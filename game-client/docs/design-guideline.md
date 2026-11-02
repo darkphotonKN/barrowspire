@@ -460,6 +460,13 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   same tone (`palette.unsafeFind`, the danger channel). Field worlds and the hub show no unsafe
   mark. In the hub, an item **still in a delve** is drawn faint, as a listed item is, and its tip
   says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)*
+- **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
+  bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
+  (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right
+  toward the left, the left end anchored. The whole seconds stay as `<n>s` at 18 px in vellum, just
+  above the bar. Bright brass because a countdown is progress, never amber. A new countdown is
+  drawn by the shared `src/ui/countdownBar.ts`, never by hand. *(Added by
+  [FS-B3NDZ](../../docs/specs/B3NDZ-unified-countdown-bar.md), 2026-11-02.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

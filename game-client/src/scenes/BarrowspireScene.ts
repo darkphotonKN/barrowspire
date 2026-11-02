@@ -37,20 +37,23 @@ import {
   FALL_CONFIRM,
   nextWatched,
   resolved,
-  resolvedCard,
+  resolvedView,
   runMenuChoices,
   watchable,
-  type ResolvedCard,
-  type ResolvedCardKind,
+  type ResolvedKind,
+  type ResolvedView,
   type RunMenuChoice,
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
-import { ProgressHud } from "@/ui/ProgressHud";
+import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
 import { PotionHud } from "@/ui/PotionHud";
 import { healthPotionCount, potionCell } from "@/ui/potions";
 import { RUN_ACTIONS } from "./runActions";
+import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
+import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -183,6 +186,14 @@ const SPECTATE_HUD_Y = 10;
  */
 const LEAVE_BUTTON_DEPTH = 1000;
 const LEAVE_BUTTON_MARGIN = 16;
+/**
+ * The escaped player's Watch the delve button (FS-QPDKN req 3, amended 2026-11-02): bottom
+ * centre, in the same HUD band and on the same bottom margin as the dead spectator's corner button.
+ */
+const WATCH_BUTTON_DEPTH = LEAVE_BUTTON_DEPTH;
+const WATCH_BUTTON_MARGIN = LEAVE_BUTTON_MARGIN;
+/** How far the Watch button stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
+const WATCH_BUTTON_LIFT = 200;
 /** A button over the world: what it says, the name its hit area answers to, what a press does. */
 interface ButtonSpec {
   name: string;
@@ -201,10 +212,11 @@ const BUTTON_H = 38;
 const BUTTON_GAP = 16;
 /**
  * Where the level and experience bar sit (FS-BDA7X req 42): top-left, under the position line,
- * and clear of the notice band (100–150) across the middle of the screen.
+ * and clear of the notice band (100–150) across the middle of the screen (`PROGRESS_HUD_AT`,
+ * which the party frames stand under).
  */
-const PROGRESS_HUD_X = 10;
-const PROGRESS_HUD_Y = 44;
+const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
+const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
 /**
  * Where the Health and class resource bars sit (FS-8AY7S req 20): bottom-left, on the progress
  * bar's left edge and the leave button's bottom margin, so nothing else on the HUD shares the corner.
@@ -226,7 +238,8 @@ const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
 const NAME_GAP = 5;
 /**
  * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
- * `gap` px over the marker base. Their name, shown on hover, lifts clear of it.
+ * `gap` px over the marker base. Their name lifts clear of it. Drawn only while the scene's
+ * `showTeammateBars` switch is on, which it is not for now (FS-CH21F R14).
  */
 const TEAMMATE_BAR = { width: 38, height: 4, gap: 2 } as const;
 const NAME_OVER_BAR_GAP = 2;
@@ -386,6 +399,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerLegs?: Phaser.GameObjects.Graphics;
   /** The health bar over each teammate's head, by player id (FS-8AY7S req 27). */
   private teammateHealthBars: Map<string, TeammateBar> = new Map();
+  /**
+   * Whether those bars are drawn at all. Off for now: teammates' health lives in the party
+   * frames, and FS-CH21F R14 supersedes FS-8AY7S req 27 with no overhead bars over players.
+   */
+  private showTeammateBars = false;
   /** The warm pool the player carries. Built once; only ever repositioned. */
   private otherPlayersLegs: Map<string, Phaser.GameObjects.Graphics> =
     new Map();
@@ -407,7 +425,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private playerNameText?: Phaser.GameObjects.Text;
   private otherPlayersNameTexts: Map<string, Phaser.GameObjects.Text> =
     new Map();
-  private hoveredPlayerId?: string; // survives game state rerenders
 
   // HP change tracking for damage flash
   private otherPlayersPrevHp: Map<string, number> = new Map();
@@ -434,6 +451,8 @@ export class BarrowspireScene extends Phaser.Scene {
   readonly resultHold = new ResultHold();
   /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
+  /** The escaped player's one button (req 3, amended): up until it is pressed or `end_game`. */
+  private watchButton?: WorldButton;
   /** The teammate this resolved player watches through (req 7); set only while spectating. */
   private watchedPlayerId?: string;
   /** The sprite the camera was last latched onto while spectating, so it is latched once. */
@@ -447,7 +466,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
-  private resolvedKind?: ResolvedCardKind;
+  private resolvedKind?: ResolvedKind;
   /** The dead player's way out (req 2, 13): on the card, or in its corner while they spectate. */
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
@@ -486,6 +505,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private chatWindow?: ChatWindow;
   /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
   private potionHud?: PotionHud;
+  private partyPanel?: PartyPanel;
+  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
+  private partyFrames?: PartyFrames;
+  /** Invites waiting on an answer, top centre, Accept greyed while delving (FS-NCC9J R24). */
+  private invitePrompt?: PartyInvitePrompt;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -764,7 +788,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.otherPlayersAnim.clear();
     this.otherPlayersNameTexts.clear();
     this.otherPlayersPrevHp.clear();
-    this.hoveredPlayerId = undefined;
 
     this.buildings = [];
     // Phaser has destroyed the rooms and the blackout's Graphics already, which destroying again
@@ -814,6 +837,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // across restarts, so the next run would start unable to move
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.resolvedCard = undefined;
+    this.watchButton = undefined;
     this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
     this.spectateHud = undefined;
@@ -838,6 +862,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.potionHud = undefined;
+    this.partyPanel?.destroy();
+    this.partyPanel = undefined;
+    this.invitePrompt?.destroy();
+    this.invitePrompt = undefined;
+    this.partyFrames?.destroy();
+    this.partyFrames = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -2729,6 +2759,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen);
+    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
+    this.partyPanel = mountPartyPanel(this, () => !!this.menu || !!this.gameEndOverlay || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
+    // party invites, hidden only under the end-of-run overlay, stacked clear of the chat window (FS-NCC9J R24)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.gameEndOverlay, () => this.chatWindow?.topEdge());
 
     // The camera and the (vestigial, collision-free) physics world live in
     // projected space: the map is a diamond, clamped by its bounding box plus a
@@ -2744,6 +2778,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.setupCustomCursor();
     this.occluders = new Occluders();
     this.monsters = new MonsterRoster(phaserMonsterStage(this), this.art, this.monsterTargeting);
+    // the party frames cut their busts from the class sheets just registered (FS-R82NV R34)
+    this.partyFrames = mountPartyFrames(this, this.art);
     this.containerView = new ContainerView(
       this,
       this.art,
@@ -2919,6 +2955,10 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.equipment?.covers(pointer.x, pointer.y)) return;
       // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
       if (this.chatWindow?.covers(pointer.x, pointer.y)) return;
+      // and one on the open party panel is the panel's (FS-R82NV R28)
+      if (this.partyPanel?.covers(pointer.x, pointer.y)) return;
+      // and one on an invite prompt is the prompt's (FS-NCC9J R24)
+      if (this.invitePrompt?.covers(pointer.x, pointer.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
@@ -3133,6 +3173,18 @@ export class BarrowspireScene extends Phaser.Scene {
     return this.sessionID === undefined || state.session_id === this.sessionID;
   }
 
+  /**
+   * The player is out of the barrow: their sprite, legs and name go, once, with the escape
+   * played where they stood when `withEscape` (a body that was seen in play).
+   */
+  private hideOwnBody(withEscape: boolean): void {
+    if (!this.player || !this.playerPos || !this.player.visible) return;
+    if (withEscape && this.fx) playEscape(this.fx, "self", { x: this.playerPos.x, y: this.playerPos.y });
+    this.player.setVisible(false);
+    this.playerLegs?.setVisible(false);
+    this.playerNameText?.setVisible(false);
+  }
+
   private handleGameStateUpdate(state: ClientGameState): void {
     if (!this.acceptsFrame(state)) return;
     this.lastGameState = state;
@@ -3150,9 +3202,13 @@ export class BarrowspireScene extends Phaser.Scene {
       const pos = state.current_player.position;
 
       // 第一次收到位置，建立玩家
-      if (!this.player) {
+      const firstSeen = !this.player;
+      if (firstSeen) {
         this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
       }
+      // escaped, and still sent their own state until the run ends (FS-QPDKN req 24): the body
+      // stays hidden; the escape plays only for a body seen in play, not on a reconnect's rebuild
+      if (state.current_player.escape === true) this.hideOwnBody(!firstSeen);
 
       // 設定目標位置，在 update() 中平滑移動
       this.targetPosition = { x: pos.x, y: pos.y };
@@ -3173,12 +3229,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (curHp !== undefined) this.prevLocalPlayerHp = curHp;
     } else {
       // current_player is null — player has escaped
-      if (this.player && this.playerPos && this.player.visible) {
-        if (this.fx) playEscape(this.fx, "self", { x: this.playerPos.x, y: this.playerPos.y });
-        this.player.setVisible(false);
-        this.playerLegs?.setVisible(false);
-        this.playerNameText?.setVisible(false);
-      }
+      this.hideOwnBody(true);
     }
 
     // the merc's own stance, parries and armed riposte: never a teammate's (FS-MAMHR §G.34–§G.38)
@@ -3233,6 +3284,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.syncResolvedView(state);
     this.showResourceBars(state);
     this.showAbilityCard();
+    this.partyFrames?.show(state);
 
     // Update escaped count HUD
     if (this.escapedCountText) {
@@ -3514,9 +3566,6 @@ export class BarrowspireScene extends Phaser.Scene {
         // remove their health bar
         this.teammateHealthBars.get(playerId)?.graphics.destroy();
         this.teammateHealthBars.delete(playerId);
-        if (this.hoveredPlayerId === playerId) {
-          this.hoveredPlayerId = undefined;
-        }
       }
     });
 
@@ -3543,10 +3592,11 @@ export class BarrowspireScene extends Phaser.Scene {
         }
         this.settleDustOnDeath(sprite, playerData.id, () => this.otherPlayersPos.get(playerData.id));
 
-        // Hover shows their name, hit-tested on the ground they stand on, not their
-        // sprite's bounds (FS-2325V §C.6): the server's collision radius around their
-        // world position. Another player is an ally (FS-77AB6 req 40): no strike-mark,
-        // no click-to-attack.
+        // Their pointer target is the ground they stand on, not their sprite's bounds
+        // (FS-2325V §C.6): the server's collision radius around their world position.
+        // Another player is an ally (FS-77AB6 req 40): no strike-mark, no click-to-attack.
+        // Nothing listens to it now, but it stays: removing it would change which object a
+        // click over them lands on.
         sprite.setInteractive({
           hitArea: {},
           hitAreaCallback: footprintHitArea(
@@ -3565,7 +3615,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersWalkPhase.set(playerData.id, 0);
         if (!anim.baked) this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
-        // create name text (hidden until hover), in the ally channel (FS-77AB6 req 40)
+        // their name, always over their head in the ally channel (FS-77AB6 req 40, FS-CH21F R13)
         const nameText = this.add.text(
           sprite.x,
           (markerBase(sprite, anim.crown, false) ?? sprite.y) - NAME_GAP,
@@ -3581,19 +3631,7 @@ export class BarrowspireScene extends Phaser.Scene {
         );
         nameText.setOrigin(0.5, 1);
         nameText.setDepth(MARKER_DEPTH.name);
-        nameText.setVisible(false);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
-
-        // hover to show their name; the cursor stays the hand
-        const pid = playerData.id;
-        sprite.on("pointerover", () => {
-          this.hoveredPlayerId = pid;
-        });
-        sprite.on("pointerout", () => {
-          if (this.hoveredPlayerId === pid) {
-            this.hoveredPlayerId = undefined;
-          }
-        });
       }
 
       // 設定目標位置，在 update() 中平滑移動
@@ -3613,15 +3651,18 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersPrevHp.set(playerData.id, curHp);
       }
 
-      // their overhead health bar: none over a corpse, an escaped teammate, or in the hub
-      let bar = this.teammateHealthBars.get(playerData.id);
-      if (!bar) {
-        const graphics = this.add.graphics();
-        graphics.setDepth(MARKER_DEPTH.bar);
-        bar = { graphics, fill: null };
-        this.teammateHealthBars.set(playerData.id, bar);
+      // their overhead health bar, while switched on: none over a corpse, an escaped
+      // teammate, or in the hub
+      if (this.showTeammateBars) {
+        let bar = this.teammateHealthBars.get(playerData.id);
+        if (!bar) {
+          const graphics = this.add.graphics();
+          graphics.setDepth(MARKER_DEPTH.bar);
+          bar = { graphics, fill: null };
+          this.teammateHealthBars.set(playerData.id, bar);
+        }
+        bar.fill = teammateHealthFill(worldType, playerData);
       }
-      bar.fill = teammateHealthFill(worldType, playerData);
       this.markTeammate(playerData.id);
     });
   }
@@ -4126,18 +4167,35 @@ export class BarrowspireScene extends Phaser.Scene {
       this.followWatched(state);
       return;
     }
-    const card = resolvedCard(state);
+    const view = resolvedView(state);
     // in play again (a reconnect's first state), or nobody left to watch: the end is coming
-    if (!card) this.takeDownCard();
-    else if (!this.resolvedCard) this.showResolvedCard(card);
+    if (!view) this.takeDownCard();
+    else if (view.kind === "escaped") this.showWatchButton();
+    else if (!this.resolvedCard) this.showResolvedCard(view);
   }
 
+  /** The dead player's card, or the escaped player's lone Watch button: whichever is up goes down. */
   private takeDownCard(): void {
+    this.watchButton?.destroy();
+    this.watchButton = undefined;
     if (!this.resolvedCard) return;
     this.resolvedCard.destroy();
     this.resolvedCard = undefined;
     // the card's leave button went down with it
     this.leaveButton = undefined;
+  }
+
+  /**
+   * The escaped player's view while a teammate is still in play (req 3, amended 2026-11-02): no
+   * card, one Watch the delve button at the bottom centre of the screen, in the HUD band. The
+   * camera stays on their own (hidden) body until it is pressed (req 4).
+   */
+  private showWatchButton(): void {
+    if (this.watchButton) return;
+    const cam = this.cameras.main;
+    const at = { x: cam.centerX, y: cam.height - WATCH_BUTTON_MARGIN - WATCH_BUTTON_LIFT - BUTTON_H / 2 };
+    this.resolvedKind = "escaped";
+    this.watchButton = this.hudButton(this.watchSpec, at, WATCH_BUTTON_DEPTH);
   }
 
   /**
@@ -4159,7 +4217,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * run view, its copy by how they resolved, and the buttons under it. No backdrop: the delve
    * goes on behind it, visibly. The camera stays where it is until a button says otherwise.
    */
-  private showResolvedCard(card: ResolvedCard): void {
+  private showResolvedCard(card: Extract<ResolvedView, { kind: "dead" }>): void {
     const cam = this.cameras.main;
     const cardW = 420;
     const cardH = 200;
@@ -4187,9 +4245,8 @@ export class BarrowspireScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // one row of buttons, centred: Watch for everyone, Leave for the dead (req 2, 3)
-    const buttons: ButtonSpec[] = [this.watchSpec];
-    if (card.kind === "dead") buttons.push(this.leaveSpec);
+    // one row of buttons, centred: Watch and Leave (req 2)
+    const buttons: ButtonSpec[] = [this.watchSpec, this.leaveSpec];
     const made = buttons.map((button, i) => this.cardButton(cam, button, i, buttons.length));
 
     this.resolvedKind = card.kind;
@@ -4471,11 +4528,17 @@ export class BarrowspireScene extends Phaser.Scene {
       x: cam.width - LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
       y: cam.height - LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
     };
-    this.leaveButton = this.worldButton(this.leaveSpec, at, { x: 0, y: 0 }, LEAVE_BUTTON_DEPTH + 1);
-    this.leaveButton.parts.forEach((part) => part.setScrollFactor(0).setDepth(LEAVE_BUTTON_DEPTH));
+    this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)
     this.showAbilityCard();
+  }
+
+  /** A button fixed to the screen at `at`, in a HUD depth band: its hit area just over its face. */
+  private hudButton(button: ButtonSpec, at: { x: number; y: number }, depth: number): WorldButton {
+    const made = this.worldButton(button, at, { x: 0, y: 0 }, depth + 1);
+    made.parts.forEach((part) => part.setScrollFactor(0).setDepth(depth));
+    return made;
   }
 
   /**
@@ -4823,22 +4886,24 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A teammate's markers where their figure now stands: the health bar over their head (FS-8AY7S
-   * req 27), and their name over it while hovered. Neither over a baked corpse.
+   * Another player's markers where their figure now stands: their name, always (FS-CH21F R13),
+   * at the marker base, or over their health bar (FS-8AY7S req 27) when that is switched on.
+   * Neither over a baked corpse.
    */
   private markTeammate(playerId: string): void {
     const sprite = this.otherPlayers.get(playerId);
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
     const base = markerBase(sprite, this.otherPlayersAnim.get(playerId)?.crown, dead);
-    const bar = this.teammateHealthBars.get(playerId);
+    // the switch alone decides, not whether a bar happens to be in the map
+    const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
     const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;
 
     const nameText = this.otherPlayersNameTexts.get(playerId);
     if (nameText) {
       if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
       else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
-      nameText.setVisible(this.hoveredPlayerId === playerId && base !== null);
+      nameText.setVisible(base !== null);
     }
   }
 

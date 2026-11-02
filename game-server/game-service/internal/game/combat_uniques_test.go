@@ -113,7 +113,7 @@ func TestRun_LanternOfTheDrowned_ArrowHitsTwoMonstersInALine(t *testing.T) {
 // trailsInState is the burning trails the delver's broadcast carries.
 func trailsInState(t *testing.T, s *Session, playerID uuid.UUID) []*types.TrailState {
 	t.Helper()
-	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 	return stateSerializer.FormatStateToClientState(backendState, playerID).Trails

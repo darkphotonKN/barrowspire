@@ -18,15 +18,27 @@ import (
 **/
 type StateSerializer struct {
 	em               *ecs.EntityManager
+	parties          PartyMembership
 	backendStatePool *sync.Pool
 }
 
-func NewStateSerializer(em *ecs.EntityManager) *StateSerializer {
-	return &StateSerializer{em: em, backendStatePool: &sync.Pool{
+// PartyMembership is the pod's party membership as last published: which
+// party each player is in, player id → party id. The map handed back is never
+// written by anyone, so a world's goroutine may read it while the hub's loop
+// publishes the next one; nil means no one is in a party. FS-CH21F §Requirements 5–6.
+type PartyMembership interface {
+	Snapshot() map[uuid.UUID]uuid.UUID
+}
+
+// NewStateSerializer builds a world's serializer. parties tells it who is in
+// whose party, so a recipient's teammates carry their resource; nil, no one is.
+func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSerializer {
+	return &StateSerializer{em: em, parties: parties, backendStatePool: &sync.Pool{
 		New: func() interface{} {
 			return &types.BackendGameState{
 				Players:    make(map[uuid.UUID]*types.PlayerState),
 				LeftBehind: make(map[uuid.UUID]*types.PlayerState),
+				Escaped:    make(map[uuid.UUID]*types.PlayerState),
 				Resources:  make(map[uuid.UUID]*types.ResourceState),
 				Parries:    make(map[uuid.UUID]*types.ParryState),
 				Items:      make([]uuid.UUID, 0),
@@ -47,6 +59,10 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 	s.RestBackendStatePool(backendState)
 	backendState.SessionID = sessionID
 	backendState.WorldType = worldType
+	// read once, so every recipient of this broadcast sees one version
+	if s.parties != nil {
+		backendState.PartyOf = s.parties.Snapshot()
+	}
 
 	for _, entity := range entities {
 		// --- Floor (run-level entity; a hub has none) ---
@@ -62,10 +78,6 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		if isPlayer {
 			// -- get all player components --
 			player := pc.(*components.PlayerComponent)
-			if player.Escape {
-				backendState.EscapedCount++
-				continue
-			}
 			tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
 			transform := tc.(*components.TransformComponent)
 			vc, _ := entity.GetComponent(ecs.ComponentTypeVelocity)
@@ -187,11 +199,17 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				playerState.NextLevelAt = &next
 			}
 
+			switch {
+			// an escaped delver has left the barrow, so only they see
+			// themselves until the run ends (FS-QPDKN §Requirements 24)
+			case player.Escape:
+				backendState.EscapedCount++
+				backendState.Escaped[player.MemberID] = playerState
 			// a dead delver left on an earlier floor is not on this one, so only
 			// they see themselves (FS-F6F88 §Requirements 15)
-			if player.LeftBehind {
+			case player.LeftBehind:
 				backendState.LeftBehind[player.MemberID] = playerState
-			} else {
+			default:
 				backendState.Players[player.MemberID] = playerState
 			}
 		}
@@ -469,16 +487,28 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		playerCap = 0
 	}
 
-	otherPlayers := make([]*types.PlayerState, 0, playerCap)
+	// the shared PlayerState is wrapped, never written: a teammate's resource
+	// is added for this recipient's frame alone. FS-CH21F §Requirements 1–4
+	party, grouped := backendState.PartyOf[playerID]
+	otherPlayers := make([]types.OtherPlayerState, 0, playerCap)
 	for id, playerState := range backendState.Players {
-		if id != playerID {
-			otherPlayers = append(otherPlayers, playerState)
+		if id == playerID {
+			continue
 		}
+		other := types.OtherPlayerState{PlayerState: playerState}
+		if grouped && backendState.PartyOf[id] == party {
+			other.Resource = backendState.Resources[id]
+			other.ParryState = backendState.Parries[id]
+		}
+		otherPlayers = append(otherPlayers, other)
 	}
 
 	ownState, present := backendState.Players[playerID]
 	if !present {
-		ownState = backendState.LeftBehind[playerID]
+		ownState, present = backendState.LeftBehind[playerID]
+	}
+	if !present {
+		ownState = backendState.Escaped[playerID]
 	}
 	// the shared PlayerState is wrapped, never written: the resource is the
 	// recipient's alone. FS-8AY7S §Requirements 17–18
@@ -533,12 +563,17 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	for k := range state.LeftBehind {
 		delete(state.LeftBehind, k)
 	}
+	for k := range state.Escaped {
+		delete(state.Escaped, k)
+	}
 	for k := range state.Resources {
 		delete(state.Resources, k)
 	}
 	for k := range state.Parries {
 		delete(state.Parries, k)
 	}
+	// the published snapshot is shared, so it is let go, never cleared
+	state.PartyOf = nil
 	state.Items = state.Items[:0]
 	state.Doors = state.Doors[:0]
 	state.Walls = state.Walls[:0]

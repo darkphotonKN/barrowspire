@@ -63,6 +63,7 @@ server state and sends intents. ✅
 - [x] Potion count and drink key on the HUD → FS-P9G8R
 - [ ] Allocated pickup notices → FS-V780R
 - [x] Unsafe marking on run finds → FS-18Z5F
+- [ ] Other delvers' names over their heads → FS-CH21F
 
 ### Character
 
@@ -95,6 +96,7 @@ server state and sends intents. ✅
 - [ ] Indoor blackout → FS-9PN7X
 - [x] Per-floor variation of the run look → FS-8RBQY
 - [x] Pre-rendered stairs → FS-8RBQY
+- [ ] One countdown style across the canvas → FS-B3NDZ
 
 ### Hub
 
@@ -124,11 +126,12 @@ server state and sends intents. ✅
 
 - [ ] Party panel → FS-R82NV
 - [ ] Party invites → FS-R82NV
-- [ ] Follow a handoff into the hub → FS-R82NV
+- [ ] Travel to the leader's village from the party frames → FS-NCC9J
 - [ ] Party frames → FS-R82NV
 - [ ] Party loot rule setting → FS-V780R
 - [ ] Enter the Spire as a party → FS-BJNYC
-- [ ] Overhead health and resource bars over party members → FS-CH21F
+- [ ] Party entry ready check → FS-BJNYC
+- [ ] Teammates' health, resource and level in the party frames → FS-CH21F
 
 ### Chat
 

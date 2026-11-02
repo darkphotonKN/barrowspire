@@ -107,6 +107,36 @@ export interface ActionMap {
   leave_field: Record<string, never>;
   /** A player in the delve drinking a health potion (FS-P9G8R R27): no payload; the server picks the slot. */
   drink_potion: Record<string, never>;
+  /** A player in no party standing up a party of one, as its leader (FS-R82NV R4a): no payload. */
+  party_create: Record<string, never>;
+  /** Inviting a player to this player's party, by character name or id (FS-R82NV R12). */
+  party_invite: { name: string };
+  /**
+   * The leader removing a member (FS-R82NV R19). The FS names the field `player_id`, but every
+   * outgoing payload has the sender's own `player_id` merged over it by `sendMessage`, so the
+   * target travels as `target_id` until the server's handler (slice 2) settles the name.
+   */
+  party_kick: { target_id: string };
+  /** The leader handing leadership to a member (FS-R82NV R19); `target_id` as for a kick. */
+  party_transfer: { target_id: string };
+  /** Leaving the party (FS-R82NV R20): no payload. */
+  party_leave: Record<string, never>;
+  /** Answering a `party_invite` yes (FS-R82NV R16), by the invite's id. */
+  party_accept: { invite_id: string };
+  /** Answering a `party_invite` no (FS-R82NV R15), by the invite's id. */
+  party_decline: { invite_id: string };
+  /** A member asking to be taken to the town of the leader's server (FS-NCC9J R18, R28): no payload. */
+  party_travel: Record<string, never>;
+  /**
+   * The leader at the Spire's door taking the whole party down (FS-BJNYC R3, R21): no payload.
+   * Answered by a `party_ready_check`, the run itself, or a `party_notice` saying why not.
+   */
+  party_enter: Record<string, never>;
+  /**
+   * A member answering the open ready check (FS-BJNYC R9, R24). The server records it if they are
+   * waiting on that check, and ignores it otherwise; the leader sends none.
+   */
+  party_ready: { check_id: string; accept: boolean };
 }
 
 export const ActionType = {
@@ -129,6 +159,16 @@ export const ActionType = {
   EnterField: "enter_field",
   LeaveField: "leave_field",
   DrinkPotion: "drink_potion",
+  PartyCreate: "party_create",
+  PartyInvite: "party_invite",
+  PartyKick: "party_kick",
+  PartyTransfer: "party_transfer",
+  PartyLeave: "party_leave",
+  PartyAccept: "party_accept",
+  PartyDecline: "party_decline",
+  PartyTravel: "party_travel",
+  PartyEnter: "party_enter",
+  PartyReady: "party_ready",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
@@ -182,11 +222,13 @@ export interface WorldEnteredPayload {
 }
 
 /**
- * The run this player was matched into is hosted on another server: connect to
- * `addr` for the run with `session_id`. The host's world_entered follows once they are seated.
- * FS-K2HKP §Requirements 21, 29.
+ * The player's next world is on another server: connect to `addr`. For a run, the run with
+ * `session_id` (FS-K2HKP §Requirements 21, 29); for a travel to the party leader's town, `hub`
+ * and no session: the client enters that server's hub as its character (FS-NCC9J R18, R20). The
+ * host's world_entered follows once they are seated.
  */
 export interface WorldHandoffPayload {
   addr: string;
-  session_id: string;
+  session_id?: string;
+  hub?: boolean;
 }

@@ -54,7 +54,7 @@ func TestSerializeBackendState_ItemsCarryTheirRequiredLevel(t *testing.T) {
 			chest.AddComponent(components.NewTransformComponent(20, 20))
 			chest.AddComponent(components.NewItemIDListComponent([]uuid.UUID{inChest}))
 
-			s := NewStateSerializer(em)
+			s := NewStateSerializer(em, nil)
 			state, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 			require.NoError(t, err)
 

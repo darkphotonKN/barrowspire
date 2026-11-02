@@ -48,7 +48,7 @@ func TestFormatStateToClientState_CarriesTheOwnPlayersProgression(t *testing.T) 
 			em := ecs.NewEntityManager()
 			memberID := uuid.New()
 			seatDelver(em, memberID, tt.level, tt.experience)
-			s := NewStateSerializer(em)
+			s := NewStateSerializer(em, nil)
 
 			backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
 			require.NoError(t, err)

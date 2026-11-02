@@ -74,7 +74,7 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
-## Chat terms (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
+## Chat terms (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
 
 What the chat window says. Each maps to a game-service chat channel type on the wire; the
 protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
@@ -92,10 +92,13 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **Channel** (on screen) — the kind of talk a line belongs to, told apart by colour, not by tab:
   **Area**, **World**, **Party**, **Whisper**, **Trade**. In client code this is the chat channel
   type; the client has no field-channel concept, so the bare word is safe *here* and only here.
-  Party and Trade exist as filters and colours before they can carry a message.
+  Trade exists as a filter and a colour before it can carry a message.
 - **Area** — the people on the same server as you, wherever they stand: town, a field, or inside
   the Spire (ADR-0032). The window does not say where you are (FS-WJGFJ Amendment 2026-10-31).
 - **World** — everyone online, across every server.
+- **Party** — the members of your party, wherever each is: any server, town, a field or the Spire.
+  Always pickable, party or not; a line sent with no party answers with one system line ("You
+  are not in a party."). The client never checks the party itself (FS-XGW7H).
 - **Whisper** — a private line to one named player, sent as `@name message`; clicking a sender's
   name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
 - **Recall** — ArrowUp and ArrowDown in the open input walk back and forth through the player's
@@ -108,6 +111,26 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   server as a complaint. The window is the evidence; the server stores no chat.
 - **System line** — a line the client or server emits that no player wrote ("that player is not
   online"). Not a channel; never filtered out.
+
+## Party terms (FS-R82NV; across pods FS-NCC9J, ADR-0037)
+
+- **Party panel** — the carved panel **T** toggles: the members, the leader's crown, and the
+  actions the player may use (create, invite, kick, transfer, leave). Not the frames.
+- **Party frames** — the column on the left edge under the level bar, one frame per member, the
+  player first. A frame shows bars only for a teammate in the player's own world; any other
+  teammate shows name and class bust alone, so missing bars *are* the "not here" signal. An away
+  member is greyed. Not the panel.
+- **Skeleton row** — the frame drawn for a **reserved slot** (game-service: an open invite counted
+  against the party's size): the invitee's name with a grey pulse where the bust and bars go, no
+  countdown, seen by every member. It becomes a real frame on accept and goes on decline or
+  expiry. Client word only; the server says *reserved slot*.
+- **Travel button** — the button on the leader's frame, labelled **Travel**, that sends the player
+  to the town of the leader's server (game-service: *travel*, by a hub handoff). Pressable only in
+  the player's own town; greyed in a field, a delve, or while the leader is away; absent when
+  already on the leader's server, or when either server is unknown (a leader on no server is
+  offline).
+- **Invite prompt** — the small carved prompt an incoming invite raises, with Accept, Decline and
+  a countdown on the client's own clock. Not the skeleton row (that is the inviting side's view).
 
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
@@ -276,8 +299,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
   bottom left of a run or a field world, each labelled with its own name ("Health:", "Mana:",
-  "Stamina:", "Parry:"). The mercenary's bar is drawn as 3 pips. Teammates show an overhead health bar only;
-  the player has no bar over their own head (FS-8AY7S).
+  "Stamina:", "Parry:"). The mercenary's bar is drawn as 3 pips. There are no overhead bars over
+  other players for now: teammates' health and resource live in the party frames (FS-CH21F R14).
+  The player has no bar over their own head (FS-8AY7S).
 
 - **Aim line**: the line an archer sees while holding to aim Shadow Shot, faint until a release
   would fire. Drawn for the aiming player only; the server never knows about it (ADR-0030).
@@ -299,6 +323,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | the Inn, the store, the smithy | — | walls sharing a `house_id` | "enterable town building" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
 | chest, sack, bone heap | — | `containers[].kind` `chest` / `sack` / `drop_pile` | "container" |
+| the party | — | `party_update`, `party_id` | "party" |
+| travel to the leader | — | `world_handoff` (to a hub) | "Travel to the party leader's village" |
 
 ## Voice rules that ride on the vocabulary
 

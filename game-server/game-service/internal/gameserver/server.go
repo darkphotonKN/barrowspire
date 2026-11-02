@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -70,6 +72,10 @@ type Server struct {
 	// the reconnect grace each dropped member is held under, by member, and
 	// the last hold handed out
 	graceHolds map[uuid.UUID]graceHold
+	// members this pod has let go to travel to another pod, by the connection
+	// the handoff went over: not present here, and not held for the grace when
+	// that connection drops (FS-NCC9J R19)
+	travelling map[uuid.UUID]*websocket.Conn
 	// resolved run members whose reconnect grace ran out: kept, body and
 	// record, until their run ends and settles them (FS-QPDKN R18, R19)
 	awaitingSettlement map[uuid.UUID]struct{}
@@ -88,6 +94,15 @@ type Server struct {
 	itemsClient grpcitems.ItemsClient
 	// resolves the character a member enters with
 	characters CharacterReader
+	// who leads an arriving member's party, so one joining their leader here
+	// is let in past the hub's cap; nil lets nobody past it (FS-NCC9J R20)
+	leaders partyLeaders
+
+	// this pod's parties; read here only to learn when shutdown dissolved them
+	parties *partyRegistry
+	// who is in which party, as the party cache last published it: handed to every world's
+	// serializer, so a recipient's teammates carry their resource (FS-CH21F R5, R6)
+	partyMembership *partyMembership
 }
 
 // CharacterReader reads one of a member's characters from character-service,
@@ -156,13 +171,18 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		players:            make(map[uuid.UUID]*types.Player, 10),
 		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
 		graceHolds:         make(map[uuid.UUID]graceHold),
+		travelling:         make(map[uuid.UUID]*websocket.Conn),
 		awaitingSettlement: make(map[uuid.UUID]struct{}),
 
-		queue:        queueService,
-		authClient:   authClient,
-		eventEmitter: eventEmitter,
-		itemsClient:  itemsClient,
-		characters:   characters,
+		queue:           queueService,
+		authClient:      authClient,
+		eventEmitter:    eventEmitter,
+		itemsClient:     itemsClient,
+		characters:      characters,
+		partyMembership: newPartyMembership(),
+	}
+	if boot.partyStore != nil {
+		server.leaders = boot.partyStore
 	}
 
 	// initialize message sender
@@ -172,15 +192,58 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.queue.Start(ctx)
 
 	// initialize message hub
-	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus)
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat)
+	partyTicks := boot.partyTicks
+	if partyTicks == nil {
+		ticker := time.NewTicker(partyTickInterval)
+		go func() { <-ctx.Done(); ticker.Stop() }()
+		partyTicks = ticker.C
+	}
+	// one ordered writer for the presence index's writes (FS-R82NV R7)
+	redisWriter := newOrderedWriter()
+	if boot.presence != nil {
+		redisWriter.start(ctx)
+	}
+	inbox := newPodInbox(boot.inboxBus, podID)
+	jobs := newLoopJobs()
+	party := newPartyRegistry(server, newSender, jobs, partyRegistryConfig{
+		podID:      podID,
+		podAddr:    podAddr,
+		size:       boot.partySize,
+		now:        boot.partyNow,
+		newID:      uuid.New,
+		ticks:      partyTicks,
+		store:      boot.partyStore,
+		presence:   boot.presence,
+		inbox:      inbox,
+		occupancy:  boot.hubOccupancy,
+		membership: server.partyMembership,
+		worlds:     server,
+	})
+	server.parties = party
+	party.start(ctx)
+	// party lines read the registry's cache and reach other pods through its runner and courier
+	// (FS-XGW7H)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus, party)
+	var presenceWriter presenceIndex
+	if boot.presence != nil {
+		presenceWriter = boot.presence
+	}
+	presence := newPresenceKeeper(presenceWriter, boot.hubOccupancy, server, podID, podAddr, boot.partyNow, redisWriter)
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
+	inbox.start(ctx)
 
 	server.createHubSession()
 	server.createFieldSessions(fields)
 
 	return server, nil
+}
+
+// newStateSerializer is a world's serializer, handed the pod's party membership so that every world,
+// hub, field and run alike, tells a recipient their teammates' resource. FS-CH21F R6.
+func (s *Server) newStateSerializer(em *ecs.EntityManager) *serializer.StateSerializer {
+	return serializer.NewStateSerializer(em, s.partyMembership)
 }
 
 /**
@@ -196,7 +259,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 func (s *Server) createHubSession() *game.Session {
 	fmt.Printf("\n\nWorld Hub SESSION INITIALIZED\n\n\n")
 	entityManager := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(entityManager)
+	stateSerializer := s.newStateSerializer(entityManager)
 
 	hub := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.HubBounds())
 
@@ -257,7 +320,47 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 		return nil, fmt.Errorf("%w: %w", errCharactersUnavailable, err)
 	}
 
-	return s.JoinHub(conn, character)
+	return s.joinHub(conn, character, s.travelMargin(ctx, player.ID))
+}
+
+// partyLeaders is who leads a player's party, read without changing it: partystore.Redis in
+// production.
+type partyLeaders interface {
+	LeaderOf(ctx context.Context, playerID uuid.UUID) (uuid.UUID, bool, error)
+}
+
+// travelMargin is how far past the hub's cap a player entering it is let in: up to one full party
+// (shared by the whole hub, first come) for a member whose party's leader stands on this pod, in
+// its hub, a field or a run, whether they came by party_travel or not, and nothing for anyone
+// else. An unreadable party lets nobody past (FS-NCC9J R18, R20, amended).
+func (s *Server) travelMargin(ctx context.Context, playerID uuid.UUID) int {
+	if s.leaders == nil {
+		return 0
+	}
+	leader, in, err := s.leaders.LeaderOf(ctx, playerID)
+	if err != nil {
+		slog.Warn("Could not read the party of a player entering the hub, held to the cap", "player_id", playerID, "error", err)
+		return 0
+	}
+	if !in || leader == playerID {
+		return 0
+	}
+	if !s.holdsInAWorld(leader) {
+		return 0
+	}
+	return constants.HubTravelMargin
+}
+
+// holdsInAWorld reports whether this pod holds playerID seated in one of its worlds.
+func (s *Server) holdsInAWorld(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	record, onRecord := s.players[playerID]
+	if !onRecord {
+		return false
+	}
+	_, inWorld := s.sessions[record.CurrentGameSessionId]
+	return inWorld
 }
 
 /**
@@ -269,6 +372,11 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 * both have to be told. CreateGameSession does the same thing for the same reason.
 **/
 func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error) {
+	return s.joinHub(conn, character, 0)
+}
+
+// joinHub is JoinHub with the hub's cap raised by margin (travelMargin).
+func (s *Server) joinHub(conn *websocket.Conn, character types.CharacterInPlay, margin int) (*game.Session, error) {
 	hub, exists := s.HubSession()
 	if !exists {
 		return nil, errHubMissing
@@ -314,7 +422,7 @@ func (s *Server) JoinHub(conn *websocket.Conn, character types.CharacterInPlay) 
 	// out here would mean holding the server's lock over data the session owns,
 	// which serialises JoinHub against itself and nothing else, so the next path
 	// into the hub would sidestep the cap without noticing.
-	if err := hub.Admit(player.ID, character, s.tokenOf(player)); err != nil {
+	if err := hub.AdmitPast(player.ID, character, s.tokenOf(player), margin); err != nil {
 		return nil, err
 	}
 
@@ -677,6 +785,59 @@ func (s *Server) ApplyRunProgress(progress []types.RunProgress) {
 /**
 * The hub world, which every connected player returns to between runs.
 **/
+/**
+* LetGo lets a member go to travel to another pod over conn (FS-NCC9J R19):
+* the presence index drops them on the next tick, and when conn drops they are
+* not held for the reconnect grace, so a reconnect never returns them here.
+* Until then they are still present here, and still told their party. TakeBack undoes it while
+* they are still on conn; a new connection here undoes it too.
+**/
+func (s *Server) LetGo(playerID uuid.UUID, conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.travelling[playerID] = conn
+}
+
+// TakeBack keeps a member let go over conn after all: the travel never took
+// them, and they are still here on it.
+func (s *Server) TakeBack(playerID uuid.UUID, conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.travelling[playerID] == conn {
+		delete(s.travelling, playerID)
+	}
+}
+
+// Travellers are the members this pod has let go to travel: still present here
+// while on their old connection, but not in the presence index (FS-NCC9J R19).
+func (s *Server) Travellers() map[uuid.UUID]struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[uuid.UUID]struct{}, len(s.travelling))
+	for id := range s.travelling {
+		out[id] = struct{}{}
+	}
+	return out
+}
+
+// letGoOver reports whether conn carries a member let go to travel.
+func (s *Server) letGoOver(conn *websocket.Conn) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	player, mapped := s.connToPlayer[conn]
+	return mapped && s.travelling[player.ID] == conn
+}
+
+// HubOccupancy is how many players this pod's hub seats: the count its cap is held to. FS-JEAVX
+// R19.
+func (s *Server) HubOccupancy() int {
+	hub, exists := s.HubSession()
+	if !exists {
+		return 0
+	}
+	return hub.Occupancy()
+}
+
 func (s *Server) HubSession() (*game.Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -745,6 +906,8 @@ func (s *Server) MapConnToPlayer(conn *websocket.Conn, playerID uuid.UUID, msgCh
 	if !onRecord {
 		return nil, false
 	}
+	// back on a new connection: a travel they were let go for did not take them
+	delete(s.travelling, playerID)
 
 	var superseded []*websocket.Conn
 
@@ -803,6 +966,130 @@ func (s *Server) SeatedPlayerIDs() []uuid.UUID {
 	return seated
 }
 
+/**
+* SeatedConns is SeatedPlayerIDs with the connection each player is seated on:
+* a player seen on a different connection than before is read afresh, their
+* screen unknown (I-NCC9J-3, decided after round 4). One connection per player:
+* MapConnToPlayer drops a superseded one under the same lock.
+**/
+func (s *Server) SeatedConns() map[uuid.UUID]*websocket.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conns := make(map[uuid.UUID]*websocket.Conn, len(s.connToPlayer))
+	for conn, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == uuid.Nil {
+			continue
+		}
+		conns[player.ID] = conn
+	}
+	return conns
+}
+
+/**
+* TownConns is SeatedConns narrowed to the hub, the town: everyone connected here
+* and seated in it, with their connection. A member in a field, a run, no world,
+* or within their reconnect grace is not in it. FS-BJNYC §Requirements 4.
+**/
+func (s *Server) TownConns() map[uuid.UUID]*websocket.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conns := make(map[uuid.UUID]*websocket.Conn)
+	if s.hubSessionID == uuid.Nil {
+		return conns
+	}
+	for conn, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == s.hubSessionID {
+			conns[player.ID] = conn
+		}
+	}
+	return conns
+}
+
+/**
+* SeatedPlayer finds the player connected to this pod and seated in any world
+* under a character name or player id, read off the connection table as
+* SeatedPlayerIDs is. A copy, taken under the lock, so the caller reads it on
+* its own goroutine safely. FS-NCC9J §Requirements 11 (same pod).
+**/
+func (s *Server) SeatedPlayer(nameOrID string) (types.Player, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, player := range s.connToPlayer {
+		if player.CurrentGameSessionId == uuid.Nil {
+			continue
+		}
+		// character names are unique case-insensitively (character-service's lower(name) index)
+		if strings.EqualFold(player.Character.Name, nameOrID) || strings.EqualFold(player.ID.String(), nameOrID) {
+			return *player, true
+		}
+	}
+	return types.Player{}, false
+}
+
+// PartiesClosed closes once the party registry has stopped taking actions, after ctx ends.
+// Nothing is dissolved: a party outlives any pod (FS-NCC9J, ADR-0037).
+func (s *Server) PartiesClosed() <-chan struct{} {
+	return s.parties.stopped()
+}
+
+// presentPlayer is one player this pod holds, as the presence index writes them.
+type presentPlayer struct {
+	ID    uuid.UUID
+	Name  string
+	World types.WorldType
+}
+
+// PresentPlayers is every player this pod holds with a character, in any world, connected or
+// within the reconnect grace: the presence index's half from this pod (FS-NCC9J R7). A delver kept
+// only for their run's settlement after their grace ran out is gone, not present.
+func (s *Server) PresentPlayers() []presentPlayer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	present := make([]presentPlayer, 0, len(s.players))
+	for id, record := range s.players {
+		if record.Character.Name == "" {
+			continue
+		}
+		if _, kept := s.awaitingSettlement[id]; kept {
+			continue
+		}
+		world, inWorld := s.sessions[record.CurrentGameSessionId]
+		if !inWorld {
+			continue
+		}
+		present = append(present, presentPlayer{ID: id, Name: record.Character.Name, World: world.WorldType()})
+	}
+	return present
+}
+
+// InRun reports whether playerID is connected here and seated in a run: neither the hub nor a
+// field. FS-NCC9J R14.
+func (s *Server) InRun(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, player := range s.connToPlayer {
+		if player.ID != playerID {
+			continue
+		}
+		world := player.CurrentGameSessionId
+		if world == uuid.Nil || world == s.hubSessionID {
+			return false
+		}
+		for _, field := range s.fields {
+			if field == world {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 	// Read lock: this only looks the connection up. It sits on the routing path
 	// for every inbound game action, and an exclusive lock there would block the
@@ -821,7 +1108,7 @@ func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session {
 	// create entity manager first so it can be shared
 	entityManager := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(entityManager)
+	stateSerializer := s.newStateSerializer(entityManager)
 
 	// create session with message sender
 	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())

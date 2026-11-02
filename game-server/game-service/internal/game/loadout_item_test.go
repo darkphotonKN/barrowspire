@@ -99,7 +99,7 @@ func TestLoadoutItem_WithAffixes_RoundTripsSeatStateAndExtraction(t *testing.T) 
 	assert.Equal(t, "Heals you when you slay a foe.", weapon.UniqueEffectText)
 
 	// shown in world state
-	state, err := serializer.NewStateSerializer(em).SerializeBackendState(context.Background(), s.ID, types.WorldTypeRun, em.GetAllEntities())
+	state, err := serializer.NewStateSerializer(em, nil).SerializeBackendState(context.Background(), s.ID, types.WorldTypeRun, em.GetAllEntities())
 	require.NoError(t, err)
 	me := state.Players[memberID]
 	require.NotNil(t, me)

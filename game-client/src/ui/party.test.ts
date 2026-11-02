@@ -3,7 +3,7 @@ import {
   FALL_CONFIRM,
   nextWatched,
   resolved,
-  resolvedCard,
+  resolvedView,
   runMenuChoices,
   watchable,
 } from "./party";
@@ -45,7 +45,7 @@ describe("resolved (FS-77AB6 req 17)", () => {
   });
 });
 
-describe("resolvedCard (FS-QPDKN req 1, 3; edge state: left behind)", () => {
+describe("resolvedView (FS-QPDKN req 1, 3; edge state: left behind)", () => {
   it.each([
     ["dead", player({ current_health: 0 }), [ally("wenna")], "dead"],
     ["escaped", player({ escape: true }), [ally("wenna")], "escaped"],
@@ -70,34 +70,41 @@ describe("resolvedCard (FS-QPDKN req 1, 3; edge state: left behind)", () => {
       null,
     ],
     ["escaped alone", player({ escape: true }), [], null],
+    [
+      "escaped with nobody left in play",
+      player({ escape: true }),
+      [ally("wenna", { current_health: 0 })],
+      null,
+    ],
     ["absent", null, [ally("wenna")], null],
-  ])("should give a %s player the %s card", (_, me, others, want) => {
-    expect(resolvedCard(state(me, others))?.kind ?? null).toBe(want);
+  ])("should give a %s player the %s view", (_, me, others, want) => {
+    expect(resolvedView(state(me, others))?.kind ?? null).toBe(want);
   });
 
   it("should keep the dead player's grim line", () => {
-    const card = resolvedCard(
+    const view = resolvedView(
       state(player({ current_health: 0 }), [ally("wenna")]),
     );
-    expect(`${card?.title} ${card?.body}`).toMatch(/barrow keeps you/i);
+    expect(view?.kind === "dead" && `${view.title} ${view.body}`).toMatch(
+      /barrow keeps you/i,
+    );
   });
 
-  it("should tell the escaped player they are out, grim and terse", () => {
-    const card = resolvedCard(state(player({ escape: true }), [ally("wenna")]));
-    expect(`${card?.title} ${card?.body}`).toMatch(/out of the barrow/i);
-    expect(`${card?.title} ${card?.body}`).not.toMatch(/!/);
+  // amended 2026-11-02 (charter, req 3): the escaped player is told by the "escaped
+  // successfully" line, and offered only Watch the delve, with no card copy of their own
+  it("should give the escaped player the Watch button alone: no card, no copy", () => {
+    const view = resolvedView(state(player({ escape: true }), [ally("wenna")]));
+    expect(view).toEqual({ kind: "escaped" });
   });
 
-  it.each([
-    ["dead", player({ current_health: 0 })],
-    ["escaped", player({ escape: true })],
-  ])(
-    "should keep the hub's words on the %s card: delve, never run",
-    (_, me) => {
-      const card = resolvedCard(state(me, [ally("wenna")]));
-      expect(`${card?.title} ${card?.body}`).not.toMatch(/\brun\b/i);
-    },
-  );
+  it("should keep the hub's words on the dead card: delve, never run", () => {
+    const view = resolvedView(
+      state(player({ current_health: 0 }), [ally("wenna")]),
+    );
+    expect(view?.kind === "dead" && `${view.title} ${view.body}`).not.toMatch(
+      /\brun\b/i,
+    );
+  });
 });
 
 describe("watchable (FS-QPDKN req 7, 8)", () => {

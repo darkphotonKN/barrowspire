@@ -17,8 +17,11 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/hubocc"
 	matchqueue "github.com/darkphotonKN/barrowspire-server/game-service/internal/match_queue"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -41,7 +44,7 @@ type Downstreams struct {
 * liveness key, then releases every downstream connection; call it on
 * shutdown, before redis is closed.
 **/
-func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, outbox game.OutboxWriter, outboxWaker game.OutboxWaker) (*gin.Engine, func() error, error) {
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, partySize int, outbox game.OutboxWriter, outboxWaker game.OutboxWaker) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -83,7 +86,8 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// -- match maker --
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
 	matchAnnouncer := handoff.NewRedis(redisClient)
-	matchmaker := matchmaker.NewMatchmaker(2, pod.ID, matchQueueRedis, matchAnnouncer)
+	// a match is as many players as a full party: one setting (FS-R82NV R8)
+	matchmaker := matchmaker.NewMatchmaker(partySize, pod.ID, matchQueueRedis, matchAnnouncer)
 
 	// outbox is built once in main and shared with the worker that drains it;
 	// the worker is woken once match-end rows commit
@@ -96,6 +100,14 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithVisitSettler(gameService),
 		// the world channel rides the same Redis the matchmaker and handoff use (FS-5SH4G R13)
 		gameserver.WithChatBus(chatbus.NewRedis(redisClient)),
+		// the party cap is the match size; parties live in the same Redis (FS-R82NV R8, FS-NCC9J R1)
+		gameserver.WithPartySize(partySize),
+		gameserver.WithPartyStore(partystore.NewRedis(redisClient)),
+		// the presence index and the pod inbox ride it too: invites reach players on other pods
+		// (FS-R82NV R7, R9)
+		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
+		gameserver.WithHubOccupancy(hubocc.NewRedis(redisClient)),
+		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())
@@ -125,6 +137,13 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// redis is still open (FS-K2HKP §Requirements 3), bounded so a stuck redis
 	// cannot hold up exit, then releases the downstream connections
 	shutdown := func() error {
+		// parties first: the hub's loop closes the registry, then unseats the presence index,
+		// while redis is still open (FS-NCC9J; parties themselves live on, ADR-0037)
+		select {
+		case <-server.PartiesClosed():
+		case <-time.After(partiesCloseWait):
+			slog.Warn("party registry not closed in time")
+		}
 		select {
 		case <-matchmaker.Stopped():
 		case <-time.After(matchmakerStopTimeout):
@@ -138,3 +157,6 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 // a little over the matchmaker's own delete timeout
 const matchmakerStopTimeout = 3 * time.Second
+
+// how long shutdown waits for the hub's loop to close the party registry
+const partiesCloseWait = 3 * time.Second

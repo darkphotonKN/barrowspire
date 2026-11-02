@@ -96,7 +96,7 @@ func keepStanding(em *ecs.EntityManager) {
 // index.
 func BenchmarkRunTick_FullFloor(b *testing.B) {
 	s, delvers, demon := fullRun(b)
-	stateSerializer := serializer.NewStateSerializer(s.EntityManager)
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	ctx := context.Background()
 	deltaTime := 1.0 / float64(constants.GameFrameRate)
 

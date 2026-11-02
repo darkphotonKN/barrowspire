@@ -73,7 +73,7 @@ type ClientGameState struct {
 	SessionID     uuid.UUID           `json:"session_id"`
 	WorldType     WorldType           `json:"world_type"`
 	CurrentPlayer *CurrentPlayerState `json:"current_player"` // The recipient's player state
-	OtherPlayers  []*PlayerState      `json:"other_players"`  // All other players
+	OtherPlayers  []OtherPlayerState  `json:"other_players"`  // All other players
 	Items         []uuid.UUID         `json:"items"`          // TODO: update with item entity converted into struct format
 	Doors         []*DoorState        `json:"doors"`
 	Walls         []*WallState        `json:"walls"`
@@ -103,11 +103,23 @@ type ClientGameState struct {
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
-// shows, plus what only its owner is told. Other players are bare
-// PlayerStates, so a resource cannot reach them. FS-8AY7S §Requirements 17–18.
+// shows, plus what only its owner is told. Another player carries a resource
+// only for a recipient in their party (OtherPlayerState). FS-8AY7S
+// §Requirements 17–18.
 // A mercenary's parry fields sit inline beside the resource; for anyone else
 // the embedded pointer is nil and the keys are absent. FS-MAMHR §Requirements 28.
 type CurrentPlayerState struct {
+	*PlayerState
+	Resource *ResourceState `json:"resource,omitempty"`
+	*ParryState
+}
+
+// OtherPlayerState is another player as one recipient is told them: what every
+// player shows, plus, when they are in the recipient's party, their class
+// resource and a mercenary's parry fields, as their own HUD gets them. For
+// anyone else both are nil and the JSON is the bare PlayerState's.
+// FS-CH21F §Requirements 1–4.
+type OtherPlayerState struct {
 	*PlayerState
 	Resource *ResourceState `json:"resource,omitempty"`
 	*ParryState
@@ -120,11 +132,18 @@ type BackendGameState struct {
 	// LeftBehind holds dead delvers whose body stayed on a floor the party has
 	// left: each still sees their own state, nobody else sees the body
 	LeftBehind map[uuid.UUID]*PlayerState
+	// Escaped holds delvers who escaped the run: each still sees their own
+	// state until the run ends, nobody else sees them
+	Escaped map[uuid.UUID]*PlayerState
 	// Resources is each delver's class resource, kept beside their state and
 	// attached only to the frame their own client is sent
 	Resources map[uuid.UUID]*ResourceState
 	// Parries is each mercenary's parry stance, attached like Resources
-	Parries      map[uuid.UUID]*ParryState
+	Parries map[uuid.UUID]*ParryState
+	// PartyOf is the pod's party membership snapshot (player id → party id) as
+	// this broadcast read it, once for all its recipients. Published immutable:
+	// shared, never written. FS-CH21F §Requirements 5–6.
+	PartyOf      map[uuid.UUID]uuid.UUID
 	Items        []uuid.UUID
 	Doors        []*DoorState
 	Walls        []*WallState

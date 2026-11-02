@@ -116,6 +116,21 @@ describe("chatStore (FS-WJGFJ R20 as amended 2026-10-31: a buffer per channel)",
     expect(world[0]).toMatchObject({ text: `world ${CHAT_BUFFER}` });
   });
 
+  it("should keep party lines in a 100-line buffer of their own (FS-XGW7H C20)", () => {
+    const store = createChatStore();
+    store.getState().receive(line("area kept"));
+    for (let i = 0; i <= CHAT_BUFFER; i++)
+      store.getState().receive(line(`party ${i}`, { channel: "party" }));
+
+    const lines = store.getState().lines;
+    const party = lines.filter(
+      (l) => l.kind === "line" && l.channel === "party",
+    );
+    expect(party).toHaveLength(CHAT_BUFFER);
+    expect(party[0]).toMatchObject({ text: "party 1" });
+    expect(lines[0]).toMatchObject({ kind: "line", text: "area kept" });
+  });
+
   it("should keep arrival order across channels in the one stream", () => {
     const store = createChatStore();
     store.getState().receive(line("a1"));

@@ -308,6 +308,14 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		return
 	}
 
+	// a member let go to travel is gone from here: nothing to hold them for
+	// (FS-NCC9J R19)
+	if s.letGoOver(conn) {
+		slog.Info("Travelled player's old connection closed", "error", err)
+		s.cleanUpClient(conn)
+		return
+	}
+
 	grace := reconnectGrace
 	if websocket.IsCloseError(err, websocket.CloseGoingAway) {
 		grace = goingAwayGrace
@@ -326,6 +334,12 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 		"grace", grace,
 		"error", err,
 	)
+
+	// a leader dropped inside their party's run hands on the lead at once,
+	// decided on the hub's loop (FS-BJNYC §Requirements 17)
+	if world, onRecord := s.currentWorldOf(player.ID); onRecord && s.parties != nil {
+		s.parties.dropped(s.ctx, player.ID, world)
+	}
 
 	// a member dropped in a field waits out the grace at home in the hub
 	// (FS-X2F2H §Requirements 17)
@@ -527,6 +541,7 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 		player = *mapped
 		delete(s.players, player.ID)
 		delete(s.graceHolds, player.ID)
+		delete(s.travelling, player.ID)
 	}
 
 	s.mu.Unlock()

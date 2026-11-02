@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
 	"runtime"
 	"sync"
@@ -63,6 +64,14 @@ func main() {
 	// --- pod identity ---
 	pod := config.LoadPod(gamePort)
 	slog.Info("Pod identity", "pod_id", pod.ID, "pod_name", pod.Name, "pod_addr", pod.Addr, "pod_id_generated", pod.Generated)
+
+	// --- party size: the party cap and the match size (FS-R82NV R8) ---
+	partySize, err := config.LoadPartySize()
+	if err != nil {
+		slog.Error("invalid configuration, not starting", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("Party size", "party_size", partySize)
 
 	// --- database setup (runs migrations; aborts startup on failure) ---
 	db := config.InitDB()
@@ -173,7 +182,7 @@ func main() {
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, outboxServ, outboxWorker)
+	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, partySize, outboxServ, outboxWorker)
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}

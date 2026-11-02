@@ -88,6 +88,9 @@ type chatRelay struct {
 	outboundLines chan types.Message
 	// the Redis side of chat; nil on a pod built without one, which then refuses world chat
 	bus chatBus
+	// the party side: whose party a speaker is in, and the way to members on other pods; nil on a
+	// relay built without one, which then refuses party chat (FS-XGW7H)
+	party chatParty
 }
 
 // chatWorldScope is world chat's scope key: one fixed constant for every pod (FS-5SH4G R2).
@@ -95,8 +98,9 @@ const chatWorldScope = "world"
 
 // newChatRelay builds the pod's relay. now and newID are what lines are stamped with: the wall
 // clock and fresh uuids in production, fixed in tests. bus carries world chat between pods; with
-// none, world chat is closed on this pod (code review 2026-10-31).
-func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID, bus chatBus) *chatRelay {
+// none, world chat is closed on this pod (code review 2026-10-31). party is the pod's party
+// registry; with none, party chat is closed (FS-XGW7H).
+func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID, bus chatBus, party chatParty) *chatRelay {
 	return &chatRelay{
 		audience: audience,
 		sender:   sender,
@@ -104,6 +108,7 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 		now:      now,
 		newID:    newID,
 		bus:      bus,
+		party:    party,
 
 		lastAccepted:  make(map[uuid.UUID]time.Time),
 		inboundLines:  make(chan types.Message, chatInboundBuffer),
@@ -260,12 +265,13 @@ var chatNoticeCopy = map[constants.ChatNoticeCode]string{
 	constants.ChatNoticeChannelClosed: "That channel is not open yet.",
 	constants.ChatNoticeTooLong:       "Too long. Two hundred characters at most.",
 	constants.ChatNoticeTooFast:       "Catch your breath before you speak again.",
+	constants.ChatNoticeNoParty:       "You are not in a party.",
 }
 
 // relay handles one inbound chat line from sender on conn. The sender was
 // resolved from the connection by the caller; nothing in payload says who is
-// speaking (R2).
-func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload map[string]interface{}) {
+// speaking (R2). ctx is the pod's: a party line's read of other pods ends with it.
+func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *websocket.Conn, payload map[string]interface{}) {
 	if sender.CurrentGameSessionId == uuid.Nil {
 		r.notice(conn, constants.ChatNoticeNotInWorld)
 		return
@@ -273,8 +279,19 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 
 	channelName, _ := payload["channel"].(string)
 	chatChannel := constants.ChatChannel(channelName)
-	worldOpen := chatChannel == constants.ChatChannelWorld && r.bus != nil
-	if chatChannel != constants.ChatChannelArea && !worldOpen {
+	var party partyAudience
+	switch {
+	case chatChannel == constants.ChatChannelArea:
+	case chatChannel == constants.ChatChannelWorld && r.bus != nil:
+	case chatChannel == constants.ChatChannelParty && r.party != nil:
+		// no_party sits where channel_closed does: before the text is looked at, and before the
+		// flood window is touched (FS-XGW7H R4)
+		var in bool
+		if party, in = r.partyAudienceOf(sender.ID); !in {
+			r.notice(conn, constants.ChatNoticeNoParty)
+			return
+		}
+	default:
 		r.notice(conn, constants.ChatNoticeChannelClosed)
 		return
 	}
@@ -302,6 +319,11 @@ func (r *chatRelay) relay(sender *types.Player, conn *websocket.Conn, payload ma
 	// the world's scope key is the fixed constant; area's is this pod (FS-WJGFJ R1, FS-5SH4G R2)
 	if chatChannel == constants.ChatChannelWorld {
 		r.queueWorldChat(r.stamp(sender, chatChannel, chatWorldScope, text, at))
+		return
+	}
+	// a party's scope key is the party (FS-XGW7H R6)
+	if chatChannel == constants.ChatChannelParty {
+		r.relayParty(ctx, party, r.stamp(sender, chatChannel, party.id.String(), text, at))
 		return
 	}
 	line := r.stamp(sender, chatChannel, r.podID, text, at)

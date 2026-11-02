@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SERVER_ADDR, SocketManager, type SocketLike } from "./SocketManager";
+import { DEFAULT_SERVER_ADDR, SocketManager, TRAVEL_UNREACHABLE, type SocketLike } from "./SocketManager";
 import { useGameStore } from "../../stores/gameStore";
 import { useChatStore } from "../../stores/chatStore";
+import { usePartyStore } from "../../stores/partyStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
 class FakeSocket implements SocketLike {
@@ -330,5 +332,299 @@ describe("SocketManager chat (FS-WJGFJ §Requirements C20, C29: the socket feeds
       code: "channel_closed",
       text: "That channel is not open yet.",
     });
+  });
+});
+
+describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feeds the party store and the chat window)", () => {
+  const ME = "11111111-1111-4111-8111-111111111111";
+  const update = {
+    party_id: "99999999-9999-4999-8999-999999999999",
+    leader_id: ME,
+    members: [
+      { player_id: ME, name: "Aldric", class: "warrior", joined_at: "2026-11-01T05:00:00Z", where: "hub", online: true },
+    ],
+    size: 2,
+    reason: "joined",
+    subject_id: ME,
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ memberInfo: { id: ME } });
+  });
+  afterEach(() => {
+    usePartyStore.setState({ party: null, invites: [], readyCheck: null });
+    useAuthStore.setState({ memberInfo: null });
+  });
+
+  it("puts a party_update in the party store, and still tells a listener", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_update", heard);
+
+    old.receive({ action: "party_update", payload: update });
+
+    expect(usePartyStore.getState().party).toEqual(update);
+    expect(heard).toHaveBeenCalledWith(update);
+  });
+
+  it("keeps a malformed party_update out of the store", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_update", payload: { ...update, members: null } });
+
+    expect(usePartyStore.getState().party).toBeNull();
+  });
+
+  it("puts a party_notice in the chat window as a system line in the client's own words (R36)", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_notice", payload: { code: "already_in_party", name: "Wren" } });
+
+    expect(useChatStore.getState().lines.at(-1)).toEqual({
+      kind: "system",
+      code: "already_in_party",
+      text: "Wren walks with another party.",
+    });
+  });
+
+  it("puts a party_ready_check in the party store, and still tells the scene's one listener (FS-BJNYC R23)", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_ready_check", heard);
+    const check = {
+      check_id: "chk-1",
+      leader_id: ME,
+      expires_in_ms: 30_000,
+      members: [{ player_id: ME, name: "Aldric", state: "accepted" }],
+      outcome: "open",
+    };
+
+    old.receive({ action: "party_ready_check", payload: check });
+
+    expect(usePartyStore.getState().readyCheck).toMatchObject({ check_id: "chk-1", answer: null });
+    expect(heard).toHaveBeenCalledWith(check);
+
+    old.receive({
+      action: "party_ready_check",
+      payload: { ...check, outcome: "cancelled", reason: "declined", names: ["Wren"] },
+    });
+
+    expect(usePartyStore.getState().readyCheck).toBeNull();
+    expect(useChatStore.getState().lines.at(-1)).toMatchObject({
+      kind: "system",
+      text: "Wren declined. The party stays.",
+    });
+  });
+
+  it("keeps a malformed party_ready_check out of the store and from the scene", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_ready_check", heard);
+
+    old.receive({ action: "party_ready_check", payload: { check_id: "chk-1", outcome: "open" } });
+
+    expect(usePartyStore.getState().readyCheck).toBeNull();
+    expect(heard).not.toHaveBeenCalled();
+  });
+
+  it("says a party_enter's not_in_town with every name it carries, as the server sends it (FS-BJNYC R22)", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_notice", payload: { code: "not_in_town", names: ["Wren", "Mira"] } });
+
+    expect(useChatStore.getState().lines.at(-1)).toEqual({
+      kind: "system",
+      code: "not_in_town",
+      text: "Wren and Mira are not in the town.",
+    });
+  });
+
+  it("shows nothing for a party_notice whose names are not a list of names", () => {
+    const { old } = setup();
+    const before = useChatStore.getState().lines.length;
+
+    old.receive({ action: "party_notice", payload: { code: "not_in_town", names: "Wren" } });
+    old.receive({ action: "party_notice", payload: { code: "not_in_town", names: ["Wren", 7] } });
+
+    expect(useChatStore.getState().lines.length).toBe(before);
+  });
+
+  it("shows nothing for a party_notice code it has no words for", () => {
+    const { old } = setup();
+    const before = useChatStore.getState().lines.length;
+
+    old.receive({ action: "party_notice", payload: { code: "brand_new" } });
+    old.receive({ action: "party_notice", payload: { name: "no code" } });
+
+    expect(useChatStore.getState().lines.length).toBe(before);
+  });
+
+  const invite = {
+    invite_id: "inv-1",
+    party_id: "99999999-9999-4999-8999-999999999999",
+    party_pod_addr: "10.0.0.7:5660",
+    leader_name: "Wren",
+    member_count: 2,
+    size: 4,
+    expires_at: "2026-11-01T05:01:00Z",
+  };
+
+  it("raises a prompt for a party_invite, and still tells a listener (R32)", () => {
+    const { manager, old } = setup();
+    const heard = vi.fn();
+    manager.on("party_invite", heard);
+
+    old.receive({ action: "party_invite", payload: invite });
+
+    expect(usePartyStore.getState().invites).toMatchObject([invite]);
+    expect(heard).toHaveBeenCalledWith(invite);
+  });
+
+  it("raises no prompt for a malformed party_invite", () => {
+    const { old } = setup();
+
+    old.receive({ action: "party_invite", payload: { ...invite, invite_id: null } });
+
+    expect(usePartyStore.getState().invites).toEqual([]);
+  });
+});
+
+// FS-NCC9J §Requirements R18, R20, R28; I-NCC9J-8. A travel's handoff is to a hub: no run, no
+// seat; the client connects to the leader's server and enters its hub as the character it plays.
+// What it enters with, and how a refusal is told, come in as a HubArrival: the socket only moves.
+describe("SocketManager hub handoff (FS-NCC9J R20)", () => {
+  const LEADER_POD = "ws://pod-a.test/game/ws";
+  const hubHandoff = { action: "world_handoff", payload: { addr: LEADER_POD, hub: true } };
+  const hubEntered = { action: "world_entered", payload: { session_id: "hub-a", world_type: "hub" } };
+  const enterAs = { characterId: "c-1", class: "warrior", className: "warrior", characterName: "Marl", username: "Marl" };
+
+  function hubSetup(character: typeof enterAs | null = enterAs) {
+    const sockets: FakeSocket[] = [];
+    const arrival = { enterHub: vi.fn(() => character), refused: vi.fn() };
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    }, arrival);
+    manager.connectToGame("jwt-1", "Ash");
+    const old = sockets[0];
+    old.open();
+    return { manager, sockets, old, arrival };
+  }
+
+  const sentOn = (socket: FakeSocket) => socket.sent.map((raw) => JSON.parse(raw));
+
+  it("connects to the leader's server, plain, and enters its hub as the arrival says once open", () => {
+    const { old, sockets } = hubSetup();
+
+    old.receive(hubHandoff);
+    expect(sockets).toHaveLength(2);
+    const next = sockets[1];
+    expect(next.url).toBe(`${LEADER_POD}?token=jwt-1&name=Ash`);
+    expect(old.closedWith).toBeUndefined();
+
+    next.open();
+    const [enter] = sentOn(next);
+    expect(enter.action).toBe("enter_hub");
+    expect(enter.payload.characterId).toBe("c-1");
+    expect(sentOn(old).some((m) => m.action === "enter_hub")).toBe(false);
+  });
+
+  it("swaps sockets on the hub's world_entered, replays what came before it, and reconnects there afterwards", () => {
+    const { manager, old, sockets } = hubSetup();
+    const entered = vi.fn();
+    const said = vi.fn();
+    manager.on("world_entered", entered);
+    manager.on("hub_greeting", said);
+
+    old.receive(hubHandoff);
+    sockets[1].open();
+    sockets[1].receive({ action: "hub_greeting", payload: { hello: 1 } });
+    expect(said).not.toHaveBeenCalled();
+    sockets[1].receive(hubEntered);
+
+    expect(old.closedWith).toEqual({ code: 1000, reason: "handoff" });
+    expect(entered).toHaveBeenCalledWith(hubEntered.payload);
+    expect(said).toHaveBeenCalledWith({ hello: 1 });
+    expect(manager.getServerAddress()).toBe(LEADER_POD);
+
+    sockets[1].serverClose(1006);
+    manager.reconnect();
+    expect(sockets[2].url).toBe(`${LEADER_POD}?token=jwt-1&name=Ash`);
+  });
+
+  it("never tells the delve's world_handoff listener: a travel is not a match", () => {
+    const { manager, old } = hubSetup();
+    const delve = vi.fn();
+    manager.on("world_handoff", delve);
+
+    old.receive(hubHandoff);
+
+    expect(delve).not.toHaveBeenCalled();
+  });
+
+  it("stays on the old socket and has the refusal told when the hub refuses the entry", () => {
+    const { manager, old, sockets, arrival } = hubSetup();
+    old.receive(hubHandoff);
+    const next = sockets[1];
+    next.open();
+
+    next.receive({
+      action: "enter_hub",
+      payload: { message: "The hub is full. Try again shortly." },
+      error: "The hub is full. Try again shortly.",
+    });
+
+    expect(next.closedWith?.code).toBe(1000);
+    expect(old.closedWith).toBeUndefined();
+    expect(manager.isConnected()).toBe(true);
+    expect(arrival.refused).toHaveBeenCalledWith("The hub is full. Try again shortly.");
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("reconnects to the server it was on when the hub refuses and the old socket died meanwhile", () => {
+    const { old, sockets } = hubSetup();
+    old.receive(hubHandoff);
+    sockets[1].open();
+    old.serverClose(1006);
+
+    sockets[1].receive({ action: "enter_hub", payload: { message: "The hub is full." }, error: "The hub is full." });
+
+    expect(sockets).toHaveLength(3);
+    expect(sockets[2].url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
+  });
+
+  it("stays on the old socket, and says so, when the leader's server cannot be reached", () => {
+    const { manager, old, sockets, arrival } = hubSetup();
+    old.receive(hubHandoff);
+
+    sockets[1].serverClose(1006);
+
+    expect(old.closedWith).toBeUndefined();
+    expect(manager.isConnected()).toBe(true);
+    expect(sockets).toHaveLength(2);
+    expect(arrival.refused).toHaveBeenCalledWith(TRAVEL_UNREACHABLE);
+  });
+
+  it("moves nowhere, and says so, with no character to enter as", () => {
+    const { old, sockets, arrival } = hubSetup(null);
+
+    old.receive(hubHandoff);
+
+    expect(sockets).toHaveLength(1);
+    expect(arrival.refused).toHaveBeenCalledWith(TRAVEL_UNREACHABLE);
+  });
+
+  it("ignores a second travel while one is under way, and gives way to a run's handoff", () => {
+    const { old, sockets } = hubSetup();
+    old.receive(hubHandoff);
+    old.receive(hubHandoff);
+    expect(sockets).toHaveLength(2);
+
+    old.receive(handoff());
+
+    expect(sockets[1].closedWith).toEqual({ code: 1000, reason: "handoff_cancelled" });
+    expect(sockets).toHaveLength(3);
+    expect(sockets[2].url).toContain("session_id=run-1");
   });
 });

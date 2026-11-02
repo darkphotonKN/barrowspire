@@ -1,6 +1,6 @@
 /**
  * The co-op party on the HUD (FS-77AB6 req 40; FS-QPDKN req 1, 3, 7, 8, 11; FS-9K8EZ req 2, 3):
- * whether a player is still in the delve, which card a player who is out of it is shown while
+ * whether a player is still in the delve, what a player who is out of it is shown while
  * the rest play on, whose eyes they may watch through, and what the run's ESC menu offers them.
  * Pure, so the rules and the copy are tested without a canvas; the scene draws what these return.
  */
@@ -24,41 +24,39 @@ export function resolved(player?: Player | null): boolean {
 }
 
 /** How the player is out of the delve: escaped, or dead (left behind counts as dead). */
-export type ResolvedCardKind = "dead" | "escaped";
-
-/** The resolved player's card: its kind and its copy. The scene adds the buttons. */
-export interface ResolvedCard {
-  kind: ResolvedCardKind;
-  title: string;
-  body: string;
-}
-
-const CARDS: Record<ResolvedCardKind, ResolvedCard> = {
-  dead: {
-    kind: "dead",
-    title: "The barrow keeps you",
-    body: "The delve goes on without you.",
-  },
-  escaped: {
-    kind: "escaped",
-    title: "You are out of the barrow",
-    body: "Few return whole. The delve goes on without you.",
-  },
-};
+export type ResolvedKind = "dead" | "escaped";
 
 /**
- * The card a resolved player sees while another player is still in the delve (FS-QPDKN req 1,
+ * What a resolved player is shown while another player is still in the delve (FS-QPDKN req 1,
+ * 3): the dead get their card's copy, under which the scene puts Watch and Leave; the escaped
+ * get no card, only the Watch button (req 3, amended 2026-11-02), since the "escaped
+ * successfully" line already tells them they made it.
+ */
+export type ResolvedView =
+  | { kind: "dead"; title: string; body: string }
+  | { kind: "escaped" };
+
+const DEAD_CARD: ResolvedView = {
+  kind: "dead",
+  title: "The barrow keeps you",
+  body: "The delve goes on without you.",
+};
+
+const WATCH_ONLY: ResolvedView = { kind: "escaped" };
+
+/**
+ * The view a resolved player gets while another player is still in the delve (FS-QPDKN req 1,
  * 3), or `null`. Once no one is left in it, `end_game` is on its way and carries the last word.
  */
-export function resolvedCard(state: {
+export function resolvedView(state: {
   current_player: Player | null;
   other_players?: Player[];
-}): ResolvedCard | null {
+}): ResolvedView | null {
   const me = state.current_player;
   if (!me || !resolved(me)) return null;
   if (!(state.other_players ?? []).some((other) => !resolved(other)))
     return null;
-  return CARDS[me.escape === true ? "escaped" : "dead"];
+  return me.escape === true ? WATCH_ONLY : DEAD_CARD;
 }
 
 /** A teammate a spectator may watch: who they are, by the name over their head. */

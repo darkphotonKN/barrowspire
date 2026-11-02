@@ -14,7 +14,6 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -117,13 +116,28 @@ type bootOptions struct {
 	// the Redis side of chat; nil on a pod built without one, which then refuses world chat as
 	// closed (FS-5SH4G; code review 2026-10-31)
 	chatBus chatBus
+	// the party registry's clock, and the ticks it sweeps on: the wall clock and a
+	// one-second ticker unless a test turns them by hand (FS-R82NV R14)
+	partyNow   func() time.Time
+	partyTicks <-chan time.Time
+	// the party cap, PARTY_SIZE in production (FS-R82NV R8)
+	partySize int
+	// where parties live; nil refuses every party change unavailable (FS-NCC9J R1, R8)
+	partyStore partyStore
+	// where this pod's hub is written into the presence index; nil writes nothing (FS-R82NV R7)
+	presence presenceStore
+	// where each pod's hub occupancy is published and read; nil publishes nothing, and travel
+	// checks no pod's room (FS-JEAVX R19, FS-NCC9J R18)
+	hubOccupancy hubOccupancyStore
+	// the Redis side of the pod inbox; nil, and this pod reaches no other (FS-R82NV R9)
+	inboxBus inboxBus
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
 // Forest's own parameters, visits settled to the log alone, and chat stamped
 // by the wall clock.
 func newBootOptions(opts ...Option) bootOptions {
-	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}, chatNow: time.Now, chatNewID: uuid.New}
+	boot := bootOptions{seed: rand.Uint64(), forestParams: levelgen.ForestParams, visitSettler: logVisitSettler{}, chatNow: time.Now, chatNewID: uuid.New, partyNow: time.Now, partySize: defaultPartySize}
 	for _, opt := range opts {
 		opt(&boot)
 	}
@@ -194,7 +208,7 @@ func (s *Server) createFieldSessions(fields []laidOutField) {
 		place := laidOut.place
 
 		entityManager := ecs.NewEntityManager()
-		field := game.NewSession(s, messaging.NewMessageSender(s), serializer.NewStateSerializer(entityManager), entityManager, s.eventEmitter, s.itemsClient, game.FieldBounds(place))
+		field := game.NewSession(s, messaging.NewMessageSender(s), s.newStateSerializer(entityManager), entityManager, s.eventEmitter, s.itemsClient, game.FieldBounds(place))
 		field.InitialFieldMapObjects(place, laidOut.layout)
 
 		s.mu.Lock()

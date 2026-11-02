@@ -24,10 +24,12 @@ export const CHAT_PREFIX: Readonly<Record<ChatChannel, string>> = {
 
 /**
  * The channels the server relays today; the picker shows the rest disabled. World opened with
- * FS-5SH4G (I-5SH4G-3); whisper waits for FS-KCQ06, party and trade for their own scoping.
+ * FS-5SH4G (I-5SH4G-3), party with FS-XGW7H (I-XGW7H-2); whisper waits for FS-KCQ06, trade for
+ * its own scoping. Party is open whether or not the player is in a party (FS-XGW7H C19): the
+ * server answers a send from a player in none with `no_party`.
  */
 export const CHAT_OPEN_CHANNELS: ReadonlySet<ChatChannel> =
-  new Set<ChatChannel>(["area", "world"]);
+  new Set<ChatChannel>(["area", "world", "party"]);
 
 /** The most code points a line may carry, as the server counts them (R5, R26). */
 export const CHAT_TEXT_MAX = 200;

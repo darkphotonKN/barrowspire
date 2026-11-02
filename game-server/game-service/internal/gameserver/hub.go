@@ -35,12 +35,53 @@ type messageHub struct {
 	// chat lines are stamped and relayed here, on the loop, never by a world
 	// (FS-WJGFJ R11)
 	chat chatRelayer
+
+	// this pod's parties, formed and kept on the loop (FS-R82NV R2)
+	party partyKeeper
+	// this pod's hub in the presence index, sampled on the loop (FS-R82NV R7)
+	presence presenceTicker
+	// work finished off the loop and handed back to it: a party call's outcome, a lookup's answer
+	jobs loopJobs
+}
+
+// presenceTicker is what the hub needs from the presence keeper: a sample each tick, and
+// everyone unseated as the pod goes.
+type presenceTicker interface {
+	tick()
+	leaveAll(ctx context.Context)
+}
+
+// partyKeeper is what the hub needs from the party registry: each party action in,
+// answered on the loop.
+type partyKeeper interface {
+	invite(ctx context.Context, inviter *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	accept(ctx context.Context, accepter *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	decline(ctx context.Context, decliner *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	leave(ctx context.Context, leaver *types.Player, conn *websocket.Conn)
+	create(ctx context.Context, creator *types.Player, conn *websocket.Conn)
+	kick(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	transfer(ctx context.Context, leader *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	travel(ctx context.Context, traveller *types.Player, conn *websocket.Conn)
+	// whether the party cache knows the player as a party member: read on the loop, no Redis call
+	// (FS-BJNYC R1)
+	inParty(playerID uuid.UUID) bool
+	// the leader taking the party down, and a member's answer to its ready check (FS-BJNYC R3–R13)
+	enter(ctx context.Context, leader *types.Player, conn *websocket.Conn)
+	ready(ctx context.Context, member *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	// the registry's clock ticks, swept on this loop like everything else it holds
+	ticks() <-chan time.Time
+	tick(ctx context.Context)
+	// the registry stops taking actions as the pod goes; parties live on in Redis (ADR-0037)
+	close()
+	// letters from other pods, handled on the loop (R9)
+	letters() <-chan letter
+	receive(l letter)
 }
 
 // chatRelayer is what the hub needs from chat: a player's line in, delivered or refused; and
 // the lines that arrive off the bus, delivered on this loop (FS-5SH4G R9).
 type chatRelayer interface {
-	relay(sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
+	relay(ctx context.Context, sender *types.Player, conn *websocket.Conn, payload map[string]interface{})
 	inbound() <-chan types.Message
 	deliver(line types.Message)
 }
@@ -107,6 +148,11 @@ const (
 	startSoloNoCharacter = "Enter the hub with a character first."
 	startSoloQueued      = "Leave the queue first."
 )
+
+// partyEntersTogether refuses find_game and start_solo from a party member: a
+// party goes down the Spire together, never through the queue nor alone.
+// FS-BJNYC §Requirements 1, 2.
+const partyEntersTogether = "Your party enters together."
 
 // awayFromSpireGate refuses find_game and start_solo from anyone not standing
 // at the Spire's door: the Spire is entered there, not from across the hub.
@@ -306,7 +352,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -315,6 +361,9 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		podAddr:        podAddr,
 		announcer:      announcer,
 		chat:           chat,
+		party:          party,
+		presence:       presence,
+		jobs:           jobs,
 	}
 }
 
@@ -324,6 +373,9 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 **/
 func (h *messageHub) Run(ctx context.Context) {
 	slog.Info("Initializing message hub.")
+
+	// the pod's shutdown signal, heard once: parties end on it, routing does not
+	shuttingDown := ctx.Done()
 
 	for {
 		select {
@@ -414,6 +466,14 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
+				// a party enters together, never through the queue; the party
+				// cache answers, on this loop. FS-BJNYC §Requirements 1.
+				if h.party.inParty(player.ID) {
+					slog.Debug("Refusing find_game: in a party", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, partyEntersTogether)
+					continue
+				}
+
 				// the Spire is entered at its door; the queue below is untouched.
 				// FS-0XMCP §Requirements 12, 14.
 				if !h.sessionManager.AtSpireGate(player.ID) {
@@ -484,6 +544,15 @@ func (h *messageHub) Run(ctx context.Context) {
 
 				// already delving: the run they are in is the answer
 				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+					continue
+				}
+
+				// a party member, a party of one included, is refused: a party enters
+				// by party_enter, two or more strong (a lone leader leaves first);
+				// find_game's place, on the party cache. FS-BJNYC §Requirements 2.
+				if h.party.inParty(player.ID) {
+					slog.Debug("Refusing start_solo: in a party", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, partyEntersTogether)
 					continue
 				}
 
@@ -635,7 +704,112 @@ func (h *messageHub) Run(ctx context.Context) {
 					slog.Debug("chat from a connection with no player")
 					continue
 				}
-				h.chat.relay(player, clientPackage.Conn, clientPackage.Message.Payload)
+				h.chat.relay(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// A party invite by name: a player with no party becomes the leader of
+			// a new one. FS-R82NV §Requirements 4, 11–14.
+			case constants.ActionPartyInvite:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_invite from a connection with no player")
+					continue
+				}
+				h.party.invite(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// The target accepting an invite: on the party pod itself, added at
+			// once. FS-R82NV §Requirements 16, 17.
+			case constants.ActionPartyAccept:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_accept from a connection with no player")
+					continue
+				}
+				h.party.accept(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// A party-less player in the hub creating a party of one, with no
+			// invite. FS-R82NV §Requirements 4a.
+			case constants.ActionPartyCreate:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_create from a connection with no player")
+					continue
+				}
+				h.party.create(ctx, player, clientPackage.Conn)
+
+			// A member leaving their party; they stay where they stand.
+			// FS-R82NV §Requirements 20, 22.
+			case constants.ActionPartyLeave:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_leave from a connection with no player")
+					continue
+				}
+				h.party.leave(ctx, player, clientPackage.Conn)
+
+			// The leader removing a member, who stays where they stand.
+			// FS-R82NV §Requirements 19.
+			case constants.ActionPartyKick:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_kick from a connection with no player")
+					continue
+				}
+				h.party.kick(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// The leader handing the lead to a member. FS-R82NV §Requirements 19.
+			case constants.ActionPartyTransfer:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_transfer from a connection with no player")
+					continue
+				}
+				h.party.transfer(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// A member asking to be taken to their leader's village. FS-NCC9J §Requirements 18.
+			case constants.ActionPartyTravel:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_travel from a connection with no player")
+					continue
+				}
+				h.party.travel(ctx, player, clientPackage.Conn)
+
+			// The leader at the Spire's door taking the whole party down. A leader
+			// with no character, or already in a run, is answered as start_solo
+			// answers them; the rest is the party's. FS-BJNYC §Requirements 3–6.
+			case constants.ActionPartyEnter:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_enter from a connection with no player")
+					continue
+				}
+				if player.Character.ID == uuid.Nil {
+					slog.Warn("Refusing party_enter: no character in play", "player_id", player.ID)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloNoCharacter)
+					continue
+				}
+				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+					continue
+				}
+				h.party.enter(ctx, player, clientPackage.Conn)
+
+			// A member answering their party's ready check. FS-BJNYC §Requirements 9.
+			case constants.ActionPartyReady:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_ready from a connection with no player")
+					continue
+				}
+				h.party.ready(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
+
+			// The target declining an invite. FS-R82NV §Requirements 15.
+			case constants.ActionPartyDecline:
+				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+				if !exists {
+					slog.Debug("party_decline from a connection with no player")
+					continue
+				}
+				h.party.decline(ctx, player, clientPackage.Conn, clientPackage.Message.Payload)
 
 			case constants.ActionLeaveQueue:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
@@ -730,6 +904,28 @@ func (h *messageHub) Run(ctx context.Context) {
 		// one goroutine as for area lines (FS-5SH4G R7, R9)
 		case line := <-h.chat.inbound():
 			h.chat.deliver(line)
+
+		// the party registry's clock: the party cache is kept here (FS-NCC9J R4, R6)
+		case <-h.party.ticks():
+			h.party.tick(ctx)
+			h.presence.tick()
+
+		// work finished off the loop: a party call's outcome, a lookup answered, a letter that
+		// could not be sent
+		case job := <-h.jobs:
+			job()
+
+		// a letter from another pod's party (FS-R82NV R9)
+		case l := <-h.party.letters():
+			h.party.receive(l)
+
+		// the pod is shutting down: the registry stops taking party actions, and the
+		// parties live on in Redis (ADR-0037). The loop keeps routing through the drain,
+		// since the connections' readers still send to it and runs are still in play.
+		case <-shuttingDown:
+			h.party.close()
+			h.presence.leaveAll(ctx)
+			shuttingDown = nil
 		}
 
 	}

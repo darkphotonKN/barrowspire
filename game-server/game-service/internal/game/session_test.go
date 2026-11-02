@@ -69,7 +69,7 @@ func (m *mockSessionCloser) ReturnPlayersToHub(sessionID uuid.UUID) {
 func TestSessionCreation(t *testing.T) {
 	sender := createMockSender()
 	em := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(em)
+	stateSerializer := serializer.NewStateSerializer(em, nil)
 	mockEmitter := &mockEventEmitter{}
 	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 
@@ -91,7 +91,7 @@ func TestSessionCreation(t *testing.T) {
 func TestSessionAddPlayer(t *testing.T) {
 	sender := createMockSender()
 	em := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(em)
+	stateSerializer := serializer.NewStateSerializer(em, nil)
 	mockEmitter := &mockEventEmitter{}
 	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 	defer session.Shutdown()
@@ -125,7 +125,7 @@ func TestSessionAddPlayer(t *testing.T) {
 func TestSessionAddMultiplePlayers(t *testing.T) {
 	sender := createMockSender()
 	em := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(em)
+	stateSerializer := serializer.NewStateSerializer(em, nil)
 	mockEmitter := &mockEventEmitter{}
 	session := NewSession(&mockSessionCloser{}, sender, stateSerializer, em, mockEmitter, nil, RunBounds())
 	defer session.Shutdown()
@@ -162,7 +162,7 @@ func TestAddPlayerSetsInitialPosition(t *testing.T) {
 
 	t.Run("a run places each delver inside its map", func(t *testing.T) {
 		em := ecs.NewEntityManager()
-		s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, RunBounds())
+		s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em, nil), em, &mockEventEmitter{}, nil, RunBounds())
 
 		for range 50 {
 			x, y := spawnOf(t, s)
@@ -175,7 +175,7 @@ func TestAddPlayerSetsInitialPosition(t *testing.T) {
 
 	t.Run("the hub places everyone at its front door", func(t *testing.T) {
 		em := ecs.NewEntityManager()
-		s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, HubBounds())
+		s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em, nil), em, &mockEventEmitter{}, nil, HubBounds())
 
 		for range 3 {
 			x, y := spawnOf(t, s)
@@ -192,7 +192,7 @@ func TestAddPlayerSetsInitialPosition(t *testing.T) {
 func interactAt(t *testing.T, x, y float64) (*Session, uuid.UUID) {
 	t.Helper()
 	em := ecs.NewEntityManager()
-	s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, RunBounds())
+	s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em, nil), em, &mockEventEmitter{}, nil, RunBounds())
 	playerID, _ := placeDelver(t, s, "warrior", x, y)
 	return s, playerID
 }
@@ -278,7 +278,7 @@ func containerSession(t *testing.T, x, y float64) (*Session, uuid.UUID) {
 	client.On("ListItemTemplates", mock.Anything).Return(lootTemplates(true), nil)
 
 	em := ecs.NewEntityManager()
-	s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, client, RunBounds())
+	s := newSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em, nil), em, &mockEventEmitter{}, client, RunBounds())
 	require.NoError(t, s.InitializeItems(context.Background()))
 
 	playerID, _ := placeDelver(t, s, "warrior", x, y)
@@ -985,7 +985,7 @@ func TestSession_GenerateItems_CreateAndSerialize(t *testing.T) {
 	// -- setup: real serializer, mock everything else --
 	sender := createMockSender()
 	em := ecs.NewEntityManager()
-	stateSerializer := serializer.NewStateSerializer(em) // real serializer to test serialization
+	stateSerializer := serializer.NewStateSerializer(em, nil) // real serializer to test serialization
 	mockEmitter := &mockEventEmitter{}
 	mockClient := mockItemsClient{}
 
@@ -1141,7 +1141,7 @@ func TestHandleInteract_DoorRangeFromDoorwayCentre(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			em := ecs.NewEntityManager()
-			session := NewSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em), em, &mockEventEmitter{}, nil, RunBounds())
+			session := NewSession(&mockSessionCloser{}, createMockSender(), serializer.NewStateSerializer(em, nil), em, &mockEventEmitter{}, nil, RunBounds())
 			defer session.Shutdown()
 
 			playerID := uuid.New()

@@ -139,26 +139,30 @@ matchmaking); this service is the engine they feed. ✅
 
 ### Party
 
-- [ ] Form a party across pods → FS-R82NV
-- [ ] Player presence index across pods → FS-R82NV
-- [ ] Joining a party moves the player to the party's pod → FS-R82NV
+- [ ] Form a party → FS-R82NV
+- [ ] Party membership across pods → FS-NCC9J
+- [ ] Player presence index across pods → FS-NCC9J
+- [ ] Travel to the party leader's village → FS-NCC9J
 - [ ] Party loot rule → FS-V780R
 - [ ] Enter an instance as a party from its gate → FS-BJNYC
-- [ ] Matched players form a party on entry → FS-BJNYC
-- [ ] Health and resource in the broadcast for party members only → FS-CH21F
+- [ ] Ready check before a party enters → FS-BJNYC
+- [ ] Party members enter only with their party → FS-BJNYC
+- [ ] A party is locked inside its instance → FS-BJNYC
+- [ ] Party members' class resource in the broadcast → FS-CH21F
 
 ### Chat
 
 - [x] Area chat across the pod → FS-WJGFJ
 - [x] World chat across pods → FS-5SH4G
 - [ ] Whisper a player on any pod → FS-KCQ06
-- [ ] Party chat within the party's pod → FS-XGW7H
+- [ ] Party chat across pods → FS-XGW7H
 
 ### Transport
 
 - [x] WebSocket message hub
 - [x] World identity in the state protocol → FS-29KSH
 - [x] Route client messages from server-held session state → FS-29KSH
+- [ ] Reconnect returns to the pod still holding the player → FS-MCYWK
 
 ### Results
 

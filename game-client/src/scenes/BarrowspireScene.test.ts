@@ -59,6 +59,7 @@ const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
+const { markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
@@ -368,6 +369,8 @@ interface Made {
   shown?: boolean;
   /** What it was last `setDepth` to. */
   depth?: number;
+  /** The arguments of the latest call to each of those methods, by name. */
+  last: Record<string, unknown[]>;
 }
 
 /**
@@ -385,6 +388,7 @@ function recordingStage() {
       children: [] as Made[],
       handlers: {} as Record<string, () => void>,
       calls: [] as string[],
+      last: {} as Record<string, unknown[]>,
     } as Made & { active: boolean; [k: string]: unknown };
     if (kind === "container" && Array.isArray(args[2])) self.children.push(...(args[2] as Made[]));
     // destroying runs what was hung on `destroy` (hit areas that go with their card)
@@ -428,12 +432,16 @@ function recordingStage() {
           return (key: string) => {
             target.calls.push("setTexture");
             target.texture = key;
+            target.last["setTexture"] = [key];
             return proxy;
           };
+        // shown until hidden, as Phaser's are: `visible` and `shown` read what setVisible last set
         if (prop === "setVisible")
           return (visible: boolean) => {
             target.calls.push("setVisible");
             target.shown = visible;
+            target.last["setVisible"] = [visible];
+            (target as { visible?: boolean }).visible = visible;
             return proxy;
           };
         // the depth it sorts at, read back as Phaser's `depth` (what covers the player, FS-9PN7X §E.1)
@@ -441,12 +449,15 @@ function recordingStage() {
           return (depth: number) => {
             target.calls.push("setDepth");
             target.depth = depth;
+            target.last["setDepth"] = [depth];
             return proxy;
           };
         // no arcade body: the placeholder rig's collision circle is skipped
         if (prop === "body") return undefined;
-        return () => {
+        if (prop === "visible") return true;
+        return (...args: unknown[]) => {
           target.calls.push(String(prop));
+          target.last[String(prop)] = args;
           return proxy;
         };
       },
@@ -820,15 +831,113 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
 
 });
 
-describe("BarrowspireScene teammate health bars (FS-8AY7S req 27, 28)", () => {
+describe("BarrowspireScene other players' names, no overhead bars (FS-CH21F R13, R14)", () => {
+  interface Marks {
+    teammateHealthBars: Map<string, unknown>;
+    otherPlayersAnim: Map<string, { crown?: number }>;
+  }
+  /** The name text over another player, by the name it shows. */
+  const nameOf = (stage: ReturnType<typeof recordingStage>, username: string) =>
+    stage.made.find((m) => m.kind === "text" && m.args[2] === username)!;
+  const shown = (m: Made) => m.last.setVisible?.[0];
+
+  it("should show another player's name over them with no hover", () => {
+    const { run, stage } = onStage();
+    run.handleGameStateUpdate(partyState());
+    expect(shown(nameOf(stage, "Wenna"))).toBe(true);
+    run.handleGameStateUpdate(partyState());
+    expect(shown(nameOf(stage, "Wenna"))).toBe(true);
+  });
+
+  /** The ally on stage wearing a baked sheet with its head `crown` px over feet at y 300. */
+  function bakedAlly() {
+    const scene = onStage();
+    scene.run.handleGameStateUpdate(partyState());
+    const sprite = scene.players()[1] as Made & Record<string, number>;
+    Object.assign(sprite, { x: 160, y: 300, scaleY: 1, displayOriginY: 0 });
+    (scene.run as unknown as Marks).otherPlayersAnim.set("ally", { crown: 40 });
+    return { ...scene, sprite };
+  }
+
+  it("should place the name at the marker base, with no bar to lift it", () => {
+    const { run, stage, sprite } = bakedAlly();
+    run.handleGameStateUpdate(partyState());
+    const base = markerBase(sprite as never, 40, false)!;
+    expect(nameOf(stage, "Wenna").last.setPosition).toEqual([160, base - 5]);
+  });
+
+  it("should lift the name clear of the bar while the bars are switched on", () => {
+    const { run, stage, sprite } = bakedAlly();
+    (run as unknown as { showTeammateBars: boolean }).showTeammateBars = true;
+    run.handleGameStateUpdate(partyState());
+    const base = markerBase(sprite as never, 40, false)!;
+    const [, y] = nameOf(stage, "Wenna").last.setPosition as number[];
+    expect(y).toBeLessThan(base - 5);
+    expect(shown(nameOf(stage, "Wenna"))).toBe(true);
+  });
+
+  it("should let the switch alone decide: a bar left over while it is off is not drawn", () => {
+    const { run, stage, sprite } = bakedAlly();
+    const switchable = run as unknown as { showTeammateBars: boolean };
+    switchable.showTeammateBars = true;
+    run.handleGameStateUpdate(partyState());
+    const bar = (run as unknown as { teammateHealthBars: Map<string, { graphics: Made }> })
+      .teammateHealthBars.get("ally")!;
+    const drawnBefore = bar.graphics.calls.length;
+
+    switchable.showTeammateBars = false;
+    run.handleGameStateUpdate(partyState());
+    expect(bar.graphics.calls.length).toBe(drawnBefore);
+    const base = markerBase(sprite as never, 40, false)!;
+    expect(nameOf(stage, "Wenna").last.setPosition).toEqual([160, base - 5]);
+  });
+
+  it("should hide the name over a baked corpse", () => {
+    const { run, stage } = bakedAlly();
+    run.handleGameStateUpdate(partyState(undefined, player("ally", "Wenna", 160, { current_health: 0 })));
+    expect(shown(nameOf(stage, "Wenna"))).toBe(false);
+  });
+
+  it("should draw no overhead bar over another living player", () => {
+    const { run, stage } = onStage();
+    run.handleGameStateUpdate({ ...partyState(), monsters: [] } as GameState);
+    expect((run as unknown as Marks).teammateHealthBars.size).toBe(0);
+    // world-space graphics framing a bar, as the overhead bars draw; the HUD's are screen-space
+    const overhead = stage.made.filter(
+      (m) =>
+        m.kind === "graphics" &&
+        !m.destroyed &&
+        !m.calls.includes("setScrollFactor") &&
+        m.calls.includes("fillRect") &&
+        m.calls.includes("strokeRect") &&
+        // a bar's rim is a 1 px line; the placeholder roofs (FS-9PN7X) are world-space rects too
+        m.last.lineStyle?.[0] === 1,
+    );
+    expect(overhead).toHaveLength(0);
+  });
+
+  it("should leave the player's own name as it was", () => {
+    const { run, stage } = onStage();
+    run.handleGameStateUpdate(partyState());
+    const own = nameOf(stage, "Aldric");
+    expect(own).toBeDefined();
+    expect(own.calls).not.toContain("setVisible");
+  });
+});
+
+// FS-8AY7S req 27's bars are switched off by FS-CH21F R14, not deleted: their drawing is kept
+// working with the switch on, for the day they come back.
+describe("BarrowspireScene teammate health bars, switched on (FS-8AY7S req 27, 28)", () => {
   interface Bars {
     teammateHealthBars: Map<string, { graphics: Made; fill: number | null }>;
+    showTeammateBars: boolean;
   }
   /** What a bar's graphics drew since it was last cleared: a drawn bar ends in its fill. */
   const drawn = (g: Made) => g.calls.slice(g.calls.lastIndexOf("clear") + 1);
 
   function barsOnStage() {
     const scene = onStage();
+    (scene.run as unknown as Bars).showTeammateBars = true;
     const bars = (scene.run as unknown as Bars).teammateHealthBars;
     const bar = (id: string) => bars.get(id);
     return { ...scene, bars, bar };
@@ -934,16 +1043,101 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     vi.restoreAllMocks();
   });
 
-  it.each([
-    ["dead", dead, /barrow keeps you/i],
-    ["escaped", escaped, /out of the barrow/i],
-  ])("should show a %s player the card with Watch the delve while the ally is still in it", (_, me, copy) => {
-    const { run, state, watchButtons, cardTitles } = resolvedOnStage(player("me", "Aldric", 130, me));
+  it("should show a dead player the card with Watch the delve while the ally is still in it", () => {
+    const { run, state, watchButtons, cardTitles } = resolvedOnStage(player("me", "Aldric", 130, dead));
     // the card survives the next broadcast unchanged: one card, not one per tick
     (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
     expect(cardTitles()).toHaveLength(1);
-    expect(String(cardTitles()[0].args[2])).toMatch(copy);
+    expect(String(cardTitles()[0].args[2])).toMatch(/barrow keeps you/i);
     expect(watchButtons()).toHaveLength(1);
+  });
+
+  // FS-QPDKN req 3, amended 2026-11-02 (charter): the escaped player gets no card, only the button
+  describe("an escaped player with a teammate still in play (req 3, 12, amended)", () => {
+    const watchHit = (stage: ReturnType<typeof resolvedOnStage>["stage"]) =>
+      stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve" && !m.destroyed);
+
+    it("should show no card, only one Watch the delve button at the bottom centre", () => {
+      const { run, state, stage, watchButtons, cardTitles } = resolvedOnStage(
+        player("me", "Aldric", 130, escaped),
+      );
+      (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
+      expect(cardTitles()).toHaveLength(0);
+      expect(watchButtons()).toHaveLength(1);
+      const [x, y, w, h] = watchHit(stage)!.args as number[];
+      // the recording camera is 800 x 600: centred across, lifted 200 px off the bottom edge's
+      // margin (asked 2026-11-02, Nick)
+      expect(x).toBe(400);
+      expect(y + h / 2).toBe(600 - 16 - 200);
+      expect(w).toBeGreaterThan(0);
+    });
+
+    it("should draw the button in the HUD band, amber while it can be pressed", () => {
+      const { stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      const hit = watchHit(stage)!;
+      expect(hit.last.setDepth?.[0]).toBeGreaterThanOrEqual(1000);
+      expect(hit.last.setDepth?.[0]).toBeLessThan(1500);
+      const face = stage.made.find(
+        (m) => m.kind === "graphics" && !m.destroyed && m.last.fillStyle?.[0] === palette.interactable,
+      );
+      expect(face?.last.setScrollFactor).toEqual([0]);
+    });
+
+    it("should follow a teammate in play once pressed, name them at the top, and take the button down", () => {
+      const { run, pressWatch, followed, watching, hints, watchButtons, stage } = resolvedOnStage(
+        player("me", "Aldric", 130, escaped),
+        [player("ally", "Wenna", 160), player("brom", "Brom", 200)],
+      );
+      pressWatch();
+      expect(run.watchedPlayerId).toBe("ally");
+      expect(followed()).toBe(run.otherPlayers.get("ally"));
+      expect(watching()).toEqual(["Watching Wenna"]);
+      expect(hints()).toHaveLength(1);
+      expect(watchButtons()).toHaveLength(0);
+      expect(watchHit(stage)).toBeUndefined();
+      run.cycleWatched();
+      expect(watching()).toEqual(["Watching Brom"]);
+    });
+
+    it("should do nothing on Tab while the button is still up", () => {
+      const { run, followed, own, watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      run.cycleWatched();
+      expect(run.watchedPlayerId).toBeUndefined();
+      expect(followed()).toBe(own());
+      expect(watchButtons()).toHaveLength(1);
+    });
+
+    it("should show no button once nobody is left in play", () => {
+      const { watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped), [
+        player("ally", "Wenna", 160, dead),
+      ]);
+      expect(watchButtons()).toHaveLength(0);
+    });
+
+    it("should say the player escaped successfully once", () => {
+      const { run, state, stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
+      const lines = stage.made.filter((m) => m.kind === "text" && /Aldric escaped successfully/.test(String(m.args[2])));
+      expect(lines).toHaveLength(1);
+    });
+
+    it("should forget the button on a restart, and the rebuilt run raises it again, not spectating", () => {
+      const { run, stage, state } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      const before = watchHit(stage)!;
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+
+      run.resetRun();
+      expect((run as unknown as { watchButton?: unknown }).watchButton).toBeUndefined();
+      expect(run.watchedPlayerId).toBeUndefined();
+      expect(run.spectateHud).toBeUndefined();
+
+      // Phaser destroyed the old button with the scene; the next state draws a fresh one
+      before.destroyed = true;
+      (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
+      expect(watchHit(stage)).toBeDefined();
+      expect(watchHit(stage)).not.toBe(before);
+      expect(run.watchedPlayerId).toBeUndefined();
+    });
   });
 
   it("should show no card while this player is still in the delve", () => {
@@ -1116,6 +1310,49 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(run.watchedPlayerId).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
     expect(run.spectateHud).toBeUndefined();
+  });
+});
+
+// FS-QPDKN req 24 keeps an escaped player's own state coming, with `escape: true`, where it used to
+// stop (`current_player: null`): their body stays hidden either way (I-QPDKN-7)
+describe("BarrowspireScene the escaped player's own body (FS-QPDKN req 3, 24)", () => {
+  /** A run with effects to record, and the player's own sprite, legs and name as drawn. */
+  function ownBodyOnStage() {
+    const stage = onStage();
+    const play = vi.fn();
+    Object.assign(stage.run, { fx: { play, release: vi.fn() } });
+    const own = () => stage.players()[0];
+    const legs = () => (stage.run as unknown as { playerLegs: Made }).playerLegs;
+    const name = () => stage.stage.made.find((m) => m.kind === "text" && m.args[2] === "Aldric")!;
+    const hidden = () => [own(), legs(), name()].map((m) => m.last.setVisible?.[0]);
+    const escapes = () => play.mock.calls.filter(([owner, kind]) => owner === "self" && kind === "escape");
+    return { ...stage, own, hidden, escapes };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["sent with escape: true", player("me", "Aldric", 130, { escape: true })],
+    ["no longer sent", null],
+  ])("should hide the player's sprite, legs and name once their own state is %s", (_, after) => {
+    const { run, hidden, escapes } = ownBodyOnStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
+    expect(hidden()).toEqual([undefined, undefined, undefined]);
+
+    run.handleGameStateUpdate(partyState(after));
+    run.handleGameStateUpdate(partyState(after));
+
+    expect(hidden()).toEqual([false, false, false]);
+    expect(escapes()).toHaveLength(1);
+  });
+
+  it("should draw an escaped player who reconnects hidden, with no escape played again", () => {
+    const { run, hidden, escapes } = ownBodyOnStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { escape: true })));
+    expect(hidden()).toEqual([false, false, false]);
+    expect(escapes()).toHaveLength(0);
   });
 });
 
@@ -1333,7 +1570,9 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
 
     run.handleGameStateUpdate(alone());
     expect(overheadBars()).toHaveLength(0);
-    // the same probe finds a teammate's bar, so the empty answer above is not vacuous
+    // the same probe finds a teammate's bar (switched on, FS-CH21F R14), so the empty answer
+    // above is not vacuous
+    (run as unknown as { showTeammateBars: boolean }).showTeammateBars = true;
     run.handleGameStateUpdate(alone(player("ally", "Wenna", 160)));
     expect(overheadBars()).toHaveLength(1);
   });
@@ -2069,19 +2308,19 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     expect(run.view?.building?.id).toBe(run.buildings[0].id);
   });
 
-  it("should hide a teammate by the same rule: body, legs, name and health bar (§C.4)", () => {
+  it("should hide a teammate by the same rule: body, legs and name (§C.4)", () => {
     const { run } = spire();
     run.handleGameStateUpdate(peopled([], IN_ROOM));
     standAt(run, IN_HALL);
     expect(run.otherPlayers.get("ally")!.shown).toBe(false);
     expect(run.otherPlayersLegs.get("ally")!.shown).toBe(false);
     expect(run.otherPlayersNameTexts.get("ally")!.shown).toBe(false);
-    expect(run.teammateHealthBars.get("ally")!.graphics.shown).toBe(false);
+    // overhead player bars are off (FS-CH21F R14): there is no health bar to hide
+    expect(run.teammateHealthBars.get("ally")).toBeUndefined();
 
     standAt(run, IN_ROOM);
     expect(run.otherPlayers.get("ally")!.shown).toBe(true);
     expect(run.otherPlayersLegs.get("ally")!.shown).toBe(true);
-    expect(run.teammateHealthBars.get("ally")!.graphics.shown).toBe(true);
   });
 
   it("should hide the chest in a room from the halls, and the switch, escape door and stairs in the halls from the room", () => {
