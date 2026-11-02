@@ -10,6 +10,7 @@ import {
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
   CHAT_VISIBLE_LINES,
+  chatFoldButton,
   chatScrollThumb,
   chatScrollTrack,
   chatWindowFrame,
@@ -32,6 +33,8 @@ interface FakeText {
   destroyed: boolean;
   /** The handler a toggle registered for pointerdown, if it is interactive. */
   onPress?: () => void;
+  /** The handler a button registered for pointerup, if it acts on release. */
+  onRelease?: () => void;
   /** The geometry mask the text wears, as Phaser would render it with. */
   mask?: FakeMask;
 }
@@ -120,6 +123,7 @@ function fakeScene() {
       setInteractive: () => self,
       on: (event: string, cb: () => void) => {
         if (event === "pointerdown") t.onPress = cb;
+        if (event === "pointerup") t.onRelease = cb;
         return self;
       },
       get width() {
@@ -665,12 +669,35 @@ const foldButtonOf = (s: ReturnType<typeof fakeScene>) => {
   return t!;
 };
 
+/** A whole click on the fold button: the press, then the release over it. */
+const clickFold = (s: ReturnType<typeof fakeScene>) => {
+  const button = foldButtonOf(s);
+  button.onPress?.();
+  button.onRelease?.();
+};
+
 describe("ChatWindow folding", () => {
+  // asked 2026-11-02 (Nick): folding on the press shrank the window before the scene's attack
+  // handler asked whether the press was the window's, so the press at the old corner attacked.
+  it("should fold on the release, so the press at the corner is still the window's", () => {
+    const s = rig();
+    const button = foldButtonOf(s);
+    const corner = chatFoldButton(chatWindowFrame(X, BOTTOM));
+
+    button.onPress?.();
+
+    expect(s.store.getState().folded).toBe(false);
+    expect(s.window.covers(corner.x + 2, corner.y + 2)).toBe(true);
+
+    button.onRelease!();
+    expect(s.store.getState().folded).toBe(true);
+  });
+
   it("should fold down to the input row and stop drawing lines and tabs, then unfold", () => {
     const s = rig();
     s.say("hello");
 
-    foldButtonOf(s).onPress!();
+    clickFold(s);
 
     expect(s.store.getState().folded).toBe(true);
     expect(s.messageTexts()).toHaveLength(0);
@@ -682,14 +709,14 @@ describe("ChatWindow folding", () => {
       s.window.covers(X + 5, chatWindowFrame(X, BOTTOM, true).input.y + 5),
     ).toBe(true);
 
-    foldButtonOf(s).onPress!();
+    clickFold(s);
     expect(s.store.getState().folded).toBe(false);
     expect(s.contents()).toEqual(["hello"]);
   });
 
   it("should stay folded when a line arrives", () => {
     const s = rig();
-    foldButtonOf(s).onPress!();
+    clickFold(s);
 
     s.say("while folded");
 
@@ -773,7 +800,7 @@ describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", ()
     expect(button.y).toBeLessThan(open.filterRow.y + open.filterRow.height);
     expect(button.x).toBeGreaterThan(open.panel.x + open.panel.width - 30);
 
-    button.onPress!();
+    clickFold(s);
 
     const shut = chatWindowFrame(X, BOTTOM, true);
     const folded = foldButtonOf(s);
@@ -833,7 +860,7 @@ describe("ChatWindow fold button size (asked 2026-10-31)", () => {
 
     const open = parseInt(foldButtonOf(s).fontSize ?? "0", 10);
 
-    foldButtonOf(s).onPress!();
+    clickFold(s);
     // folded, the up glyph draws a size larger still: it reads small in the body face
     expect(parseInt(foldButtonOf(s).fontSize ?? "0", 10)).toBeGreaterThan(open);
   });
@@ -971,8 +998,8 @@ describe("ChatWindow mask lifetime", () => {
       true,
     );
 
-    foldButtonOf(s).onPress!();
-    foldButtonOf(s).onPress!();
+    clickFold(s);
+    clickFold(s);
     expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
       true,
     );
