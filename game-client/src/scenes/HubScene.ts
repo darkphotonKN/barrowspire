@@ -2,7 +2,7 @@ import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { ActionType, WorldType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
-import { isLeader, usePartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
+import { isLeader, usePartyStore, type PartyNoticePayload, type PartyUpdatePayload } from "@/stores/partyStore";
 import { useAuthStore } from "@/stores/authStore";
 import { CANVAS_FONT, palette, rgba, shade, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
@@ -31,7 +31,7 @@ import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
-import { PARTY_ENTER_REFUSALS } from "@/ui/partyNotice";
+import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { apiClient } from "@/utils/api";
@@ -313,6 +313,8 @@ interface Pending {
   soloPending: boolean;
   /** A party_enter is awaiting its answer (FS-BJNYC R21). */
   enterPending: boolean;
+  /** A find_game is awaiting its answer (FS-BJNYC R21). */
+  queuePending: boolean;
 }
 
 /** One choice in an NPC's dialogue (FS-NSV3D §Requirements 3). */
@@ -342,58 +344,59 @@ export interface Dialogue {
 /** Who speaks when the player steps up to the Spire gate: the place, not a keeper. */
 const SPIRE_DOOR = "The Spire's door";
 
+/** The door's opening line, the same for everyone whatever their party (FS-BJNYC R20). */
+const DOOR_LINE = "The Spire's door stands open. Few return whole,\nand fewer return twice.";
+
 /**
  * What the Spire's door offers, from the hub's state as the panel opens (FS-NSV3D §Requirements
- * 1, 2, 4; FS-0XMCP §Requirements 8, 9): alone, with company, or not yet. While the player is
- * already queued there is nothing to offer but the fact, so the panel says so and closes; the
- * corner panel carries the count. The one warning is the door's line: descending alone takes no
- * second asking. The door is a place, not a keeper, so its card carries no role. A party enters
- * together (FS-BJNYC R20, R21): a party member finds both ways down greyed and the door saying
- * why, and only the leader, a party of just the leader included, has Enter as a party, first so E
- * and Enter mean it.
+ * 1, 2, 4; FS-0XMCP §Requirements 8, 9; FS-BJNYC R20–R22): as a party, alone, with company, or
+ * not yet. While the player is already queued there is nothing to offer but the fact, so the panel
+ * says so and closes; the corner panel carries the count. The door is a place, not a keeper, so
+ * its card carries no role.
+ *
+ * Every player sees every choice, whatever their party: the server decides, and a choice that does
+ * not apply is refused in words (`refusal`, said in place of the opening line). The choice most
+ * likely to work comes first, so E and Enter mean it: Enter as a party for the leader, a party of
+ * just the leader included; Descend alone for everyone else. Each of the three keeps the door up
+ * until it is answered and is held back only while its own send is unanswered.
  */
-export function delveChoices(state: HubState): Dialogue {
+export function delveChoices(state: HubState, refusal?: string): Dialogue {
   if (state.queued) {
     return {
       line: "The delve is gathering. Wait, or leave the queue.",
       choices: [{ id: "dismiss", label: "I'll wait", register: "cancel" }],
     };
   }
-  const inParty = state.party !== "none";
-  // the queue and descending alone are not for a party member
-  const closedToParty = inParty ? () => false : undefined;
-  const choices: DialogueChoice[] = [
+  const enter: DialogueChoice = {
+    id: "enter",
+    label: "Enter as a party",
+    register: "actionable",
+    act: (scene) => scene.enterAsParty(),
+    stays: true,
+    enabled: ({ enterPending }) => !enterPending,
+  };
+  const ways: DialogueChoice[] = [
     {
       id: "solo",
       label: "Descend alone",
       register: "actionable",
       act: (scene) => scene.startSolo(),
       stays: true,
-      enabled: closedToParty ?? (({ soloPending }) => !soloPending),
+      enabled: ({ soloPending }) => !soloPending,
     },
     {
       id: "queue",
       label: "Wait for company",
       register: "actionable",
       act: (scene) => scene.joinQueue(),
-      enabled: closedToParty,
-    },
-    { id: "dismiss", label: "Not yet", register: "cancel" },
-  ];
-  if (state.party === "leader")
-    choices.unshift({
-      id: "enter",
-      label: "Enter as a party",
-      register: "actionable",
-      act: (scene) => scene.enterAsParty(),
       stays: true,
-      enabled: ({ enterPending }) => !enterPending,
-    });
+      enabled: ({ queuePending }) => !queuePending,
+    },
+  ];
+  const dismiss: DialogueChoice = { id: "dismiss", label: "Not yet", register: "cancel" };
   return {
-    line: inParty
-      ? "Your party enters together."
-      : "The Spire's door stands open. Few return whole,\nand fewer return twice.",
-    choices,
+    line: refusal ?? DOOR_LINE,
+    choices: state.party === "leader" ? [enter, ...ways, dismiss] : [...ways, enter, dismiss],
   };
 }
 
@@ -643,6 +646,11 @@ export class HubScene extends Phaser.Scene {
    * refusal (FS-BJNYC R21).
    */
   private enterPending = false;
+  /**
+   * A find_game has been sent from the door and nothing has answered it yet: neither the queue
+   * taking the player nor a refusal (FS-BJNYC R21).
+   */
+  private queuePending = false;
   /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
   private leavingHub = false;
   /**
@@ -797,9 +805,12 @@ export class HubScene extends Phaser.Scene {
       this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
     );
     // The reply to joinQueue's find_game: a refusal goes to its own error listener below, so
-    // hearing it here at all means the server took the entry (FS-G4VMQ §Requirements 11).
+    // hearing it here at all means the server took the entry (FS-G4VMQ §Requirements 11). The door
+    // waited for it with its panel up; the queue's own panel takes over (FS-BJNYC R21).
     socketManager.on(ActionType.Find_Game, () => {
       this.queued = true;
+      this.queuePending = false;
+      if (this.doorOpen) this.closeDialogue();
     });
     // A match on another server: the move happens behind this panel, and the
     // host's world_entered switches the scene. A refused move leaves the player
@@ -830,19 +841,22 @@ export class HubScene extends Phaser.Scene {
       this.leavePending = false;
       this.notice(info.message ?? "Could not leave the queue, please try again.");
     });
-    // A solo start the server would not give: the choice comes back, the dialogue stays where it
-    // was, and the reason passes by in the hub (FS-NSV3D §Requirements 5). Success needs no
-    // listener: it is the world_entered that switches the scene (§Requirements 6).
+    // A solo start the server would not give: the choice comes back and the door says why in its
+    // own panel, or in passing once the door has closed (FS-NSV3D §Requirements 5; FS-BJNYC R22).
+    // Success needs no listener: it is the world_entered that switches the scene (§Requirements 6).
     socketManager.onError(ActionType.StartSolo, (info) => {
       if (!this.soloPending) return;
       this.soloPending = false;
-      this.dialogueChoices?.retone();
-      this.notice(spireRefusalCopy(info.reason, info.message, "The way is shut for now. Ask again."));
+      this.refused(spireRefusalCopy(info.reason, info.message, "The way is shut for now. Ask again."));
     });
-    // A find_game the server would not take (unreadable gear, or away from the door): the player
-    // is not queued and stays where they stand, told why in passing.
+    // A find_game the server would not take (a party member, unreadable gear, or away from the
+    // door): the player is not queued and stays where they stand, told why by the door they asked,
+    // or in passing (FS-BJNYC R22).
     socketManager.onError(ActionType.Find_Game, (info) => {
-      this.notice(spireRefusalCopy(info.reason, info.message, "The delve will not gather for you yet. Ask again."));
+      const words = spireRefusalCopy(info.reason, info.message, "The delve will not gather for you yet. Ask again.");
+      if (!this.queuePending) return this.notice(words);
+      this.queuePending = false;
+      this.refused(words);
     });
     // Leaving for the roster (FS-G4VMQ §Requirements 25): the body goes with the server's word,
     // not the press, so the scene switches on world_left. A refusal (queued, or no longer here)
@@ -867,20 +881,21 @@ export class HubScene extends Phaser.Scene {
       this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason));
     });
     // A party_enter is answered by the ready check opening (I-BJNYC-5 draws it), by the run's
-    // world_entered switching the scene, or by a refusal: the choice comes back on any of them,
-    // the door stays where it was, and the refusal's words pass by in the chat window as every
-    // party notice does (FS-BJNYC R21, R22). The party store says the words; this only listens.
+    // world_entered switching the scene, or by a refusal: the choice comes back on any of them.
+    // A refusal is also said by the open door in its own words (FS-BJNYC R21, R22); the chat's line
+    // for it is the party store's, as for every party notice, and is not this listener's.
     socketManager.on("party_ready_check", () => this.enterAnswered());
-    socketManager.on("party_notice", (notice: { code?: string }) => {
-      if (notice?.code !== undefined && PARTY_ENTER_REFUSALS.has(notice.code)) this.enterAnswered();
+    socketManager.on("party_notice", (notice: PartyNoticePayload) => {
+      if (!this.enterPending || !PARTY_ENTER_REFUSALS.has(notice?.code)) return;
+      this.enterAnswered();
+      const words = partyEnterDoorText(notice);
+      if (words !== null && this.doorOpen) this.openDoor(words);
     });
     // The door is drawn for the player's place in the party; a place changed while it stands open
-    // (handed the lead, the lead handed on, out of the party) draws it again (FS-BJNYC R21).
+    // (handed the lead, the lead handed on, out of the party) draws it again in the new order, on
+    // its opening line: a refusal said for the old place no longer holds (FS-BJNYC R20).
     const unsubscribeParty = usePartyStore.subscribe((state, prev) => {
-      if (this.doorOpen && partyStanding(state.party) !== partyStanding(prev.party)) {
-        this.closeDialogue();
-        this.openDoor();
-      }
+      if (this.doorOpen && partyStanding(state.party) !== partyStanding(prev.party)) this.openDoor();
     });
     this.unsubscribeQueue = () => {
       unsubscribeParty();
@@ -950,6 +965,7 @@ export class HubScene extends Phaser.Scene {
     this.leavePending = false;
     this.soloPending = false;
     this.enterPending = false;
+    this.queuePending = false;
     this.leavingHub = false;
     this.enteringField = false;
     this.roofs = [];
@@ -1851,10 +1867,23 @@ export class HubScene extends Phaser.Scene {
     socketManager.sendMessage(ActionType.EnterField, { field });
   }
 
-  /** The Spire door's panel: today's delve choices, the door speaking (FS-0XMCP §Requirements 8, 9). */
-  private openDoor(): void {
-    this.showDialogue({ name: SPIRE_DOOR }, delveChoices(this.hubState()));
+  /**
+   * The Spire door's panel: today's delve choices, the door speaking (FS-0XMCP §Requirements 8, 9),
+   * on its opening line or, drawn again over itself, saying why a choice was refused (FS-BJNYC R22).
+   */
+  private openDoor(refusal?: string): void {
+    this.closeDialogue();
+    this.showDialogue({ name: SPIRE_DOOR }, delveChoices(this.hubState(), refusal));
     this.doorOpen = true;
+  }
+
+  /**
+   * A start_solo or find_game refused: said by the door the player pressed it at, every choice still
+   * offered, or in passing once the door has closed (FS-BJNYC R22).
+   */
+  private refused(words: string): void {
+    if (this.doorOpen) this.openDoor(words);
+    else this.notice(words);
   }
 
   /** What a dialogue reads, as it stands now: the party is read afresh at each opening (FS-BJNYC R20). */
@@ -2382,7 +2411,11 @@ export class HubScene extends Phaser.Scene {
     { role, line, choices }: Dialogue,
   ): void {
     const enabled = (choice: DialogueChoice) =>
-      choice.enabled?.({ soloPending: this.soloPending, enterPending: this.enterPending }) ?? true;
+      choice.enabled?.({
+        soloPending: this.soloPending,
+        enterPending: this.enterPending,
+        queuePending: this.queuePending,
+      }) ?? true;
     const pick = (choice: DialogueChoice) => {
       if (!enabled(choice)) return;
       if (choice.next) {
@@ -2577,8 +2610,13 @@ export class HubScene extends Phaser.Scene {
     this.dialogueChoices?.retone();
   }
 
-  /** Joining is the player's decision; the queue itself is unchanged. */
+  /**
+   * Joining is the player's decision; the queue itself is unchanged. One find_game, and nothing
+   * more until the server has answered it, by taking the player or a refusal (FS-BJNYC R21).
+   */
   joinQueue(): void {
+    if (this.queuePending) return;
+    this.queuePending = true;
     const character = useGameStore.getState().getActiveCharacter();
     const chosenClass = (character?.className ?? "warrior").toLowerCase();
 

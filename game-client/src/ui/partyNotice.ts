@@ -44,13 +44,15 @@ export const PARTY_NOTICE_COPY: Readonly<Record<string, string>> = {
   not_at_gate: "Walk to the Spire's door first.",
   // every member not in the town, in join order
   not_in_town: "{names} {is} not in the town.",
+  // a party of just its leader may not enter (FS-BJNYC R5, amended 2026-11-02)
+  too_few: "Your party needs at least two players.",
 };
 
 /**
- * The party_notice codes that answer a party_enter by refusing it (FS-BJNYC R5). not_member,
- * not_leader, locked and unavailable also answer other party actions; taking one of those as the
- * answer only gives the choice back early, and a second press is refused `checking` if a check is
- * open.
+ * The party_notice codes that answer a party_enter by refusing it (FS-BJNYC R5), `too_few` (a party
+ * of just its leader) included. not_member, not_leader, locked and unavailable also answer other
+ * party actions; they are taken as the answer only while a party_enter is unanswered, and a second
+ * press is refused `checking` if a check is open.
  */
 export const PARTY_ENTER_REFUSALS: ReadonlySet<string> = new Set([
   "not_member",
@@ -60,7 +62,28 @@ export const PARTY_ENTER_REFUSALS: ReadonlySet<string> = new Set([
   "not_at_gate",
   "not_in_town",
   "unavailable",
+  "too_few",
 ]);
+
+/**
+ * The door's own words for a refused party_enter (FS-BJNYC R22, §Copy door rows), where the chat's
+ * would misread: `not_member` and `not_leader` are shared codes worded for invites, kicks and
+ * transfers, and at the door the one in no party is the player who pressed.
+ */
+const PARTY_ENTER_DOOR_COPY: Readonly<Record<string, string>> = {
+  not_member: "Form a party first.",
+  not_leader: "Only your leader can lead the party in.",
+};
+
+/**
+ * What the Spire's door says when it refuses Enter as a party: its own words where §Copy gives
+ * them, every other code in the chat's words; null for a code with no words at all.
+ */
+export function partyEnterDoorText(notice: PartyNoticePayload): string | null {
+  return Object.hasOwn(PARTY_ENTER_DOOR_COPY, notice.code)
+    ? PARTY_ENTER_DOOR_COPY[notice.code]
+    : partyNoticeText(notice);
+}
 
 /** Stands in for a name the server left off: the line still reads. */
 export const NO_NAME = "Someone";

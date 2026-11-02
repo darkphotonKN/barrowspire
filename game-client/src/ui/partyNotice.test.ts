@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PARTY_ENTER_REFUSALS,
   PARTY_NOTICE_COPY,
+  partyEnterDoorText,
   partyNoticeText,
   readyCheckCancelText,
 } from "./partyNotice";
@@ -40,7 +41,7 @@ describe("partyNoticeText (FS-R82NV R36, FS-NCC9J R29)", () => {
   });
 
   it("should cover every code in R36's table, R29's and FS-BJNYC's party entry", () => {
-    expect(Object.keys(PARTY_NOTICE_COPY)).toHaveLength(24);
+    expect(Object.keys(PARTY_NOTICE_COPY)).toHaveLength(25);
   });
 
   it("should word every code that refuses a party_enter (FS-BJNYC R5)", () => {
@@ -67,8 +68,14 @@ describe("partyNoticeText for party_enter's refusals (FS-BJNYC R22, §Copy)", ()
     ["not_leader", "Only the leader may do that."],
     ["locked", "Not while delving."],
     ["unavailable", "The party cannot be changed right now."],
+    // a party of just its leader (I-BJNYC-8): new on both sides, the same words
+    ["too_few", "Your party needs at least two players."],
   ])("%s → %s", (code, want) => {
     expect(partyNoticeText({ code })).toBe(want);
+  });
+
+  it("should take too_few as an answer to the press", () => {
+    expect(PARTY_ENTER_REFUSALS.has("too_few")).toBe(true);
   });
 
   it.each([
@@ -82,6 +89,32 @@ describe("partyNoticeText for party_enter's refusals (FS-BJNYC R22, §Copy)", ()
   it("should still read when not_in_town arrives with no names", () => {
     expect(partyNoticeText({ code: "not_in_town" })).toBe("Someone is not in the town.");
     expect(partyNoticeText({ code: "not_in_town", names: [" ", ""] })).toBe("Someone is not in the town.");
+  });
+});
+
+// FS-BJNYC R22, §Copy door rows (amended 2026-11-02): the door keys its words by the action pressed,
+// so the two shared codes read for the one who pressed Enter as a party; the rest in the chat's words.
+describe("partyEnterDoorText (FS-BJNYC R22, §Copy door rows)", () => {
+  it.each([
+    [{ code: "not_member" }, "Form a party first."],
+    [{ code: "not_leader" }, "Only your leader can lead the party in."],
+    [{ code: "too_few" }, "Your party needs at least two players."],
+    [{ code: "locked" }, "Not while delving."],
+    [{ code: "checking" }, "Your party is already being asked."],
+    [{ code: "not_at_gate" }, "Walk to the Spire's door first."],
+    [{ code: "not_in_town", names: ["Wren", "Mira"] }, "Wren and Mira are not in the town."],
+    [{ code: "unavailable" }, "The party cannot be changed right now."],
+  ])("%j → %s", (notice, want) => {
+    expect(partyEnterDoorText(notice)).toBe(want);
+  });
+
+  it("should leave the chat's words for the shared codes as they are", () => {
+    expect(partyNoticeText({ code: "not_member" })).toBe("They are not in your party.");
+    expect(partyNoticeText({ code: "not_leader" })).toBe("Only the leader may do that.");
+  });
+
+  it("should return null for a code with no words, so the door says nothing unworded", () => {
+    expect(partyEnterDoorText({ code: "brand_new" })).toBeNull();
   });
 });
 
