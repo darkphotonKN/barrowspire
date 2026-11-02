@@ -1,6 +1,6 @@
 ---
 id: I-XGW7H-2
-status: open
+status: in-progress
 implements: FS-XGW7H
 blocked_by: []
 labels: [ready-for-agent]
@@ -65,3 +65,7 @@ Criteria Client.
 
 - RED: `chatInput.test.ts`: with the real `CHAT_OPEN_CHANNELS`, `pick("party")` writes `%` and Enter sends on party; the closed-channel test lists only whisper and trade.
 - GREEN: add `party` to the set.
+
+## Charter run (2026-11-02)
+
+Built by a /develop child (TDD), two-axis review: ready to merge. Browser check pending: Party pickable with or without a party, `%` prefix, a no_party send says "You are not in a party.", lines reach a teammate on another pod.
