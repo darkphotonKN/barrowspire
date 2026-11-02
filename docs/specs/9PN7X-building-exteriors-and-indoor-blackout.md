@@ -105,14 +105,21 @@ today.
    > **Amended 2026-11-03 (owner): entrances show a door, not a dark opening** ("ok i wanna add
    > doors back. black just aint good"). The dark opening above is superseded:
    > - a **town door gap** holds a drawn plank door, the run door's own sheet (`door_x`/`door_y`)
-   >   on the gap's axis: frame `unlocked` (shut) while the player is outside that building,
-   >   `open` while they are inside it (the inside test counts the gap as inside, so it opens as
+   >   on the gap's axis: frame `shut` (closed with no lock on it: the door can't be acted on, so
+   >   nothing amber sits on it) while the player is outside that building, `open` while they are
+   >   inside it (the inside test counts the gap as inside, so it opens as
    >   they step into the doorway; instant snap, no tween). Purely drawn: no collision, no
    >   interaction, no server change, and another player walking in does not open it for the
    >   viewer. The shut door is part of the building exterior (hidden whole from inside another
    >   building, covers the player for the silhouette); the open one is part of the interior look;
-   > - a **Spire room door** seen from the halls draws its own server state again, open or shut,
-   >   as before this FS; nothing is drawn in place of an open door.
+   > - a **Spire room door** seen from the halls draws its own server state again, open or shut
+   >   (`unlocked`, `locked` or `open`, as the server says), as before this FS; nothing is drawn in
+   >   place of an open door;
+   > - a **door head** closes every door gap from outside, town or Spire, door drawn or the
+   >   server's: the wall carried on over the door's lintel up to the wall top in the building
+   >   type's outward surface, so nothing of the room shows above a door. It is part of the
+   >   building exterior (cover, hidden from inside), sorts like the door under it, and without
+   >   its sheet falls back to a slab over the gap at the wall top in the walls' placeholder colour.
    > The hide rule, room-only lights, the cap and the blackout are unchanged.
 6. **The interior look while inside.** While the player is inside B, B draws as it ships today:
    the cut-away south and east fronts and front posts, its roof lifted (hub) or its cap hidden
@@ -232,8 +239,12 @@ today.
    sheets' convention.
    *(Amended 2026-11-03 (owner): entrances show a door, not a dark opening; superseded and
    retired. The four `*door_dark_*` sheets and their model are removed from the bake and from
-   `public/art`; an entrance draws the existing run door sheets `door_{x,y}` (§B.5 amendment).
-   No new art.)*
+   `public/art`; an entrance draws the run door sheets `door_{x,y}` (§B.5 amendment), which gain
+   a fourth state, `shut`, the door closed with no lock, for town gaps. New in the `building`
+   group: the **door heads** `door_head_{x,y}` (timber: plaster under the wall plate, a king
+   stud over the door) and `tower_door_head_{x,y}` (masonry: coursed stone, the string course
+   and corbel table carried across), each the gap's width (50 world px) from the door's lintel to
+   the coping, unlit.)*
 5. **Atlas and fidelity.** The new sheets go in one new atlas group, `building` (not
    "exterior", which names the run theme), additive only: every
    pre-existing atlas `sha256` and sheet entry unchanged. Same palette ramp, light direction and

@@ -264,7 +264,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   door, drawn as its frame with flat darkness inside. A closed or locked door draws as a door.~~
   Retired 2026-11-03 (owner, FS-9PN7X §B.5 amendment): entrances show doors. A town door gap
   holds a drawn door, shut from outside and open from inside; a Spire room door shows its own
-  state. Don't use the term.
+  state; a door head closes the wall over every door from outside. Don't use the term.
 - **Container view**: the on-screen panel showing a container's contents. Not the
   same thing as a **container**, which is the WS entity in `containers[]`. Opening the view is
   presentation; clicking an item in it sends exactly the message the item row always sent. It has
