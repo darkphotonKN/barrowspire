@@ -2388,7 +2388,7 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     expect(stamps.has(run.otherPlayersLegs.get("ally"))).toBe(true);
     // the plates and bars stand over the dark
     expect(stamps.has(run.otherPlayersNameTexts.get("ally"))).toBe(false);
-    expect(stamps.has(run.teammateHealthBars.get("ally")!.graphics)).toBe(false);
+    expect(stamps.has(run.teammateHealthBars.get("ally")?.graphics)).toBe(false);
     expect(stamps.has(run.chests.get("c1")!.sprite)).toBe(true);
     expect(stamps.has(run.switches.get("s1")!.sprite)).toBe(false);
     expect(stamps.has(run.escapeDoors.get("e1")!.sprite)).toBe(false);
