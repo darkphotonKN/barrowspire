@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE } from "@/render/iso";
-import type { DoorState, WallState } from "@/types/gameState";
+import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
-import { darkOpening, doorGaps, planBuildings, planCap } from "./buildingLooks";
+import { doorGaps, gapDoor, planBuildings, planCap } from "./buildingLooks";
 import { housesFrom } from "./houses";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { MASONRY_WALLS, TIMBER_WALLS, planWalls } from "./walls";
@@ -205,11 +205,12 @@ describe("doorGaps (FS-9PN7X §B.5)", () => {
   });
 });
 
-describe("darkOpening (FS-9PN7X §B.5, §F.4)", () => {
-  it("should cover a town door gap with the timber dark opening along x", () => {
+describe("gapDoor (FS-9PN7X §B.5, amended 2026-11-03)", () => {
+  it("should hang a shut plank door in a town door gap while the player is outside", () => {
     const [gap] = doorGaps(TOWN_WALLS);
-    expect(darkOpening(gap, TIMBER_WALLS)).toEqual({
-      sheet: "door_dark_x",
+    expect(gapDoor(gap, false)).toEqual({
+      sheet: "door_x",
+      frame: "unlocked",
       axis: "x",
       at: { x: gap.position.x + DOOR / 2, y: gap.position.y + THICK / 2 },
       depthAt: gap.position,
@@ -217,20 +218,17 @@ describe("darkOpening (FS-9PN7X §B.5, §F.4)", () => {
     });
   });
 
-  it("should give an open Spire door the masonry dark opening on the door's own axis", () => {
-    const door: DoorState = {
-      entity_id: "d",
-      position: { x: 500, y: 300 },
-      width: THICK,
-      height: DOOR,
-      is_open: true,
-    };
-    const spot = darkOpening(door, MASONRY_WALLS);
-    expect(spot.sheet).toBe("tower_door_dark_y");
-    expect(spot.axis).toBe("y");
-    expect(spot.at).toEqual({ x: 510, y: 325 });
-    expect(darkOpening({ ...door, width: DOOR, height: THICK }, MASONRY_WALLS).sheet).toBe(
-      "tower_door_dark_x",
-    );
+  it("should show the door open while the player is inside its building", () => {
+    const [gap] = doorGaps(TOWN_WALLS);
+    expect(gapDoor(gap, true)).toEqual({ ...gapDoor(gap, false), frame: "open" });
+  });
+
+  it("should turn the door to the gap's own axis, as the door sheets name it", () => {
+    const gap = { houseId: "e", position: { x: 280, y: 75 }, width: THICK, height: DOOR };
+    const door = gapDoor(gap, false);
+    expect(door.sheet).toBe("door_y");
+    expect(door.axis).toBe("y");
+    expect(door.at).toEqual({ x: 290, y: 100 });
+    expect(gapDoor(gap, true).sheet).toBe("door_y");
   });
 });

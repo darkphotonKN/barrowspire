@@ -274,10 +274,11 @@ describe("cutExterior (FS-9PN7X §B.2, §F.2)", () => {
 });
 
 describe("a building type's other sheets (FS-9PN7X §F.3, §F.4)", () => {
-  it("should name each type's dark opening, and a stone cap for masonry only", () => {
-    expect(TIMBER_WALLS.opening).toBe("door_dark");
-    expect(MASONRY_WALLS.opening).toBe("tower_door_dark");
+  it("should name a stone cap for masonry only, and no dark opening for either (amended 2026-11-03)", () => {
     expect(MASONRY_WALLS.cap).toBe("tower_cap");
+    // entrances show a door, not a dark opening: no type names an opening sheet
+    expect("opening" in TIMBER_WALLS).toBe(false);
+    expect("opening" in MASONRY_WALLS).toBe(false);
     // timber buildings keep their roof
     expect(TIMBER_WALLS.cap).toBeUndefined();
   });
