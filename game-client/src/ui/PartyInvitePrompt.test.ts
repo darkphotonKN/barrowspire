@@ -22,6 +22,7 @@ interface FakeText {
   alpha: number;
   fontSize?: string;
   onPress?: () => void;
+  onRelease?: () => void;
 }
 
 /** A plain rectangle a fake graphics filled, in the colour it was filled with. */
@@ -82,6 +83,7 @@ function fakeScene() {
       setInteractive: () => ((t.interactive = true), self),
       on: (event: string, cb: () => void) => {
         if (event === "pointerdown") t.onPress = cb;
+        if (event === "pointerup") t.onRelease = cb;
         return self;
       },
       destroy: () => void (t.destroyed = true),
@@ -175,6 +177,12 @@ function setup(
 
 const LINE = "Wren invites you to their party (2/4)";
 
+/** A whole click on a button: the press, then the release over it. */
+const click = (t: { onPress?: () => void; onRelease?: () => void }) => {
+  t.onPress?.();
+  t.onRelease?.();
+};
+
 describe("PartyInvitePrompt (FS-R82NV R32: the prompt)", () => {
   it("should draw nothing with no invite waiting", () => {
     const env = setup();
@@ -191,10 +199,27 @@ describe("PartyInvitePrompt (FS-R82NV R32: the prompt)", () => {
     expect(env.find("Decline")?.interactive).toBe(true);
   });
 
+  // asked 2026-11-02 (Nick): answering on the press closed the prompt before a fighting scene's
+  // attack handler asked whether the press was the prompt's, so the press attacked too.
+  it("should answer on the release, so the press on a button is still the prompt's", () => {
+    const env = setup();
+    env.store.getState().receiveInvite(invite("a"));
+    const accept = env.find("Accept")!;
+    const [frame] = invitePromptFrames(1, { canvasWidth: 1080, panelOpen: false });
+
+    accept.onPress?.();
+
+    expect(env.commands.accept).not.toHaveBeenCalled();
+    expect(env.prompt.covers(frame.panel.x + 5, frame.panel.y + 5)).toBe(true);
+
+    accept.onRelease!();
+    expect(env.commands.accept).toHaveBeenCalledWith("a");
+  });
+
   it("should send party_accept with the invite id and close the prompt", () => {
     const env = setup();
     env.store.getState().receiveInvite(invite("a"));
-    env.find("Accept")!.onPress?.();
+    click(env.find("Accept")!);
     expect(env.commands.accept).toHaveBeenCalledWith("a");
     expect(env.commands.decline).not.toHaveBeenCalled();
     expect(env.find(LINE)).toBeUndefined();
@@ -204,7 +229,7 @@ describe("PartyInvitePrompt (FS-R82NV R32: the prompt)", () => {
   it("should send party_decline with the invite id and close the prompt", () => {
     const env = setup();
     env.store.getState().receiveInvite(invite("a"));
-    env.find("Decline")!.onPress?.();
+    click(env.find("Decline")!);
     expect(env.commands.decline).toHaveBeenCalledWith("a");
     expect(env.commands.accept).not.toHaveBeenCalled();
     expect(env.find(LINE)).toBeUndefined();
@@ -245,7 +270,7 @@ describe("PartyInvitePrompt (FS-R82NV R32: the prompt)", () => {
     const env = setup();
     env.store.getState().receiveInvite(invite("a"));
     env.store.getState().receiveInvite(invite("b", "Osric", 3));
-    env.all("Decline")[1].onPress?.();
+    click(env.all("Decline")[1]);
     expect(env.commands.decline).toHaveBeenCalledWith("b");
     expect(env.find(LINE)).toBeDefined();
     expect(env.prompt.shown()).toBe(1);
@@ -321,7 +346,7 @@ describe("PartyInvitePrompt (FS-NCC9J R24: in every world)", () => {
     env.store.getState().receiveInvite(invite("a"));
     expect(env.find("Accept")?.interactive).toBe(true);
     expect(env.find("Not while delving.")).toBeUndefined();
-    env.find("Accept")!.onPress?.();
+    click(env.find("Accept")!);
     expect(env.commands.accept).toHaveBeenCalledWith("a");
   });
 
@@ -333,7 +358,7 @@ describe("PartyInvitePrompt (FS-NCC9J R24: in every world)", () => {
     expect(accept.interactive).toBe(false);
     expect(accept.alpha).toBeLessThan(1);
     expect(env.find("Not while delving.")).toBeDefined();
-    accept.onPress?.();
+    click(accept);
     expect(env.commands.accept).not.toHaveBeenCalled();
     // the prompt stays up for an answer once out, or a decline now
     expect(env.prompt.shown()).toBe(1);
@@ -342,7 +367,7 @@ describe("PartyInvitePrompt (FS-NCC9J R24: in every world)", () => {
   it("should still let a delver decline", () => {
     const env = setup({ world: "run" });
     env.store.getState().receiveInvite(invite("a"));
-    env.find("Decline")!.onPress?.();
+    click(env.find("Decline")!);
     expect(env.commands.decline).toHaveBeenCalledWith("a");
     expect(env.prompt.shown()).toBe(0);
   });
@@ -366,7 +391,7 @@ describe("PartyInvitePrompt (FS-NCC9J R24: in every world)", () => {
     env.store.getState().receiveInvite(invite("b", "Osric", 3));
     expect(env.prompt.shown()).toBe(1);
     // the second shows once the first is answered
-    env.find("Decline")!.onPress?.();
+    click(env.find("Decline")!);
     expect(env.prompt.shown()).toBe(1);
     expect(env.find("Osric invites you to their party (3/4)")).toBeDefined();
   });

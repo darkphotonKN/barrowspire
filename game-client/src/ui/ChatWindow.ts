@@ -662,7 +662,9 @@ export class ChatWindow {
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
       .setInteractive({ useHandCursor: true })
-      .on("pointerdown", () => this.store.getState().toggleFolded());
+      // on the release, not the press (asked 2026-11-02): folding on the press shrank the window
+      // before the scene's attack handler asked whether that press was the window's (R31)
+      .on("pointerup", () => this.store.getState().toggleFolded());
   }
 
   private clearTabs(): void {
