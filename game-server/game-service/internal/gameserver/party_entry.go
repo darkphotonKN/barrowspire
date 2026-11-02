@@ -52,6 +52,9 @@ type partyEntryWorlds interface {
 // readyCheckWindow is how long members have to answer. FS-BJNYC R7.
 const readyCheckWindow = 30 * time.Second
 
+// partyEntryMinMembers is the fewest members a party can enter a run with. FS-BJNYC R3.
+const partyEntryMinMembers = 2
+
 // readyMember is one member on a ready check.
 type readyMember struct {
 	id    uuid.UUID
@@ -180,6 +183,8 @@ func (r *partyRegistry) entered(ctx context.Context, leader *types.Player, conn 
 		r.refuse(conn, leader.ID, constants.PartyNoticeNotLeader)
 	case r.locked(ctx, p):
 		r.refuse(conn, leader.ID, constants.PartyNoticeLocked)
+	case len(p.Members) < partyEntryMinMembers:
+		r.refuse(conn, leader.ID, constants.PartyNoticeTooFew)
 	case r.checks[p.ID] != nil:
 		r.refuse(conn, leader.ID, constants.PartyNoticeChecking)
 	case !r.cfg.worlds.AtSpireGate(leader.ID):
@@ -191,7 +196,7 @@ func (r *partyRegistry) entered(ctx context.Context, leader *types.Player, conn 
 			r.noticeNames(conn, constants.PartyNoticeNotInTown, absent)
 			return
 		}
-		r.openCheck(ctx, p, town)
+		r.openCheck(p, town)
 	}
 }
 
@@ -210,9 +215,8 @@ func (r *partyRegistry) absentFromTown(p partystore.Party, town map[uuid.UUID]*w
 }
 
 // openCheck opens p's ready check: the leader accepted, everyone else waiting, 30 s on the clock,
-// every member shown it. A party of just the leader has nobody to wait for, and starts at once
-// with no popup (R3).
-func (r *partyRegistry) openCheck(ctx context.Context, p partystore.Party, town map[uuid.UUID]*websocket.Conn) {
+// every member shown it. Only a party of two or more gets here (R3, R5).
+func (r *partyRegistry) openCheck(p partystore.Party, town map[uuid.UUID]*websocket.Conn) {
 	check := &readyCheck{
 		id:       r.cfg.newID(),
 		partyID:  p.ID,
@@ -229,10 +233,6 @@ func (r *partyRegistry) openCheck(ctx context.Context, p partystore.Party, town 
 	}
 	r.checks[p.ID] = check
 	slog.Info("Party ready check opened", "party_id", p.ID, "check_id", check.id, "members", len(check.members))
-	if check.allAccepted() {
-		r.startCheck(ctx, check)
-		return
-	}
 	r.tellCheck(check, constants.ReadyCheckOpen, "", nil)
 }
 

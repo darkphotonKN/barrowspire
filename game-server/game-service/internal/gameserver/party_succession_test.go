@@ -124,15 +124,15 @@ func TestPartySuccession_OldLeaderReconnectsWithinGrace_BackInTheRunAsAMember(t 
 	assert.Equal(t, []uuid.UUID{p.wren.ID, p.kaelen.ID, p.marl.ID}, memberIDs(after), "nobody left")
 }
 
-// A party of one drops in its run: nobody to pass to, the grace runs as today. FS-BJNYC Edge
-// States "Leader drops in the run in a party of one".
+// A party shrunk to one in its run (a party of one never enters, R3) drops: nobody to pass to, the
+// grace runs as today. FS-BJNYC Edge States "Leader drops in the run in a party of one".
 func TestPartySuccession_PartyOfOne_NoTransfer(t *testing.T) {
 	rig := newPartyEntryRig(t, &MockItemsClient{})
 	wren, conn, inbox := rig.standingOnWire(t, "Wren", true)
-	sendParty(rig.server, conn, partyCreateAction, map[string]interface{}{})
-	awaitUpdate(t, inbox, "joined", wren.ID, "Wren")
-	sendEnter(rig.server, conn)
-	run := awaitRunEntered(t, rig.server, inbox, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.standing(t, "Kaelen", false)
+	rig.partied(t, conn, inbox, "Kaelen", kaelenConn, kaelenInbox)
+	run := pairIntoItsRun(t, rig, conn, kaelenConn, inbox, kaelenInbox)
+	shrunkToOne(t, rig, wren.ID, kaelen.ID)
 
 	rig.server.handleReadError(conn, dropAbnormally)
 	rig.settle(t)

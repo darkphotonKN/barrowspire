@@ -182,7 +182,10 @@ const (
 	// PartyNoticeLeaderAway: the leader is away, so there is nobody to travel to. FS-NCC9J R18.
 	PartyNoticeLeaderAway PartyNoticeCode = "leader_away"
 
-	// Refusals of party_enter (FS-BJNYC R5), after not_member, not_leader and locked.
+	// Refusals of party_enter (FS-BJNYC R5), in order: not_member, not_leader, locked, too_few,
+	// checking, not_at_gate, not_in_town, then unavailable.
+	// PartyNoticeTooFew: the party is just its leader; it needs at least two to enter.
+	PartyNoticeTooFew PartyNoticeCode = "too_few"
 	// PartyNoticeChecking: the party already has a ready check open.
 	PartyNoticeChecking PartyNoticeCode = "checking"
 	// PartyNoticeNotAtGate: the leader is not standing at the Spire's door.

@@ -546,7 +546,8 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
-				// a party member, a party of one included, enters by party_enter;
+				// a party member, a party of one included, is refused: a party enters
+				// by party_enter, two or more strong (a lone leader leaves first);
 				// find_game's place, on the party cache. FS-BJNYC §Requirements 2.
 				if h.party.inParty(player.ID) {
 					slog.Debug("Refusing start_solo: in a party", "player_id", player.ID)
