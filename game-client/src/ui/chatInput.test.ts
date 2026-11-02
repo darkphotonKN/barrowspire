@@ -483,8 +483,8 @@ describe("ChatInput with the server's open channels", () => {
     return { field, send, input };
   }
 
-  it("should list world among the open channels, and nothing else beyond area", () => {
-    expect([...CHAT_OPEN_CHANNELS].sort()).toEqual(["area", "world"]);
+  it("should list world and party among the open channels, and nothing else beyond area (FS-XGW7H C18)", () => {
+    expect([...CHAT_OPEN_CHANNELS].sort()).toEqual(["area", "party", "world"]);
   });
 
   it("should write # when World is picked, and send the line on world without it", () => {
@@ -514,9 +514,35 @@ describe("ChatInput with the server's open channels", () => {
     expect(field.channel).toBe("area");
   });
 
-  it("should keep party, whisper and trade closed: not pickable, their prefixes plain text", () => {
+  // FS-XGW7H C18, C19: party opens; nothing on the input asks whether the player is in a party,
+  // so a player in none can still pick it and the server answers with no_party
+  it("should write % when Party is picked, and send the line on party without it", () => {
     const { field, send, input } = realRig();
-    for (const channel of ["party", "whisper", "trade"] as const) {
+    field.value = "on my way";
+
+    input.pick("party");
+    expect(field.channel).toBe("party");
+    expect(field.value).toBe("%on my way");
+
+    input.keyDown("Enter", false);
+    expect(send).toHaveBeenCalledWith({ channel: "party", text: "on my way" });
+  });
+
+  it("should pick Party when % is typed first, and go back to Area when it is deleted", () => {
+    const { field, input } = realRig();
+
+    field.value = "%hi";
+    input.typed(false);
+    expect(field.channel).toBe("party");
+
+    field.value = "hi";
+    input.typed(false);
+    expect(field.channel).toBe("area");
+  });
+
+  it("should keep whisper and trade closed: not pickable, their prefixes plain text", () => {
+    const { field, send, input } = realRig();
+    for (const channel of ["whisper", "trade"] as const) {
       input.pick(channel);
       expect(field.channel).toBe("area");
     }
@@ -525,5 +551,11 @@ describe("ChatInput with the server's open channels", () => {
     expect(field.channel).toBe("area");
     input.keyDown("Enter", false);
     expect(send).toHaveBeenCalledWith({ channel: "area", text: "@Kaelen hi" });
+
+    field.value = "$WTB ember";
+    input.typed(false);
+    expect(field.channel).toBe("area");
+    input.keyDown("Enter", false);
+    expect(send).toHaveBeenCalledWith({ channel: "area", text: "$WTB ember" });
   });
 });
