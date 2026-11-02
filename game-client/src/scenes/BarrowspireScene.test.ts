@@ -65,6 +65,8 @@ const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
+const { BlackoutMask } = await import("@/render/world/blackoutMask");
+type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
@@ -2359,6 +2361,42 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     standAt(run, IN_ROOM);
     expect(veiled.every((m) => m.calls.setVisible?.[0] === true)).toBe(true);
     expect(inSight.every((m) => m.calls.setVisible?.[0] === false)).toBe(true);
+  });
+
+  it("should mask the dark with the room's own px under WebGL: its walls and whoever and whatever stands in it, never the halls", () => {
+    const show = vi.spyOn(BlackoutMask.prototype, "show").mockImplementation(() => {});
+    const { run, stage } = spire();
+    const scene = run as unknown as Record<string, unknown>;
+    scene.renderer = { type: 2 };
+    scene.make = { graphics: () => (run.add as unknown as { graphics(): unknown }).graphics() };
+    run.handleGameStateUpdate(peopled([IN_ROOM, IN_HALL], IN_ROOM));
+    standAt(run, IN_ROOM);
+
+    const look = show.mock.calls.at(-1)?.[0] as MaskLook;
+    expect(look.house.id).toBe(run.buildings[0].id);
+    const stamps = new Set(look.stamps as unknown[]);
+    const view = run.view as unknown as { drawn: { house: { id: string }; shared: unknown[]; interior: unknown[] }[] };
+    const room = view.drawn.find((b) => b.house.id === look.house.id)!;
+    for (const p of [...room.shared, ...room.interior]) expect(stamps.has(p)).toBe(true);
+    const [inRoom, inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    // the stage records the objects behind the proxies the scene holds: matched by their call log
+    const drawsOf = (m: Made) => [...stamps].some((s) => (s as Made).calls === m.calls);
+    expect(drawsOf(inRoom)).toBe(true);
+    expect(drawsOf(inHall)).toBe(false);
+    expect(stamps.has(run.player)).toBe(true);
+    expect(stamps.has(run.otherPlayers.get("ally"))).toBe(true);
+    expect(stamps.has(run.otherPlayersLegs.get("ally"))).toBe(true);
+    // the plates and bars stand over the dark
+    expect(stamps.has(run.otherPlayersNameTexts.get("ally"))).toBe(false);
+    expect(stamps.has(run.teammateHealthBars.get("ally")?.graphics)).toBe(false);
+    expect(stamps.has(run.chests.get("c1")!.sprite)).toBe(true);
+    expect(stamps.has(run.switches.get("s1")!.sprite)).toBe(false);
+    expect(stamps.has(run.escapeDoors.get("e1")!.sprite)).toBe(false);
+    expect(stamps.has(run.stairs.drawn.get("st1")!.sprite)).toBe(false);
+
+    standAt(run, IN_HALL);
+    expect(show).toHaveBeenLastCalledWith(undefined);
+    show.mockRestore();
   });
 
   it("should never hide the player, who is in the room they stand in", () => {

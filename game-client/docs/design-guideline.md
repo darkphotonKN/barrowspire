@@ -221,7 +221,10 @@ lit) while the player stands inside.
   building's material with flat darkness inside (`palette.inkDeep`): you see the way in, not the
   room. A closed or locked door draws as a door.
 - **The indoor blackout.** While the player stands inside a building, everything outside it goes
-  to `palette.inkDeep`, the canvas's darkest ink, so being inside feels enclosed.
+  to `palette.inkDeep`, the canvas's darkest ink, so being inside feels enclosed. It is exact to
+  the px: nothing shows outside what the building itself draws (its floor inside its walls, its
+  walls, and whatever stands in it), not a strip of ground along a wall or over its coping.
+  *(Tightened from a geometric hole, 2026-11-02; the canvas renderer keeps the hole.)*
 
 ---
 

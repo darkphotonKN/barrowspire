@@ -9,13 +9,23 @@ export {
   blackoutHole,
   blackoutQuads,
   type BlackoutGeometry,
+  type BlackoutOwn,
   type BlackoutStage,
 } from "./blackout";
+export {
+  BlackoutMask,
+  MASK_MARGIN,
+  maskBounds,
+  maskFloor,
+  type MaskLook,
+  type Stamp,
+} from "./blackoutMask";
 export {
   BuildingView,
   type BuildingViewOptions,
   type BuildingViewStage,
   type Figure,
+  type Occupant,
   type Scenery,
   type Visible,
 } from "./buildingView";

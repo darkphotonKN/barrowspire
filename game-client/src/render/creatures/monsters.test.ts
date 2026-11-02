@@ -1041,6 +1041,20 @@ describe("the hide rule (FS-9PN7X §C.2)", () => {
     expect(bars[0].visible).toBe(true);
   });
 
+  it("should say where each body stands, for the blackout's mask: the body only, its plate and bar being over the dark", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([
+      monster({ entity_id: "in", position: { x: 50, y: 50 } }),
+      monster({ entity_id: "out", position: { x: 300, y: 300 } }),
+    ]);
+    roster.update(FRAME);
+    expect(roster.standing()).toEqual([
+      { parts: [sprites[0]], at: { x: 50, y: 50 } },
+      { parts: [sprites[1]], at: { x: 300, y: 300 } },
+    ]);
+  });
+
   it("should read the eased position, not the broadcast's", () => {
     const { stage, sprites } = fakeStage();
     const roster = new MonsterRoster(stage, fixtureArt());

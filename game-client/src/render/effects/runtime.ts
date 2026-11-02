@@ -54,6 +54,15 @@ export type OwnerKey = string;
 interface Destroyable {
   destroy(): void;
   setVisible(visible: boolean): unknown;
+  /** The container it was put in, if any: a ground effect's image rides in its plane pair. */
+  parentContainer?: unknown;
+}
+
+/** An effect as it stands for the blackout's mask (FS-9PN7X §D): what it drew, and where. */
+export interface StandingEffect {
+  /** The objects it drew that stand on their own: a ground effect's plane root, not its image. */
+  parts: readonly Destroyable[];
+  at: Point;
 }
 
 /**
@@ -217,6 +226,20 @@ export class EffectsRuntime {
     for (const set of this.owners.values())
       for (const group of set) this.hide(group, hidden(group.at));
     for (const group of this.fading) this.hide(group, hidden(group.at));
+  }
+
+  /**
+   * Every effect playing or burning out, as the blackout's mask draws them (FS-9PN7X §D): the
+   * objects it drew that stand on their own (a ground effect's plane root carries its image), and
+   * where it stands.
+   */
+  standing(): StandingEffect[] {
+    const out: StandingEffect[] = [];
+    const add = (group: Group) =>
+      out.push({ parts: group.objects.filter((o) => !o.parentContainer), at: group.at });
+    for (const set of this.owners.values()) for (const group of set) add(group);
+    for (const group of this.fading) add(group);
+    return out;
   }
 
   /** How many effects are playing, for one owner or in all. A burning-out stream is not. */

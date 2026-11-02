@@ -502,6 +502,28 @@ describe("EffectsRuntime hideWhere (FS-9PN7X §C.2)", () => {
     expect(second.hidden).toBe(false);
   });
 
+  it("should say what each effect drew and where it stands, for the blackout's mask (§D), a burning-out one too", () => {
+    const { fake, fx } = stage();
+    fx.play("p1", "escape", { x: 50, y: 50 });
+    const trail = fx.play("p2", "arrowTrail", { x: 300, y: 50 })!;
+    trail.moveTo({ x: 320, y: 60 });
+    const standing = fx.standing();
+    expect(standing.map((s) => s.at)).toEqual([
+      { x: 50, y: 50 },
+      { x: 320, y: 60 },
+    ]);
+    expect(standing.reduce((n, s) => n + s.parts.length, 0)).toBe(fake.live().length);
+
+    const fading = (Object.keys(EFFECTS) as (keyof typeof EFFECTS)[]).find((name) => {
+      const t = EFFECTS[name].timing;
+      return t.kind === "stream" && t.onRelease === "fade";
+    })!;
+    fx.clearAll();
+    fx.play("p3", fading, { x: 70, y: 80 });
+    fx.release("p3");
+    expect(fx.standing().map((s) => s.at)).toEqual([{ x: 70, y: 80 }]);
+  });
+
   it("should follow an effect that moves: shown again once it has left", () => {
     const { fake, fx } = stage();
     const trail = fx.play("p1", "arrowTrail", { x: 50, y: 50 })!;

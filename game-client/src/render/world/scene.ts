@@ -479,6 +479,8 @@ export interface BuiltBuilding {
   cover: Cover[];
   /** Lights the interior look's walls declare, as `addWalls` hands them back. */
   lights: { source: LightSource; wallId: string; underRoof: boolean }[];
+  /** Its walls' thickness in world px: the blackout's floor stops at their centrelines (§D). */
+  wall: number;
 }
 
 export interface BuildingOptions {
@@ -625,6 +627,7 @@ export function addBuildings(
   const gaps = options.openings?.(walls) ?? [];
 
   return planBuildings(walls, seed, sheets).map((plan) => {
+    const own = walls.filter((w) => w.house_id === plan.house.id);
     const built: BuiltBuilding = {
       house: plan.house,
       shared: [],
@@ -632,6 +635,7 @@ export function addBuildings(
       exterior: [],
       cover: [],
       lights: [],
+      wall: Math.min(...own.map((w) => Math.min(w.width, w.height))),
     };
     const draw = (look: WallLook, full: boolean, lit: boolean): BuiltParts => {
       const out: BuiltParts = { parts: [], cover: [] };

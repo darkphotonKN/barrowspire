@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BLACKOUT } from "./blackout";
+import { BlackoutMask, type MaskLook } from "./blackoutMask";
 import { BuildingView, type BuildingViewStage, type Figure, type Scenery } from "./buildingView";
 import type { House } from "./houses";
 import type { BuildingPart, BuiltBuilding, Cover } from "./scene";
 
 /** A drawn part: whether it shows, and whether it is gone. */
 interface FakePart {
+  parentContainer: null;
   visible: boolean;
   destroyed: boolean;
   x: number;
@@ -17,6 +19,7 @@ interface FakePart {
 const part = (): FakePart => {
   const p: FakePart = {
     visible: true,
+    parentContainer: null,
     destroyed: false,
     x: 0,
     y: 0,
@@ -43,6 +46,7 @@ function built(house: House, depth = 10) {
     exterior: [exterior],
     cover: [cover],
     lights: [],
+    wall: 20,
   } as unknown as BuiltBuilding;
   return { b, shared: [shared], interior: [interior], exterior: [exterior] };
 }
@@ -291,5 +295,73 @@ describe("BuildingView: the silhouette (FS-9PN7X §E)", () => {
     masked.length = 0;
     v.update(ON_STREET, figure(5));
     expect(masked).toContain(roof);
+  });
+});
+
+describe("BuildingView: the blackout's mask under WebGL (FS-9PN7X §D, the owner's pixel model)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The view on a WebGL scene, the mask's drawing stubbed: what it is handed is what is watched. */
+  function webgl(options: Partial<ConstructorParameters<typeof BuildingView>[1]> = {}) {
+    const show = vi.spyOn(BlackoutMask.prototype, "show").mockImplementation(() => {});
+    const s = stage();
+    const any = (): unknown => {
+      const p: unknown = new Proxy({}, { get: (_, k) => (k === "then" ? undefined : () => p) });
+      return p;
+    };
+    const scene = s.stage as unknown as Record<string, unknown>;
+    (scene.add as Record<string, unknown>).rectangle = any;
+    scene.make = { graphics: any };
+    scene.cameras = { main: { width: 1080, height: 720, roundPixels: true } };
+    scene.renderer = { type: 2 };
+    const v = new BuildingView(s.stage, { blackout: { wallTop: () => 40, reach: 5000 }, ...options });
+    const inn = built(INN);
+    const store = built(STORE);
+    v.set(inn.b);
+    v.set(store.b);
+    const last = () => show.mock.calls.at(-1)?.[0] as MaskLook | undefined;
+    return { ...s, v, inn, store, show, last };
+  }
+
+  const occupant = (at: { x: number; y: number }) => ({ parts: [part(), part()], at });
+
+  it("should hand the mask the player's building, its walls' thickness and the walls in its interior look", () => {
+    const { v, inn, last } = webgl();
+    v.update(IN_INN);
+    expect(last()?.house).toBe(INN);
+    expect(last()?.wall).toBe(20);
+    expect(last()?.wallTop).toBe(40);
+    expect(last()?.stamps).toEqual([...inn.shared, ...inn.interior]);
+  });
+
+  it("should add whatever stands in the building, and nothing standing elsewhere", () => {
+    const inside = occupant({ x: 150, y: 120 });
+    const doorway = occupant({ x: 200, y: INN.y + INN.height });
+    const inStore = occupant(IN_STORE);
+    const street = occupant(ON_STREET);
+    const { v, inn, last } = webgl({ occupants: () => [inside, doorway, inStore, street] });
+    v.update(IN_INN);
+    expect(last()?.stamps).toEqual([...inn.shared, ...inn.interior, ...inside.parts, ...doorway.parts]);
+  });
+
+  it("should ask who stands where every frame, so the mask follows them", () => {
+    const occupants = vi.fn(() => [occupant({ x: 150, y: 120 })]);
+    const { v } = webgl({ occupants });
+    v.update(IN_INN);
+    v.update(IN_INN);
+    expect(occupants).toHaveBeenCalledTimes(2);
+  });
+
+  it("should put the mask out on the street, asking no one", () => {
+    const occupants = vi.fn(() => []);
+    const { v, show } = webgl({ occupants });
+    v.update(IN_INN);
+    v.update(ON_STREET);
+    expect(show).toHaveBeenLastCalledWith(undefined);
+    occupants.mockClear();
+    v.update(ON_STREET);
+    expect(occupants).not.toHaveBeenCalled();
   });
 });

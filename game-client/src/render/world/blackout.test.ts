@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { projectRect, raise } from "@/render/iso/shapes";
 import type { Point } from "@/render/iso/projection";
 import type { House } from "./houses";
 import { palette } from "@/utils/canvasPalette";
 import { BLACKOUT, Blackout, blackoutHole, blackoutQuads } from "./blackout";
+import { BlackoutMask, type Stamp } from "./blackoutMask";
 
 /** Strictly inside a convex polygon, whichever way it winds; points on an edge are not. */
 function strictlyInside(p: Point, poly: readonly Point[]): boolean {
@@ -227,6 +228,73 @@ describe("Blackout (FS-9PN7X §D.3–§D.5)", () => {
     dark.show(INN);
     dark.destroy();
     expect(g.destroyed).toBe(true);
+    expect(dark.house).toBeUndefined();
+  });
+});
+
+describe("Blackout under WebGL: dark outside the building's own px (FS-9PN7X §D, the owner's pixel model)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Answers any call with itself: the mask's texture, dark rect and floor shape, unwatched here. */
+  const chain = (): unknown => {
+    const p: unknown = new Proxy({}, { get: (_, k) => (k === "then" ? undefined : () => p) });
+    return p;
+  };
+
+  function blackout(type: number | undefined, wallTop = () => 141) {
+    const show = vi.spyOn(BlackoutMask.prototype, "show").mockImplementation(() => {});
+    const destroy = vi.spyOn(BlackoutMask.prototype, "destroy").mockImplementation(() => {});
+    const g = fakeGraphics();
+    const graphics = vi.fn(() => g);
+    const stage = {
+      add: { graphics, renderTexture: chain, rectangle: chain },
+      make: { graphics: chain },
+      cameras: { main: { width: 1080, height: 720, roundPixels: true } },
+      renderer: type === undefined ? undefined : { type },
+    } as unknown as ConstructorParameters<typeof Blackout>[0];
+    return { g, graphics, show, destroy, dark: new Blackout(stage, { wallTop, reach: REACH }) };
+  }
+
+  const stamps = [{ x: 600, y: 200, visible: true, parentContainer: null }] as Stamp[];
+
+  it("should hand the mask the building, its walls' thickness and height, and what is its own", () => {
+    const { show, graphics, dark } = blackout(2);
+    expect(graphics).not.toHaveBeenCalled();
+    dark.show(INN, () => ({ wall: 20, stamps }));
+    expect(show).toHaveBeenLastCalledWith({ house: INN, wall: 20, wallTop: 141, stamps });
+    expect(dark.house).toBe(INN);
+  });
+
+  it("should put the mask out on the street without asking what is the building's", () => {
+    const { show, dark } = blackout(2);
+    const own = vi.fn(() => ({ wall: 20, stamps }));
+    dark.show(undefined, own);
+    expect(own).not.toHaveBeenCalled();
+    expect(show).toHaveBeenLastCalledWith(undefined);
+    expect(dark.house).toBeUndefined();
+  });
+
+  it("should keep the geometric dark under the canvas renderer, which has no bitmap masks", () => {
+    for (const type of [1, undefined]) {
+      const { g, show, dark } = blackout(type);
+      const own = vi.fn(() => ({ wall: 20, stamps }));
+      dark.show(INN, own);
+      expect(show).not.toHaveBeenCalled();
+      expect(own).not.toHaveBeenCalled();
+      expect(g.quads).toEqual(blackoutQuads(INN, 141, REACH));
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("should clear the mask for a floor's teardown, and let it go with the scene", () => {
+    const { show, destroy, dark } = blackout(2);
+    dark.show(INN, () => ({ wall: 20, stamps }));
+    dark.clear();
+    expect(show).toHaveBeenLastCalledWith(undefined);
+    dark.destroy();
+    expect(destroy).toHaveBeenCalled();
     expect(dark.house).toBeUndefined();
   });
 });

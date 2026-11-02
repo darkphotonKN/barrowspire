@@ -13,7 +13,8 @@
  */
 
 import type { Point } from "@/render/iso/projection";
-import { Blackout, type BlackoutGeometry, type BlackoutStage } from "./blackout";
+import { Blackout, type BlackoutGeometry, type BlackoutOwn, type BlackoutStage } from "./blackout";
+import type { Stamp } from "./blackoutMask";
 import type { House } from "./houses";
 import { buildingAt, hidden, markerShown } from "./indoors";
 import { covering, type Sorted } from "./occlusion";
@@ -36,6 +37,17 @@ export interface Scenery {
   at?: Point;
 }
 
+/**
+ * Something standing at a world point, drawn as its parts (a body and its legs, a prop, an
+ * effect's sprites). While the player is in the building it stands in, its parts are the
+ * building's own px, drawn into the blackout's mask (§D). Plates and bars over a body stand over
+ * the dark, so they are never among its parts.
+ */
+export interface Occupant {
+  parts: readonly Stamp[];
+  at: Point;
+}
+
 /** The player as the silhouette copies them: their body, and the bounds and depth it is drawn at. */
 export interface Figure extends Sorted {
   body: SilhouetteBody;
@@ -52,6 +64,12 @@ export interface BuildingViewOptions {
   cover?: () => readonly Cover[];
   /** The scene's scenery hidden by footprint, read whenever the looks are shown. */
   scenery?: () => Iterable<Scenery>;
+  /**
+   * Whatever stands in the world besides the buildings' walls (people, monsters, furnishings and
+   * dressing, containers, doors, projectiles, effects), read every frame the player is in a
+   * building: those standing in it are drawn into the blackout's mask with its walls (§D).
+   */
+  occupants?: () => Iterable<Occupant>;
   /**
    * What else follows the player's building, called whenever the looks are shown: the frame the
    * building changes, and the frame after the buildings, scenery or cover changed.
@@ -147,8 +165,9 @@ export class BuildingView {
       this.showLooks();
       this.options.onShow?.(next);
     }
-    // redrawn only on a change of building or of the walls' height, once they bake
-    this.blackout.show(next);
+    // under canvas, redrawn only on a change of building or of the walls' height, once they bake;
+    // under WebGL, the mask is redrawn only when something of the building changed
+    this.blackout.show(next, next && (() => this.ownOf(next)));
     this.showSilhouette(figure);
   }
 
@@ -175,6 +194,20 @@ export class BuildingView {
 
   private houses(): House[] {
     return [...this.built.values()].map((b) => b.house);
+  }
+
+  /**
+   * What the player's building draws as its own (§D, the owner's pixel model): its walls and
+   * posts in the interior look, and the parts of whatever stands in it, by the one inside test.
+   * Its floor is the mask's, from its walls' thickness.
+   */
+  private ownOf(house: House): BlackoutOwn {
+    const b = this.built.get(house.id)!;
+    const stamps: Stamp[] = [...b.shared, ...b.interior];
+    const houses = this.houses();
+    for (const { parts, at } of this.options.occupants?.() ?? [])
+      if (buildingAt(at, houses) === house) stamps.push(...parts);
+    return { wall: b.wall, stamps };
   }
 
   /**
