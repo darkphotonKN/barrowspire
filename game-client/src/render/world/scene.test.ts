@@ -10,6 +10,7 @@ import { worldDepth, worldToScreen } from "@/render/iso";
 import { planGables } from "./roofs";
 import {
   Occluders,
+  PLACEHOLDER_STONE,
   addBuildings,
   addGables,
   showLook,
@@ -127,10 +128,10 @@ function library(names: readonly string[], logger = { warn: vi.fn() }) {
       ...SHEET,
       animations: name.includes("gable")
         ? { s: frames(1), n: frames(1), e: frames(1), w: frames(1) }
-        : name.includes("post")
+        : name.includes("post") || name.includes("head")
           ? { default: frames(1) }
           : name.startsWith("door_")
-            ? { locked: frames(1), unlocked: frames(1), open: frames(1) }
+            ? { locked: frames(1), unlocked: frames(1), open: frames(1), shut: frames(1) }
             : { variants: frames(2) },
     };
   const manifest: ArtManifest = {
@@ -150,7 +151,7 @@ const SHIPPED = [...SHIPPED_TIMBER, "post_back", "post_front"];
 const EXTERIOR_TIMBER = ["plain", "brace", "window"].flatMap((k) =>
   ["x", "y"].map((a) => `wall_exterior_${k}_${a}`),
 );
-const TIMBER_ART = [...SHIPPED, ...EXTERIOR_TIMBER, "door_x", "door_y"];
+const TIMBER_ART = [...SHIPPED, ...EXTERIOR_TIMBER, "door_x", "door_y", "door_head_x", "door_head_y"];
 
 const wall = (x: number, y: number, width: number, height: number, house_id?: string): WallState => ({
   entity_id: `${house_id}:${x},${y},${width},${height}`,
@@ -181,7 +182,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const sheets = (parts: unknown[]) => parts.map(sheetOf);
     expect(sheets(b.exterior).filter((s) => s?.startsWith("wall_"))).not.toHaveLength(0);
     expect(
-      sheets(b.exterior).every((s) => /^(wall_exterior_|post_back$|door_x$)/.test(s!)),
+      sheets(b.exterior).every((s) => /^(wall_exterior_|post_back$|door_x$|door_head_x$)/.test(s!)),
     ).toBe(true);
     expect(sheets(b.interior).every((s) => /^(wall_front_|post_front$|door_x$)/.test(s!))).toBe(true);
     expect(sheets(b.shared).every((s) => /^(wall_back_|post_back$)/.test(s!))).toBe(true);
@@ -203,7 +204,8 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const { scene } = stubScene();
     const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { doors: doorGaps });
     const doorsIn = (parts: unknown[]) => parts.filter((p) => sheetOf(p) === "door_x");
-    expect(doorsIn(b.exterior).map(frameOf)).toEqual(["unlocked"]);
+    // shut with no lock: it can't be acted on, so nothing amber on it
+    expect(doorsIn(b.exterior).map(frameOf)).toEqual(["shut"]);
     expect(doorsIn(b.interior).map(frameOf)).toEqual(["open"]);
     expect(doorsIn(b.shared)).toEqual([]);
     // both stand in the gap and sort like a door: by the back corner of the gap's footprint
@@ -223,6 +225,29 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const { scene } = stubScene();
     const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1);
     expect([...b.exterior, ...b.interior].map(sheetOf)).not.toContain("door_x");
+  });
+
+  it("should close every door gap over the lintel from outside, with or without a drawn door (§B.5, amended 2026-11-03)", () => {
+    for (const options of [{ doors: doorGaps }, {}]) {
+      const { scene } = stubScene();
+      const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, options);
+      const heads = b.exterior.filter((p) => sheetOf(p) === "door_head_x");
+      expect(heads).toHaveLength(1);
+      // standing in the gap and sorted like the door below it
+      const at = worldToScreen(250, 250);
+      expect(recOf(heads[0]).args.slice(0, 2)).toEqual([at.x, at.y]);
+      expect(recOf(heads[0]).depth).toBe(worldDepth(225, 240, 1));
+      // seen from outside only: it covers the player, and the interior look has none
+      expect(b.cover.map((c) => c.part)).toContain(heads[0]);
+      expect([...b.shared, ...b.interior].map(sheetOf)).not.toContain("door_head_x");
+    }
+  });
+
+  it("should give a building with no door gap no head", () => {
+    const { scene } = stubScene();
+    const gapless = [...HOUSE.slice(0, 3), wall(100, 240, 300, 20, "h")];
+    const [b] = addBuildings(scene, library(TIMBER_ART).art, gapless, 1, { doors: doorGaps });
+    expect(b.exterior.map(sheetOf)).not.toContain("door_head_x");
   });
 
   it("should swap a building's looks on command, the shared walls standing in both", () => {
@@ -305,8 +330,17 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
     expect(leaves).toHaveLength(2);
     const planes = made.filter((m) => m.kind === "container" && m.args.length === 3);
     const roots = (parts: unknown[]) => planes.filter((pl) => parts.some((p) => recOf(p) === pl));
-    expect(roots(b.exterior).length).toBeGreaterThan(0);
+    // the cap's slab, the shut door and the head's slab outside; the open door inside
+    expect(roots(b.exterior)).toHaveLength(3);
     expect(roots(b.interior)).toHaveLength(1);
+    // the head: a slab over the gap at the wall top, in the walls' placeholder colour
+    const heads = made.filter(
+      (m) =>
+        m.kind === "graphics" &&
+        (m.calls.fillRect ?? []).some(([x, y, w, h]) => x === 225 && y === 240 && w === 50 && h === 20) &&
+        (m.calls.fillStyle ?? []).every(([c]) => c === PLACEHOLDER_STONE.top),
+    );
+    expect(heads).toHaveLength(1);
     expect(made.some((m) => (m.calls.fillStyle ?? []).some(([c]) => c === palette.inkDeep))).toBe(false);
     expect(b.cover.length).toBe(b.shared.length + b.exterior.length);
     // no manifest is already reported once by the loader: no warning per sheet
@@ -321,6 +355,7 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
     const warned = logger.warn.mock.calls.map(([m]) => m as string);
     expect(warned.some((m) => m.includes("wall_exterior_"))).toBe(true);
     expect(warned.some((m) => m.includes("door_x"))).toBe(true);
+    expect(warned.some((m) => m.includes("door_head_x"))).toBe(true);
     expect(new Set(warned).size).toBe(warned.length);
     // a placeholder side as tall as the baked back wall it stands beside
     const full = BAKE.WALL_BACK * BAKE.VPX;
@@ -337,7 +372,8 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
       ["back", "front", "exterior"].flatMap((h) => ["x", "y"].map((a) => `tower_wall_${h}_${k}_${a}`)),
     );
     const { scene, made } = stubScene();
-    const { art, logger } = library([...masonry, "tower_post_back", "tower_post_front"]);
+    const heads = ["tower_door_head_x", "tower_door_head_y"];
+    const { art, logger } = library([...masonry, "tower_post_back", "tower_post_front", ...heads]);
     const [b] = addBuildings(scene, art, HOUSE, 1, {
       sheets: MASONRY_WALLS,
       logger,

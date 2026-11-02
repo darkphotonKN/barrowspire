@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
-import { doorGaps, gapDoor, planBuildings, planCap } from "./buildingLooks";
+import { doorGaps, doorHead, gapDoor, planBuildings, planCap } from "./buildingLooks";
 import { housesFrom } from "./houses";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { MASONRY_WALLS, TIMBER_WALLS, planWalls } from "./walls";
@@ -206,11 +206,11 @@ describe("doorGaps (FS-9PN7X §B.5)", () => {
 });
 
 describe("gapDoor (FS-9PN7X §B.5, amended 2026-11-03)", () => {
-  it("should hang a shut plank door in a town door gap while the player is outside", () => {
+  it("should hang a shut plank door, no lock on it, in a town door gap while the player is outside", () => {
     const [gap] = doorGaps(TOWN_WALLS);
     expect(gapDoor(gap, false)).toEqual({
       sheet: "door_x",
-      frame: "unlocked",
+      frame: "shut",
       axis: "x",
       at: { x: gap.position.x + DOOR / 2, y: gap.position.y + THICK / 2 },
       depthAt: gap.position,
@@ -230,5 +230,24 @@ describe("gapDoor (FS-9PN7X §B.5, amended 2026-11-03)", () => {
     expect(door.axis).toBe("y");
     expect(door.at).toEqual({ x: 290, y: 100 });
     expect(gapDoor(gap, true).sheet).toBe("door_y");
+  });
+});
+
+describe("doorHead (FS-9PN7X §B.5, amended 2026-11-03)", () => {
+  it("should close a town door gap over the door's lintel in the type's own wall, sorted like the door", () => {
+    const [gap] = doorGaps(TOWN_WALLS);
+    expect(doorHead(gap, TIMBER_WALLS)).toEqual({
+      sheet: "door_head_x",
+      axis: "x",
+      at: { x: gap.position.x + DOOR / 2, y: gap.position.y + THICK / 2 },
+      depthAt: gap.position,
+      rect: { x: gap.position.x, y: gap.position.y, width: DOOR, height: THICK },
+    });
+  });
+
+  it("should give a Spire room's gap the masonry head, on the gap's own axis", () => {
+    const gap = { houseId: "r", position: { x: 280, y: 75 }, width: THICK, height: DOOR };
+    expect(doorHead(gap, MASONRY_WALLS).sheet).toBe("tower_door_head_y");
+    expect(doorHead({ ...gap, width: DOOR, height: THICK }, MASONRY_WALLS).sheet).toBe("tower_door_head_x");
   });
 });

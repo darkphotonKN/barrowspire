@@ -2612,6 +2612,10 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     expect([frameOf(open), frameOf(shut)]).toEqual(["open", "unlocked"]);
     expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toEqual([open, shut]);
     expect(drawn(/dark/)).toHaveLength(0);
+    // each room's wall carried on over its door's lintel to the coping, open door or shut
+    const heads = drawn(/^tower_door_head_x$/);
+    expect(heads.filter((m) => m.shown !== false)).toHaveLength(2);
+    expect(heads.map((m) => m.args.slice(0, 2))).toEqual([open, shut].map((m) => m.args.slice(0, 2)));
 
     // the door shuts while the player is outside: still shown, its frame follows the state
     run.handleGameStateUpdate(rooms(false));
@@ -2650,6 +2654,8 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     expect(shown(own.shared)).toBe(true);
     expect(run.serverDoors.get("d1_1")!.sprite!.shown).toBe(true);
     expect(drawn(/dark/)).toHaveLength(0);
+    // the heads are the rooms' exteriors: none shows from inside
+    expect(hiddenAll(drawn(/^tower_door_head_/))).toBe(true);
     // everything outside the room hides: the other room's walls and cap too (owner's addition 1)
     expect(hiddenAll(caps)).toBe(true);
     expect(hiddenAll(exterior)).toBe(true);

@@ -2715,7 +2715,12 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(shown(drawn(stage, /^roof_gable_[xy]$/))).toBe(true);
       const doors = drawn(stage, /^door_x$/).filter((m) => m.visible);
       expect(doors).toHaveLength(BUILDINGS.length);
-      expect(doors.every((m) => frameOf(m) === "unlocked")).toBe(true);
+      // shut with no lock: a town door can't be acted on, so nothing amber on it
+      expect(doors.every((m) => frameOf(m) === "shut")).toBe(true);
+      // and the wall carried on over each door's lintel to the wall top: nothing of the room above it
+      const heads = drawn(stage, /^door_head_x$/).filter((m) => m.visible);
+      expect(heads).toHaveLength(BUILDINGS.length);
+      expect(heads.map((m) => m.args.slice(0, 2))).toEqual(doors.map((m) => m.args.slice(0, 2)));
       // no dark opening is drawn anywhere (amended 2026-11-03)
       expect(drawn(stage, /dark/)).toHaveLength(0);
       // nothing of the cut-away: its fronts and their low posts are hidden
@@ -2752,7 +2757,9 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         building(hub, id)[look].filter((m) => sheetOf(m) === "door_x");
       const [innShut] = doorOf("inn", "exterior");
       const [innOpen] = doorOf("inn", "interior");
-      expect(frameOf(innShut)).toBe("unlocked");
+      expect(frameOf(innShut)).toBe("shut");
+      const [innHead] = building(hub, "inn").exterior.filter((m) => sheetOf(m) === "door_head_x");
+      expect(innHead.visible).toBe(true);
       expect(frameOf(innOpen)).toBe("open");
       expect([innShut.visible, innOpen.visible]).toEqual([true, false]);
 
@@ -2760,6 +2767,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       for (const spot of [IN_INN_DOORWAY, IN_INN]) {
         standIn(spot);
         expect([innShut.visible, innOpen.visible]).toEqual([false, true]);
+        // the head is the exterior's: inside, the cut-away shows the open door alone
+        expect(innHead.visible).toBe(false);
         // the other buildings' doors are outside the Inn: hidden whole, shut or open
         expect(hiddenAll([...doorOf("store", "exterior"), ...doorOf("store", "interior")])).toBe(true);
         const open = drawn(stage, /^door_x$/).filter((m) => m.visible);
@@ -2769,7 +2778,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
       standIn(OUTDOORS);
       expect([innShut.visible, innOpen.visible]).toEqual([true, false]);
-      expect(drawn(stage, /^door_x$/).filter((m) => m.visible).every((m) => frameOf(m) === "unlocked")).toBe(true);
+      expect(drawn(stage, /^door_x$/).filter((m) => m.visible).every((m) => frameOf(m) === "shut")).toBe(true);
+      expect(innHead.visible).toBe(true);
     });
 
     it("should draw a building with no door gap closed, with no door (§B.5)", () => {

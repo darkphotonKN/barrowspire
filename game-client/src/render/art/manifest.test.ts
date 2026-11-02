@@ -362,7 +362,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
   it("carries every interactable state the scenes swap between", () => {
     const states = (name: string) => Object.keys(baked.sheets[name].animations);
     for (const axis of ["x", "y"]) {
-      expect(states(`door_${axis}`)).toEqual(["locked", "unlocked", "open"]);
+      // `shut`: a town gap's door, shut with no lock, since it can't be acted on (FS-9PN7X §B.5)
+      expect(states(`door_${axis}`)).toEqual(["locked", "unlocked", "open", "shut"]);
       expect(states(`escape_door_${axis}`)).toEqual([
         "locked",
         "unlocked",
@@ -1366,11 +1367,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
     /** Named for the ridge whose ends they close, as roof_ridge's animations. */
     const GABLES = AXES.map((a) => `roof_gable_${a}`);
+    /** The wall over a door's lintel, up to the wall top, per type (FS-9PN7X §F.4, amended). */
+    const HEADS = [...AXES.map((a) => `door_head_${a}`), ...AXES.map((a) => `tower_door_head_${a}`)];
     const BUILDING = [
       ...TIMBER,
       ...MASONRY,
       "tower_cap",
       ...GABLES,
+      ...HEADS,
     ];
     /** Screen px a sheet stands above its anchor. */
     const above = (s: Sheet) => s.anchor.y * s.frameHeight;
@@ -1393,6 +1397,17 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const [name, s] of Object.entries(baked.sheets) as [string, Sheet][])
         if (/^building-/.test(s.atlas)) expect(BUILDING, name).toContain(name);
     });
+
+    it.each(HEADS)(
+      "%s closes a door gap from the door's lintel to the wall top: as tall above the ground as a back wall, wider than one tile",
+      (name) => {
+        const s = sheet(name);
+        const back = sheet(`${name.startsWith("tower_") ? "tower_" : ""}wall_back_plain_${name.slice(-1)}`);
+        expect(Object.keys(s.animations)).toEqual(["default"]);
+        expect(Math.abs(above(s) - above(back))).toBeLessThanOrEqual(3);
+        expect(s.frameWidth).toBeGreaterThan(back.frameWidth);
+      },
+    );
 
     it("declares no light on any exterior piece, cap or gable: from outside, lights are off", () => {
       for (const name of BUILDING)
