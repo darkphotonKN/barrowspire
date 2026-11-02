@@ -382,6 +382,128 @@ describe("partyStore notices and the one clock (FS-R82NV R14, R31, R36)", () => 
   });
 });
 
+// FS-R82NV §Requirements R31a (amended 2026-11-02, Nick: "有人加入隊伍幫我顯示xxx加入隊伍的系統文字給所有成員").
+
+describe("partyStore join line (FS-R82NV R31a: every member is told who joined)", () => {
+  const rig = () => {
+    const said: { code: string; text: string }[] = [];
+    const store = createPartyStore({
+      selfId: () => ME,
+      say: (line) => said.push(line),
+    });
+    return { said, store };
+  };
+
+  it("should say '<name> joined the party.' when a teammate joins", () => {
+    const { said, store } = rig();
+    store
+      .getState()
+      .apply(update({ members: [member(ME, "Aldric")], subject_id: ME }));
+    said.length = 0;
+
+    store.getState().apply(update());
+
+    expect(said).toEqual([{ code: "joined", text: "Wren joined the party." }]);
+  });
+
+  it("should say 'You joined the party.' to the player who joined", () => {
+    const { said, store } = rig();
+
+    store.getState().apply(update({ leader_id: ALLY, subject_id: ME }));
+
+    expect(said).toEqual([{ code: "joined", text: "You joined the party." }]);
+  });
+
+  it("should say nothing when the player creates a party of one", () => {
+    const { said, store } = rig();
+
+    store
+      .getState()
+      .apply(update({ members: [member(ME, "Aldric")], subject_id: ME }));
+
+    expect(said).toEqual([]);
+  });
+
+  it("should say it once when the same join arrives again", () => {
+    const { said, store } = rig();
+    store
+      .getState()
+      .apply(update({ members: [member(ME, "Aldric")], subject_id: ME }));
+    said.length = 0;
+
+    store.getState().apply(update());
+    store.getState().apply(update());
+
+    expect(said).toEqual([{ code: "joined", text: "Wren joined the party." }]);
+  });
+
+  it("should say nothing for any other reason", () => {
+    const { said, store } = rig();
+    store
+      .getState()
+      .apply(update({ members: [member(ME, "Aldric")], subject_id: ME }));
+    said.length = 0;
+
+    store.getState().apply(update({ reason: "sync" }));
+
+    expect(said).toEqual([]);
+  });
+});
+
+// FS-R82NV §Requirements R31a (amended 2026-11-02, Nick: "離開時也顯示", "離開不用分是被踢還是自己離開").
+
+describe("partyStore leave line (FS-R82NV R31a: left and kicked read the same)", () => {
+  const rig = () => {
+    const said: { code: string; text: string }[] = [];
+    const store = createPartyStore({
+      selfId: () => ME,
+      say: (line) => said.push(line),
+    });
+    store.getState().apply(update({ reason: "sync" }));
+    return { said, store };
+  };
+  const without = (reason: string, subject: string) =>
+    update({
+      reason,
+      subject_id: subject,
+      members: [member(ME, "Aldric"), member(ALLY, "Wren")].filter(
+        (m) => m.player_id !== subject,
+      ),
+    });
+
+  it.each(["left", "kicked"])(
+    "should say '<name> left the party.' when a teammate is %s",
+    (reason) => {
+      const { said, store } = rig();
+
+      store.getState().apply(without(reason, ALLY));
+
+      expect(said).toEqual([{ code: "left", text: "Wren left the party." }]);
+    },
+  );
+
+  it.each(["left", "kicked"])(
+    "should say 'You left the party.' to the player who is %s",
+    (reason) => {
+      const { said, store } = rig();
+
+      store.getState().apply(without(reason, ME));
+
+      expect(said).toEqual([{ code: "left", text: "You left the party." }]);
+      expect(store.getState().party).toBeNull();
+    },
+  );
+
+  it("should say it once when the same leave arrives again", () => {
+    const { said, store } = rig();
+
+    store.getState().apply(without("left", ALLY));
+    store.getState().apply(without("left", ALLY));
+
+    expect(said).toEqual([{ code: "left", text: "Wren left the party." }]);
+  });
+});
+
 // FS-NCC9J §Requirements R21, R25–R27. I-NCC9J-7: open invites as reserved slots, each member's
 // online, the `sync` update, and the leader's expiry line.
 

@@ -174,6 +174,16 @@ slice as with chat); the client side is agent lane.
     party, or invite someone by name."
 31. Every `party_notice` shows as a system line in the chat window (FS-XGW7H's system-line
     shape, channel `party`), with the copy in the notice table (R36).
+31a. *(Amended 2026-11-02, Nick: "有人加入隊伍幫我顯示xxx加入隊伍的系統文字給所有成員")* When a
+    `party_update` with reason `joined` names a member this client did not already list, every
+    member's client writes a system line in the chat window, the same way as a notice: "<name>
+    joined the party." for a teammate, "You joined the party." for the joiner. A party of one just
+    created says nothing. Leaving likewise *(Nick: "離開時也顯示", "離開不用分是被踢還是自己離開")*:
+    reason `left` or `kicked`, read the same, "<name> left the party." for the rest, "You left the
+    party." for the one who went, the name taken from the party as the client last held it. A
+    repeated update says nothing twice. Best-effort: an update the server skips (stale, or the
+    runner behind) means no line for it, never a doubled one. Client-only: the server already sends these reasons with
+    the subject to every member on every pod (R21). New-leader lines (user story 20) are not built.
 
 ### Invite prompt (game-client)
 
