@@ -102,6 +102,7 @@ func main() {
 	grpcServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),
 			commoninterceptor.Status(slog.Default()),
 		),

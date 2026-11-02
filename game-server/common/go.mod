@@ -4,8 +4,10 @@ go 1.24.2
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.1
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.10.9
+	github.com/prometheus/client_golang v1.23.2
 	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/redis/go-redis/v9 v9.17.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0
@@ -16,6 +18,15 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.40.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
+)
+
+require (
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.66.1 // indirect
+	github.com/prometheus/procfs v0.16.1 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 )
 
 require (

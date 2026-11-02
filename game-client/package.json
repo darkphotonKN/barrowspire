@@ -6,6 +6,8 @@
     "dev": "next dev -p 3938",
     "dev:kind:a": "NEXT_DIST_DIR=.next-kind-a NEXT_PUBLIC_API_URL=http://localhost:7214 NEXT_PUBLIC_GAME_SERVER_ADDR=ws://localhost:5660/game/ws next dev -p 3940",
     "dev:kind:b": "NEXT_DIST_DIR=.next-kind-b NEXT_PUBLIC_API_URL=http://localhost:7214 NEXT_PUBLIC_GAME_SERVER_ADDR=ws://localhost:5661/game/ws next dev -p 3941",
+    "dev:gke:a": "NEXT_DIST_DIR=.next-gke-a NEXT_PUBLIC_API_URL=https://api.barrowspire.app NEXT_PUBLIC_GAME_SERVER_ADDR=wss://play.barrowspire.app/game/ws next dev -p 3942",
+    "dev:gke:b": "NEXT_DIST_DIR=.next-gke-b NEXT_PUBLIC_API_URL=https://api.barrowspire.app NEXT_PUBLIC_GAME_SERVER_ADDR=wss://play.barrowspire.app/game/ws next dev -p 3943",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

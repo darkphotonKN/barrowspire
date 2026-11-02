@@ -24,6 +24,12 @@ type OutboxEvent struct {
 	PublishedAt *time.Time `db:"published_at"`
 }
 
+// Backlog is what the worker has yet to publish.
+type Backlog struct {
+	Rows             int     `db:"unpublished"`
+	OldestAgeSeconds float64 `db:"oldest_age_seconds"`
+}
+
 // isp interface for all services
 type OutboxPublisher interface {
 	CreateOutbox(ctx context.Context, params OutboxParams) error

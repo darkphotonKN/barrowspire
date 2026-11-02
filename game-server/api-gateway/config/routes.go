@@ -18,6 +18,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/payment"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httpmetrics"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
 	"github.com/gin-contrib/cors"
@@ -76,6 +77,9 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 	// Recovery FIRST. Middleware registered before it panics outside its scope,
 	// and a panic in CORS or tracing would produce the empty 500 all over again.
 	router.Use(httperr.Recovery())
+
+	// after Recovery, so a panic unwinds past it uncounted: the 500 shows in logs, not here
+	router.Use(httpmetrics.Middleware())
 
 	// skip /healthz: LB probes it every few seconds; failures still show as an unhealthy LB backend and in `kubectl describe pod`
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/healthz"}}))

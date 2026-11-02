@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/stats-service/internal/stats"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -54,7 +55,7 @@ func SetupServices(db *sqlx.DB, amqpChannel, republishCh *amqp.Channel) (*grpc.S
 	}
 
 	// create gRPC server
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	// Register stats service with gRPC server
 	pb.RegisterStatsServiceServer(grpcServer, handler)

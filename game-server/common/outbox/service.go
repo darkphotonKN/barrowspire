@@ -22,6 +22,7 @@ type Repository interface {
 	CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params OutboxParams) error
 	GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error)
 	UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error
+	GetUnpublishedBacklog(ctx context.Context) (Backlog, error)
 }
 
 func (s *service) CreateOutbox(ctx context.Context, params OutboxParams) error {
@@ -38,4 +39,8 @@ func (s *service) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) err
 
 func (s *service) GetPendingOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error) {
 	return s.repo.GetUnpublishedOutboxItems(ctx, limit)
+}
+
+func (s *service) GetBacklog(ctx context.Context) (Backlog, error) {
+	return s.repo.GetUnpublishedBacklog(ctx)
 }

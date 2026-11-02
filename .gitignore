@@ -131,7 +131,7 @@ build/Release
 
 # Next.js build output
 .next/
-.next-kind-*/
+.next-*/
 out/
 
 # React build output

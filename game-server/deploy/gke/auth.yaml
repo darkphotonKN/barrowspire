@@ -20,7 +20,7 @@ spec:
         - name: auth
           # Which build of the code runs. KinD: the image you built and `kind load`ed.
           # GKE: registry path plus version tag. Changing it triggers a rolling update.
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/auth:4ca1793
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/auth:8ea4d787
           # The port net.Listen(":"+port) opens; must match GRPC_AUTH_ADDR in the ConfigMap.
           # The name lets other fields say `grpc` instead of repeating 7116.
           ports: [{ containerPort: 7116, name: grpc }]
@@ -34,7 +34,7 @@ spec:
           resources:
             # Reserved by the scheduler. On GKE Autopilot this is what you are billed for.
             # 100m = 0.1 CPU.
-            requests: { cpu: 100m, memory: 128Mi }
+            requests: { cpu: 50m, memory: 128Mi }
             # CPU over the limit: throttled (shows up as latency in traces).
             # Memory over the limit: killed instantly, no Go log. Look for
             # `OOMKilled` / exit code 137 in `kubectl describe pod`, and read
@@ -61,13 +61,15 @@ apiVersion: v1
 kind: Service
 # This name IS the DNS name: other services use AUTH_ADDR=auth:7116.
 # Renaming it breaks every caller.
-metadata: { name: auth }
+metadata: { name: auth, labels: { app: auth } }
 spec:
   # Which pods get traffic: same label as the Deployment's pods. The label is
   # the only link; the Service and Deployment never reference each other.
   selector: { app: auth }
   # port: what callers dial. targetPort: the container port (by name).
-  ports: [{ port: 7116, targetPort: grpc }]
+  ports:
+    - { name: grpc, port: 7116, targetPort: grpc }
+    - { name: metrics, port: 8194, targetPort: 8194 }
 
 ---
 apiVersion: v1

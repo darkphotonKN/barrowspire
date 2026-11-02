@@ -12,4 +12,4 @@ data:
   RABBITMQ_PORT: "5672"
   TEMPORAL_HOST_PORT: "quickstart-barrowspire-f2c20954.xjqvw.tmprl.cloud:7233"
   TEMPORAL_NAMESPACE: "quickstart-barrowspire-f2c20954.xjqvw"
-  GOMEMLIMIT: "230MiB"
+  GOMEMLIMIT: "115MiB"

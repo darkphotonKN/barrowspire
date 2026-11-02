@@ -74,6 +74,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *a
 	validate := commonauth.NewValidator([]byte(os.Getenv("JWT_SECRET")))
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),
 			commonauth.Auth(validate),
 		),

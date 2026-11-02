@@ -111,3 +111,22 @@ func (r *repo) GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*Ou
 
 	return outboxItem, nil
 }
+
+func (r *repo) GetUnpublishedBacklog(ctx context.Context) (Backlog, error) {
+	query := `
+	SELECT
+		COUNT(*) AS unpublished,
+		COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(created_at)), 0)::float8 AS oldest_age_seconds
+	FROM outbox
+	WHERE published_at IS NULL
+	`
+
+	var backlog Backlog
+	if err := r.db.GetContext(ctx, &backlog, query); err != nil {
+		slog.Error("Error occured when attempting to read the outbox backlog",
+			"err", err)
+		return Backlog{}, wrapDBErr("get unpublished backlog", err)
+	}
+
+	return backlog, nil
+}

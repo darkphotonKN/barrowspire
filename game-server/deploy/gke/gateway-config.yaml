@@ -8,6 +8,7 @@ data:
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   OTEL_ENABLED: "false"
+  GOMEMLIMIT: "115MiB"
   AUTH_ADDR: "auth-headless:7116"
   CHARACTER_ADDR: "character-headless:7123"
   ITEMS_ADDR: "items-headless:7126"
