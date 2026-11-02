@@ -645,7 +645,7 @@ func TestPartyCache_RefreshedEveryTenSeconds(t *testing.T) {
 
 // A pod shutting down dissolves nothing: a party outlives any pod. Its members
 // get no final update from it, and the party stays in Redis. FS-NCC9J Summary;
-// ADR-0036; I-NCC9J-1 D5.
+// ADR-0037; I-NCC9J-1 D5.
 func TestPartyShutdown_ThePartyLivesOn(t *testing.T) {
 	rig := newPartyRig(t)
 	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")

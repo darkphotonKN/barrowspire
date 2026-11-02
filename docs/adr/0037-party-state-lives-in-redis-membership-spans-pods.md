@@ -1,4 +1,4 @@
-# ADR-0036 — Party state lives in Redis and membership spans pods; joining is in place, travel to the leader is explicit
+# ADR-0037 — Party state lives in Redis and membership spans pods; joining is in place, travel to the leader is explicit
 
 Status: accepted
 Date: 2026-11-01

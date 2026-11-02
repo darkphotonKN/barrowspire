@@ -71,7 +71,7 @@ type partyKeeper interface {
 	// the registry's clock ticks, swept on this loop like everything else it holds
 	ticks() <-chan time.Time
 	tick(ctx context.Context)
-	// the registry stops taking actions as the pod goes; parties live on in Redis (ADR-0036)
+	// the registry stops taking actions as the pod goes; parties live on in Redis (ADR-0037)
 	close()
 	// letters from other pods, handled on the loop (R9)
 	letters() <-chan letter
@@ -920,7 +920,7 @@ func (h *messageHub) Run(ctx context.Context) {
 			h.party.receive(l)
 
 		// the pod is shutting down: the registry stops taking party actions, and the
-		// parties live on in Redis (ADR-0036). The loop keeps routing through the drain,
+		// parties live on in Redis (ADR-0037). The loop keeps routing through the drain,
 		// since the connections' readers still send to it and runs are still in play.
 		case <-shuttingDown:
 			h.party.close()

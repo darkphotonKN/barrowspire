@@ -138,7 +138,7 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// cannot hold up exit, then releases the downstream connections
 	shutdown := func() error {
 		// parties first: the hub's loop closes the registry, then unseats the presence index,
-		// while redis is still open (FS-NCC9J; parties themselves live on, ADR-0036)
+		// while redis is still open (FS-NCC9J; parties themselves live on, ADR-0037)
 		select {
 		case <-server.PartiesClosed():
 		case <-time.After(partiesCloseWait):

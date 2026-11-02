@@ -1030,7 +1030,7 @@ func (s *Server) SeatedPlayer(nameOrID string) (types.Player, bool) {
 }
 
 // PartiesClosed closes once the party registry has stopped taking actions, after ctx ends.
-// Nothing is dissolved: a party outlives any pod (FS-NCC9J, ADR-0036).
+// Nothing is dissolved: a party outlives any pod (FS-NCC9J, ADR-0037).
 func (s *Server) PartiesClosed() <-chan struct{} {
 	return s.parties.stopped()
 }

@@ -112,7 +112,7 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **System line** — a line the client or server emits that no player wrote ("that player is not
   online"). Not a channel; never filtered out.
 
-## Party terms (FS-R82NV; across pods FS-NCC9J, ADR-0036)
+## Party terms (FS-R82NV; across pods FS-NCC9J, ADR-0037)
 
 - **Party panel** — the carved panel **T** toggles: the members, the leader's crown, and the
   actions the player may use (create, invite, kick, transfer, leave). Not the frames.

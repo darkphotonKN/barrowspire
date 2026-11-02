@@ -1,4 +1,4 @@
-// Package partystore is a party's state in Redis (FS-NCC9J §Requirements 1–3, ADR-0036): the
+// Package partystore is a party's state in Redis (FS-NCC9J §Requirements 1–3, ADR-0037): the
 // party itself, its members in join order, its open invites, and each member's pointer to it. No
 // pod is a party's home; every pod reads and changes it here. Every change is one Lua script that
 // makes the final check and write, or returns a refusal instead of writing; who may act, and in

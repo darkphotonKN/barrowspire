@@ -258,7 +258,7 @@ The lost-letter MED: a removed player whose final letter is lost keeps the party
 long as they stay connected, because the re-read resyncs only the party's members and they are no
 longer one. pub/sub is at most once and an acknowledged transport would not close it either (a
 letter to the wrong pod, a publisher that dies between the script and the publish, a send to the
-socket that fails), so the repair is by state, not by redelivery, as ADR-0036 already says ("a
+socket that fails), so the repair is by state, not by redelivery, as ADR-0037 already says ("a
 periodic re-read corrects any missed letter"). The pod holding a player is the only one that can
 repair their screen: it holds their socket and re-reads their party anyway.
 

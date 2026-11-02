@@ -93,7 +93,7 @@ FS-NCC9J §Requirements R1–R4, R6, R8, R10, R12–R15, R22; §User Stories 5, 
 11. **Superseded tests changed** (FS-NCC9J replaces the FS-R82NV rule they asserted): invite from
     a field (R9), accept in a field / `locked` in a run (R14), create anywhere (R15), no expiry
     notice (R12), no `pod_full` at invite (R10, cross-pod test deleted), Redis key layout (R1),
-    shutdown keeps the party (ADR-0036).
+    shutdown keeps the party (ADR-0037).
 12. **Removed as dead:** `Server.InHub`, `Server.HubOccupancy` (only the registry used them).
 
 ## Acceptance-criteria walk (2026-11-01)
@@ -142,7 +142,7 @@ Standards and Spec axes, run by two independent reviewers on the uncommitted dif
 - **MED: the withdrawal's outcome was dropped and the cache changed before Redis confirmed.** The
   cache now follows what Redis did; a party a failed withdrawal leaves standing is shown to its
   leader after the `delivery_failed` notice. `TestPartyInvite_UndeliveredAndNotWithdrawn_PartyKept`.
-- **MED (language): "party pod"** (retired by ADR-0036) renamed `inviterPod`; the inbox letter field
+- **MED (language): "party pod"** (retired by ADR-0037) renamed `inviterPod`; the inbox letter field
   is now `inviter_pod_id`.
 
 ## Code review (2026-11-01): open

@@ -90,7 +90,7 @@ Also:
 
 ## Carried into FS-NCC9J (2026-11-01)
 
-ADR-0036 superseded ADR-0034 after this slice was built: party state moves to Redis and
+ADR-0037 superseded ADR-0034 after this slice was built: party state moves to Redis and
 membership spans pods. This slice is committed as is, on feat/party-formation, to carry into
 FS-NCC9J: the presence keeper (to widen to every connected player), the pod inbox, the ordered
 Redis writer, `partypresence` and `partypointer.PartyPodOf`. Its code review (2026-11-01) left

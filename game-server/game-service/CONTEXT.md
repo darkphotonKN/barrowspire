@@ -292,7 +292,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Host pod** — the pod a match's run lives on. Currently the pod of the first popped player.
   Every matched player ends the match connected to it, and returns to *its* HUB world. For a
   party entry the host pod is simply the **leader's pod**, since the whole party has travelled
-  there. (A party has no pod of its own: ADR-0036.)
+  there. (A party has no pod of its own: ADR-0037.)
 
 ### Matchmaking (FS-K2HKP)
 
@@ -327,13 +327,13 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   none left spawns the arrival elsewhere. ("Formation" here is spatial; it has nothing to do with
   *party formation* below, which is players grouping up.)
 
-### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R; ADR-0036)
+### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R; ADR-0037)
 
 Before these specs, "party" was loose prose for "the players in a run". It is now a thing with
 an id. Use **roster** or **the run's players** for the people a run seats; use **party** only
 for the group below. The two coincide inside an instance by rule, not by definition.
 
-ADR-0036 (superseding ADR-0034) moved the party off any one pod. Since I-NCC9J-1 a party's
+ADR-0037 (superseding ADR-0034) moved the party off any one pod. Since I-NCC9J-1 a party's
 state is in Redis (`internal/partystore`) and each pod keeps a **party cache**; the remaining
 FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 
@@ -350,7 +350,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Leader's pod** — the pod the leader is connected to *at the moment it is asked*: where a
   member's **travel** goes. It moves when the leader does. Not a home: the party's state is in
   Redis whoever leads and wherever.
-- **Party pod** — *retired by ADR-0036.* It meant the one pod a party lived on and every member
+- **Party pod** — *retired by ADR-0037.* It meant the one pod a party lived on and every member
   had to be connected to. There is no such pod now; say **leader's pod** for where travel goes,
   and **party cache** for a pod's copy of a party. (Still the right word when reading FS-R82NV's
   same-pod build.)
@@ -492,7 +492,7 @@ above; the rule is to qualify, never to rename.
   is a simulation, world chat crosses all of them. Always "world chat", never a bare "world".
 - **Party chat** — the chat channel whose audience is the members of one party (scope key = the
   party id), on any pod and in any world, the sender included. Members may be on different pods
-  (ADR-0036): the sender's pod reads the audience from its **party cache**, tells the members it
+  (ADR-0037): the sender's pod reads the audience from its **party cache**, tells the members it
   seats directly, finds the rest with one presence read, and sends each other pod holding any of
   them one **party chat letter** through its pod inbox; that pod hands the line to the players the
   letter names without consulting its own cache. It never touches the chat bus (FS-XGW7H). Always

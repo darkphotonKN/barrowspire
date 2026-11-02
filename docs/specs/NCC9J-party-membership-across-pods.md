@@ -1,6 +1,6 @@
 # FS-NCC9J: Party membership across pods
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Party membership across pods", "Player presence index across pods", "Travel to the party leader's village"; `game-client/SPECIFICATION.md` "### Party" → "Travel to the leader's village from the party frames" → this FS · Related ADRs: [ADR-0036](../adr/0036-party-state-lives-in-redis-membership-spans-pods.md) (party state in Redis, membership spans pods; supersedes [ADR-0034](../adr/0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md)), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (locked inside an instance), [ADR-0030](../adr/0030-field-worlds-are-per-replica-channels-entered-by-a-local-world-switch.md) (a field is never a handoff destination), [ADR-0033](../adr/0033-chat-is-never-stored-a-report-carries-its-own-evidence.md) (nothing stored) · Supersedes in [FS-R82NV](R82NV-party-formation.md): R2, R3, R4 (delivery wording), R7, R9's kind list, R11, R12 (order and `pod_full`), R14 (expiry notice), R16, R17, R18, R23, R24 and R33; its remaining requirements still hold except where this FS restates them · Builds on: FS-R82NV (same-pod party; its slice 3 presence keeper, pod inbox and ordered writer, commit 66d8ee4), [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (handoff, pod address, `pod:alive`), [FS-JEAVX](JEAVX-hub-shared-across-replicas.md) (hub occupancy cap) · Siblings: [FS-MCYWK](MCYWK-reconnect-to-the-holding-pod.md) (reconnect to the holding pod), [FS-BJNYC](BJNYC-party-instance-entry.md), [FS-XGW7H](XGW7H-party-chat.md), [FS-V780R](V780R-party-loot-rule.md), [FS-CH21F](CH21F-party-member-overhead-bars.md) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Party; [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Party terms
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Party" → "Party membership across pods", "Player presence index across pods", "Travel to the party leader's village"; `game-client/SPECIFICATION.md` "### Party" → "Travel to the leader's village from the party frames" → this FS · Related ADRs: [ADR-0037](../adr/0037-party-state-lives-in-redis-membership-spans-pods.md) (party state in Redis, membership spans pods; supersedes [ADR-0034](../adr/0034-a-party-lives-on-one-pod-joining-is-a-hub-handoff.md)), [ADR-0035](../adr/0035-a-party-is-the-universal-instance-roster-ephemeral-and-locked-inside.md) (locked inside an instance), [ADR-0030](../adr/0030-field-worlds-are-per-replica-channels-entered-by-a-local-world-switch.md) (a field is never a handoff destination), [ADR-0033](../adr/0033-chat-is-never-stored-a-report-carries-its-own-evidence.md) (nothing stored) · Supersedes in [FS-R82NV](R82NV-party-formation.md): R2, R3, R4 (delivery wording), R7, R9's kind list, R11, R12 (order and `pod_full`), R14 (expiry notice), R16, R17, R18, R23, R24 and R33; its remaining requirements still hold except where this FS restates them · Builds on: FS-R82NV (same-pod party; its slice 3 presence keeper, pod inbox and ordered writer, commit 66d8ee4), [FS-K2HKP](K2HKP-cross-replica-matchmaking-and-handoff.md) (handoff, pod address, `pod:alive`), [FS-JEAVX](JEAVX-hub-shared-across-replicas.md) (hub occupancy cap) · Siblings: [FS-MCYWK](MCYWK-reconnect-to-the-holding-pod.md) (reconnect to the holding pod), [FS-BJNYC](BJNYC-party-instance-entry.md), [FS-XGW7H](XGW7H-party-chat.md), [FS-V780R](V780R-party-loot-rule.md), [FS-CH21F](CH21F-party-member-overhead-bars.md) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Party; [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Party terms
 
 ## Summary
 
@@ -21,7 +21,7 @@ as with FS-R82NV); the client side is agent lane.
 
 ### Party state (game-service)
 
-1. **A party's state lives in Redis** (ADR-0036): its id, leader, members in join order (player
+1. **A party's state lives in Redis** (ADR-0037): its id, leader, members in join order (player
    id, character name, class, joined at), creation time, settings slot (FS-V780R), and its open
    invites. No pod is its home. Each member's pointer `player:<player_id>:party` → party id. A
    player is in at most one party. Nothing is stored in a database.
@@ -60,7 +60,7 @@ as with FS-R82NV); the client side is agent lane.
    entry is **offline**. *(Amended 2026-11-02, I-NCC9J-5; Nick: each hash also carries `pod_addr`,
    the holding pod's address, written with every seat, so a travel finds where to send a member
    (R18).)*
-8. **Redis HA.** Party mutations depend on Redis (ADR-0036). While Redis is unreachable every
+8. **Redis HA.** Party mutations depend on Redis (ADR-0037). While Redis is unreachable every
    mutation is refused with `party_notice` `unavailable`; reads keep working from the cache, and
    runs are unaffected.
 

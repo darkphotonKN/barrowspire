@@ -16,7 +16,7 @@ import (
 
 /**
 * The party registry: this pod's side of every party one of its players is in. A party's state
-* lives in Redis (FS-NCC9J R1, ADR-0036), not on any pod. The registry keeps the party cache (R4),
+* lives in Redis (FS-NCC9J R1, ADR-0037), not on any pod. The registry keeps the party cache (R4),
 * each party as Redis last answered, and makes every change as one script, run off the hub's loop
 * by one runner in the order asked, its outcome handed back to the loop. The loop never waits on Redis: who may act, and in what
 * order the refusals come, is checked on the loop against the cache; the script makes the final
@@ -173,7 +173,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 func (r *partyRegistry) start(ctx context.Context) { r.run.start(ctx) }
 
 // close stops the registry as the pod shuts down. Nothing is dissolved: a party outlives any pod
-// (ADR-0036); this pod's players simply stop being seated here, and their parties live on in Redis.
+// (ADR-0037); this pod's players simply stop being seated here, and their parties live on in Redis.
 func (r *partyRegistry) close() {
 	if r.closed {
 		return

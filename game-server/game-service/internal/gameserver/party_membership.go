@@ -9,7 +9,7 @@ import (
 
 /**
 * The party membership (FS-CH21F R5, R6): who is in which party, as this pod's party cache last held
-* it, for every world's serializer to read. The cache is the hub loop's alone (ADR-0036), while
+* it, for every world's serializer to read. The cache is the hub loop's alone (ADR-0037), while
 * each world serializes on its own goroutine, so the cache publishes a fresh map after every
 * change and never writes one it has published: a reader takes the pointer and reads without a
 * lock, and one broadcast reads it once for all its recipients.
