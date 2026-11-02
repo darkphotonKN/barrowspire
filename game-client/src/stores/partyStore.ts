@@ -71,6 +71,47 @@ function noAnswerLine(name: string): { code: string; text: string } {
   return { code: "no_answer", text: `No answer from ${name}.` };
 }
 
+/**
+ * The line every member's client writes when someone joins (FS-R82NV R31a): "<name> joined the
+ * party." for a teammate, "You joined the party." for the joiner. Nothing for a party of one just
+ * created, and nothing again for a join this client already saw (the subject was already a member).
+ */
+function joinLine(
+  update: PartyUpdatePayload,
+  prev: PartyUpdatePayload | null,
+  selfId: string | undefined,
+): { code: string; text: string } | null {
+  if (update.reason !== "joined") return null;
+  const joiner = update.members.find((m) => m.player_id === update.subject_id);
+  if (!joiner) return null;
+  if (prev?.members.some((m) => m.player_id === joiner.player_id)) return null;
+  if (joiner.player_id === selfId)
+    return update.members.length > 1
+      ? { code: "joined", text: "You joined the party." }
+      : null;
+  return { code: "joined", text: `${joiner.name} joined the party.` };
+}
+
+/**
+ * The line every member's client writes when someone leaves (FS-R82NV R31a): left and kicked read
+ * the same (Nick), "<name> left the party." for a teammate, "You left the party." for the one who
+ * went. The name comes from the party as this client last held it, since the update no longer
+ * lists them; a leave this client already saw (the subject was not a member) says nothing.
+ */
+function leaveLine(
+  update: PartyUpdatePayload,
+  prev: PartyUpdatePayload | null,
+  selfId: string | undefined,
+): { code: string; text: string } | null {
+  if (update.reason !== "left" && update.reason !== "kicked") return null;
+  const leaver = prev?.members.find((m) => m.player_id === update.subject_id);
+  if (!leaver) return null;
+  if (update.members.some((m) => m.player_id === leaver.player_id)) return null;
+  return leaver.player_id === selfId
+    ? { code: "left", text: "You left the party." }
+    : { code: "left", text: `${leaver.name} left the party.` };
+}
+
 /** One open invite, told apart from a later invite to the same name by its expiry. */
 const slotKey = (slot: ReservedSlot) => `${slot.name}\u0000${slot.expires_at}`;
 
@@ -466,6 +507,9 @@ export function createPartyStore({
     invites: [],
     apply: (update) => {
       const me = selfId();
+      const prev = get().party;
+      const leaving = leaveLine(update, prev, me);
+      if (leaving) say(leaving);
       const stillIn =
         update.reason !== "dissolved" &&
         update.members.some((m) => m.player_id === me);
@@ -478,7 +522,6 @@ export function createPartyStore({
       // said here when the update outran this client's own tick (R27)
       const kept = new Set(reservedSlots(update).map(slotKey));
       const joined = new Set(update.members.map((m) => m.name));
-      const prev = get().party;
       const dropped = prev
         ? reservedSlots(prev).filter(
             (s) => !kept.has(slotKey(s)) && !joined.has(s.name),
@@ -486,6 +529,8 @@ export function createPartyStore({
         : [];
       announce(dropped, update);
       announced = new Set([...announced].filter((k) => kept.has(k)));
+      const line = joinLine(update, prev, me);
+      if (line) say(line);
       // a member answers no more invites: joining one party closes every prompt (R32)
       set({ party: update, invites: [] });
     },
