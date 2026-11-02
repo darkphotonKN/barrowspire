@@ -1,8 +1,10 @@
 /**
  * The ready-check popup (FS-BJNYC R23–R26): when the leader chooses Enter as a party, every member,
  * the leader included, sees the same carved popup at the top centre: "<leader> would enter the
- * Spire. Are you ready?", one row per member with a tick box and their state, and a countdown in
- * whole seconds from the server's `expires_in_ms`. The leader's row is ticked from the moment it
+ * Spire. Are you ready?", one row per member with a tick box and their state, and the shared
+ * countdown (FS-B3NDZ): the whole seconds from the server's `expires_in_ms` above a bar along the
+ * popup's foot that drains every frame over the check's first window. The leader's row is ticked
+ * from the moment it
  * opens. A member still waiting has **Decline** and **Accept**; once they press one, the answer
  * stands in the buttons' place. The leader's popup is status only.
  *
@@ -26,6 +28,11 @@ import {
 import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
+import {
+  COUNTDOWN_SECONDS_PX,
+  countdownSecondsText,
+  drawCountdownBar,
+} from "./countdownBar";
 import { partyCommands, type PartyCommands } from "./partyCommands";
 import type { Rect } from "./partyPanelLayout";
 import {
@@ -33,7 +40,6 @@ import {
   READY_STATE_LABEL,
   readyCheckFrame,
   readyCheckView,
-  readyCountdownText,
 } from "./partyReadyCheckLayout";
 
 export interface PartyReadyCheckDeps {
@@ -80,6 +86,8 @@ const style = (colour: number, px = FONT_PX) => ({
 
 export class PartyReadyCheck {
   private graphics?: Phaser.GameObjects.Graphics;
+  /** The countdown bar's own layer, redrawn every frame (FS-B3NDZ R4), and where it lies. */
+  private bar?: { graphics: Phaser.GameObjects.Graphics; rect: Rect };
   private texts: Phaser.GameObjects.Text[] = [];
   /** What the last draw showed: hidden or not, and the check's id and seconds. */
   private drawn = "";
@@ -94,10 +102,10 @@ export class PartyReadyCheck {
         state.readyCheck !== prev.readyCheck ||
         state.panelOpen !== prev.panelOpen
       )
-        this.draw(true);
+        this.render(true);
     });
     scene.events.on("postupdate", this.tick, this);
-    this.draw(true);
+    this.render(true);
   }
 
   /** Whether the popup is on screen now. */
@@ -111,9 +119,22 @@ export class PartyReadyCheck {
     this.clear();
   }
 
-  /** Once a frame: redraws when a second ticks or an overlay comes or goes. */
+  /** Once a frame: the bar drains, and the rest redraws when a second ticks or an overlay comes or goes. */
   private tick(): void {
-    this.draw(false);
+    this.render(false);
+  }
+
+  private render(force: boolean): void {
+    this.draw(force);
+    this.drainBar();
+  }
+
+  /** The countdown bar at what is left of the check's first window, now (FS-B3NDZ R3, R6). */
+  private drainBar(): void {
+    const { readyCheck: check, readyFraction } = this.deps.store.getState();
+    if (!this.bar || !check) return;
+    this.bar.graphics.clear();
+    drawCountdownBar(this.bar.graphics, this.bar.rect, readyFraction(check));
   }
 
   private answer(check: OpenReadyCheck, accept: boolean): void {
@@ -126,6 +147,8 @@ export class PartyReadyCheck {
     this.texts = [];
     this.graphics?.destroy();
     this.graphics = undefined;
+    this.bar?.graphics.destroy();
+    this.bar = undefined;
   }
 
   private text(
@@ -212,6 +235,13 @@ export class PartyReadyCheck {
       .setDepth(POPUP_DEPTH);
     this.graphics = g;
     carvedPanel(g, f.panel.x, f.panel.y, f.panel.width, f.panel.height);
+    this.bar = {
+      graphics: this.scene.add
+        .graphics()
+        .setScrollFactor(0)
+        .setDepth(POPUP_DEPTH),
+      rect: f.bar,
+    };
     this.text(
       f.question.x,
       f.question.y,
@@ -232,13 +262,14 @@ export class PartyReadyCheck {
         SMALL_PX,
       ).setOrigin(1, 0);
     });
+    // the shared countdown's seconds, in the row just above the bar (FS-B3NDZ R8, R9)
     this.text(
       f.countdown.x,
-      f.countdown.y + 3,
-      readyCountdownText(seconds),
-      palette.hudLabel,
-      SMALL_PX,
-    );
+      f.countdown.y + f.countdown.height / 2,
+      countdownSecondsText(seconds),
+      palette.hudText,
+      COUNTDOWN_SECONDS_PX,
+    ).setOrigin(0, 0.5);
     if (view.buttons) {
       // arcane for the way out, amber for the thing to do (design guideline, Gameplay accent)
       this.button(g, f.decline, READY_LABEL.decline, palette.safe, () =>

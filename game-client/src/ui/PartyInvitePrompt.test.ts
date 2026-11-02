@@ -7,6 +7,7 @@ import {
   type PartyInvitePayload,
   type PartyUpdatePayload,
 } from "@/stores/partyStore";
+import { palette } from "@/utils/canvasPalette";
 import { PartyInvitePrompt } from "./PartyInvitePrompt";
 import { invitePromptFrames } from "./partyInvitePromptLayout";
 
@@ -19,33 +20,58 @@ interface FakeText {
   destroyed: boolean;
   interactive: boolean;
   alpha: number;
+  fontSize?: string;
   onPress?: () => void;
+}
+
+/** A plain rectangle a fake graphics filled, in the colour it was filled with. */
+interface FakeFill {
+  colour: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  const drawn: { fills: FakeFill[]; destroyed: boolean }[] = [];
   const graphics = () => {
+    const rec = { fills: [] as FakeFill[], destroyed: false };
+    drawn.push(rec);
+    let colour = 0;
     const self: Record<string, unknown> = {};
     for (const m of [
       "setScrollFactor",
       "setDepth",
-      "fillStyle",
       "lineStyle",
       "fillRoundedRect",
       "strokeRoundedRect",
+      "strokeRect",
       "lineBetween",
       "fillCircle",
     ])
       self[m] = () => self;
-    self.destroy = () => undefined;
+    self.fillStyle = (c: number) => ((colour = c), self);
+    self.fillRect = (x: number, y: number, width: number, height: number) => (
+      rec.fills.push({ colour, x, y, width, height }), self
+    );
+    self.clear = () => ((rec.fills = []), self);
+    self.destroy = () => void (rec.destroyed = true);
     return self;
   };
-  const text = (_x: number, _y: number, content: string) => {
+  const text = (
+    _x: number,
+    _y: number,
+    content: string,
+    style?: { fontSize?: string },
+  ) => {
     const t: FakeText = {
       content,
       destroyed: false,
       interactive: false,
       alpha: 1,
+      fontSize: style?.fontSize,
     };
     texts.push(t);
     const self: Record<string, unknown> = {
@@ -71,7 +97,15 @@ function fakeScene() {
   const live = () => texts.filter((t) => !t.destroyed);
   const find = (content: string) => live().find((t) => t.content === content);
   const all = (content: string) => live().filter((t) => t.content === content);
-  return { scene, events, live, find, all };
+  const fills = (colour: number) =>
+    drawn
+      .filter((g) => !g.destroyed)
+      .flatMap((g) => g.fills)
+      .filter((f) => f.colour === colour);
+  /** The countdown bars' fills and tracks on live graphics (FS-B3NDZ R5). */
+  const barFills = () => fills(palette.xpFill);
+  const barTracks = () => fills(palette.xpTrack);
+  return { scene, events, texts, live, find, all, barFills, barTracks };
 }
 
 const ME = "me";
@@ -335,5 +369,59 @@ describe("PartyInvitePrompt (FS-NCC9J R24: in every world)", () => {
     env.find("Decline")!.onPress?.();
     expect(env.prompt.shown()).toBe(1);
     expect(env.find("Osric invites you to their party (3/4)")).toBeDefined();
+  });
+});
+
+// FS-B3NDZ §Requirements 1–9, 11. I-B3NDZ-1: each prompt's countdown as the shared bar.
+describe("PartyInvitePrompt countdown bar (FS-B3NDZ R1–R9, R11)", () => {
+  const framesOf = (count: number) =>
+    invitePromptFrames(count, { canvasWidth: 1080, panelOpen: false });
+
+  it("should draw a full bar along the prompt's foot, edge to edge, in the XP bar's colours", () => {
+    const env = setup();
+    env.store.getState().receiveInvite(invite("a"));
+    const [{ bar }] = framesOf(1);
+    expect(env.barTracks()).toEqual([{ colour: palette.xpTrack, ...bar }]);
+    expect(env.barFills()).toEqual([{ colour: palette.xpFill, ...bar }]);
+  });
+
+  it("should show the seconds at 18 px", () => {
+    const env = setup();
+    env.store.getState().receiveInvite(invite("a"));
+    expect(env.find("60s")?.fontSize).toBe("18px");
+  });
+
+  it("should drain each bar from the right over its own invite's window, every frame", () => {
+    const env = setup();
+    env.store.getState().receiveInvite(invite("a"));
+    env.clock.now = 15_000;
+    env.store.getState().receiveInvite(invite("b"));
+    env.clock.now = 30_000;
+    env.frame();
+    const [first, second] = framesOf(2);
+    const [a, b] = env.barFills();
+    expect(a.x).toBe(first.bar.x);
+    expect(a.width).toBeCloseTo(first.bar.width * 0.5);
+    expect(b.x).toBe(second.bar.x);
+    expect(b.width).toBeCloseTo(second.bar.width * 0.75);
+  });
+
+  it("should leave the texts alone between second ticks", () => {
+    const env = setup();
+    env.store.getState().receiveInvite(invite("a"));
+    const made = env.texts.length;
+    env.clock.now = 200;
+    env.frame();
+    env.clock.now = 400;
+    env.frame();
+    expect(env.texts.length).toBe(made);
+    expect(env.barFills()[0].width).toBeLessThan(framesOf(1)[0].bar.width);
+  });
+
+  it("should draw no bar while hidden", () => {
+    const env = setup({ hidden: true });
+    env.store.getState().receiveInvite(invite("a"));
+    env.frame();
+    expect(env.barTracks()).toEqual([]);
   });
 });

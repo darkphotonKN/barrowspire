@@ -2,6 +2,7 @@ import { createStore, type StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
 import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
+import { countdownFraction } from "@/utils/countdown";
 import { partyNoticeText, readyCheckCancelText } from "@/ui/partyNotice";
 
 /**
@@ -120,6 +121,14 @@ export function inviteSecondsLeft(invite: PendingInvite, now: number): number {
   );
 }
 
+/** How full the prompt's countdown bar is: what is left of the invite's own window (FS-B3NDZ R6). */
+export function inviteFraction(invite: PendingInvite, now: number): number {
+  return countdownFraction(
+    invite.received_at + INVITE_TTL_MS - now,
+    INVITE_TTL_MS,
+  );
+}
+
 /** One member's answer on a ready check (FS-BJNYC R8). */
 export type ReadyCheckState = "waiting" | "accepted" | "declined";
 
@@ -153,6 +162,11 @@ export interface PartyReadyCheckPayload {
 export interface OpenReadyCheck extends PartyReadyCheckPayload {
   /** Epoch ms on this client's clock, when the newest message for this check came. */
   received_at: number;
+  /**
+   * The window the check began with: the first `expires_in_ms` this client held for this
+   * `check_id`, kept across its later messages. The countdown bar drains over it (FS-B3NDZ R6).
+   */
+  total_ms: number;
   /** The answer this player sent, null before: the buttons give way before the server's next message. */
   answer: Exclude<ReadyCheckState, "waiting"> | null;
 }
@@ -165,6 +179,14 @@ export function readyCheckSecondsLeft(
   return Math.max(
     0,
     Math.ceil((check.received_at + check.expires_in_ms - now) / 1000),
+  );
+}
+
+/** How full the popup's countdown bar is: what is left over the window the check began with (FS-B3NDZ R6). */
+export function readyCheckFraction(check: OpenReadyCheck, now: number): number {
+  return countdownFraction(
+    check.received_at + check.expires_in_ms - now,
+    check.total_ms,
   );
 }
 
@@ -375,6 +397,8 @@ export interface PartyState {
   expireInvites: () => void;
   /** Whole seconds left on an invite's countdown, by the store's own clock: the one clock (R14). */
   secondsLeft: (invite: PendingInvite) => number;
+  /** How full an invite's countdown bar is now, 1 to 0, by the store's own clock (FS-B3NDZ R6). */
+  inviteFraction: (invite: PendingInvite) => number;
   /**
    * On the leader's client, says "No answer from <name>." once for each open invite whose
    * `expires_at` has passed on the store's clock (FS-NCC9J R27). Called every frame.
@@ -400,6 +424,8 @@ export interface PartyState {
   answerReadyCheck: (checkId: string, accept: boolean) => void;
   /** Whole seconds left on the held check's countdown, by the store's own clock. */
   readySecondsLeft: (check: OpenReadyCheck) => number;
+  /** How full the held check's countdown bar is now, 1 to 0, by the store's own clock (FS-B3NDZ R6). */
+  readyFraction: (check: OpenReadyCheck) => number;
   togglePanel: () => void;
 }
 
@@ -484,6 +510,7 @@ export function createPartyStore({
         return live.length === state.invites.length ? state : { invites: live };
       }),
     secondsLeft: (invite) => inviteSecondsLeft(invite, now()),
+    inviteFraction: (invite) => inviteFraction(invite, now()),
     receiveNotice: (notice) => {
       // a code with no copy says nothing
       const text = partyNoticeText(notice);
@@ -493,8 +520,16 @@ export function createPartyStore({
     receiveReadyCheck: (check) => {
       if (check.outcome === "open") {
         const held = get().readyCheck;
-        const answer = held?.check_id === check.check_id ? held.answer : null;
-        set({ readyCheck: { ...check, received_at: now(), answer } });
+        const same = held?.check_id === check.check_id;
+        // the bar drains over the window the check began with, not each message's (FS-B3NDZ R6)
+        set({
+          readyCheck: {
+            ...check,
+            received_at: now(),
+            total_ms: same ? held.total_ms : check.expires_in_ms,
+            answer: same ? held.answer : null,
+          },
+        });
         return;
       }
       // a party holds one check at a time (R12): any close is the end of the one held
@@ -515,6 +550,7 @@ export function createPartyStore({
           : state,
       ),
     readySecondsLeft: (check) => readyCheckSecondsLeft(check, now()),
+    readyFraction: (check) => readyCheckFraction(check, now()),
     togglePanel: () => set((state) => ({ panelOpen: !state.panelOpen })),
   }));
 }

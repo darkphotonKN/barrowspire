@@ -5,7 +5,9 @@ import {
   createPartyStore,
   type PartyReadyCheckPayload,
 } from "@/stores/partyStore";
+import { palette } from "@/utils/canvasPalette";
 import { PartyReadyCheck } from "./PartyReadyCheck";
+import { readyCheckFrame } from "./partyReadyCheckLayout";
 
 // FS-BJNYC §Requirements R23–R26. I-BJNYC-5: the ready-check popup as a scene draws it, on a
 // recording stand-in for the Phaser scene.
@@ -14,17 +16,35 @@ interface FakeText {
   content: string;
   destroyed: boolean;
   interactive: boolean;
+  fontSize?: string;
   onPress?: () => void;
+}
+
+/** A plain rectangle a fake graphics filled, in the colour it was filled with. */
+interface FakeFill {
+  colour: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface FakeGraphics {
+  fills: FakeFill[];
+  destroyed: boolean;
 }
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  const drawn: FakeGraphics[] = [];
   const graphics = () => {
+    const rec: FakeGraphics = { fills: [], destroyed: false };
+    drawn.push(rec);
+    let colour = 0;
     const self: Record<string, unknown> = {};
     for (const m of [
       "setScrollFactor",
       "setDepth",
-      "fillStyle",
       "lineStyle",
       "fillRoundedRect",
       "strokeRoundedRect",
@@ -33,11 +53,26 @@ function fakeScene() {
       "fillCircle",
     ])
       self[m] = () => self;
-    self.destroy = () => undefined;
+    self.fillStyle = (c: number) => ((colour = c), self);
+    self.fillRect = (x: number, y: number, width: number, height: number) => (
+      rec.fills.push({ colour, x, y, width, height }), self
+    );
+    self.clear = () => ((rec.fills = []), self);
+    self.destroy = () => void (rec.destroyed = true);
     return self;
   };
-  const text = (_x: number, _y: number, content: string) => {
-    const t: FakeText = { content, destroyed: false, interactive: false };
+  const text = (
+    _x: number,
+    _y: number,
+    content: string,
+    style?: { fontSize?: string },
+  ) => {
+    const t: FakeText = {
+      content,
+      destroyed: false,
+      interactive: false,
+      fontSize: style?.fontSize,
+    };
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
@@ -61,7 +96,19 @@ function fakeScene() {
   } as unknown as Phaser.Scene;
   const live = () => texts.filter((t) => !t.destroyed);
   const find = (content: string) => live().find((t) => t.content === content);
-  return { scene, events, live, find };
+  /** The bright-brass fills on live graphics: the countdown bar's fill (FS-B3NDZ R5). */
+  const barFills = () =>
+    drawn
+      .filter((g) => !g.destroyed)
+      .flatMap((g) => g.fills)
+      .filter((f) => f.colour === palette.xpFill);
+  /** The charcoal fills on live graphics: the countdown bar's track. */
+  const barTracks = () =>
+    drawn
+      .filter((g) => !g.destroyed)
+      .flatMap((g) => g.fills)
+      .filter((f) => f.colour === palette.xpTrack);
+  return { scene, events, texts, live, find, barFills, barTracks };
 }
 
 const LEADER = "leader";
@@ -259,5 +306,82 @@ describe("PartyReadyCheck live and close (FS-BJNYC R25, R26)", () => {
     env.receive();
     env.frame();
     expect(env.live()).toHaveLength(0);
+  });
+});
+
+// FS-B3NDZ §Requirements 1–10. I-B3NDZ-1: the popup's countdown as the shared bar.
+describe("PartyReadyCheck countdown bar (FS-B3NDZ R1–R10)", () => {
+  const frameOf = (rows = 3) =>
+    readyCheckFrame(rows, { canvasWidth: 1080, panelOpen: false });
+
+  it("should draw a full bar along the popup's foot, edge to edge, in the XP bar's colours", () => {
+    const env = setup();
+    env.receive();
+    const { bar } = frameOf();
+    expect(env.barTracks()).toEqual([{ colour: palette.xpTrack, ...bar }]);
+    expect(env.barFills()).toEqual([{ colour: palette.xpFill, ...bar }]);
+  });
+
+  it("should show the seconds at 18 px", () => {
+    const env = setup();
+    env.receive();
+    expect(env.find("30s")?.fontSize).toBe("18px");
+  });
+
+  it("should drain the bar from the right every frame, its left end anchored", () => {
+    const env = setup();
+    env.receive();
+    const { bar } = frameOf();
+    env.clock.now = 300;
+    env.frame();
+    const [early] = env.barFills();
+    expect(early.x).toBe(bar.x);
+    expect(early.width).toBeCloseTo(bar.width * 0.99);
+    env.clock.now = 15_000;
+    env.frame();
+    const [half] = env.barFills();
+    expect(half.x).toBe(bar.x);
+    expect(half.width).toBeCloseTo(bar.width / 2);
+  });
+
+  it("should leave the texts alone between second ticks", () => {
+    const env = setup();
+    env.receive();
+    const made = env.texts.length;
+    env.clock.now = 300;
+    env.frame();
+    env.clock.now = 600;
+    env.frame();
+    expect(env.texts.length).toBe(made);
+    expect(env.barFills()).toHaveLength(1);
+  });
+
+  it("should drain over the window the check began with, not each message's", () => {
+    const env = setup();
+    env.receive({ expires_in_ms: 30_000 });
+    env.clock.now = 6_000;
+    env.receive({ expires_in_ms: 24_000 });
+    env.frame();
+    const { bar } = frameOf();
+    expect(env.barFills()[0].width).toBeCloseTo(bar.width * 0.8);
+  });
+
+  it("should draw the bar on the leader's status-only popup too", () => {
+    const env = setup(LEADER);
+    env.receive();
+    expect(env.barFills()).toHaveLength(1);
+  });
+
+  it("should draw no bar while hidden or once the check closes", () => {
+    const env = setup(WREN, { hidden: true });
+    env.receive();
+    env.frame();
+    expect(env.barTracks()).toEqual([]);
+    env.state.hidden = false;
+    env.frame();
+    expect(env.barTracks()).toHaveLength(1);
+    env.receive({ outcome: "started" });
+    env.frame();
+    expect(env.barTracks()).toEqual([]);
   });
 });
