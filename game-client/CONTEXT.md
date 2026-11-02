@@ -74,7 +74,7 @@ translation belongs to the surface that renders words.
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 
-## Chat terms (FS-WJGFJ; world chat FS-5SH4G; whisper FS-KCQ06; mute and report FS-4HEG7)
+## Chat terms (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
 
 What the chat window says. Each maps to a game-service chat channel type on the wire; the
 protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
@@ -92,10 +92,13 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **Channel** (on screen) — the kind of talk a line belongs to, told apart by colour, not by tab:
   **Area**, **World**, **Party**, **Whisper**, **Trade**. In client code this is the chat channel
   type; the client has no field-channel concept, so the bare word is safe *here* and only here.
-  Party and Trade exist as filters and colours before they can carry a message.
+  Trade exists as a filter and a colour before it can carry a message.
 - **Area** — the people on the same server as you, wherever they stand: town, a field, or inside
   the Spire (ADR-0032). The window does not say where you are (FS-WJGFJ Amendment 2026-10-31).
 - **World** — everyone online, across every server.
+- **Party** — the members of your party, wherever each is: any server, town, a field or the Spire.
+  Always pickable, party or not; a line sent with no party answers with one system line ("You
+  are not in a party."). The client never checks the party itself (FS-XGW7H).
 - **Whisper** — a private line to one named player, sent as `@name message`; clicking a sender's
   name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
 - **Recall** — ArrowUp and ArrowDown in the open input walk back and forth through the player's
