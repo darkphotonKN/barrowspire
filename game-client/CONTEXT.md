@@ -71,6 +71,12 @@ translation belongs to the surface that renders words.
 - **Lich Lord** — the ruling antagonist of the Spire. Named sparingly; dread over exposition.
 - **Relic** / **plunder** — what a player carries out. `items` on the wire, item cards in the
   marketplace.
+- **Settlement record** — the panel that opens when the player resolves (escapes or dies): what
+  they carried out (finds marked), what they lost ("Kept by the barrow" for unsafe finds, "Used
+  up" for what they drank), experience and level, kills and time, and a status line,
+  **Settling…** until items-service confirms, then **Settled**. Toggled by the **Settlement**
+  button; while open it holds the return to the town; gone once they leave the tower. It replaces
+  the result card: never say "result card". (FS-GV8WN R19–R24)
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
 

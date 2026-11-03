@@ -309,6 +309,11 @@ for tests only). Client slices are agent lane.
   of a live run. This is closed by the FS-MCYWK dependency. Until then it is a known gap, the same
   as today.
 
+- An escaped player whose drop cannot be their leave (the hub is missing) is held, and past their
+  grace kept in the run until it ends, as a dead player is (FS-QPDKN R26). They were settled at
+  their escape, so only where they reconnect is at stake: back into the run. *(Added 2026-11-04,
+  I-GV8WN-7 code review.)*
+
 **Run end**
 - Every member already settled: the run's end writes only the sweep.
 - The run ends with someone still in play (server-side end): they are settled at the end from

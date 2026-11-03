@@ -252,13 +252,42 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   delver escapes. Unsafe follows the item, not the slot: equipping it keeps it unsafe. A dead
   delver's unsafe finds are lost, whether they leave early or wait for the run's end. Field
   death costs nothing, so field finds are never lost (FS-18Z5F).
-- **Released escapee** — an escaped delver who can no longer come back (grace run out, or a
-  normal close). The run keeps their body and settles it at its end, but their record no longer
-  names the run. Not a leave: an escaped delver can't leave on their own (FS-QPDKN R29).
-- **Settling** — a released escapee whose run has not settled yet, marked in Redis
-  (`settling:<playerID>`). A settling player can't enter any world that takes their gear (queue,
-  solo, party entry, field), so the plunder settlement puts in their bag can't collide with a
-  checkout (FS-QPDKN R32–R36).
+- ~~**Released escapee**~~ — retired 2026-11-04 (FS-GV8WN R17). An escaped delver now settles at
+  their escape and may leave like a dead one; nobody is released.
+- ~~**Settling**~~ — retired 2026-11-04 (FS-GV8WN R17). The Redis mark and its entry refusals are
+  gone. In game-client, "Settling…" is only the settlement record's status line.
+
+### Settlement (FS-GV8WN, ADR-0040)
+
+- **Resolve** — a member leaving active play: escaping, dying (by choice too, or left behind on a
+  floor below, which only a dead body can be), or being removed while in play once their grace
+  runs out. A **resolved** member is out of play, whether or not they are settled yet. Always
+  "resolved member" or "resolved delver": a **resolved cast** (Classes and abilities) is another
+  thing.
+- **Settlement** — the one write that brings a member's run home: their worn and carried items
+  (a death keeps only safe items), the stored items they used up, their experience. Each member
+  is settled exactly once: by **their own settlement** the moment they resolve (a pair carrying
+  only them, items.extracted partial), or by the run's end for whoever was never settled. Code:
+  `settleEscape`, `settleDeath`, `RawSettlement`, `PublishSettlement`. Not the marketplace's
+  settlement (a listing's saga).
+- **Settled member** — one whose settlement is written or under way (`Session.settled`). Resolved
+  but not settled happens only when their body could not be snapshotted; the run's end then
+  settles them. The run's end names the settled (`settled_member_ids`) so its release skips them.
+- **Pending settlement** — a formatted settlement the **settlement writer** holds until its
+  outbox write commits, retried with jittered backoff (FS-GV8WN R8).
+- **Settlement writer** — the pod's holder of pending settlements (`settlementWriter`), not a
+  session: a session is torn down as usual while its settlements are still pending. Once the pod
+  drains, it refuses new ones.
+- **Sweep** — the run's end when every member was already settled: an items.extracted with no
+  players, naming the settled, and no match.ended (a sweep is no match result). It releases
+  orphans, such as gear checked out for a member never seated.
+- **Rollback** — what a pod dying before a member's settlement commits means for them: brought-in
+  gear back as it was (reclaimed at their next checkout), finds lost, what they used up undone, no
+  experience. Nothing runs to make it happen; it is what is left. Say "rollback", never
+  "compensation" (that is the marketplace saga's).
+- **Kept member** — a resolved member whose drop could not be their leave (no hub to go to) and
+  whose grace ran out: kept, body and record, until their run ends (`keptUntilRunEnd`), and back
+  into the run if they reconnect before. Already settled; kept only for where they land.
 
 ### Containers (FS-4R9M9, FS-1D6BX)
 
