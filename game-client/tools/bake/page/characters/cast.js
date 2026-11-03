@@ -21,10 +21,10 @@ import {
   boots,
   cloak,
   cloakBones,
+  cowl,
   hair,
   hands,
   head,
-  hood,
   legs,
   neck,
   overTorso,
@@ -130,7 +130,8 @@ export function archer() {
   hands(rig, F.leather);
   boots(rig, F.leather, { top: 0.21 });
   head(rig, F.skin);
-  hood(rig, F.ranger);
+  // a deep cowl over a shadowed face, its crown drawn back into a long, full point that droops
+  cowl(rig, F.ranger, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], F.leatherDark);
   skirt(rig, F.leatherLight, { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094], legFollow: 0.7, panels: true, panelWeight: 0.3 });
   belt(rig, F.leatherDark, M.brass, { pouch: true });
