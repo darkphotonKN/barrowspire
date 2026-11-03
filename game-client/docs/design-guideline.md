@@ -217,9 +217,13 @@ lit) while the player stands inside.
   closed under it in the building's timber; masonry rooms are closed by a flat stone cap at the
   back walls' top, the same on every floor. Neither takes the occluder fade, so nothing of the
   inside shows over or through the top.
-- **A dark opening at entrances.** A doorway seen from outside is a full-height frame in the
-  building's material with flat darkness inside (`palette.inkDeep`): you see the way in, not the
-  room. A closed or locked door draws as a door.
+- **A door at entrances.** A doorway shows a door: a town door gap holds a plank door, shut while
+  the player is outside the building and open while they are inside it; a Spire room door shows
+  its own state, open or shut. From outside the wall carries on over every door's lintel to the
+  wall top (a door head in the building's own surface), so nothing of the room shows above a
+  door. A town door can't be acted on, so it is shut with no lock: nothing amber on it. Never
+  flat darkness in a doorway. *(Amended 2026-11-03, owner: was a dark opening, a frame with
+  `palette.inkDeep` inside.)*
 - **The indoor blackout.** While the player stands inside a building, everything outside it goes
   to `palette.inkDeep`, the canvas's darkest ink, so being inside feels enclosed. It is exact to
   the px: nothing shows outside what the building itself draws (its floor inside its walls, its

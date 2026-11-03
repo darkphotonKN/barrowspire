@@ -2,21 +2,21 @@ import type Phaser from "phaser";
 import { describe, expect, it, vi } from "vitest";
 import { ArtLibrary } from "@/render/art/library";
 import { MANIFEST_VERSION, type ArtManifest, type ArtSheet } from "@/render/art/manifest";
-import type { DoorState, WallState } from "@/types/gameState";
+import type { WallState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
 import { BAKE } from "./bake";
-import { darkOpening, doorGaps } from "./buildingLooks";
+import { doorGaps } from "./buildingLooks";
 import { worldDepth, worldToScreen } from "@/render/iso";
 import { planGables } from "./roofs";
 import {
   Occluders,
+  PLACEHOLDER_STONE,
   addBuildings,
-  addDarkOpening,
   addGables,
   showLook,
   type GroundWorld,
 } from "./scene";
-import { MASONRY_WALLS, TIMBER_WALLS } from "./walls";
+import { MASONRY_WALLS } from "./walls";
 
 describe("GroundLayer's world (FS-KSD6K §Requirements 16)", () => {
   // checked by `tsc`: a faded edge erases everything past the map, so nothing may be laid there
@@ -102,6 +102,8 @@ function stubScene() {
 const recOf = (o: unknown) => (o as { rec: Made }).rec;
 /** The manifest sheet a stub sprite shows: its frame is `{sheet}/{animation}/{direction}/{index}`. */
 const sheetOf = (o: unknown) => (recOf(o).args[3] as string | undefined)?.split("/")[0];
+/** The animation a stub sprite was made showing: a door's state frame. */
+const frameOf = (o: unknown) => (recOf(o).args[3] as string | undefined)?.split("/")[1];
 
 const SHEET: Omit<ArtSheet, "animations"> = {
   atlas: "a",
@@ -126,9 +128,11 @@ function library(names: readonly string[], logger = { warn: vi.fn() }) {
       ...SHEET,
       animations: name.includes("gable")
         ? { s: frames(1), n: frames(1), e: frames(1), w: frames(1) }
-        : name.includes("post") || name.includes("dark")
+        : name.includes("post") || name.includes("head")
           ? { default: frames(1) }
-          : { variants: frames(2) },
+          : name.startsWith("door_")
+            ? { locked: frames(1), unlocked: frames(1), open: frames(1), shut: frames(1) }
+            : { variants: frames(2) },
     };
   const manifest: ArtManifest = {
     version: MANIFEST_VERSION,
@@ -147,7 +151,7 @@ const SHIPPED = [...SHIPPED_TIMBER, "post_back", "post_front"];
 const EXTERIOR_TIMBER = ["plain", "brace", "window"].flatMap((k) =>
   ["x", "y"].map((a) => `wall_exterior_${k}_${a}`),
 );
-const TIMBER_ART = [...SHIPPED, ...EXTERIOR_TIMBER, "door_dark_x", "door_dark_y"];
+const TIMBER_ART = [...SHIPPED, ...EXTERIOR_TIMBER, "door_x", "door_y", "door_head_x", "door_head_y"];
 
 const wall = (x: number, y: number, width: number, height: number, house_id?: string): WallState => ({
   entity_id: `${house_id}:${x},${y},${width},${height}`,
@@ -170,7 +174,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const { scene } = stubScene();
     const { art, logger } = library(TIMBER_ART);
     const [b, ...rest] = addBuildings(scene, art, [...HOUSE, wall(0, 0, 80, 20)], 1, {
-      openings: doorGaps,
+      doors: doorGaps,
       logger,
     });
     expect(rest).toEqual([]);
@@ -178,10 +182,9 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const sheets = (parts: unknown[]) => parts.map(sheetOf);
     expect(sheets(b.exterior).filter((s) => s?.startsWith("wall_"))).not.toHaveLength(0);
     expect(
-      sheets(b.exterior).every((s) => /^(wall_exterior_|post_back$|door_dark_x$)/.test(s!)),
+      sheets(b.exterior).every((s) => /^(wall_exterior_|post_back$|door_x$|door_head_x$)/.test(s!)),
     ).toBe(true);
-    expect(sheets(b.exterior)).toContain("door_dark_x");
-    expect(sheets(b.interior).every((s) => /^(wall_front_|post_front$)/.test(s!))).toBe(true);
+    expect(sheets(b.interior).every((s) => /^(wall_front_|post_front$|door_x$)/.test(s!))).toBe(true);
     expect(sheets(b.shared).every((s) => /^(wall_back_|post_back$)/.test(s!))).toBe(true);
     // the player starts outside every building
     expect(b.exterior.every((p) => recOf(p).visible)).toBe(true);
@@ -197,15 +200,59 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     expect(addBuildings(scene, library(TIMBER_ART).art, thick, 1)[0].wall).toBe(24);
   });
 
-  it("should leave dark openings out where the gaps hold doors (a run's buildings)", () => {
+  it("should hang a door in each door gap: shut in the exterior, open in the interior look (§B.5, amended 2026-11-03)", () => {
+    const { scene } = stubScene();
+    const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { doors: doorGaps });
+    const doorsIn = (parts: unknown[]) => parts.filter((p) => sheetOf(p) === "door_x");
+    // shut with no lock: it can't be acted on, so nothing amber on it
+    expect(doorsIn(b.exterior).map(frameOf)).toEqual(["shut"]);
+    expect(doorsIn(b.interior).map(frameOf)).toEqual(["open"]);
+    expect(doorsIn(b.shared)).toEqual([]);
+    // both stand in the gap and sort like a door: by the back corner of the gap's footprint
+    const at = worldToScreen(250, 250);
+    for (const door of [...doorsIn(b.exterior), ...doorsIn(b.interior)]) {
+      expect(recOf(door).args.slice(0, 2)).toEqual([at.x, at.y]);
+      expect(recOf(door).depth).toBe(worldDepth(225, 240, 1));
+    }
+    // the shut door is seen from outside, so it covers the player; the open one never does
+    expect(b.cover.map((c) => c.part)).toContain(doorsIn(b.exterior)[0]);
+    expect(b.cover.map((c) => c.part)).not.toContain(doorsIn(b.interior)[0]);
+    // and no dark opening anywhere
+    expect([...b.shared, ...b.interior, ...b.exterior].map(sheetOf).some((s) => /dark/.test(s ?? ""))).toBe(false);
+  });
+
+  it("should hang no door where none is asked for (a run's rooms: their gaps hold server doors)", () => {
     const { scene } = stubScene();
     const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1);
-    expect(b.exterior.map(sheetOf)).not.toContain("door_dark_x");
+    expect([...b.exterior, ...b.interior].map(sheetOf)).not.toContain("door_x");
+  });
+
+  it("should close every door gap over the lintel from outside, with or without a drawn door (§B.5, amended 2026-11-03)", () => {
+    for (const options of [{ doors: doorGaps }, {}]) {
+      const { scene } = stubScene();
+      const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, options);
+      const heads = b.exterior.filter((p) => sheetOf(p) === "door_head_x");
+      expect(heads).toHaveLength(1);
+      // standing in the gap and sorted like the door below it
+      const at = worldToScreen(250, 250);
+      expect(recOf(heads[0]).args.slice(0, 2)).toEqual([at.x, at.y]);
+      expect(recOf(heads[0]).depth).toBe(worldDepth(225, 240, 1));
+      // seen from outside only: it covers the player, and the interior look has none
+      expect(b.cover.map((c) => c.part)).toContain(heads[0]);
+      expect([...b.shared, ...b.interior].map(sheetOf)).not.toContain("door_head_x");
+    }
+  });
+
+  it("should give a building with no door gap no head", () => {
+    const { scene } = stubScene();
+    const gapless = [...HOUSE.slice(0, 3), wall(100, 240, 300, 20, "h")];
+    const [b] = addBuildings(scene, library(TIMBER_ART).art, gapless, 1, { doors: doorGaps });
+    expect(b.exterior.map(sheetOf)).not.toContain("door_head_x");
   });
 
   it("should swap a building's looks on command, the shared walls standing in both", () => {
     const { scene } = stubScene();
-    const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { openings: doorGaps });
+    const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { doors: doorGaps });
     showLook(b, "interior");
     expect(b.interior.every((p) => recOf(p).visible)).toBe(true);
     expect(b.exterior.every((p) => !recOf(p).visible)).toBe(true);
@@ -217,7 +264,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
 
   it("should list every piece seen from outside as cover, with its depth, and nothing of the interior", () => {
     const { scene } = stubScene();
-    const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { openings: doorGaps });
+    const [b] = addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { doors: doorGaps });
     expect(b.cover).toHaveLength(b.shared.length + b.exterior.length);
     expect(b.cover.map((c) => c.depth)).toEqual(
       [...b.shared, ...b.exterior].map((p) => recOf(p).depth),
@@ -229,7 +276,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
   it("should carry each placeholder part with its cover, without art (§B.7, §E.3)", () => {
     const { scene } = stubScene();
     const [b] = addBuildings(scene, ArtLibrary.empty({ warn: () => {} }), HOUSE, 1, {
-      openings: doorGaps,
+      doors: doorGaps,
       sheets: MASONRY_WALLS,
     });
     expect(b.cover.map((c) => c.part)).toEqual([...b.shared, ...b.exterior]);
@@ -239,7 +286,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const { scene } = stubScene();
     const occluders = new Occluders();
     const add = vi.spyOn(occluders, "add");
-    addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { openings: doorGaps });
+    addBuildings(scene, library(TIMBER_ART).art, HOUSE, 1, { doors: doorGaps });
     expect(add).not.toHaveBeenCalled();
     expect(occluders.size).toBe(0);
   });
@@ -254,7 +301,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
       flicker: 0,
     });
     const { scene } = stubScene();
-    const [b] = addBuildings(scene, art, HOUSE, 1, { openings: doorGaps });
+    const [b] = addBuildings(scene, art, HOUSE, 1, { doors: doorGaps });
     const pieces = (parts: unknown[]) => parts.filter((p) => sheetOf(p)?.startsWith("wall_"));
     expect(b.lights).toHaveLength(pieces(b.shared).length + pieces(b.interior).length);
     expect(b.lights.filter((l) => l.underRoof)).toHaveLength(pieces(b.shared).length);
@@ -262,12 +309,12 @@ describe("addBuildings (FS-9PN7X §B)", () => {
 });
 
 describe("addBuildings without art (FS-9PN7X §B.7)", () => {
-  it("should close a building with full-height placeholder sides, a slab cap and a dark quad, with no manifest", () => {
+  it("should close a building with full-height placeholder sides, a slab cap and a placeholder door, with no manifest", () => {
     const { scene, made } = stubScene();
     const logger = { warn: vi.fn() };
     const [b] = addBuildings(scene, ArtLibrary.empty(logger), HOUSE, 1, {
       sheets: MASONRY_WALLS,
-      openings: doorGaps,
+      doors: doorGaps,
       logger,
     });
     expect(made.some((m) => m.kind === "sprite")).toBe(false);
@@ -275,11 +322,26 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
     expect(b.interior.length).toBeGreaterThan(0);
     // the slab: a world plane lifted to the wall top
     expect(made.some((m) => m.kind === "container")).toBe(true);
-    // the dark opening: a flat inkDeep quad
-    const ink = made.filter(
-      (m) => m.kind === "graphics" && (m.calls.fillStyle ?? []).every(([c]) => c === palette.inkDeep),
+    // the door: a door-coloured leaf on its own lifted plane, shut outside and open inside, like
+    // the run's placeholder door; never a flat inkDeep quad
+    const leaves = made.filter(
+      (m) => m.kind === "graphics" && (m.calls.fillStyle ?? []).some(([c]) => c === palette.wallLight),
     );
-    expect(ink.length).toBeGreaterThan(0);
+    expect(leaves).toHaveLength(2);
+    const planes = made.filter((m) => m.kind === "container" && m.args.length === 3);
+    const roots = (parts: unknown[]) => planes.filter((pl) => parts.some((p) => recOf(p) === pl));
+    // the cap's slab, the shut door and the head's slab outside; the open door inside
+    expect(roots(b.exterior)).toHaveLength(3);
+    expect(roots(b.interior)).toHaveLength(1);
+    // the head: a slab over the gap at the wall top, in the walls' placeholder colour
+    const heads = made.filter(
+      (m) =>
+        m.kind === "graphics" &&
+        (m.calls.fillRect ?? []).some(([x, y, w, h]) => x === 225 && y === 240 && w === 50 && h === 20) &&
+        (m.calls.fillStyle ?? []).every(([c]) => c === PLACEHOLDER_STONE.top),
+    );
+    expect(heads).toHaveLength(1);
+    expect(made.some((m) => (m.calls.fillStyle ?? []).some(([c]) => c === palette.inkDeep))).toBe(false);
     expect(b.cover.length).toBe(b.shared.length + b.exterior.length);
     // no manifest is already reported once by the loader: no warning per sheet
     expect(logger.warn).not.toHaveBeenCalled();
@@ -288,11 +350,12 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
   it("should stand a missing exterior side full height beside the baked back walls, warning once per sheet", () => {
     const { scene, made } = stubScene();
     const { art, logger } = library(SHIPPED);
-    addBuildings(scene, art, HOUSE, 1, { openings: doorGaps, logger });
-    addBuildings(scene, art, HOUSE, 1, { openings: doorGaps, logger });
+    addBuildings(scene, art, HOUSE, 1, { doors: doorGaps, logger });
+    addBuildings(scene, art, HOUSE, 1, { doors: doorGaps, logger });
     const warned = logger.warn.mock.calls.map(([m]) => m as string);
     expect(warned.some((m) => m.includes("wall_exterior_"))).toBe(true);
-    expect(warned.some((m) => m.includes("door_dark_x"))).toBe(true);
+    expect(warned.some((m) => m.includes("door_x"))).toBe(true);
+    expect(warned.some((m) => m.includes("door_head_x"))).toBe(true);
     expect(new Set(warned).size).toBe(warned.length);
     // a placeholder side as tall as the baked back wall it stands beside
     const full = BAKE.WALL_BACK * BAKE.VPX;
@@ -309,7 +372,8 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
       ["back", "front", "exterior"].flatMap((h) => ["x", "y"].map((a) => `tower_wall_${h}_${k}_${a}`)),
     );
     const { scene, made } = stubScene();
-    const { art, logger } = library([...masonry, "tower_post_back", "tower_post_front"]);
+    const heads = ["tower_door_head_x", "tower_door_head_y"];
+    const { art, logger } = library([...masonry, "tower_post_back", "tower_post_front", ...heads]);
     const [b] = addBuildings(scene, art, HOUSE, 1, {
       sheets: MASONRY_WALLS,
       logger,
@@ -355,28 +419,5 @@ describe("addGables (FS-9PN7X §B.3, ADR-0036)", () => {
     expect(addGables(scene, library(["roof_slope"]).art, house, 20)).toEqual([]);
     expect(addGables(scene, ArtLibrary.empty({ warn: () => {} }), house, 20)).toEqual([]);
     expect(made).toHaveLength(0);
-  });
-});
-
-describe("addDarkOpening (FS-9PN7X §B.5)", () => {
-  const door: DoorState = { entity_id: "d", position: { x: 225, y: 240 }, width: 50, height: 20, is_open: true };
-
-  it("should draw an open door's dark opening from the art, sorted like the door", () => {
-    const { scene } = stubScene();
-    const { art } = library(["tower_door_dark_x"]);
-    const built = addDarkOpening(scene, art, darkOpening(door, MASONRY_WALLS), MASONRY_WALLS);
-    expect(built.parts.map(sheetOf)).toEqual(["tower_door_dark_x"]);
-    expect(built.cover).toHaveLength(1);
-  });
-
-  it("should fall back to a flat inkDeep quad without the sheet", () => {
-    const { scene, made } = stubScene();
-    const { art, logger } = library([]);
-    const built = addDarkOpening(scene, art, darkOpening(door, TIMBER_WALLS), TIMBER_WALLS, logger);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    expect(built.parts.length).toBeGreaterThan(0);
-    expect(made.every((m) => m.kind === "graphics")).toBe(true);
-    for (const m of made)
-      expect((m.calls.fillStyle ?? []).every(([c]) => c === palette.inkDeep)).toBe(true);
   });
 });

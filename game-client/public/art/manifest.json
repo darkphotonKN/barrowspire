@@ -37,7 +37,7 @@
       "image": "building-0.png",
       "width": 1980,
       "height": 388,
-      "sha256": "0d5df08711a2260e79511fd276444d9e7158194c4aefa66e2718fd593dd76869"
+      "sha256": "d83432aeb0218221a8bf6078e59ac64a17f32b852b031fc315aab2aecc44b493"
     },
     "characters-0": {
       "image": "characters-0.png",
@@ -137,9 +137,9 @@
     },
     "props-0": {
       "image": "props-0.png",
-      "width": 2016,
-      "height": 324,
-      "sha256": "de60f1c5e911c05199f5c60e04b239b1aaa81df9c048b96eb3b68b1458270de1"
+      "width": 1640,
+      "height": 352,
+      "sha256": "347011fee31ed2466961002333814f14eaa6306b928a9c58eb8564f80cf274ff"
     },
     "spire-0": {
       "image": "spire-0.png",
@@ -215,7 +215,7 @@
           "frames": [
             [
               {
-                "x": 727,
+                "x": 1421,
                 "y": 209
               }
             ]
@@ -271,7 +271,7 @@
           "frames": [
             [
               {
-                "x": 266,
+                "x": 960,
                 "y": 209
               }
             ]
@@ -422,7 +422,7 @@
           "frames": [
             [
               {
-                "x": 367,
+                "x": 1061,
                 "y": 209
               }
             ]
@@ -434,7 +434,7 @@
           "frames": [
             [
               {
-                "x": 457,
+                "x": 1151,
                 "y": 209
               }
             ]
@@ -446,7 +446,7 @@
           "frames": [
             [
               {
-                "x": 547,
+                "x": 1241,
                 "y": 209
               }
             ]
@@ -458,7 +458,7 @@
           "frames": [
             [
               {
-                "x": 637,
+                "x": 1331,
                 "y": 209
               }
             ]
@@ -4630,7 +4630,7 @@
           "frames": [
             [
               {
-                "x": 2,
+                "x": 696,
                 "y": 209
               }
             ]
@@ -4642,7 +4642,7 @@
           "frames": [
             [
               {
-                "x": 134,
+                "x": 828,
                 "y": 209
               }
             ]
@@ -12013,7 +12013,7 @@
       "source": "procedural: tools/bake/page/models/nature.js#pebbles",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "door_dark_x": {
+    "door_head_x": {
       "atlas": "building-0",
       "frameWidth": 144,
       "frameHeight": 181,
@@ -12029,17 +12029,17 @@
           "frames": [
             [
               {
-                "x": 509,
+                "x": 210,
                 "y": 2
               }
             ]
           ]
         }
       },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
+      "source": "authored: tools/bake/page/models/building.js#doorHead",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "door_dark_y": {
+    "door_head_y": {
       "atlas": "building-0",
       "frameWidth": 144,
       "frameHeight": 181,
@@ -12055,14 +12055,14 @@
           "frames": [
             [
               {
-                "x": 655,
+                "x": 356,
                 "y": 2
               }
             ]
           ]
         }
       },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
+      "source": "authored: tools/bake/page/models/building.js#doorHead",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "door_x": {
@@ -12081,8 +12081,8 @@
           "frames": [
             [
               {
-                "x": 1450,
-                "y": 2
+                "x": 2,
+                "y": 209
               }
             ]
           ]
@@ -12093,8 +12093,8 @@
           "frames": [
             [
               {
-                "x": 1583,
-                "y": 2
+                "x": 135,
+                "y": 209
               }
             ]
           ]
@@ -12105,8 +12105,20 @@
           "frames": [
             [
               {
-                "x": 1716,
-                "y": 2
+                "x": 268,
+                "y": 209
+              }
+            ]
+          ]
+        },
+        "shut": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 401,
+                "y": 209
               }
             ]
           ]
@@ -12156,6 +12168,18 @@
             [
               {
                 "x": 1333,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "shut": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1450,
                 "y": 2
               }
             ]
@@ -17214,7 +17238,7 @@
           "frames": [
             [
               {
-                "x": 810,
+                "x": 1504,
                 "y": 209
               }
             ]
@@ -17226,7 +17250,7 @@
           "frames": [
             [
               {
-                "x": 876,
+                "x": 1570,
                 "y": 209
               }
             ]
@@ -17252,8 +17276,8 @@
           "frames": [
             [
               {
-                "x": 1849,
-                "y": 2
+                "x": 534,
+                "y": 209
               }
             ]
           ]
@@ -17334,13 +17358,13 @@
       "source": "authored: tools/bake/page/models/building.js#towerCap",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "tower_door_dark_x": {
+    "tower_door_head_x": {
       "atlas": "building-0",
-      "frameWidth": 147,
-      "frameHeight": 183,
+      "frameWidth": 144,
+      "frameHeight": 181,
       "anchor": {
-        "x": 0.22448979591836735,
-        "y": 0.8907103825136612
+        "x": 0.20833333333333334,
+        "y": 0.9005524861878453
       },
       "directions": 1,
       "animations": {
@@ -17350,23 +17374,23 @@
           "frames": [
             [
               {
-                "x": 210,
+                "x": 502,
                 "y": 2
               }
             ]
           ]
         }
       },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
+      "source": "authored: tools/bake/page/models/building.js#doorHead",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "tower_door_dark_y": {
+    "tower_door_head_y": {
       "atlas": "building-0",
-      "frameWidth": 148,
-      "frameHeight": 183,
+      "frameWidth": 144,
+      "frameHeight": 181,
       "anchor": {
-        "x": 0.22972972972972974,
-        "y": 0.8907103825136612
+        "x": 0.20833333333333334,
+        "y": 0.9005524861878453
       },
       "directions": 1,
       "animations": {
@@ -17376,14 +17400,14 @@
           "frames": [
             [
               {
-                "x": 359,
+                "x": 648,
                 "y": 2
               }
             ]
           ]
         }
       },
-      "source": "authored: tools/bake/page/models/building.js#darkOpening",
+      "source": "authored: tools/bake/page/models/building.js#doorHead",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "tower_perimeter_back_plain_x": {
@@ -18022,11 +18046,11 @@
           "frames": [
             [
               {
-                "x": 801,
+                "x": 794,
                 "y": 2
               },
               {
-                "x": 939,
+                "x": 932,
                 "y": 2
               }
             ]
@@ -18052,11 +18076,11 @@
           "frames": [
             [
               {
-                "x": 1077,
+                "x": 1070,
                 "y": 2
               },
               {
-                "x": 1215,
+                "x": 1208,
                 "y": 2
               }
             ]
@@ -18082,11 +18106,11 @@
           "frames": [
             [
               {
-                "x": 1353,
+                "x": 1346,
                 "y": 2
               },
               {
-                "x": 1491,
+                "x": 1484,
                 "y": 2
               }
             ]
@@ -18112,11 +18136,11 @@
           "frames": [
             [
               {
-                "x": 1629,
+                "x": 1622,
                 "y": 2
               },
               {
-                "x": 1767,
+                "x": 1760,
                 "y": 2
               }
             ]

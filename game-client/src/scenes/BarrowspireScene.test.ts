@@ -2520,7 +2520,7 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
   });
 });
 
-describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings and the silhouette (FS-9PN7X §B, §E)", () => {
+describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and the silhouette (FS-9PN7X §B, §E)", () => {
   const manifest = JSON.parse(
     readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"),
   );
@@ -2602,24 +2602,41 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings an
     expect(shown(drawn(/^tower_wall_back_/))).toBe(true);
   });
 
-  it("should show a shut door as a door from the halls, and an open one as a dark opening", () => {
+  it("should show each room door from the halls in its own state, shut or open, never a dark opening (§B.5, amended 2026-11-03)", () => {
     const { run, drawn } = spire();
-    run.handleGameStateUpdate(rooms(false));
+    run.handleGameStateUpdate(rooms(true));
     standAt(run, IN_HALL);
-    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(2);
-    expect(drawn(/^tower_door_dark_/).filter((m) => m.shown !== false)).toHaveLength(0);
+    const frameOf = (m: Made) => String(m.args[3] ?? "").split("/")[1];
+    const open = run.serverDoors.get("d1_1")!.sprite!;
+    const shut = run.serverDoors.get("d2_1")!.sprite!;
+    expect([frameOf(open), frameOf(shut)]).toEqual(["open", "unlocked"]);
+    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toEqual([open, shut]);
+    expect(drawn(/dark/)).toHaveLength(0);
+    // each room's wall carried on over its door's lintel to the coping, open door or shut
+    const heads = drawn(/^tower_door_head_x$/);
+    expect(heads.filter((m) => m.shown !== false)).toHaveLength(2);
+    expect(heads.map((m) => m.args.slice(0, 2))).toEqual([open, shut].map((m) => m.args.slice(0, 2)));
 
-    // the door opens while the player is outside: the swap follows the state
+    // the door shuts while the player is outside: still shown, its frame follows the state
+    run.handleGameStateUpdate(rooms(false));
+    run.checkBuildingStatus();
+    expect(open.calls).toContain("setTexture");
+    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(2);
+
+    // and opens again
     run.handleGameStateUpdate(rooms(true));
     run.checkBuildingStatus();
-    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(1);
-    expect(drawn(/^tower_door_dark_x$/).filter((m) => m.shown !== false)).toHaveLength(1);
-
-    // and shuts again
-    run.handleGameStateUpdate(rooms(false));
-    run.checkBuildingStatus();
     expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(2);
-    expect(drawn(/^tower_door_dark_/).filter((m) => m.shown !== false)).toHaveLength(0);
+    expect(drawn(/dark/)).toHaveLength(0);
+  });
+
+  it("should count a room door as cover from the halls, open or shut (§E.1)", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate(rooms(true));
+    standAt(run, IN_HALL);
+    const cover = (run as unknown as { coverBesideRooms(): { part: unknown }[] }).coverBesideRooms();
+    const parts = cover.map((c) => (c.part as Made).calls);
+    for (const id of ["d1_1", "d2_1"]) expect(parts).toContain(run.serverDoors.get(id)!.sprite!.calls);
   });
 
   it("should snap the room to its cut-away look in the frame the player steps in, and back as they leave", () => {
@@ -2636,7 +2653,9 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings an
     expect(shown(own.interior)).toBe(true);
     expect(shown(own.shared)).toBe(true);
     expect(run.serverDoors.get("d1_1")!.sprite!.shown).toBe(true);
-    expect(drawn(/^tower_door_dark_/).every((m) => m.shown === false)).toBe(true);
+    expect(drawn(/dark/)).toHaveLength(0);
+    // the heads are the rooms' exteriors: none shows from inside
+    expect(hiddenAll(drawn(/^tower_door_head_/))).toBe(true);
     // everything outside the room hides: the other room's walls and cap too (owner's addition 1)
     expect(hiddenAll(caps)).toBe(true);
     expect(hiddenAll(exterior)).toBe(true);
@@ -2663,7 +2682,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings an
     expect(doors.filter((m) => m.shown !== false)).toHaveLength(1);
   });
 
-  it("should put no room piece, cap, opening or room door among the occluders, and keep the hall wall's", () => {
+  it("should put no room piece, cap or room door among the occluders, and keep the hall wall's", () => {
     const { run, drawn } = spire();
     run.handleGameStateUpdate(rooms(true));
     standAt(run, IN_HALL);
@@ -2671,7 +2690,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings an
     const fading = new Set(run.occluders.items.map((i) => i.sprite.calls));
     const roomParts = [
       ...run.view.drawn.flatMap((r) => [...r.shared, ...r.interior, ...r.exterior]),
-      ...drawn(/^tower_door_dark_|^door_x$/),
+      ...drawn(/^door_x$/),
     ];
     expect(roomParts.some((m) => /^tower_cap/.test(String(m.args[3])))).toBe(true);
     for (const part of roomParts) expect(fading.has(part.calls)).toBe(false);
@@ -2713,11 +2732,11 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings an
     expect(mask.calls.filter((c) => c === "draw").length).toBeGreaterThan(0);
   });
 
-  it("should rebuild the rooms, caps and openings with the floor on a climb", () => {
+  it("should rebuild the rooms, caps and doors with the floor on a climb", () => {
     const { run, drawn } = spire();
     run.handleGameStateUpdate(rooms(true, 1));
     standAt(run, IN_HALL);
-    const floorOne = [...drawn(/^tower_wall_exterior_|^tower_cap$|^tower_door_dark_/)];
+    const floorOne = [...drawn(/^tower_wall_exterior_|^tower_cap$|^door_x$/)];
     expect(floorOne.length).toBeGreaterThan(0);
 
     run.handleGameStateUpdate(rooms(true, 2));
@@ -2725,7 +2744,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, dark openings an
 
     expect(floorOne.every((m) => m.destroyed)).toBe(true);
     expect(drawn(/^tower_cap$/).length).toBeGreaterThan(0);
-    expect(drawn(/^tower_door_dark_x$/).filter((m) => m.shown !== false)).toHaveLength(1);
+    expect(drawn(/^door_x$/).filter((m) => m.shown !== false)).toHaveLength(2);
     expect(run.buildings.map((b) => b.id)).toEqual(["r1_2", "r2_2"]);
   });
 

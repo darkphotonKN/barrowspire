@@ -30,14 +30,16 @@ export {
   type Visible,
 } from "./buildingView";
 export {
-  darkOpening,
   doorGaps,
+  doorHead,
+  gapDoor,
   planBuildings,
   planCap,
   type BuildingWalls,
   type CapPiece,
-  type DarkOpening,
   type DoorGap,
+  type DoorHead,
+  type GapDoor,
   type WallLook,
 } from "./buildingLooks";
 export {
@@ -108,7 +110,6 @@ export {
   Occluders,
   PLACEHOLDER_STONE,
   addBuildings,
-  addDarkOpening,
   addDressing,
   addGables,
   addPerimeter,

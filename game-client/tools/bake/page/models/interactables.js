@@ -23,7 +23,10 @@ function padlock(M, open) {
   return g;
 }
 
-/** A plank door in an oak frame. state: locked | unlocked | open. axis: x | y. */
+/**
+ * A plank door in an oak frame. state: locked | unlocked | open | shut. axis: x | y. `shut` is a
+ * town gap's drawn door (FS-9PN7X §B.5): closed with no lock on it, since it can't be acted on.
+ */
 export function door(state, axis) {
   const M = materials();
   const g = new THREE.Group();
@@ -54,7 +57,7 @@ export function door(state, axis) {
     const lock = padlock(M, false);
     lock.position.set(DOOR_W - 0.14, 1.08, 0.1);
     leaf.add(lock);
-  } else {
+  } else if (state !== "shut") {
     const lock = padlock(M, true);
     lock.position.set(DOOR_W - 0.14, 1.0, 0.07);
     leaf.add(lock);
