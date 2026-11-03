@@ -9,6 +9,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	commonerr "github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
@@ -43,8 +44,10 @@ var setWinningBidNonRetryable = []error{
 	// the bid is no longer WINNING. Only WINNING -> WON is whitelisted, so the FSM
 	// is what decides this, and a demoted bid never becomes the winner again
 	listing.ErrInvalidBidTransition,
-	// no listing to write to
+	// no listing to write to. Both sentinels: ListingRepository.Update reports a
+	// missing row as commonconstants.ErrNotFound (WrapDBErr), not apperr's
 	commonerr.ErrNotFound,
+	commonconstants.ErrNotFound,
 }
 
 func classifySetWinningBidErr(listingID uuid.UUID, err error) error {

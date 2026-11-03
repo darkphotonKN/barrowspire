@@ -19,9 +19,11 @@ re-reads the winner. Any other status is `ErrInvalidListingState`; a missing row
 `commonconstants.ErrNotFound`. Both are in 0a's non-retryable set.
 
 **0b FreezeItem** (items, `repository.FreezeItem`): one conditional write,
-`LISTED → PENDING_SETTLEMENT` where the owner is the seller. Zero rows is followed by a separate
-read: already `PENDING_SETTLEMENT` for the seller is success, anything else is
-`ErrItemNotFreezable`, 0b's only non-retryable error.
+`LISTED → PENDING_SETTLEMENT` where the owner is the seller and `listing_id` is this listing
+(§Req 24a). Zero rows is followed by a separate read: already `PENDING_SETTLEMENT` for the seller
+and this listing is success, anything else is `ErrItemNotFreezable`, 0b's only non-retryable
+error. A 0b recorded before `FreezeItemInput` carried `ListingID` replays with `uuid.Nil` and keeps
+the status-and-owner guard it was started under.
 
 **Rollback** (uncapped, on a context the workflow's cancellation cannot reach):
 `RaiseSettlementException` → `MarkSettlementFailed` → `LoseAllBids` → `ReleaseAllHolds` →
@@ -61,6 +63,7 @@ with the impossibility as its reason, and publishes `settlement.failed`.
 | 11 | Item owner changed, or item unfrozen/unlisted, before 0b | item in that state | non-retryable → rollback: exception raised, listing `SETTLEMENT_FAILED`, bids `LOST`, `UnfreezeItem` leaves an item that is no longer this listing's alone; the run fails | roll back | `TestFreezeItem` "…owned by someone else is refused", "available item was unlisted, refused"; `TestFreezeItemActivity_Classification`; `TestWorkflow_FreezeItemImpossible_RollsBackAndFails`; `TestUnfreezeItem` "owned by someone else is left alone, and warned about" |
 | 11a | 0b parked on an outage, then turns out impossible on a later lap | an `OPEN` park exception for (workflow, `FreezeItem`) | the park's exception is resolved, then the rollback raises its own with the impossibility as the reason | roll back, recorded and alerted | `TestWorkflow_FreezeItemParksThenImpossible_RollbackRaisesItsOwnException` |
 | 11b | The workflow is cancelled while 0a or 0b is parked | the step's state before it parked | cancellation is not an impossibility: nothing is rolled back, the run ends cancelled | cancelled, nothing undone | `TestWorkflow_CancelledWhileParked_DoesNotRollBack` |
+| 11d | Item released and relisted under a new listing before a retried 0b runs | item `LISTED` (or frozen) for the new listing | the write and the already-frozen read both miss on `listing_id`: non-retryable → rollback; `UnfreezeItem` is scoped to the old listing too, so the new listing's item is left as it is | roll back, new listing untouched | `TestFreezeItem` "listed for another listing is refused and stays listed", "frozen for another listing is not already applied" |
 
 ## The rollback itself
 

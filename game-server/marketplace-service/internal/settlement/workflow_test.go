@@ -198,6 +198,7 @@ type freezeArm struct {
 	queues map[string]string
 
 	freezeItemErr error
+	freezeIn      itemsactivity.FreezeItemInput
 	// markFailedErrs is consumed one per attempt: a rollback action failing
 	// transiently before it lands
 	markFailedErrs []error
@@ -250,6 +251,7 @@ func registerFreezeArm(env *testsuite.TestWorkflowEnvironment, arm *freezeArm) {
 	arm.queues = map[string]string{}
 	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.FreezeItemInput) error {
 		arm.record(ctx, itemsactivity.FreezeItemActivityName)
+		arm.freezeIn = in
 		return arm.freezeItemErr
 	}, activity.RegisterOptions{Name: itemsactivity.FreezeItemActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.MarkSettlementFailedInput) error {
@@ -388,6 +390,8 @@ func TestWorkflow_FreezeItemImpossible_RollsBackAndFails(t *testing.T) {
 		walletactivity.ReleaseAllHoldsActivityName,
 		itemsactivity.UnfreezeItemActivityName,
 	}, arm.calls)
+	assert.Equal(t, itemsactivity.FreezeItemInput{ItemID: itemID, SellerID: sellerID, ListingID: listingID}, arm.freezeIn,
+		"0b is scoped to this settlement's listing (§Req 24a)")
 	assert.Equal(t, listingID, arm.markFailedIn.ListingID)
 	assert.Equal(t, listingID, arm.loseAllIn.ListingID, "every bid on the listing ends LOST")
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.queues[marketplaceactivity.LoseAllBidsActivityName])

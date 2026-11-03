@@ -9,6 +9,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	commonerr "github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
@@ -41,8 +42,10 @@ var markSoldNonRetryable = []error{
 	// the listing is neither PENDING_SETTLEMENT nor SOLD: something other than
 	// this settlement moved it, and step 6 never overwrites
 	listing.ErrInvalidListingState,
-	// no listing to write to
+	// no listing to write to. Both sentinels: ListingRepository.Update reports a
+	// missing row as commonconstants.ErrNotFound (WrapDBErr), not apperr's
 	commonerr.ErrNotFound,
+	commonconstants.ErrNotFound,
 }
 
 func classifyMarkSoldErr(listingID uuid.UUID, err error) error {

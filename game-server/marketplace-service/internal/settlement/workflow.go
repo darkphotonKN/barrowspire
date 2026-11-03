@@ -83,7 +83,7 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 		itemsactivity.FreezeItemActivityName,
 		bstemporal.QueueItems,
 		beforePivot,
-		itemsactivity.FreezeItemInput{ItemID: frozen.ItemID, SellerID: frozen.SellerID},
+		itemsactivity.FreezeItemInput{ItemID: frozen.ItemID, SellerID: frozen.SellerID, ListingID: frozen.ListingID},
 		nil,
 	)
 	if err != nil {

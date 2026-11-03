@@ -47,11 +47,13 @@ func TestConvertSingleProtoItemtoItemInstance_RarityID(t *testing.T) {
 // interface is nil: anything else the service reaches for panics the test.
 type freezeRepo struct {
 	Repository
-	frozen bool
-	err    error
+	frozen     bool
+	err        error
+	gotListing uuid.UUID
 }
 
-func (r *freezeRepo) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error) {
+func (r *freezeRepo) FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) (bool, error) {
+	r.gotListing = listingID
 	return r.frozen, r.err
 }
 
@@ -71,7 +73,11 @@ func TestServiceFreezeItem(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := (&service{repo: tt.repo}).FreezeItem(context.Background(), uuid.New(), uuid.New())
+			listingID := uuid.New()
+			err := (&service{repo: tt.repo}).FreezeItem(context.Background(), uuid.New(), uuid.New(), listingID)
+			if tt.repo.gotListing != listingID {
+				t.Errorf("repo got listing %v, want %v", tt.repo.gotListing, listingID)
+			}
 
 			if tt.wantErr == nil && err != nil {
 				t.Fatalf("unexpected error: %v", err)

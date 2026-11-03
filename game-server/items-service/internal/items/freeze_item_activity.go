@@ -16,7 +16,7 @@ type FreezeItemsActivity struct {
 }
 
 type ItemsFreezer interface {
-	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) error
+	FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error
 }
 
 func NewItemsActivity(itemFreezer ItemsFreezer) *FreezeItemsActivity {
@@ -27,7 +27,7 @@ func NewItemsActivity(itemFreezer ItemsFreezer) *FreezeItemsActivity {
 
 func (a *FreezeItemsActivity) FreezeItemActivity(ctx context.Context, inp commonactivity.FreezeItemInput) (commonactivity.FreezeItemOutput, error) {
 
-	err := a.service.FreezeItem(ctx, inp.ItemID, inp.SellerID)
+	err := a.service.FreezeItem(ctx, inp.ItemID, inp.SellerID, inp.ListingID)
 
 	if err != nil {
 		return commonactivity.FreezeItemOutput{}, classifyFreezeErr(err)
