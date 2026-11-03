@@ -1,6 +1,9 @@
 # ADR-0036 — Buildings have an exterior and an interior: a closed block from outside, the cut-away only from inside
 
 Status: accepted
+Amended by: [ADR-0042](0042-a-building-entrance-shows-a-door-not-a-dark-opening.md) — the clause
+"an entrance shows a dark opening, not the room": an entrance shows a door, with the wall above it
+closed. The rest of this ADR stands unchanged.
 Date: 2026-11-01
 Scope: `game-client` (canvas presentation)
 Realized by: [FS-9PN7X](../specs/9PN7X-building-exteriors-and-indoor-blackout.md) (closed building
