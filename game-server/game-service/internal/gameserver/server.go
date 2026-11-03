@@ -77,13 +77,11 @@ type Server struct {
 	// the handoff went over: not present here, and not held for the grace when
 	// that connection drops (FS-NCC9J R19)
 	travelling map[uuid.UUID]*websocket.Conn
-	// dead run members whose reconnect grace ran out: kept, body and record,
-	// until their run ends and settles them (FS-QPDKN R18, R26). An escaped one
-	// is released instead, body kept and record gone (R29)
-	awaitingSettlement map[uuid.UUID]struct{}
-	lastGraceHold      graceHold
-	// released escapees marked settling until their run settles (FS-QPDKN R32)
-	settling *settlingKeeper
+	// kept members: resolved run members whose drop could not be their leave and
+	// whose reconnect grace ran out, kept, body and record, until their run ends
+	// (FS-QPDKN R18, R26). They were settled the moment they resolved (FS-GV8WN §A)
+	keptUntilRunEnd map[uuid.UUID]struct{}
+	lastGraceHold   graceHold
 	// a test seam: runs inside LeaveRun once the hub has seated the leaver and
 	// before their record moves, so a test can land a racing drop there. Nil
 	// outside tests
@@ -172,15 +170,15 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		serverChan: make(chan types.ClientPackage, 10),
 		msgChan:    make(map[*websocket.Conn]chan interface{}, constants.MaxMsgChanBuffer),
 
-		sessions:           make(map[uuid.UUID]*game.Session, 10),
-		fields:             make(map[game.FieldID]uuid.UUID),
-		visitSettler:       boot.visitSettler,
-		fieldEntries:       make(map[uuid.UUID]struct{}),
-		players:            make(map[uuid.UUID]*types.Player, 10),
-		connToPlayer:       make(map[*websocket.Conn]*types.Player, 10),
-		graceHolds:         make(map[uuid.UUID]graceHold),
-		travelling:         make(map[uuid.UUID]*websocket.Conn),
-		awaitingSettlement: make(map[uuid.UUID]struct{}),
+		sessions:        make(map[uuid.UUID]*game.Session, 10),
+		fields:          make(map[game.FieldID]uuid.UUID),
+		visitSettler:    boot.visitSettler,
+		fieldEntries:    make(map[uuid.UUID]struct{}),
+		players:         make(map[uuid.UUID]*types.Player, 10),
+		connToPlayer:    make(map[*websocket.Conn]*types.Player, 10),
+		graceHolds:      make(map[uuid.UUID]graceHold),
+		travelling:      make(map[uuid.UUID]*websocket.Conn),
+		keptUntilRunEnd: make(map[uuid.UUID]struct{}),
 
 		queue:           queueService,
 		authClient:      authClient,
@@ -192,8 +190,6 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	if boot.partyStore != nil {
 		server.leaders = boot.partyStore
 	}
-	server.settling = newSettlingKeeper(boot.settling, server.runLives)
-	server.settling.start(ctx, boot.settlingTicks)
 
 	// initialize message sender
 	newSender := messaging.NewMessageSender(server)
@@ -516,8 +512,8 @@ func (s *Server) connectPlayer(memberID uuid.UUID, username string, token types.
 	connected := constants.Connected
 
 	if player, exists := s.players[memberID]; exists {
-		// back before their run ended: no longer kept only for its settlement
-		delete(s.awaitingSettlement, memberID)
+		// back before their run ended: no longer kept
+		delete(s.keptUntilRunEnd, memberID)
 		for _, record := range s.everyRecordOf(player) {
 			record.ConnectState = &connected
 			// may have changed name
@@ -591,14 +587,14 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 			continue
 		}
 		// a member who left early, or has since entered another world, is not
-		// this run's to move: their body here is for settlement only (FS-QPDKN R22)
+		// this run's to move (FS-QPDKN R22)
 		if world, _ := s.currentWorldOf(playerID); world != runID {
 			continue
 		}
-		// a dead member kept past their grace is settled by this end (the
-		// snapshot was taken before this) and goes off record; nobody seats a
-		// body in the hub for a member who is not here (FS-QPDKN R18, R26)
-		if s.forgetIfAwaitingSettlement(playerID) {
+		// a kept member (resolved, kept past their grace) goes off record now
+		// their run has ended; nobody seats a body in the hub for a member who
+		// is not here (FS-QPDKN R18, R26)
+		if s.forgetIfKept(playerID) {
 			home = append(home, playerID)
 			continue
 		}
@@ -617,19 +613,18 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 	s.leftRun(runID, home...)
 }
 
-// forgetIfAwaitingSettlement ends the stay of a member kept only for their
-// run's settlement, now that the run has settled them. Reports whether they
-// were such a member; one who came back meanwhile is not.
-func (s *Server) forgetIfAwaitingSettlement(playerID uuid.UUID) bool {
+// forgetIfKept ends the stay of a kept member now that their run has ended.
+// Reports whether they were one; one who came back meanwhile is not.
+func (s *Server) forgetIfKept(playerID uuid.UUID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, kept := s.awaitingSettlement[playerID]; !kept {
+	if _, kept := s.keptUntilRunEnd[playerID]; !kept {
 		return false
 	}
-	delete(s.awaitingSettlement, playerID)
+	delete(s.keptUntilRunEnd, playerID)
 	delete(s.players, playerID)
-	slog.Info("Kept delver settled with their run, off record", "player_id", playerID)
+	slog.Info("Kept delver's run ended, off record", "player_id", playerID)
 	return true
 }
 
@@ -1149,7 +1144,7 @@ func (s *Server) PresentPlayers() []presentPlayer {
 		if record.Character.Name == "" {
 			continue
 		}
-		if _, kept := s.awaitingSettlement[id]; kept {
+		if _, kept := s.keptUntilRunEnd[id]; kept {
 			continue
 		}
 		world, inWorld := s.sessions[record.CurrentGameSessionId]
@@ -1206,9 +1201,7 @@ func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.
 	stateSerializer := s.newStateSerializer(entityManager)
 
 	// create session with message sender
-	// a run's end lets its settling marks go once its settlement is written (FS-QPDKN R32)
-	emitter := settledRunEmitter{EventEmitter: s.eventEmitter, settling: s.settling}
-	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, emitter, s.itemsClient, game.RunBounds())
+	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
 
 	newGameSession.InitialSystems()
 

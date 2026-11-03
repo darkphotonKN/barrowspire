@@ -118,9 +118,6 @@ type SessionManager interface {
 	InTown(playerID uuid.UUID) bool
 	GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool)
 	CheckLoadout(ctx context.Context, player *types.Player) error
-	// whether any of these players is a released escapee whose run has not settled; blocks on
-	// Redis (FS-QPDKN R33)
-	Settling(ctx context.Context, playerIDs ...uuid.UUID) bool
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
 }
@@ -170,19 +167,12 @@ const partyEntersTogether = "Your party enters together."
 // FS-0XMCP §Requirements 12.
 const awayFromSpireGate = "Walk to the Spire's door first."
 
-// settlingRefusal refuses any entry that checks out the gear of a released
-// escapee whose run has not settled: their plunder lands in their bag when it
-// does. FS-QPDKN §Requirements 33.
-const settlingRefusal = "Your plunder is still being counted. Wait for the delve to end."
-
 // leaveRunRefusal is what a refused leave_run says, by why the run would not
 // let the member go. FS-QPDKN §Requirements 14.
 func leaveRunRefusal(err error) string {
 	switch {
 	case errors.Is(err, game.ErrStillInPlay):
 		return "You are still in the delve."
-	case errors.Is(err, game.ErrEscapedWaits):
-		return "You are out of the barrow; the delve ends for you when it ends."
 	default:
 		return "You are not in a delve."
 	}
@@ -309,7 +299,7 @@ func (h *messageHub) refuseField(conn *websocket.Conn, action string, err error)
 }
 
 // enterField walks a hub member into a field. It runs off the message hub's
-// loop: it waits on the queue, the settling mark and items-service, each read
+// loop: it waits on the queue and items-service, each read
 // bounded on its own by EnterField. FS-X2F2H §Requirements 9–13.
 func (h *messageHub) enterField(ctx context.Context, clientPackage types.ClientPackage) {
 	fieldID, _ := clientPackage.Message.Payload["field"].(string)
@@ -332,19 +322,7 @@ func (h *messageHub) enterField(ctx context.Context, clientPackage types.ClientP
 // loadout as empty, so entry fails closed. Readable gear sends the message
 // back into the hub's inbound channel marked checked, so the loop runs every
 // guard again on its own state and decides there.
-//
-// A settling entrant is refused first, read off the loop the same way: their
-// bag must stay home until their run settles (FS-QPDKN R33). An unreadable mark
-// lets them on (R35). Each read gets its own bound: a mark read that stalls out
-// its time must not leave the gear read none, which would turn letting them on
-// into refusing them for unreadable gear.
 func (h *messageHub) checkGear(ctx context.Context, player *types.Player, clientPackage types.ClientPackage) {
-	if h.settling(ctx, player.ID) {
-		slog.Info("Refusing Spire entry: settling",
-			"action", clientPackage.Message.Action, "player_id", player.ID)
-		h.refuse(clientPackage.Conn, clientPackage.Message.Action, settlingRefusal)
-		return
-	}
 	readCtx, cancel := context.WithTimeout(ctx, fieldReadTimeout)
 	defer cancel()
 	err := h.sessionManager.CheckLoadout(readCtx, player)
@@ -360,14 +338,6 @@ func (h *messageHub) checkGear(ctx context.Context, player *types.Player, client
 	case h.sessionManager.GetServerChan() <- clientPackage:
 	case <-ctx.Done():
 	}
-}
-
-// settling reads whether the player is settling, bounded as a field entry's
-// read is (FS-QPDKN R33, R35).
-func (h *messageHub) settling(ctx context.Context, playerID uuid.UUID) bool {
-	readCtx, cancel := context.WithTimeout(ctx, fieldReadTimeout)
-	defer cancel()
-	return h.sessionManager.Settling(readCtx, playerID)
 }
 
 // resolveGameSession answers which world a connection's messages belong to,

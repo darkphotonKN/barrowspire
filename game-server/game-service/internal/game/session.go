@@ -1511,75 +1511,39 @@ func (s *Session) Resolved(playerID uuid.UUID) bool {
 	return ok && !systems.InPlay(entity)
 }
 
-// Depart lets a resolved delver leave this run early (FS-QPDKN §Requirements
-// 13, 14, 18). Their body stays, so the run's end settles them as if they had
-// stayed; they are dropped from the run's recipients (R21). Refused while they
-// are still in play, and for an escaped delver, whose plunder is settled from
-// the run's end snapshot and who therefore waits for it.
+// Depart lets a resolved delver leave this run early, dead or escaped
+// (FS-QPDKN §Requirements 13, 14, 18; FS-GV8WN §F R16). Each is settled the
+// moment they resolved, so nothing is left to wait for. Their body stays and
+// they are dropped from the run's recipients (R21). Refused while they are
+// still in play.
 func (s *Session) Depart(playerID uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	escaped, err := s.escapedLocked(playerID)
-	if err != nil {
+	if err := s.outOfPlayLocked(playerID); err != nil {
 		return fmt.Errorf("depart %s: %w", playerID, err)
 	}
-	if escaped {
-		return fmt.Errorf("depart %s: %w", playerID, ErrEscapedWaits)
-	}
 
 	s.departed[playerID] = struct{}{}
 	return nil
 }
 
-// Release lets an escaped delver who can no longer come back go from this run
-// (FS-QPDKN §Requirements 29). As with Depart, their body stays, so the run's
-// end settles their plunder as if they had stayed, and they are dropped from
-// the run's recipients. It is not a leave: Depart still refuses them, and
-// Release refuses anyone who has not escaped.
-func (s *Session) Release(playerID uuid.UUID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	escaped, err := s.escapedLocked(playerID)
-	if err != nil {
-		return fmt.Errorf("release %s: %w", playerID, err)
-	}
-	if !escaped {
-		return fmt.Errorf("release %s: %w", playerID, ErrNotEscaped)
-	}
-
-	s.departed[playerID] = struct{}{}
-	return nil
-}
-
-// Escaped reports whether the member has a body here that escaped. A member
-// with no body here has not; they are simply not here.
-func (s *Session) Escaped(playerID uuid.UUID) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	escaped, err := s.escapedLocked(playerID)
-	return err == nil && escaped
-}
-
-// escapedLocked reports whether the member's body here, which must be out of
-// play, escaped: refused for a member with no body here, and for one still in
-// play. Callers hold at least the read lock.
-func (s *Session) escapedLocked(playerID uuid.UUID) (bool, error) {
+// outOfPlayLocked refuses a member with no body here, and one still in play;
+// anyone else is resolved here (dead, escaped or left behind). Callers hold at
+// least the read lock.
+func (s *Session) outOfPlayLocked(playerID uuid.UUID) error {
 	entityID, here := s.playerIDToEntitiesID[playerID]
 	if !here {
-		return false, ErrNotInThisWorld
+		return ErrNotInThisWorld
 	}
 	entity, ok := s.EntityManager.GetEntity(entityID)
 	if !ok {
-		return false, ErrNotInThisWorld
+		return ErrNotInThisWorld
 	}
 	if systems.InPlay(entity) {
-		return false, ErrStillInPlay
+		return ErrStillInPlay
 	}
-	pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
-	return isPlayer && pc.(*components.PlayerComponent).Escape, nil
+	return nil
 }
 
 // Fall is a delver in play choosing to die where they stand (FS-9K8EZ
