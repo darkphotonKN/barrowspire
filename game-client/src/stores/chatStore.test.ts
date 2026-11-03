@@ -6,6 +6,7 @@ import {
   CHAT_FILTER_KEY,
   CHAT_RECALL_DEPTH,
   createChatStore,
+  isChatLine,
   visibleChatLines,
   type ChatLinePayload,
 } from "./chatStore";
@@ -323,5 +324,39 @@ describe("chatStore sent history (asked 2026-10-31: recall with the arrow keys)"
       .getState()
       .rememberSent("private");
     expect(writes).toEqual([]);
+  });
+});
+
+// FS-KCQ06 R6, I-KCQ06-3: a whisper carries its target, so its echo can say who it went to
+describe("isChatLine for a whisper (FS-KCQ06 R6)", () => {
+  const whisper = line("hello", {
+    channel: "whisper",
+    scope: "22222222-2222-4222-8222-222222222222",
+    target_id: "22222222-2222-4222-8222-222222222222",
+    target_name: "Kaelen",
+  });
+
+  it("should take a whisper that names its target", () => {
+    expect(isChatLine(whisper)).toBe(true);
+  });
+
+  it("should refuse a whisper with no target, and not ask other channels for one", () => {
+    const { target_name: _name, ...noName } = whisper;
+    const { target_id: _id, ...noId } = whisper;
+    expect(isChatLine(noName)).toBe(false);
+    expect(isChatLine(noId)).toBe(false);
+    expect(isChatLine(line("hi"))).toBe(true);
+  });
+
+  it("should hide and show whispers with the whisper filter", () => {
+    const store = createChatStore();
+    store.getState().receive(whisper);
+    expect(visibleChatLines(store.getState())).toHaveLength(1);
+
+    store.getState().toggleChannel("whisper");
+    expect(visibleChatLines(store.getState())).toHaveLength(0);
+
+    store.getState().toggleChannel("whisper");
+    expect(visibleChatLines(store.getState())).toHaveLength(1);
   });
 });

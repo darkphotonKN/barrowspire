@@ -44,7 +44,8 @@ interface FakeMask {
   destroy(): void;
 }
 
-function fakeScene() {
+/** `heightOf` sets a text's drawn height by its words, as a wrapped line's would be. */
+function fakeScene(heightOf: (content: string) => number = () => 18) {
   const texts: FakeText[] = [];
   const maskRecords: FakeMask[] = [];
   const panels: {
@@ -109,7 +110,7 @@ function fakeScene() {
       fontSize: style.fontSize,
       x,
       y,
-      height: 18,
+      height: heightOf(content),
       alpha: 1,
       originX: 0,
       destroyed: false,
@@ -296,6 +297,60 @@ describe("ChatWindow (C20, C22, C29: the stream drawn)", () => {
     expect(t.color).toBe(toCss(palette.chatSystem));
   });
 
+  // FS-KCQ06 C14, C16: a whisper reads From or To by who sent it, in the whisper colour, under the
+  // Whisper tab; its notices are system lines with the server's words
+  it("should draw a received whisper as From Name and the echo as To Name, both in the whisper colour", () => {
+    const store = createChatStore();
+    const s = fakeScene();
+    new ChatWindow(s.scene, store, X, BOTTOM, { selfId: () => "p-wren" });
+    const whisper = {
+      channel: "whisper" as const,
+      scope: "p-kaelen",
+      target_id: "p-kaelen",
+      target_name: "Kaelen",
+    };
+    store
+      .getState()
+      .receive(stamped("ho there", { ...whisper, sender_id: "p-wren" }));
+    store.getState().receive(
+      stamped("well met", {
+        ...whisper,
+        sender_id: "p-kaelen",
+        sender_name: "Kaelen",
+        scope: "p-wren",
+        target_id: "p-wren",
+        target_name: "Wren",
+      }),
+    );
+
+    const [echo, received] = s.messageTexts();
+    expect(echo.content).toBe("To Kaelen: ho there");
+    expect(received.content).toBe("From Kaelen: well met");
+    expect(echo.color).toBe(toCss(palette.chatWhisper));
+    expect(received.color).toBe(toCss(palette.chatWhisper));
+
+    toggleOf(s, "Whisper").onPress!();
+    expect(s.messageTexts()).toEqual([]);
+    toggleOf(s, "Whisper").onPress!();
+    expect(s.messageTexts()).toHaveLength(2);
+  });
+
+  it.each([
+    ["not_online", "That player is not online."],
+    ["whisper_self", "You can't whisper yourself."],
+  ])(
+    "should draw a %s notice as a system line with the server's text",
+    (code, text) => {
+      const { store, messageTexts } = rig();
+
+      store.getState().notice({ code, text });
+
+      const [t] = messageTexts();
+      expect(t.content).toBe(`— ${text}`);
+      expect(t.color).toBe(toCss(palette.chatSystem));
+    },
+  );
+
   it("should show only the newest eight lines while following", () => {
     const { say, contents } = rig();
 
@@ -441,12 +496,17 @@ interface FakeField {
   events?: import("./chatInputField").ChatInputFieldEvents;
 }
 
-function inputRig(mayOpen = () => true) {
+function inputRig(
+  mayOpen = () => true,
+  selfId?: () => string | undefined,
+  heightOf?: (content: string) => number,
+) {
   const store = createChatStore();
-  const s = fakeScene();
+  const s = fakeScene(heightOf);
   const fields: FakeField[] = [];
   const sent: unknown[] = [];
   const window = new ChatWindow(s.scene, store, X, BOTTOM, {
+    selfId,
     input: {
       mayOpen,
       send: (line) => sent.push(line),
@@ -739,9 +799,13 @@ describe("ChatWindow picker wiring", () => {
     const { field } = inputRig();
     field().value = "hi";
     field().events!.picked("whisper");
-    // whisper is not open yet (FS-KCQ06): the picker falls back to Area and the draft is untouched
-    expect(field().channel).toBe("area");
-    expect(field().value).toBe("hi");
+    expect(field().channel).toBe("whisper");
+    expect(field().value).toBe("@hi");
+
+    // trade is not open yet: the picker falls back to the draft's channel and leaves it untouched
+    field().events!.picked("trade");
+    expect(field().channel).toBe("whisper");
+    expect(field().value).toBe("@hi");
   });
 });
 
@@ -1082,5 +1146,237 @@ describe("ChatWindow world lines (FS-5SH4G C15, I-5SH4G-3)", () => {
     toggleOf(s, "World").onPress!();
     expect(s.messageTexts()).toHaveLength(0);
     expect(s.store.getState().lines).toHaveLength(1);
+  });
+});
+
+// FS-KCQ06 C15, I-KCQ06-4: a sender's name in a drawn line is a hit area as wide as the name is
+// drawn; a click on it (on the release) fills `@Name ` and opens the input. The stand-in font draws
+// every character 7px wide and every line 18px tall.
+describe("ChatWindow clicking a name (FS-KCQ06 C15)", () => {
+  const CHAR = 7;
+  const whisper = {
+    channel: "whisper" as const,
+    scope: "p-kaelen",
+    target_id: "p-kaelen",
+    target_name: "Kaelen",
+  };
+  const click = (s: ReturnType<typeof inputRig>, x: number, y: number) => {
+    s.input.emit("pointerdown", { x, y });
+    s.input.emit("pointerup", { x, y });
+  };
+  /** The point in the middle of characters `from`..`to` of a drawn line. */
+  const at = (t: FakeText, from: number, to: number) =>
+    [t.x + ((from + to) / 2) * CHAR, t.y + 9] as const;
+
+  it("should fill @Name and one space, pick whisper and focus the input when the sender's name is clicked", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+
+    const [line] = s.messageTexts();
+    click(s, ...at(line, 0, "Wren".length));
+
+    expect(s.field().value).toBe("@Wren ");
+    expect(s.field().channel).toBe("whisper");
+    expect(s.field().focused).toBe(true);
+    expect(s.window.isTyping()).toBe(true);
+  });
+
+  it.each(["world", "party"] as const)(
+    "should take a click on the sender's name in a %s line too",
+    (channel) => {
+      const s = inputRig(
+        () => true,
+        () => "p-me",
+      );
+      s.store.getState().receive(stamped("well met", { channel }));
+
+      click(s, ...at(s.messageTexts()[0], 0, 4));
+
+      expect(s.field().value).toBe("@Wren ");
+    },
+  );
+
+  it("should fill the target of a To Name echo, and the sender of a From Name whisper", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-wren",
+    );
+    s.store
+      .getState()
+      .receive(stamped("ho there", { ...whisper, sender_id: "p-wren" }));
+    s.store.getState().receive(
+      stamped("well met", {
+        ...whisper,
+        sender_id: "p-orla",
+        sender_name: "Orla",
+        scope: "p-wren",
+        target_id: "p-wren",
+        target_name: "Wren",
+      }),
+    );
+    const [echo, received] = s.messageTexts();
+    expect(echo.content).toBe("To Kaelen: ho there");
+    expect(received.content).toBe("From Orla: well met");
+
+    click(s, ...at(echo, "To ".length, "To Kaelen".length));
+    expect(s.field().value).toBe("@Kaelen ");
+
+    click(s, ...at(received, "From ".length, "From Orla".length));
+    expect(s.field().value).toBe("@Orla ");
+  });
+
+  it("should do nothing for a click on the line outside the name", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+    s.store.getState().receive(
+      stamped("hi", {
+        ...whisper,
+        sender_id: "p-kaelen",
+        sender_name: "Kaelen",
+      }),
+    );
+    const [area, received] = s.messageTexts();
+
+    click(s, ...at(area, "Wren: ".length, "Wren: well met".length));
+    // the From before a whisper's name is the line's, not the name's
+    click(s, ...at(received, 0, "From".length));
+
+    expect(s.field().value).toBe("");
+    expect(s.field().focused).toBe(false);
+  });
+
+  it("should do nothing for a click on this player's own name", () => {
+    const s = inputRig(
+      () => true,
+      () => "s",
+    );
+    s.store.getState().receive(stamped("well met"));
+
+    click(s, ...at(s.messageTexts()[0], 0, 4));
+
+    expect(s.field().value).toBe("");
+    expect(s.field().focused).toBe(false);
+  });
+
+  it("should act on the release, not the press, and only when both land on the name", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+    const [line] = s.messageTexts();
+    const [nx, ny] = at(line, 0, 4);
+
+    s.input.emit("pointerdown", { x: nx, y: ny });
+    expect(s.field().value).toBe("");
+    expect(s.field().focused).toBe(false);
+    // pressed on the name, let go on the line's words
+    s.input.emit("pointerup", { x: nx + 10 * CHAR, y: ny });
+    expect(s.field().value).toBe("");
+
+    // pressed on the words, let go on the name
+    s.input.emit("pointerdown", { x: nx + 10 * CHAR, y: ny });
+    s.input.emit("pointerup", { x: nx, y: ny });
+    expect(s.field().value).toBe("");
+  });
+
+  it("should replace the draft's prefix and keep its words", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+    s.field().value = "#selling a blade";
+    s.field().events!.typed(false);
+
+    click(s, ...at(s.messageTexts()[0], 0, 4));
+
+    expect(s.field().value).toBe("@Wren selling a blade");
+  });
+
+  it("should keep the player typing when they click a name while the input is open", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+    s.press("ENTER");
+    s.field().value = "hi";
+    s.field().events!.typed(false);
+
+    click(s, ...at(s.messageTexts()[0], 0, 4));
+
+    expect(s.window.isTyping()).toBe(true);
+    expect(s.field().focused).toBe(true);
+    expect(s.field().value).toBe("@Wren hi");
+  });
+
+  it("should do nothing while something else owns the keys", () => {
+    const s = inputRig(
+      () => false,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+
+    click(s, ...at(s.messageTexts()[0], 0, 4));
+
+    expect(s.field().value).toBe("");
+    expect(s.field().focused).toBe(false);
+  });
+
+  it("should follow the lines as they move: a scrolled line's name is where it is drawn now", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("first", { sender_name: "Orla" }));
+    s.store.getState().receive(stamped("second"));
+    const [, second] = s.messageTexts();
+    const [x, y] = at(second, 0, 4);
+    s.store.getState().receive(stamped("third", { sender_name: "Brann" }));
+
+    // "second" moved up a line; what is drawn at its old place now is Brann's line
+    click(s, x, y);
+
+    expect(s.field().value).toBe("@Brann ");
+  });
+
+  it("should not take a click on a name cut off above the message area", () => {
+    // the oldest line wraps so tall its first row sits under the tab row
+    const tall = (content: string) => (content.startsWith("Orla:") ? 200 : 18);
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+      tall,
+    );
+    s.store.getState().receive(stamped("a long tale", { sender_name: "Orla" }));
+    s.store.getState().receive(stamped("hi"));
+    const orla = s.shown().find((t) => t.content.startsWith("Orla:"))!;
+    const m = chatWindowFrame(X, BOTTOM).messages;
+    expect(orla.y).toBeLessThan(m.y);
+
+    click(s, orla.x + 2 * CHAR, orla.y + 9);
+
+    expect(s.field().value).toBe("");
+  });
+
+  it("should draw no hit areas while folded", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("well met"));
+    const [x, y] = at(s.messageTexts()[0], 0, 4);
+    s.store.getState().toggleFolded();
+
+    click(s, x, y);
+
+    expect(s.field().value).toBe("");
   });
 });
