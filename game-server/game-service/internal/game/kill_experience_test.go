@@ -232,3 +232,39 @@ func TestRun_SlainGhoulFeedsThePartyOnTheTick(t *testing.T) {
 		assert.Equal(t, 10, sc.(*components.StatsComponent).Experience)
 	}
 }
+
+// A delver who is dead or escaped and stays to watch receives nothing from the run: no experience
+// when a living delver slays a monster on the tick, and no item, even one lying in reach in an open
+// chest. A matched party keeps its watchers as members; what they receive is decided here, by who
+// is in play, never by membership. FS-988SM §Requirements 15, 16; FS-BDA7X §Requirements 9.
+func TestRun_Watcher_GetsNoKillExperienceAndNoItem(t *testing.T) {
+	for _, how := range []string{"dead", "escaped"} {
+		t.Run(how, func(t *testing.T) {
+			s := unstartedRun(t)
+			delver, killer := placeDelver(t, s, "warrior", 500, 500)
+			watcherID, watcher := placeDelver(t, s, "mage", 590, 500)
+			if how == "dead" {
+				kill(t, watcher)
+			} else {
+				markEscaped(t, watcher)
+			}
+			itemID := s.AddItem(pickupBread)
+			chestID := openChest(t, s, 600, 500, itemID)
+			g := frailGhoul(s, 545, 500)
+			// rooted, so the test alone decides where it stands
+			g.RemoveComponent(ecs.ComponentTypeVelocity)
+
+			require.NoError(t, s.handleAttack(delver, g.ID))
+			tick(s)
+			err := s.handleInteract(watcherID, itemID)
+
+			ks, _ := killer.GetComponent(ecs.ComponentTypeStats)
+			require.Equal(t, 10, ks.(*components.StatsComponent).Experience, "the living killer was paid")
+			ws, _ := watcher.GetComponent(ecs.ComponentTypeStats)
+			assert.Zero(t, ws.(*components.StatsComponent).Experience, "the watcher gets no experience")
+			assert.ErrorIs(t, err, ErrDelverOutOfPlay)
+			assert.Empty(t, inventory(t, s, watcher.ID).ItemIDs, "no item reaches the watcher's bag")
+			assert.Equal(t, []uuid.UUID{itemID}, itemList(t, s, chestID).ItemIDs, "the item stays in the chest")
+		})
+	}
+}

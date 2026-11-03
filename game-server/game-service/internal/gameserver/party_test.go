@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
@@ -61,6 +62,18 @@ func newPartyRig(t *testing.T, opts ...Option) *partyRig {
 // newPartyRigOn is newPartyRig with options that need the rig's Redis client.
 func newPartyRigOn(t *testing.T, extra func(client redis.UniversalClient) []Option) *partyRig {
 	t.Helper()
+	return newPartyRigAuthed(t, &MockAuthClient{}, extra)
+}
+
+// newPartyRigAuthed is newPartyRigOn with connections authenticated by authClient.
+func newPartyRigAuthed(t *testing.T, authClient grpcauth.AuthClient, extra func(client redis.UniversalClient) []Option) *partyRig {
+	t.Helper()
+	return newPartyRigAnnouncing(t, authClient, noopAnnouncer{}, extra)
+}
+
+// newPartyRigAnnouncing is newPartyRigAuthed with handoffs announced through announcer.
+func newPartyRigAnnouncing(t *testing.T, authClient grpcauth.AuthClient, announcer HandoffAnnouncer, extra func(client redis.UniversalClient) []Option) *partyRig {
+	t.Helper()
 
 	client, mini := testutil.NewRedis(t)
 	opts := append([]Option{WithPartyStore(partystore.NewRedis(client))}, extra(client)...)
@@ -72,7 +85,7 @@ func newPartyRigOn(t *testing.T, extra func(client redis.UniversalClient) []Opti
 	t.Cleanup(func() { stopWorlds(server) })
 	ctx, shutdown := context.WithCancel(context.Background())
 	t.Cleanup(shutdown)
-	server = newTestServer(t, ctx, &MockAuthClient{}, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, noopAnnouncer{},
+	server = newTestServer(t, ctx, authClient, queue, &MockEventEmitter{}, &MockItemsClient{}, characters, testPodID, testPodAddr, announcer,
 		append([]Option{WithPartyClock(partyClock.now), withPartyTicks(ticks)}, opts...)...,
 	)
 	hub, ok := server.HubSession()

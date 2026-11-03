@@ -56,6 +56,7 @@ server state and sends intents. ✅
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
+- [ ] Told why entry waits while a run settles → FS-QPDKN
 - [x] Die by choice from the run's ESC menu → FS-9K8EZ
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S
@@ -71,6 +72,7 @@ server state and sends intents. ✅
 - [x] Mercenary class → FS-MAMHR
 - [x] Gear and bag overlay → FS-HRH2J
 - [x] Character stats overlay → FS-HRH2J
+- [ ] A character name is one word → FS-KCQ06
 
 ### Presentation
 
@@ -139,6 +141,8 @@ server state and sends intents. ✅
 - [x] Channel filters on one chat stream → FS-WJGFJ
 - [x] Send to the world channel from the chat window → FS-5SH4G
 - [ ] Send to the party channel from the chat window → FS-XGW7H
+- [ ] Whisper a player from the chat window → FS-KCQ06
+- [ ] Click a sender's name to whisper them → FS-KCQ06
 - [ ] Mute a player → FS-4HEG7
 - [ ] Report a chat message → FS-4HEG7
 

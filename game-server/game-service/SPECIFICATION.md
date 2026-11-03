@@ -55,6 +55,8 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Start a solo run without the queue → FS-NSV3D
 - [x] Resolved players settle with the run despite leaving or disconnecting → FS-QPDKN
+- [ ] A dead player's disconnect counts as leaving the run → FS-QPDKN
+- [ ] An escaped player cut off from their run waits in the village until it settles → FS-QPDKN
 
 ### ECS world
 
@@ -148,6 +150,8 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Ready check before a party enters → FS-BJNYC
 - [ ] Party members enter only with their party → FS-BJNYC
 - [ ] A party is locked inside its instance → FS-BJNYC
+- [ ] A random match forms a party → FS-988SM
+- [ ] A matched party lasts only for its run → FS-988SM
 - [ ] Party members' class resource in the broadcast → FS-CH21F
 
 ### Chat

@@ -252,6 +252,13 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   delver escapes. Unsafe follows the item, not the slot: equipping it keeps it unsafe. A dead
   delver's unsafe finds are lost, whether they leave early or wait for the run's end. Field
   death costs nothing, so field finds are never lost (FS-18Z5F).
+- **Released escapee** — an escaped delver who can no longer come back (grace run out, or a
+  normal close). The run keeps their body and settles it at its end, but their record no longer
+  names the run. Not a leave: an escaped delver can't leave on their own (FS-QPDKN R29).
+- **Settling** — a released escapee whose run has not settled yet, marked in Redis
+  (`settling:<playerID>`). A settling player can't enter any world that takes their gear (queue,
+  solo, party entry, field), so the plunder settlement puts in their bag can't collide with a
+  checkout (FS-QPDKN R32–R36).
 
 ### Containers (FS-4R9M9, FS-1D6BX)
 
@@ -327,7 +334,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   none left spawns the arrival elsewhere. ("Formation" here is spatial; it has nothing to do with
   *party formation* below, which is players grouping up.)
 
-### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R; ADR-0037)
+### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R, FS-988SM; ADR-0037, ADR-0039)
 
 Before these specs, "party" was loose prose for "the players in a run". It is now a thing with
 an id. Use **roster** or **the run's players** for the people a run seats; use **party** only
@@ -376,11 +383,14 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   `{player id, pod id, pod address, world}`, for **every connected player with a character**, in any world.
   Written by the pod that holds the player, kept alive by TTL, deleted when they leave. Answers
   "is this player online, and where": invites, party fan-out, reconnects and whisper (FS-KCQ06)
-  use it. A name with no entry is **offline**. Not a friends list and not a history.
+  use it. A name with no entry is **offline**. Not a friends list and not a history. A lookup
+  query shaped like a uuid is always read as a player id, never a name, so a whisper or invite can
+  name a player by id, and a 32-hex-character name can't be found by name (FS-KCQ06, accepted).
 - **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for **letters**
   addressed to one of *its* players from another pod: an invite, a **party update** (which also
   carries the party, versioned, for that pod's party cache), a party notice, or a **party chat
-  letter** (`party_chat`: one stamped party chat line and the players there it is for, FS-XGW7H).
+  letter** (`party_chat`: one stamped party chat line and the players there it is for, FS-XGW7H),
+  or a **whisper letter** (`whisper`: one stamped whisper and the one player it is for, FS-KCQ06).
   Every letter is at most once. Rides the same
   Redis client and subscriber → hub-loop shape as world chat. Distinct from the **match-start
   channel**, which carries run coordination, and from the chat bus, which carries chat lines. (In
@@ -417,13 +427,23 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Ready check** — the pending request a party entry sends every other member: accept within
   30 s or the entry is cancelled and the party told who declined or timed out. Same shape as an
   invite (sent, awaited, expired), different question.
-- **Auto-formed party** — the party the host pod creates at run creation from a random match's
-  roster, so matched strangers are a party too: leader at random, no invites. A no-show (seat
-  released) is not a member. A solo run is a party of one (FS-BJNYC), so everyone in a run is in
-  a party.
+- **Matched party** (also *auto-formed party*) — the party the host pod creates from **every**
+  matched player, local and on other pods, on a random match (`find_game` → `MatchStart`),
+  **before it creates the run** and before anyone enters the tower: so matched strangers are a
+  party too, leader at random among the **local** players, no invites. If any matched player
+  already has a party, the match is **cancelled**: no run, and everyone is told to queue again. A late arrival is entering, not
+  joining; one who never connects or closes the tab is a disconnected member, host or not. It
+  carries the **matched origin**, which is what sets its lifetime apart: a member leaves it on
+  **leaving the run** (dying and leaving, escaping and leaving, leaving early, their reconnect
+  grace running out, or their seat being released before they arrived, at which point they count
+  as dead), and it ends when its last member leaves. It never outlives its
+  run (ADR-0039, FS-988SM). A member who stays to watch after dying or escaping is still a member.
+  The opposite is a **pre-formed party** (made by create and invite), which persists after a run.
+  A solo run is *not* a party: "every run is a party" is parked (FS-BJNYC Out of Scope).
 - **Instance lock** — while a party is inside an instance, leave, kick, transfer and loot-rule
   changes are refused. Disconnecting keeps the run's existing reconnect grace; only when it runs
-  out does the player count as dead for that run. They remain a member regardless.
+  out does the player count as dead for that run. A pre-formed party's member remains a member
+  regardless; a matched party's member leaves it on leaving the run (FS-988SM).
 - **Loot rule** — the party setting that says whose bag a pickup lands in: **random allocation**
   (default; a random living, un-escaped member, redrawn if their bag is full) or **picker keeps**.
   A closed set that later rules extend. Chosen by the leader, locked inside an instance. It
@@ -502,9 +522,16 @@ above; the rule is to qualify, never to rename.
   Rendered as system, never as a member speaking. Distinct from a **chat notice**, which answers
   one sender alone. None is sent yet: party events and loot allocation notices in the party chat
   channel were left out of FS-XGW7H for a later FS.
-- **Whisper** — a one-to-one message to one player by id, found on any pod over Redis; the pod
-  holding the target delivers it. A target held by no pod is **offline**, and the sender gets
-  one system notice. Nothing is queued for later.
+- **Whisper** — a one-to-one message to one player, addressed by character name and found
+  through the **presence index**, on any pod and in any world. The sender's pod delivers it
+  itself when the target is seated there; otherwise it sends one **whisper letter** to the
+  target's pod inbox, and only that pod delivers it (FS-KCQ06). A name with no presence entry is
+  **offline**, and the sender gets one chat notice. Nothing is queued for later.
+- **Whisper echo** — the sender's own copy of a whisper they sent, shown as "To Name: …". It
+  means the line went out, never that it was read: on the same pod, the target's writer queue took
+  it; across pods, the whisper letter was published and at least one pod received it (a receiver
+  count above 0, FS-KCQ06 R8a). A line that didn't go out gets `not_online` instead of an echo.
+  There is no ack.
 - **Chat bus** — the Redis side of chat (`internal/chatbus`): the pub/sub the cross-pod
   channels ride, bytes in and bytes out, knowing nothing about lines. A pod subscribes to the
   world channel at boot and publishes its own world lines to it (FS-5SH4G). Not a store: nothing

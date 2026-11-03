@@ -191,6 +191,10 @@ func (failingPublish) Publish(context.Context, string, []byte) error {
 	return errors.New("redis gone")
 }
 
+func (failingPublish) PublishCount(context.Context, string, []byte) (int64, error) {
+	return 0, errors.New("redis gone")
+}
+
 // An invite whose letter cannot be published notices delivery_failed and holds no place.
 // FS-R82NV R10.
 func TestPartyInvite_CrossPod_PublishFailsDeliveryFailed(t *testing.T) {

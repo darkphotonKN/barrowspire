@@ -835,10 +835,7 @@ export class HubScene extends Phaser.Scene {
     // A reply after the handoff already failed finds nothing to leave and changes nothing.
     socketManager.on(ActionType.LeaveQueue, () => {
       if (!this.queued) return;
-      this.leftQueue();
-      this.queuePanel?.destroy();
-      this.queuePanel = undefined;
-      this.closeMenu();
+      this.queueGone();
     });
     socketManager.onError(ActionType.LeaveQueue, (info) => {
       if (!this.leavePending) return;
@@ -855,9 +852,14 @@ export class HubScene extends Phaser.Scene {
     });
     // A find_game the server would not take (a party member, unreadable gear, or away from the
     // door): the player is not queued and stays where they stand, told why by the door they asked,
-    // or in passing (FS-BJNYC R22).
+    // or in passing (FS-BJNYC R22). One arriving while queued is a random match called off: the
+    // match already took the player out, so the queue comes down with the words (FS-988SM R8a, R24).
     socketManager.onError(ActionType.Find_Game, (info) => {
       const words = spireRefusalCopy(info.reason, info.message, "The delve will not gather for you yet. Ask again.");
+      if (this.queued) {
+        this.queueGone();
+        return this.refused(words);
+      }
       if (!this.queuePending) return this.notice(words);
       this.queuePending = false;
       this.refused(words);
@@ -1986,6 +1988,17 @@ export class HubScene extends Phaser.Scene {
     this.leavePending = false;
     this.leaveButton?.destroy();
     this.leaveButton = undefined;
+  }
+
+  /**
+   * The server says the player is out of the queue (left it, or their match was called off): the
+   * panel, its Leave and the menu's way out all come down.
+   */
+  private queueGone(): void {
+    this.leftQueue();
+    this.queuePanel?.destroy();
+    this.queuePanel = undefined;
+    this.closeMenu();
   }
 
   /**

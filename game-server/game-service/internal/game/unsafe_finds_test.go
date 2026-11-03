@@ -138,6 +138,10 @@ func TestGetRawMatchState_DeadDelverLosesUnsafeFinds(t *testing.T) {
 			require.NoError(t, g.s.Depart(g.playerID))
 		}, false, []string{"Barrow Helm"}},
 		{"escaped", func(t *testing.T, g geared) { g.escape(t) }, true, []string{"Lesser Heal Potion", "Barrow Helm"}},
+		{"escaped, released", func(t *testing.T, g geared) {
+			g.escape(t)
+			require.NoError(t, g.s.Release(g.playerID))
+		}, true, []string{"Lesser Heal Potion", "Barrow Helm"}},
 		{"alive, not escaped", func(t *testing.T, g geared) {}, true, []string{"Lesser Heal Potion", "Barrow Helm"}},
 	}
 	for _, tt := range tests {

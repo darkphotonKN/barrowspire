@@ -22,6 +22,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/settling"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -108,6 +109,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
 		gameserver.WithHubOccupancy(hubocc.NewRedis(redisClient)),
 		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
+		// released escapees are marked settling there, so every pod refuses them an entry that
+		// takes their gear until their run settles (FS-QPDKN R32, R33)
+		gameserver.WithSettling(settling.NewRedis(redisClient)),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())

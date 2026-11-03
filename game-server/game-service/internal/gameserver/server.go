@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -76,10 +77,17 @@ type Server struct {
 	// the handoff went over: not present here, and not held for the grace when
 	// that connection drops (FS-NCC9J R19)
 	travelling map[uuid.UUID]*websocket.Conn
-	// resolved run members whose reconnect grace ran out: kept, body and
-	// record, until their run ends and settles them (FS-QPDKN R18, R19)
+	// dead run members whose reconnect grace ran out: kept, body and record,
+	// until their run ends and settles them (FS-QPDKN R18, R26). An escaped one
+	// is released instead, body kept and record gone (R29)
 	awaitingSettlement map[uuid.UUID]struct{}
 	lastGraceHold      graceHold
+	// released escapees marked settling until their run settles (FS-QPDKN R32)
+	settling *settlingKeeper
+	// a test seam: runs inside LeaveRun once the hub has seated the leaver and
+	// before their record moves, so a test can land a racing drop there. Nil
+	// outside tests
+	leaveRunSeated func()
 
 	mu sync.RWMutex
 
@@ -184,6 +192,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	if boot.partyStore != nil {
 		server.leaders = boot.partyStore
 	}
+	server.settling = newSettlingKeeper(boot.settling, server.runLives)
+	server.settling.start(ctx, boot.settlingTicks)
 
 	// initialize message sender
 	newSender := messaging.NewMessageSender(server)
@@ -211,6 +221,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		size:       boot.partySize,
 		now:        boot.partyNow,
 		newID:      uuid.New,
+		pickLeader: rand.IntN,
 		ticks:      partyTicks,
 		store:      boot.partyStore,
 		presence:   boot.presence,
@@ -222,8 +233,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.parties = party
 	party.start(ctx)
 	// party lines read the registry's cache and reach other pods through its runner and courier
-	// (FS-XGW7H)
-	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus, party)
+	// (FS-XGW7H); a whisper's target is looked up in its presence index on the same runner
+	// (FS-KCQ06)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus, party, party)
 	var presenceWriter presenceIndex
 	if boot.presence != nil {
 		presenceWriter = boot.presence
@@ -570,6 +582,9 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		return
 	}
 
+	// everyone this end sends home, or settles off record, leaves the run's
+	// matched party with it (FS-988SM §Requirements 11, 14)
+	var home []uuid.UUID
 	for _, playerID := range run.GetPlayerIDs() {
 		player, exists := s.PlayerByID(playerID)
 		if !exists {
@@ -580,22 +595,26 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		if world, _ := s.currentWorldOf(playerID); world != runID {
 			continue
 		}
-		// a resolved member kept past their grace is settled by this end (the
+		// a dead member kept past their grace is settled by this end (the
 		// snapshot was taken before this) and goes off record; nobody seats a
-		// body in the hub for a member who is not here (FS-QPDKN R18, R19)
+		// body in the hub for a member who is not here (FS-QPDKN R18, R26)
 		if s.forgetIfAwaitingSettlement(playerID) {
+			home = append(home, playerID)
 			continue
 		}
 
 		run.RemovePlayer(playerID.String())
 		hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 		s.setCurrentWorld(player, hub.ID)
+		home = append(home, playerID)
 
 		if err := s.sender.SendMessageToPlayer(playerID, worldEnteredMessage(hub)); err != nil {
 			slog.Warn("Could not tell a returning player they are home",
 				"player_id", playerID, "error", err)
 		}
 	}
+
+	s.leftRun(runID, home...)
 }
 
 // forgetIfAwaitingSettlement ends the stay of a member kept only for their
@@ -632,6 +651,13 @@ func (s *Server) currentWorldOf(playerID uuid.UUID) (uuid.UUID, bool) {
 * run ends (FS-QPDKN §Requirements 13, 14). The run keeps their body and settles
 * them at its end; the hub seats them now. Refused, with the run's reason, for
 * anyone the run will not let go, and for a member whose record names no run.
+*
+* A leave_run on the loop and the drop's own leave can both find the record
+* naming the run, and Depart and the hub's seat take both. Only the record move
+* tells them apart: it is made only while the record still names this run, so
+* the later of the two moves nothing (R27). Otherwise a loop's leave landing
+* after the drop has held them would mark them connected with no connection,
+* and their grace would never end their stay.
 **/
 func (s *Server) LeaveRun(player *types.Player) (*game.Session, error) {
 	hub, exists := s.HubSession()
@@ -650,9 +676,39 @@ func (s *Server) LeaveRun(player *types.Player) (*game.Session, error) {
 	}
 
 	hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
-	s.setCurrentWorld(player, hub.ID)
+	if s.leaveRunSeated != nil {
+		s.leaveRunSeated()
+	}
+	s.moveRecordFromRun(player, run.ID, hub.ID)
+
+	// gone home, so out of the run's matched party (FS-988SM §Requirements 11)
+	s.leftRun(run.ID, player.ID)
 
 	return hub, nil
+}
+
+/**
+* Moves a leaver's record from the run to the hub, across every copy of them,
+* but only the copies still naming that run: a copy that already moved was
+* moved by the other of a leave_run and a drop racing (FS-QPDKN R27), and is
+* left as it is. A member held for a reconnect stays held; anyone else is
+* connected, as setCurrentWorld marks them.
+**/
+func (s *Server) moveRecordFromRun(player *types.Player, runID, hubID uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	connected := constants.Connected
+
+	for _, record := range s.everyRecordOf(player) {
+		if record.CurrentGameSessionId != runID {
+			continue
+		}
+		record.CurrentGameSessionId = hubID
+		if record.ConnectState == nil || *record.ConnectState != constants.Reconnecting {
+			record.ConnectState = &connected
+		}
+	}
 }
 
 // Why a member may not leave the hub right now.
@@ -742,6 +798,26 @@ func (s *Server) DrinkPotion(player *types.Player) {
 	}
 
 	run.Drink(player.ID)
+}
+
+/**
+* Hears, from a run's tick, whose seats the run released: matched players who
+* never arrived and can no longer come back, so they have left the run, and
+* with it its matched party. Returns at once; the party is changed on the
+* hub's loop. FS-988SM §Requirements 7.
+**/
+func (s *Server) SeatsReleased(runID uuid.UUID, memberIDs []uuid.UUID) {
+	s.leftRun(runID, memberIDs...)
+}
+
+// leftRun tells the party registry that members have left a run, so the run's
+// matched party loses them; any other run's party keeps them. Returns at once:
+// the party is changed on the hub's loop. FS-988SM §Requirements 11, 17.
+func (s *Server) leftRun(runID uuid.UUID, memberIDs ...uuid.UUID) {
+	if s.parties == nil || len(memberIDs) == 0 {
+		return
+	}
+	s.parties.leftRun(s.ctx, runID, memberIDs...)
 }
 
 /**
@@ -1008,6 +1084,23 @@ func (s *Server) TownConns() map[uuid.UUID]*websocket.Conn {
 }
 
 /**
+* InTown reports whether playerID's record here names the hub, whether they are
+* connected or inside their reconnect grace: closing the tab is a disconnect,
+* not leaving. A matched player whose record is gone or names another world (a
+* run, a field) is left out of the run. FS-988SM §Requirements 4, 7.
+**/
+func (s *Server) InTown(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.hubSessionID == uuid.Nil {
+		return false
+	}
+	player, exists := s.players[playerID]
+	return exists && player.CurrentGameSessionId == s.hubSessionID
+}
+
+/**
 * SeatedPlayer finds the player connected to this pod and seated in any world
 * under a character name or player id, read off the connection table as
 * SeatedPlayerIDs is. A copy, taken under the lock, so the caller reads it on
@@ -1043,8 +1136,8 @@ type presentPlayer struct {
 }
 
 // PresentPlayers is every player this pod holds with a character, in any world, connected or
-// within the reconnect grace: the presence index's half from this pod (FS-NCC9J R7). A delver kept
-// only for their run's settlement after their grace ran out is gone, not present.
+// within the reconnect grace: the presence index's half from this pod (FS-NCC9J R7). A dead delver
+// kept only for their run's settlement after their grace ran out is gone, not present.
 func (s *Server) PresentPlayers() []presentPlayer {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1111,7 +1204,9 @@ func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.
 	stateSerializer := s.newStateSerializer(entityManager)
 
 	// create session with message sender
-	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
+	// a run's end lets its settling marks go once its settlement is written (FS-QPDKN R32)
+	emitter := settledRunEmitter{EventEmitter: s.eventEmitter, settling: s.settling}
+	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, emitter, s.itemsClient, game.RunBounds())
 
 	newGameSession.InitialSystems()
 
@@ -1151,6 +1246,11 @@ func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.
 	for _, player := range players.LocalPlayers {
 		for _, record := range s.everyRecordOf(player) {
 			record.CurrentGameSessionId = newGameSession.ID
+			// a member inside their reconnect grace enters disconnected, so the
+			// grace still ends their stay if they never come back (FS-988SM R7)
+			if record.ConnectState != nil && *record.ConnectState == constants.Reconnecting {
+				continue
+			}
 			record.ConnectState = &connected
 		}
 	}

@@ -865,6 +865,8 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     { standing: "the leader", party: LED_BY_SELF, notice: { code: "not_at_gate" }, words: "Walk to the Spire's door first." },
     { standing: "the leader", party: LED_BY_SELF, notice: { code: "not_in_town", names: ["Wren"] }, words: "Wren is not in the town." },
     { standing: "the leader", party: LED_BY_SELF, notice: { code: "unavailable" }, words: "The party cannot be changed right now." },
+    // a member's run has not settled yet (FS-QPDKN R33)
+    { standing: "the leader", party: LED_BY_SELF, notice: { code: "settling" }, words: "Your plunder is still being counted. Wait for the delve to end." },
   ])("should say $words in the door's panel when Enter as a party is refused $notice.code for $standing", ({ party, notice, words }) => {
     usePartyStore.setState({ party });
     const { hub, stage, choice, label, atTheDoor, send, reply } = queuedHubOnStage();
@@ -904,6 +906,28 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     for (const each of ["enter", "solo", "queue"]) expect(toneOf(label, each)).toBe(AMBER);
     choice(id)?.handlers.pointerup();
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  // FS-QPDKN R33: a settling player's start_solo and find_game are refused in the server's words,
+  // with no reason; the door says them and nothing is left queued.
+  it.each([
+    { id: "solo", action: "start_solo" },
+    { id: "queue", action: "find_game" },
+  ])("should say a settling refusal of $action in the door's panel, nothing queued", ({ id, action }) => {
+    const SETTLING = "Your plunder is still being counted. Wait for the delve to end.";
+    const { hub, stage, choice, label, atTheDoor, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice(id)?.handlers.pointerup();
+
+    refuse(action, SETTLING);
+
+    expect(says(stage, SETTLING)).toBe(true);
+    expect(hub.dialogue).toBeDefined();
+    expect(hub.soloPending).toBe(false);
+    expect(hub.queuePending).toBe(false);
+    expect(hub.queued).toBe(false);
+    expect(hub.queuePanel).toBeUndefined();
+    for (const each of ["enter", "solo", "queue"]) expect(toneOf(label, each)).toBe(AMBER);
   });
 
   it("should say an unreadable gear refusal at the door in the client's words", () => {
@@ -1052,6 +1076,48 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
 
     expect(says(stage, OPEN_LINE)).toBe(true);
     expect(says(stage, "Form a party first.")).toBe(false);
+  });
+
+  // A random match called off on the host (FS-988SM R8a) is refused as find_game after queue_status:
+  // the match already took the player out of the queue, so the panel comes down (R24).
+  const MATCH_FAILED = "The match failed. Queue again.";
+
+  it("should take the queue down and say why when a match is called off, Wait for company pressable again", () => {
+    const { hub, stage, choice, atTheDoor, reply, refuse, button, send } = queuedHubOnStage();
+    reply("find_game", { message: "Successfully joined matchmaking queue" });
+    reply("queue_status", { current: 2, total: 2 });
+    const panel = hub.queuePanel as Made;
+    const leave = button() as Made;
+
+    refuse("find_game", MATCH_FAILED);
+
+    expect(hub.queued).toBe(false);
+    expect(panel.destroyed).toBe(true);
+    expect(hub.queuePanel).toBeUndefined();
+    expect(leave.destroyed).toBe(true);
+    expect(hub.leaveButton).toBeUndefined();
+    expect(passing(stage, MATCH_FAILED)).toBe(true);
+
+    atTheDoor();
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    choice("queue")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledWith(ActionType.Find_Game, expect.anything());
+  });
+
+  it("should redraw an open door's queued line with every choice when a match is called off", () => {
+    const { hub, stage, choice, atTheDoor, reply, refuse, send } = queuedHubOnStage();
+    reply("queue_status", { current: 2, total: 2 });
+    atTheDoor();
+    expect(says(stage, "The delve is gathering. Wait, or leave the queue.")).toBe(true);
+
+    refuse("find_game", MATCH_FAILED);
+
+    expect(hub.queued).toBe(false);
+    expect(hub.dialogue).toBeDefined();
+    expect(says(stage, MATCH_FAILED)).toBe(true);
+    expect(says(stage, "The delve is gathering. Wait, or leave the queue.")).toBe(false);
+    choice("queue")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledWith(ActionType.Find_Game, expect.anything());
   });
 });
 
@@ -1748,6 +1814,17 @@ describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 5
     standAt(AWAY);
     standAt(MEADOWS_GATE.position);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should tell a settling player to wait for the delve to end (FS-QPDKN R33)", () => {
+    const { stage, standAt, refuse } = queuedHubOnStage();
+    standAt(AWAY);
+    standAt(MEADOWS_GATE.position);
+
+    refuse(ActionType.EnterField, "Your plunder is still being counted. Wait for the delve to end.", "settling");
+
+    expect(said(stage, "Your plunder is still being counted. Wait for the delve to end.")).toBe(true);
+    expect(stage.made.some((m) => m.kind === "text" && m.args[2] === "settling")).toBe(false);
   });
 
   it("should not walk out while the Esc menu or a dialogue is open, as the Spire's door does not open", () => {

@@ -8,6 +8,7 @@ import {
   CHAT_CHANNELS,
   type ChatChannel,
   type ChatEntry,
+  type ChatLine,
 } from "@/stores/chatStore";
 import { palette } from "@/utils/canvasPalette";
 
@@ -104,10 +105,55 @@ export function chatWindowFrame(
   };
 }
 
-/** `Name: text` (R22 as amended 2026-10-31: no time); a system line is `— text` (R29). */
-export function formatChatEntry(entry: ChatEntry): string {
+/**
+ * `Name: text` (R22 as amended 2026-10-31: no time); a system line is `— text` (R29). A whisper
+ * reads `From Name: text`, or `To Name: text` when `selfId`, this player, sent it: the echo
+ * (FS-KCQ06 R14).
+ */
+export function formatChatEntry(entry: ChatEntry, selfId?: string): string {
   if (entry.kind === "system") return `— ${entry.text}`;
-  return `${entry.sender_name}: ${entry.text}`;
+  const { before, name } = namedIn(entry, selfId);
+  return `${before}${name}: ${entry.text}`;
+}
+
+/** The name a player line shows, whose it is, and the words drawn before it. */
+function namedIn(
+  entry: ChatLine,
+  selfId?: string,
+): { before: string; name: string; id: string } {
+  if (entry.channel !== "whisper") {
+    return { before: "", name: entry.sender_name, id: entry.sender_id };
+  }
+  return selfId !== undefined && entry.sender_id === selfId
+    ? {
+        before: "To ",
+        name: entry.target_name ?? "",
+        id: entry.target_id ?? "",
+      }
+    : { before: "From ", name: entry.sender_name, id: entry.sender_id };
+}
+
+/** A line's clickable name: who it is, and where it sits from the line's left edge. */
+export interface ChatNameSpan {
+  name: string;
+  x: number;
+  width: number;
+}
+
+/**
+ * The name in a drawn line a click whispers to (FS-KCQ06 C15): the sender's, or the target's in a
+ * `To Name` echo, placed by `measure` on the very words `formatChatEntry` draws. A system line has
+ * none, and neither does this player's own name: a whisper to it would only be refused.
+ */
+export function chatNameSpan(
+  entry: ChatEntry,
+  selfId: string | undefined,
+  measure: (s: string) => number,
+): ChatNameSpan | null {
+  if (entry.kind === "system") return null;
+  const { before, name, id } = namedIn(entry, selfId);
+  if (!name || (selfId !== undefined && id === selfId)) return null;
+  return { name, x: before ? measure(before) : 0, width: measure(name) };
 }
 
 /**
@@ -262,15 +308,24 @@ export interface ChatTabSegment extends Rect {
 }
 
 /**
- * The filter row's five tab segments, joined edge to edge from the row's left, each as wide as its
- * label (`measure`) plus padding (R24 as amended 2026-10-31).
+ * The channels the window offers, as filter tabs and as picker options. Trade is hidden until it has
+ * its own scoping (Nick, 2026-11-03); it stays in CHAT_CHANNELS, the protocol's closed set, so a
+ * trade line is still recognised. The server relays none, so none arrives.
+ */
+export const CHAT_SHOWN_CHANNELS: readonly ChatChannel[] = CHAT_CHANNELS.filter(
+  (channel) => channel !== "trade",
+);
+
+/**
+ * The filter row's tab segments, one per shown channel, joined edge to edge from the row's left,
+ * each as wide as its label (`measure`) plus padding (R24 as amended 2026-10-31).
  */
 export function chatTabSegments(
   row: Rect,
   measure: (label: string) => number,
 ): ChatTabSegment[] {
   let x = row.x;
-  return CHAT_CHANNELS.map((channel) => {
+  return CHAT_SHOWN_CHANNELS.map((channel) => {
     const width = Math.round(
       measure(CHAT_FILTER_LABEL[channel]) + CHAT_TAB_PAD * 2,
     );

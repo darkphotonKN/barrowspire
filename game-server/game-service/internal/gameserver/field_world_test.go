@@ -67,12 +67,12 @@ type fieldRig struct {
 	settle     *settleSpy
 }
 
-func newFieldRig(t *testing.T, items grpcitems.ItemsClient) *fieldRig {
+func newFieldRig(t *testing.T, items grpcitems.ItemsClient, opts ...Option) *fieldRig {
 	t.Helper()
 
 	queue := newStartSoloQueue()
 	characters := newFakeCharacters()
-	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, items, characters, testPodID, testPodAddr, noopAnnouncer{})
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, queue, &MockEventEmitter{}, items, characters, testPodID, testPodAddr, noopAnnouncer{}, opts...)
 	spy := &settleSpy{}
 	server.visitSettler = spy
 
@@ -97,8 +97,15 @@ func (r *fieldRig) atMeadowsGate(t *testing.T, name string) (*types.Player, *web
 func (r *fieldRig) inHubAt(t *testing.T, name string, conn *websocket.Conn, x, y float64) (*types.Player, *websocket.Conn, *startSoloInbox) {
 	t.Helper()
 
-	player := &types.Player{ID: uuid.New(), Username: name}
-	character := r.characters.give(player.ID, "warrior", name, 3, 900)
+	return r.seatAt(t, &types.Player{ID: uuid.New(), Username: name}, conn, x, y)
+}
+
+// seatAt seats player in the hub at (x, y) on conn, as a character character-service knows, and
+// listens on their connection: a member another pod already knew keeps their id here.
+func (r *fieldRig) seatAt(t *testing.T, player *types.Player, conn *websocket.Conn, x, y float64) (*types.Player, *websocket.Conn, *startSoloInbox) {
+	t.Helper()
+
+	character := r.characters.give(player.ID, "warrior", player.Username, 3, 900)
 	player.Character = character
 	registerTestConn(r.server, conn, player)
 

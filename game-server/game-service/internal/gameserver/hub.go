@@ -65,6 +65,12 @@ type partyKeeper interface {
 	// whether the party cache knows the player as a party member: read on the loop, no Redis call
 	// (FS-BJNYC R1)
 	inParty(playerID uuid.UUID) bool
+	// a random match about to start here: every matched player, local and on other pods, makes one
+	// matched party first, off the loop; formed is handed the outcome back on the loop, and answers
+	// with the run it created, if any (FS-988SM R3, R3a, R8, R9)
+	formMatched(ctx context.Context, locals, remotes []*types.Player, formed func(matchedOutcome) matchedRun)
+	// a letter to a player on podID whose match, hosted here, was cancelled (FS-988SM R8a)
+	sendMatchFailed(podID string, playerID uuid.UUID)
 	// the leader taking the party down, and a member's answer to its ready check (FS-BJNYC R3–R13)
 	enter(ctx context.Context, leader *types.Player, conn *websocket.Conn)
 	ready(ctx context.Context, member *types.Player, conn *websocket.Conn, payload map[string]interface{})
@@ -109,7 +115,12 @@ type SessionManager interface {
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 	AtSpireGate(playerID uuid.UUID) bool
+	InTown(playerID uuid.UUID) bool
+	GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool)
 	CheckLoadout(ctx context.Context, player *types.Player) error
+	// whether any of these players is a released escapee whose run has not settled; blocks on
+	// Redis (FS-QPDKN R33)
+	Settling(ctx context.Context, playerIDs ...uuid.UUID) bool
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
 }
@@ -159,6 +170,11 @@ const partyEntersTogether = "Your party enters together."
 // FS-0XMCP §Requirements 12.
 const awayFromSpireGate = "Walk to the Spire's door first."
 
+// settlingRefusal refuses any entry that checks out the gear of a released
+// escapee whose run has not settled: their plunder lands in their bag when it
+// does. FS-QPDKN §Requirements 33.
+const settlingRefusal = "Your plunder is still being counted. Wait for the delve to end."
+
 // leaveRunRefusal is what a refused leave_run says, by why the run would not
 // let the member go. FS-QPDKN §Requirements 14.
 func leaveRunRefusal(err error) string {
@@ -195,12 +211,17 @@ func leaveHubRefusal(err error) string {
 // refuse answers an action with why it was not done: the same words on the
 // error and in the payload, so the client shows one message whichever it reads.
 func (h *messageHub) refuse(conn *websocket.Conn, action string, why string) {
-	if err := h.sender.SendMessageToConn(conn, types.Message{
+	if err := h.sender.SendMessageToConn(conn, refusal(action, why)); err != nil {
+		slog.Warn("Could not deliver a refusal", "action", action, "error", err)
+	}
+}
+
+// refusal is how a refused action is answered: why in error, and in payload.message.
+func refusal(action string, why string) types.Message {
+	return types.Message{
 		Action:  action,
 		Payload: map[string]interface{}{"message": why},
 		Error:   &why,
-	}); err != nil {
-		slog.Warn("Could not deliver a refusal", "action", action, "error", err)
 	}
 }
 
@@ -288,11 +309,9 @@ func (h *messageHub) refuseField(conn *websocket.Conn, action string, err error)
 }
 
 // enterField walks a hub member into a field. It runs off the message hub's
-// loop: it waits on the queue and on items-service. FS-X2F2H §Requirements 9–13.
-func (h *messageHub) enterField(clientPackage types.ClientPackage) {
-	ctx, cancel := context.WithTimeout(context.Background(), fieldReadTimeout)
-	defer cancel()
-
+// loop: it waits on the queue, the settling mark and items-service, each read
+// bounded on its own by EnterField. FS-X2F2H §Requirements 9–13.
+func (h *messageHub) enterField(ctx context.Context, clientPackage types.ClientPackage) {
 	fieldID, _ := clientPackage.Message.Payload["field"].(string)
 
 	field, err := h.sessionManager.EnterField(ctx, clientPackage.Conn, fieldID)
@@ -313,10 +332,22 @@ func (h *messageHub) enterField(clientPackage types.ClientPackage) {
 // loadout as empty, so entry fails closed. Readable gear sends the message
 // back into the hub's inbound channel marked checked, so the loop runs every
 // guard again on its own state and decides there.
+//
+// A settling entrant is refused first, read off the loop the same way: their
+// bag must stay home until their run settles (FS-QPDKN R33). An unreadable mark
+// lets them on (R35). Each read gets its own bound: a mark read that stalls out
+// its time must not leave the gear read none, which would turn letting them on
+// into refusing them for unreadable gear.
 func (h *messageHub) checkGear(ctx context.Context, player *types.Player, clientPackage types.ClientPackage) {
+	if h.settling(ctx, player.ID) {
+		slog.Info("Refusing Spire entry: settling",
+			"action", clientPackage.Message.Action, "player_id", player.ID)
+		h.refuse(clientPackage.Conn, clientPackage.Message.Action, settlingRefusal)
+		return
+	}
 	readCtx, cancel := context.WithTimeout(ctx, fieldReadTimeout)
+	defer cancel()
 	err := h.sessionManager.CheckLoadout(readCtx, player)
-	cancel()
 	if err != nil {
 		slog.Warn("Refusing Spire entry: gear unreadable",
 			"action", clientPackage.Message.Action, "player_id", player.ID, "error", err)
@@ -329,6 +360,14 @@ func (h *messageHub) checkGear(ctx context.Context, player *types.Player, client
 	case h.sessionManager.GetServerChan() <- clientPackage:
 	case <-ctx.Done():
 	}
+}
+
+// settling reads whether the player is settling, bounded as a field entry's
+// read is (FS-QPDKN R33, R35).
+func (h *messageHub) settling(ctx context.Context, playerID uuid.UUID) bool {
+	readCtx, cancel := context.WithTimeout(ctx, fieldReadTimeout)
+	defer cancel()
+	return h.sessionManager.Settling(readCtx, playerID)
 }
 
 // resolveGameSession answers which world a connection's messages belong to,
@@ -617,7 +656,7 @@ func (h *messageHub) Run(ctx context.Context) {
 			// the field; off the loop, since it reads the queue and the loadout.
 			// FS-X2F2H §Requirements 9–13.
 			case constants.ActionEnterField:
-				go h.enterField(clientPackage)
+				go h.enterField(ctx, clientPackage)
 
 			// A player at a field's entrance walking home to the hub, beside
 			// leave_run. FS-X2F2H §Requirements 14–16.
@@ -857,25 +896,19 @@ func (h *messageHub) Run(ctx context.Context) {
 				continue
 			}
 
-			slog.Info("Received matched players, creating game session...",
+			slog.Info("Received matched players, forming their party before the run...",
 				"matched_players", matchedPlayers)
-			session := h.sessionManager.CreateGameSession(matchedPlayers)
-			playerIDs := make([]uuid.UUID, len(matchedPlayers.LocalPlayers))
 
-			// broadcast to local players
-			for i, player := range matchedPlayers.LocalPlayers {
-				playerIDs[i] = player.ID
-			}
-			// game_found was this message under an older name, from when a run
-			// was the only world anyone could enter. FS-29KSH §Requirements 15.
-			if err := h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session)); err != nil {
-				slog.Warn("world_entered not delivered to every matched player", "session_id", session.ID, "error", err)
-			}
-
-			// only now that the run exists are the other pods told to send their
-			// players over. Off the loop, so a slow redis never stalls it.
-			// FS-K2HKP §Requirements 20.
-			go h.announceHandoffs(ctx, session.ID, h.handoffsByPod(matched))
+			// every matched player, those still on other pods too, makes one party first, off the
+			// loop; only once it answers is the run created, back on the loop, or the match
+			// cancelled and nobody moved. FS-988SM §Requirements 3, 3a, 8, 9.
+			h.party.formMatched(ctx, matchedPlayers.LocalPlayers, matchedPlayers.HandoffPlayers, func(outcome matchedOutcome) matchedRun {
+				if outcome.cancelled {
+					h.cancelMatch(matched, outcome.inParty)
+					return matchedRun{}
+				}
+				return h.startMatchedRun(ctx, matched, matchedPlayers)
+			})
 
 		case status := <-h.sessionManager.GetQueueStatusChan(ctx):
 			fmt.Printf("Queue status update: %d/%d\n", status.Current, status.Total)
@@ -968,6 +1001,108 @@ func (h *messageHub) resolveMatchedPlayers(match matchmaker.MatchStart) *types.R
 	return &types.ResolvedMatchedPlayers{
 		LocalPlayers:   players,
 		HandoffPlayers: handoffPlayers,
+	}
+}
+
+// matchFailedRefusal is what every player of a cancelled match is refused find_game with.
+// FS-988SM §Requirements 8a.
+const matchFailedRefusal = "The match failed. Queue again."
+
+/**
+* Creates the run of a match, sends its local players in, and tells the other
+* pods to send theirs over. Called on the loop, once the match's party has
+* answered (FS-988SM R3a); returns the run, and the local players left out of
+* it.
+*
+* The party took a Redis round trip: a local player resolved before it is sent
+* in only if their record is still here and names the town. One whose record
+* went, or who entered a solo run or a field meanwhile, is left out, so the
+* party drops them as one leaving the run (FS-988SM R4, Edge States). One who
+* only dropped is inside their reconnect grace: they go in disconnected, and the
+* run's grace applies to them (R7, R18). With none left, no run starts and the
+* match fails for everyone (R8a).
+**/
+func (h *messageHub) startMatchedRun(ctx context.Context, matched matchmaker.MatchStart, matchedPlayers *types.ResolvedMatchedPlayers) matchedRun {
+	present, gone := h.stillInTown(matchedPlayers.LocalPlayers)
+	if len(present) == 0 {
+		slog.Warn("Every local matched player left the town before the run, no run started", "players", len(gone))
+		h.failMatch(matched)
+		return matchedRun{left: gone}
+	}
+	matchedPlayers = &types.ResolvedMatchedPlayers{LocalPlayers: present, HandoffPlayers: matchedPlayers.HandoffPlayers}
+
+	session := h.sessionManager.CreateGameSession(matchedPlayers)
+	playerIDs := make([]uuid.UUID, len(matchedPlayers.LocalPlayers))
+
+	// broadcast to local players
+	for i, player := range matchedPlayers.LocalPlayers {
+		playerIDs[i] = player.ID
+	}
+	// game_found was this message under an older name, from when a run
+	// was the only world anyone could enter. FS-29KSH §Requirements 15.
+	if err := h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session)); err != nil {
+		slog.Warn("world_entered not delivered to every matched player", "session_id", session.ID, "error", err)
+	}
+
+	// only now that the run exists are the other pods told to send their
+	// players over. Off the loop, so a slow redis never stalls it.
+	// FS-K2HKP §Requirements 20.
+	go h.announceHandoffs(ctx, session.ID, h.handoffsByPod(matched))
+
+	return matchedRun{id: session.ID, left: gone}
+}
+
+/**
+* Splits a match's local players, resolved before its party's Redis round trip,
+* into those whose records still stand here in town, connected or inside their
+* reconnect grace, and the ids of those who are not. FS-988SM §Requirements 4, 7.
+**/
+func (h *messageHub) stillInTown(locals []*types.Player) ([]*types.Player, []uuid.UUID) {
+	present := make([]*types.Player, 0, len(locals))
+	var gone []uuid.UUID
+
+	for _, resolved := range locals {
+		player, exists := h.sessionManager.PlayerByID(resolved.ID)
+		if !exists || !h.sessionManager.InTown(resolved.ID) {
+			slog.Warn("Matched player left the town before the run, dropped from it", "player_id", resolved.ID)
+			gone = append(gone, resolved.ID)
+			continue
+		}
+		present = append(present, player)
+	}
+
+	return present, gone
+}
+
+/**
+* Cancels a match a player already in a party was found in: no run, nobody
+* moves, and everyone is told it failed. FS-988SM §Requirements 8, 8a.
+**/
+func (h *messageHub) cancelMatch(match matchmaker.MatchStart, inParty []uuid.UUID) {
+	for _, id := range inParty {
+		slog.Warn("Match cancelled: a matched player is already in a party", "player_id", id)
+	}
+	h.failMatch(match)
+}
+
+/**
+* Tells every player of a match that will not start that it failed: those here
+* by the find_game refusal, each on another pod by a letter to that pod, which
+* refuses them the same way. Nobody is queued again: they queue themselves.
+* FS-988SM §Requirements 8a.
+**/
+func (h *messageHub) failMatch(match matchmaker.MatchStart) {
+	for _, player := range match.Players {
+		if player.Pod != h.podID {
+			h.party.sendMatchFailed(player.Pod, player.ID)
+			continue
+		}
+		conn, here := h.sessionManager.GetConnFromPlayer(player.ID)
+		if !here {
+			slog.Debug("match failed refusal dropped: player not here", "player_id", player.ID)
+			continue
+		}
+		h.refuse(conn, string(constants.ActionFindGame), matchFailedRefusal)
 	}
 }
 

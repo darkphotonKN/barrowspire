@@ -15,6 +15,9 @@ type failingBox struct{}
 func (failingBox) open() bool                             { return true }
 func (failingBox) letters() <-chan letter                 { return nil }
 func (failingBox) send(_ string, _ letter, failed func()) { go failed() }
+func (failingBox) sendConfirmed(_ string, _ letter, _, failed func()) {
+	go failed()
+}
 
 // An invite letter that could not be published still reaches the loop when the loop is behind:
 // its failure waits for room rather than being dropped, so the leader is told delivery_failed
@@ -26,7 +29,7 @@ func TestPartyCourier_FailedInvite_WaitsForTheLoop(t *testing.T) {
 	for len(jobs) < cap(jobs) {
 		jobs <- func() {}
 	}
-	courier := newPartyCourier(failingBox{}, nil, jobs, "pod-a", func(partyUpdateLetter) {}, func([]uuid.UUID, map[string]interface{}) {})
+	courier := newPartyCourier(failingBox{}, nil, jobs, "pod-a", courierHandlers{update: func(partyUpdateLetter) {}, chat: func([]uuid.UUID, map[string]interface{}) {}, matchFailed: func(uuid.UUID) {}})
 	told := make(chan struct{})
 
 	courier.sendInvite(ctx, "pod-b", uuid.New(), map[string]interface{}{}, func() { close(told) })

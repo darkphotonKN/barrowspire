@@ -123,8 +123,9 @@ type ChatChannel string
 const (
 	// ChatChannelArea is heard by every player seated on this pod (ADR-0032).
 	ChatChannelArea ChatChannel = "area"
-	// ChatChannelWorld, ChatChannelWhisper: cross-pod, FS-5SH4G. Closed until then.
-	ChatChannelWorld   ChatChannel = "world"
+	// ChatChannelWorld is heard by every player on every pod. FS-5SH4G.
+	ChatChannelWorld ChatChannel = "world"
+	// ChatChannelWhisper is heard by one player, found by name on any pod. FS-KCQ06.
 	ChatChannelWhisper ChatChannel = "whisper"
 	// ChatChannelParty is heard by every member of the sender's party, on any pod. FS-XGW7H.
 	ChatChannelParty ChatChannel = "party"
@@ -147,6 +148,11 @@ const (
 	ChatNoticeTooFast ChatNoticeCode = "too_fast"
 	// ChatNoticeNoParty: a party line from a player their pod knows in no party. FS-XGW7H R3.
 	ChatNoticeNoParty ChatNoticeCode = "no_party"
+	// ChatNoticeNotOnline: a whisper's target has no presence entry, or could not be handed the
+	// line. FS-KCQ06 R4, R9.
+	ChatNoticeNotOnline ChatNoticeCode = "not_online"
+	// ChatNoticeWhisperSelf: a whisper names the sender's own character. FS-KCQ06 R2.
+	ChatNoticeWhisperSelf ChatNoticeCode = "whisper_self"
 )
 
 // PartyNoticeCode is the stable reason on a party_notice the client switches on.
@@ -189,7 +195,7 @@ const (
 	PartyNoticeLeaderAway PartyNoticeCode = "leader_away"
 
 	// Refusals of party_enter (FS-BJNYC R5), in order: not_member, not_leader, locked, too_few,
-	// checking, not_at_gate, not_in_town, then unavailable.
+	// checking, not_at_gate, settling, not_in_town, then unavailable.
 	// PartyNoticeTooFew: the party is just its leader; it needs at least two to enter.
 	PartyNoticeTooFew PartyNoticeCode = "too_few"
 	// PartyNoticeChecking: the party already has a ready check open.
@@ -199,6 +205,9 @@ const (
 	// PartyNoticeNotInTown: members not seated in the leader's pod's hub, as { "names" } in join
 	// order.
 	PartyNoticeNotInTown PartyNoticeCode = "not_in_town"
+	// PartyNoticeSettling: a member is a released escapee whose run has not settled yet, so their
+	// bag must stay home. FS-QPDKN R33.
+	PartyNoticeSettling PartyNoticeCode = "settling"
 )
 
 // ReadyCheckState is one member's answer on a party_ready_check. FS-BJNYC §Requirements 8.

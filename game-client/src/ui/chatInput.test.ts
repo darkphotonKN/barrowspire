@@ -5,6 +5,7 @@ import {
   CHAT_TEXT_MAX,
   ChatInput,
   clampChatText,
+  whisperOf,
   type ChatInputField,
   type SceneKeyboard,
 } from "./chatInput";
@@ -147,7 +148,7 @@ describe("ChatInput sending (C26, C28)", () => {
     expect(field.value).toBe("你好");
   });
 
-  it("should send an @ line as plain text in this slice", () => {
+  it("should send an @ line as plain text while whisper is not among the open channels", () => {
     const { input, field, send } = opened();
     field.value = "@Kaelen hi";
 
@@ -225,6 +226,53 @@ describe("ChatInput typing (C26)", () => {
 
     input.typed(false);
     expect(field.value).toHaveLength(200);
+  });
+
+  it.each([
+    ["world", "#"],
+    ["party", "%"],
+  ] as const)(
+    "should cut a %s draft to 200 code points, its prefix among them",
+    (channel, prefix) => {
+      const { input, field } = rig(() => true, ["area", channel]);
+      input.requestOpen();
+      input.focused();
+
+      field.value = prefix + "a".repeat(205);
+      input.typed(false);
+
+      expect(field.value).toBe(prefix + "a".repeat(199));
+      expect(field.channel).toBe(channel);
+    },
+  );
+
+  it("should cut a whisper's message to 200 code points, @Name and the space after it aside", () => {
+    const { input, field, send } = rig(() => true, ["area", "whisper"]);
+    input.requestOpen();
+    input.focused();
+
+    field.value = "@Kaelen  " + "😀".repeat(205);
+    input.typed(false);
+
+    expect(field.value).toBe("@Kaelen  " + "😀".repeat(200));
+    expect(field.channel).toBe("whisper");
+    input.keyDown("Enter", false);
+    expect(send).toHaveBeenCalledWith({
+      channel: "whisper",
+      target: "Kaelen",
+      text: "😀".repeat(200),
+    });
+  });
+
+  it("should cut a whisper draft with no message yet as a whole line", () => {
+    const { input, field } = rig(() => true, ["area", "whisper"]);
+    input.requestOpen();
+    input.focused();
+
+    field.value = "@" + "a".repeat(205);
+    input.typed(false);
+
+    expect(field.value).toBe("@" + "a".repeat(199));
   });
 });
 
@@ -483,8 +531,13 @@ describe("ChatInput with the server's open channels", () => {
     return { field, send, input };
   }
 
-  it("should list world and party among the open channels, and nothing else beyond area (FS-XGW7H C18)", () => {
-    expect([...CHAT_OPEN_CHANNELS].sort()).toEqual(["area", "party", "world"]);
+  it("should list world, party and whisper among the open channels, and nothing else beyond area (FS-XGW7H C18, FS-KCQ06 C11)", () => {
+    expect([...CHAT_OPEN_CHANNELS].sort()).toEqual([
+      "area",
+      "party",
+      "whisper",
+      "world",
+    ]);
   });
 
   it("should write # when World is picked, and send the line on world without it", () => {
@@ -540,22 +593,260 @@ describe("ChatInput with the server's open channels", () => {
     expect(field.channel).toBe("area");
   });
 
-  it("should keep whisper and trade closed: not pickable, their prefixes plain text", () => {
+  it("should keep trade closed: not pickable, its prefix plain text", () => {
     const { field, send, input } = realRig();
-    for (const channel of ["whisper", "trade"] as const) {
-      input.pick(channel);
-      expect(field.channel).toBe("area");
-    }
-    field.value = "@Kaelen hi";
-    input.typed(false);
+    input.pick("trade");
     expect(field.channel).toBe("area");
-    input.keyDown("Enter", false);
-    expect(send).toHaveBeenCalledWith({ channel: "area", text: "@Kaelen hi" });
 
     field.value = "$WTB ember";
     input.typed(false);
     expect(field.channel).toBe("area");
     input.keyDown("Enter", false);
     expect(send).toHaveBeenCalledWith({ channel: "area", text: "$WTB ember" });
+  });
+});
+
+// ── Whisper from the input (FS-KCQ06 C11–C13, I-KCQ06-3) ────────────────────────────────────
+
+/** An open input on the server's open channels, remembering what it sends. */
+function whisperRig() {
+  const field = fakeField();
+  const send = vi.fn();
+  const sent: string[] = [];
+  const input = new ChatInput({
+    field,
+    keyboard: () => ({ enabled: true, resetKeys: () => undefined }),
+    mayOpen: () => true,
+    send,
+    recall: {
+      lines: () => sent,
+      remember: (line: string) => void sent.push(line),
+    },
+  });
+  input.requestOpen();
+  input.focused();
+  return { field, send, input, sent };
+}
+
+describe("ChatInput whispering (FS-KCQ06 C11, C12)", () => {
+  it("should send @Name hello as a whisper to Name", () => {
+    const { field, send, input } = whisperRig();
+    field.value = "@Name hello";
+    input.typed(false);
+
+    input.keyDown("Enter", false);
+
+    expect(send).toHaveBeenCalledWith({
+      channel: "whisper",
+      target: "Name",
+      text: "hello",
+    });
+  });
+
+  it("should not send @Name alone, and keep it in the open input", () => {
+    const { field, send, input } = whisperRig();
+    field.value = "@Name";
+    input.typed(false);
+
+    input.keyDown("Enter", false);
+    expect(send).not.toHaveBeenCalled();
+    expect(input.isOpen()).toBe(true);
+    expect(field.value).toBe("@Name");
+
+    field.value = "@Name   ";
+    input.keyDown("Enter", false);
+    expect(send).not.toHaveBeenCalled();
+    expect(field.value).toBe("@Name   ");
+  });
+
+  it.each(["@ hello", "@ Kaelen hello"])(
+    "should not send %j, with no name straight after the @",
+    (draft) => {
+      const { field, send, input } = whisperRig();
+      field.value = draft;
+      input.typed(false);
+
+      input.keyDown("Enter", false);
+      expect(send).not.toHaveBeenCalled();
+      expect(input.isOpen()).toBe(true);
+      expect(field.value).toBe(draft);
+    },
+  );
+
+  it("should never send an @ line on Area", () => {
+    const { field, send, input } = whisperRig();
+    for (const line of ["@Kaelen hi", "@Kaelen", "@ hi"]) {
+      field.value = line;
+      input.typed(false);
+      expect(field.channel).toBe("whisper");
+      input.keyDown("Enter", false);
+    }
+    expect(send.mock.calls.every(([line]) => line.channel === "whisper")).toBe(
+      true,
+    );
+  });
+
+  it("should send everything after the first space as the message", () => {
+    const { field, send, input } = whisperRig();
+    field.value = "@Kaelen  meet me at the  gate ";
+    input.typed(false);
+
+    input.keyDown("Enter", false);
+
+    expect(send).toHaveBeenCalledWith({
+      channel: "whisper",
+      target: "Kaelen",
+      text: "meet me at the  gate",
+    });
+  });
+});
+
+describe("ChatInput whisper picker and recall (FS-KCQ06 C13)", () => {
+  it("should put @ at the start of the draft when Whisper is picked", () => {
+    const { field, input } = whisperRig();
+    field.value = "hi";
+
+    input.pick("whisper");
+
+    expect(field.channel).toBe("whisper");
+    expect(field.value).toBe("@hi");
+  });
+
+  it("should bring back a sent whisper with its @Name and pick whisper", () => {
+    const { field, input, sent } = whisperRig();
+    field.value = "@Kaelen hello";
+    input.typed(false);
+    input.keyDown("Enter", false);
+    expect(sent).toEqual(["@Kaelen hello"]);
+
+    input.pick("area");
+    input.keyDown("ArrowUp", false);
+
+    expect(field.value).toBe("@Kaelen hello");
+    expect(field.channel).toBe("whisper");
+  });
+});
+
+describe("whisperOf (FS-KCQ06 R12: the name runs to the first whitespace)", () => {
+  it.each([
+    ["Name hello", { target: "Name", text: "hello" }],
+    ["Name hello there", { target: "Name", text: "hello there" }],
+    ["Name\thello", { target: "Name", text: "hello" }],
+    ["Name   hello  ", { target: "Name", text: "hello" }],
+    ["名字 你好", { target: "名字", text: "你好" }],
+    ["Name", null],
+    ["Name   ", null],
+    ["", null],
+    [" hello", null],
+  ])("should read %j as %j", (body, parts) => {
+    expect(whisperOf(body)).toEqual(parts);
+  });
+});
+
+// FS-KCQ06 C15, I-KCQ06-4: a clicked name fills the input, the draft's prefix gives way to it
+describe("ChatInput whisperTo (FS-KCQ06 C15)", () => {
+  const open: ChatChannel[] = ["area", "world", "party", "whisper"];
+
+  it("should fill an empty draft with @Name and one space, pick whisper and open the input", () => {
+    const { field, input, changed } = rig(() => true, open);
+
+    input.whisperTo("Kaelen");
+
+    expect(field.value).toBe("@Kaelen ");
+    expect(field.channel).toBe("whisper");
+    expect(field.focused).toBe(true);
+    expect(changed).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an area draft", "hello there", "@Kaelen hello there"],
+    ["a world draft", "#hello there", "@Kaelen hello there"],
+    ["a party draft", "%regroup", "@Kaelen regroup"],
+    ["a world prefix alone", "#", "@Kaelen "],
+    [
+      "a whisper to someone else",
+      "@Wren meet me at the gate",
+      "@Kaelen meet me at the gate",
+    ],
+    ["a half-typed whisper name", "@Wr", "@Kaelen "],
+    ["a bare @", "@", "@Kaelen "],
+  ])("should replace %s's prefix and keep its words", (_label, draft, want) => {
+    const { field, input } = rig(() => true, open);
+    field.value = draft;
+    input.typed(false);
+
+    input.whisperTo("Kaelen");
+
+    expect(field.value).toBe(want);
+    expect(field.channel).toBe("whisper");
+  });
+
+  it("should leave an open input open and its draft refilled", () => {
+    const { field, input } = rig(() => true, open);
+    input.requestOpen();
+    input.focused();
+    field.value = "hi";
+    input.typed(false);
+
+    input.whisperTo("Kaelen");
+
+    expect(input.isOpen()).toBe(true);
+    expect(field.value).toBe("@Kaelen hi");
+  });
+
+  it("should send what follows the filled name as a whisper to that name", () => {
+    const { field, input, send } = rig(() => true, open);
+    input.whisperTo("Kaelen");
+    input.focused();
+
+    field.value += "well met";
+    input.typed(false);
+    input.keyDown("Enter", false);
+
+    expect(send).toHaveBeenCalledWith({
+      channel: "whisper",
+      target: "Kaelen",
+      text: "well met",
+    });
+  });
+
+  it("should do nothing while something else owns the keys", () => {
+    const { field, input, changed } = rig(() => false, open);
+    field.value = "#hello";
+
+    input.whisperTo("Kaelen");
+
+    expect(field.value).toBe("#hello");
+    expect(field.focused).toBe(false);
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing while whisper is not a channel the server relays", () => {
+    const { field, input } = rig(() => true, ["area"]);
+    field.value = "hello";
+
+    input.whisperTo("Kaelen");
+
+    expect(field.value).toBe("hello");
+    expect(field.focused).toBe(false);
+  });
+
+  it("should keep the filled message within the server's limit, @Name and its space aside", () => {
+    const { field, input } = rig(() => true, open);
+    field.value = "😀".repeat(CHAT_TEXT_MAX);
+    input.typed(false);
+
+    input.whisperTo("Kaelen");
+
+    expect(field.value).toBe("@Kaelen " + "😀".repeat(CHAT_TEXT_MAX));
+  });
+
+  it("should cut a longer message to the server's limit after @Name", () => {
+    const { field, input } = rig(() => true, open);
+    field.value = "#" + "a".repeat(CHAT_TEXT_MAX + 5);
+
+    input.whisperTo("Kaelen");
+
+    expect(field.value).toBe("@Kaelen " + "a".repeat(CHAT_TEXT_MAX));
   });
 });

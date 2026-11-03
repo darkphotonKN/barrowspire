@@ -32,6 +32,8 @@ func (h *homeReturner) ReturnPlayersToHub(_ uuid.UUID) {
 
 func (h *homeReturner) ApplyRunProgress(_ []types.RunProgress) {}
 
+func (h *homeReturner) SeatsReleased(_ uuid.UUID, _ []uuid.UUID) {}
+
 func (h *homeReturner) CloseSession(_ uuid.UUID) error { return nil }
 
 // capturingOutbox keeps every event the match-complete publish writes.

@@ -130,6 +130,58 @@ func TestCreateCharacter_Validation(t *testing.T) {
 	}
 }
 
+// A name is one word, so a whisper's "@Name message" always finds the whole
+// name (FS-KCQ06 §Requirements 17). The trim runs first, so only whitespace
+// left inside the name refuses it.
+func TestCreateCharacter_NameIsOneWord(t *testing.T) {
+	member := uuid.New()
+	tests := []struct {
+		name     string
+		in       string
+		wantErr  bool
+		wantName string
+	}{
+		{"space", "Dark Knight", true, ""},
+		{"tab", "Dark\tKnight", true, ""},
+		{"ideographic space", "Dark\u3000Knight", true, ""},
+		{"newline", "Dark\nKnight", true, ""},
+		{"no-break space", "Dark\u00a0Knight", true, ""},
+		{"zero-width no-break space", "Dark\ufeffKnight", true, ""},
+		{"leading zero-width no-break space", "\ufeffAldric", true, ""},
+		{"inner space survives the trim", "  Dark Knight  ", true, ""},
+		{"one word", "Aldric", false, "Aldric"},
+		{"leading and trailing spaces are trimmed", "  Aldric  ", false, "Aldric"},
+		{"leading tab and trailing ideographic space are trimmed", "\tAldric\u3000", false, "Aldric"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{}
+			svc := NewService(repo, nil)
+
+			_, err := svc.CreateCharacter(context.Background(), CharacterCreate{member, tt.in, "warrior"})
+
+			if tt.wantErr {
+				if !errors.Is(err, commonconstants.ErrInvalidInput) {
+					t.Fatalf("err = %v, want ErrInvalidInput", err)
+				}
+				if !strings.Contains(err.Error(), "A hero's name is one word.") {
+					t.Fatalf("err = %q, want it to say \"A hero's name is one word.\"", err)
+				}
+				if repo.created != nil {
+					t.Fatalf("repo was written for %q", tt.in)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if repo.created.Name != tt.wantName {
+				t.Fatalf("stored name %q, want %q", repo.created.Name, tt.wantName)
+			}
+		})
+	}
+}
+
 func TestCreateCharacter_TakenName_IsAlreadyExists(t *testing.T) {
 	svc := NewService(&fakeRepo{createErr: commonconstants.ErrDuplicateResource}, nil)
 

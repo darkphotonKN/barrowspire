@@ -45,6 +45,9 @@ type partyEntryWorlds interface {
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
 	// the gear read start_solo makes off the loop (checkGear); blocks
 	CheckLoadout(ctx context.Context, player *types.Player) error
+	// whether any of these players is a released escapee whose run has not settled; blocks
+	// (FS-QPDKN R33)
+	Settling(ctx context.Context, playerIDs ...uuid.UUID) bool
 	CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session
 	GetGameSession(id uuid.UUID) (*game.Session, bool)
 }
@@ -124,10 +127,12 @@ func (c *readyCheck) sameRoster(p partystore.Party) bool {
 
 // partyRun is what a pod remembers of a run it built for a party: the party and the roster it went
 // down with, in join order (R14). In memory only; the lock reads it (I-BJNYC-6), and succession
-// falls back on its roster (R17).
+// falls back on its roster (R17). matched marks a random match's party, which its members leave as
+// they leave the run (FS-988SM R1, R11); a party that entered from the gate is not.
 type partyRun struct {
 	partyID uuid.UUID
 	roster  []uuid.UUID
+	matched bool
 }
 
 // inParty reports whether the pod's party cache knows playerID as a member of a party, a party of
@@ -137,9 +142,17 @@ func (r *partyRegistry) inParty(playerID uuid.UUID) bool {
 	return r.cache.grouped(playerID)
 }
 
-// enter handles party_enter from the leader on conn: the party is read off the loop, then answered
-// by entered. A press while the last one is still being read is ignored. The hub has already
-// answered a leader with no character or already in a run, as start_solo answers them (R5).
+// entryRead is a press's read off the loop: the party as Redis holds it, and whether any of its
+// members is settling (FS-QPDKN R33).
+type entryRead struct {
+	partystore.Arrival
+	settling bool
+}
+
+// enter handles party_enter from the leader on conn: the party, and its members' settling marks,
+// are read off the loop, then answered by entered. A press while the last one is still being read
+// is ignored. The hub has already answered a leader with no character or already in a run, as
+// start_solo answers them (R5).
 func (r *partyRegistry) enter(ctx context.Context, leader *types.Player, conn *websocket.Conn) {
 	if r.closed {
 		return
@@ -153,10 +166,16 @@ func (r *partyRegistry) enter(ctx context.Context, leader *types.Player, conn *w
 		return
 	}
 	r.entryReads[leader.ID] = struct{}{}
-	at := r.cfg.now()
+	at, worlds := r.cfg.now(), r.cfg.worlds
 	onRunner(ctx, r.run,
-		func(c context.Context) (partystore.Arrival, error) { return r.cfg.store.PartyOf(c, leader.ID, at) },
-		func(res partystore.Arrival, err error) {
+		func(c context.Context) (entryRead, error) {
+			res, err := r.cfg.store.PartyOf(c, leader.ID, at)
+			if err != nil || !res.In {
+				return entryRead{Arrival: res}, err
+			}
+			return entryRead{Arrival: res, settling: worlds.Settling(c, memberIDs(res.Party)...)}, nil
+		},
+		func(res entryRead, err error) {
 			delete(r.entryReads, leader.ID)
 			r.entered(ctx, leader, conn, res, err)
 		},
@@ -164,8 +183,9 @@ func (r *partyRegistry) enter(ctx context.Context, leader *types.Player, conn *w
 }
 
 // entered answers a press with the party as Redis holds it: R5's refusals in order, or the ready
-// check opened. The cache never decides who enters (R6).
-func (r *partyRegistry) entered(ctx context.Context, leader *types.Player, conn *websocket.Conn, res partystore.Arrival, err error) {
+// check opened. The cache never decides who enters (R6). A party with a settling member stays in
+// the town until that member's run settles, since their bag must stay home (FS-QPDKN R33).
+func (r *partyRegistry) entered(ctx context.Context, leader *types.Player, conn *websocket.Conn, res entryRead, err error) {
 	if r.closed {
 		return
 	}
@@ -174,7 +194,7 @@ func (r *partyRegistry) entered(ctx context.Context, leader *types.Player, conn 
 		r.refuse(conn, leader.ID, constants.PartyNoticeUnavailable)
 		return
 	}
-	r.cache.sweptBy(ctx, res)
+	r.cache.sweptBy(ctx, res.Arrival)
 	p := res.Party
 	switch {
 	case !res.In:
@@ -189,6 +209,8 @@ func (r *partyRegistry) entered(ctx context.Context, leader *types.Player, conn 
 		r.refuse(conn, leader.ID, constants.PartyNoticeChecking)
 	case !r.cfg.worlds.AtSpireGate(leader.ID):
 		r.refuse(conn, leader.ID, constants.PartyNoticeNotAtGate)
+	case res.settling:
+		r.refuse(conn, leader.ID, constants.PartyNoticeSettling)
 	default:
 		town := r.cfg.worlds.TownConns()
 		if absent := r.absentFromTown(p, town); len(absent) > 0 {
@@ -498,7 +520,7 @@ func (r *partyRegistry) droppedIn(ctx context.Context, playerID, world uuid.UUID
 		return
 	}
 	if _, exists := r.cfg.worlds.GetGameSession(world); !exists {
-		delete(r.partyRuns, world)
+		r.runGone(ctx, world)
 		return
 	}
 	members := run.roster
@@ -551,8 +573,9 @@ func earliestOther(members []uuid.UUID, playerID uuid.UUID) (uuid.UUID, bool) {
 
 // tickChecks is the ready checks' share of the registry's tick: a check whose member left the town
 // or disconnected is cancelled, then one whose 30 s ran out with members still waiting (R10); and a
-// run that no longer exists is forgotten.
-func (r *partyRegistry) tickChecks() {
+// run that no longer exists is forgotten, its matched party losing whoever it still held
+// (FS-988SM R11).
+func (r *partyRegistry) tickChecks(ctx context.Context) {
 	if r.cfg.worlds == nil || (len(r.checks) == 0 && len(r.partyRuns) == 0) {
 		return
 	}
@@ -573,7 +596,7 @@ func (r *partyRegistry) tickChecks() {
 	}
 	for runID := range r.partyRuns {
 		if _, exists := r.cfg.worlds.GetGameSession(runID); !exists {
-			delete(r.partyRuns, runID)
+			r.runGone(ctx, runID)
 		}
 	}
 }

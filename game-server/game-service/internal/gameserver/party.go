@@ -47,6 +47,8 @@ type partyDirectory interface {
 // production (R1, R2).
 type partyStore interface {
 	Create(ctx context.Context, partyID uuid.UUID, creator partystore.Joiner, now time.Time) (partystore.CreateResult, error)
+	// a random match's matched party, every matched player a member at once (FS-988SM R3)
+	CreateMatched(ctx context.Context, a partystore.MatchedArgs) (partystore.MatchedResult, error)
 	Invite(ctx context.Context, a partystore.InviteArgs) (partystore.InviteResult, error)
 	Withdraw(ctx context.Context, inviteID uuid.UUID, endIfAlone bool, now time.Time) (partystore.WithdrawResult, error)
 	Accept(ctx context.Context, a partystore.AcceptArgs) (partystore.AcceptResult, error)
@@ -71,6 +73,8 @@ type presenceLookup interface {
 type letterBox interface {
 	open() bool
 	send(podID string, l letter, failed func())
+	// send, telling sent once the letter is published (FS-KCQ06 R9)
+	sendConfirmed(podID string, l letter, sent, failed func())
 	letters() <-chan letter
 }
 
@@ -97,6 +101,8 @@ type partyRegistryConfig struct {
 	// what parties and invites are stamped with, and how invites expire (R12)
 	now   func() time.Time
 	newID func() uuid.UUID
+	// which of n local matched players leads their matched party, drawn at random (FS-988SM R4)
+	pickLeader func(n int) int
 	// when the hub's loop ticks the registry; nil, never
 	ticks <-chan time.Time
 	// where parties live; nil on a pod built without Redis, where every change is refused
@@ -137,6 +143,9 @@ type partyRegistry struct {
 	checks     map[uuid.UUID]*readyCheck
 	entryReads map[uuid.UUID]struct{}
 	partyRuns  map[uuid.UUID]partyRun
+	// matched party members whose removal on leaving the run Redis failed, tried again each tick
+	// until the script answers; true while a try is under way (FS-988SM R17)
+	leaving map[matchedLeave]bool
 	// where gear read off the loop for a party entry comes back to it
 	jobs loopJobs
 
@@ -156,10 +165,11 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		checks:      make(map[uuid.UUID]*readyCheck),
 		entryReads:  make(map[uuid.UUID]struct{}),
 		partyRuns:   make(map[uuid.UUID]partyRun),
+		leaving:     make(map[matchedLeave]bool),
 		jobs:        jobs,
 		done:        make(chan struct{}),
 	}
-	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, r.heardUpdate, r.heardPartyChat)
+	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, courierHandlers{update: r.heardUpdate, chat: r.heardPartyChat, matchFailed: r.heardMatchFailed, whisper: r.heardWhisper})
 	var reader partyReader
 	if cfg.store != nil {
 		reader = cfg.store
@@ -895,15 +905,17 @@ func (r *partyRegistry) ticks() <-chan time.Time {
 	return r.cfg.ticks
 }
 
-// tick keeps the party cache, takes back any traveller the travel did not take, and keeps the open
-// ready checks (FS-BJNYC R10).
+// tick keeps the party cache, takes back any traveller the travel did not take, keeps the open
+// ready checks and the runs parties went down with, and tries again the matched party removals
+// Redis failed (FS-BJNYC R10, FS-988SM R11, R17).
 func (r *partyRegistry) tick(ctx context.Context) {
 	if r.closed {
 		return
 	}
 	r.takeBackLapsed(ctx)
 	r.cache.tick(ctx)
-	r.tickChecks()
+	r.tickChecks(ctx)
+	r.retryLeaves(ctx)
 }
 
 // letters is where letters from other pods wait for the hub's loop.

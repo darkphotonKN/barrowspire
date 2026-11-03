@@ -32,6 +32,17 @@ func (r *Redis) Publish(ctx context.Context, channel string, payload []byte) err
 	return nil
 }
 
+// PublishCount is Publish, telling how many subscribers Redis handed payload to: 0 when nobody
+// listens on channel, as on the inbox of a pod that has died (FS-KCQ06 Edge States). In cluster
+// mode Redis counts only the subscribers on the node it was published to.
+func (r *Redis) PublishCount(ctx context.Context, channel string, payload []byte) (int64, error) {
+	heard, err := r.client.Publish(ctx, channel, payload).Result()
+	if err != nil {
+		return 0, fmt.Errorf("chat bus publish %s: %w", channel, err)
+	}
+	return heard, nil
+}
+
 // subscribeTimeout bounds the wait for Redis to confirm a subscription.
 const subscribeTimeout = 5 * time.Second
 

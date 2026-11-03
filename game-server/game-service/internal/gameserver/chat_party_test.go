@@ -86,7 +86,7 @@ func newPartyRelayRig(seated []uuid.UUID, parties ...partystore.Party) *partyRel
 		}
 	}
 	return &partyRelayRig{
-		relay: newChatRelay(everyoneHere(seated), spy, testPodID, clock.now, func() uuid.UUID { return chatTestID }, nil, fake),
+		relay: newChatRelay(everyoneHere(seated), spy, testPodID, clock.now, func() uuid.UUID { return chatTestID }, nil, fake, nil),
 		spy:   spy,
 		party: fake,
 		clock: clock,
@@ -309,7 +309,8 @@ func (p *scriptedPresence) reads() [][]uuid.UUID {
 	return append([][]uuid.UUID(nil), p.asked...)
 }
 
-// recordingInbox is an inbox bus that hears nothing and records every letter published.
+// recordingInbox is an inbox bus that hears nothing and records every letter published; it counts
+// each as heard by one pod, as a live one is.
 type recordingInbox struct {
 	mu        sync.Mutex
 	published map[string][]letter
@@ -333,6 +334,13 @@ func (b *recordingInbox) Publish(_ context.Context, channel string, payload []by
 	defer b.mu.Unlock()
 	b.published[channel] = append(b.published[channel], l)
 	return nil
+}
+
+func (b *recordingInbox) PublishCount(ctx context.Context, channel string, payload []byte) (int64, error) {
+	if err := b.Publish(ctx, channel, payload); err != nil {
+		return 0, err
+	}
+	return 1, nil
 }
 
 func (b *recordingInbox) letters() map[string][]letter {

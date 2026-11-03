@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { ChatEntry } from "@/stores/chatStore";
+import {
+  CHAT_CHANNELS,
+  type ChatEntry,
+  type ChatLine,
+} from "@/stores/chatStore";
 import { contrastRatio } from "@/render/lighting/lighting";
 import { palette } from "@/utils/canvasPalette";
 import {
   CHAT_CHANNEL_COLOUR,
+  CHAT_SHOWN_CHANNELS,
   CHAT_VISIBLE_LINES,
   CHAT_WINDOW_W,
   chatEntryColour,
+  chatNameSpan,
   CHAT_FOLD_W,
   CHAT_FRAME_PAD,
   CHAT_LINES_GAP,
@@ -93,6 +99,110 @@ describe("formatChatEntry (C22 as amended 2026-10-31, C29)", () => {
 
   it("should leave markup in the text as characters", () => {
     expect(formatChatEntry(line("<b>x</b>"))).toContain("<b>x</b>");
+  });
+});
+
+// FS-KCQ06 C14, I-KCQ06-3: a whisper reads From or To, by whether this player sent it
+describe("formatChatEntry for a whisper (FS-KCQ06 C14)", () => {
+  const whisper = (sender_id: string): ChatEntry => ({
+    ...(line("meet me at the gate") as ChatLine),
+    channel: "whisper",
+    sender_id,
+    sender_name: "Wren",
+    scope: "p-kaelen",
+    target_id: "p-kaelen",
+    target_name: "Kaelen",
+  });
+
+  it("should read a whisper received as From Name: text", () => {
+    expect(formatChatEntry(whisper("p-wren"), "p-kaelen")).toBe(
+      "From Wren: meet me at the gate",
+    );
+  });
+
+  it("should read this player's own whisper, the echo, as To Name: text", () => {
+    expect(formatChatEntry(whisper("p-wren"), "p-wren")).toBe(
+      "To Kaelen: meet me at the gate",
+    );
+  });
+
+  it("should read a whisper as received while this player is not known", () => {
+    expect(formatChatEntry(whisper("p-wren"))).toBe(
+      "From Wren: meet me at the gate",
+    );
+  });
+
+  it("should draw both in the whisper colour", () => {
+    expect(chatEntryColour(whisper("p-wren"))).toBe(palette.chatWhisper);
+  });
+
+  it("should leave other channels' lines as Name: text whoever sent them", () => {
+    expect(formatChatEntry(line("hi"), "s")).toBe("Wren: hi");
+  });
+});
+
+// FS-KCQ06 C15, I-KCQ06-4: where a line's clickable name sits, measured from its drawn text
+describe("chatNameSpan (FS-KCQ06 C15)", () => {
+  // a stand-in font: every character 7px wide
+  const measure = (s: string) => s.length * 7;
+  const whisper = (sender_id: string): ChatEntry => ({
+    ...(line("meet me at the gate") as ChatLine),
+    channel: "whisper",
+    sender_id,
+    sender_name: sender_id === "p-wren" ? "Wren" : "Kaelen",
+    scope: "x",
+    target_id: sender_id === "p-wren" ? "p-kaelen" : "p-wren",
+    target_name: sender_id === "p-wren" ? "Kaelen" : "Wren",
+  });
+
+  it.each([
+    ["area", "area"],
+    ["world", "world"],
+    ["party", "party"],
+  ] as const)(
+    "should put the sender's name at the start of a %s line, as wide as it is drawn",
+    (_label, channel) => {
+      const entry = { ...(line("hi") as ChatLine), channel };
+      expect(chatNameSpan(entry, "p-me", measure)).toEqual({
+        name: "Wren",
+        x: 0,
+        width: 28,
+      });
+    },
+  );
+
+  it("should put a received whisper's sender after From", () => {
+    expect(chatNameSpan(whisper("p-kaelen"), "p-wren", measure)).toEqual({
+      name: "Kaelen",
+      x: measure("From "),
+      width: measure("Kaelen"),
+    });
+  });
+
+  it("should put the echo's target after To", () => {
+    expect(chatNameSpan(whisper("p-wren"), "p-wren", measure)).toEqual({
+      name: "Kaelen",
+      x: measure("To "),
+      width: measure("Kaelen"),
+    });
+  });
+
+  it("should give this player's own line no name to click", () => {
+    expect(chatNameSpan(line("hi"), "s", measure)).toBeNull();
+  });
+
+  it("should give a system line no name to click", () => {
+    expect(
+      chatNameSpan(system("That player is not online."), "s", measure),
+    ).toBeNull();
+  });
+
+  it("should measure the span from the very words the line draws", () => {
+    const entry = whisper("p-kaelen");
+    const span = chatNameSpan(entry, "p-wren", measure)!;
+    const drawn = formatChatEntry(entry, "p-wren");
+    expect(drawn.slice(0, span.x / 7)).toBe("From ");
+    expect(drawn.slice(span.x / 7, (span.x + span.width) / 7)).toBe(span.name);
   });
 });
 
@@ -203,7 +313,7 @@ describe("chatWindowFrame folded (Amendment 2026-10-31: collapse)", () => {
 });
 
 describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
-  it("should lay the five segments edge to edge from the row's left, each as wide as its label needs", () => {
+  it("should lay the shown segments edge to edge from the row's left, each as wide as its label needs", () => {
     const row = chatWindowFrame(10, 500).filterRow;
     const segments = chatTabSegments(row, (label) => label.length * 7);
 
@@ -212,7 +322,6 @@ describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
       "world",
       "party",
       "whisper",
-      "trade",
     ]);
     expect(segments[0].x).toBe(row.x);
     for (let i = 1; i < segments.length; i++) {
@@ -222,6 +331,14 @@ describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
       segments.every((s) => s.y === row.y && s.height === row.height),
     ).toBe(true);
     expect(segments[3].width).toBeGreaterThan(segments[0].width);
+  });
+
+  it("should hide trade from the window, as a tab and as a picker option, until it is scoped", () => {
+    // the picker (chatInputField) lists exactly these channels too
+    expect(CHAT_SHOWN_CHANNELS).not.toContain("trade");
+    expect(CHAT_SHOWN_CHANNELS).toEqual(["area", "world", "party", "whisper"]);
+    // still a channel of the protocol: a trade line is still recognised, just never offered
+    expect(CHAT_CHANNELS).toContain("trade");
   });
 
   it("should stop short of the fold button at the row's right end", () => {
