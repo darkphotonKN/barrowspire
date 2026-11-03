@@ -3525,7 +3525,8 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
   it.each([
     ["dead", dead, ["leave", "back"], "Leave the barrow  [1]"],
-    ["escaped", escaped, ["back"], "Back  [Esc]"],
+    // an escaped player may leave too: settled at their escape (FS-GV8WN R16)
+    ["escaped", escaped, ["leave", "back"], "Leave the barrow  [1]"],
   ])("should offer a %s player %j", (_, me, ids, label) => {
     const { keys, press, option, labels } = menuOnStage(player("me", "Aldric", 130, me));
     press(keys.esc);

@@ -41,7 +41,7 @@ describe("partyNoticeText (FS-R82NV R36, FS-NCC9J R29)", () => {
   });
 
   it("should cover every code in R36's table, R29's and FS-BJNYC's party entry", () => {
-    expect(Object.keys(PARTY_NOTICE_COPY)).toHaveLength(26);
+    expect(Object.keys(PARTY_NOTICE_COPY)).toHaveLength(25);
   });
 
   it("should word every code that refuses a party_enter (FS-BJNYC R5)", () => {
@@ -76,14 +76,6 @@ describe("partyNoticeText for party_enter's refusals (FS-BJNYC R22, §Copy)", ()
 
   it("should take too_few as an answer to the press", () => {
     expect(PARTY_ENTER_REFUSALS.has("too_few")).toBe(true);
-  });
-
-  // a member still settling a run stops the party entering (FS-QPDKN R33): sent to the presser, no names
-  it("should word settling for the presser, and take it as an answer to the press", () => {
-    const want = "Your plunder is still being counted. Wait for the delve to end.";
-    expect(partyNoticeText({ code: "settling" })).toBe(want);
-    expect(partyEnterDoorText({ code: "settling" })).toBe(want);
-    expect(PARTY_ENTER_REFUSALS.has("settling")).toBe(true);
   });
 
   it.each([

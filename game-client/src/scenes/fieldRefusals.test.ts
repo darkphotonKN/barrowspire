@@ -23,7 +23,6 @@ describe("fieldRefusalCopy (FS-X2F2H §Requirements 10, 14, 60)", () => {
     "not_at_gate",
     "queued",
     "loadout_unavailable",
-    "settling",
   ];
   const leaveReasons = ["not_in_field", "not_at_gate", "fallen"];
 
@@ -38,13 +37,6 @@ describe("fieldRefusalCopy (FS-X2F2H §Requirements 10, 14, 60)", () => {
     const copy = fieldRefusalCopy(ActionType.LeaveField, reason);
     expect(copy).not.toBe(reason);
     expect(copy).not.toMatch(/_/);
-  });
-
-  // a delver whose run has not settled yet (FS-QPDKN R33): the same words as the Spire's door gives
-  it("should tell a settling player to wait for the delve to end", () => {
-    expect(fieldRefusalCopy(ActionType.EnterField, "settling")).toBe(
-      "Your plunder is still being counted. Wait for the delve to end.",
-    );
   });
 
   it("should say every enter reason differently", () => {
