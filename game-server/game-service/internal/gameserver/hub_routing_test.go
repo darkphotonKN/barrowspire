@@ -22,7 +22,7 @@ func newRoutingTestHub(t *testing.T) (*messageHub, *Server) {
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	sender := messaging.NewMessageSender(server)
 	jobs := newLoopJobs()
-	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New, nil, nil), newPartyRegistry(server, sender, jobs, partyRegistryConfig{podID: testPodID, podAddr: testPodAddr, size: defaultPartySize, now: time.Now, newID: uuid.New}), newPresenceKeeper(nil, nil, server, testPodID, testPodAddr, time.Now, newOrderedWriter()), jobs)
+	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New, nil, nil, nil), newPartyRegistry(server, sender, jobs, partyRegistryConfig{podID: testPodID, podAddr: testPodAddr, size: defaultPartySize, now: time.Now, newID: uuid.New}), newPresenceKeeper(nil, nil, server, testPodID, testPodAddr, time.Now, newOrderedWriter()), jobs)
 
 	return hub, server
 }

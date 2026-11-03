@@ -18,10 +18,11 @@ import (
 * registry decides what to say and to whom, the courier gets it there. Only the hub's loop touches
 * it.
 *
-* Five letters: an invite for a player on that pod; a party_update for the members it holds,
+* Six letters: an invite for a player on that pod; a party_update for the members it holds,
 * carrying the party as Redis answered so that pod's cache takes it too; a party_notice for one
-* player there; a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go); and a
-* match_failed for one player there whose random match was cancelled (FS-988SM R8a).
+* player there; a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go); a
+* match_failed for one player there whose random match was cancelled (FS-988SM R8a); and a
+* whisper for one player there (FS-KCQ06 R8, in chat_whisper.go).
 **/
 
 // partyUpdateLetter is a party_update as it travels between pods: the party as Redis answered it,
@@ -60,6 +61,8 @@ type courierHandlers struct {
 	chat func(to []uuid.UUID, message map[string]interface{})
 	// told of each match_failed letter that arrives, the player it is for (FS-988SM R8a)
 	matchFailed func(playerID uuid.UUID)
+	// told of each whisper letter that arrives, its addressee and its line (FS-KCQ06 R8)
+	whisper func(to uuid.UUID, message map[string]interface{})
 }
 
 func newPartyCourier(inbox letterBox, sender playerSender, jobs loopJobs, podID string, on courierHandlers) *partyCourier {
@@ -175,6 +178,8 @@ func (c *partyCourier) receive(l letter) {
 		c.receivePartyChat(l)
 	case letterMatchFailed:
 		c.receiveMatchFailed(l)
+	case letterWhisper:
+		c.receiveWhisper(l)
 	default:
 		slog.Debug("pod inbox letter of an unknown kind dropped", "kind", l.Kind)
 	}

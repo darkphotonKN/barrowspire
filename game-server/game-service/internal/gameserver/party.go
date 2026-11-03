@@ -73,6 +73,8 @@ type presenceLookup interface {
 type letterBox interface {
 	open() bool
 	send(podID string, l letter, failed func())
+	// send, telling sent once the letter is published (FS-KCQ06 R9)
+	sendConfirmed(podID string, l letter, sent, failed func())
 	letters() <-chan letter
 }
 
@@ -167,7 +169,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		jobs:        jobs,
 		done:        make(chan struct{}),
 	}
-	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, courierHandlers{update: r.heardUpdate, chat: r.heardPartyChat, matchFailed: r.heardMatchFailed})
+	r.courier = newPartyCourier(cfg.inbox, sender, jobs, cfg.podID, courierHandlers{update: r.heardUpdate, chat: r.heardPartyChat, matchFailed: r.heardMatchFailed, whisper: r.heardWhisper})
 	var reader partyReader
 	if cfg.store != nil {
 		reader = cfg.store

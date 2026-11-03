@@ -24,12 +24,12 @@ export const CHAT_PREFIX: Readonly<Record<ChatChannel, string>> = {
 
 /**
  * The channels the server relays today; the picker shows the rest disabled. World opened with
- * FS-5SH4G (I-5SH4G-3), party with FS-XGW7H (I-XGW7H-2); whisper waits for FS-KCQ06, trade for
- * its own scoping. Party is open whether or not the player is in a party (FS-XGW7H C19): the
- * server answers a send from a player in none with `no_party`.
+ * FS-5SH4G (I-5SH4G-3), party with FS-XGW7H (I-XGW7H-2), whisper with FS-KCQ06 (I-KCQ06-3);
+ * trade waits for its own scoping. Party is open whether or not the player is in a party
+ * (FS-XGW7H C19): the server answers a send from a player in none with `no_party`.
  */
 export const CHAT_OPEN_CHANNELS: ReadonlySet<ChatChannel> =
-  new Set<ChatChannel>(["area", "world", "party"]);
+  new Set<ChatChannel>(["area", "world", "party", "whisper"]);
 
 /** The most code points a line may carry, as the server counts them (R5, R26). */
 export const CHAT_TEXT_MAX = 200;
@@ -40,6 +40,18 @@ export function clampChatText(text: string): string {
   return points.length <= CHAT_TEXT_MAX
     ? text
     : points.slice(0, CHAT_TEXT_MAX).join("");
+}
+
+/**
+ * A draft cut to what may be sent: a whisper's message, after its `@Name` and the whitespace that
+ * follows, to `CHAT_TEXT_MAX` code points, as the server counts the message alone (FS-KCQ06 R5);
+ * any other draft, a whisper with no message yet among them, whole, its prefix included.
+ */
+function clampDraft(draft: string, channel: ChatChannel): string {
+  const head = channel === "whisper" ? /^@\S+\s+/.exec(draft)?.[0] : undefined;
+  return head
+    ? head + clampChatText(draft.slice(head.length))
+    : clampChatText(draft);
 }
 
 /** The text field and its channel picker, as the input drives them. */
@@ -57,10 +69,31 @@ export interface SceneKeyboard {
   resetKeys(): void;
 }
 
-/** What a sent line carries: the picked channel and the text without its prefix. */
+/**
+ * What a sent line carries: the picked channel and the text without its prefix; a whisper also
+ * names its target, the character name as typed (FS-KCQ06 R1, R11).
+ */
 export interface ChatSend {
   channel: ChatChannel;
+  target?: string;
   text: string;
+}
+
+/** A whisper's body split into who it is for and what it says. */
+export interface WhisperParts {
+  target: string;
+  text: string;
+}
+
+/**
+ * The text after `@` split at its first whitespace: the name before it, the message after
+ * (FS-KCQ06 R12). Character names hold no whitespace (Nick, 2026-11-03), so this is the whole
+ * rule. Either part missing is no whisper.
+ */
+export function whisperOf(body: string): WhisperParts | null {
+  const match = /^(\S+)\s+([\s\S]*\S)/.exec(body);
+  if (!match) return null;
+  return { target: match[1], text: match[2] };
 }
 
 export interface ChatInputDeps {
@@ -124,6 +157,29 @@ export class ChatInput {
     this.deps.changed?.();
   }
 
+  /**
+   * A name clicked in the window (FS-KCQ06 C15): the draft becomes `@Name ` and what it said,
+   * its own prefix dropped (a whisper draft's whole `@Other `), and the input opens on it. Nothing
+   * happens while something else owns the keys, or while whisper is not relayed.
+   */
+  whisperTo(name: string): void {
+    if (!this.pickable.has("whisper") || !this.deps.mayOpen()) return;
+    const field = this.deps.field;
+    const channel = channelOf(field.value, this.pickable);
+    const words =
+      channel === "whisper"
+        ? field.value.replace(/^@\S*\s*/, "")
+        : field.value.slice(CHAT_PREFIX[channel].length).trimStart();
+    this.recalled = null;
+    field.value = clampDraft(
+      `${CHAT_PREFIX.whisper}${name} ${words}`,
+      "whisper",
+    );
+    field.channel = "whisper";
+    this.deps.changed?.();
+    this.requestOpen();
+  }
+
   isOpen(): boolean {
     return this.open;
   }
@@ -173,15 +229,27 @@ export class ChatInput {
     if (key === "Enter") {
       const field = this.deps.field;
       const channel = channelOf(field.value, this.pickable);
-      const text = clampChatText(
-        field.value.slice(CHAT_PREFIX[channel].length).trim(),
-      );
-      if (!text) {
+      const body = field.value.slice(CHAT_PREFIX[channel].length).trim();
+      if (!body) {
         // Enter on nothing is the way back to the game, as the second Enter after a line
         this.discardAndClose();
         return;
       }
-      this.deps.send({ channel, text });
+      if (channel === "whisper") {
+        // a name with no message is not sent; the draft stays to be finished (FS-KCQ06 R12)
+        // read untrimmed: a space straight after the @ leaves no name
+        const whisper = whisperOf(
+          field.value.slice(CHAT_PREFIX.whisper.length),
+        );
+        if (!whisper) return;
+        this.deps.send({
+          channel,
+          target: whisper.target,
+          text: clampChatText(whisper.text),
+        });
+      } else {
+        this.deps.send({ channel, text: clampChatText(body) });
+      }
       this.deps.recall?.remember(field.value.trim());
       this.recalled = null;
       // the input stays open for the next line (revised by the user 2026-10-31); the channel and
@@ -227,10 +295,11 @@ export class ChatInput {
     // an edited line is the player's own again; the arrows start over from the newest
     this.recalled = null;
     const field = this.deps.field;
-    const clamped = clampChatText(field.value);
-    if (clamped !== field.value) field.value = clamped;
     // a prefix typed or deleted at the start picks its channel, or goes back to Area
-    field.channel = channelOf(field.value, this.pickable);
+    const channel = channelOf(field.value, this.pickable);
+    const clamped = clampDraft(field.value, channel);
+    if (clamped !== field.value) field.value = clamped;
+    field.channel = channel;
     this.deps.changed?.();
   }
 

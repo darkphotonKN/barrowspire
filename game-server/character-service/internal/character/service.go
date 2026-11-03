@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -17,6 +18,10 @@ const maxNameLength = 32
 
 // classes is the closed set a character may be (FS-BDA7X R3; FS-MAMHR R4).
 var classes = map[string]bool{"warrior": true, "mage": true, "archer": true, "mercenary": true}
+
+// splitsAName reports whether r would break a name in two. U+FEFF counts although Go's
+// unicode.IsSpace leaves it out, because the client's whisper parse (JS \s) splits on it.
+func splitsAName(r rune) bool { return unicode.IsSpace(r) || r == '\uFEFF' }
 
 type service struct {
 	repo      Repository
@@ -52,6 +57,10 @@ func (s *service) CreateCharacter(ctx context.Context, in CharacterCreate) (*Cha
 	}
 	if n := utf8.RuneCountInString(name); n < 1 || n > maxNameLength {
 		return nil, fmt.Errorf("create character: name must be 1-%d characters: %w", maxNameLength, commonconstants.ErrInvalidInput)
+	}
+	// one word, so a whisper's "@Name message" finds the whole name (FS-KCQ06 R17)
+	if strings.IndexFunc(name, splitsAName) >= 0 {
+		return nil, fmt.Errorf("create character: A hero's name is one word.: %w", commonconstants.ErrInvalidInput)
 	}
 
 	created, err := s.repo.Create(ctx, &Character{

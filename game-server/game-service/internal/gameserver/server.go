@@ -233,8 +233,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	server.parties = party
 	party.start(ctx)
 	// party lines read the registry's cache and reach other pods through its runner and courier
-	// (FS-XGW7H)
-	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus, party)
+	// (FS-XGW7H); a whisper's target is looked up in its presence index on the same runner
+	// (FS-KCQ06)
+	chat := newChatRelay(server, newSender, podID, boot.chatNow, boot.chatNewID, boot.chatBus, party, party)
 	var presenceWriter presenceIndex
 	if boot.presence != nil {
 		presenceWriter = boot.presence

@@ -7,9 +7,10 @@
  * Amendment 2026-10-31): the channel tabs (any combination shown, R24), the lines (`Name: text`),
  * a brass divider, and the input row on a near-black ground with the channel picker at its left
  * and the fold button at its right. Folded, the window is that input row alone. It sits at the
- * HUD's depth, under overlays and popups (R17). Only its tabs and the fold button take a click
- * and only the wheel over its lines is read; a scene asks `covers` so a click on the panel is
- * never an attack in the world behind it (R31).
+ * HUD's depth, under overlays and popups (R17). Its tabs, the fold button and the names in its
+ * lines take a click (a name starts a whisper, FS-KCQ06 C15), and only the wheel over its lines is
+ * read; a scene asks `covers` so a click on the panel is never an attack in the world behind it
+ * (R31).
  */
 
 import type Phaser from "phaser";
@@ -20,6 +21,7 @@ import {
   visibleChatLines,
   type ChatState,
 } from "@/stores/chatStore";
+import { useAuthStore } from "@/stores/authStore";
 import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
@@ -45,6 +47,7 @@ import {
   CHAT_TAB_PAD,
   chatEntryColour,
   chatFoldButton,
+  chatNameSpan,
   chatScrollOffsetAt,
   chatScrollThumb,
   chatScrollTrack,
@@ -58,9 +61,11 @@ import {
   type Rect,
 } from "./chatWindowLayout";
 
-/** What a scene gives the window: what the input needs to let the player type. */
+/** What a scene gives the window: what the input needs to let the player type, and who is playing. */
 export interface ChatWindowOptions {
   input?: ChatWindowInput;
+  /** This player's id: a whisper they sent is their echo, `To Name` (FS-KCQ06 R14). */
+  selfId?: () => string | undefined;
 }
 
 /** What a scene gives the window so the player can type: who owns the keys, and how a line leaves. */
@@ -91,6 +96,7 @@ export function mountChatWindow(
         send: (line) => socketManager.sendMessage(ActionType.Chat, line),
         makeField: domChatInputField,
       },
+      selfId: () => useAuthStore.getState().memberInfo?.id,
     },
   );
 }
@@ -170,6 +176,10 @@ export class ChatWindow {
   private maskShape?: Phaser.GameObjects.Graphics;
   private mask?: Phaser.Display.Masks.GeometryMask;
   private lineTexts: Phaser.GameObjects.Text[] = [];
+  /** Each drawn line's clickable name, where it is drawn now (FS-KCQ06 C15). */
+  private nameHits: { name: string; rect: Rect }[] = [];
+  /** The name the pointer went down on, if it did; the release on it is the click. */
+  private pressedName: string | null = null;
   private scrollbar?: Phaser.GameObjects.Graphics;
   /** While the thumb is held: how far below its top it was grabbed. */
   private grabbed: number | null = null;
@@ -181,6 +191,7 @@ export class ChatWindow {
   private unsubscribe: () => void;
   private field?: ChatInputFieldHandle;
   private input?: ChatInput;
+  private readonly selfId: () => string | undefined;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
   constructor(
@@ -191,6 +202,7 @@ export class ChatWindow {
     options: ChatWindowOptions = {},
   ) {
     this.bottom = bottom;
+    this.selfId = options.selfId ?? (() => undefined);
     this.frame = this.frameNow();
     this.drawAll();
     this.unsubscribe = store.subscribe((state, prev) =>
@@ -387,9 +399,20 @@ export class ChatWindow {
    * browser will not move focus itself, since Phaser prevents a canvas mousedown's default.
    */
   private onPress(pointer: { x: number; y: number }): void {
+    this.pressedName = null;
     if (this.grabScrollbar(pointer)) return;
+    this.pressedName = this.nameAt(pointer.x, pointer.y);
     if (!this.input?.isOpen() || this.covers(pointer.x, pointer.y)) return;
     this.field?.blur();
+  }
+
+  /**
+   * The name drawn under a screen point, if any. Only inside the message area: a wrapped line's
+   * head cut off above it lies under the tabs.
+   */
+  private nameAt(x: number, y: number): string | null {
+    if (!within(this.frame.messages, x, y)) return null;
+    return this.nameHits.find((hit) => within(hit.rect, x, y))?.name ?? null;
   }
 
   /** How many lines the player can scroll through now: the ones their filter shows. */
@@ -423,8 +446,18 @@ export class ChatWindow {
     if (this.grabbed !== null) this.scrollTo(pointer.y);
   }
 
-  private onRelease(): void {
+  /**
+   * A release ends a thumb drag; one on the name it went down on starts a whisper to it (FS-KCQ06
+   * C15). On the release, not the press, as the fold button: the scene's attack handler has asked
+   * whether the press was the window's before anything here moves (R31).
+   */
+  private onRelease(pointer: { x: number; y: number }): void {
     this.grabbed = null;
+    const pressed = this.pressedName;
+    this.pressedName = null;
+    if (pressed !== null && pressed === this.nameAt(pointer.x, pointer.y)) {
+      this.input?.whisperTo(pressed);
+    }
   }
 
   private scrollTo(pointerY: number): void {
@@ -556,21 +589,32 @@ export class ChatWindow {
 
   /** A tab label's width at the window's font, measured once per label. */
   private labelWidth(label: string): number {
-    let width = this.measured.get(label);
-    if (width === undefined) {
+    return this.wordsSize(label).width;
+  }
+
+  /**
+   * Some words' drawn size on one line at the window's font, measured once per words: a tab label,
+   * or a name and what stands before it in a chat line (the shadow does not widen a line).
+   */
+  private wordsSize(words: string): { width: number; height: number } {
+    let size = this.measured.get(words);
+    if (size === undefined) {
       const probe = this.scene.add.text(
         0,
         0,
-        label,
+        words,
         textStyle(palette.chatSystem),
       );
-      width = probe.width;
+      size = { width: probe.width, height: probe.height };
       probe.destroy();
-      this.measured.set(label, width);
+      this.measured.set(words, size);
     }
-    return width;
+    return size;
   }
-  private readonly measured = new Map<string, number>();
+  private readonly measured = new Map<
+    string,
+    { width: number; height: number }
+  >();
 
   /** The tab labels, centred in their segments, faint while their channel is hidden (R24). */
   private drawTabs(): void {
@@ -610,12 +654,13 @@ export class ChatWindow {
       visibleChatLines(this.store.getState()),
       this.offset,
     );
+    const self = this.selfId();
     // the newest line stands a little above the input row's divider
     let y = m.y + m.height - CHAT_LINES_GAP;
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
       const t = this.scene.add
-        .text(m.x + CHAT_PAD, 0, formatChatEntry(entry), {
+        .text(m.x + CHAT_PAD, 0, formatChatEntry(entry, self), {
           ...lineStyle(chatEntryColour(entry)),
           // fill each line before breaking: Phaser's own wrap breaks only at spaces, so a Chinese
           // sentence after "Name: " would jump whole to the next line
@@ -636,6 +681,23 @@ export class ChatWindow {
       t.setPosition(m.x + CHAT_PAD, y);
       if (this.mask) t.setMask(this.mask);
       this.lineTexts.unshift(t);
+      // the name heads the line's first row, so its hit area is that row's, as wide as the name
+      const span = chatNameSpan(
+        entry,
+        self,
+        (words) => this.wordsSize(words).width,
+      );
+      if (span) {
+        this.nameHits.push({
+          name: span.name,
+          rect: {
+            x: m.x + CHAT_PAD + span.x,
+            y,
+            width: span.width,
+            height: this.wordsSize(span.name).height,
+          },
+        });
+      }
     }
   }
 
@@ -675,5 +737,6 @@ export class ChatWindow {
   private clearLines(): void {
     this.lineTexts.forEach((t) => t.destroy());
     this.lineTexts = [];
+    this.nameHits = [];
   }
 }

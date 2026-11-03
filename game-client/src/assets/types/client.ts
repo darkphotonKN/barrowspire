@@ -30,6 +30,8 @@ export interface UsePayload {
 /** A chat line as the client sends it; the pod stamps everything else (FS-WJGFJ R2). */
 export interface ChatPayload {
   channel: ChatChannel;
+  /** A whisper's target, the character name as typed; on whisper only (FS-KCQ06 R1). */
+  target?: string;
   text: string;
 }
 

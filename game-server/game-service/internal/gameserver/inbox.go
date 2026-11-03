@@ -23,10 +23,12 @@ import (
 type inboxBus interface {
 	Listen(ctx context.Context, channel string, onMessage func(payload []byte)) error
 	Publish(ctx context.Context, channel string, payload []byte) error
+	// Publish, telling how many subscribers heard it: a confirmed letter's path (FS-KCQ06)
+	PublishCount(ctx context.Context, channel string, payload []byte) (int64, error)
 }
 
-// Letter kinds (FS-R82NV R9; FS-NCC9J R5; FS-XGW7H R10; FS-988SM R8a). A letter for a player this
-// pod does not hold is dropped.
+// Letter kinds (FS-R82NV R9; FS-NCC9J R5; FS-XGW7H R10; FS-988SM R8a; FS-KCQ06 R8). A letter for a
+// player this pod does not hold is dropped.
 const (
 	letterPartyInvite = "party_invite"
 	letterPartyUpdate = "party_update"
@@ -34,6 +36,7 @@ const (
 	letterPartyChat   = "party_chat"
 	// a random match hosted elsewhere was cancelled: the player is refused find_game here
 	letterMatchFailed = "match_failed"
+	letterWhisper     = "whisper"
 )
 
 // letter is one inbox message: {kind, to_player_id, payload}.
@@ -52,11 +55,13 @@ const (
 func inboxChannel(podID string) string { return "pod:" + podID + ":inbox" }
 
 // outgoing is a letter on its way to another pod; failed runs, off the hub's loop, if it was not
-// published.
+// published, and sent, if set, once it was. A confirmed letter is sent only if a pod heard it.
 type outgoing struct {
-	podID  string
-	letter letter
-	failed func()
+	podID     string
+	letter    letter
+	confirmed bool
+	sent      func()
+	failed    func()
 }
 
 type podInbox struct {
@@ -94,11 +99,24 @@ func (in *podInbox) letters() <-chan letter { return in.arrived }
 // send queues l for podID's inbox. failed runs, off the loop, if it is not published; a full
 // queue fails it at once.
 func (in *podInbox) send(podID string, l letter, failed func()) {
+	in.queue(outgoing{podID: podID, letter: l, failed: failed})
+}
+
+// sendConfirmed is send, with sent run, off the loop, once l is published and heard: Redis took it
+// and handed it to a subscriber on podID's inbox. Nobody listening, as on a pod that has died
+// while its players' presence lingers, fails it (FS-KCQ06 Edge States, charter #2). A letter some
+// other pod heard is still only at most once: that pod may not seat its addressee.
+func (in *podInbox) sendConfirmed(podID string, l letter, sent, failed func()) {
+	in.queue(outgoing{podID: podID, letter: l, confirmed: true, sent: sent, failed: failed})
+}
+
+// queue hands out to the publisher; a full queue fails it at once.
+func (in *podInbox) queue(out outgoing) {
 	select {
-	case in.outgoing <- outgoing{podID: podID, letter: l, failed: failed}:
+	case in.outgoing <- out:
 	default:
-		slog.Warn("inbox letter not sent: publisher behind", "kind", l.Kind, "pod_id", podID)
-		go failed()
+		slog.Warn("inbox letter not sent: publisher behind", "kind", out.letter.Kind, "pod_id", out.podID)
+		go out.failed()
 	}
 }
 
@@ -139,18 +157,38 @@ func (in *podInbox) publishLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case out := <-in.outgoing:
-			raw, err := json.Marshal(out.letter)
-			if err == nil {
-				publishCtx, cancel := context.WithTimeout(ctx, inboxPublishTimeout)
-				err = in.bus.Publish(publishCtx, inboxChannel(out.podID), raw)
-				cancel()
-			}
-			if err != nil {
+			if err := in.publish(ctx, out); err != nil {
 				slog.Warn("inbox letter not published", "kind", out.letter.Kind, "pod_id", out.podID, "error", err)
 				out.failed()
+				continue
+			}
+			if out.sent != nil {
+				out.sent()
 			}
 		}
 	}
+}
+
+// publish puts out's letter on its pod's inbox. A confirmed letter nobody heard is not sent.
+func (in *podInbox) publish(ctx context.Context, out outgoing) error {
+	raw, err := json.Marshal(out.letter)
+	if err != nil {
+		return fmt.Errorf("encode letter: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, inboxPublishTimeout)
+	defer cancel()
+	channel := inboxChannel(out.podID)
+	if !out.confirmed {
+		return in.bus.Publish(ctx, channel, raw)
+	}
+	heard, err := in.bus.PublishCount(ctx, channel, raw)
+	if err != nil {
+		return err
+	}
+	if heard == 0 {
+		return fmt.Errorf("nobody listening on %s", channel)
+	}
+	return nil
 }
 
 // WithPodInbox gives the pod its inbox on bus, the chat bus's Redis in production: it listens at
