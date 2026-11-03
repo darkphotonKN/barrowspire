@@ -1,9 +1,9 @@
 ---
 id: I-NXP1W-15
-status: open
+status: done
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-3]
-labels: [blocked]
+labels: []
 title: "FS-NXP1W slice 15: no-bids arm — NB1 ReturnItem, NB2 ExpireListing"
 ---
 Implements FS-NXP1W §Requirements 8, 24a, 34a, 34b

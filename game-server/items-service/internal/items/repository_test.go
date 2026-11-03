@@ -1635,8 +1635,8 @@ func TestMarketplaceWrites_LeaveAnInRunItemAlone(t *testing.T) {
 			}
 			return nil
 		}},
-		{"FreezeItem", func(owner, item, _ uuid.UUID) error {
-			if ok, err := repo.FreezeItem(ctx, item, owner); ok || err != nil {
+		{"FreezeItem", func(owner, item, listing uuid.UUID) error {
+			if ok, err := repo.FreezeItem(ctx, item, owner, listing); ok || err != nil {
 				return fmt.Errorf("freeze = %v, %v; want false, nil", ok, err)
 			}
 			return nil
