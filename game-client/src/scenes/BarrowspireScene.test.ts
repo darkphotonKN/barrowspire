@@ -3588,9 +3588,15 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     run.confirmKey = { justDown: false, isDown: false };
     run.choiceKeys = [];
     const keyHandlers: Record<string, () => void> = {};
+    const removeKey = vi.fn();
     const input = Object.assign(new EventEmitter(), {
       setDefaultCursor: vi.fn(),
-      keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+      keyboard: {
+        on: (event: string, fn: () => void) => (keyHandlers[event] = fn),
+        // the overlay's Shift, while open (FS-NV54P R4); closing must not remove it
+        addKey: () => ({ isDown: false }),
+        removeKey,
+      },
       activePointer: { button: 0, positionToCamera: () => ({ x: 400, y: 300 }) },
     });
     Object.assign(stage.run, { input, game: { events: new EventEmitter() } });
@@ -3622,7 +3628,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     };
     const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
     const shown = (content: string) => stage.texts().some((t) => t.content === content);
-    return { ...stage, run, key, pressEsc, press, sentOf, shown };
+    return { ...stage, run, key, pressEsc, press, sentOf, shown, removeKey };
   }
 
   afterEach(() => {
@@ -3642,7 +3648,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   });
 
   it("should toggle the overlay on I and on B, and close it on Q (R4)", () => {
-    const { run, key } = overlayOnStage();
+    const { run, key, removeKey } = overlayOnStage();
     key("I");
     expect(run.equipment?.isOpen()).toBe(true);
     key("B");
@@ -3654,6 +3660,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     key("B");
     key("Q");
     expect(run.equipment?.isOpen()).toBe(false);
+    expect(removeKey).not.toHaveBeenCalled();
   });
 
   it("should close the overlay on one ESC and leave the menu closed; the next ESC opens the menu (R5)", () => {

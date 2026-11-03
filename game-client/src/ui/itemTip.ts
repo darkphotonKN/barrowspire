@@ -31,11 +31,20 @@ const LINE_GAP = 2;
  */
 const SIZE = { name: 18, body: 15, small: 13, caption: 12 } as const;
 
+export interface ItemTipOptions {
+  width?: number;
+  /**
+   * A line above the name in the badge's caption style, as a worn tip's "Worn" (FS-NV54P R14);
+   * none, and the tip is drawn as ever.
+   */
+  caption?: string;
+}
+
 /** A tip for one item, drawn with its top-left at (0, 0); the caller places and layers it. */
 export function buildItemTip(
   scene: Phaser.Scene,
   view: ItemView,
-  width = 280,
+  { width = 280, caption }: ItemTipOptions = {},
 ): ItemTip {
   const left = PAD + EDGE;
   const inner = width - left - PAD;
@@ -63,16 +72,25 @@ export function buildItemTip(
     y += text.height + LINE_GAP;
   };
 
+  /** Caption-size words, upper-cased and letter-spaced: the badge's style, and a caption's. */
+  const captionText = (x: number, words: string, color: number) => {
+    const text = scene.add.text(x, Math.round(y), words.toUpperCase(), {
+      ...style(SIZE.caption, color),
+      letterSpacing: 2,
+    });
+    children.push(text);
+    return text;
+  };
+
+  if (caption)
+    y += captionText(left, caption, palette.hudLabel).height + LINE_GAP;
+
   line(view.name, SIZE.name, palette.hudText, "bold");
 
   // The badge: the rarity's label in its colour, then the kind of item.
   let badgeX = left;
   const badge = (words: string, color: number) => {
-    const text = scene.add.text(badgeX, Math.round(y), words.toUpperCase(), {
-      ...style(SIZE.caption, color),
-      letterSpacing: 2,
-    });
-    children.push(text);
+    const text = captionText(badgeX, words, color);
     badgeX = Math.round(badgeX + text.width + 10);
     return text.height;
   };

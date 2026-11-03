@@ -6,6 +6,7 @@ import { IN_RUN_NOTE, UNSAFE_FIND_NOTE } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { palette } from "@/utils/canvasPalette";
 import {
+  GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
   GearOverlay,
   STASH_HINT,
@@ -43,8 +44,45 @@ function worn(over: Partial<EquippedItems> = {}): EquippedItems {
 }
 
 /**
- * A scene that records what the overlay draws (text, fills, depths) and the pointer, wheel and
- * resize handlers it hangs on; every other call is accepted and ignored.
+ * The part of Phaser's scene keyboard the overlay reads, as Phaser keeps it: a key exists only
+ * once added, adding a key that exists hands back that same key, a removed key hears no more
+ * presses, a press reaches a key only while the keyboard is enabled, and `resetKeys` (on blur,
+ * and as the chat input opens) lets every key go without an event. SHIFT is there from the
+ * start, as every scene's `createCursorKeys()` adds it before the overlay ever opens.
+ */
+function recordingKeyboard() {
+  const keys = new Map<string, { isDown: boolean }>([
+    ["SHIFT", { isDown: false }],
+  ]);
+  /** The keys added with capture on: their browser default would be stopped. */
+  const captured: string[] = [];
+  const keyboard = {
+    enabled: true,
+    addKey(code: string, enableCapture = true) {
+      if (enableCapture) captured.push(code);
+      const key = keys.get(code) ?? { isDown: false };
+      keys.set(code, key);
+      return key;
+    },
+    removeKey(key: { isDown: boolean } | string) {
+      for (const [code, k] of keys)
+        if (k === key || code === key) keys.delete(code);
+    },
+    resetKeys() {
+      keys.forEach((k) => (k.isDown = false));
+    },
+  };
+  /** A press or release of `code`, as the keyboard plugin hands it to its key. */
+  const key = (code: string, down: boolean) => {
+    const k = keys.get(code);
+    if (k && keyboard.enabled) k.isDown = down;
+  };
+  return { keyboard, keys, captured, key };
+}
+
+/**
+ * A scene that records what the overlay draws (text, fills, depths) and the pointer, wheel,
+ * resize and frame handlers it hangs on; every other call is accepted and ignored.
  */
 function recordingScene(width = 1080, height = 720) {
   const texts: {
@@ -60,7 +98,10 @@ function recordingScene(width = 1080, height = 720) {
   /** Every icon sprite drawn, with the alpha it was given (1 unless dimmed). */
   const sprites: { x: number; y: number; alpha: number }[] = [];
   const depths = new Set<number>();
-  const input = new EventEmitter();
+  const keys = recordingKeyboard();
+  const input = Object.assign(new EventEmitter(), {
+    keyboard: keys.keyboard,
+  });
   const scale = new EventEmitter();
   const events = new EventEmitter();
   const camera = { width, height };
@@ -153,6 +194,13 @@ function recordingScene(width = 1080, height = 720) {
     input.emit("pointerdown", pointer(x, y, button));
   const wheel = (x: number, y: number, dy: number) =>
     input.emit("wheel", pointer(x, y), [], 0, dy);
+  /** One game step: the scene's update, after the keyboard has handed its keys their events. */
+  const frame = () => events.emit("update");
+  /** Shift pressed or released, then a frame. */
+  const shift = (down: boolean) => {
+    keys.key("SHIFT", down);
+    frame();
+  };
   return {
     scene,
     art,
@@ -169,6 +217,11 @@ function recordingScene(width = 1080, height = 720) {
     move,
     press,
     wheel,
+    frame,
+    shift,
+    keyboard: keys.keyboard,
+    keys: keys.keys,
+    captured: keys.captured,
   };
 }
 
@@ -461,7 +514,8 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
     const { left } = overlayLayout(s.camera.width, s.camera.height);
     const area = statsPanelArea(left);
     const rows = s.texts.filter(
-      (t) => !t.destroyed && t.x <= left.x + left.w && t.content !== "CHARACTER",
+      (t) =>
+        !t.destroyed && t.x <= left.x + left.w && t.content !== "CHARACTER",
     );
     return { area, rows, left };
   }
@@ -843,5 +897,377 @@ describe("GearOverlay item standing (FS-18Z5F §H)", () => {
     overlay.handleEquipKey();
     expect(mayUnequip).toHaveBeenCalledWith(helm);
     expect(onUnequip).not.toHaveBeenCalled();
+  });
+});
+
+describe("GearOverlay compare (FS-NV54P)", () => {
+  /** The "Worn" captions drawn now (upper-cased as the badge is, R14). */
+  const captions = (shown: () => string[]) =>
+    shown().filter((t) => t === "WORN");
+
+  it("should show the worn weapon's tip captioned Worn while Shift is held over a bag weapon, and take it away on release (R1–2, R14)", () => {
+    const { move, cell, shift, shown } = overlayOnStage(
+      [sword],
+      worn({ weapon: axe }),
+    );
+    move(...cell(0));
+    expect(shown()).toContain("sword");
+    expect(shown()).not.toContain("axe");
+
+    shift(true);
+    expect(shown()).toEqual(expect.arrayContaining(["sword", "axe", "WORN"]));
+    expect(captions(shown)).toHaveLength(1);
+
+    shift(false);
+    expect(shown()).toContain("sword");
+    expect(shown()).not.toContain("axe");
+    expect(captions(shown)).toHaveLength(0);
+  });
+
+  it.each([
+    ["head", "head"],
+    ["chest", "body"],
+    ["gloves", "hands"],
+    ["legs", "feet"],
+  ] as const)(
+    "should compare a bag %s piece with what is worn in %s, and add nothing with it empty (R8, R10)",
+    (armorSlot, slot) => {
+      const piece = item("new-piece", { armor_slot: armorSlot });
+      const old = item("old-piece", { armor_slot: armorSlot });
+      const wearing = overlayOnStage([piece], worn({ [slot]: old }));
+      wearing.move(...wearing.cell(0));
+      wearing.shift(true);
+      expect(wearing.shown()).toContain("old-piece");
+      expect(captions(wearing.shown)).toHaveLength(1);
+
+      const bare = overlayOnStage([piece]);
+      bare.move(...bare.cell(0));
+      bare.shift(true);
+      expect(bare.shown()).toContain("new-piece");
+      expect(captions(bare.shown)).toHaveLength(0);
+    },
+  );
+
+  it("should compare when Shift is already held as the pointer reaches the item (R3)", () => {
+    const { move, cell, shift, shown } = overlayOnStage(
+      [sword],
+      worn({ weapon: axe }),
+    );
+    shift(true);
+    expect(captions(shown)).toHaveLength(0);
+    move(...cell(0));
+    expect(shown()).toEqual(expect.arrayContaining(["sword", "axe", "WORN"]));
+  });
+
+  it.each([
+    ["a consumable", item("draught", { healing_amount: 20 })],
+    ["armour with no slot", item("plate", { defense_rating: 4 })],
+    ["an item of unknown kind", item("relic", { item_type: "relic" })],
+  ])("should never compare %s (R9)", (_name, bagItem) => {
+    const { move, cell, shift, shown } = overlayOnStage(
+      [bagItem],
+      worn({
+        weapon: axe,
+        head: helm,
+        consumable_1: item("old-draught", { healing_amount: 10 }),
+      }),
+    );
+    move(...cell(0));
+    shift(true);
+    expect(shown()).toContain(bagItem.name);
+    expect(captions(shown)).toHaveLength(0);
+  });
+
+  it("should add nothing under Shift over a worn slot, an empty cell or outside the cells (R7)", () => {
+    const { move, cell, slot, shift, shown, camera } = overlayOnStage(
+      [sword],
+      worn({ weapon: axe }),
+    );
+    shift(true);
+    move(...slot("weapon"));
+    expect(shown()).toContain("axe");
+    expect(captions(shown)).toHaveLength(0);
+    move(...cell(1));
+    expect(captions(shown)).toHaveLength(0);
+    move(camera.width / 2, camera.height / 2);
+    expect(captions(shown)).toHaveLength(0);
+  });
+
+  it("should read Shift only while open, leave the scene's own Shift key working after closing, and never capture it (R4–5, R23)", () => {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    overlay.updateInventory([sword]);
+    overlay.updateEquipment(worn({ weapon: axe }));
+    const scenesShift = s.keys.get("SHIFT");
+    expect(s.events.listenerCount("update")).toBe(0);
+
+    overlay.show();
+    expect(s.events.listenerCount("update")).toBe(1);
+    overlay.hide();
+    expect(s.events.listenerCount("update")).toBe(0);
+    // the key is the scene's (its cursor keys' shift), not the overlay's to take off
+    expect(s.keys.get("SHIFT")).toBe(scenesShift);
+
+    s.shift(true);
+    expect(scenesShift?.isDown).toBe(true);
+    expect(s.shown()).toHaveLength(0);
+    s.shift(false);
+    expect(scenesShift?.isDown).toBe(false);
+    expect(s.captured).toEqual([]);
+  });
+
+  it("should compare when the overlay opens under a Shift already held, on the first open and on a reopen (R3)", () => {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    overlay.updateInventory([sword]);
+    overlay.updateEquipment(worn({ weapon: axe }));
+    const { right } = overlayLayout(s.camera.width, s.camera.height);
+    const r = gearPanelLayout(right, 1).cells[0].rect;
+    const overBag = () => s.move(r.x + r.w / 2, r.y + r.h / 2);
+
+    s.shift(true);
+    overlay.show();
+    s.frame();
+    overBag();
+    expect(captions(s.shown)).toHaveLength(1);
+
+    // closed and opened again, Shift never let go
+    overlay.hide();
+    s.frame();
+    overlay.show();
+    s.frame();
+    overBag();
+    expect(captions(s.shown)).toHaveLength(1);
+  });
+
+  it("should let go of the worn tips when the keyboard lets go of its keys: on blur, and as the chat input opens (R6)", () => {
+    const { move, cell, shift, frame, keyboard, shown } = overlayOnStage(
+      [sword],
+      worn({ weapon: axe }),
+    );
+    move(...cell(0));
+    shift(true);
+    expect(captions(shown)).toHaveLength(1);
+
+    // Phaser's blur reset
+    keyboard.resetKeys();
+    frame();
+    expect(captions(shown)).toHaveLength(0);
+    expect(shown()).toContain("sword");
+
+    // the chat input opening: keys let go, the keyboard off, so Shift typed in chat never compares
+    shift(true);
+    keyboard.resetKeys();
+    keyboard.enabled = false;
+    frame();
+    expect(captions(shown)).toHaveLength(0);
+    shift(true);
+    expect(captions(shown)).toHaveLength(0);
+  });
+
+  it("should compare a bag item in stash mode, and never a stash item (R7, R11)", () => {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    overlay.openStash();
+    overlay.updateInventory([sword]);
+    overlay.updateEquipment(worn({ weapon: axe }));
+    overlay.updateStash([item("spare", { weapon_type: "sword" })]);
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const centre = (r: { x: number; y: number; w: number; h: number }) =>
+      [r.x + r.w / 2, r.y + r.h / 2] as const;
+
+    s.shift(true);
+    s.move(...centre(gearPanelLayout(right, 1).cells[0].rect));
+    expect(s.shown()).toEqual(expect.arrayContaining(["sword", "axe", "WORN"]));
+
+    s.move(...centre(stashPanelLayout(left, 1).cells[0].rect));
+    expect(s.shown()).toContain("spare");
+    expect(captions(s.shown)).toHaveLength(0);
+  });
+
+  it("should build the worn tip from the same view as the worn item's own tip, only the caption added, no delta drawn (R13–16)", () => {
+    const find = item("charm-blade", {
+      weapon_type: "sword",
+      attack_power: 9,
+      rarity: "rare",
+      unsafe: true,
+      required_level: 9,
+    });
+    const s = overlayOnStage([sword], worn({ weapon: find }), "run");
+    s.overlay.setCharacterLevel(3);
+    /** The tip texts drawn now: everything shown less the panels' own words. */
+    const panels = s.shown();
+    const tipTexts = () => {
+      const left = [...panels];
+      return s.shown().filter((t) => {
+        const i = left.indexOf(t);
+        if (i < 0) return true;
+        left.splice(i, 1);
+        return false;
+      });
+    };
+
+    s.move(...s.slot("weapon"));
+    const ownTip = tipTexts();
+    expect(ownTip).toContain(UNSAFE_FIND_NOTE);
+
+    s.move(...s.cell(0));
+    const itemTip = tipTexts();
+    expect(itemTip).not.toContain("WORN");
+
+    s.shift(true);
+    expect(tipTexts().sort()).toEqual([...itemTip, "WORN", ...ownTip].sort());
+    expect(s.fills).toContain(palette.rarity.rare);
+  });
+
+  it("should take the worn tips away on moving to another cell, closing and the scene shutting down (R21)", () => {
+    const { overlay, move, cell, shift, shown, events } = overlayOnStage(
+      [sword, item("trinket")],
+      worn({ weapon: axe }),
+    );
+    shift(true);
+    move(...cell(0));
+    expect(captions(shown)).toHaveLength(1);
+    move(...cell(1));
+    expect(shown()).not.toContain("axe");
+    expect(captions(shown)).toHaveLength(0);
+
+    move(...cell(0));
+    overlay.hide();
+    expect(captions(shown)).toHaveLength(0);
+    expect(shown()).toHaveLength(0);
+
+    overlay.show();
+    shift(true);
+    move(...cell(0));
+    expect(captions(shown)).toHaveLength(1);
+    events.emit("shutdown");
+    expect(shown()).toHaveLength(0);
+  });
+
+  it("should rebuild the worn tips from what is worn now on a redraw: a state, a resize, an equip with Shift held (R21–22)", () => {
+    const { overlay, move, press, cell, shift, shown, scale, onEquip } =
+      overlayOnStage([sword], worn({ weapon: axe }));
+    move(...cell(0));
+    shift(true);
+    expect(shown()).toContain("axe");
+
+    const blade = item("blade", { weapon_type: "sword" });
+    overlay.updateEquipment(worn({ weapon: blade }));
+    expect(shown()).not.toContain("axe");
+    expect(shown()).toContain("blade");
+    expect(captions(shown)).toHaveLength(1);
+
+    scale.emit("resize");
+    expect(captions(shown)).toHaveLength(1);
+
+    // the sword is worn now and the blade back in the bag, under the pointer: it compares with the sword
+    press(...cell(0), 2);
+    expect(onEquip).toHaveBeenCalledWith(sword, "weapon");
+    expect(shown()).toEqual(expect.arrayContaining(["blade", "sword", "WORN"]));
+    expect(captions(shown)).toHaveLength(1);
+  });
+
+  it.each([
+    ["above the character's level", { required_level: 12 }, undefined],
+    ["not available", { status: "LISTED" }, undefined],
+    ["under a status line", {}, "Changing your gear..."],
+  ] as const)(
+    "should still compare a bag item %s (R12)",
+    (_name, extra, status) => {
+      const s = overlayOnStage(
+        [item("great-sword", { weapon_type: "sword", ...extra })],
+        worn({ weapon: axe }),
+        "hub",
+      );
+      s.overlay.setCharacterLevel(3);
+      if (status) s.overlay.setStatus(status);
+      s.move(...s.cell(0));
+      s.shift(true);
+      expect(s.shown()).toEqual(expect.arrayContaining(["great-sword", "axe"]));
+      expect(captions(s.shown)).toHaveLength(1);
+    },
+  );
+
+  describe("a bag ring (R8, R10, R14, R17)", () => {
+    const band = item("band", { item_type: "ring" });
+    const leftRing = item("left-ring", { item_type: "ring" });
+    const rightRing = item("right-ring", { item_type: "ring" });
+    const RING_1 = "WORN · RING 1";
+    const RING_2 = "WORN · RING 2";
+    /** The ring captions and worn rings drawn now, in the order their tips stand in the row. */
+    const ringTexts = (shown: () => string[]) =>
+      shown().filter((t) =>
+        [RING_1, RING_2, "left-ring", "right-ring", "WORN"].includes(t),
+      );
+
+    it.each([
+      {
+        name: "both rings worn: Ring 1's tip, then Ring 2's",
+        gear: { ring_1: leftRing, ring_2: rightRing },
+        want: [RING_1, "left-ring", RING_2, "right-ring"],
+      },
+      {
+        name: "only ring_1 worn: its tip alone, its own caption",
+        gear: { ring_1: leftRing },
+        want: [RING_1, "left-ring"],
+      },
+      {
+        name: "only ring_2 worn: its tip alone, its own caption",
+        gear: { ring_2: rightRing },
+        want: [RING_2, "right-ring"],
+      },
+      {
+        name: "no ring worn: the hovered ring's tip alone",
+        gear: {},
+        want: [],
+      },
+    ])("should compare with what is worn: $name", ({ gear, want }) => {
+      const { move, cell, shift, shown } = overlayOnStage(
+        [band],
+        worn({ weapon: axe, ...gear }),
+      );
+      move(...cell(0));
+      shift(true);
+      expect(shown()[shown().indexOf("band") - 1]).not.toMatch(/^WORN/);
+      expect(shown().indexOf("band")).toBeLessThan(
+        Math.min(...want.map((t) => shown().indexOf(t))),
+      );
+      expect(ringTexts(shown)).toEqual(want);
+      expect(shown()).not.toContain("axe");
+    });
+
+    it("should keep the plain Worn caption for a weapon or armour", () => {
+      const { move, cell, shift, shown } = overlayOnStage(
+        [sword],
+        worn({ weapon: axe, ring_1: leftRing, ring_2: rightRing }),
+      );
+      move(...cell(0));
+      shift(true);
+      expect(ringTexts(shown)).toEqual(["WORN"]);
+    });
+
+    it.each(["ring_1", "ring_2"] as const)(
+      "should add nothing under Shift over the worn %s slot (R7)",
+      (ringSlot) => {
+        const { move, slot, shift, shown } = overlayOnStage(
+          [band],
+          worn({ ring_1: leftRing, ring_2: rightRing }),
+        );
+        shift(true);
+        move(...slot(ringSlot));
+        expect(shown().filter((t) => t.startsWith("WORN"))).toEqual([]);
+      },
+    );
+  });
+
+  it("should hint at Shift: compare between the gesture and the close part (R24)", () => {
+    expect(GEAR_HINT).toBe(
+      "Right-click or E: wear or take off  //  Shift: compare  //  I, B or Esc: close",
+    );
+    expect(STASH_HINT).toBe(
+      "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close",
+    );
+    expect(overlayOnStage().shown()).toContain(GEAR_HINT);
   });
 });

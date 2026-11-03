@@ -119,7 +119,7 @@ export const PANEL_PAD = 14;
 const TITLE_H = 26;
 const SECTION_GAP = 12;
 const BAG_HEAD_H = 24;
-const HINT_H = 20;
+export const HINT_H = 40;
 /** A bag cell's side: as large as the panel allows, within these. */
 const MIN_CELL = 26;
 const MAX_CELL = 72;
@@ -374,4 +374,50 @@ export function stashPanelLayout(
       scroll,
     }),
   };
+}
+
+// ── The item tip row ──────────────────────────────────────────────────────
+
+/** How far the row stands right of the pointer and above it, and off it when flipped left. */
+const TIP_OFFSET_X = 14;
+const TIP_OFFSET_Y = 10;
+const TIP_FLIP_GAP = 8;
+/** The gap between two tips in the row. */
+const TIP_GAP = 8;
+/** How close the row may come to a screen edge. */
+const TIP_EDGE = 4;
+
+/**
+ * Where each tip of a row stands (its top-left), for the pointer at `pointer` on a screen this
+ * size: the hovered item's tip first, then its worn tips (FS-NV54P R17), side by side `TIP_GAP`
+ * apart, tops aligned. The row sits right of the pointer, flipped whole to its left where it
+ * would leave the right edge; where neither side has room it is pushed in from the right edge,
+ * the left edge winning on a screen narrower than the row (R18–19). Vertically the tallest tip
+ * decides: where it would leave the bottom the row rises above the pointer, never above the top.
+ */
+export function itemTipRow(
+  tips: readonly { width: number; height: number }[],
+  pointer: { x: number; y: number },
+  screen: { width: number; height: number },
+): { x: number; y: number }[] {
+  const rowW =
+    tips.reduce((sum, t) => sum + t.width, 0) +
+    TIP_GAP * Math.max(0, tips.length - 1);
+  const rowH = Math.max(0, ...tips.map((t) => t.height));
+
+  let x = pointer.x + TIP_OFFSET_X;
+  if (x + rowW > screen.width) x = pointer.x - rowW - TIP_FLIP_GAP;
+  if (x < TIP_EDGE) x = screen.width - TIP_EDGE - rowW;
+  x = Math.max(TIP_EDGE, x);
+
+  let y = pointer.y - TIP_OFFSET_Y;
+  if (y + rowH > screen.height) y = pointer.y - rowH - TIP_FLIP_GAP;
+  y = Math.round(Math.max(TIP_EDGE, y));
+
+  const at: { x: number; y: number }[] = [];
+  for (const t of tips) {
+    at.push({ x: Math.round(x), y });
+    x += t.width + TIP_GAP;
+  }
+  return at;
 }
