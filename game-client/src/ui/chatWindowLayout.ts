@@ -308,15 +308,24 @@ export interface ChatTabSegment extends Rect {
 }
 
 /**
- * The filter row's five tab segments, joined edge to edge from the row's left, each as wide as its
- * label (`measure`) plus padding (R24 as amended 2026-10-31).
+ * The channels the window offers, as filter tabs and as picker options. Trade is hidden until it has
+ * its own scoping (Nick, 2026-11-03); it stays in CHAT_CHANNELS, the protocol's closed set, so a
+ * trade line is still recognised. The server relays none, so none arrives.
+ */
+export const CHAT_SHOWN_CHANNELS: readonly ChatChannel[] = CHAT_CHANNELS.filter(
+  (channel) => channel !== "trade",
+);
+
+/**
+ * The filter row's tab segments, one per shown channel, joined edge to edge from the row's left,
+ * each as wide as its label (`measure`) plus padding (R24 as amended 2026-10-31).
  */
 export function chatTabSegments(
   row: Rect,
   measure: (label: string) => number,
 ): ChatTabSegment[] {
   let x = row.x;
-  return CHAT_CHANNELS.map((channel) => {
+  return CHAT_SHOWN_CHANNELS.map((channel) => {
     const width = Math.round(
       measure(CHAT_FILTER_LABEL[channel]) + CHAT_TAB_PAD * 2,
     );

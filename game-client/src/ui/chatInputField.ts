@@ -11,7 +11,7 @@
  */
 
 import type Phaser from "phaser";
-import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
+import type { ChatChannel } from "@/stores/chatStore";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CHAT_OPEN_CHANNELS, type ChatInputField } from "./chatInput";
 import {
@@ -19,6 +19,7 @@ import {
   CHAT_FILTER_LABEL,
   CHAT_INPUT_HINT,
   CHAT_PICKER_W,
+  CHAT_SHOWN_CHANNELS,
   type Rect,
 } from "./chatWindowLayout";
 
@@ -122,7 +123,8 @@ export const domChatInputField: ChatInputFieldFactory = (
     font: FONT(),
   });
   pickerBox.append(picker, arrow);
-  for (const channel of CHAT_CHANNELS) {
+  // a hidden channel (trade, for now) is not listed at all
+  for (const channel of CHAT_SHOWN_CHANNELS) {
     const option = document.createElement("option");
     option.value = channel;
     option.textContent = CHAT_FILTER_LABEL[channel];
