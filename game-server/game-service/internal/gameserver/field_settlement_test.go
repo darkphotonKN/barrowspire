@@ -107,14 +107,14 @@ func newSettlingRig(t *testing.T) (*fieldRig, *outboxRows) {
 
 	rig := newFieldRig(t, meadowsLoadout())
 	outbox := &outboxRows{}
-	rig.server.visitSettler = game.NewService(committingDB(t), outbox, noWake{}, game.SettlementRetry{Lifetime: t.Context(), First: time.Millisecond, Max: time.Millisecond, AttemptTimeout: time.Second})
+	rig.server.visitSettler = game.NewService(committingDB(t), outbox, noWake{}, game.SettlementRetry{Lifetime: t.Context(), First: time.Millisecond, Max: time.Millisecond, AttemptTimeout: time.Second}, nil)
 	return rig, outbox
 }
 
 // A server is built settling visits through the publisher it is handed, and
 // through the log alone without one. R39.
 func TestNewServer_SettlesVisitsThroughTheGivenPublisher(t *testing.T) {
-	publisher := game.NewService(committingDB(t), &outboxRows{}, noWake{}, game.SettlementRetry{Lifetime: t.Context(), First: time.Millisecond, Max: time.Millisecond, AttemptTimeout: time.Second})
+	publisher := game.NewService(committingDB(t), &outboxRows{}, noWake{}, game.SettlementRetry{Lifetime: t.Context(), First: time.Millisecond, Max: time.Millisecond, AttemptTimeout: time.Second}, nil)
 
 	assert.Same(t, publisher, bootedServer(t, WithVisitSettler(publisher)).visitSettler)
 	assert.Equal(t, logVisitSettler{}, bootedServer(t).visitSettler)

@@ -4,9 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	pbevents "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
+	pbitems "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -76,7 +84,7 @@ func soloRunEnd(runID uuid.UUID, member string) *types.RawMatchState {
 func TestPublishMatchComplete_DatabaseDownThenBack_RetriedUntilRecorded(t *testing.T) {
 	db := &downDB{next: committingTxDB(t), down: 2}
 	outbox := &capturingOutbox{}
-	svc := NewService(db, outbox, noWake{}, testRetry(t))
+	svc := NewService(db, outbox, noWake{}, testRetry(t), nil)
 	run, wren := uuid.New(), uuid.NewString()
 
 	svc.PublishMatchComplete(context.Background(), soloRunEnd(run, wren))
@@ -91,7 +99,7 @@ func TestPublishMatchComplete_DatabaseDownThenBack_RetriedUntilRecorded(t *testi
 // Every attempt is bounded: none waits on the database forever. FS-GV8WN §C R8.
 func TestPublishMatchComplete_EveryAttempt_HasADeadline(t *testing.T) {
 	db := &downDB{next: committingTxDB(t), down: 1}
-	svc := NewService(db, &capturingOutbox{}, noWake{}, testRetry(t))
+	svc := NewService(db, &capturingOutbox{}, noWake{}, testRetry(t), nil)
 
 	svc.PublishMatchComplete(context.Background(), soloRunEnd(uuid.New(), uuid.NewString()))
 	svc.Drain()
@@ -105,7 +113,7 @@ func TestPublishMatchComplete_EveryAttempt_HasADeadline(t *testing.T) {
 func TestPublishMatchComplete_PodGoingAway_StopsRetrying(t *testing.T) {
 	db := &downDB{next: committingTxDB(t), down: 1 << 30}
 	errs := captureErrors(t)
-	svc := NewService(db, &capturingOutbox{}, noWake{}, noRetry())
+	svc := NewService(db, &capturingOutbox{}, noWake{}, noRetry(), nil)
 	run := uuid.New()
 
 	svc.PublishMatchComplete(context.Background(), soloRunEnd(run, uuid.NewString()))
@@ -119,7 +127,7 @@ func TestPublishMatchComplete_PodGoingAway_StopsRetrying(t *testing.T) {
 // that is up records the run's end at once, as before. FS-GV8WN §C R8.
 func TestPublishMatchComplete_DatabaseUp_RecordedBeforeReturning(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	run, wren := uuid.New(), uuid.NewString()
 
 	svc.PublishMatchComplete(context.Background(), soloRunEnd(run, wren))
@@ -170,9 +178,9 @@ func settleThrough(t *testing.T, retry SettlementRetry, failures int) (*failingR
 	t.Helper()
 	rec := &failingRecord{failures: failures}
 	waits := &recordingWaits{}
-	w := newSettlementWriter(rec.record, retry)
+	w := newSettlementWriter(rec.record, nil, retry)
 	w.after = waits.after
-	w.settle(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()))
+	w.settle(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()), nil)
 	w.drain()
 	return rec, waits
 }
@@ -237,13 +245,96 @@ func TestSettlementWriter_Retries_ErrorOnlyWhenHeldAndWhenGivenUp(t *testing.T) 
 func TestSettlementWriter_AfterDrainBegins_RefusesNewSettlements(t *testing.T) {
 	errs := captureErrors(t)
 	rec := &failingRecord{}
-	w := newSettlementWriter(rec.record, testRetry(t))
+	w := newSettlementWriter(rec.record, nil, testRetry(t))
 	w.drain()
 
-	w.settleLater(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()))
-	w.settle(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()))
+	w.settleLater(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()), nil)
+	w.settle(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()), nil)
 	w.drain()
 
 	assert.Empty(t, rec.calls, "nothing is written once the pod is going away")
 	assert.Len(t, errs.records, 2, "each refused settlement is logged")
+}
+
+// recordingApplier stands in for items-service's ApplySettlement: it fails its
+// first `failures` calls as unavailable (or with `refusal`, when set) and
+// records each request.
+type recordingApplier struct {
+	failures int
+	refusal  error
+
+	mu    sync.Mutex
+	calls []*pbitems.ApplySettlementRequest
+}
+
+func (a *recordingApplier) ApplySettlement(_ context.Context, req *pbitems.ApplySettlementRequest) (*pbitems.ApplySettlementResponse, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls = append(a.calls, req)
+	if len(a.calls) <= a.failures {
+		if a.refusal != nil {
+			return nil, a.refusal
+		}
+		return nil, status.Error(codes.Unavailable, "items down")
+	}
+	return &pbitems.ApplySettlementResponse{}, nil
+}
+
+func (a *recordingApplier) requests() []*pbitems.ApplySettlementRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.calls)
+}
+
+// After a settlement commits it is applied in items-service at once, under its
+// items.extracted row id and with the payload committed, and confirmed once
+// that succeeds; a failed apply is retried. FS-GV8WN §D R13, I-GV8WN-8.
+func TestSettlementWriter_Committed_AppliedUnderItsRowIDThenConfirmed(t *testing.T) {
+	event := &pbevents.ItemsExtractedEvent{SessionId: uuid.NewString(), Partial: true}
+	payload, err := proto.Marshal(event)
+	require.NoError(t, err)
+	ids := newSettlementIDs(uuid.New(), uuid.NewString())
+	applier := &recordingApplier{failures: 1}
+	w := newSettlementWriter((&failingRecord{}).record, applier, testRetry(t))
+	w.after = (&recordingWaits{}).after
+
+	var confirmed atomic.Int32
+	w.settleLater(uuid.New(), &types.FormattedMatchData{ItemsExtractedEvent: payload}, ids, func() { confirmed.Add(1) })
+	w.drain()
+
+	requests := applier.requests()
+	require.Len(t, requests, 2, "a failed apply is tried again")
+	assert.Equal(t, ids.ItemsExtracted.String(), requests[1].GetEventId(), "the row id, which consumers dedup on")
+	assert.True(t, proto.Equal(event, requests[1].GetEvent()), "the committed payload")
+	assert.EqualValues(t, 1, confirmed.Load(), "confirmed once applied")
+}
+
+// A settlement whose write never commits is never applied nor confirmed.
+func TestSettlementWriter_NeverRecorded_NeitherAppliedNorConfirmed(t *testing.T) {
+	applier := &recordingApplier{}
+	w := newSettlementWriter((&failingRecord{failures: 1 << 30}).record, applier, noRetry())
+
+	confirmed := false
+	w.settleLater(uuid.New(), &types.FormattedMatchData{}, newSettlementIDs(uuid.New(), uuid.NewString()), func() { confirmed = true })
+	w.drain()
+
+	assert.Empty(t, applier.requests())
+	assert.False(t, confirmed)
+}
+
+// A settlement items-service refuses for good (a malformed request) is not
+// asked again, and never confirmed: its recorded copy lands it. FS-GV8WN R11.
+func TestSettlementWriter_ApplyRefused_NotRetriedNorConfirmed(t *testing.T) {
+	payload, err := proto.Marshal(&pbevents.ItemsExtractedEvent{SessionId: uuid.NewString()})
+	require.NoError(t, err)
+	applier := &recordingApplier{failures: 1 << 30, refusal: status.Error(codes.InvalidArgument, "malformed")}
+	w := newSettlementWriter((&failingRecord{}).record, applier, testRetry(t))
+	w.after = (&recordingWaits{}).after
+
+	confirmed := false
+	w.settleLater(uuid.New(), &types.FormattedMatchData{ItemsExtractedEvent: payload}, newSettlementIDs(uuid.New(), uuid.NewString()), func() { confirmed = true })
+	w.drain()
+
+	assert.Len(t, applier.requests(), 1, "asked once")
+	assert.False(t, confirmed)
 }

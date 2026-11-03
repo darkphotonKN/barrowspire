@@ -45,7 +45,7 @@ func endedVisit() FieldVisit {
 // id: a returned result, never a win, in a field. R40, R41, R43.
 func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	visit := endedVisit()
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
@@ -85,7 +85,7 @@ func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 // and no pickups".
 func TestPublishFieldVisit_EmptyVisit_StillSettles(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	visit := FieldVisit{ID: uuid.New(), MemberID: uuid.New(), CharacterID: uuid.New(), EnteredAt: time.Now(), LeftAt: time.Now()}
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
@@ -107,7 +107,7 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 			WithArgs(sqlmock.AnyArg(), commonconstants.GameMatchEnded, commonconstants.GameEventsExchange, sqlmock.AnyArg()).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit()
-		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{}, testRetry(t))
+		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{}, testRetry(t), nil)
 
 		require.NoError(t, svc.PublishFieldVisit(context.Background(), endedVisit()))
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -119,7 +119,7 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 		mock.ExpectExec(insertOutboxStmt).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(insertOutboxStmt).WillReturnError(errors.New("db down"))
 		mock.ExpectRollback()
-		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{}, testRetry(t))
+		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{}, testRetry(t), nil)
 		visit := endedVisit()
 
 		err := svc.PublishFieldVisit(context.Background(), visit)
@@ -135,7 +135,7 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 func visitRowIDs(t *testing.T, visit FieldVisit) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
 

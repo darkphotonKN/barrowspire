@@ -168,7 +168,7 @@ func snapshotDrink(t *testing.T, s *Session, delver *ecs.Entity, potions ...uuid
 	if pc, ok := delver.GetComponent(ecs.ComponentTypePotion); ok {
 		potions := pc.(*components.PotionComponent)
 		snap.hasPotion, snap.cooldown = true, potions.CooldownRemaining
-		snap.consumed = append([]uuid.UUID(nil), potions.ConsumedItemIDs...)
+		snap.consumed = consumedIDsOf(potions)
 	}
 	for i := range 3 {
 		if held := consumableSlot(t, s, delver, i+1); held != nil {
@@ -204,7 +204,7 @@ func TestRun_Drink_RefusalsChangeNothingAndSendNothing(t *testing.T) {
 			pc.(*components.PlayerComponent).LeftBehind = true
 		}},
 		{"on cooldown", func(t *testing.T) *Session { return coopRun(t) }, func(t *testing.T, s *Session, delver *ecs.Entity) {
-			delver.AddComponent(&components.PotionComponent{CooldownRemaining: 0.5, ConsumedItemIDs: []uuid.UUID{uuid.New()}})
+			delver.AddComponent(&components.PotionComponent{CooldownRemaining: 0.5, Consumed: []components.ConsumedItem{{InstanceID: uuid.New()}}})
 		}},
 		{"no health potion equipped", func(t *testing.T) *Session { return coopRun(t) }, func(t *testing.T, s *Session, delver *ecs.Entity) {
 			*slotHolders[0](equipmentOf(t, s, delver.ID)) = nil
@@ -325,14 +325,14 @@ func TestRun_Drink_RecordsStoredPotionsAsConsumed(t *testing.T) {
 
 	s.Drink(playerID)
 	tick(s)
-	assert.Equal(t, []uuid.UUID{*stored.InstanceID}, potionOf(t, delver).ConsumedItemIDs)
+	assert.Equal(t, []uuid.UUID{*stored.InstanceID}, consumedIDsOf(potionOf(t, delver)))
 
 	ticks(s, constants.GameFrameRate)
 	s.Drink(playerID)
 	tick(s)
 
 	assert.Equal(t, 60, currentHealth(delver), "the looted potion was drunk")
-	assert.Equal(t, []uuid.UUID{*stored.InstanceID}, potionOf(t, delver).ConsumedItemIDs, "and recorded nothing")
+	assert.Equal(t, []uuid.UUID{*stored.InstanceID}, consumedIDsOf(potionOf(t, delver)), "and recorded nothing")
 }
 
 // The consumed record and a running cooldown ride the body onto the next
@@ -350,7 +350,7 @@ func TestRun_Drink_RecordAndCooldownSurviveAFloorChange(t *testing.T) {
 	require.NoError(t, s.regenerateFloor())
 
 	body := delverEntity(t, s, playerID)
-	assert.Equal(t, []uuid.UUID{*stored.InstanceID}, potionOf(t, body).ConsumedItemIDs)
+	assert.Equal(t, []uuid.UUID{*stored.InstanceID}, consumedIDsOf(potionOf(t, body)))
 	assert.Positive(t, potionOf(t, body).CooldownRemaining, "the cooldown still runs")
 
 	s.Drink(playerID)
@@ -361,5 +361,15 @@ func TestRun_Drink_RecordAndCooldownSurviveAFloorChange(t *testing.T) {
 	s.Drink(playerID)
 	tick(s)
 	assert.False(t, itemExists(s, kept), "drunk once the cooldown ends")
-	assert.Len(t, potionOf(t, body).ConsumedItemIDs, 2)
+	assert.Len(t, consumedIDsOf(potionOf(t, body)), 2)
+}
+
+// consumedIDsOf is the instance ids of the stored potions a delver drank, in
+// order.
+func consumedIDsOf(potions *components.PotionComponent) []uuid.UUID {
+	ids := []uuid.UUID{}
+	for _, drunk := range potions.Consumed {
+		ids = append(ids, drunk.InstanceID)
+	}
+	return ids
 }

@@ -208,7 +208,7 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 			tt.expect(mock)
 			errs := captureErrors(t)
 			outbox := &countingOutbox{next: commonoutbox.NewService(commonoutbox.NewRepo(db))}
-			svc := NewService(db, outbox, noWake{}, noRetry())
+			svc := NewService(db, outbox, noWake{}, noRetry(), nil)
 			sessionID := uuid.New()
 
 			svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
@@ -230,7 +230,7 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 // field visit. FS-X2F2H §F R43, ADR-0031, I-X2F2H-2.
 func TestPublishMatchComplete_MatchEnded_SaysRun(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 
 	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
 		SessionID: uuid.New(),
@@ -245,7 +245,7 @@ func TestPublishMatchComplete_MatchEnded_SaysRun(t *testing.T) {
 func settlementRowIDs(t *testing.T, runID uuid.UUID, members ...string) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	players := make([]types.RawPlayerState, len(members))
 	for i, member := range members {
 		players[i] = types.RawPlayerState{MemberID: member, Username: "wren"}

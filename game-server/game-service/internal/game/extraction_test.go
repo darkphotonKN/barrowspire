@@ -99,7 +99,7 @@ func TestEndSession_ResolvedRun_PublishesEveryDelversItems(t *testing.T) {
 	s := p.s
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 

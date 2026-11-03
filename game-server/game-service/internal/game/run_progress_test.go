@@ -56,7 +56,7 @@ func endableRun(t *testing.T) (*Session, *progressKeeper, *capturingOutbox) {
 	keeper := &progressKeeper{homeReturner: homeReturner{run: s}}
 	outbox := &capturingOutbox{}
 	s.sessionCloser = keeper
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 	return s, keeper, outbox

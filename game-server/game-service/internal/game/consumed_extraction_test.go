@@ -21,7 +21,7 @@ func TestEndSession_ResolvedRun_PublishesEachDelversConsumedItems(t *testing.T) 
 	s := coopRun(t)
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	s.sender = &recordingSender{}
 
 	survivorID, survivor := seatedDelver(t, s, "warrior", 300, 300)
@@ -43,7 +43,7 @@ func TestEndSession_ResolvedRun_PublishesEachDelversConsumedItems(t *testing.T) 
 	ticks(s, constants.GameFrameRate)
 	s.Drink(survivorID)
 	tick(s)
-	require.Len(t, potionOf(t, survivor).ConsumedItemIDs, 2, "both of the survivor's potions were drunk")
+	require.Len(t, consumedIDsOf(potionOf(t, survivor)), 2, "both of the survivor's potions were drunk")
 
 	// the fallen delver dies after drinking; the others escape and the party resolves
 	kill(t, fallen)

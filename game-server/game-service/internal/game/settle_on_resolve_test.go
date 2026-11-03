@@ -17,6 +17,7 @@ import (
 type settlementsEmitter struct {
 	mu          sync.Mutex
 	settlements []*types.RawSettlement
+	confirms    []func()
 	ends        []*types.RawMatchState
 }
 
@@ -26,10 +27,11 @@ func (e *settlementsEmitter) PublishMatchComplete(_ context.Context, data *types
 	e.ends = append(e.ends, data)
 }
 
-func (e *settlementsEmitter) PublishSettlement(_ context.Context, settlement *types.RawSettlement) {
+func (e *settlementsEmitter) PublishSettlement(_ context.Context, settlement *types.RawSettlement, onConfirmed func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.settlements = append(e.settlements, settlement)
+	e.confirms = append(e.confirms, onConfirmed)
 }
 
 func (e *settlementsEmitter) settledMembers() []string {
@@ -184,7 +186,7 @@ func TestSettleOnResolve_RemovedInPlay_LosesFindsCarriesWhatTheyDrank(t *testing
 	drunk := uuid.New()
 	body, ok := g.s.EntityManager.GetEntity(g.entityID)
 	require.True(t, ok)
-	body.AddComponent(&components.PotionComponent{ConsumedItemIDs: []uuid.UUID{drunk}})
+	body.AddComponent(&components.PotionComponent{Consumed: []components.ConsumedItem{{InstanceID: drunk}}})
 
 	g.s.RemovePlayer(g.playerID.String())
 
@@ -252,7 +254,7 @@ func TestSettleOnResolve_TwoFallOnOneTick_EachAtTheirPosition(t *testing.T) {
 func TestSettleOnResolve_EachMemberInExactlyOnePair(t *testing.T) {
 	s := coopRun(t)
 	outbox := &capturingOutbox{}
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	s.sessionCloser = &homeReturner{run: s}
 	s.sender = &recordingSender{}
 	escapee, _ := seatedDelver(t, s, "warrior", 300, 300)

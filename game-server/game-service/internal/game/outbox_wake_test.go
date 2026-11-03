@@ -81,7 +81,7 @@ func TestMatchEndWrite_WakesTheOutboxOnlyAfterCommit(t *testing.T) {
 			db, mock := mockTxDB(t)
 			tt.script(mock)
 			waker := &countingWaker{}
-			svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), waker, noRetry())
+			svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), waker, noRetry(), nil)
 
 			_ = svc.PublishFieldVisit(context.Background(), endedVisit())
 

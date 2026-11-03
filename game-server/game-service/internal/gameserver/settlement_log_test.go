@@ -19,7 +19,7 @@ type settlementLog struct {
 	settled   []*types.RawSettlement
 }
 
-func (l *settlementLog) PublishSettlement(_ context.Context, settlement *types.RawSettlement) {
+func (l *settlementLog) PublishSettlement(_ context.Context, settlement *types.RawSettlement, _ func()) {
 	l.settledMu.Lock()
 	defer l.settledMu.Unlock()
 	l.settled = append(l.settled, settlement)

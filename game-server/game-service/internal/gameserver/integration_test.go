@@ -52,7 +52,7 @@ func (m *MockAuthClient) ValidateToken(ctx context.Context, req *pb.ValidateToke
 type MockEventEmitter struct{}
 
 // PublishSettlement: this fake records only the run's end.
-func (m *MockEventEmitter) PublishSettlement(_ context.Context, _ *types.RawSettlement) {}
+func (m *MockEventEmitter) PublishSettlement(_ context.Context, _ *types.RawSettlement, _ func()) {}
 
 func (m *MockEventEmitter) PublishMatchComplete(ctx context.Context, data *types.RawMatchState) {}
 
