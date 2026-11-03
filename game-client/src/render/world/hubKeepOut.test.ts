@@ -112,7 +112,7 @@ function beyondTheEdge(fp: Footprint): boolean {
 describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
   it("holds K3–K6 as the server places them", () => {
     expect(HUB_KEEP_OUT.spawn).toEqual({ at: { x: 1000, y: 800 }, clearance: 60 });
-    // the Spirewarden by the spawn, the Quartermaster in his store (FS-B0H2D R8)
+    // the Elder by the spawn, the Quartermaster in his store (FS-B0H2D R8)
     expect(HUB_KEEP_OUT.npcs.at).toEqual([
       { x: 1140, y: 680 },
       { x: 1280, y: 270 },
@@ -282,7 +282,7 @@ describe("the keep-out check catches a bad placement", () => {
   it.each([
     ["K1 inside a building's eave", { x: 700, y: 395 }, 10, "K1"],
     ["K3 by the spawn", { x: 1000, y: 860 }, 10, "K3"],
-    ["K4 in the Spirewarden's talk range", { x: 1140, y: 760 }, 10, "K4"],
+    ["K4 in the Elder's talk range", { x: 1140, y: 760 }, 10, "K4"],
     ["K4 in the Quartermaster's talk range", { x: 1280, y: 340 }, 10, "K4"],
     ["K5 by the hearth", { x: 1080, y: 600 }, 10, "K5"],
     ["K6 in the Woodcutter's quarter", { x: 850, y: 900 }, 10, "K6"],

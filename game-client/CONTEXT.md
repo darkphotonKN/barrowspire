@@ -48,8 +48,8 @@ translation belongs to the surface that renders words.
 - **Gate** — a place in the hub a player walks into to go somewhere (FS-0XMCP). The **Spire
   gate** (north, the tower's entrance) opens the gather / go-alone panel; a **field gate** (west
   trail to the Forlorn Forest, east road to Gentle Meadows) takes the player into that field. Once
-  FS-0XMCP ships, the Warden no longer opens the queue: he only tells the story.
-- **Town** — the hub, as the owner and the lore say it (the Warden: "the town woke to a tower").
+  FS-0XMCP ships, the storyteller no longer opens the queue: he only tells the story. He is the **Elder** (once the Spirewarden), an ordinary townsman by the spawn.
+- **Town** — the hub, as the owner and the lore say it (the Elder: "the town needs heroes now").
   The screen may say town; code keeps **hub** (`HubScene`, `HUB_KEEP_OUT`). One world, not a
   district of it.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
@@ -410,7 +410,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   name the screen uses is unsettled. The Mercenary (FS-MAMHR) is "Mercenary" in every layer.
 - ~~The **HUB** world (refactor plan) has no lore name yet — "hub" is an engineering word.~~
   Resolved 2026-10-30 (FS-B0H2D scoping): it is **the town**, the word the owner uses and the
-  Warden's tale already speaks. A proper name for the town (if it ever gets one) is still open.
+  Elder's tale already speaks. A proper name for the town (if it ever gets one) is still open.
 - **Escaping vs dying.** The end-of-run overlay distinguishes them (`current_player === null` ⇒
   escaped) but the vocabulary does not. The guideline offers *"Few return whole"* for death; the
   successful case has no term.

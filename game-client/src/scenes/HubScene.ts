@@ -430,20 +430,20 @@ function residentLine(npc: NPCState): Dialogue {
 }
 
 /**
- * How the Spire came, as the Warden tells it (FS-0XMCP §Requirements 24): the morning it stood
- * there, what it took, and where its door is, so a newcomer who asks him first still finds the
- * way in.
+ * How the Spire came, as the Elder tells it (FS-0XMCP §Requirements 24): the morning it stood
+ * there, that the town cannot learn what it is by watching, and that it needs people to go in,
+ * ending at its door so a newcomer who asks him first still finds the way in.
  */
-export const WARDEN_TALE = [
-  "One morning the town woke to a tower\nstanding on the old barrow field. No one saw it rise.",
-  "It took the bold first, then the curious,\nthen the ones who went looking for them.",
-  "Its door stands at the north of town.\nWalk up to it when you are ready, and not before.",
+export const ELDER_TALE = [
+  "One grey morning a tower stood on the old barrow field.\nIt has taken the bold and the curious since. Few came back.",
+  "We are farmers and tinkers here. Watching it teaches us nothing.\nSomeone has to go in and learn what it is.",
+  "The town needs heroes now, and you have the look of one.\nIts door stands at the north of town. Go when you are ready.",
 ];
 
 /**
- * One passage of a telling, the Warden's way: *Go on* turns to the next, *Farewell* ends it, and
+ * One passage of a telling, the Elder's way: *Go on* turns to the next, *Farewell* ends it, and
  * the last offers only *Farewell*. No memory: every telling starts at the first passage. The
- * Warden and the town folk (FS-B0H2D R27) tell theirs alike; none of them offers the queue, queued
+ * Elder and the town folk (FS-B0H2D R27) tell theirs alike; none of them offers the queue, queued
  * or not; the Spire's door does that.
  */
 function telling(lines: TownLines, passage = 0): Dialogue {
@@ -470,7 +470,7 @@ function telling(lines: TownLines, passage = 0): Dialogue {
  * it is an ambient resident, who has a line and nothing to offer.
  */
 const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
-  storyteller: () => telling({ role: "Keeper of the tale", passages: WARDEN_TALE }),
+  storyteller: () => telling({ role: "Speaker for the town", passages: ELDER_TALE }),
   // He opens nothing now: the player's gear is theirs to open anywhere (FS-HRH2J R45).
   storekeeper: () => ({
     role: "Keeper of the stores",

@@ -42,12 +42,12 @@ func TestHub_HoldsItsFunctionNPCs(t *testing.T) {
 		byFunction[npc.Function] = npc
 	}
 
-	// the Warden tells the hub's story and opens nothing: the Spire is entered
+	// the Elder tells the hub's story and opens nothing: the Spire is entered
 	// at its door, not through him. FS-0XMCP §Requirements 23.
 	assert.Equal(t, []components.NPCFunction{components.NPCFunctionStorekeeper, components.NPCFunctionStoryteller},
 		functionsOf(npcs), "the hub's function NPCs")
 	require.Contains(t, byFunction, components.NPCFunctionStoryteller, "no one to tell how the Spire came")
-	assert.Equal(t, "Spirewarden", byFunction[components.NPCFunctionStoryteller].Name)
+	assert.Equal(t, "Elder", byFunction[components.NPCFunctionStoryteller].Name)
 	assert.Equal(t, [2]float64{constants.HubSpawnX + 140, constants.HubSpawnY - 120},
 		npcPositions(hub.EntityManager.GetAllEntities())[components.NPCFunctionStoryteller], "he stands where he always has")
 	assert.Contains(t, byFunction, components.NPCFunctionStorekeeper, "no one to gear you up")

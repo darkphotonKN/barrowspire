@@ -75,7 +75,7 @@ export default function Home() {
         <SectionLabel>The Spire</SectionLabel>
         <SectionTitle>What stands over the town</SectionTitle>
         <p className="text-center text-vellum-muted max-w-2xl mx-auto leading-[1.9] text-base tracking-wide">
-          The Age of Barrowspire is a co-op dungeon crawl played in real time. The town has learned to live in the Spire&apos;s shadow. The market still opens, the inn still pours, and the old Spirewarden will tell anyone who asks how the tower came. Its door stands open at the back of the town. Inside, the stairs only lead up, yet every floor feels further underground than the one below. Nobody has come back from the top to say what lives there. The town has a name for it, and does not say it aloud.
+          The Age of Barrowspire is a co-op dungeon crawl played in real time. The town has learned to live in the Spire&apos;s shadow. The market still opens, the inn still pours, and the Elder asks every newcomer the same thing: will you go in, and learn what it is? Its door stands open at the back of the town. Inside, the stairs only lead up, yet every floor feels further underground than the one below. Nobody has come back from the top to say what lives there. The town has a name for it, and does not say it aloud.
         </p>
         <p className="text-center text-vellum-muted max-w-2xl mx-auto leading-[1.9] text-base tracking-wide mt-6">
           Not every road leads to the Spire. East of town lie the Gentle Meadows, west the Forlorn Forest. Death out there costs you nothing but the walk back, and whoever lands the killing blow takes first pick of what drops.

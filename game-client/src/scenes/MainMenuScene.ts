@@ -44,7 +44,7 @@ const CARD_XP_BAR = { left: 64, y: 56, rightMargin: 12, height: 4 };
 /** A roster card's head-and-shoulders window. */
 const PORTRAIT = { width: 44, height: 56 };
 /**
- * The primary button takes the player into the town (the hub), not into a delve: the Spirewarden
+ * The primary button takes the player into the town (the hub), not into a delve: the Spire's door
  * starts those. Wide enough for its label at the button's letter-spacing.
  */
 const ENTER_LABEL = "ENTER THE TOWN";

@@ -84,7 +84,7 @@ export const HUB_PATHS: PathRect[] = [
 /**
  * K3–K6: read-only facts copied from the server. The spawn and the function NPCs' places come
  * from game-server/game-service/common/constants/game.go (HubSpawnX/Y, NPCInteractRange) and
- * game-server/game-service/internal/game/hub_map.go (hubNPCs: the Spirewarden at the spawn +
+ * game-server/game-service/internal/game/hub_map.go (hubNPCs: the Elder at the spawn +
  * (140, -120), the Quartermaster inside his store, FS-B0H2D R8); the
  * residents' wander regions from hub_map.go (hubResidents), as top-left x, y and w × h, the way
  * WanderSystem.choose reads them. A server change to any of them needs this updated; the
@@ -112,7 +112,7 @@ export const HUB_KEEP_OUT = {
   ],
   /**
    * K8: the gates (FS-0XMCP R2, R4), from hub_map.go (hubGates) and their range (GateRange,
-   * the Warden's NPCInteractRange). Their approaches are HUB_APPROACHES.
+   * the Elder's NPCInteractRange). Their approaches are HUB_APPROACHES.
    */
   gates: {
     at: [

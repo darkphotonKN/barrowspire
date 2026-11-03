@@ -1,6 +1,6 @@
 /**
  * What the town folk say (FS-B0H2D R27): the Inn's keeper and patrons and the smith, each a short
- * telling the Warden's way (*Go on* turns the page, *Farewell* ends it, the last offers only
+ * telling the Elder's way (*Go on* turns the page, *Farewell* ends it, the last offers only
  * *Farewell*; every telling starts at the first). Keyed by the exact name the server gives the
  * fixed resident (hub_map.go hubFixedResidents). This is the one place their words live, so the
  * owner can change them here and nowhere else.

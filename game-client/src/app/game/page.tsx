@@ -25,7 +25,7 @@ export default function GamePage() {
             The Door Is Shut
           </h1>
           <p className="text-vellum-dim text-lg max-w-md">
-            The Spirewarden lets no stranger through. Speak your name, or take the oath.
+            The town lets no stranger through. Speak your name, or take the oath.
           </p>
           <div className="flex gap-4 justify-center pt-4">
             <Link

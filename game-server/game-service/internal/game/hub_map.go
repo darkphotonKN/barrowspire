@@ -19,12 +19,12 @@ type hubNPC struct {
 	X, Y     float64
 }
 
-// The hub's function NPCs. The Spirewarden stands near the spawn, so an arriving
+// The hub's function NPCs. The Elder stands near the spawn, so an arriving
 // delver sees who is worth talking to without hunting the map; the Quartermaster
 // keeps his store (FS-B0H2D §Requirements 8), his marker showing over its roof.
 var hubNPCs = []hubNPC{
 	{
-		Name:     "Spirewarden",
+		Name:     "Elder",
 		Function: components.NPCFunctionStoryteller,
 		X:        constants.HubSpawnX + 140,
 		Y:        constants.HubSpawnY - 120,
@@ -145,7 +145,7 @@ type hubResident struct {
 // outside every one: a walk is a straight line between two points of a quarter,
 // so no resident ever crosses a door gap into a room (FS-B0H2D §Requirements 7).
 // They keep away from the spawn and the two function NPCs so nobody has to walk
-// through a crowd to reach the Spirewarden: each quarter keeps a function NPC's
+// through a crowd to reach the Elder: each quarter keeps a function NPC's
 // talk range plus a margin clear (FS-MRZH7 §Requirements 9). A quarter may
 // cross a lane; a resident does not block a corridor 240 px wide. Both tested in
 // hub_map_test.go.

@@ -64,7 +64,7 @@ describe("folkLook", () => {
   );
 
   it.each([
-    ["storyteller", "folk_spirewarden"],
+    ["storyteller", "folk_resident_trousers"],
     ["storekeeper", "folk_quartermaster"],
   ] as const)("should draw the %s NPC as their own character", (fn, sheet) => {
     expect(folkLook({ function: fn, appearance: "" }, BAKED)).toEqual({

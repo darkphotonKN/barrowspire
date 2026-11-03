@@ -19,12 +19,12 @@ import type { CharacterLook } from "./character";
 /** The fallback: an ordinary villager in the trousers build's first palette. */
 export const DEFAULT_RESIDENT_SHEET = "folk_resident_trousers";
 
-/** Each function NPC's own character: the Warden is the storyteller (FS-0XMCP R23). */
+/** Each function NPC's own character. The Elder, the storyteller, is an ordinary townsman. */
 export const FUNCTION_NPC_SHEETS: Record<
   Exclude<NPCState["function"], "">,
   string
 > = {
-  storyteller: "folk_spirewarden",
+  storyteller: DEFAULT_RESIDENT_SHEET,
   storekeeper: "folk_quartermaster",
 };
 

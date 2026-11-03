@@ -33,8 +33,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Hub** — the shared, long-lived world players occupy between runs. One per deployment,
   server-authoritative, capped. Same thing the refactor plan calls the **HUB**; never call it a
   lobby, a town, or a village in code.
-  - **Town** — the owner's word for the hub, and the lore's (the Warden's tale: "the town woke
-    to a tower"). Same world, not a part of it. Fine in conversation, specs and player-facing
+  - **Town** — the owner's word for the hub, and the lore's (the Elder's tale: "the town needs
+    heroes now"). Same world, not a part of it. Fine in conversation, specs and player-facing
     copy ("town buildings", "out of town to the Forest"); code keeps **hub** (`hubBuildings`,
     `HubScene`). A spec that says "town" means the hub world, never a separate place.
 - **Run** — a short-lived world built for one match, resolved and torn down. The original

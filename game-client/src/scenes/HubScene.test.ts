@@ -72,7 +72,7 @@ vi.mock("@/render/iso", async (importOriginal) => {
   return { ...real, addUprightBlock: vi.fn(real.addUprightBlock) };
 });
 
-const { HubScene, delveChoices, hubMenuChoices, WARDEN_TALE } = await import("./HubScene");
+const { HubScene, delveChoices, hubMenuChoices, ELDER_TALE } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { palette, rgba, toCss } = await import("@/utils/canvasPalette");
@@ -1821,7 +1821,7 @@ describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 5
   });
 });
 
-describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)", () => {
+describe("HubScene the Elder tells the story (FS-0XMCP §Requirements 24, 25)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -1830,19 +1830,19 @@ describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)",
     stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
 
   it("should tell up to three passages", () => {
-    expect(WARDEN_TALE.length).toBeGreaterThan(0);
-    expect(WARDEN_TALE.length).toBeLessThanOrEqual(3);
+    expect(ELDER_TALE.length).toBeGreaterThan(0);
+    expect(ELDER_TALE.length).toBeLessThanOrEqual(3);
     // the last points a newcomer at the door
-    expect(WARDEN_TALE[WARDEN_TALE.length - 1]).toMatch(/door/);
+    expect(ELDER_TALE[ELDER_TALE.length - 1]).toMatch(/door/);
   });
 
   it("should go on through the passages, the last offering only Farewell", () => {
     const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();
     talkTo("storyteller");
 
-    WARDEN_TALE.forEach((passage, i) => {
+    ELDER_TALE.forEach((passage, i) => {
       expect(said(stage)).toContain(passage);
-      const last = i === WARDEN_TALE.length - 1;
+      const last = i === ELDER_TALE.length - 1;
       expect(choice("farewell")).toBeDefined();
       expect(choice("on") !== undefined).toBe(!last);
       if (!last) choice("on")?.handlers.pointerup();
@@ -1857,7 +1857,7 @@ describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)",
     // the server sends storyteller since I-0XMCP-4; the retired alias is gone (R25)
     talkTo("delve");
 
-    expect(said(stage)).not.toContain(WARDEN_TALE[0]);
+    expect(said(stage)).not.toContain(ELDER_TALE[0]);
     expect(choice("on")).toBeUndefined();
   });
 
@@ -1865,14 +1865,14 @@ describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)",
     const { hub, stage, keys, answer, choice, talkTo } = hubOnStage();
     talkTo("storyteller");
     answer(keys.e);
-    expect(said(stage)).toContain(WARDEN_TALE[1]);
+    expect(said(stage)).toContain(ELDER_TALE[1]);
 
     choice("farewell")?.handlers.pointerup();
     expect(hub.dialogue).toBeUndefined();
 
     talkTo("storyteller");
-    expect(said(stage)).toContain(WARDEN_TALE[0]);
-    expect(said(stage)).not.toContain(WARDEN_TALE[1]);
+    expect(said(stage)).toContain(ELDER_TALE[0]);
+    expect(said(stage)).not.toContain(ELDER_TALE[1]);
     expect(said(stage)).toContain("Go on  [E]");
     expect(said(stage)).toContain("Farewell  [Esc]");
   });
@@ -1882,7 +1882,7 @@ describe("HubScene the Warden tells the story (FS-0XMCP §Requirements 24, 25)",
     if (queued) reply("queue_status", { current: 1, total: 2 });
 
     talkTo("storyteller");
-    for (let i = 0; i < WARDEN_TALE.length; i++) {
+    for (let i = 0; i < ELDER_TALE.length; i++) {
       for (const id of ["solo", "queue", "dismiss", "leave"]) expect(choice(id)).toBeUndefined();
       choice("on")?.handlers.pointerup();
     }
@@ -2327,7 +2327,7 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
       const source = readFileSync(new URL(`./${scene}.ts`, import.meta.url), "utf8");
       expect(source, scene).not.toMatch(/openStash|updateStash|STASH/);
     }
-    expect(WARDEN_TALE).toBeDefined();
+    expect(ELDER_TALE).toBeDefined();
   });
 });
 
@@ -3071,7 +3071,7 @@ describe("HubScene the town folk talk (FS-B0H2D R27–R29)", () => {
 
   it.each(["Drover", "Gravedigger", "Pilgrim"])("should give the patron %s no role", (name) => {
     const { stage } = talkAmong(npc("folk", name, "", 10));
-    for (const role of [...ROLES, "Keeper of the tale", "Keeper of the stores"])
+    for (const role of [...ROLES, "Speaker for the town", "Keeper of the stores"])
       expect(said(stage)).not.toContain(role);
   });
 
@@ -3100,10 +3100,10 @@ describe("HubScene the town folk talk (FS-B0H2D R27–R29)", () => {
       for (const passage of passages) expect(said(stage)).not.toContain(passage);
   });
 
-  it("should keep the Warden and the Quartermaster as they were, whatever their name", () => {
+  it("should keep the Elder and the Quartermaster as they were, whatever their name", () => {
     const warden = talkAmong(npc("w", "Alewife", "storyteller", 10));
-    expect(said(warden.stage)).toContain(WARDEN_TALE[0]);
-    expect(said(warden.stage)).toContain("Keeper of the tale");
+    expect(said(warden.stage)).toContain(ELDER_TALE[0]);
+    expect(said(warden.stage)).toContain("Speaker for the town");
 
     const quartermaster = talkAmong(npc("q", "Smith", "storekeeper", 10));
     expect(said(quartermaster.stage)).toContain("Keeper of the stores");

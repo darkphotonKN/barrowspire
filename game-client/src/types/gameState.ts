@@ -248,7 +248,7 @@ export interface GateState {
 
 // Complete game state received from server
 /**
- * One of the hub's residents. `function` is empty for an ambient NPC; the Warden's is
+ * One of the hub's residents. `function` is empty for an ambient NPC; the Elder's is
  * `storyteller` (FS-0XMCP §Requirements 23).
  */
 export interface NPCState {
