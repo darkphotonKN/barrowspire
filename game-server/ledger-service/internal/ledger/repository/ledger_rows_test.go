@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,11 @@ import (
 )
 
 const migrationPath = "../../../migrations/000001_create_ledger_transactions_and_entries.up.sql"
+
+// migrationsDir holds every versioned migration. The round-trip schema applies
+// all of them, so the tests run against the schema production actually has
+// (000002 renames the settlement reason, 000003 adds its unique reference).
+const migrationsDir = "../../../migrations"
 
 // roundTripSchema isolates the round-trip from whatever else lives in the dev
 // database. Dropped and recreated per run, so the DDL below always applies to
@@ -236,11 +242,7 @@ func roundTripDB(t *testing.T) *sqlx.DB {
 	db, err := sqlx.Connect("postgres", dsn+"&search_path="+roundTripSchema)
 	require.NoError(t, err)
 
-	ddl, err := os.ReadFile(filepath.Clean(migrationPath))
-	require.NoError(t, err)
-
-	_, err = db.Exec(string(ddl))
-	require.NoError(t, err)
+	applyUpMigrations(t, db)
 
 	t.Cleanup(func() {
 		_ = db.Close()
@@ -255,4 +257,24 @@ func roundTripDB(t *testing.T) *sqlx.DB {
 	})
 
 	return db
+}
+
+// applyUpMigrations runs every *.up.sql in version order. The zero-padded
+// version prefix makes lexical order the version order.
+func applyUpMigrations(t *testing.T, db *sqlx.DB) {
+	t.Helper()
+
+	paths, err := filepath.Glob(filepath.Join(migrationsDir, "*.up.sql"))
+	require.NoError(t, err)
+	require.NotEmpty(t, paths, "no up migrations found in %s", migrationsDir)
+
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		ddl, err := os.ReadFile(filepath.Clean(path))
+		require.NoError(t, err)
+
+		_, err = db.Exec(string(ddl))
+		require.NoError(t, err, "applying %s", filepath.Base(path))
+	}
 }
