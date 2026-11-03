@@ -283,7 +283,6 @@ const MENU_TONES: MenuTones = {
 /** What the player's state was when the menu was built: its rows are right for this and no other. */
 interface MenuState {
   resolved: boolean;
-  escaped: boolean;
 }
 
 /**
@@ -4443,13 +4442,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The player's state as the menu reads it (FS-9K8EZ req 2), from the last state unless one is
-   * given. A player the server no longer lists is out of the delve: the broadcast drops an
-   * escaped player's `current_player`.
+   * given. A player the server no longer lists is out of the delve. Dead and escaped are one
+   * state here: both may leave (FS-GV8WN R16).
    */
   private menuState(state = this.lastGameState): MenuState {
     const me = state?.current_player;
-    const gone = me === null;
-    return { resolved: gone || resolved(me), escaped: gone || me?.escape === true };
+    return { resolved: me === null || resolved(me) };
   }
 
   /**
@@ -4513,7 +4511,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const now = this.menuState(state);
     if (now.resolved) this.fallPending = false;
     if (!this.menu || !this.menuFor) return;
-    if (now.resolved !== this.menuFor.resolved || now.escaped !== this.menuFor.escaped) this.closeMenu();
+    if (now.resolved !== this.menuFor.resolved) this.closeMenu();
   }
 
   /**

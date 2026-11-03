@@ -108,16 +108,15 @@ const BACK: RunMenuChoice = { id: "back", label: "Back  [Esc]", register: "cance
 
 /**
  * What the run's ESC menu offers, from the player's state as it opens (FS-9K8EZ req 2): a
- * living player may fall where they stand; a dead one (left behind counts as dead) may leave
- * the barrow, the same door as their card's; an escaped one waits for the run's end, so there
- * is nothing but the way back. The row says death, never a forfeit or a withdrawal.
+ * living player may fall where they stand; a resolved one, dead, left behind or escaped, may
+ * leave the barrow, the same door as their card's or their Leave button (FS-GV8WN R16: an
+ * escaped one was settled at their escape, so nothing holds them). The row says death, never a
+ * forfeit or a withdrawal.
  */
-export function runMenuChoices(state: { resolved: boolean; escaped: boolean }): RunMenuChoice[] {
+export function runMenuChoices(state: { resolved: boolean }): RunMenuChoice[] {
   if (!state.resolved)
     return [{ id: "fall", label: "Fall where you stand", register: "actionable" }, BACK];
-  if (!state.escaped)
-    return [{ id: "leave", label: "Leave the barrow", register: "actionable" }, BACK];
-  return [BACK];
+  return [{ id: "leave", label: "Leave the barrow", register: "actionable" }, BACK];
 }
 
 /** The one asking before a chosen death (FS-9K8EZ req 3): the line, and Fall or Not yet. */

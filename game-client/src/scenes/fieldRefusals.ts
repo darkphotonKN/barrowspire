@@ -13,8 +13,6 @@ const ENTER: Record<string, string> = {
   not_at_gate: "Walk to the gate first.",
   queued: "The delve is gathering. Leave the queue first.",
   loadout_unavailable: "Your gear cannot be fetched. Try again shortly.",
-  // the player's last run has not settled yet: the Spire's door says the same (FS-QPDKN R33)
-  settling: "Your plunder is still being counted. Wait for the delve to end.",
 };
 
 const LEAVE: Record<string, string> = {
