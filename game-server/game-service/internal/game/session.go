@@ -183,10 +183,16 @@ const SeatReleaseAfter = 15 * time.Second
 // ApplyRunProgress hands over what the run did to each member's character in
 // play, before anyone is sent home, so the HUB seats them at the run's result
 // without waiting for character-service. FS-BDA7X §Requirements 24.
+//
+// SeatsReleased tells the host whose seats the run released, matched players
+// who never arrived: they can no longer come back, so they have left the run.
+// Called from the tick, so it must not wait on anything. The session knows
+// nothing of what the host does with it. FS-988SM §Requirements 7.
 type SessionCloser interface {
 	ApplyRunProgress(progress []types.RunProgress)
 	ReturnPlayersToHub(sessionID uuid.UUID)
 	CloseSession(sessionID uuid.UUID) error
+	SeatsReleased(runID uuid.UUID, memberIDs []uuid.UUID)
 }
 
 type SessionSender interface {
@@ -1205,6 +1211,9 @@ func (s *Session) seatPlayerLocked(player *types.Player, gear *pbitems.CheckOutR
 * from the host and its loops stopped (R26). Reports whether it shut the run
 * down. The hub expects nobody and never ends.
 *
+* The host is told whose seats were released, before an unreached run is
+* removed from it (FS-988SM R7).
+*
 * Called from the tick, not holding mu: the pending set is read and changed
 * under it, beside the connection goroutines seating arrivals, and Shutdown
 * takes it itself.
@@ -1220,13 +1229,17 @@ func (s *Session) releaseUnclaimedSeats(now time.Time) bool {
 	}
 
 	s.mu.Lock()
-	released := len(s.playersPendingConnection)
+	released := make([]uuid.UUID, 0, len(s.playersPendingConnection))
+	for memberID := range s.playersPendingConnection {
+		released = append(released, memberID)
+	}
 	clear(s.playersPendingConnection)
 	seated := len(s.playerIDToEntitiesID)
 	s.mu.Unlock()
 
-	if released > 0 {
-		slog.Info("Released unclaimed seats", "session_id", s.ID, "released", released, "seated", seated)
+	if len(released) > 0 {
+		slog.Info("Released unclaimed seats", "session_id", s.ID, "released", len(released), "seated", seated)
+		s.sessionCloser.SeatsReleased(s.ID, released)
 	}
 
 	if seated > 0 {

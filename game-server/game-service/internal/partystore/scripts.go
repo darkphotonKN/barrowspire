@@ -28,6 +28,9 @@ var declineLua string
 //go:embed scripts/create.lua
 var createLua string
 
+//go:embed scripts/create_matched.lua
+var createMatchedLua string
+
 //go:embed scripts/read.lua
 var readLua string
 
@@ -44,14 +47,15 @@ var transferLua string
 func script(body string) *redis.Script { return redis.NewScript(lib + "\n" + body) }
 
 var (
-	inviteScript   = script(inviteLua)
-	acceptScript   = script(acceptLua)
-	declineScript  = script(declineLua)
-	createScript   = script(createLua)
-	readScript     = script(readLua)
-	refreshScript  = script(refreshLua)
-	removeScript   = script(removeLua)
-	transferScript = script(transferLua)
+	inviteScript        = script(inviteLua)
+	acceptScript        = script(acceptLua)
+	declineScript       = script(declineLua)
+	createScript        = script(createLua)
+	createMatchedScript = script(createMatchedLua)
+	readScript          = script(readLua)
+	refreshScript       = script(refreshLua)
+	removeScript        = script(removeLua)
+	transferScript      = script(transferLua)
 )
 
 // reply is what every script returns, JSON-encoded.
@@ -64,6 +68,9 @@ type reply struct {
 	TargetName string `json:"target_name"`
 	// the change ended the party
 	Ended bool `json:"ended"`
+	// a matched create: the players already in a party, who cancel it, and those past the size
+	InParty []string `json:"in_party"`
+	NoRoom  []string `json:"no_room"`
 	// a removal passed the lead on
 	Succeeded bool `json:"succeeded"`
 	// a refresh: the parties that stand, and the ids of those that have ended
@@ -403,6 +410,57 @@ func (r *Redis) Create(ctx context.Context, partyID uuid.UUID, creator Joiner, n
 		return CreateResult{}, fmt.Errorf("create party for %s: %w", creator.PlayerID, err)
 	}
 	return CreateResult{Party: p}, nil
+}
+
+// MatchedArgs is one matched party to make (FS-988SM R3, R4): PartyID's members are Joiners, the
+// first leading and the rest in this order, at most Size of them, joined at Now.
+type MatchedArgs struct {
+	PartyID uuid.UUID
+	Joiners []Joiner
+	Size    int
+	Now     time.Time
+}
+
+// MatchedResult is a matched create's outcome: refused already_in_party, naming in InParty every
+// matched player found in a party (R8), or the new party and the players past the size left out
+// of it (R10).
+type MatchedResult struct {
+	Refusal Refusal
+	InParty []uuid.UUID
+	Party   Party
+	NoRoom  []uuid.UUID
+}
+
+// CreateMatched makes one party of a random match's players in one step, carrying the matched
+// origin, which nothing reads back out of Redis to a client (FS-988SM R1–R4, R8, R10). All or
+// nothing: one player already in a party refuses the whole party, and nothing is written.
+func (r *Redis) CreateMatched(ctx context.Context, a MatchedArgs) (MatchedResult, error) {
+	keys := make([]string, 0, len(a.Joiners))
+	args := make([]any, 0, 4+3*len(a.Joiners))
+	args = append(args, a.PartyID.String(), millis(a.Now), ttlMillis(TTL), a.Size)
+	for _, j := range a.Joiners {
+		keys = append(keys, pointerKey(j.PlayerID))
+		args = append(args, j.PlayerID.String(), j.Name, j.Class)
+	}
+	res, err := run(ctx, createMatchedScript, r.client, keys, args...)
+	if err != nil {
+		return MatchedResult{}, fmt.Errorf("create matched party %s: %w", a.PartyID, err)
+	}
+	if refusal := res.refusal(); refusal != "" {
+		inParty, err := parseIDs(res.InParty)
+		if err != nil {
+			return MatchedResult{}, fmt.Errorf("create matched party %s: parse players in a party: %w", a.PartyID, err)
+		}
+		return MatchedResult{Refusal: refusal, InParty: inParty}, nil
+	}
+	out := MatchedResult{}
+	if out.NoRoom, err = parseIDs(res.NoRoom); err != nil {
+		return MatchedResult{}, fmt.Errorf("create matched party %s: parse players past the size: %w", a.PartyID, err)
+	}
+	if out.Party, err = res.Party.party(); err != nil {
+		return MatchedResult{}, fmt.Errorf("create matched party %s: %w", a.PartyID, err)
+	}
+	return out, nil
 }
 
 // Arrival is the party a player seated on a pod is in: In is false when they are in none. Swept

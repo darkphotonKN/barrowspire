@@ -18,9 +18,10 @@ import (
 * registry decides what to say and to whom, the courier gets it there. Only the hub's loop touches
 * it.
 *
-* Four letters: an invite for a player on that pod; a party_update for the members it holds,
+* Five letters: an invite for a player on that pod; a party_update for the members it holds,
 * carrying the party as Redis answered so that pod's cache takes it too; a party_notice for one
-* player there; and a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go).
+* player there; a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go); and a
+* match_failed for one player there whose random match was cancelled (FS-988SM R8a).
 **/
 
 // partyUpdateLetter is a party_update as it travels between pods: the party as Redis answered it,
@@ -47,14 +48,22 @@ type partyCourier struct {
 	jobs   loopJobs
 	// this pod: a player present here is told directly, never by letter
 	podID string
-	// told of each party_update letter that arrives
-	onUpdate func(l partyUpdateLetter)
-	// told of each party_chat letter that arrives, its addressees and its line (FS-XGW7H R13)
-	onChat func(to []uuid.UUID, message map[string]interface{})
+	// who arriving letters are handed to
+	on courierHandlers
 }
 
-func newPartyCourier(inbox letterBox, sender playerSender, jobs loopJobs, podID string, onUpdate func(partyUpdateLetter), onChat func(to []uuid.UUID, message map[string]interface{})) *partyCourier {
-	return &partyCourier{inbox: inbox, sender: sender, jobs: jobs, podID: podID, onUpdate: onUpdate, onChat: onChat}
+// courierHandlers is who the courier hands the letters it cannot deliver itself to, on the loop.
+type courierHandlers struct {
+	// told of each party_update letter that arrives
+	update func(l partyUpdateLetter)
+	// told of each party_chat letter that arrives, its addressees and its line (FS-XGW7H R13)
+	chat func(to []uuid.UUID, message map[string]interface{})
+	// told of each match_failed letter that arrives, the player it is for (FS-988SM R8a)
+	matchFailed func(playerID uuid.UUID)
+}
+
+func newPartyCourier(inbox letterBox, sender playerSender, jobs loopJobs, podID string, on courierHandlers) *partyCourier {
+	return &partyCourier{inbox: inbox, sender: sender, jobs: jobs, podID: podID, on: on}
 }
 
 // tell gets an update to each recipient: those present here directly, and each other pod that
@@ -133,6 +142,18 @@ func (c *partyCourier) sendNotice(podID string, playerID uuid.UUID, code constan
 	})
 }
 
+// sendMatchFailed tells a player on podID that the match hosted here was cancelled (FS-988SM R8a).
+// A letter that cannot be sent is lost: that player stays in their village unqueued, told nothing.
+func (c *partyCourier) sendMatchFailed(podID string, playerID uuid.UUID) {
+	if !c.open() {
+		slog.Warn("match_failed letter not sent: this pod reaches no other", "pod_id", podID, "player_id", playerID)
+		return
+	}
+	c.inbox.send(podID, letter{Kind: letterMatchFailed, ToPlayerID: playerID.String()}, func() {
+		slog.Warn("match_failed letter not sent", "pod_id", podID, "player_id", playerID)
+	})
+}
+
 // letters is where letters from other pods wait for the hub's loop.
 func (c *partyCourier) letters() <-chan letter {
 	if c.inbox == nil {
@@ -152,6 +173,8 @@ func (c *partyCourier) receive(l letter) {
 		c.receiveNotice(l)
 	case letterPartyChat:
 		c.receivePartyChat(l)
+	case letterMatchFailed:
+		c.receiveMatchFailed(l)
 	default:
 		slog.Debug("pod inbox letter of an unknown kind dropped", "kind", l.Kind)
 	}
@@ -178,7 +201,7 @@ func (c *partyCourier) receiveUpdate(l letter) {
 		slog.Warn("pod inbox party update skipped: incomplete", "error", err)
 		return
 	}
-	c.onUpdate(update)
+	c.on.update(update)
 }
 
 func (c *partyCourier) receiveNotice(l letter) {
@@ -192,6 +215,17 @@ func (c *partyCourier) receiveNotice(l letter) {
 	if err := c.sender.SendMessageToPlayer(target, partyNotice(constants.PartyNoticeCode(code), name)); err != nil {
 		slog.Debug("pod inbox party notice dropped: player not here", "player_id", target, "error", err)
 	}
+}
+
+// receiveMatchFailed hands on the player a match_failed letter is for: their match, hosted on
+// another pod, was cancelled (FS-988SM R8a).
+func (c *partyCourier) receiveMatchFailed(l letter) {
+	target, err := uuid.Parse(l.ToPlayerID)
+	if err != nil {
+		slog.Warn("pod inbox match_failed skipped: incomplete", "error", err)
+		return
+	}
+	c.on.matchFailed(target)
 }
 
 // inviteIDOf is the invite id an answer names, if it names one.

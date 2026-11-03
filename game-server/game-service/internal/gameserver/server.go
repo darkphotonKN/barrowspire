@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -211,6 +212,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		size:       boot.partySize,
 		now:        boot.partyNow,
 		newID:      uuid.New,
+		pickLeader: rand.IntN,
 		ticks:      partyTicks,
 		store:      boot.partyStore,
 		presence:   boot.presence,
@@ -570,6 +572,9 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		return
 	}
 
+	// everyone this end sends home, or settles off record, leaves the run's
+	// matched party with it (FS-988SM §Requirements 11, 14)
+	var home []uuid.UUID
 	for _, playerID := range run.GetPlayerIDs() {
 		player, exists := s.PlayerByID(playerID)
 		if !exists {
@@ -584,18 +589,22 @@ func (s *Server) ReturnPlayersToHub(runID uuid.UUID) {
 		// snapshot was taken before this) and goes off record; nobody seats a
 		// body in the hub for a member who is not here (FS-QPDKN R18, R19)
 		if s.forgetIfAwaitingSettlement(playerID) {
+			home = append(home, playerID)
 			continue
 		}
 
 		run.RemovePlayer(playerID.String())
 		hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 		s.setCurrentWorld(player, hub.ID)
+		home = append(home, playerID)
 
 		if err := s.sender.SendMessageToPlayer(playerID, worldEnteredMessage(hub)); err != nil {
 			slog.Warn("Could not tell a returning player they are home",
 				"player_id", playerID, "error", err)
 		}
 	}
+
+	s.leftRun(runID, home...)
 }
 
 // forgetIfAwaitingSettlement ends the stay of a member kept only for their
@@ -651,6 +660,9 @@ func (s *Server) LeaveRun(player *types.Player) (*game.Session, error) {
 
 	hub.AddPlayer(player.ID, player.Character, s.tokenOf(player))
 	s.setCurrentWorld(player, hub.ID)
+
+	// gone home, so out of the run's matched party (FS-988SM §Requirements 11)
+	s.leftRun(run.ID, player.ID)
 
 	return hub, nil
 }
@@ -742,6 +754,26 @@ func (s *Server) DrinkPotion(player *types.Player) {
 	}
 
 	run.Drink(player.ID)
+}
+
+/**
+* Hears, from a run's tick, whose seats the run released: matched players who
+* never arrived and can no longer come back, so they have left the run, and
+* with it its matched party. Returns at once; the party is changed on the
+* hub's loop. FS-988SM §Requirements 7.
+**/
+func (s *Server) SeatsReleased(runID uuid.UUID, memberIDs []uuid.UUID) {
+	s.leftRun(runID, memberIDs...)
+}
+
+// leftRun tells the party registry that members have left a run, so the run's
+// matched party loses them; any other run's party keeps them. Returns at once:
+// the party is changed on the hub's loop. FS-988SM §Requirements 11, 17.
+func (s *Server) leftRun(runID uuid.UUID, memberIDs ...uuid.UUID) {
+	if s.parties == nil || len(memberIDs) == 0 {
+		return
+	}
+	s.parties.leftRun(s.ctx, runID, memberIDs...)
 }
 
 /**
@@ -1008,6 +1040,23 @@ func (s *Server) TownConns() map[uuid.UUID]*websocket.Conn {
 }
 
 /**
+* InTown reports whether playerID's record here names the hub, whether they are
+* connected or inside their reconnect grace: closing the tab is a disconnect,
+* not leaving. A matched player whose record is gone or names another world (a
+* run, a field) is left out of the run. FS-988SM §Requirements 4, 7.
+**/
+func (s *Server) InTown(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.hubSessionID == uuid.Nil {
+		return false
+	}
+	player, exists := s.players[playerID]
+	return exists && player.CurrentGameSessionId == s.hubSessionID
+}
+
+/**
 * SeatedPlayer finds the player connected to this pod and seated in any world
 * under a character name or player id, read off the connection table as
 * SeatedPlayerIDs is. A copy, taken under the lock, so the caller reads it on
@@ -1151,6 +1200,11 @@ func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.
 	for _, player := range players.LocalPlayers {
 		for _, record := range s.everyRecordOf(player) {
 			record.CurrentGameSessionId = newGameSession.ID
+			// a member inside their reconnect grace enters disconnected, so the
+			// grace still ends their stay if they never come back (FS-988SM R7)
+			if record.ConnectState != nil && *record.ConnectState == constants.Reconnecting {
+				continue
+			}
 			record.ConnectState = &connected
 		}
 	}

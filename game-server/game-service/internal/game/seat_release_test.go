@@ -12,17 +12,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// closeRecorder is the host, recording which worlds were removed from it.
+// closeRecorder is the host, recording which worlds were removed from it, and
+// whose seats each released, in the order it was told.
 type closeRecorder struct {
 	mockSessionCloser
-	mu     sync.Mutex
-	closed []uuid.UUID
+	mu       sync.Mutex
+	closed   []uuid.UUID
+	released map[uuid.UUID][]uuid.UUID
+	told     []string
+}
+
+func (c *closeRecorder) SeatsReleased(runID uuid.UUID, memberIDs []uuid.UUID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.released == nil {
+		c.released = make(map[uuid.UUID][]uuid.UUID)
+	}
+	c.released[runID] = append(c.released[runID], memberIDs...)
+	c.told = append(c.told, "released")
+}
+
+func (c *closeRecorder) releasedBy(runID uuid.UUID) []uuid.UUID {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]uuid.UUID(nil), c.released[runID]...)
+}
+
+func (c *closeRecorder) calls() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.told...)
 }
 
 func (c *closeRecorder) CloseSession(id uuid.UUID) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closed = append(c.closed, id)
+	c.told = append(c.told, "closed")
 	return nil
 }
 
@@ -80,6 +106,53 @@ func TestReleaseUnclaimedSeats_ReleasesOnlyPastTheDeadline(t *testing.T) {
 	assert.Equal(t, 0, pendingCount(s), "every unclaimed seat is released")
 	assert.False(t, s.Ended(), "the run carries on with whoever arrived")
 	assert.Empty(t, closer.closedIDs())
+}
+
+// The host is told whose seats were released, exactly the members still
+// expected, and nobody already seated. FS-988SM R7; FS-K2HKP R25.
+func TestReleaseUnclaimedSeats_ReportsTheReleasedMembers(t *testing.T) {
+	closer := &closeRecorder{}
+	s, expected := pendingRun(t, closer, 3)
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{ID: uuid.New(), Class: "warrior", Level: 1}, "")
+	arrived := expected[1]
+	arrived.Character = types.CharacterInPlay{ID: uuid.New(), Class: "warrior", Level: 1}
+	_, err := s.SeatArrival(arrived, nil)
+	require.NoError(t, err)
+
+	s.releaseUnclaimedSeats(s.seatDeadline.Add(-time.Millisecond))
+	assert.Empty(t, closer.releasedBy(s.ID), "nobody is reported before the deadline")
+
+	s.releaseUnclaimedSeats(s.seatDeadline.Add(time.Millisecond))
+
+	assert.ElementsMatch(t, []uuid.UUID{expected[0].ID, expected[2].ID}, closer.releasedBy(s.ID),
+		"the unclaimed seats, never the one seated")
+}
+
+// A run whose seats were all claimed reports nothing, and a second pass
+// reports nothing again. FS-988SM R7.
+func TestReleaseUnclaimedSeats_NothingReleased_NothingReported(t *testing.T) {
+	closer := &closeRecorder{}
+	s, _ := pendingRun(t, closer, 0)
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{ID: uuid.New(), Class: "warrior", Level: 1}, "")
+
+	past := s.seatDeadline.Add(time.Second)
+	s.releaseUnclaimedSeats(past)
+	s.releaseUnclaimedSeats(past.Add(time.Second))
+
+	assert.Empty(t, closer.calls(), "the host is told nothing")
+}
+
+// A run nobody reached reports its released seats before it is removed from
+// the host, so the host still knows the run as it hears of them. FS-988SM R7;
+// FS-K2HKP R26.
+func TestReleaseUnclaimedSeats_NobodySeated_ReportsBeforeClosing(t *testing.T) {
+	closer := &closeRecorder{}
+	s, expected := pendingRun(t, closer, 2)
+
+	s.releaseUnclaimedSeats(s.seatDeadline.Add(time.Millisecond))
+
+	assert.ElementsMatch(t, []uuid.UUID{expected[0].ID, expected[1].ID}, closer.releasedBy(s.ID))
+	assert.Equal(t, []string{"released", "closed"}, closer.calls())
 }
 
 // Release happens once: an expected player added after it is not released by

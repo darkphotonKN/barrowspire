@@ -1053,6 +1053,48 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     expect(says(stage, OPEN_LINE)).toBe(true);
     expect(says(stage, "Form a party first.")).toBe(false);
   });
+
+  // A random match called off on the host (FS-988SM R8a) is refused as find_game after queue_status:
+  // the match already took the player out of the queue, so the panel comes down (R24).
+  const MATCH_FAILED = "The match failed. Queue again.";
+
+  it("should take the queue down and say why when a match is called off, Wait for company pressable again", () => {
+    const { hub, stage, choice, atTheDoor, reply, refuse, button, send } = queuedHubOnStage();
+    reply("find_game", { message: "Successfully joined matchmaking queue" });
+    reply("queue_status", { current: 2, total: 2 });
+    const panel = hub.queuePanel as Made;
+    const leave = button() as Made;
+
+    refuse("find_game", MATCH_FAILED);
+
+    expect(hub.queued).toBe(false);
+    expect(panel.destroyed).toBe(true);
+    expect(hub.queuePanel).toBeUndefined();
+    expect(leave.destroyed).toBe(true);
+    expect(hub.leaveButton).toBeUndefined();
+    expect(passing(stage, MATCH_FAILED)).toBe(true);
+
+    atTheDoor();
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    choice("queue")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledWith(ActionType.Find_Game, expect.anything());
+  });
+
+  it("should redraw an open door's queued line with every choice when a match is called off", () => {
+    const { hub, stage, choice, atTheDoor, reply, refuse, send } = queuedHubOnStage();
+    reply("queue_status", { current: 2, total: 2 });
+    atTheDoor();
+    expect(says(stage, "The delve is gathering. Wait, or leave the queue.")).toBe(true);
+
+    refuse("find_game", MATCH_FAILED);
+
+    expect(hub.queued).toBe(false);
+    expect(hub.dialogue).toBeDefined();
+    expect(says(stage, MATCH_FAILED)).toBe(true);
+    expect(says(stage, "The delve is gathering. Wait, or leave the queue.")).toBe(false);
+    choice("queue")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledWith(ActionType.Find_Game, expect.anything());
+  });
 });
 
 describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XMCP §Requirements 8, 9)", () => {

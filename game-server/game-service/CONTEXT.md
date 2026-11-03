@@ -327,7 +327,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   none left spawns the arrival elsewhere. ("Formation" here is spatial; it has nothing to do with
   *party formation* below, which is players grouping up.)
 
-### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R; ADR-0037)
+### Party (FS-R82NV, FS-NCC9J, FS-BJNYC, FS-XGW7H, FS-V780R, FS-988SM; ADR-0037, ADR-0039)
 
 Before these specs, "party" was loose prose for "the players in a run". It is now a thing with
 an id. Use **roster** or **the run's players** for the people a run seats; use **party** only
@@ -417,13 +417,23 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Ready check** — the pending request a party entry sends every other member: accept within
   30 s or the entry is cancelled and the party told who declined or timed out. Same shape as an
   invite (sent, awaited, expired), different question.
-- **Auto-formed party** — the party the host pod creates at run creation from a random match's
-  roster, so matched strangers are a party too: leader at random, no invites. A no-show (seat
-  released) is not a member. A solo run is a party of one (FS-BJNYC), so everyone in a run is in
-  a party.
+- **Matched party** (also *auto-formed party*) — the party the host pod creates from **every**
+  matched player, local and on other pods, on a random match (`find_game` → `MatchStart`),
+  **before it creates the run** and before anyone enters the tower: so matched strangers are a
+  party too, leader at random among the **local** players, no invites. If any matched player
+  already has a party, the match is **cancelled**: no run, and everyone is told to queue again. A late arrival is entering, not
+  joining; one who never connects or closes the tab is a disconnected member, host or not. It
+  carries the **matched origin**, which is what sets its lifetime apart: a member leaves it on
+  **leaving the run** (dying and leaving, escaping and leaving, leaving early, their reconnect
+  grace running out, or their seat being released before they arrived, at which point they count
+  as dead), and it ends when its last member leaves. It never outlives its
+  run (ADR-0039, FS-988SM). A member who stays to watch after dying or escaping is still a member.
+  The opposite is a **pre-formed party** (made by create and invite), which persists after a run.
+  A solo run is *not* a party: "every run is a party" is parked (FS-BJNYC Out of Scope).
 - **Instance lock** — while a party is inside an instance, leave, kick, transfer and loot-rule
   changes are refused. Disconnecting keeps the run's existing reconnect grace; only when it runs
-  out does the player count as dead for that run. They remain a member regardless.
+  out does the player count as dead for that run. A pre-formed party's member remains a member
+  regardless; a matched party's member leaves it on leaving the run (FS-988SM).
 - **Loot rule** — the party setting that says whose bag a pickup lands in: **random allocation**
   (default; a random living, un-escaped member, redrawn if their bag is full) or **picker keeps**.
   A closed set that later rules extend. Chosen by the leader, locked inside an instance. It

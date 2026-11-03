@@ -836,3 +836,149 @@ func TestLeaderOf_ReadsTheLeader(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, in, "the party ended")
 }
+
+// FS-988SM §Requirements R1–R4, R8, R10. A random match's host makes one matched party of every
+// matched player in one step: leader first, the rest in the order given, the matched origin in the
+// record and nowhere else.
+
+// matchedArgs is a matched create of joiners, the first leading, at most size of them.
+func matchedArgs(size int, joiners ...partystore.Joiner) partystore.MatchedArgs {
+	return partystore.MatchedArgs{PartyID: uuid.New(), Joiners: joiners, Size: size, Now: sentAt}
+}
+
+// Two matched players make a party of two, the first given leading, both pointing at it, on the
+// party's TTL, its record carrying the matched origin (R1, R3, R4).
+func TestCreateMatched_PartyOfTwo_LeaderFirstOriginMatched(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, kaelen := joiner("Wren"), joiner("Kaelen")
+	args := matchedArgs(2, wren, kaelen)
+
+	res, err := store.CreateMatched(context.Background(), args)
+	require.NoError(t, err)
+
+	assert.Equal(t, partystore.Refusal(""), res.Refusal)
+	assert.Empty(t, res.InParty)
+	assert.Empty(t, res.NoRoom)
+	assert.Equal(t, partystore.Party{
+		ID: args.PartyID, Leader: wren.PlayerID, CreatedAt: sentAt, Version: 1,
+		Members: []partystore.Member{
+			{PlayerID: wren.PlayerID, Name: "Wren", Class: "warrior", JoinedAt: sentAt, SeenAt: sentAt},
+			{PlayerID: kaelen.PlayerID, Name: "Kaelen", Class: "warrior", JoinedAt: sentAt, SeenAt: sentAt},
+		},
+	}, res.Party)
+	partyKey := "{party}:p:" + args.PartyID.String()
+	assert.Equal(t, "matched", mini.HGet(partyKey, "origin"))
+	assert.Equal(t, 5*time.Minute, mini.TTL(partyKey))
+	for _, j := range []partystore.Joiner{wren, kaelen} {
+		pointer := "{party}:pl:" + j.PlayerID.String()
+		assert.Equal(t, args.PartyID.String(), mustGet(t, mini, pointer), j.Name)
+		assert.Equal(t, 5*time.Minute, mini.TTL(pointer), j.Name)
+	}
+
+	// read back as any party is: still led by Wren, both members
+	read, err := store.PartyOf(context.Background(), kaelen.PlayerID, sentAt)
+	require.NoError(t, err)
+	assert.True(t, read.In)
+	assert.Equal(t, wren.PlayerID, read.Party.Leader)
+}
+
+// A party made by create or invite carries no origin: every pre-formed party, old ones included,
+// reads as pre-formed (R1, R2).
+func TestCreate_PreFormed_NoOrigin(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	created, err := store.Create(context.Background(), uuid.New(), joiner("Wren"), sentAt)
+	require.NoError(t, err)
+	inv := invite(t, store, joiner("Kaelen"), joiner("Idris"), 2, sentAt)
+
+	for _, id := range []uuid.UUID{created.Party.ID, inv.NewPartyID} {
+		assert.Equal(t, "", mini.HGet("{party}:p:"+id.String(), "origin"))
+	}
+}
+
+// A matched player already in a party, whoever they are in the order given, cancels the whole
+// matched create: it writes nothing, no party and no pointer, names them, and leaves their own party
+// as it was (R8).
+func TestCreateMatched_AnyoneAlreadyInParty_WritesNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		// where the grouped player stands in the order given
+		at int
+	}{
+		{"the leader already in a party", 0},
+		{"a local already in a party", 1},
+		{"a remote, given last, already in a party", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, mini := testutil.NewRedis(t)
+			store := partystore.NewRedis(client)
+			joiners := []partystore.Joiner{joiner("Wren"), joiner("Kaelen"), joiner("Marl")}
+			grouped := joiners[tt.at]
+			own, err := store.Create(context.Background(), uuid.New(), grouped, sentAt)
+			require.NoError(t, err)
+			args := matchedArgs(3, joiners...)
+
+			res, err := store.CreateMatched(context.Background(), args)
+			require.NoError(t, err)
+
+			assert.Equal(t, partystore.RefusalAlreadyInParty, res.Refusal)
+			assert.Equal(t, []uuid.UUID{grouped.PlayerID}, res.InParty, "the player found in a party is named")
+			assert.Equal(t, partystore.Party{}, res.Party)
+			assert.False(t, mini.Exists("{party}:p:"+args.PartyID.String()), "no matched party")
+			for _, j := range joiners {
+				if j.PlayerID == grouped.PlayerID {
+					continue
+				}
+				assert.False(t, mini.Exists("{party}:pl:"+j.PlayerID.String()), "%s is in no party", j.Name)
+			}
+			kept, err := store.PartyOf(context.Background(), grouped.PlayerID, sentAt)
+			require.NoError(t, err)
+			assert.Equal(t, own.Party.ID, kept.Party.ID, "they keep their own party")
+			assert.Equal(t, []uuid.UUID{grouped.PlayerID}, memberIDs(kept.Party), "their own party is untouched")
+		})
+	}
+}
+
+// Every matched player found in a party is named, not only the first (R8).
+func TestCreateMatched_SeveralInParties_NamesEveryOne(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, kaelen, marl := joiner("Wren"), joiner("Kaelen"), joiner("Marl")
+	for _, j := range []partystore.Joiner{wren, marl} {
+		_, err := store.Create(context.Background(), uuid.New(), j, sentAt)
+		require.NoError(t, err)
+	}
+
+	res, err := store.CreateMatched(context.Background(), matchedArgs(3, wren, kaelen, marl))
+	require.NoError(t, err)
+
+	assert.Equal(t, partystore.RefusalAlreadyInParty, res.Refusal)
+	assert.Equal(t, []uuid.UUID{wren.PlayerID, marl.PlayerID}, res.InParty)
+}
+
+// More matched players than the party holds: the first up to the size join, the leader among
+// them, and the rest are left out with no pointer (R10).
+func TestCreateMatched_MoreThanTheSize_FirstUpToTheSizeJoin(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	wren, kaelen, idris := joiner("Wren"), joiner("Kaelen"), joiner("Idris")
+
+	res, err := store.CreateMatched(context.Background(), matchedArgs(2, wren, kaelen, idris))
+	require.NoError(t, err)
+
+	require.Equal(t, partystore.Refusal(""), res.Refusal)
+	assert.Equal(t, []uuid.UUID{wren.PlayerID, kaelen.PlayerID}, memberIDs(res.Party))
+	assert.Equal(t, wren.PlayerID, res.Party.Leader)
+	assert.Equal(t, []uuid.UUID{idris.PlayerID}, res.NoRoom)
+	assert.False(t, mini.Exists("{party}:pl:"+idris.PlayerID.String()))
+}
+
+func memberIDs(p partystore.Party) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(p.Members))
+	for _, m := range p.Members {
+		ids = append(ids, m.PlayerID)
+	}
+	return ids
+}

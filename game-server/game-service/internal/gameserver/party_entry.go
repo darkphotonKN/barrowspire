@@ -124,10 +124,12 @@ func (c *readyCheck) sameRoster(p partystore.Party) bool {
 
 // partyRun is what a pod remembers of a run it built for a party: the party and the roster it went
 // down with, in join order (R14). In memory only; the lock reads it (I-BJNYC-6), and succession
-// falls back on its roster (R17).
+// falls back on its roster (R17). matched marks a random match's party, which its members leave as
+// they leave the run (FS-988SM R1, R11); a party that entered from the gate is not.
 type partyRun struct {
 	partyID uuid.UUID
 	roster  []uuid.UUID
+	matched bool
 }
 
 // inParty reports whether the pod's party cache knows playerID as a member of a party, a party of
@@ -498,7 +500,7 @@ func (r *partyRegistry) droppedIn(ctx context.Context, playerID, world uuid.UUID
 		return
 	}
 	if _, exists := r.cfg.worlds.GetGameSession(world); !exists {
-		delete(r.partyRuns, world)
+		r.runGone(ctx, world)
 		return
 	}
 	members := run.roster
@@ -551,8 +553,9 @@ func earliestOther(members []uuid.UUID, playerID uuid.UUID) (uuid.UUID, bool) {
 
 // tickChecks is the ready checks' share of the registry's tick: a check whose member left the town
 // or disconnected is cancelled, then one whose 30 s ran out with members still waiting (R10); and a
-// run that no longer exists is forgotten.
-func (r *partyRegistry) tickChecks() {
+// run that no longer exists is forgotten, its matched party losing whoever it still held
+// (FS-988SM R11).
+func (r *partyRegistry) tickChecks(ctx context.Context) {
 	if r.cfg.worlds == nil || (len(r.checks) == 0 && len(r.partyRuns) == 0) {
 		return
 	}
@@ -573,7 +576,7 @@ func (r *partyRegistry) tickChecks() {
 	}
 	for runID := range r.partyRuns {
 		if _, exists := r.cfg.worlds.GetGameSession(runID); !exists {
-			delete(r.partyRuns, runID)
+			r.runGone(ctx, runID)
 		}
 	}
 }

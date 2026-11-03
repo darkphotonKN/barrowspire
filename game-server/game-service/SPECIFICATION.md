@@ -148,6 +148,8 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Ready check before a party enters → FS-BJNYC
 - [ ] Party members enter only with their party → FS-BJNYC
 - [ ] A party is locked inside its instance → FS-BJNYC
+- [ ] A random match forms a party → FS-988SM
+- [ ] A matched party lasts only for its run → FS-988SM
 - [ ] Party members' class resource in the broadcast → FS-CH21F
 
 ### Chat

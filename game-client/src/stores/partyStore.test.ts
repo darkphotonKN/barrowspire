@@ -868,3 +868,54 @@ describe("the party store's ready check (FS-BJNYC R23, R25, R26)", () => {
     expect(readyCheckSecondsLeft(check, 90_000)).toBe(0);
   });
 });
+
+describe("a matched party through its run (FS-988SM R19, R20, R23: no client change)", () => {
+  const rig = (self: string) => {
+    const said: { code: string; text: string }[] = [];
+    const store = createPartyStore({ selfId: () => self, say: (line) => said.push(line) });
+    return { said, store };
+  };
+  /** Both matched players, Aldric leading, in the run. */
+  const MATCHED = [member(ME, "Aldric", { where: "run" }), member(ALLY, "Wren", { where: "run" })];
+
+  it("should say 'You joined the party.' once on creation, nothing on the handoff's sync, and let go on leaving", () => {
+    const { said, store } = rig(ALLY);
+
+    // each member's own joined, themselves the subject (R19)
+    store.getState().apply(update({ members: MATCHED, subject_id: ALLY }));
+    // arriving on the host by handoff: the reconcile (FS-NCC9J R21a) adds no line (R6)
+    store.getState().apply(update({ members: MATCHED, reason: "sync", subject_id: ALLY }));
+    expect(store.getState().party?.members.map((m) => m.name)).toEqual(["Aldric", "Wren"]);
+
+    // leaving the run: the leaver's own update no longer lists them (R11, R19)
+    store.getState().apply(update({ members: [MATCHED[0]], reason: "left", subject_id: ALLY }));
+
+    expect(said).toEqual([
+      { code: "joined", text: "You joined the party." },
+      { code: "left", text: "You left the party." },
+    ]);
+    expect(store.getState().party).toBeNull();
+  });
+
+  it("should show a party on a sync alone when the creation update never reached the arrival", () => {
+    const { said, store } = rig(ALLY);
+
+    store.getState().apply(update({ members: MATCHED, reason: "sync", subject_id: ALLY }));
+
+    expect(store.getState().party?.members).toHaveLength(2);
+    expect(said).toEqual([]);
+  });
+
+  it("should keep the one still in the run in a party of one, then let go when the last one out reads dissolved", () => {
+    const { said, store } = rig(ME);
+    store.getState().apply(update({ members: MATCHED, subject_id: ME }));
+    said.length = 0;
+
+    store.getState().apply(update({ members: [MATCHED[0]], reason: "left", subject_id: ALLY }));
+    expect(said).toEqual([{ code: "left", text: "Wren left the party." }]);
+    expect(store.getState().party?.members.map((m) => m.name)).toEqual(["Aldric"]);
+
+    store.getState().apply(update({ members: [], reason: "dissolved", subject_id: ME }));
+    expect(store.getState().party).toBeNull();
+  });
+});
