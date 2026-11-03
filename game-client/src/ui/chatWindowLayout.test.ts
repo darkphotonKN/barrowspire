@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { ChatEntry, ChatLine } from "@/stores/chatStore";
+import {
+  CHAT_CHANNELS,
+  type ChatEntry,
+  type ChatLine,
+} from "@/stores/chatStore";
 import { contrastRatio } from "@/render/lighting/lighting";
 import { palette } from "@/utils/canvasPalette";
 import {
   CHAT_CHANNEL_COLOUR,
+  CHAT_SHOWN_CHANNELS,
   CHAT_VISIBLE_LINES,
   CHAT_WINDOW_W,
   chatEntryColour,
@@ -308,7 +313,7 @@ describe("chatWindowFrame folded (Amendment 2026-10-31: collapse)", () => {
 });
 
 describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
-  it("should lay the five segments edge to edge from the row's left, each as wide as its label needs", () => {
+  it("should lay the shown segments edge to edge from the row's left, each as wide as its label needs", () => {
     const row = chatWindowFrame(10, 500).filterRow;
     const segments = chatTabSegments(row, (label) => label.length * 7);
 
@@ -317,7 +322,6 @@ describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
       "world",
       "party",
       "whisper",
-      "trade",
     ]);
     expect(segments[0].x).toBe(row.x);
     for (let i = 1; i < segments.length; i++) {
@@ -327,6 +331,14 @@ describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
       segments.every((s) => s.y === row.y && s.height === row.height),
     ).toBe(true);
     expect(segments[3].width).toBeGreaterThan(segments[0].width);
+  });
+
+  it("should hide trade from the window, as a tab and as a picker option, until it is scoped", () => {
+    // the picker (chatInputField) lists exactly these channels too
+    expect(CHAT_SHOWN_CHANNELS).not.toContain("trade");
+    expect(CHAT_SHOWN_CHANNELS).toEqual(["area", "world", "party", "whisper"]);
+    // still a channel of the protocol: a trade line is still recognised, just never offered
+    expect(CHAT_CHANNELS).toContain("trade");
   });
 
   it("should stop short of the fold button at the row's right end", () => {

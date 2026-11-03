@@ -98,6 +98,11 @@ hand-coded unless the user says otherwise; agent help is tests. The client is th
     reappear when toggled on. The toggle state persists in this browser (localStorage) and is
     restored on load; a storage failure falls back to all-on. Channels this FS does not relay
     still appear as toggles, so the row's shape never changes later. **[user: PoE2 model]**
+    *(Amended 2026-11-03, user; Nick: "幫我把trade的頻道先隱藏起來". The Trade channel is hidden from the chat window until
+    it has its own scoping: the row draws four toggles, `Area · World · Party · Whisper`. Trade
+    stays in the closed set of channels (R32), so a trade line is still recognised; the server
+    relays none. The shown channels are one list in the client, the protocol's set minus Trade.
+    Was: five toggles including `Trade`, every channel drawn whether relayed or not.)*
 25. **Area label.** The filter row ends with where the player is, from the state broadcast's
     world identity, in the client's lore words: `Area: Town`, `Area: Gentle Meadows`,
     `Area: Forlorn Forest`, `Area: the Spire`. It describes the player's place; it does not
@@ -129,7 +134,9 @@ hand-coded unless the user says otherwise; agent help is tests. The client is th
     Every channel colour must clear 4.5:1 against the panel. Where a token fails (ember,
     necrotic and umbraLight are the risks), the implementing slice adds a lifted token to `theme.ts` rather
     than using a literal (ADR-0013). Party and Trade colours ship in the filter row now even
-    though no message can carry them yet.
+    though no message can carry them yet. *(Amended 2026-11-03, user, as R24: Trade is not drawn
+    in the filter row; its colour stays defined for a trade line. Was: Party and Trade colours
+    both shown in the row.)*
 31. The window never claims pointer events outside its own panel; clicking the world beside it
     still moves, attacks or interacts as before.
 
@@ -159,7 +166,8 @@ the requirement named. Built as I-WJGFJ-6.
 - **R22 (line format):** no time. A line reads `Name: text`. `sent_at` stays on the wire.
 - **R25 (area label):** removed. The window no longer says where the player is.
 - **R24 (filter row):** behaviour unchanged (five independent toggles, any combination shown);
-  drawn as joined, separated tab segments, a hidden channel's segment dim.
+  drawn as joined, separated tab segments, a hidden channel's segment dim. *(Amended 2026-11-03,
+  user, as R24: four segments, Trade not drawn. Was: five segments.)*
 - **R19 (shape):** a divider line between the lines and the input row; the input row has a
   near-black ground (the darkest ramp token, never `#000`); the panel gets a finer frame.
 - **R28 (channel of a sent message), replaced:** a channel picker sits at the input row's left
@@ -169,6 +177,10 @@ the requirement named. Built as I-WJGFJ-6.
   its prefix at the start of the input; typing a prefix at the start picks its channel; removing
   it goes back to Area. A prefix of a channel that is not open yet is plain text. A sent line
   carries the picked channel and its text without the prefix.
+  *(Amended 2026-11-03, user; Nick: "幫我把trade的頻道先隱藏起來". The picker no longer lists Trade: it lists Area, World,
+  Party and Whisper, the same channels as the filter row (R24), each selectable or disabled as
+  the server relays it. Trade's `$` prefix is plain text, as any prefix of a channel the picker
+  does not offer. Was: all five channels listed, the ones not yet relayed shown disabled.)*
 - **New (collapse):** a button folds the window down to its input row and unfolds it again. It
   stays as the player leaves it, kept in this browser like the filter. Arriving lines do not
   unfold it. *Revised the same day by the user:* opening the input in a folded window (Enter or
