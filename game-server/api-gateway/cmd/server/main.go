@@ -28,6 +28,10 @@ var (
 	// http
 	httpAddr = commonhelpers.GetEnvString("PORT", "7114")
 
+	// prometheus scrape port, off the public router. Unique per service so local
+	// runs on one host never clash; the same port is used in k8s.
+	metricsPort = commonhelpers.GetEnvString("METRICS_PORT", "8193")
+
 	// browser origins allowed by CORS, comma separated (the frontend URLs)
 	corsOrigins = commonhelpers.GetEnvString("CORS_ORIGINS", "http://localhost:3938,http://localhost:3000")
 
@@ -75,6 +79,8 @@ func main() {
 	}
 
 	defer shutdown(ctx)
+	commontelemetry.ServeMetrics(metricsPort)
+
 	// --- database setup removed - api gateway is stateless ---
 
 	// --- message broker - rabbit mq ---
