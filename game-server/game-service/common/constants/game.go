@@ -189,7 +189,7 @@ const (
 	PartyNoticeLeaderAway PartyNoticeCode = "leader_away"
 
 	// Refusals of party_enter (FS-BJNYC R5), in order: not_member, not_leader, locked, too_few,
-	// checking, not_at_gate, not_in_town, then unavailable.
+	// checking, not_at_gate, settling, not_in_town, then unavailable.
 	// PartyNoticeTooFew: the party is just its leader; it needs at least two to enter.
 	PartyNoticeTooFew PartyNoticeCode = "too_few"
 	// PartyNoticeChecking: the party already has a ready check open.
@@ -199,6 +199,9 @@ const (
 	// PartyNoticeNotInTown: members not seated in the leader's pod's hub, as { "names" } in join
 	// order.
 	PartyNoticeNotInTown PartyNoticeCode = "not_in_town"
+	// PartyNoticeSettling: a member is a released escapee whose run has not settled yet, so their
+	// bag must stay home. FS-QPDKN R33.
+	PartyNoticeSettling PartyNoticeCode = "settling"
 )
 
 // ReadyCheckState is one member's answer on a party_ready_check. FS-BJNYC §Requirements 8.
