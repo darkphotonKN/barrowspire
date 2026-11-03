@@ -28,7 +28,7 @@ Sources: [FS-F9R7Q](../../docs/specs/F9R7Q-append-only-gold-ledger.md), ADR-0005
 - **Direction** — `DEBIT` or `CREDIT`. Carries the sign, because `amount` never does.
 - **Amount** — a strictly positive integer quantity of gold. Unsigned in meaning; a negative amount is unrepresentable, not merely rejected (ADR-0008).
 - **Currency** — the unit a transaction is denominated in. `GOLD` is the only one; transaction-level, and all legs share it, because sum-to-zero across mixed currencies is meaningless.
-- **Reason** — why a transaction exists, as a closed set: `SETTLE_AUCTION`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. Transaction-level, never leg-level. Only `SETTLE_AUCTION` has a caller today; the rest are forward-declared and need no schema change to start recording.
+- **Reason** — why a transaction exists, as a closed set: `SETTLEMENT`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`. Transaction-level, never leg-level. Only `SETTLEMENT` has a caller today; the rest are forward-declared and need no schema change to start recording.
 - **Reference** — the originating event a transaction records, held as `reference_id`. Transaction-level. **Unaided** — there is no reference *type* beside it; the id carries the meaning alone. Today it is the winning bid.
 - **Applied** — the outcome of an append: `true` the transaction was recorded, `false` it already existed. **`false` is a success, not an error** — it is what idempotency looks like from the caller's side.
 
@@ -80,9 +80,10 @@ will reintroduce a decision that was made and reversed. Each is dead for a state
 | `Reconstitute` | Nothing rebuilds the aggregate. It exists only at birth — reads never load it. |
 | `version`, OCC, `withRetry`, `ErrConcurrentModification` | Nothing loads-and-mutates, so there is nothing to guard (§Req 17, ADR-0007). **wallet-service has these and must keep them; ledger must not.** |
 | `ReferenceType` | Cut from the feature. `reference_id` carries the meaning unaided. |
+| `SETTLE_AUCTION` | Renamed `SETTLEMENT` (migration 000002). The ledger records that gold settled, never what an auction is (FS-NXP1W Req 32). FS-F9R7Q still spells the old name; it is write-once. |
 | `SETTLE_AUCTION_REVERSAL`, `ReverseCommit` | The pivot moved to `CommitHold`, so reversal is unreachable (ADR-0010). |
 | `AppendLedgerTx` **as an RPC** | It is a Temporal activity and appears in no `.proto` (ADR-0011). The *name* is live; the *transport* is not. |
-| Unique constraints beyond the two PKs | `transaction_id` is the sole idempotency guard (§Open question 1). |
+| Unique constraints beyond the two PKs | `transaction_id` is the sole idempotency guard (§Open question 1). One narrow exception (migration 000003): a partial unique index on `reference_id` `WHERE reason = 'SETTLEMENT'`, a backstop against the settlement `transaction_id` derivation changing. It is not an idempotency guard, and no other reason gets one. |
 | `IsPermanent`, "permanent error" | Considered while building the classifier, dropped. **"Permanent" is already this context's word for a row that can never be corrected** — ADR-0010: *"an incorrect row is now permanent"*. Reusing it for retry classification makes one word mean two unrelated things within a paragraph of each other. `IsNonRetryable` says only what it means. |
 | `IsRetriable` | wallet-service's and marketplace-service's spelling, in the positive. **Not a name to converge on here** — ledger classifies in the negative because Temporal declares a *non-retryable* set (ADR-0011), so flipping the polarity for cross-service consistency inverts what the retry policy consumes. Both spellings are correct in their own context. |
 
