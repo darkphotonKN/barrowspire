@@ -2,6 +2,7 @@ syntax = "proto3";
 package items;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
+import "api/proto/events/game.proto";
 option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/items";
 
 // ItemsService external API for items
@@ -41,6 +42,11 @@ service ItemsService {
   // under another run id are re-tagged to it (FS-18Z5F R5-R11, ADR-0032).
   // Returns what is now IN_RUN under run_id, worn in slots and the bag as a list.
   rpc CheckOutRunGear(CheckOutRunGearRequest) returns (CheckOutRunGearResponse);
+  // Applies one run settlement now, through the same path the items.extracted
+  // consumer takes, so the call and the event's async copy apply it once
+  // between them; a repeat is success (FS-GV8WN R11, ADR-0040). Called by
+  // game-service, not a player: no token.
+  rpc ApplySettlement(ApplySettlementRequest) returns (ApplySettlementResponse);
   rpc ListItemInstances(ListItemInstancesRequest) returns (ListItemInstancesResponse);
   rpc UpdateLoadout(UpdateLoadoutRequest) returns (UpdateLoadoutResponse);
   // Moves one of the caller's unworn, AVAILABLE instances between bag and
@@ -436,6 +442,15 @@ message CheckOutRunGearResponse {
   GetLoadoutWithItemsResponse loadout = 1;
   repeated ItemInstance bag = 2;
 }
+
+// event_id is the settlement's outbox row id, the MessageId its
+// items.extracted copy carries, so both dedup on one inbox key.
+message ApplySettlementRequest {
+  string event_id = 1;
+  events.ItemsExtractedEvent event = 2;
+}
+
+message ApplySettlementResponse {}
 
 message UpdateLoadoutRequest {
   string member_id = 1;

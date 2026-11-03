@@ -45,7 +45,7 @@ func endedVisit() FieldVisit {
 // id: a returned result, never a win, in a field. R40, R41, R43.
 func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{})
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	visit := endedVisit()
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
@@ -85,7 +85,7 @@ func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 // and no pickups".
 func TestPublishFieldVisit_EmptyVisit_StillSettles(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{})
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	visit := FieldVisit{ID: uuid.New(), MemberID: uuid.New(), CharacterID: uuid.New(), EnteredAt: time.Now(), LeftAt: time.Now()}
 
 	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
@@ -101,13 +101,13 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 		db, mock := mockTxDB(t)
 		mock.ExpectBegin()
 		mock.ExpectExec(insertOutboxStmt).
-			WithArgs(commonconstants.ItemsExtracted, commonconstants.GameEventsExchange, sqlmock.AnyArg()).
+			WithArgs(sqlmock.AnyArg(), commonconstants.ItemsExtracted, commonconstants.GameEventsExchange, sqlmock.AnyArg()).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(insertOutboxStmt).
-			WithArgs(commonconstants.GameMatchEnded, commonconstants.GameEventsExchange, sqlmock.AnyArg()).
+			WithArgs(sqlmock.AnyArg(), commonconstants.GameMatchEnded, commonconstants.GameEventsExchange, sqlmock.AnyArg()).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit()
-		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{})
+		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{}, testRetry(t), nil)
 
 		require.NoError(t, svc.PublishFieldVisit(context.Background(), endedVisit()))
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -119,7 +119,7 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 		mock.ExpectExec(insertOutboxStmt).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(insertOutboxStmt).WillReturnError(errors.New("db down"))
 		mock.ExpectRollback()
-		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{})
+		svc := NewService(db, commonoutbox.NewService(commonoutbox.NewRepo(db)), noWake{}, testRetry(t), nil)
 		visit := endedVisit()
 
 		err := svc.PublishFieldVisit(context.Background(), visit)
@@ -128,4 +128,36 @@ func TestPublishFieldVisit_OneTransaction_AllOrNothing(t *testing.T) {
 		assert.Contains(t, err.Error(), visit.ID.String(), "the failure names the visit")
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
+}
+
+// visitRowIDs settles visit and returns the items.extracted and match.ended
+// row ids it was written under.
+func visitRowIDs(t *testing.T, visit FieldVisit) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	outbox := &capturingOutbox{}
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
+
+	require.NoError(t, svc.PublishFieldVisit(context.Background(), visit))
+
+	return outbox.rowID(t, commonconstants.ItemsExtracted), outbox.rowID(t, commonconstants.GameMatchEnded)
+}
+
+// A visit's settlement rows are written under ids derived from the visit, its
+// member and the event, as a run's are. FS-GV8WN §B R7, I-GV8WN-1.
+func TestPublishFieldVisit_RowIDs_DerivedFromVisitMemberAndEvent(t *testing.T) {
+	visit := endedVisit()
+
+	extracted, ended := visitRowIDs(t, visit)
+	assert.NotEqual(t, uuid.Nil, extracted, "the row carries its own id")
+	assert.NotEqual(t, uuid.Nil, ended, "the row carries its own id")
+	assert.NotEqual(t, extracted, ended, "each event of the pair has its own id")
+
+	againExtracted, againEnded := visitRowIDs(t, visit)
+	assert.Equal(t, extracted, againExtracted, "the same visit settles under the same ids")
+	assert.Equal(t, ended, againEnded, "the same visit settles under the same ids")
+
+	otherVisit := visit
+	otherVisit.ID = uuid.New()
+	otherExtracted, _ := visitRowIDs(t, otherVisit)
+	assert.NotEqual(t, extracted, otherExtracted, "another visit, other ids")
 }

@@ -614,7 +614,7 @@ func TestRegenerateFloor_EndOfMatchStateListsItemsFromEarlierFloors(t *testing.T
 
 	require.NoError(t, p.s.regenerateFloor())
 
-	raw := p.s.getRawMatchState()
+	raw := p.s.getRawMatchState(nil)
 
 	var carrier *types.RawPlayerState
 	for i := range raw.Players {

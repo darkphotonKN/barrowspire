@@ -165,23 +165,24 @@ describe("nextWatched (FS-QPDKN req 7, 8, 11)", () => {
 
 describe("runMenuChoices (FS-9K8EZ req 2)", () => {
   it.each([
-    ["in play", { resolved: false, escaped: false }, ["fall", "back"]],
-    ["dead or left behind", { resolved: true, escaped: false }, ["leave", "back"]],
-    ["escaped", { resolved: true, escaped: true }, ["back"]],
+    ["in play", { resolved: false }, ["fall", "back"]],
+    // dead, left behind or escaped: an escaped player may leave too, settled at their escape
+    // (FS-GV8WN R16)
+    ["resolved", { resolved: true }, ["leave", "back"]],
   ])("should offer %s: %j -> %j", (_, state, ids) => {
     expect(runMenuChoices(state).map((c) => c.id)).toEqual(ids);
   });
 
   it("should word the way out as death, never as a forfeit or a withdrawal", () => {
-    const fall = runMenuChoices({ resolved: false, escaped: false })[0];
+    const fall = runMenuChoices({ resolved: false })[0];
     expect(fall.label).toBe("Fall where you stand");
     expect(fall.register).toBe("actionable");
-    for (const choice of runMenuChoices({ resolved: false, escaped: false }))
+    for (const choice of runMenuChoices({ resolved: false }))
       expect(choice.label).not.toMatch(/forfeit|withdraw/i);
   });
 
   it("should name the dead player's row as the card does, and keep Back in the cancel register", () => {
-    const [leave, back] = runMenuChoices({ resolved: true, escaped: false });
+    const [leave, back] = runMenuChoices({ resolved: true });
     expect(leave.label).toBe("Leave the barrow");
     expect(back.label).toBe("Back  [Esc]");
     expect(back.register).toBe("cancel");

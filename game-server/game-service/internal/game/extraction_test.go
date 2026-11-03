@@ -36,10 +36,15 @@ func (h *homeReturner) SeatsReleased(_ uuid.UUID, _ []uuid.UUID) {}
 
 func (h *homeReturner) CloseSession(_ uuid.UUID) error { return nil }
 
-// capturingOutbox keeps every event the match-complete publish writes.
+// capturingOutbox keeps every event the match-complete publish writes, and the
+// row id it was written under.
 type capturingOutbox struct {
 	mu     sync.Mutex
 	events map[string][]byte
+	ids    map[string]uuid.UUID
+	// all keeps every row under each routing key, in write order: a run now
+	// writes a pair per settled player as well as its end (FS-GV8WN)
+	all map[string][][]byte
 }
 
 func (c *capturingOutbox) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, params commonoutbox.OutboxParams) error {
@@ -47,9 +52,23 @@ func (c *capturingOutbox) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, params c
 	defer c.mu.Unlock()
 	if c.events == nil {
 		c.events = map[string][]byte{}
+		c.ids = map[string]uuid.UUID{}
+		c.all = map[string][][]byte{}
 	}
 	c.events[params.RoutingKey] = params.Payload
+	c.all[params.RoutingKey] = append(c.all[params.RoutingKey], params.Payload)
+	c.ids[params.RoutingKey] = params.ID
 	return nil
+}
+
+// rowID is the id the last row under routingKey was written with.
+func (c *capturingOutbox) rowID(t *testing.T, routingKey string) uuid.UUID {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id, ok := c.ids[routingKey]
+	require.True(t, ok, "no %s row was written", routingKey)
+	return id
 }
 
 func (c *capturingOutbox) itemsExtracted(t *testing.T) *pb.ItemsExtractedEvent {
@@ -80,7 +99,7 @@ func TestEndSession_ResolvedRun_PublishesEveryDelversItems(t *testing.T) {
 	s := p.s
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{})
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 
@@ -122,4 +141,48 @@ func TestEndSession_ResolvedRun_PublishesEveryDelversItems(t *testing.T) {
 	assert.Equal(t, pickedUp.Name, satchel[0].Name)
 	assert.Empty(t, satchel[0].InstanceId, "an item found in the run is new")
 	assert.Empty(t, byMember[p.fallen.String()].Inventory)
+}
+
+// wrote reports whether any row was written under routingKey.
+func (c *capturingOutbox) wrote(routingKey string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.events[routingKey]
+	return ok
+}
+
+// everyItemsExtracted is every items.extracted written, in write order.
+func (c *capturingOutbox) everyItemsExtracted(t *testing.T) []*pb.ItemsExtractedEvent {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	events := make([]*pb.ItemsExtractedEvent, 0, len(c.all[commonconstants.ItemsExtracted]))
+	for _, payload := range c.all[commonconstants.ItemsExtracted] {
+		event := &pb.ItemsExtractedEvent{}
+		require.NoError(t, proto.Unmarshal(payload, event))
+		events = append(events, event)
+	}
+	return events
+}
+
+// everyMatchEnded is every match.ended written, in write order.
+func (c *capturingOutbox) everyMatchEnded(t *testing.T) []*pb.MatchEndedEvent {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	events := make([]*pb.MatchEndedEvent, 0, len(c.all[commonconstants.GameMatchEnded]))
+	for _, payload := range c.all[commonconstants.GameMatchEnded] {
+		event := &pb.MatchEndedEvent{}
+		require.NoError(t, proto.Unmarshal(payload, event))
+		events = append(events, event)
+	}
+	return events
+}
+
+// drainSettlements waits for the session's settlement writes to land.
+func drainSettlements(t *testing.T, s *Session) {
+	t.Helper()
+	svc, ok := s.eventEmitter.(*service)
+	require.True(t, ok, "the session publishes through the real service")
+	svc.Drain()
 }

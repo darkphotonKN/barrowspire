@@ -90,7 +90,7 @@ interface RunState {
   serverBuildingsCreated: boolean;
   otherPlayers: Map<string, unknown>;
   player?: unknown;
-  gameEndOverlay?: unknown;
+  runEnded?: boolean;
   fx?: unknown;
   hits?: unknown;
   lightMap?: unknown;
@@ -119,7 +119,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     run.serverBuildingsCreated = true;
     run.otherPlayers.set("p2", {});
     run.player = {};
-    run.gameEndOverlay = {};
+    run.runEnded = true;
     run.monsters = {};
     run.resolvedCard = {};
     return { scene, run, broadcasts };
@@ -142,7 +142,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     expect(run.serverBuildingsCreated).toBe(false);
     expect(run.otherPlayers.size).toBe(0);
     expect(run.player).toBeUndefined();
-    expect(run.gameEndOverlay).toBeUndefined();
+    expect(run.runEnded).toBe(false);
     expect(run.monsters).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
   });
@@ -190,7 +190,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
   // Phaser keeps the scene's keyboard plugin across restarts and reads `enabled`
   // only at boot, so the end-of-run lock carried into the next run: the player
   // could not move until a page refresh built a new game.
-  it("should give the next run back the keyboard the end-of-run overlay locked", () => {
+  it("should give the next run back the keyboard the run's end locked", () => {
     const { scene, run } = startedRun();
     const keyboard = { enabled: false };
     (run as unknown as { input: unknown }).input = { keyboard };
@@ -487,7 +487,7 @@ interface FloorRun {
   groundLayer?: unknown;
   occluders: { size: number };
   handleGameStateUpdate(state: GameState): void;
-  showGameEndOverlay(position: number, result?: string): void;
+  endRun(): void;
 }
 
 const at = (x: number, y: number) => ({ x, y });
@@ -1059,7 +1059,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     const watchHit = (stage: ReturnType<typeof resolvedOnStage>["stage"]) =>
       stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve" && !m.destroyed);
 
-    it("should show no card, only one Watch the delve button at the bottom centre", () => {
+    it("should show no card, only one Watch the delve button at the bottom centre, Leave beside it", () => {
       const { run, state, stage, watchButtons, cardTitles } = resolvedOnStage(
         player("me", "Aldric", 130, escaped),
       );
@@ -1067,9 +1067,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(cardTitles()).toHaveLength(0);
       expect(watchButtons()).toHaveLength(1);
       const [x, y, w, h] = watchHit(stage)!.args as number[];
-      // the recording camera is 800 x 600: centred across, lifted 200 px off the bottom edge's
-      // margin (asked 2026-11-02, Nick)
-      expect(x).toBe(400);
+      // the recording camera is 800 x 600: the first of two about the centre (Leave beside it,
+      // FS-GV8WN R25), lifted 200 px off the bottom edge's margin (asked 2026-11-02, Nick)
+      expect(x).toBe(400 - (w + 16) / 2);
       expect(y + h / 2).toBe(600 - 16 - 200);
       expect(w).toBeGreaterThan(0);
     });
@@ -1283,7 +1283,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
 
   it("should take the card down when end_game arrives, and not raise it again", () => {
     const { run, state, watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped));
-    (run as unknown as FloorRun).showGameEndOverlay(1, "escaped");
+    (run as unknown as FloorRun).endRun();
     expect(watchButtons()).toHaveLength(0);
     (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
     expect(watchButtons()).toHaveLength(0);
@@ -1292,7 +1292,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
   it("should take the spectate HUD down when end_game arrives", () => {
     const { run, pressWatch, watching, hints } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    (run as unknown as FloorRun).showGameEndOverlay(2, "eliminated");
+    (run as unknown as FloorRun).endRun();
     expect(watching()).toEqual([]);
     expect(hints()).toHaveLength(0);
   });
@@ -1363,7 +1363,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
   interface Leaving {
     leavePending: boolean;
     leaveButton?: unknown;
-    gameEndOverlay?: unknown;
+    runEnded?: boolean;
     leaveRefused(): void;
     resetRun(): void;
   }
@@ -1390,14 +1390,15 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     vi.restoreAllMocks();
   });
 
-  it("should give the dead player Leave the barrow beside Watch the delve, and the escaped player Watch alone", () => {
+  it("should give the dead player and the escaped player Leave the barrow beside Watch the delve", () => {
     const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
     expect(fallen.watchLabels()).toHaveLength(1);
     expect(fallen.leaveLabels()).toHaveLength(1);
 
+    // FS-GV8WN R25: the escaped may leave too
     const out = leavingOnStage(player("me", "Aldric", 130, escaped));
     expect(out.watchLabels()).toHaveLength(1);
-    expect(out.leaveLabels()).toHaveLength(0);
+    expect(out.leaveLabels()).toHaveLength(1);
   });
 
   it("should send leave_run once, with no payload, and nothing on a second press before the answer", () => {
@@ -1423,10 +1424,10 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     expect(leavesSent()).toHaveLength(2);
   });
 
-  it("should ignore a refusal once the end-of-run overlay is up: the run ended first", () => {
+  it("should ignore a refusal once the run has ended: it ended first", () => {
     const { run, press, leaveLabels } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("leave-the-barrow");
-    (run as unknown as FloorRun).showGameEndOverlay(2, "eliminated");
+    (run as unknown as FloorRun).endRun();
 
     run.leaveRefused();
 
@@ -1451,17 +1452,124 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     expect(run.leavePending).toBe(true);
   });
 
-  it("should give the escaped spectator no leave button", () => {
+  it("should keep the escaped spectator's Leave in the bottom-centre row, centred, not in the corner", () => {
     const { press, leaveLabels, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
     press("watch-the-delve");
-    expect(leaveLabels()).toHaveLength(0);
-    expect(hit("leave-the-barrow")).toBeUndefined();
+    expect(leaveLabels()).toHaveLength(1);
+    // the recording camera is 800 x 600: alone in the row, on the row's line
+    const [x, y, , h] = hit("leave-the-barrow")!.args as number[];
+    expect(x).toBe(400);
+    expect(y + h / 2).toBe(600 - 16 - 200);
+  });
+
+  // FS-GV8WN R25: the escaped player's Leave, beside Watch in the bottom-centre row
+  describe("an escaped player's Leave (FS-GV8WN R25)", () => {
+    it("should stand beside Watch the delve, the two spread about the centre on one line", () => {
+      const { hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const watch = hit("watch-the-delve")!.args as number[];
+      const leave = hit("leave-the-barrow")!.args as number[];
+      expect(watch[0]).toBeLessThan(400);
+      expect(leave[0]).toBeGreaterThan(400);
+      expect(watch[0] + leave[0]).toBe(800);
+      expect(leave[1]).toBe(watch[1]);
+    });
+
+    it("should send leave_run once, as the dead player's does, and dim until the answer", () => {
+      const { run, press, leavesSent, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      press("leave-the-barrow");
+      press("leave-the-barrow");
+
+      expect(leavesSent()).toEqual([[ActionType.LeaveRun, {}]]);
+      expect(run.leavePending).toBe(true);
+      expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+    });
+
+    it("should come back dimmed when the row is redrawn while the leave is pending", () => {
+      const { run, press, hit, leavesSent } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      press("leave-the-barrow");
+      const first = hit("leave-the-barrow");
+      // the last teammate falls: Watch goes, and the row is drawn again around Leave alone
+      (run as unknown as FloorRun).handleGameStateUpdate(
+        partyState(player("me", "Aldric", 130, escaped), player("ally", "Wenna", 160, dead)),
+      );
+      const redrawn = hit("leave-the-barrow")!;
+      expect(redrawn).not.toBe(first);
+      expect(redrawn.calls).toContain("disableInteractive");
+      press("leave-the-barrow");
+      expect(leavesSent()).toHaveLength(1);
+    });
+
+    it("should hand the button back on a refusal and keep the player in the run", () => {
+      const { run, press, leavesSent, hit, leaveLabels, watchLabels } = leavingOnStage(
+        player("me", "Aldric", 130, escaped),
+      );
+      press("leave-the-barrow");
+      const before = hit("leave-the-barrow")?.calls.length ?? 0;
+
+      run.leaveRefused();
+
+      expect(run.leavePending).toBe(false);
+      expect(hit("leave-the-barrow")?.calls.slice(before)).toContain("setInteractive");
+      expect(leaveLabels()).toHaveLength(1);
+      expect(watchLabels()).toHaveLength(1);
+      press("leave-the-barrow");
+      expect(leavesSent()).toHaveLength(2);
+    });
+
+    it("should show Leave without Watch once no teammate is left in play", () => {
+      const { run, leaveLabels, watchLabels, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      (run as unknown as FloorRun).handleGameStateUpdate(
+        partyState(player("me", "Aldric", 130, escaped), player("ally", "Wenna", 160, dead)),
+      );
+      expect(watchLabels()).toHaveLength(0);
+      expect(leaveLabels()).toHaveLength(1);
+      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(400);
+    });
+
+    it("should keep Leave once the broadcast no longer sends an escaped player's own state", () => {
+      const { run, leaveLabels } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      expect(leaveLabels()).toHaveLength(1);
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
+      expect(leaveLabels()).toHaveLength(1);
+    });
+
+    // a transient null own state is not an escape: Leave stands only once the player was seen escaped
+    it("should give no Leave to a player never seen escaped when their own state goes missing", () => {
+      const { run, leaveLabels } = leavingOnStage(player("me", "Aldric", 130));
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
+      expect(leaveLabels()).toHaveLength(0);
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
+      expect(leaveLabels()).toHaveLength(0);
+    });
+
+    it("should forget the escape on a restart, so the next run starts with no Leave", () => {
+      const { run, stage } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+      run.resetRun();
+      // the old run's buttons went down with the scene; only what is drawn after the reset counts
+      const before = stage.made.length;
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
+      const drawn = stage.made.slice(before);
+      expect(drawn.some((m) => m.kind === "text" && /leave the barrow/i.test(String(m.args[2])))).toBe(false);
+    });
+
+    it("should give a player still in the delve no Leave", () => {
+      const { leaveLabels } = leavingOnStage(player("me", "Aldric", 130));
+      expect(leaveLabels()).toHaveLength(0);
+    });
+
+    it("should take the button down when end_game arrives", () => {
+      const { run, leaveLabels, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      (run as unknown as FloorRun).endRun();
+      expect(leaveLabels()).toHaveLength(0);
+      expect(hit("leave-the-barrow")).toBeUndefined();
+    });
   });
 
   it("should take the corner button down with the spectate HUD when end_game arrives", () => {
     const { run, press, leaveLabels, hit } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("watch-the-delve");
-    (run as unknown as FloorRun).showGameEndOverlay(2, "eliminated");
+    (run as unknown as FloorRun).endRun();
 
     expect(leaveLabels()).toHaveLength(0);
     expect(hit("leave-the-barrow")).toBeUndefined();
@@ -3008,43 +3116,157 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
   });
 });
 
-describe("BarrowspireScene result card hold (FS-QPDKN req 15, 16, 17)", () => {
+describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   const hub = { session_id: "hub-1", world_type: "hub" as const };
+  type SettlementPayload = import("@/assets/types/client").SettlementPayload;
 
-  function onStage() {
-    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
-    const scene = sceneOnStage();
+  const settlement = (fields: Partial<SettlementPayload> = {}): SettlementPayload => ({
+    outcome: "escaped",
+    carried: [{ item_id: "i1", entity_id: "e1", name: "Iron Blade", quantity: 1, found: true }],
+    lost: [{ item_id: "i2", entity_id: "e2", name: "Health Potion", quantity: 1, reason: "consumed" }],
+    experience_gained: 40,
+    level_before: 2,
+    level_after: 2,
+    kills: 3,
+    seconds_in_run: 80,
+    status: "pending",
+    ...fields,
+  });
+
+  /** What the scene holds for a settled player's record and the run's end. */
+  interface Settling {
+    resultHold: import("@/components/resultHold").ResultHold;
+    settlementRecord?: unknown;
+    showSettlement(payload: SettlementPayload): void;
+    endRun(): void;
+    leaveRefused(): void;
+    init(): void;
+    events: Emitter;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+
+  function settlingOnStage(me = player("me", "Aldric", 130, escaped)) {
+    const stage = onStage();
     const start = vi.fn();
-    const run = scene.run as FloorRun & { resultHold: import("@/components/resultHold").ResultHold };
-    Object.assign(run, { scene: { start } });
-    const buttons = () =>
-      scene.stage.made.filter((m) => m.kind === "rectangle" && m.handlers.pointerdown && !m.destroyed);
-    return { ...scene, run, sent, start, buttons };
+    Object.assign(stage.run, { scene: { start } });
+    stage.run.handleGameStateUpdate(partyState(me));
+    const run = stage.run as unknown as Settling;
+    const live = () => stage.stage.made.filter((m) => !m.destroyed);
+    const shown = () => live().filter((m) => m.kind === "text").map((m) => String(m.args[2]));
+    const hit = (name: string) => live().find((m) => (m as { name?: string }).name === name);
+    const press = (name: string) => hit(name)?.handlers.pointerdown();
+    const held = () => {
+      const apply = vi.fn();
+      const isHeld = run.resultHold.hold(hub, apply);
+      return { isHeld, apply };
+    };
+    return { ...stage, run, start, shown, hit, press, held };
   }
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("should put up one button, Return to the hub, and neither legacy one", () => {
-    const { run, texts, buttons } = onStage();
-    run.showGameEndOverlay(1, "escaped");
-
-    expect(buttons()).toHaveLength(1);
-    const labels = texts().map((t) => String(t.content));
-    expect(labels.filter((l) => /return to the hub/i.test(l))).toHaveLength(1);
-    expect(labels.some((l) => /delve again|withdraw/i.test(l))).toBe(false);
+  // the server names the run a record settles; a late confirmation of an earlier run, landing in
+  // this one, is not this run's record (FS-GV8WN R20)
+  it("should ignore a settlement naming another run, and take one naming this run", () => {
+    const { run } = settlingOnStage();
+    (run as unknown as { sessionID?: string }).sessionID = "run-2";
+    run.showSettlement(settlement({ run_id: "run-1" }));
+    expect(run.settlementRecord).toBeUndefined();
+    run.showSettlement(settlement({ run_id: "run-2" }));
+    expect(run.settlementRecord).toBeDefined();
   });
 
-  it("should hold the hub world behind the card and apply it when the button is pressed", () => {
-    const { run, sent, start, buttons } = onStage();
-    run.showGameEndOverlay(3, "eliminated");
-    const apply = vi.fn();
+  it("should open the record at once on settlement, with what was carried, lost and earned", () => {
+    const { run, shown } = settlingOnStage();
+    run.showSettlement(settlement());
+    for (const line of ["Escaped the barrow", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
+      expect(shown()).toContain(line);
+    expect(shown()).toContain("Experience +40 · Level 2");
+    expect(shown()).toContain("Slain 3 · 1:20 in the delve");
+  });
 
-    expect(run.resultHold.hold(hub, apply)).toBe(true);
+  it("should change only the status when the confirmed copy arrives", () => {
+    const { run, shown } = settlingOnStage();
+    run.showSettlement(settlement());
+    const before = shown().filter((t) => t !== "Settling…");
+    run.showSettlement(settlement({ status: "confirmed" }));
+    expect(shown()).toContain("Settled");
+    expect(shown()).not.toContain("Settling…");
+    expect(shown().filter((t) => t !== "Settled")).toEqual(before);
+  });
+
+  it("should leave a closed record closed when the confirmed copy arrives, and show it on reopening", () => {
+    const { run, shown, press } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("close-the-record");
+    run.showSettlement(settlement({ status: "confirmed" }));
+    expect(shown()).not.toContain("Settled");
+    press("settlement");
+    expect(shown()).toContain("Settled");
+  });
+
+  it("should put the Settlement button after Watch the delve and Leave in the bottom-centre row", () => {
+    const { run, hit } = settlingOnStage();
+    run.showSettlement(settlement());
+    const watch = hit("watch-the-delve")!.args as number[];
+    const leave = hit("leave-the-barrow")!.args as number[];
+    const record = hit("settlement")!.args as number[];
+    // the recording camera is 800 x 600: three buttons about the centre, on the Watch button's line
+    expect(watch[0]).toBeLessThan(400);
+    expect(leave[0]).toBe(400);
+    expect(record[0]).toBeGreaterThan(400);
+    expect(watch[0] + record[0]).toBe(800);
+    expect([leave[1], record[1]]).toEqual([watch[1], watch[1]]);
+    expect(record[1] + record[3] / 2).toBe(600 - 16 - 200);
+  });
+
+  it("should keep Leave and the Settlement button, centred as a pair, once Watch is pressed", () => {
+    const { run, hit, press } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("close-the-record");
+    press("watch-the-delve");
+    expect(hit("watch-the-delve")).toBeUndefined();
+    const leave = (hit("leave-the-barrow")!.args as number[])[0];
+    const record = (hit("settlement")!.args as number[])[0];
+    expect(leave).toBeLessThan(400);
+    expect(leave + record).toBe(800);
+  });
+
+  it("should give a dead player the Settlement button too, the card's Watch and Leave kept", () => {
+    const { run, hit, shown } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.showSettlement(settlement({ outcome: "died" }));
+    expect((hit("settlement")!.args as number[])[0]).toBe(400);
+    expect(hit("watch-the-delve")).toBeDefined();
+    expect(hit("leave-the-barrow")).toBeDefined();
+    expect(shown()).toContain("Fallen in the barrow");
+  });
+
+  it("should close from its Close button and reopen from the Settlement button", () => {
+    const { run, shown, press } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("close-the-record");
+    expect(shown()).not.toContain("Iron Blade");
+    press("settlement");
+    expect(shown()).toContain("Iron Blade");
+    // the button toggles: pressed again with the record up, it closes it
+    press("settlement");
+    expect(shown()).not.toContain("Iron Blade");
+  });
+
+  // R23: the run's end (end_game + world_entered(hub)) waits on an open record
+  it("should hold the hub at the run's end while the record is open, until it is closed", () => {
+    const { run, press, held, sent, start } = settlingOnStage();
+    run.showSettlement(settlement());
+    run.endRun();
+    const { isHeld, apply } = held();
+    expect(isHeld).toBe(true);
     expect(apply).not.toHaveBeenCalled();
 
-    buttons()[0].handlers.pointerdown();
+    press("close-the-record");
 
     expect(apply).toHaveBeenCalledWith(hub);
     // client-only: nothing goes to the server, and the switch is the handler's, not the scene's
@@ -3052,18 +3274,120 @@ describe("BarrowspireScene result card hold (FS-QPDKN req 15, 16, 17)", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("should forget the held world when the scene stops, so the next run gets no stale switch", () => {
-    const { run } = onStage();
-    (run as unknown as { init(): void }).init();
-    run.showGameEndOverlay(2, "survived");
+  it("should let the hub in at once at the run's end when the record is closed", () => {
+    const { run, press, held } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("close-the-record");
+    run.endRun();
+    expect(held().isHeld).toBe(false);
+  });
+
+  it("should hold the hub again once the record is reopened", () => {
+    const { run, press, held } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("close-the-record");
+    press("settlement");
+    expect(held().isHeld).toBe(true);
+  });
+
+  it("should not hold the hub a Leave asks for, with the record open", () => {
+    const { run, press, held, sent } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.showSettlement(settlement({ outcome: "died" }));
+    press("leave-the-barrow");
+    expect(sent).toHaveBeenCalledWith(ActionType.LeaveRun, {});
+    expect(held().isHeld).toBe(false);
+  });
+
+  // R23: reopening the record while a Leave is on its way must not hold the town the player chose
+  it("should not hold the hub a pending Leave asks for when the record is reopened", () => {
+    const { run, press, held } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("close-the-record");
+    press("leave-the-barrow");
+    press("settlement");
+    expect(held().isHeld).toBe(false);
+  });
+
+  it("should not hold the hub a dead player's pending Leave asks for when the record is reopened", () => {
+    const { run, press, held } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.showSettlement(settlement({ outcome: "died" }));
+    press("leave-the-barrow");
+    press("settlement");
+    press("settlement");
+    expect(held().isHeld).toBe(false);
+  });
+
+  it("should hold the hub again if the Leave is refused while the record is open", () => {
+    const { run, press, held } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.showSettlement(settlement({ outcome: "died" }));
+    press("leave-the-barrow");
+    run.leaveRefused();
+    expect(held().isHeld).toBe(true);
+  });
+
+  // FS-GV8WN R23, R25: the escaped player's Leave lets the town in as the dead player's does
+  it("should not hold the hub an escaped player's Leave asks for, with the record open", () => {
+    const { run, press, held, sent } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("leave-the-barrow");
+    expect(sent).toHaveBeenCalledWith(ActionType.LeaveRun, {});
+    expect(held().isHeld).toBe(false);
+  });
+
+  it("should hold the hub again, and keep the record up, if an escaped player's Leave is refused", () => {
+    const { run, press, held, shown, start } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("leave-the-barrow");
+    run.leaveRefused();
+    expect(held().isHeld).toBe(true);
+    expect(shown()).toContain("Iron Blade");
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("should let a hub held after a refused Leave in from the record's Close once the run has ended", () => {
+    const { run, press, held, sent } = settlingOnStage();
+    run.showSettlement(settlement());
+    press("leave-the-barrow");
+    run.leaveRefused();
+    run.endRun();
+    const { isHeld, apply } = held();
+    expect(isHeld).toBe(true);
+    // the row is down with the run's end: the record's Close is the way through
+    press("close-the-record");
+    expect(apply).toHaveBeenCalledWith(hub);
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toHaveLength(1);
+  });
+
+  // R24: the record replaces the FS-QPDKN result card
+  it("should put up no result card when the run ends", () => {
+    const { run, shown, stage } = settlingOnStage();
+    const before = stage.made.length;
+    run.endRun();
+    expect(stage.made.length).toBe(before);
+    expect(shown().some((t) => /escaped!|you fell|you live|return to the hub/i.test(t))).toBe(false);
+  });
+
+  it("should hold nothing at the run's end when no record came", () => {
+    const { run, held } = settlingOnStage();
+    run.endRun();
+    expect(held().isHeld).toBe(false);
+  });
+
+  // R22: entering any other world stops the run scene, and the record goes with it
+  it("should forget the record and the held world when the scene stops", () => {
+    const { run } = settlingOnStage();
+    run.init();
+    run.showSettlement(settlement());
+    run.endRun();
     const apply = vi.fn();
     run.resultHold.hold(hub, apply);
 
-    (run as unknown as RunState).events.emit("shutdown");
+    run.events.emit("shutdown");
 
     run.resultHold.release();
     expect(apply).not.toHaveBeenCalled();
-    expect(run.resultHold.hold(hub, apply)).toBe(false);
+    expect(run.resultHold.hold(hub, vi.fn())).toBe(false);
+    expect(run.settlementRecord).toBeUndefined();
   });
 });
 
@@ -3144,7 +3468,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     canSendMove(): boolean;
     toggleControlsPanel(): void;
     fallRefused(info: { message?: string }): void;
-    showGameEndOverlay(position: number, result?: string): void;
+    endRun(): void;
     resetRun(): void;
   }
 
@@ -3214,7 +3538,8 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
   it.each([
     ["dead", dead, ["leave", "back"], "Leave the barrow  [1]"],
-    ["escaped", escaped, ["back"], "Back  [Esc]"],
+    // an escaped player may leave too: settled at their escape (FS-GV8WN R16)
+    ["escaped", escaped, ["leave", "back"], "Leave the barrow  [1]"],
   ])("should offer a %s player %j", (_, me, ids, label) => {
     const { keys, press, option, labels } = menuOnStage(player("me", "Aldric", 130, me));
     press(keys.esc);
@@ -3223,9 +3548,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(labels()).toContain(label);
   });
 
-  it("should do nothing on ESC once the result card is up", () => {
+  it("should do nothing on ESC once the run has ended", () => {
     const { run, keys, press } = menuOnStage();
-    run.showGameEndOverlay(1, "escaped");
+    run.endRun();
     press(keys.esc);
     expect(run.menu).toBeUndefined();
   });
@@ -3391,7 +3716,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   it("should take the menu down when end_game arrives", () => {
     const { run, keys, press, option } = menuOnStage();
     press(keys.esc);
-    run.showGameEndOverlay(1, "eliminated");
+    run.endRun();
     expect(run.menu).toBeUndefined();
     expect(option("fall")).toBeUndefined();
   });
@@ -3741,7 +4066,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     resetRun(): void;
     leaveFloor(): void;
     openMenu(): void;
-    showGameEndOverlay(position: number, result?: string): void;
+    endRun(): void;
     toggleInventory(): void;
     aimFrame(): void;
     sendMovementIntent(vx: number, vy: number): void;
@@ -3988,7 +4313,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     ["the player dying", (s) => s.run.handleGameStateUpdate(partyState(as("archer", { current_health: 0 }) as ReturnType<typeof player>))],
     ["the party leaving the floor", (s) => s.run.leaveFloor()],
     ["the ESC menu opening", (s) => s.run.openMenu()],
-    ["the run ending", (s) => s.run.showGameEndOverlay(1, "escaped")],
+    ["the run ending", (s) => s.run.endRun()],
     [
       "the equipment panel opening",
       (s) => {
@@ -4014,7 +4339,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
   it("should send nothing on a release once the run has ended, even from a hold begun after", () => {
     const s = aimOnStage();
-    s.run.showGameEndOverlay(1, "escaped");
+    s.run.endRun();
     s.press();
     s.release(1500);
     expect(s.casts()).toHaveLength(0);

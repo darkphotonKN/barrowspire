@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // extractionRepo stubs what an extraction's settlement reaches for and records
@@ -36,8 +38,12 @@ type extractionRepo struct {
 	loadouts []*UpsertPlayerLoadoutRequest
 	locked   []uuid.UUID
 	released []uuid.UUID
-	fenceRun []uuid.UUID
-	calls    []string
+	// memberReleases are the member-scoped releases of partial events
+	memberReleases []memberRelease
+	// exceptReleases are whole-run releases that skip members already settled
+	exceptReleases []memberRelease
+	fenceRun       []uuid.UUID
+	calls          []string
 }
 
 func (r *extractionRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member uuid.UUID) error {
@@ -80,6 +86,23 @@ func (r *extractionRepo) UpsertPlayerLoadoutTx(_ context.Context, _ *sqlx.Tx, re
 func (r *extractionRepo) ReleaseRunTx(_ context.Context, _ *sqlx.Tx, runID uuid.UUID) (int64, error) {
 	r.calls = append(r.calls, "release")
 	r.released = append(r.released, runID)
+	return 0, r.releaseErr
+}
+
+func (r *extractionRepo) ReleaseRunMembersTx(_ context.Context, _ *sqlx.Tx, runID uuid.UUID, members []uuid.UUID) (int64, error) {
+	r.calls = append(r.calls, "release members")
+	r.memberReleases = append(r.memberReleases, memberRelease{runID, members})
+	return 0, r.releaseErr
+}
+
+type memberRelease struct {
+	runID   uuid.UUID
+	members []uuid.UUID
+}
+
+func (r *extractionRepo) ReleaseRunExceptTx(_ context.Context, _ *sqlx.Tx, runID uuid.UUID, settled []uuid.UUID) (int64, error) {
+	r.calls = append(r.calls, "release except settled")
+	r.exceptReleases = append(r.exceptReleases, memberRelease{runID, settled})
 	return 0, r.releaseErr
 }
 
@@ -484,6 +507,79 @@ func TestProcessItemsExtracted_LocksEveryAccountOnceInOrderBeforeWriting(t *test
 	}
 }
 
+// FS-GV8WN R12: a partial event settles only its members. It locks only their
+// accounts, never reading the run's other owners, and releases only their
+// IN_RUN rows under the run: a teammate still in the run keeps their gear
+// checked out. Storing and the consumed delete are as for a whole run.
+func TestProcessItemsExtracted_Partial_SettlesOnlyItsMembers(t *testing.T) {
+	runA, teammate := uuid.New(), uuid.New()
+	event := extractedEvent(potion())
+	event.SessionId = runA.String()
+	event.Partial = true
+	event.PlayerItems[0].ConsumedItemIds = []string{uuid.NewString()}
+	member := uuid.MustParse(event.PlayerItems[0].MemberId)
+	repo := &consumingRepo{extractionRepo: &extractionRepo{runOwners: []uuid.UUID{member, teammate}}}
+	svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
+
+	if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !slices.Equal(repo.locked, []uuid.UUID{member}) {
+		t.Errorf("locked %v, want only the event's member %v", repo.locked, member)
+	}
+	if len(repo.released) != 0 {
+		t.Errorf("released the whole run %v, want only the event's members", repo.released)
+	}
+	if len(repo.memberReleases) != 1 || repo.memberReleases[0].runID != runA || !slices.Equal(repo.memberReleases[0].members, []uuid.UUID{member}) {
+		t.Errorf("member releases %+v, want one for %v under run A", repo.memberReleases, member)
+	}
+	if calls := strings.Join(repo.calls, ","); calls != "lock,insert,apply,loadout,consumed,release members" {
+		t.Errorf("calls %q, want the members locked, stored, consumed deleted, then released", calls)
+	}
+}
+
+// A whole-run event naming members already settled releases the run without
+// their items: their own partial events release those, and may still be on
+// their way. FS-GV8WN R14 (D3), I-GV8WN-5.
+func TestProcessItemsExtracted_WholeRun_SkipsSettledMembers(t *testing.T) {
+	run, settled := uuid.New(), uuid.New()
+	event := extractedEvent(potion())
+	event.SessionId = run.String()
+	event.SettledMemberIds = []string{settled.String()}
+	repo := &consumingRepo{extractionRepo: &extractionRepo{}}
+	svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
+
+	if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(repo.released) != 0 {
+		t.Errorf("released the whole run %v, want it released without the settled member", repo.released)
+	}
+	if len(repo.exceptReleases) != 1 || repo.exceptReleases[0].runID != run || !slices.Equal(repo.exceptReleases[0].members, []uuid.UUID{settled}) {
+		t.Errorf("except releases %+v, want one under the run skipping %v", repo.exceptReleases, settled)
+	}
+}
+
+// A settled member id that is not a uuid is a producer bug: the event fails as
+// malformed before any write.
+func TestProcessItemsExtracted_SettledMemberNotUUID_Malformed(t *testing.T) {
+	event := extractedEvent(potion())
+	event.SettledMemberIds = []string{"not-a-uuid"}
+	repo := &consumingRepo{extractionRepo: &extractionRepo{}}
+	svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
+
+	err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event)
+
+	if !errors.Is(err, commonconstants.ErrUUIDCouldNotBeParsed) {
+		t.Fatalf("err %v, want ErrUUIDCouldNotBeParsed", err)
+	}
+	if len(repo.calls) != 0 {
+		t.Errorf("calls %v, want nothing written", repo.calls)
+	}
+}
+
 // Nil equipment maps to no equipped items and an empty loadout for the member.
 func TestMapProtoEquipmentToItemInstances_NilEquipment(t *testing.T) {
 	member := uuid.New()
@@ -510,9 +606,19 @@ type settlementFixture struct {
 
 func (f settlementFixture) settle(t *testing.T, runID uuid.UUID, players ...*pb.PlayerItems) {
 	t.Helper()
-	event := &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: players}
+	f.apply(t, &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: players})
+}
+
+// settlePartial settles only players' members of the run (FS-GV8WN R6).
+func (f settlementFixture) settlePartial(t *testing.T, runID uuid.UUID, players ...*pb.PlayerItems) {
+	t.Helper()
+	f.apply(t, &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: players, Partial: true})
+}
+
+func (f settlementFixture) apply(t *testing.T, event *pb.ItemsExtractedEvent) {
+	t.Helper()
 	if err := f.svc.ProcessItemsExtracted(f.ctx, uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
-		t.Fatalf("settle run %s: %v", runID, err)
+		t.Fatalf("settle run %s: %v", event.GetSessionId(), err)
 	}
 }
 
@@ -661,6 +767,62 @@ func TestProcessItemsExtracted_AgainstTheSchema(t *testing.T) {
 		}
 	})
 
+	t.Run("a partial event releases only its members; a teammate stays in the run", func(t *testing.T) {
+		member, teammate, runA := uuid.New(), uuid.New(), uuid.New()
+		left := seedInRun(t, ctx, db, member, LocationStash, runA) // not carried out: released
+		drunk := seedInRun(t, ctx, db, member, LocationBag, runA)
+		ring := seedInRun(t, ctx, db, teammate, LocationStash, runA)
+		potion := seedInRun(t, ctx, db, teammate, LocationBag, runA)
+		f.cleanUpAfter(t, member, teammate)
+		ringBefore, potionBefore := runStateOf(t, ctx, db, ring), runStateOf(t, ctx, db, potion)
+
+		f.settlePartial(t, runA, &pb.PlayerItems{
+			MemberId:        member.String(),
+			Equipment:       &pb.Equipment{},
+			ConsumedItemIds: []string{drunk.String()},
+		})
+
+		expectHome(t, ctx, db, left, LocationStash)
+		if got := f.owned(t, member); got != 1 {
+			t.Errorf("member owns %d instances, want the drunk potion deleted", got)
+		}
+		if now := runStateOf(t, ctx, db, ring); !now.inRun(runA) || !now.same(ringBefore) {
+			t.Errorf("teammate's ring = %+v, want untouched IN_RUN under run A", now)
+		}
+		if now := runStateOf(t, ctx, db, potion); !now.inRun(runA) || !now.same(potionBefore) {
+			t.Errorf("teammate's potion = %+v, want untouched IN_RUN under run A", now)
+		}
+
+		// the run's end then settles the teammate, releasing what is left
+		f.settle(t, runA, &pb.PlayerItems{MemberId: teammate.String(), Equipment: &pb.Equipment{}})
+
+		expectHome(t, ctx, db, ring, LocationStash)
+		expectHome(t, ctx, db, potion, LocationBag)
+	})
+
+	t.Run("the run's sweep skips a settled member whose own event is still on its way", func(t *testing.T) {
+		escapee, orphanOwner, runA := uuid.New(), uuid.New(), uuid.New()
+		drunk := seedInRun(t, ctx, db, escapee, LocationBag, runA)
+		orphan := seedInRun(t, ctx, db, orphanOwner, LocationStash, runA) // checked out, never seated
+		f.cleanUpAfter(t, escapee, orphanOwner)
+		drunkBefore := runStateOf(t, ctx, db, drunk)
+
+		// the run's end arrives first, nobody left to settle
+		f.apply(t, &pb.ItemsExtractedEvent{SessionId: runA.String(), EventId: uuid.NewString(), SettledMemberIds: []string{escapee.String()}})
+
+		expectHome(t, ctx, db, orphan, LocationStash)
+		if now := runStateOf(t, ctx, db, drunk); !now.inRun(runA) || !now.same(drunkBefore) {
+			t.Errorf("escapee's potion = %+v, want untouched IN_RUN under run A", now)
+		}
+
+		// the escapee's own settlement lands after it and still deletes the drunk potion
+		f.settlePartial(t, runA, &pb.PlayerItems{MemberId: escapee.String(), Equipment: &pb.Equipment{}, ConsumedItemIds: []string{drunk.String()}})
+
+		if got := f.owned(t, escapee); got != 0 {
+			t.Errorf("escapee owns %d instances, want the drunk potion deleted", got)
+		}
+	})
+
 	t.Run("a field visit's id settles like a run's", func(t *testing.T) {
 		member, visit := uuid.New(), uuid.New()
 		potion := seedInRun(t, ctx, db, member, LocationBag, visit)
@@ -705,6 +867,9 @@ type consumingRepo struct {
 	*extractionRepo
 	deleteErr error
 	deleted   []consumedDelete
+	// gone, when set, is how many of each delete's ids already left the run
+	// fence (reclaimed by a later checkout): they match no row
+	gone int
 }
 
 type consumedDelete struct {
@@ -716,7 +881,7 @@ type consumedDelete struct {
 func (r *consumingRepo) DeleteConsumedItemInstancesTx(_ context.Context, tx *sqlx.Tx, memberID, runID uuid.UUID, ids []uuid.UUID) (int64, error) {
 	r.calls = append(r.calls, "consumed")
 	r.deleted = append(r.deleted, consumedDelete{memberID, runID, ids, tx})
-	return int64(len(ids)), r.deleteErr
+	return int64(len(ids) - r.gone), r.deleteErr
 }
 
 // A drunk potion is reported as a consumed item; settlement deletes exactly
@@ -868,6 +1033,63 @@ func TestProcessItemsExtracted_ConsumedItems_Failures(t *testing.T) {
 			}
 			if calls := strings.Join(tt.repo.calls, ","); calls != tt.wantCalls {
 				t.Fatalf("calls %q, want %q", calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
+// FS-GV8WN R26, ADR-0040: a consumed delete matching fewer rows than its ids
+// under the run fence is the free-consumable residual (a later checkout
+// reclaimed the drunk potion first). It is not an error: the event still
+// settles, with a warning naming the member, the run and the ids, and the
+// missed items counted.
+func TestProcessItemsExtracted_ConsumedDeleteMisses_WarnsAndCounts(t *testing.T) {
+	tests := []struct {
+		name       string
+		consumed   int
+		gone       int
+		wantWarn   bool
+		wantMissed float64
+	}{
+		{name: "every id deleted", consumed: 2, gone: 0},
+		{name: "one id already gone", consumed: 2, gone: 1, wantWarn: true, wantMissed: 1},
+		{name: "zero rows matched", consumed: 2, gone: 2, wantWarn: true, wantMissed: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+
+			event := extractedEvent(potion())
+			drunk := make([]string, 0, tt.consumed)
+			for range tt.consumed {
+				drunk = append(drunk, uuid.NewString())
+			}
+			event.PlayerItems[0].ConsumedItemIds = drunk
+			repo := &consumingRepo{extractionRepo: &extractionRepo{}, gone: tt.gone}
+			svc := &service{repo: repo, withTx: runInline, inbox: &fakeInbox{}}
+			before := testutil.ToFloat64(consumedDeleteMisses)
+
+			if err := svc.ProcessItemsExtracted(context.Background(), uuid.New(), commonconstants.ItemsExtracted, event); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got := testutil.ToFloat64(consumedDeleteMisses) - before; got != tt.wantMissed {
+				t.Errorf("counted %v missed, want %v", got, tt.wantMissed)
+			}
+			warned := strings.Contains(logs.String(), "not deleted")
+			if warned != tt.wantWarn {
+				t.Fatalf("warned = %v, want %v; logs:\n%s", warned, tt.wantWarn, logs.String())
+			}
+			if !tt.wantWarn {
+				return
+			}
+			for _, want := range append([]string{event.PlayerItems[0].MemberId, event.SessionId}, drunk...) {
+				if !strings.Contains(logs.String(), want) {
+					t.Errorf("warning lacks %s; logs:\n%s", want, logs.String())
+				}
 			}
 		})
 	}

@@ -304,6 +304,7 @@ func leaveRunWorldsOnRecord(t *testing.T, server *Server, memberID uuid.UUID) []
 
 // leaveRunEmitterSpy captures what the run reports at its end.
 type leaveRunEmitterSpy struct {
+	settlementLog
 	mu       sync.Mutex
 	captured []*types.RawMatchState
 	ended    chan *types.RawMatchState
@@ -427,29 +428,30 @@ func TestLeaveRun_RefusedWhileInPlay(t *testing.T) {
 	assert.Positive(t, wrenInbox.ownHealth(t, run.ID), "still in play")
 }
 
-// An escaped delver cannot leave early: their plunder is settled from the
-// run-end snapshot. FS-QPDKN §Requirements 14; §Out of Scope.
-func TestLeaveRun_RefusedAfterEscape(t *testing.T) {
+// An escaped delver may leave early, as a dead one may: they were settled at their escape, so
+// nothing holds them to the run. They go home at once; the run keeps their body. FS-GV8WN §F R16.
+func TestLeaveRun_AcceptedAfterEscape(t *testing.T) {
 	server, hub := leaveRunServer(t, &MockEventEmitter{})
 	wren, wrenConn, wrenInbox := leaveRunEnter(t, server, "Wren")
 	kaelen, _, _ := leaveRunEnter(t, server, "Kaelen")
 	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 
 	leaveRunEscape(t, run, wren.ID)
-	// an escaped delver is left out of the frame and counted instead
 	wrenInbox.awaitFrame(t, run.ID, "the tick has seen the escape", func(frame *types.ClientGameState) bool {
 		return frame.EscapedCount > 0
 	})
 
 	leaveRunSend(server, wrenConn)
 
-	leaveRunAssertRefused(t, wrenInbox)
-
+	reply, answered := wrenInbox.await(string(constants.ActionWorldEntered), leaveRunAction)
+	require.True(t, answered, "leave_run was never answered")
+	require.Equal(t, string(constants.ActionWorldEntered), reply.Action, "the leave is accepted, got error %q", leaveRunErrorOf(reply))
 	for _, world := range leaveRunWorldsOnRecord(t, server, wren.ID) {
-		assert.Equal(t, run.ID, world, "the record still names the run")
+		assert.Equal(t, hub.ID, world, "every record of the leaver names the hub")
 	}
-	assert.True(t, run.HasPlayer(wren.ID), "still in the run")
-	assert.False(t, hub.HasPlayer(wren.ID), "no body in the hub")
+	assert.True(t, hub.HasPlayer(wren.ID), "the leaver has a body in the hub")
+	assert.True(t, run.HasPlayer(wren.ID), "the run keeps their body until it ends")
+	assert.False(t, run.Ended(), "the run goes on for the teammate in play")
 }
 
 // A member standing in the hub is in no run to leave. This is also what the
@@ -597,12 +599,8 @@ func TestLeaveRun_LeaverSettledWithTheRun(t *testing.T) {
 
 	assert.Equal(t, run.ID, ended.SessionID)
 
-	members := make([]string, 0, len(ended.Players))
-	for _, player := range ended.Players {
-		members = append(members, player.MemberID)
-	}
-	assert.ElementsMatch(t, []string{wren.ID.String(), kaelen.ID.String()}, members,
-		"match.ended carries every delver who was in the run, the leaver included")
+	assert.ElementsMatch(t, []string{wren.ID.String(), kaelen.ID.String()}, spy.settledInRun(ended),
+		"every delver who was in the run is settled, the leaver included (FS-GV8WN §A)")
 
 	position, eliminated := ended.EliminationOrder[wren.ID]
 	assert.True(t, eliminated, "the leaver keeps the elimination they died with")
@@ -610,13 +608,8 @@ func TestLeaveRun_LeaverSettledWithTheRun(t *testing.T) {
 	_, kaelenEliminated := ended.EliminationOrder[kaelen.ID]
 	assert.False(t, kaelenEliminated)
 
-	var leaverProgress *types.RunProgress
-	for i := range ended.Progress {
-		if ended.Progress[i].MemberID == wren.ID {
-			leaverProgress = &ended.Progress[i]
-		}
-	}
-	require.NotNil(t, leaverProgress, "run progress carries the leaver")
-	assert.Equal(t, wrenCharacter, leaverProgress.CharacterID)
-	assert.True(t, leaverProgress.Seated, "settled from the body the run kept, as if they had stayed")
+	own := spy.settlementsOf(wren.ID)
+	require.Len(t, own, 1, "the leaver is settled once, at their death")
+	assert.Equal(t, wrenCharacter, own[0].Progress.CharacterID)
+	assert.True(t, own[0].Progress.Seated, "settled from their body as it fell")
 }

@@ -37,6 +37,14 @@ message ItemsExtractedEvent {
   string session_id = 1;
   string event_id = 2;
   repeated PlayerItems playerItems = 4;
+  // FS-GV8WN R6, ADR-0040: these members only. The consumer releases only the
+  // listed members' IN_RUN items under the run. False (and events written
+  // before the field existed) releases every IN_RUN item of the run.
+  bool partial = 5;
+  // FS-GV8WN R14 (D3), ADR-0040: on a whole-run event (partial false), members
+  // already settled by their own partial event. The run's release skips their
+  // IN_RUN items: their own event releases them, and may still be on its way.
+  repeated string settled_member_ids = 6;
 }
 
 message PlayerItems {

@@ -102,6 +102,7 @@ func (q *startSoloQueue) unreadable(err error) {
 
 // startSoloEmitterSpy captures what a run reports at its end.
 type startSoloEmitterSpy struct {
+	settlementLog
 	mu       sync.Mutex
 	captured []*types.RawMatchState
 }
@@ -532,8 +533,8 @@ func TestSoloRun_EndsWhenTheDelverDies(t *testing.T) {
 
 	ended := spy.published()[0]
 	assert.Equal(t, run.ID, ended.SessionID)
-	require.Len(t, ended.Players, 1, "match.ended carries the one delver")
-	assert.Equal(t, wren.ID.String(), ended.Players[0].MemberID)
+	assert.Equal(t, []string{wren.ID.String()}, spy.settledInRun(ended),
+		"the one delver is settled, at their death (FS-GV8WN §A)")
 	position, eliminated := ended.EliminationOrder[wren.ID]
 	assert.True(t, eliminated, "the delver fell")
 	assert.Equal(t, 0, position, "first and only to fall")

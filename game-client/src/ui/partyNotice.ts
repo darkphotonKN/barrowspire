@@ -46,13 +46,11 @@ export const PARTY_NOTICE_COPY: Readonly<Record<string, string>> = {
   not_in_town: "{names} {is} not in the town.",
   // a party of just its leader may not enter (FS-BJNYC R5, amended 2026-11-02)
   too_few: "Your party needs at least two players.",
-  // a member's last run has not settled yet; to the one who pressed, no names (FS-QPDKN R33)
-  settling: "Your plunder is still being counted. Wait for the delve to end.",
 };
 
 /**
  * The party_notice codes that answer a party_enter by refusing it (FS-BJNYC R5), `too_few` (a party
- * of just its leader) and `settling` (a member's run not yet settled, FS-QPDKN R33) included. not_member, not_leader, locked and unavailable also answer other
+ * of just its leader) included. not_member, not_leader, locked and unavailable also answer other
  * party actions; they are taken as the answer only while a party_enter is unanswered, and a second
  * press is refused `checking` if a check is open.
  */
@@ -65,7 +63,6 @@ export const PARTY_ENTER_REFUSALS: ReadonlySet<string> = new Set([
   "not_in_town",
   "unavailable",
   "too_few",
-  "settling",
 ]);
 
 /**

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	authpb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
+	pbevents "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -87,6 +88,7 @@ type Service interface {
 	GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*Loadout, error)
 	GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error)
 	CheckOutRunGear(ctx context.Context, caller uuid.UUID, req *CheckOutRunGearRequest) (*RunGear, error)
+	ApplySettlement(ctx context.Context, eventID uuid.UUID, req *pbevents.ItemsExtractedEvent) error
 	ListItemInstances(ctx context.Context, caller uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error)
 	UpdateLoadout(ctx context.Context, caller uuid.UUID, req *UpdateLoadoutRequest) error
 	MoveItemInstance(ctx context.Context, caller uuid.UUID, req *MoveItemInstanceRequest) (string, error)
@@ -984,6 +986,50 @@ func (h *Handler) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRe
 		Loadout: loadoutWithItemsToProto(gear.Loadout),
 		Bag:     bag,
 	}, nil
+}
+
+// ApplySettlement applies one run settlement at once, through the same path
+// the items.extracted consumer applies it: same inbox, same transaction
+// (FS-GV8WN R11, ADR-0040 §3). event_id is the settlement's outbox row id, the
+// MessageId its async copy carries, so a repeat call or the copy applied first
+// is ErrAlreadyProcessed and answers success. game-service calls it, not a
+// player: there is no caller to check. Outcomes: a malformed id or payload →
+// InvalidArgument; what the consumer would retry (the store down, a reference
+// not there yet, an account lock held) → Unavailable; anything else →
+// Internal.
+func (h *Handler) ApplySettlement(ctx context.Context, req *pb.ApplySettlementRequest) (*pb.ApplySettlementResponse, error) {
+	eventID, err := uuid.Parse(req.GetEventId())
+	if err != nil || eventID == uuid.Nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid event_id")
+	}
+
+	err = h.service.ApplySettlement(ctx, eventID, req.GetEvent())
+	switch {
+	case err == nil:
+	case errors.Is(err, commonconstants.ErrAlreadyProcessed):
+		slog.Info("apply settlement: already applied", "event_id", eventID)
+	// before the malformed cases: a foreign-key violation also matches
+	// ErrConstraintViolation, but it is a reference that may not exist yet
+	case isMissingReference(err):
+		slog.Warn("apply settlement: reference not there yet", "event_id", eventID, "error", err)
+		return nil, status.Error(codes.Unavailable, "settlement reference not there yet")
+	case errors.Is(err, commonconstants.ErrLockUnavailable):
+		slog.Warn("apply settlement: account lock held", "event_id", eventID, "error", err)
+		return nil, status.Error(codes.Unavailable, "account busy")
+	case errors.Is(err, commonconstants.ErrUUIDCouldNotBeParsed),
+		errors.Is(err, commonconstants.ErrConstraintViolation),
+		errors.Is(err, commonconstants.ErrInvalidInput):
+		slog.Error("apply settlement: malformed settlement", "event_id", eventID, "error", err)
+		return nil, status.Error(codes.InvalidArgument, "invalid settlement")
+	case errors.Is(err, commonconstants.ErrTransient):
+		slog.Error("apply settlement: store unavailable", "event_id", eventID, "error", err)
+		return nil, status.Error(codes.Unavailable, "items store unavailable")
+	default:
+		slog.Error("apply settlement failed", "event_id", eventID, "error", err)
+		return nil, status.Error(codes.Internal, "failed to apply settlement")
+	}
+
+	return &pb.ApplySettlementResponse{}, nil
 }
 
 func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {

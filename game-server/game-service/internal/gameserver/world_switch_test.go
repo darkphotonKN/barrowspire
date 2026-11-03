@@ -127,5 +127,7 @@ func TestDelvingPlayer_IsAbsentFromTheHubBroadcast(t *testing.T) {
 
 	assert.ElementsMatch(t, []uuid.UUID{wren.ID, kaelen.ID, watcher.ID}, hub.GetPlayerIDs(),
 		"and everyone again once the run resolves")
-	assert.Empty(t, run.GetPlayerIDs(), "the finished run holds nobody")
+	// still in play, so settled and removed on the run's next tick (FS-GV8WN §A R2)
+	awaitRemoved(t, run, wren.ID, "the finished run holds nobody")
+	awaitRemoved(t, run, kaelen.ID, "the finished run holds nobody")
 }

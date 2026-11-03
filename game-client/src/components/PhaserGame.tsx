@@ -103,8 +103,8 @@ export default function PhaserGame() {
       }
 
       // The run's end sends end_game and the hub in the same moment. While the
-      // result card is up, the hub waits behind it until *Return to the hub*;
-      // a run is never held. FS-QPDKN §Requirements 15–17.
+      // settlement record is open, the hub waits behind it until the record is
+      // closed or Leave is pressed; a run is never held. FS-GV8WN R23.
       const run = game.scene.getScene(
         "BarrowspireScene",
       ) as BarrowspireScene | null;

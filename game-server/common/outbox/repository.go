@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -32,26 +33,63 @@ const createOutboxQuery = `
 	VALUES(:routing_key, :exchange, :payload)
 `
 
+// a caller-derived id makes the write idempotent: writing the same row again,
+// say a retry after a commit that errored but did commit, leaves one row and
+// still succeeds (FS-GV8WN §B R7, ADR-0040 §2)
+const createOutboxWithIDQuery = `
+	INSERT INTO outbox(id, routing_key, exchange, payload)
+	VALUES(:id, :routing_key, :exchange, :payload)
+	ON CONFLICT (id) DO NOTHING
+`
+
+// createQuery is the insert for params: under its own id when it carries one,
+// otherwise under one the database picks.
+func createQuery(params OutboxParams) string {
+	if params.ID == uuid.Nil {
+		return createOutboxQuery
+	}
+	return createOutboxWithIDQuery
+}
+
+// warnIfNotWritten warns of a row given its own id that the insert skipped
+// because a row under that id already exists. The write still reports success,
+// as a retry should, but a collision with an unrelated row is not silent.
+func warnIfNotWritten(params OutboxParams, result sql.Result) {
+	if params.ID == uuid.Nil {
+		return
+	}
+	written, err := result.RowsAffected()
+	if err != nil || written > 0 {
+		return
+	}
+	slog.Warn("outbox row already exists, not written again",
+		"id", params.ID,
+		"routing_key", params.RoutingKey,
+	)
+}
+
 func (r *repo) CreateOutbox(ctx context.Context, params OutboxParams) error {
-	_, err := r.db.NamedExecContext(ctx, createOutboxQuery, params)
+	result, err := r.db.NamedExecContext(ctx, createQuery(params), params)
 
 	if err != nil {
 		slog.Error("Error occured when attempting to create outbox",
 			"err", err)
 		return wrapDBErr("create outbox", err)
 	}
+	warnIfNotWritten(params, result)
 
 	return nil
 }
 
 func (r *repo) CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params OutboxParams) error {
-	_, err := tx.NamedExecContext(ctx, createOutboxQuery, params)
+	result, err := tx.NamedExecContext(ctx, createQuery(params), params)
 
 	if err != nil {
 		slog.Error("Error occured when attempting to create outbox in tx",
 			"err", err)
 		return wrapDBErr("create outbox in tx", err)
 	}
+	warnIfNotWritten(params, result)
 
 	return nil
 }

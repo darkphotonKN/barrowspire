@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -27,6 +29,12 @@ func TestApplyRunProgress_HubSeatsTheRunsResult(t *testing.T) {
 	_, err := server.EnterHub(context.Background(), conn, warrior.ID.String())
 	require.NoError(t, err)
 	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
+
+	// the body stands at the run's result: leaving the run settles it as it
+	// stands (FS-GV8WN §A R3)
+	sc, _ := resolvedDropBodyOf(t, run, player.ID).GetComponent(ecs.ComponentTypeStats)
+	stats := sc.(*components.StatsComponent)
+	stats.Level, stats.Experience = 3, 240
 
 	server.ApplyRunProgress([]types.RunProgress{{
 		MemberID: player.ID, CharacterID: warrior.ID, Gained: 150, Seated: true, Level: 3, Experience: 240,

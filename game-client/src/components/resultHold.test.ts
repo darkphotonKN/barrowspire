@@ -6,10 +6,10 @@ import { ResultHold } from "./resultHold";
 const hub: WorldEnteredPayload = { session_id: "hub-1", world_type: "hub" };
 const run: WorldEnteredPayload = { session_id: "run-2", world_type: "run" };
 
-describe("ResultHold (FS-QPDKN §Requirements 15–17)", () => {
+describe("ResultHold (FS-GV8WN R23; FS-QPDKN §Requirements 15–17)", () => {
   // The run's end sends end_game and world_entered(hub) in the same moment; applied
-  // at once, the hub sweeps the result card away before it can be read.
-  it("should hold the hub world while the result card is up, and apply it on release", () => {
+  // at once, the hub sweeps the settlement record away before it can be read.
+  it("should hold the hub world while the record is up, and apply it on release", () => {
     const hold = new ResultHold();
     const apply = vi.fn();
     hold.raise();
@@ -23,18 +23,18 @@ describe("ResultHold (FS-QPDKN §Requirements 15–17)", () => {
   });
 
   // R16: only the hub is held; a run (a handoff host's, say) is the caller's to apply now
-  it("should not hold a run world while the card is up", () => {
+  it("should not hold a run world while the record is up", () => {
     const hold = new ResultHold();
     hold.raise();
     expect(hold.hold(run, vi.fn())).toBe(false);
   });
 
-  it("should not hold the hub while no card is up", () => {
+  it("should not hold the hub while no record is up", () => {
     const hold = new ResultHold();
     expect(hold.hold(hub, vi.fn())).toBe(false);
   });
 
-  // the scene stopped under the card (a reconnect rebuilds it): nothing stale must switch
+  // the scene stopped under the record (a reconnect rebuilds it): nothing stale must switch
   it("should forget the held world when cleared, and hold nothing after", () => {
     const hold = new ResultHold();
     const apply = vi.fn();
@@ -49,7 +49,7 @@ describe("ResultHold (FS-QPDKN §Requirements 15–17)", () => {
   });
 
   // a fast press beats the hub message: the next hub world must not be held forever
-  it("should let the hub in at once if the card was dismissed before it arrived", () => {
+  it("should let the hub in at once if the record was closed before it arrived", () => {
     const hold = new ResultHold();
     hold.raise();
     hold.release();

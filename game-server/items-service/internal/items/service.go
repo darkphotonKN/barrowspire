@@ -129,6 +129,8 @@ type Repository interface {
 	RunItemOwnersTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID) ([]uuid.UUID, error)
 	ApplyRunItemsTx(ctx context.Context, tx *sqlx.Tx, member, runID uuid.UUID, items []*ItemInstance) ([]uuid.UUID, error)
 	ReleaseRunTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID) (int64, error)
+	ReleaseRunMembersTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, members []uuid.UUID) (int64, error)
+	ReleaseRunExceptTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, settled []uuid.UUID) (int64, error)
 
 	// marketplace
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
@@ -162,8 +164,9 @@ func (s *service) CreatePlayerLoadout(createPlayerLoadoutReq *PlayerLoadout) err
 // so it serializes with checkouts and loadout writes, which take the same lock
 // before their rows. Each member's items and loadout are stored through the
 // run fence, then each member's consumed items are deleted (FS-P9G8R R17-R19),
-// then every instance still IN_RUN under the run is released (R27-R29).
-// Nothing else is deleted (R30).
+// then every instance still IN_RUN under the run is released (R27-R29), or
+// only the event's members' when it is partial (FS-GV8WN R12). Nothing else
+// is deleted (R30).
 //
 // An item that cannot be stored on its own (no template, bad affix) is skipped
 // with a warning; any other failure is returned, transient or not, for the
@@ -181,6 +184,11 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 	if err != nil {
 		return fmt.Errorf("store items extracted %s: %w", eventID, err)
 	}
+	settled, err := settledMembers(req)
+	if err != nil {
+		return fmt.Errorf("store items extracted %s: %w", eventID, err)
+	}
+	scope := s.newSettlementScope(runID, req.GetPartial(), members, settled)
 
 	var writeErr error
 	err = s.withTx(ctx, func(tx *sqlx.Tx) error {
@@ -193,7 +201,7 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 			writeErr = commonconstants.ErrAlreadyProcessed
 			return writeErr
 		}
-		writeErr = s.settleRun(ctx, tx, runID, members, consumed, req.GetPlayerItems())
+		writeErr = s.settleRun(ctx, tx, scope, members, consumed, req.GetPlayerItems())
 		return writeErr
 	})
 	switch {
@@ -208,6 +216,14 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 	}
 }
 
+// ApplySettlement applies one run settlement at once, through the same
+// ProcessItemsExtracted the items.extracted consumer calls and marked under the
+// same event type, so whichever path comes second finds the other's mark and
+// applies nothing (FS-GV8WN R11, ADR-0040 §3).
+func (s *service) ApplySettlement(ctx context.Context, eventID uuid.UUID, req *pb.ItemsExtractedEvent) error {
+	return s.ProcessItemsExtracted(ctx, eventID, commonconstants.ItemsExtracted, req)
+}
+
 // extractedMembers parses each player's member id, in event order.
 func extractedMembers(req *pb.ItemsExtractedEvent) ([]uuid.UUID, error) {
 	members := make([]uuid.UUID, 0, len(req.GetPlayerItems()))
@@ -219,6 +235,21 @@ func extractedMembers(req *pb.ItemsExtractedEvent) ([]uuid.UUID, error) {
 		members = append(members, member)
 	}
 	return members, nil
+}
+
+// settledMembers parses the members a whole-run event says were already
+// settled. One that is not a UUID is a producer bug and fails the event as
+// malformed before any write (FS-GV8WN R14, D3).
+func settledMembers(req *pb.ItemsExtractedEvent) ([]uuid.UUID, error) {
+	settled := make([]uuid.UUID, 0, len(req.GetSettledMemberIds()))
+	for _, raw := range req.GetSettledMemberIds() {
+		member, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("settled member id %q: %w: %w", raw, commonconstants.ErrUUIDCouldNotBeParsed, err)
+		}
+		settled = append(settled, member)
+	}
+	return settled, nil
 }
 
 // extractedConsumed parses each player's consumed item ids, in event order. One
@@ -240,11 +271,81 @@ func extractedConsumed(req *pb.ItemsExtractedEvent, members []uuid.UUID) ([][]uu
 	return consumed, nil
 }
 
+// settlementScope is how much of its run one settlement covers, resolved once
+// from the event: the accounts it locks and the IN_RUN instances it releases.
+type settlementScope struct {
+	runID   uuid.UUID
+	partial bool // logged only
+	// accounts is every account the settlement may write, unordered and
+	// possibly repeated
+	accounts func(ctx context.Context, tx *sqlx.Tx) ([]uuid.UUID, error)
+	// release makes the covered IN_RUN instances AVAILABLE again and reports
+	// how many it released
+	release func(ctx context.Context, tx *sqlx.Tx) (int64, error)
+}
+
+// newSettlementScope resolves what a settlement of members in the run runID
+// covers. A full one writes its members and the owners of instances still
+// IN_RUN under the run, who are released even when absent from the event
+// (FS-18Z5F R29), and releases the whole run (R27-R29). A partial one writes
+// only its members, so it locks and releases only theirs, leaving the rest of
+// the run checked out (FS-GV8WN R6, R12). A full one naming members already
+// settled releases the run without their instances: their own partial events
+// release those, and may still be on their way (R14, D3).
+func (s *service) newSettlementScope(runID uuid.UUID, partial bool, members, settled []uuid.UUID) settlementScope {
+	if partial {
+		return settlementScope{
+			runID:   runID,
+			partial: true,
+			accounts: func(context.Context, *sqlx.Tx) ([]uuid.UUID, error) {
+				return members, nil
+			},
+			release: func(ctx context.Context, tx *sqlx.Tx) (int64, error) {
+				released, err := s.repo.ReleaseRunMembersTx(ctx, tx, runID, members)
+				if err != nil {
+					return 0, fmt.Errorf("release members of run %s: %w", runID, err)
+				}
+				return released, nil
+			},
+		}
+	}
+
+	return settlementScope{
+		runID: runID,
+		accounts: func(ctx context.Context, tx *sqlx.Tx) ([]uuid.UUID, error) {
+			owners, err := s.repo.RunItemOwnersTx(ctx, tx, runID)
+			if err != nil {
+				return nil, fmt.Errorf("read owners of run %s: %w", runID, err)
+			}
+			return append(slices.Clone(members), owners...), nil
+		},
+		release: func(ctx context.Context, tx *sqlx.Tx) (int64, error) {
+			if len(settled) > 0 {
+				released, err := s.repo.ReleaseRunExceptTx(ctx, tx, runID, settled)
+				if err != nil {
+					return 0, fmt.Errorf("release run %s except its settled members: %w", runID, err)
+				}
+				return released, nil
+			}
+			released, err := s.repo.ReleaseRunTx(ctx, tx, runID)
+			if err != nil {
+				return 0, fmt.Errorf("release run %s: %w", runID, err)
+			}
+			return released, nil
+		},
+	}
+}
+
 // settleRun locks, stores every member, deletes what they used up and
-// releases the run runID. members[i] and consumed[i] are players[i]'s member
-// id and consumed item ids.
-func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, members []uuid.UUID, consumed [][]uuid.UUID, players []*pb.PlayerItems) error {
-	if err := s.lockSettlementAccounts(ctx, tx, runID, members); err != nil {
+// releases what scope covers of its run. members[i] and consumed[i] are
+// players[i]'s member id and consumed item ids.
+func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, scope settlementScope, members []uuid.UUID, consumed [][]uuid.UUID, players []*pb.PlayerItems) error {
+	runID := scope.runID
+	accounts, err := scope.accounts(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := s.lockAccounts(ctx, tx, accounts); err != nil {
 		return err
 	}
 	for i, playerItems := range players {
@@ -263,11 +364,11 @@ func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, m
 		}
 	}
 
-	released, err := s.repo.ReleaseRunTx(ctx, tx, runID)
+	released, err := scope.release(ctx, tx)
 	if err != nil {
-		return fmt.Errorf("release run %s: %w", runID, err)
+		return err
 	}
-	slog.Info("run settled", "run_id", runID, "members", len(members), "released", released)
+	slog.Info("run settled", "run_id", runID, "partial", scope.partial, "members", len(members), "released", released)
 	return nil
 }
 
@@ -289,23 +390,28 @@ func (s *service) deleteConsumedItems(ctx context.Context, tx *sqlx.Tx, runID, m
 		"consumed", len(ids),
 		"deleted", deleted,
 	)
+
+	// fewer rows than ids: a later checkout reclaimed some from the run fence
+	// first, so the member keeps them (FS-GV8WN R26, ADR-0040)
+	if missed := int64(len(ids)) - deleted; missed > 0 {
+		slog.Warn("consumed items no longer under the run fence, not deleted",
+			"member_id", memberID,
+			"run_id", runID,
+			"consumed_item_ids", ids,
+			"deleted", deleted,
+		)
+		consumedDeleteMisses.Add(float64(missed))
+	}
 	return nil
 }
 
-// lockSettlementAccounts takes the account lock of every member settlement
-// may write: the event's members and the owners of instances still IN_RUN
-// under runID, who are released even when absent from the event (FS-18Z5F
-// R29). Once each, in member-id order, so two settlements sharing members
-// cannot deadlock on each other.
-func (s *service) lockSettlementAccounts(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, members []uuid.UUID) error {
-	owners, err := s.repo.RunItemOwnersTx(ctx, tx, runID)
-	if err != nil {
-		return fmt.Errorf("read owners of run %s: %w", runID, err)
-	}
-
-	accounts := append(slices.Clone(members), owners...)
-	slices.SortFunc(accounts, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
-	for _, member := range slices.Compact(accounts) {
+// lockAccounts takes the account lock of every account a settlement may
+// write. Once each, in member-id order, so two settlements sharing members
+// cannot deadlock on each other. accounts itself is left as it was.
+func (s *service) lockAccounts(ctx context.Context, tx *sqlx.Tx, accounts []uuid.UUID) error {
+	sorted := slices.Clone(accounts)
+	slices.SortFunc(sorted, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+	for _, member := range slices.Compact(sorted) {
 		if err := s.repo.LockAccountTx(ctx, tx, member); err != nil {
 			return fmt.Errorf("lock account %s: %w", member, err)
 		}

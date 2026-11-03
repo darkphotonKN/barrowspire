@@ -330,6 +330,7 @@ func forfeitWorldsOnRecord(t *testing.T, server *Server, memberID uuid.UUID) []u
 
 // forfeitEmitterSpy captures what a run reports at its end.
 type forfeitEmitterSpy struct {
+	settlementLog
 	mu       sync.Mutex
 	captured []*types.RawMatchState
 	ended    chan *types.RawMatchState
@@ -408,15 +409,6 @@ func forfeitPosition(ended *types.RawMatchState, memberID uuid.UUID) (int, bool)
 	return position, fell
 }
 
-// forfeitMembersOf is every member the run's end report carries.
-func forfeitMembersOf(ended *types.RawMatchState) []string {
-	members := make([]string, 0, len(ended.Players))
-	for _, player := range ended.Players {
-		members = append(members, player.MemberID)
-	}
-	return members
-}
-
 // A member in play who forfeits is at 0 health in the next frame, with no
 // reply of their own; the tick records their elimination with the next index
 // (a teammate fell before them, so theirs is 1); the run goes on for the
@@ -465,8 +457,8 @@ func TestForfeitRun_InPlayMemberFallsAndIsEliminated(t *testing.T) {
 	assert.Equal(t, 1, spy.published(), "the run ends once")
 
 	assert.Equal(t, run.ID, ended.SessionID)
-	assert.ElementsMatch(t, []string{wren.ID.String(), kaelen.ID.String(), mira.ID.String()}, forfeitMembersOf(ended),
-		"match.ended carries every delver who was in the run, the one who chose to fall included")
+	assert.ElementsMatch(t, []string{wren.ID.String(), kaelen.ID.String(), mira.ID.String()}, spy.settledInRun(ended),
+		"every delver who was in the run is settled, the one who chose to fall included (FS-GV8WN §A)")
 
 	kaelenPosition, kaelenFell := forfeitPosition(ended, kaelen.ID)
 	assert.True(t, kaelenFell)
@@ -516,8 +508,8 @@ func TestForfeitRun_RunOfOneEndsAndSettles(t *testing.T) {
 	}
 
 	assert.Equal(t, run.ID, ended.SessionID)
-	require.Len(t, ended.Players, 1, "match.ended carries the one delver")
-	assert.Equal(t, wren.ID.String(), ended.Players[0].MemberID)
+	assert.Equal(t, []string{wren.ID.String()}, spy.settledInRun(ended),
+		"the one delver is settled, at their chosen death (FS-GV8WN §A)")
 	position, fell := forfeitPosition(ended, wren.ID)
 	assert.True(t, fell, "the chosen death is recorded as an elimination")
 	assert.Equal(t, 0, position, "first and only to fall")

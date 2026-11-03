@@ -22,13 +22,6 @@ var (
 	// ErrStillInPlay refuses an early leave by a delver who is still in the
 	// delve: only a resolved one may go. FS-QPDKN §Requirements 14.
 	ErrStillInPlay = errors.New("delver is still in play")
-	// ErrEscapedWaits refuses an early leave by an escaped delver: their plunder
-	// is settled with the run, so they wait for its end. FS-QPDKN §Out of Scope.
-	ErrEscapedWaits = errors.New("an escaped delver waits for the run's end")
-	// ErrNotEscaped refuses releasing a delver who has not escaped: only an
-	// escaped one who can no longer come back is released. FS-QPDKN
-	// §Requirements 29.
-	ErrNotEscaped = errors.New("delver has not escaped")
 	// ErrAlreadyResolved refuses a chosen death by a delver already out of the
 	// delve: dead, escaped or left behind. FS-9K8EZ §Requirements 12.
 	ErrAlreadyResolved = errors.New("delver is already out of the delve")

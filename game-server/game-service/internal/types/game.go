@@ -160,6 +160,48 @@ type RawMatchState struct {
 	// every character in the run and what it earned there, members removed
 	// before the end included. FS-BDA7X §Requirements 22–23.
 	Progress []RunProgress
+	// SettledMemberIDs are the members already settled by their own
+	// settlement before the run's end, which the run's release skips
+	// (FS-GV8WN R14, D3)
+	SettledMemberIDs []uuid.UUID
+}
+
+// SettlementCarriedItem is an item a settled player carried out, in the WS
+// item shape; Found marks a find from this run (FS-GV8WN §G R19).
+type SettlementCarriedItem struct {
+	ItemState
+	Found bool `json:"found,omitempty"`
+}
+
+// SettlementLostItem is an item a settled player lost, in the WS item shape,
+// with why: "unsafe" (a find lost on death) or "consumed" (used up in the run).
+type SettlementLostItem struct {
+	ItemState
+	Reason string `json:"reason"`
+}
+
+// Settlement record outcomes, statuses and lost reasons (FS-GV8WN §G R19).
+const (
+	SettlementOutcomeEscaped = "escaped"
+	SettlementOutcomeDied    = "died"
+
+	SettlementStatusPending   = "pending"
+	SettlementStatusConfirmed = "confirmed"
+
+	SettlementLostUnsafe   = "unsafe"
+	SettlementLostConsumed = "consumed"
+)
+
+// RawSettlement is one player's settlement, taken the moment they resolve
+// (FS-GV8WN §A R1–R2): their body as it stands then, what they earned, and
+// the position their resolution gave them.
+type RawSettlement struct {
+	SessionID     uuid.UUID
+	StartedAt     time.Time
+	EndedAt       time.Time
+	Player        RawPlayerState
+	Progress      RunProgress
+	FinalPosition int32
 }
 
 type RawPlayerState struct {

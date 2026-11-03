@@ -251,7 +251,7 @@ func TestAddPlayer_OverLevelLoadoutItem_IsSeatedInTheInventory(t *testing.T) {
 	assert.Equal(t, helmInstance, *helm.InstanceID)
 
 	// extraction still reports the carried helm, so it is not lost
-	raw := s.getRawMatchState()
+	raw := s.getRawMatchState(nil)
 	require.Len(t, raw.Players, 1)
 	require.Len(t, raw.Players[0].Inventory, 1)
 	require.NotNil(t, raw.Players[0].Inventory[0].InstanceID)

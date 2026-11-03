@@ -22,7 +22,6 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
-	"github.com/darkphotonKN/barrowspire-server/game-service/internal/settling"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -92,7 +91,7 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// outbox is built once in main and shared with the worker that drains it;
 	// the worker is woken once match-end rows commit
-	gameService := game.NewService(db, outbox, outboxWaker)
+	gameService := game.NewService(db, outbox, outboxWaker, game.DefaultSettlementRetry(ctx), itemsClient)
 	// the one announcer: the matchmaker publishes create steps with it, the
 	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
 	// the game service also settles every field visit through the same
@@ -109,9 +108,6 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
 		gameserver.WithHubOccupancy(hubocc.NewRedis(redisClient)),
 		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
-		// released escapees are marked settling there, so every pod refuses them an entry that
-		// takes their gear until their run settles (FS-QPDKN R32, R33)
-		gameserver.WithSettling(settling.NewRedis(redisClient)),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())
@@ -153,6 +149,10 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		case <-time.After(matchmakerStopTimeout):
 			slog.Warn("matchmaker did not stop in time, pod alive key left to expire")
 		}
+		// the pod's lifetime has ended, so held settlements stop retrying; an
+		// attempt under way may still commit, so let it finish before the
+		// database closes (FS-GV8WN §C R10)
+		gameService.Drain()
 		return closeAll()
 	}
 

@@ -121,11 +121,11 @@ func TestFormatMatchData(t *testing.T) {
 		},
 	}
 
-	svc := NewService(committingTxDB(t), &mockOutboxPublisher{}, noWake{})
+	svc := NewService(committingTxDB(t), &mockOutboxPublisher{}, noWake{}, testRetry(t), nil)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := svc.formatMatchData(sessionID, startedAt, endedAt, tc.players, nil, commonconstants.WorldTypeRun)
+			got, err := svc.formatMatchData(sessionID, startedAt, endedAt, tc.players, nil, commonconstants.WorldTypeRun, extractionScope{})
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 
@@ -277,7 +277,7 @@ func TestExtractedItemToPb_CarriesRarityID(t *testing.T) {
 // FS-P9G8R §Requirements 14. I-P9G8R-3.
 func TestPublishMatchComplete_CarriesEachDelversConsumedItems(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{})
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
 	drinker, abstainer := uuid.New(), uuid.New()
 	drunk := []uuid.UUID{uuid.New(), uuid.New()}
 

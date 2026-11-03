@@ -57,6 +57,8 @@ server state and sends intents. ✅
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
 - [ ] Told why entry waits while a run settles → FS-QPDKN
+- [ ] Toggleable settlement record while in the run → FS-GV8WN
+- [ ] Leave a run early after escaping → FS-GV8WN
 - [x] Die by choice from the run's ESC menu → FS-9K8EZ
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S
