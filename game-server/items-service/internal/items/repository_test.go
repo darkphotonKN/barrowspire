@@ -384,6 +384,164 @@ func TestUnfreezeItem(t *testing.T) {
 	}
 }
 
+// Opt-in like TestUnfreezeItem. ReturnItem is settlement step NB1 (FS-NXP1W Req
+// 34a): LISTED -> AVAILABLE with listing_id cleared, guarded on status and on the
+// listing ID. Zero rows changed is success, unless the row is still tagged for
+// this listing, which no retry can fix.
+func TestReturnItem(t *testing.T) {
+	dsn := os.Getenv("ITEMS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ITEMS_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	db, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+
+	seller := uuid.New()
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	const (
+		thisListing  = "this"
+		otherListing = "other"
+		noListing    = ""
+	)
+
+	tests := []struct {
+		name        string
+		status      string
+		listing     string
+		skipSeed    bool
+		wantErr     error
+		wantStatus  string
+		wantListing string
+		// a row NB1 does not match must come back untouched, updated_at included
+		wantUpdatedAtKept bool
+	}{
+		{name: "listed for this listing goes back to the seller with no listing", status: "LISTED", listing: thisListing,
+			wantStatus: "AVAILABLE", wantListing: noListing},
+		{name: "already returned is success and changes nothing", status: "AVAILABLE", listing: noListing,
+			wantStatus: "AVAILABLE", wantListing: noListing, wantUpdatedAtKept: true},
+		{name: "relisted under another listing is success and left listed", status: "LISTED", listing: otherListing,
+			wantStatus: "LISTED", wantListing: otherListing, wantUpdatedAtKept: true},
+		{name: "frozen for another listing is success and left alone", status: "PENDING_SETTLEMENT", listing: otherListing,
+			wantStatus: "PENDING_SETTLEMENT", wantListing: otherListing, wantUpdatedAtKept: true},
+		{name: "still tagged for this listing but not listed is corrupted", status: "PENDING_SETTLEMENT", listing: thisListing,
+			wantErr: ErrItemCorrupted, wantStatus: "PENDING_SETTLEMENT", wantListing: thisListing, wantUpdatedAtKept: true},
+		{name: "missing item is not found", skipSeed: true, wantErr: ErrNoItemFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			itemID, listingID, otherListingID := uuid.New(), uuid.New(), uuid.New()
+			listingFor := map[string]*uuid.UUID{thisListing: &listingID, otherListing: &otherListingID, noListing: nil}
+
+			if !tt.skipSeed {
+				// listing_id at INSERT: updated_at is trigger-stamped on any UPDATE
+				seedItemInstanceForListing(t, ctx, db, itemID, seller, tt.status, earlier, listingFor[tt.listing])
+			}
+
+			err := NewRepository(db).ReturnItem(ctx, itemID, listingID)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if tt.skipSeed {
+				return
+			}
+
+			row := readItemListing(t, ctx, db, itemID)
+			if row.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", row.Status, tt.wantStatus)
+			}
+			if row.Owner != seller {
+				t.Errorf("owner = %v, want %v: NB1 never changes hands", row.Owner, seller)
+			}
+			want := listingFor[tt.wantListing]
+			switch {
+			case want == nil && row.ListingID != nil:
+				t.Errorf("listing_id = %v, want NULL", *row.ListingID)
+			case want != nil && (row.ListingID == nil || *row.ListingID != *want):
+				t.Errorf("listing_id = %v, want %v", row.ListingID, *want)
+			}
+			if tt.wantUpdatedAtKept && !row.UpdatedAt.Equal(earlier) {
+				t.Errorf("updated_at = %v, want untouched %v", row.UpdatedAt, earlier)
+			}
+		})
+	}
+}
+
+// Opt-in like TestReturnItem. The race NB1 has to survive (FS-NXP1W Req 24a, Edge
+// States "Item relisted before a release retry ran"): NB1 commits but its
+// completion is lost, the seller relists the now-AVAILABLE item under a new
+// listing, and only then does Temporal retry NB1 with the old listing ID. The
+// retry matches nothing and succeeds, and the new listing's item stays LISTED.
+func TestReturnItem_RetryAfterRelist_LeavesTheNewListingAlone(t *testing.T) {
+	dsn := os.Getenv("ITEMS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ITEMS_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	db, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewRepository(db)
+	seller, itemID, oldListing, newListing := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	seedItemInstanceForListing(t, ctx, db, itemID, seller, "LISTED", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), &oldListing)
+
+	// NB1 commits; Temporal never hears back
+	if err := repo.ReturnItem(ctx, itemID, oldListing); err != nil {
+		t.Fatalf("first return: %v", err)
+	}
+
+	// the seller relists through the real reserve, which stamps the new ID
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	now := time.Now()
+	if _, err := repo.ReserveItemTx(ctx, tx, seller, itemID, newListing, now, now); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("relist: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit relist: %v", err)
+	}
+
+	// the lost completion makes Temporal retry NB1 with the old listing ID
+	if err := repo.ReturnItem(ctx, itemID, oldListing); err != nil {
+		t.Fatalf("retried return = %v, want success", err)
+	}
+
+	row := readItemListing(t, ctx, db, itemID)
+	if row.Status != "LISTED" {
+		t.Errorf("status = %q, want LISTED: the retry freed the new listing's item", row.Status)
+	}
+	if row.ListingID == nil || *row.ListingID != newListing {
+		t.Errorf("listing_id = %v, want the new listing %v", row.ListingID, newListing)
+	}
+}
+
+type itemListingRow struct {
+	Status    string     `db:"status"`
+	Owner     uuid.UUID  `db:"owner_member_id"`
+	ListingID *uuid.UUID `db:"listing_id"`
+	UpdatedAt time.Time  `db:"updated_at"`
+}
+
+func readItemListing(t *testing.T, ctx context.Context, db *sqlx.DB, itemID uuid.UUID) itemListingRow {
+	t.Helper()
+	var row itemListingRow
+	if err := db.GetContext(ctx, &row, `SELECT status, owner_member_id, listing_id, updated_at FROM item_instances WHERE id = $1`, itemID); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	return row
+}
+
 func seedItemInstance(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid.UUID, status string, updatedAt time.Time) {
 	t.Helper()
 	seedItemInstanceAtLevel(t, ctx, db, itemID, owner, status, updatedAt, 1)

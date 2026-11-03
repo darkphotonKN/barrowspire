@@ -39,13 +39,22 @@ func Workflow(ctx workflow.Context, in Input) (marketplaceactivity.FreezeListing
 	}
 
 	if frozen.Outcome == marketplaceactivity.OutcomeNoBids {
-		returnItemsCtx := workflow.WithActivityOptions(ctx, StepOptions(bstemporal.QueueItems))
-
-		// Step NB1
-		err := workflow.ExecuteActivity(returnItemsCtx,
+		// Step NB1. Like NB2 below, nothing came before it that a rollback could
+		// undo, so an outage and an impossibility both escalate and park, and the
+		// run never fails here (§Req 10). The listing ID guards a retry against a
+		// relist (§Req 24a).
+		//
+		// Not versioned: runUntilDone schedules the same activity with the same
+		// StepOptions, so a run open from before this change replays the same
+		// commands on its success path. A run that would have failed here instead
+		// escalates, which is a new command after its recorded history.
+		err := runUntilDone(ctx, frozen.ListingID,
 			itemsactivity.ReturnItemActivityName,
+			bstemporal.QueueItems,
+			afterPivot, // an impossible NB1 parks: nothing to roll back
 			itemsactivity.ReturnItemInput{ItemID: frozen.ItemID, ListingID: frozen.ListingID},
-		).Get(returnItemsCtx, nil)
+			nil,
+		)
 		if err != nil {
 			return marketplaceactivity.FreezeListingOutput{}, err
 		}
