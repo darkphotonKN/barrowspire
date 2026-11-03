@@ -1,7 +1,7 @@
 /**
  * The rules the verification panel and banner share (FS-V6SFK §H).
  *
- * auth-service owns verification (ADR-0040): the code, its lifetime and the
+ * auth-service owns verification (ADR-0043): the code, its lifetime and the
  * resend cooldown are enforced there. The client mirrors the code's shape and the
  * cooldown only so a bad submit or a hammered button is caught before a round
  * trip; the server's refusals arrive as codes mapped below.

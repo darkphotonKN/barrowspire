@@ -10,7 +10,7 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 )
 
-// FS-V6SFK R25, ADR-0040: the verification code travels in the payload but
+// FS-V6SFK R25, ADR-0043: the verification code travels in the payload but
 // never into a log line, even when the whole payload is handed to slog.
 func TestMemberVerificationRequestedEventPayload_LogValue_OmitsTheCode(t *testing.T) {
 	var buf bytes.Buffer

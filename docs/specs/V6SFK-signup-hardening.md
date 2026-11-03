@@ -1,6 +1,6 @@
 # FS-V6SFK: Signup hardening (password policy + soft email verification)
 
-> Status: work-order · SPECIFICATION.md: `game-server/auth-service/SPECIFICATION.md` "### Membership" → "Password policy wherever a password is set", "Case-insensitive unique email", "Email verification by code", "Change email while unverified"; "### Tokens" → "Mint an email-verified claim into the access token"; `game-server/notification-service/SPECIFICATION.md` "## Notifications" → "Verification-code email", "Outbound email delivery behind a mailer"; `game-server/marketplace-service/SPECIFICATION.md` "### Listings & bids" → "Marketplace writes require a verified email"; `game-server/api-gateway/SPECIFICATION.md` "### Integration patterns" → "Member email verification routes"; `game-client/SPECIFICATION.md` "### Account" → "Password policy at registration", "Verify email from the client", "Change an unverified email", "### Marketplace" → "Verify-email prompt on gated marketplace actions" → this FS · Related ADRs: [ADR-0040](../adr/0040-verification-codes-are-owned-by-auth-and-mailed-by-notification.md) (code ownership + delivery), [ADR-0041](../adr/0041-password-policy-is-length-and-a-blocklist-checked-only-when-set.md) (password policy), [ADR-0014](../adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md) (fail-closed claims), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only styling) · Related: [FS-83TJK](83TJK-synchronous-signup.md), [FS-9KW9F](9KW9F-account-and-role-token-claims.md) · Vocabulary: [`auth-service/CONTEXT.md`](../../game-server/auth-service/CONTEXT.md) §Verification
+> Status: work-order · SPECIFICATION.md: `game-server/auth-service/SPECIFICATION.md` "### Membership" → "Password policy wherever a password is set", "Case-insensitive unique email", "Email verification by code", "Change email while unverified"; "### Tokens" → "Mint an email-verified claim into the access token"; `game-server/notification-service/SPECIFICATION.md` "## Notifications" → "Verification-code email", "Outbound email delivery behind a mailer"; `game-server/marketplace-service/SPECIFICATION.md` "### Listings & bids" → "Marketplace writes require a verified email"; `game-server/api-gateway/SPECIFICATION.md` "### Integration patterns" → "Member email verification routes"; `game-client/SPECIFICATION.md` "### Account" → "Password policy at registration", "Verify email from the client", "Change an unverified email", "### Marketplace" → "Verify-email prompt on gated marketplace actions" → this FS · Related ADRs: [ADR-0043](../adr/0043-verification-codes-are-owned-by-auth-and-mailed-by-notification.md) (code ownership + delivery), [ADR-0041](../adr/0041-password-policy-is-length-and-a-blocklist-checked-only-when-set.md) (password policy), [ADR-0014](../adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md) (fail-closed claims), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only styling) · Related: [FS-83TJK](83TJK-synchronous-signup.md), [FS-9KW9F](9KW9F-account-and-role-token-claims.md) · Vocabulary: [`auth-service/CONTEXT.md`](../../game-server/auth-service/CONTEXT.md) §Verification
 
 **Provenance.** Scoped 2026-11-03 (`/scope-it`), run under `/charter` with 18 approved defaults
 and four approved amendments (user: "Yes, all four"). Every decision locked without pushback and
@@ -58,7 +58,7 @@ it exists. In dev, every mail lands in Mailpit, so testing never needs a real in
 9. A duplicate email, compared case-insensitively, keeps answering `409 · ALREADY_EXISTS` on
    signup (the path FS-83TJK built).
 
-### C. Verification state and codes (auth-service): ADR-0040
+### C. Verification state and codes (auth-service): ADR-0043
 
 10. **`members.email_verified_at TIMESTAMPTZ NULL`.** Set means verified. **Every existing row
     starts NULL** (unverified), the admin seed included *(charter default: none were ever
@@ -80,7 +80,7 @@ it exists. In dev, every mail lands in Mailpit, so testing never needs a real in
     refused with `400 · VERIFICATION_RESEND_TOO_SOON`.
 16. **Every issuance writes a `member.verification_requested` outbox row** on `auth.events` in
     the same transaction as the code row. Payload: `event_id`, `member_id`, `name`, `email` (the
-    normalized destination), `code` (plaintext, accepted by ADR-0040), `expires_at`. The
+    normalized destination), `code` (plaintext, accepted by ADR-0043), `expires_at`. The
     routing-key constant lives in `common/constants` next to `MemberSignedUpEvent`.
 
 ### D. Verify, resend, change email (auth-service RPCs + gateway routes)
@@ -119,7 +119,7 @@ it exists. In dev, every mail lands in Mailpit, so testing never needs a real in
 23. A claim minted before verification stays false until the member verifies (R17 hands back a
     fresh pair) or logs in again. No push and no invalidation.
 
-### F. Mail delivery (notification-service + compose): ADR-0040
+### F. Mail delivery (notification-service + compose): ADR-0043
 
 24. **notification-service consumes `member.verification_requested`** from `auth.events`, with
     inbox dedupe by `event_id` (the FS-PJPNA pattern). A redelivered event never sends twice

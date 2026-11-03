@@ -1,4 +1,4 @@
-# ADR-0040: Verification codes are owned by auth and mailed by notification through the outbox
+# ADR-0043: Verification codes are owned by auth and mailed by notification through the outbox
 
 Status: accepted
 Date: 2026-11-03

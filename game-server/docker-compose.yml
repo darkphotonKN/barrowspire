@@ -30,7 +30,7 @@ services:
     networks:
       - barrowspire-network
 
-  # Dev mail catcher (FS-V6SFK R28, ADR-0040): notification-service mails
+  # Dev mail catcher (FS-V6SFK R28, ADR-0043): notification-service mails
   # verification codes here, nothing leaves the machine. Host ports follow the
   # rabbitmq +123 offset: SMTP 1148 -> 1025, web UI 8148 -> 8025
   # (http://localhost:8148). notification-service run on the host defaults to

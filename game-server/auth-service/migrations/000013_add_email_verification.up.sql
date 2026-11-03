@@ -1,4 +1,4 @@
--- FS-V6SFK §Requirements 10-11, ADR-0040. Soft email verification.
+-- FS-V6SFK §Requirements 10-11, ADR-0043. Soft email verification.
 --
 -- email_verified_at: set means verified. Added NULL with no default, so every
 -- existing member, the admin seed included, starts unverified: none of them

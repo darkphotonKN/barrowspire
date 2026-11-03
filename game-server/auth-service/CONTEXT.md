@@ -34,7 +34,7 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
   state every Member who predates FS-V6SFK is in. It is a *state*, not a role: an unverified
   Member can authenticate and play; only email-dependent actions refuse them.
 - **Verification code** — a short-lived, single-purpose 6-digit secret proving receipt of
-  mail. auth-service issues and checks it (ADR-0040). At most one is live per Member: issuing a
+  mail. auth-service issues and checks it (ADR-0043). At most one is live per Member: issuing a
   new one (resend, email change) kills the old one. It dies on success, on expiry, or when its
   wrong tries run out. Not a token: it grants nothing by itself, it only flips the Member to
   verified.

@@ -57,7 +57,7 @@ type Recipient struct {
 }
 
 // CodeIssuer issues verification codes (FS-V6SFK §Requirements 11-16,
-// ADR-0040). Every issuance writes the member's code row and its
+// ADR-0043). Every issuance writes the member's code row and its
 // member.verification_requested outbox row in the transaction the caller owns,
 // so the code is live exactly when its mail is on the way: signup, resend and
 // change email all go through IssueTx.

@@ -46,7 +46,7 @@ const (
 	MemberSignedInEvent = "member.signedin"       // when user signs into their account
 	PasswordResetEvent  = "member.password.reset" // when password reset is requested
 
-	// a verification code was issued and needs mailing (FS-V6SFK R16, ADR-0040)
+	// a verification code was issued and needs mailing (FS-V6SFK R16, ADR-0043)
 	MemberVerificationRequestedEvent = "member.verification_requested"
 
 	MemberProfileUpdated = "profile.updated"
@@ -135,7 +135,7 @@ type MemberSignedUpEventPayload struct {
 * - notification-service, which mails the code (FS-V6SFK R24-R27)
 *
 * Code is the plaintext 6-digit code. It travels only in this payload
-* (ADR-0040) and must never be logged: LogValue leaves it out, so handing the
+* (ADR-0043) and must never be logged: LogValue leaves it out, so handing the
 * payload to slog is safe.
 **/
 type MemberVerificationRequestedEventPayload struct {
