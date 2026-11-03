@@ -25,6 +25,14 @@ import (
 // ENTRIES once Identity can express a service caller and services can present their
 // own credential — that is the check these two actually want.
 //
+// items' ApplySettlement is the same kind of call: game-service settles a run's
+// players with it the moment they resolve (FS-GV8WN R11), often after the player
+// has left, so there is no member token to forward, and a settlement may carry
+// several members. The same caveat applies, and harder: items-service's gRPC
+// listener is not bound to localhost, and this method writes items for whichever
+// members the event names. Remove it with the wallet entries once a service
+// credential exists.
+//
 // The marketplace reads below are the opposite case: genuinely public, and meant
 // to stay that way. They back the Bazaar page a signed-out visitor browses
 // (FS-8EGFA §Requirements 6, 10), so there is no token to ask for, and they reveal
@@ -49,6 +57,7 @@ var publicMethods = map[string]bool{
 
 	"/wallet.WalletService/ReleaseHold":            true,
 	"/wallet.WalletService/ListStaleReservedHolds": true,
+	"/items.ItemsService/ApplySettlement":          true,
 
 	"/marketplace.MarketplaceService/BrowseListings": true,
 	"/marketplace.MarketplaceService/GetListing":     true,

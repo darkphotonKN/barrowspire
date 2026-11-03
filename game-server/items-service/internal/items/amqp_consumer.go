@@ -67,15 +67,22 @@ func rejected(reason string, cause error) outcome {
 	return outcome{disposition: reject, dlqReason: reason, cause: cause}
 }
 
+// isMissingReference reports whether err is a reference that may not exist
+// yet: a foreign-key violation or a row not found. Check it before
+// ErrConstraintViolation, which a foreign-key violation also matches.
+func isMissingReference(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == foreignKeyViolation ||
+		errors.Is(err, commonconstants.ErrNotFound)
+}
+
 // classify turns a processing failure into how the message is settled. The
 // order matters: a foreign-key violation is also reported as a constraint
 // violation, but it is a reference that may not exist yet, not a malformed
 // event.
 func classify(err error) outcome {
-	var pqErr *pq.Error
 	switch {
-	case errors.As(err, &pqErr) && pqErr.Code == foreignKeyViolation,
-		errors.Is(err, commonconstants.ErrNotFound):
+	case isMissingReference(err):
 		return outcome{disposition: retryBounded, cause: err}
 	case errors.Is(err, commonconstants.ErrUUIDCouldNotBeParsed),
 		errors.Is(err, commonconstants.ErrConstraintViolation),

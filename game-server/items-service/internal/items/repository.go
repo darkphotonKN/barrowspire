@@ -1092,6 +1092,68 @@ func (r *repository) ReleaseRunTx(ctx context.Context, tx *sqlx.Tx, runID uuid.U
 	return n, nil
 }
 
+// ReleaseRunMembersTx makes the instances of members still IN_RUN under runID
+// AVAILABLE again, as ReleaseRunTx does for the whole run, and returns how
+// many it released. Another member's instances under the run stay IN_RUN: a
+// partial settlement settles only its members (FS-GV8WN R12).
+func (r *repository) ReleaseRunMembersTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, members []uuid.UUID) (int64, error) {
+	if len(members) == 0 {
+		return 0, nil
+	}
+
+	memberStrings := make([]string, 0, len(members))
+	for _, member := range members {
+		memberStrings = append(memberStrings, member.String())
+	}
+
+	query := `
+		UPDATE item_instances
+		SET status = 'AVAILABLE', run_id = NULL, updated_at = NOW()
+		WHERE run_id = $1
+		AND owner_member_id = ANY($2::uuid[])
+		AND status = 'IN_RUN'
+	`
+
+	res, err := tx.ExecContext(ctx, query, runID, pq.Array(memberStrings))
+	if err != nil {
+		return 0, wrapDBErr("release run member items (tx)", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("release run member items, rows affected: %w", err)
+	}
+	return n, nil
+}
+
+// ReleaseRunExceptTx makes every instance still IN_RUN under runID AVAILABLE
+// again, as ReleaseRunTx does, except those owned by settled: members already
+// settled by their own partial events, which release their own instances
+// (FS-GV8WN R14, D3). Nothing is deleted.
+func (r *repository) ReleaseRunExceptTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, settled []uuid.UUID) (int64, error) {
+	settledStrings := make([]string, 0, len(settled))
+	for _, member := range settled {
+		settledStrings = append(settledStrings, member.String())
+	}
+
+	query := `
+		UPDATE item_instances
+		SET status = 'AVAILABLE', run_id = NULL, updated_at = NOW()
+		WHERE run_id = $1
+		AND status = 'IN_RUN'
+		AND NOT (owner_member_id = ANY($2::uuid[]))
+	`
+
+	res, err := tx.ExecContext(ctx, query, runID, pq.Array(settledStrings))
+	if err != nil {
+		return 0, wrapDBErr("release run items except settled members (tx)", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("release run items except settled members, rows affected: %w", err)
+	}
+	return n, nil
+}
+
 func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error) {
 	query := `
 		UPDATE item_instances
