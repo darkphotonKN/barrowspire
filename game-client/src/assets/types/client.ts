@@ -1,4 +1,5 @@
 import type { ChatChannel } from "@/stores/chatStore";
+import type { ItemState } from "@/types/gameState";
 /**
  * The session identity every game action carries. GameSessionManager builds it
  * once and merges it into each outgoing payload, so action payload types below
@@ -233,4 +234,40 @@ export interface WorldHandoffPayload {
   addr: string;
   session_id?: string;
   hub?: boolean;
+}
+
+/** How a player left active play, as their settlement names it (FS-GV8WN R19). */
+export type SettlementOutcome = "escaped" | "died";
+
+/** `pending` once written, `confirmed` once items-service has applied it (FS-GV8WN R19, R20). */
+export type SettlementStatus = "pending" | "confirmed";
+
+/** An item the player carried out: the WS item shape, `found` when it is a find from this run. */
+export interface SettlementCarriedItem extends ItemState {
+  found?: boolean;
+}
+
+/**
+ * An item the player lost: the WS item shape, with why. `unsafe` is a find lost on death,
+ * `consumed` one used up in the run (a drunk potion).
+ */
+export interface SettlementLostItem extends ItemState {
+  reason: "unsafe" | "consumed";
+}
+
+/**
+ * `settlement`, sent only to the player who settled, the moment they resolve (FS-GV8WN R19), and
+ * again with `status: confirmed` and the same content once it is applied (R20). Built from the
+ * settlement snapshot, not from what items-service stored.
+ */
+export interface SettlementPayload {
+  outcome: SettlementOutcome;
+  carried: SettlementCarriedItem[];
+  lost: SettlementLostItem[];
+  experience_gained: number;
+  level_before: number;
+  level_after: number;
+  kills: number;
+  seconds_in_run: number;
+  status: SettlementStatus;
 }

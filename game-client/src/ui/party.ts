@@ -29,8 +29,8 @@ export type ResolvedKind = "dead" | "escaped";
 /**
  * What a resolved player is shown while another player is still in the delve (FS-QPDKN req 1,
  * 3): the dead get their card's copy, under which the scene puts Watch and Leave; the escaped
- * get no card, only the Watch button (req 3, amended 2026-11-02), since the "escaped
- * successfully" line already tells them they made it.
+ * get no card, only the bottom-centre row (req 3, amended 2026-11-02; Leave beside Watch,
+ * FS-GV8WN R25), since the "escaped successfully" line already tells them they made it.
  */
 export type ResolvedView =
   | { kind: "dead"; title: string; body: string }

@@ -4,7 +4,7 @@
  */
 
 import * as Phaser from "phaser";
-import { ActionType, WorldType } from "@/assets/types/client";
+import { ActionType, WorldType, type SettlementPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
@@ -60,6 +60,10 @@ import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import { showsPositionReadout } from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
+import { SettlementRecord } from "@/ui/SettlementRecord";
+import { settlementRecord } from "@/ui/settlement";
+import { recordHoldsTown } from "@/ui/recordHold";
+import { resolvedRow, rowSlotX, type RowButton } from "@/ui/resolvedRow";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -185,13 +189,16 @@ const SPECTATE_HUD_Y = 10;
 const LEAVE_BUTTON_DEPTH = 1000;
 const LEAVE_BUTTON_MARGIN = 16;
 /**
- * The escaped player's Watch the delve button (FS-QPDKN req 3, amended 2026-11-02): bottom
- * centre, in the same HUD band and on the same bottom margin as the dead spectator's corner button.
+ * The resolved player's bottom-centre row, Watch the delve and Settlement (FS-QPDKN req 3, amended
+ * 2026-11-02; FS-GV8WN R21): in the same HUD band and on the same bottom margin as the dead
+ * spectator's corner button.
  */
-const WATCH_BUTTON_DEPTH = LEAVE_BUTTON_DEPTH;
-const WATCH_BUTTON_MARGIN = LEAVE_BUTTON_MARGIN;
-/** How far the Watch button stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
-const WATCH_BUTTON_LIFT = 200;
+const RESOLVED_ROW_DEPTH = LEAVE_BUTTON_DEPTH;
+const RESOLVED_ROW_MARGIN = LEAVE_BUTTON_MARGIN;
+/** How far the row stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
+const RESOLVED_ROW_LIFT = 200;
+/** The settlement record's bottom edge stands this far over the row's buttons. */
+const RECORD_ROW_GAP = 12;
 /** A button over the world: what it says, the name its hit area answers to, what a press does. */
 interface ButtonSpec {
   name: string;
@@ -260,7 +267,7 @@ const NOTICE_BACKING: Record<NoticeTone, number> = {
 
 /**
  * The run's ESC menu (FS-9K8EZ req 1): the shared menu chrome, camera-fixed in the popup band
- * with the result card, over the dead player's card (1500), which it never hides for long
+ * over the dead player's card (1500), which it never hides for long
  * (req 6). The pressable area of a menu choice, in screen px around its label, and the run's
  * tokens for the chrome: amber to press, arcane to go back, the HUD's label tone while dimmed.
  */
@@ -440,17 +447,36 @@ export class BarrowspireScene extends Phaser.Scene {
   // In-game controls panel
   private controlsPanel?: Phaser.GameObjects.Container;
 
-  // End-of-game overlay (shown when server sends end_game action)
-  private gameEndOverlay?: Phaser.GameObjects.Container;
   /**
-   * Holds the hub `world_entered` behind the result card until *Return to the hub*
-   * (FS-QPDKN req 15–17). Read by the `world_entered` handler in `PhaserGame.tsx`.
+   * `end_game` has arrived: the run is over, and nothing in it answers any more. No card goes up
+   * (FS-GV8WN R24); the settlement record, if open, holds the return to the town (R23).
+   */
+  private runEnded = false;
+  /**
+   * Holds the hub `world_entered` while the settlement record is open, until it is closed
+   * (FS-GV8WN R23). Read by the `world_entered` handler in `PhaserGame.tsx`.
    */
   readonly resultHold = new ResultHold();
+  /**
+   * The settlement record (FS-GV8WN R21): made by the first `settlement`, opened by it, then
+   * closed and reopened by the player until the scene stops (R22).
+   */
+  private settlementRecord?: SettlementRecord;
   /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
-  /** The escaped player's one button (req 3, amended): up until it is pressed or `end_game`. */
-  private watchButton?: WorldButton;
+  /** An escaped player with a teammate still in play, not yet watching: Watch stands in the row. */
+  private canWatch = false;
+  /**
+   * This player has been seen escaped in this run, watching or not: Leave stands in the row
+   * (FS-GV8WN R25). Sticky until the run resets, so a state that drops their own (the broadcast no
+   * longer sending an escaped player) keeps it, and one that merely lacks it never raises it.
+   */
+  private canLeave = false;
+  /**
+   * The bottom-centre row as drawn: which buttons, by name, the buttons themselves, and its Leave
+   * when it holds one, so a pending leave dims it as it dims the dead player's.
+   */
+  private row: { names: string; buttons: WorldButton[]; leave?: WorldButton } = { names: "", buttons: [] };
   /** The teammate this resolved player watches through (req 7); set only while spectating. */
   private watchedPlayerId?: string;
   /** The sprite the camera was last latched onto while spectating, so it is latched once. */
@@ -465,7 +491,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
   private resolvedKind?: ResolvedKind;
-  /** The dead player's way out (req 2, 13): on the card, or in its corner while they spectate. */
+  /**
+   * The dead player's way out (req 2, 13): on the card, or in its corner while they spectate. The
+   * escaped player's is the row's (`row.leave`).
+   */
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
   private leavePending = false;
@@ -492,6 +521,11 @@ export class BarrowspireScene extends Phaser.Scene {
     name: "leave-the-barrow",
     label: "LEAVE THE BARROW",
     onPress: () => this.leaveTheBarrow(),
+  };
+  private readonly settlementSpec: ButtonSpec = {
+    name: "settlement",
+    label: "SETTLEMENT",
+    onPress: () => this.toggleRecord(),
   };
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
@@ -761,6 +795,7 @@ export class BarrowspireScene extends Phaser.Scene {
     socketManager.off("interact");
     socketManager.off("equip");
     socketManager.off("end_game");
+    socketManager.off("settlement");
     socketManager.off("leave_run");
     socketManager.offError("leave_run");
     socketManager.offError("forfeit_run");
@@ -828,14 +863,19 @@ export class BarrowspireScene extends Phaser.Scene {
     this.wallTop = WALL_HEIGHT;
 
     this.controlsPanel = undefined;
-    this.gameEndOverlay = undefined;
-    // a hub held behind the card must not switch the next run away (FS-QPDKN req 15)
+    this.runEnded = false;
+    // a hub held behind the record must not switch the next run away (FS-GV8WN R23), and the
+    // record is this run's alone: entering any other world clears it (R22). Its objects went
+    // down with the scene's.
     this.resultHold.clear();
-    // the end-of-run overlay locks the keyboard, and Phaser keeps the plugin
+    this.settlementRecord = undefined;
+    // the run's end locks the keyboard, and Phaser keeps the plugin
     // across restarts, so the next run would start unable to move
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.resolvedCard = undefined;
-    this.watchButton = undefined;
+    this.canWatch = false;
+    this.canLeave = false;
+    this.row = { names: "", buttons: [] };
     this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
     this.spectateHud = undefined;
@@ -964,122 +1004,113 @@ export class BarrowspireScene extends Phaser.Scene {
     this.controlsPanel.setScrollFactor(0);
   }
 
-  private showGameEndOverlay(position: number, result?: string): void {
-    if (this.gameEndOverlay) return; // already shown
-    // the overlay carries the last word now; the menu never covers it (FS-9K8EZ req 6)
+  /**
+   * `end_game`: the run is over. No card goes up (FS-GV8WN R24): the resolved view comes down,
+   * the menu and an aim with it, and the keys are locked. The hub `world_entered` that comes with
+   * it waits only on an open settlement record (R23, `resultHold`); otherwise it applies at once.
+   */
+  private endRun(): void {
+    if (this.runEnded) return;
+    this.runEnded = true;
+    // the run's end carries the last word; the menu never covers it (FS-9K8EZ req 6)
     this.takeDownResolvedView();
     this.closeMenu();
     // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15)
     this.cancelAim();
-
-    const cam = this.cameras.main;
-
-    // full-screen backdrop — eats pointer input from anything beneath
-    const backdrop = this.add.rectangle(
-      cam.width / 2,
-      cam.height / 2,
-      cam.width,
-      cam.height,
-      palette.ink,
-      0.85,
-    );
-    // centered card
-    const cardW = 460;
-    const cardH = 280;
-    const card = this.add.graphics();
-    card.fillStyle(palette.ink, 0.95);
-    card.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 10);
-    card.lineStyle(1, palette.frame, 0.5);
-    card.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 10);
-
-    let titleStr: string;
-    let subtitleStr: string;
-
-    switch (result) {
-      case "escaped":
-        titleStr = "ESCAPED!";
-        subtitleStr = "YOU CARRIED IT OUT OF THE BARROW";
-        break;
-      case "survived":
-        titleStr = "YOU LIVE";
-        subtitleStr = "LAST PLAYER STANDING";
-        break;
-      default: // "eliminated"
-        titleStr = `YOU FELL #${position}`;
-        subtitleStr = "THE BARROW KEEPS ITS DEAD";
-        break;
-    }
-
-    const title = this.add.text(0, -60, titleStr, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "44px",
-      color: toCss(palette.frameBright),
-      fontStyle: "bold",
-      letterSpacing: 6,
-    });
-    title.setOrigin(0.5);
-
-    const subtitle = this.add.text(0, 0, subtitleStr, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "13px",
-      color: toCss(palette.hudLabel),
-      letterSpacing: 3,
-    });
-    subtitle.setOrigin(0.5);
-
-    // --- the one action: Return to the hub (FS-QPDKN req 15) ---
-    // The card stays until this is pressed; the hub the server has already moved the
-    // player to waits in `resultHold`. Amber: it is the one thing here to act on.
-    const btnW = 220;
-    const btnH = 38;
-    const btnY = 70;
-
-    const returnBtn = this.add.graphics();
-    const paintReturn = (fill: number) => {
-      returnBtn.clear();
-      returnBtn.fillStyle(fill, 1);
-      returnBtn.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, 6);
-    };
-    paintReturn(palette.interactable);
-    const returnText = this.add.text(0, btnY, "RETURN TO THE HUB", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.ink),
-      fontStyle: "bold",
-      letterSpacing: 3,
-    });
-    returnText.setOrigin(0.5);
-    // the hit area lives outside the container so pointer events work reliably
-    const returnHit = this.add
-      .rectangle(cam.width / 2, cam.height / 2 + btnY, btnW, btnH, palette.inkDeep, 0)
-      .setInteractive({ useHandCursor: true })
-      .setScrollFactor(0)
-      .setDepth(2001);
-    returnHit.on("pointerover", () => paintReturn(palette.interactableBright));
-    returnHit.on("pointerout", () => paintReturn(palette.interactable));
-    // client-only (req 17): nothing goes to the server; the held world_entered is applied
-    returnHit.on("pointerdown", () => this.resultHold.release());
-
-    const cardContainer = this.add.container(cam.width / 2, cam.height / 2, [
-      card,
-      title,
-      subtitle,
-      returnBtn,
-      returnText,
-    ]);
-
-    this.gameEndOverlay = this.add.container(0, 0, [backdrop, cardContainer]);
-    this.gameEndOverlay.setDepth(2000);
-    this.gameEndOverlay.setScrollFactor(0);
-    this.resultHold.raise();
-
-    // the result card takes the keys: a half-typed line goes, and the input hands the keyboard
-    // back before it is switched off here, so nothing turns it on again under the card (FS-WJGFJ R27)
+    // a half-typed line goes, and the input hands the keyboard back before it is switched off
+    // here, so nothing turns it on again (FS-WJGFJ R27)
     this.chatWindow?.cancelInput();
-    // disable game input — keyboard movement, hover, clicks
     if (this.input.keyboard) {
       this.input.keyboard.enabled = false;
     }
+  }
+
+  /**
+   * `settlement` (FS-GV8WN R19–R21): the first opens the record at once; every one replaces its
+   * content, so a confirmed copy moves only the status line. A record the player closed stays
+   * closed: the Settlement button brings it back.
+   */
+  private showSettlement(payload: SettlementPayload): void {
+    const first = !this.settlementRecord;
+    this.settlementRecord ??= new SettlementRecord(this, this.recordAnchor(), () => this.closeRecord());
+    this.settlementRecord.set(settlementRecord(payload));
+    if (first) this.openRecord();
+    this.syncRow();
+  }
+
+  /** The record up, and the return to the town held behind it unless a Leave is on its way (R23). */
+  private openRecord(): void {
+    if (!this.settlementRecord) return;
+    this.settlementRecord.open();
+    this.holdBehindRecord();
+  }
+
+  /** Holds the return to the town behind the record when {@link recordHoldsTown} says so (R23). */
+  private holdBehindRecord(): void {
+    const state = {
+      recordOpen: this.settlementRecord?.isOpen() ?? false,
+      leavePending: this.leavePending,
+    };
+    if (recordHoldsTown(state)) this.resultHold.raise();
+  }
+
+  /** The record down, and a hub held behind it applied (R23). Client-only: nothing is sent. */
+  private closeRecord(): void {
+    this.settlementRecord?.close();
+    this.resultHold.release();
+  }
+
+  /** The Settlement button: the record up if it is down, down if it is up (R21). */
+  private toggleRecord(): void {
+    if (this.settlementRecord?.isOpen()) this.closeRecord();
+    else this.openRecord();
+  }
+
+  /** The record's place: centred across, standing just over the bottom-centre row. */
+  private recordAnchor(): { x: number; bottom: number } {
+    const cam = this.cameras.main;
+    return { x: cam.centerX, bottom: this.rowY() - BUTTON_H / 2 - RECORD_ROW_GAP };
+  }
+
+  /** The bottom-centre row's line: the buttons' centre y. */
+  private rowY(): number {
+    return this.cameras.main.height - RESOLVED_ROW_MARGIN - RESOLVED_ROW_LIFT - BUTTON_H / 2;
+  }
+
+  /**
+   * The bottom-centre row (FS-QPDKN req 3, amended; FS-GV8WN R21, R25): Watch the delve for an
+   * escaped player who can, Leave the barrow for an escaped player, and Settlement once a record
+   * has come, spread about the centre. Redrawn only when the buttons it holds change; none once
+   * the run has ended. A Leave drawn while a leave is pending comes up dimmed.
+   */
+  private syncRow(): void {
+    const names: RowButton[] = this.runEnded
+      ? []
+      : resolvedRow({
+          canWatch: this.canWatch,
+          canLeave: this.canLeave,
+          hasRecord: this.settlementRecord?.hasContent() ?? false,
+        });
+    const key = names.join(",");
+    if (key === this.row.names) return;
+    this.row.buttons.forEach((button) => button.destroy());
+    const specs: Record<RowButton, ButtonSpec> = {
+      watch: this.watchSpec,
+      leave: this.leaveSpec,
+      settlement: this.settlementSpec,
+    };
+    const cam = this.cameras.main;
+    const y = this.rowY();
+    const buttons = names.map((name, i) =>
+      this.hudButton(
+        specs[name],
+        { x: rowSlotX(i, names.length, cam.centerX, BUTTON_W, BUTTON_GAP), y },
+        RESOLVED_ROW_DEPTH,
+      ),
+    );
+    const leaveAt = names.indexOf("leave");
+    this.row = { names: key, buttons, leave: leaveAt < 0 ? undefined : buttons[leaveAt] };
+    this.row.leave?.setEnabled(!this.leavePending);
   }
 
   preload(): void {
@@ -1799,7 +1830,7 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private strike(entityId: string, them: Point): void {
     const me = this.playerPos;
-    if (!this.player || !me || this.gameEndOverlay) return;
+    if (!this.player || !me || this.runEnded) return;
     if (resolved(this.lastGameState?.current_player)) return;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
     if (this.menu) return;
@@ -2749,12 +2780,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // Connect via SocketManager
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
-    // the menu and the result card read Enter and Esc; the gear overlay and an open chest are up
-    this.chatWindow = mountChatWindow(this, () => !this.menu && !this.gameEndOverlay && !this.equipment?.isOpen() && !this.containerView?.isOpen);
+    // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
+    this.chatWindow = mountChatWindow(this, () => !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen);
     // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(this, () => !!this.menu || !!this.gameEndOverlay || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
-    // party invites, hidden only under the end-of-run overlay, stacked clear of the chat window (FS-NCC9J R24)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.gameEndOverlay, () => this.chatWindow?.topEdge());
+    this.partyPanel = mountPartyPanel(this, () => !!this.menu || this.runEnded || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
+    // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
     // The camera and the (vestigial, collision-free) physics world live in
     // projected space: the map is a diamond, clamped by its bounding box plus a
@@ -3048,8 +3079,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * `shadow_shot` at the world point under the pointer; any other release ends it with nothing.
    */
   private releaseAim(pointer: Phaser.Input.Pointer): void {
-    // a hold never outlives the run: once the end overlay is up, letting go only cancels
-    if (this.gameEndOverlay) {
+    // a hold never outlives the run: once the run has ended, letting go only cancels
+    if (this.runEnded) {
       this.cancelAim();
       return;
     }
@@ -3138,14 +3169,11 @@ export class BarrowspireScene extends Phaser.Scene {
       if (refusal) this.showNotification(refusal, toCss(NOTICE_BACKING.refused));
     });
 
-    // Listen for end_game — show final position overlay and lock interaction
-    socketManager.on(
-      "end_game",
-      (payload: { player_id: string; position: number; result: string }) => {
-        console.log("Game ended, final position:", payload);
-        this.showGameEndOverlay(payload.position, payload.result);
-      },
-    );
+    // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
+    socketManager.on("end_game", () => this.endRun());
+
+    // settlement: this player settled (FS-GV8WN R19, R20); the record shows it
+    socketManager.on("settlement", (payload: SettlementPayload) => this.showSettlement(payload));
 
     // A refused leave_run (FS-QPDKN req 14, edge state "Leaving"): the button can be pressed
     // again. The server's refusals come in two shapes; both land here.
@@ -4152,10 +4180,14 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * What a resolved player sees (FS-QPDKN req 1–6, 11): the card while a teammate is still in
    * the delve and Watch has not been pressed; the watched player's view once it has. State keeps
-   * rendering behind both. Once `end_game` has put its overlay up, neither again.
+   * rendering behind both. Once `end_game` has arrived, neither again.
    */
   private syncResolvedView(state: ClientGameState): void {
-    if (this.gameEndOverlay) return;
+    if (this.runEnded) return;
+    // an escaped player may leave the run, whether they watch or not (FS-GV8WN R25); once seen
+    // escaped they stay so, even when the broadcast stops sending their own state
+    if (state.current_player?.escape === true) this.canLeave = true;
+    this.syncRow();
     if (this.watchedPlayerId !== undefined) {
       this.followWatched(state);
       return;
@@ -4163,14 +4195,14 @@ export class BarrowspireScene extends Phaser.Scene {
     const view = resolvedView(state);
     // in play again (a reconnect's first state), or nobody left to watch: the end is coming
     if (!view) this.takeDownCard();
-    else if (view.kind === "escaped") this.showWatchButton();
+    else if (view.kind === "escaped") this.offerWatch();
     else if (!this.resolvedCard) this.showResolvedCard(view);
   }
 
-  /** The dead player's card, or the escaped player's lone Watch button: whichever is up goes down. */
+  /** The dead player's card, or the escaped player's Watch button: whichever is up goes down. */
   private takeDownCard(): void {
-    this.watchButton?.destroy();
-    this.watchButton = undefined;
+    this.canWatch = false;
+    this.syncRow();
     if (!this.resolvedCard) return;
     this.resolvedCard.destroy();
     this.resolvedCard = undefined;
@@ -4180,15 +4212,13 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The escaped player's view while a teammate is still in play (req 3, amended 2026-11-02): no
-   * card, one Watch the delve button at the bottom centre of the screen, in the HUD band. The
-   * camera stays on their own (hidden) body until it is pressed (req 4).
+   * card, a Watch the delve button in the bottom-centre row, in the HUD band. The camera stays on
+   * their own (hidden) body until it is pressed (req 4).
    */
-  private showWatchButton(): void {
-    if (this.watchButton) return;
-    const cam = this.cameras.main;
-    const at = { x: cam.centerX, y: cam.height - WATCH_BUTTON_MARGIN - WATCH_BUTTON_LIFT - BUTTON_H / 2 };
+  private offerWatch(): void {
     this.resolvedKind = "escaped";
-    this.watchButton = this.hudButton(this.watchSpec, at, WATCH_BUTTON_DEPTH);
+    this.canWatch = true;
+    this.syncRow();
   }
 
   /**
@@ -4337,24 +4367,37 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Leave the barrow (req 13, 14): one `leave_run`, then nothing until the server answers. The
-   * answer is a `world_entered(hub)`, applied as any other, or a refusal that hands the button back.
+   * Leave the barrow (req 13, 14; FS-GV8WN R25 for the escaped): one `leave_run`, then nothing until
+   * the server answers. The answer is a `world_entered(hub)`, applied as any other, or a refusal that
+   * hands the button back.
+   * The hub a Leave asks for is the player's choice, so an open settlement record does not hold it
+   * (FS-GV8WN R23); once the run has ended, Leave only lets in a hub already held.
    */
   private leaveTheBarrow(): void {
     if (this.leavePending) return;
+    this.resultHold.release();
+    if (this.runEnded) return;
     this.leavePending = true;
-    this.leaveButton?.setEnabled(false);
+    this.dimLeave();
     socketManager.sendMessage(ActionType.LeaveRun, {});
   }
 
   /**
-   * The server refused the `leave_run` (req 14). Once the end-of-run overlay is up the run ended
-   * first and the player is already on the way home: nothing to do (edge state "Leaving").
+   * The server refused the `leave_run` (req 14). Once the run has ended the player is already on
+   * the way home: nothing to do (edge state "Leaving"). Otherwise the button comes back, and an
+   * open record holds the town again.
    */
   private leaveRefused(): void {
-    if (this.gameEndOverlay) return;
+    if (this.runEnded) return;
     this.leavePending = false;
-    this.leaveButton?.setEnabled(true);
+    this.dimLeave();
+    this.holdBehindRecord();
+  }
+
+  /** Whichever Leave stands, the dead player's or the row's, dimmed exactly while a leave is pending. */
+  private dimLeave(): void {
+    this.leaveButton?.setEnabled(!this.leavePending);
+    this.row.leave?.setEnabled(!this.leavePending);
   }
 
   /**
@@ -4377,8 +4420,8 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * ESC and the menu's keys, read once a frame (FS-9K8EZ req 1). Closed, ESC opens the menu;
    * open, ESC goes back, Enter is the first row and a number is that row. Every key is read each
-   * frame, so a press never lingers to answer the next one. Once the result card is up there is
-   * nothing to open: it has the only action left (edge state "Menu").
+   * frame, so a press never lingers to answer the next one. Once the run has ended there is
+   * nothing to open (edge state "Menu").
    */
   private offerMenu(): void {
     if (!this.dismissKey) return;
@@ -4387,7 +4430,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
     // one ESC closes one thing: the gear and bag overlay before the menu opens (FS-HRH2J R5)
     if (esc && !this.menu && this.equipment?.hide()) return;
-    if (this.gameEndOverlay) return;
+    if (this.runEnded) return;
 
     if (!this.menu) {
       if (esc) this.openMenu();
@@ -4457,7 +4500,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private fallRefused(info: { message?: string }): void {
     this.fallPending = false;
     this.menuChoices?.retone();
-    if (this.gameEndOverlay) return;
+    if (this.runEnded) return;
     this.showNotification(info.message ?? "The barrow will not take you yet.", toCss(palette.hudPanel));
   }
 
