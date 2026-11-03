@@ -107,9 +107,9 @@
     },
     "fx-0": {
       "image": "fx-0.png",
-      "width": 580,
+      "width": 692,
       "height": 128,
-      "sha256": "2b468c3baea6e7f32fbed8d87ab12b2e5b29a812c2ae7ac2daccaa4e791769ea"
+      "sha256": "64ecc9ebb9c73942afbb3c7d63532faabb61b1eb68bb275e9e132b4d193214b5"
     },
     "ground-0": {
       "image": "ground-0.png",
@@ -11909,7 +11909,7 @@
           "frames": [
             [
               {
-                "x": 234,
+                "x": 300,
                 "y": 2
               }
             ]
@@ -11935,7 +11935,7 @@
           "frames": [
             [
               {
-                "x": 268,
+                "x": 334,
                 "y": 2
               }
             ]
@@ -15148,7 +15148,7 @@
           "frames": [
             [
               {
-                "x": 488,
+                "x": 602,
                 "y": 2
               }
             ]
@@ -15174,15 +15174,15 @@
           "frames": [
             [
               {
-                "x": 434,
+                "x": 534,
                 "y": 2
               },
               {
-                "x": 452,
+                "x": 552,
                 "y": 2
               },
               {
-                "x": 470,
+                "x": 570,
                 "y": 2
               }
             ]
@@ -15208,15 +15208,15 @@
           "frames": [
             [
               {
-                "x": 546,
+                "x": 660,
                 "y": 2
               },
               {
-                "x": 556,
+                "x": 670,
                 "y": 2
               },
               {
-                "x": 566,
+                "x": 680,
                 "y": 2
               }
             ]
@@ -15268,7 +15268,7 @@
           "frames": [
             [
               {
-                "x": 404,
+                "x": 504,
                 "y": 2
               }
             ]
@@ -15276,6 +15276,32 @@
         }
       },
       "source": "authored: tools/bake/page/models/fx.js#fireCore",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_glint": {
+      "atlas": "fx-0",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 368,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#glint",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "fx_glow": {
@@ -15304,6 +15330,58 @@
       "source": "authored: tools/bake/page/models/fx.js#glow",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "fx_mote": {
+      "atlas": "fx-0",
+      "frameWidth": 12,
+      "frameHeight": 12,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 588,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#mote",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "fx_ring": {
+      "atlas": "fx-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 176,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/fx.js#ring",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "fx_scorch": {
       "atlas": "fx-0",
       "frameWidth": 56,
@@ -15320,7 +15398,7 @@
           "frames": [
             [
               {
-                "x": 176,
+                "x": 242,
                 "y": 2
               }
             ]
@@ -15372,15 +15450,15 @@
           "frames": [
             [
               {
-                "x": 302,
+                "x": 402,
                 "y": 2
               },
               {
-                "x": 336,
+                "x": 436,
                 "y": 2
               },
               {
-                "x": 370,
+                "x": 470,
                 "y": 2
               }
             ]

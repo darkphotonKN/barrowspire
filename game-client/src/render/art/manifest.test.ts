@@ -439,6 +439,10 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["fx_glow", "glow"],
       ["fx_escape_column", "escapeColumn"],
       ["fx_arrow", "arrow"],
+      // the shimmer's glint and its core, and the invoked base's ground ring (FS-KZC92 R21)
+      ["fx_glint", "glint"],
+      ["fx_mote", "mote"],
+      ["fx_ring", "ring"],
     ];
     const CURSORS: [string, string][] = [
       ["cursor_gauntlet", "gauntlet"],

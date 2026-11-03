@@ -9,7 +9,7 @@ import { fetchArtManifest } from "@/utils/api";
 // One manifest read per page load, shared by every icon on it. A failed read resolves to null
 // (an empty well where the icon would be) rather than breaking the row it sits in, and is not
 // cached: the next icon to mount tries again.
-const loadManifest = retryableOnce(async (): Promise<ArtManifest> => {
+export const loadManifest = retryableOnce(async (): Promise<ArtManifest> => {
   const result = validateManifest(await fetchArtManifest());
   if (!result.ok) throw new Error("art manifest failed validation");
   return result.manifest;

@@ -148,10 +148,15 @@ are interactables on screen, and repetition is correct behaviour rather than dil
 | Channel | Colour | Means |
 |---|---|---|
 | **Interactable / actionable** | amber | the player can do something with this |
-| **Safe / friendly / restorative** | arcane green | pickups, allies, healing |
+| **Safe / friendly** | arcane green | pickups, allies |
+| **Restoring a resource** | that resource's own colour | health is red: the HP bar's `oxbloodText` and the oxblood potion bottle |
 | **Damage / danger / hostile** | oxblood | enemies, damage taken, hazards |
 | **Neutral HUD** | vellum | labels, counters, non-urgent information |
 | **Frame / chrome** | brass | panel borders, dividers, HUD structure |
+
+**Healing is not green.** Restoring a resource takes that resource's own colour, so the HP bar,
+the health potion and the heal it gives share one hue and a player reads "health" from it.
+Arcane green stays safe and friendly. *(Amended at the owner's approval of FS-KZC92, 2026-11-03.)*
 
 **The rule in its testable form: an amber thing the player cannot act on is a defect.** That is
 the check to apply, not a count. A health bar, a damage number and a score are not interactables
@@ -392,6 +397,28 @@ each ink keeps at least 3:1 against that outline, so it reads on any ground howe
 field's daylight (`FIELD_MARKER_OUTLINE` in `src/render/markers/`, tested for every field's look).
 Field worlds only: the hub's and the Spire's markers stay as they are, measured against their lit
 edge ground. *(Amended at the owner's approval of FS-X2F2H, 2026-10-30.)*
+
+---
+
+## Shimmers
+
+A **shimmer** is a one-shot glitter over a character's body, played the moment an effect lands
+on them. It is a base (the motion) plus a look (three palette tokens: the glint, its hot centre,
+and the light it casts). *(Added at the owner's approval of FS-KZC92, 2026-11-03.)*
+
+- **The source picks the base.** A **granted** shimmer (glints winking over the body) is played
+  when no player is the source: a potion, a scroll, a shrine, a world or NPC buff. An **invoked**
+  shimmer (a spiral winding up the body) is played when a player is: an ally's buff, a
+  self-buff, a charge-up. A player's own magic reads apart from what the world hands them.
+- **One-shot, about a second or less.** A shimmer is gone within 1200 ms, never longer. It marks
+  the moment the effect landed. It is not a lasting buff display, which is a separate design.
+- **Its colour is what it restores.** A shimmer's look follows the "Restoring a resource" row
+  above: the heal look is `oxbloodText` glints, `vellum` centres and an `oxblood` light. A look
+  is three `BARROW` tokens and no other colour.
+- **Stacked shimmers each play on their own.** Two landing together both play in full,
+  overlapping. A new one never cuts short or restarts an earlier one.
+- **The granted base never tints the body.** The hit's flash tints the figure oxblood; a heal
+  that tinted it too would read as damage. The glitter is drawn around the figure, never on it.
 
 ---
 

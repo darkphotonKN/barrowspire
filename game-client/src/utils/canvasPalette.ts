@@ -117,10 +117,13 @@ export const palette = {
   dropPileBoneShade: shade(BARROW_HEX.vellumDark, 0.4),
   dropPileGlint: BARROW_HEX.amber,
 
-  // -- Safe / friendly / restorative. Arcane green.
+  // -- Safe / friendly. Arcane green.
   safe: BARROW_HEX.arcane,
   safeDeep: BARROW_HEX.arcaneDeep,
-  heal: BARROW_HEX.arcane,
+
+  // -- Restoring a resource takes that resource's own colour, so healing is health's red: the
+  //    HP bar's lifted oxblood (design-guideline "Gameplay accent", amended by FS-KZC92).
+  heal: BARROW_HEX.oxbloodText,
 
   // -- Damage / danger / hostile. Oxblood.
   damage: BARROW_HEX.oxblood,
