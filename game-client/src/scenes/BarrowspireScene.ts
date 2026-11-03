@@ -22,6 +22,7 @@ import {
   DoorState,
   ProjectileState,
 } from "@/types/gameState";
+import { ABILITY_COPY } from "@/ui/abilityCopy";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
@@ -947,7 +948,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     const panelW = 260;
-    const panelH = 260;
+    const panelH = 300;
     const x = cam.width / 2;
     const y = cam.height / 2;
 
@@ -974,9 +975,12 @@ export class BarrowspireScene extends Phaser.Scene {
       ["E", "Interact"],
       ["F", "Take Item"],
       ["I / B", "Gear and bag"],
+      ["T", "Party"],
+      ["ENTER", "Chat"],
       ["Q", "Close Panel"],
-      ["LEFT CLICK", "Melee Attack"],
-      ["RIGHT CLICK", "Fireball (Skill)"],
+      ["LEFT CLICK", "Attack"],
+      // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
+      ["RIGHT CLICK", ABILITY_COPY[this.ownClass()]?.name ?? "Class ability"],
       [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
       ["H", "Toggle Controls"],
       ["ESC", "Menu"],
