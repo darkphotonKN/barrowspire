@@ -26,12 +26,14 @@ import (
 type noBidsArm struct {
 	calls       []string
 	returnIn    itemsactivity.ReturnItemInput
+	returnQueue string
+	returnErr   error
 	expireIn    marketplaceactivity.ExpireListingInput
 	expireQueue string
 	expireErr   error
 
 	// escalate and park: a raise stands for the operator fixing the cause, so
-	// it clears expireErr and the next lap gets through
+	// it clears returnErr and expireErr and the next lap gets through
 	raised   []marketplaceactivity.RaiseSettlementExceptionInput
 	resolved []uuid.UUID
 }
@@ -49,7 +51,8 @@ func newWorkflowEnv(t *testing.T, freeze func(ctx context.Context, in marketplac
 	env.RegisterActivityWithOptions(func(ctx context.Context, in itemsactivity.ReturnItemInput) error {
 		arm.calls = append(arm.calls, itemsactivity.ReturnItemActivityName)
 		arm.returnIn = in
-		return nil
+		arm.returnQueue = activity.GetInfo(ctx).TaskQueue
+		return arm.returnErr
 	}, activity.RegisterOptions{Name: itemsactivity.ReturnItemActivityName})
 	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.ExpireListingInput) error {
 		arm.calls = append(arm.calls, marketplaceactivity.ExpireListingActivityName)
@@ -61,6 +64,7 @@ func newWorkflowEnv(t *testing.T, freeze func(ctx context.Context, in marketplac
 	exceptionID := uuid.New()
 	env.RegisterActivityWithOptions(func(ctx context.Context, in marketplaceactivity.RaiseSettlementExceptionInput) (marketplaceactivity.RaiseSettlementExceptionOutput, error) {
 		arm.raised = append(arm.raised, in)
+		arm.returnErr = nil
 		arm.expireErr = nil
 		return marketplaceactivity.RaiseSettlementExceptionOutput{ExceptionID: exceptionID}, nil
 	}, activity.RegisterOptions{Name: marketplaceactivity.RaiseSettlementExceptionActivityName})
@@ -118,8 +122,46 @@ func TestWorkflow_NoBids_ReturnsTheItemThenExpiresTheListing(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	assert.Equal(t, []string{itemsactivity.ReturnItemActivityName, marketplaceactivity.ExpireListingActivityName}, arm.calls)
+	assert.Equal(t, itemsactivity.ReturnItemInput{ItemID: itemID, ListingID: listingID}, arm.returnIn,
+		"NB1 carries the listing ID that guards a retry against a relist (§Req 24a)")
+	assert.Equal(t, bstemporal.QueueItems.String(), arm.returnQueue)
 	assert.Equal(t, listingID, arm.expireIn.ListingID)
 	assert.Equal(t, bstemporal.QueueMarketplace.String(), arm.expireQueue)
+	assert.Empty(t, arm.raised, "zero bids is a normal outcome, not an exception")
+}
+
+// NB1 escalates and parks like every step (§Req 10). The no-bids arm has nothing
+// to roll back, so an items outage and an impossible NB1 both park, and the run
+// completes once the cause is fixed rather than failing. NB2 waits for NB1.
+func TestWorkflow_NoBids_ReturnItemFails_ParksThenCompletes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"items outage", errors.New("dial tcp: connection refused")},
+		{"impossible", temporal.NewNonRetryableApplicationError("item corrupted", "ReturnItemImpossible", nil)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listingID, itemID := uuid.New(), uuid.New()
+			env, arm := newWorkflowEnv(t, func(ctx context.Context, in marketplaceactivity.FreezeListingInput) (marketplaceactivity.FreezeListingOutput, error) {
+				return marketplaceactivity.FreezeListingOutput{Outcome: marketplaceactivity.OutcomeNoBids, ListingID: listingID, ItemID: itemID}, nil
+			})
+			arm.returnErr = tt.err
+
+			env.ExecuteWorkflow(Workflow, Input{ListingID: listingID, Trigger: usecase.TriggerExpiry})
+
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError(), "a failing NB1 parks; it never fails the run")
+			require.Len(t, arm.raised, 1)
+			assert.Equal(t, listingID, arm.raised[0].ListingID)
+			assert.Equal(t, itemsactivity.ReturnItemActivityName, arm.raised[0].Step)
+			assert.Len(t, arm.resolved, 1, "the exception is resolved once NB1 gets through")
+			assert.Equal(t, marketplaceactivity.ExpireListingActivityName, arm.calls[len(arm.calls)-1], "NB2 runs once, after NB1")
+			assert.Equal(t, 1, countOf(arm.calls, marketplaceactivity.ExpireListingActivityName))
+			assert.Equal(t, bstemporal.QueueItems.String(), arm.returnQueue)
+		})
+	}
 }
 
 // A listing NB2 finds in any other status is an invariant breach (§Req 34b). The
