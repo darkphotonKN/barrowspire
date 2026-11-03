@@ -158,17 +158,22 @@ func TestIdentityFromCtx_UnauthenticatedContext(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// The two wallet methods a service calls on its own behalf carry no member token,
-// because there is no member: one compensates for a failed write, the other runs on
-// a background ticker. They have to reach their handler without metadata at all.
+// serviceCalled are the methods a service calls on its own behalf, with no member
+// token because there is no member. Two wallet methods: one compensates for a failed
+// write, the other runs on a background ticker. And items' ApplySettlement, which
+// game-service calls to settle a run's players (FS-GV8WN R11).
+var serviceCalled = []string{
+	"/wallet.WalletService/ReleaseHold",
+	"/wallet.WalletService/ListStaleReservedHolds",
+	"/items.ItemsService/ApplySettlement",
+}
+
+// The service-called methods have to reach their handler without metadata at all.
 //
-// Pinned as a pair with the negative case below, so this cannot quietly become
+// Pinned as a pair with the negative cases below, so this cannot quietly become
 // "the interceptor stopped checking anything".
 func TestAuth_ServiceCalledMethods_SkipTheTokenCheck(t *testing.T) {
-	for _, method := range []string{
-		"/wallet.WalletService/ReleaseHold",
-		"/wallet.WalletService/ListStaleReservedHolds",
-	} {
+	for _, method := range serviceCalled {
 		t.Run(method, func(t *testing.T) {
 			reached := false
 
@@ -245,8 +250,11 @@ func TestAuth_PublicReads_SkipTheTokenCheck(t *testing.T) {
 // needs a token. The list is read from the generated service descriptors rather
 // than typed out, so a method added later is covered without anyone remembering.
 func TestAuth_PublicReads_LeaveEveryOtherMarketplaceAndItemsMethodGuarded(t *testing.T) {
-	public := make(map[string]bool, len(publicReads))
+	public := make(map[string]bool, len(publicReads)+len(serviceCalled))
 	for _, m := range publicReads {
+		public[m] = true
+	}
+	for _, m := range serviceCalled {
 		public[m] = true
 	}
 
