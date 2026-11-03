@@ -72,6 +72,7 @@ server state and sends intents. ✅
 - [x] Mercenary class → FS-MAMHR
 - [x] Gear and bag overlay → FS-HRH2J
 - [x] Character stats overlay → FS-HRH2J
+- [ ] Compare a bag item with worn gear → FS-NV54P
 - [ ] A character name is one word → FS-KCQ06
 
 ### Presentation

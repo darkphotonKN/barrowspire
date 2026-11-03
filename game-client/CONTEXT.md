@@ -293,6 +293,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   own grid beside the bag; items move bag ↔ stash with right-click or `E` (FS-VPD8Y). Never in
   a run or field world. Not the container view: a run chest is a world container, the stash
   chest only opens the account's stash.
+- **Worn tip**: the item tip of a worn item, captioned "Worn" ("Worn · Ring 1" / "Worn · Ring 2"),
+  shown beside a bag item's own tip while Shift is held over it in the gear overlay, one per
+  target slot that holds an item (FS-NV54P). Holding Shift to see them is to **compare**. Not a
+  second kind of tip: the same item tip, built by `buildItemTip`, with a caption.
 - **Unsafe find** (marking): the border and tip note on an item picked up in this run, which
   is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
