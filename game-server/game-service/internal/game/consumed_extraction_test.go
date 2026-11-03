@@ -21,7 +21,7 @@ func TestEndSession_ResolvedRun_PublishesEachDelversConsumedItems(t *testing.T) 
 	s := coopRun(t)
 	outbox := &capturingOutbox{}
 	s.sessionCloser = &homeReturner{run: s}
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{})
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
 	s.sender = &recordingSender{}
 
 	survivorID, survivor := seatedDelver(t, s, "warrior", 300, 300)
@@ -55,10 +55,15 @@ func TestEndSession_ResolvedRun_PublishesEachDelversConsumedItems(t *testing.T) 
 	<-s.endSessionCh
 
 	s.endSession()
+	drainSettlements(t, s)
 
+	// the fallen delver was settled by their own pair the tick they fell
+	// (FS-GV8WN §A R1); the others by the run's end
 	byMember := map[string]*pb.PlayerItems{}
-	for _, items := range outbox.itemsExtracted(t).GetPlayerItems() {
-		byMember[items.GetMemberId()] = items
+	for _, event := range outbox.everyItemsExtracted(t) {
+		for _, items := range event.GetPlayerItems() {
+			byMember[items.GetMemberId()] = items
+		}
 	}
 	require.Len(t, byMember, 3, "one entry per delver, the fallen one included")
 	assert.ElementsMatch(t,

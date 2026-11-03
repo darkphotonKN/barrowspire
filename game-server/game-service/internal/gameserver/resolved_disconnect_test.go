@@ -40,6 +40,7 @@ import (
 // resolvedDropEmitter records every run-end publish, under a lock, because the
 // publish happens on the run's own goroutine.
 type resolvedDropEmitter struct {
+	settlementLog
 	mu        sync.Mutex
 	published []*types.RawMatchState
 }
@@ -244,7 +245,7 @@ func TestGraceEnd_RemovesInPlayMember(t *testing.T) {
 	require.True(t, systems.InPlay(resolvedDropBodyOf(t, party.run, party.wren.ID)))
 	resolvedDropPastGrace(t, server, party.wrenConn)
 
-	assert.False(t, party.run.HasPlayer(party.wren.ID), "a member in play is removed from the run at grace end")
+	awaitRemoved(t, party.run, party.wren.ID, "a member in play is removed from the run at grace end")
 	_, onRecord := server.PlayerByID(party.wren.ID)
 	assert.False(t, onRecord, "and taken off record")
 
@@ -311,8 +312,9 @@ func TestRunEnd_SettlesKeptMemberAndDeletesRecord(t *testing.T) {
 		resolvedDropEscape(t, party.run, party.kaelen.ID)
 		snapshot := resolvedDropEndRun(t, party.run, emitter)
 
-		_, inSnapshot := resolvedDropPlayerIn(snapshot, party.wren.ID)
-		assert.True(t, inSnapshot, "the kept dead member is in the run-end snapshot")
+		// settled at their death by their own settlement (FS-GV8WN §A R1)
+		assert.Len(t, emitter.settlementsOf(party.wren.ID), 1, "the dead member is settled once, at their death")
+		assert.Contains(t, snapshot.SettledMemberIDs, party.wren.ID, "and named by the run's end")
 		position, eliminated := snapshot.EliminationOrder[party.wren.ID]
 		require.True(t, eliminated, "the kept dead member is in the elimination order")
 		assert.Equal(t, 0, position, "as the first to fall")

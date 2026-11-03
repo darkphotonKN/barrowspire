@@ -63,6 +63,9 @@ func (r *positionRecorder) seen() []types.Position {
 // Mock EventEmitter for testing
 type mockEventEmitter struct{}
 
+// PublishSettlement: this fake records only the run's end.
+func (m *mockEventEmitter) PublishSettlement(_ context.Context, _ *types.RawSettlement) {}
+
 func (m *mockEventEmitter) PublishMatchComplete(ctx context.Context, data *types.RawMatchState) {
 }
 

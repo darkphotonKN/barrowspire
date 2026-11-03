@@ -226,6 +226,9 @@ type settlingProbe struct {
 	atPublish []string
 }
 
+// PublishSettlement: this fake records only the run's end.
+func (e *settlingProbe) PublishSettlement(_ context.Context, _ *types.RawSettlement) {}
+
 func (e *settlingProbe) PublishMatchComplete(ctx context.Context, data *types.RawMatchState) {
 	e.mu.Lock()
 	e.atPublish = settlingKeys(e.mini)

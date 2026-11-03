@@ -488,7 +488,7 @@ func TestMatchedParty_LocalInTheGraceWhileTheScriptRuns_InTheRunAndTheParty(t *t
 
 	left := awaitUpdate(t, wren.inbox, "left", kaelen.player.ID, "Wren")
 	assert.Equal(t, []string{wren.player.ID.String()}, memberIDsOf(t, left), "the party without Kaelen")
-	assert.False(t, run.HasPlayer(kaelen.player.ID), "the grace ran out: Kaelen's body is gone")
+	awaitRemoved(t, run, kaelen.player.ID, "the grace ran out: Kaelen's body is gone")
 	assert.Equal(t, []uuid.UUID{wren.player.ID}, rosterOf(t, rig, run), "the run's roster forgets Kaelen")
 }
 

@@ -34,6 +34,9 @@ func mockTxDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
 // every transaction declared up front, and a test that ends a match opens one
 // transaction per PublishMatchComplete; 16 covers every current test with room
 // to spare. Raise it if a test legitimately ends more matches.
+// A settlement whose write fails is retried (FS-GV8WN §C R8), each retry a new
+// transaction: a test whose write fails after Begin burns this budget, so give
+// it noRetry() or a database that fails before Begin (downDB).
 const txBudget = 16
 
 // budgetedTxDB fails the test by name once committingTxDB's scripted
@@ -134,11 +137,11 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 	dbErr := errors.New("db down")
 	itemsExtracted := func(mock sqlmock.Sqlmock) *sqlmock.ExpectedExec {
 		return mock.ExpectExec(insertOutboxStmt).
-			WithArgs(commonconstants.ItemsExtracted, commonconstants.GameEventsExchange, sqlmock.AnyArg())
+			WithArgs(sqlmock.AnyArg(), commonconstants.ItemsExtracted, commonconstants.GameEventsExchange, sqlmock.AnyArg())
 	}
 	matchEnded := func(mock sqlmock.Sqlmock) *sqlmock.ExpectedExec {
 		return mock.ExpectExec(insertOutboxStmt).
-			WithArgs(commonconstants.GameMatchEnded, commonconstants.GameEventsExchange, sqlmock.AnyArg())
+			WithArgs(sqlmock.AnyArg(), commonconstants.GameMatchEnded, commonconstants.GameEventsExchange, sqlmock.AnyArg())
 	}
 
 	tests := []struct {
@@ -205,13 +208,14 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 			tt.expect(mock)
 			errs := captureErrors(t)
 			outbox := &countingOutbox{next: commonoutbox.NewService(commonoutbox.NewRepo(db))}
-			svc := NewService(db, outbox, noWake{})
+			svc := NewService(db, outbox, noWake{}, noRetry())
 			sessionID := uuid.New()
 
 			svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
 				SessionID: sessionID,
 				Players:   []types.RawPlayerState{{MemberID: uuid.NewString(), Username: "wren"}},
 			})
+			svc.Drain()
 
 			assert.NoError(t, mock.ExpectationsWereMet())
 			assert.Equal(t, tt.wantInserts, outbox.calls,
@@ -226,7 +230,7 @@ func TestPublishMatchComplete_OutboxRows_AllOrNothing(t *testing.T) {
 // field visit. FS-X2F2H §F R43, ADR-0031, I-X2F2H-2.
 func TestPublishMatchComplete_MatchEnded_SaysRun(t *testing.T) {
 	outbox := &capturingOutbox{}
-	svc := NewService(committingTxDB(t), outbox, noWake{})
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
 
 	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
 		SessionID: uuid.New(),
@@ -234,4 +238,59 @@ func TestPublishMatchComplete_MatchEnded_SaysRun(t *testing.T) {
 	})
 
 	assert.Equal(t, commonconstants.WorldTypeRun, outbox.matchEnded(t).GetWorldType())
+}
+
+// settlementRowIDs publishes the run's end for members and returns the
+// items.extracted and match.ended row ids it was written under.
+func settlementRowIDs(t *testing.T, runID uuid.UUID, members ...string) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	outbox := &capturingOutbox{}
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
+	players := make([]types.RawPlayerState, len(members))
+	for i, member := range members {
+		players[i] = types.RawPlayerState{MemberID: member, Username: "wren"}
+	}
+
+	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{SessionID: runID, Players: players})
+
+	return outbox.rowID(t, commonconstants.ItemsExtracted), outbox.rowID(t, commonconstants.GameMatchEnded)
+}
+
+// A run's settlement rows are written under ids derived from the run, its
+// members and the event, so writing the same settlement again collapses onto
+// the same rows. FS-GV8WN §B R7, ADR-0040 §2, I-GV8WN-1.
+func TestPublishMatchComplete_RowIDs_DerivedFromRunMemberAndEvent(t *testing.T) {
+	run, otherRun := uuid.New(), uuid.New()
+	wren, ash := uuid.NewString(), uuid.NewString()
+
+	extracted, ended := settlementRowIDs(t, run, wren)
+	assert.NotEqual(t, uuid.Nil, extracted, "the row carries its own id")
+	assert.NotEqual(t, uuid.Nil, ended, "the row carries its own id")
+	assert.NotEqual(t, extracted, ended, "each event of the pair has its own id")
+
+	t.Run("same run and member: same ids", func(t *testing.T) {
+		againExtracted, againEnded := settlementRowIDs(t, run, wren)
+		assert.Equal(t, extracted, againExtracted)
+		assert.Equal(t, ended, againEnded)
+	})
+
+	t.Run("another member of the run: other ids", func(t *testing.T) {
+		ashExtracted, ashEnded := settlementRowIDs(t, run, ash)
+		assert.NotEqual(t, extracted, ashExtracted)
+		assert.NotEqual(t, ended, ashEnded)
+	})
+
+	t.Run("the same member in another run: other ids", func(t *testing.T) {
+		otherExtracted, otherEnded := settlementRowIDs(t, otherRun, wren)
+		assert.NotEqual(t, extracted, otherExtracted)
+		assert.NotEqual(t, ended, otherEnded)
+	})
+
+	t.Run("several members: the same ids whatever their order", func(t *testing.T) {
+		bothExtracted, bothEnded := settlementRowIDs(t, run, wren, ash)
+		reversedExtracted, reversedEnded := settlementRowIDs(t, run, ash, wren)
+		assert.Equal(t, bothExtracted, reversedExtracted)
+		assert.Equal(t, bothEnded, reversedEnded)
+		assert.NotEqual(t, extracted, bothExtracted, "a pair for both is not the pair for one")
+	})
 }

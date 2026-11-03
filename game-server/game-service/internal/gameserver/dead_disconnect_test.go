@@ -213,22 +213,20 @@ func TestDeadDrop_SettledWithTheRun(t *testing.T) {
 			resolvedDropEscape(t, p.run, p.kaelen.ID)
 			snapshot := resolvedDropEndRun(t, p.run, p.emitter)
 
+			// settled by their own settlement the tick they fell, not by the run's
+			// end, which names them so its release skips them (FS-GV8WN §A, R14)
 			_, inSnapshot := resolvedDropPlayerIn(snapshot, p.wren.ID)
-			assert.True(t, inSnapshot, "the run-end snapshot carries them")
+			assert.False(t, inSnapshot, "the run's end does not settle them again")
+			assert.Contains(t, snapshot.SettledMemberIDs, p.wren.ID)
 			position, eliminated := snapshot.EliminationOrder[p.wren.ID]
 			require.True(t, eliminated, "with the elimination they died with")
 			assert.Equal(t, 0, position, "first and only to fall")
 
-			var progress *types.RunProgress
-			for i := range snapshot.Progress {
-				if snapshot.Progress[i].MemberID == p.wren.ID {
-					progress = &snapshot.Progress[i]
-				}
-			}
-			require.NotNil(t, progress, "run progress carries them")
-			assert.Equal(t, wrenCharacter, progress.CharacterID)
-			assert.True(t, progress.Seated, "settled from the body the run kept")
-			assert.Len(t, p.emitter.snapshots(), 1, "the run settled once")
+			own := p.emitter.settlementsOf(p.wren.ID)
+			require.Len(t, own, 1, "settled once, at their death")
+			assert.Equal(t, wrenCharacter, own[0].Progress.CharacterID)
+			assert.True(t, own[0].Progress.Seated, "settled from their body as it fell")
+			assert.Len(t, p.emitter.snapshots(), 1, "the run ended once")
 
 			if closed.err != deadDropNormal {
 				assert.Equal(t, p.hub.ID, recordOf(t, p.server, p.wren.ID).CurrentGameSessionId,
@@ -463,7 +461,7 @@ func TestDeadDrop_LivingDelverDropUnchanged(t *testing.T) {
 
 	p.server.cleanUpPlayerCompletely(p.wren.ID, deadDropHold(t, p.server, p.wren.ID))
 
-	assert.False(t, p.run.HasPlayer(p.wren.ID), "removed from the run at the grace's end")
+	awaitRemoved(t, p.run, p.wren.ID, "removed from the run at the grace's end")
 	_, onRecord := p.server.PlayerByID(p.wren.ID)
 	assert.False(t, onRecord)
 }

@@ -304,6 +304,7 @@ func leaveRunWorldsOnRecord(t *testing.T, server *Server, memberID uuid.UUID) []
 
 // leaveRunEmitterSpy captures what the run reports at its end.
 type leaveRunEmitterSpy struct {
+	settlementLog
 	mu       sync.Mutex
 	captured []*types.RawMatchState
 	ended    chan *types.RawMatchState
@@ -597,12 +598,8 @@ func TestLeaveRun_LeaverSettledWithTheRun(t *testing.T) {
 
 	assert.Equal(t, run.ID, ended.SessionID)
 
-	members := make([]string, 0, len(ended.Players))
-	for _, player := range ended.Players {
-		members = append(members, player.MemberID)
-	}
-	assert.ElementsMatch(t, []string{wren.ID.String(), kaelen.ID.String()}, members,
-		"match.ended carries every delver who was in the run, the leaver included")
+	assert.ElementsMatch(t, []string{wren.ID.String(), kaelen.ID.String()}, spy.settledInRun(ended),
+		"every delver who was in the run is settled, the leaver included (FS-GV8WN §A)")
 
 	position, eliminated := ended.EliminationOrder[wren.ID]
 	assert.True(t, eliminated, "the leaver keeps the elimination they died with")
@@ -610,13 +607,8 @@ func TestLeaveRun_LeaverSettledWithTheRun(t *testing.T) {
 	_, kaelenEliminated := ended.EliminationOrder[kaelen.ID]
 	assert.False(t, kaelenEliminated)
 
-	var leaverProgress *types.RunProgress
-	for i := range ended.Progress {
-		if ended.Progress[i].MemberID == wren.ID {
-			leaverProgress = &ended.Progress[i]
-		}
-	}
-	require.NotNil(t, leaverProgress, "run progress carries the leaver")
-	assert.Equal(t, wrenCharacter, leaverProgress.CharacterID)
-	assert.True(t, leaverProgress.Seated, "settled from the body the run kept, as if they had stayed")
+	own := spy.settlementsOf(wren.ID)
+	require.Len(t, own, 1, "the leaver is settled once, at their death")
+	assert.Equal(t, wrenCharacter, own[0].Progress.CharacterID)
+	assert.True(t, own[0].Progress.Seated, "settled from their body as it fell")
 }

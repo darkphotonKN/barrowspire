@@ -38,7 +38,7 @@ func (p *progressKeeper) ApplyRunProgress(progress []types.RunProgress) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, "progress")
-	p.progress = progress
+	p.progress = append(p.progress, progress...)
 }
 
 func (p *progressKeeper) ReturnPlayersToHub(id uuid.UUID) {
@@ -56,7 +56,7 @@ func endableRun(t *testing.T) (*Session, *progressKeeper, *capturingOutbox) {
 	keeper := &progressKeeper{homeReturner: homeReturner{run: s}}
 	outbox := &capturingOutbox{}
 	s.sessionCloser = keeper
-	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{})
+	s.eventEmitter = NewService(committingTxDB(t), outbox, noWake{}, testRetry(t))
 	s.sender = &recordingSender{}
 	s.endSessionCh = make(chan bool, 64)
 	return s, keeper, outbox
@@ -77,10 +77,15 @@ func TestEndSession_MatchEnded_CarriesEveryCharactersExperience(t *testing.T) {
 	late := seatMember(t, s, types.CharacterInPlay{ID: uuid.New(), Name: "Mira", Class: "archer"})
 
 	s.endSession()
+	drainSettlements(t, s)
 
+	// the one who left was settled by their own pair when removed (FS-GV8WN
+	// §A R1); the rest by the run's end
 	byMember := map[string]*pb.PlayerMatchResult{}
-	for _, player := range outbox.matchEnded(t).Players {
-		byMember[player.MemberId] = player
+	for _, event := range outbox.everyMatchEnded(t) {
+		for _, player := range event.Players {
+			byMember[player.MemberId] = player
+		}
 	}
 	require.Len(t, byMember, 3, "every seated member and the one who left")
 
@@ -118,7 +123,9 @@ func TestEndSession_RunProgress_ReachesTheHostBeforeHome(t *testing.T) {
 
 	s.endSession()
 
-	assert.Equal(t, []string{"progress", "home"}, keeper.calls)
+	// the removed member's progress reached the host when they were settled
+	// (FS-GV8WN §A R3), the run's own before its delvers went home
+	assert.Equal(t, []string{"progress", "progress", "home"}, keeper.calls)
 
 	byMember := map[uuid.UUID]types.RunProgress{}
 	for _, p := range keeper.progress {
@@ -128,9 +135,10 @@ func TestEndSession_RunProgress_ReachesTheHostBeforeHome(t *testing.T) {
 		MemberID: stayer.id, CharacterID: stayer.body.player.CharacterID,
 		Gained: 10, Seated: true, Level: 2, Experience: 100,
 	}, byMember[stayer.id], "seated: the body's level and experience")
-	assert.Equal(t, types.RunProgress{
-		MemberID: leaver.id, CharacterID: leaver.body.player.CharacterID, Gained: 10,
-	}, byMember[leaver.id], "removed: only what was earned")
+	removed := byMember[leaver.id]
+	assert.Equal(t, leaver.body.player.CharacterID, removed.CharacterID)
+	assert.EqualValues(t, 10, removed.Gained, "removed: what was earned")
+	assert.True(t, removed.Seated, "settled from their body as it stood when removed")
 	assert.Equal(t, types.RunProgress{
 		MemberID: idle.id, CharacterID: idle.body.player.CharacterID,
 		Seated: true, Level: 1, Experience: 0,

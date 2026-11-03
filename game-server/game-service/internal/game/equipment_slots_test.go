@@ -43,7 +43,7 @@ func TestGetRawMatchState_ExtractsWhatIsWornInEverySlot(t *testing.T) {
 	playerEntityID := s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 	wearInEverySlot(t, s, playerEntityID)
 
-	state := s.getRawMatchState()
+	state := s.getRawMatchState(nil)
 
 	require.Len(t, state.Players, 1)
 	extracted := reflect.ValueOf(state.Players[0].Equipment)

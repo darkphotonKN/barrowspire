@@ -150,7 +150,7 @@ func TestGetRawMatchState_DeadDelverLosesUnsafeFinds(t *testing.T) {
 			g := gearedDelver(t, s)
 			tt.resolve(t, g)
 
-			state := s.getRawMatchState()
+			state := s.getRawMatchState(nil)
 
 			require.Len(t, state.Players, 1, "the body is in the event")
 			extracted := state.Players[0]
@@ -174,7 +174,7 @@ func TestGetRawMatchState_RemovedDelverIsAbsent(t *testing.T) {
 	g.die(t)
 	s.RemovePlayer(g.playerID.String())
 
-	assert.Empty(t, s.getRawMatchState().Players)
+	assert.Empty(t, s.getRawMatchState(nil).Players)
 }
 
 // A field visit drops nothing, however its visitor died. FS-18Z5F §E R25.
@@ -203,7 +203,7 @@ func TestGetRawMatchState_FieldWorld_DeadVisitorKeepsUnsafeFinds(t *testing.T) {
 	pickUpInField(t, field, memberID, "Boar Tusk")
 	geared{s: field, playerID: memberID, entityID: delverEntity(t, field, memberID).ID}.die(t)
 
-	state := field.getRawMatchState()
+	state := field.getRawMatchState(nil)
 
 	require.Len(t, state.Players, 1)
 	assert.Contains(t, extractedNames(state.Players[0].Inventory), "Boar Tusk")
