@@ -92,6 +92,52 @@ const (
 	// ItemWorn: the item is in the member's loadout, so it is not in the bag
 	// or the stash to move. Added for FS-VPD8Y (Town stash).
 	ItemWorn Code = "ITEM_WORN"
+
+	// PasswordTooShort: a password being set has fewer than 10 characters,
+	// counted as Unicode code points. Checked only when a password is set
+	// (signup, password change), never at login (ADR-0041). Added for
+	// FS-V6SFK (Signup hardening).
+	PasswordTooShort Code = "PASSWORD_TOO_SHORT"
+
+	// PasswordTooLong: a password being set is over 72 bytes in UTF-8, the
+	// most bcrypt reads (ADR-0041). Added for FS-V6SFK (Signup hardening).
+	PasswordTooLong Code = "PASSWORD_TOO_LONG"
+
+	// PasswordTooCommon: a password being set is on auth-service's embedded
+	// common-password list, compared case-insensitively (ADR-0041). Added for
+	// FS-V6SFK (Signup hardening).
+	PasswordTooCommon Code = "PASSWORD_TOO_COMMON"
+
+	// EmailInvalid: an email, once trimmed and lowercased, is not a bare
+	// address net/mail parses back to itself, or is over 254 bytes. Added for
+	// FS-V6SFK (Signup hardening).
+	EmailInvalid Code = "EMAIL_INVALID"
+
+	// VerificationCodeInvalid: the verification code entered does not match
+	// the member's live code. The wrong try is counted, and the 5th burns the
+	// code. Added for FS-V6SFK (Signup hardening).
+	VerificationCodeInvalid Code = "VERIFICATION_CODE_INVALID"
+
+	// VerificationCodeExpired: the member has no live verification code: it
+	// was never issued, is past its 15 minutes, or was burned by wrong tries.
+	// The client offers a resend. Added for FS-V6SFK (Signup hardening).
+	VerificationCodeExpired Code = "VERIFICATION_CODE_EXPIRED"
+
+	// VerificationResendTooSoon: a new verification code was asked for within
+	// 60 seconds of the last one, by resend or by an email change. Added for
+	// FS-V6SFK (Signup hardening).
+	VerificationResendTooSoon Code = "VERIFICATION_RESEND_TOO_SOON"
+
+	// EmailAlreadyVerified: the member is already verified, so there is no
+	// code to resend and the email can no longer be changed this way. Added
+	// for FS-V6SFK (Signup hardening).
+	EmailAlreadyVerified Code = "EMAIL_ALREADY_VERIFIED"
+
+	// EmailUnverified: the caller's access token does not carry
+	// email_verified, so marketplace-service refuses listing, bidding and
+	// buyout. Withdraw, accept and reads stay open. Added for FS-V6SFK
+	// (Signup hardening).
+	EmailUnverified Code = "EMAIL_UNVERIFIED"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -103,4 +149,17 @@ var domainCodes = map[Code]struct{}{
 	StashFull:        {},
 	ItemNotAvailable: {},
 	ItemWorn:         {},
+
+	// FS-V6SFK
+	PasswordTooShort:  {},
+	PasswordTooLong:   {},
+	PasswordTooCommon: {},
+	EmailInvalid:      {},
+
+	VerificationCodeInvalid:   {},
+	VerificationCodeExpired:   {},
+	VerificationResendTooSoon: {},
+	EmailAlreadyVerified:      {},
+
+	EmailUnverified: {},
 }

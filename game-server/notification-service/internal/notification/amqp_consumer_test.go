@@ -3,6 +3,7 @@ package notification
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,6 +26,14 @@ type fakeConsumerService struct {
 	gameEndedCalls int
 	gameEndedID    uuid.UUID
 	gameEndedEvent *pb.MatchEndedEvent
+
+	verificationErr     error
+	verificationPayload *commonconstants.MemberVerificationRequestedEventPayload
+}
+
+func (f *fakeConsumerService) ProcessVerificationRequested(ctx context.Context, payload *commonconstants.MemberVerificationRequestedEventPayload) error {
+	f.verificationPayload = payload
+	return f.verificationErr
 }
 
 func (f *fakeConsumerService) ProcessMemberSignedUp(ctx context.Context, payload *commonconstants.MemberSignedUpEventPayload) error {
@@ -170,4 +179,78 @@ func TestRequeueWithRetry_KeepsMessageID(t *testing.T) {
 	assert.Equal(t, original.MessageId, got.msg.MessageId)
 	assert.Equal(t, original.Body, got.msg.Body)
 	assert.Equal(t, int32(1), got.msg.Headers["x-retry-count"])
+}
+
+func verificationRequestedDelivery(t *testing.T, acker *fakeAcknowledger, body []byte) amqp.Delivery {
+	t.Helper()
+	return amqp.Delivery{
+		Acknowledger: acker,
+		MessageId:    testMessageID,
+		RoutingKey:   commonconstants.MemberVerificationRequestedEvent,
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	}
+}
+
+// FS-V6SFK R24, R27: a member.verification_requested delivery is handed to the
+// service and settled by its result under the existing retry policy: sent or
+// duplicate is acked, a failed send is retried with delay, an unreadable body
+// is dead-lettered. No log line, at any level, carries the code.
+func TestHandleVerificationRequested(t *testing.T) {
+	payload := verificationRequested(uuid.NewString())
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		body        []byte
+		serviceErr  error
+		wantCalled  bool
+		wantAcks    int
+		wantNacks   int
+		wantRetries int
+	}{
+		{"sent: acked", body, nil, true, 1, 0, 0},
+		{"duplicate: acked, nothing sent", body, commonconstants.ErrAlreadyProcessed, true, 1, 0, 0},
+		{"send failed: retried with delay", body, fmt.Errorf("send verification mail: %w", commonconstants.ErrTransient), true, 1, 0, 1},
+		{"unreadable body: dead-lettered", []byte("{"), nil, false, 0, 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureErrorLogs(t)
+			acker := &fakeAcknowledger{}
+			svc := &fakeConsumerService{verificationErr: tt.serviceErr}
+			pub := &fakeRetryPublisher{}
+			c := &Consumer{service: svc, publisher: pub}
+
+			c.handleVerificationRequested(verificationRequestedDelivery(t, acker, tt.body))
+
+			assert.Equal(t, tt.wantCalled, svc.verificationPayload != nil, "service called")
+			if tt.wantCalled {
+				assert.Equal(t, payload.Code, svc.verificationPayload.Code)
+				assert.Equal(t, payload.Email, svc.verificationPayload.Email)
+			}
+			assert.Equal(t, tt.wantAcks, acker.acks, "acks")
+			assert.Equal(t, tt.wantNacks, acker.nacks, "nacks")
+			assert.Len(t, pub.published, tt.wantRetries, "retry copies")
+			assert.NotContains(t, logs.String(), testCode, "the code is in no log line")
+		})
+	}
+}
+
+// The verification queue is declared, bound and given retry queues like every
+// other event this service consumes.
+func TestEventRetryConfigs_IncludeVerificationRequested(t *testing.T) {
+	var found *EventRetryConfig
+	for _, cfg := range GetEventRetryConfigs() {
+		if cfg.RoutingKey == commonconstants.MemberVerificationRequestedEvent {
+			found = &cfg
+		}
+	}
+
+	require.NotNil(t, found)
+	assert.Equal(t, commonconstants.AuthEventsExchange, found.Exchange)
+	assert.Equal(t, commonconstants.NotificationMemberVerificationRequestedQueue, found.WorkQueue)
+	assert.Equal(t, commonconstants.NotificationMemberVerificationRequestedFailed, found.DLQKey)
 }

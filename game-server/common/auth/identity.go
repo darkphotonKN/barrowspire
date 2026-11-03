@@ -22,6 +22,11 @@ type Identity struct {
 	AccountID *uuid.UUID
 
 	Role Role
+
+	// EmailVerified is false when the token carries no email_verified claim.
+	// Never a reason to refuse authentication: an unverified member is still
+	// authenticated, and a consumer gating on it fails closed (FS-V6SFK R22).
+	EmailVerified bool
 }
 
 // identityKey is an unexported struct type, so no other package can construct

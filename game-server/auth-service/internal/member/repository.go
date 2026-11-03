@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/models"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -269,4 +270,124 @@ func (r *repository) UpdateSubscriptionStatus(ctx context.Context, memberID uuid
 		return wrapDBErr("update subscription status", err)
 	}
 	return nil
+}
+
+// UpsertVerificationCodeTx makes code the member's one live verification code,
+// inside the caller's transaction. A new code replaces the old one outright,
+// wrong-attempt count included, so issuing always kills the previous code
+// (FS-V6SFK §Requirements 11).
+func (r *repository) UpsertVerificationCodeTx(ctx context.Context, tx *sqlx.Tx, code VerificationCode) error {
+	query := `
+	INSERT INTO verification_codes (member_id, code_hash, expires_at, wrong_attempts, issued_at)
+	VALUES ($1, $2, $3, 0, $4)
+	ON CONFLICT (member_id) DO UPDATE
+	   SET code_hash      = EXCLUDED.code_hash,
+	       expires_at     = EXCLUDED.expires_at,
+	       wrong_attempts = 0,
+	       issued_at      = EXCLUDED.issued_at
+	`
+
+	if _, err := tx.ExecContext(ctx, query, code.MemberID, code.CodeHash, code.ExpiresAt, code.IssuedAt); err != nil {
+		return wrapDBErr("upsert verification code in tx", err)
+	}
+
+	return nil
+}
+
+// transactor runs work in one transaction on the auth database.
+type transactor struct {
+	db *sqlx.DB
+}
+
+func NewTransactor(db *sqlx.DB) *transactor {
+	return &transactor{db: db}
+}
+
+// InTx commits when fn returns nil and rolls back otherwise.
+func (t *transactor) InTx(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
+	tx, err := t.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	// no-op once Commit has run
+	defer func() { _ = tx.Rollback() }()
+
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+// LockMemberTx reads the member and holds its row until the caller's
+// transaction ends (FOR UPDATE), so verification work on one member is
+// serialized. The password hash is blanked, as in GetById.
+func (r *repository) LockMemberTx(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (*models.Member, error) {
+	var member models.Member
+	if err := tx.GetContext(ctx, &member, `SELECT * FROM members WHERE id = $1 FOR UPDATE`, id); err != nil {
+		return nil, wrapDBErr("lock member in tx", err)
+	}
+	member.Password = ""
+	return &member, nil
+}
+
+// VerificationCodeTx reads the member's code row, expired or not. No row
+// answers commonconstants.ErrNotFound.
+func (r *repository) VerificationCodeTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*VerificationCode, error) {
+	var code VerificationCode
+	query := `
+	SELECT member_id, code_hash, expires_at, wrong_attempts, issued_at
+	  FROM verification_codes
+	 WHERE member_id = $1
+	`
+	if err := tx.GetContext(ctx, &code, query, memberID); err != nil {
+		return nil, wrapDBErr("get verification code in tx", err)
+	}
+	return &code, nil
+}
+
+// CountWrongVerificationAttemptTx adds one wrong try to the member's code.
+func (r *repository) CountWrongVerificationAttemptTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) error {
+	query := `UPDATE verification_codes SET wrong_attempts = wrong_attempts + 1 WHERE member_id = $1`
+	if _, err := tx.ExecContext(ctx, query, memberID); err != nil {
+		return wrapDBErr("count wrong verification attempt in tx", err)
+	}
+	return nil
+}
+
+// DeleteVerificationCodeTx removes the member's code once it is used. A
+// burned code is kept, so its issued_at still holds the resend cooldown.
+func (r *repository) DeleteVerificationCodeTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM verification_codes WHERE member_id = $1`, memberID); err != nil {
+		return wrapDBErr("delete verification code in tx", err)
+	}
+	return nil
+}
+
+// MarkEmailVerifiedTx records the member as verified at at and returns the
+// updated member, password blanked.
+func (r *repository) MarkEmailVerifiedTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, at time.Time) (*models.Member, error) {
+	var member models.Member
+	query := `UPDATE members SET email_verified_at = $2, updated_at = NOW() WHERE id = $1 RETURNING *`
+	if err := tx.GetContext(ctx, &member, query, memberID, at); err != nil {
+		return nil, wrapDBErr("mark email verified in tx", err)
+	}
+	member.Password = ""
+	return &member, nil
+}
+
+// UpdateEmailTx moves the member to email, already normalized, and returns
+// the updated member, password blanked. An address another member holds
+// answers commonconstants.ErrDuplicateResource from the lower(email) unique
+// index.
+func (r *repository) UpdateEmailTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, email string) (*models.Member, error) {
+	var member models.Member
+	query := `UPDATE members SET email = $2, updated_at = NOW() WHERE id = $1 RETURNING *`
+	if err := tx.GetContext(ctx, &member, query, memberID, email); err != nil {
+		return nil, wrapDBErr("update email in tx", err)
+	}
+	member.Password = ""
+	return &member, nil
 }

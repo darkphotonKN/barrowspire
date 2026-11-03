@@ -349,7 +349,7 @@ describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feed
   };
 
   beforeEach(() => {
-    useAuthStore.setState({ memberInfo: { id: ME } });
+    useAuthStore.setState({ memberInfo: { id: ME, email_verified: false } });
   });
   afterEach(() => {
     usePartyStore.setState({ party: null, invites: [], readyCheck: null });

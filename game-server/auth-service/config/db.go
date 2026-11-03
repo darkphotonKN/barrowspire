@@ -80,12 +80,18 @@ func runMigrations(db *sqlx.DB) error {
 	return nil
 }
 
-func SeedDefaults(db *sqlx.DB) {
+// SeedDefaults takes the caller's password policy rather than building its
+// own: the embedded list is a 100k-entry map, built once in main. The seed
+// never checks it (seeded passwords are not set by a member), but the
+// service needs one.
+func SeedDefaults(db *sqlx.DB, passwordPolicy member.PasswordPolicy) {
 	// --- default members ---
 	memberRepo := member.NewRepository(db)
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
-	memberService := member.NewService(db, memberRepo, nil, outboxService)
+	codeIssuer := member.NewCodeIssuer(memberRepo, outboxService, time.Now)
+	verifier := member.NewVerifier(member.NewTransactor(db), memberRepo, codeIssuer, time.Now)
+	memberService := member.NewService(db, memberRepo, nil, outboxService, passwordPolicy, codeIssuer, verifier)
 
 	err := memberService.CreateDefaultMembers(constants.DefaultMembers)
 

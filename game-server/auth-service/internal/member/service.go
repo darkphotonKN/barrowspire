@@ -27,6 +27,30 @@ type service struct {
 	Repo            Repository
 	publishCh       commonbroker.Publisher
 	outboxPublisher commonoutbox.OutboxPublisher
+	passwordPolicy  PasswordPolicy
+	codeIssuer      VerificationCodeIssuer
+	verifier        EmailVerifier
+}
+
+// PasswordPolicy is the rule a password must meet when it is set. Check
+// answers a domain refusal (errcode.Refuse) for a password it rejects.
+type PasswordPolicy interface {
+	Check(password string) error
+}
+
+// VerificationCodeIssuer issues a member's verification code and queues its
+// mail inside the caller's transaction (FS-V6SFK §Requirements 14, 16).
+type VerificationCodeIssuer interface {
+	IssueTx(ctx context.Context, tx *sqlx.Tx, to Recipient) error
+}
+
+// EmailVerifier moves a member from unverified to verified: checking a code,
+// resending one, changing the address while unverified (FS-V6SFK
+// §Requirements 17-19). Refusals come back as errcode refusals.
+type EmailVerifier interface {
+	Verify(ctx context.Context, memberID uuid.UUID, code string) (*models.Member, error)
+	Resend(ctx context.Context, memberID uuid.UUID) error
+	ChangeEmail(ctx context.Context, memberID uuid.UUID, email string) (*models.Member, error)
 }
 
 type Repository interface {
@@ -45,12 +69,15 @@ type Repository interface {
 	UpdateSubscriptionStatus(ctx context.Context, memberID uuid.UUID, productID, status string) error
 }
 
-func NewService(db *sqlx.DB, repo Repository, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher) *service {
+func NewService(db *sqlx.DB, repo Repository, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher, passwordPolicy PasswordPolicy, codeIssuer VerificationCodeIssuer, verifier EmailVerifier) *service {
 	return &service{
 		db:              db,
 		Repo:            repo,
 		publishCh:       publishCh,
 		outboxPublisher: outboxPublisher,
+		passwordPolicy:  passwordPolicy,
+		codeIssuer:      codeIssuer,
+		verifier:        verifier,
 	}
 }
 
@@ -68,6 +95,7 @@ func memberToProto(m *models.Member) *pb.Member {
 		CreatedAt:     timestamppb.New(m.CreatedAt),
 		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 		Role:          m.Role,
+		EmailVerified: m.EmailVerifiedAt != nil,
 	}
 
 	// Include avatar_url if it exists
@@ -106,6 +134,16 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 	ctx, span := serviceTracer.Start(ctx, "service.CreateMember")
 	defer span.End()
 
+	// Both are refusals the caller fixes by changing the request, so they run
+	// before any hashing or database work (FS-V6SFK §Requirements 2, 6-7).
+	email, err := NormalizeEmail(req.Email)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.passwordPolicy.Check(req.Password); err != nil {
+		return nil, err
+	}
+
 	// span just for password
 	ctx, hashSpan := serviceTracer.Start(ctx, "service.HashPassword")
 	// hash the password
@@ -124,7 +162,7 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 		EventID:    uuid.NewString(),
 		UserID:     "", // filled in after member row is created
 		Name:       req.Name,
-		Email:      req.Email,
+		Email:      email,
 		SignedUpAt: "", // TODO: update this to legit date
 	}
 
@@ -142,7 +180,7 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 		_ = tx.Rollback()
 	}()
 
-	memberId, err := s.Repo.CreateTx(ctx, tx, req.Name, req.Email, hashedPw)
+	memberId, err := s.Repo.CreateTx(ctx, tx, req.Name, email, hashedPw)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +199,13 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 		return nil, fmt.Errorf("write outbox: %w", err)
 	}
 
+	// The verification code rides the same transaction, so a member never
+	// commits without one and no code is mailed for a rolled-back signup
+	// (FS-V6SFK §Requirements 14).
+	if err = s.codeIssuer.IssueTx(ctx, tx, Recipient{MemberID: memberId, Name: req.Name, Email: email}); err != nil {
+		return nil, fmt.Errorf("issue verification code: %w", err)
+	}
+
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit member+outbox: %w", err)
 	}
@@ -177,7 +222,10 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 }
 
 func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
-	member, err := s.Repo.GetMemberByEmail(ctx, req.Email)
+	// Normalized, never validated: a malformed address simply matches no one.
+	// Login never applies the password policy either, so a password set before
+	// it existed keeps working (FS-V6SFK §Requirements 3, 6).
+	member, err := s.Repo.GetMemberByEmail(ctx, normalizedEmail(req.Email))
 	if err != nil {
 		// Deliberately NOT ErrNotFound. Propagating it makes "no such account"
 		// answer 404 while a wrong password answers 401 — which tells an attacker
@@ -191,7 +239,13 @@ func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.Lo
 		return nil, commonconstants.ErrUnauthorized
 	}
 
-	// generate tokens
+	return tokenPair(member)
+}
+
+// tokenPair mints an access and refresh token for member and returns them with
+// the member. The claims are read off member, so it must be the row as it is
+// now: verify passes the member it just verified (FS-V6SFK §Requirements 21).
+func tokenPair(member *models.Member) (*pb.LoginResponse, error) {
 	accessExpiryTime := time.Minute * 60
 	refreshExpiryTime := time.Hour * 24 * 7
 
@@ -205,8 +259,6 @@ func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.Lo
 		return nil, fmt.Errorf("error generating refresh token: %w", err)
 	}
 
-	slog.Debug("Generated tokens", "accessToken", accessToken)
-
 	return &pb.LoginResponse{
 		AccessToken:      accessToken,
 		RefreshToken:     refreshToken,
@@ -214,6 +266,53 @@ func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.Lo
 		RefreshExpiresIn: int32(refreshExpiryTime.Seconds()),
 		MemberInfo:       memberToProto(member),
 	}, nil
+}
+
+// VerifyEmail verifies the member with their code and hands back a fresh
+// token pair, so the access token carries the claim without a new login. An
+// already-verified member gets a fresh pair too (FS-V6SFK §Requirements 17).
+func (s *service) VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error) {
+	id, err := uuid.Parse(req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid UUID: %w", err)
+	}
+
+	member, err := s.verifier.Verify(ctx, id, req.Code)
+	if err != nil {
+		return nil, err
+	}
+
+	return tokenPair(member)
+}
+
+// ResendVerification issues the member a new code (FS-V6SFK §Requirements 18).
+func (s *service) ResendVerification(ctx context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error) {
+	id, err := uuid.Parse(req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid UUID: %w", err)
+	}
+
+	if err := s.verifier.Resend(ctx, id); err != nil {
+		return nil, err
+	}
+
+	return &pb.ResendVerificationResponse{}, nil
+}
+
+// ChangeUnverifiedEmail moves an unverified member to a new address and mails
+// it a code (FS-V6SFK §Requirements 19).
+func (s *service) ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error) {
+	id, err := uuid.Parse(req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid UUID: %w", err)
+	}
+
+	member, err := s.verifier.ChangeEmail(ctx, id, req.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	return memberToProto(member), nil
 }
 
 // UpdateMemberInfo implements the gRPC UpdateMemberInfo method
@@ -265,6 +364,12 @@ func (s *service) UpdateMemberPassword(ctx context.Context, req *pb.UpdatePasswo
 			Success: false,
 			Message: "Current password is incorrect",
 		}, errors.New("current password is incorrect")
+	}
+
+	// The policy checks the new password only after the existing checks pass
+	// (FS-V6SFK §Requirements 2, 5).
+	if err := s.passwordPolicy.Check(req.NewPassword); err != nil {
+		return nil, err
 	}
 
 	// Hash the new password
@@ -408,7 +513,7 @@ func (s *service) UpdateSubscriptionStatus(ctx context.Context, req *pb.UpdateSu
 }
 
 func (s *service) CheckEmailExists(ctx context.Context, req *pb.CheckEmailRequest) (*pb.CheckEmailResponse, error) {
-	_, err := s.Repo.GetMemberByEmail(ctx, req.Email)
+	_, err := s.Repo.GetMemberByEmail(ctx, normalizedEmail(req.Email))
 	if err != nil {
 		return &pb.CheckEmailResponse{Exists: false}, nil
 	}

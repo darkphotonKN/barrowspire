@@ -30,6 +30,21 @@ services:
     networks:
       - barrowspire-network
 
+  # Dev mail catcher (FS-V6SFK R28, ADR-0040): notification-service mails
+  # verification codes here, nothing leaves the machine. Host ports follow the
+  # rabbitmq +123 offset: SMTP 1148 -> 1025, web UI 8148 -> 8025
+  # (http://localhost:8148). notification-service run on the host defaults to
+  # localhost:1148 when SMTP_HOST is unset; one inside this network would set
+  # SMTP_HOST=mailpit and SMTP_PORT=1025.
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    container_name: barrowspire-mailpit
+    ports:
+      - "1148:1025" # SMTP, changed from 1025 to avoid conflicts
+      - "8148:8025" # web UI, changed from 8025 to avoid conflicts
+    networks:
+      - barrowspire-network
+
   # One Postgres instance, one database and one role per service (ADR-0023).
   # Mirrors production, where every service database lives on a single Cloud
   # SQL instance. Isolation is by role, not by container: each service's role

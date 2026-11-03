@@ -39,4 +39,13 @@ type Claims struct {
 	// absence (ADR-0014); they must never be handed something that merely looks
 	// absent.
 	AccountID *uuid.UUID `json:"account_id,omitempty"`
+
+	// EmailVerified is true only when the member has verified their email
+	// (FS-V6SFK §Requirements 21-22). Access tokens only, read off the member
+	// row at mint time.
+	//
+	// omitempty is the point: false omits the key entirely, so an unverified
+	// token and a token minted before this claim existed look the same, and
+	// every consumer reads absence as unverified (fails closed, ADR-0014).
+	EmailVerified bool `json:"email_verified,omitempty"`
 }

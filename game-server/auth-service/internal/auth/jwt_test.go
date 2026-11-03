@@ -146,3 +146,36 @@ func TestGenerateJWT_RegisteredClaims_KeepTheirNamesAndSemantics(t *testing.T) {
 	assert.InDelta(t, time.Hour.Seconds(), exp-iat, 2,
 		"the requested expiration must survive the move to a typed struct")
 }
+
+// FS-V6SFK §Requirements 21. The access token carries email_verified: true only
+// for a verified member; for an unverified one the key is absent, not false, so
+// a consumer reading a missing key fails closed. Refresh tokens stay claim-free.
+func TestGenerateJWT_EmailVerifiedClaim(t *testing.T) {
+	t.Setenv("JWT_SECRET", testSecret)
+	verifiedAt := time.Now()
+
+	tests := []struct {
+		name        string
+		verifiedAt  *time.Time
+		tokenType   commonconstants.TokenType
+		wantPresent bool
+	}{
+		{"verified access token carries true", &verifiedAt, commonconstants.Access, true},
+		{"unverified access token omits the key", nil, commonconstants.Access, false},
+		{"verified refresh token omits the key", &verifiedAt, commonconstants.Refresh, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			member := models.Member{ID: uuid.New(), Role: "player", EmailVerifiedAt: tt.verifiedAt}
+
+			token, err := auth.GenerateJWT(member, tt.tokenType, time.Hour)
+			require.NoError(t, err)
+
+			got, present := decode(t, token)["email_verified"]
+			assert.Equal(t, tt.wantPresent, present)
+			if tt.wantPresent {
+				assert.Equal(t, true, got)
+			}
+		})
+	}
+}

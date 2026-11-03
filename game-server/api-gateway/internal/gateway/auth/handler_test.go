@@ -32,6 +32,30 @@ type stubAuthClient struct {
 	validateToken  *pb.ValidateTokenResponse
 	requestAvatar  *pb.RequestAvatarUploadResponse
 	confirmAvatar  *pb.ConfirmAvatarUploadResponse
+
+	// the requests the verification routes sent, so a test can assert the
+	// member id came from the token and the body reached auth untouched
+	verifyReq *pb.VerifyEmailRequest
+	resendReq *pb.ResendVerificationRequest
+	changeReq *pb.ChangeUnverifiedEmailRequest
+}
+
+func (s *stubAuthClient) VerifyEmail(_ context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error) {
+	s.verifyReq = req
+	return s.login, s.err
+}
+
+func (s *stubAuthClient) ResendVerification(_ context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error) {
+	s.resendReq = req
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &pb.ResendVerificationResponse{}, nil
+}
+
+func (s *stubAuthClient) ChangeUnverifiedEmail(_ context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error) {
+	s.changeReq = req
+	return s.member, s.err
 }
 
 func (s *stubAuthClient) CreateMember(context.Context, *pb.CreateMemberRequest) (*pb.Member, error) {

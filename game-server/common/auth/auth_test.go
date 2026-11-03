@@ -62,6 +62,22 @@ func TestNewValidator(t *testing.T) {
 			want:  commonauth.Identity{MemberID: memberID, Role: commonauth.RoleAdmin},
 		},
 		{
+			// FS-V6SFK §Requirements 22: the claim is read, never a refusal.
+			name: "email_verified true is carried",
+			token: sign(t, jwt.MapClaims{
+				"sub": memberID.String(), "role": "player", "email_verified": true,
+			}, testSecret),
+			want: commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: true},
+		},
+		{
+			// Absent is unverified, and still authenticated (fails closed, ADR-0014).
+			name: "email_verified absent reads as unverified",
+			token: sign(t, jwt.MapClaims{
+				"sub": memberID.String(), "role": "player",
+			}, testSecret),
+			want: commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: false},
+		},
+		{
 			name: "no role is refused",
 			token: sign(t, commonauth.Claims{
 				RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},

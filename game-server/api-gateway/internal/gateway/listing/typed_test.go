@@ -260,6 +260,29 @@ func TestPlaceBid_BidTooLowIsABadRequest(t *testing.T) {
 	testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
 }
 
+func TestPlaceBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		// FS-V6SFK §Requirements 31: the gateway does no gating, it passes marketplace's refusal through
+		{"bidder's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{err: tt.err}
+
+			w := testsupport.DoWithHeaders(newRouter(client), http.MethodPost, "/api/marketplace/listings/"+uuid.New().String()+"/bids",
+				`{"amount":150}`, authedHeaders())
+
+			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
+		})
+	}
+}
+
 // A key whose attempt was refused or abandoned, its gold returned, cannot be
 // held under again (ADR-0027): a conflict the caller fixes with a new key, kept
 // distinct from contention's CONFLICT, which a plain retry fixes.
@@ -364,6 +387,8 @@ func TestCreateListing_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"end time not in the future", status.Error(codes.InvalidArgument, "invalid argument"), http.StatusBadRequest, errcode.ValidationFailed},
 		{"items-side refusal", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
 		{"marketplace unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+		// FS-V6SFK §Requirements 31: the gateway does no gating, it passes marketplace's refusal through
+		{"seller's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
 	}
 
 	for _, tt := range tests {
@@ -626,6 +651,8 @@ func TestBuyout_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"key's attempt abandoned", status.Error(codes.AlreadyExists, "already exists"), http.StatusConflict, errcode.AlreadyExists},
 		{"marketplace or wallet unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
 		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
+		// FS-V6SFK §Requirements 31: the gateway does no gating, it passes marketplace's refusal through
+		{"buyer's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
 	}
 
 	for _, tt := range tests {

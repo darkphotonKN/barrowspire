@@ -36,6 +36,9 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerUpdateInfo(api, h, protect)
 	registerRequestAvatarUpload(api, h, protect)
 	registerConfirmAvatarUpload(api, h, protect)
+	registerVerifyEmail(api, h, protect)
+	registerResendVerification(api, h, protect)
+	registerChangeEmail(api, h, protect)
 }
 
 // ErrorFunc converts a handler's returned error into one the transport renders
@@ -83,13 +86,16 @@ func registerSignup(api huma.API, h *Handler) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "signup",
-		Errors: []int{http.StatusConflict, http.StatusUnprocessableEntity,
+		Errors: []int{http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity,
 			http.StatusServiceUnavailable, http.StatusInternalServerError},
 		Method:  http.MethodPost,
 		Path:    "/api/member/signup",
 		Summary: "Create a new member account",
 		Description: "Creates the member and returns it. The account exists by the time " +
-			"this responds. An email already in use answers 409.",
+			"this responds. An email already in use, compared case-insensitively, answers 409. " +
+			"Refusals: PASSWORD_TOO_SHORT (under 10 characters), PASSWORD_TOO_LONG (over 72 bytes), " +
+			"PASSWORD_TOO_COMMON (on the common-password list), EMAIL_INVALID (not a bare address, " +
+			"or over 254 bytes).",
 		Tags:          []string{"member"},
 		DefaultStatus: http.StatusCreated,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
@@ -97,7 +103,9 @@ func registerSignup(api huma.API, h *Handler) {
 		// unique-email violation to ErrDuplicateResource, the interceptor maps
 		// that to codes.AlreadyExists, and httperr maps that to 409. Every hop
 		// already exists and is tested; signup simply could not reach it while
-		// it answered before the database was touched.
+		// it answered before the database was touched. The password and email
+		// refusals are auth's too (FS-V6SFK): they arrive as a domain refusal
+		// and pass through the seam as 400 plus the code.
 		member, err := h.client.CreateMember(ctx, &pb.CreateMemberRequest{
 			Name:     in.Body.Name,
 			Email:    in.Body.Email,
@@ -196,7 +204,9 @@ func registerUpdatePassword(api huma.API, h *Handler,
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-member-password",
-		Description: "Changes the signed-in member's password. The current password is verified by auth-service.",
+		Description: "Changes the signed-in member's password. The current password is verified by auth-service. " +
+			"Refusals for the new password: PASSWORD_TOO_SHORT (under 10 characters), PASSWORD_TOO_LONG " +
+			"(over 72 bytes), PASSWORD_TOO_COMMON (on the common-password list).",
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 		Middlewares: huma.Middlewares{protect},
 		Security:    securedOp,
@@ -370,6 +380,134 @@ func registerConfirmAvatarUpload(api huma.API, h *Handler,
 }
 
 // ---------------------------------------------------------------------------
+// Email verification (FS-V6SFK). New operations, so they answer bare, without
+// the statusCode/message envelope, like signup after FS-83TJK.
+// ---------------------------------------------------------------------------
+
+func registerVerifyEmail(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		Body VerifyEmailBody
+	}
+	type output struct{ Body LoginResult }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "verify-email",
+		Description: "Verifies the signed-in member's email with the code mailed to them, and returns a fresh " +
+			"token pair whose access token carries the email-verified claim. An already-verified member gets " +
+			"a fresh pair too, whatever code is sent. Refusals: VERIFICATION_CODE_INVALID (wrong code; the " +
+			"5th wrong try burns it), VERIFICATION_CODE_EXPIRED (no live code: never issued, expired, or burned).",
+		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/member/email/verify",
+		Summary:     "Verify the signed-in member's email",
+		Tags:        []string{"member"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		caller, ok := commonauth.IdentityFromCtx(ctx)
+		if !ok {
+			return nil, unauthenticated()
+		}
+
+		res, err := h.client.VerifyEmail(ctx, &pb.VerifyEmailRequest{
+			Id:   caller.MemberID.String(),
+			Code: in.Body.Code,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		result := loginResultFromProto(res)
+		if result == nil {
+			return nil, fmt.Errorf("auth-service returned no login result")
+		}
+		return &output{Body: *result}, nil
+	}))
+}
+
+func registerResendVerification(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "resend-verification",
+		Description: "Mails the signed-in member a new verification code; the previous one stops working. " +
+			"Refusals: VERIFICATION_RESEND_TOO_SOON (within 60 seconds of the last code), " +
+			"EMAIL_ALREADY_VERIFIED.",
+		DefaultStatus: http.StatusNoContent,
+		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized,
+			http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/member/email/resend",
+		Summary:     "Resend the verification code",
+		Tags:        []string{"member"},
+	}, guard(func(ctx context.Context, _ *struct{}) (*output, error) {
+		caller, ok := commonauth.IdentityFromCtx(ctx)
+		if !ok {
+			return nil, unauthenticated()
+		}
+
+		if _, err := h.client.ResendVerification(ctx, &pb.ResendVerificationRequest{
+			Id: caller.MemberID.String(),
+		}); err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
+}
+
+func registerChangeEmail(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		Body ChangeEmailBody
+	}
+	type output struct{ Body Member }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "change-email",
+		Description: "Changes the signed-in member's email while it is unverified, and mails a code to the new " +
+			"address. The current address behaves as a resend. An address already in use, compared " +
+			"case-insensitively, answers 409. Refusals: EMAIL_INVALID, EMAIL_ALREADY_VERIFIED, " +
+			"VERIFICATION_RESEND_TOO_SOON (within 60 seconds of the last code).",
+		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusConflict,
+			http.StatusUnprocessableEntity, http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPut,
+		Path:        "/api/member/email",
+		Summary:     "Change an unverified email",
+		Tags:        []string{"member"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		caller, ok := commonauth.IdentityFromCtx(ctx)
+		if !ok {
+			return nil, unauthenticated()
+		}
+
+		member, err := h.client.ChangeUnverifiedEmail(ctx, &pb.ChangeUnverifiedEmailRequest{
+			Id:    caller.MemberID.String(),
+			Email: in.Body.Email,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		changed := memberFromProto(member)
+		if changed == nil {
+			return nil, fmt.Errorf("auth-service returned no member")
+		}
+		return &output{Body: *changed}, nil
+	}))
+}
+
+// ---------------------------------------------------------------------------
 // Downstream → transport
 // ---------------------------------------------------------------------------
 
@@ -387,6 +525,7 @@ func memberFromProto(m *pb.Member) *Member {
 		UpdatedAt:     timestampFromProto(m.UpdatedAt),
 		AvatarURL:     m.AvatarUrl,
 		Role:          m.Role,
+		EmailVerified: m.EmailVerified,
 	}
 }
 

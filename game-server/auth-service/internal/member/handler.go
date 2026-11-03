@@ -23,6 +23,9 @@ type Service interface {
 	GetStripeCustomerID(ctx context.Context, req *pb.GetStripeCustomerIDRequest) (*pb.GetStripeCustomerIDResponse, error)
 	UpdateSubscriptionStatus(ctx context.Context, req *pb.UpdateSubscriptionStatusRequest) (*pb.UpdateSubscriptionStatusResponse, error)
 	CheckEmailExists(ctx context.Context, req *pb.CheckEmailRequest) (*pb.CheckEmailResponse, error)
+	VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error)
+	ResendVerification(ctx context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error)
+	ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error)
 	CreateDefaultMembers(members []CreateDefaultMember) error
 }
 
@@ -72,4 +75,19 @@ func (s *Handler) UpdateSubscriptionStatus(ctx context.Context, req *pb.UpdateSu
 
 func (s *Handler) CheckEmailExists(ctx context.Context, req *pb.CheckEmailRequest) (*pb.CheckEmailResponse, error) {
 	return s.service.CheckEmailExists(ctx, req)
+}
+
+// The three verification RPCs log nothing from the request: it carries a
+// verification code or an address, and neither belongs in a log line.
+
+func (s *Handler) VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error) {
+	return s.service.VerifyEmail(ctx, req)
+}
+
+func (s *Handler) ResendVerification(ctx context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error) {
+	return s.service.ResendVerification(ctx, req)
+}
+
+func (s *Handler) ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error) {
+	return s.service.ChangeUnverifiedEmail(ctx, req)
 }

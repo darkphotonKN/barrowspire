@@ -42,6 +42,11 @@ func GenerateJWT(user models.Member, tokenType commonconstants.TokenType, expira
 		// simply not have a wallet account yet; consumers fail closed on an
 		// absent claim, and an empty string is not absent.
 		claims.AccountID = user.AccountID
+
+		// Read off the member row at mint time, so it is as fresh as the
+		// mint: a token minted before verification stays unverified until
+		// verify hands back a fresh pair or the member logs in again.
+		claims.EmailVerified = user.EmailVerifiedAt != nil
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

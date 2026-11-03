@@ -540,6 +540,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/member/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change an unverified email
+         * @description Changes the signed-in member's email while it is unverified, and mails a code to the new address. The current address behaves as a resend. An address already in use, compared case-insensitively, answers 409. Refusals: EMAIL_INVALID, EMAIL_ALREADY_VERIFIED, VERIFICATION_RESEND_TOO_SOON (within 60 seconds of the last code).
+         */
+        put: operations["change-email"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/member/email/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend the verification code
+         * @description Mails the signed-in member a new verification code; the previous one stops working. Refusals: VERIFICATION_RESEND_TOO_SOON (within 60 seconds of the last code), EMAIL_ALREADY_VERIFIED.
+         */
+        post: operations["resend-verification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/member/email/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify the signed-in member's email
+         * @description Verifies the signed-in member's email with the code mailed to them, and returns a fresh token pair whose access token carries the email-verified claim. An already-verified member gets a fresh pair too, whatever code is sent. Refusals: VERIFICATION_CODE_INVALID (wrong code; the 5th wrong try burns it), VERIFICATION_CODE_EXPIRED (no live code: never issued, expired, or burned).
+         */
+        post: operations["verify-email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/member/signin": {
         parameters: {
             query?: never;
@@ -571,7 +631,7 @@ export interface paths {
         put?: never;
         /**
          * Create a new member account
-         * @description Creates the member and returns it. The account exists by the time this responds. An email already in use answers 409.
+         * @description Creates the member and returns it. The account exists by the time this responds. An email already in use, compared case-insensitively, answers 409. Refusals: PASSWORD_TOO_SHORT (under 10 characters), PASSWORD_TOO_LONG (over 72 bytes), PASSWORD_TOO_COMMON (on the common-password list), EMAIL_INVALID (not a bare address, or over 254 bytes).
          */
         post: operations["signup"];
         delete?: never;
@@ -615,7 +675,7 @@ export interface paths {
         head?: never;
         /**
          * Change the signed-in member's password
-         * @description Changes the signed-in member's password. The current password is verified by auth-service.
+         * @description Changes the signed-in member's password. The current password is verified by auth-service. Refusals for the new password: PASSWORD_TOO_SHORT (under 10 characters), PASSWORD_TOO_LONG (over 72 bytes), PASSWORD_TOO_COMMON (on the common-password list).
          */
         patch: operations["update-member-password"];
         trace?: never;
@@ -814,6 +874,10 @@ export interface components {
              * @description Gold the buyer agrees to pay. Must equal the listing's buyoutPrice; the buyer is always charged that price.
              */
             amount: number;
+        };
+        ChangeEmailBody: {
+            /** @description The new email address */
+            email: string;
         };
         Character: {
             /** @description warrior, mage, archer or mercenary. */
@@ -1427,6 +1491,8 @@ export interface components {
             created_at?: components["schemas"]["Timestamp"];
             /** @description Email address */
             email?: string;
+            /** @description Whether the member has verified their email with a code */
+            email_verified: boolean;
             /** @description Member id (UUID) */
             id?: string;
             /** @description Display name */
@@ -1832,6 +1898,10 @@ export interface components {
             new_password?: string;
             /** @description New password, repeated */
             repeat_new_password?: string;
+        };
+        VerifyEmailBody: {
+            /** @description The 6-digit verification code from the email */
+            code: string;
         };
         WalletAccount: {
             /**
@@ -3823,6 +3893,207 @@ export interface operations {
             };
         };
     };
+    "change-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeEmailBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "resend-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
     signin: {
         parameters: {
             query?: never;
@@ -3903,6 +4174,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Member"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
                 };
             };
             /** @description Conflict */

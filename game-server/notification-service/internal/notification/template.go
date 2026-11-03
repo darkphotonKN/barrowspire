@@ -3,7 +3,10 @@ package notification
 import (
 	"bytes"
 	"fmt"
+	htmltemplate "html/template"
 	"text/template"
+
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 )
 
 type NotificationTemplate struct {
@@ -53,4 +56,49 @@ func RenderTemplate(eventType string, data map[string]any) (title, message strin
 	}
 
 	return tmpl.Title, buf.String(), tmpl.NotificationType, nil
+}
+
+// verificationSubject is the subject of every verification mail (FS-V6SFK R25).
+const verificationSubject = "Your Barrowspire verification code"
+
+var verificationText = template.Must(template.New("verification.txt").Parse(`Hi {{.Name}},
+
+Your Barrowspire verification code is:
+
+    {{.Code}}
+
+It expires in 15 minutes. If you didn't ask for this code, you can ignore this email.
+`))
+
+// html/template escapes the member's name, which is free text they chose.
+var verificationHTML = htmltemplate.Must(htmltemplate.New("verification.html").Parse(`<!doctype html>
+<html>
+  <body style="font-family: sans-serif; color: #222;">
+    <p>Hi {{.Name}},</p>
+    <p>Your Barrowspire verification code is:</p>
+    <p style="font-size: 28px; font-weight: bold; letter-spacing: 6px;">{{.Code}}</p>
+    <p>It expires in 15 minutes. If you didn't ask for this code, you can ignore this email.</p>
+  </body>
+</html>
+`))
+
+// verificationMail renders the mail carrying a member's verification code
+// (FS-V6SFK R25).
+func verificationMail(payload *commonconstants.MemberVerificationRequestedEventPayload) (Mail, error) {
+	data := struct{ Name, Code string }{Name: payload.Name, Code: payload.Code}
+
+	var text, html bytes.Buffer
+	if err := verificationText.Execute(&text, data); err != nil {
+		return Mail{}, fmt.Errorf("render verification text: %w", err)
+	}
+	if err := verificationHTML.Execute(&html, data); err != nil {
+		return Mail{}, fmt.Errorf("render verification html: %w", err)
+	}
+
+	return Mail{
+		To:      payload.Email,
+		Subject: verificationSubject,
+		Text:    text.String(),
+		HTML:    html.String(),
+	}, nil
 }

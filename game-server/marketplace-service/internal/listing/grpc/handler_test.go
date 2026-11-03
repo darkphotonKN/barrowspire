@@ -71,15 +71,28 @@ func (r *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uu
 	return nil
 }
 
-// authedCtx builds the context a request actually arrives with, by driving the
-// real auth interceptor rather than faking its context key.
+// authedCtx is a verified player's request context, the ordinary caller every
+// handler serves (FS-V6SFK §Requirements 29 gates only the unverified).
 func authedCtx(t *testing.T, memberID uuid.UUID) context.Context {
+	t.Helper()
+	return identityCtx(t, commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: true})
+}
+
+// unverifiedCtx is a player whose token carries no email_verified claim.
+func unverifiedCtx(t *testing.T, memberID uuid.UUID) context.Context {
+	t.Helper()
+	return identityCtx(t, commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer})
+}
+
+// identityCtx builds the context a request actually arrives with, by driving
+// the real auth interceptor rather than faking its context key.
+func identityCtx(t *testing.T, id commonauth.Identity) context.Context {
 	t.Helper()
 
 	var captured context.Context
 
 	interceptor := commonauth.Auth(func(token string) (commonauth.Identity, error) {
-		return commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer}, nil
+		return id, nil
 	})
 
 	incoming := metadata.NewIncomingContext(

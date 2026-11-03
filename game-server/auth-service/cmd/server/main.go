@@ -161,7 +161,11 @@ func main() {
 	// staying cheap for a low-traffic auth DB.
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
-	memberService := member.NewService(db, memberRepo, publishCh, outboxService)
+	codeIssuer := member.NewCodeIssuer(memberRepo, outboxService, time.Now)
+	verifier := member.NewVerifier(member.NewTransactor(db), memberRepo, codeIssuer, time.Now)
+	// Built once: the embedded blocklist loads into a map of 100k+ entries.
+	passwordPolicy := member.EmbeddedPasswordPolicy()
+	memberService := member.NewService(db, memberRepo, publishCh, outboxService, passwordPolicy, codeIssuer, verifier)
 	memberHandler := member.NewHandler(memberService)
 
 	workersWg := sync.WaitGroup{}

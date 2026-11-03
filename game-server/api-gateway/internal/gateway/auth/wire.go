@@ -32,6 +32,10 @@ type Member struct {
 	UpdatedAt     *wire.Timestamp `json:"updated_at,omitempty" doc:"Last update time"`
 	AvatarURL     string          `json:"avatar_url,omitempty" doc:"Avatar URL, empty when unset"`
 	Role          string          `json:"role,omitempty" doc:"Member role"`
+	// No omitempty, unlike every other member here: false is the state a
+	// client acts on, so it must be on the wire, not absent (FS-V6SFK §API
+	// surface).
+	EmailVerified bool `json:"email_verified" doc:"Whether the member has verified their email with a code"`
 }
 
 // LoginResult is the `result` member of a successful sign-in.
@@ -93,6 +97,17 @@ type UpdateInfoBody struct {
 
 type RequestAvatarUploadBody struct {
 	Filename string `json:"filename,omitempty" doc:"Name of the file to upload"`
+}
+
+// VerifyEmailBody and ChangeEmailBody are new with FS-V6SFK, not
+// transcriptions, so they declare what they require. Only the shape is checked
+// here; auth-service owns every rule about the code and the address.
+type VerifyEmailBody struct {
+	Code string `json:"code" required:"true" pattern:"^[0-9]{6}$" doc:"The 6-digit verification code from the email"`
+}
+
+type ChangeEmailBody struct {
+	Email string `json:"email" required:"true" doc:"The new email address"`
 }
 
 type ConfirmAvatarUploadBody struct {

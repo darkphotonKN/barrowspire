@@ -14,7 +14,16 @@ import (
 // FS-VPD8Y R13: a domain refusal crosses gRPC as FailedPrecondition with an
 // ErrorInfo whose reason is the code, so the gateway can pass it through.
 func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
-	codesUnderTest := []errcode.Code{errcode.BagFull, errcode.StashFull, errcode.ItemNotAvailable, errcode.ItemWorn}
+	codesUnderTest := []errcode.Code{
+		errcode.BagFull, errcode.StashFull, errcode.ItemNotAvailable, errcode.ItemWorn,
+		// FS-V6SFK §Requirements 2, 7
+		errcode.PasswordTooShort, errcode.PasswordTooLong, errcode.PasswordTooCommon, errcode.EmailInvalid,
+		// FS-V6SFK §Requirements 15, 17-19
+		errcode.VerificationCodeInvalid, errcode.VerificationCodeExpired, errcode.VerificationResendTooSoon,
+		errcode.EmailAlreadyVerified,
+		// FS-V6SFK §Requirements 29
+		errcode.EmailUnverified,
+	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {
 			// wrapped with context, as a service layer returns it

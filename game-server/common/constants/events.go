@@ -1,5 +1,10 @@
 package commonconstants
 
+import (
+	"log/slog"
+	"time"
+)
+
 /**
 NOTE: for those joining my project for the first time, follow this rule:
 
@@ -41,6 +46,9 @@ const (
 	MemberSignedInEvent = "member.signedin"       // when user signs into their account
 	PasswordResetEvent  = "member.password.reset" // when password reset is requested
 
+	// a verification code was issued and needs mailing (FS-V6SFK R16, ADR-0040)
+	MemberVerificationRequestedEvent = "member.verification_requested"
+
 	MemberProfileUpdated = "profile.updated"
 
 	// Game Events
@@ -58,6 +66,9 @@ const (
 	NotificationItemCreatedFailed    = "notification.item.created.failed"
 	NotificationMemberSignedupFailed = "notification.member.signedup.failed"
 	NotificationGameEndFailed        = "notification.game.end.failed"
+
+	// a verification mail that could not be sent (FS-V6SFK R27)
+	NotificationMemberVerificationRequestedFailed = "notification.member.verification_requested.failed"
 
 	// auth events
 	AuthMemberLogin = "member.login"
@@ -91,6 +102,8 @@ const (
 	WalletMemberSignedUpQueue       = "wallet.auth.member.signedup"
 	AuthAccountCreatedQueue         = "auth.wallet.account.created"
 	CharacterGameMatchEndedQueue    = "character.game.match.ended"
+
+	NotificationMemberVerificationRequestedQueue = "notification.auth.member.verification_requested"
 )
 
 /**
@@ -111,6 +124,35 @@ type MemberSignedUpEventPayload struct {
 	Name       string `json:"name"`
 	Email      string `json:"email"`
 	SignedUpAt string `json:"signedUpAt"`
+}
+
+/**
+* MemberVerificationRequestedEventPayload
+*
+* Published by auth-service on AuthEventsExchange, in the same transaction as
+* the verification code it carries (FS-V6SFK R16).
+* Consumed by:
+* - notification-service, which mails the code (FS-V6SFK R24-R27)
+*
+* Code is the plaintext 6-digit code. It travels only in this payload
+* (ADR-0040) and must never be logged: LogValue leaves it out, so handing the
+* payload to slog is safe.
+**/
+type MemberVerificationRequestedEventPayload struct {
+	EventID   string    `json:"event_id"`
+	MemberID  string    `json:"member_id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"` // the normalized destination address
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// LogValue keeps the code (and the address) out of every log line.
+func (p MemberVerificationRequestedEventPayload) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("event_id", p.EventID),
+		slog.String("member_id", p.MemberID),
+	)
 }
 
 /**

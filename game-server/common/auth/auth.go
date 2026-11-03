@@ -42,9 +42,10 @@ func NewValidator(secret []byte) func(string) (Identity, error) {
 		}
 
 		return Identity{
-			MemberID:  memberID,
-			AccountID: claims.AccountID,
-			Role:      Role(claims.Role),
+			MemberID:      memberID,
+			AccountID:     claims.AccountID,
+			Role:          Role(claims.Role),
+			EmailVerified: claims.EmailVerified,
 		}, nil
 	}
 }

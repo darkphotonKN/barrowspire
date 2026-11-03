@@ -28,4 +28,8 @@ type Member struct {
 	StripeSubscriptionStatus    string     `db:"stripe_subscription_status" json:"stripe_subscription_status"`
 	CreatedAt                   time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt                   time.Time  `db:"updated_at" json:"updated_at"`
+
+	// EmailVerifiedAt set means the member proved they receive mail at Email
+	// (FS-V6SFK §Requirements 10). NULL is unverified.
+	EmailVerifiedAt *time.Time `db:"email_verified_at" json:"email_verified_at,omitempty"`
 }

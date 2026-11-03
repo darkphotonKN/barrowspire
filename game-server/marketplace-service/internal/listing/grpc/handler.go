@@ -10,6 +10,7 @@ import (
 	pbpagination "github.com/darkphotonKN/barrowspire-server/common/api/proto/shared/v1"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	commoncursor "github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/dto"
@@ -103,14 +104,14 @@ func NewHandler(
 // ========================= WRITE PATHS  =========================
 
 func (h *Handler) PlaceBid(ctx context.Context, req *pb.PlaceBidRequest) (*pb.PlaceBidResponse, error) {
+	memberID, err := verifiedCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	listingID, err := uuid.Parse(req.GetListingId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
-	}
-
-	memberID, ok := commonauth.MemberIDFromCtx(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
 
 	// Optional: an absent or malformed key means "no key", which is uuid.Nil.
@@ -194,16 +195,16 @@ func (h *Handler) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.
 // (FS-NXP1W §Req 4). It returns once the buyout is recorded; the sale completes
 // on its own.
 func (h *Handler) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
+	// the buyer is who the gold is held from and who the domain refuses if they
+	// are the seller, so it is only ever the authenticated caller
+	memberID, err := verifiedCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	listingID, err := uuid.Parse(req.GetListingId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
-	}
-
-	// the buyer is who the gold is held from and who the domain refuses if they
-	// are the seller, so it is only ever the authenticated caller
-	memberID, ok := commonauth.MemberIDFromCtx(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
 
 	// Optional, as for PlaceBid: an absent or malformed key means "no key", and the
@@ -226,12 +227,31 @@ func (h *Handler) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.Buyout
 	return &pb.BuyoutResponse{}, nil
 }
 
+// verifiedCaller is the gate on new marketplace commitments: listing, bidding
+// and buyout (FS-V6SFK §Requirements 29). It answers the authenticated caller
+// only when their token carries email_verified, and runs first, before any
+// read or write. An absent claim is unverified, so the gate fails closed
+// (ADR-0014).
+//
+// Withdraw and accept never call it: a gate must not trap a member in a
+// commitment they already made (FS-V6SFK §Requirements 30).
+func verifiedCaller(ctx context.Context) (uuid.UUID, error) {
+	id, ok := commonauth.IdentityFromCtx(ctx)
+	if !ok {
+		return uuid.Nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+	if !id.EmailVerified {
+		return uuid.Nil, errcode.Refuse(errcode.EmailUnverified)
+	}
+	return id.MemberID, nil
+}
+
 // ========================= READ PATHS  =========================
 
 func (h *Handler) ListItem(ctx context.Context, req *pb.ListItemRequest) (*pb.ListItemResponse, error) {
-	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	sellerId, err := verifiedCaller(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	slog.Debug("ListItem", "sellerid:", sellerId)

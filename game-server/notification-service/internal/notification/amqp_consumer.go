@@ -47,6 +47,13 @@ func GetEventRetryConfigs() []EventRetryConfig {
 			WorkQueue:  commonconstants.NotificationGameEndQueue,
 			DLQKey:     commonconstants.NotificationGameEndFailed,
 		},
+		{
+			EventType:  "member.verification_requested",
+			RoutingKey: commonconstants.MemberVerificationRequestedEvent,
+			Exchange:   commonconstants.AuthEventsExchange,
+			WorkQueue:  commonconstants.NotificationMemberVerificationRequestedQueue,
+			DLQKey:     commonconstants.NotificationMemberVerificationRequestedFailed,
+		},
 	}
 }
 
@@ -73,6 +80,7 @@ type ConsumerService interface {
 	ProcessMemberSignedUp(ctx context.Context, payload *commonconstants.MemberSignedUpEventPayload) error
 	ProcessItemCreated(ctx context.Context, payload *pb.ItemCreatedEvent) error
 	ProcessGameEnded(ctx context.Context, eventID uuid.UUID, payload *pb.MatchEndedEvent) error
+	ProcessVerificationRequested(ctx context.Context, payload *commonconstants.MemberVerificationRequestedEventPayload) error
 }
 
 // retryPublisher is what the consumer needs to park a failed message's copy
@@ -104,6 +112,7 @@ func (c *Consumer) Listen() {
 	go c.consumeMemberSignedUp()
 	go c.consumeItemCreated()
 	go c.consumeGameEnded()
+	go c.consumeVerificationRequested()
 	slog.Info("Notification consumer listening for events...")
 }
 
@@ -266,6 +275,62 @@ func (c *Consumer) handleGameEnded(msg amqp.Delivery) {
 
 	// Use session_id as identifier
 	c.handleResult(msg, err, retryCount, "game.ended", payload.SessionId)
+}
+
+// ==========================================
+// Consumer: Verification Requested (FS-V6SFK R24-R27)
+// ==========================================
+
+func (c *Consumer) consumeVerificationRequested() {
+	msgs, err := c.channel.Consume(
+		commonconstants.NotificationMemberVerificationRequestedQueue,
+		"",    // consumer
+		false, // auto-ack
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,   // args
+	)
+	if err != nil {
+		slog.Error("Failed to register consumer", "error", err)
+		return
+	}
+
+	slog.Info("Started consuming member.verification_requested events")
+
+	for msg := range msgs {
+		c.handleVerificationRequested(msg)
+	}
+}
+
+// handleVerificationRequested hands the event to the service, which dedupes
+// on the payload's event_id. The payload carries a plaintext code, so nothing
+// here logs the body or the payload's fields beyond the two ids.
+func (c *Consumer) handleVerificationRequested(msg amqp.Delivery) {
+	retryCount := getRetryCount(msg)
+
+	var payload commonconstants.MemberVerificationRequestedEventPayload
+	if err := json.Unmarshal(msg.Body, &payload); err != nil {
+		// The JSON error can quote the body, so it is not logged.
+		slog.Error("Failed to parse MemberVerificationRequestedEvent, dead-lettering it",
+			"message_id", msg.MessageId,
+		)
+		if nackErr := msg.Nack(false, false); nackErr != nil {
+			slog.Error("Failed to dead-letter verification requested message", "message_id", msg.MessageId, "error", nackErr)
+		}
+		return
+	}
+
+	slog.Info("Received verification requested event",
+		"event_id", payload.EventID,
+		"member_id", payload.MemberID,
+		"retry_count", retryCount,
+	)
+
+	ctx := context.Background()
+	err := c.service.ProcessVerificationRequested(ctx, &payload)
+
+	c.handleResult(msg, err, retryCount, commonconstants.MemberVerificationRequestedEvent, payload.MemberID)
 }
 
 // ==========================================

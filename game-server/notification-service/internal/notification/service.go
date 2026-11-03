@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -30,15 +31,17 @@ type InboxRepository interface {
 type service struct {
 	repo      Repository
 	inboxRepo InboxRepository
+	mailer    Mailer
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
-func NewService(db *sqlx.DB, repo Repository, inboxRepo InboxRepository) *service {
+func NewService(db *sqlx.DB, repo Repository, inboxRepo InboxRepository, mailer Mailer) *service {
 	return &service{
 		repo:      repo,
 		inboxRepo: inboxRepo,
+		mailer:    mailer,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
@@ -93,6 +96,62 @@ func (s *service) ProcessMemberSignedUp(ctx context.Context, payload *commoncons
 		}
 		return err
 	})
+}
+
+// ProcessVerificationRequested mails a member their verification code, once
+// per event_id (FS-V6SFK R24-R27). The send runs inside the inbox transaction:
+// a failed send rolls the inbox mark back, so the event stays unprocessed and
+// the consumer's retry sends it, while a committed mark makes any redelivery a
+// no-op. It writes no in-app notification. The code is never stored or
+// logged: log lines carry the member id and event id only.
+func (s *service) ProcessVerificationRequested(ctx context.Context, payload *commonconstants.MemberVerificationRequestedEventPayload) error {
+	// Without a usable event id the inbox cannot dedupe, and retrying will not
+	// grow one: a permanent failure, dead-lettered before any mail goes out.
+	eventID, err := uuid.Parse(payload.EventID)
+	if err != nil {
+		return fmt.Errorf("verification requested event id %q is not a uuid: %w", payload.EventID, err)
+	}
+
+	mail, err := verificationMail(payload)
+	if err != nil {
+		return err
+	}
+
+	err = s.runInTx(ctx, eventID, commonconstants.MemberVerificationRequestedEvent, func(tx *sqlx.Tx) error {
+		if err := s.mailer.Send(ctx, mail); err != nil {
+			// Only the classification is logged or returned (the consumer logs
+			// the returned error again): a server's free text can echo the
+			// recipient address (FS-V6SFK R25).
+			stage, code := classifyMailFailure(err)
+			slog.ErrorContext(ctx, "verification mail send failed",
+				"event_id", eventID,
+				"member_id", payload.MemberID,
+				"stage", stage,
+				"smtp_code", code,
+			)
+			return fmt.Errorf("send verification mail failed at %s (smtp reply %d): %w", stage, code, commonconstants.ErrTransient)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "verification mail sent",
+		"event_id", eventID,
+		"member_id", payload.MemberID,
+	)
+	return nil
+}
+
+// classifyMailFailure reduces a send error to what is safe to log: the stage
+// and SMTP reply code of a *MailError, or "unknown" for anything else.
+func classifyMailFailure(err error) (stage string, code int) {
+	var mailErr *MailError
+	if errors.As(err, &mailErr) {
+		return mailErr.Stage, mailErr.Code
+	}
+	return "unknown", 0
 }
 
 // runInTx opens a tx, records the event in the inbox, runs fn, and commits.

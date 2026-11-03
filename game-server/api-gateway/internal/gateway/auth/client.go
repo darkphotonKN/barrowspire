@@ -85,3 +85,15 @@ func (c *Client) ConfirmAvatarUpload(ctx context.Context, req *pb.ConfirmAvatarU
 	response, err := client.ConfirmAvatarUpload(ctx, req)
 	return response, err
 }
+
+func (c *Client) VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error) {
+	return pb.NewAuthServiceClient(c.conn).VerifyEmail(ctx, req)
+}
+
+func (c *Client) ResendVerification(ctx context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error) {
+	return pb.NewAuthServiceClient(c.conn).ResendVerification(ctx, req)
+}
+
+func (c *Client) ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error) {
+	return pb.NewAuthServiceClient(c.conn).ChangeUnverifiedEmail(ctx, req)
+}

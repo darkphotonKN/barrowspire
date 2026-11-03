@@ -30,6 +30,14 @@ service AuthService {
   rpc UpdateSubscriptionStatus(UpdateSubscriptionStatusRequest) returns (UpdateSubscriptionStatusResponse) {}
   // Check if email exists (for signup polling)
   rpc CheckEmailExists(CheckEmailRequest) returns (CheckEmailResponse) {}
+  // Verify the member's email with their code; returns a fresh token pair
+  // (FS-V6SFK §Requirements 17)
+  rpc VerifyEmail(VerifyEmailRequest) returns (LoginResponse) {}
+  // Issue a new verification code (FS-V6SFK §Requirements 18)
+  rpc ResendVerification(ResendVerificationRequest) returns (ResendVerificationResponse) {}
+  // Change an unverified member's email and issue a code to it
+  // (FS-V6SFK §Requirements 19)
+  rpc ChangeUnverifiedEmail(ChangeUnverifiedEmailRequest) returns (Member) {}
 }
 
 // used for Upload methods 
@@ -49,6 +57,8 @@ message Member {
   google.protobuf.Timestamp updated_at = 7;
   string avatar_url = 8;
   string role = 9;
+  // set once the member proved they receive mail at email (FS-V6SFK §Requirements 20)
+  bool email_verified = 10;
 }
 
 // Login request
@@ -182,3 +192,23 @@ message ConfirmAvatarUploadResponse {
   string avatar_url = 3;
 }
 
+// Verify email request. id is the caller's member id, taken by the gateway
+// from the verified token, never from the request body.
+message VerifyEmailRequest {
+  string id = 1;
+  string code = 2;
+}
+
+// Resend verification request. id as in VerifyEmailRequest.
+message ResendVerificationRequest {
+  string id = 1;
+}
+
+// Resend verification response: success carries nothing.
+message ResendVerificationResponse {}
+
+// Change unverified email request. id as in VerifyEmailRequest.
+message ChangeUnverifiedEmailRequest {
+  string id = 1;
+  string email = 2;
+}

@@ -19,8 +19,11 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
 	repo := notification.NewRepository(db)
 	inboxRepo := inbox.NewRepo()
 
+	// Outbound mail (FS-V6SFK R26): SMTP, Mailpit in dev
+	mailer := notification.NewSMTPMailer(LoadSMTPConfig())
+
 	// Create service with repositories and DB handle (for tx-wrapped inbox pattern)
-	service := notification.NewService(db, repo, inboxRepo)
+	service := notification.NewService(db, repo, inboxRepo, mailer)
 
 	// Create gRPC handler with service
 	handler := notification.NewHandler(service)

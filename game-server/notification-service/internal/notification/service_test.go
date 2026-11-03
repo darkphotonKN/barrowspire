@@ -398,7 +398,7 @@ func (m *mockRepository) TestProcessMemberSignedUp_Success(t *testing.T) {
 			UpdatedAt: time.Now(),
 		},
 	}
-	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true})
+	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true}, nil)
 
 	payload := &commonconstants.MemberSignedUpEventPayload{
 		UserID: "550e8400-e29b-41d4-a716-446655440001",
@@ -422,7 +422,7 @@ func (m *mockRepository) TestProcessMemberSignedUp_Success(t *testing.T) {
 func (m *mockRepository) TestProcessMemberSignedUp_InvalidUUID(t *testing.T) {
 	// ===== Arrange =====
 	mockRepo := &mockRepository{}
-	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true})
+	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true}, nil)
 	payload := &commonconstants.MemberSignedUpEventPayload{
 		UserID: "invalid-uuid",
 		Name:   "kiki_test",
