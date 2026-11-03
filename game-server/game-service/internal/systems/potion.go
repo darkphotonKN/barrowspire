@@ -2,6 +2,7 @@ package systems
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -80,7 +81,10 @@ func (p *PotionSystem) Drink(delver *ecs.Entity) error {
 
 	potions.CooldownRemaining = drinkCooldown
 	if potion.InstanceID != nil {
-		potions.ConsumedItemIDs = append(potions.ConsumedItemIDs, *potion.InstanceID)
+		potions.Consumed = append(potions.Consumed, components.ConsumedItem{
+			InstanceID: *potion.InstanceID,
+			Item:       ownCopy(*potion),
+		})
 	}
 	if !delver.HasComponent(ecs.ComponentTypePotion) {
 		delver.AddComponent(potions)
@@ -140,4 +144,15 @@ func (p *PotionSystem) firstHealthPotion(equipment *components.EquipmentComponen
 		}
 	}
 	return nil, nil
+}
+
+// ownCopy is item sharing nothing with the component it was copied from, whose
+// entity is about to go.
+func ownCopy(item components.ItemComponent) components.ItemComponent {
+	if item.InstanceID != nil {
+		id := *item.InstanceID
+		item.InstanceID = &id
+	}
+	item.Affixes = slices.Clone(item.Affixes)
+	return item
 }

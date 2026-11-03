@@ -91,7 +91,7 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// outbox is built once in main and shared with the worker that drains it;
 	// the worker is woken once match-end rows commit
-	gameService := game.NewService(db, outbox, outboxWaker, game.DefaultSettlementRetry(ctx))
+	gameService := game.NewService(db, outbox, outboxWaker, game.DefaultSettlementRetry(ctx), itemsClient)
 	// the one announcer: the matchmaker publishes create steps with it, the
 	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
 	// the game service also settles every field visit through the same

@@ -44,14 +44,16 @@ type service struct {
 }
 
 // NewService builds the match-end publisher. retry is how a run's settlement
-// whose write fails is held and tried again until it commits (FS-GV8WN §C R8).
-func NewService(db TxBeginner, outbox OutboxWriter, waker OutboxWaker, retry SettlementRetry) *service {
+// whose write fails is held and tried again until it commits (FS-GV8WN §C R8);
+// applier applies each recorded settlement in items-service at once (§D R13),
+// nil for none.
+func NewService(db TxBeginner, outbox OutboxWriter, waker OutboxWaker, retry SettlementRetry, applier SettlementApplier) *service {
 	s := &service{
 		db:     db,
 		outbox: outbox,
 		waker:  waker,
 	}
-	s.writer = newSettlementWriter(s.writeMatchEndOutbox, retry)
+	s.writer = newSettlementWriter(s.writeMatchEndOutbox, applier, retry)
 	return s
 }
 
@@ -80,14 +82,15 @@ func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatch
 	// held until it commits: a failed write is retried, never dropped
 	// (FS-GV8WN §C R8). The write does not run under ctx: it outlives the
 	// caller, bounded per attempt and by the pod's lifetime.
-	s.writer.settle(data.SessionID, protoData, ids)
+	s.writer.settle(data.SessionID, protoData, ids, nil)
 }
 
 // PublishSettlement settles one player the moment they resolve: one pair
 // carrying only them, its items.extracted partial so items-service releases
 // only theirs (FS-GV8WN §A, §B R5–R6). It never blocks: the write runs on the
 // settlement writer's goroutine, so the tick can call it (I-GV8WN-5).
-func (s *service) PublishSettlement(ctx context.Context, settlement *types.RawSettlement) {
+// onConfirmed runs once items-service has applied it (§D R13, §G R20).
+func (s *service) PublishSettlement(ctx context.Context, settlement *types.RawSettlement, onConfirmed func()) {
 	player := settlement.Player
 	result := types.RankedPlayerState{
 		MemberID:        player.MemberID,
@@ -114,7 +117,7 @@ func (s *service) PublishSettlement(ctx context.Context, settlement *types.RawSe
 		return
 	}
 
-	s.writer.settleLater(settlement.SessionID, data, newSettlementIDs(settlement.SessionID, player.MemberID))
+	s.writer.settleLater(settlement.SessionID, data, newSettlementIDs(settlement.SessionID, player.MemberID), onConfirmed)
 }
 
 // publishSweep writes the run's end when everyone was already settled: an
@@ -131,7 +134,7 @@ func (s *service) publishSweep(data *types.RawMatchState) {
 		return
 	}
 
-	s.writer.settle(data.SessionID, &types.FormattedMatchData{ItemsExtractedEvent: extracted}, newSettlementIDs(data.SessionID, sweepMemberKey))
+	s.writer.settle(data.SessionID, &types.FormattedMatchData{ItemsExtractedEvent: extracted}, newSettlementIDs(data.SessionID, sweepMemberKey), nil)
 }
 
 // Drain stops taking settlements and waits for those still held to be recorded

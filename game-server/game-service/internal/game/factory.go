@@ -73,6 +73,7 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 	player := components.NewPlayerComponent(config.MemberID, config.ClassName, config.Username, config.Escape)
 	player.CharacterID = config.CharacterID
 	player.LoadoutUnknown = config.LoadoutUnknown
+	player.SeatedLevel = config.Level
 	entity.AddComponent(player)
 
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))

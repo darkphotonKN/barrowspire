@@ -273,8 +273,12 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Settled member** — one whose settlement is written or under way (`Session.settled`). Resolved
   but not settled happens only when their body could not be snapshotted; the run's end then
   settles them. The run's end names the settled (`settled_member_ids`) so its release skips them.
-- **Pending settlement** — a formatted settlement the **settlement writer** holds until its
-  outbox write commits, retried with jittered backoff (FS-GV8WN R8).
+- **Pending settlement** — a formatted settlement the **settlement writer** holds until it is
+  recorded in the outbox and applied in items-service, each step retried with jittered backoff
+  (FS-GV8WN R8, R13). A refused apply is not retried: the recorded copy lands it.
+- **Confirmed settlement** — one items-service has applied: the player is sent their settlement
+  record again with status confirmed (FS-GV8WN R20). "Pending" and "confirmed" are also the
+  record's two statuses on the wire.
 - **Settlement writer** — the pod's holder of pending settlements (`settlementWriter`), not a
   session: a session is torn down as usual while its settlements are still pending. Once the pod
   drains, it refuses new ones.

@@ -99,9 +99,12 @@ const (
 	ActionPartyReadyCheck Action = "party_ready_check"
 
 	// system actions
-	ActionError          Action = "error"
-	ActionSuccess        Action = "success"
-	ActionEndGame        Action = "end_game"
+	ActionError   Action = "error"
+	ActionSuccess Action = "success"
+	ActionEndGame Action = "end_game"
+	// ActionSettlement is a player's settlement record, sent to them alone the
+	// moment they settle and again once it is applied (FS-GV8WN §G R19, R20)
+	ActionSettlement     Action = "settlement"
 	ActionHandoffConnect Action = "end_game"
 	ActionReconnect      Action = "reconnected"
 

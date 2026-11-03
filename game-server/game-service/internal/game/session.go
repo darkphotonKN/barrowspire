@@ -87,6 +87,10 @@ type Session struct {
 	// their own, the moment they resolved, or by the run's end. Each member is
 	// settled once (FS-GV8WN §A R4).
 	settled map[uuid.UUID]struct{}
+	// startedAt is when the world's loop started: a settlement record's time
+	// in the run counts from it (FS-GV8WN §G R19). Zero for a world never
+	// started.
+	startedAt time.Time
 
 	// frames a member's writer could not take, counted rather than logged:
 	// one slow client would otherwise log thirty lines a second (FS-QG1HR D2)
@@ -213,8 +217,9 @@ type SessionSender interface {
 type EventEmitter interface {
 	PublishMatchComplete(ctx context.Context, data *types.RawMatchState)
 	// PublishSettlement settles one player the moment they resolve, without
-	// blocking: the tick calls it (FS-GV8WN §A).
-	PublishSettlement(ctx context.Context, settlement *types.RawSettlement)
+	// blocking: the tick calls it (FS-GV8WN §A). onConfirmed runs once the
+	// settlement is applied in items-service (§G R20).
+	PublishSettlement(ctx context.Context, settlement *types.RawSettlement, onConfirmed func())
 }
 
 type StateSerializer interface {
@@ -300,7 +305,6 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		endSessionCh: make(chan bool, 1),
 
 		sessionCloser:   sessionCloser,
-		sender:          sender,
 		stateSerializer: serializer,
 		eventEmitter:    eventEmitter,
 		itemsClient:     itemsClient,
@@ -312,6 +316,10 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
+	}
+	// a nil sender leaves the interface nil, so a send can tell there is none
+	if sender != nil {
+		s.sender = sender
 	}
 	// a run's kill awards the whole party; a field's, the killer alone
 	// (FS-X2F2H §Requirements 30)
@@ -367,6 +375,7 @@ func (s *Session) Start() {
 	}
 
 	s.isRunning = true
+	s.startedAt = time.Now()
 
 	// managing incoming client messages
 	go s.manageClientMessages()
@@ -1303,11 +1312,11 @@ func (s *Session) RemovePlayer(userID string) {
 	defer s.mu.Unlock()
 
 	// no tick runs, so nothing races the read
-	settlement, settled := s.takeSettlementLocked(playerID, safeItems)
+	settlement, record, settled := s.takeSettlementLocked(playerID, safeItems)
 	s.removePlayerLocked(playerID)
 	if settled {
 		// handed off once the lock is released below
-		defer s.handOff(settlement)
+		defer s.handOff(settlement, record)
 	}
 }
 
@@ -3076,10 +3085,14 @@ func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
 		return nil
 	}
 	potion, ok := pc.(*components.PotionComponent)
-	if !ok || len(potion.ConsumedItemIDs) == 0 {
+	if !ok || len(potion.Consumed) == 0 {
 		return nil
 	}
-	return slices.Clone(potion.ConsumedItemIDs)
+	ids := make([]uuid.UUID, 0, len(potion.Consumed))
+	for _, drunk := range potion.Consumed {
+		ids = append(ids, drunk.InstanceID)
+	}
+	return ids
 }
 
 func (s *Session) InitialSystems() {

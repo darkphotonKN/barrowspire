@@ -660,6 +660,13 @@ func (s *StateSerializer) PutBackendState(state *types.BackendGameState) {
 // stats (zero ones are left off the wire), the level it requires and its roll.
 // FS-BDA7X §Requirements 30, FS-4R9M9 §Requirements 54.
 func (s *StateSerializer) getItemState(itemID uuid.UUID, entityID uuid.UUID, item *components.ItemComponent) *types.ItemState {
+	return ItemStateOf(itemID, entityID, item)
+}
+
+// ItemStateOf is an item as the WS item shape carries it: its stats (zero ones
+// left off the wire), the level it requires and its roll. The one conversion,
+// for world state and settlement records alike.
+func ItemStateOf(itemID uuid.UUID, entityID uuid.UUID, item *components.ItemComponent) *types.ItemState {
 	return &types.ItemState{
 		ItemID:          itemID,
 		EntityID:        entityID,

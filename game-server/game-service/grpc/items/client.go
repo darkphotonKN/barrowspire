@@ -95,6 +95,13 @@ func (c *Client) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearReq
 	return pb.NewItemsServiceClient(c.conn).CheckOutRunGear(ctx, req)
 }
 
+// ApplySettlement applies a run settlement in items-service at once, under the
+// caller's event id (FS-GV8WN §D R11). Service-to-service: it carries no member
+// token (ADR-0040; a service credential is I-GV8WN-11).
+func (c *Client) ApplySettlement(ctx context.Context, req *pb.ApplySettlementRequest) (*pb.ApplySettlementResponse, error) {
+	return pb.NewItemsServiceClient(c.conn).ApplySettlement(ctx, req)
+}
+
 func (c *Client) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
 	client := pb.NewItemsServiceClient(c.conn)
 	return client.ListItemInstances(ctx, req)

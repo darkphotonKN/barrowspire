@@ -13,10 +13,18 @@ type PotionComponent struct {
 	// CooldownRemaining is the seconds of simulation time left before the
 	// delver may drink again, 0 when none. Shared by all three slots.
 	CooldownRemaining float64
-	// ConsumedItemIDs is the item_instances id of every stored-loadout potion
-	// drunk this run, in the order drunk. A potion looted in this run has no
-	// row and is never listed.
-	ConsumedItemIDs []uuid.UUID
+	// Consumed is every stored-loadout potion drunk this run, in the order
+	// drunk: its item_instances id, for extraction to delete (FS-P9G8R), and a
+	// copy of the item as it was, its entity being gone, for the settlement
+	// record to name (FS-GV8WN §G R19). A potion looted in this run has no row
+	// and is never listed.
+	Consumed []ConsumedItem
+}
+
+// ConsumedItem is one stored-loadout item used up in the run.
+type ConsumedItem struct {
+	InstanceID uuid.UUID
+	Item       ItemComponent
 }
 
 func (p *PotionComponent) Type() ecs.ComponentType {

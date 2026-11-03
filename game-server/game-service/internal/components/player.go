@@ -22,6 +22,9 @@ type PlayerComponent struct {
 	// so the run's extraction tells the settlement to leave the stored loadout
 	// alone rather than overwrite it with empty slots.
 	LoadoutUnknown bool
+	// SeatedLevel is the character's level when seated, for the settlement
+	// record's level before (FS-GV8WN §G R19).
+	SeatedLevel int
 }
 
 func (p *PlayerComponent) Type() ecs.ComponentType {
