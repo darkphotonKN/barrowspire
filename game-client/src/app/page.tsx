@@ -75,7 +75,10 @@ export default function Home() {
         <SectionLabel>The Spire</SectionLabel>
         <SectionTitle>What stands over the town</SectionTitle>
         <p className="text-center text-vellum-muted max-w-2xl mx-auto leading-[1.9] text-base tracking-wide">
-          The Age of Barrowspire is a co-op dungeon crawl played in real time. The town has learned to live in the Spire&apos;s shadow. The market still opens and the bell still rings, and the Spirewarden keeps a list of everyone who goes through the door. Put your name on it and go in. Inside, the stairs only lead up, yet every floor feels further underground than the one below. Nobody has come back from the top to say what lives there. The town has a name for it, and does not say it aloud.
+          The Age of Barrowspire is a co-op dungeon crawl played in real time. The town has learned to live in the Spire&apos;s shadow. The market still opens, the inn still pours, and the old Spirewarden will tell anyone who asks how the tower came. Its door stands open at the back of the town. Inside, the stairs only lead up, yet every floor feels further underground than the one below. Nobody has come back from the top to say what lives there. The town has a name for it, and does not say it aloud.
+        </p>
+        <p className="text-center text-vellum-muted max-w-2xl mx-auto leading-[1.9] text-base tracking-wide mt-6">
+          Not every road leads to the Spire. East of town lie the Gentle Meadows, west the Forlorn Forest. Death out there costs you nothing but the walk back, and whoever lands the killing blow takes first pick of what drops.
         </p>
       </section>
 
@@ -89,7 +92,7 @@ export default function Home() {
         <div className="grid md:grid-cols-3 gap-6">
           <MechanicCard
             title="WHAT WALKS THE FLOORS"
-            description="Ghouls and trolls hold the halls. Some are elites, older and harder to put down, and their names say so. Every one carries its level above its head, so you know how far out of your depth you are. Now and then something larger answers the noise. The few who saw it call it a demon."
+            description="Ghouls and trolls hold the halls. Some are elites, older and harder to put down, and you know them on sight. They grow with the party that comes for them. Now and then something larger answers the noise. The few who saw it call it a demon."
             color="brass"
           />
           <MechanicCard
@@ -99,13 +102,44 @@ export default function Home() {
           />
           <MechanicCard
             title="SWORN TOGETHER"
-            description="You go in as a party, and your blades can't touch each other. The Spire does enough. Kills bring experience, and experience lets you wear heavier gear, up to the twentieth level. When you fall, the Spire keeps everything you carried. What you learned, you keep."
+            description="You go in as a party, and your blades can't touch each other. The Spire does enough. Kills bring experience, and experience lets you wear heavier gear, up to the twentieth level. When you fall, the Spire keeps whatever you found inside. What you brought in, and what you learned, you keep."
             color="brass"
           />
         </div>
       </section>
 
       <Divider variant="arcane" />
+
+      {/* ── Classes ── */}
+      <section className="max-w-6xl mx-auto px-6 sm:px-12 lg:px-16 py-28">
+        <SectionLabel>Callings</SectionLabel>
+        <SectionTitle>Who goes in</SectionTitle>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <MechanicCard
+            title="WARRIOR"
+            description="Iron and patience. Strikes close and hard, and dashes through the gap before it closes."
+            color="brass"
+          />
+          <MechanicCard
+            title="MAGE"
+            description="Burns what the others cannot reach. Throws three fireballs in a spread and pays for each in mana."
+            color="arcane"
+          />
+          <MechanicCard
+            title="ARCHER"
+            description="Works from the dark. Holds the Shadow Shot to aim, then looses one slow, heavy bolt."
+            color="brass"
+          />
+          <MechanicCard
+            title="MERCENARY"
+            description="Sworn to no one but the purse. Turns a blow as it lands, and on the third parry the cut answers back."
+            color="arcane"
+          />
+        </div>
+      </section>
+
+      <Divider />
 
       {/* ── Gear & Items ── */}
       <section className="max-w-5xl mx-auto px-6 sm:px-12 lg:px-16 py-28">
@@ -123,12 +157,12 @@ export default function Home() {
           />
           <GearCard
             title="ARMOR & RINGS"
-            items={['Head, chest, legs, gloves and shield', 'Defense against steel, resistance against sorcery', 'Two rings that carry no armor, only power']}
+            items={['Head, body, hands and feet', 'Defense against steel, resistance against sorcery', 'Two rings that carry no armor, only power']}
             color="arcane"
           />
           <GearCard
             title="DRAUGHTS"
-            items={['Restore health', 'Restore mana', 'Strength that does not last']}
+            items={['Three belt slots, carried into the dark', 'A health draught drunk with a single key', 'Once drunk, gone for good']}
             color="brass"
           />
         </div>
@@ -151,10 +185,10 @@ export default function Home() {
         <SectionTitle>How it goes</SectionTitle>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <StepCard step="01" title="GATHER" description="Find the Spirewarden in the town. You go in with whoever else is waiting at the door." />
+          <StepCard step="01" title="THE DOOR" description="Walk to the Spire's door at the back of the town. Go in alone, or wait for company and go in together." />
           <StepCard step="02" title="PLUNDER" description="Break the coffers open and take what the dead drop. Put it on. You will need it." />
           <StepCard step="03" title="CLIMB" description="Meet at the stairs to go up. Everyone goes, or nobody does. The next floor is worse." />
-          <StepCard step="04" title="ESCAPE" description="Find the switch and walk out the sealed door with what you carry. Fall, and the barrow keeps its dead." />
+          <StepCard step="04" title="ESCAPE" description="Find the switch and walk out the sealed door with what you carry. Fall, and the barrow keeps what you found." />
         </div>
       </section>
 
@@ -165,13 +199,19 @@ export default function Home() {
         <SectionLabel>Controls</SectionLabel>
         <SectionTitle>Player Controls</SectionTitle>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-md mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-2xl mx-auto">
           <ControlKey keys="WASD" label="Move" />
-          <ControlKey keys="SPACE" label="Strike" />
-          <ControlKey keys="E" label="Interact" />
-          <ControlKey keys="F" label="Plunder" />
-          <ControlKey keys="I" label="Pack" />
-          <ControlKey keys="ESC" label="Close Menu" />
+          <ControlKey keys="L-CLICK" label="Attack" />
+          <ControlKey keys="R-CLICK" label="Class ability" />
+          <ControlKey keys="E" label="Talk, open, use" />
+          <ControlKey keys="F" label="Take from a coffer" />
+          <ControlKey keys="1" label="Drink a health draught" />
+          <ControlKey keys="I / B" label="Gear and bag" />
+          <ControlKey keys="T" label="Party" />
+          <ControlKey keys="ENTER" label="Chat" />
+          <ControlKey keys="Q" label="Close a panel" />
+          <ControlKey keys="ESC" label="Menu" />
+          <ControlKey keys="H" label="Controls, in the Spire" />
         </div>
       </section>
 

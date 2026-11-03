@@ -399,7 +399,7 @@
   text-shadow: none;
 }
 
-.logo-beta {
+.logo-alpha {
   font-family: var(--font-body);
   font-size: 0.55rem;
   font-weight: 700;
@@ -418,7 +418,7 @@
   transition: all 0.3s ease;
 }
 
-.header-logo:hover .logo-beta {
+.header-logo:hover .logo-alpha {
   border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
   text-shadow: none;

@@ -19,10 +19,10 @@ export default function Header() {
     <header className="header-main">
       <div className="header-container">
         <div className="header-left">
-          <Link href="/portal" className="header-logo">
+          <Link href="/" className="header-logo">
             <span className="logo-text">THE AGE OF</span>
             <span className="logo-accent">BARROWSPIRE</span>
-            <span className="logo-beta">BETA</span>
+            <span className="logo-alpha">ALPHA</span>
           </Link>
 
           <nav className="header-nav">
