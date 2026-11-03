@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     globals: true,
   },
+  // tsconfig keeps JSX as-is for Next; a test that renders a .tsx module needs it compiled.
+  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

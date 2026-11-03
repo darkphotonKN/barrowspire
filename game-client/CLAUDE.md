@@ -169,3 +169,10 @@ Every other Phaser scene (HubScene, BarrowspireScene, the HUD) uses the **game p
 - API: `apiClient` at `http://localhost:7114`
 - Game state: Server-authoritative, client does optimistic updates with `lootedAt` pending pattern
 - Phaser is loaded via dynamic import (SSR disabled)
+
+## Dev gallery
+
+`/dev/gallery` (dev builds only; production answers 404) shows the client's reusable visual pieces by name. Check it before building a new one. The tracked families are listed once, in `src/dev/gallery/families.ts` (FS-1819Q).
+
+- **Registries, not docs.** Each tracked family is a code registry the gallery renders, held complete by a test or a direct read of its source list. There is no inventory doc; the registry is the inventory.
+- **Same change.** A feature that builds something in a tracked family adds its gallery card in the same change. Adding an effect? Add a card in `src/dev/gallery/effects.ts`. Item icons appear on their own from `ITEM_ICONS`.

@@ -1,0 +1,199 @@
+/**
+ * The effect cards (FS-1819Q R10): one per effect module in `src/render/effects/`, each a name
+ * and a demo that plays it on the gallery's figure, called as the game calls it (R13). An effect
+ * that can't be played outside a run gets `demo: null` and a one-line reason, and still shows.
+ *
+ * Adding an effect module? Add its card here, in the same change (R2). `effects.test.ts` fails
+ * until you do.
+ */
+
+import type Phaser from "phaser";
+import type { Point } from "@/render/iso/projection";
+import { AimLine } from "@/render/effects/aimLine";
+import { playArrowRelease } from "@/render/effects/arrow";
+import { CHARGE_MS, playCharge } from "@/render/effects/charge";
+import { CutFx } from "@/render/effects/cut";
+import { playDeathDust } from "@/render/effects/death";
+import { EntranceMarker } from "@/render/effects/entrance";
+import { playEscape } from "@/render/effects/escape";
+import { playFireballCast } from "@/render/effects/fireball";
+import { HitFeedback } from "@/render/effects/hit";
+import { addMist } from "@/render/effects/mist";
+import { ParryFx } from "@/render/effects/parry";
+import { RiposteFx } from "@/render/effects/riposte";
+import type {
+  EffectLights,
+  EffectsRuntime,
+  FxArt,
+  OwnerKey,
+} from "@/render/effects/runtime";
+import { playShadowShotRelease } from "@/render/effects/shadowShot";
+import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { playSlash } from "@/render/effects/slash";
+import { ChimneySmoke } from "@/render/effects/smoke";
+import { FOREST_LOOK } from "@/render/world/fieldLook";
+
+/** What a demo plays on: the gallery's one figure, on its floor, under the run's light. */
+export interface Stage {
+  scene: Phaser.Scene;
+  fx: EffectsRuntime;
+  /** This play's own owner key, so a demo ending late never releases a newer one. */
+  owner: OwnerKey;
+  /** The figure's feet, in world px. */
+  at: Point;
+  /** Where the figure aims, in world px: a little way ahead of it. */
+  aim: Point;
+  figure: Phaser.GameObjects.Sprite;
+  /** The figure's head height (its sheet's `crown`), for an effect drawn over its body. */
+  crown: number | undefined;
+  /** The art and the light-map the runtime plays over, for an effect that draws its own. */
+  art: FxArt;
+  lights: EffectLights;
+  /** The scene clock, as the game's `now`. */
+  now(): number;
+  /** Runs `fn` after `ms`, for a demo that has to end what it started. */
+  later(ms: number, fn: () => void): void;
+  /** Flies a projectile of a server `projectile_type` from the figure to `aim`, landing there. */
+  fly(projectileType: string): void;
+}
+
+export type EffectCard = { module: string; name: string } & (
+  | { demo: (s: Stage) => void }
+  | { demo: null; reason: string }
+);
+
+/** How long a held or looping effect stays up before its demo ends it. */
+const HOLD_MS = 2400;
+
+/** Screen px from the figure's feet to where its smoke rises: over its head, as from a chimney pot. */
+const CHIMNEY_LIFT = 80;
+
+export const EFFECT_CARDS: EffectCard[] = [
+  {
+    module: "aimLine",
+    name: "Shadow Shot aim line",
+    demo: (s) => {
+      const line = new AimLine(() => s.scene.add.graphics());
+      line.draw(s.at, s.aim, true);
+      s.later(HOLD_MS / 2, () => line.clear());
+    },
+  },
+  {
+    module: "arrow",
+    name: "Arrow",
+    demo: (s) => {
+      playArrowRelease(s.fx, s.owner, s.at, s.aim);
+      s.fly("arrow");
+    },
+  },
+  {
+    module: "charge",
+    name: "Warrior charge dust",
+    demo: (s) => {
+      const charge = playCharge(s.fx, s.owner, s.at, s.aim);
+      s.later(CHARGE_MS, () => charge.end());
+    },
+  },
+  {
+    module: "cut",
+    name: "Mercenary cut",
+    demo: (s) => new CutFx(s.scene).play(s.at, s.aim),
+  },
+  {
+    module: "death",
+    name: "Death dust",
+    demo: (s) => playDeathDust(s.fx, s.owner, s.at),
+  },
+  {
+    module: "entrance",
+    name: "Entrance glow",
+    demo: (s) => {
+      const marker = new EntranceMarker(s.fx, s.owner, s.at);
+      s.later(HOLD_MS, () => marker.setVisible(false));
+    },
+  },
+  {
+    module: "escape",
+    name: "Escape column",
+    demo: (s) => playEscape(s.fx, s.owner, s.at),
+  },
+  {
+    module: "fireball",
+    name: "Fireball",
+    demo: (s) => {
+      playFireballCast(s.fx, s.owner, s.at, s.aim);
+      s.fly("fireball");
+    },
+  },
+  {
+    module: "hit",
+    name: "Hit tint",
+    demo: (s) => new HitFeedback(s.scene).play(s.figure),
+  },
+  {
+    module: "mist",
+    name: "Forest mist",
+    demo: (s) => {
+      const layer = addMist(s.scene, FOREST_LOOK.mist, 1);
+      s.later(HOLD_MS, () => layer.destroy());
+    },
+  },
+  {
+    module: "parry",
+    name: "Parry stance and flash",
+    demo: (s) => {
+      const parry = new ParryFx(s.scene);
+      parry.follow(s.at, s.now());
+      parry.sync({ parry_open: true, parries: 0 }, s.now());
+      parry.sync({ parry_open: true, parries: 1 }, s.now());
+      s.later(HOLD_MS / 2, () => parry.forget());
+    },
+  },
+  {
+    module: "riposte",
+    name: "Riposte slice",
+    demo: (s) => new RiposteFx(s.scene).play(s.at, s.aim),
+  },
+  {
+    module: "shadowShot",
+    name: "Shadow Shot",
+    demo: (s) => {
+      playShadowShotRelease(s.fx, s.owner, s.at, s.aim);
+      s.fly("shadow_shot");
+    },
+  },
+  {
+    module: "shimmer",
+    name: "Heal shimmer (granted base)",
+    demo: (s) => {
+      // as a drink plays it: one per figure, following its feet; it ends itself (FS-KZC92 §B)
+      const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
+      shimmers.follow(s.at);
+      shimmers.playGranted(HEAL_LOOK, s.crown);
+    },
+  },
+  {
+    module: "shimmer",
+    name: "Invoked shimmer base (heal look as a stand-in)",
+    demo: (s) => {
+      // nothing in the game plays it yet and it has no look of its own, so the heal look stands
+      // in (FS-KZC92 R19, R39); it ends itself
+      const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
+      shimmers.follow(s.at);
+      shimmers.playInvoked(HEAL_LOOK, s.crown);
+    },
+  },
+  {
+    module: "slash",
+    name: "Warrior slash",
+    demo: (s) => playSlash(s.fx, s.owner, s.at, s.aim),
+  },
+  {
+    module: "smoke",
+    name: "Chimney smoke",
+    demo: (s) => {
+      const smoke = new ChimneySmoke(s.fx, s.owner, s.at, CHIMNEY_LIFT);
+      s.later(HOLD_MS, () => smoke.setVisible(false));
+    },
+  },
+];
