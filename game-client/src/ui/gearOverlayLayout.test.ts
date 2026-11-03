@@ -4,8 +4,11 @@ import {
   BAG_COLUMNS,
   BAG_ROWS,
   gearPanelLayout,
+  HINT_H,
+  itemTipRow,
   overlayLayout,
   overPanel,
+  PANEL_PAD,
   rowWindow,
   STASH_COLUMNS,
   STASH_ROWS,
@@ -141,6 +144,28 @@ describe("gearPanelLayout (FS-HRH2J R13–14, R23; edge state Small window)", ()
   });
 });
 
+describe("the hint line (FS-NV54P R25: the longer hint stays inside the right panel)", () => {
+  // the hint is drawn 4px into its area at 10px, wrapped to the panel's inner width; the stash
+  // hint wraps to three lines on the narrowest panel, each about 12px tall (Phaser's ~1.2em)
+  it("should leave room for three 10px lines", () => {
+    expect(HINT_H).toBeGreaterThanOrEqual(4 + 3 * 12);
+  });
+
+  it.each(SIZES)(
+    "should sit inside the right panel, below every bag cell shown, at %ix%i",
+    (w, h) => {
+      const { right } = overlayLayout(w, h);
+      const g = gearPanelLayout(right, BAG_CAPACITY);
+      expect(g.hintY + HINT_H).toBeLessThanOrEqual(
+        right.y + right.h - PANEL_PAD,
+      );
+      const gridBottom = Math.max(...g.cells.map((c) => c.rect.y + c.rect.h));
+      expect(gridBottom).toBeLessThanOrEqual(g.hintY);
+      expect(g.visibleRows).toBeGreaterThan(0);
+    },
+  );
+});
+
 describe("statsPanelArea (FS-HRH2J §C: the stats panel's insides)", () => {
   it.each(SIZES)(
     "should sit inside the left panel, below its title, at %ix%i",
@@ -262,4 +287,146 @@ describe("rowWindow (FS-HRH2J edge state Small window: panel contents scroll)", 
   it("should draw nothing past the space, even a row taller than it", () => {
     expect(rowWindow([50], 20, 0)).toEqual({ first: 0, count: 0, rows: 1 });
   });
+});
+
+describe("itemTipRow (FS-NV54P §D R17–19: the item tip and its worn tips in one row)", () => {
+  const tip = (width: number, height = 120) => ({ width, height });
+  const screen = { width: 1080, height: 720 };
+
+  it.each([
+    {
+      name: "one tip right of the pointer, as today's tip",
+      tips: [tip(280)],
+      pointer: { x: 300, y: 200 },
+      want: [{ x: 314, y: 190 }],
+    },
+    {
+      name: "two tips right of the pointer, a small gap between, tops aligned",
+      tips: [tip(280), tip(280, 200)],
+      pointer: { x: 300, y: 200 },
+      want: [
+        { x: 314, y: 190 },
+        { x: 602, y: 190 },
+      ],
+    },
+    {
+      name: "the whole row flipped left near the right edge, its order kept",
+      tips: [tip(280), tip(280)],
+      pointer: { x: 900, y: 200 },
+      want: [
+        { x: 324, y: 190 },
+        { x: 612, y: 190 },
+      ],
+    },
+    {
+      name: "raised above the pointer near the bottom, by the tallest tip",
+      tips: [tip(280, 100), tip(280, 300)],
+      pointer: { x: 300, y: 600 },
+      want: [
+        { x: 314, y: 292 },
+        { x: 602, y: 292 },
+      ],
+    },
+    {
+      name: "never raised above the top edge",
+      tips: [tip(280, 700)],
+      pointer: { x: 300, y: 600 },
+      want: [{ x: 314, y: 4 }],
+    },
+    {
+      name: "a ring's three tips right of the pointer, in slot order",
+      tips: [tip(280), tip(280), tip(280)],
+      pointer: { x: 100, y: 200 },
+      want: [
+        { x: 114, y: 190 },
+        { x: 402, y: 190 },
+        { x: 690, y: 190 },
+      ],
+    },
+    {
+      name: "a ring's three tips flipped whole left near the right edge, their order kept",
+      tips: [tip(280), tip(280), tip(280)],
+      pointer: { x: 1000, y: 200 },
+      want: [
+        { x: 136, y: 190 },
+        { x: 424, y: 190 },
+        { x: 712, y: 190 },
+      ],
+    },
+    {
+      name: "pushed in from the right edge where neither side fits",
+      tips: [tip(280), tip(280), tip(280)],
+      pointer: { x: 540, y: 200 },
+      want: [
+        { x: 220, y: 190 },
+        { x: 508, y: 190 },
+        { x: 796, y: 190 },
+      ],
+    },
+    {
+      name: "the left edge kept on a screen narrower than the row",
+      tips: [tip(280), tip(280), tip(280)],
+      pointer: { x: 300, y: 200 },
+      screen: { width: 640, height: 400 },
+      want: [
+        { x: 4, y: 190 },
+        { x: 292, y: 190 },
+        { x: 580, y: 190 },
+      ],
+    },
+  ])("should place $name", ({ tips, pointer, want, ...rest }) => {
+    expect(itemTipRow(tips, pointer, rest.screen ?? screen)).toEqual(want);
+  });
+
+  it.each(SIZES)(
+    "should keep a row that fits the screen wholly on it at %ix%i, wherever the pointer is",
+    (w, h) => {
+      const tips = [tip(280, 150), tip(280, 220)];
+      for (const px of [0, w / 4, w / 2, (3 * w) / 4, w])
+        for (const py of [0, h / 2, h]) {
+          const at = itemTipRow(
+            tips,
+            { x: px, y: py },
+            { width: w, height: h },
+          );
+          at.forEach((p, i) => {
+            expect(p.x).toBeGreaterThanOrEqual(0);
+            expect(p.x + tips[i].width).toBeLessThanOrEqual(w);
+            expect(p.y).toBeGreaterThanOrEqual(0);
+            expect(p.y + tips[i].height).toBeLessThanOrEqual(h);
+            expect(p.y).toBe(at[0].y);
+          });
+        }
+    },
+  );
+
+  it.each(SIZES)(
+    "should keep a ring's three-tip row on screen at %ix%i wherever the pointer is, the left edge winning where it is wider than the screen (R19)",
+    (w, h) => {
+      const tips = [tip(280, 150), tip(280, 220), tip(280, 180)];
+      const rowW = 3 * 280 + 2 * 8;
+      for (const px of [0, w / 4, w / 2, (3 * w) / 4, w])
+        for (const py of [0, h / 2, h]) {
+          const at = itemTipRow(
+            tips,
+            { x: px, y: py },
+            { width: w, height: h },
+          );
+          expect(at.map((p) => p.x)).toEqual([
+            at[0].x,
+            at[0].x + 288,
+            at[0].x + 576,
+          ]);
+          at.forEach((p, i) => {
+            expect(p.y).toBe(at[0].y);
+            expect(p.y).toBeGreaterThanOrEqual(0);
+            expect(p.y + tips[i].height).toBeLessThanOrEqual(h);
+          });
+          if (rowW <= w) {
+            expect(at[0].x).toBeGreaterThanOrEqual(0);
+            expect(at[2].x + 280).toBeLessThanOrEqual(w);
+          } else expect(at[0].x).toBe(4);
+        }
+    },
+  );
 });

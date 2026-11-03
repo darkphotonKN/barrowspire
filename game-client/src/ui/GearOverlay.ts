@@ -31,6 +31,7 @@ import type { WorldType } from "@/assets/types/client";
 import {
   equipSlotFor,
   getItemType,
+  getValidSlotsForItem,
   type EquipmentSlot,
   type EquippedItems,
   type ItemState,
@@ -60,6 +61,7 @@ import {
   GEAR_SLOTS,
   gearPanelLayout,
   inRect,
+  itemTipRow,
   overlayLayout,
   overPanel,
   rowWindow,
@@ -100,10 +102,25 @@ const XP_BAR_H = 6;
 const RESOURCE_BAR_H = 4;
 
 export const GEAR_HINT =
-  "Right-click or E: wear or take off  //  I, B or Esc: close";
-/** In stash mode items move between bag and stash and nothing is worn; worn gear still comes off (FS-VPD8Y R38). */
+  "Right-click or E: wear or take off  //  Shift: compare  //  I, B or Esc: close";
+/**
+ * In stash mode items move between bag and stash and nothing is worn; worn gear still comes off
+ * (FS-VPD8Y R38). A bag item still compares (FS-NV54P R11, R24).
+ */
 export const STASH_HINT =
-  "Right-click or E: move between bag and stash, or take off  //  I, B or Esc: close";
+  "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close";
+
+/** A worn tip's caption (FS-NV54P R14): "Worn" for a weapon or armour, and which ring for a ring. */
+function wornCaption(slot: EquipmentSlot): string {
+  switch (slot) {
+    case "ring_1":
+      return "Worn · Ring 1";
+    case "ring_2":
+      return "Worn · Ring 2";
+    default:
+      return "Worn";
+  }
+}
 
 /** One stats panel row: its height, and how it draws itself with its top at `y`. */
 interface StatsRow {
@@ -123,6 +140,15 @@ type Hovered =
 function hoverKey(at: Hovered | undefined): string {
   if (!at) return "";
   return at.kind === "slot" ? `slot:${at.slot}` : `${at.kind}:${at.index}`;
+}
+
+/**
+ * The slots a bag item compares with (FS-NV54P R8–9), in slot order: a weapon's or an armour
+ * piece's own slot, a ring's `ring_1` then `ring_2`. A consumable, and an item with no valid
+ * slot, compares with nothing.
+ */
+function compareSlots(item: ItemState): EquipmentSlot[] {
+  return getItemType(item) === "consumable" ? [] : getValidSlotsForItem(item);
 }
 
 export class GearOverlay implements HudPanel {
@@ -170,8 +196,17 @@ export class GearOverlay implements HudPanel {
   /** The hover ring, redrawn as the pointer moves. */
   private hoverRing?: Phaser.GameObjects.Graphics;
   private hovered?: Hovered;
-  private tip?: ItemTip;
+  /** The hovered item's tip, then its worn tips while comparing (FS-NV54P R17). */
+  private tips: ItemTip[] = [];
   private pointer = { x: -1, y: -1 };
+  /**
+   * Shift on the scene keyboard, only while open (FS-NV54P R4), never captured (R5). The
+   * keyboard is off while the chat input is open, and lets its keys go as the input opens and on
+   * blur, so the key reads up then (R6).
+   */
+  private shift?: Phaser.Input.Keyboard.Key;
+  /** Whether Shift was held at the last frame: the worn tips show beside a bag item's tip (R1). */
+  private comparing = false;
 
   /** `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37). */
   constructor(
@@ -190,7 +225,12 @@ export class GearOverlay implements HudPanel {
   show(): void {
     if (this.visible) return;
     this.visible = true;
+    this.shift = this.scene.input.keyboard?.addKey("SHIFT", false);
+    this.comparing = this.shift?.isDown ?? false;
     this.build();
+    // Phaser lets a key go on blur and as the chat input opens without an event, so Shift is
+    // read each frame rather than heard (R2, R6)
+    this.scene.events?.on("update", this.readShift, this);
     this.scene.input.on("pointermove", this.onPointerMove, this);
     this.scene.input.on("pointerdown", this.onPointerDown, this);
     this.scene.input.on("wheel", this.onWheel, this);
@@ -232,6 +272,11 @@ export class GearOverlay implements HudPanel {
     this.scene.input?.off("wheel", this.onWheel, this);
     this.scene.scale?.off("resize", this.relayout, this);
     this.scene.events?.off("shutdown", this.hide, this);
+    this.scene.events?.off("update", this.readShift, this);
+    // closing lets go of Shift (R23). The key is never removed: `addKey` handed back the scene's
+    // own Shift (its cursor keys' shift), and removing it would stop that key hearing presses
+    this.shift = undefined;
+    this.comparing = false;
     this.teardown();
   }
 
@@ -872,8 +917,16 @@ export class GearOverlay implements HudPanel {
         WELL_RADIUS,
       );
     }
-    const item = this.itemOf(now);
-    if (item) this.showTip(item);
+    this.showTips(now);
+  }
+
+  /** Shift pressed or let go since the last frame: the hovered item's tips again, no pointer move needed (R2). */
+  private readShift(): void {
+    const held = this.shift?.isDown ?? false;
+    if (held === this.comparing) return;
+    this.comparing = held;
+    this.hideTip();
+    if (this.hovered) this.showTips(this.hovered);
   }
 
   /**
@@ -945,29 +998,41 @@ export class GearOverlay implements HudPanel {
     return itemView(item, this.characterLevel, this.world);
   }
 
-  /** The item's tip (R15): every line the item views share, for this character. */
-  private showTip(item: ItemState): void {
-    this.tip = buildItemTip(this.scene, this.view(item));
-    this.tip.container.setDepth(TIP_DEPTH).setScrollFactor(0);
+  /**
+   * The hovered item's tip (R15): every line the item views share, for this character. While
+   * Shift is held over a bag item, the tip of what is worn in each of its slots follows it,
+   * captioned and built from the same view (FS-NV54P R8–14); an empty slot adds none (R10).
+   */
+  private showTips(at: Hovered): void {
+    const item = this.itemOf(at);
+    if (!item) return;
+    this.tips = [buildItemTip(this.scene, this.view(item))];
+    if (this.comparing && at.kind === "bag")
+      for (const slot of compareSlots(item)) {
+        const wornItem = this.equipped[slot];
+        if (wornItem)
+          this.tips.push(
+            buildItemTip(this.scene, this.view(wornItem), {
+              caption: wornCaption(slot),
+            }),
+          );
+      }
+    for (const tip of this.tips)
+      tip.container.setDepth(TIP_DEPTH).setScrollFactor(0);
     this.moveTip();
   }
 
-  /** Beside the cursor, flipped to the other side where it would leave the screen. */
+  /** The row beside the cursor, flipped or pushed in where it would leave the screen (FS-NV54P §D). */
   private moveTip(): void {
-    if (!this.tip) return;
-    const { container, width, height } = this.tip;
+    if (!this.tips.length) return;
     const cam = this.scene.cameras.main;
-    const { x: px, y: py } = this.pointer;
-    let x = px + 14;
-    let y = py - 10;
-    if (x + width > cam.width) x = px - width - 8;
-    if (y + height > cam.height) y = Math.max(4, py - height - 8);
-    container.setPosition(Math.round(x), Math.round(y));
+    const at = itemTipRow(this.tips, this.pointer, cam);
+    this.tips.forEach((tip, i) => tip.container.setPosition(at[i].x, at[i].y));
   }
 
   private hideTip(): void {
-    this.tip?.container.destroy();
-    this.tip = undefined;
+    for (const tip of this.tips) tip.container.destroy();
+    this.tips = [];
   }
 
   /** A short refusal beside the cursor, as the equip panel gave one. */
