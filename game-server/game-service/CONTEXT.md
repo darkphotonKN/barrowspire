@@ -252,6 +252,13 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   delver escapes. Unsafe follows the item, not the slot: equipping it keeps it unsafe. A dead
   delver's unsafe finds are lost, whether they leave early or wait for the run's end. Field
   death costs nothing, so field finds are never lost (FS-18Z5F).
+- **Released escapee** — an escaped delver who can no longer come back (grace run out, or a
+  normal close). The run keeps their body and settles it at its end, but their record no longer
+  names the run. Not a leave: an escaped delver can't leave on their own (FS-QPDKN R29).
+- **Settling** — a released escapee whose run has not settled yet, marked in Redis
+  (`settling:<playerID>`). A settling player can't enter any world that takes their gear (queue,
+  solo, party entry, field), so the plunder settlement puts in their bag can't collide with a
+  checkout (FS-QPDKN R32–R36).
 
 ### Containers (FS-4R9M9, FS-1D6BX)
 
