@@ -38,6 +38,8 @@ vi.mock("phaser", async () => {
       Distance: {
         Between: (x1: number, y1: number, x2: number, y2: number) => Math.hypot(x2 - x1, y2 - y1),
       },
+      // the frame eases the player's drawn position toward the server's
+      Linear: (p0: number, p1: number, t: number) => (p1 - p0) * t + p0,
     },
   };
   return { ...phaser, default: phaser };
@@ -4336,5 +4338,150 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       });
     const offenders = sources(SRC).filter((f) => /triple_arrow|multishot_arrow/.test(readFileSync(f, "utf8")));
     expect(offenders).toEqual([]);
+  });
+});
+
+const { HEAL_LOOK } = await import("@/render/effects/shimmer");
+
+describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)", () => {
+  const potion = {
+    item_id: "i",
+    entity_id: "e_potion",
+    name: "Lesser Heal Potion",
+    quantity: 1,
+    item_type: "consumable",
+    healing_amount: 25,
+  };
+  const worn = (potions: number) => ({
+    weapon: null,
+    head: null,
+    chest: null,
+    gloves: null,
+    legs: null,
+    ring_1: null,
+    ring_2: null,
+    consumable_1: potions > 0 ? potion : null,
+    consumable_2: potions > 1 ? potion : null,
+    consumable_3: potions > 2 ? potion : null,
+  });
+  const drinker = (id: string, name: string, x: number, potions: number, hp: number) => ({
+    ...player(id, name, x, { current_health: hp }),
+    equipment: worn(potions),
+  });
+  const ally = (potions: number, hp: number) => drinker("ally", "Wenna", 160, potions, hp);
+  const state = (me: ReturnType<typeof drinker> | null, others = [ally(2, 60)]): GameState =>
+    ({ ...floorState(1), current_player: me, other_players: others }) as GameState;
+  const me = (potions: number, hp: number) => drinker("me", "Aldric", 130, potions, hp);
+
+  /** A run on stage with a recording shimmer standing in for the baked one. */
+  function onStage() {
+    const scene = sceneOnStage();
+    const shimmers = { playGranted: vi.fn(), follow: vi.fn(), forget: vi.fn(), playing: 0 };
+    const run = scene.run as unknown as FloorRun & {
+      shimmers?: typeof shimmers;
+      playerAnim?: { crown?: number };
+      player?: unknown;
+      playerPos?: { x: number; y: number };
+      targetPosition?: { x: number; y: number };
+      events: Emitter;
+      init(): void;
+      update(time: number, delta: number): void;
+    };
+    run.shimmers = shimmers;
+    return { run, shimmers };
+  }
+
+  it("should play one heal shimmer on the local player's drink, at their sheet's crown", () => {
+    const { run, shimmers } = onStage();
+    run.handleGameStateUpdate(state(me(2, 60)));
+    // the sheet's crown, pinned: the empty art library has none, and undefined would pass anything
+    const CROWN = 83;
+    expect(run.playerAnim).toBeDefined();
+    Object.defineProperty(run.playerAnim, "crown", { get: () => CROWN });
+    run.handleGameStateUpdate(state(me(1, 85)));
+    expect(shimmers.playGranted).toHaveBeenCalledTimes(1);
+    expect(shimmers.playGranted).toHaveBeenCalledWith(HEAL_LOOK, CROWN);
+  });
+
+  it("should carry the shimmers with the player's drawn feet each frame (R23)", () => {
+    const { run, shimmers } = onStage();
+    run.handleGameStateUpdate(state(me(2, 60)));
+    // one frame, with no key down and nothing else on stage to draw
+    const up = { isDown: false };
+    const keys = { left: up, right: up, up, down: up };
+    Object.assign(run, {
+      cursors: keys,
+      wasd: keys,
+      kit: { follow: vi.fn(), guarding: false },
+      updateLighting: vi.fn(),
+      updateOtherPlayersSmooth: vi.fn(),
+      checkBuildingStatus: vi.fn(),
+      sendMovementIntent: vi.fn(),
+      playerPos: { x: 130, y: 0 },
+      targetPosition: { x: 150, y: 20 },
+    });
+    expect(run.player).toBeDefined(); // the state drew the player
+    shimmers.follow.mockClear();
+
+    run.update(0, 16);
+
+    expect(shimmers.follow).toHaveBeenCalledTimes(1);
+    const [feet] = shimmers.follow.mock.calls[0];
+    expect(feet).toBe(run.playerPos);
+    // where the body was just drawn this frame, eased toward the server's position
+    expect(feet).toEqual({ x: 136, y: 6 });
+  });
+
+  it("should play nothing for the first state, an unequip, or a teammate's drink", () => {
+    const { run, shimmers } = onStage();
+    run.handleGameStateUpdate(state(me(2, 60)));
+    // an unequip: the count drops, health holds
+    run.handleGameStateUpdate(state(me(1, 60)));
+    // the ally drinks: only other_players changes
+    run.handleGameStateUpdate(state(me(1, 60), [ally(1, 85)]));
+    expect(shimmers.playGranted).not.toHaveBeenCalled();
+  });
+
+  it("should play twice for two drinks a cooldown apart", () => {
+    const { run, shimmers } = onStage();
+    run.handleGameStateUpdate(state(me(3, 40)));
+    run.handleGameStateUpdate(state(me(2, 65)));
+    run.handleGameStateUpdate(state(me(2, 65)));
+    run.handleGameStateUpdate(state(me(1, 90)));
+    expect(shimmers.playGranted).toHaveBeenCalledTimes(2);
+  });
+
+  it("should take a fresh baseline after a state with no current_player", () => {
+    const { run, shimmers } = onStage();
+    run.handleGameStateUpdate(state(me(2, 60)));
+    run.handleGameStateUpdate(state(null));
+    run.handleGameStateUpdate(state(me(1, 85)));
+    expect(shimmers.playGranted).not.toHaveBeenCalled();
+  });
+
+  it.each(["shutdown", "destroy"])(
+    "should take every live shimmer down on %s, and treat the next run's first state as a baseline",
+    (event) => {
+      const { run, shimmers } = onStage();
+      run.init();
+      run.handleGameStateUpdate(state(me(2, 60)));
+      run.events.emit(event);
+      expect(shimmers.forget).toHaveBeenCalledTimes(1);
+      expect(run.shimmers).toBeUndefined();
+
+      // the next run's shimmer, and a state that would be a drink against the old run's baseline
+      const next = { playGranted: vi.fn(), follow: vi.fn(), forget: vi.fn(), playing: 0 };
+      run.shimmers = next;
+      run.handleGameStateUpdate(state(me(1, 85)));
+      expect(next.playGranted).not.toHaveBeenCalled();
+    },
+  );
+
+  it("should not exist in the hub or field scenes", () => {
+    const SRC = join(__dirname, "..");
+    for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
+      const source = readFileSync(join(SRC, "scenes", scene), "utf8");
+      expect(source).not.toMatch(/ShimmerFx|PotionDrinkWatcher/);
+    }
   });
 });

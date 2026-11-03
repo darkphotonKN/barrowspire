@@ -50,6 +50,7 @@ import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
 import { PotionHud } from "@/ui/PotionHud";
 import { healthPotionCount, potionCell } from "@/ui/potions";
+import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
@@ -91,6 +92,7 @@ import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
+import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { CHARGE_MS, playCharge, type Charge } from "@/render/effects/charge";
 import { DeathDust } from "@/render/effects/death";
@@ -697,6 +699,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private charge?: Charge;
   /** The struck-character tint (FS-KYPQ9 §G.1). */
   private hits?: HitFeedback;
+  /** The local player's shimmers: the heal shimmer on a drink (FS-KZC92 §G). */
+  private shimmers?: ShimmerFx;
+  /** Reads a drink off `current_player` alone; never a teammate's (FS-KZC92 R33–R35). */
+  private readonly drinks = new PotionDrinkWatcher();
   /** Which characters have settled their death dust this death (FS-KYPQ9 §G.2). */
   private readonly deathDust = new DeathDust();
   /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
@@ -816,6 +822,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.charge = undefined;
     this.hits?.clearAll();
     this.hits = undefined;
+    // every live shimmer and its light, and the next run's first state is a baseline (FS-KZC92 R26)
+    this.shimmers?.forget();
+    this.shimmers = undefined;
+    this.drinks.forget();
     this.lightMap?.clearTransient();
     this.houseFloors = [];
     this.groundPlane = undefined;
@@ -3233,6 +3243,9 @@ export class BarrowspireScene extends Phaser.Scene {
       this.hideOwnBody(true);
     }
 
+    // a potion drunk: fewer worn and more health in this one state (FS-KZC92 R34)
+    if (this.drinks.see(state.current_player)) this.shimmers?.playGranted(HEAL_LOOK, this.playerAnim?.crown);
+
     // the merc's own stance, parries and armed riposte: never a teammate's (FS-MAMHR §G.34–§G.38)
     this.kit.sync(state.current_player, this.time.now);
 
@@ -4068,6 +4081,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // world effects over the baked fx sheets, lighting through the light-map (FS-KYPQ9 §B, §C)
     this.fx = new EffectsRuntime(this, this.art, this.lightMap);
     this.hits = new HitFeedback(this);
+    this.shimmers = new ShimmerFx(this, this.art, this.lightMap);
     this.projectiles = new ProjectileFlights(this, this.art, this.fx, projectileFlightOf);
   }
 
@@ -4807,6 +4821,8 @@ export class BarrowspireScene extends Phaser.Scene {
       this.charge?.follow(this.playerPos);
       // the stance never roots the merc: the tell and the flash ride on the body (FS-MAMHR §C.13)
       this.kit.follow(this.playerPos, this.time.now);
+      // the heal shimmer is carried with the body (FS-KZC92 R23)
+      this.shimmers?.follow(this.playerPos);
     }
 
     // an archer's hold follows the body just drawn and the cursor now (FS-JTNPR req 10, 11)
