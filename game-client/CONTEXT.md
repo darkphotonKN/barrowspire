@@ -310,6 +310,23 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   armed).
 - **Riposte slice**: the wide sword arc drawn when an armed mercenary cuts. Not the **cut**, the
   narrow arc of their ordinary left-click.
+- **Shimmer** (FS-KZC92): a one-shot glitter over one character's body, played the moment an
+  effect lands on them. It ends on its own and marks the moment only. It is not a lasting buff
+  display. A concrete shimmer is a base (its motion) plus a **look**.
+- **Granted shimmer**: the base played when no player is the source (a potion, scroll, shrine,
+  world or NPC buff): glints winking over the body. The heal shimmer is one.
+- **Invoked shimmer**: the base played when a player is the source (an ally's buff, a
+  self-buff, a charge-up): a spiral winding up the body.
+- **Look**: a shimmer's three colours, all `BARROW` tokens: `glint` (the glint body), `centre`
+  (its hot core) and `light` (the glow it casts and pools at the feet). The heal look is
+  `oxbloodText` / `vellum` / `oxblood`. Not a base: the same base takes any look.
+
+## Dev gallery terms (FS-1819Q)
+
+- **Tracked family**: a kind of visual piece the dev gallery must show in full. Listed once in
+  `src/dev/gallery/families.ts`; v1 tracks effects and item icons.
+- **Gallery card**: one entry in a tracked family: a name plus a one-line demo, or a one-line
+  reason why it can't be demoed.
 
 ## Mapping table
 

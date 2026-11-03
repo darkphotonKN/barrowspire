@@ -97,6 +97,7 @@ server state and sends intents. ✅
 - [x] Per-floor variation of the run look → FS-8RBQY
 - [x] Pre-rendered stairs → FS-8RBQY
 - [ ] One countdown style across the canvas → FS-B3NDZ
+- [ ] Shimmers: granted and invoked spell-landed glitter → FS-KZC92
 
 ### Hub
 
@@ -155,6 +156,10 @@ server state and sends intents. ✅
 - [x] Bids stay below a listing's buyout price → FS-49Z37
 - [x] A refused bid retries under a fresh key → FS-49Z37
 - [x] View and withdraw my bids → FS-EYQ8K
+
+### Dev tooling
+
+- [ ] Dev gallery of reusable visual pieces → FS-1819Q
 
 ### Deployment
 
