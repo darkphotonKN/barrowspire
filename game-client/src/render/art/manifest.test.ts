@@ -362,7 +362,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
   it("carries every interactable state the scenes swap between", () => {
     const states = (name: string) => Object.keys(baked.sheets[name].animations);
     for (const axis of ["x", "y"]) {
-      expect(states(`door_${axis}`)).toEqual(["locked", "unlocked", "open"]);
+      // `shut`: a town gap's door, shut with no lock, since it can't be acted on (FS-9PN7X §B.5)
+      expect(states(`door_${axis}`)).toEqual(["locked", "unlocked", "open", "shut"]);
       expect(states(`escape_door_${axis}`)).toEqual([
         "locked",
         "unlocked",
@@ -1364,18 +1365,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     const MASONRY = ["plain", "pillar"].flatMap((v) =>
       AXES.map((a) => `tower_wall_exterior_${v}_${a}`),
     );
-    const OPENINGS = [
-      ...AXES.map((a) => `door_dark_${a}`),
-      ...AXES.map((a) => `tower_door_dark_${a}`),
-    ];
     /** Named for the ridge whose ends they close, as roof_ridge's animations. */
     const GABLES = AXES.map((a) => `roof_gable_${a}`);
+    /** The wall over a door's lintel, up to the wall top, per type (FS-9PN7X §F.4, amended). */
+    const HEADS = [...AXES.map((a) => `door_head_${a}`), ...AXES.map((a) => `tower_door_head_${a}`)];
     const BUILDING = [
       ...TIMBER,
       ...MASONRY,
       "tower_cap",
-      ...OPENINGS,
       ...GABLES,
+      ...HEADS,
     ];
     /** Screen px a sheet stands above its anchor. */
     const above = (s: Sheet) => s.anchor.y * s.frameHeight;
@@ -1399,9 +1398,25 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         if (/^building-/.test(s.atlas)) expect(BUILDING, name).toContain(name);
     });
 
-    it("declares no light on any exterior piece, cap or dark opening: from outside, lights are off", () => {
+    it.each(HEADS)(
+      "%s closes a door gap from the door's lintel to the wall top: as tall above the ground as a back wall, wider than one tile",
+      (name) => {
+        const s = sheet(name);
+        const back = sheet(`${name.startsWith("tower_") ? "tower_" : ""}wall_back_plain_${name.slice(-1)}`);
+        expect(Object.keys(s.animations)).toEqual(["default"]);
+        expect(Math.abs(above(s) - above(back))).toBeLessThanOrEqual(3);
+        expect(s.frameWidth).toBeGreaterThan(back.frameWidth);
+      },
+    );
+
+    it("declares no light on any exterior piece, cap or gable: from outside, lights are off", () => {
       for (const name of BUILDING)
         expect(sheet(name).light, name).toBeUndefined();
+    });
+
+    it("bakes no dark opening: an entrance shows a door (FS-9PN7X §F.4, amended 2026-11-03)", () => {
+      for (const name of [...AXES.map((a) => `door_dark_${a}`), ...AXES.map((a) => `tower_door_dark_${a}`)])
+        expect(baked.sheets[name], name).toBeUndefined();
     });
 
     it.each([
@@ -1462,18 +1477,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         // back wall's height (3.6) and climbs one rise (0.7) across its tile to the ridge side
         expect(above(s)).toBeGreaterThan(above(back) + 0.5 * 0.7 * VPX);
         expect(above(s)).toBeLessThan(above(back) + (0.7 + 0.1) * VPX + 16);
-      },
-    );
-
-    it.each(OPENINGS)(
-      "%s stands full height, as tall as a back wall, and wider than one tile of wall",
-      (name) => {
-        const s = sheet(name);
-        const axis = name.slice(-1);
-        const back = sheet(`wall_back_plain_${axis}`);
-        expect(Object.keys(s.animations)).toEqual(["default"]);
-        expect(Math.abs(above(s) - above(back))).toBeLessThanOrEqual(3);
-        expect(s.frameWidth).toBeGreaterThan(back.frameWidth);
       },
     );
   });

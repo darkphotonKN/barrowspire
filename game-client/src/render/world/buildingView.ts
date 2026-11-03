@@ -7,7 +7,7 @@
  * building that covers them (§E).
  *
  * What differs per scene comes in as options, never as flags: which other pieces cover the player
- * (the hub's roofs and gables, the Spire's room doors and their dark openings), which scenery
+ * (the hub's roofs and gables, the Spire's room doors), which scenery
  * hides by footprint, and what else changes with the player's building (the hub's interiors, the
  * Spire's room lights).
  */
@@ -58,7 +58,7 @@ export interface BuildingViewOptions {
   blackout: BlackoutGeometry;
   /**
    * Pieces drawn beside the buildings that cover the player from outside too (§E.1): the hub's
-   * roofs, gables and chimneys; the Spire's room doors, their dark openings and a house's roof.
+   * roofs, gables and chimneys; the Spire's room doors and a house's roof.
    * Read when the cover is retaken: on the first frame, and after {@link BuildingView.invalidate}.
    */
   cover?: () => readonly Cover[];

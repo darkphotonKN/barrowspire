@@ -1,5 +1,7 @@
 // Building exteriors (FS-9PN7X §F, ADR-0036): the outward face of each building type, the stone
-// cap a masonry room is closed with, and the dark opening a doorway shows from outside. Authored
+// cap a masonry room is closed with, and the door head that carries the wall on over a doorway. A
+// doorway seen from outside shows a door, the run door's own sheet (interactables.js `door`), under
+// its head, never a dark opening (FS-9PN7X §F.4, amended 2026-11-03). Authored
 // in code (ADR-0021) on the same camera, key light and scale as the shipped world sheets: one
 // three.js unit is one tile edge, +x is world +x, +z is world +y, +y is up, and each model's
 // origin is the centre of its footprint.
@@ -17,7 +19,7 @@
 
 import * as THREE from "three";
 import { fbm, rng, smoothstep, vnoise } from "../noise.js";
-import { color, cssRgb, grey, mix, shade } from "../palette.js";
+import { cssRgb, grey, mix, shade } from "../palette.js";
 import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../materials.js";
 import { part } from "./util.js";
 import { ROOF_RISE, wallPiece, WALL_BACK } from "./architecture.js";
@@ -31,11 +33,12 @@ const P_THICK = 0.24;
 /** How far exterior relief may stand proud of the centreline: inside the guide's cap (0.26). */
 const PROUD = 0.13;
 
-/** The dark opening: the run door's width (50 world px of a 40 px tile) and the door's height. */
-export const OPEN_W = 50 / 40;
-const JAMB = 0.12;
-const CLEAR_W = OPEN_W - 2 * JAMB;
+/** A doorway's head height: a masonry exterior's string course runs level with it. */
 const OPEN_H = 2.4;
+/** A door gap: the run door's width (50 world px of a 40 px tile). */
+const GAP_W = 50 / 40;
+/** The top of the run door's lintel (interactables.js: DOOR_H 2.4, its lintel 0.14 at +0.12). */
+const LINTEL_TOP = 2.4 + 0.19;
 
 // ── Palette (BARROW blends only). The timber tones are architecture.js's, the stone tower.js's,
 // so a type's exterior and interior pieces read as one building. ─────────────────────────
@@ -52,20 +55,13 @@ const STONE_LO = mix("slate", "barrowDeep", 0.4);
 const STONE_MID = mix("slate", "barrowBrown", 0.32);
 const STONE_HI = mix("slateLight", "vellumFaint", 0.32);
 const CAP_JOINT = mix("charcoal", "barrowDeep", 0.45);
-/** The way in, seen from outside: the canvas's darkest ink (palette.inkDeep). */
+/** The dark reveal round a shuttered window: the canvas's darkest ink (palette.inkDeep). */
 const DARK = "pitch";
 
 /** Hides a frame guide: still counted by the bake's framing, never drawn and never shadowing. */
 function guide(obj) {
   obj.visible = false;
   return obj;
-}
-
-/** The flat darkness of a doorway: unlit, untoned, exactly the token. */
-let VOID = null;
-function voidMaterial() {
-  VOID ??= new THREE.MeshBasicMaterial({ color: color(DARK), toneMapped: false });
-  return VOID;
 }
 
 // ── Timber: the outside of a half-timbered house ────────────────────────────────────────
@@ -434,65 +430,43 @@ export function towerCap(variant) {
   return g;
 }
 
-// ── The dark opening ──────────────────────────────────────────────────────────────────────
+// ── The door head ───────────────────────────────────────────────────────────────────────
 
 /**
- * Plaster and oak over a timber doorway, `W` px wide: the wall plate, a king stud and the
- * weathered plaster either side, so the head reads as the wall it stands in.
+ * The wall over a doorway (FS-9PN7X §B.5, §F.4, amended 2026-11-03): the run door stands lower
+ * than the walls, so from its lintel to the coping the gap is closed by the type's own outward
+ * face, as wide as the gap (50 world px). Without it the room shows over a door from outside.
+ * `type` is timber | masonry; `axis` x runs along world x, y along world y, as the door sheets do.
  */
-function timberHead(clearW, h, seed) {
-  const W = Math.round(128 * clearW);
-  const Hp = Math.round(128 * h);
-  return timberFace(W, Hp, seed, {
-    plinth: 0,
-    frame: [
-      [0, 0, W, 12],
-      [W / 2 - 5, 12, 10, Hp - 12],
-    ],
-  });
-}
-
-/**
- * The way into a building seen from outside (FS-9PN7X §B.5, §F.4): a full-height frame, as wide
- * as the run's door (50 world px), its lintel and reveals in the building's own material, the
- * wall carried on over the lintel to the coping, and flat darkness inside. `type` is timber |
- * masonry; `axis` x runs along world x, y along world y, as the door sheets do.
- */
-export function darkOpening(type, axis) {
-  const M = materials();
+export function doorHead(type, axis) {
   const H = WALL_BACK;
+  const h = H - LINTEL_TOP;
   const g = new THREE.Group();
-  const head = H - OPEN_H;
   if (type === "timber") {
-    for (const sx of [-1, 1])
-      g.add(part(new THREE.BoxGeometry(JAMB, H, 0.22), M.beam, { x: sx * (OPEN_W / 2 - JAMB / 2), y: H / 2 }));
-    const map = timberHead(CLEAR_W, head - 0.16, 61);
+    const M = materials();
+    const W = Math.round(128 * GAP_W);
+    const Hp = Math.round(128 * h);
+    // the wall plate along the top and a king stud over the door, as a timber wall's frame
+    const map = timberFace(W, Hp, 61, {
+      plinth: 0,
+      frame: [
+        [0, 0, W, 12],
+        [W / 2 - 5, 12, 10, Hp - 12],
+      ],
+    });
     const face = new THREE.MeshStandardMaterial({ map, bumpMap: map, bumpScale: 0.6, roughness: 0.92 });
-    g.add(part(new THREE.BoxGeometry(CLEAR_W, head - 0.16, THICK), [M.cap, M.cap, M.cap, M.cap, face, face], { y: OPEN_H + 0.16 + (head - 0.16) / 2 }));
-    g.add(part(new THREE.BoxGeometry(CLEAR_W + 0.04, 0.16, 0.22), M.beam, { y: OPEN_H + 0.08 }));
-    g.add(part(new THREE.BoxGeometry(OPEN_W, 0.1, 0.26), M.cap, { y: H + 0.05 }));
-    g.add(part(new THREE.BoxGeometry(CLEAR_W, 0.05, 0.28), M.stone, { y: 0.025 }));
+    g.add(part(new THREE.BoxGeometry(GAP_W, h, THICK), [M.cap, M.cap, M.cap, M.cap, face, face], { y: LINTEL_TOP + h / 2 }));
+    g.add(part(new THREE.BoxGeometry(GAP_W, 0.1, 0.26), M.cap, { y: H + 0.05 }));
   } else {
     const T = towerMaterials();
-    const R = rng(axis === "x" ? 71 : 73);
-    // quoined reveals: dressed blocks with a clean inner arris, long and short in turn on the
-    // outer side, bonding into the walls either side
-    let y = 0;
-    for (let k = 0; y < OPEN_H - 0.01; k++) {
-      const bh = Math.min(0.3 + R() * 0.06, OPEN_H - y);
-      const bw = k % 2 ? JAMB + 0.1 : JAMB;
-      for (const sx of [-1, 1])
-        g.add(part(roughBox(bw, bh - 0.01, PROUD * 2, Math.floor(R() * 1000), 0.04), T.blockLight, { x: sx * (CLEAR_W / 2 + bw / 2), y: y + bh / 2 }));
-      y += bh;
-    }
-    const tex = masonry(Math.round(PX * OPEN_W), Math.round(PX * head), { key: 5600, seed: 3, grime: 0, damp: 0.6, flaws: 1 });
-    g.add(body(OPEN_W, head, P_THICK, stoneMat(tex), T.block, T.cap).translateY(OPEN_H));
-    g.add(part(roughBox(CLEAR_W + 0.3, 0.28, PROUD * 2, 79, 0.03), T.blockLight, { y: OPEN_H + 0.14 }));
-    g.add(part(new THREE.BoxGeometry(OPEN_W, 0.1, 0.26), T.cap, { y: H + 0.05 }));
-    g.add(part(roughBox(CLEAR_W, 0.06, 0.3, 83, 0.03), T.cap, { y: 0.03 }));
+    const tex = masonry(Math.round(PX * GAP_W), Math.round(PX * h), { key: 5600, seed: 43, grime: 0.75, damp: 0.7, flaws: 1 });
+    g.add(body(GAP_W, h, P_THICK, stoneMat(tex), T.block, T.cap).translateY(LINTEL_TOP));
+    g.add(part(new THREE.BoxGeometry(GAP_W, 0.1, 0.26), T.cap, { y: H + 0.05 }));
+    // the string course and the corbel table carried on across the head, as on the walls beside it
+    g.add(part(roughBox(GAP_W, 0.1, PROUD * 2, 85, 0.02), T.blockLight, { y: OPEN_H + 0.21 }));
+    for (const x of [-0.5, -0.25, 0, 0.25, 0.5])
+      g.add(part(roughBox(0.12, 0.14, 0.05, 89 + Math.round(x * 8), 0.05), T.blockLight, { x, y: H - 0.17, z: P_THICK / 2 + 0.006 }));
   }
-  // the darkness: the doorway's void, set back so the reveals show their depth
-  g.add(part(new THREE.BoxGeometry(CLEAR_W, OPEN_H, 0.12), voidMaterial(), { y: OPEN_H / 2, z: -0.02 }));
   if (axis === "y") g.rotation.y = Math.PI / 2;
   return g;
 }

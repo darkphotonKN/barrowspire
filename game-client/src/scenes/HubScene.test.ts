@@ -2321,6 +2321,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   const TOWN = [...BUILDING_WALLS, ...FURNISHING_WALLS];
 
   const IN_INN = { x: 690, y: 370 };
+  /** In the Inn's door gap, in its south wall: inside, by the inclusive inside test (§A.2). */
+  const IN_INN_DOORWAY = { x: 670, y: 400 };
   const IN_STORE = { x: 1280, y: 330 };
   const IN_SMITHY = { x: 260, y: 230 };
   const OUTDOORS = { x: 1000, y: 800 };
@@ -2403,13 +2405,13 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   const sameRect = (args: unknown[], [, x, y, w, h]: [string, number, number, number, number]) =>
     args[1] === x && args[2] === y && args[3] === w && args[4] === h;
 
-  it("should hand the buildings the building walls only, never a furnishing, with the gaps' dark openings", () => {
+  it("should hand the buildings the building walls only, never a furnishing, with a door for each gap", () => {
     town(BAKED);
     const [call] = vi.mocked(world.addBuildings).mock.calls;
     const drawn = call[2] as readonly { entity_id: string }[];
     expect(drawn.map((w) => w.entity_id)).toEqual(BUILDING_WALLS.map((w) => w.entity_id));
-    // the hub has no DoorState: a town door gap shows its dark opening from outside (§B.5)
-    expect(call[4]).toMatchObject({ openings: world.doorGaps });
+    // the hub has no DoorState: a town door gap holds a drawn door, shut outside, open inside (§B.5)
+    expect(call[4]).toMatchObject({ doors: world.doorGaps });
   });
 
   it("should stand each furnishing's prop on the centre of its rect", () => {
@@ -2696,6 +2698,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       drawScenery(walls: unknown[]): void;
     }
     const sheetOf = (m: Made) => String(m.args[3] ?? "").split("/")[0];
+    /** The state frame a door was drawn showing. */
+    const frameOf = (m: Made) => String(m.args[3] ?? "").split("/")[1];
     const drawn = (stage: { made: Made[] }, match: RegExp) =>
       stage.made.filter((m) => m.kind === "sprite" && !m.destroyed && match.test(sheetOf(m)));
     const shown = (ms: Made[]) => ms.length > 0 && ms.every((m) => m.visible);
@@ -2704,12 +2708,21 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     const building = (hub: unknown, id: string) => closed(hub).view.drawn.find((b) => b.house.id === id)!;
     const roof = (hub: unknown, id: string) => closed(hub).roofs.find((r) => r.house.id === id)!.parts;
 
-    it("should close every building from the street: full-height exterior fronts, roof and gables, a dark opening in each door gap", () => {
+    it("should close every building from the street: full-height exterior fronts, roof and gables, a shut door in each door gap", () => {
       const { stage } = town(BAKED);
       expect(shown(drawn(stage, /^wall_exterior_/))).toBe(true);
       expect(shown(drawn(stage, /^roof_(slope|ridge)$/))).toBe(true);
       expect(shown(drawn(stage, /^roof_gable_[xy]$/))).toBe(true);
-      expect(drawn(stage, /^door_dark_x$/).filter((m) => m.visible)).toHaveLength(BUILDINGS.length);
+      const doors = drawn(stage, /^door_x$/).filter((m) => m.visible);
+      expect(doors).toHaveLength(BUILDINGS.length);
+      // shut with no lock: a town door can't be acted on, so nothing amber on it
+      expect(doors.every((m) => frameOf(m) === "shut")).toBe(true);
+      // and the wall carried on over each door's lintel to the wall top: nothing of the room above it
+      const heads = drawn(stage, /^door_head_x$/).filter((m) => m.visible);
+      expect(heads).toHaveLength(BUILDINGS.length);
+      expect(heads.map((m) => m.args.slice(0, 2))).toEqual(doors.map((m) => m.args.slice(0, 2)));
+      // no dark opening is drawn anywhere (amended 2026-11-03)
+      expect(drawn(stage, /dark/)).toHaveLength(0);
       // nothing of the cut-away: its fronts and their low posts are hidden
       expect(hiddenAll(drawn(stage, /^wall_front_/))).toBe(true);
       expect(hiddenAll(drawn(stage, /^post_front$/))).toBe(true);
@@ -2738,7 +2751,38 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(shown(roof(hub, "store"))).toBe(true);
     });
 
-    it("should draw a building with no door gap closed, with no dark opening (§B.5)", () => {
+    it("should open the door of the building the player stands in, from its doorway in, and shut it as they leave (§B.5, amended 2026-11-03)", () => {
+      const { hub, stage, standIn } = town(BAKED);
+      const doorOf = (id: string, look: "exterior" | "interior") =>
+        building(hub, id)[look].filter((m) => sheetOf(m) === "door_x");
+      const [innShut] = doorOf("inn", "exterior");
+      const [innOpen] = doorOf("inn", "interior");
+      expect(frameOf(innShut)).toBe("shut");
+      const [innHead] = building(hub, "inn").exterior.filter((m) => sheetOf(m) === "door_head_x");
+      expect(innHead.visible).toBe(true);
+      expect(frameOf(innOpen)).toBe("open");
+      expect([innShut.visible, innOpen.visible]).toEqual([true, false]);
+
+      // standing in the gap is inside: the door is open the frame they step into it
+      for (const spot of [IN_INN_DOORWAY, IN_INN]) {
+        standIn(spot);
+        expect([innShut.visible, innOpen.visible]).toEqual([false, true]);
+        // the head is the exterior's: inside, the cut-away shows the open door alone
+        expect(innHead.visible).toBe(false);
+        // the other buildings' doors are outside the Inn: hidden whole, shut or open
+        expect(hiddenAll([...doorOf("store", "exterior"), ...doorOf("store", "interior")])).toBe(true);
+        const open = drawn(stage, /^door_x$/).filter((m) => m.visible);
+        expect(open.map(frameOf)).toEqual(["open"]);
+        expect(open[0].args.slice(0, 2)).toEqual(innOpen.args.slice(0, 2));
+      }
+
+      standIn(OUTDOORS);
+      expect([innShut.visible, innOpen.visible]).toEqual([true, false]);
+      expect(drawn(stage, /^door_x$/).filter((m) => m.visible).every((m) => frameOf(m) === "shut")).toBe(true);
+      expect(innHead.visible).toBe(true);
+    });
+
+    it("should draw a building with no door gap closed, with no door (§B.5)", () => {
       const { hub: raw, stage } = hubOnStage();
       const hub = raw as unknown as InteriorHub;
       hub.art = BAKED;
@@ -2749,7 +2793,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         wall("e", "shed", 480, 500, 20, 160),
         wall("s", "shed", 300, 640, 200, 20),
       ]);
-      expect(drawn(stage, /^door_dark_/)).toHaveLength(0);
+      expect(drawn(stage, /^door_/)).toHaveLength(0);
       expect(shown(drawn(stage, /^wall_exterior_/))).toBe(true);
       expect(shown(drawn(stage, /^roof_gable_/))).toBe(true);
     });

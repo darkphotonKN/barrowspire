@@ -2037,7 +2037,8 @@ export class HubScene extends Phaser.Scene {
    * is drawn as furniture, never as wall pieces (FS-B0H2D R19).
    *
    * Each house is drawn in both its looks and shows its exterior (ADR-0036, FS-9PN7X §B): four
-   * full-height timber walls, a dark opening in its door gap (the hub has no doors to draw, §B.5),
+   * full-height timber walls, a drawn door in its door gap, shut from outside and open from inside
+   * (the hub sends no DoorState: the door is only drawn, §B.5 amended 2026-11-03),
    * a roof and gables that never fade (§E.4); placeholder blocks without art (§B.7). A wall of no
    * house is drawn and faded as it always was.
    */
@@ -2050,7 +2051,7 @@ export class HubScene extends Phaser.Scene {
     this.drawLooseWalls(walls.filter((w) => !w.house_id), seed);
 
     const buildings = addBuildings(this, this.art, walls, seed, {
-      openings: doorGaps,
+      doors: doorGaps,
       style: TIMBER_PLACEHOLDER,
     });
     for (const { house, lights } of buildings)
