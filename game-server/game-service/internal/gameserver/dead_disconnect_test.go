@@ -107,6 +107,16 @@ func (p *deadDropParty) killWren(t *testing.T) {
 	})
 }
 
+// escapeWren has Wren escape and waits for the tick to see it.
+func (p *deadDropParty) escapeWren(t *testing.T) {
+	t.Helper()
+
+	leaveRunEscape(t, p.run, p.wren.ID)
+	p.wrenInbox.awaitFrame(t, p.run.ID, "the tick has seen the escape", func(frame *types.ClientGameState) bool {
+		return frame.EscapedCount > 0
+	})
+}
+
 // strandWren leaves Wren behind on a floor below (FS-F6F88) and waits for the tick.
 func (p *deadDropParty) strandWren(t *testing.T) {
 	t.Helper()
@@ -115,13 +125,13 @@ func (p *deadDropParty) strandWren(t *testing.T) {
 	p.wrenInbox.awaitTicks(t, p.run.ID, 2)
 }
 
-// deadDropAwaitingSettlement reports whether the member is kept off-connection for a run's
-// settlement.
-func deadDropAwaitingSettlement(server *Server, memberID uuid.UUID) bool {
+// deadDropKept reports whether the member is a kept member: held off-connection until their run
+// ends.
+func deadDropKept(server *Server, memberID uuid.UUID) bool {
 	server.mu.RLock()
 	defer server.mu.RUnlock()
 
-	_, kept := server.awaitingSettlement[memberID]
+	_, kept := server.keptUntilRunEnd[memberID]
 	return kept
 }
 
@@ -137,10 +147,11 @@ func deadDropHold(t *testing.T, server *Server, memberID uuid.UUID) graceHold {
 	return hold
 }
 
-// A dead delver's drop is their leave, at once, whatever closed the connection: the run keeps
+// A resolved delver's drop is their leave, at once, whatever closed the connection: the run keeps
 // their body, and they are a hub member from then on. Held for the hub's grace after an abnormal
 // or going-away close; gone, hub body and record, after a normal one. A delver left behind on a
-// lower floor counts as dead. FS-QPDKN R25; AC rows 1, 2, 8.
+// lower floor counts as dead, and an escaped one leaves the same way: they were settled at their
+// escape, so nothing holds them to the run. FS-QPDKN R25; FS-GV8WN §F R17.
 func TestDeadDrop_LeavesTheRunAtOnce(t *testing.T) {
 	resolves := []struct {
 		name    string
@@ -148,6 +159,7 @@ func TestDeadDrop_LeavesTheRunAtOnce(t *testing.T) {
 	}{
 		{"dead", (*deadDropParty).killWren},
 		{"left behind", (*deadDropParty).strandWren},
+		{"escaped", (*deadDropParty).escapeWren},
 	}
 
 	for _, resolved := range resolves {
@@ -158,8 +170,8 @@ func TestDeadDrop_LeavesTheRunAtOnce(t *testing.T) {
 
 				p.server.handleReadError(p.wrenConn, closed.err)
 
-				assert.True(t, p.run.HasPlayer(p.wren.ID), "the run keeps the body for its settlement")
-				assert.False(t, deadDropAwaitingSettlement(p.server, p.wren.ID), "nobody is kept off-connection for the run")
+				assert.True(t, p.run.HasPlayer(p.wren.ID), "the run keeps the body")
+				assert.False(t, deadDropKept(p.server, p.wren.ID), "nobody is kept off-connection for the run")
 				_, mapped := p.server.GetPlayerFromConn(p.wrenConn)
 				assert.False(t, mapped, "the closed connection is unmapped")
 
@@ -194,7 +206,7 @@ func TestDeadDrop_GraceEnd_EndsTheirHubStayOnly(t *testing.T) {
 	_, onRecord := p.server.PlayerByID(p.wren.ID)
 	assert.False(t, onRecord, "their record goes at the hub grace's end")
 	assert.Zero(t, entityCountFor(p.hub.EntityManager.GetAllEntities(), p.wren.ID), "with their hub body")
-	assert.False(t, deadDropAwaitingSettlement(p.server, p.wren.ID), "nobody kept for the run")
+	assert.False(t, deadDropKept(p.server, p.wren.ID), "nobody kept for the run")
 	assert.True(t, p.run.HasPlayer(p.wren.ID), "the run keeps its body for its settlement")
 }
 
@@ -237,36 +249,48 @@ func TestDeadDrop_SettledWithTheRun(t *testing.T) {
 	}
 }
 
-// A dead delver who drops and comes back before the run ends is announced the hub, never the run,
-// and the run sends them nothing more: no state, no end_game. FS-QPDKN R12, R21, R25; AC row 4.
+// A resolved delver who drops and comes back before the run ends is announced the hub, never the
+// run, and the run sends them nothing more: no state, no end_game. Dead or escaped alike: an
+// escapee's drop is their leave too. FS-QPDKN R12, R21, R25; FS-GV8WN §F R17.
 func TestDeadDrop_ReconnectBeforeRunEnd_LandsInTheHub(t *testing.T) {
-	p := deadDropRun(t)
-	p.killWren(t)
-	p.server.handleReadError(p.wrenConn, deadDropAbnormal)
+	resolves := []struct {
+		name    string
+		resolve func(p *deadDropParty, t *testing.T)
+	}{
+		{"dead", (*deadDropParty).killWren},
+		{"escaped", (*deadDropParty).escapeWren},
+	}
+	for _, resolved := range resolves {
+		t.Run(resolved.name, func(t *testing.T) {
+			p := deadDropRun(t)
+			resolved.resolve(p, t)
+			p.server.handleReadError(p.wrenConn, deadDropAbnormal)
 
-	record, reconnected := p.server.connectPlayer(p.wren.ID, "Wren", "token")
-	require.True(t, reconnected, "within the hub's grace it is a reconnect")
-	assert.Equal(t, p.hub.ID, record.CurrentGameSessionId, "their record names the hub")
+			record, reconnected := p.server.connectPlayer(p.wren.ID, "Wren", "token")
+			require.True(t, reconnected, "within the hub's grace it is a reconnect")
+			assert.Equal(t, p.hub.ID, record.CurrentGameSessionId, "their record names the hub")
 
-	msgChan := make(chan interface{}, clientWriterBuffer)
-	p.server.announceCurrentWorld(msgChan, &record)
-	back := &websocket.Conn{}
-	_, mapped := p.server.MapConnToPlayer(back, p.wren.ID, msgChan)
-	require.True(t, mapped)
-	inbox := leaveRunListen(t, p.server, back)
+			msgChan := make(chan interface{}, clientWriterBuffer)
+			p.server.announceCurrentWorld(msgChan, &record)
+			back := &websocket.Conn{}
+			_, mapped := p.server.MapConnToPlayer(back, p.wren.ID, msgChan)
+			require.True(t, mapped)
+			inbox := leaveRunListen(t, p.server, back)
 
-	world, announced := inbox.await(string(constants.ActionWorldEntered))
-	require.True(t, announced, "the reconnecting member is told which world they are in")
-	assert.Equal(t, string(types.WorldTypeHub), world.Payload["world_type"])
-	assert.Equal(t, p.hub.ID.String(), world.Payload["session_id"])
+			world, announced := inbox.await(string(constants.ActionWorldEntered))
+			require.True(t, announced, "the reconnecting member is told which world they are in")
+			assert.Equal(t, string(types.WorldTypeHub), world.Payload["world_type"])
+			assert.Equal(t, p.hub.ID.String(), world.Payload["session_id"])
 
-	resolvedDropEscape(t, p.run, p.kaelen.ID)
-	resolvedDropEndRun(t, p.run, p.emitter)
+			resolvedDropEscape(t, p.run, p.kaelen.ID)
+			resolvedDropEndRun(t, p.run, p.emitter)
 
-	assert.Empty(t, inbox.quiet(string(constants.ActionEndGame), string(constants.ActionWorldEntered)),
-		"the run's end reached a member who had left it")
-	assert.Zero(t, inbox.framesFrom(p.run.ID), "the run sent state to a member who had left it")
-	assert.Equal(t, p.hub.ID, recordOf(t, p.server, p.wren.ID).CurrentGameSessionId)
+			assert.Empty(t, inbox.quiet(string(constants.ActionEndGame), string(constants.ActionWorldEntered)),
+				"the run's end reached a member who had left it")
+			assert.Zero(t, inbox.framesFrom(p.run.ID), "the run sent state to a member who had left it")
+			assert.Equal(t, p.hub.ID, recordOf(t, p.server, p.wren.ID).CurrentGameSessionId)
+		})
+	}
 }
 
 // A dead delver who comes back after the hub's grace is a fresh connect: in no world, with no tie
@@ -420,31 +444,7 @@ func TestDeadDrop_LoopLeaveLandingAfterTheDropsHold_LeavesThemHeld(t *testing.T)
 	_, onRecord := p.server.PlayerByID(p.wren.ID)
 	assert.False(t, onRecord, "the grace's end takes their record")
 	assert.Zero(t, entityCountFor(p.hub.EntityManager.GetAllEntities(), p.wren.ID), "and their hub body")
-	assert.True(t, p.run.HasPlayer(p.wren.ID), "the run keeps its body for its settlement")
-}
-
-// An escaped delver's drop is no leave: held in the run for the grace, then released, the run
-// keeping their body for its settlement and their record going. FS-QPDKN R26, R29 (I-QPDKN-9); AC
-// row 9.
-func TestDeadDrop_EscapedDelverDropIsNoLeave(t *testing.T) {
-	p := deadDropRun(t)
-	leaveRunEscape(t, p.run, p.wren.ID)
-	p.wrenInbox.awaitFrame(t, p.run.ID, "the tick has seen the escape", func(frame *types.ClientGameState) bool {
-		return frame.EscapedCount > 0
-	})
-
-	p.server.handleReadError(p.wrenConn, deadDropAbnormal)
-
-	assert.Equal(t, p.run.ID, recordOf(t, p.server, p.wren.ID).CurrentGameSessionId, "their record still names the run")
-	assert.Equal(t, constants.Reconnecting, connStateOf(t, p.server, p.wren.ID))
-	assert.False(t, p.hub.HasPlayer(p.wren.ID), "no hub body")
-
-	p.server.cleanUpPlayerCompletely(p.wren.ID, deadDropHold(t, p.server, p.wren.ID))
-
-	assert.False(t, deadDropAwaitingSettlement(p.server, p.wren.ID), "released past the grace, not kept")
-	_, onRecord := p.server.PlayerByID(p.wren.ID)
-	assert.False(t, onRecord, "their record goes")
-	assert.True(t, p.run.HasPlayer(p.wren.ID), "and the run keeps the body for its settlement")
+	assert.True(t, p.run.HasPlayer(p.wren.ID), "the run keeps its body")
 }
 
 // A living delver's drop is unchanged by the rule: held in the run for the grace, then removed.
@@ -485,7 +485,7 @@ func TestDeadDrop_HubMissing_FallsBackToTheRunGrace(t *testing.T) {
 
 	p.server.cleanUpPlayerCompletely(p.wren.ID, deadDropHold(t, p.server, p.wren.ID))
 
-	assert.True(t, deadDropAwaitingSettlement(p.server, p.wren.ID), "kept for the run's settlement, as before")
+	assert.True(t, deadDropKept(p.server, p.wren.ID), "kept until the run ends, as before")
 	assert.True(t, p.run.HasPlayer(p.wren.ID))
 }
 

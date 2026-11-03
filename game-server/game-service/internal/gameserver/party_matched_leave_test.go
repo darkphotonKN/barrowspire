@@ -409,9 +409,9 @@ func TestMatchedParty_Watching_StillAMemberHearsPartyChat(t *testing.T) {
 	}
 }
 
-// An escaped member cannot leave early, so stays a member until the run ends; at its end both are
-// out, and back in town either may queue at once. AC rows 9, 10; R15, R21.
-func TestMatchedParty_Escaped_MemberUntilTheRunEndsThenFindGameQueues(t *testing.T) {
+// An escaped member may leave early (FS-GV8WN §F R16): home at once, out of the run's matched party
+// with it (FS-988SM R11), and back in town they may queue at once. AC rows 9, 10; R15, R21.
+func TestMatchedParty_Escaped_LeavesEarlyThenFindGameQueues(t *testing.T) {
 	rig := newPartyRig(t)
 	pair := matchedPairHere(t, rig)
 	escaped := pair.member
@@ -419,16 +419,13 @@ func TestMatchedParty_Escaped_MemberUntilTheRunEndsThenFindGameQueues(t *testing
 
 	leaveRunSend(rig.server, escaped.conn)
 
-	refused, answered := escaped.inbox.await(leaveRunAction)
+	// an escaped member may leave early now (FS-GV8WN §F R16): home at once, and out of the run's
+	// matched party with it (FS-988SM R11)
+	home, answered := escaped.inbox.await(string(constants.ActionWorldEntered), leaveRunAction)
 	require.True(t, answered, "leave_run was never answered")
-	require.NotNil(t, refused.Error, "an escaped member may not leave early")
-	assertNobodyLeft(t, pair.leader.inbox, "the leader")
-	assert.Len(t, partyInRedisOf(t, rig, escaped.player.ID).Members, 2, "still a member")
-
-	leaveRunKill(t, pair.run, pair.leader.player.ID)
-
-	require.Eventually(t, pair.run.Ended, leaveRunSettle, 10*time.Millisecond, "the run never ended")
-	assertEndedOnce(t, rig, pair)
+	require.Equal(t, string(constants.ActionWorldEntered), home.Action, "an escaped member may leave early")
+	awaitUpdate(t, pair.leader.inbox, "left", escaped.player.ID, "the leader")
+	assert.False(t, pair.run.Ended(), "the run goes on for the leader in play")
 
 	rig.hub.RemovePlayer(escaped.player.ID.String())
 	rig.hub.AddPlayerAt(escaped.player.ID, escaped.player.Character, "", spireGateX, spireGateY)

@@ -19,12 +19,11 @@ import (
 
 // FS-QPDKN §Requirements 18–20, §Edge States "Disconnects" (I-QPDKN-5).
 //
-// A resolved member of a run (dead, escaped, left behind) whose connection
-// drops past its reconnect grace keeps their body and their record until the
-// run ends, so the run settles them exactly as if they had stayed. A member
-// still in play, and a member in the hub, are removed at grace end as today.
-// Since I-QPDKN-9 an escaped member keeps only their body: they are released,
-// and their record goes at grace end (R29; escaped_release_test.go).
+// A resolved member of a run (dead, escaped, left behind) whose drop could not
+// be their leave and whose grace then runs out keeps their body and their
+// record until the run ends. They were settled when they resolved (FS-GV8WN
+// §A). A member still in play, and a member in the hub, are removed at grace
+// end as today.
 //
 // The run's end is driven through its real path. NewSession starts a world's
 // loop as it is built, so a run here ticks from CreateGameSession on: once a
@@ -198,11 +197,11 @@ func resolvedDropWorldEntered(t *testing.T, msgChan chan interface{}) (types.Mes
 	}
 }
 
-// A resolved member whose grace runs out keeps their body in the run. A dead
-// one keeps their record too, still naming the run; an escaped one is released,
-// and their record goes (FS-QPDKN R29, I-QPDKN-9). The connection is already
-// gone, so they receive nothing until they reconnect. FS-QPDKN §Requirements
-// 18–19.
+// A resolved member whose grace runs out (their drop could not be their leave)
+// keeps their body in the run and their record, still naming the run, dead or
+// escaped alike: both were settled when they resolved (FS-GV8WN §A). The
+// connection is already gone, so they receive nothing until they reconnect.
+// FS-QPDKN §Requirements 18–19.
 func TestGraceEnd_KeepsResolvedRunMember(t *testing.T) {
 	t.Run("escaped", func(t *testing.T) {
 		server, _ := resolvedDropServer(t)
@@ -212,8 +211,8 @@ func TestGraceEnd_KeepsResolvedRunMember(t *testing.T) {
 		resolvedDropPastGrace(t, server, party.wrenConn)
 
 		assert.True(t, party.run.HasPlayer(party.wren.ID), "an escaped member's body is kept in the run past the grace")
-		_, onRecord := server.PlayerByID(party.wren.ID)
-		assert.False(t, onRecord, "an escaped member is released past the grace: their record goes")
+		assert.Equal(t, party.run.ID, recordOf(t, server, party.wren.ID).CurrentGameSessionId,
+			"their record is kept too, naming the run")
 
 		_, mapped := server.GetPlayerFromConn(party.wrenConn)
 		assert.False(t, mapped, "the dropped connection is unmapped")
@@ -362,14 +361,29 @@ func TestGraceEnd_LastInPlayMemberEndsTheRunAndSettlesTheKept(t *testing.T) {
 
 // A kept member who reconnects before the run ends is back in the run: the
 // ordinary reconnect finds their record naming the run and announces it on
-// the new connection. FS-QPDKN §Requirements 19 (R12). Only a dead member is
-// kept now (one whose drop could not be their leave); an escaped one past the
-// grace is released and connects fresh (R29, I-QPDKN-9).
+// the new connection. A member is kept only when their drop could not be
+// their leave; dead or escaped, they are kept alike. FS-QPDKN §Requirements
+// 19 (R12); FS-GV8WN Edge States.
 func TestReconnect_BeforeRunEnd_LandsInRun(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		resolve func(t *testing.T, run *game.Session, memberID uuid.UUID)
+	}{
+		{"dead", resolvedDropKill},
+		{"escaped", resolvedDropEscape},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			reconnectKeptMember(t, tt.resolve)
+		})
+	}
+}
+
+func reconnectKeptMember(t *testing.T, resolve func(t *testing.T, run *game.Session, memberID uuid.UUID)) {
+	t.Helper()
 	server, _ := resolvedDropServer(t)
 	party := resolvedDropRun(t, server)
 
-	resolvedDropKill(t, party.run, party.wren.ID)
+	resolve(t, party.run, party.wren.ID)
 	resolvedDropPastGrace(t, server, party.wrenConn)
 
 	// the reconnect, as the handler runs it: the record is found, the world
