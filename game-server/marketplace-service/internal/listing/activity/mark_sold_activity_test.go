@@ -62,6 +62,9 @@ func TestMarkSoldActivity_Classification(t *testing.T) {
 		{"listing in another status", listing.ErrInvalidListingState, true},
 		// the listing itself is gone; there is nothing to write to
 		{"listing not found", commonerr.ErrNotFound, true},
+		// what ListingRepository.Update actually returns for a missing row, via
+		// WrapDBErr: a different sentinel from apperr's
+		{"listing not found, as the repository reports it", commonconstants.ErrNotFound, true},
 		{"dependency blip", errors.New("dial tcp: connection refused"), false},
 		{"lost the row lock", listing.ErrConcurrentModification, false},
 		// another writer held the listing past Update's 3s lock_timeout

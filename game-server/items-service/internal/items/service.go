@@ -112,7 +112,7 @@ type Repository interface {
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
 	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
-	FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error)
+	FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) (bool, error)
 	TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error)
 	UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error
 
@@ -1215,17 +1215,25 @@ func (s *service) GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*Ite
 	return summaries, nil
 }
 
-// FreezeItem is settlement step 0b. Frozen, or already frozen for this seller, is
-// success; anything else is ErrItemNotFreezable, which the settlement treats as
-// final rather than retrying.
-func (s *service) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) error {
-	frozen, err := s.repo.FreezeItem(ctx, itemID, sellerID)
+// FreezeItem is settlement step 0b. Frozen, or already frozen for this seller and
+// listing, is success; anything else is ErrItemNotFreezable, which the settlement
+// treats as final rather than retrying.
+//
+// uuid.Nil for listingID is a 0b recorded before the input carried one; the
+// repository falls back to the unscoped guard for it.
+func (s *service) FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error {
+	if listingID == uuid.Nil {
+		slog.WarnContext(ctx, "freeze item without a listing, falling back to the unscoped guard",
+			"item_id", itemID, "seller_id", sellerID)
+	}
+
+	frozen, err := s.repo.FreezeItem(ctx, itemID, sellerID, listingID)
 	if err != nil {
 		return fmt.Errorf("freeze item %v: %w", itemID, err)
 	}
 
 	if !frozen {
-		return fmt.Errorf("freeze item %v for seller %v: %w", itemID, sellerID, ErrItemNotFreezable)
+		return fmt.Errorf("freeze item %v for seller %v listing %v: %w", itemID, sellerID, listingID, ErrItemNotFreezable)
 	}
 
 	return nil

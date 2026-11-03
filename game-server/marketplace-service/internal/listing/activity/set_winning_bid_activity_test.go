@@ -8,6 +8,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/marketplaceactivity"
 	commonerr "github.com/darkphotonKN/barrowspire-server/common/apperr"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	"github.com/google/uuid"
@@ -78,6 +79,9 @@ func TestSetWinningBidActivity_Classification(t *testing.T) {
 		{"bid is no longer winning", listing.ErrInvalidBidTransition, true},
 		// the listing itself is gone; there is nothing to write to
 		{"listing not found", commonerr.ErrNotFound, true},
+		// what ListingRepository.Update actually returns for a missing row, via
+		// WrapDBErr: a different sentinel from apperr's
+		{"listing not found, as the repository reports it", commonconstants.ErrNotFound, true},
 		{"dependency blip", errors.New("dial tcp: connection refused"), false},
 		// the row lock lost a race. A fresh attempt gets a fresh version.
 		{"lost the row lock", listing.ErrConcurrentModification, false},

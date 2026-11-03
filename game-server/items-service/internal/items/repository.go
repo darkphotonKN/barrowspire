@@ -1128,9 +1128,10 @@ func selectItemSummaries(ctx context.Context, q sqlx.QueryerContext, ids []uuid.
 }
 
 // FreezeItem is settlement step 0b (FS-NXP1W Req 26): LISTED -> PENDING_SETTLEMENT,
-// conditional on the seller still owning the item. It reports false when the item
-// is neither freezable nor already frozen for this seller; the caller decides what
-// that means.
+// conditional on the seller still owning the item and the item still being
+// reserved for this listing (Req 24a). It reports false when the item is neither
+// freezable nor already frozen for this seller and listing; the caller decides
+// what that means.
 //
 // Only the LISTED row is written, so a retry on an already-frozen item changes
 // nothing (updated_at is trigger-stamped on any UPDATE, even a no-op one). The
@@ -1138,16 +1139,26 @@ func selectItemSummaries(ctx context.Context, q sqlx.QueryerContext, ids []uuid.
 // snapshot after the write, so an overlapping attempt that froze the item first
 // has committed by then and is seen, where a snapshot shared with the write would
 // miss it.
-func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID) (bool, error) {
+func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) (bool, error) {
+	// scoped to this listing (Req 24a), so a 0b retried after the seller relisted
+	// the item leaves the new listing's reservation alone. uuid.Nil is a 0b
+	// recorded before the input carried a listing: it goes in as NULL and keeps
+	// the status-and-owner guard it was started under
+	var scope *uuid.UUID
+	if listingID != uuid.Nil {
+		scope = &listingID
+	}
+
 	freeze := `
 		UPDATE item_instances
 		SET status = 'PENDING_SETTLEMENT'
 		WHERE id = $1
 		AND owner_member_id = $2
+		AND ($3::uuid IS NULL OR listing_id = $3::uuid)
 		AND status = 'LISTED'
 	`
 
-	res, err := r.DB.ExecContext(ctx, freeze, itemID, sellerID)
+	res, err := r.DB.ExecContext(ctx, freeze, itemID, sellerID, scope)
 	if err != nil {
 		return false, wrapDBErr("freeze item", err)
 	}
@@ -1160,18 +1171,21 @@ func (r *repository) FreezeItem(ctx context.Context, itemID, sellerID uuid.UUID)
 		return true, nil
 	}
 
+	// already applied only if frozen for this seller and this listing; frozen for
+	// another listing is a relist settling since, not this 0b catching up
 	alreadyFrozen := `
 		SELECT EXISTS (
 			SELECT 1
 			FROM item_instances
 			WHERE id = $1
 			AND owner_member_id = $2
+			AND ($3::uuid IS NULL OR listing_id = $3::uuid)
 			AND status = 'PENDING_SETTLEMENT'
 		)
 	`
 
 	var frozen bool
-	if err := r.DB.GetContext(ctx, &frozen, alreadyFrozen, itemID, sellerID); err != nil {
+	if err := r.DB.GetContext(ctx, &frozen, alreadyFrozen, itemID, sellerID, scope); err != nil {
 		return false, wrapDBErr("freeze item, already frozen check", err)
 	}
 

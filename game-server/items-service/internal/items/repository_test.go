@@ -73,7 +73,8 @@ func TestBatchUpsertItemInstances_Executes(t *testing.T) {
 
 // Opt-in like the test above, but committed: FreezeItem runs on the pool, not a
 // caller's tx, so seeded rows are deleted on cleanup. FreezeItem is settlement step 0b: one conditional
-// write, LISTED -> PENDING_SETTLEMENT, guarded on both status and owner.
+// write, LISTED -> PENDING_SETTLEMENT, guarded on status, owner and the listing
+// the item is reserved for (FS-NXP1W §Req 24a).
 func TestFreezeItem(t *testing.T) {
 	dsn := os.Getenv("ITEMS_TEST_DSN")
 	if dsn == "" {
@@ -87,35 +88,58 @@ func TestFreezeItem(t *testing.T) {
 	defer db.Close()
 
 	seller, stranger := uuid.New(), uuid.New()
+	thisListing, otherListing := uuid.New(), uuid.New()
 	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name       string
-		status     string
-		owner      uuid.UUID
-		caller     uuid.UUID
-		skipSeed   bool
-		wantFrozen bool
-		wantStatus string
-		// an already-frozen item must come back untouched, updated_at included
+		name   string
+		status string
+		owner  uuid.UUID
+		// the listing the seeded item is reserved for
+		reservedFor *uuid.UUID
+		caller      uuid.UUID
+		// the listing the settlement freezes for; uuid.Nil is a pre-ListingID replay
+		callerListing uuid.UUID
+		skipSeed      bool
+		wantFrozen    bool
+		wantStatus    string
+		// a row the freeze does not match, or an already-frozen one, must come
+		// back untouched, updated_at included
 		wantUpdatedAtKept bool
 	}{
-		{name: "listed item owned by seller freezes", status: "LISTED", owner: seller, caller: seller, wantFrozen: true, wantStatus: "PENDING_SETTLEMENT"},
-		{name: "already frozen for seller is success and changes nothing", status: "PENDING_SETTLEMENT", owner: seller, caller: seller, wantFrozen: true, wantStatus: "PENDING_SETTLEMENT", wantUpdatedAtKept: true},
-		{name: "listed item owned by someone else is refused", status: "LISTED", owner: stranger, caller: seller, wantStatus: "LISTED"},
-		{name: "frozen item owned by someone else is refused", status: "PENDING_SETTLEMENT", owner: stranger, caller: seller, wantStatus: "PENDING_SETTLEMENT"},
-		{name: "available item was unlisted, refused", status: "AVAILABLE", owner: seller, caller: seller, wantStatus: "AVAILABLE"},
-		{name: "missing item is refused", caller: seller, skipSeed: true},
+		{name: "listed item owned by seller freezes", status: "LISTED", owner: seller, reservedFor: &thisListing, caller: seller, callerListing: thisListing,
+			wantFrozen: true, wantStatus: "PENDING_SETTLEMENT"},
+		{name: "already frozen for seller is success and changes nothing", status: "PENDING_SETTLEMENT", owner: seller, reservedFor: &thisListing, caller: seller, callerListing: thisListing,
+			wantFrozen: true, wantStatus: "PENDING_SETTLEMENT", wantUpdatedAtKept: true},
+		{name: "listed item owned by someone else is refused", status: "LISTED", owner: stranger, reservedFor: &thisListing, caller: seller, callerListing: thisListing,
+			wantStatus: "LISTED", wantUpdatedAtKept: true},
+		{name: "frozen item owned by someone else is refused", status: "PENDING_SETTLEMENT", owner: stranger, reservedFor: &thisListing, caller: seller, callerListing: thisListing,
+			wantStatus: "PENDING_SETTLEMENT", wantUpdatedAtKept: true},
+		{name: "available item was unlisted, refused", status: "AVAILABLE", owner: seller, caller: seller, callerListing: thisListing,
+			wantStatus: "AVAILABLE", wantUpdatedAtKept: true},
+		{name: "missing item is refused", caller: seller, callerListing: thisListing, skipSeed: true},
+		// relisted since: the item is the seller's and LISTED, but for a new listing.
+		// A retried 0b for the old one must leave it alone.
+		{name: "listed for another listing is refused and stays listed", status: "LISTED", owner: seller, reservedFor: &otherListing, caller: seller, callerListing: thisListing,
+			wantStatus: "LISTED", wantUpdatedAtKept: true},
+		{name: "frozen for another listing is not already applied", status: "PENDING_SETTLEMENT", owner: seller, reservedFor: &otherListing, caller: seller, callerListing: thisListing,
+			wantStatus: "PENDING_SETTLEMENT", wantUpdatedAtKept: true},
+		// a 0b scheduled before ListingID existed replays with none: it keeps the
+		// status-and-owner guard it was started under
+		{name: "unscoped replay freezes on status and owner", status: "LISTED", owner: seller, reservedFor: &thisListing, caller: seller, callerListing: uuid.Nil,
+			wantFrozen: true, wantStatus: "PENDING_SETTLEMENT"},
+		{name: "unscoped replay of an already frozen item is success", status: "PENDING_SETTLEMENT", owner: seller, reservedFor: &thisListing, caller: seller, callerListing: uuid.Nil,
+			wantFrozen: true, wantStatus: "PENDING_SETTLEMENT", wantUpdatedAtKept: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			itemID := uuid.New()
 			if !tt.skipSeed {
-				seedItemInstance(t, ctx, db, itemID, tt.owner, tt.status, earlier)
+				seedItemInstanceForListing(t, ctx, db, itemID, tt.owner, tt.status, earlier, tt.reservedFor)
 			}
 
-			frozen, err := NewRepository(db).FreezeItem(ctx, itemID, tt.caller)
+			frozen, err := NewRepository(db).FreezeItem(ctx, itemID, tt.caller, tt.callerListing)
 			if err != nil {
 				t.Fatalf("freeze: %v", err)
 			}
@@ -127,10 +151,11 @@ func TestFreezeItem(t *testing.T) {
 			}
 
 			var row struct {
-				Status    string    `db:"status"`
-				UpdatedAt time.Time `db:"updated_at"`
+				Status    string     `db:"status"`
+				UpdatedAt time.Time  `db:"updated_at"`
+				ListingID *uuid.UUID `db:"listing_id"`
 			}
-			if err := db.GetContext(ctx, &row, `SELECT status, updated_at FROM item_instances WHERE id = $1`, itemID); err != nil {
+			if err := db.GetContext(ctx, &row, `SELECT status, updated_at, listing_id FROM item_instances WHERE id = $1`, itemID); err != nil {
 				t.Fatalf("read back: %v", err)
 			}
 			if row.Status != tt.wantStatus {
@@ -138,6 +163,13 @@ func TestFreezeItem(t *testing.T) {
 			}
 			if tt.wantUpdatedAtKept && !row.UpdatedAt.Equal(earlier) {
 				t.Errorf("updated_at = %v, want untouched %v", row.UpdatedAt, earlier)
+			}
+			// freezing never re-points or clears the reservation
+			switch {
+			case tt.reservedFor == nil && row.ListingID != nil:
+				t.Errorf("listing_id = %v, want NULL", *row.ListingID)
+			case tt.reservedFor != nil && (row.ListingID == nil || *row.ListingID != *tt.reservedFor):
+				t.Errorf("listing_id = %v, want %v", row.ListingID, *tt.reservedFor)
 			}
 		})
 	}

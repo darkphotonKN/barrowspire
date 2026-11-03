@@ -18,9 +18,18 @@ const FreezeItemActivityName = "FreezeItem"
 // FreezeItemInput carries SellerID so the write can be conditional on ownership.
 // An item that changed hands since the listing was made is a semantic
 // impossibility, not something to retry.
+//
+// ListingID scopes the write to this settlement's listing (FS-NXP1W §Req 24a):
+// an item the seller has since relisted is reserved for another listing, and
+// status alone cannot tell the two apart.
+//
+// Added after the first runs were recorded. A 0b scheduled before then replays
+// with no listing_id, which decodes as uuid.Nil; items reads that as "unscoped"
+// and falls back to the status-and-owner guard those runs were started under.
 type FreezeItemInput struct {
-	ItemID   uuid.UUID `json:"item_id"`
-	SellerID uuid.UUID `json:"seller_id"`
+	ItemID    uuid.UUID `json:"item_id"`
+	SellerID  uuid.UUID `json:"seller_id"`
+	ListingID uuid.UUID `json:"listing_id"`
 }
 
 type FreezeItemOutput struct {
