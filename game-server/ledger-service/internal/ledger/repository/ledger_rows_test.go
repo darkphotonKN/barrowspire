@@ -30,7 +30,7 @@ const migrationsDir = "../../../migrations"
 // an empty schema and its non-IF-NOT-EXISTS indexes never collide.
 const roundTripSchema = "ledger_rows_roundtrip_test"
 
-const defaultTestDSN = "postgres://user:password@localhost:5226/barrowspire_ledger_service_db?sslmode=disable"
+const defaultTestDSN = "postgres://ledger_service:ledger_service@localhost:5432/barrowspire_ledger_service_db?sslmode=disable"
 
 // --- tag ↔ column agreement (no database required) ---
 
