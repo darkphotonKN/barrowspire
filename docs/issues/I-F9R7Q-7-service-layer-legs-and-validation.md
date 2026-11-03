@@ -1,9 +1,9 @@
 ---
 id: I-F9R7Q-7
-status: open
+status: done
 implements: FS-F9R7Q
 blocked_by: [I-F9R7Q-1, I-F9R7Q-6]
-labels: [blocked]
+labels: []
 title: "FS-F9R7Q slice 7: service layer — leg construction, sum-to-zero, reason/reference validation"
 ---
 Implements FS-F9R7Q §Requirements 1-8, §Edge States

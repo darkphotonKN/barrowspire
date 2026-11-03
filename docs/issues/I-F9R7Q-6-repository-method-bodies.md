@@ -1,9 +1,9 @@
 ---
 id: I-F9R7Q-6
-status: open
+status: done
 implements: FS-F9R7Q
 blocked_by: [I-F9R7Q-1, I-F9R7Q-3, I-F9R7Q-4]
-labels: [blocked]
+labels: []
 title: "FS-F9R7Q slice 6: repository method bodies — atomic multi-leg append, idempotent"
 ---
 Implements FS-F9R7Q §Requirements 9-13, §Data model
