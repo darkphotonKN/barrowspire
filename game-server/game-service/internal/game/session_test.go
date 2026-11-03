@@ -60,6 +60,8 @@ func (m *mockSessionCloser) CloseSession(_ uuid.UUID) error {
 
 func (m *mockSessionCloser) ApplyRunProgress(_ []types.RunProgress) {}
 
+func (m *mockSessionCloser) SeatsReleased(_ uuid.UUID, _ []uuid.UUID) {}
+
 func (m *mockSessionCloser) ReturnPlayersToHub(sessionID uuid.UUID) {
 	m.returnedToHub = append(m.returnedToHub, sessionID)
 }

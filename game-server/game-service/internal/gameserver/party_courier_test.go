@@ -26,7 +26,7 @@ func TestPartyCourier_FailedInvite_WaitsForTheLoop(t *testing.T) {
 	for len(jobs) < cap(jobs) {
 		jobs <- func() {}
 	}
-	courier := newPartyCourier(failingBox{}, nil, jobs, "pod-a", func(partyUpdateLetter) {}, func([]uuid.UUID, map[string]interface{}) {})
+	courier := newPartyCourier(failingBox{}, nil, jobs, "pod-a", courierHandlers{update: func(partyUpdateLetter) {}, chat: func([]uuid.UUID, map[string]interface{}) {}, matchFailed: func(uuid.UUID) {}})
 	told := make(chan struct{})
 
 	courier.sendInvite(ctx, "pod-b", uuid.New(), map[string]interface{}{}, func() { close(told) })
