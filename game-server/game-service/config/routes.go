@@ -92,7 +92,7 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 
 	// outbox is built once in main and shared with the worker that drains it;
 	// the worker is woken once match-end rows commit
-	gameService := game.NewService(db, outbox, outboxWaker)
+	gameService := game.NewService(db, outbox, outboxWaker, game.DefaultSettlementRetry(ctx))
 	// the one announcer: the matchmaker publishes create steps with it, the
 	// server publishes handoff steps to the other pods. FS-K2HKP §Requirements 20.
 	// the game service also settles every field visit through the same
@@ -153,6 +153,10 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		case <-time.After(matchmakerStopTimeout):
 			slog.Warn("matchmaker did not stop in time, pod alive key left to expire")
 		}
+		// the pod's lifetime has ended, so held settlements stop retrying; an
+		// attempt under way may still commit, so let it finish before the
+		// database closes (FS-GV8WN §C R10)
+		gameService.Drain()
 		return closeAll()
 	}
 

@@ -40,41 +40,106 @@ type service struct {
 	db     TxBeginner
 	outbox OutboxWriter
 	waker  OutboxWaker
+	writer *settlementWriter
 }
 
-func NewService(db TxBeginner, outbox OutboxWriter, waker OutboxWaker) *service {
-	return &service{
+// NewService builds the match-end publisher. retry is how a run's settlement
+// whose write fails is held and tried again until it commits (FS-GV8WN §C R8).
+func NewService(db TxBeginner, outbox OutboxWriter, waker OutboxWaker, retry SettlementRetry) *service {
+	s := &service{
 		db:     db,
 		outbox: outbox,
 		waker:  waker,
 	}
+	s.writer = newSettlementWriter(s.writeMatchEndOutbox, retry)
+	return s
 }
 
 func (s *service) PublishMatchComplete(ctx context.Context, data *types.RawMatchState) {
 	slog.Debug("service publishingMatchComplete")
+
+	// everyone already settled: the run's end only sweeps what is left
+	// (FS-GV8WN R14, D2)
+	if len(data.Players) == 0 && len(data.Progress) == 0 {
+		s.publishSweep(data)
+		return
+	}
 	// calculate winner and determine final positions
 	rankedPlayers := s.rankPlayers(data.Players, data.EliminationOrder)
 
 	// proto marshal
-	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers, data.Progress, commonconstants.WorldTypeRun)
+	protoData, err := s.formatMatchData(data.SessionID, data.StartedAt, data.EndedAt, rankedPlayers, data.Progress, commonconstants.WorldTypeRun, wholeRunExtraction(data.SettledMemberIDs))
 
 	if err != nil {
 		slog.Error("Error formatting game match end event", "session_id", data.SessionID, "error", err)
 		return
 	}
 
-	if err := s.writeMatchEndOutbox(ctx, protoData); err != nil {
-		slog.Error("Error writing match end events to the outbox, rows may not have been recorded",
-			"session_id", data.SessionID,
-			"error", err,
-		)
+	ids := newSettlementIDs(data.SessionID, membersKey(settledMemberIDs(rankedPlayers, data.Progress)))
+
+	// held until it commits: a failed write is retried, never dropped
+	// (FS-GV8WN §C R8). The write does not run under ctx: it outlives the
+	// caller, bounded per attempt and by the pod's lifetime.
+	s.writer.settle(data.SessionID, protoData, ids)
+}
+
+// PublishSettlement settles one player the moment they resolve: one pair
+// carrying only them, its items.extracted partial so items-service releases
+// only theirs (FS-GV8WN §A, §B R5–R6). It never blocks: the write runs on the
+// settlement writer's goroutine, so the tick can call it (I-GV8WN-5).
+func (s *service) PublishSettlement(ctx context.Context, settlement *types.RawSettlement) {
+	player := settlement.Player
+	result := types.RankedPlayerState{
+		MemberID:        player.MemberID,
+		Username:        player.Username,
+		Kills:           player.Kills,
+		Deaths:          player.Deaths,
+		Escape:          player.Escape,
+		Win:             player.Escape,
+		FinalPosition:   settlement.FinalPosition,
+		Equipment:       player.Equipment,
+		Inventory:       player.Inventory,
+		LoadoutUnknown:  player.LoadoutUnknown,
+		ConsumedItemIDs: player.ConsumedItemIDs,
+	}
+
+	var progress []types.RunProgress
+	if settlement.Progress.MemberID != uuid.Nil {
+		progress = []types.RunProgress{settlement.Progress}
+	}
+
+	data, err := s.formatMatchData(settlement.SessionID, settlement.StartedAt, settlement.EndedAt, []types.RankedPlayerState{result}, progress, commonconstants.WorldTypeRun, partialExtraction())
+	if err != nil {
+		slog.Error("Error formatting a player's settlement", "session_id", settlement.SessionID, "member_id", player.MemberID, "error", err)
 		return
 	}
 
-	slog.Debug("Successfully created outbox item for two events",
-		"event_one_name", commonconstants.GameMatchEnded,
-		"event_two_name", commonconstants.ItemsExtracted,
-	)
+	s.writer.settleLater(settlement.SessionID, data, newSettlementIDs(settlement.SessionID, player.MemberID))
+}
+
+// publishSweep writes the run's end when everyone was already settled: an
+// items.extracted with no players, naming them, and no match.ended, since a
+// sweep is no match result (FS-GV8WN R14, D2, D3).
+func (s *service) publishSweep(data *types.RawMatchState) {
+	extracted, err := proto.Marshal(&pb.ItemsExtractedEvent{
+		SessionId:        data.SessionID.String(),
+		EventId:          uuid.NewString(),
+		SettledMemberIds: uuidStrings(data.SettledMemberIDs),
+	})
+	if err != nil {
+		slog.Error("Error formatting a run's sweep", "session_id", data.SessionID, "error", err)
+		return
+	}
+
+	s.writer.settle(data.SessionID, &types.FormattedMatchData{ItemsExtractedEvent: extracted}, newSettlementIDs(data.SessionID, sweepMemberKey))
+}
+
+// Drain stops taking settlements and waits for those still held to be recorded
+// or given up. Run it on shutdown, after the pod's lifetime has ended and before
+// the database closes: an attempt under way may still commit, and one handed
+// over after it is refused and rolls back (FS-GV8WN §C R10).
+func (s *service) Drain() {
+	s.writer.drain()
 }
 
 /**
@@ -102,12 +167,14 @@ func (s *service) PublishFieldVisit(ctx context.Context, visit FieldVisit) error
 		Gained:      int64(visit.ExperienceGained),
 	}}
 
-	data, err := s.formatMatchData(visit.ID, visit.EnteredAt, visit.LeftAt, []types.RankedPlayerState{result}, progress, commonconstants.WorldTypeField)
+	data, err := s.formatMatchData(visit.ID, visit.EnteredAt, visit.LeftAt, []types.RankedPlayerState{result}, progress, commonconstants.WorldTypeField, extractionScope{})
 	if err != nil {
 		return fmt.Errorf("format field visit %s: %w", visit.ID, err)
 	}
 
-	if err := s.writeMatchEndOutbox(ctx, data); err != nil {
+	ids := newSettlementIDs(visit.ID, visit.MemberID.String())
+
+	if err := s.writeMatchEndOutbox(ctx, data, ids); err != nil {
 		return fmt.Errorf("write field visit %s to the outbox: %w", visit.ID, err)
 	}
 
@@ -116,8 +183,10 @@ func (s *service) PublishFieldVisit(ctx context.Context, visit FieldVisit) error
 
 // writeMatchEndOutbox writes the ItemsExtracted and GameMatchEnded rows in one
 // transaction: both are recorded or neither is, so a match is never counted
-// without its loot or the other way round.
-func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.FormattedMatchData) (err error) {
+// without its loot or the other way round. The rows are written under ids, so
+// writing the same settlement again leaves the rows already there
+// (FS-GV8WN §B R7).
+func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.FormattedMatchData, ids settlementIDs) (err error) {
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin match end outbox tx: %w", err)
@@ -132,6 +201,7 @@ func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.Formatted
 	}()
 
 	err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+		ID:         ids.ItemsExtracted,
 		RoutingKey: commonconstants.ItemsExtracted,
 		Exchange:   commonconstants.GameEventsExchange,
 		Payload:    data.ItemsExtractedEvent,
@@ -140,7 +210,13 @@ func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.Formatted
 		return fmt.Errorf("create items extracted outbox row: %w", err)
 	}
 
+	// a sweep carries no match result (FS-GV8WN R14)
+	if data.MatchEndedEvent == nil {
+		return s.commitMatchEnd(tx)
+	}
+
 	err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+		ID:         ids.MatchEnded,
 		RoutingKey: commonconstants.GameMatchEnded,
 		Exchange:   commonconstants.GameEventsExchange,
 		Payload:    data.MatchEndedEvent,
@@ -149,7 +225,12 @@ func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.Formatted
 		return fmt.Errorf("create match ended outbox row: %w", err)
 	}
 
-	if err = tx.Commit(); err != nil {
+	return s.commitMatchEnd(tx)
+}
+
+// commitMatchEnd commits the match-end rows and wakes the outbox worker.
+func (s *service) commitMatchEnd(tx *sqlx.Tx) error {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit match end outbox tx: %w", err)
 	}
 
@@ -164,7 +245,27 @@ func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.Formatted
 * Formats from raw game state to match end state, for the kind of world that
 * ended (FS-X2F2H §F R43).
 **/
-func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, endedAt time.Time, players []types.RankedPlayerState, progress []types.RunProgress, worldType string) (*types.FormattedMatchData, error) {
+// extractionScope is how much of the run an items.extracted covers. Build it
+// with partialExtraction or wholeRunExtraction: a partial one never names
+// settled members. The zero value is a whole-run event naming nobody, as a
+// field visit's is.
+type extractionScope struct {
+	partial bool
+	settled []uuid.UUID
+}
+
+// partialExtraction covers only the event's players (FS-GV8WN R6).
+func partialExtraction() extractionScope {
+	return extractionScope{partial: true}
+}
+
+// wholeRunExtraction covers the whole run, minus the members already settled by
+// their own events (FS-GV8WN R14, D3).
+func wholeRunExtraction(settled []uuid.UUID) extractionScope {
+	return extractionScope{settled: settled}
+}
+
+func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, endedAt time.Time, players []types.RankedPlayerState, progress []types.RunProgress, worldType string, scope extractionScope) (*types.FormattedMatchData, error) {
 
 	// format data for marshalling as protobuf
 	playerMatchRes := make([]*pb.PlayerMatchResult, len(players))
@@ -232,9 +333,11 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 	eventId := uuid.NewString()
 
 	itemsExtractedEvent := &pb.ItemsExtractedEvent{
-		SessionId:   string(sessionID.String()),
-		EventId:     eventId,
-		PlayerItems: playerItems,
+		SessionId:        string(sessionID.String()),
+		EventId:          eventId,
+		PlayerItems:      playerItems,
+		Partial:          scope.partial,
+		SettledMemberIds: uuidStrings(scope.settled),
 	}
 
 	slog.Debug("itemsExtractedEvent in formatMatchData before marshalling into protobuf",
@@ -260,6 +363,22 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 	}
 
 	return data, nil
+}
+
+// settledMemberIDs is every member a run's settlement pair carries: the ranked
+// players, and members removed before the end who still earned experience
+// (withRunProgress adds those to match.ended).
+func settledMemberIDs(players []types.RankedPlayerState, progress []types.RunProgress) []string {
+	memberIDs := make([]string, 0, len(players)+len(progress))
+	for _, player := range players {
+		if player.MemberID != "" {
+			memberIDs = append(memberIDs, player.MemberID)
+		}
+	}
+	for _, p := range progress {
+		memberIDs = append(memberIDs, p.MemberID.String())
+	}
+	return memberIDs
 }
 
 // withRunProgress puts each character's run experience on its member's result,

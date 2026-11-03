@@ -9,9 +9,13 @@ import (
 )
 
 type OutboxParams struct {
-	RoutingKey string `db:"routing_key"`
-	Exchange   string `db:"exchange"`
-	Payload    []byte `db:"payload"`
+	// optional: the caller's own row id, which is the MessageId consumers
+	// dedup on. A row whose id exists is not written again (FS-GV8WN §B R7).
+	// uuid.Nil = the database picks a random one, as before.
+	ID         uuid.UUID `db:"id"`
+	RoutingKey string    `db:"routing_key"`
+	Exchange   string    `db:"exchange"`
+	Payload    []byte    `db:"payload"`
 }
 
 type OutboxEvent struct {

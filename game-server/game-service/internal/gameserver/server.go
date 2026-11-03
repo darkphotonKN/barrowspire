@@ -821,9 +821,11 @@ func (s *Server) leftRun(runID uuid.UUID, memberIDs ...uuid.UUID) {
 }
 
 /**
-* Keeps what a finished run did to each member's character in play.
+* Keeps what a run did to each member's character in play.
 *
-* Called as the run resolves, before its players are sent home, so the HUB
+* Called from the run's tick as each member settles, the moment they resolve
+* (FS-GV8WN §A R3), and as the run ends, before its players are sent home,
+* so the HUB
 * seats them at the run's resulting level without waiting for character-service
 * to consume the run's end (FS-BDA7X §Requirements 24). A seated member takes
 * where their body finished; a member removed before the end takes what they

@@ -83,6 +83,10 @@ type Session struct {
 	// members who left this run early: their body stays for the run's end and
 	// its settlement, but nothing is sent to them any more (FS-QPDKN R18, R21)
 	departed map[uuid.UUID]struct{}
+	// settled are the members whose settlement is written or under way: by
+	// their own, the moment they resolved, or by the run's end. Each member is
+	// settled once (FS-GV8WN §A R4).
+	settled map[uuid.UUID]struct{}
 
 	// frames a member's writer could not take, counted rather than logged:
 	// one slow client would otherwise log thirty lines a second (FS-QG1HR D2)
@@ -189,6 +193,10 @@ const SeatReleaseAfter = 15 * time.Second
 // Called from the tick, so it must not wait on anything. The session knows
 // nothing of what the host does with it. FS-988SM §Requirements 7.
 type SessionCloser interface {
+	// ApplyRunProgress keeps what a run did to members' characters on their
+	// records. Called from the tick as each member settles (FS-GV8WN §A R3) and
+	// as the run ends: it only updates records in memory under a short lock and
+	// never waits on I/O.
 	ApplyRunProgress(progress []types.RunProgress)
 	ReturnPlayersToHub(sessionID uuid.UUID)
 	CloseSession(sessionID uuid.UUID) error
@@ -204,6 +212,9 @@ type SessionSender interface {
 
 type EventEmitter interface {
 	PublishMatchComplete(ctx context.Context, data *types.RawMatchState)
+	// PublishSettlement settles one player the moment they resolve, without
+	// blocking: the tick calls it (FS-GV8WN §A).
+	PublishSettlement(ctx context.Context, settlement *types.RawSettlement)
 }
 
 type StateSerializer interface {
@@ -260,6 +271,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerIDToEntitiesID:     make(map[uuid.UUID]uuid.UUID),
 		playerEntityIDToPlayerID: make(map[uuid.UUID]uuid.UUID, constants.DefautMaxSessionPlayers),
 		departed:                 make(map[uuid.UUID]struct{}),
+		settled:                  make(map[uuid.UUID]struct{}),
 		visits:                   make(map[uuid.UUID]FieldVisit),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
@@ -1265,14 +1277,38 @@ func (s *Session) Ended() bool {
 }
 
 func (s *Session) RemovePlayer(userID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	playerID, err := uuid.Parse(userID)
 	if err != nil {
 		slog.Error("RemovePlayer: Invalid userID", "userID", userID, "error", err)
 		return
 	}
+
+	s.mu.Lock()
+	// a run member removed while still unsettled (an in-play drop whose grace
+	// ran out, a normal close in play) is settled as a death before their body
+	// goes (FS-GV8WN §A R1–R2). While the tick runs, both happen on it: the
+	// body is still in play, so the tick may be writing it (experience, a hit)
+	// and must be the only reader. Until then they are still seated, so a run
+	// emptied by this removal ends through its end rule, swept (R14).
+	if s.needsSettlingLocked(playerID) && s.isRunning {
+		s.mu.Unlock()
+		s.queueIntent(func() {
+			s.settleDeath(playerID)
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.removePlayerLocked(playerID)
+		})
+		return
+	}
+	defer s.mu.Unlock()
+
+	// no tick runs, so nothing races the read
+	settlement, settled := s.takeSettlementLocked(playerID, safeItems)
 	s.removePlayerLocked(playerID)
+	if settled {
+		// handed off once the lock is released below
+		defer s.handOff(settlement)
+	}
 }
 
 // removePlayerLocked is RemovePlayer's body. Callers hold the world's lock.
@@ -2530,6 +2566,8 @@ func (s *Session) handlePlayerEscape(playerID uuid.UUID) {
 	}
 	slog.Info("Player escaped!", "playerID", playerID, "username", player.Username)
 
+	// settled the moment they escape (FS-GV8WN §A R1)
+	s.settleEscape(playerID)
 }
 
 // handleAttack validates a targeted attack and records it as an intent. Nothing
@@ -2776,12 +2814,10 @@ func (s *Session) recordEliminations(eliminated []types.Player) {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.closed {
+		s.mu.Unlock()
 		return
 	}
-
 	for _, player := range eliminated {
 		slog.Debug("Player eliminated",
 			"ID", player.ID,
@@ -2789,6 +2825,12 @@ func (s *Session) recordEliminations(eliminated []types.Player) {
 			"SessionID", player.CurrentGameSessionId)
 
 		s.eliminations[player.ID] = len(s.eliminations)
+	}
+	s.mu.Unlock()
+
+	// each settles on the tick they fall (FS-GV8WN §A R1)
+	for _, player := range eliminated {
+		s.settleDeath(player.ID)
 	}
 }
 
@@ -2859,11 +2901,16 @@ func (s *Session) endSession() {
 
 	// snapshot what every delver wears and carries while they are still in the
 	// world: going home removes their entities (FS-4R9M9 R49, I-4R9M9-15)
-	rawMatchState := s.getRawMatchState()
+	// the run's end takes over settlement in one step: who settled before it is
+	// named, so its release skips them, and nobody it settles is settled again
+	// on the way home (FS-GV8WN §E R14, D3)
+	settledBefore := s.beginRunEndSettlement()
+	rawMatchState := s.getRawMatchState(settledBefore)
 
 	// what each character earned, read alongside the snapshot for the same
 	// reason (FS-BDA7X §Requirements 22–23)
-	rawMatchState.Progress = s.runProgress()
+	rawMatchState.Progress = s.runProgress(settledBefore)
+	rawMatchState.SettledMemberIDs = settledIDs(settledBefore)
 
 	// send everyone home while this world still exists to move them out of,
 	// their progress kept first so the HUB seats them at the run's result
@@ -2892,9 +2939,13 @@ func (s *Session) endSession() {
 // runProgress is what the run did to every member's character in play: each
 // seated member as their body stands now, and each member who earned experience
 // and was removed before the end by that alone. FS-BDA7X §Requirements 22–24.
-func (s *Session) runProgress() []types.RunProgress {
+func (s *Session) runProgress(settled map[uuid.UUID]struct{}) []types.RunProgress {
 	byMember := make(map[uuid.UUID]types.RunProgress)
 	for _, gain := range s.runExperience.Gains() {
+		// a member settled already took their progress with them (FS-GV8WN R3)
+		if _, done := settled[gain.MemberID]; done {
+			continue
+		}
 		byMember[gain.MemberID] = types.RunProgress{
 			MemberID:    gain.MemberID,
 			CharacterID: gain.CharacterID,
@@ -2904,6 +2955,9 @@ func (s *Session) runProgress() []types.RunProgress {
 
 	s.mu.RLock()
 	for memberID, entityID := range s.playerIDToEntitiesID {
+		if _, done := settled[memberID]; done {
+			continue
+		}
 		entity, exists := s.EntityManager.GetEntity(entityID)
 		if !exists {
 			continue
@@ -2936,99 +2990,34 @@ func (s *Session) runProgress() []types.RunProgress {
 * Converts game specific entities into raw data for processing.
 **/
 // none of this matters
-func (s *Session) getRawMatchState() *types.RawMatchState {
-	// TODO: update this to fixed player count once player count is fixed
-	rawPlayers := make([]types.RawPlayerState, 0)
-
+// getRawMatchState snapshots every body still to settle at the run's end:
+// everyone but the members in settled, who were settled by their own
+// settlement (FS-GV8WN §E R14).
+func (s *Session) getRawMatchState(settled map[uuid.UUID]struct{}) *types.RawMatchState {
 	entities := s.EntityManager.GetAllEntities()
+	items := worldItems(entities)
 
-	// -- item data --
-
-	itemsMap := make(map[uuid.UUID]*components.ItemComponent)
+	rawPlayers := make([]types.RawPlayerState, 0)
 	for _, entity := range entities {
-
-		itemComp, isItem := entity.GetComponent(ecs.ComponentTypeItem)
-		if !isItem {
+		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
+		if !isPlayer {
 			continue
 		}
-
-		item, ok := itemComp.(*components.ItemComponent)
+		// settled already, by their own settlement (FS-GV8WN §E R14)
+		if _, done := settled[pc.(*components.PlayerComponent).MemberID]; done {
+			continue
+		}
+		held := items
+		// a dead delver in a run loses their unsafe finds (FS-18Z5F §E R23); a
+		// field loses nothing (R25)
+		if s.worldType == types.WorldTypeRun && losesFinds(entity, pc.(*components.PlayerComponent)) {
+			held = safeItems(items)
+		}
+		raw, ok := s.rawPlayerStateOf(entity, held)
 		if !ok {
 			continue
 		}
-
-		itemsMap[entity.ID] = item
-	}
-
-	// --- player data ---
-
-	for _, entity := range entities {
-		playerComponent, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
-		// escapeDoorComp, _ := entity.GetComponent(ecs.ComponentTypeEscapeDoor)
-
-		if isPlayer {
-			// assert back to component's original type
-			playerState := playerComponent.(*components.PlayerComponent)
-			statsComp, hasStats := entity.GetComponent(ecs.ComponentTypeStats)
-			equipmentComp, hasEquipment := entity.GetComponent(ecs.ComponentTypeEquipment)
-			itemIDListComp, hasItemIDList := entity.GetComponent(ecs.ComponentTypeItemIDList)
-
-			// malformed player, just skip
-			if !hasEquipment || !hasStats || !hasItemIDList {
-				slog.Warn("Malformed player state object when rtying to extract raw state at match end.",
-					"player_id", playerState.MemberID)
-				continue
-			}
-
-			// -- stats --
-			stats, statsOk := statsComp.(*components.StatsComponent)
-			if !statsOk {
-				stats = &components.StatsComponent{}
-			}
-
-			// what the body extracts: a dead delver in a run loses their unsafe
-			// finds, worn and carried (FS-18Z5F §E R23); a field loses nothing (R25)
-			held := itemsMap
-			if s.worldType == types.WorldTypeRun && losesFinds(entity, playerState) {
-				held = safeItems(itemsMap)
-			}
-
-			// -- equipment --
-			equipment, equipmentOk := equipmentComp.(*components.EquipmentComponent)
-			extractedEquipment := types.ExtractedEquipment{}
-
-			if equipmentOk {
-				extractedEquipment = extractedEquipmentOf(held, equipment)
-			}
-
-			// -- inventory items --
-			inventory := []*types.ExtractedItem{}
-
-			if itemIDList, itemIDListOk := itemIDListComp.(*components.ItemIDListComponent); itemIDListOk {
-
-				for _, itemID := range itemIDList.ItemIDs {
-					item, ok := held[itemID]
-					if !ok {
-						continue
-					}
-
-					inventory = append(inventory, extractedItemFrom(item))
-				}
-
-			}
-
-			rawPlayers = append(rawPlayers, types.RawPlayerState{
-				MemberID:        playerState.MemberID.String(),
-				Username:        playerState.Username,
-				Kills:           int32(stats.Kills),
-				Deaths:          int32(stats.Deaths),
-				Escape:          playerState.Escape,
-				Equipment:       extractedEquipment,
-				Inventory:       inventory,
-				LoadoutUnknown:  playerState.LoadoutUnknown,
-				ConsumedItemIDs: consumedItemIDsOf(entity),
-			})
-		}
+		rawPlayers = append(rawPlayers, raw)
 	}
 
 	return &types.RawMatchState{
@@ -3039,6 +3028,75 @@ func (s *Session) getRawMatchState() *types.RawMatchState {
 		Players:          rawPlayers,
 		EliminationOrder: s.eliminations,
 	}
+}
+
+// worldItems is every item in the world, by its entity id.
+func worldItems(entities []*ecs.Entity) map[uuid.UUID]*components.ItemComponent {
+	items := make(map[uuid.UUID]*components.ItemComponent)
+	for _, entity := range entities {
+		itemComp, isItem := entity.GetComponent(ecs.ComponentTypeItem)
+		if !isItem {
+			continue
+		}
+		if item, ok := itemComp.(*components.ItemComponent); ok {
+			items[entity.ID] = item
+		}
+	}
+	return items
+}
+
+// rawPlayerStateOf is what one delver's body extracts: what it wears and
+// carries of held (the items it takes out), the stored items they used up, and
+// their tally. Reports false for a malformed body.
+func (s *Session) rawPlayerStateOf(entity *ecs.Entity, held map[uuid.UUID]*components.ItemComponent) (types.RawPlayerState, bool) {
+	pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
+	if !isPlayer {
+		return types.RawPlayerState{}, false
+	}
+	playerState := pc.(*components.PlayerComponent)
+
+	statsComp, hasStats := entity.GetComponent(ecs.ComponentTypeStats)
+	equipmentComp, hasEquipment := entity.GetComponent(ecs.ComponentTypeEquipment)
+	itemIDListComp, hasItemIDList := entity.GetComponent(ecs.ComponentTypeItemIDList)
+	// malformed player, just skip
+	if !hasEquipment || !hasStats || !hasItemIDList {
+		slog.Warn("Malformed player state object when rtying to extract raw state at match end.",
+			"player_id", playerState.MemberID)
+		return types.RawPlayerState{}, false
+	}
+
+	stats, statsOk := statsComp.(*components.StatsComponent)
+	if !statsOk {
+		stats = &components.StatsComponent{}
+	}
+
+	extractedEquipment := types.ExtractedEquipment{}
+	if equipment, ok := equipmentComp.(*components.EquipmentComponent); ok {
+		extractedEquipment = extractedEquipmentOf(held, equipment)
+	}
+
+	inventory := []*types.ExtractedItem{}
+	if itemIDList, ok := itemIDListComp.(*components.ItemIDListComponent); ok {
+		for _, itemID := range itemIDList.ItemIDs {
+			item, ok := held[itemID]
+			if !ok {
+				continue
+			}
+			inventory = append(inventory, extractedItemFrom(item))
+		}
+	}
+
+	return types.RawPlayerState{
+		MemberID:        playerState.MemberID.String(),
+		Username:        playerState.Username,
+		Kills:           int32(stats.Kills),
+		Deaths:          int32(stats.Deaths),
+		Escape:          playerState.Escape,
+		Equipment:       extractedEquipment,
+		Inventory:       inventory,
+		LoadoutUnknown:  playerState.LoadoutUnknown,
+		ConsumedItemIDs: consumedItemIDsOf(entity),
+	}, true
 }
 
 // consumedItemIDsOf is a copy of the stored-loadout items the delver drank this
