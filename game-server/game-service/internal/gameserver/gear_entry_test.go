@@ -7,6 +7,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,7 +26,15 @@ import (
 func (r *fieldRig) atSpireGate(t *testing.T, name string) (*types.Player, *websocket.Conn, *startSoloInbox) {
 	t.Helper()
 
-	player, conn, inbox := r.inHubAt(t, name, &websocket.Conn{}, 1000, 50)
+	return r.seatAtSpireGate(t, &types.Player{ID: uuid.New(), Username: name})
+}
+
+// seatAtSpireGate seats player in rig's hub at the Spire's door, once the hub's tick has measured
+// them there, and listens on their connection.
+func (r *fieldRig) seatAtSpireGate(t *testing.T, player *types.Player) (*types.Player, *websocket.Conn, *startSoloInbox) {
+	t.Helper()
+
+	player, conn, inbox := r.seatAt(t, player, &websocket.Conn{}, 1000, 50)
 	require.Eventually(t, func() bool {
 		return r.hub.AtGate(player.ID, components.GateDestinationSpire)
 	}, startSoloSettle, 10*time.Millisecond, "the hub never measured them at the Spire's door")
