@@ -314,6 +314,14 @@ for tests only). Client slices are agent lane.
   their escape, so only where they reconnect is at stake: back into the run. *(Added 2026-11-04,
   I-GV8WN-7 code review.)*
 
+- A member settled by the run's end, not by their own settlement (their snapshot failed when they
+  resolved, or the run was ended with them still in play), is sent **no settlement record**: the
+  run's `end_game` tells them the outcome. *(Added 2026-11-04, I-GV8WN-8 code review; Nick: "好".)*
+- A potion found and drunk in the same run has no row, so the record does not list it as lost; only
+  stored potions drunk are `consumed`. *(Added 2026-11-04, I-GV8WN-8 code review.)*
+- A confirmation landing after the player is in another run names the run it settles (`run_id`);
+  the client ignores a settlement for another run. *(Added 2026-11-04, I-GV8WN-8 code review.)*
+
 **Run end**
 - Every member already settled: the run's end writes only the sweep.
 - The run ends with someone still in play (server-side end): they are settled at the end from
