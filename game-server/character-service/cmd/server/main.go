@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
+	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -42,6 +44,13 @@ func openChannel(conn *amqp.Connection, purpose string) *amqp.Channel {
 }
 
 func main() {
+	// --- tracing ---
+	shutdownTracing, tracingErr := commontracing.Init(context.Background(), "character")
+	if tracingErr != nil {
+		log.Fatal(tracingErr)
+	}
+	defer commontracing.Close(shutdownTracing)
+
 	// --- database setup ---
 
 	db := config.InitDB()
@@ -89,6 +98,7 @@ func main() {
 	// Status turns the domain sentinels (not found, already exists, invalid
 	// input) into gRPC codes in one place.
 	grpcServer := grpc.NewServer(
+		commontracing.ServerHandler(),
 		grpc.ChainUnaryInterceptor(
 			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),

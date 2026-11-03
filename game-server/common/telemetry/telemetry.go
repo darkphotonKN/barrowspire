@@ -1,16 +1,17 @@
 /*
-Open telemetry initialization and setup.
+OpenTelemetry METRICS setup (OTLP push to a collector).
 
-Every microservice needs the same OTel setup, so instead of copy-pasting,
-we centralize it here. Call telemetry.Init() at startup, defer shutdown.
+Traces live in common/tracing. This only ships otel.Meter(...) instruments,
+which today is game-service's tick metrics, to the local docker collector.
+Request (RED) metrics do not use this: they are Prometheus, scraped from /metrics.
 
 Design constraints:
   - Telemetry must NEVER block the request path. Timeouts are aggressive
     (3s for exports) so a degraded collector burns at most 3s per attempt.
   - Telemetry must be killable. Set `OTEL_ENABLED=false` (or leave
     `COLLECTOR_ENDPOINT` empty) and Init returns a no-op shutdown; no
-    exporters or providers are installed. Code that calls otel.Tracer(...)
-    or otel.Meter(...) gets the SDK's default noop providers, so callers
+    exporters or providers are installed. Code that calls
+    otel.Meter(...) gets the SDK's default noop providers, so callers
     don't need to branch.
   - Periodic reader fires every 30s (not 10s) — less log spam when the
     collector is unhealthy in dev.
@@ -19,17 +20,13 @@ package telemetry
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"google.golang.org/grpc"
 )
@@ -66,7 +63,7 @@ func noopShutdown(context.Context) error { return nil }
 //
 // When Enabled=false (or CollectorEndpoint=""), Init is a no-op: no exporters
 // are created, no global providers are set, and the returned shutdown does
-// nothing. Code that calls otel.Tracer(...) / otel.Meter(...) gets the SDK's
+// nothing. Code that calls otel.Meter(...) gets the SDK's
 // default noop providers, so no branching is needed elsewhere.
 func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
 	if !cfg.Enabled || cfg.CollectorEndpoint == "" {
@@ -74,40 +71,13 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 	}
 
 	// A Resource describes WHO is producing the telemetry — metadata attached
-	// to every trace and metric (filter by service.name in Grafana).
+	// to every metric (filter by service.name in Grafana).
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(cfg.ServiceName),
 		semconv.ServiceVersion(cfg.ServiceVersion),
 		semconv.DeploymentEnvironment(cfg.Environment),
 	)
-
-	// --- traces ---
-
-	traceExporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(cfg.CollectorEndpoint),
-		otlptracegrpc.WithInsecure(), // TODO: TLS in prod
-		otlptracegrpc.WithTimeout(exportTimeout),
-		// Skip the DNS TXT service-config lookup (see discovery.Dial).
-		otlptracegrpc.WithDialOption(grpc.WithDisableServiceConfig()),
-	)
-	if err != nil {
-		return noopShutdown, fmt.Errorf("creating trace exporter: %w", err)
-	}
-
-	tracerProvider := trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter,
-			trace.WithBatchTimeout(5*time.Second), // flush cadence, not per-export deadline
-		),
-		trace.WithResource(res),
-		trace.WithSampler(trace.AlwaysSample()),
-	)
-	otel.SetTracerProvider(tracerProvider)
-
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
 
 	// --- metrics ---
 
@@ -118,8 +88,6 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		otlpmetricgrpc.WithDialOption(grpc.WithDisableServiceConfig()),
 	)
 	if err != nil {
-		// Tracer is already wired; tear it down before returning.
-		_ = tracerProvider.Shutdown(ctx)
 		return noopShutdown, fmt.Errorf("creating metric exporter: %w", err)
 	}
 
@@ -133,10 +101,5 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 	)
 	otel.SetMeterProvider(meterProvider)
 
-	shutdown = func(ctx context.Context) error {
-		err1 := tracerProvider.Shutdown(ctx)
-		err2 := meterProvider.Shutdown(ctx)
-		return errors.Join(err1, err2)
-	}
-	return shutdown, nil
+	return meterProvider.Shutdown, nil
 }

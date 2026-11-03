@@ -1,15 +1,16 @@
 package config
 
 import (
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log/slog"
 	"net"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
 	"github.com/darkphotonKN/barrowspire-server/common/inbox"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/notification"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
-	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -37,7 +38,7 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
 	consumer.Listen()
 
 	// Create gRPC server
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+	grpcServer := grpc.NewServer(commontracing.ServerHandler(), grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	// Register notification service with gRPC server
 	pb.RegisterNotificationServiceServer(grpcServer, handler)
