@@ -28,6 +28,9 @@ export interface ChatLinePayload {
   /** UTC, RFC 3339 with milliseconds. */
   sent_at: string;
   text: string;
+  /** A whisper's target, as the presence index holds them; on whisper lines only (FS-KCQ06 R6). */
+  target_id?: string;
+  target_name?: string;
 }
 
 /** A system line about chat, on the `chat_notice` action (R7): a code to switch on, words to show. */
@@ -58,7 +61,10 @@ export function isChatLine(payload: unknown): payload is ChatLinePayload {
     typeof p.sender_name === "string" &&
     typeof p.text === "string" &&
     typeof p.sent_at === "string" &&
-    (CHAT_CHANNELS as readonly string[]).includes(p.channel as string)
+    (CHAT_CHANNELS as readonly string[]).includes(p.channel as string) &&
+    // a whisper names its target, or its echo could not say who it went to (FS-KCQ06 R6)
+    (p.channel !== "whisper" ||
+      (typeof p.target_id === "string" && typeof p.target_name === "string"))
   );
 }
 

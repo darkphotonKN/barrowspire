@@ -71,6 +71,8 @@ type presenceLookup interface {
 type letterBox interface {
 	open() bool
 	send(podID string, l letter, failed func())
+	// send, telling sent once the letter is published (FS-KCQ06 R9)
+	sendConfirmed(podID string, l letter, sent, failed func())
 	letters() <-chan letter
 }
 
@@ -166,6 +168,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 	}
 	r.cache = newPartyCache(reader, r.run, directory, cfg.now, cfg.membership, r.show, r.swept)
 	r.cache.onChanged = r.partyChanged
+	r.courier.onWhisper = r.heardWhisper
 	return r
 }
 

@@ -22,6 +22,12 @@ const ui = palette.menu;
 /** The class on the plinth, of the baked frame: as large as §F.3 allows. */
 const PREVIEW_SCALE = 1.5;
 
+/** A name is one word, so a whisper's "@Name" finds all of it (FS-KCQ06 R18). */
+export const NAME_ONE_WORD = "A hero's name is one word.";
+
+/** Any whitespace, as the server's `unicode.IsSpace` counts it (U+3000, NBSP and U+0085 too). */
+const WHITESPACE = /[\s\u0085]/;
+
 export class CharacterCreationScene extends Phaser.Scene {
   private selectedClassKey: ClassKey = "warrior";
   private characterName: string = "";
@@ -53,7 +59,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
   private nameText?: Phaser.GameObjects.Text;
   private nameInputBg?: Phaser.GameObjects.Graphics;
-  /** Why the last creation was refused (a taken name, the ledger out of reach). */
+  /** Why the last creation was refused (a spaced or taken name, the ledger out of reach). */
   private refusalText?: Phaser.GameObjects.Text;
   /** A creation is on its way to the server; a second press waits for it. */
   private creating = false;
@@ -486,6 +492,10 @@ export class CharacterCreationScene extends Phaser.Scene {
   private async handleConfirmCreation(): Promise<void> {
     if (!this.characterName || this.characterName.trim().length === 0) {
       alert("Please enter a valid hero name.");
+      return;
+    }
+    if (WHITESPACE.test(this.characterName)) {
+      this.refusalText?.setText(NAME_ONE_WORD);
       return;
     }
     if (this.creating) return;

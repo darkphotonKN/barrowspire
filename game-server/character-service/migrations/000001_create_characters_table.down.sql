@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS examples; 
+DROP TABLE IF EXISTS characters;

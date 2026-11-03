@@ -91,6 +91,10 @@ type chatRelay struct {
 	// the party side: whose party a speaker is in, and the way to members on other pods; nil on a
 	// relay built without one, which then refuses party chat (FS-XGW7H)
 	party chatParty
+	// the presence side: whether a whisper's target can be looked up, and the lookup; nil, or not
+	// open, on a pod without the presence index and the pod inbox, which then refuses whisper
+	// (FS-KCQ06 R1)
+	whisper chatWhisper
 }
 
 // chatWorldScope is world chat's scope key: one fixed constant for every pod (FS-5SH4G R2).
@@ -99,8 +103,9 @@ const chatWorldScope = "world"
 // newChatRelay builds the pod's relay. now and newID are what lines are stamped with: the wall
 // clock and fresh uuids in production, fixed in tests. bus carries world chat between pods; with
 // none, world chat is closed on this pod (code review 2026-10-31). party is the pod's party
-// registry; with none, party chat is closed (FS-XGW7H).
-func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID, bus chatBus, party chatParty) *chatRelay {
+// registry; with none, party chat is closed (FS-XGW7H). whisper finds a whisper's target; with
+// none, whisper is closed (FS-KCQ06).
+func newChatRelay(audience chatAudience, sender chatSender, podID string, now func() time.Time, newID func() uuid.UUID, bus chatBus, party chatParty, whisper chatWhisper) *chatRelay {
 	return &chatRelay{
 		audience: audience,
 		sender:   sender,
@@ -109,6 +114,7 @@ func newChatRelay(audience chatAudience, sender chatSender, podID string, now fu
 		newID:    newID,
 		bus:      bus,
 		party:    party,
+		whisper:  whisper,
 
 		lastAccepted:  make(map[uuid.UUID]time.Time),
 		inboundLines:  make(chan types.Message, chatInboundBuffer),
@@ -266,6 +272,8 @@ var chatNoticeCopy = map[constants.ChatNoticeCode]string{
 	constants.ChatNoticeTooLong:       "Too long. Two hundred characters at most.",
 	constants.ChatNoticeTooFast:       "Catch your breath before you speak again.",
 	constants.ChatNoticeNoParty:       "You are not in a party.",
+	constants.ChatNoticeNotOnline:     "That player is not online.",
+	constants.ChatNoticeWhisperSelf:   "You can't whisper yourself.",
 }
 
 // relay handles one inbound chat line from sender on conn. The sender was
@@ -280,6 +288,8 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 	channelName, _ := payload["channel"].(string)
 	chatChannel := constants.ChatChannel(channelName)
 	var party partyAudience
+	// a whisper's target, the character name as typed, trimmed (FS-KCQ06 R1)
+	var target string
 	switch {
 	case chatChannel == constants.ChatChannelArea:
 	case chatChannel == constants.ChatChannelWorld && r.bus != nil:
@@ -291,6 +301,15 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 			r.notice(conn, constants.ChatNoticeNoParty)
 			return
 		}
+	case chatChannel == constants.ChatChannelWhisper && r.whisper != nil && r.whisper.whisperOpen():
+		// whisper_self sits where no_party does: before the text, the flood window and Redis
+		// (FS-KCQ06 R2)
+		raw, _ := payload["target"].(string)
+		target = strings.TrimSpace(raw)
+		if target != "" && strings.EqualFold(target, strings.TrimSpace(sender.Character.Name)) {
+			r.notice(conn, constants.ChatNoticeWhisperSelf)
+			return
+		}
 	default:
 		r.notice(conn, constants.ChatNoticeChannelClosed)
 		return
@@ -300,6 +319,10 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 	raw, _ := payload["text"].(string)
 	text := normaliseChatText(raw)
 	if text == "" {
+		return
+	}
+	// a whisper to nobody is dropped like an empty line (FS-KCQ06 R2)
+	if chatChannel == constants.ChatChannelWhisper && target == "" {
 		return
 	}
 	if utf8.RuneCountInString(text) > chatTextMax {
@@ -319,6 +342,11 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 	// the world's scope key is the fixed constant; area's is this pod (FS-WJGFJ R1, FS-5SH4G R2)
 	if chatChannel == constants.ChatChannelWorld {
 		r.queueWorldChat(r.stamp(sender, chatChannel, chatWorldScope, text, at))
+		return
+	}
+	// a whisper's scope key is its target, known once they are looked up (FS-KCQ06 R3, R6)
+	if chatChannel == constants.ChatChannelWhisper {
+		r.relayWhisper(ctx, sender, conn, target, text, at)
 		return
 	}
 	// a party's scope key is the party (FS-XGW7H R6)

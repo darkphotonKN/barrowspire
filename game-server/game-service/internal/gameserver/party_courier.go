@@ -18,9 +18,10 @@ import (
 * registry decides what to say and to whom, the courier gets it there. Only the hub's loop touches
 * it.
 *
-* Four letters: an invite for a player on that pod; a party_update for the members it holds,
+* Five letters: an invite for a player on that pod; a party_update for the members it holds,
 * carrying the party as Redis answered so that pod's cache takes it too; a party_notice for one
-* player there; and a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go).
+* player there; a party_chat line for the members it holds (FS-XGW7H R10, in chat_party.go); and
+* a whisper for one player there (FS-KCQ06 R8, in chat_whisper.go).
 **/
 
 // partyUpdateLetter is a party_update as it travels between pods: the party as Redis answered it,
@@ -51,6 +52,8 @@ type partyCourier struct {
 	onUpdate func(l partyUpdateLetter)
 	// told of each party_chat letter that arrives, its addressees and its line (FS-XGW7H R13)
 	onChat func(to []uuid.UUID, message map[string]interface{})
+	// told of each whisper letter that arrives, its addressee and its line (FS-KCQ06 R8)
+	onWhisper func(to uuid.UUID, message map[string]interface{})
 }
 
 func newPartyCourier(inbox letterBox, sender playerSender, jobs loopJobs, podID string, onUpdate func(partyUpdateLetter), onChat func(to []uuid.UUID, message map[string]interface{})) *partyCourier {
@@ -152,6 +155,8 @@ func (c *partyCourier) receive(l letter) {
 		c.receiveNotice(l)
 	case letterPartyChat:
 		c.receivePartyChat(l)
+	case letterWhisper:
+		c.receiveWhisper(l)
 	default:
 		slog.Debug("pod inbox letter of an unknown kind dropped", "kind", l.Kind)
 	}
