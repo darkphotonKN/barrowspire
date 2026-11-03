@@ -12,3 +12,5 @@
 
 - [x] Match-result notifications → FS-none
 - [x] Deduplicated match-result notifications → FS-PJPNA
+- [ ] Verification-code email → FS-V6SFK
+- [ ] Outbound email delivery behind a mailer → FS-V6SFK

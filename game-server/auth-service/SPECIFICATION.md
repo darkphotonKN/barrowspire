@@ -62,12 +62,17 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [x] Update member password
 - [x] Check whether an email is taken
 - [x] Single member-creation path → FS-83TJK
+- [ ] Password policy wherever a password is set → FS-V6SFK
+- [ ] Case-insensitive unique email → FS-V6SFK
+- [ ] Email verification by code → FS-V6SFK
+- [ ] Change email while unverified → FS-V6SFK
 
 ### Tokens
 
 - [x] Validate a token and return its subject
 - [ ] Reject a refresh token presented as an access credential
 - [x] Mint account and role claims into the access token → FS-9KW9F
+- [ ] Mint an email-verified claim into the access token → FS-V6SFK
 
 ### Avatars
 

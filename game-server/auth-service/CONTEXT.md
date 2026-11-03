@@ -26,6 +26,26 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
   path this is what earns the unscoped listing and the right to name another account
   (FS-F9R7Q §Req 28).
 
+### Verification (FS-V6SFK)
+
+- **Verified member** — a Member who has proved they receive mail at their email address by
+  entering a **verification code** sent to it. Recorded as `members.email_verified_at` (set =
+  verified). **Unverified** is the opposite state, the state every Member is born in and the
+  state every Member who predates FS-V6SFK is in. It is a *state*, not a role: an unverified
+  Member can authenticate and play; only email-dependent actions refuse them.
+- **Verification code** — a short-lived, single-purpose 6-digit secret proving receipt of
+  mail. auth-service issues and checks it (ADR-0040). At most one is live per Member: issuing a
+  new one (resend, email change) kills the old one. It dies on success, on expiry, or when its
+  wrong tries run out. Not a token: it grants nothing by itself, it only flips the Member to
+  verified.
+- **Normalized email** — an email trimmed and lowercased. The only form auth-service stores,
+  compares or looks up. "One account per email" means one per *normalized* email, so
+  `Kranti@x.com` and `kranti@x.com` are the same address.
+- **Password policy** — the rule a password must meet *when it is set* (signup, password
+  change): length bounds plus a common-password blocklist (ADR-0041). It is never checked at
+  login, so a password set before the policy existed is still valid. "Weak password" means
+  *refused by the policy at set time*, never *an existing password we now dislike*.
+
 ### Tokens
 
 - **Minting** — issuing and signing a token. auth-service is the **only** minter; there is
@@ -34,7 +54,7 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
   covers it*, not *someone asserted it* — which is why a claim is trusted and a request
   parameter of the same name is not (FS-F9R7Q §Req 24).
 - **Access token** — the short-lived (60 min) credential that carries authorization claims:
-  `sub`, `role`, and, when known, `account_id`.
+  `sub`, `role`, `email_verified` when true, and, when known, `account_id`.
 - **Refresh token** — the long-lived (7 day) credential used only to re-mint an access token.
   **Carries no authorization claims, deliberately** — so a stale role or account id cannot be
   copied forward out of a week-old token.
@@ -42,6 +62,10 @@ and this service's [`SPECIFICATION.md`](SPECIFICATION.md).
   token so a read can be account-scoped without a lookup. **Absent, not empty, when unknown**:
   the key is omitted from the claim map entirely, and a token missing it is refused
   (`401 · UNAUTHENTICATED`), never silently narrowed.
+- **email-verified claim** (`email_verified`) — whether the Member was verified when the
+  access token was minted. **Absent means not verified** (fails closed, same rule as the
+  account id claim). It goes stale the moment the Member verifies, which is why verifying
+  mints a fresh pair (FS-V6SFK).
 
 ### The denormalized copy
 
