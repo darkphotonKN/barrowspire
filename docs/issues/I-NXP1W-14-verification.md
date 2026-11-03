@@ -3,7 +3,7 @@ id: I-NXP1W-14
 status: open
 implements: FS-NXP1W
 blocked_by: [I-NXP1W-6, I-NXP1W-8, I-NXP1W-9, I-NXP1W-11, I-NXP1W-12, I-NXP1W-13]
-labels: [blocked]
+labels: []
 title: "FS-NXP1W slice 14: verification — end-to-end auction test and break-it tests"
 ---
 Implements FS-NXP1W §Requirements 39–40
