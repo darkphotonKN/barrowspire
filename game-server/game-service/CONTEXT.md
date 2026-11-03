@@ -376,11 +376,14 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   `{player id, pod id, pod address, world}`, for **every connected player with a character**, in any world.
   Written by the pod that holds the player, kept alive by TTL, deleted when they leave. Answers
   "is this player online, and where": invites, party fan-out, reconnects and whisper (FS-KCQ06)
-  use it. A name with no entry is **offline**. Not a friends list and not a history.
+  use it. A name with no entry is **offline**. Not a friends list and not a history. A lookup
+  query shaped like a uuid is always read as a player id, never a name, so a whisper or invite can
+  name a player by id, and a 32-hex-character name can't be found by name (FS-KCQ06, accepted).
 - **Pod inbox** — the Redis channel `pod:<podID>:inbox` each pod subscribes to for **letters**
   addressed to one of *its* players from another pod: an invite, a **party update** (which also
   carries the party, versioned, for that pod's party cache), a party notice, or a **party chat
-  letter** (`party_chat`: one stamped party chat line and the players there it is for, FS-XGW7H).
+  letter** (`party_chat`: one stamped party chat line and the players there it is for, FS-XGW7H),
+  or a **whisper letter** (`whisper`: one stamped whisper and the one player it is for, FS-KCQ06).
   Every letter is at most once. Rides the same
   Redis client and subscriber → hub-loop shape as world chat. Distinct from the **match-start
   channel**, which carries run coordination, and from the chat bus, which carries chat lines. (In
@@ -502,9 +505,16 @@ above; the rule is to qualify, never to rename.
   Rendered as system, never as a member speaking. Distinct from a **chat notice**, which answers
   one sender alone. None is sent yet: party events and loot allocation notices in the party chat
   channel were left out of FS-XGW7H for a later FS.
-- **Whisper** — a one-to-one message to one player by id, found on any pod over Redis; the pod
-  holding the target delivers it. A target held by no pod is **offline**, and the sender gets
-  one system notice. Nothing is queued for later.
+- **Whisper** — a one-to-one message to one player, addressed by character name and found
+  through the **presence index**, on any pod and in any world. The sender's pod delivers it
+  itself when the target is seated there; otherwise it sends one **whisper letter** to the
+  target's pod inbox, and only that pod delivers it (FS-KCQ06). A name with no presence entry is
+  **offline**, and the sender gets one chat notice. Nothing is queued for later.
+- **Whisper echo** — the sender's own copy of a whisper they sent, shown as "To Name: …". It
+  means the line went out, never that it was read: on the same pod, the target's writer queue took
+  it; across pods, the whisper letter was published and at least one pod received it (a receiver
+  count above 0, FS-KCQ06 R8a). A line that didn't go out gets `not_online` instead of an echo.
+  There is no ack.
 - **Chat bus** — the Redis side of chat (`internal/chatbus`): the pub/sub the cross-pod
   channels ride, bytes in and bytes out, knowing nothing about lines. A pod subscribes to the
   world channel at boot and publishes its own world lines to it (FS-5SH4G). Not a store: nothing
