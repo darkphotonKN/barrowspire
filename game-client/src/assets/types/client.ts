@@ -261,6 +261,8 @@ export interface SettlementLostItem extends ItemState {
  * settlement snapshot, not from what items-service stored.
  */
 export interface SettlementPayload {
+  /** The run it settles: a late confirmation of an earlier run is not this run's (R20). */
+  run_id?: string;
   outcome: SettlementOutcome;
   carried: SettlementCarriedItem[];
   lost: SettlementLostItem[];

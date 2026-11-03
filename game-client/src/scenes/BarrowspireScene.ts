@@ -1030,6 +1030,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * closed: the Settlement button brings it back.
    */
   private showSettlement(payload: SettlementPayload): void {
+    // a late confirmation of an earlier run, landing in this one, is not its record (R20)
+    if (payload.run_id !== undefined && this.sessionID !== undefined && payload.run_id !== this.sessionID)
+      return;
     const first = !this.settlementRecord;
     this.settlementRecord ??= new SettlementRecord(this, this.recordAnchor(), () => this.closeRecord());
     this.settlementRecord.set(settlementRecord(payload));
