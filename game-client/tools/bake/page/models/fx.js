@@ -8,7 +8,7 @@
 // on seeded noise, so a re-bake is byte-identical (FS-KYPQ9 §0.6).
 //
 // Two kinds of texture:
-//  - **Tint-taking** (slash, dust, ember, smoke, scorch, glow, escape column): neutral
+//  - **Tint-taking** (slash, dust, ember, smoke, scorch, glow, glint, mote, ring, escape column): neutral
 //    luminance (palette.js `grey`, no hue), so the runtime's multiply tint puts a `BARROW` token
 //    on them (fx_slash `vellum`, fx_glow `amber`, fx_scorch `pitch`...). Their grit lives in
 //    the luminance, so a tinted effect is never a flat fill.
@@ -16,7 +16,7 @@
 //    fx_fire_core runs `ember` → `amberBright` (FS-KYPQ9 §E.2); fx_arrow is wood, iron and
 //    feather.
 //
-// World-plane textures (slash, scorch, glow) are drawn top-down in world px: the runtime lays
+// World-plane textures (slash, scorch, glow, ring) are drawn top-down in world px: the runtime lays
 // them on `addWorldPlane`, which turns them onto the isometric ground. Upright textures (dust,
 // ember, smoke, fire core, escape column, arrow) are in screen px.
 //
@@ -278,6 +278,76 @@ export function glow(seed = 101) {
 }
 
 /**
+ * fx_glint: one glint of a shimmer (FS-KZC92 R21), upright. Four arms around a small soft
+ * core, the vertical pair about twice the horizontal, so it reads as a glint and not a plus
+ * sign. Each arm tapers to a point and fades along its length: no hard edge, no ring. The
+ * runtime tints it the look's `glint` token and lays the `centre` mote over its core.
+ */
+export const GLINT = { size: 32 };
+const GLINT_ARMS = { long: 15, short: 7.5 };
+export function glint(seed = 131) {
+  const c = GLINT.size / 2;
+  /** One arm pair along an axis: `along` px out on it, `across` px off it, `reach` its length. */
+  const arm = (along, across, reach) => {
+    const t = along / reach;
+    if (t >= 1) return 0;
+    const half = 0.25 + 1.15 * (1 - t); // px, tapering to a point
+    return Math.exp(-((across / half) ** 2)) * (1 - t) ** 1.6;
+  };
+  return raster(GLINT.size, GLINT.size, (x, y) => {
+    const ax = Math.abs(x - c);
+    const ay = Math.abs(y - c);
+    const arms = Math.max(arm(ay, ax, GLINT_ARMS.long), arm(ax, ay, GLINT_ARMS.short));
+    const core = Math.exp(-(ax * ax + ay * ay) / 4.5);
+    const a = clamp(arms + 0.85 * core, 0, 1);
+    if (a < 0.01) return null;
+    const grain = vnoise(x * 0.9, y * 0.9, seed);
+    return lum(222 + 33 * core + 10 * (grain - 0.5), a);
+  });
+}
+
+/**
+ * fx_mote: a soft round dot (FS-KZC92 R21), upright: a glint's hot core and the spiral's motes.
+ * A plain falloff with no edge; a faint grain keeps it from banding under a tint.
+ */
+export const MOTE = { size: 12 };
+export function mote(seed = 141) {
+  const c = MOTE.size / 2;
+  return raster(MOTE.size, MOTE.size, (x, y) => {
+    const d2 = (x - c) ** 2 + (y - c) ** 2;
+    const a = Math.exp(-d2 / 6.5);
+    if (a < 0.01) return null;
+    const grain = vnoise(x * 0.8, y * 0.8, seed);
+    return lum(240 + 14 * (grain - 0.5), a);
+  });
+}
+
+/**
+ * fx_ring: the invoked shimmer's ground ring (FS-KZC92 R15, R21), top-down: a band of light
+ * that falls off on both sides, inward and outward, with no hard edge (the look's "no hard
+ * rings"), and gone well inside the frame so no edge clips it. A slow wobble keeps it from
+ * reading as a drawn circle and a faint grain keeps it from banding under a tint. The runtime
+ * opens it from 0.35× to 0.75×, so at full open it sits just inside the spiral's 20 px base.
+ */
+export const RING = { size: 64 };
+const RING_BAND = { radius: 22, width: 4 }; // fades out (alpha < 0.01) inside the frame
+export function ring(seed = 151) {
+  const c = RING.size / 2;
+  return raster(RING.size, RING.size, (x, y) => {
+    const dx = x - c;
+    const dy = y - c;
+    const th = Math.atan2(dy, dx);
+    const wob = fbm(Math.cos(th) * 1.6 + 5, Math.sin(th) * 1.6 + 5, seed, 2);
+    const r = Math.hypot(dx, dy);
+    const q = (r - RING_BAND.radius * (0.96 + 0.08 * wob)) / RING_BAND.width;
+    const a = Math.exp(-q * q) * 0.85;
+    if (a < 0.01) return null;
+    const grain = vnoise(x * 0.8, y * 0.8, seed + 1);
+    return lum(236 + 14 * (grain - 0.5), a * (0.85 + 0.15 * wob));
+  });
+}
+
+/**
  * fx_escape_column: a quiet column of pale light where a player leaves (§G.3), upright: a
  * faint pool at the feet (the anchor) and a soft shaft fading upward, with slow vertical
  * striations. No rays, no sparkle.
@@ -391,6 +461,9 @@ export const FX_TEXTURES = [
     ["fx_fire_core", "fireCore", FIRE_CORE, fireCore],
     ["fx_scorch", "scorch", SCORCH, scorch],
     ["fx_glow", "glow", GLOW, glow],
+    ["fx_glint", "glint", GLINT, glint],
+    ["fx_mote", "mote", MOTE, mote],
+    ["fx_ring", "ring", RING, ring],
   ].map(([name, fn, spec, build]) => ({
     name,
     fn,
