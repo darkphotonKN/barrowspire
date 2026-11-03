@@ -623,7 +623,7 @@ const toggleOf = (s: ReturnType<typeof fakeScene>, label: string) => {
 };
 
 describe("ChatWindow filter row (R24)", () => {
-  it("should draw five toggles in order in the filter row, each in its channel's colour, all on", () => {
+  it("should draw a toggle per shown channel in order in the filter row, each in its channel's colour, all on, with no Trade", () => {
     const { shown } = rig();
     const row = chatWindowFrame(X, BOTTOM).filterRow;
 
@@ -637,12 +637,12 @@ describe("ChatWindow filter row (R24)", () => {
         t.content !== CHAT_FOLD_SHUT,
     );
 
+    // trade is hidden until it is scoped (Nick, 2026-11-03)
     expect(toggles.map((t) => t.content)).toEqual([
       "Area",
       "World",
       "Party",
       "Whisper",
-      "Trade",
     ]);
     expect(toggles.map((t) => t.color)).toEqual(
       [
@@ -650,7 +650,6 @@ describe("ChatWindow filter row (R24)", () => {
         palette.chatWorld,
         palette.chatParty,
         palette.chatWhisper,
-        palette.chatTrade,
       ].map(toCss),
     );
     expect(toggles.every((t) => t.alpha === 1)).toBe(true);
@@ -702,7 +701,7 @@ describe("ChatWindow filter row (R24)", () => {
     const frame = chatWindowFrame(X, BOTTOM);
     s.wheel(frame.messages.x + 20, frame.messages.y + 20, -100);
 
-    toggleOf(s, "Trade").onPress!();
+    toggleOf(s, "Whisper").onPress!();
 
     expect(s.contents().at(-1)).toBe("l12");
   });
