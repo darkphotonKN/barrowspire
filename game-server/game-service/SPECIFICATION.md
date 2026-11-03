@@ -57,6 +57,8 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Resolved players settle with the run despite leaving or disconnecting → FS-QPDKN
 - [ ] A dead player's disconnect counts as leaving the run → FS-QPDKN
 - [ ] An escaped player cut off from their run waits in the village until it settles → FS-QPDKN
+- [ ] Resolved players settle the moment they resolve → FS-GV8WN
+- [ ] Leave a run early after escaping → FS-GV8WN
 
 ### ECS world
 
@@ -172,6 +174,7 @@ matchmaking); this service is the engine they feed. ✅
 
 - [x] Publish match-end events via an outbox → FS-none
 - [x] Match-end outbox in game-service's own database → FS-9TNJA
+- [ ] Match-end writes retried until recorded → FS-GV8WN
 
 ### Persistent world (MMO-RPG refactor)
 

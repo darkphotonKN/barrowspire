@@ -32,3 +32,5 @@
 - [x] Deduplicated extracted-items consumption → FS-BVM9H
 - [x] Settle checked-out items at run end → FS-18Z5F
 - [x] Consumed items removed at extraction → FS-P9G8R
+- [ ] Settle one player of a run without releasing the rest → FS-GV8WN
+- [ ] Apply a run settlement on request → FS-GV8WN
