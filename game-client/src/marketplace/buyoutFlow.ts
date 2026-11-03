@@ -11,6 +11,7 @@
 
 import type { BidNote } from "./bid";
 import { BOUGHT, buyoutFailure, keepsBuyoutKey } from "./buyout";
+import { gateFlag } from "./emailGate";
 
 export interface BuyoutSubmitDeps {
   buyout: (amount: number, idempotencyKey: string) => Promise<void>;
@@ -38,7 +39,7 @@ export async function submitBuyout(
       bought: false,
       ends: failure.ends === true,
       key: keepsBuyoutKey(err) ? key : undefined,
-      note: { tone: "error", text: failure.message },
+      note: { tone: "error", text: failure.message, ...gateFlag(err) },
     };
   }
   await Promise.all([deps.refresh(), deps.reloadPurse()]);

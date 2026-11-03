@@ -3,6 +3,7 @@
 import { useId, useMemo, useRef, useState, type RefObject } from "react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import ItemIcon from "@/components/ItemIcon";
+import NoteText from "@/components/bazaar/NoteText";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
 import {
   DURATIONS,
@@ -14,12 +15,13 @@ import {
   type DurationId,
   type PickerCard,
 } from "@/marketplace/listRelic";
+import type { ListingRefusal } from "@/marketplace/listRelicFlow";
 import type { InstancesState } from "@/marketplace/useItemInstances";
 
 /**
  * The List-a-relic drawer (FS-8EGFA req 25; design guideline Part II "Item grid"). The player
  * picks one of their relics from a card grid, sets a start price and a duration, and submits.
- * `onSubmit` resolves to an error message to show, or null once the listing is posted, when the
+ * `onSubmit` resolves to the refusal to show, or null once the listing is posted, when the
  * page closes the drawer. Esc and the close control dismiss it; focus stays inside while open
  * and returns to `returnFocus` on close.
  */
@@ -35,7 +37,7 @@ export default function ListRelicDrawer({
     startPrice: number,
     buyoutPrice: number | undefined,
     duration: DurationId,
-  ) => Promise<string | null>;
+  ) => Promise<ListingRefusal | null>;
   onClose: () => void;
   returnFocus: RefObject<HTMLElement | null>;
 }) {
@@ -51,7 +53,7 @@ export default function ListRelicDrawer({
   const [buyoutText, setBuyoutText] = useState("");
   const [duration, setDuration] = useState<DurationId>("24h");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<ListingRefusal>();
 
   const nothingListable = instances.phase === "ready" && !cards.some((c) => c.selectable);
   const ready = canSubmitListing({ cards, selectedId, priceText, buyoutText, submitting });
@@ -64,10 +66,10 @@ export default function ListRelicDrawer({
     if (!ready || !selectedId || startPrice === null || !buyout.valid) return;
     setSubmitting(true);
     setError(undefined);
-    const message = await onSubmit(selectedId, startPrice, buyout.buyoutPrice, duration);
+    const refusal = await onSubmit(selectedId, startPrice, buyout.buyoutPrice, duration);
     // On success the page unmounts the drawer; only a refusal lands back here.
-    if (message) {
-      setError(message);
+    if (refusal) {
+      setError(refusal);
       setSubmitting(false);
     }
   };
@@ -203,7 +205,7 @@ export default function ListRelicDrawer({
 
           {error && (
             <p className="login-error" role="alert">
-              {error}
+              <NoteText note={error} />
             </p>
           )}
 

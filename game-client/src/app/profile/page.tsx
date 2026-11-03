@@ -8,6 +8,8 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/api";
+import { needsEmailVerification } from "@/utils/emailVerification";
+import VerificationPanel from "@/components/VerificationPanel";
 
 
 export default function ProfilePage() {
@@ -211,12 +213,31 @@ export default function ProfilePage() {
             </div>
 
             <div className="profile-detail-item">
+              <span className="profile-detail-label">Email:</span>
+              <span className="profile-detail-value">
+                {needsEmailVerification(memberInfo) ? (
+                  "Unverified"
+                ) : (
+                  <span className="verify-status">Verified</span>
+                )}
+              </span>
+            </div>
+
+            <div className="profile-detail-item">
               <span className="profile-detail-label">Sworn:</span>
               <span className="profile-detail-value">
                 {formatDate(memberInfo.created_at)}
               </span>
             </div>
           </div>
+
+          {/* FS-V6SFK R36: the same panel the banner opens, until verified. */}
+          {needsEmailVerification(memberInfo) && (
+            <section className="profile-verify" aria-label="Verify your email">
+              <h3 className="profile-verify-title">Verify your email</h3>
+              <VerificationPanel />
+            </section>
+          )}
         </div>
 
         {/* Messages */}

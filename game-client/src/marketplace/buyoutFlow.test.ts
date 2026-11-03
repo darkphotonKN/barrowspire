@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import { BROWSE_UNREACHABLE } from "./browse";
+import { VERIFY_TO_BUY_OUT } from "./emailGate";
 import {
   BOUGHT,
   BUYOUT_CONFLICT,
@@ -138,5 +139,20 @@ describe("submitBuyout ends", () => {
     expect(gone.results[0]).toMatchObject({ bought: false, ends: true });
     const lapsed = await pressAll([apiError(409, "ALREADY_EXISTS")]);
     expect(lapsed.results[0]).toMatchObject({ bought: false, ends: false });
+  });
+});
+
+// FS-V6SFK §Requirements 38: the gate's refusal is flagged on the note, so it can open the panel.
+describe("submitBuyout and the email-verified gate", () => {
+  it("should flag the note when the gate refuses", async () => {
+    const { d } = deps([apiError(400, "EMAIL_UNVERIFIED")]);
+    const result = await submitBuyout({ price: 500, key: undefined, availableGold: 800 }, d);
+    expect(result.note).toEqual({ tone: "error", text: VERIFY_TO_BUY_OUT, verifyEmail: true });
+  });
+
+  it("should not flag any other refusal", async () => {
+    const { d } = deps([apiError(409, "CONFLICT")]);
+    const result = await submitBuyout({ price: 500, key: undefined, availableGold: 800 }, d);
+    expect(result.note).not.toHaveProperty("verifyEmail");
   });
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
+import NoteText from "@/components/bazaar/NoteText";
 import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import { purseFailure, type BidNote, type Purse } from "@/marketplace/bid";
 import { buyoutAction, buyoutLabel, buyoutQuestion } from "@/marketplace/buyout";
@@ -97,7 +98,7 @@ export default function BuyoutAction({
 
   const noteLine = note && (
     <p role="status" aria-live="polite" className={`text-center text-sm ${NOTE_TONE[note.tone]}`}>
-      {note.text}
+      <NoteText note={note} />
     </p>
   );
 
@@ -149,7 +150,9 @@ export default function BuyoutAction({
       </button>
       <p id="bazaar-buyout-reason" role="status" aria-live="polite" className="min-h-[1.25rem] text-center text-sm">
         {note ? (
-          <span className={NOTE_TONE[note.tone]}>{note.text}</span>
+          <span className={NOTE_TONE[note.tone]}>
+            <NoteText note={note} />
+          </span>
         ) : (
           action.reason && <span className={NOTE_TONE.muted}>{action.reason}</span>
         )}

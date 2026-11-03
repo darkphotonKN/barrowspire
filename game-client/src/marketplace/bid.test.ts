@@ -18,6 +18,7 @@ import {
   parseBidAmount,
   purseFailure,
 } from "./bid";
+import { VERIFY_TO_BID } from "./emailGate";
 
 const apiError = (status: number, code: string) =>
   new ApiError({ status, code, detail: "server prose", errors: [] });
@@ -194,6 +195,13 @@ describe("bidFailure", () => {
     expect(bidFailure(new TypeError("fetch failed"), { amount: 50 })).toEqual(want);
   });
 
+  // FS-V6SFK §Requirements 38
+  it("should ask an unverified bidder to verify their email", () => {
+    expect(
+      bidFailure(apiError(400, "EMAIL_UNVERIFIED"), { amount: 50, availableGold: 100 }),
+    ).toEqual({ message: VERIFY_TO_BID });
+  });
+
   it("should fall back to the server's own words for any other code", () => {
     expect(bidFailure(apiError(400, "SOMETHING_NEW"), { amount: 50 })).toEqual({
       message: "server prose",
@@ -224,6 +232,12 @@ describe("purseFailure", () => {
 });
 
 describe("closedBoxNotes", () => {
+  // FS-V6SFK §Requirements 38: the verify prompt survives the box closing.
+  it("should keep the gate's flag on a refusal still showing when the box closes", () => {
+    const refused = { tone: "error" as const, text: VERIFY_TO_BID, verifyEmail: true as const };
+    expect(closedBoxNotes(refused, BID_ENDED)[0]).toEqual(refused);
+  });
+
   it("should say only that bidding has closed when no bid was in flight", () => {
     expect(closedBoxNotes(undefined, BID_ENDED)).toEqual([{ tone: "muted", text: BID_ENDED }]);
   });

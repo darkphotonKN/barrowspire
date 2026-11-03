@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import { BROWSE_UNREACHABLE } from "./browse";
+import { VERIFY_TO_LIST } from "./emailGate";
 import {
   BUYOUT_NOT_ABOVE_START,
   CANNOT_LIST,
@@ -195,6 +196,15 @@ describe("createListingFailureMessage", () => {
     ["a 422", apiError(422), LIST_FAILED],
   ])("should map %s", (_l, err, want) => {
     expect(createListingFailureMessage(err)).toBe(want);
+  });
+
+  // FS-V6SFK §Requirements 38: the gate's 400 is named by its code, before any price reading
+  it("should ask an unverified seller to verify their email, whatever was sent", () => {
+    const unverified = new ApiError({ code: "EMAIL_UNVERIFIED", status: 400, detail: "", errors: [] });
+    expect(createListingFailureMessage(unverified)).toBe(VERIFY_TO_LIST);
+    expect(
+      createListingFailureMessage(unverified, { startPrice: 50, buyoutPrice: 50 }),
+    ).toBe(VERIFY_TO_LIST);
   });
 
   it("should read a 400 on a buyout not above the start as the buyout refusal", () => {

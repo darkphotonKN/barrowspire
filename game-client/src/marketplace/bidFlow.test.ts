@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import { BID_AT_BUYOUT, BID_CONFLICT, BID_LAPSED, BID_NOT_ENOUGH_GOLD, type BidAttempt } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
+import { VERIFY_TO_BID } from "./emailGate";
 import { submitBid, type BidSubmitDeps } from "./bidFlow";
 
 const apiError = (status: number, code: string) =>
@@ -141,5 +142,12 @@ describe("submitBid", () => {
     const result = await submitBid({ amount: 60, previous: undefined, availableGold: 40 }, d);
     expect(log).toEqual(["place 60"]);
     expect(result.note).toEqual({ tone: "error", text: BID_NOT_ENOUGH_GOLD });
+  });
+
+  // FS-V6SFK §Requirements 38: the gate's refusal is flagged on the note, so it can open the panel.
+  it("should flag the note when the email-verified gate refuses", async () => {
+    const { d } = deps([apiError(400, "EMAIL_UNVERIFIED")]);
+    const result = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
+    expect(result.note).toEqual({ tone: "error", text: VERIFY_TO_BID, verifyEmail: true });
   });
 });

@@ -15,6 +15,7 @@ import {
 } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { actionArea } from "./detail";
+import { EMAIL_UNVERIFIED, VERIFY_TO_BUY_OUT } from "./emailGate";
 import { formatGold } from "./gold";
 
 export const BUYOUT_CONFLICT = "Someone acted at the same moment — try again.";
@@ -85,6 +86,8 @@ export function buyoutFailure(
       return { message: BUYOUT_CONFLICT };
     case "ALREADY_EXISTS":
       return { message: BUYOUT_LAPSED };
+    case EMAIL_UNVERIFIED:
+      return { message: VERIFY_TO_BUY_OUT };
     case "VALIDATION_FAILED":
       return { message: BUYOUT_PRICE_CHANGED, refetch: true };
     case "FAILED_PRECONDITION":

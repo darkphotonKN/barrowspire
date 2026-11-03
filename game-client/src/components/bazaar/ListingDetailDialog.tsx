@@ -8,6 +8,7 @@ import { v4 as uuid } from "uuid";
 import ItemIcon from "@/components/ItemIcon";
 import RarityBadge from "@/components/RarityBadge";
 import BuyoutAction from "@/components/bazaar/BuyoutAction";
+import NoteText from "@/components/bazaar/NoteText";
 import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import SellerBlock from "@/components/bazaar/SellerBlock";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
@@ -318,7 +319,7 @@ function BidBox({
       <div role="status" aria-live="polite" className="flex flex-col gap-1 text-center">
         {closedBoxNotes(note, box.reason ?? BID_ENDED).map((line) => (
           <p key={line.text} className={NOTE_TONE[line.tone]}>
-            {line.text}
+            <NoteText note={line} />
           </p>
         ))}
       </div>
@@ -358,7 +359,9 @@ function BidBox({
       </p>
       <p id="bazaar-bid-reason" role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
         {note ? (
-          <span className={NOTE_TONE[note.tone]}>{note.text}</span>
+          <span className={NOTE_TONE[note.tone]}>
+            <NoteText note={note} />
+          </span>
         ) : (
           box.reason && <span className={NOTE_TONE.muted}>{box.reason}</span>
         )}

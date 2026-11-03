@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import { BUYOUT_NOT_ABOVE_START, CANNOT_LIST, POSTED_LIVE, STILL_PROCESSING, endsAtFor } from "./listRelic";
+import { VERIFY_TO_LIST } from "./emailGate";
 import { postListing, type PostListingDeps } from "./listRelicFlow";
 import type { PollOutcome } from "./postedPoll";
 
@@ -64,7 +65,7 @@ describe("postListing", () => {
     const t = deps({
       refuse: new ApiError({ status: 400, code: "VALIDATION_FAILED", detail: "", errors: [] }),
     });
-    expect(await postListing({ ...input, buyoutPrice: 50 }, t.d)).toBe(BUYOUT_NOT_ABOVE_START);
+    expect(await postListing({ ...input, buyoutPrice: 50 }, t.d)).toEqual({ text: BUYOUT_NOT_ABOVE_START });
   });
 
   it("should answer before the poll ends, so the drawer closes at once", async () => {
@@ -103,7 +104,15 @@ describe("postListing", () => {
 
   it("should answer a refusal's copy and neither hand over nor poll", async () => {
     const t = deps({ refuse: new ApiError({ status: 500, code: "INTERNAL", detail: "", errors: [] }) });
-    expect(await postListing(input, t.d)).toBe(CANNOT_LIST);
+    expect(await postListing(input, t.d)).toEqual({ text: CANNOT_LIST });
     expect(t.log).toEqual([`create item-1 50 ${endsAtFor("24h", NOW)}`]);
+  });
+
+  // FS-V6SFK §Requirements 38: the gate's refusal is flagged, so the drawer's note opens the panel.
+  it("should flag the email-verified gate's refusal", async () => {
+    const t = deps({
+      refuse: new ApiError({ status: 400, code: "EMAIL_UNVERIFIED", detail: "", errors: [] }),
+    });
+    expect(await postListing(input, t.d)).toEqual({ text: VERIFY_TO_LIST, verifyEmail: true });
   });
 });

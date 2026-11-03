@@ -4,7 +4,8 @@
  *
  * 1. post the listing with the end time the chosen duration gives, and its buyout price when set
  *    (FS-49Z37 req 1);
- * 2. refused: answer the refusal's copy, and nothing else happens;
+ * 2. refused: answer the refusal's copy, flagged when it is the email-verified gate's
+ *    (FS-V6SFK R38), and nothing else happens;
  * 3. accepted (202): hand over (close the drawer, say it is posted, switch to Mine), answer at
  *    once, and poll for the listing in the background; when the poll ends, say how it went,
  *    unless the poll was cancelled or the page has gone by then.
@@ -18,6 +19,12 @@ import {
   type DurationId,
 } from "./listRelic";
 import type { PollOutcome } from "./postedPoll";
+import { gateFlag, type GateFlag } from "./emailGate";
+
+/** What a refused listing says; `verifyEmail` marks the email-verified gate's refusal. */
+export interface ListingRefusal extends GateFlag {
+  text: string;
+}
 
 export interface PostListingDeps {
   createListing: (
@@ -37,11 +44,11 @@ export interface PostListingDeps {
   now: () => number;
 }
 
-/** Resolves to the refusal's copy, or null once the listing is accepted. */
+/** Resolves to the refusal, or null once the listing is accepted. */
 export async function postListing(
   listing: { itemId: string; startPrice: number; buyoutPrice?: number; duration: DurationId },
   deps: PostListingDeps,
-): Promise<string | null> {
+): Promise<ListingRefusal | null> {
   try {
     await deps.createListing(
       listing.itemId,
@@ -50,7 +57,7 @@ export async function postListing(
       listing.buyoutPrice,
     );
   } catch (err) {
-    return createListingFailureMessage(err, listing);
+    return { text: createListingFailureMessage(err, listing), ...gateFlag(err) };
   }
   deps.onPosted();
   void deps.poll(listing.itemId).then(({ outcome }) => {

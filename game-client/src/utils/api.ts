@@ -84,6 +84,32 @@ class ApiClient {
     return unwrap(await client.GET("/api/member", {}));
   }
 
+  // Verifies the signed-in member's email with the mailed 6-digit code (FS-V6SFK R17). Answers a
+  // bare LoginResult: a fresh pair whose access token carries the email_verified claim, which the
+  // caller swaps into the auth store. Already verified is a success no-op with a fresh pair too.
+  async verifyEmail(code: string) {
+    return unwrap(
+      await client.POST("/api/member/email/verify", {
+        body: { code },
+      }),
+    );
+  }
+
+  // Mails a new verification code (FS-V6SFK R18); the old one stops working. 204 with no body.
+  async resendVerification(): Promise<void> {
+    unwrap(await client.POST("/api/member/email/resend", {}));
+  }
+
+  // Changes an unverified email and mails a code to the new address (FS-V6SFK R19). Answers the
+  // bare updated Member; 409 ALREADY_EXISTS when the address belongs to someone else.
+  async changeEmail(email: string) {
+    return unwrap(
+      await client.PUT("/api/member/email", {
+        body: { email },
+      }),
+    );
+  }
+
   // Request avatar upload presigned URL
   async requestAvatarUpload(filename: string) {
     return unwrap(

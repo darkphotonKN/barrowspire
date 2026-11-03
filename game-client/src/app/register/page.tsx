@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fromProblem, userMessage } from "@/utils/apiError";
 import { publicClient } from "@/utils/api";
+import {
+  PASSWORD_HINT,
+  PASSWORD_REFUSAL_MESSAGES,
+  SIGNUP_REFUSAL_MESSAGES,
+  meetsPasswordMinimum,
+} from "@/utils/credentialRules";
 
 
 const ParticleAnimation = () => {
@@ -45,8 +51,10 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    // Only the length floor is mirrored here; auth-service owns the rest of
+    // the policy and answers with a code (FS-V6SFK R33).
+    if (!meetsPasswordMinimum(password)) {
+      setError(PASSWORD_REFUSAL_MESSAGES.PASSWORD_TOO_SHORT);
       return;
     }
 
@@ -66,6 +74,7 @@ export default function RegisterPage() {
         // poll that timed out into "taking longer than expected".
         setError(
           userMessage(fromProblem(response.status, error), {
+            ...SIGNUP_REFUSAL_MESSAGES,
             ALREADY_EXISTS: "An account with that email already exists.",
             VALIDATION_FAILED: "Please check the details you entered.",
             SERVICE_UNAVAILABLE:
@@ -154,9 +163,13 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="login-input"
-              placeholder="At least 6 characters..."
+              placeholder="Choose a password..."
               autoComplete="new-password"
+              aria-describedby="password-hint"
             />
+            <p id="password-hint" className="login-hint">
+              {PASSWORD_HINT}
+            </p>
           </div>
 
           {error && <p className="login-error">{error}</p>}

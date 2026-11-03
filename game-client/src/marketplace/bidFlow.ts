@@ -23,6 +23,7 @@ import {
   type BidNote,
 } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
+import { gateFlag } from "./emailGate";
 
 export interface BidSubmitDeps {
   placeBid: (amount: number, idempotencyKey: string) => Promise<void>;
@@ -45,7 +46,7 @@ export async function submitBid(
     const failure = bidFailure(err, { amount: attempt.amount, availableGold: bid.availableGold });
     const kept = keepsBidKey(err) ? attempt : undefined;
     if (!("refetch" in failure))
-      return { attempt: kept, note: { tone: "error", text: failure.message } };
+      return { attempt: kept, note: { tone: "error", text: failure.message, ...gateFlag(err) } };
     deps.resetTouched();
     const fresh = await deps.refresh();
     return {

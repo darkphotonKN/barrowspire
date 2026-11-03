@@ -14,6 +14,7 @@ import {
 } from "./buyout";
 import { BID_NOT_ENOUGH_GOLD, PURSE_FAILED, PURSE_NOT_READY } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
+import { VERIFY_TO_BUY_OUT } from "./emailGate";
 
 const apiError = (status: number, code: string, detail = "server prose") =>
   new ApiError({ status, code, detail, errors: [] });
@@ -105,6 +106,13 @@ describe("buyoutFailure", () => {
       apiError(400, "FAILED_PRECONDITION"),
       { price: 500, availableGold: undefined },
       { message: BUYOUT_GONE, refetch: true, ends: true },
+    ],
+    // FS-V6SFK §Requirements 38: nothing changed under us, so no re-read and the confirm stays
+    [
+      "400 · EMAIL_UNVERIFIED",
+      apiError(400, "EMAIL_UNVERIFIED"),
+      ctx,
+      { message: VERIFY_TO_BUY_OUT },
     ],
     ["503", apiError(503, "UNAVAILABLE"), ctx, { message: BROWSE_UNREACHABLE }],
     ["a transport failure", new TypeError("Failed to fetch"), ctx, { message: BROWSE_UNREACHABLE }],

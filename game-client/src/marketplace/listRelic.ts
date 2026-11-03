@@ -7,6 +7,7 @@
 import { ApiError } from "@/utils/apiError";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { formatCriticalRate } from "./detail";
+import { EMAIL_UNVERIFIED, VERIFY_TO_LIST } from "./emailGate";
 
 // ── Copy (req 25, 29; Edge States) ──────────────────────────────────────────
 
@@ -198,7 +199,8 @@ export function canSubmitListing(form: {
 }
 
 /**
- * What a refused `create-listing` says (req 29). A 500 is the items-side refusal: the relic is
+ * What a refused `create-listing` says (req 29). `EMAIL_UNVERIFIED` is the email-verified gate
+ * (FS-V6SFK R38), named by its code. A 500 is the items-side refusal: the relic is
  * already listed or otherwise held. A 400 is marketplace refusing the listing; the page sends a
  * chosen relic's id and checked prices, so the end time is the one fact it cannot vouch for, unless
  * what was sent carries a buyout price not above the start (FS-49Z37 req 2): the server answers
@@ -209,6 +211,8 @@ export function createListingFailureMessage(
   sent?: { startPrice: number; buyoutPrice?: number },
 ): string {
   if (!(err instanceof ApiError) || err.status === 503) return BROWSE_UNREACHABLE;
+  // named by its code, so the price reading below never mistakes it (FS-V6SFK R38)
+  if (err.code === EMAIL_UNVERIFIED) return VERIFY_TO_LIST;
   if (err.status === 500) return CANNOT_LIST;
   if (err.status === 400)
     return sent?.buyoutPrice !== undefined && sent.buyoutPrice <= sent.startPrice

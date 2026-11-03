@@ -3,6 +3,7 @@ import { Pirata_One, EB_Garamond } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
 import AuthGuard from '@/components/AuthGuard';
+import VerifyEmailBanner from '@/components/VerifyEmailBanner';
 
 // Display face. Blackletter, bound to --font-heading and used only at >=28px
 // on the logo, the hero, and the page h1 — see docs/design-guideline.md.
@@ -39,6 +40,7 @@ export default function RootLayout({
       <body>
         <AuthGuard>
           <Header />
+          <VerifyEmailBanner />
           {children}
         </AuthGuard>
       </body>

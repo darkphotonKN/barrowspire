@@ -6,6 +6,7 @@
 
 import { ApiError } from "@/utils/apiError";
 import { BROWSE_UNREACHABLE } from "./browse";
+import { EMAIL_UNVERIFIED, VERIFY_TO_BID, type GateFlag } from "./emailGate";
 import { formatGold } from "./gold";
 
 export const BID_ENDED = "This auction has ended.";
@@ -144,6 +145,8 @@ export function bidFailure(
         : { message: BID_ENDED };
     case "ALREADY_EXISTS":
       return { message: BID_LAPSED };
+    case EMAIL_UNVERIFIED:
+      return { message: VERIFY_TO_BID };
   }
   if (err.status === 409) return { message: BID_CONFLICT };
   return { message: err.detail };
@@ -163,8 +166,11 @@ export function validationRefusal(
     : outbidMessage(fresh.minimumBid);
 }
 
-/** A line under the bid box: the server's answer to a bid. */
-export interface BidNote {
+/**
+ * A line under the bid box: the server's answer to a bid. `verifyEmail` marks the email-verified
+ * gate's refusal (FS-V6SFK R38), which the note renders as a prompt to verify.
+ */
+export interface BidNote extends GateFlag {
   tone: "ok" | "error";
   text: string;
 }
@@ -177,7 +183,7 @@ export interface BidNote {
 export function closedBoxNotes(
   note: BidNote | undefined,
   closed: string,
-): { tone: BidNote["tone"] | "muted"; text: string }[] {
+): (BidNote | { tone: "muted"; text: string })[] {
   const shut = { tone: "muted" as const, text: closed };
   if (!note) return [shut];
   if (note.text === closed) return [note];

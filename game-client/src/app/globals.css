@@ -1081,6 +1081,171 @@
   color: var(--color-brass-bright);
 }
 
+/* ── Email verification (FS-V6SFK R35–R36) ────────────────────────────────
+   Iron structure and bone-grey text only: the banner sits on every signed-in
+   view, so it never takes the torch from the view's own primary CTA. */
+.verify-banner {
+  background-color: var(--color-bg-card);
+  background-image: var(--surface-gradient);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--edge-carved);
+  padding: 0.6rem 1.5rem;
+}
+
+/* Open on request from inside a Bazaar dialog (z 100) or drawer (z 60): held
+   under the header and over them, so the panel opens in view (R38). */
+.verify-banner--raised {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 110;
+  box-shadow: var(--edge-carved), var(--shadow-card);
+}
+
+.verify-banner-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.verify-banner-text {
+  color: var(--color-text);
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+}
+
+.verify-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.verify-banner .verify-panel {
+  max-width: 1400px;
+  margin: 0.75rem auto 0.25rem;
+}
+
+.verify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-bg-well) 60%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--edge-engraved);
+}
+
+.verify-panel-lead {
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+}
+
+.verify-panel-email {
+  color: var(--color-text);
+}
+
+.verify-panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.verify-panel-row .login-input {
+  width: auto;
+  flex: 1 1 12rem;
+  min-height: 40px;
+  padding: 10px 14px;
+}
+
+.verify-panel-label {
+  min-width: 5rem;
+}
+
+.verify-code-input {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3em;
+  max-width: 12rem;
+}
+
+.verify-panel .btn-secondary,
+.verify-banner .btn-secondary {
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.verify-panel .btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.verify-link {
+  min-height: 40px;
+  padding: 0 0.5rem;
+  background: none;
+  border: none;
+  color: var(--color-text-dim);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.verify-link:hover {
+  color: var(--color-brass-bright);
+}
+
+.verify-error {
+  color: var(--color-danger-text);
+  font-size: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 20%, transparent);
+  border-radius: 6px;
+}
+
+.verify-notice {
+  color: var(--color-brass-bright);
+  font-size: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  background: color-mix(in srgb, var(--color-brass) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
+  border-radius: 6px;
+}
+
+.verify-status {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  color: var(--color-brass-bright);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.profile-verify {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-verify-title {
+  font-size: 1rem;
+  color: var(--color-brass-bright);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -1379,6 +1544,12 @@
   border-color: color-mix(in srgb, var(--color-brass) 40%, transparent);
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--color-brass) 6%, transparent);
+}
+
+.login-hint {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
 }
 
 .login-error {
