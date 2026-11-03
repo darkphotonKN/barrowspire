@@ -46,7 +46,7 @@ func (logVisitSettler) PublishFieldVisit(_ context.Context, visit game.FieldVisi
 	return nil
 }
 
-// fieldReadTimeout bounds the queue and loadout reads an entry waits on, the
+// fieldReadTimeout bounds each queue, settling and loadout read an entry waits on, the
 // arrival path's loadout bound.
 const fieldReadTimeout = 3 * time.Second
 
@@ -61,6 +61,8 @@ var (
 	errEnterFieldUnknown     = errors.New("unknown_field")
 	errEnterFieldNotAtGate   = errors.New("not_at_gate")
 	errEnterFieldQueued      = errors.New("queued")
+	// a released escapee whose run has not settled (FS-QPDKN R33)
+	errEnterFieldSettling = errors.New("settling")
 
 	// unreadable gear refuses entry anywhere it would be worn: a field, and
 	// the Spire's find_game and start_solo. Fail closed.
@@ -83,6 +85,7 @@ var fieldRefusals = map[error]string{
 	errEnterFieldUnknown:     "That road leads nowhere yet.",
 	errEnterFieldNotAtGate:   "Walk to the gate first.",
 	errEnterFieldQueued:      "Leave the queue first.",
+	errEnterFieldSettling:    settlingRefusal,
 	errNoLoadout:             "Your gear could not be fetched. Try again shortly.",
 	errLeaveFieldNotInField:  "You are not in the fields.",
 	errLeaveFieldNotAtGate:   "Walk to the road home first.",
@@ -131,6 +134,10 @@ type bootOptions struct {
 	hubOccupancy hubOccupancyStore
 	// the Redis side of the pod inbox; nil, and this pod reaches no other (FS-R82NV R9)
 	inboxBus inboxBus
+	// where released escapees are marked settling and every entry checks them; nil marks nobody
+	// and refuses nothing (FS-QPDKN R32, R33). The refresh ticks every 30 s unless a test turns it.
+	settling      settlingMarks
+	settlingTicks <-chan time.Time
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
@@ -279,8 +286,14 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 		return nil, fmt.Errorf("enter field %s: %w", place.ID, errEnterFieldNotAtGate)
 	}
 
+	// Each read below gets its own bound: one that stalls out its time must not
+	// leave the next none, which would turn letting them in into refusing them
+	// (FS-QPDKN R35).
+
 	// an unreadable queue is not a queue they are in, as start_solo treats it (D4)
-	queued, err := s.IsQueued(ctx, player.ID)
+	queueCtx, cancelQueue := context.WithTimeout(ctx, fieldReadTimeout)
+	queued, err := s.IsQueued(queueCtx, player.ID)
+	cancelQueue()
 	if err != nil {
 		slog.Warn("Could not read queue entry on enter_field, treating as not queued", "player_id", player.ID, "error", err)
 	}
@@ -288,11 +301,22 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 		return nil, fmt.Errorf("enter field %s: %w", place.ID, errEnterFieldQueued)
 	}
 
+	// a settling member's bag stays home until their run settles; an
+	// unreadable mark lets them in (FS-QPDKN R33, R35)
+	settlingCtx, cancelSettling := context.WithTimeout(ctx, fieldReadTimeout)
+	settlingNow := s.Settling(settlingCtx, player.ID)
+	cancelSettling()
+	if settlingNow {
+		return nil, fmt.Errorf("enter field %s: %w", place.ID, errEnterFieldSettling)
+	}
+
 	// the visit id is minted first: the gear is checked out under it, after
 	// the pre-checks above and before the field's lock, so a slow items-service
 	// delays only this entry (FS-18Z5F §C R13, R14, R16)
 	visitID := uuid.New()
-	gear, err := s.setupHandoffConnectingPlayer(ctx, player.ID, visitID, s.tokenOf(player))
+	checkoutCtx, cancelCheckout := context.WithTimeout(ctx, fieldReadTimeout)
+	gear, err := s.setupHandoffConnectingPlayer(checkoutCtx, player.ID, visitID, s.tokenOf(player))
+	cancelCheckout()
 	if err != nil {
 		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)
 	}

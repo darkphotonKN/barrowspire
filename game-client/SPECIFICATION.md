@@ -56,6 +56,7 @@ server state and sends intents. ✅
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
+- [ ] Told why entry waits while a run settles → FS-QPDKN
 - [x] Die by choice from the run's ESC menu → FS-9K8EZ
 - [x] Health and class resource bars on the HUD → FS-8AY7S
 - [x] Ability card on the HUD → FS-8AY7S

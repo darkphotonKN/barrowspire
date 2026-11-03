@@ -300,8 +300,14 @@ const (
 * The server's own close of a connection it already unmapped (one a reconnect
 * superseded) also lands here, as "use of closed network connection". There is
 * nobody behind it, so it is only closed.
+*
+* Whatever closed it, a dead delver's drop is first their leave of the run
+* (FS-QPDKN §Requirements 25): from there on they are a hub member who dropped,
+* and the branches below treat them as one.
 **/
 func (s *Server) handleReadError(conn *websocket.Conn, err error) {
+	leftRun := s.leaveRunOnDrop(conn)
+
 	if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
 		slog.Info("Player closed connection normally (intentional leave)")
 		s.cleanUpClient(conn)
@@ -336,8 +342,13 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 	)
 
 	// a leader dropped inside their party's run hands on the lead at once,
-	// decided on the hub's loop (FS-BJNYC §Requirements 17)
-	if world, onRecord := s.currentWorldOf(player.ID); onRecord && s.parties != nil {
+	// decided on the hub's loop (FS-BJNYC §Requirements 17). A dead one's drop
+	// has already taken them home, so it is the run they left that counts.
+	world, onRecord := s.currentWorldOf(player.ID)
+	if leftRun != uuid.Nil {
+		world = leftRun
+	}
+	if onRecord && s.parties != nil {
 		s.parties.dropped(s.ctx, player.ID, world)
 	}
 
@@ -346,6 +357,45 @@ func (s *Server) handleReadError(conn *websocket.Conn, err error) {
 	s.homeFromField(s.ctx, player.ID)
 
 	go s.handleReconnectionTimeout(player.ID, hold, grace)
+}
+
+/**
+* A dead delver's dropped connection is their leave (FS-QPDKN §Requirements
+* 25–27): whatever closed it, they leave the run now through LeaveRun, exactly
+* as if they had pressed Leave. The run keeps their body and settles them at its
+* end; the hub seats them, and their record names it.
+*
+* The connection is gone, so its writer stops first: a leave_run the loop
+* handles meanwhile is refused, as for any member in the hub, and the refusal
+* is written nowhere. One the loop handled before finds them in the hub here,
+* and one arriving after finds the connection unmapped, so they leave once.
+*
+* Refused for anyone the run will not let go (in play, escaped), for a member
+* in no run, and with the hub missing; the drop is then handled as before
+* (R26). Returns the run they left, or uuid.Nil if they did not.
+**/
+func (s *Server) leaveRunOnDrop(conn *websocket.Conn) uuid.UUID {
+	player, mapped := s.GetPlayerFromConn(conn)
+	if !mapped {
+		return uuid.Nil
+	}
+
+	s.mu.Lock()
+	s.stopClientWriterLocked(conn)
+	s.mu.Unlock()
+
+	run, _ := s.currentWorldOf(player.ID)
+
+	if _, err := s.LeaveRun(player); err != nil {
+		// the run's refusals are expected; a missing hub is not
+		if errors.Is(err, errHubMissing) {
+			slog.Warn("Dropped player could not be taken home, handling the drop as before", "player_id", player.ID, "error", err)
+		}
+		return uuid.Nil
+	}
+
+	slog.Info("Dead delver dropped, left the run for the hub", "player_id", player.ID, "run_id", run)
+	return run
 }
 
 // clientWriterBuffer is how many messages a connection's writer channel holds
@@ -470,15 +520,17 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
 		return
 	}
 
-	// A resolved member of a run is kept, body and record, until the run ends
-	// and settles them: an escape must not be lost to a dropped connection.
-	// The run's end deletes the record if they are still away (FS-QPDKN R18, R19).
+	// A dead member still in a run (their drop could not be their leave, or
+	// they died within the grace) is kept, body and record, until the run ends
+	// and settles them. The run's end deletes the record if they are still away
+	// (FS-QPDKN R18, R26). An escaped one is not kept: they are released below,
+	// with their record going and their body staying (R29).
 	if world, inWorld := s.sessions[record.CurrentGameSessionId]; inWorld &&
-		world.WorldType() == types.WorldTypeRun && world.Resolved(playerID) {
+		world.WorldType() == types.WorldTypeRun && world.Resolved(playerID) && !world.Escaped(playerID) {
 		s.awaitingSettlement[playerID] = struct{}{}
 		delete(s.graceHolds, playerID)
 		s.mu.Unlock()
-		slog.Info("Resolved delver failed to reconnect within the grace, kept for the run's settlement",
+		slog.Info("Dead delver failed to reconnect within the grace, kept for the run's settlement",
 			"username", record.Username, "run_id", world.ID)
 		// kept only to be settled: they can no longer come back, so they
 		// have left the run and its matched party (FS-988SM §Requirements 11)
@@ -511,9 +563,15 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
 * removed by this old cleanup finishing late. Nothing here forgets a world on
 * a record: the record is gone, and the member's current one, if they came
 * back, is not this cleanup's to touch.
+*
+* An escaped delver's body is the exception: it is their plunder, so it stays
+* in the run for its settlement and they are released instead (FS-QPDKN
+* §Requirements 29).
 **/
 func (s *Server) releaseDeparted(player *types.Player) {
-	s.leaveCurrentWorld(player)
+	if !s.releaseEscaped(player) {
+		s.leaveCurrentWorld(player)
+	}
 
 	// queue removal is external and can retry for a while, so it never runs under
 	// the server lock; on its own goroutine so the disconnect isn't held up either.
@@ -524,6 +582,43 @@ func (s *Server) releaseDeparted(player *types.Player) {
 			slog.Error("failed to remove disconnected player from queue", "player_id", player.ID, "err", err)
 		}
 	}(&queued)
+}
+
+/**
+* Releases an escaped delver who can no longer come back, now that their record
+* is gone: their grace ran out, or they closed normally (FS-QPDKN §Requirements
+* 29). The run marks them departed and keeps their body, so its end settles
+* their plunder and experience as if they had stayed. Any later connect is
+* fresh and lands in the village.
+*
+* This is the one place an escaped delver is released, and so the one place
+* anyone is marked settling (R32, R36). It is not a leave: the hub seats
+* nobody, and leave_run stays refused for an escaped delver.
+*
+* Reports whether they were released. Anyone else (a record naming no run, the
+* hub or a field, a delver still in play or dead) is not, and the caller
+* removes their body as before.
+**/
+func (s *Server) releaseEscaped(player *types.Player) bool {
+	s.mu.RLock()
+	run, exists := s.sessions[player.CurrentGameSessionId]
+	s.mu.RUnlock()
+
+	if !exists || run.WorldType() != types.WorldTypeRun {
+		return false
+	}
+
+	if err := run.Release(player.ID); err != nil {
+		return false
+	}
+
+	slog.Info("Escaped delver can no longer come back, released with their body kept for the run's settlement",
+		"player_id", player.ID, "run_id", run.ID)
+
+	// no world takes their gear until the run settles: their plunder lands in
+	// their bag then (R32, R33)
+	s.settling.mark(s.ctx, run.ID, player.ID)
+	return true
 }
 
 /**

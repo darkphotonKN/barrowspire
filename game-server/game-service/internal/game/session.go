@@ -1484,25 +1484,66 @@ func (s *Session) Depart(playerID uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	entityID, here := s.playerIDToEntitiesID[playerID]
-	if !here {
-		return fmt.Errorf("depart %s: %w", playerID, ErrNotInThisWorld)
+	escaped, err := s.escapedLocked(playerID)
+	if err != nil {
+		return fmt.Errorf("depart %s: %w", playerID, err)
 	}
-	entity, ok := s.EntityManager.GetEntity(entityID)
-	if !ok {
-		return fmt.Errorf("depart %s: %w", playerID, ErrNotInThisWorld)
-	}
-	if systems.InPlay(entity) {
-		return fmt.Errorf("depart %s: %w", playerID, ErrStillInPlay)
-	}
-	if pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer); isPlayer {
-		if pc.(*components.PlayerComponent).Escape {
-			return fmt.Errorf("depart %s: %w", playerID, ErrEscapedWaits)
-		}
+	if escaped {
+		return fmt.Errorf("depart %s: %w", playerID, ErrEscapedWaits)
 	}
 
 	s.departed[playerID] = struct{}{}
 	return nil
+}
+
+// Release lets an escaped delver who can no longer come back go from this run
+// (FS-QPDKN §Requirements 29). As with Depart, their body stays, so the run's
+// end settles their plunder as if they had stayed, and they are dropped from
+// the run's recipients. It is not a leave: Depart still refuses them, and
+// Release refuses anyone who has not escaped.
+func (s *Session) Release(playerID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	escaped, err := s.escapedLocked(playerID)
+	if err != nil {
+		return fmt.Errorf("release %s: %w", playerID, err)
+	}
+	if !escaped {
+		return fmt.Errorf("release %s: %w", playerID, ErrNotEscaped)
+	}
+
+	s.departed[playerID] = struct{}{}
+	return nil
+}
+
+// Escaped reports whether the member has a body here that escaped. A member
+// with no body here has not; they are simply not here.
+func (s *Session) Escaped(playerID uuid.UUID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	escaped, err := s.escapedLocked(playerID)
+	return err == nil && escaped
+}
+
+// escapedLocked reports whether the member's body here, which must be out of
+// play, escaped: refused for a member with no body here, and for one still in
+// play. Callers hold at least the read lock.
+func (s *Session) escapedLocked(playerID uuid.UUID) (bool, error) {
+	entityID, here := s.playerIDToEntitiesID[playerID]
+	if !here {
+		return false, ErrNotInThisWorld
+	}
+	entity, ok := s.EntityManager.GetEntity(entityID)
+	if !ok {
+		return false, ErrNotInThisWorld
+	}
+	if systems.InPlay(entity) {
+		return false, ErrStillInPlay
+	}
+	pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
+	return isPlayer && pc.(*components.PlayerComponent).Escape, nil
 }
 
 // Fall is a delver in play choosing to die where they stand (FS-9K8EZ
