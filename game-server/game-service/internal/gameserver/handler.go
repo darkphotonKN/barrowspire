@@ -480,6 +480,9 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
 		s.mu.Unlock()
 		slog.Info("Resolved delver failed to reconnect within the grace, kept for the run's settlement",
 			"username", record.Username, "run_id", world.ID)
+		// kept only to be settled: they can no longer come back, so they
+		// have left the run and its matched party (FS-988SM §Requirements 11)
+		s.leftRun(world.ID, playerID)
 		return
 	}
 
@@ -493,6 +496,10 @@ func (s *Server) cleanUpPlayerCompletely(playerID uuid.UUID, hold graceHold) {
 	slog.Info("Player failed to reconnect within the grace, cleaning up completely", "username", player.Username)
 
 	s.releaseDeparted(&player)
+
+	// out of whatever run they were in, and its matched party, if it has one
+	// (FS-988SM §Requirements 11)
+	s.leftRun(player.CurrentGameSessionId, playerID)
 }
 
 /**
@@ -557,6 +564,10 @@ func (s *Server) cleanUpClient(conn *websocket.Conn) {
 	// removes the body before the (possibly slow) queue removal, and never
 	// touches a record the member may have come back with meanwhile
 	s.releaseDeparted(&player)
+
+	// gone for good, with no grace: out of whatever run they were in, and its
+	// matched party, if it has one (FS-988SM §Requirements 11)
+	s.leftRun(player.CurrentGameSessionId, player.ID)
 
 	conn.Close()
 }

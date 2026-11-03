@@ -156,5 +156,5 @@ func (c *partyCourier) receivePartyChat(l letter) {
 		slog.Warn("pod inbox party chat skipped: incomplete", "addressees", len(to), "has_message", message != nil)
 		return
 	}
-	c.onChat(to, message)
+	c.on.chat(to, message)
 }
