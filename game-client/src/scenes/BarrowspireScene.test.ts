@@ -3167,6 +3167,17 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     vi.restoreAllMocks();
   });
 
+  // the server names the run a record settles; a late confirmation of an earlier run, landing in
+  // this one, is not this run's record (FS-GV8WN R20)
+  it("should ignore a settlement naming another run, and take one naming this run", () => {
+    const { run } = settlingOnStage();
+    (run as unknown as { sessionID?: string }).sessionID = "run-2";
+    run.showSettlement(settlement({ run_id: "run-1" }));
+    expect(run.settlementRecord).toBeUndefined();
+    run.showSettlement(settlement({ run_id: "run-2" }));
+    expect(run.settlementRecord).toBeDefined();
+  });
+
   it("should open the record at once on settlement, with what was carried, lost and earned", () => {
     const { run, shown } = settlingOnStage();
     run.showSettlement(settlement());
