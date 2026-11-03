@@ -3,6 +3,7 @@ module github.com/darkphotonKN/barrowspire-server/common
 go 1.24.2
 
 require (
+	github.com/XSAM/otelsql v0.41.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.1
 	github.com/jmoiron/sqlx v1.4.0
@@ -53,7 +54,7 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.39.0 // indirect
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
-	go.opentelemetry.io/otel/trace v1.40.0 // indirect
+	go.opentelemetry.io/otel/trace v1.40.0
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.temporal.io/api v1.62.12 // indirect
 	go.temporal.io/sdk v1.45.0

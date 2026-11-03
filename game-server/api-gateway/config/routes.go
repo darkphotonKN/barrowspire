@@ -79,6 +79,12 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 	// and a panic in CORS or tracing would produce the empty 500 all over again.
 	router.Use(httperr.Recovery())
 
+	// span per request named "METHOD /route/:template"; before RED so the trace
+	// covers everything below. /healthz is kubelet probe noise, not traced.
+	router.Use(otelgin.Middleware("api-gateway",
+		otelgin.WithFilter(func(r *http.Request) bool { return r.URL.Path != "/healthz" }),
+	))
+
 	// after Recovery, so a panic unwinds past it uncounted: the 500 shows in logs, not here
 	router.Use(httpmetrics.Middleware())
 
@@ -96,8 +102,6 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 		// browser caches the preflight, fewer OPTIONS round trips
 		MaxAge: 12 * time.Hour,
 	}))
-
-	router.Use(otelgin.Middleware("api-gateway"))
 
 	// load balancer and readiness health check
 	router.GET("/healthz", func(c *gin.Context) { c.Status(http.StatusOK) })

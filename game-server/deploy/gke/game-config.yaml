@@ -18,5 +18,5 @@ data:
   DB_NAME: "barrowspire_game_service_db"
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
-  OTEL_ENABLED: "false"
+  OTEL_ENABLED: "true"
   GOMEMLIMIT: "230MiB"

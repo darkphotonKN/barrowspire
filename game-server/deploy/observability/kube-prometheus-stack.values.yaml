@@ -113,3 +113,13 @@ grafana:
       requests:
         cpu: 50m
         memory: 64Mi
+  # Tempo is its own release (tempo.values.yaml). After changing this, re-run:
+  #   helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  #     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev \
+  #     -n monitoring --reuse-values -f deploy/observability/kube-prometheus-stack.values.yaml
+  additionalDataSources:
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      url: http://tempo.monitoring:3200
+      access: proxy

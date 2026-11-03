@@ -10,6 +10,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/constants"
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -36,7 +37,8 @@ func InitDB() *sqlx.DB {
 	)
 
 	// pass the db connection string to connect to our database
-	db, err := sqlx.Connect("postgres", dsn)
+	// queries show up as spans under the request that ran them
+	db, err := commontracing.OpenPostgres(dsn)
 	if err != nil {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log"
 	"log/slog"
 	"net"
@@ -48,6 +49,13 @@ func main() {
 		Level: slog.LevelInfo,
 	})))
 
+	// --- tracing ---
+	shutdownTracing, tracingErr := commontracing.Init(context.Background(), "wallet")
+	if tracingErr != nil {
+		log.Fatal(tracingErr)
+	}
+	defer commontracing.Close(shutdownTracing)
+
 	// --- database setup ---
 
 	db := config.InitDB()
@@ -64,6 +72,7 @@ func main() {
 
 	// -- server --
 	grpcServer := grpc.NewServer(
+		commontracing.ServerHandler(),
 		grpc.ChainUnaryInterceptor(
 			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),
