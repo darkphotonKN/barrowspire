@@ -38,8 +38,16 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// Create gRPC handler with service
 	handler := notification.NewHandler(service)
 
-	// Create AMQP consumer with service
-	consumer := notification.NewConsumer(service, amqpChannel)
+	// Mailbox (FS-1GZGD, ADR-0044). One arrival publisher announces the
+	// letters every door stores (R41, R52); the letter request shares this
+	// service's inbox (R12).
+	arrivals := mailbox.NewRedisArrivalPublisher(redisClient)
+	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
+		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals, inboxRepo)
+	mailboxHandler := mailbox.NewHandler(mailboxService)
+
+	// Create AMQP consumer with service; letter requests go to the mailbox
+	consumer := notification.NewConsumer(service, mailboxService, amqpChannel)
 
 	// Set up AMQP infrastructure
 	if err := notification.SetupAMQPInfrastructure(amqpChannel); err != nil {
@@ -48,13 +56,6 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 
 	// Start listening for AMQP events
 	consumer.Listen()
-
-	// Mailbox (FS-1GZGD, ADR-0044). One arrival publisher announces the
-	// letters every door stores (R41, R52).
-	arrivals := mailbox.NewRedisArrivalPublisher(redisClient)
-	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
-		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals)
-	mailboxHandler := mailbox.NewHandler(mailboxService)
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
