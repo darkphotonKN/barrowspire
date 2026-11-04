@@ -430,6 +430,29 @@ func grantRequest(quantities ...int32) *pb.GrantItemsRequest {
 	return req
 }
 
+func sixtyOf(q int32) []int32 {
+	out := make([]int32, StashCapacity)
+	for i := range out {
+		out[i] = q
+	}
+	return out
+}
+
+// A grant's slot count is bounded by the stash cap before any work: no grant
+// larger than an empty stash can ever be minted, so one is refused up front
+// rather than expanded into ids first. Exactly the cap still reaches the
+// service, whose stash check decides.
+func TestHandler_GrantItems_ExactlyAStashOfSlotsReachesTheService(t *testing.T) {
+	svc := &fakeGrantService{result: &GrantResult{}}
+
+	if _, err := NewHandler(svc, nil).GrantItems(asGrantMember(uuid.New()), grantRequest(30, 29, 1)); err != nil {
+		t.Fatalf("a %d-slot grant: %v", StashCapacity, err)
+	}
+	if svc.calls != 1 {
+		t.Errorf("service calls = %d, want 1", svc.calls)
+	}
+}
+
 // FS-1GZGD D18, AC "No member field exists on the GrantItems request".
 func TestGrantItemsRequest_NamesNoMember(t *testing.T) {
 	fields := (&pb.GrantItemsRequest{}).ProtoReflect().Descriptor().Fields()
@@ -502,6 +525,8 @@ func TestHandler_GrantItems_Refusals(t *testing.T) {
 		{name: "more than 60 entries", ctx: asGrantMember(member), req: tooManyLines, wantCode: codes.InvalidArgument},
 		{name: "quantity 0", ctx: asGrantMember(member), req: grantRequest(0), wantCode: codes.InvalidArgument},
 		{name: "quantity 61", ctx: asGrantMember(member), req: grantRequest(61), wantCode: codes.InvalidArgument},
+		{name: "over 60 slots in total", ctx: asGrantMember(member), req: grantRequest(60, 1), wantCode: codes.InvalidArgument},
+		{name: "60 entries of 60", ctx: asGrantMember(member), req: grantRequest(sixtyOf(60)...), wantCode: codes.InvalidArgument},
 		{name: "malformed template id", ctx: asGrantMember(member), req: badTemplate, wantCode: codes.InvalidArgument},
 		{name: "no snapshot", ctx: asGrantMember(member), req: noSnapshot, wantCode: codes.InvalidArgument},
 		{name: "stash full", ctx: asGrantMember(member), req: grantRequest(1), serviceErr: errcode.Refuse(errcode.StashFull),
@@ -517,7 +542,7 @@ func TestHandler_GrantItems_Refusals(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := &fakeGrantService{err: tt.serviceErr}
+			svc := &fakeGrantService{result: &GrantResult{}, err: tt.serviceErr}
 
 			_, err := NewHandler(svc, nil).GrantItems(tt.ctx, tt.req)
 
