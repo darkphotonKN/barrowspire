@@ -177,7 +177,9 @@ func TestIdentityFromCtx_UnauthenticatedContext(t *testing.T) {
 // serviceCalled are the methods a service calls on its own behalf, with no member
 // token because there is no member. Two wallet methods: one compensates for a failed
 // write, the other runs on a background ticker. And items' ApplySettlement, which
-// game-service calls to settle a run's players (FS-GV8WN R11).
+// game-service calls to settle a run's players (FS-GV8WN R11), and
+// ResolveItemSnapshots, which notification-service calls when a letter is sent,
+// often from a letter request with no member behind it (FS-1GZGD R21).
 var serviceCalled = []string{
 	"/wallet.WalletService/ReleaseHold",
 	"/wallet.WalletService/ListStaleReservedHolds",
@@ -185,6 +187,7 @@ var serviceCalled = []string{
 	"/items.ItemsService/ListStaleReserved",
 	"/items.ItemsService/CancelReservation",
 	"/items.ItemsService/ConfirmReservation",
+	"/items.ItemsService/ResolveItemSnapshots",
 }
 
 // The service-called methods have to reach their handler without metadata at all.

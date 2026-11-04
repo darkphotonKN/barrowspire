@@ -44,6 +44,8 @@ const (
 	ItemsService_CancelReservation_FullMethodName           = "/items.ItemsService/CancelReservation"
 	ItemsService_ConfirmReservation_FullMethodName          = "/items.ItemsService/ConfirmReservation"
 	ItemsService_GetItemSummaries_FullMethodName            = "/items.ItemsService/GetItemSummaries"
+	ItemsService_ResolveItemSnapshots_FullMethodName        = "/items.ItemsService/ResolveItemSnapshots"
+	ItemsService_GrantItems_FullMethodName                  = "/items.ItemsService/GrantItems"
 )
 
 // ItemsServiceClient is the client API for ItemsService service.
@@ -99,6 +101,16 @@ type ItemsServiceClient interface {
 	ConfirmReservation(ctx context.Context, in *ConfirmReservationRequest, opts ...grpc.CallOption) (*ConfirmReservationResponse, error)
 	// Public display facts for item instances, by id. Unknown ids are omitted.
 	GetItemSummaries(ctx context.Context, in *GetItemSummariesRequest, opts ...grpc.CallOption) (*GetItemSummariesResponse, error)
+	// Resolves templates and existing instances into item snapshots, the full
+	// description of an item a grant can mint later (FS-1GZGD R21, A1, A2). No
+	// drop rule is applied, only representability. Called by notification-service
+	// when a letter is sent, often with no member behind it: no token.
+	ResolveItemSnapshots(ctx context.Context, in *ResolveItemSnapshotsRequest, opts ...grpc.CallOption) (*ResolveItemSnapshotsResponse, error)
+	// Mints item snapshots into the stash of the member in the forwarded token, in
+	// one transaction, all or nothing (STASH_FULL). grant_id is unique: a repeat
+	// mints nothing and answers the first grant's ids, already_granted set
+	// (FS-1GZGD R18-R20, ADR-0044).
+	GrantItems(ctx context.Context, in *GrantItemsRequest, opts ...grpc.CallOption) (*GrantItemsResponse, error)
 }
 
 type itemsServiceClient struct {
@@ -349,6 +361,26 @@ func (c *itemsServiceClient) GetItemSummaries(ctx context.Context, in *GetItemSu
 	return out, nil
 }
 
+func (c *itemsServiceClient) ResolveItemSnapshots(ctx context.Context, in *ResolveItemSnapshotsRequest, opts ...grpc.CallOption) (*ResolveItemSnapshotsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveItemSnapshotsResponse)
+	err := c.cc.Invoke(ctx, ItemsService_ResolveItemSnapshots_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *itemsServiceClient) GrantItems(ctx context.Context, in *GrantItemsRequest, opts ...grpc.CallOption) (*GrantItemsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GrantItemsResponse)
+	err := c.cc.Invoke(ctx, ItemsService_GrantItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ItemsServiceServer is the server API for ItemsService service.
 // All implementations must embed UnimplementedItemsServiceServer
 // for forward compatibility.
@@ -402,6 +434,16 @@ type ItemsServiceServer interface {
 	ConfirmReservation(context.Context, *ConfirmReservationRequest) (*ConfirmReservationResponse, error)
 	// Public display facts for item instances, by id. Unknown ids are omitted.
 	GetItemSummaries(context.Context, *GetItemSummariesRequest) (*GetItemSummariesResponse, error)
+	// Resolves templates and existing instances into item snapshots, the full
+	// description of an item a grant can mint later (FS-1GZGD R21, A1, A2). No
+	// drop rule is applied, only representability. Called by notification-service
+	// when a letter is sent, often with no member behind it: no token.
+	ResolveItemSnapshots(context.Context, *ResolveItemSnapshotsRequest) (*ResolveItemSnapshotsResponse, error)
+	// Mints item snapshots into the stash of the member in the forwarded token, in
+	// one transaction, all or nothing (STASH_FULL). grant_id is unique: a repeat
+	// mints nothing and answers the first grant's ids, already_granted set
+	// (FS-1GZGD R18-R20, ADR-0044).
+	GrantItems(context.Context, *GrantItemsRequest) (*GrantItemsResponse, error)
 	mustEmbedUnimplementedItemsServiceServer()
 }
 
@@ -483,6 +525,12 @@ func (UnimplementedItemsServiceServer) ConfirmReservation(context.Context, *Conf
 }
 func (UnimplementedItemsServiceServer) GetItemSummaries(context.Context, *GetItemSummariesRequest) (*GetItemSummariesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetItemSummaries not implemented")
+}
+func (UnimplementedItemsServiceServer) ResolveItemSnapshots(context.Context, *ResolveItemSnapshotsRequest) (*ResolveItemSnapshotsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveItemSnapshots not implemented")
+}
+func (UnimplementedItemsServiceServer) GrantItems(context.Context, *GrantItemsRequest) (*GrantItemsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GrantItems not implemented")
 }
 func (UnimplementedItemsServiceServer) mustEmbedUnimplementedItemsServiceServer() {}
 func (UnimplementedItemsServiceServer) testEmbeddedByValue()                      {}
@@ -937,6 +985,42 @@ func _ItemsService_GetItemSummaries_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ItemsService_ResolveItemSnapshots_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveItemSnapshotsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).ResolveItemSnapshots(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_ResolveItemSnapshots_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).ResolveItemSnapshots(ctx, req.(*ResolveItemSnapshotsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ItemsService_GrantItems_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GrantItemsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).GrantItems(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_GrantItems_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).GrantItems(ctx, req.(*GrantItemsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ItemsService_ServiceDesc is the grpc.ServiceDesc for ItemsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1039,6 +1123,14 @@ var ItemsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetItemSummaries",
 			Handler:    _ItemsService_GetItemSummaries_Handler,
+		},
+		{
+			MethodName: "ResolveItemSnapshots",
+			Handler:    _ItemsService_ResolveItemSnapshots_Handler,
+		},
+		{
+			MethodName: "GrantItems",
+			Handler:    _ItemsService_GrantItems_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
