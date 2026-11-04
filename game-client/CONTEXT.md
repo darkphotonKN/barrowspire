@@ -153,12 +153,11 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **Letter panel** — the centered carved panel the envelope opens: the letter list on the left,
   the open letter on the right. While it is open WASD does not move the character.
 - **Enclosed row** — the row of bag-sized slots under a letter's body showing its enclosures:
-  item icons with the item tip, "x3" for a quantity, the gold under a pouch.
-- **Claim** (a letter) — taking every enclosure of a letter into the stash at once with the one
-  **Claim** button. Afterwards the letter wears a **Claimed** wax stamp. See the voice-rule note
+  item icons with the item tip, "x3" for a quantity, and the gold as a `coins` slot with its
+  amount under it (gold is credited to the purse on claim; it is not an item).
+- **Claim** (a letter) — taking every enclosure of a letter at once with the one **Claim**
+  button: its items into the stash, its gold into the purse. Afterwards the letter wears a **Claimed** wax stamp. See the voice-rule note
   under *Open*.
-- **Gold pouch** — an item that holds gold (tip: "Holds N gold"); **Open** in its tip turns it
-  into gold in the player's purse. Lives only in the stash.
 
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 

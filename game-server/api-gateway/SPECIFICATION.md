@@ -64,7 +64,6 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ### Items
 
 - [x] Move an item between bag and stash → FS-VPD8Y
-- [ ] Open a gold pouch → FS-1GZGD
 
 ### Mail
 

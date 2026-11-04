@@ -39,8 +39,8 @@ Sources: [FS-9KW9F](../../docs/specs/9KW9F-account-and-role-token-claims.md),
   transaction as the credit, as `CreditSeller` does. A repeated key credits nothing and succeeds.
   Not `Deposit`, which takes no key. The account is always the forwarded token's member; the
   request names no account.
-- **Pouch credit** — an idempotent credit whose key is `pouch:<item instance id>`, made by
-  items-service when a member opens a gold pouch. Gold entering the economy with no
+- **Mail credit** — an idempotent credit whose key is `mail:<letter id>:<member id>`, made by
+  notification-service when a member claims a letter's gold. Gold entering the economy with no
   counterparty, so it writes no ledger entry (ADR-0006).
 
 ## Boundaries
