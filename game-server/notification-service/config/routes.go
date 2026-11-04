@@ -18,9 +18,11 @@ import (
 // SetupServices initializes all services and their dependencies.
 //
 // itemsConn is the connection to items-service, which the mailbox resolves
-// item enclosures through at send (FS-1GZGD R4). jwtSecret verifies the
-// token the gateway forwards on every mailbox call.
-func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn grpc.ClientConnInterface, jwtSecret []byte) *grpc.Server {
+// item enclosures through at send (FS-1GZGD R4) and grants a claim's items
+// through (R15); walletConn is wallet-service's, which credits a claim's gold
+// (R16). jwtSecret verifies the token the gateway forwards on every mailbox
+// call.
+func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn grpc.ClientConnInterface, jwtSecret []byte) *grpc.Server {
 	// Create repositories
 	repo := notification.NewRepository(db)
 	inboxRepo := inbox.NewRepo()
@@ -46,7 +48,8 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn grpc.Client
 	consumer.Listen()
 
 	// Mailbox (FS-1GZGD, ADR-0044)
-	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db), mailbox.NewItemsClient(itemsConn))
+	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
+		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn))
 	mailboxHandler := mailbox.NewHandler(mailboxService)
 
 	// Create gRPC server
