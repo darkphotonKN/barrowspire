@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -65,33 +66,45 @@ func (i *GrpcItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, st
 	return item, nil
 }
 
-func (i *GrpcItemReserver) ListStaleReserved(ctx context.Context, reservedBefore time.Time) (*pb.ListStaleReservedResponse, error) {
-
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-	vals := md.Get("authorization")
-	if len(vals) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
-	}
-	outCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		"authorization", vals[0],
-	)
-	req := &pb.ListStaleReservedRequest{
-		ReservedBefore: timestamppb.New(reservedBefore),
-	}
-	itemIds, err := i.client.ListStaleReserved(outCtx, req)
+// ListStaleReserved asks for the reservations older than olderThan. The age is
+// sent rather than a cutoff, so items-service measures it on the clock that
+// stamped the reservation.
+func (i *GrpcItemReserver) ListStaleReserved(ctx context.Context, olderThan time.Duration) (*pb.ListStaleReservedResponse, error) {
+	outCtx, err := forwardAuthorization(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return itemIds, nil
+	return i.client.ListStaleReserved(outCtx, &pb.ListStaleReservedRequest{
+		OlderThan: durationpb.New(olderThan),
+	})
 }
 
-func (i *GrpcItemReserver) CancelReservation(ctx context.Context, itemID uuid.UUID) (*pb.CancelReservationResponse, error) {
+// CancelReservation releases the reservation for listingID only.
+func (i *GrpcItemReserver) CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (*pb.CancelReservationResponse, error) {
+	outCtx, err := forwardAuthorization(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return i.client.CancelReservation(outCtx, &pb.CancelReservationRequest{
+		ItemId:    itemID.String(),
+		ListingId: listingID.String(),
+	})
+}
 
+// ConfirmReservation marks the reservation for listingID as matched by its listing.
+func (i *GrpcItemReserver) ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (*pb.ConfirmReservationResponse, error) {
+	outCtx, err := forwardAuthorization(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return i.client.ConfirmReservation(outCtx, &pb.ConfirmReservationRequest{
+		ItemId:    itemID.String(),
+		ListingId: listingID.String(),
+	})
+}
+
+// forwardAuthorization copies the caller's bearer token onto the outgoing call.
+func forwardAuthorization(ctx context.Context) (context.Context, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
@@ -100,18 +113,5 @@ func (i *GrpcItemReserver) CancelReservation(ctx context.Context, itemID uuid.UU
 	if len(vals) == 0 {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
-	outCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		"authorization", vals[0],
-	)
-
-	req := &pb.CancelReservationRequest{
-		ItemId: itemID.String(),
-	}
-	items, err := i.client.CancelReservation(outCtx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	return items, nil
+	return metadata.AppendToOutgoingContext(ctx, "authorization", vals[0]), nil
 }

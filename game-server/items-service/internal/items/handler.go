@@ -95,8 +95,9 @@ type Service interface {
 
 	// marketplace
 	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error)
-	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
-	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
+	ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error)
+	CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
+	ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
@@ -1275,45 +1276,78 @@ func (h *Handler) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (
 	}, nil
 }
 
+// ListStaleReserved answers the reservations older than older_than that still
+// wait for their listing. A missing or non-positive age would make every
+// reservation stale, a listing created a second ago included, so it is refused.
 func (h *Handler) ListStaleReserved(ctx context.Context, req *pb.ListStaleReservedRequest) (*pb.ListStaleReservedResponse, error) {
-	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
-	slog.Info("ReserveItem", "sellerid:", sellerId)
-	if !ok {
+	if _, ok := commonauth.MemberIDFromCtx(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
-	reserveBefore := req.ReservedBefore.AsTime()
-	res, err := h.service.ListStaleReserved(ctx, reserveBefore)
+	olderThan := req.GetOlderThan()
+	if olderThan == nil || olderThan.CheckValid() != nil || olderThan.AsDuration() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "older_than must be a positive duration")
+	}
+
+	stale, err := h.service.ListStaleReserved(ctx, olderThan.AsDuration())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "list stale item failed")
+		slog.ErrorContext(ctx, "list stale reserved failed", "error", err)
+		return nil, status.Error(codes.Internal, "list stale reserved failed")
 	}
 
-	itemIds := make([]string, 0, len(res))
-	for _, id := range res {
-		itemIds = append(itemIds, id.String())
+	reservations := make([]*pb.StaleReservation, 0, len(stale))
+	for _, r := range stale {
+		reservations = append(reservations, &pb.StaleReservation{
+			ItemId:    r.ItemID.String(),
+			ListingId: r.ListingID.String(),
+		})
 	}
-
-	response := &pb.ListStaleReservedResponse{
-		ItemIds: itemIds,
-	}
-	return response, nil
+	return &pb.ListStaleReservedResponse{Reservations: reservations}, nil
 }
 
+// CancelReservation gives back an item whose listing was never created. Zero
+// rows (already confirmed, or another listing's reservation) is success: there is
+// nothing left for the reconciler to cancel.
 func (h *Handler) CancelReservation(ctx context.Context, req *pb.CancelReservationRequest) (*pb.CancelReservationResponse, error) {
-	sellerId, ok := commonauth.MemberIDFromCtx(ctx)
-	slog.Info("ReserveItem", "sellerid:", sellerId)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
-	}
-	itemID, err := uuid.Parse(req.ItemId)
+	itemID, listingID, err := reservationIDs(ctx, req.GetItemId(), req.GetListingId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "item id invalid")
+		return nil, err
 	}
-	_, err = h.service.CancelReservation(ctx, itemID)
+	if _, err := h.service.CancelReservation(ctx, itemID, listingID); err != nil {
+		slog.ErrorContext(ctx, "cancel reservation failed", "item_id", itemID, "listing_id", listingID, "error", err)
+		return nil, status.Error(codes.Internal, "cancel reservation failed")
+	}
+	return &pb.CancelReservationResponse{}, nil
+}
+
+// ConfirmReservation marks a reservation as matched by its listing. Zero rows is
+// success, for the same reason as CancelReservation.
+func (h *Handler) ConfirmReservation(ctx context.Context, req *pb.ConfirmReservationRequest) (*pb.ConfirmReservationResponse, error) {
+	itemID, listingID, err := reservationIDs(ctx, req.GetItemId(), req.GetListingId())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "list stale item failed")
+		return nil, err
 	}
-	response := &pb.CancelReservationResponse{}
-	return response, nil
+	if _, err := h.service.ConfirmReservation(ctx, itemID, listingID); err != nil {
+		slog.ErrorContext(ctx, "confirm reservation failed", "item_id", itemID, "listing_id", listingID, "error", err)
+		return nil, status.Error(codes.Internal, "confirm reservation failed")
+	}
+	return &pb.ConfirmReservationResponse{}, nil
+}
+
+// reservationIDs checks the caller and parses the two ids that name one
+// reservation; both are required, or the write would not be fenced.
+func reservationIDs(ctx context.Context, rawItemID, rawListingID string) (uuid.UUID, uuid.UUID, error) {
+	if _, ok := commonauth.MemberIDFromCtx(ctx); !ok {
+		return uuid.Nil, uuid.Nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+	itemID, err := uuid.Parse(rawItemID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, status.Error(codes.InvalidArgument, "item id invalid")
+	}
+	listingID, err := uuid.Parse(rawListingID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, status.Error(codes.InvalidArgument, "listing id invalid")
+	}
+	return itemID, listingID, nil
 }
 
 // maxSummaryIDs bounds one GetItemSummaries call: a listing page is at most 100

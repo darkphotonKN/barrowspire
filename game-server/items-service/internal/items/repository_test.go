@@ -1925,7 +1925,9 @@ func TestReservationReconcileWrites(t *testing.T) {
 
 	type write func(itemID, listingID uuid.UUID) (bool, error)
 	cancel := func(itemID, listingID uuid.UUID) (bool, error) { return repo.CancelReservation(ctx, itemID, listingID) }
-	confirm := func(itemID, listingID uuid.UUID) (bool, error) { return repo.ConfirmReservation(ctx, itemID, listingID) }
+	confirm := func(itemID, listingID uuid.UUID) (bool, error) {
+		return repo.ConfirmReservation(ctx, itemID, listingID)
+	}
 
 	tests := []struct {
 		name         string

@@ -224,7 +224,17 @@ type ItemInstance struct {
 	AcquiredAt time.Time `db:"acquired_at" json:"acquired_at"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
-	ReservedAt time.Time `db:"reserved_at" json:"reserved_at"`
+	// ReservedAt is when the item was reserved for ListingID, on the database
+	// clock; NULL once the reconciler has matched the reservation to its listing
+	// or released it, and for an item never reserved.
+	ReservedAt *time.Time `db:"reserved_at" json:"reserved_at"`
+}
+
+// StaleReservation is a LISTED item whose reservation has waited longer than
+// the reconciler's age for its listing to be confirmed.
+type StaleReservation struct {
+	ItemID    uuid.UUID `db:"id"`
+	ListingID uuid.UUID `db:"listing_id"`
 }
 
 // PlayerLoadout mirrors the player_loadouts table — a member's currently
