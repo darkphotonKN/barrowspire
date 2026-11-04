@@ -39,6 +39,12 @@ class FakeSocket implements SocketLike {
     this.readyState = 3;
     this.onclose?.({ code, reason });
   }
+  /** A server that cannot be reached, as a browser reports it: error, then close (1006), never open. */
+  unreachable() {
+    this.readyState = 3;
+    this.onerror?.({ type: "error" });
+    this.onclose?.({ code: 1006, reason: "" });
+  }
 }
 
 const HOST = "ws://localhost:5669/game/ws";
@@ -514,13 +520,15 @@ describe("SocketManager hub handoff (FS-NCC9J R20)", () => {
 
   const sentOn = (socket: FakeSocket) => socket.sent.map((raw) => JSON.parse(raw));
 
-  it("connects to the leader's server, plain, and enters its hub as the arrival says once open", () => {
+  // A connection a server directed the client to make is seated where it lands, never
+  // redirected back to the traveller's old pod. FS-MCYWK C19.
+  it("connects to the leader's server, flagged redirected, and enters its hub as the arrival says once open", () => {
     const { old, sockets } = hubSetup();
 
     old.receive(hubHandoff);
     expect(sockets).toHaveLength(2);
     const next = sockets[1];
-    expect(next.url).toBe(`${LEADER_POD}?token=jwt-1&name=Ash`);
+    expect(next.url).toBe(`${LEADER_POD}?token=jwt-1&name=Ash&redirected=1`);
     expect(old.closedWith).toBeUndefined();
 
     next.open();
@@ -626,5 +634,181 @@ describe("SocketManager hub handoff (FS-NCC9J R20)", () => {
     expect(sockets[1].closedWith).toEqual({ code: 1000, reason: "handoff_cancelled" });
     expect(sockets).toHaveLength(3);
     expect(sockets[2].url).toContain("session_id=run-1");
+  });
+
+  it("does not follow a redirect on the travel's connection once it is the game's (FS-MCYWK C17, C19)", () => {
+    const { manager, old, sockets } = hubSetup();
+    old.receive(hubHandoff);
+    sockets[1].open();
+    sockets[1].receive(hubEntered);
+
+    sockets[1].receive({ action: "world_handoff", payload: { addr: "ws://pod-b/game/ws", reconnect: true } });
+
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].closedWith).toBeUndefined();
+    expect(manager.getServerAddress()).toBe(LEADER_POD);
+  });
+});
+
+describe("SocketManager redirect to the holding pod (FS-MCYWK C14–C19)", () => {
+  const HOLDING = "ws://pod-a/game/ws";
+  const redirect = (addr: string | null = HOLDING) => ({
+    action: "world_handoff",
+    payload: { ...(addr === null ? {} : { addr }), reconnect: true },
+  });
+
+  it("lets the landing socket go and connects to the holding pod as the same player, flagged redirected", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect());
+
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].url).toBe(`${HOLDING}?token=jwt-1&name=Ash&redirected=1`);
+    expect(manager.getServerAddress()).toBe(HOLDING);
+    expect(old.closedWith?.code).toBe(1000);
+  });
+
+  it("reads the landing socket's close as neither a disconnect nor an auth failure", () => {
+    const { manager, old } = setup();
+    const authError = vi.fn();
+    manager.setOnAuthError(authError);
+    const statuses: string[] = [];
+    manager.onConnectionStatusChange((status) => statuses.push(status));
+
+    old.receive(redirect());
+    old.serverClose(4001);
+
+    expect(authError).not.toHaveBeenCalled();
+    expect(statuses).not.toContain("disconnected");
+    expect(manager.getConnectionStatus()).toBe("connecting");
+  });
+
+  it("goes connected on open and dispatches what the holding pod sends as on any connection", () => {
+    const { manager, old, sockets } = setup();
+    const reconnected = vi.fn();
+    manager.on("reconnected", reconnected);
+
+    old.receive(redirect());
+    const holding = sockets[1];
+    holding.open();
+    holding.receive({ action: "reconnected", payload: { x: 3 } });
+    holding.receive({ action: "world_entered", payload: { session_id: "hub-a", world_type: "hub" } });
+
+    expect(manager.getConnectionStatus()).toBe("connected");
+    expect(reconnected).toHaveBeenCalledWith({ x: 3 });
+    expect(useGameStore.getState().sessionId).toBe("hub-a");
+    expect(useGameStore.getState().worldType).toBe("hub");
+
+    manager.sendMessage("move" as any, { vx: 1, vy: 0 } as any);
+    expect(holding.sent).toHaveLength(1);
+    expect(old.sent).toHaveLength(0);
+  });
+
+  it("reconnects later to the holding pod plainly, without the redirected flag", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect());
+    sockets[1].open();
+    sockets[1].serverClose(1006);
+    manager.reconnect();
+
+    expect(sockets).toHaveLength(3);
+    expect(sockets[2].url).toBe(`${HOLDING}?token=jwt-1&name=Ash`);
+  });
+
+  it("ignores a redirect on a connection it opened as redirected: one redirect per connect", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect());
+    sockets[1].open();
+    sockets[1].receive(redirect("ws://pod-b/game/ws"));
+
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].closedWith).toBeUndefined();
+    expect(manager.getServerAddress()).toBe(HOLDING);
+  });
+
+  it("ignores a redirect with no addr, so the landing pod's close is an ordinary disconnect", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect(null));
+    expect(sockets).toHaveLength(1);
+    expect(old.closedWith).toBeUndefined();
+
+    old.serverClose(1000);
+    expect(manager.getConnectionStatus()).toBe("disconnected");
+    expect(manager.getServerAddress()).toBe(DEFAULT_SERVER_ADDR);
+  });
+
+  it("falls back once to the default address, still redirected, when the holding pod cannot be reached", () => {
+    const { manager, old, sockets } = setup();
+    const authError = vi.fn();
+    manager.setOnAuthError(authError);
+
+    old.receive(redirect());
+    const statuses: string[] = [];
+    manager.onConnectionStatusChange((status) => statuses.push(status));
+    sockets[1].unreachable();
+
+    expect(sockets).toHaveLength(3);
+    expect(sockets[2].url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash&redirected=1`);
+    expect(manager.getServerAddress()).toBe(DEFAULT_SERVER_ADDR);
+    expect(manager.getConnectionStatus()).toBe("connecting");
+    // invisible beyond a brief connecting: no error painted before the fallback (R15)
+    expect(statuses).not.toContain("error");
+
+    sockets[2].unreachable();
+
+    expect(sockets).toHaveLength(3);
+    expect(manager.getConnectionStatus()).toBe("disconnected");
+    expect(authError).not.toHaveBeenCalled();
+  });
+
+  it("is seated wherever the fallback lands, and a redirect there is not followed", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect());
+    sockets[1].unreachable();
+    sockets[2].open();
+    sockets[2].receive(redirect());
+
+    expect(manager.getConnectionStatus()).toBe("connected");
+    expect(sockets).toHaveLength(3);
+  });
+
+  it("treats a redirected socket that opened and then closed as an ordinary close: no fallback", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect());
+    sockets[1].open();
+    sockets[1].serverClose(1006);
+
+    expect(sockets).toHaveLength(2);
+    expect(manager.getConnectionStatus()).toBe("disconnected");
+    expect(manager.getServerAddress()).toBe(HOLDING);
+  });
+
+  it("still routes a 4001 on a redirected socket that opened to the auth error handler", () => {
+    const { manager, old, sockets } = setup();
+    const authError = vi.fn();
+    manager.setOnAuthError(authError);
+
+    old.receive(redirect());
+    sockets[1].open();
+    sockets[1].serverClose(4001);
+
+    expect(authError).toHaveBeenCalledTimes(1);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("does not fall back when the client itself disconnected while the redirect was connecting", () => {
+    const { manager, old, sockets } = setup();
+
+    old.receive(redirect());
+    manager.disconnect();
+    sockets[1].serverClose(1000); // the browser's close event for the client's own close
+
+    expect(sockets).toHaveLength(2);
+    expect(manager.getConnectionStatus()).toBe("disconnected");
   });
 });
