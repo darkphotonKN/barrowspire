@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +32,12 @@ func mailKey(memberID uuid.UUID) string {
 	return "mail:" + uuid.NewString() + ":" + memberID.String()
 }
 
+// creditKey is how Credit stores a caller's key in processed_activities: in a
+// namespace of its own, so no Credit can ever claim another writer's key.
+func creditKey(key string) string {
+	return "credit:" + key
+}
+
 // seedMember births an account for a fresh member, and removes it and the dedup
 // row of the key the test will use when the test ends.
 func seedMember(t *testing.T, db *sqlx.DB) (account.AccountSnapshot, string) {
@@ -38,14 +45,21 @@ func seedMember(t *testing.T, db *sqlx.DB) (account.AccountSnapshot, string) {
 	acc := seedSeller(t, db, "")
 	snap := acc.Snapshot()
 	key := mailKey(snap.MemberID)
-	cleanupDedupRow(t, db, key)
+	cleanupCreditRow(t, db, key)
 	return snap, key
 }
 
+// cleanupCreditRow removes the dedup row a Credit with the caller's key leaves.
+func cleanupCreditRow(t *testing.T, db *sqlx.DB, key string) {
+	t.Helper()
+	cleanupDedupRow(t, db, creditKey(key))
+}
+
+// dedupRows counts the dedup rows a Credit with the caller's key has left.
 func dedupRows(t *testing.T, db *sqlx.DB, key string) int {
 	t.Helper()
 	var rows int
-	require.NoError(t, db.Get(&rows, `SELECT COUNT(*) FROM processed_activities WHERE idempotency_key = $1`, key))
+	require.NoError(t, db.Get(&rows, `SELECT COUNT(*) FROM processed_activities WHERE idempotency_key = $1`, creditKey(key)))
 	return rows
 }
 
@@ -152,7 +166,7 @@ func TestCreditUC_ConcurrentCallsWithDifferentKeys_CreditEach(t *testing.T) {
 	keys := make([]string, credits)
 	for i := range keys {
 		keys[i] = mailKey(member.MemberID)
-		cleanupDedupRow(t, db, keys[i])
+		cleanupCreditRow(t, db, keys[i])
 	}
 
 	var wg sync.WaitGroup
@@ -181,7 +195,7 @@ func TestCreditUC_MemberHasNoAccount_IsNotFoundAndMarksNothing(t *testing.T) {
 	db := walletDB(t)
 	memberID := uuid.New()
 	key := mailKey(memberID)
-	cleanupDedupRow(t, db, key)
+	cleanupCreditRow(t, db, key)
 
 	applied, err := newCreditUC(db).Handle(context.Background(), &usecase.CreditCommand{
 		MemberID: memberID, Amount: 500, IdempotencyKey: key, Now: time.Now(),
@@ -245,4 +259,78 @@ func TestCreditUC_HoldsOneConnection_CompletesOnAPoolOfOne(t *testing.T) {
 
 	require.NoError(t, err, "the credit must not wait on a second connection")
 	assert.Equal(t, 500, goldOf(t, db, member.MemberID))
+}
+
+// Credit shares processed_activities with settlement's CreditSeller, whose keys
+// are <workflow id>:CreditSeller. A Credit takes any caller key, so a key shaped
+// like a settlement's must not claim the settlement's row: the seller would
+// never be paid while the settlement looked complete.
+func TestCreditUC_SettlementShapedKey_DoesNotBlockCreditSeller(t *testing.T) {
+	db := walletDB(t)
+	key := settlementKey()
+	seller := seedSeller(t, db, key).Snapshot()
+	cleanupCreditRow(t, db, key)
+
+	applied, err := newCreditUC(db).Handle(context.Background(), &usecase.CreditCommand{
+		MemberID: seller.MemberID, Amount: 500, IdempotencyKey: key, Now: time.Now(),
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+
+	_, err = newCreditSellerUC(db).Handle(context.Background(), &usecase.CreditSellerCommand{
+		SellerID: seller.MemberID, Amount: 250, IdempotencyKey: key, Now: time.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 750, goldOf(t, db, seller.MemberID), "the settlement still pays the seller")
+}
+
+// The other way round: a settlement's key already marked does not make a Credit
+// with the same caller key report already applied.
+func TestCreditUC_KeyASettlementAlreadyMarked_StillCredits(t *testing.T) {
+	db := walletDB(t)
+	key := settlementKey()
+	seller := seedSeller(t, db, key).Snapshot()
+	cleanupCreditRow(t, db, key)
+
+	_, err := newCreditSellerUC(db).Handle(context.Background(), &usecase.CreditSellerCommand{
+		SellerID: seller.MemberID, Amount: 250, IdempotencyKey: key, Now: time.Now(),
+	})
+	require.NoError(t, err)
+
+	applied, err := newCreditUC(db).Handle(context.Background(), &usecase.CreditCommand{
+		MemberID: seller.MemberID, Amount: 500, IdempotencyKey: key, Now: time.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.True(t, applied)
+	assert.Equal(t, 750, goldOf(t, db, seller.MemberID))
+}
+
+// A credit the balance cannot hold is refused as an invalid amount, and it burns
+// no key: the same key with an amount that fits still applies afterwards.
+func TestCreditUC_AmountOverflowingTheBalance_IsRefusedAndBurnsNoKey(t *testing.T) {
+	db := walletDB(t)
+	member, key := seedMember(t, db)
+	_, err := db.Exec(`UPDATE accounts SET gold = $1 WHERE member_id = $2`, int64(math.MaxInt64-10), member.MemberID)
+	require.NoError(t, err)
+	uc := newCreditUC(db)
+
+	applied, err := uc.Handle(context.Background(), &usecase.CreditCommand{
+		MemberID: member.MemberID, Amount: 11, IdempotencyKey: key, Now: time.Now(),
+	})
+
+	assert.ErrorIs(t, err, usecase.ErrCreditOverflow)
+	assert.ErrorIs(t, err, account.ErrInvalidGold, "an overflowing amount is an invalid argument")
+	assert.False(t, applied)
+	assert.Equal(t, math.MaxInt64-10, goldOf(t, db, member.MemberID), "the balance is untouched")
+	assert.Zero(t, dedupRows(t, db, key), "the key is not burned")
+
+	applied, err = uc.Handle(context.Background(), &usecase.CreditCommand{
+		MemberID: member.MemberID, Amount: 10, IdempotencyKey: key, Now: time.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.True(t, applied)
+	assert.Equal(t, math.MaxInt64, goldOf(t, db, member.MemberID))
 }

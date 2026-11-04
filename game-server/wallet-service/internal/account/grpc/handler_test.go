@@ -550,6 +550,7 @@ func TestCredit_MapsUseCaseErrorsToStatusCodes(t *testing.T) {
 	}{
 		{"empty key", fmt.Errorf("wrapped: %w", usecase.ErrMissingCreditKey), codes.InvalidArgument},
 		{"non-positive amount", fmt.Errorf("wrapped: %w", account.ErrInvalidGold), codes.InvalidArgument},
+		{"amount the balance cannot hold", fmt.Errorf("wrapped: %w", usecase.ErrCreditOverflow), codes.InvalidArgument},
 		{"no account", fmt.Errorf("wrapped: %w", commonconstants.ErrNotFound), codes.NotFound},
 		{"raced out", fmt.Errorf("wrapped: %w", usecase.ErrMaxRetries), codes.Aborted},
 		{"transient", fmt.Errorf("wrapped: %w", commonconstants.ErrTransient), codes.Unavailable},
