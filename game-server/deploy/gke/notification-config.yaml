@@ -12,5 +12,7 @@ data:
   RABBITMQ_PORT: "5672"
   # the mailbox resolves a letter's item enclosures through items at send (FS-1GZGD R4)
   ITEMS_ADDR: "items-headless:7126"
+  # a claimed letter's gold is credited through wallet (FS-1GZGD R16)
+  WALLET_ADDR: "wallet-headless:7128"
   OTEL_ENABLED: "false"
   GOMEMLIMIT: "115MiB"

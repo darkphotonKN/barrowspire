@@ -22,12 +22,32 @@ type Repository interface {
 	Summary(ctx context.Context, member uuid.UUID, now time.Time) (Summary, error)
 	FindAddressed(ctx context.Context, letterID, member uuid.UUID) (*Letter, error)
 	MarkRead(ctx context.Context, letterID, member uuid.UUID, at time.Time) error
+
+	// The claim (ADR-0044): the state row is ensured outside the claim's
+	// transaction, then locked, moved and finished inside it.
+	EnsureState(ctx context.Context, letterID, member uuid.UUID) error
+	LockState(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID) (ClaimState, error)
+	StartClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID, at time.Time) error
+	FinishClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID) error
 }
 
-// SnapshotResolver turns item enclosure requests into item snapshots, once,
-// at send (A2). items-service behind it; see items.go.
-type SnapshotResolver interface {
+// Items is what the mailbox needs from items-service: snapshots at send, the
+// grant at claim. See items.go.
+type Items interface {
+	// ResolveItemSnapshots turns item enclosure requests into item snapshots,
+	// once, at send (A2).
 	ResolveItemSnapshots(ctx context.Context, templates []TemplateRef, instanceIDs []uuid.UUID) (*Resolution, error)
+	// GrantItems mints the lines into the stash of the member whose token the
+	// call forwards, once per grant id (R15, R20). A full stash is the
+	// STASH_FULL refusal.
+	GrantItems(ctx context.Context, grantID string, lines []ItemGrant) (*Grant, error)
+}
+
+// GoldCreditor credits gold to the wallet of the member whose token the call
+// forwards, once per key (R16, R23). applied false means the key was already
+// credited, which is success. See wallet.go.
+type GoldCreditor interface {
+	Credit(ctx context.Context, amount int64, key string) (applied bool, err error)
 }
 
 // TemplateRef asks for a fresh item of a template. ItemLevel nil means the
@@ -48,18 +68,20 @@ type Resolution struct {
 }
 
 type service struct {
-	repo  Repository
-	items SnapshotResolver
+	repo   Repository
+	items  Items
+	wallet GoldCreditor
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 	now    func() time.Time
 }
 
-func NewService(db *sqlx.DB, repo Repository, items SnapshotResolver) *service {
+func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor) *service {
 	return &service{
-		repo:  repo,
-		items: items,
+		repo:   repo,
+		items:  items,
+		wallet: wallet,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
@@ -314,4 +336,114 @@ func (s *service) MarkLetterRead(ctx context.Context, letterID, member uuid.UUID
 		return errcode.Refuse(errcode.LetterExpired)
 	}
 	return s.repo.MarkRead(ctx, letterID, member, now)
+}
+
+// claimStepsTimeout bounds the items and wallet calls of one claim together,
+// and so how long the claim holds its row lock and connection (ADR-0044
+// §Consequences).
+const claimStepsTimeout = 10 * time.Second
+
+// ClaimLetter takes every enclosure of one letter for the member (R13-R17,
+// ADR-0044): items into the stash, then gold into the wallet, and 'claimed'
+// only after both. Refusals come first and call nothing: not addressed is
+// ErrLetterNotFound, then LETTER_EXPIRED, NOTHING_TO_CLAIM, and, under the
+// row lock, LETTER_CLAIM_IN_PROGRESS and LETTER_ALREADY_CLAIMED (R25, S5).
+//
+// The lock is held across both steps. A step failure still commits the move
+// to 'claiming' and the read, so the next claim re-drives both steps with the
+// same keys (R27, R28); a crash rolls back to the earlier state, which the
+// next claim re-drives just the same.
+func (s *service) ClaimLetter(ctx context.Context, letterID, member uuid.UUID) (*Claim, error) {
+	letter, err := s.repo.FindAddressed(ctx, letterID, member)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	if !letter.ExpiresAt.After(now) {
+		return nil, errcode.Refuse(errcode.LetterExpired)
+	}
+	if len(letter.Enclosures) == 0 {
+		return nil, errcode.Refuse(errcode.NothingToClaim)
+	}
+	if err := s.repo.EnsureState(ctx, letterID, member); err != nil {
+		return nil, err
+	}
+
+	var (
+		claim    *Claim
+		stepsErr error
+	)
+	err = s.withTx(ctx, func(tx *sqlx.Tx) error {
+		state, err := s.repo.LockState(ctx, tx, letterID, member)
+		switch {
+		case errors.Is(err, ErrStateLocked):
+			return errcode.Refuse(errcode.LetterClaimInProgress)
+		case err != nil:
+			return err
+		case state == ClaimClaimed:
+			return errcode.Refuse(errcode.LetterAlreadyClaimed)
+		}
+
+		if err := s.repo.StartClaim(ctx, tx, letterID, member, now); err != nil {
+			return err
+		}
+		claim, stepsErr = s.claimSteps(ctx, letter, member)
+		if stepsErr != nil {
+			// commit 'claiming': the next claim finishes it
+			return nil
+		}
+		return s.repo.FinishClaim(ctx, tx, letterID, member)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if stepsErr != nil {
+		return nil, stepsErr
+	}
+	return claim, nil
+}
+
+// claimKey is both steps' idempotency key (R14, ADR-0009): the grant id and
+// the credit key. Derived from letter id + member id only, so every attempt of
+// one claim carries the same key, and the member is the one whose token the
+// steps forward.
+func claimKey(letterID, member uuid.UUID) string {
+	return "mail:" + letterID.String() + ":" + member.String()
+}
+
+// claimSteps runs step 1 (items, if any) then step 2 (gold, if any) under one
+// deadline. A done step answers already granted or already applied, which
+// counts as success.
+func (s *service) claimSteps(ctx context.Context, letter *Letter, member uuid.UUID) (*Claim, error) {
+	ctx, cancel := context.WithTimeout(ctx, claimStepsTimeout)
+	defer cancel()
+
+	key := claimKey(letter.ID, member)
+	claim := &Claim{LetterID: letter.ID, ItemIDs: []uuid.UUID{}}
+	var lines []ItemGrant
+	for _, e := range letter.Enclosures {
+		switch e.Kind {
+		case EnclosureItem:
+			if e.Item == nil {
+				return nil, fmt.Errorf("letter %s holds an item enclosure without a snapshot", letter.ID)
+			}
+			lines = append(lines, ItemGrant{Snapshot: e.Item, Quantity: e.Quantity})
+		case EnclosureGold:
+			claim.Gold += e.Gold
+		}
+	}
+
+	if len(lines) > 0 {
+		grant, err := s.items.GrantItems(ctx, key, lines)
+		if err != nil {
+			return nil, fmt.Errorf("grant the items of letter %s: %w", letter.ID, err)
+		}
+		claim.ItemIDs = grant.ItemIDs
+	}
+	if claim.Gold > 0 {
+		if _, err := s.wallet.Credit(ctx, claim.Gold, key); err != nil {
+			return nil, fmt.Errorf("credit the gold of letter %s: %w", letter.ID, err)
+		}
+	}
+	return claim, nil
 }

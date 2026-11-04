@@ -6,6 +6,7 @@ import (
 	"time"
 
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -16,16 +17,19 @@ import (
 // admin quickly instead of holding the send.
 const defaultItemsTimeout = 5 * time.Second
 
-// snapshotRPC is the one items-service call the mailbox makes at send.
-type snapshotRPC interface {
+// itemsRPC is the items-service calls the mailbox makes: the resolve at send,
+// the grant at claim.
+type itemsRPC interface {
 	ResolveItemSnapshots(ctx context.Context, in *itemspb.ResolveItemSnapshotsRequest, opts ...grpc.CallOption) (*itemspb.ResolveItemSnapshotsResponse, error)
+	GrantItems(ctx context.Context, in *itemspb.GrantItemsRequest, opts ...grpc.CallOption) (*itemspb.GrantItemsResponse, error)
 }
 
 // ItemsClient resolves item enclosures through items-service
-// ResolveItemSnapshots (FS-1GZGD R21). The method is tokenless, so no token
-// is forwarded.
+// ResolveItemSnapshots (FS-1GZGD R21), which is tokenless, and grants a
+// claim's items through GrantItems (R15), which mints into the stash of the
+// member in the player's forwarded token.
 type ItemsClient struct {
-	rpc     snapshotRPC
+	rpc     itemsRPC
 	timeout time.Duration
 }
 
@@ -78,6 +82,40 @@ func (c *ItemsClient) ResolveItemSnapshots(ctx context.Context, templates []Temp
 		return nil, err
 	}
 	return out, nil
+}
+
+// GrantItems mints the lines into the stash of the member whose token ctx
+// carries, once per grant id (R15, R20). A refusal (STASH_FULL) comes back as
+// its errcode refusal; a connection failure is ErrItemsUnavailable.
+func (c *ItemsClient) GrantItems(ctx context.Context, grantID string, lines []ItemGrant) (*Grant, error) {
+	ctx, err := forwardToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("grant items: %w", err)
+	}
+	req := &itemspb.GrantItemsRequest{GrantId: grantID, Items: make([]*itemspb.GrantItem, 0, len(lines))}
+	for _, l := range lines {
+		req.Items = append(req.Items, &itemspb.GrantItem{Snapshot: SnapshotProto(l.Snapshot), Quantity: l.Quantity})
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	res, err := c.rpc.GrantItems(ctx, req)
+	if err != nil {
+		if code, ok := errcode.RefusalReason(status.Convert(err)); ok {
+			return nil, errcode.Refuse(code)
+		}
+		if code := status.Code(err); code == codes.Unavailable || code == codes.DeadlineExceeded {
+			return nil, fmt.Errorf("%w: %w", ErrItemsUnavailable, err)
+		}
+		return nil, fmt.Errorf("grant items: %w", err)
+	}
+
+	ids, err := parseUUIDs(res.GetItemIds())
+	if err != nil {
+		return nil, fmt.Errorf("granted item ids: %w", err)
+	}
+	return &Grant{ItemIDs: ids, AlreadyGranted: res.GetAlreadyGranted()}, nil
 }
 
 func snapshotsFromProto(resolved []*itemspb.ResolvedItemSnapshot) ([]*ItemSnapshot, error) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type repository struct {
@@ -197,6 +198,94 @@ func (r *repository) MarkRead(ctx context.Context, letterID, member uuid.UUID, a
 
 	if _, err := r.db.ExecContext(ctx, query, letterID, member, at); err != nil {
 		return fmt.Errorf("mark letter %s read for member %s: %w", letterID, member, err)
+	}
+	return nil
+}
+
+// EnsureState creates the member's state row for a letter if absent (R6),
+// committed at once, outside any claim's transaction, so a claim always finds
+// a committed row to lock.
+//
+// It must never wait on a claim in flight, which holds the row locked and
+// updated: a bare INSERT … ON CONFLICT DO NOTHING would, since its conflict
+// check waits for the transaction that last updated the conflicting row. So
+// the insert is only attempted when a plain read sees no row; ON CONFLICT
+// then settles two first claims racing to create it, the loser waiting only
+// for the winner's one-statement insert.
+func (r *repository) EnsureState(ctx context.Context, letterID, member uuid.UUID) error {
+	query := `
+	INSERT INTO letter_states (letter_id, member_id)
+	SELECT $1, $2
+	WHERE NOT EXISTS (SELECT 1 FROM letter_states WHERE letter_id = $1 AND member_id = $2)
+	ON CONFLICT (letter_id, member_id) DO NOTHING`
+
+	if _, err := r.db.ExecContext(ctx, query, letterID, member); err != nil {
+		return fmt.Errorf("ensure state of letter %s for member %s: %w", letterID, member, err)
+	}
+	return nil
+}
+
+// pgLockNotAvailable is the SQLSTATE of a NOWAIT lock another transaction
+// holds.
+const pgLockNotAvailable = "55P03"
+
+// LockState takes the row lock on the member's state row for the rest of tx
+// and answers its claim state (ADR-0044 §Decision 3). It never waits: a row
+// another claim holds is ErrStateLocked.
+func (r *repository) LockState(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID) (ClaimState, error) {
+	query := `
+	SELECT claim_state FROM letter_states
+	WHERE letter_id = $1 AND member_id = $2
+	FOR UPDATE NOWAIT`
+
+	var state string
+	if err := sqlx.GetContext(ctx, tx, &state, query, letterID, member); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pgLockNotAvailable {
+			return "", ErrStateLocked
+		}
+		return "", fmt.Errorf("lock state of letter %s for member %s: %w", letterID, member, err)
+	}
+	return ClaimState(state), nil
+}
+
+// StartClaim is the conditional move out of 'unclaimed' (R25): it moves the
+// row to 'claiming', or keeps it there when an earlier attempt left it, and
+// marks the letter read (R13). A 'claimed' row is never moved back.
+func (r *repository) StartClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID, at time.Time) error {
+	query := `
+	UPDATE letter_states
+	SET claim_state = 'claiming', read_at = COALESCE(read_at, $3)
+	WHERE letter_id = $1 AND member_id = $2 AND claim_state IN ('unclaimed', 'claiming')`
+
+	return updateOne(ctx, tx, "start claim", query, letterID, member, at)
+}
+
+// FinishClaim records 'claimed', only from 'claiming' (R17).
+func (r *repository) FinishClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID) error {
+	query := `
+	UPDATE letter_states
+	SET claim_state = 'claimed'
+	WHERE letter_id = $1 AND member_id = $2 AND claim_state = 'claiming'`
+
+	return updateOne(ctx, tx, "finish claim", query, letterID, member)
+}
+
+// errStateNotMoved: a conditional claim update matched no row, which under
+// the row lock means the state was not what the caller locked.
+var errStateNotMoved = errors.New("letter state not in the expected claim state")
+
+func updateOne(ctx context.Context, tx sqlx.ExtContext, op, query string, letterID, member uuid.UUID, args ...any) error {
+	res, err := tx.ExecContext(ctx, query, append([]any{letterID, member}, args...)...)
+	if err != nil {
+		return fmt.Errorf("%s of letter %s for member %s: %w", op, letterID, member, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s of letter %s for member %s: %w", op, letterID, member, err)
+	}
+	if n != 1 {
+		return fmt.Errorf("%s of letter %s for member %s: %w", op, letterID, member, errStateNotMoved)
 	}
 	return nil
 }

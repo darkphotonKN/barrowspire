@@ -3,6 +3,7 @@ package mailbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ type fakeService struct {
 	gotLetter uuid.UUID
 	letters   []MailboxLetter
 	summary   Summary
+	claim     *Claim
 
 	err error
 }
@@ -55,6 +57,12 @@ func (f *fakeService) MarkLetterRead(_ context.Context, letterID, member uuid.UU
 	f.calls++
 	f.gotLetter, f.gotMember = letterID, member
 	return f.err
+}
+
+func (f *fakeService) ClaimLetter(_ context.Context, letterID, member uuid.UUID) (*Claim, error) {
+	f.calls++
+	f.gotLetter, f.gotMember = letterID, member
+	return f.claim, f.err
 }
 
 func as(id commonauth.Identity) context.Context {
@@ -201,6 +209,8 @@ func TestHandler_WithoutACallerIsUnauthenticated(t *testing.T) {
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 	_, err = h.MarkLetterRead(ctx, &pb.MarkLetterReadRequest{LetterId: uuid.NewString()})
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	_, err = h.ClaimLetter(ctx, &pb.ClaimLetterRequest{LetterId: uuid.NewString()})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
 func TestHandlerListLetters_AnswersTheStoredSnapshots(t *testing.T) {
@@ -266,4 +276,62 @@ func TestHandlerMarkLetterRead(t *testing.T) {
 
 	_, err = NewHandler(svc).MarkLetterRead(as(player), &pb.MarkLetterReadRequest{LetterId: "nope"})
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestHandlerClaimLetter_AnswersWhatTheTokensMemberTook(t *testing.T) {
+	member, letter := uuid.New(), uuid.New()
+	first, second := uuid.New(), uuid.New()
+	svc := &fakeService{claim: &Claim{LetterID: letter, ItemIDs: []uuid.UUID{first, second}, Gold: 500}}
+
+	res, err := NewHandler(svc).ClaimLetter(as(commonauth.Identity{MemberID: member, Role: commonauth.RolePlayer}),
+		&pb.ClaimLetterRequest{LetterId: letter.String()})
+	require.NoError(t, err)
+
+	assert.Equal(t, member, svc.gotMember, "the member is the token's, never a request field")
+	assert.Equal(t, letter, svc.gotLetter)
+	assert.Equal(t, letter.String(), res.GetLetterId())
+	assert.Equal(t, "claimed", res.GetClaimState())
+	assert.Equal(t, []string{first.String(), second.String()}, res.GetItemIds())
+	assert.Equal(t, int64(500), res.GetGold())
+}
+
+func TestHandlerClaimLetter_Failures(t *testing.T) {
+	t.Run("a non-uuid letter id never reaches the service", func(t *testing.T) {
+		svc := &fakeService{}
+		_, err := NewHandler(svc).ClaimLetter(as(player), &pb.ClaimLetterRequest{LetterId: "nope"})
+		assert.Equal(t, codes.InvalidArgument, status.Code(err))
+		assert.Zero(t, svc.calls)
+	})
+
+	cases := []struct {
+		name string
+		err  error
+		want codes.Code
+	}{
+		{"not addressed", ErrLetterNotFound, codes.NotFound},
+		{"items down", errors.Join(ErrItemsUnavailable, errors.New("dial")), codes.Unavailable},
+		{"wallet down", errors.Join(ErrWalletUnavailable, errors.New("dial")), codes.Unavailable},
+		{"no wallet account", errors.New("credit 5 gold: rpc error: code = NotFound"), codes.Internal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewHandler(&fakeService{err: tc.err}).ClaimLetter(as(player), &pb.ClaimLetterRequest{LetterId: uuid.NewString()})
+			assert.Equal(t, tc.want, status.Code(err))
+		})
+	}
+
+	for _, code := range []errcode.Code{
+		errcode.LetterExpired, errcode.NothingToClaim, errcode.LetterAlreadyClaimed,
+		errcode.LetterClaimInProgress, errcode.StashFull,
+	} {
+		t.Run(string(code)+" passes through", func(t *testing.T) {
+			wrapped := fmt.Errorf("grant the items of letter x: %w", errcode.Refuse(code))
+			_, err := NewHandler(&fakeService{err: wrapped}).ClaimLetter(as(player), &pb.ClaimLetterRequest{LetterId: uuid.NewString()})
+			st, _ := status.FromError(err)
+			got, ok := errcode.RefusalReason(st)
+			require.True(t, ok)
+			assert.Equal(t, code, got)
+			assert.Equal(t, string(code), st.Message(), "no service context on the wire")
+		})
+	}
 }

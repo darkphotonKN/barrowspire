@@ -356,6 +356,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mail/letters/{letterId}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim a letter's enclosures
+         * @description Takes every enclosure of one of the signed-in member's letters at once: its items into the member's stash, then its gold into their wallet, and marks the letter read. The member is taken from the token. Never pays out twice; a claim that fails can simply be repeated. Refused (400) as LETTER_EXPIRED, NOTHING_TO_CLAIM (no enclosures), LETTER_ALREADY_CLAIMED, LETTER_CLAIM_IN_PROGRESS (another claim of it is running) or STASH_FULL (nothing taken; free slots and repeat). A letter not addressed to the member is 404. 503 when items or wallet is unreachable; repeat later.
+         */
+        post: operations["claim-letter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mail/letters/{letterId}/read": {
         parameters: {
             query?: never;
@@ -1004,6 +1024,22 @@ export interface components {
         CharacterList: {
             /** @description Live characters, oldest first. Empty for a member with none. */
             characters: components["schemas"]["Character"][];
+        };
+        ClaimedLetter: {
+            /**
+             * @description Always claimed: a claim that did not complete answers an error.
+             * @enum {string}
+             */
+            claimState: "claimed";
+            /**
+             * Format: int64
+             * @description The gold credited to the member's wallet. 0 on an item-only letter.
+             */
+            gold: number;
+            /** @description The item instances now in the member's stash, one per enclosed item and quantity. Empty on a gold-only letter. */
+            itemIds: string[];
+            /** Format: uuid */
+            letterId: string;
         };
         ConfirmAvatarEnvelope: {
             /** @description The stored avatar URL */
@@ -3381,6 +3417,83 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "claim-letter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Letter id. */
+                letterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimedLetter"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

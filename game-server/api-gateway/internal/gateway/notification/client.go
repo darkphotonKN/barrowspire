@@ -70,3 +70,7 @@ func (c *Client) GetMailboxSummary(ctx context.Context, req *pb.GetMailboxSummar
 func (c *Client) MarkLetterRead(ctx context.Context, req *pb.MarkLetterReadRequest) (*pb.MarkLetterReadResponse, error) {
 	return pb.NewNotificationServiceClient(c.conn).MarkLetterRead(ctx, req)
 }
+
+func (c *Client) ClaimLetter(ctx context.Context, req *pb.ClaimLetterRequest) (*pb.ClaimLetterResponse, error) {
+	return pb.NewNotificationServiceClient(c.conn).ClaimLetter(ctx, req)
+}

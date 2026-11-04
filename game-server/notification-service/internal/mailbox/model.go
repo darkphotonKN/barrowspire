@@ -186,6 +186,28 @@ type SentLetters struct {
 	ExpiresAt time.Time
 }
 
+// ItemGrant is one line of a claim's items grant: a stored snapshot and how
+// many to mint from it (A2).
+type ItemGrant struct {
+	Snapshot *ItemSnapshot
+	Quantity int32
+}
+
+// Grant is items-service's answer to a grant: the minted instances, quantity
+// per line in letter order, or on a repeat the first grant's.
+type Grant struct {
+	ItemIDs        []uuid.UUID
+	AlreadyGranted bool
+}
+
+// Claim is what a member took from a letter: the instances now in their stash
+// and the gold credited to their wallet (0 on an item-only letter).
+type Claim struct {
+	LetterID uuid.UUID
+	ItemIDs  []uuid.UUID
+	Gold     int64
+}
+
 var (
 	// ErrLetterNotFound: no such letter, or not addressed to the caller. The
 	// two are one answer so a letter's existence is never revealed.
@@ -198,4 +220,9 @@ var (
 	// ErrStoreFailed: storing the letters failed and nothing was stored.
 	// Retryable.
 	ErrStoreFailed = errors.New("storing the letters failed")
+	// ErrWalletUnavailable: wallet-service could not credit the gold now. The
+	// claim stays re-drivable. Retryable.
+	ErrWalletUnavailable = errors.New("wallet service unavailable")
+	// ErrStateLocked: another claim holds the row lock on this letter state.
+	ErrStateLocked = errors.New("letter state locked by another claim")
 )

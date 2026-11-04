@@ -33,6 +33,8 @@ var (
 
 	// items-service, for resolving a letter's item enclosures at send (ADR-0022)
 	itemsAddr = commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126")
+	// wallet-service, for crediting a claimed letter's gold (FS-1GZGD R16)
+	walletAddr = commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128")
 )
 
 func main() {
@@ -79,8 +81,16 @@ func main() {
 	}
 	defer itemsConn.Close()
 
+	// lazy dial too: a claim with gold while wallet is down answers
+	// Unavailable and stays re-drivable
+	walletConn, err := discovery.Dial(walletAddr)
+	if err != nil {
+		log.Fatalf("Failed to dial wallet service at %s: %s", walletAddr, err)
+	}
+	defer walletConn.Close()
+
 	// Use the new config setup to initialize all services
-	grpcServer = config.SetupServices(db, ch, itemsConn, []byte(os.Getenv("JWT_SECRET")))
+	grpcServer = config.SetupServices(db, ch, itemsConn, walletConn, []byte(os.Getenv("JWT_SECRET")))
 
 	log.Printf("Notification Server started on PORT: %s\n", grpcAddr)
 

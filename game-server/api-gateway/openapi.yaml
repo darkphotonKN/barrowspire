@@ -196,6 +196,34 @@ components:
       required:
         - characters
       type: object
+    ClaimedLetter:
+      additionalProperties: false
+      properties:
+        claimState:
+          description: "Always claimed: a claim that did not complete answers an error."
+          enum:
+            - claimed
+          type: string
+        gold:
+          description: The gold credited to the member's wallet. 0 on an item-only letter.
+          format: int64
+          minimum: 0
+          type: integer
+        itemIds:
+          description: The item instances now in the member's stash, one per enclosed item and quantity. Empty on a gold-only letter.
+          items:
+            format: uuid
+            type: string
+          type: array
+        letterId:
+          format: uuid
+          type: string
+      required:
+        - letterId
+        - claimState
+        - itemIds
+        - gold
+      type: object
     ConfirmAvatarEnvelope:
       additionalProperties: false
       properties:
@@ -3033,6 +3061,67 @@ paths:
       security:
         - bearerAuth: []
       summary: List my letters
+      tags:
+        - mailbox
+  /api/mail/letters/{letterId}/claim:
+    post:
+      description: "Takes every enclosure of one of the signed-in member's letters at once: its items into the member's stash, then its gold into their wallet, and marks the letter read. The member is taken from the token. Never pays out twice; a claim that fails can simply be repeated. Refused (400) as LETTER_EXPIRED, NOTHING_TO_CLAIM (no enclosures), LETTER_ALREADY_CLAIMED, LETTER_CLAIM_IN_PROGRESS (another claim of it is running) or STASH_FULL (nothing taken; free slots and repeat). A letter not addressed to the member is 404. 503 when items or wallet is unreachable; repeat later."
+      operationId: claim-letter
+      parameters:
+        - description: Letter id.
+          in: path
+          name: letterId
+          required: true
+          schema:
+            description: Letter id.
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimedLetter"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Claim a letter's enclosures
       tags:
         - mailbox
   /api/mail/letters/{letterId}/read:

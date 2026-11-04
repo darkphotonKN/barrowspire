@@ -35,7 +35,7 @@ func authenticate(validate func(token string) (commonauth.Identity, error)) grpc
 // notificationServer is the one NotificationService implementation: the
 // notification methods and the mailbox methods side by side. The notification
 // handler embeds the generated Unimplemented server, so a method neither
-// defines (ClaimLetter until I-1GZGD-4) answers Unimplemented.
+// defines answers Unimplemented.
 type notificationServer struct {
 	*notificationMethods
 	*mailboxMethods
