@@ -111,6 +111,7 @@ server state and sends intents. ✅
 - [ ] ~Loadout access from the hub~ → superseded by FS-HRH2J
 - [x] Function NPC markers → FS-MRZH7
 - [ ] Follow a handoff to another server → FS-K2HKP
+- [ ] Return to the server still holding the player → FS-MCYWK
 - [x] Switch character from the hub → FS-G4VMQ
 - [x] Leave the queue from the hub → FS-G4VMQ
 - [x] Town stash → FS-VPD8Y

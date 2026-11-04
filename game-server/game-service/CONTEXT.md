@@ -333,6 +333,24 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   Every matched player ends the match connected to it, and returns to *its* HUB world. For a
   party entry the host pod is simply the **leader's pod**, since the whole party has travelled
   there. (A party has no pod of its own: ADR-0037.)
+- **Holding pod** (FS-MCYWK) — the pod a player is **present** on (seated, or within its
+  reconnect grace), as the **presence index** names it. At most one at a time. Not the host pod:
+  a player is held by the host pod only once they arrive there.
+- **Landing pod** (FS-MCYWK) — whichever pod the load balancer put a new connection on, before
+  any pod has decided anything about it. It may or may not be the holding pod. Only a fresh,
+  plain connection has one in this sense: a handoff's arrival goes to the pod address it was
+  sent to, never through the balancer.
+- **Redirect** (FS-MCYWK) — the landing pod's answer to a connection whose player is present on
+  another live pod: it sends one `world_handoff {addr, reconnect: true}` (no `session_id`, no
+  `hub`) and closes the socket, having created nothing for them. The client then reconnects to
+  `addr`, break-before-make, and the holding pod's own in-place reconnect puts them back where
+  they stood. **Not a handoff**: a handoff is make-before-break and the old socket carries a
+  player; the landing pod's carries nobody. Decided at the WebSocket handshake, before any
+  record exists.
+  - **Redirected connection** — one the client opened because a server directed it there,
+    marked `redirected=1`: the connection a redirect sends it to, its one fallback to the shared
+    address, and a travel's hub handoff connection. Never redirected again; seated where it
+    lands.
 
 ### Matchmaking (FS-K2HKP)
 
@@ -409,9 +427,10 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   closes. **Taken back**: still there on that socket once the handoff's 15 s pass, and found on no
   other pod, so the travel did not take them; they are in the index again.
 - **Hub handoff** — a handoff (same mechanic: new socket to the pod address, old one dropped)
-  whose destination is a pod's hub world instead of a run. Used for a member's **travel**, and
-  for returning a reconnecting player to the pod still holding them (FS-MCYWK). No longer used on
-  invite acceptance. Never used for fields (ADR-0030).
+  whose destination is a pod's hub world instead of a run: the client enters that hub with
+  `enter_hub` once the new socket opens. Used only for a member's **travel**. No longer used on
+  invite acceptance. Never used for fields (ADR-0030). Not the **redirect** (under *Pods*), which
+  shares the `world_handoff` message but is no handoff.
 - **Presence index** — the Redis lookup from a character name, or a player id, to
   `{player id, pod id, pod address, world}`, for **every connected player with a character**, in any world.
   Written by the pod that holds the player, kept alive by TTL, deleted when they leave. Answers
@@ -431,8 +450,9 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Seated / present** — a player is **seated** on a pod while connected to it and standing in one
   of its worlds: whom it answers by name directly, and whose parties its party cache keeps. A
   player is **present** on a pod while seated there *or* within its reconnect grace: who the pod
-  writes into the presence index, and who hears a party update there. "Held" is not a separate
-  term: say seated. A player seated on a new connection is read afresh: the pod does not know
+  writes into the presence index, and who hears a party update there. "Held" on its own is not
+  a term: say seated, or present for the wider sense. The one compound kept is **holding pod**
+  (under *Pods*), the pod a player is present on. A player seated on a new connection is read afresh: the pod does not know
   their screen. (Not a **seat**, which is a place in a run.)
 - **Shown party** — what a pod last queued for a seated player's connection as a party update: a
   party at a version, or no party. The pod's own record, not something the client reports. After each
