@@ -372,6 +372,10 @@ A9 …)*. New requirements are R63–R65.
   another fetch").
   - **Why:** concurrent fetches, other tabs (a letter read or taken there) and expiry made the
     local arithmetic drift from the server, and nothing corrected it until the next town entry.
+  - **Every Take outcome confirms.** The confirming fetch follows every Take, whatever its
+    outcome: success, `STASH_FULL`, `LETTER_ALREADY_CLAIMED`, `LETTER_EXPIRED` and any other
+    failure. A mark read that fails puts the letter's unread dot back (and the seal with it),
+    so the panel never shows read what the server holds unread.
   - **The same round, client:** one Take at a time per panel (every Take waits while one is in
     flight); a panel opening applies its letters only if it is still the latest opening; the
     crumbled line shows only when the expired letter is the open one; the chat window, the party
@@ -403,11 +407,15 @@ A9 …)*. New requirements are R63–R65.
     permanent.
   - A non-admin `SendLetter` is refused `PermissionDenied` before its draft is parsed, so a
     player learns nothing about the draft rules from the admin RPC.
-- **A9.5 — mark read never waits on or blocks a claim.** Mark read creates the state row only
-  when it sees none, and sets `read_at` only on an unread row it can lock without waiting
+- **A9.5 — mark read never waits on a claim.** Mark read creates the state row only when it
+  sees none, and sets `read_at` only on an unread row it can lock without waiting
   (`FOR UPDATE SKIP LOCKED`). A row a claim holds is skipped and mark read still succeeds; the
-  claim sets `read_at` itself (R13). An already read letter takes no lock. So mark read never
-  makes a concurrent claim answer `LETTER_CLAIM_IN_PROGRESS`, and never waits for a slow claim.
+  claim sets `read_at` itself (R13). An already read letter takes no lock, so mark read never
+  makes a claim of an **already read** letter answer `LETTER_CLAIM_IN_PROGRESS`. On an **unread**
+  letter, the first mark read holds the row lock for one statement; a claim landing in that
+  instant may answer `LETTER_CLAIM_IN_PROGRESS`. That is benign and retryable (the claim did
+  nothing, and the next press goes through). *(Corrected 2026-11-04 after the round-2 review;
+  the first wording said mark read never blocks a claim.)*
 - **A9.6 — a sent letter is always mintable (items-service).** `ResolveItemSnapshots` reports as
   unrepresentable (so the send is refused `ENCLOSURE_INVALID`) anything `GrantItems` would refuse
   to mint, for example a template of required level 0. A letter whose send succeeded can always
@@ -463,6 +471,12 @@ the last blocker is local and blocks only running the mailbox from the main chec
   `cmd/server/main.go:59`, items `config/routes.go:74`, api-gateway
   `internal/auth/jwt_middleware.go:45`, and auth-service `internal/auth/jwt.go`. Each should
   refuse to start without one, as notification's `config.JWTSecret` does.
+- wallet's `Account.Deposit` (`internal/account/domain/account/account.go`) still adds without
+  an overflow check, so its other callers (for example settlement's `CreditSeller`) can
+  overflow a balance. `Credit` guards only its own path (A9.7); the guard belongs in `Deposit`.
+- An admin send retried after a gateway timeout can store every letter twice, because the admin
+  send has no idempotency key (the A6 edge state "a list send retried after a timeout"). Keep it
+  on the back-office list: the back office must not retry a send blindly until a send key exists.
 
 ## Requirements
 
@@ -497,10 +511,12 @@ the last blocker is local and blocks only running the mailbox from the main chec
 7. A member's **mailbox** is every non-expired letter addressed to them or to all members, newest
    first, at most 50 (D14). A member who signed up after a broadcast was sent sees it.
 8. **Mark read** sets `read_at` on the member's state row (creating it); repeating it changes
-   nothing and succeeds. It never waits on or blocks a claim: it locks an unread row only if it
-   can without waiting, and a row a claim holds is skipped (mark read still succeeds, and the
-   claim sets `read_at` itself, R13). An already read letter takes no lock. *(Amended
-   2026-11-04, A9.5.)*
+   nothing and succeeds. It never waits on a claim: it locks an unread row only if it can
+   without waiting, and a row a claim holds is skipped (mark read still succeeds, and the claim
+   sets `read_at` itself, R13). An already read letter takes no lock, so its claim is never
+   refused because of a mark read. On an unread letter the first mark read holds the row lock
+   for one statement, and a claim landing in that instant may answer `LETTER_CLAIM_IN_PROGRESS`
+   (benign, retryable). *(Amended 2026-11-04, A9.5, as corrected after the round-2 review.)*
 9. The **mailbox summary** returns `unreadCount`, `unclaimedCount` (letters with enclosures whose
    claim state is `unclaimed` or `claiming`), `waitingCount` (S6) and `newestLetterAt` (the
    newest non-expired letter's sent time, absent when the mailbox is empty). Expired letters
@@ -684,8 +700,10 @@ the last blocker is local and blocks only running the mailbox from the main chec
     and any other failure → "The seal would not break. Try again.", button stays. (D14)
     *(Amended 2026-11-04, A5; was: "Claim" → "Claiming…" → claimed, with a "Claimed" stamp. The
     request is still the claim.)* After a Take or a crumble the seal drops at once and the
-    summary is fetched once to confirm it (R34). One Take runs at a time per panel. The crumbled
-    line shows only when the expired letter is the open one. *(Amended 2026-11-04, A9.1.)*
+    summary is fetched once to confirm it (R34). The confirming fetch follows every Take outcome,
+    failures included, and a failed mark read restores the letter's unread dot. One Take runs at
+    a time per panel. The crumbled line shows only when the expired letter is the open one.
+    *(Amended 2026-11-04, A9.1.)*
 40. **Empty** — "No letters wait for you." **Close** with × or Esc; while the panel is open WASD
     does not move the character (as with chat input). (D14)
 
@@ -1014,8 +1032,10 @@ the last blocker is local and blocks only running the mailbox from the main chec
 - [ ] With 3 claims in flight on one pod, a fourth answers `503 · SERVICE_UNAVAILABLE` at once
       and does nothing, while reads still answer promptly; every claim outcome frees its slot.
       *(Added 2026-11-04, A9.2.)*
-- [ ] A mark read during a claim of the same letter neither waits for it nor makes it
-      `LETTER_CLAIM_IN_PROGRESS`; the claim leaves the letter read. *(Added 2026-11-04, A9.5.)*
+- [ ] A mark read during a claim of the same letter does not wait for it, and the claim leaves
+      the letter read; a mark read of an already read letter never makes a claim answer
+      `LETTER_CLAIM_IN_PROGRESS`. *(Added 2026-11-04, A9.5, as corrected after the round-2
+      review.)*
 - [ ] items `Internal` and wallet `NotFound` or `Internal` answer the claim
       `503 · SERVICE_UNAVAILABLE`. *(Added 2026-11-04, A9.4.)*
 - [ ] Claiming a letter without enclosures is refused `NOTHING_TO_CLAIM`.
@@ -1087,7 +1107,9 @@ the last blocker is local and blocks only running the mailbox from the main chec
       on entry, on opening and every 60 s in the town.)*
 - [ ] After a mark read, a Take and a crumble, the seal drops at once and one summary fetch
       follows; when two fetches overlap only the later answer applies, and the seal ends on the
-      server's count (e.g. after a letter is read in another tab). *(Added 2026-11-04, A9.1.)*
+      server's count (e.g. after a letter is read in another tab). The fetch follows every Take
+      outcome, failures included, and a failed mark read restores the letter's unread dot.
+      *(Added 2026-11-04, A9.1.)*
 - [ ] The seal is lit with `waitingCount` when it is > 0 and dark at 0; a newer
       `newestLetterAt` makes the envelope pulse a few times and stay lit.
 - [ ] The panel lists letters as D14 describes, selects the first unread (else the newest) on
@@ -1253,7 +1275,10 @@ the last blocker is local and blocks only running the mailbox from the main chec
   `503`; a claim cut off this way may still finish on the server, and the next claim or read
   shows where it ended (the keys make a repeat safe).
 - **Mark read while a claim runs on the same letter:** mark read skips the locked row and
-  succeeds; the claim marks the letter read.
+  succeeds; the claim marks the letter read. A claim that lands in the one statement in which
+  an unread letter's first mark read holds the row may answer `LETTER_CLAIM_IN_PROGRESS`; the
+  next press goes through.
+- **A mark read that fails:** the letter's unread dot comes back, and the seal with it (A9.1).
 - **A letter read or taken in another tab:** this tab's next read, Take, crumble, town entry or
   panel open fetches the summary, and the seal settles on the server's count.
 - **Overlapping summary fetches:** only the latest one applies; an older answer arriving later is
