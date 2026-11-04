@@ -40,6 +40,7 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerMailboxSummary(api, h, protect)
 	registerListLetters(api, h, protect)
 	registerMarkLetterRead(api, h, protect)
+	registerClaimLetter(api, h, protect)
 	registerSendLetter(api, h, protect)
 }
 
@@ -154,6 +155,47 @@ func registerMarkLetterRead(api huma.API, h *Handler, protect func(huma.Context,
 			return nil, err
 		}
 		return &struct{}{}, nil
+	}))
+}
+
+func registerClaimLetter(api huma.API, h *Handler, protect func(huma.Context, func(huma.Context))) {
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		LetterID      string `path:"letterId" format:"uuid" doc:"Letter id."`
+	}
+	type output struct{ Body ClaimedLetter }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "claim-letter",
+		Description: "Takes every enclosure of one of the signed-in member's letters at once: its items into the " +
+			"member's stash, then its gold into their wallet, and marks the letter read. The member is taken from " +
+			"the token. Never pays out twice; a claim that fails can simply be repeated. Refused (400) as " +
+			"LETTER_EXPIRED, NOTHING_TO_CLAIM (no enclosures), LETTER_ALREADY_CLAIMED, LETTER_CLAIM_IN_PROGRESS " +
+			"(another claim of it is running) or STASH_FULL (nothing taken; free slots and repeat). A letter not " +
+			"addressed to the member is 404. 503 when items or wallet is unreachable; repeat later.",
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusNotFound,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodPost,
+		Path:        "/api/mail/letters/{letterId}/claim",
+		Summary:     "Claim a letter's enclosures",
+		Tags:        []string{tag},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.ClaimLetter(forward(ctx, in.Authorization), &pb.ClaimLetterRequest{LetterId: in.LetterID})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil {
+			return nil, errNoAnswer
+		}
+		return &output{Body: claimedFromProto(res)}, nil
 	}))
 }
 

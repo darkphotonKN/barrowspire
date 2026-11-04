@@ -115,6 +115,28 @@ type SentLetter struct {
 	MemberID *string `json:"memberId,omitempty" format:"uuid"`
 }
 
+// ClaimedLetter answers a claim: what the signed-in member took from the
+// letter.
+type ClaimedLetter struct {
+	LetterID   string   `json:"letterId" format:"uuid"`
+	ClaimState string   `json:"claimState" enum:"claimed" doc:"Always claimed: a claim that did not complete answers an error."`
+	ItemIDs    []string `json:"itemIds" nullable:"false" format:"uuid" doc:"The item instances now in the member's stash, one per enclosed item and quantity. Empty on a gold-only letter."`
+	Gold       int64    `json:"gold" minimum:"0" doc:"The gold credited to the member's wallet. 0 on an item-only letter."`
+}
+
+func claimedFromProto(res *pb.ClaimLetterResponse) ClaimedLetter {
+	ids := res.GetItemIds()
+	if ids == nil {
+		ids = []string{}
+	}
+	return ClaimedLetter{
+		LetterID:   res.GetLetterId(),
+		ClaimState: res.GetClaimState(),
+		ItemIDs:    ids,
+		Gold:       res.GetGold(),
+	}
+}
+
 func summaryFromProto(s *pb.MailboxSummary) MailboxSummary {
 	out := MailboxSummary{
 		UnreadCount:    s.GetUnreadCount(),

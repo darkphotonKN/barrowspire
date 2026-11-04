@@ -1,5 +1,5 @@
 // Package mailbox serves the in-game mailbox (FS-1GZGD): the player's letters,
-// their summary and mark read, and the admin send. Every rule about a letter
+// their summary, mark read and the claim, and the admin send. Every rule about a letter
 // is notification-service's; this package checks shape and the admin role,
 // forwards the caller's token, and passes notification's answers through.
 //
@@ -20,6 +20,7 @@ type LetterClient interface {
 	ListLetters(ctx context.Context, req *pb.ListLettersRequest) (*pb.ListLettersResponse, error)
 	GetMailboxSummary(ctx context.Context, req *pb.GetMailboxSummaryRequest) (*pb.MailboxSummary, error)
 	MarkLetterRead(ctx context.Context, req *pb.MarkLetterReadRequest) (*pb.MarkLetterReadResponse, error)
+	ClaimLetter(ctx context.Context, req *pb.ClaimLetterRequest) (*pb.ClaimLetterResponse, error)
 }
 
 // Handler holds the notification client the typed operations close over.
