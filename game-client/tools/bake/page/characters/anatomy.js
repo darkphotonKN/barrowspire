@@ -34,6 +34,15 @@ export function torso(rig, mat, o = {}) {
   return skinTube(rig, cps, mat, { segs: 24, steps: o.ribs ? 8 : 4, shape: ribs, uv: 5 });
 }
 
+/** A modest bust on the chest, under the garment it is dressed in (the Mage). */
+export function bust(rig, mat, k = 1) {
+  const H = rig.H;
+  const [, cy] = J(rig, "chest");
+  const td = rig.p.torsoD;
+  for (const [, sx] of sides)
+    attach(rig, "chest", ellipsoid(0.038 * k * H, 0.034 * k * H, 0.03 * k * H, 12), mat, [sx * 0.037, cy + 0.028, 0.062 * td], { rz: sx * 0.15 });
+}
+
 /**
  * Cloth over the torso (a tabard's upper half): the torso's own profile from `from` (H) up to the
  * neck, padded out, as an open panel over `arc`.
@@ -520,22 +529,6 @@ function capelet(rig, mat) {
   attach(rig, "chest", cape, mat, [0, 0, 0]);
 }
 
-/**
- * Adds a beard's spring bone under the chin. Call before any skinned mesh is built. The beard
- * itself is rigid on that bone, so it swings as a piece.
- */
-export function beard(rig, mat) {
-  const H = rig.H;
-  const [, hy, hz] = J(rig, "head");
-  rig.addBone("beard", "head", 0, 0.02, 0.05);
-  spring(rig, "beard", { stiffness: 80, damping: 9, drag: 0.15, inertia: 0.7, limit: 0.5, gravity: 0.5 });
-  return () => {
-    // a long grey beard spilling from the chin down over the robe (apex down and a little out)
-    attach(rig, "beard", new THREE.ConeGeometry(0.046 * H, 0.16 * H, 12), mat, [0, hy - 0.05, hz + 0.088], { rx: Math.PI - 0.32, sz: 0.65 });
-    attach(rig, "beard", ellipsoid(0.042 * H, 0.034 * H, 0.03 * H, 12), mat, [0, hy + 0.018, hz + 0.058]);
-  };
-}
-
 /** A close-trimmed beard along the jaw and over the lip; `full` scales its depth down the chin. */
 export function shortBeard(rig, mat, { full = 1 } = {}) {
   const H = rig.H;
@@ -614,6 +607,28 @@ export function hair(rig, mat, o = {}) {
   return out;
 }
 
+/**
+ * Long hair falling loose down the back from under the crown to `length` below the neck: an open
+ * panel over the back `arc` (radians each side of centre), `width` and `depth` its radii at the
+ * shoulders. Rigid on the chest, so a turn of the head never parts it from the back.
+ */
+export function hairFall(rig, mat, { length = 0.22, width = 0.075, depth = 0.09, arc = 1.0 } = {}) {
+  const [, ny] = J(rig, "neck");
+  const [, hy, hz] = J(rig, "head");
+  const geo = rigidTube(
+    rig.H,
+    [
+      { p: [0, hy + 0.07, hz - 0.006], r: [0.06, 0.066] },
+      { p: [0, hy + 0.01, hz - 0.012], r: [0.058, 0.066] },
+      { p: [0, ny - 0.01, -0.004], r: [width, depth] },
+      { p: [0, ny - length * 0.55, 0.0], r: [width * 1.06, depth * 1.02] },
+      { p: [0, ny - length, 0.004], r: [width * 0.8, depth * 0.96] },
+    ],
+    { segs: 20, steps: 4, caps: false, arc: [-Math.PI / 2 - arc, -Math.PI / 2 + arc] },
+  );
+  return attach(rig, "chest", geo, mat, [0, 0, 0]);
+}
+
 /** A soft felt cap with a short brim, worn over the crown. */
 export function cap(rig, mat) {
   const H = rig.H;
@@ -640,6 +655,21 @@ export function shawl(rig, mat) {
       { p: [0, ny - 0.1, -0.004], r: [0.152 * sw, 0.106 * td] },
     ],
     { segs: 24, steps: 4, caps: false },
+  );
+  return attach(rig, "chest", geo, mat, [0, 0, 0]);
+}
+
+/** A stiff standing collar rising behind the neck by `rise`, open at the throat by `gap` (radians). */
+export function standingCollar(rig, mat, { rise = 0.04, gap = 0.8 } = {}) {
+  const [, ny] = J(rig, "neck");
+  const geo = rigidTube(
+    rig.H,
+    [
+      { p: [0, ny - 0.02, 0.0], r: [0.07, 0.064] },
+      { p: [0, ny + rise * 0.5, -0.008], r: [0.074, 0.068] },
+      { p: [0, ny + rise, -0.016], r: [0.088, 0.08] },
+    ],
+    { segs: 22, steps: 3, caps: false, arc: [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap] },
   );
   return attach(rig, "chest", geo, mat, [0, 0, 0]);
 }

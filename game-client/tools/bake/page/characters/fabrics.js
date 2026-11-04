@@ -290,11 +290,13 @@ export const GEAR = {
   ranger: mix("arcaneDeep", "barrowDeep", 0.4),
   rangerDark: mix("arcaneDeep", "pitch", 0.45),
   breeches: mix("barrowDeep", "slate", 0.35),
-  robe: mix("necrotic", "charcoal", 0.52),
-  robeDark: mix("necrotic", "pitch", 0.62),
+  // the Mage: a black gown under a scapular in the class's necrotic teal
+  robe: mix("pitch", "charcoal", 0.6),
+  scapular: mix("necrotic", "charcoal", 0.5),
   linen: mix("vellum", "vellumDark", 0.4),
   skin: shade(mix("vellum", "oxbloodText", 0.45), 0.68),
-  beard: mix("vellum", "slateLight", 0.2),
+  // raven hair, cooled toward slate so it parts from the black gown behind it
+  raven: mix("pitch", "slate", 0.48),
   bone: mix("vellum", "vellumDark", 0.35),
   // barrow mud and cold stone, kept off the demon boss's bog green so the two never read as kin
   troll: mix(mix("slate", "barrowBrown", 0.5), "vellumDark", 0.12),
@@ -369,10 +371,11 @@ export function fabrics() {
     rangerDark: mat(wool(GEAR.rangerDark, { seed: 31 })),
     breeches: mat(wool(GEAR.breeches, { seed: 33 })),
     robe: mat(wool(GEAR.robe, { seed: 35, dirt: 0.3 }), { side: D }),
-    robeDark: mat(wool(GEAR.robeDark, { seed: 37 }), { side: D }),
+    scapular: mat(wool(GEAR.scapular, { seed: 37, dirt: 0.3 }), { side: D }),
     linen: mat(linen(GEAR.linen)),
     skin: mat(skin(GEAR.skin), { rough: 0.6, normal: 0.5 }),
-    beard: mat(hair(GEAR.beard), { rough: 0.9 }),
+    // a smoother finish than other hair: the key light lays a cold sheen down its length
+    raven: mat(hair(GEAR.raven, { seed: 131 }), { rough: 0.45, side: D }),
     bone: mat(bone(GEAR.bone), { rough: 0.7 }),
     troll: mat(hide(GEAR.troll), { rough: 0.7, normal: 0.9 }),
     trollBelly: mat(hide(GEAR.trollBelly, { seed: 39 }), { rough: 0.65 }),

@@ -260,36 +260,6 @@ export function quiver(rig, M, F) {
   return g;
 }
 
-/** A gnarled staff held upright, crowned with claws gripping a glowing orb. */
-export function staff(rig, M, F, orbMat) {
-  const H = rig.H;
-  const g = new THREE.Group();
-  const pts = [];
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    pts.push(new THREE.Vector3(Math.sin(t * 9) * 0.006 * H, Math.cos(t * 7) * 0.005 * H, (-0.47 + t * 0.97) * H));
-  }
-  const curve = new THREE.CatmullRomCurve3(pts);
-  const shaft = new THREE.TubeGeometry(curve, 48, 0.011 * H, 7, false);
-  g.add(new THREE.Mesh(shaft, M.woodDark));
-  const top = pts[8];
-  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.03 * H, 16, 12), orbMat);
-  orb.position.set(top.x, top.y, top.z + 0.035 * H);
-  g.add(orb);
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + 0.4;
-    const claw = new THREE.ConeGeometry(0.006 * H, 0.075 * H, 5);
-    claw.rotateX(Math.PI / 2);
-    const m = new THREE.Mesh(claw, M.woodDark);
-    m.position.set(top.x + Math.cos(a) * 0.026 * H, top.y + Math.sin(a) * 0.026 * H, top.z + 0.03 * H);
-    m.rotation.set(-Math.sin(a) * 0.5, Math.cos(a) * 0.5, 0);
-    g.add(m);
-  }
-  g.add(placed(rod(0.014 * H, 0.014 * H, 0.05 * H), F.leatherDark));
-  g.userData.orb = orb;
-  return g;
-}
-
 export function cleaver(rig, M, F) {
   const H = rig.H;
   const g = new THREE.Group();
@@ -406,38 +376,45 @@ export function poleyns(rig, F) {
   }
 }
 
-/** A tall wizard's hat: a drooping brim, a crooked cone and a brass band. */
-export function wizardHat(rig, mat, bandMat) {
+// --- the Mage -----------------------------------------------------------------------------
+
+/** A short iron sceptre, a ball pommel under the fist and the stone held in three prongs at its head. */
+export function sceptre(rig, M, F, orbMat) {
   const H = rig.H;
-  const [, hy, hz] = J(rig, "head");
-  const brimPts = [];
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    const r = (0.052 + t * 0.11) * H;
-    brimPts.push(new THREE.Vector2(r, (-t * t * 0.022 + 0.004) * H));
+  const g = new THREE.Group();
+  g.add(placed(rod(0.009 * H, 0.008 * H, 0.3 * H, 8), F.blackIron, 0, 0, 0.09 * H));
+  g.add(placed(new THREE.SphereGeometry(0.014 * H, 10, 8), F.blackIron, 0, 0, -0.06 * H));
+  g.add(placed(rod(0.012 * H, 0.012 * H, 0.06 * H), F.leatherDark));
+  const top = 0.24 * H;
+  g.add(placed(rod(0.016 * H, 0.009 * H, 0.02 * H, 8), F.blackIron, 0, 0, top));
+  g.add(placed(new THREE.SphereGeometry(0.022 * H, 14, 10), orbMat, 0, 0, top + 0.03 * H));
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const prong = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, top),
+      new THREE.Vector3(Math.cos(a) * 0.024 * H, Math.sin(a) * 0.024 * H, top + 0.022 * H),
+      new THREE.Vector3(Math.cos(a) * 0.016 * H, Math.sin(a) * 0.016 * H, top + 0.05 * H),
+    ]);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(prong, 8, 0.004 * H, 5, false), F.blackIron));
   }
-  for (let i = 8; i >= 0; i--) {
-    const t = i / 8;
-    const r = (0.052 + t * 0.11) * H;
-    brimPts.push(new THREE.Vector2(r, (-t * t * 0.022 - 0.004) * H));
-  }
-  const brim = new THREE.LatheGeometry(brimPts, 32);
-  attach(rig, "head", brim, mat, [0, hy + 0.078, hz - 0.004], { rx: -0.08 });
-  const cone = new THREE.LatheGeometry(
-    [
-      new THREE.Vector2(0.068 * H, 0),
-      new THREE.Vector2(0.06 * H, 0.05 * H),
-      new THREE.Vector2(0.042 * H, 0.11 * H),
-      new THREE.Vector2(0.024 * H, 0.17 * H),
-      new THREE.Vector2(0.0, 0.2 * H),
-    ],
-    24,
-  );
-  attach(rig, "head", cone, mat, [0, hy + 0.074, hz - 0.012], { rx: -0.22 });
-  const tip = new THREE.ConeGeometry(0.02 * H, 0.08 * H, 12);
-  attach(rig, "head", tip, mat, [0, hy + 0.265, hz - 0.075], { rx: -1.05 });
-  const band = new THREE.CylinderGeometry(0.067 * H, 0.069 * H, 0.016 * H, 24, 1, true);
-  attach(rig, "head", band, bandMat, [0, hy + 0.086, hz - 0.013], { rx: -0.22 });
+  return g;
+}
+
+/**
+ * A closed tome bound in black leather with iron corners, carried by its spine and hanging at the
+ * side. Mount it in the off hand turned a quarter back (`inHand(rig, "L", { rx: -Math.PI / 2 })`).
+ */
+export function tome(rig, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  const book = new THREE.Group();
+  book.position.set(0, -0.02 * H, -0.03 * H);
+  book.add(new THREE.Mesh(new THREE.BoxGeometry(0.036 * H, 0.1 * H, 0.078 * H), F.leatherDark));
+  book.add(placed(new THREE.BoxGeometry(0.028 * H, 0.094 * H, 0.076 * H), materials().vellum, 0, 0, 0.004 * H));
+  for (const sy of [-1, 1])
+    for (const sz of [-1, 1]) book.add(placed(new THREE.BoxGeometry(0.04 * H, 0.014 * H, 0.014 * H), F.blackIron, 0, sy * 0.044 * H, sz * 0.034 * H));
+  g.add(book);
+  return g;
 }
 
 // --- the Mercenary (FS-MAMHR §H) -----------------------------------------------------------
