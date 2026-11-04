@@ -5,6 +5,10 @@ import {
   letterPanelFrame,
   listWindow,
   scrolledList,
+  BODY_SCROLL_THUMB_MIN,
+  bodyScrollTrack,
+  bodyScrollThumb,
+  bodyScrollAt,
   type Rect,
 } from "./letterPanelLayout";
 
@@ -120,5 +124,63 @@ describe("the list window", () => {
     expect(scrolledList(0, -1, 20, 8)).toBe(0);
     expect(scrolledList(12, 1, 20, 8)).toBe(12);
     expect(scrolledList(5, 1, 3, 8)).toBe(0);
+  });
+});
+
+describe("the body's scrollbar (asked 2026-11-04)", () => {
+  const body: Rect = { x: 400, y: 200, width: 380, height: 160 };
+  const track = bodyScrollTrack(body);
+
+  it("runs down the body's right edge, inside it", () => {
+    expect(inside(track, body)).toBe(true);
+    expect(track.x + track.width).toBe(body.x + body.width);
+    expect(track.height).toBe(body.height);
+  });
+
+  it("is absent while the whole body fits", () => {
+    expect(bodyScrollThumb(track, 160, 0, body.height)).toBeNull();
+    expect(bodyScrollThumb(track, 120, 0, body.height)).toBeNull();
+  });
+
+  it("sizes the thumb by the share in view and moves it with the scroll", () => {
+    const top = bodyScrollThumb(track, 320, 0, body.height)!;
+    expect(top.height).toBe(track.height / 2);
+    expect(top.y).toBe(track.y);
+    const bottom = bodyScrollThumb(track, 320, 160, body.height)!;
+    expect(bottom.y + bottom.height).toBe(track.y + track.height);
+  });
+
+  it("never shrinks the thumb below its minimum", () => {
+    const thumb = bodyScrollThumb(track, 100_000, 0, body.height)!;
+    expect(thumb.height).toBe(BODY_SCROLL_THUMB_MIN);
+  });
+
+  it("turns a held thumb's position back into a scroll, clamped to the ends", () => {
+    const content = 320;
+    const thumb = bodyScrollThumb(track, content, 0, body.height)!;
+    expect(
+      bodyScrollAt(track, content, body.height, thumb.height, track.y),
+    ).toBe(0);
+    expect(
+      bodyScrollAt(
+        track,
+        content,
+        body.height,
+        thumb.height,
+        track.y + track.height,
+      ),
+    ).toBe(content - body.height);
+    expect(
+      bodyScrollAt(track, content, body.height, thumb.height, track.y - 50),
+    ).toBe(0);
+    expect(
+      bodyScrollAt(
+        track,
+        content,
+        body.height,
+        thumb.height,
+        track.y + track.height - thumb.height,
+      ),
+    ).toBe(content - body.height);
   });
 });

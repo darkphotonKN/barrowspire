@@ -15,6 +15,7 @@ import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
 import { ApiError } from "@/utils/apiError";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { LetterPanel } from "./LetterPanel";
+import { letterPanelFrame } from "./letterPanelLayout";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
 
@@ -28,6 +29,8 @@ interface Pressable {
 interface FakeText extends Pressable {
   content: string;
   color?: string;
+  style?: { wordWrap?: { width?: number; useAdvancedWrap?: boolean } };
+  masked?: boolean;
 }
 
 function fakeScene() {
@@ -44,6 +47,7 @@ function fakeScene() {
       "setAlpha",
       "setScale",
       "setCrop",
+      "setMask",
       "setPosition",
       "setVisible",
       "setInteractive",
@@ -81,11 +85,12 @@ function fakeScene() {
       _x: number,
       _y: number,
       content: string,
-      style?: { color?: string },
+      style?: FakeText["style"] & { color?: string },
     ) => {
       const t: FakeText = {
         content,
         color: style?.color,
+        style,
         handlers: {},
         destroyed: false,
       };
@@ -100,6 +105,10 @@ function fakeScene() {
       );
       self.setColor = (color: string) => {
         t.color = color;
+        return self;
+      };
+      self.setMask = () => {
+        t.masked = true;
         return self;
       };
       return self;
@@ -123,6 +132,9 @@ function fakeScene() {
   };
   const scene = {
     add,
+    make: {
+      graphics: () => chain({ createGeometryMask: () => ({}) }),
+    },
     events: new EventEmitter(),
     input: new EventEmitter(),
     tweens: {
@@ -284,6 +296,17 @@ describe("LetterPanel (R36, R37, R40)", () => {
         "Rest well.",
       ]),
     );
+  });
+
+  it("wraps the body within its rect, clear of the scrollbar, and clips it with a mask (asked 2026-11-04)", () => {
+    const { scene, store, find } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [letter({ sender: "system" })], "a");
+    const body = find("Rest well.")!;
+    expect(body.style?.wordWrap?.useAdvancedWrap).toBe(true);
+    const frame = letterPanelFrame({ width: 1080, height: 720 }, 0);
+    expect(body.style?.wordWrap?.width).toBeLessThan(frame.body.width);
+    expect(body.masked).toBe(true);
   });
 
   it("opens a letter pressed in the list, marking it read", () => {
