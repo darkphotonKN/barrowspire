@@ -40,7 +40,13 @@ import { itemTipRow } from "./gearOverlayLayout";
 import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
 import { drawWaxSeal } from "./MailboxEnvelope";
 import {
+  BODY_SCROLL_GAP,
+  BODY_SCROLL_GRAB,
+  BODY_SCROLL_W,
   DETAIL_HEAD_H,
+  bodyScrollAt,
+  bodyScrollThumb,
+  bodyScrollTrack,
   letterPanelFrame,
   listWindow,
   scrolledList,
@@ -65,6 +71,9 @@ const ICON_FILL = 0.78;
 const TAKEN_ALPHA = 0.4;
 /** Body px scrolled per wheel notch. */
 const BODY_STEP = 24;
+/** The body's type: the chat's size, not the dialogue's, so a long letter reads as a letter. */
+const BODY_PX = 13;
+const BODY_LINE_SPACING = 2;
 const ROW_TITLE_MAX = 28;
 const DETAIL_TITLE_MAX = 46;
 const WELL_RADIUS = 4;
@@ -102,8 +111,15 @@ export class LetterPanel {
   private frame?: LetterPanelFrame;
   private tip?: ItemTip;
   private listOffset = 0;
-  private body?: { text: Phaser.GameObjects.Text; rect: Rect; max: number };
+  private body?: {
+    text: Phaser.GameObjects.Text;
+    rect: Rect;
+    max: number;
+    bar: Phaser.GameObjects.Graphics;
+  };
   private bodyScroll = 0;
+  /** While the body's thumb is held: how far below its top it was caught. */
+  private grabbed?: number;
   /** The letter the body was last drawn for: another letter starts at its top. */
   private shownLetter: string | null = null;
   private readonly now: () => number;
@@ -127,12 +143,16 @@ export class LetterPanel {
         this.draw();
     });
     scene.input.on("wheel", this.onWheel, this);
+    scene.input.on("pointermove", this.onDrag, this);
+    scene.input.on("pointerup", this.onRelease, this);
     this.draw();
   }
 
   destroy(): void {
     this.unsubscribe();
     this.scene.input?.off("wheel", this.onWheel, this);
+    this.scene.input?.off("pointermove", this.onDrag, this);
+    this.scene.input?.off("pointerup", this.onRelease, this);
     this.clear();
   }
 
@@ -373,13 +393,44 @@ export class LetterPanel {
       rect.x,
       rect.y,
       detail.body,
-      style(palette.hudText, 15, {
-        wordWrap: { width: rect.width - 8 },
-        lineSpacing: 3,
+      style(palette.hudText, BODY_PX, {
+        wordWrap: {
+          width: rect.width - BODY_SCROLL_W - BODY_SCROLL_GAP,
+          useAdvancedWrap: true,
+        },
+        lineSpacing: BODY_LINE_SPACING,
       }),
     );
-    this.body = { text, rect, max: Math.max(0, text.height - rect.height) };
+    // Clipped by a mask in screen space, not setCrop: a crop is in the text texture's pixels, which
+    // crisp text renders at the device pixel ratio, so it no longer lined up with the body's rect.
+    const maskShape = this.keep(
+      this.scene.make.graphics({}, false).setScrollFactor(0),
+    );
+    // a mask's colour is never drawn, only its shape; any token keeps the fence's literal ban
+    maskShape.fillStyle(palette.hudText);
+    maskShape.fillRect(rect.x, rect.y, rect.width, rect.height);
+    text.setMask(maskShape.createGeometryMask());
+    const bar = this.keep(
+      this.scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH),
+    );
+    this.body = {
+      text,
+      rect,
+      max: Math.max(0, text.height - rect.height),
+      bar,
+    };
     this.scrollBody(0);
+    // a press on the bar: on the thumb it is held where caught, on the bare track the thumb jumps there
+    const track = bodyScrollTrack(rect);
+    if (this.body.max > 0)
+      this.zone({
+        x: track.x - BODY_SCROLL_GRAB,
+        y: track.y,
+        width: track.width + BODY_SCROLL_GRAB * 2,
+        height: track.height,
+      })
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", (pointer: { y: number }) => this.grabBar(pointer.y));
 
     if (frame.enclosed) this.drawEnclosed(g, detail, take);
   }
@@ -390,7 +441,70 @@ export class LetterPanel {
     if (!body) return;
     this.bodyScroll = Math.min(body.max, Math.max(0, this.bodyScroll + delta));
     body.text.setPosition(body.rect.x, body.rect.y - this.bodyScroll);
-    body.text.setCrop(0, this.bodyScroll, body.rect.width, body.rect.height);
+    this.drawBodyBar();
+  }
+
+  /** The body's track and thumb, drawn only while the letter runs longer than its window. */
+  private drawBodyBar(): void {
+    const body = this.body;
+    if (!body) return;
+    const g = body.bar;
+    g.clear();
+    const track = bodyScrollTrack(body.rect);
+    const thumb = bodyScrollThumb(
+      track,
+      body.text.height,
+      this.bodyScroll,
+      body.rect.height,
+    );
+    if (!thumb) return;
+    g.fillStyle(palette.chatRule, 0.18);
+    g.fillRoundedRect(track.x, track.y, track.width, track.height, 2);
+    g.fillStyle(palette.chatRule, 0.75);
+    g.fillRoundedRect(thumb.x, thumb.y, thumb.width, thumb.height, 2);
+  }
+
+  /** A press on the bar: held where caught on the thumb, centred on the press on the bare track. */
+  private grabBar(y: number): void {
+    const body = this.body;
+    if (!body) return;
+    const track = bodyScrollTrack(body.rect);
+    const thumb = bodyScrollThumb(
+      track,
+      body.text.height,
+      this.bodyScroll,
+      body.rect.height,
+    );
+    if (!thumb) return;
+    const onThumb = y >= thumb.y && y <= thumb.y + thumb.height;
+    this.grabbed = onThumb ? y - thumb.y : thumb.height / 2;
+    this.onDrag({ y });
+  }
+
+  /** While the thumb is held, the body follows the pointer up and down, wherever it wanders. */
+  private onDrag(pointer: { y: number }): void {
+    const body = this.body;
+    if (this.grabbed === undefined || !body) return;
+    const track = bodyScrollTrack(body.rect);
+    const thumb = bodyScrollThumb(
+      track,
+      body.text.height,
+      this.bodyScroll,
+      body.rect.height,
+    );
+    if (!thumb) return;
+    const next = bodyScrollAt(
+      track,
+      body.text.height,
+      body.rect.height,
+      thumb.height,
+      pointer.y - this.grabbed,
+    );
+    this.scrollBody(next - this.bodyScroll);
+  }
+
+  private onRelease(): void {
+    this.grabbed = undefined;
   }
 
   /** The Enclosed row (R37) and its Take button, stamp and warning line (R39). */

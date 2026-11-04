@@ -208,3 +208,59 @@ export function scrolledList(
 ): number {
   return listWindow(letters, offset + step, visible).first;
 }
+
+/** The body's scrollbar: its drawn width, the grab margin either side, its shortest thumb, and the
+ * gap kept between the wrapped body text and the bar (asked 2026-11-04, after the chat's). */
+export const BODY_SCROLL_W = 4;
+export const BODY_SCROLL_GRAB = 6;
+export const BODY_SCROLL_THUMB_MIN = 16;
+export const BODY_SCROLL_GAP = 12;
+
+/** The scrollbar's track, down the body's right edge for the body's full height. */
+export function bodyScrollTrack(body: Rect): Rect {
+  return {
+    x: body.x + body.width - BODY_SCROLL_W,
+    y: body.y,
+    width: BODY_SCROLL_W,
+    height: body.height,
+  };
+}
+
+/**
+ * The thumb for a body `content` px tall seen through a `view` px window scrolled `scroll` px
+ * down, or null while it all fits. Its length is the share in view.
+ */
+export function bodyScrollThumb(
+  track: Rect,
+  content: number,
+  scroll: number,
+  view: number,
+): Rect | null {
+  if (content <= view) return null;
+  const height = Math.max(
+    BODY_SCROLL_THUMB_MIN,
+    (track.height * view) / content,
+  );
+  const max = content - view;
+  const at = Math.min(max, Math.max(0, scroll)) / max;
+  return {
+    x: track.x,
+    y: track.y + (track.height - height) * at,
+    width: track.width,
+    height,
+  };
+}
+
+/** The scroll that puts a `thumbHeight` thumb's top at `thumbTop`, clamped to the body's ends. */
+export function bodyScrollAt(
+  track: Rect,
+  content: number,
+  view: number,
+  thumbHeight: number,
+  thumbTop: number,
+): number {
+  const room = track.height - thumbHeight;
+  if (room <= 0 || content <= view) return 0;
+  const at = Math.min(1, Math.max(0, (thumbTop - track.y) / room));
+  return at * (content - view);
+}
