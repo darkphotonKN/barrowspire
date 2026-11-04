@@ -100,4 +100,6 @@ D14; spec defaults S6, S8. User stories 1–8, 16, 18, 19, 31–33.
 
 Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Every criterion but the manual one has a unit test; A9.1 changed the seal: after a read it still drops at once, then one summary fetch confirms it, and only the latest fetch applies. The same round added one Take per panel, the amber ×, the toned enclosure tip and the chat and party popups under the panel. Wrap-up run: `vitest run` (4689 tests), `tsc --noEmit`, `next lint` on the changed files and the token fence pass.
 
+A9.1 as corrected after the round-2 review: a failed mark read restores the letter's unread dot (and the seal); a sibling child is bringing the client in line with this.
+
 **Pending manual check in the browser (Nick):** the envelope's position (bottom-right of the town HUD) and look; the pulse on town entry for a letter sent while away; reading a letter lowers the seal (and it settles on the server's count); Esc closes the panel and WASD does not move the character while it is open; the enclosure tip on an item slot. Close this issue once all of them are seen.
