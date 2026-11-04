@@ -1,12 +1,15 @@
 package tracing
 
 import (
+	"context"
+	"database/sql/driver"
 	"fmt"
 
 	"github.com/XSAM/otelsql"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // OpenPostgres is sqlx.Connect("postgres", dsn) with every query as a child
@@ -20,6 +23,7 @@ func OpenPostgres(dsn string) (*sqlx.DB, error) {
 			OmitConnResetSession: true,
 			OmitRows:             true,
 			DisableErrSkip:       true,
+			SpanFilter:           withinTrace,
 		}),
 	)
 	if err != nil {
@@ -32,4 +36,11 @@ func OpenPostgres(dsn string) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 	return sdb, nil
+}
+
+// withinTrace keeps a query's span only when the query runs inside an existing
+// trace. Background pollers (the outbox worker) query on a bare context, and
+// without this every poll would start a one-span trace of its own.
+func withinTrace(ctx context.Context, _ otelsql.Method, _ string, _ []driver.NamedValue) bool {
+	return trace.SpanContextFromContext(ctx).IsValid()
 }
