@@ -36,6 +36,19 @@
 > acceptance criteria and two A7 edge states are corrected in place, each saying *(Amended
 > 2026-11-04, A8 …)*.
 
+> **Amended again 2026-11-04 (A9)**, after all eleven slices were merged on
+> `feat/notification-mailbox` and a code-review fix round (merged at `fb1abf5c`) changed some
+> behaviour: the client confirms the seal with the server after every read, take and crumble;
+> claims are capped per pod and the gateway puts deadlines on mailbox calls; an items refusal
+> puts the claim row back; more outage answers are 503 and a letter request that fails to store
+> is retried; mark read never waits on a claim; a sent letter is always mintable; wallet's credit
+> keys get their own namespace; the game relay's queue and decoder tighten; notification refuses
+> to boot without `JWT_SECRET`. See "Amendment 2026-11-04 (A9)" after A8, and "Before GKE" after
+> it for what must happen before the mailbox reaches GKE. D16, R8, R11, R12, R15, R17, R19, R21,
+> R23, R24, R32, R34, R38, R39, R42, R43, the client and claim acceptance criteria, the edge states
+> and the API surface are corrected in place, each saying *(Amended 2026-11-04, A9 …)*. New
+> requirements are R63–R65.
+
 ## Summary
 
 Players get a mailbox in the town. The Wardens (an admin) can send an official letter to one
@@ -70,7 +83,7 @@ them; the reason is the charter's.
 | D13 | ~~The client polls `GET /api/mail/summary` every 60 s in the town, and at once on town entry and on opening the panel; a newer newest-letter time triggers the pulse.~~ *(Amended 2026-11-04: replaced by A4 — push on `mail:arrived`, no polling.)* | ~~No push in v1; push via game-service is out.~~ |
 | D14 | Letter panel: carved panel, list left (newest first, ≤ 50, non-expired), letter right, Enclosed row, one ~~Claim~~ **Take** button, the listed states and copy. *(Amended 2026-11-04: button copy per A5.)* | — |
 | D15 | One ADR for D1 + the claim protocol (D6/D16/D20). | (ADR-0044) |
-| D16 | Claim order: items `GrantItems(grant_id)` first (the only step that can be refused), then wallet's idempotent credit keyed `mail:<letter id>:<member id>` with the player's token. `claimed` only after **both** succeed; on any failure the row stays `claiming` and the next claim re-sends both with the same keys. Gold-only letters skip items; item-only letters skip wallet. | Never lost, never doubled. (user override; ADR-0044) |
+| D16 | Claim order: items `GrantItems(grant_id)` first (the only step that can be refused), then wallet's idempotent credit keyed `mail:<letter id>:<member id>` with the player's token. `claimed` only after **both** succeed; on any failure the row stays `claiming` and the next claim re-sends both with the same keys. Gold-only letters skip items; item-only letters skip wallet. *(Amended 2026-11-04, A9.3: a business refusal from items, `STASH_FULL` or unmintable snapshots, puts the row back to the state the claim locked; only a transport or outage failure leaves it `claiming`.)* | Never lost, never doubled. (user override; ADR-0044) |
 | D18 | Wallet credits only the account of the member in the forwarded token. | Nobody can claim gold into another's account. |
 | D20 | No duplicate claims, guarded at every layer (R25–R29), each guard tested, at least one concurrently. | The user's emphasis. (ADR-0044) |
 
@@ -341,6 +354,116 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
   "never a partial welcome" rule; a welcome is still never stored without its gold, and an
   account whose welcome went out gold-only is not topped up later.
 
+## Amendment 2026-11-04 (A9: the review-fix round)
+
+Recorded on 2026-11-04, after a two-axis code review of the eleven merged slices. The fixes were
+merged at `fb1abf5c` on `feat/notification-mailbox` under the user's `/charter` approval. A1–A8
+stand except where this says otherwise. Two earlier choices change: the seal's local-only update
+(R34, R38) and D16/R17's "any failure leaves the row `claiming`". The requirements, acceptance
+criteria, edge states and API surface are corrected in place, each saying *(Amended 2026-11-04,
+A9 …)*. New requirements are R63–R65.
+
+- **A9.1 — the seal settles on the server's count.** After every mark read, Take and crumble (a
+  `LETTER_EXPIRED` refusal), the client still drops the seal at once from what it knows, then
+  fetches `GET /api/mail/summary` once more to confirm. The server's answer replaces the local
+  one. Only the latest summary request applies: a newer one drops any older one still in flight,
+  and leaving the town drops it too. Still no timer, and nothing is fetched outside the town.
+  This amends R34 (the summary is fetched on more than its three occasions) and R38 ("without
+  another fetch").
+  - **Why:** concurrent fetches, other tabs (a letter read or taken there) and expiry made the
+    local arithmetic drift from the server, and nothing corrected it until the next town entry.
+  - **The same round, client:** one Take at a time per panel (every Take waits while one is in
+    flight); a panel opening applies its letters only if it is still the latest opening; the
+    crumbled line shows only when the expired letter is the open one; the chat window, the party
+    invite prompt and the ready check sit under the letter panel, and chat keeps its draft while
+    the panel holds the keys.
+- **A9.2 — claims are capped per pod, and mailbox calls have deadlines.** A claim holds a
+  database connection across its items and wallet calls, for up to about 10 s.
+  notification-service's pool is **8** connections (was 2, the repo default), and at most **3**
+  claims run at once per pod. Taking a claim slot never waits: a claim over the cap does nothing
+  and answers `503 · SERVICE_UNAVAILABLE` at once, and is safe to repeat. So reads, mark read and
+  the consumers always keep connections. The gateway runs every mailbox call under a deadline
+  (summary, letters and mark read 5 s; claim 15 s; admin send 15 s) and answers a missed deadline
+  `503 · SERVICE_UNAVAILABLE`. The generated contract does not change. New R63, R64.
+- **A9.3 — an items refusal puts the claim row back.** When items-service refuses the grant as a
+  business answer (`STASH_FULL`, or snapshots it cannot mint), nothing was minted. The claim puts
+  the row back to the state it locked (`unclaimed` on a first attempt, `claiming` when it was
+  finishing an earlier attempt) and keeps `read_at`. A transport or outage failure from items or
+  wallet still leaves the row `claiming` (R17), because a step may have applied. This settles
+  R17 ("any failure leaves `claiming`") against D7 and the stash-full acceptance criterion
+  ("stays unclaimed"): D7 and the criterion stand, and R17 and D16 are corrected.
+- **A9.4 — more answers count as an outage; a failed letter store is retried.**
+  - items `Internal` (on resolve or grant) and wallet `NotFound` (no account yet, R24) or
+    `Internal` are `503 · SERVICE_UNAVAILABLE`, as `Unavailable` and a missed deadline already
+    were: a retry may succeed. items-service answers a transient resolve failure `Unavailable`,
+    as its grant already did.
+  - A letter request (R12) whose store or transaction fails (begin, inbox mark, insert, commit)
+    rolls back and returns a transient error (`ErrTransient`). The consumer requeues it with its
+    usual delays instead of dead-lettering it. Only a request that breaks the letter rules is
+    permanent.
+  - A non-admin `SendLetter` is refused `PermissionDenied` before its draft is parsed, so a
+    player learns nothing about the draft rules from the admin RPC.
+- **A9.5 — mark read never waits on or blocks a claim.** Mark read creates the state row only
+  when it sees none, and sets `read_at` only on an unread row it can lock without waiting
+  (`FOR UPDATE SKIP LOCKED`). A row a claim holds is skipped and mark read still succeeds; the
+  claim sets `read_at` itself (R13). An already read letter takes no lock. So mark read never
+  makes a concurrent claim answer `LETTER_CLAIM_IN_PROGRESS`, and never waits for a slow claim.
+- **A9.6 — a sent letter is always mintable (items-service).** `ResolveItemSnapshots` reports as
+  unrepresentable (so the send is refused `ENCLOSURE_INVALID`) anything `GrantItems` would refuse
+  to mint, for example a template of required level 0. A letter whose send succeeded can always
+  be claimed, unless its template is retired after the send (Edge States). `GrantItems` refuses
+  `InvalidArgument` up front when its lines' quantities total more than the stash capacity (60),
+  before it builds any id; notification never sends such a grant (S1).
+- **A9.7 — wallet's credit keys get their own namespace.** `Credit` stores its dedup key as
+  `credit:` + the caller's key (`credit:mail:<letter id>:<member id>`), so it can never collide
+  with settlement's keys (`<workflow id>:CreditSeller`) or any other writer's in
+  `processed_activities`. Repeats of one caller key still dedupe against each other. `Credit`
+  refuses an amount that would overflow the balance (`InvalidArgument`); the refusal rolls back
+  with the mark, so the key is not burned.
+- **A9.8 — game-service's relay.** The mail-arrival queue holds **1024** arrivals, so an A6 list
+  send of 1000 members cannot crowd this pod's member out. A member arrival looks up only that
+  member's town connection, instead of copying the town. The decoder takes exactly the keys
+  ADR-0045 names (`member_id`, or `broadcast`), with non-null values, and skips anything else. A
+  full-queue drop logs at Debug, like chat.
+- **A9.9 — notification refuses to boot without a JWT secret.** An unset or blank `JWT_SECRET`
+  stops notification-service at boot, because it verifies every forwarded mailbox token with that
+  key and an empty key is never a working configuration. New R65. Six other services accept an
+  empty secret the same way; they are a follow-up under "Before GKE".
+
+## Before GKE
+
+What must be done before the mailbox ships to GKE. None of it blocks merging the branch to main;
+the last blocker is local and blocks only running the mailbox from the main checkout. Written
+2026-11-04 (A9).
+
+**Blockers**
+
+- [ ] **Service credential (ADR-0046).** items `GrantItems` and `ResolveItemSnapshots` and wallet
+      `Credit` trust their caller. They need a service credential before GKE; it lands with
+      I-GV8WN-11 (the same credential `ApplySettlement` is waiting for).
+- [ ] **The seeded admin's password (ADR-0047).** Change or remove the default password of the
+      seeded `admin@barrowspire.com` account, which is public in the repo.
+- [ ] **`JWT_SECRET` in the notification Secret.** The hand-made `notification` Secret must carry
+      `JWT_SECRET`, the key the gateway signs with; without it notification does not start (R65).
+      `game-server/deploy/gke/notification.yaml` says so beside its `secretRef`.
+- [ ] **Database connection budget.** Cloud SQL `db-f1-micro` allows about 25 connections.
+      notification now opens up to 8 per pod while every other service opens 2. Check that the
+      sum over services and replicas fits before scaling notification out.
+- [ ] **notification-config.** Verify `REDIS_ADDR`, `ITEMS_ADDR` and `WALLET_ADDR` in the live
+      ConfigMap. `game-server/deploy/gke/notification-config.yaml` already carries
+      `redis:6379`, `items-headless:7126` and `wallet-headless:7128` (checked 2026-11-04).
+- [ ] **The main checkout's local notification `.env`** (local, not GKE): it needs `ITEMS_ADDR`,
+      `WALLET_ADDR` and `REDIS_ADDR` (IP literals, `127.0.0.1:<port>`), and its glued
+      `OTEL_ENABLED=trueITEMS_ADDR…` line split in two.
+
+**Follow-up (not a blocker)**
+
+- Six other services accept an empty JWT secret the way notification did before A9.9:
+  wallet `cmd/server/main.go:63`, marketplace `cmd/server/main.go:162`, ledger
+  `cmd/server/main.go:59`, items `config/routes.go:74`, api-gateway
+  `internal/auth/jwt_middleware.go:45`, and auth-service `internal/auth/jwt.go`. Each should
+  refuse to start without one, as notification's `config.JWTSecret` does.
+
 ## Requirements
 
 ### Letters (notification-service, Mailbox context)
@@ -374,7 +497,10 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 7. A member's **mailbox** is every non-expired letter addressed to them or to all members, newest
    first, at most 50 (D14). A member who signed up after a broadcast was sent sees it.
 8. **Mark read** sets `read_at` on the member's state row (creating it); repeating it changes
-   nothing and succeeds.
+   nothing and succeeds. It never waits on or blocks a claim: it locks an unread row only if it
+   can without waiting, and a row a claim holds is skipped (mark read still succeeds, and the
+   claim sets `read_at` itself, R13). An already read letter takes no lock. *(Amended
+   2026-11-04, A9.5.)*
 9. The **mailbox summary** returns `unreadCount`, `unclaimedCount` (letters with enclosures whose
    claim state is `unclaimed` or `claiming`), `waitingCount` (S6) and `newestLetterAt` (the
    newest non-expired letter's sent time, absent when the mailbox is empty). Expired letters
@@ -389,14 +515,19 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     `official`. notification-service checks the role again from the forwarded identity, so its
     gRPC method cannot be used by a player token from inside the cluster. The recipient is one
     member, a list of members (R45–R51) or all members. *(Amended 2026-11-04, A6; was: one
-    member or all.)*
+    member or all.)* A non-admin caller is refused `PermissionDenied` before the draft is
+    parsed. *(Amended 2026-11-04, A9.4.)*
 12. **Letter request** — notification-service consumes `mail.letter.requested` (a new message in
     a new file under `common/api/proto/events/`, carrying an event id, recipient, title, body,
     enclosures, an optional expiry and a **required `source`**, stored as the letter's sent-by
     source, R55). The letter is `system`. *(Amended 2026-11-04, A7: `source` added.)* The event is deduplicated through
     the inbox (`processed_events`, FS-PJPNA) in the same transaction that stores the letter, so a
     redelivery stores nothing. A request that breaks R3–R5 is logged at error, marked processed
-    and acked, never requeued. v1 has no producer in the repo (D2). Its recipient stays one member
+    and acked, never requeued. A request whose store or transaction fails (begin, inbox mark,
+    insert, commit) rolls back whole and is transient (`ErrTransient`): the consumer requeues it
+    with its usual delays, as for an items outage, instead of dead-lettering it at once.
+    *(Amended 2026-11-04, A9.4.)* v1 has no
+    producer in the repo (D2). Its recipient stays one member
     or all members; it has no list form (A6).
 
 ### Claim (notification-service → items-service, wallet-service)
@@ -409,14 +540,20 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     **credit key** `mail:<letter id>:<member id>` for wallet.
 15. **Step 1 — items** (only if the letter has item enclosures): `GrantItems` with the player's
     forwarded token, the grant id and the item enclosures. This is the only step that can be
-    refused (`STASH_FULL`, D7).
+    refused (`STASH_FULL`, D7; or snapshots items cannot mint, R19). *(Amended 2026-11-04, A9.3:
+    the unmintable refusal named.)*
 16. **Step 2 — wallet** (only if the letter has a gold enclosure), and only after step 1
     succeeded or was skipped: wallet's `Credit` with the player's forwarded token, the gold
     amount and the credit key (D5, D16).
 17. notification-service sets the claim state to `claimed` only after **both** steps succeed,
-    an already-granted or already-applied answer counting as success. Any failure in either step
-    leaves the row `claiming`; the next claim re-sends both steps with the same keys — a done step
-    answers success, the missing one completes (D16).
+    an already-granted or already-applied answer counting as success. A transport or outage
+    failure in either step leaves the row `claiming`; the next claim re-sends both steps with the
+    same keys — a done step answers success, the missing one completes (D16). A **business
+    refusal** from items (`STASH_FULL`, or snapshots it cannot mint) minted nothing, so the claim
+    puts the row back to the state it locked (`unclaimed` on a first attempt, `claiming` when it
+    was finishing an earlier one) and keeps `read_at`. *(Amended 2026-11-04, A9.3; was: any
+    failure in either step leaves the row `claiming`, which contradicted D7 and the stash-full
+    acceptance criterion.)*
 
 ### Grants (items-service)
 
@@ -428,7 +565,9 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 19. If the member's stash plus the grant's slot count would exceed 60, `GrantItems` mints nothing
     and refuses `STASH_FULL` (D7). A snapshot whose template is unknown, or that is not
     representable (A1), mints nothing and is refused (S2 backstop). *(Amended 2026-11-04; was:
-    an unknown template is refused.)*
+    an unknown template is refused.)* A grant whose quantities total more than the stash
+    capacity (60) can never fit and is refused `InvalidArgument` up front, before any id is
+    built. *(Amended 2026-11-04, A9.6.)*
 20. `grant_id` is a unique key in items-service, recorded in the minting transaction. A
     `GrantItems` whose grant id is already recorded mints nothing and returns the first grant's
     instance ids, marked already-granted (D6, D20.2).
@@ -443,7 +582,10 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     (A3); it never applies a drop rule. Catalogue and item facts only: no member token is needed,
     so a letter request with no token can be resolved too. *(Amended 2026-11-04; was:
     `GetTemplateSummaries(template_ids)`, template facts for previews composed at read.)*
-    **[amendment default]** for the field list and the way unknown ids are reported.
+    **[amendment default]** for the field list and the way unknown ids are reported. It flags as
+    unrepresentable anything `GrantItems` would refuse to mint (for example a required level of
+    0), so a letter whose send succeeded is always mintable; a transient failure answers
+    `Unavailable`. *(Amended 2026-11-04, A9.6.)*
 22. items-service has no gold or mailbox concept: a grant is items only, and a snapshot is an
     item, not an enclosure. (The schema needs no
     change unless recording grant ids requires a table, which then comes as a new numbered
@@ -457,9 +599,14 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     (`MarkActivityProcessed`) and applies the credit in **one transaction**, exactly as
     `CreditSellerUC` does; a known key credits nothing and succeeds, reporting it was already
     applied. An empty key or a non-positive amount is refused. No ledger entry is written
-    (charter bound; ADR-0006).
+    (charter bound; ADR-0006). The key is stored as `credit:` + the caller's key, so it never
+    meets settlement's keys or any other writer's in `processed_activities`; an amount that
+    would overflow the balance is refused `InvalidArgument`, and the refusal rolls back with the
+    mark, so the key is not burned. *(Amended 2026-11-04, A9.7.)*
 24. A member with no wallet account cannot be credited: `Credit` fails, and the claim stays
-    `claiming` (the items, if any, are already in the stash) until a retry succeeds.
+    `claiming` (the items, if any, are already in the stash) until a retry succeeds. The claim
+    answers `503 · SERVICE_UNAVAILABLE`, since wallet creates the account from the same signup.
+    *(Amended 2026-11-04, A9.4.)*
 
 ### No duplicate claims (D20)
 
@@ -491,6 +638,10 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     no preview and is drawn `generic`.)*
 32. Domain refusals pass through as `400 · <CODE>` (the existing errcode convention); a
     downstream outage is `503 · SERVICE_UNAVAILABLE`. New codes are added to `common/errcode`.
+    An outage includes items `Unavailable`, `DeadlineExceeded` or `Internal`, wallet
+    `Unavailable`, `DeadlineExceeded`, `Aborted`, `NotFound` (no account yet, R24) or `Internal`,
+    a full claim cap (R63) and a missed gateway deadline (R64). *(Amended 2026-11-04, A9.2,
+    A9.4.)*
 
 ### Client (game-client, town only)
 
@@ -499,7 +650,11 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 34. **Fetching the summary** — the client fetches `GET /api/mail/summary` on entering the town,
     on each `mail_arrived` message while in the town (R43), and on opening the panel; never on a
     timer, and never outside the town (A4). *(Amended 2026-11-04; was: polling at once on entry,
-    every 60 s and on opening the panel, stopped on leaving the town — D13.)*
+    every 60 s and on opening the panel, stopped on leaving the town — D13.)* It also fetches it
+    once after every mark read, Take and crumble, to confirm the seal it has already lowered
+    (R38, R39). Only the latest request applies: a newer one drops any older one in flight, and
+    leaving the town drops it. The server's answer wins over the client's own arithmetic.
+    *(Amended 2026-11-04, A9.1; was: those three occasions only.)*
 35. **Seal** — lit with `waitingCount` while it is > 0; dark at 0. When `newestLetterAt` is newer
     than the last value the client saw (whichever of R34's fetches brought it), the envelope
     glows/pulses a few times, then stays lit (D12). The last-seen value is kept per player in browser storage (every access in
@@ -516,8 +671,10 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     (S8). (D14) *(Amended 2026-11-04: the icon and tip come from the snapshot, not a read-time
     preview.)*
 38. **Selection** — opening the panel selects the first unread letter, else the newest; opening
-    (selecting) a letter marks it read (R8) and updates the seal at once, without another
-    fetch. *(Amended 2026-11-04; was: "without waiting for the next poll".)*
+    (selecting) a letter marks it read (R8) and lowers the seal at once, then fetches the summary
+    once to confirm it (R34); the server's answer wins. *(Amended 2026-11-04; was: "without
+    waiting for the next poll". Amended again 2026-11-04, A9.1; was: "without another fetch".)*
+    Only the latest panel opening applies its letters and selection. *(A9.1.)*
 39. **Take button** — one "Take" button, shown only while the letter's enclosures are
     unclaimed. Press → "Taking…", disabled → on success ("Taken"): slots dim, a "Taken" wax stamp,
     the button gone, the list glyph dims, the seal count drops, and any gold balance the client shows
@@ -526,7 +683,9 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     letter leaves the list. `LETTER_ALREADY_CLAIMED` → shown taken. `LETTER_CLAIM_IN_PROGRESS`
     and any other failure → "The seal would not break. Try again.", button stays. (D14)
     *(Amended 2026-11-04, A5; was: "Claim" → "Claiming…" → claimed, with a "Claimed" stamp. The
-    request is still the claim.)*
+    request is still the claim.)* After a Take or a crumble the seal drops at once and the
+    summary is fetched once to confirm it (R34). One Take runs at a time per panel. The crumbled
+    line shows only when the expired letter is the open one. *(Amended 2026-11-04, A9.1.)*
 40. **Empty** — "No letters wait for you." **Close** with × or Esc; while the panel is open WASD
     does not move the character (as with chat input). (D14)
 
@@ -542,11 +701,15 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 42. Every game-service pod subscribes to `mail:arrived` at boot and stays subscribed, subscribing
     again after a drop, in the same subscriber → message hub shape as world chat (FS-5SH4G). A
     message that is neither form is skipped with a warning. Nothing is stored or retried: at
-    most once.
+    most once. The decoder takes exactly ADR-0045's keys with non-null values, so anything else
+    is "neither form". The pod's arrival queue holds 1024 messages, enough for an A6 list send of
+    1000; a full queue drops the message (logged at Debug) rather than block the subscriber.
+    *(Amended 2026-11-04, A9.8.)*
 43. For `{"member_id": M}` the pod sends `{"action": "mail_arrived", "payload": {}}` to M if M
     stands in the HUB world on this pod; for `{"broadcast": true}` it sends it to every player in
     the HUB world on this pod. A player in a run or a field world, or on another pod, gets
     nothing from this pod. The message carries no letter content: the client asks the gateway.
+    A member arrival looks up only that member's town connection. *(Amended 2026-11-04, A9.8.)*
 44. A missed `mail_arrived` (Redis down, the player in a run, a dropped subscription) is recovered
     by the summary fetch on the next town entry (R34). game-service gains nothing else of the
     mailbox: it neither reads nor stores letters.
@@ -643,6 +806,19 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 62. After the commit, notification-service publishes one `mail:arrived` `{"member_id"}` for the
     welcome letter through the arrival publisher (R41), outside the transaction; a failed publish
     is logged and the event is still acked. A duplicate delivery publishes nothing.
+
+### Capacity, deadlines and boot (added 2026-11-04, A9)
+
+63. notification-service's database pool holds **8** connections, and at most **3** claims run
+    at once on one pod (each holds a connection across its items and wallet calls). Taking a
+    claim slot never waits: a claim over the cap does nothing and answers
+    `503 · SERVICE_UNAVAILABLE` at once, and repeating it is safe. Every outcome of a claim frees
+    its slot. Reads, mark read and the consumers keep connections while the cap is full.
+64. The gateway runs every mailbox call under a deadline: summary, letters and mark read 5 s,
+    claim 15 s, admin send 15 s. A missed deadline answers `503 · SERVICE_UNAVAILABLE`. The
+    generated contract does not change.
+65. notification-service refuses to start when `JWT_SECRET` is unset or blank, since it verifies
+    every forwarded mailbox token with that key.
 
 ## User Stories
 
@@ -832,6 +1008,16 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 - [ ] With the stash 2 short, the claim mints nothing, credits nothing, returns
       `400 · STASH_FULL`, and the letter stays unclaimed; after freeing slots, the same claim
       succeeds.
+- [ ] A business refusal from items (`STASH_FULL`, unmintable snapshots) puts the row back to
+      the state the claim locked (`unclaimed` on a first attempt) with `read_at` kept; an items
+      or wallet outage leaves it `claiming`. *(Added 2026-11-04, A9.3.)*
+- [ ] With 3 claims in flight on one pod, a fourth answers `503 · SERVICE_UNAVAILABLE` at once
+      and does nothing, while reads still answer promptly; every claim outcome frees its slot.
+      *(Added 2026-11-04, A9.2.)*
+- [ ] A mark read during a claim of the same letter neither waits for it nor makes it
+      `LETTER_CLAIM_IN_PROGRESS`; the claim leaves the letter read. *(Added 2026-11-04, A9.5.)*
+- [ ] items `Internal` and wallet `NotFound` or `Internal` answer the claim
+      `503 · SERVICE_UNAVAILABLE`. *(Added 2026-11-04, A9.4.)*
 - [ ] Claiming a letter without enclosures is refused `NOTHING_TO_CLAIM`.
 - [ ] Granted items and credited gold go to the member in the forwarded token, never one named in
       a request; wallet `Credit` has no field naming an account.
@@ -861,6 +1047,27 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 
 - [ ] Wallet `Credit` with an empty key or a non-positive amount is refused; it writes no ledger
       entry; a member with no account is not credited and the claim stays retryable.
+- [ ] `Credit` marks `credit:` + the caller's key, so a key settlement already marked does not
+      stop a credit and a credit does not stop `CreditSeller`; an amount that would overflow the
+      balance is refused `InvalidArgument` and burns no key. *(Added 2026-11-04, A9.7.)*
+
+### Items (added 2026-11-04, A9.6)
+
+- [ ] `ResolveItemSnapshots` reports as unrepresentable a template `GrantItems` could not mint
+      (required level 0), so the send is refused `ENCLOSURE_INVALID`.
+- [ ] `GrantItems` whose quantities total more than 60 is refused `InvalidArgument` before any
+      write.
+
+### Capacity, deadlines and boot (added 2026-11-04, A9)
+
+- [ ] A gateway mailbox call whose notification answer misses its deadline (5 s reads, 15 s
+      claim and send) answers `503 · SERVICE_UNAVAILABLE`.
+- [ ] A non-admin `SendLetter` is `PermissionDenied` before its draft is parsed.
+- [ ] A letter request whose store or transaction fails is requeued as transient, with nothing
+      stored and the inbox mark rolled back.
+- [ ] notification-service exits at boot with an unset or blank `JWT_SECRET`.
+- [ ] A game pod's arrival queue takes a 1000-message burst and still delivers the member's
+      message on this pod; the decoder refuses unknown keys and null values.
 
 ### Gateway contract
 
@@ -878,6 +1085,9 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 - [ ] The summary is fetched on town entry, on each `mail_arrived` in the town and on opening the
       panel; no timer fetches it; nothing fetches it outside the town. *(Amended 2026-11-04; was:
       on entry, on opening and every 60 s in the town.)*
+- [ ] After a mark read, a Take and a crumble, the seal drops at once and one summary fetch
+      follows; when two fetches overlap only the later answer applies, and the seal ends on the
+      server's count (e.g. after a letter is read in another tab). *(Added 2026-11-04, A9.1.)*
 - [ ] The seal is lit with `waitingCount` when it is > 0 and dark at 0; a newer
       `newestLetterAt` makes the envelope pulse a few times and stay lit.
 - [ ] The panel lists letters as D14 describes, selects the first unread (else the newest) on
@@ -888,7 +1098,8 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
       lower seal count, gold refetched) *(amended 2026-11-04; was: Claim → "Claiming…" →
       "Claimed" stamp)*; `STASH_FULL` shows "Your stash needs N free slots";
       another failure shows "The seal would not break. Try again."; an expired letter shows "This
-      letter has crumbled to dust." and leaves the list.
+      letter has crumbled to dust." and leaves the list. Only one Take runs at a time in a panel.
+      *(Amended 2026-11-04, A9.1.)*
 - [ ] An empty mailbox reads "No letters wait for you."; × and Esc close the panel; WASD does not
       move the character while it is open.
 
@@ -1001,7 +1212,8 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
   has crumbled to dust." and the letter leaves the list; a summary fetch does not yank an open
   letter unasked.
 - **Stash full:** the claim is refused whole; nothing is minted or credited; the letter keeps its
-  Take button.
+  Take button, and its row goes back to `unclaimed` (or to `claiming` if the claim was finishing
+  an earlier attempt), still read. *(Amended 2026-11-04, A9.3.)*
 - **items-service or wallet-service down at claim:** `503 · SERVICE_UNAVAILABLE`; the row stays
   `unclaimed` or `claiming`; the client shows "The seal would not break. Try again."
 - **No wallet account** (wallet's known signup gap): the credit fails and the claim stays
@@ -1017,7 +1229,9 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
 - **Template retired after send:** the letter still shows its snapshot, and `GrantItems` refuses
   the unknown template (S2 backstop), shown as the generic error; the letter stays unclaimable
   until it expires. Accepted for v1. *(Amended 2026-11-04; was: the preview is absent, drawn
-  `generic`.)*
+  `generic`.)* Each refused claim puts the row back where it was (A9.3). This is now the only way
+  a stored letter can be unmintable: resolve refuses at send whatever a grant would refuse
+  (A9.6). *(Amended 2026-11-04, A9.)*
 - **Copy source changed or deleted after send:** nothing changes; the letter holds its snapshot
   (A1).
 - **Disconnected / leaving the town:** the panel closes with the town; `mail_arrived` is not sent
@@ -1029,6 +1243,28 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
   the last seen.
 - **Broadcast with many players in the town:** one `mail:arrived` message; each pod sends one
   `mail_arrived` per HUB-world player, each of whom fetches the summary once.
+
+*Added by amendment A9 (2026-11-04):*
+
+- **Claim cap full:** a fourth claim on a pod while three run answers `503` at once and does
+  nothing; the client shows "The seal would not break. Try again." and the next press may
+  succeed. Reads and mark read still answer.
+- **notification slow or hung:** the gateway's deadline (5 s reads, 15 s claim and send) answers
+  `503`; a claim cut off this way may still finish on the server, and the next claim or read
+  shows where it ended (the keys make a repeat safe).
+- **Mark read while a claim runs on the same letter:** mark read skips the locked row and
+  succeeds; the claim marks the letter read.
+- **A letter read or taken in another tab:** this tab's next read, Take, crumble, town entry or
+  panel open fetches the summary, and the seal settles on the server's count.
+- **Overlapping summary fetches:** only the latest one applies; an older answer arriving later is
+  dropped.
+- **A letter request whose store fails** (database blip): rolled back and requeued as
+  transient, like an items outage; it is dead-lettered only after the consumer's retries run out.
+- **A credit that would overflow the balance:** refused `InvalidArgument`; the claim fails with
+  the generic error, the row stays `claiming` and the key is not burned.
+- **A 1000-member list send on a game pod:** 1000 messages fit the pod's 1024-slot arrival
+  queue, so a listed member in this pod's town still gets `mail_arrived`.
+- **notification started without `JWT_SECRET`:** it exits at boot rather than run without a key.
 
 *Added by amendment A6 (2026-11-04):*
 
@@ -1092,13 +1328,18 @@ no token is `401 · UNAUTHENTICATED` on every row.
 |----|---------------|--------------|--------------|----------|--------|
 | Mailbox summary | `GET /api/mail/summary` | — | — | `200` `{ unreadCount: int, unclaimedCount: int, waitingCount: int, newestLetterAt?: date-time }` | `503 · SERVICE_UNAVAILABLE` |
 | Read my letters | `GET /api/mail/letters` | — (≤ 50, newest first, no paging) | — | `200` `{ letters: Letter[] }` (below) | `503 · SERVICE_UNAVAILABLE` |
-| Mark a letter read | `POST /api/mail/letters/{letterId}/read` | `letterId` uuid | — | `204` | `404 · NOT_FOUND` (absent or not addressed to the caller) · `400 · LETTER_EXPIRED` · `422 · VALIDATION_FAILED` (bad uuid) |
+| Mark a letter read | `POST /api/mail/letters/{letterId}/read` | `letterId` uuid | — | `204` | `404 · NOT_FOUND` (absent or not addressed to the caller) · `400 · LETTER_EXPIRED` · `422 · VALIDATION_FAILED` (bad uuid) · `503 · SERVICE_UNAVAILABLE` (added 2026-11-04, A9.2: a missed deadline) |
 | Claim a letter | `POST /api/mail/letters/{letterId}/claim` | `letterId` uuid | — | `200` `{ letterId: uuid, claimState: "claimed", itemIds: uuid[], gold: int64 }` (`gold` 0 on an item-only letter) | `404 · NOT_FOUND` · `400 · LETTER_EXPIRED` · `400 · NOTHING_TO_CLAIM` · `400 · LETTER_ALREADY_CLAIMED` · `400 · LETTER_CLAIM_IN_PROGRESS` · `400 · STASH_FULL` · `503 · SERVICE_UNAVAILABLE` · `422 · VALIDATION_FAILED` |
 | Send official mail | `POST /api/admin/mail` | — | `{ recipient: { memberId: uuid } \| { memberIds: uuid[] } \| { allMembers: true }, title: string, body: string, enclosures?: EnclosureRequest[] (≤ 10, ≤ 1 gold), expiresAt?: date-time }` | `201` `{ letters: { letterId: uuid, memberId?: uuid }[], expiresAt: date-time }` (one entry per stored letter; `memberId` absent only for `allMembers`) | `403 · FORBIDDEN` (not `RoleAdmin`) · `400 · LETTER_RECIPIENTS_INVALID` (empty list, > 1000 distinct ids) · `400 · LETTER_TITLE_INVALID` · `400 · LETTER_BODY_INVALID` · `400 · LETTER_EXPIRY_INVALID` · `400 · ENCLOSURE_INVALID` (count, gold count, quantity, amount, slot count, item level < 1, unrepresentable copy) · `400 · UNKNOWN_ITEM_TEMPLATE` · `400 · UNKNOWN_ITEM_INSTANCE` · `422 · VALIDATION_FAILED` (shape: more than one or none of the recipient forms, a non-uuid id, unknown members) · `503 · SERVICE_UNAVAILABLE` |
 
 *Admin send amended 2026-11-04 (A6): the `memberIds` form, the `letters` answer (was
 `{ letterId: uuid, expiresAt }`) and `LETTER_RECIPIENTS_INVALID` are new. **[spec default]** for
 the answer's shape and the code's name.*
+
+*Amended 2026-11-04 (A9.2): every mailbox row may answer `503 · SERVICE_UNAVAILABLE` when
+notification misses the gateway's deadline (5 s for the three reads, 15 s for claim and send),
+and a claim also answers it when the pod's claim cap is full (R63, R64). The generated contract
+is unchanged.*
 
 **Letter** (response): `{ id: uuid, title: string, body: string, sender: "official" | "system",
 sentAt: date-time, expiresAt: date-time, read: bool, claimState: "none" | "unclaimed" |
@@ -1125,9 +1366,9 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
 |---|---|---|
 | notification | `SendLetter` | admin identity from forwarded token; recipient (one member, a member list or all members), title, body, enclosures, expiry → the stored letters as (letter id, member id?) and the expiry (recipient list and answer amended 2026-11-04, A6) |
 | notification | `ListLetters`, `GetMailboxSummary`, `MarkLetterRead`, `ClaimLetter` | member from token |
-| items | `GrantItems(grant_id, items[{snapshot, quantity}])` → instance ids, `already_granted` | member from forwarded token; mints from the snapshots (amended 2026-11-04) |
-| items | `ResolveItemSnapshots(templates[{template_id, item_level?}], instance_ids)` → snapshots, unknown ids, unrepresentable ids | no member token; send time only (replaces `GetTemplateSummaries`, 2026-11-04) |
-| wallet | `Credit(amount, idempotency_key)` → `applied` | member from forwarded token; no account field |
+| items | `GrantItems(grant_id, items[{snapshot, quantity}])` → instance ids, `already_granted` | member from forwarded token; mints from the snapshots (amended 2026-11-04); refuses a total over 60 `InvalidArgument` up front (A9.6) |
+| items | `ResolveItemSnapshots(templates[{template_id, item_level?}], instance_ids)` → snapshots, unknown ids, unrepresentable ids | no member token; send time only (replaces `GetTemplateSummaries`, 2026-11-04); flags as unrepresentable anything `GrantItems` would refuse (A9.6) |
+| wallet | `Credit(amount, idempotency_key)` → `applied` | member from forwarded token; no account field; marks `credit:` + the key; refuses an overflowing amount (A9.7) |
 | events | `LetterRequested` (`mail.letter.requested`) | new file under `common/api/proto/events/`; enclosures of the three request kinds; recipient one member or all members, never a list (A6); a required `source` string, 1–64 characters, stored as the letter's sent-by source (added 2026-11-04, A7) |
 | events | `member.signedup` (consumed, existing) | also stores the welcome letter in the same inbox transaction (added 2026-11-04, A7); the payload does not change |
 | Redis pub/sub | `mail:arrived` ← `{"member_id"}` \| `{"broadcast": true}` | published by notification after commit, subscribed by every game-service pod (added 2026-11-04, ADR-0045) |
@@ -1166,3 +1407,6 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
   or in another language; other notification triggers besides the welcome.
 - *(Added 2026-11-04, A8:)* refreshing the cached welcome potion without a restart (a TTL, an
   event from items-service); topping up the potions of a welcome that went out gold-only.
+- *(Added 2026-11-04, A9:)* a configurable claim cap or pool size; queueing claims over the cap
+  instead of answering 503; a gateway retry of a missed deadline; fixing the six other services
+  that accept an empty JWT secret (a follow-up in "Before GKE").
