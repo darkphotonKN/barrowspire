@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/admin/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an official letter
+         * @description An admin sends an official letter to one member, to a list of members (one letter per distinct member, all stored or none) or to every member (one broadcast letter). Item enclosures are resolved into snapshots now; the letter shows and gives exactly those. Admins only (403 otherwise). The letter rules — lengths, enclosure bounds, expiry, the list's size — are notification-service's and come back as 400 with their code.
+         */
+        post: operations["send-official-letter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters": {
         parameters: {
             query?: never;
@@ -308,6 +328,66 @@ export interface paths {
          * @description Get details of a specific transaction by its transaction id.
          */
         get: operations["get-transaction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List my letters
+         * @description Lists the signed-in member's mailbox: at most 50 non-expired letters addressed to them or to every member, newest first, each with its read and claim state. Each item enclosure is the item as it was when the letter was sent. The member is taken from the token.
+         */
+        get: operations["list-my-letters"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/letters/{letterId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a letter read
+         * @description Marks one of the signed-in member's letters read. Repeating it changes nothing and succeeds. A letter not addressed to the member is 404; an expired one is refused LETTER_EXPIRED.
+         */
+        post: operations["mark-letter-read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get my mailbox summary
+         * @description Counts the signed-in member's non-expired letters: unread, holding untaken enclosures, and waiting (either), with when the newest was sent. The member is taken from the token.
+         */
+        get: operations["get-mailbox-summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1179,6 +1259,51 @@ export interface components {
             /** @description Weapon type */
             weapon_type?: string;
         };
+        Enclosure: {
+            /**
+             * Format: int64
+             * @description The gold amount. Present on a gold enclosure.
+             */
+            gold?: number;
+            /** @description The item as it was when the letter was sent. Present on an item enclosure. */
+            item?: components["schemas"]["ItemSnapshot"];
+            /** @enum {string} */
+            kind: "item" | "gold";
+            /**
+             * Format: int32
+             * @description How many of the item. Present on an item enclosure.
+             */
+            quantity?: number;
+        };
+        EnclosureRequest: {
+            /**
+             * Format: uuid
+             * @description copy: the item instance to copy as it stands now.
+             */
+            copyOf?: string;
+            /**
+             * Format: int64
+             * @description gold: at least 1 (notification-service decides).
+             */
+            gold?: number;
+            /**
+             * Format: int32
+             * @description template: at least 1; absent means the template's minimum item level.
+             */
+            itemLevel?: number;
+            /** @enum {string} */
+            kind: "template" | "copy" | "gold";
+            /**
+             * Format: int32
+             * @description template, copy: 1-60 (notification-service decides).
+             */
+            quantity?: number;
+            /**
+             * Format: uuid
+             * @description template: the item template.
+             */
+            templateId?: string;
+        };
         Entry: {
             account_id: string;
             /** Format: int64 */
@@ -1274,6 +1399,40 @@ export interface components {
             id?: string;
             name?: string;
             updated_at?: components["schemas"]["Timestamp"];
+        };
+        ItemSnapshot: {
+            /** @description Every affix; empty for an item without any. */
+            affixes: components["schemas"]["Affix"][];
+            armorSlot?: string;
+            /** Format: int32 */
+            attackPower?: number;
+            /** Format: int32 */
+            buffDuration?: number;
+            /** Format: double */
+            criticalRate?: number;
+            /** Format: int32 */
+            defenseRating?: number;
+            description?: string;
+            /** Format: int32 */
+            healingAmount?: number;
+            /** Format: int32 */
+            itemLevel: number;
+            /** @description e.g. weapon, armor, ring, consumable. */
+            itemType: string;
+            /** Format: int32 */
+            magicResistance?: number;
+            /** Format: int32 */
+            manaAmount?: number;
+            name: string;
+            /** @description The rarity tier: normal, uncommon, rare, runed or fabled. */
+            rarity: string;
+            /** Format: int32 */
+            requiredLevel: number;
+            /** Format: uuid */
+            templateId: string;
+            /** @description The unique's effect text. Absent unless the item is a unique. */
+            uniqueEffectText?: string;
+            weaponType?: string;
         };
         ItemSummary: {
             /** @description Every rolled affix; empty for an item without any. */
@@ -1373,6 +1532,34 @@ export interface components {
             /** Format: int64 */
             amount: number;
             direction: string;
+        };
+        Letter: {
+            /** @description Plain text. */
+            body: string;
+            /**
+             * @description none on a letter without enclosures; treat claiming like unclaimed.
+             * @enum {string}
+             */
+            claimState: "none" | "unclaimed" | "claiming" | "claimed";
+            /** @description Empty on a letter without enclosures. */
+            enclosures: components["schemas"]["Enclosure"][];
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: uuid */
+            id: string;
+            read: boolean;
+            /**
+             * @description official: the Barrowspire Wardens; system: the Spire.
+             * @enum {string}
+             */
+            sender: "official" | "system";
+            /** Format: date-time */
+            sentAt: string;
+            title: string;
+        };
+        LetterList: {
+            /** @description At most 50 non-expired letters, newest first. */
+            letters: components["schemas"]["Letter"][];
         };
         ListEnvelope: {
             /** @description Human-readable summary */
@@ -1478,6 +1665,28 @@ export interface components {
             refresh_expires_in?: number;
             /** @description Refresh token */
             refresh_token?: string;
+        };
+        MailboxSummary: {
+            /**
+             * Format: date-time
+             * @description When the newest letter was sent. Absent when the mailbox is empty.
+             */
+            newestLetterAt?: string;
+            /**
+             * Format: int32
+             * @description Letters whose enclosures the member has not taken.
+             */
+            unclaimedCount: number;
+            /**
+             * Format: int32
+             * @description Letters the member has not read.
+             */
+            unreadCount: number;
+            /**
+             * Format: int32
+             * @description Letters unread or holding untaken enclosures: the count on the envelope's seal.
+             */
+            waitingCount: number;
         };
         Member: {
             /** @description Avatar URL, empty when unset */
@@ -1696,6 +1905,17 @@ export interface components {
             /** @description Whether the update succeeded */
             success: boolean;
         };
+        Recipient: {
+            /** @description Every member, as one broadcast letter. Only true. */
+            allMembers?: boolean;
+            /**
+             * Format: uuid
+             * @description One member.
+             */
+            memberId?: string;
+            /** @description A member list: one letter per distinct member, 1-1000 distinct ids (notification-service decides). */
+            memberIds?: string[];
+        };
         RequestAvatarUploadBody: {
             /** @description Name of the file to upload */
             filename?: string;
@@ -1829,6 +2049,31 @@ export interface components {
             status: number;
             title: string;
             type: string;
+        };
+        SendLetterBody: {
+            /** @description 1-2000 characters after trimming, plain text (notification-service decides). */
+            body: string;
+            /** @description At most 10, at most one gold, item quantities summing to at most 60 (notification-service decides). */
+            enclosures?: components["schemas"]["EnclosureRequest"][];
+            /**
+             * Format: date-time
+             * @description Must be later than now. Absent: 30 days after sending.
+             */
+            expiresAt?: string;
+            recipient: components["schemas"]["Recipient"];
+            /** @description 1-60 characters after trimming (notification-service decides). */
+            title: string;
+        };
+        SentLetter: {
+            /** Format: uuid */
+            letterId: string;
+            /** Format: uuid */
+            memberId?: string;
+        };
+        SentLetters: {
+            /** Format: date-time */
+            expiresAt: string;
+            letters: components["schemas"]["SentLetter"][];
         };
         SigninBody: {
             /** @description Email address */
@@ -1974,6 +2219,84 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "send-official-letter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendLetterBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SentLetters"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
     "list-my-characters": {
         parameters: {
             query?: never;
@@ -3002,6 +3325,193 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "list-my-letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LetterList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "mark-letter-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Letter id. */
+                letterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "get-mailbox-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailboxSummary"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

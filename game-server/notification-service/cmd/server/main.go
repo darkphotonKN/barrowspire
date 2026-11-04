@@ -4,8 +4,10 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
+	"github.com/darkphotonKN/barrowspire-server/common/discovery"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/notification-service/config"
@@ -28,6 +30,9 @@ var (
 	amqpPassword = commonhelpers.GetEnvString("RABBITMQ_PASS", "guest")
 	amqpHost     = commonhelpers.GetEnvString("RABBITMQ_HOST", "localhost")
 	amqpPort     = commonhelpers.GetEnvString("RABBITMQ_PORT", "5672")
+
+	// items-service, for resolving a letter's item enclosures at send (ADR-0022)
+	itemsAddr = commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126")
 )
 
 func main() {
@@ -66,8 +71,16 @@ func main() {
 		ch.Close()
 	}()
 
+	// lazy dial: notification boots with items absent, and a send that needs
+	// items while it is down answers Unavailable
+	itemsConn, err := discovery.Dial(itemsAddr)
+	if err != nil {
+		log.Fatalf("Failed to dial items service at %s: %s", itemsAddr, err)
+	}
+	defer itemsConn.Close()
+
 	// Use the new config setup to initialize all services
-	grpcServer = config.SetupServices(db, ch)
+	grpcServer = config.SetupServices(db, ch, itemsConn, []byte(os.Getenv("JWT_SECRET")))
 
 	log.Printf("Notification Server started on PORT: %s\n", grpcAddr)
 

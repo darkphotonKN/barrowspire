@@ -50,3 +50,23 @@ func (c *Client) MarkAllNotificationsAsRead(ctx context.Context, req *pb.MarkAll
 	response, err := client.MarkAllNotificationsAsRead(ctx, req)
 	return response, err
 }
+
+// Mailbox (FS-1GZGD): the in-game letters live in notification-service too,
+// so the mailbox operations share this connection. Each call carries the
+// caller's forwarded token on ctx.
+
+func (c *Client) SendLetter(ctx context.Context, req *pb.SendLetterRequest) (*pb.SendLetterResponse, error) {
+	return pb.NewNotificationServiceClient(c.conn).SendLetter(ctx, req)
+}
+
+func (c *Client) ListLetters(ctx context.Context, req *pb.ListLettersRequest) (*pb.ListLettersResponse, error) {
+	return pb.NewNotificationServiceClient(c.conn).ListLetters(ctx, req)
+}
+
+func (c *Client) GetMailboxSummary(ctx context.Context, req *pb.GetMailboxSummaryRequest) (*pb.MailboxSummary, error) {
+	return pb.NewNotificationServiceClient(c.conn).GetMailboxSummary(ctx, req)
+}
+
+func (c *Client) MarkLetterRead(ctx context.Context, req *pb.MarkLetterReadRequest) (*pb.MarkLetterReadResponse, error) {
+	return pb.NewNotificationServiceClient(c.conn).MarkLetterRead(ctx, req)
+}

@@ -138,6 +138,54 @@ const (
 	// buyout. Withdraw, accept and reads stay open. Added for FS-V6SFK
 	// (Signup hardening).
 	EmailUnverified Code = "EMAIL_UNVERIFIED"
+
+	// --- Mailbox (FS-1GZGD) ----------------------------------------------------
+	// Decided by notification-service, which owns the letter rules; the
+	// gateway passes them through and restates none.
+
+	// LetterTitleInvalid: a letter's title, trimmed, is not 1-60 characters
+	// (runes). FS-1GZGD R3.
+	LetterTitleInvalid Code = "LETTER_TITLE_INVALID"
+
+	// LetterBodyInvalid: a letter's body, trimmed, is not 1-2000 characters
+	// (runes). FS-1GZGD R3.
+	LetterBodyInvalid Code = "LETTER_BODY_INVALID"
+
+	// LetterExpiryInvalid: a given expiry is not later than now. FS-1GZGD R5.
+	LetterExpiryInvalid Code = "LETTER_EXPIRY_INVALID"
+
+	// EnclosureInvalid: a letter's enclosures break a bound (more than 10,
+	// more than one gold, a quantity outside 1-60, gold below 1, a slot count
+	// over 60, an item level below 1) or an item cannot be represented.
+	// FS-1GZGD S1, A3.
+	EnclosureInvalid Code = "ENCLOSURE_INVALID"
+
+	// UnknownItemTemplate: a template enclosure names no item template.
+	// FS-1GZGD R4.
+	UnknownItemTemplate Code = "UNKNOWN_ITEM_TEMPLATE"
+
+	// UnknownItemInstance: a copy enclosure names no item instance.
+	// FS-1GZGD A3.
+	UnknownItemInstance Code = "UNKNOWN_ITEM_INSTANCE"
+
+	// LetterRecipientsInvalid: a member list holds no id, or more than 1000
+	// distinct ids. FS-1GZGD A6, R47.
+	LetterRecipientsInvalid Code = "LETTER_RECIPIENTS_INVALID"
+
+	// LetterExpired: the letter is past its expiry, so no write may touch it.
+	// FS-1GZGD R5.
+	LetterExpired Code = "LETTER_EXPIRED"
+
+	// NothingToClaim: the letter has no enclosures. FS-1GZGD R13.
+	NothingToClaim Code = "NOTHING_TO_CLAIM"
+
+	// LetterAlreadyClaimed: the member already claimed this letter.
+	// FS-1GZGD R25.
+	LetterAlreadyClaimed Code = "LETTER_ALREADY_CLAIMED"
+
+	// LetterClaimInProgress: another claim of this letter by this member holds
+	// it right now. FS-1GZGD R25, S5.
+	LetterClaimInProgress Code = "LETTER_CLAIM_IN_PROGRESS"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -162,4 +210,17 @@ var domainCodes = map[Code]struct{}{
 	EmailAlreadyVerified:      {},
 
 	EmailUnverified: {},
+
+	// FS-1GZGD
+	LetterTitleInvalid:      {},
+	LetterBodyInvalid:       {},
+	LetterExpiryInvalid:     {},
+	EnclosureInvalid:        {},
+	UnknownItemTemplate:     {},
+	UnknownItemInstance:     {},
+	LetterRecipientsInvalid: {},
+	LetterExpired:           {},
+	NothingToClaim:          {},
+	LetterAlreadyClaimed:    {},
+	LetterClaimInProgress:   {},
 }
