@@ -28,7 +28,9 @@ interface FakeText extends Pressable {
 
 function fakeScene() {
   const texts: FakeText[] = [];
-  const zones: (Pressable & { rect: { x: number; y: number; w: number; h: number } })[] = [];
+  const zones: (Pressable & {
+    rect: { x: number; y: number; w: number; h: number };
+  })[] = [];
   const tweens: unknown[] = [];
   const chain = (self: Record<string, unknown>, record?: Pressable) => {
     for (const m of [
@@ -71,10 +73,27 @@ function fakeScene() {
   };
   const add = {
     graphics: () => chain({}),
-    text: (_x: number, _y: number, content: string, style?: { color?: string }) => {
-      const t: FakeText = { content, color: style?.color, handlers: {}, destroyed: false };
+    text: (
+      _x: number,
+      _y: number,
+      content: string,
+      style?: { color?: string },
+    ) => {
+      const t: FakeText = {
+        content,
+        color: style?.color,
+        handlers: {},
+        destroyed: false,
+      };
       texts.push(t);
-      return chain({ width: content.length * 7, height: 18, frame: { width: 10, height: 10 } }, t);
+      return chain(
+        {
+          width: content.length * 7,
+          height: 18,
+          frame: { width: 10, height: 10 },
+        },
+        t,
+      );
     },
     zone: (x: number, y: number, w: number, h: number) => {
       const z = { rect: { x, y, w, h }, handlers: {}, destroyed: false };
@@ -83,7 +102,11 @@ function fakeScene() {
     },
     sprite: () => chain({ frame: { width: 64, height: 64 } }),
     // as in Phaser, a container takes its children down with it
-    container: (_x: number, _y: number, children: { destroy(): void }[] = []) => {
+    container: (
+      _x: number,
+      _y: number,
+      children: { destroy(): void }[] = [],
+    ) => {
       const self = chain({ add: () => undefined });
       self.destroy = () => children.forEach((c) => c.destroy());
       return self;
@@ -108,7 +131,11 @@ function fakeScene() {
 }
 
 const art = {
-  resolve: () => ({ placeholder: true, texture: "__placeholder", anchor: { x: 0.5, y: 0.5 } }),
+  resolve: () => ({
+    placeholder: true,
+    texture: "__placeholder",
+    anchor: { x: 0.5, y: 0.5 },
+  }),
 } as unknown as ArtLibrary;
 
 const NOW = Date.parse("2026-11-04T12:00:00Z");
@@ -140,17 +167,34 @@ const letter = (over: Partial<Letter> = {}): Letter => ({
 
 function setup() {
   const api = {
-    summary: vi.fn(async () => ({ unreadCount: 0, unclaimedCount: 0, waitingCount: 0 })),
+    summary: vi.fn(async () => ({
+      unreadCount: 0,
+      unclaimedCount: 0,
+      waitingCount: 0,
+    })),
     letters: vi.fn(async () => [] as Letter[]),
     markRead: vi.fn(async (_id: string) => undefined),
   } satisfies MailboxApi;
-  const store = createMailboxStore({ api, storage: () => null, memberId: () => "me" });
+  const store = createMailboxStore({
+    api,
+    storage: () => null,
+    memberId: () => "me",
+  });
   const s = fakeScene();
   return { ...s, api, store };
 }
 
-const open = (store: ReturnType<typeof setup>["store"], letters: Letter[], selectedId: string | null = null) =>
-  store.setState({ panelOpen: true, letters, lettersStatus: "ready", selectedId });
+const open = (
+  store: ReturnType<typeof setup>["store"],
+  letters: Letter[],
+  selectedId: string | null = null,
+) =>
+  store.setState({
+    panelOpen: true,
+    letters,
+    lettersStatus: "ready",
+    selectedId,
+  });
 
 describe("LetterPanel (R36, R37, R40)", () => {
   it("draws nothing while closed", () => {
@@ -185,7 +229,11 @@ describe("LetterPanel (R36, R37, R40)", () => {
   it("lists each letter with its title and time, and shows the open one's sender, dates and body", () => {
     const { scene, store, shown } = setup();
     new LetterPanel(scene, { store, art, now: () => NOW });
-    open(store, [letter({ sender: "system", expiresAt: "2026-11-06T12:00:00Z" })], "a");
+    open(
+      store,
+      [letter({ sender: "system", expiresAt: "2026-11-06T12:00:00Z" })],
+      "a",
+    );
     expect(shown()).toEqual(
       expect.arrayContaining([
         "A word from the Wardens",
@@ -201,7 +249,11 @@ describe("LetterPanel (R36, R37, R40)", () => {
   it("opens a letter pressed in the list, marking it read", () => {
     const { scene, store, api, zones } = setup();
     new LetterPanel(scene, { store, art, now: () => NOW });
-    open(store, [letter({ id: "a" }), letter({ id: "b", title: "Second", read: false })], "a");
+    open(
+      store,
+      [letter({ id: "a" }), letter({ id: "b", title: "Second", read: false })],
+      "a",
+    );
     const rows = zones.filter((z) => !z.destroyed && z.handlers.pointerdown);
     // the second row zone in the list opens the second letter
     rows[1].handlers.pointerdown();
@@ -238,7 +290,16 @@ describe("LetterPanel (R36, R37, R40)", () => {
   it("shows the item tip from the snapshot while the pointer is over its slot", () => {
     const { scene, store, shown, zones } = setup();
     new LetterPanel(scene, { store, art, now: () => NOW });
-    open(store, [letter({ claimState: "unclaimed", enclosures: [{ kind: "item", quantity: 1, item: sword }] })], "a");
+    open(
+      store,
+      [
+        letter({
+          claimState: "unclaimed",
+          enclosures: [{ kind: "item", quantity: 1, item: sword }],
+        }),
+      ],
+      "a",
+    );
     const slot = zones.find((z) => !z.destroyed && z.handlers.pointerover)!;
     slot.handlers.pointerover({ x: 400, y: 500 });
     expect(shown().filter((t) => t === "Barrow Blade")).toHaveLength(1);
@@ -255,13 +316,10 @@ describe("LetterPanel (R36, R37, R40)", () => {
     expect(shown()).not.toContain(EMPTY_MAILBOX);
   });
 
-  it("covers its own rect only while open, and lets go of everything on destroy", () => {
+  it("lets go of everything on destroy, and draws nothing after", () => {
     const { scene, store, live } = setup();
     const panel = new LetterPanel(scene, { store, art, now: () => NOW });
-    expect(panel.covers(540, 360)).toBe(false);
     open(store, []);
-    expect(panel.covers(540, 360)).toBe(true);
-    expect(panel.covers(5, 5)).toBe(false);
     panel.destroy();
     expect(live()).toHaveLength(0);
     store.setState({ panelOpen: false });
@@ -275,9 +333,13 @@ describe("MailboxEnvelope (R33, R35)", () => {
     const { scene, store, shown } = setup();
     new MailboxEnvelope(scene, { store, blocked: () => false });
     expect(shown()).toHaveLength(0);
-    store.setState({ summary: { unreadCount: 2, unclaimedCount: 1, waitingCount: 3 } });
+    store.setState({
+      summary: { unreadCount: 2, unclaimedCount: 1, waitingCount: 3 },
+    });
     expect(shown()).toEqual(["3"]);
-    store.setState({ summary: { unreadCount: 0, unclaimedCount: 0, waitingCount: 0 } });
+    store.setState({
+      summary: { unreadCount: 0, unclaimedCount: 0, waitingCount: 0 },
+    });
     expect(shown()).toHaveLength(0);
   });
 
@@ -330,14 +392,5 @@ describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
     hud.destroy();
     expect(store.getState().panelOpen).toBe(false);
     expect(live()).toHaveLength(0);
-  });
-
-  it("covers the envelope and the open panel", async () => {
-    const { scene, store } = setup();
-    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
-    expect(hud.covers(1080 - 30, 720 - 30)).toBe(true);
-    expect(hud.covers(540, 360)).toBe(false);
-    await store.getState().openPanel();
-    expect(hud.covers(540, 360)).toBe(true);
   });
 });

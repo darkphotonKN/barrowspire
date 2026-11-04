@@ -815,7 +815,9 @@ describe("SocketManager redirect to the holding pod (FS-MCYWK C14–C19)", () =>
 });
 
 describe("SocketManager mailbox (FS-1GZGD R34, R43, A4: mail_arrived goes to the mailbox store)", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("hands a mail_arrived to the mailbox store once, and still tells a listener", () => {
     const { manager, old } = setup();

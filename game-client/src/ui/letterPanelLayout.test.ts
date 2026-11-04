@@ -19,7 +19,10 @@ const inside = (inner: Rect, outer: Rect) =>
   inner.y + inner.height <= outer.y + outer.height;
 
 const overlaps = (a: Rect, b: Rect) =>
-  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  a.x < b.x + b.width &&
+  b.x < a.x + a.width &&
+  a.y < b.y + b.height &&
+  b.y < a.y + a.height;
 
 describe("envelopeFrame (R33, D11)", () => {
   it("sits at the bottom-right of the screen", () => {
@@ -35,7 +38,8 @@ describe("letterPanelFrame (R36, R37)", () => {
     const f = letterPanelFrame(SCREEN, 0);
     expect(f.panel.x + f.panel.width / 2).toBe(SCREEN.width / 2);
     expect(f.panel.y + f.panel.height / 2).toBe(SCREEN.height / 2);
-    for (const part of [f.close, f.list, f.detail, f.body]) expect(inside(part, f.panel)).toBe(true);
+    for (const part of [f.close, f.list, f.detail, f.body])
+      expect(inside(part, f.panel)).toBe(true);
     expect(f.list.x + f.list.width).toBeLessThan(f.detail.x);
     expect(overlaps(f.close, f.detail)).toBe(false);
   });

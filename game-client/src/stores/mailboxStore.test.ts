@@ -3,7 +3,11 @@ import { ApiError } from "@/utils/apiError";
 import type { KeyValueStore } from "@/characters/roster";
 import type { Letter, MailboxSummary } from "@/mailbox/mailbox";
 import { LETTER_CRUMBLED } from "@/mailbox/mailbox";
-import { createMailboxStore, lastSeenKey, type MailboxApi } from "./mailboxStore";
+import {
+  createMailboxStore,
+  lastSeenKey,
+  type MailboxApi,
+} from "./mailboxStore";
 
 // FS-1GZGD §Requirements R34, R35, R38, R40, R44; A4 (no timer). I-1GZGD-6: what fetches the
 // summary, when the envelope pulses, and reading letters, against a faked gateway.
@@ -32,7 +36,9 @@ const letter = (over: Partial<Letter> = {}): Letter => ({
   ...over,
 });
 
-function memoryStorage(initial: Record<string, string> = {}): KeyValueStore & { data: Record<string, string> } {
+function memoryStorage(
+  initial: Record<string, string> = {},
+): KeyValueStore & { data: Record<string, string> } {
   const data = { ...initial };
   return {
     data,
@@ -65,11 +71,19 @@ function fakeApi(start: MailboxSummary = summary(), letters: Letter[] = []) {
 }
 
 function setup(
-  opts: { start?: MailboxSummary; letters?: Letter[]; storage?: KeyValueStore | null } = {},
+  opts: {
+    start?: MailboxSummary;
+    letters?: Letter[];
+    storage?: KeyValueStore | null;
+  } = {},
 ) {
   const { api, state } = fakeApi(opts.start, opts.letters);
   const storage = opts.storage === undefined ? memoryStorage() : opts.storage;
-  const store = createMailboxStore({ api, storage: () => storage, memberId: () => ME });
+  const store = createMailboxStore({
+    api,
+    storage: () => storage,
+    memberId: () => ME,
+  });
   return { store, api, state, storage };
 }
 
@@ -105,8 +119,12 @@ describe("mailbox store: fetching the summary (R34, A4)", () => {
   });
 
   describe("no timer", () => {
-    beforeEach(() => vi.useFakeTimers());
-    afterEach(() => vi.useRealTimers());
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
     it("never fetches again on its own, however long the player stands in the town", async () => {
       const { store, api } = setup();
@@ -128,7 +146,9 @@ describe("mailbox store: fetching the summary (R34, A4)", () => {
     const { store, api } = setup();
     let answerFirst!: (s: MailboxSummary) => void;
     api.summary
-      .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (answerFirst = resolve)),
+      )
       .mockImplementationOnce(async () => summary({ waitingCount: 3 }));
     const first = store.getState().enterTown();
     await store.getState().arrived();
@@ -141,7 +161,10 @@ describe("mailbox store: fetching the summary (R34, A4)", () => {
 describe("mailbox store: the pulse (R35)", () => {
   it("pulses when the newest letter is newer than the one this player last saw", async () => {
     const storage = memoryStorage({ [lastSeenKey(ME)]: T1 });
-    const { store } = setup({ start: summary({ waitingCount: 1, newestLetterAt: T2 }), storage });
+    const { store } = setup({
+      start: summary({ waitingCount: 1, newestLetterAt: T2 }),
+      storage,
+    });
     await store.getState().enterTown();
     expect(store.getState().pulses).toBe(1);
     expect(storage.getItem(lastSeenKey(ME))).toBe(T2);
@@ -149,7 +172,10 @@ describe("mailbox store: the pulse (R35)", () => {
 
   it("does not pulse again for the same letter", async () => {
     const storage = memoryStorage({ [lastSeenKey(ME)]: T2 });
-    const { store } = setup({ start: summary({ newestLetterAt: T2 }), storage });
+    const { store } = setup({
+      start: summary({ newestLetterAt: T2 }),
+      storage,
+    });
     await store.getState().enterTown();
     await store.getState().arrived();
     expect(store.getState().pulses).toBe(0);
@@ -157,7 +183,10 @@ describe("mailbox store: the pulse (R35)", () => {
 
   it("records the first summary it ever sees without pulsing, then pulses for a newer one", async () => {
     const storage = memoryStorage();
-    const { store, state } = setup({ start: summary({ newestLetterAt: T1 }), storage });
+    const { store, state } = setup({
+      start: summary({ newestLetterAt: T1 }),
+      storage,
+    });
     await store.getState().enterTown();
     expect(store.getState().pulses).toBe(0);
     expect(storage.getItem(lastSeenKey(ME))).toBe(T1);
@@ -172,7 +201,10 @@ describe("mailbox store: the pulse (R35)", () => {
   });
 
   it("works on in a session whose storage throws: the first summary records, a newer one pulses", async () => {
-    const { store, state } = setup({ start: summary({ newestLetterAt: T1 }), storage: brokenStorage });
+    const { store, state } = setup({
+      start: summary({ newestLetterAt: T1 }),
+      storage: brokenStorage,
+    });
     await expect(store.getState().enterTown()).resolves.toBeUndefined();
     expect(store.getState().pulses).toBe(0);
 
@@ -182,7 +214,10 @@ describe("mailbox store: the pulse (R35)", () => {
   });
 
   it("works with no storage at all", async () => {
-    const { store, state } = setup({ start: summary({ newestLetterAt: T1 }), storage: null });
+    const { store, state } = setup({
+      start: summary({ newestLetterAt: T1 }),
+      storage: null,
+    });
     await store.getState().enterTown();
     state.summary = summary({ newestLetterAt: T2 });
     await store.getState().arrived();
@@ -228,13 +263,19 @@ describe("mailbox store: the letter panel (R36, R38, R40)", () => {
     const fetches = api.summary.mock.calls.length;
 
     expect(api.markRead).toHaveBeenCalledWith("unread");
-    expect(store.getState().letters.find((l) => l.id === "unread")?.read).toBe(true);
-    expect(store.getState().summary).toEqual(summary({ unreadCount: 0, waitingCount: 0 }));
+    expect(store.getState().letters.find((l) => l.id === "unread")?.read).toBe(
+      true,
+    );
+    expect(store.getState().summary).toEqual(
+      summary({ unreadCount: 0, waitingCount: 0 }),
+    );
     expect(api.summary.mock.calls.length).toBe(fetches);
   });
 
   it("selects the newest when every letter is read, and marks nothing", async () => {
-    const { store, api } = setup({ letters: [read, letter({ id: "old", read: true, sentAt: T1 })] });
+    const { store, api } = setup({
+      letters: [read, letter({ id: "old", read: true, sentAt: T1 })],
+    });
     await store.getState().openPanel();
     expect(store.getState().selectedId).toBe("newest");
     expect(api.markRead).not.toHaveBeenCalled();
@@ -271,10 +312,21 @@ describe("mailbox store: the letter panel (R36, R38, R40)", () => {
   it("a letter that expired says it crumbled and leaves the list (LETTER_EXPIRED)", async () => {
     const { store, api } = setup({
       start: summary({ unreadCount: 1, unclaimedCount: 1, waitingCount: 1 }),
-      letters: [letter({ id: "dust", claimState: "unclaimed", enclosures: [{ kind: "gold", gold: 5 }] })],
+      letters: [
+        letter({
+          id: "dust",
+          claimState: "unclaimed",
+          enclosures: [{ kind: "gold", gold: 5 }],
+        }),
+      ],
     });
     api.markRead.mockRejectedValueOnce(
-      new ApiError({ code: "LETTER_EXPIRED", status: 400, detail: "expired", errors: [] }),
+      new ApiError({
+        code: "LETTER_EXPIRED",
+        status: 400,
+        detail: "expired",
+        errors: [],
+      }),
     );
     await store.getState().openPanel();
     await settle();
@@ -309,7 +361,12 @@ describe("mailbox store: the letter panel (R36, R38, R40)", () => {
   it("the next opening clears the last notice", async () => {
     const { store, api } = setup({ letters: [letter({ id: "dust" })] });
     api.markRead.mockRejectedValueOnce(
-      new ApiError({ code: "LETTER_EXPIRED", status: 400, detail: "expired", errors: [] }),
+      new ApiError({
+        code: "LETTER_EXPIRED",
+        status: 400,
+        detail: "expired",
+        errors: [],
+      }),
     );
     await store.getState().openPanel();
     await settle();
