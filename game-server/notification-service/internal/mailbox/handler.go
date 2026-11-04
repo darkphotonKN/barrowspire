@@ -20,12 +20,12 @@ type Service interface {
 	ListLetters(ctx context.Context, member uuid.UUID) ([]MailboxLetter, error)
 	MailboxSummary(ctx context.Context, member uuid.UUID) (Summary, error)
 	MarkLetterRead(ctx context.Context, letterID, member uuid.UUID) error
+	ClaimLetter(ctx context.Context, letterID, member uuid.UUID) (*Claim, error)
 }
 
 // Handler serves the mailbox methods of NotificationService. It does not
 // embed the generated Unimplemented server: config composes it with the
-// notification handler, which does, into the one registered server. Methods
-// not defined here (ClaimLetter until I-1GZGD-4) answer Unimplemented.
+// notification handler, which does, into the one registered server.
 type Handler struct {
 	service Service
 }
@@ -126,6 +126,36 @@ func (h *Handler) MarkLetterRead(ctx context.Context, req *pb.MarkLetterReadRequ
 	return &pb.MarkLetterReadResponse{}, nil
 }
 
+// ClaimLetter takes every enclosure of one letter for the token's member
+// (R13). The forwarded token stays on ctx: the claim forwards it to items and
+// wallet, which act on that same member.
+func (h *Handler) ClaimLetter(ctx context.Context, req *pb.ClaimLetterRequest) (*pb.ClaimLetterResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	letterID, err := uuid.Parse(req.GetLetterId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "letter_id is not a uuid")
+	}
+
+	claim, err := h.service.ClaimLetter(ctx, letterID, who.MemberID)
+	if err != nil {
+		return nil, statusOf(ctx, "claim letter", err)
+	}
+
+	res := &pb.ClaimLetterResponse{
+		LetterId:   claim.LetterID.String(),
+		ClaimState: string(ClaimClaimed),
+		ItemIds:    make([]string, 0, len(claim.ItemIDs)),
+		Gold:       claim.Gold,
+	}
+	for _, id := range claim.ItemIDs {
+		res.ItemIds = append(res.ItemIds, id.String())
+	}
+	return res, nil
+}
+
 // statusOf is the one place a mailbox error becomes a gRPC status. A refusal
 // crosses as its code, unwrapped, so no service context reaches the wire.
 func statusOf(ctx context.Context, op string, err error) error {
@@ -137,7 +167,7 @@ func statusOf(ctx context.Context, op string, err error) error {
 		return status.Error(codes.PermissionDenied, "only an admin may send official letters")
 	case errors.Is(err, ErrLetterNotFound):
 		return status.Error(codes.NotFound, "letter not found")
-	case errors.Is(err, ErrItemsUnavailable), errors.Is(err, ErrStoreFailed):
+	case errors.Is(err, ErrItemsUnavailable), errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrStoreFailed):
 		slog.WarnContext(ctx, "mailbox dependency unavailable", "op", op, "error", err)
 		return status.Error(codes.Unavailable, op+" unavailable")
 	default:
