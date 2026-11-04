@@ -18,6 +18,8 @@ export interface MailboxHudDeps {
   art: ArtLibrary;
   /** Whether a dialogue, a menu or an overlay owns the screen now: the envelope opens nothing. */
   blocked: () => boolean;
+  /** The character's level, where known: the enclosure tip tones a requirement above it. */
+  level?: () => number | undefined;
 }
 
 /** The mailbox as the hub hangs it: the app's mailbox store, the scene's baked art. */
@@ -25,8 +27,9 @@ export function mountMailbox(
   scene: Phaser.Scene,
   art: ArtLibrary,
   blocked: () => boolean,
+  level?: () => number | undefined,
 ): MailboxHud {
-  return new MailboxHud(scene, { store: useMailboxStore, art, blocked });
+  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level });
 }
 
 export class MailboxHud {
@@ -41,7 +44,11 @@ export class MailboxHud {
       store: deps.store,
       blocked: deps.blocked,
     });
-    this.panel = new LetterPanel(scene, { store: deps.store, art: deps.art });
+    this.panel = new LetterPanel(scene, {
+      store: deps.store,
+      art: deps.art,
+      level: deps.level,
+    });
     void deps.store.getState().enterTown();
   }
 
@@ -52,6 +59,11 @@ export class MailboxHud {
 
   close(): void {
     this.deps.store.getState().closePanel();
+  }
+
+  /** Whether a screen point lies under the open panel: what is drawn there takes no wheel or press. */
+  covers(x: number, y: number): boolean {
+    return this.panel.covers(x, y);
   }
 
   /** Leaving the town: the panel closes with it, and `mail_arrived` fetches nothing until the next entry. */
