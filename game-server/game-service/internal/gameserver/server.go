@@ -243,10 +243,9 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		presenceWriter = boot.presence
 	}
 	presence := newPresenceKeeper(presenceWriter, boot.hubOccupancy, server, podID, podAddr, boot.partyNow, redisWriter)
-	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs)
 	// a mail arrival reaches the players standing in this pod's hub (FS-1GZGD R42, R43)
 	mail := newMailArrivals(boot.mailBus, server, newSender)
-	messageHub.mail = mail
+	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs, mail)
 	go messageHub.Run(ctx)
 	chat.start(ctx)
 	inbox.start(ctx)
@@ -1088,6 +1087,25 @@ func (s *Server) TownConns() map[uuid.UUID]*websocket.Conn {
 		}
 	}
 	return conns
+}
+
+/**
+* TownConn is TownConns for one member: their connection if they are connected
+* here and seated in the hub. Read under the same lock, without listing the town.
+**/
+func (s *Server) TownConn(playerID uuid.UUID) (*websocket.Conn, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.hubSessionID == uuid.Nil {
+		return nil, false
+	}
+	for conn, player := range s.connToPlayer {
+		if player.ID == playerID && player.CurrentGameSessionId == s.hubSessionID {
+			return conn, true
+		}
+	}
+	return nil, false
 }
 
 /**
