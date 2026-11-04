@@ -27,6 +27,12 @@ const TokenKey = "token"
 const SessionIDParam = "session_id"
 const SessionIDKey = "session_id"
 
+// for a connection a server sent the client to make: "1" on the redirect's
+// target, its one fallback and a travel's hub handoff. Such a connection is
+// seated where it lands, never redirected again. FS-MCYWK R8.
+const RedirectedParam = "redirected"
+const RedirectedKey = "redirected"
+
 // Custom close code for auth errors (4000-4999 range is for application use)
 const CloseCodeAuthError = 4001
 
@@ -109,6 +115,7 @@ func WSAuthMiddleware(authClient grpcauth.AuthClient) gin.HandlerFunc {
 		c.Set("userIdStr", resp.MemberId)
 		c.Set(TokenKey, token)
 		c.Set(SessionIDKey, sessionID) // store session id needed for handoff
+		c.Set(RedirectedKey, c.Query(RedirectedParam))
 
 		slog.Debug("stored userId in gin context")
 

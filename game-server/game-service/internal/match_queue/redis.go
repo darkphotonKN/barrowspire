@@ -257,6 +257,18 @@ func (r *Redis) MarkPodDead(ctx context.Context, podID string) error {
 	return nil
 }
 
+// PodAlive reports whether podID's liveness key stands, so whether it is still
+// heartbeating. A read only: the key, its TTL and its write stay the
+// heartbeat's. FS-MCYWK R4.
+func (r *Redis) PodAlive(ctx context.Context, podID string) (bool, error) {
+	n, err := r.client.Exists(ctx, keyPodAlivePrefix+podID).Result()
+	if err != nil {
+		return false, fmt.Errorf("MatchQueue PodAlive %s: %w", podID, err)
+	}
+
+	return n > 0, nil
+}
+
 var queuedPlayersScript = redis.NewScript(`
 		-- check the entire queue
 		local queue = redis.call("LRANGE", KEYS[1], 0, -1)

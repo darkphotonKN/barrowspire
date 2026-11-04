@@ -104,6 +104,11 @@ type Server struct {
 	// is let in past the hub's cap; nil lets nobody past it (FS-NCC9J R20)
 	leaders partyLeaders
 
+	// the other live pod still holding a connecting member; nil on a pod built
+	// without the presence index or the liveness reader, which never looks up
+	// (FS-MCYWK R4, R6)
+	holdingPods *holdingPods
+
 	// this pod's parties; read here only to learn when shutdown dissolved them
 	parties *partyRegistry
 	// who is in which party, as the party cache last published it: handed to every world's
@@ -190,6 +195,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	if boot.partyStore != nil {
 		server.leaders = boot.partyStore
 	}
+	server.holdingPods = newHoldingPods(podID, boot.presence, boot.podLiveness)
 
 	// initialize message sender
 	newSender := messaging.NewMessageSender(server)

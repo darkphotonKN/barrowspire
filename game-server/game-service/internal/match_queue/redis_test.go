@@ -212,6 +212,49 @@ func TestMarkPodAlive_Refresh_ExtendsTheTTL(t *testing.T) {
 	assert.True(t, mr.Exists("pod:alive:pod-a"), "a refreshed pod must stay alive past the first TTL")
 }
 
+// A pod reads as alive while its heartbeat key stands, and not once it lapses
+// or is deleted on a graceful shutdown. FS-MCYWK R4.
+func TestPodAlive_WhileTheHeartbeatKeyExists(t *testing.T) {
+	client, mr := testutil.NewRedis(t)
+	q := matchqueue.NewRedis(client)
+	ctx := context.Background()
+
+	alive, err := q.PodAlive(ctx, "pod-a")
+	require.NoError(t, err)
+	assert.False(t, alive, "a pod that never beat is not alive")
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	alive, err = q.PodAlive(ctx, "pod-a")
+	require.NoError(t, err)
+	assert.True(t, alive, "a beating pod is alive")
+
+	mr.FastForward(3 * time.Second)
+	alive, err = q.PodAlive(ctx, "pod-a")
+	require.NoError(t, err)
+	assert.False(t, alive, "a lapsed heartbeat is not alive")
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	require.NoError(t, q.MarkPodDead(ctx, "pod-a"))
+	alive, err = q.PodAlive(ctx, "pod-a")
+	require.NoError(t, err)
+	assert.False(t, alive, "a pod marked dead is not alive")
+}
+
+// The read never touches the key: no write, no TTL change.
+func TestPodAlive_LeavesTheKeyAndItsTTLAlone(t *testing.T) {
+	client, mr := testutil.NewRedis(t)
+	q := matchqueue.NewRedis(client)
+	ctx := context.Background()
+
+	require.NoError(t, q.MarkPodAlive(ctx, "pod-a"))
+	mr.FastForward(time.Second)
+
+	_, err := q.PodAlive(ctx, "pod-a")
+	require.NoError(t, err)
+
+	assert.Equal(t, 2*time.Second, mr.TTL("pod:alive:pod-a"))
+}
+
 var matchOfTwo = matchmaker.MatchCriteria{MatchSize: 2}
 
 func TestMatchmake_FewerThanMatchSize_ReturnsNilAndLeavesPlayerQueued(t *testing.T) {

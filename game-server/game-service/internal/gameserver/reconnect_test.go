@@ -66,3 +66,36 @@ func TestDisconnect_LeavingTheHubIsFinal(t *testing.T) {
 	_, mapped := server.GetPlayerFromConn(conn)
 	assert.False(t, mapped, "and routing no longer knows the connection")
 }
+
+// A dropped member is still present while their reconnect grace runs, so the
+// presence keeper keeps their entry and a landing pod can send them back here;
+// once the grace ends they are not. FS-MCYWK §B R13.
+func TestPresentPlayers_ListsAMemberWithinTheGraceOnly(t *testing.T) {
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren"}
+	registerTestConn(server, conn, player)
+	_, err := server.JoinHub(conn, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"})
+	require.NoError(t, err)
+
+	_, hold, held := server.holdForReconnect(conn)
+	require.True(t, held)
+	_, mapped := server.GetPlayerFromConn(conn)
+	require.False(t, mapped, "the dropped connection is unmapped")
+
+	assert.Contains(t, presentIDs(server), player.ID, "present within the grace")
+
+	server.cleanUpPlayerCompletely(player.ID, hold)
+
+	assert.NotContains(t, presentIDs(server), player.ID, "not present once the grace ends")
+}
+
+// presentIDs is who the server reports present.
+func presentIDs(server *Server) []uuid.UUID {
+	var ids []uuid.UUID
+	for _, present := range server.PresentPlayers() {
+		ids = append(ids, present.ID)
+	}
+	return ids
+}

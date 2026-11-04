@@ -131,6 +131,9 @@ type bootOptions struct {
 	hubOccupancy hubOccupancyStore
 	// the Redis side of the pod inbox; nil, and this pod reaches no other (FS-R82NV R9)
 	inboxBus inboxBus
+	// whether another pod still heartbeats; nil, and a connection is never redirected
+	// (FS-MCYWK R4, R6)
+	podLiveness podLiveness
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
