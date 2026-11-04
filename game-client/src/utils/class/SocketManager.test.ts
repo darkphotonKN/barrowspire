@@ -4,6 +4,7 @@ import { useGameStore } from "../../stores/gameStore";
 import { useChatStore } from "../../stores/chatStore";
 import { usePartyStore } from "../../stores/partyStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useMailboxStore } from "../../stores/mailboxStore";
 
 /** A socket the test drives by hand: the server side of each event is a method. */
 class FakeSocket implements SocketLike {
@@ -810,5 +811,32 @@ describe("SocketManager redirect to the holding pod (FS-MCYWK C14–C19)", () =>
 
     expect(sockets).toHaveLength(2);
     expect(manager.getConnectionStatus()).toBe("disconnected");
+  });
+});
+
+describe("SocketManager mailbox (FS-1GZGD R34, R43, A4: mail_arrived goes to the mailbox store)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hands a mail_arrived to the mailbox store once, and still tells a listener", () => {
+    const { manager, old } = setup();
+    const arrived = vi.spyOn(useMailboxStore.getState(), "arrived").mockResolvedValue(undefined);
+    const heard = vi.fn();
+    manager.on("mail_arrived", heard);
+
+    old.receive({ action: "mail_arrived", payload: {} });
+
+    expect(arrived).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledWith({});
+  });
+
+  it("never sends a mail_arrived itself", () => {
+    const { old } = setup();
+    vi.spyOn(useMailboxStore.getState(), "arrived").mockResolvedValue(undefined);
+
+    old.receive({ action: "mail_arrived", payload: {} });
+
+    expect(old.sent.some((m) => JSON.parse(m).action === "mail_arrived")).toBe(false);
   });
 });
