@@ -619,7 +619,8 @@ type SnapshotResolution struct {
 	UnknownTemplateIDs []uuid.UUID
 	UnknownInstanceIDs []uuid.UUID
 	// UnrepresentableIDs are known ids that cannot be minted: an item level
-	// below 1, or a copy source with a malformed affix.
+	// below 1, a required level below 1, a negative durability, or a copy
+	// source with a malformed affix.
 	UnrepresentableIDs []uuid.UUID
 }
 

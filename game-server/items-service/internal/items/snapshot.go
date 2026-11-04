@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// representable is FS-1GZGD A1's only check on a snapshot: an item level of
+// representable is FS-1GZGD A1's check on a snapshot: an item level of
 // at least 1 and every affix well formed (a known stat code, tier 0-3, value
 // >= 0). Never a drop rule: any affix count at any rarity and any item level
 // above the template's band is fine.
@@ -26,8 +26,10 @@ func (s *ItemSnapshot) representable() bool {
 
 // mintable is representable plus what the stored instance needs to read back
 // as the snapshot: a required level of its own (>= 1) and no negative
-// durability. A resolve never makes a snapshot that fails these; a grant
-// checks them because its snapshot comes from the caller.
+// durability. Both sides check it: a resolve refuses at send what a grant
+// would refuse at claim (a template's required_level column allows 0), so a
+// resolved snapshot always grants; a grant checks it because its snapshot
+// comes from the caller.
 func (s *ItemSnapshot) mintable() bool {
 	return s.representable() && s.RequiredLevel >= 1 && (s.Durability == nil || *s.Durability >= 0)
 }
@@ -71,8 +73,9 @@ const templateSnapshotRarity = "normal"
 // base stats, Normal, no affixes, at the requested item level or else its
 // min_item_level. An instance becomes a copy of it as it stands. Answers are
 // index-aligned with the request; an unknown id, or a known one that is not
-// representable, answers nil and is named once in the resolution's lists. No
-// drop rule is applied.
+// representable, answers nil and is named once in the resolution's lists.
+// "Representable" here is mintable: whatever a resolve answers, GrantItems
+// accepts. No drop rule is applied.
 func (s *service) ResolveItemSnapshots(ctx context.Context, templates []TemplateSnapshotRequest, instanceIDs []uuid.UUID) (*SnapshotResolution, error) {
 	templateIDs := make([]uuid.UUID, 0, len(templates))
 	for _, t := range templates {
@@ -112,7 +115,7 @@ func (s *service) ResolveItemSnapshots(ctx context.Context, templates []Template
 		if req.ItemLevel != nil {
 			snap.ItemLevel = *req.ItemLevel
 		}
-		if !snap.representable() {
+		if !snap.mintable() {
 			report(&out.UnrepresentableIDs, req.TemplateID)
 			continue
 		}
@@ -127,7 +130,7 @@ func (s *service) ResolveItemSnapshots(ctx context.Context, templates []Template
 		}
 		snap := *c
 		snap.Affixes = slices.Clone(c.Affixes)
-		if !snap.representable() {
+		if !snap.mintable() {
 			report(&out.UnrepresentableIDs, id)
 			continue
 		}
