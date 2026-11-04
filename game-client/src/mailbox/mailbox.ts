@@ -20,7 +20,8 @@ export const EMPTY_MAILBOX = "No letters wait for you.";
 /** A letter that expired under the player's hand (R39, Edge States). */
 export const LETTER_CRUMBLED = "This letter has crumbled to dust.";
 /** The letters could not be read: the gateway or notification-service is down. */
-export const MAILBOX_UNREACHABLE = "The letters cannot be reached. Open the mailbox again.";
+export const MAILBOX_UNREACHABLE =
+  "The letters cannot be reached. Open the mailbox again.";
 
 /** Who a letter is from, as the panel names them (R36). */
 export function senderName(sender: Letter["sender"]): string {
@@ -76,22 +77,34 @@ export function initialLetter(letters: readonly Letter[]): string | null {
 const less = (n: number) => Math.max(0, n - 1);
 
 /** The summary once `letter` is read, so the seal lowers at once without another fetch (R38). */
-export function afterRead(summary: MailboxSummary, letter: Letter): MailboxSummary {
+export function afterRead(
+  summary: MailboxSummary,
+  letter: Letter,
+): MailboxSummary {
   if (letter.read) return summary;
   return {
     ...summary,
     unreadCount: less(summary.unreadCount),
-    waitingCount: untaken(letter) ? summary.waitingCount : less(summary.waitingCount),
+    waitingCount: untaken(letter)
+      ? summary.waitingCount
+      : less(summary.waitingCount),
   };
 }
 
 /** The summary once `letter` has left the mailbox (it expired): it counts nowhere (R9). */
-export function withoutLetter(summary: MailboxSummary, letter: Letter): MailboxSummary {
+export function withoutLetter(
+  summary: MailboxSummary,
+  letter: Letter,
+): MailboxSummary {
   return {
     ...summary,
     unreadCount: letter.read ? summary.unreadCount : less(summary.unreadCount),
-    unclaimedCount: untaken(letter) ? less(summary.unclaimedCount) : summary.unclaimedCount,
-    waitingCount: waiting(letter) ? less(summary.waitingCount) : summary.waitingCount,
+    unclaimedCount: untaken(letter)
+      ? less(summary.unclaimedCount)
+      : summary.unclaimedCount,
+    waitingCount: waiting(letter)
+      ? less(summary.waitingCount)
+      : summary.waitingCount,
   };
 }
 
@@ -108,7 +121,20 @@ export function relativeTime(sentAt: string, now: number): string {
   return `${Math.floor(ago / DAY)}d ago`;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 /** The day a letter was sent, in the player's own time zone: "4 Nov 2026" (R36). */
 export function sentDate(sentAt: string): string {
@@ -146,7 +172,8 @@ export function letterRow(letter: Letter, now: number): LetterRow {
     title: letter.title,
     time: relativeTime(letter.sentAt, now),
     unread: !letter.read,
-    glyph: letter.enclosures.length === 0 ? "none" : untaken(letter) ? "lit" : "dim",
+    glyph:
+      letter.enclosures.length === 0 ? "none" : untaken(letter) ? "lit" : "dim",
   };
 }
 
@@ -194,7 +221,13 @@ export function letterDetail(letter: Letter, now: number): LetterDetail {
 
 function enclosureSlot(enclosure: Enclosure): EnclosureSlot[] {
   if (enclosure.kind === "gold")
-    return [{ kind: "gold", icon: "coins", amount: (enclosure.gold ?? 0).toLocaleString("en-US") }];
+    return [
+      {
+        kind: "gold",
+        icon: "coins",
+        amount: (enclosure.gold ?? 0).toLocaleString("en-US"),
+      },
+    ];
   if (!enclosure.item) return [];
   const item = snapshotItem(enclosure.item);
   const quantity = enclosure.quantity ?? 1;

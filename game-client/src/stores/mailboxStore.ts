@@ -105,13 +105,17 @@ export function createMailboxStore({
 
   return createStore<MailboxState>()((set, get) => {
     /** Pulses for a newer letter than the player last saw, and records it either way. */
-    const notice = (newest: string | undefined) => {
+    const recordNewest = (newest: string | undefined) => {
       const id = memberId();
       if (!newest || !id) return;
       const key = lastSeenKey(id);
       const seen = readSeen(key) ?? seenInSession.get(key) ?? null;
       if (isNewerLetter(newest, seen)) set({ pulses: get().pulses + 1 });
-      if (!seen || isNewerLetter(newest, seen) || Number.isNaN(Date.parse(seen))) {
+      if (
+        !seen ||
+        isNewerLetter(newest, seen) ||
+        Number.isNaN(Date.parse(seen))
+      ) {
         seenInSession.set(key, newest);
         writeSeen(key, newest);
       }
@@ -128,7 +132,7 @@ export function createMailboxStore({
       }
       if (request !== summaryRequest) return;
       set({ summary });
-      notice(summary.newestLetterAt);
+      recordNewest(summary.newestLetterAt);
     };
 
     /** The letter has expired: it leaves the list and the counts, and the panel says so. */
@@ -152,13 +156,16 @@ export function createMailboxStore({
 
       const summary = get().summary;
       set({
-        letters: get().letters.map((l) => (l.id === letterId ? { ...l, read: true } : l)),
+        letters: get().letters.map((l) =>
+          l.id === letterId ? { ...l, read: true } : l,
+        ),
         summary: summary && afterRead(summary, letter),
       });
       try {
         await api.markRead(letterId);
       } catch (err) {
-        if (err instanceof ApiError && err.code === "LETTER_EXPIRED") crumble(letterId);
+        if (err instanceof ApiError && err.code === "LETTER_EXPIRED")
+          crumble(letterId);
         // anything else: the next summary fetch is the truth
         else console.warn("marking a letter read failed", err);
       }
@@ -192,7 +199,13 @@ export function createMailboxStore({
         await fetchSummary();
       },
 
-      leaveTown: () => set({ inTown: false, panelOpen: false, selectedId: null, notice: null }),
+      leaveTown: () =>
+        set({
+          inTown: false,
+          panelOpen: false,
+          selectedId: null,
+          notice: null,
+        }),
 
       arrived: async () => {
         if (!get().inTown) return;
