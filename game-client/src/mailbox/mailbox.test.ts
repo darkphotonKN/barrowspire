@@ -468,7 +468,7 @@ describe("takeView: the Take button and the Taken stamp (R39, A5)", () => {
 
   it("offers Take on untaken enclosures, a claim in progress included", () => {
     for (const state of ["unclaimed", "claiming"] as const)
-      expect(takeView(detail(state), false, null)).toEqual({
+      expect(takeView(detail(state), null, null)).toEqual({
         button: { label: TAKE_LABEL, enabled: true },
         stamp: false,
         warning: null,
@@ -476,15 +476,24 @@ describe("takeView: the Take button and the Taken stamp (R39, A5)", () => {
   });
 
   it("says Taking… and cannot be pressed while the take is in flight", () => {
-    expect(takeView(detail("unclaimed"), true, null)).toEqual({
+    const open = detail("unclaimed");
+    expect(takeView(open, open.id, null)).toEqual({
       button: { label: TAKING_LABEL, enabled: false },
       stamp: false,
       warning: null,
     });
   });
 
+  it("says Take but cannot be pressed while another letter's take is in flight (one take per panel)", () => {
+    expect(takeView(detail("unclaimed"), "another-letter", null)).toEqual({
+      button: { label: TAKE_LABEL, enabled: false },
+      stamp: false,
+      warning: null,
+    });
+  });
+
   it("keeps the button under a refusal's warning line", () => {
-    expect(takeView(detail("unclaimed"), false, SEAL_WOULD_NOT_BREAK)).toEqual({
+    expect(takeView(detail("unclaimed"), null, SEAL_WOULD_NOT_BREAK)).toEqual({
       button: { label: TAKE_LABEL, enabled: true },
       stamp: false,
       warning: SEAL_WOULD_NOT_BREAK,
@@ -492,7 +501,7 @@ describe("takeView: the Take button and the Taken stamp (R39, A5)", () => {
   });
 
   it("stamps a taken letter and shows no button", () => {
-    expect(takeView(detail("claimed"), false, null)).toEqual({
+    expect(takeView(detail("claimed"), null, null)).toEqual({
       button: null,
       stamp: true,
       warning: null,
@@ -500,7 +509,7 @@ describe("takeView: the Take button and the Taken stamp (R39, A5)", () => {
   });
 
   it("shows neither on a letter without enclosures", () => {
-    expect(takeView(detail("none", false), false, null)).toEqual({
+    expect(takeView(detail("none", false), null, null)).toEqual({
       button: null,
       stamp: false,
       warning: null,
