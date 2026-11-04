@@ -26,7 +26,35 @@ const wantWelcomeBody = "The town keeps a fire for every newcomer, and tonight o
 	"enough to buy what the Quartermaster thinks you will need.\n\n" +
 	"Take them. They will wait in your stash."
 
+// smallHealthPotion is the id the test catalogue gives the welcome potion's name.
 var smallHealthPotion = uuid.MustParse("aa0e8400-e29b-41d4-a716-446655440006")
+
+const testGiftName = "Lesser Heal Potion"
+
+// fakeGifts is the catalogue lookup: names to template ids, or an error.
+type fakeGifts struct {
+	mu    sync.Mutex
+	ids   map[string]uuid.UUID
+	err   error
+	calls int
+	asked []string
+}
+
+func newFakeGifts() *fakeGifts {
+	return &fakeGifts{ids: map[string]uuid.UUID{testGiftName: smallHealthPotion}}
+}
+
+func (f *fakeGifts) FindTemplateByName(_ context.Context, name string) (uuid.UUID, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.asked = append(f.asked, name)
+	if f.err != nil {
+		return uuid.Nil, false, f.err
+	}
+	id, ok := f.ids[name]
+	return id, ok, nil
+}
 
 func storeWelcome(t *testing.T, svc *service, member uuid.UUID) (func(context.Context), error) {
 	t.Helper()
@@ -262,4 +290,72 @@ func TestWelcomeCopy_PassesTheLetterRules(t *testing.T) {
 	assert.Equal(t, welcomeTitle, title)
 	assert.Equal(t, welcomeBody, body)
 	assert.False(t, strings.Contains(welcomeBody, "\n\n\n"))
+}
+
+func TestStoreWelcome_FindsThePotionByName_OncePerProcess(t *testing.T) {
+	repo, items := &fakeRepo{}, &fakeItems{}
+	svc := newTestService(repo, items)
+	gifts := newFakeGifts()
+	svc.gift = welcomeGift{finder: gifts, name: testGiftName}
+
+	for range 3 {
+		_, err := storeWelcome(t, svc, uuid.New())
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 1, gifts.calls, "the potion's id is looked up once, then cached")
+	assert.Equal(t, []string{testGiftName}, gifts.asked)
+	for _, batch := range repo.inserted {
+		require.Len(t, batch[0].Enclosures, 2)
+		assert.Equal(t, smallHealthPotion, batch[0].Enclosures[0].Item.TemplateID)
+	}
+}
+
+func TestStoreWelcome_PotionNameNotInTheCatalogue_StoresAGoldOnlyWelcomeAndAsksAgainNextTime(t *testing.T) {
+	logs := captureLogs(t)
+	repo, items := &fakeRepo{}, &fakeItems{}
+	svc := newTestService(repo, items)
+	gifts := &fakeGifts{ids: map[string]uuid.UUID{}}
+	svc.gift = welcomeGift{finder: gifts, name: testGiftName}
+
+	announce, err := storeWelcome(t, svc, uuid.New())
+
+	require.NoError(t, err, "a missing potion never breaks signup")
+	require.NotNil(t, announce)
+	require.Len(t, repo.inserted, 1)
+	assert.Equal(t, []Enclosure{{Kind: EnclosureGold, Gold: 100}}, repo.inserted[0][0].Enclosures)
+	assert.Equal(t, 0, items.calls, "nothing to resolve without a template")
+	assert.Contains(t, logs.String(), "level=ERROR")
+	assert.Contains(t, logs.String(), testGiftName)
+
+	gifts.ids[testGiftName] = smallHealthPotion
+	_, err = storeWelcome(t, svc, uuid.New())
+	require.NoError(t, err)
+	assert.Equal(t, 2, gifts.calls, "a miss is not cached")
+	assert.Len(t, repo.inserted[1][0].Enclosures, 2)
+}
+
+func TestStoreWelcome_PotionLookupUnavailable_IsTransientAndStoresNothing(t *testing.T) {
+	repo, items := &fakeRepo{}, &fakeItems{}
+	svc := newTestService(repo, items)
+	gifts := &fakeGifts{err: ErrItemsUnavailable}
+	svc.gift = welcomeGift{finder: gifts, name: testGiftName}
+
+	announce, err := storeWelcome(t, svc, uuid.New())
+
+	assert.ErrorIs(t, err, commonconstants.ErrTransient)
+	assert.Nil(t, announce)
+	assert.Empty(t, repo.inserted)
+}
+
+func TestStoreWelcome_NoGiftConfigured_StoresGoldOnly(t *testing.T) {
+	repo, items := &fakeRepo{}, &fakeItems{}
+	svc := newTestService(repo, items)
+	svc.gift = welcomeGift{}
+
+	_, err := storeWelcome(t, svc, uuid.New())
+
+	require.NoError(t, err)
+	require.Len(t, repo.inserted, 1)
+	assert.Equal(t, []Enclosure{{Kind: EnclosureGold, Gold: 100}}, repo.inserted[0][0].Enclosures)
 }

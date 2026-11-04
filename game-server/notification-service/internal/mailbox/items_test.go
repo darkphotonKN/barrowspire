@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type fakeSnapshotRPC struct {
@@ -27,6 +28,15 @@ type fakeSnapshotRPC struct {
 	grantDeadline bool
 	grantRes      *itemspb.GrantItemsResponse
 	grantErr      error
+
+	listCalls int
+	listRes   *itemspb.ListItemTemplatesResponse
+	listErr   error
+}
+
+func (f *fakeSnapshotRPC) ListItemTemplates(_ context.Context, _ *emptypb.Empty, _ ...grpc.CallOption) (*itemspb.ListItemTemplatesResponse, error) {
+	f.listCalls++
+	return f.listRes, f.listErr
 }
 
 func (f *fakeSnapshotRPC) GrantItems(ctx context.Context, in *itemspb.GrantItemsRequest, _ ...grpc.CallOption) (*itemspb.GrantItemsResponse, error) {
@@ -176,5 +186,43 @@ func TestItemsClient_GrantItemsFailures(t *testing.T) {
 		_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(context.Background(), "k", lines)
 		require.Error(t, err)
 		assert.Zero(t, rpc.grantCalls)
+	})
+}
+
+// The welcome potion is found by name in the catalogue, because its template id differs per
+// environment (seeded by the dev seed, not a migration).
+func TestItemsClient_FindTemplateByName(t *testing.T) {
+	lesser, greater := uuid.New(), uuid.New()
+	catalogue := &itemspb.ListItemTemplatesResponse{Items: []*itemspb.ItemTemplate{
+		{Id: greater.String(), ItemName: "Greater Heal Potion"},
+		{Id: lesser.String(), ItemName: "Lesser Heal Potion"},
+	}}
+
+	t.Run("an exact name, ignoring case and spaces at either end", func(t *testing.T) {
+		client := &ItemsClient{rpc: &fakeSnapshotRPC{listRes: catalogue}, timeout: defaultItemsTimeout}
+		id, found, err := client.FindTemplateByName(context.Background(), "  lesser heal potion ")
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, lesser, id)
+	})
+
+	t.Run("no template of that name", func(t *testing.T) {
+		client := &ItemsClient{rpc: &fakeSnapshotRPC{listRes: catalogue}, timeout: defaultItemsTimeout}
+		_, found, err := client.FindTemplateByName(context.Background(), "Heal Potion")
+		require.NoError(t, err)
+		assert.False(t, found, "a partial name is not a match")
+	})
+
+	t.Run("items down is unavailable", func(t *testing.T) {
+		client := &ItemsClient{rpc: &fakeSnapshotRPC{listErr: status.Error(codes.Unavailable, "down")}, timeout: defaultItemsTimeout}
+		_, _, err := client.FindTemplateByName(context.Background(), "Lesser Heal Potion")
+		assert.ErrorIs(t, err, ErrItemsUnavailable)
+	})
+
+	t.Run("a malformed id from items is an error, not a match", func(t *testing.T) {
+		bad := &itemspb.ListItemTemplatesResponse{Items: []*itemspb.ItemTemplate{{Id: "nope", ItemName: "Lesser Heal Potion"}}}
+		client := &ItemsClient{rpc: &fakeSnapshotRPC{listRes: bad}, timeout: defaultItemsTimeout}
+		_, _, err := client.FindTemplateByName(context.Background(), "Lesser Heal Potion")
+		require.Error(t, err)
 	})
 }

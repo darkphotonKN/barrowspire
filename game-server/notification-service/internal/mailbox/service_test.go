@@ -149,6 +149,7 @@ func newClaimService(repo *fakeRepo, items *fakeItems, wallet *fakeWallet) *serv
 		items:    items,
 		wallet:   wallet,
 		arrivals: &fakeArrivals{},
+		gift:     welcomeGift{finder: newFakeGifts(), name: testGiftName},
 		withTx: func(_ context.Context, fn func(tx *sqlx.Tx) error) error {
 			return fn(nil)
 		},
