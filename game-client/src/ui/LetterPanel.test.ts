@@ -12,6 +12,7 @@ import {
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
 import { LetterPanel } from "./LetterPanel";
 import { MailboxEnvelope } from "./MailboxEnvelope";
+import { MailboxHud } from "./mailboxHud";
 
 // FS-1GZGD R33, R35–R37, R40. I-1GZGD-6: the envelope and the letter panel as a scene draws them,
 // on a recording stand-in for the Phaser scene.
@@ -81,7 +82,12 @@ function fakeScene() {
       return chain({}, z);
     },
     sprite: () => chain({ frame: { width: 64, height: 64 } }),
-    container: () => chain({ add: () => undefined }),
+    // as in Phaser, a container takes its children down with it
+    container: (_x: number, _y: number, children: { destroy(): void }[] = []) => {
+      const self = chain({ add: () => undefined });
+      self.destroy = () => children.forEach((c) => c.destroy());
+      return self;
+    },
   };
   const scene = {
     add,
@@ -295,5 +301,43 @@ describe("MailboxEnvelope (R33, R35)", () => {
     store.setState({ pulses: 1 });
     expect(tweens).toHaveLength(1);
     expect(tweens[0]).toMatchObject({ yoyo: true, repeat: 2 });
+  });
+});
+
+describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
+  it("fetches the summary on town entry, and drops mail_arrived once the town is left", async () => {
+    const { scene, store, api } = setup();
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
+    await Promise.resolve();
+    expect(store.getState().inTown).toBe(true);
+    expect(api.summary).toHaveBeenCalledTimes(1);
+
+    hud.destroy();
+    await store.getState().arrived();
+    expect(api.summary).toHaveBeenCalledTimes(1);
+  });
+
+  it("owns the keys while the panel is open, and closes it with the town", async () => {
+    const { scene, store, live } = setup();
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
+    expect(hud.isOpen()).toBe(false);
+    await store.getState().openPanel();
+    expect(hud.isOpen()).toBe(true);
+    hud.close();
+    expect(hud.isOpen()).toBe(false);
+
+    await store.getState().openPanel();
+    hud.destroy();
+    expect(store.getState().panelOpen).toBe(false);
+    expect(live()).toHaveLength(0);
+  });
+
+  it("covers the envelope and the open panel", async () => {
+    const { scene, store } = setup();
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
+    expect(hud.covers(1080 - 30, 720 - 30)).toBe(true);
+    expect(hud.covers(540, 360)).toBe(false);
+    await store.getState().openPanel();
+    expect(hud.covers(540, 360)).toBe(true);
   });
 });
