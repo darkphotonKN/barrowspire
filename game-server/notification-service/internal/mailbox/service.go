@@ -94,8 +94,11 @@ type service struct {
 	wallet   GoldCreditor
 	arrivals ArrivalPublisher
 	inbox    Inbox
-	// welcomeGift caches the welcome potion's snapshot once resolved (A8.1).
+	// welcomeGift caches the welcome potion's template id and snapshot once
+	// found and resolved (A8.1, A10).
 	welcomeGift potionCache
+	// gift is where the welcome potion is found: a catalogue name (A10).
+	gift welcomeGift
 	// claims caps the claims in flight; nil is no cap.
 	claims claimSlots
 	// withTx runs fn in one transaction, committing when fn succeeds and

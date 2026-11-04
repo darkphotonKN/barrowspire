@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"net"
+	"os"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
@@ -36,9 +37,13 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// letters every door stores (R41, R52); the letter request shares this
 	// service's inbox (R12).
 	arrivals := mailbox.NewRedisArrivalPublisher(redisClient)
+	// The welcome potion is found by catalogue name (FS-1GZGD A10): its template
+	// id differs per environment, since the dev seed mints it.
+	itemsClient := mailbox.NewItemsClient(itemsConn)
 	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
-		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals, inboxRepo,
-		MaxConcurrentClaims)
+		itemsClient, mailbox.NewWalletClient(walletConn), arrivals, inboxRepo,
+		MaxConcurrentClaims).
+		WithWelcomeGift(itemsClient, os.Getenv("WELCOME_GIFT_TEMPLATE_NAME"))
 	mailboxHandler := mailbox.NewHandler(mailboxService)
 
 	// Create service with repositories and DB handle (for tx-wrapped inbox

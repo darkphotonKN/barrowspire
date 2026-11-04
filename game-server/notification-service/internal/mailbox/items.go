@@ -3,6 +3,7 @@ package mailbox
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // defaultItemsTimeout bounds one resolve, so an items outage answers the
@@ -18,8 +20,9 @@ import (
 const defaultItemsTimeout = 5 * time.Second
 
 // itemsRPC is the items-service calls the mailbox makes: the resolve at send,
-// the grant at claim.
+// the grant at claim, and the catalogue the welcome potion is found in.
 type itemsRPC interface {
+	ListItemTemplates(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*itemspb.ListItemTemplatesResponse, error)
 	ResolveItemSnapshots(ctx context.Context, in *itemspb.ResolveItemSnapshotsRequest, opts ...grpc.CallOption) (*itemspb.ResolveItemSnapshotsResponse, error)
 	GrantItems(ctx context.Context, in *itemspb.GrantItemsRequest, opts ...grpc.CallOption) (*itemspb.GrantItemsResponse, error)
 }
@@ -36,6 +39,37 @@ type ItemsClient struct {
 // NewItemsClient calls items-service over conn.
 func NewItemsClient(conn grpc.ClientConnInterface) *ItemsClient {
 	return &ItemsClient{rpc: itemspb.NewItemsServiceClient(conn), timeout: defaultItemsTimeout}
+}
+
+// FindTemplateByName finds the catalogue template named name, ignoring case and
+// spaces at either end, through the public ListItemTemplates. found is false
+// when no template has that name. The welcome potion is found this way because
+// its template id differs per environment: the dev seed mints it, not a
+// migration (FS-1GZGD A10). items down is ErrItemsUnavailable.
+func (c *ItemsClient) FindTemplateByName(ctx context.Context, name string) (uuid.UUID, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	res, err := c.rpc.ListItemTemplates(ctx, &emptypb.Empty{})
+	if err != nil {
+		if itemsDown(err) {
+			return uuid.Nil, false, fmt.Errorf("%w: %w", ErrItemsUnavailable, err)
+		}
+		return uuid.Nil, false, fmt.Errorf("list item templates: %w", err)
+	}
+
+	want := strings.TrimSpace(name)
+	for _, t := range res.GetItems() {
+		if !strings.EqualFold(strings.TrimSpace(t.GetItemName()), want) {
+			continue
+		}
+		id, err := uuid.Parse(t.GetId())
+		if err != nil {
+			return uuid.Nil, false, fmt.Errorf("template %q has a malformed id %q: %w", t.GetItemName(), t.GetId(), err)
+		}
+		return id, true, nil
+	}
+	return uuid.Nil, false, nil
 }
 
 func (c *ItemsClient) ResolveItemSnapshots(ctx context.Context, templates []TemplateRef, instanceIDs []uuid.UUID) (*Resolution, error) {
