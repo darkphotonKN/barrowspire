@@ -106,6 +106,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		// the presence index and the pod inbox ride it too: invites reach players on other pods
 		// (FS-R82NV R7, R9)
 		gameserver.WithPresence(partypresence.NewRedis(redisClient)),
+		// a fresh connection is sent to the pod still holding its member only while that pod
+		// heartbeats; the matchmaker's Redis owns the pod:alive key (FS-MCYWK R4)
+		gameserver.WithPodLiveness(matchQueueRedis),
 		gameserver.WithHubOccupancy(hubocc.NewRedis(redisClient)),
 		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
 	)

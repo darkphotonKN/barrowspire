@@ -58,6 +58,23 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		return
 	}
 
+	// a handoff connection names the run it was sent to. The middleware always
+	// passes the session id on, empty for an ordinary connect. FS-K2HKP R22.
+	sessionID := c.GetString(auth.SessionIDKey)
+	isHandoff := sessionID != ""
+
+	// a member on record nowhere here, on a connection no server sent, may still
+	// be present on another live pod, their holding pod: they are sent there
+	// before anything is created for them, so this pod keeps no record, seat or presence entry for
+	// them. A member on record here reconnects in place. FS-MCYWK R2, R3, R8.
+	redirected := c.GetString(auth.RedirectedKey) == redirectedValue
+	if _, onRecord := s.PlayerByID(memberId); !isHandoff && !redirected && !onRecord {
+		if holding, found := s.holdingPods.find(ctx, memberId); found {
+			s.redirectToHoldingPod(c, memberId, holding)
+			return
+		}
+	}
+
 	// a member already on record is reconnecting: their record is kept and
 	// takes the token they reconnected with. player is a copy of the record,
 	// so it is read below without the lock the worlds write it under.
@@ -72,11 +89,6 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 			"username", data.Name,
 		)
 	}
-
-	// a handoff connection names the run it was sent to. The middleware always
-	// passes the session id on, empty for an ordinary connect. FS-K2HKP R22.
-	sessionID := c.GetString(auth.SessionIDKey)
-	isHandoff := sessionID != ""
 
 	// establish websocket connection
 	conn, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
