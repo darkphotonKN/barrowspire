@@ -35,7 +35,7 @@ const (
 func mailboxDB(t *testing.T) *sqlx.DB {
 	t.Helper()
 	db := emptyMailboxSchema(t)
-	migrateUp(t, db, latestMigration)
+	migrateUp(t, db, 1, latestMigration)
 	return db
 }
 
@@ -87,9 +87,9 @@ func emptyMailboxSchema(t *testing.T) *sqlx.DB {
 // latestMigration asks migrateUp for every migration there is.
 const latestMigration = math.MaxInt
 
-// migrateUp applies, in order, the up file of every migration numbered at
-// most through.
-func migrateUp(t *testing.T, db *sqlx.DB, through int) {
+// migrateUp applies, in order, the up file of every migration numbered from
+// first through last.
+func migrateUp(t *testing.T, db *sqlx.DB, first, last int) {
 	t.Helper()
 
 	migrations, err := filepath.Glob(migrationsGlob)
@@ -97,10 +97,9 @@ func migrateUp(t *testing.T, db *sqlx.DB, through int) {
 	require.NotEmpty(t, migrations, "no migrations found at %s", migrationsGlob)
 	sort.Strings(migrations)
 	for _, m := range migrations {
-		if migrationVersion(t, m) > through {
-			break
+		if v := migrationVersion(t, m); v >= first && v <= last {
+			applyMigration(t, db, m)
 		}
-		applyMigration(t, db, m)
 	}
 }
 
@@ -468,11 +467,11 @@ func insertRawLetter(t *testing.T, db *sqlx.DB, sender string) uuid.UUID {
 
 func TestMigration000006_LettersStoredBeforeItKeepBothSentByColumnsNull(t *testing.T) {
 	db := emptyMailboxSchema(t)
-	migrateUp(t, db, 5)
+	migrateUp(t, db, 1, 5)
 	official := insertRawLetter(t, db, "official")
 	system := insertRawLetter(t, db, "system")
 
-	migrateUp(t, db, 6)
+	migrateUp(t, db, 6, 6)
 
 	for _, id := range []uuid.UUID{official, system} {
 		row := sentByOf(t, db, id)
@@ -495,7 +494,7 @@ func TestMigration000006_UpDownUp(t *testing.T) {
 	assert.False(t, exists, "down drops the CHECK")
 	insertRawLetter(t, db, "official")
 
-	migrateUp(t, db, 6)
+	migrateUp(t, db, 6, 6)
 	assert.Equal(t, 2, sentByColumns(t, db))
 	exists, validated := sentByCheckValidated(t, db)
 	assert.True(t, exists)
