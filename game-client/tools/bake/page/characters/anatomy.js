@@ -418,7 +418,6 @@ export function cloak(rig, mat, o = {}) {
 export function hood(rig, mat, o = {}) {
   const H = rig.H;
   const [, hy, hz] = J(rig, "head");
-  const [, ny] = J(rig, "neck");
   const r = rig.p.headR * 1.38;
   const shell = new THREE.SphereGeometry(r * H, 22, 16, Math.PI / 2 + 0.52, Math.PI * 2 - 1.04, 0, Math.PI * 0.7);
   attach(rig, "head", shell, mat, [0, hy + 0.05, hz - 0.002], { sy: 1.12 });
@@ -430,7 +429,85 @@ export function hood(rig, mat, o = {}) {
   attach(rig, "head", inner, shade, [0, hy + 0.05, hz - 0.002], { sy: 1.12, noShadow: true });
   // peak: the hood rises to a soft point behind the crown
   attach(rig, "head", new THREE.ConeGeometry(r * 0.55 * H, r * 1.1 * H, 12), mat, [0, hy + 0.1, hz - 0.045], { rx: -0.95 });
-  // capelet: rides the chest, covers the shoulder line
+  capelet(rig, o.capeMat ?? mat);
+}
+
+/**
+ * A deep cowl: the crown closed all round, the face opening cut only from the brow down, and the
+ * whole drawn forward so the face sits in its shadow. `brow` is where the opening starts (a
+ * fraction of π down from the crown), `gap` its width (radians), `reach` how far the cowl is
+ * pulled forward over the face. `shade` darkens the face beneath: 0 none, 1 the eyes, 2 down to
+ * the mouth. `point` draws the crown out behind into one tapering point (see `drawToPoint`).
+ */
+export function cowl(rig, mat, o = {}) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const R = rig.p.headR;
+  const r = R * 1.38;
+  const gap = o.gap ?? 0.9;
+  const brow = (o.brow ?? 0.46) * Math.PI;
+  const end = Math.PI * 0.72;
+  const at = [0, hy + 0.05, hz - 0.002 + (o.reach ?? 0.014)];
+  const shape = { sy: 1.12, sz: 1.08 };
+  // the crown drawn out behind into one long point, every layer by the same pull so they stay flush
+  const pt = o.point;
+  const draw = (geo) => (pt ? drawToPoint(geo, { ...pt, length: pt.length * H }) : geo);
+  attach(rig, "head", draw(new THREE.SphereGeometry(r * H, 28, 14, 0, Math.PI * 2, 0, brow)), mat, at, shape);
+  attach(rig, "head", draw(new THREE.SphereGeometry(r * H, 28, 10, Math.PI / 2 + gap / 2, Math.PI * 2 - gap, brow, end - brow)), mat, at, shape);
+  // the turned edge over the brow, a fold of cloth that gives the opening its line
+  const lip = new THREE.SphereGeometry(r * 1.03 * H, 16, 3, Math.PI / 2 - gap / 2 - 0.35, gap + 0.7, brow - 0.07 * Math.PI, 0.08 * Math.PI);
+  attach(rig, "head", draw(lip), mat, at, shape);
+  // the inside, near black: what shows through the opening is the cowl's dark, not its lining
+  const dark = mat.clone();
+  dark.side = THREE.BackSide;
+  dark.color = new THREE.Color(0.12, 0.12, 0.12);
+  const inner = draw(new THREE.SphereGeometry(r * 0.95 * H, 24, 14, Math.PI / 2 + gap / 2, Math.PI * 2 - gap, 0, end));
+  attach(rig, "head", inner, dark, at, { ...shape, noShadow: true });
+  // the face under the cowl's shadow: a dark veil over the head's front, down to `shade`
+  const shade = o.shade ?? 1;
+  if (shade > 0) {
+    const veil = mat.clone();
+    veil.color = new THREE.Color(0.07, 0.07, 0.07);
+    const to = shade > 1 ? 0.78 : 0.52;
+    const front = new THREE.SphereGeometry(1, 16, 8, Math.PI / 2 - 0.8, 1.6, 0.28 * Math.PI, (to - 0.28) * Math.PI);
+    attach(rig, "head", front, veil, [0, hy + 0.058, hz - 0.002], { sx: R * 0.97 * H, sy: R * 1.08 * H, sz: R * 1.2 * H, noShadow: true });
+  }
+  capelet(rig, o.capeMat ?? mat);
+}
+
+/**
+ * Pulls a hood piece out toward `dir` into a point `length` long. A vertex is pulled by how
+ * squarely it faces `dir`, and its girth narrows by the same measure, so the hood tapers over its
+ * whole length instead of ending in a nub. `pinch` is how far the girth narrows at the tip (1 a
+ * needle, lower a blunter, fuller end); `girth` is how late it starts narrowing (higher keeps the
+ * hood full for longer); `swell` fattens the middle of the run, as cloth bags. `droop` bends the
+ * far end down, as cloth hangs.
+ */
+function drawToPoint(geo, { dir, length, droop = 0, pinch = 0.92, girth = 2.2, swell = 0 }) {
+  const d = new THREE.Vector3(...dir).normalize();
+  const p = geo.attributes.position;
+  const v = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = v.length();
+    if (!n) continue;
+    const a = v.dot(d);
+    const t = Math.max(0, a / n);
+    const w = Math.pow(t, 2.2);
+    side.copy(v).addScaledVector(d, -a).multiplyScalar((1 - pinch * Math.pow(t, girth)) * (1 + swell * 4 * w * (1 - w)));
+    v.copy(d).multiplyScalar(a + length * w).add(side);
+    v.y -= droop * length * w * w;
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A short capelet riding the chest and covering the shoulder line, under a hood or cowl. */
+function capelet(rig, mat) {
+  const H = rig.H;
+  const [, ny] = J(rig, "neck");
   const cape = rigidTube(
     H,
     [
@@ -440,7 +517,7 @@ export function hood(rig, mat, o = {}) {
     ],
     { segs: 24, steps: 4, caps: false },
   );
-  attach(rig, "chest", cape, o.capeMat ?? mat, [0, 0, 0]);
+  attach(rig, "chest", cape, mat, [0, 0, 0]);
 }
 
 /**

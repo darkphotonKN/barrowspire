@@ -61,7 +61,7 @@
       "image": "characters-3.png",
       "width": 1984,
       "height": 2780,
-      "sha256": "0db84f8406d3eee15b8ac57de3da177147f237e0b25dfeb588da99a6a8bb9fee"
+      "sha256": "780198a33e6908d5294c03bc70bd4f20e36c6c0604fa0b594fc663db2c689282"
     },
     "containers-0": {
       "image": "containers-0.png",
@@ -1463,7 +1463,7 @@
           ]
         }
       },
-      "crown": 76,
+      "crown": 78,
       "source": "authored: tools/bake/page/characters/cast.js#archer",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },

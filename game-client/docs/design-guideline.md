@@ -251,6 +251,11 @@ lit) while the player stands inside.
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
   class reads at a glance: knight, archer, wizard, mercenary.
+- **Archer:** a ranger in forest green. A deep cowl, closed over the crown, hides most of the
+  face in shadow down to the mouth. Its crown draws back into one long, full point that droops
+  like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
+  ragged cloak hangs over light leather, with a quiver on the back. *(Amended at the owner's
+  pick, 2026-11-04.)*
 - **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
   open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
   mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall
