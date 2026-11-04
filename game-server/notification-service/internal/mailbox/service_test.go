@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/google/uuid"
@@ -144,9 +145,10 @@ func newTestService(repo *fakeRepo, items *fakeItems) *service {
 
 func newClaimService(repo *fakeRepo, items *fakeItems, wallet *fakeWallet) *service {
 	return &service{
-		repo:   repo,
-		items:  items,
-		wallet: wallet,
+		repo:     repo,
+		items:    items,
+		wallet:   wallet,
+		arrivals: &fakeArrivals{},
 		withTx: func(_ context.Context, fn func(tx *sqlx.Tx) error) error {
 			return fn(nil)
 		},
@@ -525,4 +527,131 @@ func TestMarkLetterRead(t *testing.T) {
 		assertRefused(t, err, errcode.LetterExpired)
 		assert.Empty(t, repo.markedAt)
 	})
+}
+
+// fakeArrivals records every batch the service announced and whether the
+// letters' transaction had committed when it did.
+type fakeArrivals struct {
+	batches        [][]Letter
+	afterCommit    []bool
+	committedSoFar *bool
+}
+
+func (f *fakeArrivals) PublishArrivals(_ context.Context, letters []Letter) {
+	f.batches = append(f.batches, letters)
+	f.afterCommit = append(f.afterCommit, f.committedSoFar != nil && *f.committedSoFar)
+}
+
+// newSendService is newTestService whose transaction says when it commits,
+// so a test can tell a publish after the commit from one inside it.
+func newSendService(repo *fakeRepo, items *fakeItems) (*service, *fakeArrivals) {
+	committed := false
+	arrivals := &fakeArrivals{committedSoFar: &committed}
+	svc := newTestService(repo, items)
+	svc.arrivals = arrivals
+	svc.withTx = func(_ context.Context, fn func(tx *sqlx.Tx) error) error {
+		if err := fn(nil); err != nil {
+			return err
+		}
+		committed = true
+		return nil
+	}
+	return svc, arrivals
+}
+
+func membersOf(letters []Letter) []*uuid.UUID {
+	members := make([]*uuid.UUID, 0, len(letters))
+	for _, l := range letters {
+		members = append(members, l.MemberID)
+	}
+	return members
+}
+
+// FS-1GZGD R41, R50; ADR-0045 §Decision 1.
+func TestSendLetter_OneMemberLetterIsAnnouncedOnceAfterItsCommit(t *testing.T) {
+	repo := &fakeRepo{}
+	svc, arrivals := newSendService(repo, &fakeItems{})
+	member := uuid.New()
+
+	_, err := svc.SendLetter(context.Background(), admin, draft(toMember(member)))
+
+	require.NoError(t, err)
+	require.Len(t, arrivals.batches, 1)
+	assert.Equal(t, repo.inserted[0], arrivals.batches[0], "the stored letters are the ones announced")
+	assert.Equal(t, []*uuid.UUID{&member}, membersOf(arrivals.batches[0]))
+	assert.Equal(t, []bool{true}, arrivals.afterCommit)
+}
+
+func TestSendLetter_BroadcastIsAnnouncedOnceForEveryMember(t *testing.T) {
+	svc, arrivals := newSendService(&fakeRepo{}, &fakeItems{})
+
+	_, err := svc.SendLetter(context.Background(), admin, draft(toAll))
+
+	require.NoError(t, err)
+	require.Len(t, arrivals.batches, 1)
+	assert.Equal(t, []*uuid.UUID{nil}, membersOf(arrivals.batches[0]))
+	assert.Equal(t, []bool{true}, arrivals.afterCommit)
+}
+
+// A6: [A, B, A, C] stores three letters and announces the three as one batch.
+func TestSendLetter_MemberListAnnouncesEachStoredLetterInOneBatchAfterTheCommit(t *testing.T) {
+	svc, arrivals := newSendService(&fakeRepo{}, &fakeItems{})
+	a, b, c := uuid.New(), uuid.New(), uuid.New()
+
+	_, err := svc.SendLetter(context.Background(), admin, draft(toList(a, b, a, c)))
+
+	require.NoError(t, err)
+	require.Len(t, arrivals.batches, 1)
+	assert.Equal(t, []*uuid.UUID{&a, &b, &c}, membersOf(arrivals.batches[0]))
+	assert.Equal(t, []bool{true}, arrivals.afterCommit)
+}
+
+func TestSendLetter_RefusedOrFailedSendAnnouncesNothing(t *testing.T) {
+	tmpl := uuid.New()
+	cases := []struct {
+		name   string
+		repo   *fakeRepo
+		items  *fakeItems
+		caller commonauth.Identity
+		draft  LetterDraft
+	}{
+		{"not an admin", &fakeRepo{}, &fakeItems{}, player, draft(toAll)},
+		{"title out of bounds", &fakeRepo{}, &fakeItems{}, admin, LetterDraft{Recipient: toAll, Body: "b"}},
+		{"empty member list", &fakeRepo{}, &fakeItems{}, admin, draft(toList())},
+		{"unknown template", &fakeRepo{}, &fakeItems{unknownTemplates: map[uuid.UUID]bool{tmpl: true}}, admin, draft(toAll, templateOf(tmpl, 1))},
+		{"items down", &fakeRepo{}, &fakeItems{err: ErrItemsUnavailable}, admin, draft(toAll, templateOf(tmpl, 1))},
+		{"transaction fails", &fakeRepo{insertErr: errors.New("connection reset")}, &fakeItems{}, admin, draft(toList(uuid.New(), uuid.New()))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, arrivals := newSendService(tc.repo, tc.items)
+
+			_, err := svc.SendLetter(context.Background(), tc.caller, tc.draft)
+
+			require.Error(t, err)
+			assert.Empty(t, arrivals.batches)
+		})
+	}
+}
+
+// A6 with the real publisher: Redis down never fails, undoes or holds up the
+// send beyond one deadline, and the failure is logged once.
+func TestSendLetter_RedisDownStillStoresEveryLetterAndAnswersWithinOneDeadline(t *testing.T) {
+	mr := miniredis.RunT(t)
+	addr := mr.Addr()
+	mr.Close()
+	publisher, logs := publisherOn(t, addr, 200*time.Millisecond)
+	repo := &fakeRepo{}
+	svc := newTestService(repo, &fakeItems{})
+	svc.arrivals = publisher
+
+	start := time.Now()
+	got, err := svc.SendLetter(context.Background(), admin, draft(toList(uuid.New(), uuid.New(), uuid.New())))
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(start), time.Second)
+	require.Len(t, repo.inserted, 1)
+	assert.Len(t, repo.inserted[0], 3)
+	assert.Len(t, got.Letters, 3)
+	assert.Len(t, logs.warnings(), 1)
 }
