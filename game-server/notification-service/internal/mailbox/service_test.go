@@ -655,3 +655,79 @@ func TestSendLetter_RedisDownStillStoresEveryLetterAndAnswersWithinOneDeadline(t
 	assert.Len(t, got.Letters, 3)
 	assert.Len(t, logs.warnings(), 1)
 }
+
+// The sent-by audit (FS-1GZGD A7.2, R55): the admin send records the token's
+// member on every letter it stores, whatever the recipient form, and no
+// source.
+func TestSendLetter_EveryLetterRecordsTheAdminFromTheToken(t *testing.T) {
+	tests := []struct {
+		name      string
+		recipient Recipient
+		letters   int
+	}{
+		{"one member", toMember(uuid.New()), 1},
+		{"a list of three", toList(uuid.New(), uuid.New(), uuid.New()), 3},
+		{"all members", toAll, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{}
+			_, err := newTestService(repo, &fakeItems{}).SendLetter(context.Background(), admin, draft(tt.recipient))
+			require.NoError(t, err)
+
+			require.Len(t, repo.inserted, 1)
+			require.Len(t, repo.inserted[0], tt.letters)
+			for _, l := range repo.inserted[0] {
+				assert.Equal(t, SenderOfficial, l.Sender)
+				require.NotNil(t, l.SentBy.MemberID)
+				assert.Equal(t, admin.MemberID, *l.SentBy.MemberID)
+				assert.Empty(t, l.SentBy.Source)
+			}
+		})
+	}
+}
+
+// The seam the system path (I-1GZGD-5's letter request, I-1GZGD-11's welcome)
+// stores through: a system letter records its sent-by source and no member.
+func TestPrepareLetters_SystemLetterRecordsItsSentBySource(t *testing.T) {
+	source, err := ParseSentBySource("test.compensation")
+	require.NoError(t, err)
+
+	letters, err := newTestService(&fakeRepo{}, &fakeItems{}).
+		prepareLetters(context.Background(), draft(toMember(uuid.New()), gold(100)), systemFrom(source))
+	require.NoError(t, err)
+
+	require.Len(t, letters, 1)
+	assert.Equal(t, SenderSystem, letters[0].Sender)
+	assert.Equal(t, SentBySource("test.compensation"), letters[0].SentBy.Source)
+	assert.Nil(t, letters[0].SentBy.MemberID)
+}
+
+func TestParseSentBySource_Bounds(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    SentBySource
+		wantErr bool
+	}{
+		{"a service and feature", "marketplace.settlement", "marketplace.settlement", false},
+		{"trimmed", "  test.compensation\n", "test.compensation", false},
+		{"one character", "x", "x", false},
+		{"64 characters", strings.Repeat("a", 64), SentBySource(strings.Repeat("a", 64)), false},
+		{"64 characters, not bytes", strings.Repeat("ä", 64), SentBySource(strings.Repeat("ä", 64)), false},
+		{"empty", "", "", true},
+		{"blank", " \t ", "", true},
+		{"65 characters", strings.Repeat("a", 65), "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseSentBySource(tt.raw)
+			if tt.wantErr {
+				assert.ErrorIs(t, err, ErrSentBySourceInvalid)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

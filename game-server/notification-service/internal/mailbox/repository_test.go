@@ -2,17 +2,22 @@ package mailbox
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,6 +33,15 @@ const (
 )
 
 func mailboxDB(t *testing.T) *sqlx.DB {
+	t.Helper()
+	db := emptyMailboxSchema(t)
+	migrateUp(t, db, latestMigration)
+	return db
+}
+
+// emptyMailboxSchema answers a connection to a fresh throwaway schema with no
+// migration applied, dropped when the test ends.
+func emptyMailboxSchema(t *testing.T) *sqlx.DB {
 	t.Helper()
 
 	if testing.Short() {
@@ -57,17 +71,6 @@ func mailboxDB(t *testing.T) *sqlx.DB {
 	db, err := sqlx.Connect("postgres", dsn+separator+"search_path="+testSchema+",public")
 	require.NoError(t, err)
 
-	migrations, err := filepath.Glob(migrationsGlob)
-	require.NoError(t, err)
-	require.NotEmpty(t, migrations, "no migrations found at %s", migrationsGlob)
-	sort.Strings(migrations)
-	for _, m := range migrations {
-		ddl, err := os.ReadFile(m)
-		require.NoError(t, err)
-		_, err = db.Exec(string(ddl))
-		require.NoError(t, err, "applying %s", filepath.Base(m))
-	}
-
 	t.Cleanup(func() {
 		_ = db.Close()
 		cleanup, err := sqlx.Connect("postgres", dsn)
@@ -81,7 +84,55 @@ func mailboxDB(t *testing.T) *sqlx.DB {
 	return db
 }
 
+// latestMigration asks migrateUp for every migration there is.
+const latestMigration = math.MaxInt
+
+// migrateUp applies, in order, the up file of every migration numbered at
+// most through.
+func migrateUp(t *testing.T, db *sqlx.DB, through int) {
+	t.Helper()
+
+	migrations, err := filepath.Glob(migrationsGlob)
+	require.NoError(t, err)
+	require.NotEmpty(t, migrations, "no migrations found at %s", migrationsGlob)
+	sort.Strings(migrations)
+	for _, m := range migrations {
+		if migrationVersion(t, m) > through {
+			break
+		}
+		applyMigration(t, db, m)
+	}
+}
+
+// migrateDown applies the down file of one migration.
+func migrateDown(t *testing.T, db *sqlx.DB, version int) {
+	t.Helper()
+
+	files, err := filepath.Glob(fmt.Sprintf("../../migrations/%06d_*.down.sql", version))
+	require.NoError(t, err)
+	require.Len(t, files, 1, "one down file for migration %d", version)
+	applyMigration(t, db, files[0])
+}
+
+func migrationVersion(t *testing.T, path string) int {
+	t.Helper()
+	version, err := strconv.Atoi(strings.SplitN(filepath.Base(path), "_", 2)[0])
+	require.NoError(t, err, "migration %s has no numeric version", path)
+	return version
+}
+
+func applyMigration(t *testing.T, db *sqlx.DB, path string) {
+	t.Helper()
+	ddl, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = db.Exec(string(ddl))
+	require.NoError(t, err, "applying %s", filepath.Base(path))
+}
+
 var sentAt = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+
+// wardensAdmin is the admin every stored test letter records as its sender.
+var wardensAdmin = uuid.MustParse("5b0f3e8a-2c4d-4e6f-8a1b-9c0d1e2f3a4b")
 
 func letterTo(member *uuid.UUID, sent time.Time, enclosures ...Enclosure) Letter {
 	return Letter{
@@ -89,6 +140,7 @@ func letterTo(member *uuid.UUID, sent time.Time, enclosures ...Enclosure) Letter
 		Title:      "From the Wardens",
 		Body:       "Well met.",
 		Sender:     SenderOfficial,
+		SentBy:     SentBy{MemberID: &wardensAdmin},
 		MemberID:   member,
 		Enclosures: enclosures,
 		SentAt:     sent,
@@ -355,4 +407,176 @@ func TestRepository_FindAddressedLetter(t *testing.T) {
 
 	_, err = repo.FindAddressed(ctx, uuid.New(), a)
 	assert.ErrorIs(t, err, ErrLetterNotFound)
+}
+
+// The sent-by audit (FS-1GZGD A7.2, R53-R56).
+
+const sentByCheck = "letters_sent_by_matches_sender"
+
+// sentByRow is a letter's sent-by audit as an operator reads it.
+type sentByRow struct {
+	Sender   string         `db:"sender"`
+	MemberID uuid.NullUUID  `db:"sent_by_member_id"`
+	Source   sql.NullString `db:"sent_by_source"`
+}
+
+func sentByOf(t *testing.T, db *sqlx.DB, letterID uuid.UUID) sentByRow {
+	t.Helper()
+	var row sentByRow
+	require.NoError(t, db.Get(&row,
+		`SELECT sender, sent_by_member_id, sent_by_source FROM letters WHERE id = $1`, letterID))
+	return row
+}
+
+func sentByColumns(t *testing.T, db *sqlx.DB) int {
+	t.Helper()
+	var n int
+	require.NoError(t, db.Get(&n, `
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = 'letters'
+		  AND column_name IN ('sent_by_member_id', 'sent_by_source')`, testSchema))
+	return n
+}
+
+// sentByCheckValidated answers whether the sent-by CHECK exists and, if so,
+// whether postgres has checked the rows already stored against it.
+func sentByCheckValidated(t *testing.T, db *sqlx.DB) (exists, validated bool) {
+	t.Helper()
+	var rows []bool
+	require.NoError(t, db.Select(&rows, `
+		SELECT c.convalidated FROM pg_constraint c
+		JOIN pg_namespace n ON n.oid = c.connamespace
+		WHERE n.nspname = $1 AND c.conname = $2`, testSchema, sentByCheck))
+	if len(rows) == 0 {
+		return false, false
+	}
+	return true, rows[0]
+}
+
+// insertRawLetter stores a letters row by hand, without the sent-by columns,
+// the way a row stored before migration 000006 looks.
+func insertRawLetter(t *testing.T, db *sqlx.DB, sender string) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	_, err := db.Exec(`
+		INSERT INTO letters (id, title, body, sender, member_id, sent_at, expires_at)
+		VALUES ($1, 'From the Wardens', 'Well met.', $2, NULL, $3, $4)`,
+		id, sender, sentAt, sentAt.Add(time.Hour))
+	require.NoError(t, err)
+	return id
+}
+
+func TestMigration000006_LettersStoredBeforeItKeepBothSentByColumnsNull(t *testing.T) {
+	db := emptyMailboxSchema(t)
+	migrateUp(t, db, 5)
+	official := insertRawLetter(t, db, "official")
+	system := insertRawLetter(t, db, "system")
+
+	migrateUp(t, db, 6)
+
+	for _, id := range []uuid.UUID{official, system} {
+		row := sentByOf(t, db, id)
+		assert.False(t, row.MemberID.Valid, "no backfill of the member id")
+		assert.False(t, row.Source.Valid, "no backfill of the source")
+	}
+	assert.Equal(t, 2, countRows(t, db, "letters"), "nothing is deleted")
+	exists, validated := sentByCheckValidated(t, db)
+	assert.True(t, exists)
+	assert.False(t, validated, "the CHECK is added NOT VALID: earlier rows are not checked")
+}
+
+func TestMigration000006_UpDownUp(t *testing.T) {
+	db := mailboxDB(t)
+	assert.Equal(t, 2, sentByColumns(t, db))
+
+	migrateDown(t, db, 6)
+	assert.Equal(t, 0, sentByColumns(t, db), "down drops both columns")
+	exists, _ := sentByCheckValidated(t, db)
+	assert.False(t, exists, "down drops the CHECK")
+	insertRawLetter(t, db, "official")
+
+	migrateUp(t, db, 6)
+	assert.Equal(t, 2, sentByColumns(t, db))
+	exists, validated := sentByCheckValidated(t, db)
+	assert.True(t, exists)
+	assert.False(t, validated)
+}
+
+func TestRepository_SentByCheckRefusesARowThatDoesNotMatchItsSender(t *testing.T) {
+	admin := uuid.New()
+	tests := []struct {
+		name     string
+		sender   string
+		memberID *uuid.UUID
+		source   *string
+		refused  bool
+	}{
+		{"official with the admin", "official", &admin, nil, false},
+		{"system with a source", "system", nil, ptr("test.compensation"), false},
+		{"official without a member id", "official", nil, nil, true},
+		{"official with a source", "official", &admin, ptr("test.compensation"), true},
+		{"system without a source", "system", nil, nil, true},
+		{"system with a member id", "system", &admin, ptr("test.compensation"), true},
+	}
+	db := mailboxDB(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := db.Exec(`
+				INSERT INTO letters (id, title, body, sender, member_id, sent_at, expires_at, sent_by_member_id, sent_by_source)
+				VALUES ($1, 'From the Wardens', 'Well met.', $2, NULL, $3, $4, $5, $6)`,
+				uuid.New(), tt.sender, sentAt, sentAt.Add(time.Hour), tt.memberID, tt.source)
+			if !tt.refused {
+				require.NoError(t, err)
+				return
+			}
+			var pqErr *pq.Error
+			require.ErrorAs(t, err, &pqErr)
+			assert.Equal(t, pq.ErrorCode("23514"), pqErr.Code, "a check violation")
+			assert.Equal(t, sentByCheck, pqErr.Constraint)
+		})
+	}
+}
+
+func TestRepository_InsertLettersStoresEachLettersSentBy(t *testing.T) {
+	db := mailboxDB(t)
+	admin := uuid.New()
+	member := uuid.New()
+
+	official := letterTo(&member, sentAt)
+	official.SentBy = SentBy{MemberID: &admin}
+	system := letterTo(nil, sentAt)
+	system.Sender = SenderSystem
+	system.SentBy = SentBy{Source: "test.compensation"}
+	store(t, db, official, system)
+
+	got := sentByOf(t, db, official.ID)
+	assert.Equal(t, uuid.NullUUID{UUID: admin, Valid: true}, got.MemberID)
+	assert.False(t, got.Source.Valid)
+
+	got = sentByOf(t, db, system.ID)
+	assert.False(t, got.MemberID.Valid)
+	assert.Equal(t, sql.NullString{String: "test.compensation", Valid: true}, got.Source)
+}
+
+// R55 through the real store: an admin's list send records the token's member
+// on every stored row.
+func TestSendLetterDB_EveryStoredLetterRecordsTheAdminFromTheToken(t *testing.T) {
+	db := mailboxDB(t)
+	svc := NewService(db, NewRepository(db), &fakeItems{}, &fakeWallet{}, &fakeArrivals{})
+	caller := commonauth.Identity{MemberID: uuid.New(), Role: commonauth.RoleAdmin}
+
+	sent, err := svc.SendLetter(context.Background(), caller, LetterDraft{
+		Recipient: Recipient{Kind: RecipientMemberList, MemberIDs: []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}},
+		Title:     "From the Wardens",
+		Body:      "Well met.",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, sent.Letters, 3)
+	for _, l := range sent.Letters {
+		got := sentByOf(t, db, l.LetterID)
+		assert.Equal(t, "official", got.Sender)
+		assert.Equal(t, uuid.NullUUID{UUID: caller.MemberID, Valid: true}, got.MemberID)
+		assert.False(t, got.Source.Valid)
+	}
 }
