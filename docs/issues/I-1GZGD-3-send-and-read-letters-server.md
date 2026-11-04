@@ -6,7 +6,7 @@ blocked_by: [I-1GZGD-1]
 labels: [ready-for-agent]
 title: "FS-1GZGD slice 3: admins send letters; players read their mailbox, its summary, and mark letters read (notification-service + api-gateway)"
 ---
-Implements FS-1GZGD §Requirements R1–R11, R30–R32, §Amendment 2026-11-04 (A1, A2, A3), §API surface (summary, letters, read, admin send), §Acceptance Criteria (Letters and entry points, Gateway contract), §Edge States
+Implements FS-1GZGD §Requirements R1–R11, R30–R32, R45–R49, R51, §Amendment 2026-11-04 (A1, A2, A3), §Amendment 2026-11-04 (A6), §API surface (summary, letters, read, admin send), §Acceptance Criteria (Letters and entry points, Gateway contract, Sending to a member list), §Edge States
 
 **Lane: server (human lane; the 2026-11-04 mailbox charter authorises this feature's server work, so `/develop` may run it when Nick asks).**
 
@@ -15,6 +15,14 @@ Implements FS-1GZGD §Requirements R1–R11, R30–R32, §Amendment 2026-11-04 (
 > snapshots** in the letter; the letters read returns them as stored, so the gateway composes
 > nothing and calls no items RPC. `UNKNOWN_ITEM_INSTANCE` joins the codes. The `mail:arrived`
 > publish is I-1GZGD-8, not this issue.
+
+> **Amended again 2026-11-04** (FS-1GZGD amendment A6): the admin send also takes
+> `recipient: { memberIds: [...] }`. It stores one one-member letter per distinct recipient in
+> **one transaction**, resolves enclosures **once**, takes at most 1000 distinct ids
+> (`LETTER_RECIPIENTS_INVALID` for an empty or oversized list), and answers
+> `201 { letters: [{ letterId, memberId? }], expiresAt }` for **every** recipient form (was
+> `{ letterId, expiresAt }`). Read, summary, mark read, letter state rows and the claim are
+> unchanged. The per-recipient publish is I-1GZGD-8.
 
 ## What to Build
 
@@ -36,6 +44,16 @@ pattern; ADR-0044; names per `CONTEXT.md` § Mailbox — no `Mail*` types):
   `UNKNOWN_ITEM_TEMPLATE`, unknown instance → `UNKNOWN_ITEM_INSTANCE`, unrepresentable →
   `ENCLOSURE_INVALID` (A3); items down → 503; a letter with no item enclosure calls no items RPC.
   No drop rule is checked here.
+- `SendLetter` recipient (A6, R45–R51): one member, a **member list** or all members. For a list:
+  de-duplicate, then refuse `LETTER_RECIPIENTS_INVALID` if no id or more than 1000 distinct ids
+  remain (R47; ids not checked for existence, S7). Every other check runs once per request (R48).
+  Resolve the item enclosures once (R49), then insert one ordinary one-member `letters` row per
+  distinct recipient, all in **one transaction**, with identical title, body, enclosures, sent
+  time and expiry (R45). No column marks a list send, and nothing in `letter_states`, the list
+  query or the claim changes. Answer the stored letters as (letter id, member id?) in the order
+  each id first appears, plus the expiry (R51); a one-member send answers one entry, a broadcast
+  one entry with no member. Shape the store path so that it hands I-1GZGD-8 the stored letters
+  after the commit.
 - `ListLetters` (≤ 50, newest first, non-expired, addressed to the member or to all),
   `GetMailboxSummary` (`unreadCount`, `unclaimedCount`, `waitingCount`, `newestLetterAt`; R9, S6),
   `MarkLetterRead` (lazy state row, idempotent; expired → `LETTER_EXPIRED`; not addressed →
@@ -48,7 +66,11 @@ pattern; ADR-0044; names per `CONTEXT.md` § Mailbox — no `Mail*` types):
 **api-gateway** (typed handlers, FS-NTPW2 style; a new `internal/gateway/mailbox/` or the
 existing `notification` package): `GET /api/mail/summary`, `GET /api/mail/letters`,
 `POST /api/mail/letters/{letterId}/read`, `POST /api/admin/mail` (rejects non-`RoleAdmin` with
-`403 · FORBIDDEN` before forwarding; `EnclosureRequest` of kinds `template` / `copy` / `gold`).
+`403 · FORBIDDEN` before forwarding; `EnclosureRequest` of kinds `template` / `copy` / `gold`;
+recipient `{ memberId }` | `{ memberIds: uuid[] }` | `{ allMembers: true }`, exactly one, else
+`422 · VALIDATION_FAILED`, and a non-uuid list entry is 422 too. The list's bounds are **not**
+restated at the gateway; notification owns them (R46–R47). The answer is
+`201 { letters: { letterId, memberId? }[], expiresAt }`).
 The letters read returns each item enclosure as `{kind: "item", quantity, item: ItemSnapshot}`
 straight from notification's stored snapshot (R31, A2) — no items call at read. Then `make openapi && make client` and commit the
 regenerated `openapi.yaml` and `game-client/src/api/generated/` with the handlers.
@@ -56,7 +78,7 @@ regenerated `openapi.yaml` and `game-client/src/api/generated/` with the handler
 **common/errcode:** add every mailbox code once, here, including the ones only I-1GZGD-4 uses,
 so that file is touched once: `LETTER_TITLE_INVALID`, `LETTER_BODY_INVALID`,
 `LETTER_EXPIRY_INVALID`, `ENCLOSURE_INVALID`, `UNKNOWN_ITEM_TEMPLATE`, `UNKNOWN_ITEM_INSTANCE`,
-`LETTER_EXPIRED`,
+`LETTER_RECIPIENTS_INVALID` (A6), `LETTER_EXPIRED`,
 `NOTHING_TO_CLAIM`, `LETTER_ALREADY_CLAIMED`, `LETTER_CLAIM_IN_PROGRESS` (and list them in
 `domainCodes`).
 
@@ -93,6 +115,19 @@ local `.env` uses `127.0.0.1:<port>`).
 - [ ] Mark read creates the state row once and is a no-op success on repeat; summary counts follow
       R9 for direct and broadcast letters.
 - [ ] A letter not addressed to the caller is `404 · NOT_FOUND` on mark read.
+- [ ] *(A6)* `memberIds: [A, B, C]` stores three one-member letters with identical content, each
+      visible only to its member; `[A, B, A]` stores two and answers them in the order A, B.
+- [ ] *(A6)* The `201` is `{ letters: [{ letterId, memberId? }], expiresAt }` for all three
+      recipient forms: one entry with the member for `memberId`, one without for `allMembers`.
+- [ ] *(A6)* An empty list and 1001 distinct ids are each `400 · LETTER_RECIPIENTS_INVALID` and
+      store nothing; 1000 distinct ids plus duplicates are accepted. Two recipient forms, none,
+      or a non-uuid entry are `422 · VALIDATION_FAILED`.
+- [ ] *(A6)* A list send with item enclosures calls `ResolveItemSnapshots` exactly once; a bound
+      violation in title, body, enclosures or expiry stores no letter for any recipient.
+- [ ] *(A6)* All or none: a storage failure forced part-way through a list (repository test)
+      leaves no letter of the request stored.
+- [ ] *(A6)* Two recipients of one list send read and mark read independently. One marking read
+      leaves the other unread.
 - [ ] `openapi.yaml` and the generated client are regenerated, not hand-edited, and committed with
       the handlers; the contract checks pass.
 - [ ] Tests pass in notification-service and api-gateway; lint clean.
@@ -104,8 +139,8 @@ I-1GZGD-1 (`ResolveItemSnapshots` for resolving enclosures at send)
 ## Spec Reference
 
 FS-1GZGD §Requirements R1–R11, R30–R32; §Amendment 2026-11-04 A1–A3; §API surface rows 1–3 and
-5; §Decisions D1, D2(a), D3, D8, D9, D10, D14 (list bounds); spec defaults S1, S2, S6, S7. User
-stories 4–7, 17, 20–26, 29, 31, 34–38.
+5; §Amendment 2026-11-04 (A6), R45–R49, R51; §Decisions D1, D2(a), D3, D8, D9, D10, D14
+(list bounds); spec defaults S1, S2, S6, S7. User stories 4–7, 17, 20–26, 29, 31, 34–38, 40–44, 46.
 
 ## TDD Approach
 
@@ -113,3 +148,6 @@ stories 4–7, 17, 20–26, 29, 31, 34–38.
   `MarkLetterRead` creates exactly one row for (letter, member).
 - GREEN: the `letters` / `letter_states` tables and a list query that left-joins the member's
   state row.
+- RED (A6): a repository test that storing a three-member list send whose third insert fails
+  stores none, and a service test that `[A, B, A]` stores two letters and resolves enclosures
+  once.

@@ -6,9 +6,14 @@ blocked_by: [I-1GZGD-3]
 labels: [ready-for-agent]
 title: "FS-1GZGD slice 8: publish mail:arrived on Redis after a letter commits (notification-service)"
 ---
-Implements FS-1GZGD §Requirements R41, §Amendment 2026-11-04 (A4), §API surface (RPC surface: the `mail:arrived` row), §Acceptance Criteria (New-letter push: publish and Redis-down criteria), §Edge States (Redis down at send); ADR-0045 §Decision 1
+Implements FS-1GZGD §Requirements R41, R50, §Amendment 2026-11-04 (A4), §Amendment 2026-11-04 (A6), §API surface (RPC surface: the `mail:arrived` row), §Acceptance Criteria (New-letter push: publish and Redis-down criteria), §Edge States (Redis down at send); ADR-0045 §Decision 1
 
 **Lane: server (human lane; the 2026-11-04 mailbox charter authorises this feature's server work, so `/develop` may run it when Nick asks). Added by the 2026-11-04 amendment.**
+
+> **Amended 2026-11-04** (FS-1GZGD amendment A6): a send to a member list stores one letter per
+> recipient (I-1GZGD-3), so it publishes one `{"member_id"}` **per stored letter**, the whole
+> batch under **one** short deadline, logged **once** on failure with the letter count. The
+> channel and its two payload forms do not change (ADR-0045), and neither does game-service.
 
 ## What to Build
 
@@ -25,6 +30,12 @@ send depend on it.
   letter to one member, `{"broadcast": true}` for a broadcast. Outside the transaction, under a
   short deadline (a few seconds); a failure is logged at warn with the letter id and **never**
   fails, undoes or delays the send's answer beyond the deadline.
+- A member-list send (R50, A6) publishes one `{"member_id"}` per letter it stored, after its one
+  commit. The batch shares **one** deadline, so 1000 recipients never wait 1000 deadlines; a
+  pipelined publish is fine. A failure, partial or whole, is logged once at warn with the number
+  of letters (and how many were published, if known), and the send still answers `201`. The
+  publisher takes the stored letters (or their recipients) as a batch; a one-member send and a
+  broadcast are batches of one.
 - Put the publish in the path both entry points use to store a letter, so I-1GZGD-5's letter
   request publishes through it after its own commit; a refused send publishes nothing.
 - Deploy config: `REDIS_ADDR` in notification's ConfigMap, pointing at the Redis game-service
@@ -46,6 +57,10 @@ No proto, no migration, no gateway, no game-service file.
 - [ ] An admin send to one member publishes exactly one `{"member_id": M}` on `mail:arrived`
       after the letter is stored (asserted with miniredis or a fake publisher).
 - [ ] A broadcast publishes exactly one `{"broadcast": true}`.
+- [ ] *(A6)* A member-list send to `[A, B, A, C]` publishes exactly three `{"member_id"}`
+      messages, for A, B and C, after the commit, and none if its transaction fails.
+- [ ] *(A6)* With Redis unreachable, a member-list send stores every letter, answers within one
+      deadline (not one per recipient), and logs the failure once.
 - [ ] A refused send (any bound or unknown-id refusal) publishes nothing.
 - [ ] With Redis unreachable, the send stores the letter, answers success within the deadline,
       and logs the publish failure.
@@ -59,8 +74,8 @@ I-1GZGD-3 (the letters store path the publish hooks into)
 
 ## Spec Reference
 
-FS-1GZGD §Requirements R41; §Amendment 2026-11-04 A4; ADR-0045 §Decision 1. User stories 32,
-39.
+FS-1GZGD §Requirements R41, R50; §Amendment 2026-11-04 A4, A6; ADR-0045 §Decision 1. User
+stories 32, 39, 45.
 
 ## TDD Approach
 
