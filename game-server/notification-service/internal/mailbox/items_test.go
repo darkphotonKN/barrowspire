@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -18,6 +20,28 @@ type fakeSnapshotRPC struct {
 	got *itemspb.ResolveItemSnapshotsRequest
 	res *itemspb.ResolveItemSnapshotsResponse
 	err error
+
+	grantCalls    int
+	gotGrant      *itemspb.GrantItemsRequest
+	grantAuth     []string
+	grantDeadline bool
+	grantRes      *itemspb.GrantItemsResponse
+	grantErr      error
+}
+
+func (f *fakeSnapshotRPC) GrantItems(ctx context.Context, in *itemspb.GrantItemsRequest, _ ...grpc.CallOption) (*itemspb.GrantItemsResponse, error) {
+	f.grantCalls++
+	f.gotGrant = in
+	md, _ := metadata.FromOutgoingContext(ctx)
+	f.grantAuth = md.Get("authorization")
+	_, f.grantDeadline = ctx.Deadline()
+	return f.grantRes, f.grantErr
+}
+
+// withPlayerToken is a claim's context as the auth interceptor leaves it: the
+// gateway's forwarded authorization on the incoming metadata.
+func withPlayerToken(token string) context.Context {
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", token))
 }
 
 func (f *fakeSnapshotRPC) ResolveItemSnapshots(_ context.Context, in *itemspb.ResolveItemSnapshotsRequest, _ ...grpc.CallOption) (*itemspb.ResolveItemSnapshotsResponse, error) {
@@ -88,5 +112,62 @@ func TestItemsClient_ConnectionFailuresAreUnavailable(t *testing.T) {
 		_, err := client.ResolveItemSnapshots(context.Background(), []TemplateRef{{TemplateID: uuid.New()}}, nil)
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, ErrItemsUnavailable)
+	})
+}
+
+func TestItemsClient_GrantItemsForwardsThePlayersTokenAndTheStoredSnapshots(t *testing.T) {
+	first, second, third := uuid.New(), uuid.New(), uuid.New()
+	rpc := &fakeSnapshotRPC{grantRes: &itemspb.GrantItemsResponse{
+		ItemIds: []string{first.String(), second.String(), third.String()}, AlreadyGranted: true,
+	}}
+	client := &ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}
+
+	got, err := client.GrantItems(withPlayerToken("Bearer the-players-token"), "mail:l:m",
+		[]ItemGrant{{Snapshot: potion, Quantity: 2}, {Snapshot: unique, Quantity: 1}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"Bearer the-players-token"}, rpc.grantAuth, "items mints into the token's member's stash")
+	assert.True(t, rpc.grantDeadline)
+	assert.Equal(t, "mail:l:m", rpc.gotGrant.GetGrantId())
+	require.Len(t, rpc.gotGrant.GetItems(), 2)
+	assert.True(t, proto.Equal(SnapshotProto(potion), rpc.gotGrant.GetItems()[0].GetSnapshot()))
+	assert.Equal(t, int32(2), rpc.gotGrant.GetItems()[0].GetQuantity())
+	assert.True(t, proto.Equal(SnapshotProto(unique), rpc.gotGrant.GetItems()[1].GetSnapshot()))
+	assert.Equal(t, int32(1), rpc.gotGrant.GetItems()[1].GetQuantity())
+
+	assert.Equal(t, &Grant{ItemIDs: []uuid.UUID{first, second, third}, AlreadyGranted: true}, got)
+}
+
+func TestItemsClient_GrantItemsFailures(t *testing.T) {
+	lines := []ItemGrant{{Snapshot: potion, Quantity: 1}}
+
+	t.Run("a refusal passes its code through", func(t *testing.T) {
+		rpc := &fakeSnapshotRPC{grantErr: errcode.Refuse(errcode.StashFull).(*errcode.Refusal).GRPCStatus().Err()}
+		_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(withPlayerToken("Bearer t"), "k", lines)
+		assertRefused(t, err, errcode.StashFull)
+	})
+
+	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded} {
+		t.Run(c.String()+" is an outage", func(t *testing.T) {
+			rpc := &fakeSnapshotRPC{grantErr: status.Error(c, "down")}
+			_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(withPlayerToken("Bearer t"), "k", lines)
+			assert.ErrorIs(t, err, ErrItemsUnavailable)
+		})
+	}
+
+	t.Run("an unmintable snapshot is neither a refusal nor an outage", func(t *testing.T) {
+		rpc := &fakeSnapshotRPC{grantErr: status.Error(codes.InvalidArgument, "an item snapshot cannot be minted")}
+		_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(withPlayerToken("Bearer t"), "k", lines)
+		require.Error(t, err)
+		var refusal *errcode.Refusal
+		assert.NotErrorAs(t, err, &refusal)
+		assert.NotErrorIs(t, err, ErrItemsUnavailable)
+	})
+
+	t.Run("without a token to forward nothing is called", func(t *testing.T) {
+		rpc := &fakeSnapshotRPC{}
+		_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(context.Background(), "k", lines)
+		require.Error(t, err)
+		assert.Zero(t, rpc.grantCalls)
 	})
 }

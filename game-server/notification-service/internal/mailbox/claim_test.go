@@ -306,8 +306,12 @@ func TestClaimLetter_RefusalsCallNeitherItemsNorWallet(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo, itemsSvc, wallet := tc.repo(), &fakeItems{}, &fakeWallet{}
+			letterID := uuid.New()
+			if repo.found != nil {
+				letterID = repo.found.ID
+			}
 
-			_, err := newClaimService(repo, itemsSvc, wallet).ClaimLetter(context.Background(), uuid.New(), member)
+			_, err := newClaimService(repo, itemsSvc, wallet).ClaimLetter(context.Background(), letterID, member)
 
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
