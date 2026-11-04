@@ -22,3 +22,5 @@
 - [ ] A member's mailbox and its summary → FS-1GZGD
 - [ ] Claim a letter's enclosures → FS-1GZGD
 - [ ] New-letter arrival published to the game pods → FS-1GZGD
+- [ ] Sender audit on stored letters → FS-1GZGD
+- [ ] Welcome letter for each new account → FS-1GZGD

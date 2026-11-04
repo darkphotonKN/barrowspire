@@ -1,6 +1,6 @@
 # FS-1GZGD: In-game mailbox — system letters with enclosures
 
-> Status: work-order · SPECIFICATION.md: `game-server/notification-service/SPECIFICATION.md` "## Mailbox", `game-server/items-service/SPECIFICATION.md` "## Grants", `game-server/wallet-service/SPECIFICATION.md` "### Account" (idempotent credit), `game-server/api-gateway/SPECIFICATION.md` "### Mail", `game-client/SPECIFICATION.md` "### Mailbox", `game-server/game-service/SPECIFICATION.md` "### Hub world" (the new-letter notice; added by the 2026-11-04 amendment) → this FS · Related ADRs: [ADR-0044](../adr/0044-the-mailbox-lives-in-notification-and-a-claim-is-idempotent-by-caller-keys.md) (mailbox in notification-service; the claim protocol), [ADR-0045](../adr/0045-a-new-letter-is-pushed-to-hub-players-over-redis-at-most-once.md) (the `mail:arrived` push; amends ADR-0044 §Decision 1's wire names), [ADR-0046](../adr/0046-grant-items-trusts-its-caller-until-a-service-credential-exists.md) (accepted risk: `GrantItems` trusts the snapshots its caller sends until a service credential exists; blocks the GKE rollout), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted keys), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (mailed gold is an unrecorded deposit), [ADR-0043](../adr/0043-verification-codes-are-owned-by-auth-and-mailed-by-notification.md) ("mail" already means email in notification-service) · Builds on: [FS-VPD8Y](VPD8Y-town-stash.md) (stash 60, `STASH_FULL`), [FS-PJPNA](PJPNA-deduplicated-match-result-notifications.md) (notification's inbox), [FS-22WKC](22WKC-uniform-error-contract.md) (problem+json errors), [FS-NXP1W](NXP1W-auction-settlement-saga.md) (`CreditSellerUC`, the model for the wallet credit), [FS-8EGFA](8EGFA-marketplace-web-page.md) (the item-summary shape a snapshot follows) · Vocabulary: [`notification-service/CONTEXT.md`](../../game-server/notification-service/CONTEXT.md) § Mailbox, [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md), [`wallet-service/CONTEXT.md`](../../game-server/wallet-service/CONTEXT.md), [`api-gateway/CONTEXT.md`](../../game-server/api-gateway/CONTEXT.md), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Mailbox terms, [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Mailbox arrivals · Scoped 2026-11-04 in a `/charter` run; promoted the same day from the charter's locked decisions (`--from-thread`), with the user's mid-run override (gold is credited on claim; no gold pouch) applied.
+> Status: work-order · SPECIFICATION.md: `game-server/notification-service/SPECIFICATION.md` "## Mailbox", `game-server/items-service/SPECIFICATION.md` "## Grants", `game-server/wallet-service/SPECIFICATION.md` "### Account" (idempotent credit), `game-server/api-gateway/SPECIFICATION.md` "### Mail", `game-client/SPECIFICATION.md` "### Mailbox", `game-server/game-service/SPECIFICATION.md` "### Hub world" (the new-letter notice; added by the 2026-11-04 amendment) → this FS · Related ADRs: [ADR-0044](../adr/0044-the-mailbox-lives-in-notification-and-a-claim-is-idempotent-by-caller-keys.md) (mailbox in notification-service; the claim protocol), [ADR-0045](../adr/0045-a-new-letter-is-pushed-to-hub-players-over-redis-at-most-once.md) (the `mail:arrived` push; amends ADR-0044 §Decision 1's wire names), [ADR-0046](../adr/0046-grant-items-trusts-its-caller-until-a-service-credential-exists.md) (accepted risk: `GrantItems` trusts the snapshots its caller sends until a service credential exists; blocks the GKE rollout), [ADR-0047](../adr/0047-an-admin-is-a-role-on-a-player-account-until-a-back-office-identity-exists.md) (an admin is a role on a player account until a back-office identity exists; the seeded admin's public password blocks the GKE rollout; added by A7), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted keys), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (mailed gold is an unrecorded deposit), [ADR-0043](../adr/0043-verification-codes-are-owned-by-auth-and-mailed-by-notification.md) ("mail" already means email in notification-service) · Builds on: [FS-VPD8Y](VPD8Y-town-stash.md) (stash 60, `STASH_FULL`), [FS-PJPNA](PJPNA-deduplicated-match-result-notifications.md) (notification's inbox), [FS-22WKC](22WKC-uniform-error-contract.md) (problem+json errors), [FS-NXP1W](NXP1W-auction-settlement-saga.md) (`CreditSellerUC`, the model for the wallet credit), [FS-8EGFA](8EGFA-marketplace-web-page.md) (the item-summary shape a snapshot follows) · Vocabulary: [`notification-service/CONTEXT.md`](../../game-server/notification-service/CONTEXT.md) § Mailbox, [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md), [`wallet-service/CONTEXT.md`](../../game-server/wallet-service/CONTEXT.md), [`api-gateway/CONTEXT.md`](../../game-server/api-gateway/CONTEXT.md), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Mailbox terms, [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Mailbox arrivals · Scoped 2026-11-04 in a `/charter` run; promoted the same day from the charter's locked decisions (`--from-thread`), with the user's mid-run override (gold is credited on claim; no gold pouch) applied.
 
 > **Amended 2026-11-04** by the user, before any slice was built: **S4** and **S3** are replaced
 > (two enclosure kinds, template and copy, each stored in the letter as an **item snapshot**
@@ -18,6 +18,15 @@
 > change. See "Amendment 2026-11-04 (A6)" after the first amendment block. **[charter default]**
 > marks a choice the `/charter` run made under the user's approval; **[spec default]** marks one
 > this amendment made where both left it open.
+
+> **Amended again 2026-11-04 (A7)** by the user, after the send slice (I-1GZGD-3) was merged:
+> **both entry points stay** (the admin API is the door for people, the system paths the door for
+> code; the admin door is guarded today by a stand-in role, ADR-0047); every letter records **who
+> sent it** (an audit stored in the letter, never shown to players), so `mail.letter.requested`
+> gains a required `source`; and each new account gets one **welcome letter** with a small
+> starter gift when notification consumes `member.signedup`. See "Amendment 2026-11-04 (A7)"
+> after A6. New requirements are R52–R62. **[charter default]** and **[spec default]** mean what
+> they mean in A6.
 
 ## Summary
 
@@ -39,7 +48,7 @@ them; the reason is the charter's.
 | # | Decision | Reason |
 |---|---|---|
 | D1 | The mailbox is a new bounded context in notification-service. | It already owns per-member in-app notifications and inbox dedup; no new service, DB or deploy. (ADR-0044) |
-| D2 | Two entry points: admin `POST /api/admin/mail` (`RoleAdmin` only), to one member or to all; AMQP `mail.letter.requested` with an event id, deduplicated by the inbox. No in-repo producer in v1. *(Amended 2026-11-04, A6: the admin send may also name a list of members; the event stays one member or all.)* | Official mail now, system compensations later. |
+| D2 | Two entry points: admin `POST /api/admin/mail` (`RoleAdmin` only), to one member or to all; AMQP `mail.letter.requested` with an event id, deduplicated by the inbox. No in-repo producer in v1. *(Amended 2026-11-04, A6: the admin send may also name a list of members; the event stays one member or all.)* *(Amended 2026-11-04, A7: both kept on purpose, the admin API as the door for people and the system paths as the door for code; the event gains a required `source`; notification's own welcome trigger is the first system path in the repo.)* | Official mail now, system compensations later. |
 | D3 | A broadcast is stored once; per-member state rows are created lazily on read/claim; later signups still see it until expiry. | No fan-out; notification doesn't know signup dates. |
 | D4 | ~~Item enclosure = template id + quantity, minted at base stats, no affix roll.~~ *(Amended 2026-11-04: replaced by A1, A2 — a template or a copy enclosure, stored as a snapshot.)* | Compensation must be deterministic. |
 | D5 | A gold enclosure `{gold: N}` is credited straight to the member's wallet on claim, as the marketplace credits a seller (`CreditSellerUC`). No pouch item. | (user override) |
@@ -181,6 +190,114 @@ place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are
     same shape answers all three forms, so a caller never branches on the response. It replaces
     the old `{ letterId, expiresAt }`, which nothing has built yet. **[spec default]**
 
+## Amendment 2026-11-04 (A7: both doors, sent-by audit, welcome letter)
+
+Decided by the user on 2026-11-04, after the send slice (I-1GZGD-3) was merged and while the
+claim (I-1GZGD-4) and the client (I-1GZGD-6) were being built. A1–A6 and every decision and
+default above stand. The letter request (R12) and the event row of the RPC surface are corrected
+in place, each saying *(Amended 2026-11-04, A7 …)*. New requirements are R52–R62. Everything
+here is server-side: no HTTP endpoint, no generated contract and no client screen changes.
+
+- **A7.1 — both doors stay.** The user weighed dropping the admin API and kept it. There are two
+  ways a letter gets into the mailbox, and they are for different senders:
+  - **The door for people is the admin API**, `POST /api/admin/mail`. A person sends through it:
+    a compensation after an incident, an event announcement, a support answer. Its letters are
+    `official`. Today it is guarded by the `admin` role on a **player account**, a stand-in until
+    a separate back-office identity exists ([ADR-0047](../adr/0047-an-admin-is-a-role-on-a-player-account-until-a-back-office-identity-exists.md));
+    when that identity arrives it replaces the role check at this door, not the mailbox behind it.
+  - **The door for code is the system path**: the `mail.letter.requested` event, which another
+    service publishes, and notification-service's own **letter triggers**, which run inside it. Code sends
+    through it, with no person behind each letter. Its letters are `system`. The welcome letter
+    (A7.3) is the first trigger of the second kind and the first system letter the repo produces.
+  - Both doors end in the same store path (`prepareLetters` → `InsertLetters`): the same rules,
+    the same snapshots, the same push. Only the sender kind and the sent-by audit differ.
+- **A7.2 — every letter records who sent it (the sent-by audit).** Stored with the letter, for
+  operators reading the database; **never shown to players**, and not part of any HTTP or
+  player-facing gRPC answer.
+  - An `official` letter records the **admin's member id, taken from the verified token** the
+    admin send forwards; nothing in the request names it. Every letter of one request (one member,
+    a list, a broadcast) records the same admin.
+  - A `system` letter records its **sent-by source**: the requesting service or feature. For the letter
+    request it is the event's new **required** `source` field; for a letter trigger it is a
+    fixed name (`welcome` for A7.3).
+  - **Columns:** two nullable columns on `letters`, `sent_by_member_id uuid` and
+    `sent_by_source text`, with a `CHECK` that ties them to `sender`: an `official` row has a
+    member id and no source, a `system` row has a source and no member id. **[charter default]**
+  - **A new migration pair**, `000006_add_letter_sent_by` (next free number in
+    notification-service). `000005_create_mailbox_tables` is never edited (the user's rule).
+  - **Rows stored before the migration** keep both columns null. The `CHECK` is added
+    `NOT VALID`, so Postgres enforces it on every row inserted or updated from then on and does
+    not check the old rows; the migration neither backfills nor deletes them. Only development
+    databases hold such rows, because the mailbox has not shipped anywhere. **[spec default]**
+  - **The `source` field:** a string of 1–64 characters after trimming, naming the requesting
+    service and feature, for example `marketplace.settlement`. Its value is not checked against a
+    list. An event whose `source` is missing, blank or too long breaks R12's rules: it is logged at
+    error, marked processed, acked and never requeued. **[spec default]**
+  - **No read surface in v1.** No RPC, endpoint or screen reads the audit; an operator queries the
+    table. **[spec default]**
+- **A7.3 — a welcome letter for every new account.** When notification-service consumes
+  `member.signedup`, it also stores one `system` letter for that member.
+  - **Same transaction.** The letter is inserted in the **same inbox transaction** as the
+    existing signup handling (`ProcessMemberSignedUp`'s `runInTx`: the inbox mark and the signup
+    notification). The inbox dedups the event, so each account gets **exactly one** welcome
+    letter, however often the event is delivered; if anything in the transaction fails, none of
+    the three is stored.
+  - **Per account, not per character.** The mailbox belongs to the account (the member id in
+    `member.signedup`). The player first sees the letter on their first town entry, with their
+    first character; a later character of the same account sees the same letter, already read or
+    taken if it was.
+  - **No backfill.** Accounts that signed up before this ships get no welcome letter.
+  - **Sent by** `system`, `sent_by_source` `welcome`, addressed to that one member, expiring
+    **30 days** after it is stored (the default expiry, R5).
+  - **The copy** (English, the game's voice; title 29 characters, well inside R3's bounds).
+    **[spec default]** for the wording:
+
+    > **Title:** The Town Keeps a Fire for You
+    >
+    > **Body:**
+    > The town keeps a fire for every newcomer, and tonight one burns for you.
+    >
+    > North of the square the Spire waits, as it has since the town woke to find it there. Those
+    > who go down come back with relics and plunder, or do not come back at all. What you carry
+    > out is yours to keep. What you leave behind, the barrow keeps.
+    >
+    > Go in prepared. Sealed in this letter are three small health potions and a hundred gold,
+    > enough to buy what the Quartermaster thinks you will need.
+    >
+    > Take them. They will wait in your stash.
+
+  - **The starter gift:** a template enclosure of **3 Small Health Potions** at the template's
+    `min_item_level`, and a gold enclosure of **100**. **[charter default]** for the amounts.
+    Both are claimed like any letter's enclosures (R13–R17); an empty new stash always has room.
+  - **How the potion is named:** by the **seeded template id**
+    `aa0e8400-e29b-41d4-a716-446655440006` (Small Health Potion, code `HEALTH_POT_SMALL`,
+    items-service migration `000002_seed_basic_data`), held as one named constant in
+    notification's mailbox package. `ResolveItemSnapshots` takes template ids, items-service has no
+    lookup by name or code, and a config key would be a knob nobody sets. **[spec default]**
+  - **Resolving it:** the welcome goes through the same `prepareLetters` path as any letter, so
+    its potion is resolved by `ResolveItemSnapshots` and stored as a snapshot (A2). The resolve
+    runs **inside** the inbox transaction, after the inbox mark, under a short deadline, the way
+    `ProcessVerificationRequested` sends its email inside its own. A duplicate delivery stops at
+    the inbox mark and never calls items-service. **[spec default]**
+  - **When items-service is unavailable** (unreachable, a deadline, an outage answer), the
+    handler returns a **transient** error (`ErrTransient`). The whole transaction rolls back
+    (no inbox mark, no signup notification, no letter), and the consumer requeues the event with
+    its usual delays (5 s, 15 s, 60 s), then dead-letters it. Replaying it later stores all three,
+    once. **[spec default]**
+  - **When items-service refuses the potion** (the seeded template is gone, or unrepresentable),
+    retrying cannot help: the handler logs at error and returns a permanent error, the transaction
+    rolls back and the event is dead-lettered. There is never a partial welcome (gold without the
+    potions, or a letter without its gift). **[spec default]**
+  - **The push:** after the transaction commits, notification-service publishes one
+    `mail:arrived` `{"member_id": "<uuid>"}` through I-1GZGD-8's arrival publisher, outside the
+    transaction, never failing the event (R41). A duplicate delivery stores nothing and publishes
+    nothing. A brand-new account usually has no character in the town yet, so the push mostly
+    finds nobody, and the first town entry's summary fetch shows the letter (R34, R44).
+  - **The seam:** the signup handling (`internal/notification`) reaches the mailbox through a
+    narrow interface it owns, implemented in `internal/mailbox` and wired in `config/routes.go`:
+    store the welcome letter for a member on the given transaction, and, after the commit,
+    announce it. The notification package learns nothing else of letters. **[spec default]**
+
 ## Requirements
 
 ### Letters (notification-service, Mailbox context)
@@ -232,7 +349,8 @@ place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are
     member or all.)*
 12. **Letter request** — notification-service consumes `mail.letter.requested` (a new message in
     a new file under `common/api/proto/events/`, carrying an event id, recipient, title, body,
-    enclosures and an optional expiry). The letter is `system`. The event is deduplicated through
+    enclosures, an optional expiry and a **required `source`**, stored as the letter's sent-by
+    source, R55). The letter is `system`. *(Amended 2026-11-04, A7: `source` added.)* The event is deduplicated through
     the inbox (`processed_events`, FS-PJPNA) in the same transaction that stores the letter, so a
     redelivery stores nothing. A request that breaks R3–R5 is logged at error, marked processed
     and acked, never requeued. v1 has no producer in the repo (D2). Its recipient stays one member
@@ -420,6 +538,63 @@ place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are
     each recipient first appears in the request. The same shape answers `{ memberId }` (one entry,
     with the member) and `{ allMembers: true }` (one entry, no member). **[spec default]**
 
+### Both doors (added 2026-11-04, A7)
+
+52. Letters enter the mailbox through two doors, and both stay: the **admin send** (R11) for
+    people, whose letters are `official`, and the **system path** for code, whose letters are
+    `system`: the letter request (R12) and notification-service's own triggers (R57). Both use the
+    same store path and the same rules (R3–R5, S1, A2), and both publish the same push (R41). The
+    admin door accepts the `admin` role of a player account until a back-office identity exists
+    (ADR-0047). *(the user's decision)*
+
+### Sent-by audit (notification-service; added 2026-11-04, A7)
+
+53. Every letter stored from now on records **who sent it** in two columns of `letters`:
+    `sent_by_member_id` (uuid, null) and `sent_by_source` (text, null). A `CHECK` ties them to
+    `sender`: `official` has a member id and no source; `system` has a source and no member id.
+    They come in a **new** migration pair, `000006_add_letter_sent_by`; `000005` is not edited.
+    **[charter default]** for the columns and the check.
+54. Rows stored before the migration keep both columns null. The `CHECK` is added `NOT VALID`:
+    every row inserted or updated afterwards is checked, the old ones are not; nothing is
+    backfilled or deleted. The down migration drops the constraint and both columns.
+    **[spec default]**
+55. The **admin send** records the admin's member id **from the verified forwarded token**, never
+    from the request, on every letter it stores (one member, each letter of a list, or the
+    broadcast). The **letter request** records the event's `source` as its sent-by source (1–64 characters after
+    trimming, not checked against a list); an event whose `source` is missing, blank or longer is
+    invalid under R12 (logged at error, marked processed, acked, never requeued). A
+    letter trigger records its own fixed sent-by source. **[spec default]** for the bounds.
+56. The sent-by audit is **never shown to players**: no player-facing gRPC answer, no gateway
+    response (including the admin send's `201`) and no generated client type carries it, and no
+    RPC or endpoint reads it in v1. **[spec default]** for the absence of a read surface.
+
+### Welcome letter (notification-service; added 2026-11-04, A7)
+
+57. When notification-service consumes `member.signedup`, it stores one **welcome letter** for
+    that member **in the same inbox transaction** as its existing signup handling (the inbox mark
+    and the signup notification). So each account gets exactly one, however often the event is
+    delivered, and a failure anywhere stores none of the three. Accounts that signed up before
+    this ships get none (no backfill).
+58. The welcome letter is a `system` letter to that one member, `sent_by_source` `welcome`,
+    expiring 30 days after it is stored, with A7.3's title and body **[spec default]** and two
+    enclosures: a template enclosure of **3** Small Health Potions at the template's
+    `min_item_level`, and **100** gold. **[charter default]** for the amounts.
+59. The potion's template is named by its **seeded template id**
+    (`aa0e8400-e29b-41d4-a716-446655440006`, items migration `000002_seed_basic_data`), one named
+    constant in notification's mailbox package. **[spec default]**
+60. The welcome is built through the same path as every letter (R3–R5, S1), so its potion is
+    resolved through `ResolveItemSnapshots` and stored as a snapshot. The resolve runs inside the
+    inbox transaction, after the inbox mark, under a short deadline; a duplicate delivery never
+    calls items-service. **[spec default]**
+61. If items-service is **unavailable**, the handler returns a transient error: the transaction
+    rolls back whole and the event is requeued with the consumer's delays, then dead-lettered. If
+    items-service **refuses** the potion (unknown or unrepresentable template), the handler logs
+    at error and returns a permanent error: the transaction rolls back and the event is
+    dead-lettered. A welcome letter is never stored without its whole gift. **[spec default]**
+62. After the commit, notification-service publishes one `mail:arrived` `{"member_id"}` for the
+    welcome letter through the arrival publisher (R41), outside the transaction; a failed publish
+    is logged and the event is still acked. A duplicate delivery publishes nothing.
+
 ## User Stories
 
 1. As a player, I want to see an envelope in the town when a letter waits for me, so that I
@@ -519,6 +694,36 @@ place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are
     sent to me alone, so that a list send feels no different to me.
 46. As a listed player, I want the letter to be mine alone, with my own read and claim state, so
     that another recipient taking theirs never touches mine.
+
+*Added by amendment A7 (2026-11-04):*
+
+47. As an admin, I want to keep sending letters by hand through the admin API, so that a
+    compensation, an event or a support answer needs no code change.
+48. As a platform developer, I want code to send letters through the system path, so that an
+    automated letter never needs a person or an admin token.
+49. As an operator, I want every official letter to record which admin sent it, so that I can
+    answer "who sent this?" after an incident.
+50. As an operator, I want every system letter to record which service or feature asked for it,
+    so that I can trace an automated letter back to its cause.
+51. As an operator, I want an admin who mails items or gold to themselves to leave a record, so
+    that the stand-in admin role (ADR-0047) is at least visible when it is misused.
+52. As a player, I never want to see an admin's id or a service's name in my letters, so that the
+    letters stay in the game's voice.
+53. As a service publishing a letter request, I want a request without a `source` refused, so that
+    no system letter is ever stored without a cause.
+54. As a new player, I want a welcome letter waiting in my mailbox the first time I reach the
+    town, so that the game greets me and points me at the Spire.
+55. As a new player, I want a few health potions and some gold with the welcome, so that my first
+    delve is not empty-handed.
+56. As a new player, I want exactly one welcome letter, however often the signup event is
+    delivered, so that the gift cannot be farmed by redelivery.
+57. As a player making a second character, I want no second welcome gift, so that the gift
+    belongs to the account and cannot be farmed by new characters.
+58. As an operator, I want a welcome that could not be built (items-service down, the potion gone)
+    to retry or dead-letter whole, never half-stored, so that every account ends with the whole
+    gift or none and a replay fixes it.
+59. As an existing player, I get no welcome letter after this ships, so that the welcome stays a
+    welcome and is not a surprise handout.
 
 ## Acceptance Criteria
 
@@ -678,6 +883,45 @@ place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are
 - [ ] A `mail.letter.requested` event carrying a member list is not accepted: the event has no list
       form.
 
+### Sent-by audit (added 2026-11-04, A7)
+
+- [ ] Migration `000006_add_letter_sent_by` adds `sent_by_member_id` and `sent_by_source` to
+      `letters` with the sender `CHECK` (`NOT VALID`); `000005` is byte-for-byte unchanged; the
+      down migration removes both columns and the constraint, and up → down → up succeeds.
+- [ ] A letter row stored before the migration survives it with both columns null.
+- [ ] After the migration, inserting an `official` row without a member id, an `official` row
+      with a source, a `system` row without a source, or a `system` row with a member id is
+      refused by the database (repository test).
+- [ ] An admin send to one member, to a list of three and to all members stores the admin's
+      member id from the token on every letter, and no source.
+- [ ] A `mail.letter.requested` with `source: "test.compensation"` stores that source and no
+      member id; one with a missing, blank or 65-character `source` stores nothing, is logged at
+      error, marked processed and acked.
+- [ ] Neither `ListLetters`, the letters read, the summary nor the admin send's `201` carries a
+      sent-by field, and the regenerated `openapi.yaml` and client have none.
+
+### Welcome letter (added 2026-11-04, A7)
+
+- [ ] Consuming one `member.signedup` stores, in one transaction, the inbox mark, the existing
+      signup notification and one `system` letter to that member with `sent_by_source`
+      `welcome`, A7.3's title and body, 3 Small Health Potions (as a snapshot at the template's
+      `min_item_level`) and 100 gold, expiring 30 days after it was stored.
+- [ ] The same event delivered twice stores one welcome letter and publishes `mail:arrived`
+      once; the second delivery calls no items RPC.
+- [ ] Two different `member.signedup` events for two accounts store one welcome letter each.
+- [ ] After the commit, exactly one `{"member_id": M}` is published; with Redis unreachable the
+      letter and the notification are still stored and the event acked.
+- [ ] With items-service unreachable, nothing is stored (no inbox mark, no notification, no
+      letter), and the event is requeued as transient; once items is back, the redelivery stores
+      all three once.
+- [ ] With items-service refusing the potion template, nothing is stored, the failure is logged at
+      error, and the event is dead-lettered, not requeued.
+- [ ] A failure forced in the letter insert rolls back the inbox mark and the signup notification
+      too (service or repository test).
+- [ ] The welcome letter appears in that member's mailbox and summary like any letter, and its
+      claim mints three potions into the stash and credits 100 gold once.
+- [ ] Members who existed before the change have no welcome letter; nothing backfills one.
+
 ## Edge States
 
 - **Empty mailbox:** the list is empty, the right side reads "No letters wait for you.", the seal
@@ -745,6 +989,30 @@ place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are
 - **The same member in a list send and a broadcast:** two letters, each with its own state; nothing
   merges them.
 
+*Added by amendment A7 (2026-11-04):*
+
+- **An admin mails themselves:** allowed; the letter records the admin's member id as both
+  sender and recipient, which is the only trace (ADR-0047). Accepted until the back office exists.
+- **Letters stored before migration 000006:** both sent-by columns null; the check skips them.
+- **A letter request without a `source`:** invalid (R55); nothing stored, marked processed, acked.
+- **Signup event redelivered:** the inbox stops it before any work; no second welcome, no items
+  call, no push.
+- **items-service down at signup:** the whole signup handling waits with it. The event is
+  requeued three times (5 s, 15 s, 60 s); an outage longer than that dead-letters the event, so
+  the signup notification and the welcome letter are both missing until the event is replayed.
+  Accepted for v1. **[spec default]**
+- **The seeded potion template removed or renamed by id:** every signup dead-letters, logged at
+  error, until the constant or the seed is fixed and the events are replayed. **[spec default]**
+- **A new player claims the welcome before wallet-service has created their account:** the
+  credit fails and the claim stays `claiming`, retryable (R24); wallet creates the account from
+  the same `member.signedup`.
+- **A player's second character:** sees the same welcome letter, in whatever state the first left
+  it; no second gift.
+- **The welcome expires unread** (the player never reached the town within 30 days): it is gone
+  with its gift, like any letter (R5).
+- **Push at signup:** the new member is almost never in the town yet; the push finds nobody and
+  the first town entry's summary shows the letter.
+
 ## API surface
 
 New resources, so field-level. Identity is never in a request: the member comes from the token.
@@ -791,7 +1059,8 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
 | items | `GrantItems(grant_id, items[{snapshot, quantity}])` → instance ids, `already_granted` | member from forwarded token; mints from the snapshots (amended 2026-11-04) |
 | items | `ResolveItemSnapshots(templates[{template_id, item_level?}], instance_ids)` → snapshots, unknown ids, unrepresentable ids | no member token; send time only (replaces `GetTemplateSummaries`, 2026-11-04) |
 | wallet | `Credit(amount, idempotency_key)` → `applied` | member from forwarded token; no account field |
-| events | `LetterRequested` (`mail.letter.requested`) | new file under `common/api/proto/events/`; enclosures of the three request kinds; recipient one member or all members, never a list (A6) |
+| events | `LetterRequested` (`mail.letter.requested`) | new file under `common/api/proto/events/`; enclosures of the three request kinds; recipient one member or all members, never a list (A6); a required `source` string, 1–64 characters, stored as the letter's sent-by source (added 2026-11-04, A7) |
+| events | `member.signedup` (consumed, existing) | also stores the welcome letter in the same inbox transaction (added 2026-11-04, A7); the payload does not change |
 | Redis pub/sub | `mail:arrived` ← `{"member_id"}` \| `{"broadcast": true}` | published by notification after commit, subscribed by every game-service pod (added 2026-11-04, ADR-0045) |
 | game WebSocket | `{"action": "mail_arrived", "payload": {}}` | game-service → client in the HUB world (added 2026-11-04) |
 
@@ -821,3 +1090,8 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
   deduplicated (for now the back office must not retry blindly); a "sent with" grouping of a list
   send's letters.
 - The mailbox in a delve or a field world (D11).
+- *(Added 2026-11-04, A7:)* a separate back-office or operator identity, its login and its
+  per-action audit (ADR-0047); stopping an admin from mailing themselves; any read surface for
+  the sent-by audit, and showing a sender's identity to players; checking a letter request's
+  `source` against a list; a welcome letter for accounts that existed before, one per character,
+  or in another language; other notification triggers besides the welcome.
