@@ -48,6 +48,13 @@
 > R23, R24, R32, R34, R38, R39, R42, R43, the client and claim acceptance criteria, the edge states
 > and the API surface are corrected in place, each saying *(Amended 2026-11-04, A9 …)*. New
 > requirements are R63–R65.
+>
+> **Amended again 2026-11-04 (A10)**, after the branch was merged to main and run live: the
+> welcome potion is found by its **catalogue name**, not a fixed template id. The id A7.3 named
+> came from an items migration later migrations removed; the potions in use are minted by the dev
+> seed, with an id that differs per environment, so every welcome fell back to gold only. See
+> "Amendment 2026-11-04 (A10)" after A9. A7.3, A8.1, R58, R59, the welcome acceptance criterion,
+> one edge state and "Before GKE" are corrected in place, each saying *(Amended 2026-11-04, A10 …)*.
 
 ## Summary
 
@@ -290,11 +297,13 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
   - **The starter gift:** a template enclosure of **3 Small Health Potions** at the template's
     `min_item_level`, and a gold enclosure of **100**. **[charter default]** for the amounts.
     Both are claimed like any letter's enclosures (R13–R17); an empty new stash always has room.
-  - **How the potion is named:** by the **seeded template id**
+  - ~~**How the potion is named:** by the **seeded template id**
     `aa0e8400-e29b-41d4-a716-446655440006` (Small Health Potion, code `HEALTH_POT_SMALL`,
     items-service migration `000002_seed_basic_data`), held as one named constant in
     notification's mailbox package. `ResolveItemSnapshots` takes template ids, items-service has no
-    lookup by name or code, and a config key would be a knob nobody sets. **[spec default]**
+    lookup by name or code, and a config key would be a knob nobody sets. **[spec default]**~~
+    *(Amended 2026-11-04, A10: the potion is found by its catalogue name,
+    `WELCOME_GIFT_TEMPLATE_NAME`, default "Lesser Heal Potion"; the fixed id no longer exists.)*
   - **Resolving it:** the welcome goes through the same `prepareLetters` path as any letter, so
     its potion is resolved by `ResolveItemSnapshots` and stored as a snapshot (A2). The resolve
     runs **inside** the inbox transaction, after the inbox mark, under a short deadline, the way
@@ -340,7 +349,7 @@ this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the
     once-only initialiser).
   - Concurrent signups on a cold cache may each resolve; whichever finishes fills the cache, and
     each letter encloses a snapshot items-service resolved.
-  - **Accepted consequence:** a rebalance of the Small Health Potion template reaches new welcome
+  - **Accepted consequence:** a rebalance of the welcome potion's template reaches new welcome
     letters only after notification-service restarts. Letters already stored keep their snapshot
     either way (A2).
 - **A8.2 — a permanent problem with the gift never breaks signup.** **[charter default]**,
@@ -438,6 +447,33 @@ A9 …)*. New requirements are R63–R65.
   key and an empty key is never a working configuration. New R65. Six other services accept an
   empty secret the same way; they are a follow-up under "Before GKE".
 
+## Amendment 2026-11-04 (A10: the welcome potion is found by name)
+
+Found in the first live run after the merge to main: a new account's welcome carried its 100 gold
+but no potions. items-service answered `UNKNOWN_ITEM_TEMPLATE` for
+`aa0e8400-e29b-41d4-a716-446655440006`, so A8.2's gold-only fallback fired as designed. That id
+came from items migration `000002_seed_basic_data`, whose catalogue later migrations removed; the
+potions players use are minted by `game-server/scripts/seed-dev.sh`, which gives every
+environment its own template ids. A fixed id can therefore never be right in more than one place.
+
+- **A10.1 — the potion is named by its catalogue name.** *(the user's choice of the three offered:
+  by name, by a per-environment id, or a migration-seeded template with a fixed id)* notification
+  finds the template whose name is `WELCOME_GIFT_TEMPLATE_NAME` (default **"Lesser Heal
+  Potion"**, the dev seed's small healing potion), matched exactly but ignoring case and spaces at
+  either end, through items-service's public `ListItemTemplates`. It needs no new items RPC and no
+  token. **[spec default]** for the default name.
+- **A10.2 — the id is cached with the snapshot.** The first welcome a process builds finds the
+  id, then resolves the snapshot as before (A8.1); both are cached for the life of the process, so
+  later welcomes call neither. A lookup that finds nothing, or fails, fills nothing.
+- **A10.3 — outcomes of the lookup.** The catalogue unreachable is an outage: the signup handling
+  rolls back and is retried, exactly as an outage of the resolve (A8.1, R61). No template by that
+  name, or no gift configured at all, is a **permanent** problem: logged at error, the welcome is
+  stored with its gold only, and signup commits (A8.2); the miss is not cached, so a catalogue
+  that gains the name is picked up by the next welcome.
+- **A10.4 — accepted consequence.** A rename of the template in the catalogue turns new welcomes
+  gold-only until the name or `WELCOME_GIFT_TEMPLATE_NAME` agrees again; the error log says which
+  name was missing.
+
 ## Before GKE
 
 What must be done before the mailbox ships to GKE. None of it blocks merging the branch to main;
@@ -457,6 +493,10 @@ the last blocker is local and blocks only running the mailbox from the main chec
 - [ ] **Database connection budget.** Cloud SQL `db-f1-micro` allows about 25 connections.
       notification now opens up to 8 per pod while every other service opens 2. Check that the
       sum over services and replicas fits before scaling notification out.
+- [ ] **The welcome potion in the GKE catalogue (A10).** The GKE items catalogue must hold a
+      template named "Lesser Heal Potion", or `notification-config` must set
+      `WELCOME_GIFT_TEMPLATE_NAME` to the name it does hold; otherwise every welcome is gold only.
+      *(Added 2026-11-04, A10.)*
 - [ ] **notification-config.** Verify `REDIS_ADDR`, `ITEMS_ADDR` and `WALLET_ADDR` in the live
       ConfigMap. `game-server/deploy/gke/notification-config.yaml` already carries
       `redis:6379`, `items-headless:7126` and `wallet-headless:7128` (checked 2026-11-04).
@@ -801,11 +841,16 @@ the last blocker is local and blocks only running the mailbox from the main chec
     this ships get none (no backfill).
 58. The welcome letter is a `system` letter to that one member, `sent_by_source` `welcome`,
     expiring 30 days after it is stored, with A7.3's title and body **[spec default]** and two
-    enclosures: a template enclosure of **3** Small Health Potions at the template's
-    `min_item_level`, and **100** gold. **[charter default]** for the amounts.
-59. The potion's template is named by its **seeded template id**
-    (`aa0e8400-e29b-41d4-a716-446655440006`, items migration `000002_seed_basic_data`), one named
-    constant in notification's mailbox package. **[spec default]**
+    enclosures: a template enclosure of **3** welcome potions at the template's
+    `min_item_level`, and **100** gold. **[charter default]** for the amounts. *(Amended
+    2026-11-04, A10: "welcome potions"; was: Small Health Potions.)*
+59. The potion's template is the one in items-service's catalogue whose name is
+    `WELCOME_GIFT_TEMPLATE_NAME` (default "Lesser Heal Potion"), matched exactly ignoring case and
+    surrounding spaces, found through the public `ListItemTemplates` by the first welcome a process
+    builds and cached with its snapshot (A10). The catalogue unreachable is an outage (R61); no
+    template by that name, or none configured, stores a gold-only welcome, logged at error and not
+    cached. *(Amended 2026-11-04, A10; was: the seeded template id
+    `aa0e8400-e29b-41d4-a716-446655440006`, a constant in notification's mailbox package.)*
 60. The welcome is built through the same path as every letter (R3–R5, S1), so its potion is
     stored as a snapshot that `ResolveItemSnapshots` resolved. The first welcome a process builds
     resolves it, inside the inbox transaction, after the inbox mark, under a short deadline; the
@@ -1193,8 +1238,11 @@ the last blocker is local and blocks only running the mailbox from the main chec
 
 - [ ] Consuming one `member.signedup` stores, in one transaction, the inbox mark, the existing
       signup notification and one `system` letter to that member with `sent_by_source`
-      `welcome`, A7.3's title and body, 3 Small Health Potions (as a snapshot at the template's
+      `welcome`, A7.3's title and body, 3 welcome potions (as a snapshot at the template's
       `min_item_level`) and 100 gold, expiring 30 days after it was stored.
+- [ ] The welcome potion is found by its catalogue name (R59): one lookup per process, then
+      cached; a name missing from the catalogue stores a gold-only welcome, logged at error, and
+      is asked again on the next signup. *(Added 2026-11-04, A10.)*
 - [ ] The same event delivered twice stores one welcome letter and publishes `mail:arrived`
       once; the second delivery calls no items RPC.
 - [ ] After one welcome has resolved the potion, later signups in the same process store their
@@ -1326,11 +1374,13 @@ the last blocker is local and blocks only running the mailbox from the main chec
   requeued three times (5 s, 15 s, 60 s); an outage longer than that dead-letters the event, so
   the signup notification and the welcome letter are both missing until the event is replayed.
   Accepted for v1. **[spec default]** *(Amended 2026-11-04, A8.1: only on a cold cache.)*
-- **The seeded potion template removed or renamed by id:** a process that already cached the
-  potion keeps enclosing it until it restarts. A process with an empty cache stores every welcome
-  with its gold only, logged at error, and keeps asking items-service on each signup until the
-  constant or the seed is fixed. Those accounts never get the potions. **[charter default]**
-  *(Amended 2026-11-04, A8.2; was: every signup dead-letters until fixed and replayed.)*
+- **The welcome potion's name missing from the catalogue (renamed, removed, or never seeded):** a
+  process that already cached the potion keeps enclosing it until it restarts. A process with an
+  empty cache stores every welcome with its gold only, logged at error with the missing name, and
+  keeps asking items-service on each signup until the catalogue or `WELCOME_GIFT_TEMPLATE_NAME`
+  agrees again. Those accounts never get the potions. **[charter default]** *(Amended
+  2026-11-04, A8.2; was: every signup dead-letters until fixed and replayed. Amended 2026-11-04,
+  A10: by name, not by a seeded id.)*
 - **The potion template rebalanced while the process runs:** new welcomes keep the cached
   snapshot until notification-service restarts (A8.1, accepted). *(Added 2026-11-04, A8.)*
 - **A new player claims the welcome before wallet-service has created their account:** the

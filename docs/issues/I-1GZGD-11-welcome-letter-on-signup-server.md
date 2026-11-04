@@ -126,3 +126,12 @@ FS-1GZGD §Amendment 2026-11-04 (A7) A7.1, A7.3; §Requirements R52, R57–R62; 
 Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Every criterion but the claim of the welcome has a test, so those boxes are ticked ("members created before the change have no welcome" holds by construction: nothing backfills). Wrap-up run: `go test ./...` passes in notification-service, including the `ProcessMemberSignedUpDB` tests against a throwaway schema.
 
 **Pending manual check (Nick), live signup on the running stack:** a new account gets exactly one welcome letter; Take on it mints 3 Small Health Potions into the stash and credits 100 gold; a second signup (another account, same process) stores its welcome without an items call (cached potion). Ticks the open criterion above; close this issue once all of them are seen.
+
+## Live run (2026-11-04, after the merge to main)
+
+The fixed template id above (`aa0e8400-…-446655440006`) no longer exists: later items migrations
+removed that catalogue, and the dev seed mints the potions with a per-environment id. The first
+live signup therefore got a gold-only welcome (A8.2 working as designed). Fixed by FS-1GZGD **A10**:
+the potion is found by catalogue name (`WELCOME_GIFT_TEMPLATE_NAME`, default "Lesser Heal
+Potion") through `ListItemTemplates`, cached with its snapshot (commits 8e351b5b, ad1c10e5,
+7bb7fe4b). The pending manual check above now expects 3 Lesser Heal Potions.
