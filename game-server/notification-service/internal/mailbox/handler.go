@@ -167,7 +167,8 @@ func statusOf(ctx context.Context, op string, err error) error {
 		return status.Error(codes.PermissionDenied, "only an admin may send official letters")
 	case errors.Is(err, ErrLetterNotFound):
 		return status.Error(codes.NotFound, "letter not found")
-	case errors.Is(err, ErrItemsUnavailable), errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrStoreFailed):
+	case errors.Is(err, ErrItemsUnavailable), errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrStoreFailed),
+		errors.Is(err, ErrClaimsBusy):
 		slog.WarnContext(ctx, "mailbox dependency unavailable", "op", op, "error", err)
 		return status.Error(codes.Unavailable, op+" unavailable")
 	default:

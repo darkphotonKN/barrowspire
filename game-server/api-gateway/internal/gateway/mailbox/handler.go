@@ -8,8 +8,12 @@ package mailbox
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // LetterClient is what the mailbox operations need from notification-service.
@@ -23,11 +27,44 @@ type LetterClient interface {
 	ClaimLetter(ctx context.Context, req *pb.ClaimLetterRequest) (*pb.ClaimLetterResponse, error)
 }
 
-// Handler holds the notification client the typed operations close over.
-type Handler struct {
-	client LetterClient
+// Timeouts bound each mailbox call to notification-service, so a stuck
+// notification never holds a player's request open: past it the answer is
+// 503 SERVICE_UNAVAILABLE (FS-1GZGD R32). The deadline travels with the call,
+// so notification stops working on an answer nobody waits for.
+type Timeouts struct {
+	// Read bounds the summary, the letters and mark read.
+	Read time.Duration
+	// Claim bounds a claim. It outlasts notification's own 10 s bound on the
+	// claim's items and wallet steps, so a slow but healthy claim finishes.
+	Claim time.Duration
+	// Send bounds the admin send. It outlasts notification's 5 s items
+	// resolve plus storing up to 1000 letters.
+	Send time.Duration
 }
 
-func NewHandler(client LetterClient) *Handler {
-	return &Handler{client: client}
+// DefaultTimeouts are the mailbox deadlines the gateway runs with.
+var DefaultTimeouts = Timeouts{Read: 5 * time.Second, Claim: 15 * time.Second, Send: 15 * time.Second}
+
+// Handler holds the notification client the typed operations close over.
+type Handler struct {
+	client   LetterClient
+	timeouts Timeouts
+}
+
+func NewHandler(client LetterClient, timeouts Timeouts) *Handler {
+	return &Handler{client: client, timeouts: timeouts}
+}
+
+// within runs one notification call under d. notification not answering in
+// time is its outage, Unavailable (503), not the 500 an unseen
+// DeadlineExceeded would map to.
+func within[O any](ctx context.Context, d time.Duration, call func(context.Context) (O, error)) (O, error) {
+	ctx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+
+	out, err := call(ctx)
+	if err != nil && (status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded)) {
+		return out, status.Error(codes.Unavailable, "notification service did not answer in time")
+	}
+	return out, err
 }

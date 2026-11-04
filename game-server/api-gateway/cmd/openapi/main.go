@@ -41,7 +41,7 @@ func main() {
 		Listing:      listinggw.NewHandler(nil, nil),
 		Wallet:       walletgw.NewHandler(nil),
 		Characters:   charactergw.NewHandler(nil),
-		Mailbox:      mailboxgw.NewHandler(nil),
+		Mailbox:      mailboxgw.NewHandler(nil, mailboxgw.DefaultTimeouts),
 	})
 
 	spec, err := api.OpenAPI().YAML()

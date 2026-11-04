@@ -279,6 +279,18 @@ func (r *repository) FinishClaim(ctx context.Context, tx sqlx.ExtContext, letter
 	return updateOne(ctx, tx, "finish claim", query, letterID, member)
 }
 
+// RevertClaim puts a 'claiming' row back to the state the claim locked it in
+// (R17): after items refused the grant, so nothing was minted. The read the
+// claim recorded stays.
+func (r *repository) RevertClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID, to ClaimState) error {
+	query := `
+	UPDATE letter_states
+	SET claim_state = $3
+	WHERE letter_id = $1 AND member_id = $2 AND claim_state = 'claiming'`
+
+	return updateOne(ctx, tx, "revert claim", query, letterID, member, string(to))
+}
+
 // errStateNotMoved: a conditional claim update matched no row, which under
 // the row lock means the state was not what the caller locked.
 var errStateNotMoved = errors.New("letter state not in the expected claim state")

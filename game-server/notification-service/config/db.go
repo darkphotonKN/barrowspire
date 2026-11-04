@@ -18,6 +18,26 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 )
 
+// The pool budget (FS-1GZGD, ADR-0044 §Consequences). Most services keep two
+// connections, since Cloud SQL db-f1-micro allows 25 for every service and
+// replica combined. notification cannot: a claim holds a connection inside its
+// transaction across the items grant and the wallet credit, up to 10 s, and a
+// letter request or a cold-cache welcome holds one across its items resolve,
+// up to 5 s. With two connections, two slow claims froze every read, mark
+// read, GetNotification and consumer. So notification keeps eight: at most
+// MaxConcurrentClaims claims (the mailbox answers the next one busy at once)
+// plus the resolvingConsumers, leaving the rest for everything else. Raising
+// it spends the shared Cloud SQL budget; lower the claim cap with it.
+const (
+	dbMaxOpenConns = 8
+	// MaxConcurrentClaims caps the mailbox claims in flight on one pod.
+	MaxConcurrentClaims = 3
+	// resolvingConsumers are the AMQP consumers that can hold a connection
+	// across an items call: mail.letter.requested and member.signedup (the
+	// welcome). Each consumes one delivery at a time.
+	resolvingConsumers = 2
+)
+
 func InitDB() *sqlx.DB {
 	var (
 		host     = getEnvAsString("DB_HOST", "localhost")
@@ -35,9 +55,8 @@ func InitDB() *sqlx.DB {
 		panic(fmt.Errorf("failed to connect to database: %w", err))
 	}
 
-	// small pool: Cloud SQL db-f1-micro allows 25 connections for every service and replica combined
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(1)
+	db.SetMaxOpenConns(dbMaxOpenConns)
+	db.SetMaxIdleConns(2)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 

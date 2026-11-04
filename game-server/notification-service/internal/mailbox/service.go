@@ -29,6 +29,7 @@ type Repository interface {
 	LockState(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID) (ClaimState, error)
 	StartClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID, at time.Time) error
 	FinishClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID) error
+	RevertClaim(ctx context.Context, tx sqlx.ExtContext, letterID, member uuid.UUID, to ClaimState) error
 }
 
 // Items is what the mailbox needs from items-service: snapshots at send, the
@@ -95,19 +96,25 @@ type service struct {
 	inbox    Inbox
 	// welcomeGift caches the welcome potion's snapshot once resolved (A8.1).
 	welcomeGift potionCache
+	// claims caps the claims in flight; nil is no cap.
+	claims claimSlots
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 	now    func() time.Time
 }
 
-func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor, arrivals ArrivalPublisher, inbox Inbox) *service {
+// NewService builds the mailbox. maxClaims caps the claims in flight: each
+// holds one of db's connections across its items and wallet calls, so the cap
+// must stay below db's pool or slow claims starve every other query.
+func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor, arrivals ArrivalPublisher, inbox Inbox, maxClaims int) *service {
 	return &service{
 		repo:     repo,
 		items:    items,
 		wallet:   wallet,
 		arrivals: arrivals,
 		inbox:    inbox,
+		claims:   newClaimSlots(maxClaims),
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
@@ -400,13 +407,16 @@ const claimStepsTimeout = 10 * time.Second
 // ClaimLetter takes every enclosure of one letter for the member (R13-R17,
 // ADR-0044): items into the stash, then gold into the wallet, and 'claimed'
 // only after both. Refusals come first and call nothing: not addressed is
-// ErrLetterNotFound, then LETTER_EXPIRED, NOTHING_TO_CLAIM, and, under the
-// row lock, LETTER_CLAIM_IN_PROGRESS and LETTER_ALREADY_CLAIMED (R25, S5).
+// ErrLetterNotFound, then LETTER_EXPIRED, NOTHING_TO_CLAIM, ErrClaimsBusy
+// when the claim cap is taken, and, under the row lock,
+// LETTER_CLAIM_IN_PROGRESS and LETTER_ALREADY_CLAIMED (R25, S5).
 //
-// The lock is held across both steps. A step failure still commits the move
-// to 'claiming' and the read, so the next claim re-drives both steps with the
-// same keys (R27, R28); a crash rolls back to the earlier state, which the
-// next claim re-drives just the same.
+// The lock is held across both steps. A refusal from items (STASH_FULL, an
+// unmintable snapshot) means items minted nothing, so the row goes back to
+// the state the claim found and the letter stays unclaimed. Any other step
+// failure commits the move to 'claiming' and the read, so the next claim
+// re-drives both steps with the same keys (R17, R27, R28); a crash rolls back
+// to the earlier state, which the next claim re-drives just the same.
 func (s *service) ClaimLetter(ctx context.Context, letterID, member uuid.UUID) (*Claim, error) {
 	letter, err := s.repo.FindAddressed(ctx, letterID, member)
 	if err != nil {
@@ -419,6 +429,14 @@ func (s *service) ClaimLetter(ctx context.Context, letterID, member uuid.UUID) (
 	if len(letter.Enclosures) == 0 {
 		return nil, errcode.Refuse(errcode.NothingToClaim)
 	}
+
+	// never queue for a slot: a queued claim would wait while holding the
+	// player's request, and the slots exist to keep connections free
+	if !s.claims.tryTake() {
+		return nil, ErrClaimsBusy
+	}
+	defer s.claims.give()
+
 	if err := s.repo.EnsureState(ctx, letterID, member); err != nil {
 		return nil, err
 	}
@@ -442,7 +460,11 @@ func (s *service) ClaimLetter(ctx context.Context, letterID, member uuid.UUID) (
 			return err
 		}
 		claim, stepsErr = s.claimSteps(ctx, letter, member)
-		if stepsErr != nil {
+		switch {
+		case refusedByItems(stepsErr):
+			// items minted nothing: the row goes back as it was, keeping the read
+			return s.repo.RevertClaim(ctx, tx, letterID, member, state)
+		case stepsErr != nil:
 			// commit 'claiming': the next claim finishes it
 			return nil
 		}
@@ -455,6 +477,46 @@ func (s *service) ClaimLetter(ctx context.Context, letterID, member uuid.UUID) (
 		return nil, stepsErr
 	}
 	return claim, nil
+}
+
+// refusedByItems reports a step failure in which items answered that it
+// minted nothing and will mint nothing on a retry as it stands: a refusal
+// code (STASH_FULL) or unmintable snapshots. Only step 1 can answer either;
+// step 2 runs only after step 1 succeeded.
+func refusedByItems(err error) bool {
+	var refusal *errcode.Refusal
+	return errors.As(err, &refusal) || errors.Is(err, errGrantUnmintable)
+}
+
+// claimSlots caps the claims in flight. A claim holds a database connection
+// for up to claimStepsTimeout, so without a cap a few slow claims take the
+// whole pool and every read, mark read and consumer waits behind them.
+// Taking a slot never waits: a full cap answers ErrClaimsBusy at once.
+type claimSlots chan struct{}
+
+// newClaimSlots answers a cap of n claims, at least one.
+func newClaimSlots(n int) claimSlots {
+	return make(claimSlots, max(n, 1))
+}
+
+// tryTake takes a slot if one is free. A nil cap always has room.
+func (c claimSlots) tryTake() bool {
+	if c == nil {
+		return true
+	}
+	select {
+	case c <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// give returns a slot tryTake took.
+func (c claimSlots) give() {
+	if c != nil {
+		<-c
+	}
 }
 
 // claimKey is both steps' idempotency key (R14, ADR-0009): the grant id and

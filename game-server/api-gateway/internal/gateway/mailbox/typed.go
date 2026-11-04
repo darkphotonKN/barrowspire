@@ -87,7 +87,9 @@ func registerMailboxSummary(api huma.API, h *Handler, protect func(huma.Context,
 		Summary:     "Get my mailbox summary",
 		Tags:        []string{tag},
 	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
-		res, err := h.client.GetMailboxSummary(forward(ctx, in.Authorization), &pb.GetMailboxSummaryRequest{})
+		res, err := within(forward(ctx, in.Authorization), h.timeouts.Read, func(ctx context.Context) (*pb.MailboxSummary, error) {
+			return h.client.GetMailboxSummary(ctx, &pb.GetMailboxSummaryRequest{})
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +116,9 @@ func registerListLetters(api huma.API, h *Handler, protect func(huma.Context, fu
 		Summary:     "List my letters",
 		Tags:        []string{tag},
 	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
-		res, err := h.client.ListLetters(forward(ctx, in.Authorization), &pb.ListLettersRequest{})
+		res, err := within(forward(ctx, in.Authorization), h.timeouts.Read, func(ctx context.Context) (*pb.ListLettersResponse, error) {
+			return h.client.ListLetters(ctx, &pb.ListLettersRequest{})
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +155,9 @@ func registerMarkLetterRead(api huma.API, h *Handler, protect func(huma.Context,
 		Summary:     "Mark a letter read",
 		Tags:        []string{tag},
 	}, guard(func(ctx context.Context, in *input) (*struct{}, error) {
-		if _, err := h.client.MarkLetterRead(forward(ctx, in.Authorization), &pb.MarkLetterReadRequest{LetterId: in.LetterID}); err != nil {
+		if _, err := within(forward(ctx, in.Authorization), h.timeouts.Read, func(ctx context.Context) (*pb.MarkLetterReadResponse, error) {
+			return h.client.MarkLetterRead(ctx, &pb.MarkLetterReadRequest{LetterId: in.LetterID})
+		}); err != nil {
 			return nil, err
 		}
 		return &struct{}{}, nil
@@ -188,7 +194,9 @@ func registerClaimLetter(api huma.API, h *Handler, protect func(huma.Context, fu
 		Summary:     "Claim a letter's enclosures",
 		Tags:        []string{tag},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		res, err := h.client.ClaimLetter(forward(ctx, in.Authorization), &pb.ClaimLetterRequest{LetterId: in.LetterID})
+		res, err := within(forward(ctx, in.Authorization), h.timeouts.Claim, func(ctx context.Context) (*pb.ClaimLetterResponse, error) {
+			return h.client.ClaimLetter(ctx, &pb.ClaimLetterRequest{LetterId: in.LetterID})
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -295,7 +303,9 @@ func registerSendLetter(api huma.API, h *Handler, protect func(huma.Context, fun
 			return nil, apperr.WithDetail(apperr.ErrForbidden, "Only an admin may send official letters")
 		}
 
-		res, err := h.client.SendLetter(forward(ctx, in.Authorization), in.Body.sendRequest())
+		res, err := within(forward(ctx, in.Authorization), h.timeouts.Send, func(ctx context.Context) (*pb.SendLetterResponse, error) {
+			return h.client.SendLetter(ctx, in.Body.sendRequest())
+		})
 		if err != nil {
 			return nil, err
 		}
