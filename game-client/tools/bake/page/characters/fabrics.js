@@ -285,8 +285,8 @@ export const GEAR = {
   leather: mix("barrowBrown", "barrowDeep", 0.3),
   leatherLight: mix("barrowBrown", "brass", 0.3),
   leatherDark: mix("barrowDeep", "pitch", 0.35),
-  tabard: mix("oxblood", "barrowDeep", 0.15),
-  cloakKnight: mix("charcoal", "slate", 0.55),
+  // the knight's heavy wool cloak, in the house oxblood
+  cloakKnight: mix("oxblood", "barrowDeep", 0.58),
   ranger: mix("arcaneDeep", "barrowDeep", 0.4),
   rangerDark: mix("arcaneDeep", "pitch", 0.45),
   breeches: mix("barrowDeep", "slate", 0.35),
@@ -352,6 +352,7 @@ export function fabrics() {
   const D = THREE.DoubleSide;
   SET = {
     mail: mat(mail(GEAR.mail), { metal: 0.8, rough: 0.45, normal: 1.2 }),
+    mailDouble: mat(mail(GEAR.mail), { metal: 0.8, rough: 0.45, normal: 1.2, side: D }),
     mailDark: mat(mail(GEAR.blackIron, { rust: 0.35, dirt: 0.5, seed: 4 }), { metal: 0.7, rough: 0.55 }),
     steel: mat(plate(GEAR.steel), { metal: 0.85, rough: 0.3 }),
     steelDouble: mat(plate(GEAR.steel), { metal: 0.85, rough: 0.3, side: D }),
@@ -363,8 +364,7 @@ export function fabrics() {
     leatherLight: mat(leather(GEAR.leatherLight, { seed: 21 }), { rough: 0.72 }),
     leatherDark: mat(leather(GEAR.leatherDark, { seed: 23 }), { rough: 0.65 }),
     leatherDouble: mat(leather(GEAR.leatherLight, { seed: 21 }), { rough: 0.72, side: D }),
-    tabard: mat(wool(GEAR.tabard, { seed: 25 }), { side: D }),
-    cloakKnight: mat(wool(GEAR.cloakKnight, { seed: 27, dirt: 0.5 }), { side: D }),
+    cloakKnight: mat(wool(GEAR.cloakKnight, { seed: 93, dirt: 0.5 }), { side: D }),
     ranger: mat(wool(GEAR.ranger, { seed: 29, dirt: 0.45 }), { side: D }),
     rangerDark: mat(wool(GEAR.rangerDark, { seed: 31 })),
     breeches: mat(wool(GEAR.breeches, { seed: 33 })),

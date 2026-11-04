@@ -251,6 +251,12 @@ lit) while the player stands inside.
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
   class reads at a glance: knight, archer, wizard, mercenary.
+- **Knight:** the old guard of the barrow-watch, armoured in mail, never plate. A conical nasal
+  helm sits over a mail coif, the face bare behind the nasal. A long mail hauberk falls to the
+  knee, open at the front for the saddle, over mail chausses and plain boots, and a heavy oxblood
+  cloak hangs to the calf. He carries a longsword and a tall kite shield painted per pale in bone
+  and oxblood, with an iron boss. Worn and functional kit, never bright fantasy plate. *(Amended
+  at the owner's pick, 2026-11-04.)*
 - **Archer:** a ranger in forest green. A deep cowl, closed over the crown, hides most of the
   face in shadow down to the mouth. Its crown draws back into one long, full point that droops
   like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
@@ -262,8 +268,8 @@ lit) while the player stands inside.
   boots. He goes bareheaded, his hair tied back and his beard trimmed, so the face and hair
   carry him. His sword is a long, slender, curved dueling blade with a knuckle-bow, used
   one-handed with no shield. He is broad in the shoulder and heavy in the arm: never the
-  knight's plate and helm, never the archer's hood and cloak. *(Amended at the owner's pick,
-  FS-MAMHR §H, 2026-10-31.)*
+  knight's long mail, helm and shield, never the archer's hood and cloak. *(Amended at the
+  owner's pick, FS-MAMHR §H, 2026-10-31.)*
 - **Enemies:** barrow/undead themes — skeletons, wraiths, revenants — for fodder and brutes;
   a boss may also be an infernal demon the Spire summons. In field worlds only, fodder and
   brutes may also be living animals (the boar first). Dark palette; **glowing eyes as the
