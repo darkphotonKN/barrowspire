@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
@@ -15,6 +16,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // fakeListService serves ListItemInstances only; any other call panics on the
@@ -524,5 +526,144 @@ func TestHandler_UpdateLoadout_Outcomes(t *testing.T) {
 				t.Errorf("reason = %q, want none", reason)
 			}
 		})
+	}
+}
+
+// fakeReconcileService serves the reservation reconciler's three calls and
+// records what the handler handed it.
+type fakeReconcileService struct {
+	Service
+	stale []StaleReservation
+
+	listCalled   bool
+	gotOlderThan time.Duration
+	cancelled    []StaleReservation
+	confirmed    []StaleReservation
+}
+
+func (f *fakeReconcileService) ListStaleReserved(_ context.Context, olderThan time.Duration) ([]StaleReservation, error) {
+	f.listCalled, f.gotOlderThan = true, olderThan
+	return f.stale, nil
+}
+
+func (f *fakeReconcileService) CancelReservation(_ context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	f.cancelled = append(f.cancelled, StaleReservation{ItemID: itemID, ListingID: listingID})
+	return true, nil
+}
+
+func (f *fakeReconcileService) ConfirmReservation(_ context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	f.confirmed = append(f.confirmed, StaleReservation{ItemID: itemID, ListingID: listingID})
+	return true, nil
+}
+
+func reconcilerCtx() context.Context {
+	return commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: uuid.New()})
+}
+
+// The age is measured by items-service on its database clock, so the caller only
+// says how old. A missing or non-positive age would make every reservation stale,
+// a listing created a second ago included, so it is refused rather than run.
+func TestHandler_ListStaleReserved_RefusesAnAgeThatSweepsEverything(t *testing.T) {
+	tests := []struct {
+		name      string
+		olderThan *durationpb.Duration
+	}{
+		{name: "missing", olderThan: nil},
+		{name: "zero", olderThan: durationpb.New(0)},
+		{name: "negative", olderThan: durationpb.New(-time.Minute)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &fakeReconcileService{}
+
+			_, err := NewHandler(svc, nil).ListStaleReserved(reconcilerCtx(), &pb.ListStaleReservedRequest{OlderThan: tt.olderThan})
+
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("code = %v, want InvalidArgument", status.Code(err))
+			}
+			if svc.listCalled {
+				t.Error("service must not be asked with an unsafe age")
+			}
+		})
+	}
+}
+
+// Each stale reservation comes back with the listing it was made for, so the
+// follow-up cancel or confirm can be fenced on that listing.
+func TestHandler_ListStaleReserved_ReturnsItemAndListing(t *testing.T) {
+	stale := StaleReservation{ItemID: uuid.New(), ListingID: uuid.New()}
+	svc := &fakeReconcileService{stale: []StaleReservation{stale}}
+
+	res, err := NewHandler(svc, nil).ListStaleReserved(reconcilerCtx(), &pb.ListStaleReservedRequest{OlderThan: durationpb.New(10 * time.Minute)})
+
+	if err != nil {
+		t.Fatalf("ListStaleReserved: %v", err)
+	}
+	if svc.gotOlderThan != 10*time.Minute {
+		t.Errorf("service olderThan = %v, want 10m", svc.gotOlderThan)
+	}
+	if len(res.GetReservations()) != 1 {
+		t.Fatalf("reservations = %v, want one", res.GetReservations())
+	}
+	got := res.GetReservations()[0]
+	if got.GetItemId() != stale.ItemID.String() || got.GetListingId() != stale.ListingID.String() {
+		t.Errorf("reservation = %v, want item %s listing %s", got, stale.ItemID, stale.ListingID)
+	}
+}
+
+// Cancel and confirm act on one reservation, named by item and listing. Without a
+// valid listing id the write would be unfenced, so it is refused before the
+// service is reached.
+func TestHandler_ReservationWrites_NeedItemAndListing(t *testing.T) {
+	itemID, listingID := uuid.New(), uuid.New()
+
+	writes := []struct {
+		name  string
+		write func(h *Handler, itemID, listingID string) error
+		got   func(f *fakeReconcileService) []StaleReservation
+	}{
+		{name: "cancel", write: func(h *Handler, item, listing string) error {
+			_, err := h.CancelReservation(reconcilerCtx(), &pb.CancelReservationRequest{ItemId: item, ListingId: listing})
+			return err
+		}, got: func(f *fakeReconcileService) []StaleReservation { return f.cancelled }},
+		{name: "confirm", write: func(h *Handler, item, listing string) error {
+			_, err := h.ConfirmReservation(reconcilerCtx(), &pb.ConfirmReservationRequest{ItemId: item, ListingId: listing})
+			return err
+		}, got: func(f *fakeReconcileService) []StaleReservation { return f.confirmed }},
+	}
+	cases := []struct {
+		name      string
+		itemID    string
+		listingID string
+		wantCode  codes.Code
+	}{
+		{name: "both ids", itemID: itemID.String(), listingID: listingID.String(), wantCode: codes.OK},
+		{name: "missing listing id", itemID: itemID.String(), listingID: "", wantCode: codes.InvalidArgument},
+		{name: "malformed listing id", itemID: itemID.String(), listingID: "nope", wantCode: codes.InvalidArgument},
+		{name: "malformed item id", itemID: "nope", listingID: listingID.String(), wantCode: codes.InvalidArgument},
+	}
+	for _, w := range writes {
+		for _, c := range cases {
+			t.Run(w.name+"/"+c.name, func(t *testing.T) {
+				svc := &fakeReconcileService{}
+
+				err := w.write(NewHandler(svc, nil), c.itemID, c.listingID)
+
+				if status.Code(err) != c.wantCode {
+					t.Fatalf("code = %v, want %v", status.Code(err), c.wantCode)
+				}
+				got := w.got(svc)
+				if c.wantCode != codes.OK {
+					if len(got) != 0 {
+						t.Errorf("service reached with %v, want not reached", got)
+					}
+					return
+				}
+				want := StaleReservation{ItemID: itemID, ListingID: listingID}
+				if len(got) != 1 || got[0] != want {
+					t.Errorf("service got %v, want [%v]", got, want)
+				}
+			})
+		}
 	}
 }

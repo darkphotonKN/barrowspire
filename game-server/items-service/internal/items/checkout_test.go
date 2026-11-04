@@ -473,7 +473,7 @@ type listingRepo struct {
 
 func (r *listingRepo) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) (*Loadout, error) {
 	err := commonutils.ExecTx(ctx, r.db, nil, func(listing *sqlx.Tx) error {
-		_, err := r.ReserveItemTx(ctx, listing, r.seller, r.itemID, uuid.New(), time.Now(), time.Now())
+		_, err := r.ReserveItemTx(ctx, listing, r.seller, r.itemID, uuid.New(), time.Now())
 		return err
 	})
 	if err != nil {
@@ -516,7 +516,7 @@ func TestCheckOutRunGear_RacingAListing(t *testing.T) {
 		}
 
 		err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
-			_, err := repo.ReserveItemTx(ctx, tx, owner, sword, uuid.New(), time.Now(), time.Now())
+			_, err := repo.ReserveItemTx(ctx, tx, owner, sword, uuid.New(), time.Now())
 			return err
 		})
 
