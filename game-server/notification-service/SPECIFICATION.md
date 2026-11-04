@@ -21,3 +21,4 @@
 - [ ] Letter requests from the broker, deduplicated → FS-1GZGD
 - [ ] A member's mailbox and its summary → FS-1GZGD
 - [ ] Claim a letter's enclosures → FS-1GZGD
+- [ ] New-letter arrival published to the game pods → FS-1GZGD
