@@ -150,14 +150,22 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   or still holds unclaimed enclosures; dark only when everything is read and claimed. The
   **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
   after it the seal stays lit. A lit seal dot on a list row means that letter is unread.
+- **`mail_arrived`** — the game WebSocket action (`{"action": "mail_arrived", "payload": {}}`)
+  that tells a player standing in the town a letter has just been sent to them. It carries no
+  letter: the client answers it by fetching the mailbox summary. It is the only thing that
+  fetches outside town entry and opening the panel; there is no polling timer. A missed one is
+  made up at the next town entry. (FS-1GZGD A4, ADR-0045)
 - **Letter panel** — the centered carved panel the envelope opens: the letter list on the left,
   the open letter on the right. While it is open WASD does not move the character.
 - **Enclosed row** — the row of bag-sized slots under a letter's body showing its enclosures:
   item icons with the item tip, "x3" for a quantity, and the gold as a `coins` slot with its
-  amount under it (gold is credited to the purse on claim; it is not an item).
-- **Claim** (a letter) — taking every enclosure of a letter at once with the one **Claim**
-  button: its items into the stash, its gold into the purse. Afterwards the letter wears a **Claimed** wax stamp. See the voice-rule note
-  under *Open*.
+  amount under it (gold is credited to the purse on claim; it is not an item). The icon and the
+  tip come from the enclosure's **item snapshot**, which is exactly the item the player will get.
+- **Take** (a letter's enclosures) — what the screen calls taking every enclosure of a letter at
+  once with the one **Take** button ("Take" → "Taking…" → "Taken"): its items into the stash,
+  its gold into the purse. Afterwards the dimmed slots wear a **Taken** wax stamp. Code, the API
+  and the server call it the **claim** (`/claim`, `claimState`, `LETTER_ALREADY_CLAIMED`); the
+  screen never says "Claim" here (voice rule, see *Open*, resolved 2026-11-04).
 
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
@@ -376,6 +384,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | chest, sack, bone heap | — | `containers[].kind` `chest` / `sack` / `drop_pile` | "container" |
 | the party | — | `party_update`, `party_id` | "party" |
 | travel to the leader | — | `world_handoff` (to a hub) | "Travel to the party leader's village" |
+| a letter, Take | `/api/mail/*`, `claim`, `claimState` | `mail_arrived` | "mailbox", "claim a letter's enclosures" |
 
 ## Voice rules that ride on the vocabulary
 
@@ -405,9 +414,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Escaping vs dying.** The end-of-run overlay distinguishes them (`current_player === null` ⇒
   escaped) but the vocabulary does not. The guideline offers *"Few return whole"* for death; the
   successful case has no term.
-- **"Claim" on a letter vs the voice rule.** *Voice rules* reserve "Acquire" / "Claim" for
+- ~~**"Claim" on a letter vs the voice rule.** *Voice rules* reserve "Acquire" / "Claim" for
   in-game-gold purchases; FS-1GZGD's charter put "Claim" on the letter's button, where nothing
   is bought. Kept as the charter decided; whether the voice rule should name letters too, or the
-  button should take another verb, is unsettled.
+  button should take another verb, is unsettled.~~ Resolved 2026-11-04 (FS-1GZGD amendment, A5,
+  the user): the button takes another verb, **Take** → "Taking…" → "Taken", with a "Taken" stamp.
+  The voice rule stands unchanged; "claim" survives only in code and API names.
 - `game-server/game-service/CONTEXT.md` is still empty. When it is populated, the protocol column
   of the mapping table above becomes a link rather than a restatement.
