@@ -65,7 +65,8 @@ func attrOf(r slog.Record, key string) (slog.Value, bool) {
 // recorder, with the given deadline.
 func publisherOn(t *testing.T, addr string, timeout time.Duration) (*RedisArrivalPublisher, *recordingHandler) {
 	t.Helper()
-	client := redis.NewClient(&redis.Options{Addr: addr})
+	// as config.NewRedisClient builds it: deadlines on the context bind reads
+	client := redis.NewClient(&redis.Options{Addr: addr, ContextTimeoutEnabled: true})
 	t.Cleanup(func() { _ = client.Close() })
 	logs := &recordingHandler{}
 	p := NewRedisArrivalPublisher(client)

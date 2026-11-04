@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/notification"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
 
@@ -20,9 +21,10 @@ import (
 // itemsConn is the connection to items-service, which the mailbox resolves
 // item enclosures through at send (FS-1GZGD R4) and grants a claim's items
 // through (R15); walletConn is wallet-service's, which credits a claim's gold
-// (R16). jwtSecret verifies the token the gateway forwards on every mailbox
-// call.
-func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn grpc.ClientConnInterface, jwtSecret []byte) *grpc.Server {
+// (R16). redisClient carries mail arrivals to the game pods after a letter
+// commits (R41, ADR-0045). jwtSecret verifies the token the gateway forwards
+// on every mailbox call.
+func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn grpc.ClientConnInterface, redisClient *redis.Client, jwtSecret []byte) *grpc.Server {
 	// Create repositories
 	repo := notification.NewRepository(db)
 	inboxRepo := inbox.NewRepo()
@@ -47,9 +49,11 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// Start listening for AMQP events
 	consumer.Listen()
 
-	// Mailbox (FS-1GZGD, ADR-0044)
+	// Mailbox (FS-1GZGD, ADR-0044). One arrival publisher announces the
+	// letters every door stores (R41, R52).
+	arrivals := mailbox.NewRedisArrivalPublisher(redisClient)
 	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
-		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn))
+		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals)
 	mailboxHandler := mailbox.NewHandler(mailboxService)
 
 	// Create gRPC server

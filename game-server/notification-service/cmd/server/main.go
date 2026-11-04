@@ -35,6 +35,9 @@ var (
 	itemsAddr = commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126")
 	// wallet-service, for crediting a claimed letter's gold (FS-1GZGD R16)
 	walletAddr = commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128")
+	// Redis, for the mail:arrived hint after a letter commits (ADR-0045); the
+	// default is the compose Redis on the host
+	redisAddr = commonhelpers.GetEnvString("REDIS_ADDR", "127.0.0.1:6492")
 )
 
 func main() {
@@ -89,8 +92,12 @@ func main() {
 	}
 	defer walletConn.Close()
 
+	// never fatal: Redis down only silences the new-letter hint
+	redisClient := config.NewRedisClient(redisAddr)
+	defer redisClient.Close()
+
 	// Use the new config setup to initialize all services
-	grpcServer = config.SetupServices(db, ch, itemsConn, walletConn, []byte(os.Getenv("JWT_SECRET")))
+	grpcServer = config.SetupServices(db, ch, itemsConn, walletConn, redisClient, []byte(os.Getenv("JWT_SECRET")))
 
 	log.Printf("Notification Server started on PORT: %s\n", grpcAddr)
 
