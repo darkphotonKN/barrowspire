@@ -111,6 +111,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithPodLiveness(matchQueueRedis),
 		gameserver.WithHubOccupancy(hubocc.NewRedis(redisClient)),
 		gameserver.WithPodInbox(chatbus.NewRedis(redisClient)),
+		// notification-service's mail arrivals ride it too: mail_arrived to HUB-world players
+		// (FS-1GZGD R42, ADR-0045)
+		gameserver.WithMailArrivals(chatbus.NewRedis(redisClient)),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())

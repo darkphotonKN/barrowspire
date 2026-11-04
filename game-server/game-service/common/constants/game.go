@@ -116,6 +116,11 @@ const (
 	// ActionWorldHandoff tells a client its run is hosted on another pod, and
 	// where to reconnect to enter it. FS-K2HKP §Requirements 21.
 	ActionWorldHandoff Action = "world_handoff"
+
+	// ActionMailArrived tells a client in the HUB world that a mailbox letter may be waiting, as
+	// an empty payload: the client then asks the gateway for its mailbox summary. Server to
+	// client only; one sent by a client is an unknown action. FS-1GZGD R43, ADR-0045.
+	ActionMailArrived Action = "mail_arrived"
 )
 
 // ChatChannel is which kind of talk a chat line belongs to. The five are the
