@@ -234,6 +234,8 @@ export interface WorldHandoffPayload {
   addr: string;
   session_id?: string;
   hub?: boolean;
+  /** A landing pod sending the client back to the pod still holding the player (FS-MCYWK C14). */
+  reconnect?: boolean;
 }
 
 /** How a player left active play, as their settlement names it (FS-GV8WN R19). */

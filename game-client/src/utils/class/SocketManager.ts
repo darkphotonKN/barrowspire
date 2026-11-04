@@ -98,6 +98,9 @@ export class SocketManager {
   // is for. The run id stays after the move, so a repeated handoff is ignored.
   private pending: SocketLike | null = null;
   private handoffSessionId: string | null = null;
+  // Sockets opened with redirected=1: a server sent the client there, so a redirect arriving on
+  // one is never followed. FS-MCYWK C17.
+  private redirected = new WeakSet<SocketLike>();
 
   constructor(
     private createSocket: (url: string) => SocketLike = (url) =>
@@ -180,23 +183,35 @@ export class SocketManager {
     this.setConnectionStatus("disconnected");
   }
 
-  private connect(url: string) {
+  private connect(url: string, closedUnopened?: () => void) {
     if (this.socket) return; // 避免重複連接
 
     this.setConnectionStatus("connecting");
     this.socket = this.createSocket(url);
-    this.attach(this.socket);
+    this.attach(this.socket, closedUnopened);
   }
 
-  /** Makes `socket` the one the game talks through: its status, its closes, its messages. */
-  private attach(socket: SocketLike) {
+  /**
+   * Makes `socket` the one the game talks through: its status, its closes, its messages.
+   * `closedUnopened`, when given, takes the place of the ordinary error and close if the socket
+   * fails before it ever opened.
+   */
+  private attach(socket: SocketLike, closedUnopened?: () => void) {
+    // a socket promoted after a handoff is attached already open
+    let opened = socket.readyState === SOCKET_OPEN;
     socket.onopen = () => {
+      opened = true;
       console.log("WebSocket connected");
       this.setConnectionStatus("connected");
       this.updateStatus("WebSocket Connected", toCss(palette.safe));
     };
 
     socket.onerror = (error) => {
+      if (!opened && closedUnopened) {
+        // the close that follows decides what happens; no error is shown meanwhile
+        console.warn("WebSocket error before open:", error);
+        return;
+      }
       console.error("WebSocket error:", error);
       this.setConnectionStatus("error");
       this.updateStatus("WebSocket Error", toCss(palette.damageBright));
@@ -209,8 +224,15 @@ export class SocketManager {
         "reason:",
         event.reason,
       );
-      if (this.socket === socket) {
+      const current = this.socket === socket;
+      if (current) {
         this.socket = null;
+      }
+
+      // only while it is still the game's socket: a client that let it go is done with it
+      if (!opened && current && closedUnopened) {
+        closedUnopened();
+        return;
       }
 
       // Close code 4001 = auth error (token invalid/expired)
@@ -262,6 +284,13 @@ export class SocketManager {
       // it from the shape of a state broadcast. FS-29KSH §Requirements 36.
       this.handleWorldEntered(data.payload as WorldEnteredPayload);
       this.listeners.get(data.action)?.(data.payload);
+    } else if (
+      data.action === "world_handoff" &&
+      data.payload?.reconnect === true
+    ) {
+      // A landing pod sending us back to the pod still holding the player: it carries neither
+      // `hub` nor `session_id`, so it is checked first. FS-MCYWK C14.
+      this.redirect(data.payload as WorldHandoffPayload);
     } else if (data.action === "world_handoff" && data.payload?.hub === true) {
       // A travel to the party leader's town: no match, so the delve's listener
       // hears nothing; the host's world_entered switches the scene. FS-NCC9J R20.
@@ -313,6 +342,41 @@ export class SocketManager {
   }
 
   /**
+   * Follows a redirect to the pod still holding the player, break-before-make: the landing pod
+   * holds nothing for us, so its socket is let go quietly and we reconnect, as the same player,
+   * to `addr`. FS-MCYWK C15.
+   */
+  private redirect(payload: WorldHandoffPayload) {
+    const landing = this.socket;
+    if (!landing) return;
+    if (!payload?.addr) {
+      console.warn("redirect world_handoff missing addr, ignored:", payload);
+      return;
+    }
+    if (this.redirected.has(landing)) {
+      console.warn("redirect on a redirected connection, ignored:", payload);
+      return;
+    }
+
+    this.detach(landing);
+    landing.close(1000, "redirect");
+    this.socket = null;
+    this.serverAddr = payload.addr;
+    // The holding pod unreachable (closed before ever opening): one try at the default address,
+    // seated wherever that lands. FS-MCYWK C18.
+    this.connectRedirected(() => {
+      this.serverAddr = DEFAULT_SERVER_ADDR;
+      this.connectRedirected();
+    });
+  }
+
+  /** Connects to `serverAddr` as this player on a connection a server sent us to make. */
+  private connectRedirected(closedUnopened?: () => void) {
+    this.connect(`${this.gameUrl()}&redirected=1`, closedUnopened);
+    if (this.socket) this.redirected.add(this.socket);
+  }
+
+  /**
    * Follows a handoff to the server hosting a run, make-before-break: the
    * current socket stays live until the host has seated us, so a refused or
    * failed move leaves the player standing where they were.
@@ -353,11 +417,11 @@ export class SocketManager {
 
   /**
    * Follows a travel's handoff to the hub of the party leader's server (FS-NCC9J R18, R20),
-   * make-before-break as a run's is: a plain connection there, which enters the hub as the
-   * arrival says once it opens; the hub's world_entered is the acceptance. A refused entry (the
-   * hub full) or a server that cannot be reached leaves the player where they stand, on the old
-   * socket (or back on the server they were on, if it died meanwhile), and the arrival tells them
-   * why. One move at a time.
+   * make-before-break as a run's is: a connection there, flagged redirected (FS-MCYWK C19), which
+   * enters the hub as the arrival says once it opens; the hub's world_entered is the acceptance. A
+   * refused entry (the hub full) or a server that cannot be reached leaves the player where they
+   * stand, on the old socket (or back on the server they were on, if it died meanwhile), and the
+   * arrival tells them why. One move at a time.
    */
   private hubHandoff(payload: WorldHandoffPayload) {
     if (!payload?.addr) {
@@ -372,9 +436,12 @@ export class SocketManager {
       return;
     }
 
+    // flagged redirected: the leader's pod seats a traveller where they land rather than send
+    // them back to the old pod that may still name itself as holding them. FS-MCYWK C19.
     const next = this.createSocket(
-      `${payload.addr}?token=${this.token}&name=${this.name}`,
+      `${payload.addr}?token=${this.token}&name=${this.name}&redirected=1`,
     );
+    this.redirected.add(next);
     this.pending = next;
     next.onopen = () => next.send(this.encode("enter_hub", enter));
 
@@ -448,10 +515,7 @@ export class SocketManager {
 
     if (old) {
       // detached first, so its close reads as neither a disconnect nor an auth failure
-      old.onopen = null;
-      old.onclose = null;
-      old.onerror = null;
-      old.onmessage = null;
+      this.detach(old);
       old.close(1000, "handoff");
     }
 
@@ -481,11 +545,16 @@ export class SocketManager {
     if (!pending) return;
 
     this.pending = null;
-    pending.onopen = null;
-    pending.onclose = null;
-    pending.onerror = null;
-    pending.onmessage = null;
+    this.detach(pending);
     pending.close(1000, "handoff_cancelled");
+  }
+
+  /** Stops listening to a socket, so whatever it does next reaches no handler of ours. */
+  private detach(socket: SocketLike) {
+    socket.onopen = null;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.onmessage = null;
   }
 
   /**
