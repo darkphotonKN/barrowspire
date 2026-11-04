@@ -16,11 +16,13 @@ export const POSTED_LIVE = "Your listing is live.";
 export const STILL_PROCESSING = "Still processing — refresh in a minute";
 export const NOTHING_LISTED = "You have nothing listed.";
 export const NOTHING_LISTABLE =
-  "Every relic you hold is already listed — or you hold none yet.";
+  "None of your relics can be listed right now — take off worn ones, or wait for listings to end.";
 export const CANNOT_LIST =
   "That relic can't be listed right now — it may already be listed.";
 export const END_TIME_PASSED = "That end time has already passed — check your clock";
 export const LIST_FAILED = "That relic could not be listed — try again.";
+/** FS-HBXZN R17: items-service refused a relic the member is wearing. */
+export const WORN_CANNOT_LIST = "Take it off first — worn relics can't be listed.";
 /** FS-49Z37 req 2: the form's own check and the server's refusal read the same. */
 export const BUYOUT_NOT_ABOVE_START = "The buyout price must be above the starting bid.";
 
@@ -88,7 +90,8 @@ export type InstanceStatus =
 /**
  * An instance's status. The generated type marks `status` optional, though the server always
  * sends it (FS-8EGFA req 11); an absent one is read as AVAILABLE, so an older server leaves every
- * relic choosable and the server stays the authority (a refusal answers 500, {@link CANNOT_LIST}).
+ * relic choosable and the server stays the authority (it refuses with ITEM_NOT_AVAILABLE,
+ * {@link CANNOT_LIST}).
  * A status the page does not know is never choosable.
  */
 export function instanceStatus(status: string | undefined): InstanceStatus {
@@ -125,11 +128,17 @@ export interface PickerInstance {
   mana_amount?: number;
 }
 
+/** A worn relic that is otherwise listable (FS-HBXZN R13). */
+const WORN_TAG = "Worn";
+
 export interface PickerCard {
   id: string;
   name: string;
   selectable: boolean;
-  /** "Listed", "In escrow" or "Unavailable" on a card that cannot be chosen. */
+  /**
+   * Why a card cannot be chosen: its status ("Listed", "In escrow", "Settling", "Unavailable"),
+   * or "Worn" for an available relic in the member's loadout. The status tag wins (FS-HBXZN R15).
+   */
   tag?: string;
   /** The stats the relic has. No price: the picker chooses a relic, it does not sell one. */
   stats: { label: string; value: string }[];
@@ -137,16 +146,25 @@ export interface PickerCard {
   icon: Pick<PickerInstance, "name" | "weapon_type" | "armor_slot" | "healing_amount" | "mana_amount">;
 }
 
-export function pickerCards(instances: readonly PickerInstance[]): PickerCard[] {
+/**
+ * One card per relic with an id. `worn` is the ids in the member's loadout (FS-HBXZN R13): a worn
+ * relic stays in the picker but cannot be chosen. None worn, or a loadout that could not be read,
+ * leaves every card to its status (R16); the server stays the authority.
+ */
+export function pickerCards(
+  instances: readonly PickerInstance[],
+  worn: ReadonlySet<string> = new Set(),
+): PickerCard[] {
   return instances.flatMap((inst) => {
     if (!inst.id) return [];
     const status = instanceStatus(inst.status);
+    const isWorn = worn.has(inst.id);
     return [
       {
         id: inst.id,
         name: inst.name?.trim() || "Unknown relic",
-        selectable: status === "AVAILABLE",
-        tag: TAGS[status],
+        selectable: status === "AVAILABLE" && !isWorn,
+        tag: TAGS[status] ?? (isWorn ? WORN_TAG : undefined),
         stats: statsOf(inst),
         icon: {
           name: inst.name,
@@ -199,21 +217,33 @@ export function canSubmitListing(form: {
 }
 
 /**
- * What a refused `create-listing` says (req 29). `EMAIL_UNVERIFIED` is the email-verified gate
- * (FS-V6SFK R38), named by its code. A 500 is the items-side refusal: the relic is
- * already listed or otherwise held. A 400 is marketplace refusing the listing; the page sends a
- * chosen relic's id and checked prices, so the end time is the one fact it cannot vouch for, unless
- * what was sent carries a buyout price not above the start (FS-49Z37 req 2): the server answers
- * both with the same 400, so the prices sent tell them apart.
+ * A create-listing refusal named by its code, read before the status so the price reading never
+ * mistakes it: the email-verified gate (FS-V6SFK R38), and items-service refusing the relic itself,
+ * worn or already held (FS-HBXZN R17).
+ */
+const REFUSAL_COPY: Record<string, string> = {
+  [EMAIL_UNVERIFIED]: VERIFY_TO_LIST,
+  ITEM_WORN: WORN_CANNOT_LIST,
+  ITEM_NOT_AVAILABLE: CANNOT_LIST,
+};
+
+/**
+ * What a refused `create-listing` says (req 29). A refusal with a code reads its own copy
+ * ({@link REFUSAL_COPY}). A 404 is a relic that is not the member's, a stale page, and reads as
+ * one that cannot be listed. Any other 400 is marketplace refusing the listing's terms; the page
+ * sends a chosen relic's id and checked prices, so the end time is the one fact it cannot vouch
+ * for, unless what was sent carries a buyout price not above the start (FS-49Z37 req 2): the
+ * server answers both with the same 400, so the prices sent tell them apart. A 500 is a real
+ * failure, not a refusal.
  */
 export function createListingFailureMessage(
   err: unknown,
   sent?: { startPrice: number; buyoutPrice?: number },
 ): string {
   if (!(err instanceof ApiError) || err.status === 503) return BROWSE_UNREACHABLE;
-  // named by its code, so the price reading below never mistakes it (FS-V6SFK R38)
-  if (err.code === EMAIL_UNVERIFIED) return VERIFY_TO_LIST;
-  if (err.status === 500) return CANNOT_LIST;
+  const named = REFUSAL_COPY[err.code];
+  if (named) return named;
+  if (err.status === 404) return CANNOT_LIST;
   if (err.status === 400)
     return sent?.buyoutPrice !== undefined && sent.buyoutPrice <= sent.startPrice
       ? BUYOUT_NOT_ABOVE_START
