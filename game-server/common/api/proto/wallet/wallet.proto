@@ -22,6 +22,8 @@ service WalletService {
   rpc Deposit(DepositRequest) returns (DepositResponse) {}
   // Remove gold from a member's account, up to what is not already held.
   rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {}
+  // Add gold to the caller's own account once per idempotency key.
+  rpc Credit(CreditRequest) returns (CreditResponse) {}
 }
 
 // CreateAccount
@@ -122,3 +124,23 @@ message WithdrawRequest {
 
 // Empty by design, same rule as DepositResponse.
 message WithdrawResponse {}
+
+// Credit
+// The idempotent credit (FS-1GZGD Req 23, ADR-0044): gold added to the account
+// of the member in the forwarded token, once per caller-minted key. Not Deposit,
+// which takes no key.
+//
+// Names no account or member on purpose, same rule as GetAccountRequest: the
+// account is always the caller's own, so nobody can credit another's.
+message CreditRequest {
+  int64  amount          = 1;  // gold to add, must be positive
+  // Minted by the caller and stable across its retries (ADR-0009); the mailbox
+  // sends mail:<letter id>:<member id>. Required.
+  string idempotency_key = 2;
+}
+
+// applied is false when an earlier call with the same key already credited:
+// success, and nothing moved.
+message CreditResponse {
+  bool applied = 1;
+}

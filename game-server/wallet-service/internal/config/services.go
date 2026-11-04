@@ -39,6 +39,8 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	depositGoldUC := usecase.NewDepositGoldUC(accountRepo)
 	withdrawGoldUC := usecase.NewWithdrawGoldUC(accountRepo)
 	getAccQuery := accountquery.NewGetAccountQuery(db)
+	processedActivities := accountrepo.NewProcessedActivityRepo()
+	creditUC := usecase.NewCreditUC(db, accountRepo, processedActivities)
 
 	staleHoldsQuery := accountquery.NewStaleReservedHoldsQuery(db)
 
@@ -48,6 +50,7 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 		ReleaseHoldUC:    releaseHoldUC,
 		DepositGoldUC:    depositGoldUC,
 		WithdrawGoldUC:   withdrawGoldUC,
+		CreditUC:         creditUC,
 		AccountReader:    getAccQuery,
 		StaleHoldsReader: staleHoldsQuery,
 	})
@@ -63,7 +66,7 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
 	releaseAllHoldsUC := usecase.NewReleaseAllHoldsUC(accountRepo)
 	releaseLosingHoldsUC := usecase.NewReleaseLosingHoldsUC(accountRepo)
-	creditSellerUC := usecase.NewCreditSellerUC(db, accountRepo, accountrepo.NewProcessedActivityRepo())
+	creditSellerUC := usecase.NewCreditSellerUC(db, accountRepo, processedActivities)
 	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC, releaseLosingHoldsUC, creditSellerUC, releaseHoldUC)
 
 	return &Services{
