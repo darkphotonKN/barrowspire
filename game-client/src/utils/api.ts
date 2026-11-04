@@ -206,6 +206,27 @@ class ApiClient {
     );
   }
 
+  // The signed-in member's mailbox counts and the newest letter's time (FS-1GZGD R9, R34): what
+  // the envelope's wax seal shows and when it pulses.
+  async getMailboxSummary() {
+    return unwrap(await client.GET("/api/mail/summary", {}));
+  }
+
+  // The signed-in member's letters, newest first, at most 50 (FS-1GZGD R7). Each item enclosure
+  // carries the item as it was when the letter was sent (A2).
+  async listLetters() {
+    return unwrap(await client.GET("/api/mail/letters", {})).letters;
+  }
+
+  // Marks one letter read (FS-1GZGD R8). 204 with no body; an expired letter is LETTER_EXPIRED.
+  async markLetterRead(letterId: string): Promise<void> {
+    unwrap(
+      await client.POST("/api/mail/letters/{letterId}/read", {
+        params: { path: { letterId } },
+      }),
+    );
+  }
+
   // Get player loadout
   async getLoadout() {
     return unwrap(await client.GET("/api/items/loadout", {}));
