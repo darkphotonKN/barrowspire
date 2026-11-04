@@ -8,6 +8,7 @@ import (
 	// "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -55,15 +56,30 @@ func (i *GrpcItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, st
 
 	item, err := i.client.ReserveItem(outCtx, req)
 	if err != nil {
-		switch status.Code(err) {
-		case codes.Unavailable, codes.DeadlineExceeded:
-			return nil, fmt.Errorf("reserve item %s: %w: %w", itemID, commonconstants.ErrTransient, err)
-		default:
-			return nil, err
-		}
+		return nil, reserveError(itemID, err)
 	}
 
 	return item, nil
+}
+
+// reserveError translates items-service's answer into what the listing error
+// mapping reads (FS-HBXZN R7–R9). items owns the rules, so a refusal it answers
+// (ITEM_WORN, ITEM_NOT_AVAILABLE) is passed on as the same refusal and never
+// restated here; not found stays not found; unreachable is transient. Anything
+// else is wrapped with the item id and maps to Internal.
+func reserveError(itemID uuid.UUID, err error) error {
+	st := status.Convert(err)
+	if reason, ok := errcode.RefusalReason(st); ok {
+		return fmt.Errorf("reserve item %s: %w", itemID, errcode.Refuse(reason))
+	}
+	switch st.Code() {
+	case codes.NotFound:
+		return fmt.Errorf("reserve item %s: %w", itemID, commonconstants.ErrNotFound)
+	case codes.Unavailable, codes.DeadlineExceeded:
+		return fmt.Errorf("reserve item %s: %w: %w", itemID, commonconstants.ErrTransient, err)
+	default:
+		return fmt.Errorf("reserve item %s: %w", itemID, err)
+	}
 }
 
 // The three reconciler calls go out without a token: the worker runs on a
