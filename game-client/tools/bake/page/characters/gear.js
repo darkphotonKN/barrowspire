@@ -84,13 +84,16 @@ export function longsword(rig, M, F) {
   return g;
 }
 
-/** A kite shield painted with the house device, strapped to the forearm. */
+/**
+ * A tall kite shield strapped to the forearm, curved across its width, painted in the house
+ * colours: per pale, bone and oxblood, an iron boss at the heart.
+ */
 export function kiteShield(rig, side, F) {
   const H = rig.H;
   const s = new THREE.Shape();
-  const w = 0.105 * H;
-  const top = 0.13 * H;
-  const bot = -0.23 * H;
+  const w = 0.115 * H;
+  const top = 0.145 * H;
+  const bot = -0.27 * H;
   s.moveTo(-w, top * 0.72);
   s.quadraticCurveTo(0, top * 1.12, w, top * 0.72);
   s.quadraticCurveTo(w * 1.02, -0.02 * H, 0, bot);
@@ -100,11 +103,12 @@ export function kiteShield(rig, side, F) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) / w;
-    pos.setZ(i, pos.getZ(i) - x * x * 0.03 * H);
+    pos.setZ(i, pos.getZ(i) - x * x * 0.026 * H);
   }
   geo.computeVertexNormals();
 
-  const face = shieldFace(w, top, bot);
+  // the outline's highest point, where the face's paint ends
+  const face = shieldFace(w, top * 0.92, bot);
   // shape → forearm frame: long axis along forearm-local +z (up when the forearm is raised
   // forward), width along the forearm, face outward (+x on the left arm)
   const sx = side === "L" ? 1 : -1;
@@ -124,42 +128,35 @@ function shieldFace(w, top, bot) {
   const S = 256;
   const c = mkCanvas(S, S);
   const ctx = c.getContext("2d");
-  const field = mix("oxblood", "barrowDeep", 0.1);
-  ctx.fillStyle = cssRgb(field);
+  // per pale: bone to the left, oxblood to the right
+  ctx.fillStyle = cssRgb(shade(mix("vellum", "vellumDark", 0.5), 0.82));
   ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = cssRgb(mix("oxblood", "barrowDeep", 0.12));
+  ctx.fillRect(S * 0.5, 0, S * 0.5, S);
+  // the iron boss
+  ctx.fillStyle = cssRgb(mix("slate", "pitch", 0.4));
+  ctx.beginPath();
+  ctx.arc(S * 0.5, S * 0.46, S * 0.08, 0, Math.PI * 2);
+  ctx.fill();
   // wear on the paint
-  for (let i = 0; i < 900; i++) {
+  const grime = mix("barrowDeep", "pitch", 0.4);
+  for (let i = 0; i < 1100; i++) {
     const x = (i * 97) % S;
     const y = (i * 61 + ((i * i) % 37)) % S;
-    ctx.fillStyle = cssRgb(shade(field, 0.7 + ((i * 13) % 10) / 20), 0.35);
-    ctx.fillRect(x, y, 3, 2);
+    ctx.fillStyle = cssRgb(grime, 0.12 + ((i * 7) % 10) / 60);
+    ctx.fillRect(x, y, 3 + (i % 3), 2);
   }
-  // a brass chevron and a vellum tower: the house of the barrow-watch
-  ctx.fillStyle = cssRgb(mix("brass", "brassBright", 0.5));
-  ctx.beginPath();
-  ctx.moveTo(S * 0.12, S * 0.62);
-  ctx.lineTo(S * 0.5, S * 0.4);
-  ctx.lineTo(S * 0.88, S * 0.62);
-  ctx.lineTo(S * 0.88, S * 0.72);
-  ctx.lineTo(S * 0.5, S * 0.5);
-  ctx.lineTo(S * 0.12, S * 0.72);
-  ctx.fill();
-  ctx.fillStyle = cssRgb(mix("vellum", "vellumDark", 0.3));
-  ctx.fillRect(S * 0.42, S * 0.16, S * 0.16, S * 0.2);
-  ctx.fillRect(S * 0.38, S * 0.13, S * 0.06, S * 0.05);
-  ctx.fillRect(S * 0.47, S * 0.13, S * 0.06, S * 0.05);
-  ctx.fillRect(S * 0.56, S * 0.13, S * 0.06, S * 0.05);
   // rim
-  ctx.strokeStyle = cssRgb(mix("brass", "barrowDeep", 0.3));
-  ctx.lineWidth = 16;
+  ctx.strokeStyle = cssRgb(mix("barrowDeep", "pitch", 0.3));
+  ctx.lineWidth = 18;
   ctx.strokeRect(0, 0, S, S);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   // ExtrudeGeometry's face UVs are the shape's own coordinates; map its box onto the canvas
-  t.repeat.set(1 / (2 * w), 1 / (top * 1.12 - bot));
-  t.offset.set(0.5, -bot / (top * 1.12 - bot));
+  t.repeat.set(1 / (2 * w), 1 / (top - bot));
+  t.offset.set(0.5, -bot / (top - bot));
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.6, metalness: 0.1 });
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.62, metalness: 0.1 });
 }
 
 /**
@@ -339,44 +336,35 @@ export function spikedClub(rig, M, F) {
 
 // --- armour --------------------------------------------------------------------------------
 
-/** A flat-topped great helm with an eye slit, a brass cross and an oxblood crest. */
-export function greatHelm(rig, F, M, crestMat) {
+/**
+ * A conical nasal helm, worn over a mail coif (anatomy.js coif): a dark steel cone rising to a
+ * point, an iron band about the brow and an iron nasal down over the nose, the face left bare.
+ */
+export function nasalHelm(rig, F) {
   const H = rig.H;
   const [, hy, hz] = J(rig, "head");
   const r = rig.p.headR;
-  const shell = rigidTube(
+  const cone = rigidTube(
     H,
     [
-      { p: [0, hy - 0.012, hz - 0.002], r: [r * 1.08, r * 1.14] },
-      { p: [0, hy + 0.05, hz], r: [r * 1.12, r * 1.18] },
-      { p: [0, hy + 0.1, hz - 0.002], r: [r * 1.06, r * 1.12] },
-      { p: [0, hy + 0.125, hz - 0.004], r: [r * 0.78, r * 0.84] },
+      { p: [0, hy + 0.058, hz - 0.004], r: [r * 1.15, r * 1.2] },
+      { p: [0, hy + 0.095, hz - 0.006], r: [r * 1.02, r * 1.07] },
+      { p: [0, hy + 0.138, hz - 0.004], r: [r * 0.55, r * 0.58] },
+      { p: [0, hy + 0.176, hz + 0.002], r: [r * 0.07, r * 0.07] },
     ],
-    { segs: 22, steps: 3 },
+    { segs: 20, steps: 3 },
   );
-  attach(rig, "head", shell, F.steel, [0, 0, 0]);
-  attach(rig, "head", new THREE.BoxGeometry(r * 1.7 * H, 0.011 * H, 0.03 * H), F.blackIron, [0, hy + 0.066, hz + r * 1.1]);
-  attach(rig, "head", new THREE.BoxGeometry(0.012 * H, 0.085 * H, 0.012 * H), M.brass, [0, hy + 0.035, hz + r * 1.18]);
-  attach(rig, "head", new THREE.BoxGeometry(r * 1.9 * H, 0.01 * H, 0.012 * H), M.brass, [0, hy + 0.084, hz + r * 1.12]);
-  const crest = new THREE.SphereGeometry(1, 14, 10);
-  crest.scale(0.012 * H, 0.04 * H, 0.085 * H);
-  attach(rig, "head", crest, crestMat, [0, hy + 0.15, hz - 0.01]);
-}
-
-/** Steel pauldrons: two lames on each shoulder, riding the upper arm. */
-export function pauldrons(rig, F) {
-  const H = rig.H;
-  for (const [s, sx] of [
-    ["L", 1],
-    ["R", -1],
-  ]) {
-    const [x, uy] = J(rig, `upperArm${s}`);
-    for (let k = 0; k < 2; k++) {
-      const cap = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.52);
-      cap.scale(0.06 * H * (1 - k * 0.12), 0.04 * H, 0.062 * H * (1 - k * 0.1));
-      attach(rig, `upperArm${s}`, cap, F.steelDouble, [x + sx * (0.006 + k * 0.012), uy + 0.022 - k * 0.028, 0], { rz: -sx * (0.35 + k * 0.25) });
-    }
-  }
+  attach(rig, "head", cone, F.darkSteel, [0, 0, 0]);
+  const band = rigidTube(
+    H,
+    [
+      { p: [0, hy + 0.054, hz - 0.004], r: [r * 1.19, r * 1.24] },
+      { p: [0, hy + 0.068, hz - 0.004], r: [r * 1.17, r * 1.22] },
+    ],
+    { segs: 20, steps: 1 },
+  );
+  attach(rig, "head", band, F.blackIron, [0, 0, 0]);
+  attach(rig, "head", new THREE.BoxGeometry(0.014 * H, 0.062 * H, 0.008 * H), F.blackIron, [0, hy + 0.032, hz + r * 1.22]);
 }
 
 /** Rigid plate or leather tubes over a limb segment (vambraces, bracers, greaves). */
@@ -393,17 +381,6 @@ export function limbGuard(rig, bone, from, to, r, mat, o = {}) {
     { segs: 14, steps: 2, caps: false },
   );
   return attach(rig, bone, geo, mat, [0, 0, 0]);
-}
-
-/** A knee cop on the front of each knee, riding the shin. */
-export function poleyns(rig, F) {
-  const H = rig.H;
-  for (const s of ["L", "R"]) {
-    const [x, ky] = J(rig, `shin${s}`);
-    const cap = new THREE.SphereGeometry(0.03 * H, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    cap.rotateX(Math.PI / 2);
-    attach(rig, `shin${s}`, cap, F.steel, [x, ky - 0.004, 0.035]);
-  }
 }
 
 /** A tall wizard's hat: a drooping brim, a crooked cone and a brass band. */

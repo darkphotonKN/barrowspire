@@ -504,6 +504,30 @@ function drawToPoint(geo, { dir, length, droop = 0, pinch = 0.92, girth = 2.2, s
   return geo;
 }
 
+/**
+ * A mail coif: a hood of mail over the crown and round the face, the face itself left open, and
+ * its mantle spread over the neck and the shoulder line. Worn under a helm; `mat` should be
+ * double-sided.
+ */
+export function coif(rig, mat) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const [, ny] = J(rig, "neck");
+  const r = rig.p.headR;
+  const hoodG = new THREE.SphereGeometry(r * 1.1 * H, 22, 14, Math.PI / 2 + 0.62, Math.PI * 2 - 1.24, 0, Math.PI * 0.8);
+  attach(rig, "head", hoodG, mat, [0, hy + 0.055, hz - 0.004]);
+  const mantle = rigidTube(
+    H,
+    [
+      { p: [0, hy + 0.0, hz - 0.01], r: [r * 1.0, r * 1.0] },
+      { p: [0, ny + 0.0, -0.006], r: [0.072, 0.068] },
+      { p: [0, ny - 0.05, -0.004], r: [0.13 * rig.p.shoulderW, 0.094 * rig.p.torsoD] },
+    ],
+    { segs: 24, steps: 4, caps: false },
+  );
+  attach(rig, "chest", mantle, mat, [0, 0, 0]);
+}
+
 /** A short capelet riding the chest and covering the shoulder line, under a hood or cowl. */
 function capelet(rig, mat) {
   const H = rig.H;

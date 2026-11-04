@@ -21,13 +21,13 @@ import {
   boots,
   cloak,
   cloakBones,
+  coif,
   cowl,
   hair,
   hands,
   head,
   legs,
   neck,
-  overTorso,
   sash,
   shortBeard,
   skirt,
@@ -37,7 +37,6 @@ import {
 import {
   cleaver,
   curvedSword,
-  greatHelm,
   gripAt,
   inHand,
   kiteShield,
@@ -45,8 +44,7 @@ import {
   limbGuard,
   longbow,
   longsword,
-  pauldrons,
-  poleyns,
+  nasalHelm,
   quiver,
   scabbard,
   spaulder,
@@ -58,42 +56,36 @@ import { DEMON_ANIMATIONS, demon } from "./demon.js";
 import { ghost, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 
-const FRONT = [Math.PI / 2 - 0.95, Math.PI / 2 + 0.95];
-const BACK = [-Math.PI / 2 - 0.95, -Math.PI / 2 + 0.95];
-
+/**
+ * The Knight: the old guard of the barrow-watch. A conical nasal helm over a mail coif, the face
+ * bare beneath it; a long mail hauberk to the knee, open at the front for the saddle, over mail
+ * chausses; no plate at all. A heavy oxblood cloak to the calf, a longsword on a plain belt, and a
+ * tall kite shield painted per pale in bone and oxblood.
+ */
 export function knight() {
   const M = materials();
   const F = fabrics();
   const rig = createRig(2.0, { shoulderW: 1.1, torsoW: 1.06 });
   rig.hooks = [];
-  cloakBones(rig, { length: 0.5 });
-  skirtBones(rig);
+  cloakBones(rig, { length: 0.64, drag: 0.34 });
+  skirtBones(rig, { stiffness: 55 });
   const [, hy] = J(rig, "hips");
   const [, ky] = J(rig, "shinL");
-  const [, ay] = J(rig, "footL");
-  const [, fy] = J(rig, "foreArmL");
-  const [, wy] = J(rig, "handL");
+  // the hauberk is open across the front by `gap` radians each side of centre
+  const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
 
   torso(rig, F.mail);
   neck(rig, F.mail);
   arms(rig, F.mail);
   legs(rig, F.mailDark);
-  hands(rig, F.blackIron);
-  boots(rig, F.leatherDark, { top: 0.06 });
-  greatHelm(rig, F, M, F.tabard);
-  pauldrons(rig, F);
-  for (const s of ["L", "R"]) {
-    limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.03, [0.037, 0.035], F.steel);
-    limbGuard(rig, `shin${s}`, ay + 0.02, ky - 0.035, [0.045, 0.05], F.darkSteel, { z: 0.004, taper: 1.05 });
-  }
-  poleyns(rig, F);
-  skirt(rig, F.mail, { top: hy + 0.02, bottom: hy - 0.17, rTop: [0.1, 0.078], rBottom: [0.114, 0.096], legFollow: 0.75 });
-  overTorso(rig, F.tabard, { from: hy - 0.01, arc: FRONT, pad: 0.012 });
-  overTorso(rig, F.tabard, { from: hy - 0.01, arc: BACK, pad: 0.012 });
-  for (const arc of [FRONT, BACK])
-    skirt(rig, F.tabard, { top: hy - 0.005, bottom: hy - 0.27, rTop: [0.11, 0.09], rBottom: [0.122, 0.108], arc, panels: true, legFollow: 0.35, segs: 12 });
-  belt(rig, F.leatherDark, M.brass, { r: [0.112, 0.092], dy: 0.0 });
-  cloak(rig, F.cloakKnight, { length: 0.5, spread: 1.35 });
+  hands(rig, F.leatherDark);
+  boots(rig, F.leatherDark, { top: 0.1 });
+  head(rig, F.skin);
+  coif(rig, F.mailDouble);
+  nasalHelm(rig, F);
+  skirt(rig, F.mail, { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112], legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
+  belt(rig, F.leatherDark, M.brass, { r: [0.106, 0.086], dy: 0.03 });
+  cloak(rig, F.cloakKnight, { length: 0.64, spread: 1.5, flare: 1.3 });
   inHand(rig, "R").add(longsword(rig, M, F));
   kiteShield(rig, "L", F);
 
