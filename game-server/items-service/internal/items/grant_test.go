@@ -336,7 +336,7 @@ func TestGrantItems_InvalidSnapshotMintsNothing(t *testing.T) {
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 
 	cases := []struct {
-		name  string
+		name   string
 		break_ func(s *ItemSnapshot)
 	}{
 		{"unknown template", func(s *ItemSnapshot) { s.TemplateID = uuid.New() }},

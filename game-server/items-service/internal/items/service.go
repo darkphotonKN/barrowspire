@@ -144,6 +144,13 @@ type Repository interface {
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
 	ReturnItem(ctx context.Context, id, listingID uuid.UUID) error
+
+	// item grants and snapshots (FS-1GZGD)
+	InsertItemGrantTx(ctx context.Context, tx *sqlx.Tx, grant *ItemGrant) (bool, error)
+	ItemGrantTx(ctx context.Context, tx *sqlx.Tx, grantID string) (*ItemGrant, error)
+	TemplateItemTypesTx(ctx context.Context, tx *sqlx.Tx, ids []uuid.UUID) (map[uuid.UUID]string, error)
+	RarityIDsTx(ctx context.Context, tx *sqlx.Tx) (map[string]uuid.UUID, error)
+	InsertItemInstancesAtTx(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance, location string) error
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {

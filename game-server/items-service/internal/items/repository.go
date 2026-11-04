@@ -880,10 +880,9 @@ var insertItemColumns = []string{
 
 // insertItemArgs is one row's values for insertItemColumns. A RequiredLevel
 // of 0 means the instance has no requirement of its own and stores NULL, so
-// reads fall back to the template's (FS-4R9M9 R48-49). Location is always the
-// bag: a find is carried out of the run (FS-VPD8Y R9, FS-18Z5F R27), worn or
-// not, and a worn one only reads its location once it is unequipped.
-func insertItemArgs(item *ItemInstance) []any {
+// reads fall back to the template's (FS-4R9M9 R48-49). Every row goes to
+// location, whatever the item says.
+func insertItemArgs(item *ItemInstance, location string) []any {
 	var requiredLevel *int
 	if item.RequiredLevel > 0 {
 		requiredLevel = &item.RequiredLevel
@@ -894,7 +893,7 @@ func insertItemArgs(item *ItemInstance) []any {
 		item.AttackPower, item.CriticalRate, item.WeaponType,
 		item.DefenseRating, item.MagicResistance, item.ArmorSlot,
 		item.HealingAmount, item.ManaAmount, item.BuffDuration,
-		item.Durability, item.Description, item.Status, LocationBag,
+		item.Durability, item.Description, item.Status, location,
 		max(item.ItemLevel, 1), item.Affixes, requiredLevel,
 	}
 }
@@ -902,13 +901,21 @@ func insertItemArgs(item *ItemInstance) []any {
 // InsertItemInstancesTx inserts new instances, the finds of a run, in one
 // statement. Insert only: an existing row is never the path here, so nothing
 // the run fence skipped can be written through a conflict clause (FS-18Z5F
-// R27); brought-in items go through ApplyRunItemsTx.
+// R27); brought-in items go through ApplyRunItemsTx. Every find goes to the
+// bag: it is carried out of the run (FS-VPD8Y R9, FS-18Z5F R27), worn or not,
+// and a worn one only reads its location once it is unequipped.
 func (r *repository) InsertItemInstancesTx(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance) error {
+	return r.InsertItemInstancesAtTx(ctx, tx, items, LocationBag)
+}
+
+// InsertItemInstancesAtTx inserts new instances at location in one statement,
+// insert only, as InsertItemInstancesTx does.
+func (r *repository) InsertItemInstancesAtTx(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance, location string) error {
 	if len(items) == 0 {
 		return nil
 	}
 
-	query, args := insertItemsQuery(items)
+	query, args := insertItemsQueryAt(items, location)
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return wrapDBErr("insert item instances (tx)", err)
 	}
@@ -950,10 +957,15 @@ func (r *repository) DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx
 	return deleted, nil
 }
 
-// insertItemsQuery builds the multi-row insert and its arguments, giving any
-// item without an id a new one. Placeholders are numbered from the column
-// list, so they cannot drift from the arguments.
+// insertItemsQuery is insertItemsQueryAt for the bag, where finds go.
 func insertItemsQuery(items []*ItemInstance) (string, []any) {
+	return insertItemsQueryAt(items, LocationBag)
+}
+
+// insertItemsQueryAt builds the multi-row insert at location and its
+// arguments, giving any item without an id a new one. Placeholders are
+// numbered from the column list, so they cannot drift from the arguments.
+func insertItemsQueryAt(items []*ItemInstance, location string) (string, []any) {
 	colsPerRow := len(insertItemColumns)
 
 	var b strings.Builder
@@ -981,7 +993,7 @@ func insertItemsQuery(items []*ItemInstance) (string, []any) {
 		}
 		b.WriteString(")")
 
-		args = append(args, insertItemArgs(item)...)
+		args = append(args, insertItemArgs(item, location)...)
 	}
 
 	return b.String(), args
@@ -1785,4 +1797,104 @@ func (r *repository) CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member,
 		return nil, wrapDBErr("read run gear (tx)", err)
 	}
 	return items, nil
+}
+
+// ============ Item grants and snapshots (FS-1GZGD) ============
+
+// InsertItemGrantTx records grant, unless its grant id is already recorded:
+// true when this call recorded it. The primary key decides, not a read: a
+// concurrent insert of the same id waits for the other transaction and then
+// records nothing if that one committed (FS-1GZGD R20).
+func (r *repository) InsertItemGrantTx(ctx context.Context, tx *sqlx.Tx, grant *ItemGrant) (bool, error) {
+	ids := make([]string, 0, len(grant.ItemIDs))
+	for _, id := range grant.ItemIDs {
+		ids = append(ids, id.String())
+	}
+
+	var recorded string
+	err := tx.GetContext(ctx, &recorded, `
+		INSERT INTO item_grants (grant_id, member_id, item_ids)
+		VALUES ($1, $2, $3::uuid[])
+		ON CONFLICT (grant_id) DO NOTHING
+		RETURNING grant_id`, grant.GrantID, grant.MemberID, pq.Array(ids))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, wrapDBErr("insert item grant (tx)", err)
+	}
+	return true, nil
+}
+
+// ItemGrantTx reads the grant recorded under grantID; nil, nil when there is
+// none. A fresh statement, so it sees a grant another transaction committed
+// after this one began.
+func (r *repository) ItemGrantTx(ctx context.Context, tx *sqlx.Tx, grantID string) (*ItemGrant, error) {
+	var row struct {
+		GrantID  string         `db:"grant_id"`
+		MemberID uuid.UUID      `db:"member_id"`
+		ItemIDs  pq.StringArray `db:"item_ids"`
+	}
+	err := tx.GetContext(ctx, &row, `SELECT grant_id, member_id, item_ids FROM item_grants WHERE grant_id = $1`, grantID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, wrapDBErr("read item grant (tx)", err)
+	}
+
+	grant := &ItemGrant{GrantID: row.GrantID, MemberID: row.MemberID, ItemIDs: make([]uuid.UUID, 0, len(row.ItemIDs))}
+	for _, raw := range row.ItemIDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("read item grant (tx): item id %q: %w", raw, err)
+		}
+		grant.ItemIDs = append(grant.ItemIDs, id)
+	}
+	return grant, nil
+}
+
+// TemplateItemTypesTx answers the item type of each known template among ids;
+// an unknown id is absent from the map.
+func (r *repository) TemplateItemTypesTx(ctx context.Context, tx *sqlx.Tx, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	var rows []struct {
+		ID       uuid.UUID `db:"id"`
+		ItemType string    `db:"item_type"`
+	}
+	if err := tx.SelectContext(ctx, &rows,
+		`SELECT id, COALESCE(item_type, '') AS item_type FROM item_templates WHERE id = ANY($1::uuid[])`,
+		pq.Array(uuidStrings(ids))); err != nil {
+		return nil, wrapDBErr("read template item types (tx)", err)
+	}
+
+	types := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		types[row.ID] = row.ItemType
+	}
+	return types, nil
+}
+
+// RarityIDsTx answers every rarity tier's id by its code.
+func (r *repository) RarityIDsTx(ctx context.Context, tx *sqlx.Tx) (map[string]uuid.UUID, error) {
+	var rows []struct {
+		ID   uuid.UUID `db:"id"`
+		Code string    `db:"rarity_code"`
+	}
+	if err := tx.SelectContext(ctx, &rows, `SELECT id, rarity_code FROM item_rarities`); err != nil {
+		return nil, wrapDBErr("read rarity ids (tx)", err)
+	}
+
+	ids := make(map[string]uuid.UUID, len(rows))
+	for _, row := range rows {
+		ids[row.Code] = row.ID
+	}
+	return ids, nil
+}
+
+func uuidStrings(ids []uuid.UUID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
 }

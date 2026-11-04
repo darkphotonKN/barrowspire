@@ -563,3 +563,56 @@ type ItemSummary struct {
 	// code is not public (FS-4R9M9 R52).
 	UniqueEffectText *string `db:"unique_effect_text"`
 }
+
+// ItemSnapshot is the full, self-contained description of an item to be
+// minted, in the facts of ItemSummary (FS-1GZGD R21, A2). It is not an
+// instance: no id, no owner, no status, location or listing until a grant
+// mints it. A nil stat is one the item type does not have.
+type ItemSnapshot struct {
+	TemplateID  uuid.UUID `db:"template_id"`
+	Name        string    `db:"name"`
+	Description *string   `db:"description"`
+	ItemType    string    `db:"item_type"`
+	WeaponType  *string   `db:"weapon_type"`
+	ArmorSlot   *string   `db:"armor_slot"`
+	// Rarity is the tier's code; empty for a copy of an instance that carries
+	// no rarity.
+	Rarity string `db:"rarity"`
+
+	AttackPower     *int     `db:"attack_power"`
+	CriticalRate    *float64 `db:"critical_rate"`
+	DefenseRating   *int     `db:"defense_rating"`
+	MagicResistance *int     `db:"magic_resistance"`
+	HealingAmount   *int     `db:"healing_amount"`
+	ManaAmount      *int     `db:"mana_amount"`
+	BuffDuration    *int     `db:"buff_duration"`
+	// Durability is the template's; templates carry none today.
+	Durability *int `db:"durability"`
+
+	ItemLevel        int     `db:"item_level"`
+	RequiredLevel    int     `db:"required_level"`
+	Affixes          Affixes `db:"affixes"`
+	UniqueEffectText *string `db:"unique_effect_text"`
+}
+
+// GrantLine is one entry of an item grant: Quantity new instances, each
+// exactly as Snapshot describes.
+type GrantLine struct {
+	Snapshot *ItemSnapshot
+	Quantity int
+}
+
+// GrantResult is a grant's answer: the minted ids in request order, or, when
+// the grant id was already granted, the first grant's ids and AlreadyGranted.
+type GrantResult struct {
+	ItemIDs        []uuid.UUID
+	AlreadyGranted bool
+}
+
+// ItemGrant is one recorded grant (item_grants): its caller-minted id, the
+// member it minted for and the minted instances in mint order.
+type ItemGrant struct {
+	GrantID  string
+	MemberID uuid.UUID
+	ItemIDs  []uuid.UUID
+}
