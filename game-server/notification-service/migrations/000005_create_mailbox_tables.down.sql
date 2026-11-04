@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS letter_states;
+DROP TABLE IF EXISTS letters;
