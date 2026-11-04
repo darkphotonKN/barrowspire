@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -49,6 +50,18 @@ type CreditCommand struct {
 // one reported as already applied and never paid.
 var ErrMissingCreditKey = errors.New("credit requires an idempotency key")
 
+// ErrCreditOverflow refuses a credit the balance cannot hold. It reads as
+// ErrInvalidGold too: the amount is what is wrong, not the account.
+var ErrCreditOverflow = fmt.Errorf("credit would overflow the balance: %w", account.ErrInvalidGold)
+
+// creditKeyNamespace prefixes every caller key before it is marked.
+// processed_activities is shared with settlement's CreditSeller, whose keys are
+// <workflow id>:CreditSeller, and Credit accepts any caller key: unprefixed, a
+// Credit could claim a settlement's key first and that seller would never be
+// paid. No other writer's key starts with it, so a Credit only ever collides
+// with another Credit of the same caller key, which is the dedup it wants.
+const creditKeyNamespace = "credit:"
+
 // Handle reports whether this call applied the credit. false with no error means
 // an earlier call with the same key already committed it: nothing moves (Guard 4).
 func (uc *CreditUC) Handle(ctx context.Context, cmd *CreditCommand) (bool, error) {
@@ -61,6 +74,7 @@ func (uc *CreditUC) Handle(ctx context.Context, cmd *CreditCommand) (bool, error
 		return false, fmt.Errorf("credit uc handle member %s amount %d: %w", cmd.MemberID, cmd.Amount, account.ErrInvalidGold)
 	}
 
+	key := creditKeyNamespace + cmd.IdempotencyKey
 	var applied bool
 
 	err := withRetry(ctx, func() error {
@@ -68,9 +82,9 @@ func (uc *CreditUC) Handle(ctx context.Context, cmd *CreditCommand) (bool, error
 		applied = false
 
 		return commonutils.ExecTx(ctx, uc.db, nil, func(tx *sqlx.Tx) error {
-			claimed, err := uc.marker.MarkActivityProcessed(ctx, tx, cmd.IdempotencyKey)
+			claimed, err := uc.marker.MarkActivityProcessed(ctx, tx, key)
 			if err != nil {
-				return fmt.Errorf("marking %s processed: %w", cmd.IdempotencyKey, err)
+				return fmt.Errorf("marking %s processed: %w", key, err)
 			}
 
 			// already applied: an earlier call committed the credit and its row
@@ -86,6 +100,11 @@ func (uc *CreditUC) Handle(ctx context.Context, cmd *CreditCommand) (bool, error
 			}
 
 			before := acc.Snapshot()
+			// Deposit adds unchecked. The balance is only known here, after the
+			// mark, so the refusal rolls the mark back with it: the key is not burned
+			if before.Gold > math.MaxInt-cmd.Amount {
+				return fmt.Errorf("crediting member %s gold %d by %d: %w", cmd.MemberID, before.Gold, cmd.Amount, ErrCreditOverflow)
+			}
 			if err := acc.Deposit(cmd.Amount, cmd.Now); err != nil {
 				return fmt.Errorf("crediting member %s: %w", cmd.MemberID, err)
 			}
