@@ -110,6 +110,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [ ] Buyout (immediate self-settlement)
 - [x] Listing buyout price → FS-9XKS6
 - [ ] Marketplace writes require a verified email → FS-V6SFK
+- [ ] Item refusals passed through on listing → FS-HBXZN
 
 ### Auction lifecycle
 
