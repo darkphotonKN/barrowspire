@@ -556,8 +556,10 @@ func (f *fakeReconcileService) ConfirmReservation(_ context.Context, itemID, lis
 	return true, nil
 }
 
+// reconcilerCtx is what marketplace's background reconciler arrives with: no
+// member, because there is no request behind the sweep.
 func reconcilerCtx() context.Context {
-	return commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: uuid.New()})
+	return context.Background()
 }
 
 // The age is measured by items-service on its database clock, so the caller only

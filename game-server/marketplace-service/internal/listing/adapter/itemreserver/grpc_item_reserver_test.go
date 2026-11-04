@@ -76,11 +76,10 @@ func TestReserveItemRequestCarriesTheBuyoutPrice(t *testing.T) {
 	assert.Equal(t, int64(900), client.gotReserve.GetBuyoutPrice())
 }
 
-func authedCtx() context.Context {
-	return metadata.NewIncomingContext(
-		context.Background(),
-		metadata.New(map[string]string{"authorization": "Bearer test-token"}),
-	)
+// reconcilerCtx is the worker's context: a background ticker, no request and so
+// no token to forward. The reconcile calls must go out without one.
+func reconcilerCtx() context.Context {
+	return context.Background()
 }
 
 // The reconciler sends an age, which items-service measures on its own clock,
@@ -88,7 +87,7 @@ func authedCtx() context.Context {
 func TestListStaleReservedRequestCarriesTheAge(t *testing.T) {
 	client := &fakeClient{}
 
-	_, err := NewItemReserver(client).ListStaleReserved(authedCtx(), 10*time.Minute)
+	_, err := NewItemReserver(client).ListStaleReserved(reconcilerCtx(), 10*time.Minute)
 
 	require.NoError(t, err)
 	require.NotNil(t, client.gotList.GetOlderThan(), "a missing age would read as zero")
@@ -102,9 +101,9 @@ func TestReservationWritesCarryItemAndListing(t *testing.T) {
 	client := &fakeClient{}
 	reserver := NewItemReserver(client)
 
-	_, err := reserver.CancelReservation(authedCtx(), itemID, listingID)
+	_, err := reserver.CancelReservation(reconcilerCtx(), itemID, listingID)
 	require.NoError(t, err)
-	_, err = reserver.ConfirmReservation(authedCtx(), itemID, listingID)
+	_, err = reserver.ConfirmReservation(reconcilerCtx(), itemID, listingID)
 	require.NoError(t, err)
 
 	assert.Equal(t, itemID.String(), client.gotCancel.GetItemId())
