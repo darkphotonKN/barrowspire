@@ -14,6 +14,12 @@ import {
   sealState,
   senderName,
   sentDate,
+  SEAL_WOULD_NOT_BREAK,
+  TAKE_LABEL,
+  TAKING_LABEL,
+  afterTake,
+  takeOutcome,
+  takeView,
   withoutLetter,
   type ItemSnapshot,
   type Letter,
@@ -347,5 +353,163 @@ describe("letterDetail (R36, R37, S8)", () => {
         .untaken,
     ).toBe(false);
     expect(letterDetail(letter(), NOW).untaken).toBe(false);
+  });
+});
+
+describe("takeOutcome: what a refused Take shows (R39)", () => {
+  const stacked = letter({
+    claimState: "unclaimed",
+    enclosures: [
+      { kind: "item", quantity: 1, item: sword },
+      { kind: "item", quantity: 3, item: unique },
+      { kind: "gold", gold: 40 },
+    ],
+  });
+
+  it("a full stash asks for the letter's slot count, the sum of its item quantities, and keeps the button", () => {
+    expect(takeOutcome("STASH_FULL", stacked)).toEqual({
+      kind: "refused",
+      warning: "Your stash needs 4 free slots",
+    });
+  });
+
+  it("says one free slot for a single item", () => {
+    const one = letter({
+      claimState: "unclaimed",
+      enclosures: [{ kind: "item", quantity: 1, item: sword }],
+    });
+    expect(takeOutcome("STASH_FULL", one)).toEqual({
+      kind: "refused",
+      warning: "Your stash needs 1 free slot",
+    });
+  });
+
+  it("shows a letter already taken as taken, and an expired one crumbled", () => {
+    expect(takeOutcome("LETTER_ALREADY_CLAIMED", stacked)).toEqual({
+      kind: "taken",
+    });
+    expect(takeOutcome("LETTER_EXPIRED", stacked)).toEqual({
+      kind: "crumbled",
+    });
+  });
+
+  it.each([
+    "LETTER_CLAIM_IN_PROGRESS",
+    "NOTHING_TO_CLAIM",
+    "NOT_FOUND",
+    "VALIDATION_FAILED",
+    "UNAUTHENTICATED",
+    "SERVICE_UNAVAILABLE",
+    "INTERNAL",
+    "UNKNOWN_ERROR",
+    undefined,
+  ])(
+    "any other failure (%s) says the seal would not break and keeps the button",
+    (code) => {
+      expect(takeOutcome(code, stacked)).toEqual({
+        kind: "refused",
+        warning: SEAL_WOULD_NOT_BREAK,
+      });
+    },
+  );
+});
+
+describe("afterTake: the seal lowers at once (R39)", () => {
+  it("drops the unclaimed and waiting counts for a read letter", () => {
+    const before = summary({
+      unreadCount: 1,
+      unclaimedCount: 2,
+      waitingCount: 3,
+    });
+    const held = letter({
+      read: true,
+      claimState: "unclaimed",
+      enclosures: [{ kind: "gold", gold: 5 }],
+    });
+    expect(afterTake(before, held)).toEqual(
+      summary({ unreadCount: 1, unclaimedCount: 1, waitingCount: 2 }),
+    );
+  });
+
+  it("drops the unread count too for a letter taken before it was read: taking reads it", () => {
+    const before = summary({
+      unreadCount: 1,
+      unclaimedCount: 1,
+      waitingCount: 1,
+    });
+    const held = letter({
+      read: false,
+      claimState: "claiming",
+      enclosures: [{ kind: "gold", gold: 5 }],
+    });
+    expect(afterTake(before, held)).toEqual(summary());
+  });
+
+  it("changes nothing for a letter already taken", () => {
+    const before = summary({ waitingCount: 1 });
+    const taken = letter({
+      read: true,
+      claimState: "claimed",
+      enclosures: [{ kind: "gold", gold: 5 }],
+    });
+    expect(afterTake(before, taken)).toEqual(before);
+  });
+});
+
+describe("takeView: the Take button and the Taken stamp (R39, A5)", () => {
+  const detail = (claimState: Letter["claimState"], enclosed = true) =>
+    letterDetail(
+      letter({
+        claimState,
+        enclosures: enclosed ? [{ kind: "gold", gold: 5 }] : [],
+      }),
+      NOW,
+    );
+
+  it("offers Take on untaken enclosures, a claim in progress included", () => {
+    for (const state of ["unclaimed", "claiming"] as const)
+      expect(takeView(detail(state), false, null)).toEqual({
+        button: { label: TAKE_LABEL, enabled: true },
+        stamp: false,
+        warning: null,
+      });
+  });
+
+  it("says Taking… and cannot be pressed while the take is in flight", () => {
+    expect(takeView(detail("unclaimed"), true, null)).toEqual({
+      button: { label: TAKING_LABEL, enabled: false },
+      stamp: false,
+      warning: null,
+    });
+  });
+
+  it("keeps the button under a refusal's warning line", () => {
+    expect(takeView(detail("unclaimed"), false, SEAL_WOULD_NOT_BREAK)).toEqual({
+      button: { label: TAKE_LABEL, enabled: true },
+      stamp: false,
+      warning: SEAL_WOULD_NOT_BREAK,
+    });
+  });
+
+  it("stamps a taken letter and shows no button", () => {
+    expect(takeView(detail("claimed"), false, null)).toEqual({
+      button: null,
+      stamp: true,
+      warning: null,
+    });
+  });
+
+  it("shows neither on a letter without enclosures", () => {
+    expect(takeView(detail("none", false), false, null)).toEqual({
+      button: null,
+      stamp: false,
+      warning: null,
+    });
+  });
+
+  it("never says Claim", () => {
+    expect(
+      [TAKE_LABEL, TAKING_LABEL, SEAL_WOULD_NOT_BREAK].join(" "),
+    ).not.toMatch(/claim/i);
   });
 });

@@ -14,6 +14,7 @@ export type MailboxSummary = components["schemas"]["MailboxSummary"];
 export type Letter = components["schemas"]["Letter"];
 export type Enclosure = components["schemas"]["Enclosure"];
 export type ItemSnapshot = components["schemas"]["ItemSnapshot"];
+export type ClaimedLetter = components["schemas"]["ClaimedLetter"];
 
 /** The right side of an empty mailbox (R40). */
 export const EMPTY_MAILBOX = "No letters wait for you.";
@@ -22,6 +23,19 @@ export const LETTER_CRUMBLED = "This letter has crumbled to dust.";
 /** The letters could not be read: the gateway or notification-service is down. */
 export const MAILBOX_UNREACHABLE =
   "The letters cannot be reached. Open the mailbox again.";
+
+/** The Take button's words: pressable, then in flight (R39, A5). */
+export const TAKE_LABEL = "Take";
+export const TAKING_LABEL = "Taking…";
+/** The wax stamp over a taken letter's dimmed slots (A5). */
+export const TAKEN_STAMP = "Taken";
+/** A Take refused for any reason but a full stash, an expired letter or one already taken (R39). */
+export const SEAL_WOULD_NOT_BREAK = "The seal would not break. Try again.";
+
+/** The warning a full stash shows: room for every item the letter holds (R39, D7). */
+function stashNeeds(slots: number): string {
+  return `Your stash needs ${slots} free ${slots === 1 ? "slot" : "slots"}`;
+}
 
 /** Who a letter is from, as the panel names them (R36). */
 export function senderName(sender: Letter["sender"]): string {
@@ -96,6 +110,22 @@ export function withoutLetter(
   summary: MailboxSummary,
   letter: Letter,
 ): MailboxSummary {
+  return uncounted(summary, letter);
+}
+
+/**
+ * The summary once `letter`'s enclosures are taken, so the seal lowers at once (R39). Taking also
+ * reads the letter, so a taken letter counts nowhere, as one that left the mailbox does.
+ */
+export function afterTake(
+  summary: MailboxSummary,
+  letter: Letter,
+): MailboxSummary {
+  return uncounted(summary, letter);
+}
+
+/** `summary` with `letter` taken out of every count it is in. */
+function uncounted(summary: MailboxSummary, letter: Letter): MailboxSummary {
   return {
     ...summary,
     unreadCount: letter.read ? summary.unreadCount : less(summary.unreadCount),
@@ -153,6 +183,43 @@ export function expiryLine(days: number): { text: string; warning: boolean } {
     text: `${days} ${days === 1 ? "day" : "days"} left`,
     warning: days <= EXPIRY_WARNING_DAYS,
   };
+}
+
+/** The stash slots a letter's items take: the sum of their quantities (R39). Gold takes none. */
+function slotCount(letter: Letter): number {
+  return letter.enclosures.reduce(
+    (n, e) => (e.kind === "item" ? n + (e.quantity ?? 1) : n),
+    0,
+  );
+}
+
+/** What a Take's answer does to the open letter (R39; Edge States). */
+export type TakeOutcome =
+  /** Taken: its slots dim under the stamp and the button goes. */
+  | { kind: "taken" }
+  /** It expired: it leaves the list and the panel says it crumbled. */
+  | { kind: "crumbled" }
+  /** Nothing was taken: a warning line, and the button stays. */
+  | { kind: "refused"; warning: string };
+
+/**
+ * A refused Take, by the gateway's error `code` (undefined for a failure that never reached it).
+ * A letter already taken (another tab, a double press) is shown taken.
+ */
+export function takeOutcome(
+  code: string | undefined,
+  letter: Letter,
+): TakeOutcome {
+  switch (code) {
+    case "LETTER_ALREADY_CLAIMED":
+      return { kind: "taken" };
+    case "LETTER_EXPIRED":
+      return { kind: "crumbled" };
+    case "STASH_FULL":
+      return { kind: "refused", warning: stashNeeds(slotCount(letter)) };
+    default:
+      return { kind: "refused", warning: SEAL_WOULD_NOT_BREAK };
+  }
 }
 
 /** One row of the letter list (R36). */
@@ -274,4 +341,35 @@ export function snapshotItem(snapshot: ItemSnapshot): ItemState {
   for (const [key, value] of Object.entries(optional))
     if (value) Object.assign(item, { [key]: value });
   return item;
+}
+
+/** The Take button, the Taken stamp and a refusal's warning line, as the open letter draws them. */
+export interface TakeView {
+  /** Null once taken, and on a letter without enclosures. */
+  button: { label: string; enabled: boolean } | null;
+  /** The "Taken" wax stamp over the dimmed slots. */
+  stamp: boolean;
+  /** The last refusal's line (a full stash, a seal that would not break), shown over the button. */
+  warning: string | null;
+}
+
+/**
+ * The Take controls for the open letter (R39): "Take" while its enclosures are untaken,
+ * "Taking…" and not pressable while the claim is in flight, and the stamp once taken.
+ */
+export function takeView(
+  detail: Pick<LetterDetail, "enclosed" | "untaken">,
+  taking: boolean,
+  warning: string | null,
+): TakeView {
+  if (detail.enclosed.length === 0)
+    return { button: null, stamp: false, warning: null };
+  if (!detail.untaken) return { button: null, stamp: true, warning: null };
+  return {
+    button: taking
+      ? { label: TAKING_LABEL, enabled: false }
+      : { label: TAKE_LABEL, enabled: true },
+    stamp: false,
+    warning,
+  };
 }

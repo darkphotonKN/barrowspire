@@ -3,9 +3,13 @@ import type { KeyValueStore } from "@/characters/roster";
 import {
   LETTER_CRUMBLED,
   afterRead,
+  afterTake,
   initialLetter,
   isNewerLetter,
+  takeOutcome,
+  untaken,
   withoutLetter,
+  type ClaimedLetter,
   type Letter,
   type MailboxSummary,
 } from "@/mailbox/mailbox";
@@ -31,6 +35,8 @@ export interface MailboxApi {
   summary(): Promise<MailboxSummary>;
   letters(): Promise<Letter[]>;
   markRead(letterId: string): Promise<void>;
+  /** Takes every enclosure of the letter at once (R39); refused with a problem `code`. */
+  claim(letterId: string): Promise<ClaimedLetter>;
 }
 
 export interface MailboxStoreDeps {
@@ -59,6 +65,10 @@ export interface MailboxState {
   selectedId: string | null;
   /** A line shown in place of the open letter: the crumbled letter's (R39). */
   notice: string | null;
+  /** The letter whose Take is in flight: its button says "Taking…" and nothing else is sent. */
+  taking: string | null;
+  /** The last refused Take's warning line, on the letter it was refused for (R39). */
+  takeWarning: { letterId: string; text: string } | null;
 
   /** The town was entered (or entered again, from a delve or a field): fetch the summary. */
   enterTown: () => Promise<void>;
@@ -71,6 +81,8 @@ export interface MailboxState {
   closePanel: () => void;
   /** Opens one letter, marking it read (R38). */
   select: (letterId: string) => Promise<void>;
+  /** The Take button: claims every enclosure of the letter at once, one claim at a time (R39). */
+  take: (letterId: string) => Promise<void>;
 }
 
 /** Where the newest letter time this player last saw is kept (R35). */
@@ -151,7 +163,7 @@ export function createMailboxStore({
     const select = async (letterId: string) => {
       const letter = get().letters.find((l) => l.id === letterId);
       if (!letter) return;
-      set({ selectedId: letterId, notice: null });
+      set({ selectedId: letterId, notice: null, takeWarning: null });
       if (letter.read) return;
 
       const summary = get().summary;
@@ -168,6 +180,42 @@ export function createMailboxStore({
           crumble(letterId);
         // anything else: the next summary fetch is the truth
         else console.warn("marking a letter read failed", err);
+      }
+    };
+
+    /** The letter's enclosures are taken: it is read and claimed, and leaves the counts. */
+    const taken = (letterId: string) => {
+      const letter = get().letters.find((l) => l.id === letterId);
+      if (!letter) return;
+      const summary = get().summary;
+      set({
+        letters: get().letters.map((l) =>
+          l.id === letterId
+            ? { ...l, read: true, claimState: "claimed" as const }
+            : l,
+        ),
+        summary: summary && afterTake(summary, letter),
+      });
+    };
+
+    const take = async (letterId: string) => {
+      const letter = get().letters.find((l) => l.id === letterId);
+      if (!letter || !untaken(letter) || get().taking) return;
+      set({ taking: letterId, takeWarning: null });
+      try {
+        await api.claim(letterId);
+        taken(letterId);
+      } catch (err) {
+        const code = err instanceof ApiError ? err.code : undefined;
+        const outcome = takeOutcome(code, letter);
+        if (outcome.kind === "taken") taken(letterId);
+        else if (outcome.kind === "crumbled") crumble(letterId);
+        else {
+          console.warn("taking a letter failed", err);
+          set({ takeWarning: { letterId, text: outcome.warning } });
+        }
+      } finally {
+        set({ taking: null });
       }
     };
 
@@ -193,6 +241,8 @@ export function createMailboxStore({
       lettersStatus: "idle",
       selectedId: null,
       notice: null,
+      taking: null,
+      takeWarning: null,
 
       enterTown: async () => {
         set({ inTown: true });
@@ -213,7 +263,12 @@ export function createMailboxStore({
       },
 
       openPanel: async () => {
-        set({ panelOpen: true, selectedId: null, notice: null });
+        set({
+          panelOpen: true,
+          selectedId: null,
+          notice: null,
+          takeWarning: null,
+        });
         // both settle before the first letter is marked read, so the summary it lowers is the
         // one this opening fetched rather than one overwritten by it
         const [, loaded] = await Promise.all([fetchSummary(), loadLetters()]);
@@ -225,6 +280,7 @@ export function createMailboxStore({
       closePanel: () => set({ panelOpen: false }),
 
       select,
+      take,
     };
   });
 }
@@ -235,6 +291,7 @@ export const useMailboxStore = createMailboxStore({
     summary: () => apiClient.getMailboxSummary(),
     letters: () => apiClient.listLetters(),
     markRead: (letterId) => apiClient.markLetterRead(letterId),
+    claim: (letterId) => apiClient.claimLetter(letterId),
   },
   storage: () => (typeof window === "undefined" ? null : window.localStorage),
   memberId: () => useAuthStore.getState().memberInfo?.id,

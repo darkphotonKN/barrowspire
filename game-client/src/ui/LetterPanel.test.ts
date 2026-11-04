@@ -6,15 +6,18 @@ import {
   EMPTY_MAILBOX,
   LETTER_CRUMBLED,
   MAILBOX_UNREACHABLE,
+  SEAL_WOULD_NOT_BREAK,
+  type ClaimedLetter,
   type ItemSnapshot,
   type Letter,
 } from "@/mailbox/mailbox";
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
+import { ApiError } from "@/utils/apiError";
 import { LetterPanel } from "./LetterPanel";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
 
-// FS-1GZGD R33, R35–R37, R40. I-1GZGD-6: the envelope and the letter panel as a scene draws them,
+// FS-1GZGD R33, R35–R37, R39, R40; A5. I-1GZGD-6 and -7: the envelope and the letter panel as a scene draws them,
 // on a recording stand-in for the Phaser scene.
 
 interface Pressable {
@@ -174,6 +177,14 @@ function setup() {
     })),
     letters: vi.fn(async () => [] as Letter[]),
     markRead: vi.fn(async (_id: string) => undefined),
+    claim: vi.fn(
+      async (letterId: string): Promise<ClaimedLetter> => ({
+        letterId,
+        claimState: "claimed",
+        itemIds: [],
+        gold: 0,
+      }),
+    ),
   } satisfies MailboxApi;
   const store = createMailboxStore({
     api,
@@ -325,6 +336,93 @@ describe("LetterPanel (R36, R37, R40)", () => {
     store.setState({ panelOpen: false });
     store.setState({ panelOpen: true });
     expect(live()).toHaveLength(0);
+  });
+});
+
+/** Lets every pending promise settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("LetterPanel: Take (R39, A5)", () => {
+  const held = letter({
+    claimState: "unclaimed",
+    enclosures: [
+      { kind: "item", quantity: 1, item: sword },
+      { kind: "item", quantity: 3, item: sword },
+      { kind: "gold", gold: 500 },
+    ],
+  });
+  const refusal = (code: string) =>
+    new ApiError({ code, status: 400, detail: code, errors: [] });
+
+  it("walks Take → Taking… (not pressable) → the Taken stamp, the button gone", async () => {
+    const { scene, store, api, find, shown } = setup();
+    let answer!: (v: ClaimedLetter) => void;
+    api.claim.mockImplementationOnce(
+      () => new Promise<ClaimedLetter>((resolve) => (answer = resolve)),
+    );
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [held], "a");
+    expect(shown()).not.toContain("Taken");
+
+    find("Take")!.handlers.pointerdown();
+    expect(api.claim).toHaveBeenCalledWith("a");
+    expect(shown()).toContain("Taking…");
+    expect(shown()).not.toContain("Take");
+    expect(find("Taking…")!.handlers.pointerdown).toBeUndefined();
+
+    answer({ letterId: "a", claimState: "claimed", itemIds: [], gold: 500 });
+    await settle();
+    expect(shown()).toContain("Taken");
+    expect(shown()).not.toContain("Take");
+    expect(shown()).not.toContain("Taking…");
+  });
+
+  it("a full stash shows the slots it needs over the button, and the button stays", async () => {
+    const { scene, store, api, find, shown } = setup();
+    api.claim.mockRejectedValueOnce(refusal("STASH_FULL"));
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [held], "a");
+    find("Take")!.handlers.pointerdown();
+    await settle();
+    expect(shown()).toEqual(
+      expect.arrayContaining(["Your stash needs 4 free slots", "Take"]),
+    );
+  });
+
+  it("any other failure says the seal would not break, and the button stays", async () => {
+    const { scene, store, api, find, shown } = setup();
+    api.claim.mockRejectedValueOnce(refusal("LETTER_CLAIM_IN_PROGRESS"));
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [held], "a");
+    find("Take")!.handlers.pointerdown();
+    await settle();
+    expect(shown()).toEqual(
+      expect.arrayContaining([SEAL_WOULD_NOT_BREAK, "Take"]),
+    );
+  });
+
+  it("an expired letter crumbles and leaves the list", async () => {
+    const { scene, store, api, find, shown } = setup();
+    api.claim.mockRejectedValueOnce(refusal("LETTER_EXPIRED"));
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [held], "a");
+    find("Take")!.handlers.pointerdown();
+    await settle();
+    expect(shown()).toContain(LETTER_CRUMBLED);
+    expect(shown()).not.toContain("A word from the Wardens");
+  });
+
+  it("has no button on a letter without enclosures, nor on one already taken; and never says Claim", () => {
+    const { scene, store, shown } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [letter()], "a");
+    expect(shown()).not.toContain("Take");
+    expect(shown()).not.toContain("Taken");
+
+    open(store, [{ ...held, claimState: "claimed" }], "a");
+    expect(shown()).not.toContain("Take");
+    expect(shown()).toContain("Taken");
+    expect(shown().join(" ")).not.toMatch(/claim/i);
   });
 });
 

@@ -6,8 +6,9 @@
  *
  * The Enclosed row draws each item from the letter's stored snapshot with the bag's icon and the
  * bag's item tip on hover, "x3" for a stack, and gold as a `coins` slot with its amount under it
- * (R37, S8). Enclosures are read-only here: the Take button takes `frame.enclosed.take`
- * (I-1GZGD-7) and reads `LetterDetail.untaken`.
+ * (R37, S8). The one Take button sits at the row's right end (R39, A5): "Take", then "Taking…"
+ * and not pressable while the claim is in flight, then gone, the slots dimmed under a "Taken" wax
+ * stamp. A refused Take's line (a full stash, a seal that would not break) sits over the button.
  *
  * In-world panel on the game palette (`carvedPanel`, ADR-0025). It reads the mailbox store and
  * decides nothing: the words and the order are `@/mailbox/mailbox`'s, the geometry
@@ -20,17 +21,20 @@ import { itemView } from "@/items/itemView";
 import {
   EMPTY_MAILBOX,
   MAILBOX_UNREACHABLE,
+  TAKEN_STAMP,
   letterDetail,
   letterRow,
+  takeView,
   type EnclosureSlot,
   type LetterDetail,
   type LetterRow,
+  type TakeView,
 } from "@/mailbox/mailbox";
 import { artSprite } from "@/render/art/phaser";
 import { iconSheet } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
 import type { MailboxState } from "@/stores/mailboxStore";
-import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { itemTipRow } from "./gearOverlayLayout";
 import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
@@ -55,13 +59,15 @@ const PANEL_DEPTH = 1800;
 const TIP_DEPTH = 2200;
 /** How much of a slot its icon fills, as in the bag. */
 const ICON_FILL = 0.78;
-/** Taken enclosures are drawn this faint (R39 draws the stamp). */
+/** Taken enclosures are drawn this faint, under the Taken stamp (R39). */
 const TAKEN_ALPHA = 0.4;
 /** Body px scrolled per wheel notch. */
 const BODY_STEP = 24;
 const ROW_TITLE_MAX = 28;
 const DETAIL_TITLE_MAX = 46;
 const WELL_RADIUS = 4;
+/** A button that cannot be pressed now ("Taking…") is drawn this faint, as the HUD's are. */
+const INERT_ALPHA = 0.45;
 const EDGE_W = 3;
 
 const style = (
@@ -112,7 +118,9 @@ export class LetterPanel {
         state.letters !== prev.letters ||
         state.selectedId !== prev.selectedId ||
         state.lettersStatus !== prev.lettersStatus ||
-        state.notice !== prev.notice
+        state.notice !== prev.notice ||
+        state.taking !== prev.taking ||
+        state.takeWarning !== prev.takeWarning
       )
         this.draw();
     });
@@ -230,7 +238,18 @@ export class LetterPanel {
       centred(MAILBOX_UNREACHABLE, palette.hudLabel);
     else if (state.lettersStatus === "ready" && state.letters.length === 0)
       centred(EMPTY_MAILBOX, palette.hudLabel);
-    else if (detail) this.drawLetter(g, detail);
+    else if (detail) {
+      const warning = state.takeWarning;
+      this.drawLetter(
+        g,
+        detail,
+        takeView(
+          detail,
+          state.taking === detail.id,
+          warning?.letterId === detail.id ? warning.text : null,
+        ),
+      );
+    }
   }
 
   private drawList(
@@ -311,6 +330,7 @@ export class LetterPanel {
   private drawLetter(
     g: Phaser.GameObjects.Graphics,
     detail: LetterDetail,
+    take: TakeView,
   ): void {
     const frame = this.frame!;
     const right = frame.detail;
@@ -353,7 +373,7 @@ export class LetterPanel {
     this.body = { text, rect, max: Math.max(0, text.height - rect.height) };
     this.scrollBody(0);
 
-    if (frame.enclosed) this.drawEnclosed(g, detail);
+    if (frame.enclosed) this.drawEnclosed(g, detail, take);
   }
 
   /** Moves the body by `delta` px within its rect, cropping what lies outside it. */
@@ -365,10 +385,11 @@ export class LetterPanel {
     body.text.setCrop(0, this.bodyScroll, body.rect.width, body.rect.height);
   }
 
-  /** The Enclosed row (R37): read-only here; the Take button takes `enclosed.take` (I-1GZGD-7). */
+  /** The Enclosed row (R37) and its Take button, stamp and warning line (R39). */
   private drawEnclosed(
     g: Phaser.GameObjects.Graphics,
     detail: LetterDetail,
+    take: TakeView,
   ): void {
     const enclosed = this.frame!.enclosed!;
     this.text(
@@ -381,6 +402,84 @@ export class LetterPanel {
     detail.enclosed.forEach((slot, i) =>
       this.drawSlot(g, enclosed.slots[i], slot, alpha),
     );
+
+    if (take.stamp) this.drawStamp(enclosed.stamp);
+    if (take.warning)
+      this.text(
+        enclosed.warning.x + enclosed.warning.width,
+        enclosed.warning.y,
+        take.warning,
+        style(palette.damageBright, 12),
+      ).setOrigin(1, 0);
+    if (take.button) {
+      const id = detail.id;
+      this.drawButton(g, enclosed.take, take.button, () =>
+        this.deps.store.getState().take(id),
+      );
+    }
+  }
+
+  /**
+   * A stone button with a brass rim, as the HUD's: amber words while it can be pressed (amber
+   * means interactable), faint and inert while not, so a claim in flight is never sent twice.
+   */
+  private drawButton(
+    g: Phaser.GameObjects.Graphics,
+    r: Rect,
+    button: { label: string; enabled: boolean },
+    press: () => void,
+  ): void {
+    g.fillStyle(palette.hudPanelDeep, 0.85);
+    g.fillRoundedRect(r.x, r.y, r.width, r.height, WELL_RADIUS);
+    g.lineStyle(1, palette.frame, button.enabled ? 0.8 : 0.3);
+    g.strokeRoundedRect(
+      r.x + 0.5,
+      r.y + 0.5,
+      r.width - 1,
+      r.height - 1,
+      WELL_RADIUS,
+    );
+    const label = this.text(
+      r.x + r.width / 2,
+      r.y + r.height / 2,
+      button.label,
+      style(button.enabled ? palette.interactable : palette.hudFaint, 14),
+    ).setOrigin(0.5);
+    if (!button.enabled) {
+      label.setAlpha(INERT_ALPHA);
+      return;
+    }
+    label.setInteractive({ useHandCursor: true }).on("pointerdown", press);
+    label.on("pointerover", () =>
+      label.setColor(toCss(palette.interactableBright)),
+    );
+    label.on("pointerout", () => label.setColor(toCss(palette.interactable)));
+  }
+
+  /** The "Taken" wax stamp (A5): a pressed blot of wax over the dimmed slots, the word on it. */
+  private drawStamp(at: { x: number; y: number; radius: number }): void {
+    const { x, y, radius: r } = at;
+    // its own layer, made after the slots' icons, so the wax lies over them
+    const g = this.keep(
+      this.scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH),
+    );
+    g.fillStyle(palette.ember, 0.9);
+    // a drip or two at the rim, as the envelope's seal has, so it reads as wax
+    g.fillCircle(x - r * 0.8, y + r * 0.5, r * 0.3);
+    g.fillCircle(x + r * 0.75, y - r * 0.55, r * 0.24);
+    g.fillCircle(x, y, r);
+    g.lineStyle(1.5, shade(palette.ember, 0.4), 0.9);
+    g.strokeCircle(x, y, r - 4);
+    this.text(
+      x,
+      y,
+      TAKEN_STAMP,
+      style(palette.hudText, 13, {
+        fontStyle: "bold",
+        stroke: toCss(shade(palette.ember, 0.5)),
+        strokeThickness: 2,
+      }),
+    ).setOrigin(0.5);
   }
 
   /** One slot: the bag's well and icon, its rarity edge, and its count or gold amount. */

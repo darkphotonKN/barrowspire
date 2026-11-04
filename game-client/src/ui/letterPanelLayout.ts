@@ -50,16 +50,24 @@ const SLOT_GAP = 8;
 const CAPTION_H = 18;
 const AMOUNT_H = 18;
 const ENCLOSED_GAP = 12;
-/** The place the Take button (I-1GZGD-7) takes at the right end of the Enclosed row. */
+/** The place the Take button takes at the right end of the Enclosed row (R39). */
 export const TAKE_W = 112;
 export const TAKE_H = 32;
+/** Room left of a refused Take's warning line for the row's "ENCLOSED" caption. */
+const CAPTION_W = 100;
+/** The Taken wax stamp's radius: a little under a slot, so it reads as pressed over them. */
+const STAMP_R = 22;
 
 export interface EnclosedFrame {
   caption: Rect;
   /** One per enclosure, in the letter's order, wrapping onto another row when they do not fit. */
   slots: Rect[];
-  /** Reserved for the Take button (I-1GZGD-7): nothing is drawn here yet. */
+  /** The Take button, at the right end of the first slot row (R39). */
   take: Rect;
+  /** A refused Take's warning line: the caption row, right-aligned over the Take button. */
+  warning: Rect;
+  /** The Taken wax stamp, centred over the slots (A5). */
+  stamp: { x: number; y: number; radius: number };
 }
 
 export interface LetterPanelFrame {
@@ -166,7 +174,19 @@ function enclosedFrame(detail: Rect, count: number): EnclosedFrame {
     width: TAKE_W,
     height: TAKE_H,
   };
-  return { caption, slots, take };
+  const warning: Rect = {
+    x: detail.x + CAPTION_W,
+    y: caption.y,
+    width: detail.width - CAPTION_W,
+    height: CAPTION_H,
+  };
+  const cols = Math.min(count, perRow);
+  const stamp = {
+    x: detail.x + (cols * (SLOT + SLOT_GAP) - SLOT_GAP) / 2,
+    y: slotsTop + ((rowCount - 1) * rowH + SLOT) / 2,
+    radius: STAMP_R,
+  };
+  return { caption, slots, take, warning, stamp };
 }
 
 /** Which letters the list shows: `visible` rows from `offset`, kept inside the list. */
