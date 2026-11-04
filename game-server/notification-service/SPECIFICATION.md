@@ -17,10 +17,10 @@
 
 ## Mailbox
 
-- [ ] Official and system letters to chosen members or to every member → FS-1GZGD
-- [ ] Letter requests from the broker, deduplicated → FS-1GZGD
-- [ ] A member's mailbox and its summary → FS-1GZGD
-- [ ] Claim a letter's enclosures → FS-1GZGD
-- [ ] New-letter arrival published to the game pods → FS-1GZGD
-- [ ] Sender audit on stored letters → FS-1GZGD
-- [ ] Welcome letter for each new account → FS-1GZGD
+- [x] Official and system letters to chosen members or to every member → FS-1GZGD
+- [x] Letter requests from the broker, deduplicated → FS-1GZGD
+- [x] A member's mailbox and its summary → FS-1GZGD
+- [x] Claim a letter's enclosures → FS-1GZGD
+- [x] New-letter arrival published to the game pods → FS-1GZGD
+- [x] Sender audit on stored letters → FS-1GZGD
+- [x] Welcome letter for each new account → FS-1GZGD

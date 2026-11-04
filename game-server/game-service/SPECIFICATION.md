@@ -129,7 +129,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Spire entry from its gate → FS-0XMCP
 - [x] Enterable town buildings → FS-B0H2D
 - [x] The Inn and its innkeeper → FS-B0H2D
-- [ ] New-letter notice to players in the hub → FS-1GZGD
+- [x] New-letter notice to players in the hub → FS-1GZGD
 
 ### Field worlds
 

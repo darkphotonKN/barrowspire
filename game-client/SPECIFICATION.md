@@ -127,10 +127,10 @@ server state and sends intents. ✅
 
 ### Mailbox
 
-- [ ] Mailbox in the hub HUD → FS-1GZGD
-- [ ] New-letter indicator on the mailbox → FS-1GZGD
-- [ ] Read letters → FS-1GZGD
-- [ ] Claim a letter's enclosures → FS-1GZGD
+- [x] Mailbox in the hub HUD → FS-1GZGD
+- [x] New-letter indicator on the mailbox → FS-1GZGD
+- [x] Read letters → FS-1GZGD
+- [x] Claim a letter's enclosures → FS-1GZGD
 
 ### Field worlds
 

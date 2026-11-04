@@ -67,10 +67,10 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 ### Mail
 
-- [ ] Read my mailbox and its summary → FS-1GZGD
-- [ ] Mark a letter read → FS-1GZGD
-- [ ] Claim a letter → FS-1GZGD
-- [ ] Send official mail as an admin → FS-1GZGD
+- [x] Read my mailbox and its summary → FS-1GZGD
+- [x] Mark a letter read → FS-1GZGD
+- [x] Claim a letter → FS-1GZGD
+- [x] Send official mail as an admin → FS-1GZGD
 
 ### Characters
 

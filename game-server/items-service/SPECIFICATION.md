@@ -25,8 +25,8 @@
 
 ## Grants
 
-- [ ] Idempotent item grants into the stash → FS-1GZGD
-- [ ] Item snapshots from templates and instances → FS-1GZGD
+- [x] Idempotent item grants into the stash → FS-1GZGD
+- [x] Item snapshots from templates and instances → FS-1GZGD
 
 ## Marketplace settlement
 
