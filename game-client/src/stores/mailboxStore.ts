@@ -203,8 +203,15 @@ export function createMailboxStore({
       } catch (err) {
         if (err instanceof ApiError && err.code === "LETTER_EXPIRED")
           crumble(letterId);
-        // anything else: the count below puts the seal right
-        else console.warn("marking a letter read failed", err);
+        else {
+          // anything else: the letter is unread again, as the count below will say
+          console.warn("marking a letter read failed", err);
+          set({
+            letters: get().letters.map((l) =>
+              l.id === letterId ? { ...l, read: false } : l,
+            ),
+          });
+        }
       }
       void confirmCount();
     };
@@ -229,7 +236,6 @@ export function createMailboxStore({
       const letter = get().letters.find((l) => l.id === letterId);
       if (!letter || !untaken(letter) || get().taking) return;
       set({ taking: letterId, takeWarning: null });
-      let changed = true;
       try {
         await api.claim(letterId);
         taken(letterId);
@@ -239,14 +245,14 @@ export function createMailboxStore({
         if (outcome.kind === "taken") taken(letterId);
         else if (outcome.kind === "crumbled") crumble(letterId);
         else {
-          changed = false;
           console.warn("taking a letter failed", err);
           set({ takeWarning: { letterId, text: outcome.warning } });
         }
       } finally {
         set({ taking: null });
       }
-      if (changed) void confirmCount();
+      // every outcome, a warning too: a claim the gateway gave up on may still have been taken
+      void confirmCount();
     };
 
     /** Reads the letters for opening `mine`; a later opening (or a close) makes its answer moot. */
