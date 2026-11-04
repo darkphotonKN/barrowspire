@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-4
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-2, I-1GZGD-3]
 labels: [ready-for-agent]
@@ -49,23 +49,23 @@ I-1GZGD-3 and `game-server/api-gateway/config/routes.go` if a new route needs wi
 
 ## Acceptance Criteria
 
-- [ ] A letter with items (×1, ×3) and 500 gold: four instances in the stash, each equal to its
+- [x] A letter with items (×1, ×3) and 500 gold: four instances in the stash, each equal to its
       stored snapshot, 500 gold credited, the letter `claimed` and read; the response carries the
       item ids and the gold. The claim calls no `ResolveItemSnapshots`.
-- [ ] A gold-only letter never calls items; an item-only letter never calls wallet.
-- [ ] Stash 2 short: `400 · STASH_FULL`, nothing minted or credited, the letter still claimable;
+- [x] A gold-only letter never calls items; an item-only letter never calls wallet.
+- [x] Stash 2 short: `400 · STASH_FULL`, nothing minted or credited, the letter still claimable;
       after freeing slots, the same claim succeeds.
-- [ ] A letter without enclosures is `NOTHING_TO_CLAIM`; an expired one `LETTER_EXPIRED`.
-- [ ] **Guard 1 (concurrent):** two claims started together against a real database: one grant,
+- [x] A letter without enclosures is `NOTHING_TO_CLAIM`; an expired one `LETTER_EXPIRED`.
+- [x] **Guard 1 (concurrent):** two claims started together against a real database: one grant,
       one credit, one success, one `LETTER_CLAIM_IN_PROGRESS` or `LETTER_ALREADY_CLAIMED`.
-- [ ] **Guard 1 (sequential):** claiming a `claimed` letter calls neither items nor wallet.
-- [ ] **Guard 3:** with the grant applied and the row left `claiming`, the next claim gets
+- [x] **Guard 1 (sequential):** claiming a `claimed` letter calls neither items nor wallet.
+- [x] **Guard 3:** with the grant applied and the row left `claiming`, the next claim gets
       already-granted, completes the credit and marks `claimed`; one set of items.
-- [ ] **Items succeeded, wallet failed:** the claim fails and the row stays `claiming`; with
+- [x] **Items succeeded, wallet failed:** the claim fails and the row stays `claiming`; with
       wallet restored, the retry credits the gold exactly once and marks `claimed`.
-- [ ] Both keys are derived from letter id + member id and identical across attempts (asserted).
-- [ ] Items and gold go to the token's member; no request field names a member or account.
-- [ ] `openapi.yaml` and the generated client are regenerated and committed; tests pass; lint
+- [x] Both keys are derived from letter id + member id and identical across attempts (asserted).
+- [x] Items and gold go to the token's member; no request field names a member or account.
+- [x] `openapi.yaml` and the generated client are regenerated and committed; tests pass; lint
       clean.
 
 ## Blocked By
@@ -82,3 +82,7 @@ D18, D20; spec default S5; ADR-0044. User stories 9–15, 30.
 - RED: the concurrent two-claims test against a real database, asserting one grant call and one
   credit call through fakes for items and wallet.
 - GREEN: the conditional move to `claiming` plus the row lock held across the two steps.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test. A9.2 to A9.4 changed this issue's surface: the pool is 8 and at most 3 claims run per pod (a fourth answers 503 at once); the gateway's claim deadline is 15 s; a business refusal from items (`STASH_FULL`, unmintable) puts the row back to the state the claim locked, while an outage still leaves it `claiming`; items `Internal` and wallet `NotFound`/`Internal` are 503. Wrap-up run: the `ClaimDB` tests (Guard 1 concurrent, Guard 3, wallet failure then retry, stash full, cap, mark read during a claim) pass against a throwaway schema, and `go test ./...` passes in notification-service and api-gateway.

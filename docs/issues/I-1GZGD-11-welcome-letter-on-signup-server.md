@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-11
-status: open
+status: in-progress
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3, I-1GZGD-8, I-1GZGD-10]
 labels: [ready-for-agent]
@@ -75,30 +75,30 @@ no proto, no `common/errcode`, no gateway, no client, no items-service file.
 
 ## Acceptance Criteria
 
-- [ ] One `member.signedup` stores, in one transaction, the inbox mark, the signup notification
+- [x] One `member.signedup` stores, in one transaction, the inbox mark, the signup notification
       and one `system` welcome letter to that member: sent-by source `welcome`, the A7.3 title
       and body, 3 Small Health Potions as a snapshot at the template's `min_item_level`, 100 gold,
       expiry 30 days after it was stored.
-- [ ] The same event delivered twice stores one welcome letter, calls `ResolveItemSnapshots`
+- [x] The same event delivered twice stores one welcome letter, calls `ResolveItemSnapshots`
       at most once and publishes `mail:arrived` once.
-- [ ] Once a welcome has resolved the potion, a later signup stores its welcome with the cached
+- [x] Once a welcome has resolved the potion, a later signup stores its welcome with the cached
       snapshot and calls no items RPC.
-- [ ] Concurrent signups on a cold cache each store one whole welcome (race detector clean).
-- [ ] Two events for two accounts store one welcome letter each.
-- [ ] After the commit, exactly one `{"member_id": M}` is published; with the publisher failing,
+- [x] Concurrent signups on a cold cache each store one whole welcome (race detector clean).
+- [x] Two events for two accounts store one welcome letter each.
+- [x] After the commit, exactly one `{"member_id": M}` is published; with the publisher failing,
       the letter and the notification are stored and the handler returns success.
-- [ ] With the cache empty and the items resolver unavailable, the handler returns an
+- [x] With the cache empty and the items resolver unavailable, the handler returns an
       `ErrTransient`-wrapped error and nothing is stored (no inbox mark, no notification, no
       letter); the cache stays empty, and a later call with the resolver back stores all three
       once.
-- [ ] With the items resolver refusing the template, the handler returns success, logs at error,
+- [x] With the items resolver refusing the template, the handler returns success, logs at error,
       and stores the inbox mark, the signup notification and a welcome holding only 100 gold; the
       next signup calls the resolver again.
-- [ ] A failure forced in the letter insert rolls back the inbox mark and the notification too.
+- [x] A failure forced in the letter insert rolls back the inbox mark and the notification too.
 - [ ] The stored welcome letter shows in that member's mailbox and summary, and (once I-1GZGD-4
       is merged) its claim mints three potions and credits 100 gold once.
-- [ ] Members created before the change have no welcome letter.
-- [ ] Tests pass (`go test ./...` in notification-service); lint clean.
+- [x] Members created before the change have no welcome letter.
+- [x] Tests pass (`go test ./...` in notification-service); lint clean.
 
 ## Blocked By
 
@@ -120,3 +120,9 @@ FS-1GZGD §Amendment 2026-11-04 (A7) A7.1, A7.3; §Requirements R52, R57–R62; 
   leaves the cache empty, and that a refusal stores a gold-only welcome.
 - GREEN: the seam interface in `internal/notification`, its mailbox implementation, and the
   wiring in `config/routes.go`.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Every criterion but the claim of the welcome has a test, so those boxes are ticked ("members created before the change have no welcome" holds by construction: nothing backfills). Wrap-up run: `go test ./...` passes in notification-service, including the `ProcessMemberSignedUpDB` tests against a throwaway schema.
+
+**Pending manual check (Nick), live signup on the running stack:** a new account gets exactly one welcome letter; Take on it mints 3 Small Health Potions into the stash and credits 100 gold; a second signup (another account, same process) stores its welcome without an items call (cached potion). Ticks the open criterion above; close this issue once all of them are seen.

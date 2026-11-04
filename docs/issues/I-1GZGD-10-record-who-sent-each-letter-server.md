@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-10
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3]
 labels: [ready-for-agent]
@@ -52,22 +52,22 @@ request, I-1GZGD-11's welcome) pass their source through the seam this slice add
 
 ## Acceptance Criteria
 
-- [ ] `000006` up adds both columns and the `NOT VALID` check; down removes them; up → down → up
+- [x] `000006` up adds both columns and the `NOT VALID` check; down removes them; up → down → up
       succeeds; `000005` is unchanged (`git diff` shows no edit to it).
-- [ ] A letter row inserted before `000006` survives it with both columns null (a repository
+- [x] A letter row inserted before `000006` survives it with both columns null (a repository
       test that migrates to 5, inserts and migrates to 6 if the test harness can step migrations;
       otherwise checked by hand against a local database and noted in the PR).
-- [ ] After `000006`, the database refuses an `official` row without a member id or with a
+- [x] After `000006`, the database refuses an `official` row without a member id or with a
       source, and a `system` row without a source or with a member id (repository test, raw
       inserts).
-- [ ] An admin send to one member, to a list of three and to all members stores the caller's
+- [x] An admin send to one member, to a list of three and to all members stores the caller's
       member id from the token on every letter, and no source (service test with a fake
       repository, plus one repository round-trip).
-- [ ] A system letter built through the seam with source `test.compensation` stores that source
+- [x] A system letter built through the seam with source `test.compensation` stores that source
       and no member id; the source helper refuses an empty, blank and 65-character source.
-- [ ] No gRPC response message and no gateway response type gains a sent-by field; the gateway
+- [x] No gRPC response message and no gateway response type gains a sent-by field; the gateway
       and `openapi.yaml` are untouched.
-- [ ] Tests pass (`go test ./...` in notification-service, repository tests with
+- [x] Tests pass (`go test ./...` in notification-service, repository tests with
       `NOTIFICATION_TEST_DB_DSN`); lint clean.
 
 ## Blocked By
@@ -89,3 +89,7 @@ mitigation for an admin mailing themselves). User stories 49–52.
   repository two letters both stamped with the caller's member id.
 - GREEN: the migration pair, the sent-by on the letter model, and `prepareLetters` /
   `InsertLetters` carrying it.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test; the migration criteria are proven by `TestMigration000006_UpDownUp` and `TestMigration000006_LettersStoredBeforeItKeepBothSentByColumnsNull`, which passed at wrap-up against a throwaway schema with `NOTIFICATION_TEST_DB_DSN`. `go test ./...` and lint (no new findings since main) pass in notification-service.

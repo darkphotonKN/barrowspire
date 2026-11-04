@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-8
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3]
 labels: [ready-for-agent]
@@ -61,19 +61,19 @@ No proto, no migration, no gateway, no game-service file.
 
 ## Acceptance Criteria
 
-- [ ] An admin send to one member publishes exactly one `{"member_id": M}` on `mail:arrived`
+- [x] An admin send to one member publishes exactly one `{"member_id": M}` on `mail:arrived`
       after the letter is stored (asserted with miniredis or a fake publisher).
-- [ ] A broadcast publishes exactly one `{"broadcast": true}`.
-- [ ] *(A6)* A member-list send to `[A, B, A, C]` publishes exactly three `{"member_id"}`
+- [x] A broadcast publishes exactly one `{"broadcast": true}`.
+- [x] *(A6)* A member-list send to `[A, B, A, C]` publishes exactly three `{"member_id"}`
       messages, for A, B and C, after the commit, and none if its transaction fails.
-- [ ] *(A6)* With Redis unreachable, a member-list send stores every letter, answers within one
+- [x] *(A6)* With Redis unreachable, a member-list send stores every letter, answers within one
       deadline (not one per recipient), and logs the failure once.
-- [ ] A refused send (any bound or unknown-id refusal) publishes nothing.
-- [ ] With Redis unreachable, the send stores the letter, answers success within the deadline,
+- [x] A refused send (any bound or unknown-id refusal) publishes nothing.
+- [x] With Redis unreachable, the send stores the letter, answers success within the deadline,
       and logs the publish failure.
-- [ ] The publish happens after the commit: a send whose transaction fails publishes nothing.
-- [ ] The Redis client is injected; `REDIS_ADDR` is in the GKE ConfigMap.
-- [ ] Tests pass (`go test ./...` in notification-service); lint clean.
+- [x] The publish happens after the commit: a send whose transaction fails publishes nothing.
+- [x] The Redis client is injected; `REDIS_ADDR` is in the GKE ConfigMap.
+- [x] Tests pass (`go test ./...` in notification-service); lint clean.
 
 ## Blocked By
 
@@ -90,3 +90,7 @@ stories 32, 39, 45.
   `{"member_id"}` and a refused one publishes nothing; a second test that a failing publisher
   still yields a successful send.
 - GREEN: the publisher interface called after the transaction commits.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test, and `REDIS_ADDR` is in `game-server/deploy/gke/notification-config.yaml` (`redis:6379`, checked 2026-11-04). Wrap-up run: `go test ./...` and lint (no new findings since main) pass in notification-service.

@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-5
-status: open
+status: in-progress
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3, I-1GZGD-8, I-1GZGD-10]
 labels: [ready-for-agent]
@@ -55,17 +55,17 @@ wiring). No gateway change, no openapi regeneration, no Redis wiring (I-1GZGD-8 
 
 ## Acceptance Criteria
 
-- [ ] A valid `mail.letter.requested` stores one `system` letter visible in the mailbox.
-- [ ] The same event delivered twice stores one letter and publishes `mail:arrived` once.
-- [ ] A request with a copy enclosure stores the source's snapshot; one naming an unknown instance
+- [x] A valid `mail.letter.requested` stores one `system` letter visible in the mailbox.
+- [x] The same event delivered twice stores one letter and publishes `mail:arrived` once.
+- [x] A request with a copy enclosure stores the source's snapshot; one naming an unknown instance
       is logged, marked processed and stores nothing.
-- [ ] An invalid event is logged at error, marked processed and acked without requeue; nothing is
+- [x] An invalid event is logged at error, marked processed and acked without requeue; nothing is
       stored.
-- [ ] With items-service down, the event is not marked processed and is redelivered.
-- [ ] *(A7)* A request with `source: "test.compensation"` stores that sent-by source and no
+- [x] With items-service down, the event is not marked processed and is redelivered.
+- [x] *(A7)* A request with `source: "test.compensation"` stores that sent-by source and no
       member id; one with a missing, blank or 65-character `source` is logged at error, marked
       processed, acked and stores nothing.
-- [ ] Tests pass; lint clean.
+- [x] Tests pass; lint clean.
 
 ## Blocked By
 
@@ -83,3 +83,9 @@ default S2. User stories 27, 28.
 
 - RED: a consumer test that delivers one event twice and finds one letter.
 - GREEN: inbox mark + letter insert in one transaction.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Every criterion has a test, so the boxes are ticked; A9.4 added one behaviour: a request whose store or transaction fails rolls back and is requeued as transient instead of dead-lettered. Wrap-up run: `go test ./...` passes in notification-service, including the `ProcessLetterRequestedDB` tests against a throwaway schema.
+
+**Pending manual check (Nick):** publish a `mail.letter.requested` by hand (RabbitMQ management UI, `mailbox.events` exchange, routing key `mail.letter.requested`, with a `source`) against the running stack, and see one `system` letter in the member's mailbox. Close this issue (`status: done`) once that is seen.

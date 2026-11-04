@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-9
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: []
 labels: [ready-for-agent]
@@ -46,17 +46,17 @@ is reused, not changed.
 
 ## Acceptance Criteria
 
-- [ ] Publishing `{"member_id": M}` on `mail:arrived` delivers one `mail_arrived` to M when M
+- [x] Publishing `{"member_id": M}` on `mail:arrived` delivers one `mail_arrived` to M when M
       stands in the HUB world on the pod, and nothing when M is in a run, in a field world, or
       not connected to the pod.
-- [ ] Publishing `{"broadcast": true}` delivers one `mail_arrived` to every player in the HUB world
+- [x] Publishing `{"broadcast": true}` delivers one `mail_arrived` to every player in the HUB world
       on the pod and none to players in runs or fields.
-- [ ] A malformed message is skipped with a warning; the next valid one is still delivered.
-- [ ] After the subscription drops, the relay subscribes again and delivers later messages.
-- [ ] A full queue drops the message instead of blocking the subscriber.
-- [ ] No other game-service behaviour changes (existing test suites pass unchanged); the relay
+- [x] A malformed message is skipped with a warning; the next valid one is still delivered.
+- [x] After the subscription drops, the relay subscribes again and delivers later messages.
+- [x] A full queue drops the message instead of blocking the subscriber.
+- [x] No other game-service behaviour changes (existing test suites pass unchanged); the relay
       makes no gRPC or HTTP call.
-- [ ] Tests pass (`go test ./...` in game-service, with miniredis); lint clean.
+- [x] Tests pass (`go test ./...` in game-service, with miniredis); lint clean.
 
 ## Blocked By
 
@@ -73,3 +73,7 @@ FS-1GZGD §Requirements R42–R44; §Amendment 2026-11-04 A4; ADR-0045 §Decisio
 - RED: a relay test on miniredis that a `{"member_id"}` for a HUB-world player reaches their
   sender and one for a player in a run does not.
 - GREEN: the subscriber → hub loop queue and the HUB-world audience filter.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test. A9.8 changed this issue's surface: the arrival queue holds 1024 (an A6 list burst still reaches this pod's member), a member arrival looks up only that member, the decoder takes exactly ADR-0045's keys with non-null values, and a full-queue drop logs at Debug. Wrap-up run: `go test ./...` (with miniredis) and lint (no new findings since main) pass in game-service.

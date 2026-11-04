@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-2
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: []
 labels: [ready-for-agent]
@@ -34,16 +34,16 @@ regenerated Go; a new `game-server/wallet-service/internal/account/usecase/credi
 
 ## Acceptance Criteria
 
-- [ ] `Credit(500, "mail:L:M")` with member M's token raises M's gold by 500 and returns
+- [x] `Credit(500, "mail:L:M")` with member M's token raises M's gold by 500 and returns
       `applied = true`.
-- [ ] **Guard 4:** a second `Credit` with the same key changes no balance and returns
+- [x] **Guard 4:** a second `Credit` with the same key changes no balance and returns
       `applied = false`; the dedup row and the credit commit in one transaction (a failure after
       the mark rolls both back).
-- [ ] Two concurrent `Credit` calls with one key credit once.
-- [ ] An empty key or an amount ≤ 0 is refused and changes nothing.
-- [ ] A member with no account gets `NotFound` and nothing is marked processed.
-- [ ] The request carries no account/member field; no ledger call is made.
-- [ ] Tests pass (`go test ./...` in wallet-service), lint clean.
+- [x] Two concurrent `Credit` calls with one key credit once.
+- [x] An empty key or an amount ≤ 0 is refused and changes nothing.
+- [x] A member with no account gets `NotFound` and nothing is marked processed.
+- [x] The request carries no account/member field; no ledger call is made.
+- [x] Tests pass (`go test ./...` in wallet-service), lint clean.
 
 ## Blocked By
 
@@ -58,3 +58,7 @@ FS-1GZGD §Requirements R23, R24, R29; §Decisions D5, D16, D18. User stories 10
 - RED: the use case credited twice with one key leaves the balance raised once.
 - GREEN: `MarkActivityProcessed` inside the credit transaction, short-circuiting when already
   claimed (as `CreditSellerUC`).
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test. A9.7 changed this issue's surface: `Credit` marks `credit:` + the caller's key, so it never meets settlement's keys, and refuses an amount that would overflow the balance (`InvalidArgument`, key not burned). Wrap-up run: `go test ./...` and lint (no new findings since main) pass in wallet-service; the `CreditUC` tests run against wallet's database (Guard 4, concurrency, overflow) and skipped at wrap-up because that database was not reachable on its compose port.

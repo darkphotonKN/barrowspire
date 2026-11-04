@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-7
-status: open
+status: in-progress
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-4, I-1GZGD-6, I-1GZGD-8, I-1GZGD-9]
 labels: [ready-for-agent]
@@ -40,16 +40,16 @@ I-1GZGD-4).
 
 ## Acceptance Criteria
 
-- [ ] Take walks "Take" → "Taking…" (disabled) → "Taken": dim slots, "Taken" stamp, no button, dim
+- [x] Take walks "Take" → "Taking…" (disabled) → "Taken": dim slots, "Taken" stamp, no button, dim
       list glyph, lower seal count, gold refetched.
-- [ ] `STASH_FULL` shows "Your stash needs N free slots" with the letter's slot count; the button
+- [x] `STASH_FULL` shows "Your stash needs N free slots" with the letter's slot count; the button
       stays.
-- [ ] `LETTER_ALREADY_CLAIMED` shows the letter taken; `LETTER_EXPIRED` shows the crumbled line
+- [x] `LETTER_ALREADY_CLAIMED` shows the letter taken; `LETTER_EXPIRED` shows the crumbled line
       and drops it; any other failure shows "The seal would not break. Try again." with the button
       kept.
-- [ ] The button is absent on a letter with no enclosures or already taken; no on-screen string
+- [x] The button is absent on a letter with no enclosures or already taken; no on-screen string
       says "Claim".
-- [ ] Presenter unit tests cover every state above; typecheck, lint and the token fence pass.
+- [x] Presenter unit tests cover every state above; typecheck, lint and the token fence pass.
 - [ ] Manual check in the browser: take a letter with items and gold (the items match what the
       letter showed); a second tab's take is refused and shows taken after reload.
 - [ ] Manual push check (with I-1GZGD-8 and -9 running): a letter sent by the admin endpoint to a
@@ -73,3 +73,9 @@ stories 9–13, 31, 32.
 - RED: a presenter test that a `STASH_FULL` refusal on a letter with items ×1 and ×3 yields "Your
   stash needs 4 free slots" and keeps the button.
 - GREEN: the take state machine in the presenter.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Every criterion but the two manual ones has a presenter test; A9.1 applies here too (after a Take or a crumble the seal drops at once and one summary fetch confirms it; one Take at a time per panel; the crumbled line only for the open letter). Wrap-up run: `vitest run`, `tsc --noEmit`, `next lint` on the changed files and the token fence pass.
+
+**Pending manual check in the browser (Nick):** Take a letter with items and gold (the items match what the letter showed, the gold arrives); two tabs on one letter (the second Take is refused and shows taken after a reload); a stash too full ("Your stash needs N free slots"); the live push: a letter sent to a player standing in the town lights and pulses the envelope without a reload, one sent during a delve shows on return, and a broadcast lights every town player's envelope; with services down, Take shows "The seal would not break. Try again." Close this issue once all of them are seen.

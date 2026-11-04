@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-3
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-1]
 labels: [ready-for-agent]
@@ -95,42 +95,42 @@ local `.env` uses `127.0.0.1:<port>`).
 
 ## Acceptance Criteria
 
-- [ ] An admin send to one member stores one `official` letter visible to that member only.
-- [ ] A broadcast stores one letter row and no state rows; every member, including one whose first
+- [x] An admin send to one member stores one `official` letter visible to that member only.
+- [x] A broadcast stores one letter row and no state rows; every member, including one whose first
       read is after the send, sees it.
-- [ ] A non-admin gets `403 · FORBIDDEN` at the gateway, and a player token calling
+- [x] A non-admin gets `403 · FORBIDDEN` at the gateway, and a player token calling
       `SendLetter` directly is refused.
-- [ ] Each bound violation (title 61, body 2001, empty title, 11 enclosures, two gold
+- [x] Each bound violation (title 61, body 2001, empty title, 11 enclosures, two gold
       enclosures, slot count 61, quantity 0, gold 0, past expiry, item level 0) is refused with
       its code and stores nothing; an unknown template is `UNKNOWN_ITEM_TEMPLATE`, an unknown
       instance `UNKNOWN_ITEM_INSTANCE`.
-- [ ] A template enclosure is stored as a snapshot at the given item level, or at the template's
+- [x] A template enclosure is stored as a snapshot at the given item level, or at the template's
       `min_item_level` without one; a copy enclosure of a unique with affixes is stored with its
       template, item level, rarity and affixes, and changing or deleting the source afterwards
       changes nothing the letter returns. No drop rule refuses either.
-- [ ] Default expiry is sent + 30 days; an expired letter is absent from the list and every count,
+- [x] Default expiry is sent + 30 days; an expired letter is absent from the list and every count,
       and mark read on it is `LETTER_EXPIRED`.
-- [ ] The list is ≤ 50, newest first; each item enclosure returns its stored snapshot unchanged,
+- [x] The list is ≤ 50, newest first; each item enclosure returns its stored snapshot unchanged,
       and the read makes no items-service call.
-- [ ] Mark read creates the state row once and is a no-op success on repeat; summary counts follow
+- [x] Mark read creates the state row once and is a no-op success on repeat; summary counts follow
       R9 for direct and broadcast letters.
-- [ ] A letter not addressed to the caller is `404 · NOT_FOUND` on mark read.
-- [ ] *(A6)* `memberIds: [A, B, C]` stores three one-member letters with identical content, each
+- [x] A letter not addressed to the caller is `404 · NOT_FOUND` on mark read.
+- [x] *(A6)* `memberIds: [A, B, C]` stores three one-member letters with identical content, each
       visible only to its member; `[A, B, A]` stores two and answers them in the order A, B.
-- [ ] *(A6)* The `201` is `{ letters: [{ letterId, memberId? }], expiresAt }` for all three
+- [x] *(A6)* The `201` is `{ letters: [{ letterId, memberId? }], expiresAt }` for all three
       recipient forms: one entry with the member for `memberId`, one without for `allMembers`.
-- [ ] *(A6)* An empty list and 1001 distinct ids are each `400 · LETTER_RECIPIENTS_INVALID` and
+- [x] *(A6)* An empty list and 1001 distinct ids are each `400 · LETTER_RECIPIENTS_INVALID` and
       store nothing; 1000 distinct ids plus duplicates are accepted. Two recipient forms, none,
       or a non-uuid entry are `422 · VALIDATION_FAILED`.
-- [ ] *(A6)* A list send with item enclosures calls `ResolveItemSnapshots` exactly once; a bound
+- [x] *(A6)* A list send with item enclosures calls `ResolveItemSnapshots` exactly once; a bound
       violation in title, body, enclosures or expiry stores no letter for any recipient.
-- [ ] *(A6)* All or none: a storage failure forced part-way through a list (repository test)
+- [x] *(A6)* All or none: a storage failure forced part-way through a list (repository test)
       leaves no letter of the request stored.
-- [ ] *(A6)* Two recipients of one list send read and mark read independently. One marking read
+- [x] *(A6)* Two recipients of one list send read and mark read independently. One marking read
       leaves the other unread.
-- [ ] `openapi.yaml` and the generated client are regenerated, not hand-edited, and committed with
+- [x] `openapi.yaml` and the generated client are regenerated, not hand-edited, and committed with
       the handlers; the contract checks pass.
-- [ ] Tests pass in notification-service and api-gateway; lint clean.
+- [x] Tests pass in notification-service and api-gateway; lint clean.
 
 ## Blocked By
 
@@ -151,3 +151,7 @@ FS-1GZGD §Requirements R1–R11, R30–R32; §Amendment 2026-11-04 A1–A3; §A
 - RED (A6): a repository test that storing a three-member list send whose third insert fails
   stores none, and a service test that `[A, B, A]` stores two letters and resolves enclosures
   once.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test. A9.4 and A9.5 changed this issue's surface: a non-admin send is `PermissionDenied` before its draft is parsed; mark read never waits on or blocks a claim (`FOR UPDATE SKIP LOCKED`); notification refuses to boot without `JWT_SECRET` (R65); the gateway reads run under a 5 s deadline (R64). Wrap-up run: `go test ./...` passes in notification-service (including the repository tests against a throwaway schema with `NOTIFICATION_TEST_DB_DSN`) and api-gateway; lint has no new findings since main.

@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-1
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: []
 labels: [ready-for-agent]
@@ -59,27 +59,27 @@ never edit an existing migration). This is the **only** issue that touches `item
 
 ## Acceptance Criteria
 
-- [ ] `ResolveItemSnapshots` for a template without item level returns a snapshot at its
+- [x] `ResolveItemSnapshots` for a template without item level returns a snapshot at its
       `min_item_level`, `normal`, base stats, no affixes; with item level 40 returns it at 40,
       even above the template's drop band.
-- [ ] `ResolveItemSnapshots` for a unique instance with affixes returns its template, item level,
+- [x] `ResolveItemSnapshots` for a unique instance with affixes returns its template, item level,
       rarity, affixes and values, and no owner, listing, status or location; an affix set no drop
       rule would allow is returned unrefused.
-- [ ] Unknown template ids and unknown instance ids are reported as such; an item level of 0 is
+- [x] Unknown template ids and unknown instance ids are reported as such; an item level of 0 is
       reported unrepresentable; no token is needed.
-- [ ] `GrantItems` with (snapshot A ×1, snapshot B ×3) mints four `AVAILABLE` stash instances
+- [x] `GrantItems` with (snapshot A ×1, snapshot B ×3) mints four `AVAILABLE` stash instances
       owned by the token's member, each equal to its snapshot (template, stats, item level,
       required level, rarity, affixes), and returns their ids; a copy's source instance is
       untouched.
-- [ ] With the stash 2 slots short, it mints nothing and is refused `STASH_FULL`.
-- [ ] A snapshot with an unknown template, or a malformed affix, mints nothing and is refused.
-- [ ] **Guard 2:** a second call with the same grant id mints nothing and returns the first call's
+- [x] With the stash 2 slots short, it mints nothing and is refused `STASH_FULL`.
+- [x] A snapshot with an unknown template, or a malformed affix, mints nothing and is refused.
+- [x] **Guard 2:** a second call with the same grant id mints nothing and returns the first call's
       ids with `already_granted = true`.
-- [ ] **Guard 2 (concurrent):** two identical `GrantItems` calls started together against a real
+- [x] **Guard 2 (concurrent):** two identical `GrantItems` calls started together against a real
       database mint exactly one set.
-- [ ] No member field exists on the `GrantItems` request; the member is the forwarded token's.
-- [ ] The new migration's down reverses its up; no existing migration file changed.
-- [ ] Tests pass (`go test ./...` in items-service), lint clean.
+- [x] No member field exists on the `GrantItems` request; the member is the forwarded token's.
+- [x] The new migration's down reverses its up; no existing migration file changed.
+- [x] Tests pass (`go test ./...` in items-service), lint clean.
 
 ## Blocked By
 
@@ -96,3 +96,7 @@ FS-1GZGD §Requirements R18–R22 (grants, item snapshots), R26 (grant retried);
   each equal to its snapshot.
 - GREEN: the grants unique key written in the minting transaction, with the conflict path
   returning the recorded ids.
+
+## Charter run (2026-11-04)
+
+Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Done: every criterion has a test. A9.6 added two in this issue's surface: `ResolveItemSnapshots` refuses whatever `GrantItems` would (required level 0) and answers a transient failure `Unavailable`, and `GrantItems` refuses a total over 60 `InvalidArgument` up front. Wrap-up run: `go test ./...` and lint (no new findings since main) pass in items-service; the grant tests that need a database (`ITEMS_TEST_DSN`, including Guard 2 concurrent) skip without one and were not re-run at wrap-up, since they write to the items database.
