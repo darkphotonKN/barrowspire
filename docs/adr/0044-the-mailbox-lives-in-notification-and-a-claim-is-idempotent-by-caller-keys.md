@@ -3,6 +3,7 @@
 Status: accepted
 Date: 2026-11-04
 Scope: `game-server/notification-service`, `game-server/items-service`, `game-server/wallet-service`
+Amended by: [ADR-0045](0045-a-new-letter-is-pushed-to-hub-players-over-redis-at-most-once.md) — §Decision 1's list of the only wire names that use "mail" for the in-game mailbox, and the consequence that notification-service's new dependencies are items and wallet
 Realized by: [FS-1GZGD](../specs/1GZGD-in-game-mailbox.md) (D1, D6, D16, D20; spec default S5)
 Builds on: [ADR-0009](0009-idempotency-belongs-to-the-caller.md) (the caller mints the key),
 [ADR-0043](0043-verification-codes-are-owned-by-auth-and-mailed-by-notification.md)
