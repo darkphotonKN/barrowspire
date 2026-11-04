@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
+	"github.com/darkphotonKN/barrowspire-server/common/inbox"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +22,7 @@ import (
 
 func claimDBService(t *testing.T, db *sqlx.DB, items *fakeItems, wallet *fakeWallet) *service {
 	t.Helper()
-	svc := NewService(db, NewRepository(db), items, wallet, &fakeArrivals{})
+	svc := NewService(db, NewRepository(db), items, wallet, &fakeArrivals{}, inbox.NewRepo())
 	svc.now = func() time.Time { return sentAt.Add(time.Hour) }
 	return svc
 }

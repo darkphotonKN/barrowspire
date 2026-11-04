@@ -254,3 +254,92 @@ func TestEventRetryConfigs_IncludeVerificationRequested(t *testing.T) {
 	assert.Equal(t, commonconstants.NotificationMemberVerificationRequestedQueue, found.WorkQueue)
 	assert.Equal(t, commonconstants.NotificationMemberVerificationRequestedFailed, found.DLQKey)
 }
+
+// fakeLetterRequests records the letter requests the consumer handed the
+// mailbox.
+type fakeLetterRequests struct {
+	err   error
+	calls []*pb.LetterRequested
+}
+
+func (f *fakeLetterRequests) ProcessLetterRequested(ctx context.Context, evt *pb.LetterRequested) error {
+	f.calls = append(f.calls, evt)
+	return f.err
+}
+
+func letterRequestedDelivery(acker *fakeAcknowledger, body []byte) amqp.Delivery {
+	return amqp.Delivery{
+		Acknowledger: acker,
+		RoutingKey:   commonconstants.MailLetterRequestedEvent,
+		ContentType:  "application/x-protobuf",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	}
+}
+
+// FS-1GZGD R12: a mail.letter.requested delivery is handed to the mailbox and
+// settled by its result: stored, duplicate and invalid (marked processed by
+// the mailbox, which answers nil) are acked; items down is retried with delay;
+// an unreadable body or any other failure is dead-lettered.
+func TestHandleLetterRequested(t *testing.T) {
+	evt := &pb.LetterRequested{
+		EventId:   uuid.NewString(),
+		Recipient: &pb.LetterRequested_MemberId{MemberId: uuid.NewString()},
+		Title:     "A Debt Repaid",
+		Body:      "The Wardens return what the barrow took.",
+		Source:    "test.compensation",
+	}
+	body, err := proto.Marshal(evt)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		body        []byte
+		mailboxErr  error
+		wantCalled  bool
+		wantAcks    int
+		wantNacks   int
+		wantRetries int
+	}{
+		{"stored or invalid: acked", body, nil, true, 1, 0, 0},
+		{"duplicate: acked", body, commonconstants.ErrAlreadyProcessed, true, 1, 0, 0},
+		{"items down: retried with delay", body, fmt.Errorf("prepare requested letter: %w", commonconstants.ErrTransient), true, 1, 0, 1},
+		{"permanent failure: dead-lettered", body, errors.New("event id is not a uuid"), true, 0, 1, 0},
+		{"unreadable body: dead-lettered", []byte{0xff, 0xff}, nil, false, 0, 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			acker := &fakeAcknowledger{}
+			letters := &fakeLetterRequests{err: tt.mailboxErr}
+			pub := &fakeRetryPublisher{}
+			c := &Consumer{letters: letters, publisher: pub}
+
+			c.handleLetterRequested(letterRequestedDelivery(acker, tt.body))
+
+			require.Equal(t, tt.wantCalled, len(letters.calls) == 1, "mailbox called")
+			if tt.wantCalled {
+				assert.True(t, proto.Equal(evt, letters.calls[0]), "the event as published")
+			}
+			assert.Equal(t, tt.wantAcks, acker.acks, "acks")
+			assert.Equal(t, tt.wantNacks, acker.nacks, "nacks")
+			assert.False(t, acker.requeued, "never nacked with requeue")
+			assert.Len(t, pub.published, tt.wantRetries, "retry copies")
+		})
+	}
+}
+
+// The letter request queue is declared, bound and given retry queues like
+// every other event this service consumes.
+func TestEventRetryConfigs_IncludeLetterRequested(t *testing.T) {
+	var found *EventRetryConfig
+	for _, cfg := range GetEventRetryConfigs() {
+		if cfg.RoutingKey == commonconstants.MailLetterRequestedEvent {
+			found = &cfg
+		}
+	}
+
+	require.NotNil(t, found)
+	assert.Equal(t, commonconstants.MailboxEventsExchange, found.Exchange)
+	assert.Equal(t, commonconstants.NotificationMailLetterRequestedQueue, found.WorkQueue)
+	assert.Equal(t, commonconstants.NotificationMailLetterRequestedFailed, found.DLQKey)
+}

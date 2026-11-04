@@ -14,6 +14,7 @@ import (
 	"time"
 
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	"github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -561,7 +562,7 @@ func TestRepository_InsertLettersStoresEachLettersSentBy(t *testing.T) {
 // on every stored row.
 func TestSendLetterDB_EveryStoredLetterRecordsTheAdminFromTheToken(t *testing.T) {
 	db := mailboxDB(t)
-	svc := NewService(db, NewRepository(db), &fakeItems{}, &fakeWallet{}, &fakeArrivals{})
+	svc := NewService(db, NewRepository(db), &fakeItems{}, &fakeWallet{}, &fakeArrivals{}, inbox.NewRepo())
 	caller := commonauth.Identity{MemberID: uuid.New(), Role: commonauth.RoleAdmin}
 
 	sent, err := svc.SendLetter(context.Background(), caller, LetterDraft{
