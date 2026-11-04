@@ -754,10 +754,10 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
     this.art = registerArt(this);
     this.occluders = new Occluders();
-    // The run's gauntlet, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
+    // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
     // `default` without its sheet. Nothing hostile here, so no strike-mark.
     this.input.setDefaultCursor(
-      cursorCss("cursor_gauntlet", "default", cursorSource(this.art, this.textures)),
+      cursorCss("cursor_hand", "default", cursorSource(this.art, this.textures)),
     );
 
     // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1), running on past
@@ -1018,7 +1018,7 @@ export class HubScene extends Phaser.Scene {
     this.stashMarks = [];
     this.interiors = [];
     this.stashChest = undefined;
-    // the gauntlet is the hub's and the run's; the menus the hub hands over to keep the browser's
+    // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's
     this.input.setDefaultCursor("");
   }
 
@@ -2003,7 +2003,7 @@ export class HubScene extends Phaser.Scene {
     button.on("pointerup", (pointer: Phaser.Input.Pointer) => {
       if (!this.overGear(pointer)) this.leaveQueue();
     });
-    // the gauntlet stays; brightening to vellum is the hover cue, as on a dialogue option
+    // the hand stays; brightening to vellum is the hover cue, as on a dialogue option
     button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
     button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
     this.leaveButton = button;

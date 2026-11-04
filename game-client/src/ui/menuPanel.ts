@@ -109,7 +109,7 @@ export function menuOption(scene: MenuStage, spec: MenuOptionSpec): MenuOption {
     .setDepth(MENU_DEPTH + 1)
     .setInteractive()
     .setName(name);
-  // The cursor stays the gauntlet over a row; the text brightening is the hover cue
+  // The cursor stays the hand over a row; the text brightening is the hover cue
   // (FS-KYPQ9 §H.3). A dimmed row neither brightens nor answers.
   hit.on("pointerup", () => {
     if (enabled()) onPick();

@@ -3,7 +3,7 @@
  * out, for `scene.input.setDefaultCursor`.
  *
  * The hotspot is the sheet's manifest anchor, scaled to the size of the image the cursor shows,
- * so the click point stays on the gauntlet's fingertip and the strike-mark's centre whatever
+ * so the click point stays on the hand's fingertip and the strike-mark's centre whatever
  * size the image comes out at. Anything unresolved (no manifest, no such sheet, an atlas that
  * did not load, a frame that cannot be read back) gives the plain browser `fallback`, exactly
  * `default` or `crosshair`, so the pointer always works.

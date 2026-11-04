@@ -2781,13 +2781,13 @@ export class BarrowspireScene extends Phaser.Scene {
   private crosshairCursorCSS = "";
 
   /**
-   * The baked cursors (FS-KYPQ9 §H.2): the gauntlet by default, the strike-mark over a rival.
+   * The baked cursors (FS-KYPQ9 §H.2): the bone hand by default, the strike-mark over a rival.
    * Each hotspot is its manifest anchor scaled with the image, so the click point is unchanged;
    * with no manifest or sheet the browser's `default`/`crosshair` applies, as before.
    */
   private setupCustomCursor(): void {
     const source = cursorSource(this.art, this.textures);
-    this.defaultCursorCSS = cursorCss("cursor_gauntlet", "default", source);
+    this.defaultCursorCSS = cursorCss("cursor_hand", "default", source);
     this.crosshairCursorCSS = cursorCss("cursor_strike", "crosshair", source);
     this.input.setDefaultCursor(this.defaultCursorCSS);
   }

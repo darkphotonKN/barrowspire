@@ -146,7 +146,7 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
     expect(sendMessage).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "arrow", target_x: 400, target_y: 520 });
   });
 
-  it("should show the strike-mark over a living boar, and the gauntlet once the pointer leaves", () => {
+  it("should show the strike-mark over a living boar, and the hand once the pointer leaves", () => {
     const { state, sprites, cursor } = fieldOnStage();
     state(me(200));
     sprites[0].handlers.pointerover();

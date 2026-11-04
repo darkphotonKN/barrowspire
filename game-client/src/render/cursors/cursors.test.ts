@@ -37,8 +37,8 @@ function hotspot(css: string): [number, number] {
 
 describe("cursorCss (FS-KYPQ9 §H.2)", () => {
   it("puts the image url first and the browser fallback last", () => {
-    expect(cursorCss("cursor_gauntlet", "default", sourceAt(1))).toMatch(
-      /^url\(data:image\/png;base64,cursor_gauntlet\) \d+ \d+, default$/,
+    expect(cursorCss("cursor_hand", "default", sourceAt(1))).toMatch(
+      /^url\(data:image\/png;base64,cursor_hand\) \d+ \d+, default$/,
     );
     expect(cursorCss("cursor_strike", "crosshair", sourceAt(1))).toMatch(
       /, crosshair$/,
@@ -46,7 +46,7 @@ describe("cursorCss (FS-KYPQ9 §H.2)", () => {
   });
 
   it.each([
-    ["cursor_gauntlet", "default"],
+    ["cursor_hand", "default"],
     ["cursor_strike", "crosshair"],
   ] as const)(
     "takes %s's hotspot from its manifest anchor, scaled to the emitted image",
@@ -62,8 +62,8 @@ describe("cursorCss (FS-KYPQ9 §H.2)", () => {
   );
 
   it("keeps the click point where the art puts it: fingertip and centre", () => {
-    expect(hotspot(cursorCss("cursor_gauntlet", "default", sourceAt(1)))).toEqual(
-      [7, 1],
+    expect(hotspot(cursorCss("cursor_hand", "default", sourceAt(1)))).toEqual(
+      [6, 1],
     );
     expect(hotspot(cursorCss("cursor_strike", "crosshair", sourceAt(1)))).toEqual(
       [16, 16],
@@ -81,12 +81,12 @@ describe("cursorCss (FS-KYPQ9 §H.2)", () => {
   it.each(["default", "crosshair"] as const)(
     "returns exactly %s with no manifest",
     (fallback) => {
-      expect(cursorCss("cursor_gauntlet", fallback, null)).toBe(fallback);
-      expect(cursorCss("cursor_gauntlet", fallback, undefined)).toBe(fallback);
+      expect(cursorCss("cursor_hand", fallback, null)).toBe(fallback);
+      expect(cursorCss("cursor_hand", fallback, undefined)).toBe(fallback);
       const empty = cursorSource(ArtLibrary.empty(quiet), {
         getBase64: () => "data:image/png;base64,x",
       });
-      expect(cursorCss("cursor_gauntlet", fallback, empty)).toBe(fallback);
+      expect(cursorCss("cursor_hand", fallback, empty)).toBe(fallback);
     },
   );
 
@@ -109,24 +109,24 @@ describe("cursorSource: the frame cropped from the loaded atlas", () => {
   it("crops the sheet's frame from its atlas texture, at the frame's size", () => {
     const getBase64 = vi.fn(() => "data:image/png;base64,AAAA");
     const source = cursorSource(library(), { getBase64 });
-    const s = baked.sheets.cursor_gauntlet;
-    expect(source.image("cursor_gauntlet")).toEqual({
+    const s = baked.sheets.cursor_hand;
+    expect(source.image("cursor_hand")).toEqual({
       url: "data:image/png;base64,AAAA",
       width: s.frameWidth,
       height: s.frameHeight,
     });
     expect(getBase64).toHaveBeenCalledWith(
       `art:${s.atlas}`,
-      "cursor_gauntlet/default/0/0",
+      "cursor_hand/default/0/0",
     );
   });
 
   it("has no image when the atlas did not load", () => {
     const getBase64 = vi.fn(() => "data:image/png;base64,AAAA");
     const source = cursorSource(library(new Set()), { getBase64 });
-    expect(source.sheet("cursor_gauntlet")).toBeUndefined();
-    expect(source.image("cursor_gauntlet")).toBeUndefined();
-    expect(cursorCss("cursor_gauntlet", "default", source)).toBe("default");
+    expect(source.sheet("cursor_hand")).toBeUndefined();
+    expect(source.image("cursor_hand")).toBeUndefined();
+    expect(cursorCss("cursor_hand", "default", source)).toBe("default");
     expect(getBase64).not.toHaveBeenCalled();
   });
 

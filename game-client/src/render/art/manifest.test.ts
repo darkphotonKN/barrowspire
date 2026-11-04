@@ -445,7 +445,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["fx_ring", "ring"],
     ];
     const CURSORS: [string, string][] = [
-      ["cursor_gauntlet", "gauntlet"],
+      ["cursor_hand", "boneHand"],
       ["cursor_strike", "strikeMark"],
     ];
 
@@ -490,8 +490,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       },
     );
 
-    it("puts the gauntlet's hotspot on its fingertip, at the top left", () => {
-      const { anchor } = sheet("cursor_gauntlet");
+    it("puts the hand's hotspot on its fingertip, at the top left", () => {
+      const { anchor } = sheet("cursor_hand");
       expect(anchor.x).toBeLessThan(0.35);
       expect(anchor.y).toBeLessThan(0.15);
     });

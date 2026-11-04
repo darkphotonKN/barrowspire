@@ -44,7 +44,7 @@ export interface FieldCombatParts {
   kit?: Pick<ClassKitFx, "sync" | "forget">;
   projectiles?: Pick<ProjectileFlights, "sync" | "clear">;
   hits?: Pick<HitFeedback, "play" | "clearAll">;
-  /** The strike-mark over a living monster, the gauntlet otherwise. */
+  /** The strike-mark over a living monster, the hand otherwise. */
   cursor(overMonster: boolean): void;
   /** A player's drawn body, by entity id, for the struck tint. */
   bodyOf(entityId: string): Tintable | undefined;
@@ -195,9 +195,9 @@ export function fieldCombatOnScene(
   const fx = new EffectsRuntime(scene, art, lightMap);
   const kit = new ClassKitFx(scene);
   const source = cursorSource(art, scene.textures);
-  const gauntlet = cursorCss("cursor_gauntlet", "default", source);
+  const hand = cursorCss("cursor_hand", "default", source);
   const strikeMark = cursorCss("cursor_strike", "crosshair", source);
-  scene.input.setDefaultCursor(gauntlet);
+  scene.input.setDefaultCursor(hand);
 
   // the world point under the cursor now, wherever the camera has moved since it last moved
   const cursorWorld = (): Point => {
@@ -246,7 +246,7 @@ export function fieldCombatOnScene(
     kit,
     projectiles: new ProjectileFlights(scene, art, fx, projectileFlightOf),
     hits: new HitFeedback(scene),
-    cursor: (over) => scene.input.setDefaultCursor(over ? strikeMark : gauntlet),
+    cursor: (over) => scene.input.setDefaultCursor(over ? strikeMark : hand),
     bodyOf: hooks.bodyOf,
     button: () => scene.input.activePointer?.button,
     clearEffects: () => {

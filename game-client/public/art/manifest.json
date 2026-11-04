@@ -109,7 +109,7 @@
       "image": "fx-0.png",
       "width": 692,
       "height": 128,
-      "sha256": "64ecc9ebb9c73942afbb3c7d63532faabb61b1eb68bb275e9e132b4d193214b5"
+      "sha256": "3dfa21e330a02855570f68f353e552400f8a8907ba7bb7df802d33e9c8c46131"
     },
     "ground-0": {
       "image": "ground-0.png",
@@ -11893,12 +11893,12 @@
       "source": "authored: tools/bake/page/characters/forlorn.js#zombie",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "cursor_gauntlet": {
+    "cursor_hand": {
       "atlas": "fx-0",
       "frameWidth": 32,
       "frameHeight": 32,
       "anchor": {
-        "x": 0.21875,
+        "x": 0.1875,
         "y": 0.03125
       },
       "directions": 1,
@@ -11916,7 +11916,7 @@
           ]
         }
       },
-      "source": "authored: tools/bake/page/models/cursors.js#gauntlet",
+      "source": "authored: tools/bake/page/models/cursors.js#boneHand",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "cursor_strike": {
