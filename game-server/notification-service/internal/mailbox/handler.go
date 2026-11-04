@@ -48,6 +48,10 @@ func (h *Handler) SendLetter(ctx context.Context, req *pb.SendLetterRequest) (*p
 	if err != nil {
 		return nil, err
 	}
+	// the role before the draft: a player learns nothing from a malformed send
+	if who.Role != commonauth.RoleAdmin {
+		return nil, statusOf(ctx, "send letter", ErrNotAdmin)
+	}
 	draft, err := draftFromProto(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())

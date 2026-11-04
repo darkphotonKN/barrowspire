@@ -197,14 +197,36 @@ func (r *repository) FindAddressed(ctx context.Context, letterID, member uuid.UU
 
 // MarkRead records that member read the letter at at, creating the member's
 // state row on first use (R6, R8). A repeat keeps the first read time.
+//
+// It never waits on a claim in flight, and never makes one wait: a claim holds
+// the row locked across its items and wallet calls and records the read
+// itself, so a row another transaction holds is skipped, not waited for. The
+// row is created only when a plain read sees none (as EnsureState does), and
+// the read time is set only on a row still unread, so marking an already read
+// letter takes no lock at all and cannot make a claim's NOWAIT refuse.
 func (r *repository) MarkRead(ctx context.Context, letterID, member uuid.UUID, at time.Time) error {
-	query := `
+	create := `
 	INSERT INTO letter_states (letter_id, member_id, read_at)
-	VALUES ($1, $2, $3)
-	ON CONFLICT (letter_id, member_id)
-	DO UPDATE SET read_at = COALESCE(letter_states.read_at, EXCLUDED.read_at)`
+	SELECT $1, $2, $3
+	WHERE NOT EXISTS (SELECT 1 FROM letter_states WHERE letter_id = $1 AND member_id = $2)
+	ON CONFLICT (letter_id, member_id) DO NOTHING`
 
-	if _, err := r.db.ExecContext(ctx, query, letterID, member, at); err != nil {
+	if _, err := r.db.ExecContext(ctx, create, letterID, member, at); err != nil {
+		return fmt.Errorf("mark letter %s read for member %s: %w", letterID, member, err)
+	}
+
+	mark := `
+	WITH unread AS (
+		SELECT letter_id, member_id FROM letter_states
+		WHERE letter_id = $1 AND member_id = $2 AND read_at IS NULL
+		FOR UPDATE SKIP LOCKED
+	)
+	UPDATE letter_states s
+	SET read_at = $3
+	FROM unread u
+	WHERE s.letter_id = u.letter_id AND s.member_id = u.member_id`
+
+	if _, err := r.db.ExecContext(ctx, mark, letterID, member, at); err != nil {
 		return fmt.Errorf("mark letter %s read for member %s: %w", letterID, member, err)
 	}
 	return nil

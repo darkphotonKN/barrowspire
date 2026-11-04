@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 
@@ -31,16 +32,25 @@ var (
 	amqpHost     = commonhelpers.GetEnvString("RABBITMQ_HOST", "localhost")
 	amqpPort     = commonhelpers.GetEnvString("RABBITMQ_PORT", "5672")
 
-	// items-service, for resolving a letter's item enclosures at send (ADR-0022)
-	itemsAddr = commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126")
+	// items-service, for resolving a letter's item enclosures at send (ADR-0022).
+	// The local defaults are IP literals: gRPC's dns resolver takes seconds on
+	// "localhost", longer than the mailbox's 5 s call deadlines.
+	itemsAddr = commonhelpers.GetEnvString("ITEMS_ADDR", "127.0.0.1:7126")
 	// wallet-service, for crediting a claimed letter's gold (FS-1GZGD R16)
-	walletAddr = commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128")
+	walletAddr = commonhelpers.GetEnvString("WALLET_ADDR", "127.0.0.1:7128")
 	// Redis, for the mail:arrived hint after a letter commits (ADR-0045); the
 	// default is the compose Redis on the host
 	redisAddr = commonhelpers.GetEnvString("REDIS_ADDR", "127.0.0.1:6492")
 )
 
 func main() {
+	// before anything else: without the key every forwarded token is forgeable
+	jwtSecret, err := config.JWTSecret()
+	if err != nil {
+		slog.Error("notification cannot start", "error", err)
+		os.Exit(1)
+	}
+
 	db := config.InitDB()
 	defer db.Close()
 
@@ -97,7 +107,7 @@ func main() {
 	defer redisClient.Close()
 
 	// Use the new config setup to initialize all services
-	grpcServer = config.SetupServices(db, ch, itemsConn, walletConn, redisClient, []byte(os.Getenv("JWT_SECRET")))
+	grpcServer = config.SetupServices(db, ch, itemsConn, walletConn, redisClient, jwtSecret)
 
 	log.Printf("Notification Server started on PORT: %s\n", grpcAddr)
 

@@ -28,8 +28,7 @@ service NotificationService {
   rpc GetMailboxSummary(GetMailboxSummaryRequest) returns (MailboxSummary);
   // Marks one letter read for the caller; idempotent (R8).
   rpc MarkLetterRead(MarkLetterReadRequest) returns (MarkLetterReadResponse);
-  // Takes every enclosure of one letter (R13-R17). Declared for I-1GZGD-4;
-  // answers Unimplemented until then.
+  // Takes every enclosure of one letter (R13-R17).
   rpc ClaimLetter(ClaimLetterRequest) returns (ClaimLetterResponse);
 }
 

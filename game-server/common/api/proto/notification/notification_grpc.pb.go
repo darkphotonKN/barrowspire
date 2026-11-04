@@ -46,8 +46,7 @@ type NotificationServiceClient interface {
 	GetMailboxSummary(ctx context.Context, in *GetMailboxSummaryRequest, opts ...grpc.CallOption) (*MailboxSummary, error)
 	// Marks one letter read for the caller; idempotent (R8).
 	MarkLetterRead(ctx context.Context, in *MarkLetterReadRequest, opts ...grpc.CallOption) (*MarkLetterReadResponse, error)
-	// Takes every enclosure of one letter (R13-R17). Declared for I-1GZGD-4;
-	// answers Unimplemented until then.
+	// Takes every enclosure of one letter (R13-R17).
 	ClaimLetter(ctx context.Context, in *ClaimLetterRequest, opts ...grpc.CallOption) (*ClaimLetterResponse, error)
 }
 
@@ -156,8 +155,7 @@ type NotificationServiceServer interface {
 	GetMailboxSummary(context.Context, *GetMailboxSummaryRequest) (*MailboxSummary, error)
 	// Marks one letter read for the caller; idempotent (R8).
 	MarkLetterRead(context.Context, *MarkLetterReadRequest) (*MarkLetterReadResponse, error)
-	// Takes every enclosure of one letter (R13-R17). Declared for I-1GZGD-4;
-	// answers Unimplemented until then.
+	// Takes every enclosure of one letter (R13-R17).
 	ClaimLetter(context.Context, *ClaimLetterRequest) (*ClaimLetterResponse, error)
 	mustEmbedUnimplementedNotificationServiceServer()
 }
