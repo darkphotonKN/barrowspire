@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -124,6 +125,16 @@ type fakeStore struct {
 
 	txCount     int // transactions opened
 	createCalls int // writes outside any transaction (repo.Create)
+
+	// the mailbox's welcome seam: StoreWelcome stages one welcome per call
+	// on the open transaction; announce records who it announced and
+	// whether that welcome had committed by then
+	welcomeErr        error
+	welcomeCalls      int
+	stagedWelcomes    []uuid.UUID
+	committedWelcomes []uuid.UUID
+	announced         []uuid.UUID
+	announcedEarly    bool
 }
 
 func newFakeStore() *fakeStore {
@@ -132,17 +143,32 @@ func newFakeStore() *fakeStore {
 
 func (f *fakeStore) withTx(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 	f.txCount++
-	f.staged, f.stagedEvents = nil, nil
+	f.staged, f.stagedEvents, f.stagedWelcomes = nil, nil, nil
 	if err := fn(nil); err != nil {
-		f.staged, f.stagedEvents = nil, nil
+		f.staged, f.stagedEvents, f.stagedWelcomes = nil, nil, nil
 		return err
 	}
 	f.committed = append(f.committed, f.staged...)
 	for _, k := range f.stagedEvents {
 		f.committedEvents[k] = true
 	}
-	f.staged, f.stagedEvents = nil, nil
+	f.committedWelcomes = append(f.committedWelcomes, f.stagedWelcomes...)
+	f.staged, f.stagedEvents, f.stagedWelcomes = nil, nil, nil
 	return nil
+}
+
+func (f *fakeStore) StoreWelcome(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) (func(context.Context), error) {
+	f.welcomeCalls++
+	if f.welcomeErr != nil {
+		return nil, f.welcomeErr
+	}
+	f.stagedWelcomes = append(f.stagedWelcomes, member)
+	return func(context.Context) {
+		if !slices.Contains(f.committedWelcomes, member) {
+			f.announcedEarly = true
+		}
+		f.announced = append(f.announced, member)
+	}, nil
 }
 
 func (f *fakeStore) MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error) {
@@ -178,7 +204,7 @@ func (f *fakeStore) MarkAllAsReadByUserID(ctx context.Context, userID uuid.UUID)
 }
 
 func (f *fakeStore) service() *service {
-	return &service{repo: f, inboxRepo: f, withTx: f.withTx}
+	return &service{repo: f, inboxRepo: f, welcome: f, withTx: f.withTx}
 }
 
 func (f *fakeStore) committedUsers() []uuid.UUID {
@@ -398,7 +424,7 @@ func (m *mockRepository) TestProcessMemberSignedUp_Success(t *testing.T) {
 			UpdatedAt: time.Now(),
 		},
 	}
-	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true}, nil)
+	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true}, nil, nil)
 
 	payload := &commonconstants.MemberSignedUpEventPayload{
 		UserID: "550e8400-e29b-41d4-a716-446655440001",
@@ -422,7 +448,7 @@ func (m *mockRepository) TestProcessMemberSignedUp_Success(t *testing.T) {
 func (m *mockRepository) TestProcessMemberSignedUp_InvalidUUID(t *testing.T) {
 	// ===== Arrange =====
 	mockRepo := &mockRepository{}
-	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true}, nil)
+	service := NewService(nil, mockRepo, &mockInboxRepository{inserted: true}, nil, nil)
 	payload := &commonconstants.MemberSignedUpEventPayload{
 		UserID: "invalid-uuid",
 		Name:   "kiki_test",
@@ -435,4 +461,98 @@ func (m *mockRepository) TestProcessMemberSignedUp_InvalidUUID(t *testing.T) {
 	// ===== Assert =====
 	assert.NoError(t, err)
 	assert.False(t, mockRepo.createCalled, "Create should not be called when UUID is invalid")
+}
+
+func signedUp(eventID, member uuid.UUID) *commonconstants.MemberSignedUpEventPayload {
+	return &commonconstants.MemberSignedUpEventPayload{
+		EventID: eventID.String(),
+		UserID:  member.String(),
+		Name:    "wren",
+		Email:   "wren@example.com",
+	}
+}
+
+// One member.signedup stores the signup notification and the welcome letter
+// in one inbox transaction, and announces the welcome once it has committed.
+// FS-1GZGD R57, R62.
+func TestProcessMemberSignedUp_StoresTheWelcomeInTheInboxTransaction(t *testing.T) {
+	store := newFakeStore()
+	eventID, member := uuid.New(), uuid.New()
+
+	err := store.service().ProcessMemberSignedUp(context.Background(), signedUp(eventID, member))
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, store.txCount)
+	assert.True(t, store.committedEvents[inboxKey{eventID, commonconstants.MemberSignedUpEvent}])
+	assert.Equal(t, []uuid.UUID{member}, store.committedUsers())
+	assert.Equal(t, []uuid.UUID{member}, store.committedWelcomes)
+	assert.Equal(t, []uuid.UUID{member}, store.announced)
+	assert.False(t, store.announcedEarly, "announced only after the commit")
+}
+
+// A redelivered member.signedup stops at the inbox: no second welcome, no
+// mailbox call, no announcement. FS-1GZGD R57, R60, R62.
+func TestProcessMemberSignedUp_RedeliveryStoresAndAnnouncesNothing(t *testing.T) {
+	store := newFakeStore()
+	svc := store.service()
+	event := signedUp(uuid.New(), uuid.New())
+
+	assert.NoError(t, svc.ProcessMemberSignedUp(context.Background(), event))
+	err := svc.ProcessMemberSignedUp(context.Background(), event)
+
+	assert.ErrorIs(t, err, commonconstants.ErrAlreadyProcessed)
+	assert.Equal(t, 1, store.welcomeCalls)
+	assert.Len(t, store.committedWelcomes, 1)
+	assert.Len(t, store.committed, 1)
+	assert.Len(t, store.announced, 1)
+}
+
+func TestProcessMemberSignedUp_TwoAccountsGetOneWelcomeEach(t *testing.T) {
+	store := newFakeStore()
+	svc := store.service()
+	alice, bob := uuid.New(), uuid.New()
+
+	assert.NoError(t, svc.ProcessMemberSignedUp(context.Background(), signedUp(uuid.New(), alice)))
+	assert.NoError(t, svc.ProcessMemberSignedUp(context.Background(), signedUp(uuid.New(), bob)))
+
+	assert.Equal(t, []uuid.UUID{alice, bob}, store.committedWelcomes)
+	assert.Equal(t, []uuid.UUID{alice, bob}, store.announced)
+}
+
+// A welcome that cannot be stored rolls the whole signup handling back: no
+// inbox mark, no notification, no letter, no announcement. A transient
+// failure stays transient so the consumer requeues it, and the redelivery
+// stores everything once. FS-1GZGD R57, R61.
+func TestProcessMemberSignedUp_WelcomeFailureRollsBackTheSignup(t *testing.T) {
+	tests := []struct {
+		name          string
+		welcomeErr    error
+		wantTransient bool
+	}{
+		{"items down on a cold cache", fmt.Errorf("resolve the welcome gift: %w: items service unavailable", commonconstants.ErrTransient), true},
+		{"letter insert fails", errors.New("store the welcome letter: insert 1 letters: boom"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeStore()
+			store.welcomeErr = tt.welcomeErr
+			svc := store.service()
+			eventID, member := uuid.New(), uuid.New()
+
+			err := svc.ProcessMemberSignedUp(context.Background(), signedUp(eventID, member))
+
+			assert.Error(t, err)
+			assert.Equal(t, tt.wantTransient, errors.Is(err, commonconstants.ErrTransient))
+			assert.Empty(t, store.committedEvents, "the inbox mark rolled back")
+			assert.Empty(t, store.committed, "the notification rolled back")
+			assert.Empty(t, store.committedWelcomes)
+			assert.Empty(t, store.announced)
+
+			store.welcomeErr = nil
+			assert.NoError(t, svc.ProcessMemberSignedUp(context.Background(), signedUp(eventID, member)))
+			assert.Equal(t, []uuid.UUID{member}, store.committedUsers())
+			assert.Equal(t, []uuid.UUID{member}, store.committedWelcomes)
+			assert.Equal(t, []uuid.UUID{member}, store.announced)
+		})
+	}
 }
