@@ -43,6 +43,11 @@ type Items interface {
 	GrantItems(ctx context.Context, grantID string, lines []ItemGrant) (*Grant, error)
 }
 
+// snapshotResolver is the part of Items a send needs: the resolve at send (A2).
+type snapshotResolver interface {
+	ResolveItemSnapshots(ctx context.Context, templates []TemplateRef, instanceIDs []uuid.UUID) (*Resolution, error)
+}
+
 // GoldCreditor credits gold to the wallet of the member whose token the call
 // forwards, once per key (R16, R23). applied false means the key was already
 // credited, which is success. See wallet.go.
@@ -88,6 +93,8 @@ type service struct {
 	wallet   GoldCreditor
 	arrivals ArrivalPublisher
 	inbox    Inbox
+	// welcomeGift caches the welcome potion's snapshot once resolved (A8.1).
+	welcomeGift potionCache
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
@@ -155,8 +162,15 @@ func systemFrom(source SentBySource) origin {
 // prepareLetters checks a draft, resolves its item enclosures once and builds
 // the letters to store, one per recipient, identical but for id and member,
 // each stamped with from's sender kind and sent-by. Nothing is stored. The
-// letter request (I-1GZGD-5) stores its result in its own inbox transaction.
+// letter request (I-1GZGD-5) and the welcome (I-1GZGD-11) store their result
+// in their own inbox transaction.
 func (s *service) prepareLetters(ctx context.Context, draft LetterDraft, from origin) ([]Letter, error) {
+	return s.prepareLettersVia(ctx, s.items, draft, from)
+}
+
+// prepareLettersVia is prepareLetters resolving through items, so the welcome
+// can resolve through its cache (A8.1).
+func (s *service) prepareLettersVia(ctx context.Context, items snapshotResolver, draft LetterDraft, from origin) ([]Letter, error) {
 	now := s.now()
 
 	recipients, err := recipientsOf(draft.Recipient)
@@ -178,7 +192,7 @@ func (s *service) prepareLetters(ctx context.Context, draft LetterDraft, from or
 		expiresAt = *draft.ExpiresAt
 	}
 
-	enclosures, err := s.resolve(ctx, draft.Enclosures)
+	enclosures, err := resolve(ctx, items, draft.Enclosures)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +294,7 @@ func checkEnclosures(enclosures []EnclosureRequest) error {
 
 // resolve turns the requests into stored enclosures, in request order, with
 // one items call for every item enclosure and none without any (A2, R49).
-func (s *service) resolve(ctx context.Context, requests []EnclosureRequest) ([]Enclosure, error) {
+func resolve(ctx context.Context, items snapshotResolver, requests []EnclosureRequest) ([]Enclosure, error) {
 	var templates []TemplateRef
 	var instances []uuid.UUID
 	for _, e := range requests {
@@ -295,7 +309,7 @@ func (s *service) resolve(ctx context.Context, requests []EnclosureRequest) ([]E
 	var res *Resolution
 	if len(templates)+len(instances) > 0 {
 		var err error
-		res, err = s.items.ResolveItemSnapshots(ctx, templates, instances)
+		res, err = items.ResolveItemSnapshots(ctx, templates, instances)
 		if err != nil {
 			return nil, fmt.Errorf("resolve %d item enclosures: %w", len(templates)+len(instances), err)
 		}

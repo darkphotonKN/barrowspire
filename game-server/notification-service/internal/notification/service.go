@@ -28,20 +28,33 @@ type InboxRepository interface {
 	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
 }
 
+// WelcomeLetters is the mailbox as the signup handling needs it (FS-1GZGD
+// R57-R62): store one member's welcome letter on the signup's inbox
+// transaction, then announce it once that transaction has committed. This
+// package learns nothing else of letters. Implemented by internal/mailbox.
+type WelcomeLetters interface {
+	// StoreWelcome stores member's welcome letter on tx and answers how to
+	// announce it after the commit. A failure wraps ErrTransient when a retry
+	// can mend it.
+	StoreWelcome(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) (announce func(context.Context), err error)
+}
+
 type service struct {
 	repo      Repository
 	inboxRepo InboxRepository
 	mailer    Mailer
+	welcome   WelcomeLetters
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
-func NewService(db *sqlx.DB, repo Repository, inboxRepo InboxRepository, mailer Mailer) *service {
+func NewService(db *sqlx.DB, repo Repository, inboxRepo InboxRepository, mailer Mailer, welcome WelcomeLetters) *service {
 	return &service{
 		repo:      repo,
 		inboxRepo: inboxRepo,
 		mailer:    mailer,
+		welcome:   welcome,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
@@ -86,16 +99,32 @@ func (s *service) ProcessMemberSignedUp(ctx context.Context, payload *commoncons
 		Data:             templateData,
 	}
 
-	return s.runInTx(ctx, eventID, commonconstants.MemberSignedUpEvent, func(tx *sqlx.Tx) error {
+	// The inbox mark, the signup notification and the welcome letter commit
+	// together or not at all, so a redelivery stores and announces nothing
+	// (FS-1GZGD R57).
+	var announceWelcome func(context.Context)
+	err = s.runInTx(ctx, eventID, commonconstants.MemberSignedUpEvent, func(tx *sqlx.Tx) error {
 		_, err := s.repo.CreateTx(ctx, tx, createNotification)
 		if err != nil {
 			slog.Warn("Error occurred when creating new notification",
 				"user_id", payload.UserID,
 				"err", err,
 			)
+			return err
 		}
-		return err
+		announceWelcome, err = s.welcome.StoreWelcome(ctx, tx, id)
+		if err != nil {
+			return fmt.Errorf("store welcome letter (user_id=%s): %w", id, err)
+		}
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// committed: announce outside the transaction; it never fails the event (R62)
+	announceWelcome(ctx)
+	return nil
 }
 
 // ProcessVerificationRequested mails a member their verification code, once

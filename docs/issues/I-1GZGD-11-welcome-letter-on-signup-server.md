@@ -6,7 +6,10 @@ blocked_by: [I-1GZGD-3, I-1GZGD-8, I-1GZGD-10]
 labels: [ready-for-agent]
 title: "FS-1GZGD slice 11: one welcome letter with a starter gift for every new account, stored in the signup event's inbox transaction (notification-service)"
 ---
-Implements FS-1GZGD §Requirements R52, R57–R62, §Amendment 2026-11-04 (A7: A7.1, A7.3), §Acceptance Criteria (Welcome letter), §Edge States (A7: signup redelivered, items down at signup, potion template removed, claim before the wallet account, second character, push at signup)
+Implements FS-1GZGD §Requirements R52, R57–R62, §Amendment 2026-11-04 (A7: A7.1, A7.3), §Amendment 2026-11-04 (A8: A8.1, A8.2), §Acceptance Criteria (Welcome letter), §Edge States (A7: signup redelivered, items down at signup, potion template removed, claim before the wallet account, second character, push at signup; A8: potion rebalanced while running)
+
+*(Updated 2026-11-04 for FS-1GZGD A8: the potion snapshot is cached in memory after the first
+successful resolve, and a refused potion stores a gold-only welcome instead of dead-lettering.)*
 
 **Lane: server (human lane; the 2026-11-04 mailbox charter authorises this feature's server work, so `/develop` may run it when Nick asks). Added by amendment A7.**
 
@@ -39,18 +42,22 @@ produces (A7.1, A7.3).
 - **The potion** (R59, **[spec default]**): one named constant in `internal/mailbox`,
   `aa0e8400-e29b-41d4-a716-446655440006` (Small Health Potion, `HEALTH_POT_SMALL`, items-service
   `migrations/000002_seed_basic_data.up.sql`), with a comment pointing at the seed.
-- **Resolving inside the transaction** (R60, **[spec default]**): the welcome is built by
-  `prepareLetters`, so `ResolveItemSnapshots` runs inside `runInTx`, after the inbox mark, under a
-  short deadline (a few seconds), as `ProcessVerificationRequested` sends its email inside its
-  own inbox transaction.
-- **Failures** (R61, **[spec default]**):
-  - items-service unavailable (unreachable, deadline, an outage status): return an error wrapping
-    `commonconstants.ErrTransient`. The transaction rolls back whole and the consumer's existing
-    `handleResult` requeues with its delays (5 s, 15 s, 60 s), then dead-letters.
+- **Resolving, then caching** (R60, A8.1): the welcome is built by `prepareLetters`. While the
+  in-memory gift cache is empty, `ResolveItemSnapshots` runs inside `runInTx`, after the inbox
+  mark, under a short deadline (a few seconds), as `ProcessVerificationRequested` sends its email
+  inside its own inbox transaction. The first snapshot that resolves is kept for the life of the
+  process; every later welcome encloses it and calls no items RPC. A failed or refused resolve
+  leaves the cache empty (not `sync.Once`), and concurrent cold-cache signups are race-free.
+- **Failures** (R61, A8.2):
+  - items-service unavailable on a cold cache (unreachable, deadline, an outage status, an
+    out-of-contract answer): return an error wrapping `commonconstants.ErrTransient`. The
+    transaction rolls back whole and the consumer's existing `handleResult` requeues with its
+    delays (5 s, 15 s, 60 s), then dead-letters. **[spec default]**
   - items-service refuses the potion (`UNKNOWN_ITEM_TEMPLATE` or `ENCLOSURE_INVALID` from
-    `prepareLetters`): log at error with the member id and event id, return a **non-transient**
-    error; the transaction rolls back and the event is dead-lettered.
-  - Never store a partial welcome (no gold-only fallback, no letter without its gift).
+    `prepareLetters`): log at error with the member id, and store the welcome with its **gold
+    enclosure only**; the inbox mark, the signup notification and that letter commit, the event is
+    acked and the push follows. The refusal is not cached. **[charter default]**
+  - A welcome is never stored without its gold.
 - **The push** (R62): after `runInTx` returns success (committed), announce through the arrival
   publisher: one `{"member_id": M}` on `mail:arrived`, outside the transaction; a failed publish
   is logged at warn and the event is still acked. On `ErrAlreadyProcessed` or any error, publish
@@ -73,15 +80,20 @@ no proto, no `common/errcode`, no gateway, no client, no items-service file.
       and body, 3 Small Health Potions as a snapshot at the template's `min_item_level`, 100 gold,
       expiry 30 days after it was stored.
 - [ ] The same event delivered twice stores one welcome letter, calls `ResolveItemSnapshots`
-      once and publishes `mail:arrived` once.
+      at most once and publishes `mail:arrived` once.
+- [ ] Once a welcome has resolved the potion, a later signup stores its welcome with the cached
+      snapshot and calls no items RPC.
+- [ ] Concurrent signups on a cold cache each store one whole welcome (race detector clean).
 - [ ] Two events for two accounts store one welcome letter each.
 - [ ] After the commit, exactly one `{"member_id": M}` is published; with the publisher failing,
       the letter and the notification are stored and the handler returns success.
-- [ ] With the items resolver unavailable, the handler returns an `ErrTransient`-wrapped error
-      and nothing is stored (no inbox mark, no notification, no letter); a later call with the
-      resolver back stores all three once.
-- [ ] With the items resolver refusing the template, the handler returns a non-transient error,
-      logs at error, and nothing is stored.
+- [ ] With the cache empty and the items resolver unavailable, the handler returns an
+      `ErrTransient`-wrapped error and nothing is stored (no inbox mark, no notification, no
+      letter); the cache stays empty, and a later call with the resolver back stores all three
+      once.
+- [ ] With the items resolver refusing the template, the handler returns success, logs at error,
+      and stores the inbox mark, the signup notification and a welcome holding only 100 gold; the
+      next signup calls the resolver again.
 - [ ] A failure forced in the letter insert rolls back the inbox mark and the notification too.
 - [ ] The stored welcome letter shows in that member's mailbox and summary, and (once I-1GZGD-4
       is merged) its claim mints three potions and credits 100 gold once.
@@ -104,5 +116,7 @@ FS-1GZGD §Amendment 2026-11-04 (A7) A7.1, A7.3; §Requirements R52, R57–R62; 
   event asks the seam to store one welcome for that member on the same transaction, and that a
   second delivery (inbox says already processed) asks nothing and announces nothing.
 - RED: a test that a resolver outage surfaces as `ErrTransient` and leaves nothing stored.
+- RED: mailbox tests that a second welcome uses the cached snapshot, that an outage or a refusal
+  leaves the cache empty, and that a refusal stores a gold-only welcome.
 - GREEN: the seam interface in `internal/notification`, its mailbox implementation, and the
   wiring in `config/routes.go`.
