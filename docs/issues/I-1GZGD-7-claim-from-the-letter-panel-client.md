@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-7
-status: in-progress
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-4, I-1GZGD-6, I-1GZGD-8, I-1GZGD-9]
 labels: [ready-for-agent]
@@ -81,3 +81,7 @@ Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review
 A9.1 as corrected after the round-2 review: the confirming summary fetch follows every Take outcome, failures included, and a failed mark read restores the letter's unread dot; a sibling child is bringing the client in line with this, so the presenter boxes above hold once that fix merges.
 
 **Pending manual check in the browser (Nick):** Take a letter with items and gold (the items match what the letter showed, the gold arrives); two tabs on one letter (the second Take is refused and shows taken after a reload); a stash too full ("Your stash needs N free slots"); the live push: a letter sent to a player standing in the town lights and pulses the envelope without a reload, one sent during a delve shows on return, and a broadcast lights every town player's envelope; with services down, Take shows "The seal would not break. Try again." Close this issue once all of them are seen.
+
+## Closed (2026-11-04)
+
+Manual checks passed on the running stack (Nick, 2026-11-04). FS-1GZGD is shipped (merged to main and pushed).

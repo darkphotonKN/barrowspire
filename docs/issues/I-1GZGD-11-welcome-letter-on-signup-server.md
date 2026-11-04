@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-11
-status: in-progress
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3, I-1GZGD-8, I-1GZGD-10]
 labels: [ready-for-agent]
@@ -135,3 +135,7 @@ live signup therefore got a gold-only welcome (A8.2 working as designed). Fixed 
 the potion is found by catalogue name (`WELCOME_GIFT_TEMPLATE_NAME`, default "Lesser Heal
 Potion") through `ListItemTemplates`, cached with its snapshot (commits 8e351b5b, ad1c10e5,
 7bb7fe4b). The pending manual check above now expects 3 Lesser Heal Potions.
+
+## Closed (2026-11-04)
+
+Manual checks passed on the running stack (Nick, 2026-11-04). FS-1GZGD is shipped (merged to main and pushed).

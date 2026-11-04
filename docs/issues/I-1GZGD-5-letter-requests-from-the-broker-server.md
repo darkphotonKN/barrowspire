@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-5
-status: in-progress
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3, I-1GZGD-8, I-1GZGD-10]
 labels: [ready-for-agent]
@@ -89,3 +89,7 @@ default S2. User stories 27, 28.
 Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review fix round was merged at `fb1abf5c` and is recorded as FS-1GZGD amendment A9. Every criterion has a test, so the boxes are ticked; A9.4 added one behaviour: a request whose store or transaction fails rolls back and is requeued as transient instead of dead-lettered. Wrap-up run: `go test ./...` passes in notification-service, including the `ProcessLetterRequestedDB` tests against a throwaway schema.
 
 **Pending manual check (Nick):** publish a `mail.letter.requested` by hand (RabbitMQ management UI, `mailbox.events` exchange, routing key `mail.letter.requested`, with a `source`) against the running stack, and see one `system` letter in the member's mailbox. Close this issue (`status: done`) once that is seen.
+
+## Closed (2026-11-04)
+
+Manual checks passed on the running stack (Nick, 2026-11-04). FS-1GZGD is shipped (merged to main and pushed).

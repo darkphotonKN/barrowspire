@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-6
-status: in-progress
+status: done
 implements: FS-1GZGD
 blocked_by: [I-1GZGD-3]
 labels: [ready-for-agent]
@@ -103,3 +103,7 @@ Merged on `feat/notification-mailbox` (not on main, not pushed); the code-review
 A9.1 as corrected after the round-2 review: a failed mark read restores the letter's unread dot (and the seal); a sibling child is bringing the client in line with this.
 
 **Pending manual check in the browser (Nick):** the envelope's position (bottom-right of the town HUD) and look; the pulse on town entry for a letter sent while away; reading a letter lowers the seal (and it settles on the server's count); Esc closes the panel and WASD does not move the character while it is open; the enclosure tip on an item slot. Close this issue once all of them are seen.
+
+## Closed (2026-11-04)
+
+Manual checks passed on the running stack (Nick, 2026-11-04). FS-1GZGD is shipped (merged to main and pushed).
