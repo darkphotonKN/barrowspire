@@ -81,9 +81,25 @@ func welcomeDB(t *testing.T) *sqlx.DB {
 // potionItems resolves every template to a potion snapshot, unless down or
 // refusing. It is never asked for instances or grants here.
 type potionItems struct {
-	calls  int
-	down   bool
-	refuse bool
+	calls   int
+	down    bool
+	refuse  bool
+	missing bool
+}
+
+// welcomePotionID is the id the test catalogue gives the welcome potion's name.
+var welcomePotionID = uuid.MustParse("aa0e8400-e29b-41d4-a716-446655440006")
+
+// FindTemplateByName answers the welcome potion's id, unless down or missing from the catalogue
+// (FS-1GZGD A10). It does not count as a resolve.
+func (p *potionItems) FindTemplateByName(_ context.Context, name string) (uuid.UUID, bool, error) {
+	if p.down {
+		return uuid.Nil, false, mailbox.ErrItemsUnavailable
+	}
+	if p.missing || name != mailbox.DefaultWelcomeGiftName {
+		return uuid.Nil, false, nil
+	}
+	return welcomePotionID, true, nil
 }
 
 func (p *potionItems) ResolveItemSnapshots(_ context.Context, templates []mailbox.TemplateRef, _ []uuid.UUID) (*mailbox.Resolution, error) {
@@ -141,7 +157,8 @@ func newWelcomeRig(t *testing.T, failInsert bool) *welcomeRig {
 	}
 	rig := &welcomeRig{db: db, items: &potionItems{}, arrivals: &recordedArrivals{}}
 	inboxRepo := inbox.NewRepo()
-	mailboxService := mailbox.NewService(db, letters, rig.items, nil, rig.arrivals, inboxRepo, 8)
+	mailboxService := mailbox.NewService(db, letters, rig.items, nil, rig.arrivals, inboxRepo, 8).
+		WithWelcomeGift(rig.items, "")
 	rig.svc = NewService(db, NewRepository(db), inboxRepo, nil, mailboxService)
 	return rig
 }
@@ -211,7 +228,7 @@ func TestProcessMemberSignedUpDB_StoresMarkNotificationAndWelcomeOnce(t *testing
 	require.Len(t, enclosures, 2)
 	assert.Equal(t, int32(3), enclosures[0].Quantity)
 	require.NotNil(t, enclosures[0].Item)
-	assert.Equal(t, uuid.MustParse("aa0e8400-e29b-41d4-a716-446655440006"), enclosures[0].Item.TemplateID)
+	assert.Equal(t, welcomePotionID, enclosures[0].Item.TemplateID)
 	assert.Equal(t, int64(100), enclosures[1].Gold)
 
 	assert.Equal(t, 1, rig.items.calls, "the redelivery called no items RPC")
@@ -275,4 +292,23 @@ func TestProcessMemberSignedUpDB_LetterInsertFailureRollsBackMarkAndNotification
 	assert.Zero(t, rig.notifications(t, member), "the notification rolled back")
 	assert.Zero(t, rig.count(t, `SELECT COUNT(*) FROM letters`))
 	assert.Empty(t, rig.arrivals.batches)
+}
+
+// The potion's name is not in this environment's catalogue: signup still commits, and the welcome
+// carries its gold only (FS-1GZGD A10).
+func TestProcessMemberSignedUpDB_PotionNotInTheCatalogueStoresAGoldOnlyWelcome(t *testing.T) {
+	rig := newWelcomeRig(t, false)
+	rig.items.missing = true
+	eventID, member := uuid.New(), uuid.New()
+
+	require.NoError(t, rig.svc.ProcessMemberSignedUp(context.Background(), signedUp(eventID, member)))
+
+	assert.Equal(t, 1, rig.processed(t, eventID))
+	assert.Equal(t, 1, rig.notifications(t, member))
+	rows := rig.welcomes(t, member)
+	require.Len(t, rows, 1)
+	enclosures := enclosureKinds(t, rows[0].Enclosures)
+	require.Len(t, enclosures, 1)
+	assert.Equal(t, mailbox.EnclosureGold, enclosures[0].Kind)
+	assert.Zero(t, rig.items.calls, "nothing to resolve without a template")
 }
