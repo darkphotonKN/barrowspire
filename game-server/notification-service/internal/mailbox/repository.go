@@ -23,7 +23,7 @@ func NewRepository(db *sqlx.DB) *repository {
 }
 
 // letterColumns per inserted row.
-const letterColumns = 8
+const letterColumns = 10
 
 // InsertLetters stores letters in one statement on tx, so the caller's
 // transaction decides what commits with them: the admin send commits them
@@ -34,7 +34,7 @@ func (r *repository) InsertLetters(ctx context.Context, tx sqlx.ExtContext, lett
 	}
 
 	var query strings.Builder
-	query.WriteString(`INSERT INTO letters (id, title, body, sender, member_id, enclosures, sent_at, expires_at) VALUES `)
+	query.WriteString(`INSERT INTO letters (id, title, body, sender, member_id, enclosures, sent_at, expires_at, sent_by_member_id, sent_by_source) VALUES `)
 	args := make([]any, 0, len(letters)*letterColumns)
 	for i, l := range letters {
 		enclosures, err := json.Marshal(nonNilEnclosures(l.Enclosures))
@@ -45,8 +45,16 @@ func (r *repository) InsertLetters(ctx context.Context, tx sqlx.ExtContext, lett
 			query.WriteString(", ")
 		}
 		n := i * letterColumns
-		fmt.Fprintf(&query, "($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)", n+1, n+2, n+3, n+4, n+5, n+6, n+7, n+8)
-		args = append(args, l.ID, l.Title, l.Body, string(l.Sender), l.MemberID, enclosures, l.SentAt, l.ExpiresAt)
+		query.WriteString("(")
+		for c := 1; c <= letterColumns; c++ {
+			if c > 1 {
+				query.WriteString(", ")
+			}
+			fmt.Fprintf(&query, "$%d", n+c)
+		}
+		query.WriteString(")")
+		args = append(args, l.ID, l.Title, l.Body, string(l.Sender), l.MemberID, enclosures, l.SentAt, l.ExpiresAt,
+			l.SentBy.MemberID, sentBySource(l.SentBy.Source))
 	}
 
 	if _, err := tx.ExecContext(ctx, query.String(), args...); err != nil {
@@ -288,6 +296,12 @@ func updateOne(ctx context.Context, tx sqlx.ExtContext, op, query string, letter
 		return fmt.Errorf("%s of letter %s for member %s: %w", op, letterID, member, errStateNotMoved)
 	}
 	return nil
+}
+
+// sentBySource stores an official letter's absent source as NULL, never as
+// an empty string.
+func sentBySource(source SentBySource) sql.NullString {
+	return sql.NullString{String: string(source), Valid: source != ""}
 }
 
 // nonNilEnclosures keeps "no enclosures" a JSON [] on the way in and an empty

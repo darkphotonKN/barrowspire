@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -333,5 +336,53 @@ func TestHandlerClaimLetter_Failures(t *testing.T) {
 			assert.Equal(t, code, got)
 			assert.Equal(t, string(code), st.Message(), "no service context on the wire")
 		})
+	}
+}
+
+// R56: the sent-by audit is never shown to players. The notification proto is
+// the only way a letter leaves this service (the gateway, its openapi and the
+// generated client are all derived from it), so no message in it may carry a
+// sent-by field.
+func TestNoNotificationMessageCarriesTheSentByAudit(t *testing.T) {
+	var walk func(protoreflect.MessageDescriptors)
+	walk = func(messages protoreflect.MessageDescriptors) {
+		for i := 0; i < messages.Len(); i++ {
+			m := messages.Get(i)
+			fields := m.Fields()
+			for j := 0; j < fields.Len(); j++ {
+				name := strings.ToLower(string(fields.Get(j).Name()))
+				assert.NotContains(t, strings.ReplaceAll(name, "_", ""), "sentby",
+					"%s.%s would show the sent-by audit", m.FullName(), fields.Get(j).Name())
+			}
+			walk(m.Messages())
+		}
+	}
+	walk(pb.File_api_proto_notification_notification_proto.Messages())
+}
+
+// R56 at the handler: a stored letter's sent-by never reaches an answer.
+func TestHandler_AnswersNeverCarryTheSentBy(t *testing.T) {
+	member, sender := uuid.New(), uuid.New()
+	official := letterTo(&member, now)
+	official.SentBy = SentBy{MemberID: &sender}
+	system := letterTo(nil, now)
+	system.Sender, system.SentBy = SenderSystem, SentBy{Source: "test.compensation"}
+	svc := &fakeService{
+		letters: []MailboxLetter{{Letter: official, ClaimState: ClaimNone}, {Letter: system, ClaimState: ClaimNone}},
+		sent:    &SentLetters{Letters: []SentLetter{{LetterID: official.ID, MemberID: &member}}, ExpiresAt: official.ExpiresAt},
+	}
+	h := NewHandler(svc)
+	ctx := as(commonauth.Identity{MemberID: sender, Role: commonauth.RoleAdmin})
+
+	listed, err := h.ListLetters(ctx, &pb.ListLettersRequest{})
+	require.NoError(t, err)
+	sent, err := h.SendLetter(ctx, sendRequest(memberRecipient(member.String())))
+	require.NoError(t, err)
+
+	for _, res := range []proto.Message{listed, sent} {
+		wire, err := protojson.Marshal(res)
+		require.NoError(t, err)
+		assert.NotContains(t, string(wire), sender.String(), "the admin's member id")
+		assert.NotContains(t, string(wire), "test.compensation", "the sent-by source")
 	}
 }

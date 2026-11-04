@@ -107,7 +107,7 @@ func (s *service) SendLetter(ctx context.Context, caller commonauth.Identity, dr
 		return nil, ErrNotAdmin
 	}
 
-	letters, err := s.prepareLetters(ctx, draft, SenderOfficial)
+	letters, err := s.prepareLetters(ctx, draft, officialFrom(caller.MemberID))
 	if err != nil {
 		return nil, err
 	}
@@ -123,11 +123,31 @@ func (s *service) SendLetter(ctx context.Context, caller commonauth.Identity, dr
 	return sentLetters(letters), nil
 }
 
+// origin is who a send speaks for: the sender kind a reader sees and the
+// sent-by audit only operators see (A7.2). Built only by officialFrom and
+// systemFrom, so the two always agree, as the letters CHECK demands (R53).
+type origin struct {
+	sender Sender
+	sentBy SentBy
+}
+
+// officialFrom is the admin send's origin: the admin is the verified token's
+// member, never anything the request names (R55).
+func officialFrom(admin uuid.UUID) origin {
+	return origin{sender: SenderOfficial, sentBy: SentBy{MemberID: &admin}}
+}
+
+// systemFrom is the system path's origin: the letter request's source, or a
+// letter trigger's fixed name (R55).
+func systemFrom(source SentBySource) origin {
+	return origin{sender: SenderSystem, sentBy: SentBy{Source: source}}
+}
+
 // prepareLetters checks a draft, resolves its item enclosures once and builds
-// the letters to store, one per recipient, identical but for id and member.
-// Nothing is stored. The letter request (I-1GZGD-5) stores its result in its
-// own inbox transaction.
-func (s *service) prepareLetters(ctx context.Context, draft LetterDraft, sender Sender) ([]Letter, error) {
+// the letters to store, one per recipient, identical but for id and member,
+// each stamped with from's sender kind and sent-by. Nothing is stored. The
+// letter request (I-1GZGD-5) stores its result in its own inbox transaction.
+func (s *service) prepareLetters(ctx context.Context, draft LetterDraft, from origin) ([]Letter, error) {
 	now := s.now()
 
 	recipients, err := recipientsOf(draft.Recipient)
@@ -160,7 +180,8 @@ func (s *service) prepareLetters(ctx context.Context, draft LetterDraft, sender 
 			ID:         uuid.New(),
 			Title:      title,
 			Body:       body,
-			Sender:     sender,
+			Sender:     from.sender,
+			SentBy:     from.sentBy,
 			MemberID:   member,
 			Enclosures: enclosures,
 			SentAt:     now,
