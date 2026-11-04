@@ -719,6 +719,52 @@ describe("mailbox store: the seal and the list converge on the server (D12)", ()
     expect(store.getState().summary?.waitingCount).toBe(1);
   });
 
+  it("a read the server refused leaves the letter unread in the list, as the seal counts it", async () => {
+    const { store, api, state } = setup({ letters: [letter({ id: "a" })] });
+    api.markRead.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await store.getState().enterTown();
+    await store.getState().openPanel();
+    await settle();
+
+    expect(store.getState().selectedId).toBe("a");
+    expect(store.getState().letters[0].read).toBe(false);
+    expect(store.getState().summary?.unreadCount).toBe(1);
+
+    // opening it again tries the read again, and this time it holds
+    await store.getState().select("a");
+    await settle();
+    expect(api.markRead).toHaveBeenCalledTimes(2);
+    expect(store.getState().letters[0].read).toBe(true);
+    expect(store.getState().summary).toEqual(counted(state.letters));
+  });
+
+  it("a Take that timed out after the server took the letter settles the seal on the server's count", async () => {
+    const { store, api, state } = setup({ letters: [gold({ id: "held" })] });
+    await store.getState().enterTown();
+    await store.getState().openPanel();
+    expect(store.getState().summary?.waitingCount).toBe(1);
+
+    // the gateway's deadline answers 503 just after notification committed the claim
+    api.claim.mockImplementationOnce(async () => {
+      Object.assign(state.letters[0], { claimState: "claimed" });
+      throw new ApiError({
+        code: "SERVICE_UNAVAILABLE",
+        status: 503,
+        detail: "deadline exceeded",
+        errors: [],
+      });
+    });
+    await store.getState().take("held");
+    await settle();
+
+    expect(store.getState().takeWarning).toEqual({
+      letterId: "held",
+      text: SEAL_WOULD_NOT_BREAK,
+    });
+    expect(store.getState().summary).toEqual(counted(state.letters));
+    expect(store.getState().summary?.waitingCount).toBe(0);
+  });
+
   it("only the latest of two openings applies its letters and opens a letter, on a slow network", async () => {
     const { store, api, state } = setup({ letters: [letter({ id: "a" })] });
     await store.getState().enterTown();
