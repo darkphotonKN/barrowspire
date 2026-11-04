@@ -1279,10 +1279,10 @@ func (h *Handler) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (
 // ListStaleReserved answers the reservations older than older_than that still
 // wait for their listing. A missing or non-positive age would make every
 // reservation stale, a listing created a second ago included, so it is refused.
+//
+// The three reconciler methods take no caller: marketplace's background worker
+// has no member token to forward (see publicMethods in common/auth).
 func (h *Handler) ListStaleReserved(ctx context.Context, req *pb.ListStaleReservedRequest) (*pb.ListStaleReservedResponse, error) {
-	if _, ok := commonauth.MemberIDFromCtx(ctx); !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing identity")
-	}
 	olderThan := req.GetOlderThan()
 	if olderThan == nil || olderThan.CheckValid() != nil || olderThan.AsDuration() <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "older_than must be a positive duration")
@@ -1308,7 +1308,7 @@ func (h *Handler) ListStaleReserved(ctx context.Context, req *pb.ListStaleReserv
 // rows (already confirmed, or another listing's reservation) is success: there is
 // nothing left for the reconciler to cancel.
 func (h *Handler) CancelReservation(ctx context.Context, req *pb.CancelReservationRequest) (*pb.CancelReservationResponse, error) {
-	itemID, listingID, err := reservationIDs(ctx, req.GetItemId(), req.GetListingId())
+	itemID, listingID, err := reservationIDs(req.GetItemId(), req.GetListingId())
 	if err != nil {
 		return nil, err
 	}
@@ -1322,7 +1322,7 @@ func (h *Handler) CancelReservation(ctx context.Context, req *pb.CancelReservati
 // ConfirmReservation marks a reservation as matched by its listing. Zero rows is
 // success, for the same reason as CancelReservation.
 func (h *Handler) ConfirmReservation(ctx context.Context, req *pb.ConfirmReservationRequest) (*pb.ConfirmReservationResponse, error) {
-	itemID, listingID, err := reservationIDs(ctx, req.GetItemId(), req.GetListingId())
+	itemID, listingID, err := reservationIDs(req.GetItemId(), req.GetListingId())
 	if err != nil {
 		return nil, err
 	}
@@ -1333,12 +1333,9 @@ func (h *Handler) ConfirmReservation(ctx context.Context, req *pb.ConfirmReserva
 	return &pb.ConfirmReservationResponse{}, nil
 }
 
-// reservationIDs checks the caller and parses the two ids that name one
-// reservation; both are required, or the write would not be fenced.
-func reservationIDs(ctx context.Context, rawItemID, rawListingID string) (uuid.UUID, uuid.UUID, error) {
-	if _, ok := commonauth.MemberIDFromCtx(ctx); !ok {
-		return uuid.Nil, uuid.Nil, status.Error(codes.Unauthenticated, "missing identity")
-	}
+// reservationIDs parses the two ids that name one reservation; both are
+// required, or the write would not be fenced.
+func reservationIDs(rawItemID, rawListingID string) (uuid.UUID, uuid.UUID, error) {
 	itemID, err := uuid.Parse(rawItemID)
 	if err != nil {
 		return uuid.Nil, uuid.Nil, status.Error(codes.InvalidArgument, "item id invalid")

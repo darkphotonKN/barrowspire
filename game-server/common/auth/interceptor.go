@@ -33,6 +33,16 @@ import (
 // members the event names. Remove it with the wallet entries once a service
 // credential exists.
 //
+// items' reservation reconciler methods are the same kind of call too:
+// marketplace's ReconcileWorker sweeps on a background ticker, with no request
+// behind it and so no member token. Every write is fenced on the item id and the
+// listing id together, and only while the reservation still waits for its
+// listing (reserved_at set, the first 10-15 minutes of a listing). Both ids are
+// on the public Bazaar pages, though, and ListStaleReserved hands out the ids of
+// orphans, so until a service credential exists anyone inside the cluster could
+// cancel a fresh listing or confirm an orphan so it is never released. Remove
+// these with the others once a service credential exists.
+//
 // The marketplace reads below are the opposite case: genuinely public, and meant
 // to stay that way. They back the Bazaar page a signed-out visitor browses
 // (FS-8EGFA §Requirements 6, 10), so there is no token to ask for, and they reveal
@@ -58,6 +68,9 @@ var publicMethods = map[string]bool{
 	"/wallet.WalletService/ReleaseHold":            true,
 	"/wallet.WalletService/ListStaleReservedHolds": true,
 	"/items.ItemsService/ApplySettlement":          true,
+	"/items.ItemsService/ListStaleReserved":        true,
+	"/items.ItemsService/CancelReservation":        true,
+	"/items.ItemsService/ConfirmReservation":       true,
 
 	"/marketplace.MarketplaceService/BrowseListings": true,
 	"/marketplace.MarketplaceService/GetListing":     true,
