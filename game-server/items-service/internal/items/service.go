@@ -151,6 +151,8 @@ type Repository interface {
 	TemplateItemTypesTx(ctx context.Context, tx *sqlx.Tx, ids []uuid.UUID) (map[uuid.UUID]string, error)
 	RarityIDsTx(ctx context.Context, tx *sqlx.Tx) (map[string]uuid.UUID, error)
 	InsertItemInstancesAtTx(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance, location string) error
+	TemplateFacts(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*TemplateFacts, error)
+	InstanceSnapshots(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*ItemSnapshot, error)
 }
 
 func (s *service) CreateItemInstance(createItemInstanceReq *ItemInstance) (*ItemInstance, error) {

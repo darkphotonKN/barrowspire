@@ -43,6 +43,16 @@ import (
 // cancel a fresh listing or confirm an orphan so it is never released. Remove
 // these with the others once a service credential exists.
 //
+// items' ResolveItemSnapshots is a service call too: notification-service resolves
+// a letter's item enclosures into snapshots when the letter is sent (FS-1GZGD R21),
+// and a letter request from the broker has no member behind it, so there is no
+// token to forward. It writes nothing and answers what GetItemSummaries already
+// answers publicly (an item's facts, never its owner, status, location or
+// listing), plus catalogue facts of templates, which ListItemTemplates already
+// serves. So it exposes nothing new; it is listed with the service calls because a
+// service credential is still the check it should have. Its sibling GrantItems is
+// not here: a grant mints into the forwarded token's member's stash.
+//
 // The marketplace reads below are the opposite case: genuinely public, and meant
 // to stay that way. They back the Bazaar page a signed-out visitor browses
 // (FS-8EGFA §Requirements 6, 10), so there is no token to ask for, and they reveal
@@ -71,6 +81,7 @@ var publicMethods = map[string]bool{
 	"/items.ItemsService/ListStaleReserved":        true,
 	"/items.ItemsService/CancelReservation":        true,
 	"/items.ItemsService/ConfirmReservation":       true,
+	"/items.ItemsService/ResolveItemSnapshots":     true,
 
 	"/marketplace.MarketplaceService/BrowseListings": true,
 	"/marketplace.MarketplaceService/GetListing":     true,

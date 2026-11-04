@@ -1806,17 +1806,12 @@ func (r *repository) CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member,
 // concurrent insert of the same id waits for the other transaction and then
 // records nothing if that one committed (FS-1GZGD R20).
 func (r *repository) InsertItemGrantTx(ctx context.Context, tx *sqlx.Tx, grant *ItemGrant) (bool, error) {
-	ids := make([]string, 0, len(grant.ItemIDs))
-	for _, id := range grant.ItemIDs {
-		ids = append(ids, id.String())
-	}
-
 	var recorded string
 	err := tx.GetContext(ctx, &recorded, `
 		INSERT INTO item_grants (grant_id, member_id, item_ids)
 		VALUES ($1, $2, $3::uuid[])
 		ON CONFLICT (grant_id) DO NOTHING
-		RETURNING grant_id`, grant.GrantID, grant.MemberID, pq.Array(ids))
+		RETURNING grant_id`, grant.GrantID, grant.MemberID, pq.Array(uuidStrings(grant.ItemIDs)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -1889,6 +1884,87 @@ func (r *repository) RarityIDsTx(ctx context.Context, tx *sqlx.Tx) (map[string]u
 		ids[row.Code] = row.ID
 	}
 	return ids, nil
+}
+
+// TemplateFacts answers the base item facts of each known template among ids,
+// for a template snapshot: name, item type, base stats, description, required
+// level, min_item_level and a unique's effect text. An unknown id is absent.
+func (r *repository) TemplateFacts(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*TemplateFacts, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]*TemplateFacts{}, nil
+	}
+
+	query := `
+	 SELECT it.id, it.id AS template_id, it.item_name AS name, it.item_type,
+	        w.weapon_type, a.armor_slot,
+	        w.attack_power, w.critical_rate,
+	        a.defense_rating, a.magic_resistance,
+	        c.healing_amount, c.mana_amount, c.buff_duration,
+	        COALESCE(w.description, a.description, c.description, rg.description) AS description,
+	        COALESCE(it.required_level, 1) AS required_level,
+	        it.min_item_level,
+	        u.effect_text AS unique_effect_text
+	 FROM item_templates AS it
+	 LEFT JOIN weapons AS w ON w.id = it.item_id AND it.item_type = 'weapon'
+	 LEFT JOIN armors AS a ON a.id = it.item_id AND it.item_type = 'armor'
+	 LEFT JOIN consumables AS c ON c.id = it.item_id AND it.item_type = 'consumable'
+	 LEFT JOIN rings AS rg ON rg.id = it.item_id AND it.item_type = 'ring'
+	 LEFT JOIN unique_items AS u ON u.template_id = it.id
+	 WHERE it.id = ANY($1::uuid[])
+	`
+
+	var rows []*TemplateFacts
+	if err := r.DB.SelectContext(ctx, &rows, query, pq.Array(uuidStrings(ids))); err != nil {
+		return nil, wrapDBErr("read template facts", err)
+	}
+
+	facts := make(map[uuid.UUID]*TemplateFacts, len(rows))
+	for _, row := range rows {
+		facts[row.ID] = row
+	}
+	return facts, nil
+}
+
+// InstanceSnapshots answers each known instance among ids as an item snapshot,
+// a copy as it stands (FS-1GZGD A1): its template, own name, description,
+// stats, rarity code, item level, derived required level, affixes and its
+// template's unique effect text. The column list is the privacy rule, as for
+// item summaries: no owner, source, status, location, listing or run is
+// selected. Durability is the template's, so none. An unknown id is absent.
+func (r *repository) InstanceSnapshots(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*ItemSnapshot, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]*ItemSnapshot{}, nil
+	}
+
+	query := `
+	 SELECT ii.id, ii.template_id, ii.name, ii.description, ii.item_type,
+	        ii.weapon_type, ii.armor_slot,
+	        COALESCE(r.rarity_code, '') AS rarity,
+	        ii.attack_power, ii.critical_rate,
+	        ii.defense_rating, ii.magic_resistance,
+	        ii.healing_amount, ii.mana_amount, ii.buff_duration,
+	        ` + instanceLevelColumns + `,
+	        u.effect_text AS unique_effect_text
+	 FROM item_instances AS ii
+	 JOIN item_templates AS t ON t.id = ii.template_id
+	 ` + uniqueEffectJoin + `
+	 LEFT JOIN item_rarities AS r ON r.id = ii.rarity_id
+	 WHERE ii.id = ANY($1::uuid[])
+	`
+
+	var rows []struct {
+		ID uuid.UUID `db:"id"`
+		ItemSnapshot
+	}
+	if err := r.DB.SelectContext(ctx, &rows, query, pq.Array(uuidStrings(ids))); err != nil {
+		return nil, wrapDBErr("read instance snapshots", err)
+	}
+
+	snapshots := make(map[uuid.UUID]*ItemSnapshot, len(rows))
+	for i := range rows {
+		snapshots[rows[i].ID] = &rows[i].ItemSnapshot
+	}
+	return snapshots, nil
 }
 
 func uuidStrings(ids []uuid.UUID) []string {

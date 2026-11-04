@@ -102,7 +102,8 @@ type Service interface {
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
 
-	// item grants (FS-1GZGD)
+	// item snapshots and grants (FS-1GZGD)
+	ResolveItemSnapshots(ctx context.Context, templates []TemplateSnapshotRequest, instanceIDs []uuid.UUID) (*SnapshotResolution, error)
 	GrantItems(ctx context.Context, member uuid.UUID, grantID string, lines []GrantLine) (*GrantResult, error)
 }
 
@@ -1481,11 +1482,7 @@ func (h *Handler) GrantItems(ctx context.Context, req *pb.GrantItemsRequest) (*p
 	if got.AlreadyGranted {
 		slog.InfoContext(ctx, "grant items: already granted", "member_id", member, "grant_id", grantID)
 	}
-	ids := make([]string, 0, len(got.ItemIDs))
-	for _, id := range got.ItemIDs {
-		ids = append(ids, id.String())
-	}
-	return &pb.GrantItemsResponse{ItemIds: ids, AlreadyGranted: got.AlreadyGranted}, nil
+	return &pb.GrantItemsResponse{ItemIds: uuidStrings(got.ItemIDs), AlreadyGranted: got.AlreadyGranted}, nil
 }
 
 // snapshotFromProto reads a wire snapshot as it is; whether it can be minted
@@ -1525,10 +1522,106 @@ func snapshotFromProto(in *pb.ItemSnapshot) (*ItemSnapshot, error) {
 	}, nil
 }
 
+// snapshotToProto keeps absence as absence, as toProtoItemSummary does.
+func snapshotToProto(s *ItemSnapshot) *pb.ItemSnapshot {
+	return &pb.ItemSnapshot{
+		TemplateId:       s.TemplateID.String(),
+		Name:             s.Name,
+		Description:      s.Description,
+		ItemType:         s.ItemType,
+		WeaponType:       s.WeaponType,
+		ArmorSlot:        s.ArmorSlot,
+		Rarity:           s.Rarity,
+		AttackPower:      int32Ptr(s.AttackPower),
+		CriticalRate:     s.CriticalRate,
+		DefenseRating:    int32Ptr(s.DefenseRating),
+		MagicResistance:  int32Ptr(s.MagicResistance),
+		HealingAmount:    int32Ptr(s.HealingAmount),
+		ManaAmount:       int32Ptr(s.ManaAmount),
+		BuffDuration:     int32Ptr(s.BuffDuration),
+		Durability:       int32Ptr(s.Durability),
+		ItemLevel:        int32(s.ItemLevel),
+		RequiredLevel:    int32(s.RequiredLevel),
+		Affixes:          affixesToProto(s.Affixes),
+		UniqueEffectText: s.UniqueEffectText,
+	}
+}
+
 func intPtr(v *int32) *int {
 	if v == nil {
 		return nil
 	}
 	i := int(*v)
 	return &i
+}
+
+// maxSnapshotIDs bounds each list of one ResolveItemSnapshots call: a letter
+// holds at most 10 enclosures (FS-1GZGD S1), so a caller never needs more.
+const maxSnapshotIDs = 100
+
+// ResolveItemSnapshots answers item snapshots for templates and existing
+// instances (FS-1GZGD R21). Tokenless (see publicMethods in common/auth): it
+// reads no caller and answers no owner, status, location or listing. Results
+// are index-aligned with the request; what did not resolve is named in the
+// unknown and unrepresentable lists, not an error.
+func (h *Handler) ResolveItemSnapshots(ctx context.Context, req *pb.ResolveItemSnapshotsRequest) (*pb.ResolveItemSnapshotsResponse, error) {
+	if len(req.GetTemplates()) > maxSnapshotIDs || len(req.GetInstanceIds()) > maxSnapshotIDs {
+		return nil, status.Errorf(codes.InvalidArgument, "at most %d templates and %d instance ids", maxSnapshotIDs, maxSnapshotIDs)
+	}
+	if len(req.GetTemplates())+len(req.GetInstanceIds()) == 0 {
+		return &pb.ResolveItemSnapshotsResponse{}, nil
+	}
+
+	templates := make([]TemplateSnapshotRequest, 0, len(req.GetTemplates()))
+	for _, t := range req.GetTemplates() {
+		id, err := uuid.Parse(t.GetTemplateId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid template_id")
+		}
+		templates = append(templates, TemplateSnapshotRequest{TemplateID: id, ItemLevel: intPtr(t.ItemLevel)})
+	}
+	instanceIDs, err := parseIDs(req.GetInstanceIds())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid instance id")
+	}
+
+	got, err := h.service.ResolveItemSnapshots(ctx, templates, instanceIDs)
+	if err != nil {
+		slog.ErrorContext(ctx, "resolve item snapshots failed", "error", err)
+		return nil, status.Error(codes.Internal, "resolve item snapshots failed")
+	}
+
+	return &pb.ResolveItemSnapshotsResponse{
+		Templates:          resolvedToProto(req.GetTemplates(), got.Templates, func(t *pb.TemplateSnapshotRequest) string { return t.GetTemplateId() }),
+		Instances:          resolvedToProto(req.GetInstanceIds(), got.Instances, func(id string) string { return id }),
+		UnknownTemplateIds: uuidStrings(got.UnknownTemplateIDs),
+		UnknownInstanceIds: uuidStrings(got.UnknownInstanceIDs),
+		UnrepresentableIds: uuidStrings(got.UnrepresentableIDs),
+	}, nil
+}
+
+// resolvedToProto pairs each requested id with its snapshot, absent where it
+// did not resolve.
+func resolvedToProto[T any](requested []T, snapshots []*ItemSnapshot, idOf func(T) string) []*pb.ResolvedItemSnapshot {
+	out := make([]*pb.ResolvedItemSnapshot, 0, len(requested))
+	for i, r := range requested {
+		resolved := &pb.ResolvedItemSnapshot{Id: idOf(r)}
+		if i < len(snapshots) && snapshots[i] != nil {
+			resolved.Snapshot = snapshotToProto(snapshots[i])
+		}
+		out = append(out, resolved)
+	}
+	return out
+}
+
+func parseIDs(raw []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, r := range raw {
+		id, err := uuid.Parse(r)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

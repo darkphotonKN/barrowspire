@@ -595,6 +595,34 @@ type ItemSnapshot struct {
 	UniqueEffectText *string `db:"unique_effect_text"`
 }
 
+// TemplateFacts is what a template snapshot is made from: the template's base
+// item facts and the lowest item level it drops at.
+type TemplateFacts struct {
+	ID           uuid.UUID `db:"id"`
+	MinItemLevel int       `db:"min_item_level"`
+	ItemSnapshot
+}
+
+// TemplateSnapshotRequest asks for a fresh item of a template, at ItemLevel
+// when it is set, else at the template's min_item_level (FS-1GZGD A1).
+type TemplateSnapshotRequest struct {
+	TemplateID uuid.UUID
+	ItemLevel  *int
+}
+
+// SnapshotResolution answers a resolve. Templates and Instances are
+// index-aligned with the request, nil where the id did not resolve; the id
+// lists name each id that did not, once.
+type SnapshotResolution struct {
+	Templates          []*ItemSnapshot
+	Instances          []*ItemSnapshot
+	UnknownTemplateIDs []uuid.UUID
+	UnknownInstanceIDs []uuid.UUID
+	// UnrepresentableIDs are known ids that cannot be minted: an item level
+	// below 1, or a copy source with a malformed affix.
+	UnrepresentableIDs []uuid.UUID
+}
+
 // GrantLine is one entry of an item grant: Quantity new instances, each
 // exactly as Snapshot describes.
 type GrantLine struct {
