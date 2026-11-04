@@ -244,9 +244,13 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	}
 	presence := newPresenceKeeper(presenceWriter, boot.hubOccupancy, server, podID, podAddr, boot.partyNow, redisWriter)
 	messageHub := NewMessageHub(server, newSender, podID, podAddr, announcer, chat, party, presence, jobs)
+	// a mail arrival reaches the players standing in this pod's hub (FS-1GZGD R42, R43)
+	mail := newMailArrivals(boot.mailBus, server, newSender)
+	messageHub.mail = mail
 	go messageHub.Run(ctx)
 	chat.start(ctx)
 	inbox.start(ctx)
+	mail.start(ctx)
 
 	server.createHubSession()
 	server.createFieldSessions(fields)
