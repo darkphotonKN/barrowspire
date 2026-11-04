@@ -138,6 +138,28 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 - **Invite prompt** — the small carved prompt an incoming invite raises, with Accept, Decline and
   a countdown on the client's own clock. Not the skeleton row (that is the inviting side's view).
 
+## Mailbox terms (FS-1GZGD)
+
+- **Mailbox** — the player's in-game letters, opened from the **envelope** in the town only
+  (never in a delve or a field). The screen and the code say mailbox and letter; never "mail",
+  "inbox" or "email" (the account's email is a different thing on the web pages). Maps to
+  notification-service's Mailbox and `/api/mail/*`.
+- **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
+  in Phaser with a small **wax seal**. Not an emoji and not a Heroicon (the HUD is canvas).
+- **Wax seal** (on the envelope) — the indicator: lit, with a count, while any letter is unread
+  or still holds unclaimed enclosures; dark only when everything is read and claimed. The
+  **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
+  after it the seal stays lit. A lit seal dot on a list row means that letter is unread.
+- **Letter panel** — the centered carved panel the envelope opens: the letter list on the left,
+  the open letter on the right. While it is open WASD does not move the character.
+- **Enclosed row** — the row of bag-sized slots under a letter's body showing its enclosures:
+  item icons with the item tip, "x3" for a quantity, the gold under a pouch.
+- **Claim** (a letter) — taking every enclosure of a letter into the stash at once with the one
+  **Claim** button. Afterwards the letter wears a **Claimed** wax stamp. See the voice-rule note
+  under *Open*.
+- **Gold pouch** — an item that holds gold (tip: "Holds N gold"); **Open** in its tip turns it
+  into gold in the player's purse. Lives only in the stash.
+
 ## Rendering terms (canvas presentation, [ADR-0020](../docs/adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) / FS-2325V)
 
 These are engineering words, not lore. They name how the canvas draws the world, and like the lore
@@ -384,5 +406,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Escaping vs dying.** The end-of-run overlay distinguishes them (`current_player === null` ⇒
   escaped) but the vocabulary does not. The guideline offers *"Few return whole"* for death; the
   successful case has no term.
+- **"Claim" on a letter vs the voice rule.** *Voice rules* reserve "Acquire" / "Claim" for
+  in-game-gold purchases; FS-1GZGD's charter put "Claim" on the letter's button, where nothing
+  is bought. Kept as the charter decided; whether the voice rule should name letters too, or the
+  button should take another verb, is unsettled.
 - `game-server/game-service/CONTEXT.md` is still empty. When it is populated, the protocol column
   of the mapping table above becomes a link rather than a restatement.

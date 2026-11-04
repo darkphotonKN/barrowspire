@@ -22,6 +22,12 @@
 - [ ] Affixes and item level on owned instances → FS-4R9M9
 - [x] Bag and stash locations on owned instances → FS-VPD8Y
 - [x] In-run status on owned instances → FS-18Z5F
+- [ ] Gold pouch instances → FS-1GZGD
+- [ ] Open a gold pouch → FS-1GZGD
+
+## Grants
+
+- [ ] Idempotent item grants into the stash → FS-1GZGD
 
 ## Marketplace settlement
 

@@ -124,6 +124,14 @@ server state and sends intents. ✅
 - [x] The Spire's entrance at the back of the hub → FS-0XMCP
 - [x] The Warden as storyteller, not the queue → FS-0XMCP
 - [x] Town building interiors → FS-B0H2D
+- [ ] Open a gold pouch → FS-1GZGD
+
+### Mailbox
+
+- [ ] Mailbox in the hub HUD → FS-1GZGD
+- [ ] New-letter indicator on the mailbox → FS-1GZGD
+- [ ] Read letters → FS-1GZGD
+- [ ] Claim a letter's enclosures → FS-1GZGD
 
 ### Field worlds
 
