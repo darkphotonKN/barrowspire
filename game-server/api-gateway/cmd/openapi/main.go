@@ -20,6 +20,7 @@ import (
 	itemgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
 	ledgergw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	listinggw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
+	mailboxgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/mailbox"
 	notifgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
 	statsgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
 	walletgw "github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
@@ -40,6 +41,7 @@ func main() {
 		Listing:      listinggw.NewHandler(nil, nil),
 		Wallet:       walletgw.NewHandler(nil),
 		Characters:   charactergw.NewHandler(nil),
+		Mailbox:      mailboxgw.NewHandler(nil),
 	})
 
 	spec, err := api.OpenAPI().YAML()
