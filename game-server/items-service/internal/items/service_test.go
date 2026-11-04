@@ -3,6 +3,7 @@ package items
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
+	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/proto"
@@ -734,5 +736,380 @@ func TestServiceUpdateLoadout_RefusesAnItemNotAvailable(t *testing.T) {
 				t.Errorf("calls = %v, want %v", repo.calls, tt.wantCalls)
 			}
 		})
+	}
+}
+
+// reserveRepo stubs the three calls a reservation makes, in a transaction run
+// inline, and records the order they come in. The embedded interface is nil:
+// anything else the service reaches for panics the test.
+type reserveRepo struct {
+	Repository
+	placement  *ItemPlacement
+	reserveErr error
+
+	calls     []string
+	lockedFor uuid.UUID
+	readFor   uuid.UUID
+}
+
+func (r *reserveRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member uuid.UUID) error {
+	r.calls = append(r.calls, "lock")
+	r.lockedFor = member
+	return nil
+}
+
+func (r *reserveRepo) ItemPlacementTx(_ context.Context, _ *sqlx.Tx, owner, _ uuid.UUID) (*ItemPlacement, error) {
+	r.calls = append(r.calls, "read")
+	r.readFor = owner
+	return r.placement, nil
+}
+
+func (r *reserveRepo) ReserveItemTx(_ context.Context, _ *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, _ time.Time) (*ItemInstance, error) {
+	r.calls = append(r.calls, "reserve")
+	if r.reserveErr != nil {
+		return nil, r.reserveErr
+	}
+	return &ItemInstance{ID: itemID, TemplateID: uuid.New(), OwnerMemberID: sellerID, Status: "LISTED", ListingID: &listingID}, nil
+}
+
+// recordingOutbox records the outbox rows a service writes.
+type recordingOutbox struct {
+	rows []commonoutbox.OutboxParams
+}
+
+func (o *recordingOutbox) CreateOutbox(_ context.Context, params commonoutbox.OutboxParams) error {
+	o.rows = append(o.rows, params)
+	return nil
+}
+
+func (o *recordingOutbox) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, params commonoutbox.OutboxParams) error {
+	o.rows = append(o.rows, params)
+	return nil
+}
+
+// FS-HBXZN R1-R4: under the seller's account lock the placement is read, and
+// the first failing check answers: not the seller's → ErrNotFound; not
+// AVAILABLE → ITEM_NOT_AVAILABLE, worn or not; worn → ITEM_WORN. Only then is
+// the conditional reserve run, and a reserve that matches no row is
+// ITEM_NOT_AVAILABLE. A refused reservation writes no outbox row.
+func TestServiceReserveItem_Rules(t *testing.T) {
+	available := func(worn bool) *ItemPlacement {
+		return &ItemPlacement{Status: itemStatusAvailable, Location: LocationBag, Worn: worn}
+	}
+	dbDown := errors.New("connection refused")
+
+	tests := []struct {
+		name        string
+		repo        *reserveRepo
+		wantErr     error
+		wantRefusal errcode.Code
+		wantCalls   []string
+	}{
+		{name: "unknown or foreign instance is not found",
+			repo: &reserveRepo{}, wantErr: commonconstants.ErrNotFound, wantCalls: []string{"lock", "read"}},
+		{name: "worn is refused",
+			repo: &reserveRepo{placement: available(true)}, wantRefusal: errcode.ItemWorn, wantCalls: []string{"lock", "read"}},
+		{name: "listed is not available",
+			repo: &reserveRepo{placement: &ItemPlacement{Status: "LISTED", Location: LocationBag}}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
+		{name: "pending settlement is not available",
+			repo: &reserveRepo{placement: &ItemPlacement{Status: "PENDING_SETTLEMENT", Location: LocationBag}}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
+		{name: "worn and in a run is not available, not worn",
+			repo: &reserveRepo{placement: &ItemPlacement{Status: itemStatusInRun, Location: LocationBag, Worn: true}}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
+		{name: "unworn and available is reserved",
+			repo: &reserveRepo{placement: available(false)}, wantCalls: []string{"lock", "read", "reserve"}},
+		{name: "a reserve that matches no row is not available",
+			repo: &reserveRepo{placement: available(false), reserveErr: ErrItemNotReservable}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read", "reserve"}},
+		{name: "a reserve failure is returned, not read as a refusal",
+			repo: &reserveRepo{placement: available(false), reserveErr: dbDown}, wantErr: dbDown, wantCalls: []string{"lock", "read", "reserve"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seller, itemID := uuid.New(), uuid.New()
+			outbox := &recordingOutbox{}
+			svc := &service{repo: tt.repo, withTx: runInline, outboxPublisher: outbox}
+
+			item, err := svc.ReserveItem(context.Background(), seller, itemID, 100, nil, time.Now().Add(time.Hour))
+
+			switch {
+			case tt.wantRefusal != "":
+				var refusal *errcode.Refusal
+				if !errors.As(err, &refusal) || refusal.Code != tt.wantRefusal {
+					t.Fatalf("err = %v, want refusal %s", err, tt.wantRefusal)
+				}
+			case tt.wantErr != nil:
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				var refusal *errcode.Refusal
+				if errors.As(err, &refusal) {
+					t.Fatalf("err = %v, must not read as a refusal", err)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if item.ID != itemID || item.Status != "LISTED" {
+					t.Errorf("item = %+v, want %v LISTED", item, itemID)
+				}
+			}
+
+			wantRows := 0
+			if err == nil {
+				wantRows = 1
+			}
+			if len(outbox.rows) != wantRows {
+				t.Errorf("outbox rows = %d, want %d", len(outbox.rows), wantRows)
+			}
+			if got := strings.Join(tt.repo.calls, ","); got != strings.Join(tt.wantCalls, ",") {
+				t.Errorf("calls = %v, want %v", tt.repo.calls, tt.wantCalls)
+			}
+			if tt.repo.lockedFor != seller || tt.repo.readFor != seller {
+				t.Errorf("locked %v, read for %v; want the seller %v", tt.repo.lockedFor, tt.repo.readFor, seller)
+			}
+		})
+	}
+}
+
+// wearIn puts id in owner's loadout slot column.
+func wearIn(t *testing.T, ctx context.Context, db *sqlx.DB, owner, id uuid.UUID, column string) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `INSERT INTO player_loadouts (member_id, `+column+`) VALUES ($1, $2)`, owner, id); err != nil {
+		t.Fatalf("wear in %s: %v", column, err)
+	}
+	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
+}
+
+// Opt-in and committed. The reservation's checks against a real schema: a
+// worn instance (a weapon slot and a consumable slot) is refused ITEM_WORN and
+// left untouched; an unworn one is reserved as before; a listed one, and one
+// worn in a run, are not available; a missing and a foreign one read the same,
+// not found (FS-HBXZN R1-R4). The outbox is recorded rather than written, so
+// no ItemReserved for a test item can reach a live outbox worker.
+func TestServiceReserveItem_AgainstTheSchema(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	reserve := func(seller, itemID uuid.UUID) (*recordingOutbox, error) {
+		outbox := &recordingOutbox{}
+		_, err := NewService(NewRepository(db), db, nil, outbox, nil).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
+		return outbox, err
+	}
+	refusedWith := func(t *testing.T, err error, code errcode.Code) {
+		t.Helper()
+		var refusal *errcode.Refusal
+		if !errors.As(err, &refusal) || refusal.Code != code {
+			t.Fatalf("err = %v, want refusal %s", err, code)
+		}
+	}
+
+	for _, column := range []string{"weapon_instance_id", "consumable_1_id"} {
+		t.Run("worn in "+column+" is refused and untouched", func(t *testing.T) {
+			owner := uuid.New()
+			item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+			wearIn(t, ctx, db, owner, item, column)
+
+			outbox, err := reserve(owner, item)
+
+			refusedWith(t, err, errcode.ItemWorn)
+			if r := reservationOf(t, ctx, db, item); r.Status != itemStatusAvailable || r.ListingID != nil || r.ReservedAt != nil {
+				t.Errorf("item = %+v, want AVAILABLE with no listing", r)
+			}
+			if len(outbox.rows) != 0 {
+				t.Errorf("outbox rows = %d, want none", len(outbox.rows))
+			}
+		})
+	}
+
+	t.Run("unworn and available is reserved", func(t *testing.T) {
+		owner := uuid.New()
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+
+		outbox, err := reserve(owner, item)
+
+		if err != nil {
+			t.Fatalf("reserve: %v", err)
+		}
+		if r := reservationOf(t, ctx, db, item); r.Status != "LISTED" || r.ListingID == nil || r.ReservedAt == nil {
+			t.Errorf("item = %+v, want LISTED with a listing and reserved_at", r)
+		}
+		if len(outbox.rows) != 1 || outbox.rows[0].RoutingKey != commonconstants.ItemReserved {
+			t.Errorf("outbox rows = %+v, want one %s", outbox.rows, commonconstants.ItemReserved)
+		}
+	})
+
+	t.Run("listed is not available", func(t *testing.T) {
+		owner := uuid.New()
+		item := seedAt(t, ctx, db, owner, "LISTED", LocationBag)
+
+		_, err := reserve(owner, item)
+
+		refusedWith(t, err, errcode.ItemNotAvailable)
+	})
+
+	t.Run("worn and in a run is not available, not worn", func(t *testing.T) {
+		owner := uuid.New()
+		item := seedInRun(t, ctx, db, owner, LocationBag, uuid.New())
+		wearIn(t, ctx, db, owner, item, "weapon_instance_id")
+
+		_, err := reserve(owner, item)
+
+		refusedWith(t, err, errcode.ItemNotAvailable)
+	})
+
+	t.Run("missing and foreign are not found alike", func(t *testing.T) {
+		owner := uuid.New()
+		foreign := seedAt(t, ctx, db, uuid.New(), itemStatusAvailable, LocationBag)
+
+		for name, item := range map[string]uuid.UUID{"missing": uuid.New(), "foreign": foreign} {
+			_, err := reserve(owner, item)
+
+			if !errors.Is(err, commonconstants.ErrNotFound) {
+				t.Errorf("%s: err = %v, want not found", name, err)
+			}
+		}
+		if r := reservationOf(t, ctx, db, foreign); r.Status != itemStatusAvailable || r.ListingID != nil {
+			t.Errorf("foreign item = %+v, want untouched", r)
+		}
+	})
+}
+
+// midEquipRepo starts a reservation of the item being equipped after the
+// equip has written the loadout and before it commits, and lets the equip
+// commit only once the reservation is seen waiting: the window a reserve
+// without the account lock would read "not worn" in and then win the item row
+// once the equip commits.
+type midEquipRepo struct {
+	*repository
+	reserve func() (<-chan error, error)
+	result  <-chan error
+}
+
+func (r *midEquipRepo) UpsertLoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, req *UpdateLoadoutRequest) error {
+	if err := r.repository.UpsertLoadoutSlotTx(ctx, tx, req); err != nil {
+		return err
+	}
+	result, err := r.reserve()
+	r.result = result
+	return err
+}
+
+// awaitAccountLockWaiter returns once another session is blocked on member's
+// account lock, and fails if done reports first or nothing waits in time.
+func awaitAccountLockWaiter(ctx context.Context, db *sqlx.DB, member uuid.UUID, done <-chan error) error {
+	const waiter = `
+		SELECT EXISTS (
+			SELECT 1 FROM pg_locks
+			WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+			AND ((classid::bigint << 32) | objid::bigint) = hashtextextended('items.account:' || $1::text, 0)
+		)`
+	deadline := time.After(5 * time.Second)
+	for {
+		var waiting bool
+		if err := db.GetContext(ctx, &waiting, waiter, member); err != nil {
+			return fmt.Errorf("read lock waiters: %w", err)
+		}
+		if waiting {
+			return nil
+		}
+		select {
+		case err := <-done:
+			return fmt.Errorf("reserve finished without waiting on the account lock: %v", err)
+		case <-deadline:
+			return errors.New("reserve never waited on the account lock")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// Opt-in and committed. A reservation that starts while an equip of the same
+// item is uncommitted waits for it behind the seller's account lock and then
+// sees the item worn (FS-HBXZN R3).
+func TestServiceReserveItem_WaitsForAnEquipInProgress(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	owner := uuid.New()
+	item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
+
+	reserver := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+	repo := &midEquipRepo{repository: NewRepository(db), reserve: func() (<-chan error, error) {
+		done := make(chan error, 1)
+		go func() {
+			_, err := reserver.ReserveItem(ctx, owner, item, 100, nil, time.Now().Add(time.Hour))
+			done <- err
+		}()
+		return done, awaitAccountLockWaiter(ctx, db, owner, done)
+	}}
+
+	if err := NewService(repo, db, nil, nil, nil).UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: &item}); err != nil {
+		t.Fatalf("equip: %v", err)
+	}
+	if repo.result == nil {
+		t.Fatal("the equip never wrote the loadout slot, so no reservation was started")
+	}
+
+	var err error
+	select {
+	case err = <-repo.result:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reserve did not finish within 5s of the equip committing")
+	}
+	var refusal *errcode.Refusal
+	if !errors.As(err, &refusal) || refusal.Code != errcode.ItemWorn {
+		t.Fatalf("reserve = %v, want ITEM_WORN", err)
+	}
+	if r := reservationOf(t, ctx, db, item); r.Status != itemStatusAvailable || r.ListingID != nil {
+		t.Errorf("item = %+v, want AVAILABLE with no listing", r)
+	}
+}
+
+// Opt-in and committed. An equip and a reservation of the same instance, run
+// at once and repeated: both take the seller's account lock, so every run ends
+// with exactly one of them succeeding, and the instance is never both worn and
+// LISTED (FS-HBXZN R3, §Edge States "Equip and list race").
+func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+
+	for i := range 25 {
+		owner := uuid.New()
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
+
+		start := make(chan struct{})
+		equipped, reserved := make(chan error, 1), make(chan error, 1)
+		go func() {
+			<-start
+			equipped <- svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: &item})
+		}()
+		go func() {
+			<-start
+			_, err := svc.ReserveItem(ctx, owner, item, 100, nil, time.Now().Add(time.Hour))
+			reserved <- err
+		}()
+		close(start)
+		equipErr, reserveErr := <-equipped, <-reserved
+
+		var refusal *errcode.Refusal
+		switch {
+		case equipErr == nil && reserveErr == nil:
+			t.Fatalf("run %d: both the equip and the reservation succeeded", i)
+		case equipErr == nil:
+			if !errors.As(reserveErr, &refusal) || refusal.Code != errcode.ItemWorn {
+				t.Fatalf("run %d: equip won, reserve = %v, want ITEM_WORN", i, reserveErr)
+			}
+		case reserveErr == nil:
+			if !errors.As(equipErr, &refusal) || refusal.Code != errcode.ItemNotAvailable {
+				t.Fatalf("run %d: reserve won, equip = %v, want ITEM_NOT_AVAILABLE", i, equipErr)
+			}
+		default:
+			t.Fatalf("run %d: neither succeeded: equip = %v, reserve = %v", i, equipErr, reserveErr)
+		}
+
+		placement := &ItemPlacement{}
+		if err := db.GetContext(ctx, placement, placementQuery, item, owner); err != nil {
+			t.Fatalf("run %d: read back: %v", i, err)
+		}
+		if placement.Worn && placement.Status == "LISTED" {
+			t.Fatalf("run %d: item is both worn and LISTED", i)
+		}
 	}
 }

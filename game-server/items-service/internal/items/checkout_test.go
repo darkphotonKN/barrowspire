@@ -463,7 +463,8 @@ func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 
 // listingRepo reserves the item for a listing, committed on its own
 // connection, after the checkout has read the loadout and before it writes:
-// a listing never takes the account lock, so this is the race it can win.
+// the bare conditional reserve, without the account lock ReserveItem now takes
+// (FS-HBXZN R3), so the checkout's own conditional write is what is tested.
 type listingRepo struct {
 	*repository
 	db     *sqlx.DB
