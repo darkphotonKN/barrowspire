@@ -571,7 +571,7 @@ func TestReturnItem_RetryAfterRelist_LeavesTheNewListingAlone(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	now := time.Now()
-	if _, err := repo.ReserveItemTx(ctx, tx, seller, itemID, newListing, now, now); err != nil {
+	if _, err := repo.ReserveItemTx(ctx, tx, seller, itemID, newListing, now); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("relist: %v", err)
 	}
@@ -769,8 +769,13 @@ func TestListingRelease_KeepsLocation(t *testing.T) {
 		{name: "returned unsold", release: func(r *repository, itemID, listingID uuid.UUID) error {
 			return r.ReturnItem(ctx, itemID, listingID)
 		}},
-		{name: "reservation cancelled", release: func(r *repository, itemID, _ uuid.UUID) error {
-			_, err := r.CancelReservation(ctx, itemID)
+		{name: "reservation cancelled", release: func(r *repository, itemID, listingID uuid.UUID) error {
+			// the reconciler only cancels a reservation still waiting for its listing
+			markReservedAgo(t, ctx, db, itemID, 11*time.Minute)
+			ok, err := r.CancelReservation(ctx, itemID, listingID)
+			if err == nil && !ok {
+				return errors.New("cancel matched no row")
+			}
 			return err
 		}},
 	}
@@ -838,7 +843,7 @@ func TestReserveItemTx_SetsListingID(t *testing.T) {
 				t.Fatalf("begin: %v", err)
 			}
 			now := time.Now()
-			item, err := NewRepository(db).ReserveItemTx(ctx, tx, seller, itemID, listingID, now, now)
+			item, err := NewRepository(db).ReserveItemTx(ctx, tx, seller, itemID, listingID, now)
 			if tt.wantReserved {
 				if err != nil {
 					tx.Rollback()
@@ -1315,7 +1320,7 @@ type reservingRepo struct {
 
 func (r *reservingRepo) CountUnwornAtTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID, location string) (int, error) {
 	err := commonutils.ExecTx(ctx, r.db, nil, func(listing *sqlx.Tx) error {
-		_, err := r.ReserveItemTx(ctx, listing, r.seller, r.itemID, uuid.New(), time.Now(), time.Now())
+		_, err := r.ReserveItemTx(ctx, listing, r.seller, r.itemID, uuid.New(), time.Now())
 		return err
 	})
 	if err != nil {
@@ -1570,7 +1575,7 @@ func (r *lockProbeRepo) UpsertLoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, re
 		if _, err := listing.ExecContext(ctx, `SET LOCAL lock_timeout = '200ms'`); err != nil {
 			return err
 		}
-		_, err := r.ReserveItemTx(ctx, listing, r.owner, r.itemID, uuid.New(), time.Now(), time.Now())
+		_, err := r.ReserveItemTx(ctx, listing, r.owner, r.itemID, uuid.New(), time.Now())
 		return err
 	})
 	return r.repository.UpsertLoadoutSlotTx(ctx, tx, req)
@@ -1621,7 +1626,7 @@ func TestMarketplaceWrites_LeaveAnInRunItemAlone(t *testing.T) {
 	}{
 		{"ReserveItem", func(owner, item, _ uuid.UUID) error {
 			err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
-				_, err := repo.ReserveItemTx(ctx, tx, owner, item, uuid.New(), time.Now(), time.Now())
+				_, err := repo.ReserveItemTx(ctx, tx, owner, item, uuid.New(), time.Now())
 				return err
 			})
 			if !errors.Is(err, ErrItemNotReservable) {
@@ -1629,9 +1634,15 @@ func TestMarketplaceWrites_LeaveAnInRunItemAlone(t *testing.T) {
 			}
 			return nil
 		}},
-		{"CancelReservation", func(_, item, _ uuid.UUID) error {
-			if ok, err := repo.CancelReservation(ctx, item); ok || err != nil {
+		{"CancelReservation", func(_, item, listing uuid.UUID) error {
+			if ok, err := repo.CancelReservation(ctx, item, listing); ok || err != nil {
 				return fmt.Errorf("cancel = %v, %v; want false, nil", ok, err)
+			}
+			return nil
+		}},
+		{"ConfirmReservation", func(_, item, listing uuid.UUID) error {
+			if ok, err := repo.ConfirmReservation(ctx, item, listing); ok || err != nil {
+				return fmt.Errorf("confirm = %v, %v; want false, nil", ok, err)
 			}
 			return nil
 		}},
@@ -1806,5 +1817,164 @@ func TestDeleteConsumedItemInstancesTx_OwnerScopedRunFencedAndIdempotent(t *test
 	again, err := repo.DeleteConsumedItemInstancesTx(ctx, tx, member, runA, []uuid.UUID{drunk1, drunk2})
 	if err != nil || again != 0 {
 		t.Fatalf("second delete got (%d, %v), want (0, nil)", again, err)
+	}
+}
+
+// markReservedAgo backdates an item's reservation on the database clock, the
+// clock the reconciler measures with.
+func markReservedAgo(t *testing.T, ctx context.Context, db *sqlx.DB, itemID uuid.UUID, ago time.Duration) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx,
+		`UPDATE item_instances SET reserved_at = NOW() - make_interval(secs => $2) WHERE id = $1`,
+		itemID, ago.Seconds()); err != nil {
+		t.Fatalf("backdate reservation: %v", err)
+	}
+}
+
+type reservationRow struct {
+	Status     string     `db:"status"`
+	ListingID  *uuid.UUID `db:"listing_id"`
+	ReservedAt *time.Time `db:"reserved_at"`
+}
+
+func reservationOf(t *testing.T, ctx context.Context, db *sqlx.DB, itemID uuid.UUID) reservationRow {
+	t.Helper()
+	var row reservationRow
+	if err := db.GetContext(ctx, &row, `SELECT status, listing_id, reserved_at FROM item_instances WHERE id = $1`, itemID); err != nil {
+		t.Fatalf("read reservation: %v", err)
+	}
+	return row
+}
+
+// Opt-in and committed. ReserveItemTx stamps reserved_at from the database clock,
+// the same clock ListStaleReserved measures against, so the 10-minute age is
+// never skewed by a Go process's clock or time zone.
+func TestReserveItemTx_StampsReservedAtOnTheDatabaseClock(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	seller, itemID := uuid.New(), uuid.New()
+	seedItemInstanceForListing(t, ctx, db, itemID, seller, "AVAILABLE", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil)
+
+	err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
+		_, err := NewRepository(db).ReserveItemTx(ctx, tx, seller, itemID, uuid.New(), time.Now())
+		return err
+	})
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	var age float64
+	if err := db.GetContext(ctx, &age, `SELECT EXTRACT(EPOCH FROM NOW() - reserved_at) FROM item_instances WHERE id = $1`, itemID); err != nil {
+		t.Fatalf("read age: %v", err)
+	}
+	if age < 0 || age > 60 {
+		t.Errorf("reservation age = %.0fs on the database clock, want just now", age)
+	}
+}
+
+// Opt-in and committed. Only a LISTED reservation older than the age, still
+// waiting for its listing (reserved_at set), is stale; it comes back with the
+// listing it was made for.
+func TestListStaleReserved_OnlyReservationsOlderThanTheAge(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	seed := func(status string, reservedAgo time.Duration, confirmed bool) StaleReservation {
+		r := StaleReservation{ItemID: uuid.New(), ListingID: uuid.New()}
+		seedItemInstanceForListing(t, ctx, db, r.ItemID, uuid.New(), status, earlier, &r.ListingID)
+		markReservedAgo(t, ctx, db, r.ItemID, reservedAgo)
+		if confirmed {
+			if _, err := db.ExecContext(ctx, `UPDATE item_instances SET reserved_at = NULL WHERE id = $1`, r.ItemID); err != nil {
+				t.Fatalf("confirm seed: %v", err)
+			}
+		}
+		return r
+	}
+	stale := seed("LISTED", 11*time.Minute, false)
+	fresh := seed("LISTED", 9*time.Minute, false)
+	confirmed := seed("LISTED", 30*time.Minute, true)
+	notListed := seed("AVAILABLE", 30*time.Minute, false)
+
+	got, err := repo.ListStaleReserved(ctx, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("ListStaleReserved: %v", err)
+	}
+
+	found := map[uuid.UUID]StaleReservation{}
+	for _, r := range got {
+		found[r.ItemID] = r
+	}
+	if r, ok := found[stale.ItemID]; !ok || r != stale {
+		t.Errorf("stale reservation = %v, %v; want %v", r, ok, stale)
+	}
+	for name, r := range map[string]StaleReservation{"younger than the age": fresh, "already confirmed": confirmed, "not listed": notListed} {
+		if _, ok := found[r.ItemID]; ok {
+			t.Errorf("%s reservation %s came back stale", name, r.ItemID)
+		}
+	}
+}
+
+// Opt-in and committed. The reconciler's two writes act only on the reservation
+// for the named listing, and only while it is still waiting (reserved_at set).
+// Cancel gives the item back AVAILABLE with no listing; confirm keeps it LISTED
+// and stops it being asked about again.
+func TestReservationReconcileWrites(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	type write func(itemID, listingID uuid.UUID) (bool, error)
+	cancel := func(itemID, listingID uuid.UUID) (bool, error) { return repo.CancelReservation(ctx, itemID, listingID) }
+	confirm := func(itemID, listingID uuid.UUID) (bool, error) {
+		return repo.ConfirmReservation(ctx, itemID, listingID)
+	}
+
+	tests := []struct {
+		name         string
+		write        write
+		otherListing bool
+		confirmed    bool
+		wantOK       bool
+		wantStatus   string
+		wantListing  bool
+		wantReserved bool
+	}{
+		{name: "cancel a waiting reservation", write: cancel, wantOK: true, wantStatus: "AVAILABLE"},
+		{name: "cancel names another listing", write: cancel, otherListing: true, wantStatus: "LISTED", wantListing: true, wantReserved: true},
+		{name: "cancel an already confirmed reservation", write: cancel, confirmed: true, wantStatus: "LISTED", wantListing: true},
+		{name: "confirm a waiting reservation", write: confirm, wantOK: true, wantStatus: "LISTED", wantListing: true},
+		{name: "confirm names another listing", write: confirm, otherListing: true, wantStatus: "LISTED", wantListing: true, wantReserved: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			itemID, listingID := uuid.New(), uuid.New()
+			seedItemInstanceForListing(t, ctx, db, itemID, uuid.New(), "LISTED", earlier, &listingID)
+			markReservedAgo(t, ctx, db, itemID, 11*time.Minute)
+			if tt.confirmed {
+				if _, err := db.ExecContext(ctx, `UPDATE item_instances SET reserved_at = NULL WHERE id = $1`, itemID); err != nil {
+					t.Fatalf("confirm seed: %v", err)
+				}
+			}
+			named := listingID
+			if tt.otherListing {
+				named = uuid.New()
+			}
+
+			ok, err := tt.write(itemID, named)
+
+			if err != nil || ok != tt.wantOK {
+				t.Fatalf("write = %v, %v; want %v, nil", ok, err, tt.wantOK)
+			}
+			row := reservationOf(t, ctx, db, itemID)
+			if row.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", row.Status, tt.wantStatus)
+			}
+			if hasListing := row.ListingID != nil && *row.ListingID == listingID; hasListing != tt.wantListing || (!tt.wantListing && row.ListingID != nil) {
+				t.Errorf("listing_id = %v, want kept = %v", row.ListingID, tt.wantListing)
+			}
+			if (row.ReservedAt != nil) != tt.wantReserved {
+				t.Errorf("reserved_at = %v, want set = %v", row.ReservedAt, tt.wantReserved)
+			}
+		})
 	}
 }

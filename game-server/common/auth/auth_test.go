@@ -182,6 +182,9 @@ var serviceCalled = []string{
 	"/wallet.WalletService/ReleaseHold",
 	"/wallet.WalletService/ListStaleReservedHolds",
 	"/items.ItemsService/ApplySettlement",
+	"/items.ItemsService/ListStaleReserved",
+	"/items.ItemsService/CancelReservation",
+	"/items.ItemsService/ConfirmReservation",
 }
 
 // The service-called methods have to reach their handler without metadata at all.

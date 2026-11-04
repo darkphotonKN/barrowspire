@@ -42,6 +42,7 @@ const (
 	ItemsService_ReserveItem_FullMethodName                 = "/items.ItemsService/ReserveItem"
 	ItemsService_ListStaleReserved_FullMethodName           = "/items.ItemsService/ListStaleReserved"
 	ItemsService_CancelReservation_FullMethodName           = "/items.ItemsService/CancelReservation"
+	ItemsService_ConfirmReservation_FullMethodName          = "/items.ItemsService/ConfirmReservation"
 	ItemsService_GetItemSummaries_FullMethodName            = "/items.ItemsService/GetItemSummaries"
 )
 
@@ -93,6 +94,9 @@ type ItemsServiceClient interface {
 	ReserveItem(ctx context.Context, in *ReserveItemRequest, opts ...grpc.CallOption) (*ReserveItemResponse, error)
 	ListStaleReserved(ctx context.Context, in *ListStaleReservedRequest, opts ...grpc.CallOption) (*ListStaleReservedResponse, error)
 	CancelReservation(ctx context.Context, in *CancelReservationRequest, opts ...grpc.CallOption) (*CancelReservationResponse, error)
+	// Marks a stale reservation as matched by its listing, so the reconciler stops
+	// asking about it.
+	ConfirmReservation(ctx context.Context, in *ConfirmReservationRequest, opts ...grpc.CallOption) (*ConfirmReservationResponse, error)
 	// Public display facts for item instances, by id. Unknown ids are omitted.
 	GetItemSummaries(ctx context.Context, in *GetItemSummariesRequest, opts ...grpc.CallOption) (*GetItemSummariesResponse, error)
 }
@@ -325,6 +329,16 @@ func (c *itemsServiceClient) CancelReservation(ctx context.Context, in *CancelRe
 	return out, nil
 }
 
+func (c *itemsServiceClient) ConfirmReservation(ctx context.Context, in *ConfirmReservationRequest, opts ...grpc.CallOption) (*ConfirmReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmReservationResponse)
+	err := c.cc.Invoke(ctx, ItemsService_ConfirmReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *itemsServiceClient) GetItemSummaries(ctx context.Context, in *GetItemSummariesRequest, opts ...grpc.CallOption) (*GetItemSummariesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetItemSummariesResponse)
@@ -383,6 +397,9 @@ type ItemsServiceServer interface {
 	ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error)
 	ListStaleReserved(context.Context, *ListStaleReservedRequest) (*ListStaleReservedResponse, error)
 	CancelReservation(context.Context, *CancelReservationRequest) (*CancelReservationResponse, error)
+	// Marks a stale reservation as matched by its listing, so the reconciler stops
+	// asking about it.
+	ConfirmReservation(context.Context, *ConfirmReservationRequest) (*ConfirmReservationResponse, error)
 	// Public display facts for item instances, by id. Unknown ids are omitted.
 	GetItemSummaries(context.Context, *GetItemSummariesRequest) (*GetItemSummariesResponse, error)
 	mustEmbedUnimplementedItemsServiceServer()
@@ -460,6 +477,9 @@ func (UnimplementedItemsServiceServer) ListStaleReserved(context.Context, *ListS
 }
 func (UnimplementedItemsServiceServer) CancelReservation(context.Context, *CancelReservationRequest) (*CancelReservationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelReservation not implemented")
+}
+func (UnimplementedItemsServiceServer) ConfirmReservation(context.Context, *ConfirmReservationRequest) (*ConfirmReservationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmReservation not implemented")
 }
 func (UnimplementedItemsServiceServer) GetItemSummaries(context.Context, *GetItemSummariesRequest) (*GetItemSummariesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetItemSummaries not implemented")
@@ -881,6 +901,24 @@ func _ItemsService_CancelReservation_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ItemsService_ConfirmReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).ConfirmReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_ConfirmReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).ConfirmReservation(ctx, req.(*ConfirmReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ItemsService_GetItemSummaries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetItemSummariesRequest)
 	if err := dec(in); err != nil {
@@ -993,6 +1031,10 @@ var ItemsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelReservation",
 			Handler:    _ItemsService_CancelReservation_Handler,
+		},
+		{
+			MethodName: "ConfirmReservation",
+			Handler:    _ItemsService_ConfirmReservation_Handler,
 		},
 		{
 			MethodName: "GetItemSummaries",

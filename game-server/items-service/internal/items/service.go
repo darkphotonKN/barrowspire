@@ -133,9 +133,10 @@ type Repository interface {
 	ReleaseRunExceptTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, settled []uuid.UUID) (int64, error)
 
 	// marketplace
-	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt, reservedAt time.Time) (*ItemInstance, error)
-	ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error)
-	CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error)
+	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt time.Time) (*ItemInstance, error)
+	ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error)
+	CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
+	ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
 	FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) (bool, error)
 	TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error)
 	UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error
@@ -1576,15 +1577,13 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 // buyoutPrice is marketplace's term, not items': it is forwarded onto the event
 // unread, nil when the seller set none (FS-9XKS6).
 func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error) {
-	now := time.Now()
-	updateAt := now
-	reservedAt := now
+	updateAt := time.Now()
 	// the listing is born with this ID: it rides ItemReserved to marketplace and
 	// fences every later write for this listing (FS-NXP1W Req 24a)
 	listingID := uuid.New()
 	var itemInstance *ItemInstance
 	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
-		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt, reservedAt)
+		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt)
 		if err != nil {
 			return fmt.Errorf("Reserve item service: %w", err)
 		}
@@ -1715,26 +1714,26 @@ func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID
 	return data, nil
 }
 
-func (s *service) ListStaleReserved(ctx context.Context, reserveBefore time.Time) ([]*uuid.UUID, error) {
-
-	itemIds, err := s.repo.ListStaleReserved(ctx, reserveBefore)
+func (s *service) ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error) {
+	stale, err := s.repo.ListStaleReserved(ctx, olderThan)
 	if err != nil {
-		slog.Error("ListStaleReserved service call repo failed:",
-			"error:", err,
-		)
-		return nil, err
+		return nil, fmt.Errorf("list stale reserved: %w", err)
 	}
-	return itemIds, nil
+	return stale, nil
 }
 
-func (s *service) CancelReservation(ctx context.Context, itemID uuid.UUID) (bool, error) {
-
-	ok, err := s.repo.CancelReservation(ctx, itemID)
+func (s *service) CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	ok, err := s.repo.CancelReservation(ctx, itemID, listingID)
 	if err != nil {
-		slog.Error("CancelReservation service call repo failed:",
-			"error:", err,
-		)
-		return false, err
+		return false, fmt.Errorf("cancel reservation: %w", err)
+	}
+	return ok, nil
+}
+
+func (s *service) ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	ok, err := s.repo.ConfirmReservation(ctx, itemID, listingID)
+	if err != nil {
+		return false, fmt.Errorf("confirm reservation: %w", err)
 	}
 	return ok, nil
 }

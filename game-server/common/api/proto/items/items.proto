@@ -1,6 +1,7 @@
 syntax = "proto3";
 package items;
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "api/proto/events/game.proto";
 option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/items";
@@ -58,6 +59,9 @@ service ItemsService {
   rpc ReserveItem(ReserveItemRequest) returns (ReserveItemResponse);
   rpc ListStaleReserved(ListStaleReservedRequest) returns (ListStaleReservedResponse);
   rpc CancelReservation(CancelReservationRequest) returns (CancelReservationResponse);
+  // Marks a stale reservation as matched by its listing, so the reconciler stops
+  // asking about it.
+  rpc ConfirmReservation(ConfirmReservationRequest) returns (ConfirmReservationResponse);
 
   // Public display facts for item instances, by id. Unknown ids are omitted.
   rpc GetItemSummaries(GetItemSummariesRequest) returns (GetItemSummariesResponse);
@@ -516,15 +520,35 @@ message ReserveItemResponse {
 }
 
 message ListStaleReservedRequest {
-  google.protobuf.Timestamp reservedBefore = 1;
+  // was a cutoff timestamp the caller computed on its own clock
+  reserved 1;
+  reserved "reservedBefore";
+  // How long a reservation must have waited for its listing. items-service
+  // measures it on its own database clock, the same clock that stamped the
+  // reservation. Must be positive.
+  google.protobuf.Duration older_than = 2;
+}
+message StaleReservation {
+  string item_id = 1;
+  string listing_id = 2;
 }
 message ListStaleReservedResponse {
-  repeated string item_ids = 1;
+  // was the item ids alone; the listing id now fences the follow-up write
+  reserved 1;
+  reserved "item_ids";
+  repeated StaleReservation reservations = 2;
 }
+// Both ids are required: the write acts only on the reservation for that listing.
 message CancelReservationRequest {
   string item_id = 1;
+  string listing_id = 2;
 }
 message CancelReservationResponse {}
+message ConfirmReservationRequest {
+  string item_id = 1;
+  string listing_id = 2;
+}
+message ConfirmReservationResponse {}
 
 // GetItemSummaries
 // What anyone may see of an item instance: no owner, no source, no price.

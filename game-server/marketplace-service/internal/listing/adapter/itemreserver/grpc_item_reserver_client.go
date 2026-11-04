@@ -60,3 +60,11 @@ func (c *Client) CancelReservation(ctx context.Context, req *pb.CancelReservatio
 	slog.Info("CancelReservation", "item", item)
 	return item, err
 }
+
+func (c *Client) ConfirmReservation(ctx context.Context, req *pb.ConfirmReservationRequest) (*pb.ConfirmReservationResponse, error) {
+	res, err := pb.NewItemsServiceClient(c.conn).ConfirmReservation(ctx, req)
+	if err != nil {
+		slog.Info("ConfirmReservation err", "err", err)
+	}
+	return res, err
+}

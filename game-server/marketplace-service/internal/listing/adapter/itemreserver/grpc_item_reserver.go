@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -65,53 +66,31 @@ func (i *GrpcItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, st
 	return item, nil
 }
 
-func (i *GrpcItemReserver) ListStaleReserved(ctx context.Context, reservedBefore time.Time) (*pb.ListStaleReservedResponse, error) {
+// The three reconciler calls go out without a token: the worker runs on a
+// background ticker with no request, and so no member, behind it. items-service
+// lets them through for that reason (publicMethods in common/auth).
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-	vals := md.Get("authorization")
-	if len(vals) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
-	}
-	outCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		"authorization", vals[0],
-	)
-	req := &pb.ListStaleReservedRequest{
-		ReservedBefore: timestamppb.New(reservedBefore),
-	}
-	itemIds, err := i.client.ListStaleReserved(outCtx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	return itemIds, nil
+// ListStaleReserved asks for the reservations older than olderThan. The age is
+// sent rather than a cutoff, so items-service measures it on the clock that
+// stamped the reservation.
+func (i *GrpcItemReserver) ListStaleReserved(ctx context.Context, olderThan time.Duration) (*pb.ListStaleReservedResponse, error) {
+	return i.client.ListStaleReserved(ctx, &pb.ListStaleReservedRequest{
+		OlderThan: durationpb.New(olderThan),
+	})
 }
 
-func (i *GrpcItemReserver) CancelReservation(ctx context.Context, itemID uuid.UUID) (*pb.CancelReservationResponse, error) {
+// CancelReservation releases the reservation for listingID only.
+func (i *GrpcItemReserver) CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (*pb.CancelReservationResponse, error) {
+	return i.client.CancelReservation(ctx, &pb.CancelReservationRequest{
+		ItemId:    itemID.String(),
+		ListingId: listingID.String(),
+	})
+}
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-	vals := md.Get("authorization")
-	if len(vals) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization")
-	}
-	outCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		"authorization", vals[0],
-	)
-
-	req := &pb.CancelReservationRequest{
-		ItemId: itemID.String(),
-	}
-	items, err := i.client.CancelReservation(outCtx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	return items, nil
+// ConfirmReservation marks the reservation for listingID as matched by its listing.
+func (i *GrpcItemReserver) ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (*pb.ConfirmReservationResponse, error) {
+	return i.client.ConfirmReservation(ctx, &pb.ConfirmReservationRequest{
+		ItemId:    itemID.String(),
+		ListingId: listingID.String(),
+	})
 }
