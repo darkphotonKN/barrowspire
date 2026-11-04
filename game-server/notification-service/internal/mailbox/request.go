@@ -25,7 +25,9 @@ import (
 *     error, the inbox mark committed alone, nil, acked; never requeued, nothing stored.
 *   - items-service unavailable, or any other resolve failure: ErrTransient, rolled back, so
 *     not marked processed; requeued with the consumer's delays, then dead-lettered.
-*   - no usable event id, or the store failing: a plain error, dead-lettered.
+*   - the store failing (begin, inbox mark, insert or commit): ErrTransient too, rolled back
+*     and requeued like an items blip.
+*   - no usable event id: a plain error, dead-lettered.
 **/
 
 // errLetterRequestInvalid marks an event that breaks the letter rules in a way retrying cannot
@@ -72,8 +74,13 @@ func (s *service) ProcessLetterRequested(ctx context.Context, evt *eventspb.Lett
 		stored = letters
 		return nil
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, commonconstants.ErrAlreadyProcessed), errors.Is(err, commonconstants.ErrTransient):
 		return err
+	case err != nil:
+		// the store failed (begin, mark, insert or commit) and rolled back:
+		// nothing is marked, so a redelivery retries it all
+		return fmt.Errorf("store letter request %s: %w: %w", eventID, commonconstants.ErrTransient, err)
 	}
 
 	if len(stored) == 0 {
