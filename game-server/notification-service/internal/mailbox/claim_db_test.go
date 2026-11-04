@@ -22,7 +22,7 @@ import (
 
 func claimDBService(t *testing.T, db *sqlx.DB, items *fakeItems, wallet *fakeWallet) *service {
 	t.Helper()
-	svc := NewService(db, NewRepository(db), items, wallet, &fakeArrivals{}, inbox.NewRepo())
+	svc := NewService(db, NewRepository(db), items, wallet, &fakeArrivals{}, inbox.NewRepo(), 8)
 	svc.now = func() time.Time { return sentAt.Add(time.Hour) }
 	return svc
 }
@@ -198,7 +198,7 @@ func TestClaimDB_StashFullLeavesTheLetterClaimable(t *testing.T) {
 	assertRefused(t, err, errcode.StashFull)
 	assert.Zero(t, itemsSvc.minted())
 	assert.Empty(t, wallet.creditCalls())
-	assert.NotEqual(t, "claimed", claimStateOf(t, db, letter.ID, member))
+	assert.Equal(t, "unclaimed", claimStateOf(t, db, letter.ID, member), "the letter stays unclaimed")
 
 	summary, err := NewRepository(db).Summary(ctx, member, sentAt.Add(time.Hour))
 	require.NoError(t, err)
@@ -263,4 +263,86 @@ func TestClaimDB_RefusalsBeforeTheLockWriteNothing(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, db, "letter_states"))
 	assert.Empty(t, itemsSvc.grants())
 	assert.Empty(t, wallet.creditCalls())
+}
+
+// The claim cap against a real pool: claims in flight each hold a connection
+// for their whole steps, so with the cap taken the next claim is answered busy
+// at once, and the reads, the summary and mark read still get a connection and
+// answer promptly instead of queueing behind the claims (ADR-0044
+// §Consequences).
+func TestClaimDB_WithTheCapTakenReadsStillAnswerPromptly(t *testing.T) {
+	db := mailboxDB(t)
+	const pool, maxClaims = 3, 2
+	db.SetMaxOpenConns(pool)
+
+	member := uuid.New()
+	held := []Letter{
+		letterTo(&member, sentAt, itemsOf(1, potion)),
+		letterTo(&member, sentAt, itemsOf(1, potion)),
+	}
+	extra := letterTo(&member, sentAt, goldOf(5))
+	store(t, db, held[0], held[1], extra)
+
+	itemsSvc := &fakeItems{entered: make(chan struct{}, maxClaims), release: make(chan struct{})}
+	wallet := &fakeWallet{}
+	svc := NewService(db, NewRepository(db), itemsSvc, wallet, &fakeArrivals{}, inbox.NewRepo(), maxClaims)
+	svc.now = func() time.Time { return sentAt.Add(time.Hour) }
+	ctx := context.Background()
+
+	done := make(chan error, len(held))
+	for _, l := range held {
+		go func(id uuid.UUID) {
+			_, err := svc.ClaimLetter(ctx, id, member)
+			done <- err
+		}(l.ID)
+	}
+	for range held {
+		<-itemsSvc.entered // each holds its row lock and a connection
+	}
+	defer func() {
+		select {
+		case <-itemsSvc.release:
+		default:
+			close(itemsSvc.release)
+		}
+	}()
+
+	prompt := func(name string, call func(ctx context.Context) error) error {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		start := time.Now()
+		err := call(ctx)
+		assert.Less(t, time.Since(start), time.Second, "%s answered promptly", name)
+		return err
+	}
+
+	err := prompt("a claim over the cap", func(ctx context.Context) error {
+		_, err := svc.ClaimLetter(ctx, extra.ID, member)
+		return err
+	})
+	assert.ErrorIs(t, err, ErrClaimsBusy)
+	assert.Empty(t, wallet.creditCalls(), "the busy claim called nothing")
+
+	require.NoError(t, prompt("the summary", func(ctx context.Context) error {
+		_, err := svc.MailboxSummary(ctx, member)
+		return err
+	}))
+	require.NoError(t, prompt("the letters", func(ctx context.Context) error {
+		_, err := svc.ListLetters(ctx, member)
+		return err
+	}))
+	require.NoError(t, prompt("mark read", func(ctx context.Context) error {
+		return svc.MarkLetterRead(ctx, extra.ID, member)
+	}))
+
+	close(itemsSvc.release)
+	for range held {
+		require.NoError(t, <-done)
+	}
+	for _, l := range held {
+		assert.Equal(t, "claimed", claimStateOf(t, db, l.ID, member))
+	}
+	_, err = svc.ClaimLetter(ctx, extra.ID, member)
+	require.NoError(t, err, "with the slots free the claim goes through")
 }

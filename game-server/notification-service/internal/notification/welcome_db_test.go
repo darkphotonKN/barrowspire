@@ -141,7 +141,7 @@ func newWelcomeRig(t *testing.T, failInsert bool) *welcomeRig {
 	}
 	rig := &welcomeRig{db: db, items: &potionItems{}, arrivals: &recordedArrivals{}}
 	inboxRepo := inbox.NewRepo()
-	mailboxService := mailbox.NewService(db, letters, rig.items, nil, rig.arrivals, inboxRepo)
+	mailboxService := mailbox.NewService(db, letters, rig.items, nil, rig.arrivals, inboxRepo, 8)
 	rig.svc = NewService(db, NewRepository(db), inboxRepo, nil, mailboxService)
 	return rig
 }

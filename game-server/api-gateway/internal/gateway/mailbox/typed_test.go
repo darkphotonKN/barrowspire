@@ -102,7 +102,7 @@ func signedIn(role commonauth.Role) gin.HandlerFunc {
 func newRouter(client mailbox.LetterClient, role commonauth.Role) *gin.Engine {
 	r := gin.New()
 	api := contract.New(r)
-	mailbox.RegisterOperations(api, mailbox.NewHandler(client),
+	mailbox.RegisterOperations(api, mailbox.NewHandler(client, mailbox.DefaultTimeouts),
 		contract.Protected(signedIn(role)), contract.SeamError, contract.Secured)
 	return r
 }
@@ -483,4 +483,78 @@ func TestClaimLetter_Failures(t *testing.T) {
 		testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
 		assert.Zero(t, client.calls)
 	})
+}
+
+// hangingClient is notification-service holding every call (a pinned pool, a
+// stuck claim): it answers only when the call's deadline passes.
+type hangingClient struct {
+	fakeLetterClient
+	deadlines []bool
+}
+
+func (h *hangingClient) hang(ctx context.Context) error {
+	_, ok := ctx.Deadline()
+	h.deadlines = append(h.deadlines, ok)
+	<-ctx.Done()
+	return status.FromContextError(ctx.Err()).Err()
+}
+
+func (h *hangingClient) GetMailboxSummary(ctx context.Context, _ *pb.GetMailboxSummaryRequest) (*pb.MailboxSummary, error) {
+	return nil, h.hang(ctx)
+}
+
+func (h *hangingClient) ListLetters(ctx context.Context, _ *pb.ListLettersRequest) (*pb.ListLettersResponse, error) {
+	return nil, h.hang(ctx)
+}
+
+func (h *hangingClient) MarkLetterRead(ctx context.Context, _ *pb.MarkLetterReadRequest) (*pb.MarkLetterReadResponse, error) {
+	return nil, h.hang(ctx)
+}
+
+func (h *hangingClient) ClaimLetter(ctx context.Context, _ *pb.ClaimLetterRequest) (*pb.ClaimLetterResponse, error) {
+	return nil, h.hang(ctx)
+}
+
+func (h *hangingClient) SendLetter(ctx context.Context, _ *pb.SendLetterRequest) (*pb.SendLetterResponse, error) {
+	return nil, h.hang(ctx)
+}
+
+// Every mailbox call runs under a deadline, and notification not answering in
+// time is 503 SERVICE_UNAVAILABLE (R32), never a request held open.
+func TestMailbox_NotificationNotAnsweringInTimeIs503(t *testing.T) {
+	short := mailbox.Timeouts{Read: 50 * time.Millisecond, Claim: 50 * time.Millisecond, Send: 50 * time.Millisecond}
+	letter := uuid.NewString()
+	cases := []struct {
+		name, method, path, body string
+		role                     commonauth.Role
+	}{
+		{"summary", http.MethodGet, "/api/mail/summary", "", commonauth.RolePlayer},
+		{"letters", http.MethodGet, "/api/mail/letters", "", commonauth.RolePlayer},
+		{"mark read", http.MethodPost, "/api/mail/letters/" + letter + "/read", "", commonauth.RolePlayer},
+		{"claim", http.MethodPost, "/api/mail/letters/" + letter + "/claim", "", commonauth.RolePlayer},
+		{"send", http.MethodPost, "/api/admin/mail", `{"recipient":{"allMembers":true},"title":"Hail","body":"Well met."}`, commonauth.RoleAdmin},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &hangingClient{}
+			r := gin.New()
+			mailbox.RegisterOperations(contract.New(r), mailbox.NewHandler(client, short),
+				contract.Protected(signedIn(tc.role)), contract.SeamError, contract.Secured)
+
+			start := time.Now()
+			w := do(r, tc.method, tc.path, tc.body)
+
+			assert.Less(t, time.Since(start), 2*time.Second)
+			assert.Equal(t, []bool{true}, client.deadlines, "the call carried a deadline")
+			testsupport.AssertProblem(t, w, http.StatusServiceUnavailable, string(errcode.ServiceUnavailable))
+		})
+	}
+}
+
+// The claim's deadline outlasts notification's own bound on the claim's items
+// and wallet steps, so a slow but healthy claim is never cut off at the edge.
+func TestMailbox_DefaultClaimDeadlineOutlastsTheClaimSteps(t *testing.T) {
+	assert.Greater(t, mailbox.DefaultTimeouts.Claim, 10*time.Second)
+	assert.Greater(t, mailbox.DefaultTimeouts.Send, 5*time.Second, "the send outlasts notification's items resolve")
+	assert.Positive(t, mailbox.DefaultTimeouts.Read)
 }

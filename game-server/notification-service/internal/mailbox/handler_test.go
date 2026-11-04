@@ -314,7 +314,8 @@ func TestHandlerClaimLetter_Failures(t *testing.T) {
 		{"not addressed", ErrLetterNotFound, codes.NotFound},
 		{"items down", errors.Join(ErrItemsUnavailable, errors.New("dial")), codes.Unavailable},
 		{"wallet down", errors.Join(ErrWalletUnavailable, errors.New("dial")), codes.Unavailable},
-		{"no wallet account", errors.New("credit 5 gold: rpc error: code = NotFound"), codes.Internal},
+		{"claims at the cap", ErrClaimsBusy, codes.Unavailable},
+		{"items cannot mint the snapshot", fmt.Errorf("grant the items of letter x: %w", errGrantUnmintable), codes.Internal},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

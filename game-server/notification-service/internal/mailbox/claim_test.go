@@ -3,6 +3,7 @@ package mailbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -172,6 +173,15 @@ func (f *fakeRepo) FinishClaim(_ context.Context, _ sqlx.ExtContext, letterID, m
 	return nil
 }
 
+func (f *fakeRepo) RevertClaim(_ context.Context, _ sqlx.ExtContext, letterID, member uuid.UUID, to ClaimState) error {
+	st := f.states[stateKey{letterID, member}]
+	if st.claim != ClaimClaiming {
+		return errors.New("revert claim of a letter not claiming")
+	}
+	st.claim = to
+	return nil
+}
+
 func (f *fakeRepo) state(letterID, member uuid.UUID) ClaimState {
 	st := f.states[stateKey{letterID, member}]
 	if st == nil {
@@ -336,7 +346,7 @@ func TestClaimLetter_StashFullCreditsNothingAndStaysClaimable(t *testing.T) {
 	assertRefused(t, err, errcode.StashFull)
 	assert.Zero(t, itemsSvc.minted())
 	assert.Empty(t, wallet.creditCalls(), "gold waits until the items are in")
-	assert.NotEqual(t, ClaimClaimed, repo.state(letter.ID, member))
+	assert.Equal(t, ClaimUnclaimed, repo.state(letter.ID, member), "a refusal leaves the letter unclaimed")
 
 	// slots freed
 	itemsSvc.grantErr = nil
@@ -422,4 +432,117 @@ func TestClaimLetter_FailingToRecordClaimedFailsTheClaim(t *testing.T) {
 	_, err := newClaimService(repo, &fakeItems{}, &fakeWallet{}).ClaimLetter(context.Background(), letter.ID, member)
 	require.Error(t, err)
 	assert.NotEqual(t, ClaimClaimed, repo.state(letter.ID, member))
+}
+
+// A business refusal from items (R15) means items minted nothing, so the claim
+// puts the row back where it found it: unclaimed on a first attempt, claiming
+// on a re-drive (R17). An unmintable snapshot is items' permanent refusal too.
+func TestClaimLetter_AnItemsRefusalPutsTheRowBackWhereItWas(t *testing.T) {
+	cases := []struct {
+		name     string
+		grantErr error
+		check    func(t *testing.T, err error)
+	}{
+		{"stash full", errcode.Refuse(errcode.StashFull), func(t *testing.T, err error) { assertRefused(t, err, errcode.StashFull) }},
+		{"snapshot cannot be minted", fmt.Errorf("grant items: %w", errGrantUnmintable), func(t *testing.T, err error) {
+			assert.ErrorIs(t, err, errGrantUnmintable)
+			assert.NotErrorIs(t, err, ErrItemsUnavailable, "permanent, not an outage")
+		}},
+	}
+	for _, tc := range cases {
+		for _, from := range []ClaimState{ClaimUnclaimed, ClaimClaiming} {
+			t.Run(tc.name+" from "+string(from), func(t *testing.T) {
+				member := uuid.New()
+				letter := letterWith(member, itemsOf(3, potion), goldOf(500))
+				repo := &fakeRepo{found: letter, states: map[stateKey]*fakeState{{letter.ID, member}: {claim: from}}}
+				wallet := &fakeWallet{}
+
+				_, err := newClaimService(repo, &fakeItems{grantErr: tc.grantErr}, wallet).ClaimLetter(context.Background(), letter.ID, member)
+
+				tc.check(t, err)
+				assert.Equal(t, from, repo.state(letter.ID, member))
+				assert.Empty(t, wallet.creditCalls())
+			})
+		}
+	}
+}
+
+// A transport failure from items is not a refusal: items may have minted, so
+// the row stays claiming for the next claim to finish (R17, R27).
+func TestClaimLetter_AnItemsOutageLeavesTheRowClaiming(t *testing.T) {
+	member := uuid.New()
+	letter := letterWith(member, itemsOf(1, potion))
+	repo := &fakeRepo{found: letter}
+
+	_, err := newClaimService(repo, &fakeItems{grantErr: ErrItemsUnavailable}, &fakeWallet{}).ClaimLetter(context.Background(), letter.ID, member)
+
+	assert.ErrorIs(t, err, ErrItemsUnavailable)
+	assert.Equal(t, ClaimClaiming, repo.state(letter.ID, member))
+}
+
+// The claim cap (ADR-0044 §Consequences): a claim holds a connection for up to
+// claimStepsTimeout, so claims beyond the cap are answered busy at once, call
+// nothing and write nothing, instead of queueing for the pool. A freed slot
+// takes the next claim.
+func TestClaimLetter_ClaimsBeyondTheCapAreBusyAtOnce(t *testing.T) {
+	member := uuid.New()
+	letter := letterWith(member, itemsOf(1, potion))
+	repo := &fakeRepo{found: letter}
+	itemsSvc := &fakeItems{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	svc := newClaimService(repo, itemsSvc, &fakeWallet{})
+	svc.claims = newClaimSlots(1)
+	ctx := context.Background()
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := svc.ClaimLetter(ctx, letter.ID, member)
+		first <- err
+	}()
+	<-itemsSvc.entered // the only slot is taken
+
+	other := letterWith(member, goldOf(5))
+	busyRepo := &fakeRepo{found: other}
+	busy := newClaimService(busyRepo, &fakeItems{}, &fakeWallet{})
+	busy.claims = svc.claims // the same cap
+	start := time.Now()
+	_, err := busy.ClaimLetter(ctx, other.ID, member)
+	assert.ErrorIs(t, err, ErrClaimsBusy)
+	assert.Less(t, time.Since(start), time.Second, "answered at once, never queued")
+	assert.Empty(t, busyRepo.states, "a busy claim writes nothing")
+
+	close(itemsSvc.release)
+	require.NoError(t, <-first)
+
+	_, err = busy.ClaimLetter(ctx, other.ID, member)
+	require.NoError(t, err, "the freed slot takes the next claim")
+}
+
+// Every way out of a claim gives its slot back: a refusal under the lock, a
+// step failure, a refusal before the lock.
+func TestClaimLetter_EveryOutcomeFreesTheSlot(t *testing.T) {
+	member := uuid.New()
+	slots := newClaimSlots(1)
+	outcomes := map[string]func() *service{
+		"in progress": func() *service {
+			return newClaimService(&fakeRepo{found: letterWith(member, goldOf(5)), locked: true}, &fakeItems{}, &fakeWallet{})
+		},
+		"stash full": func() *service {
+			return newClaimService(&fakeRepo{found: letterWith(member, itemsOf(1, potion))}, &fakeItems{grantErr: errcode.Refuse(errcode.StashFull)}, &fakeWallet{})
+		},
+		"wallet down": func() *service {
+			return newClaimService(&fakeRepo{found: letterWith(member, goldOf(5))}, &fakeItems{}, &fakeWallet{err: ErrWalletUnavailable})
+		},
+		"succeeded": func() *service {
+			return newClaimService(&fakeRepo{found: letterWith(member, goldOf(5))}, &fakeItems{}, &fakeWallet{})
+		},
+	}
+	for name, build := range outcomes {
+		t.Run(name, func(t *testing.T) {
+			svc := build()
+			svc.claims = slots
+			repo := svc.repo.(*fakeRepo)
+			_, _ = svc.ClaimLetter(context.Background(), repo.found.ID, member)
+			assert.Zero(t, len(slots), "the slot is free again")
+		})
+	}
 }

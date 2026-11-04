@@ -562,7 +562,7 @@ func TestRepository_InsertLettersStoresEachLettersSentBy(t *testing.T) {
 // on every stored row.
 func TestSendLetterDB_EveryStoredLetterRecordsTheAdminFromTheToken(t *testing.T) {
 	db := mailboxDB(t)
-	svc := NewService(db, NewRepository(db), &fakeItems{}, &fakeWallet{}, &fakeArrivals{}, inbox.NewRepo())
+	svc := NewService(db, NewRepository(db), &fakeItems{}, &fakeWallet{}, &fakeArrivals{}, inbox.NewRepo(), 8)
 	caller := commonauth.Identity{MemberID: uuid.New(), Role: commonauth.RoleAdmin}
 
 	sent, err := svc.SendLetter(context.Background(), caller, LetterDraft{
