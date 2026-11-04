@@ -1,6 +1,6 @@
 # FS-1GZGD: In-game mailbox — system letters with enclosures
 
-> Status: work-order · SPECIFICATION.md: `game-server/notification-service/SPECIFICATION.md` "## Mailbox", `game-server/items-service/SPECIFICATION.md` "## Grants", `game-server/wallet-service/SPECIFICATION.md` "### Account" (idempotent credit), `game-server/api-gateway/SPECIFICATION.md` "### Mail", `game-client/SPECIFICATION.md` "### Mailbox", `game-server/game-service/SPECIFICATION.md` "### Hub world" (the new-letter notice; added by the 2026-11-04 amendment) → this FS · Related ADRs: [ADR-0044](../adr/0044-the-mailbox-lives-in-notification-and-a-claim-is-idempotent-by-caller-keys.md) (mailbox in notification-service; the claim protocol), [ADR-0045](../adr/0045-a-new-letter-is-pushed-to-hub-players-over-redis-at-most-once.md) (the `mail:arrived` push; amends ADR-0044 §Decision 1's wire names), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted keys), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (mailed gold is an unrecorded deposit), [ADR-0043](../adr/0043-verification-codes-are-owned-by-auth-and-mailed-by-notification.md) ("mail" already means email in notification-service) · Builds on: [FS-VPD8Y](VPD8Y-town-stash.md) (stash 60, `STASH_FULL`), [FS-PJPNA](PJPNA-deduplicated-match-result-notifications.md) (notification's inbox), [FS-22WKC](22WKC-uniform-error-contract.md) (problem+json errors), [FS-NXP1W](NXP1W-auction-settlement-saga.md) (`CreditSellerUC`, the model for the wallet credit), [FS-8EGFA](8EGFA-marketplace-web-page.md) (the item-summary shape a snapshot follows) · Vocabulary: [`notification-service/CONTEXT.md`](../../game-server/notification-service/CONTEXT.md) § Mailbox, [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md), [`wallet-service/CONTEXT.md`](../../game-server/wallet-service/CONTEXT.md), [`api-gateway/CONTEXT.md`](../../game-server/api-gateway/CONTEXT.md), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Mailbox terms, [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Mailbox arrivals · Scoped 2026-11-04 in a `/charter` run; promoted the same day from the charter's locked decisions (`--from-thread`), with the user's mid-run override (gold is credited on claim; no gold pouch) applied.
+> Status: work-order · SPECIFICATION.md: `game-server/notification-service/SPECIFICATION.md` "## Mailbox", `game-server/items-service/SPECIFICATION.md` "## Grants", `game-server/wallet-service/SPECIFICATION.md` "### Account" (idempotent credit), `game-server/api-gateway/SPECIFICATION.md` "### Mail", `game-client/SPECIFICATION.md` "### Mailbox", `game-server/game-service/SPECIFICATION.md` "### Hub world" (the new-letter notice; added by the 2026-11-04 amendment) → this FS · Related ADRs: [ADR-0044](../adr/0044-the-mailbox-lives-in-notification-and-a-claim-is-idempotent-by-caller-keys.md) (mailbox in notification-service; the claim protocol), [ADR-0045](../adr/0045-a-new-letter-is-pushed-to-hub-players-over-redis-at-most-once.md) (the `mail:arrived` push; amends ADR-0044 §Decision 1's wire names), [ADR-0046](../adr/0046-grant-items-trusts-its-caller-until-a-service-credential-exists.md) (accepted risk: `GrantItems` trusts the snapshots its caller sends until a service credential exists; blocks the GKE rollout), [ADR-0009](../adr/0009-idempotency-belongs-to-the-caller.md) (caller-minted keys), [ADR-0006](../adr/0006-only-balanced-movements-are-recorded.md) (mailed gold is an unrecorded deposit), [ADR-0043](../adr/0043-verification-codes-are-owned-by-auth-and-mailed-by-notification.md) ("mail" already means email in notification-service) · Builds on: [FS-VPD8Y](VPD8Y-town-stash.md) (stash 60, `STASH_FULL`), [FS-PJPNA](PJPNA-deduplicated-match-result-notifications.md) (notification's inbox), [FS-22WKC](22WKC-uniform-error-contract.md) (problem+json errors), [FS-NXP1W](NXP1W-auction-settlement-saga.md) (`CreditSellerUC`, the model for the wallet credit), [FS-8EGFA](8EGFA-marketplace-web-page.md) (the item-summary shape a snapshot follows) · Vocabulary: [`notification-service/CONTEXT.md`](../../game-server/notification-service/CONTEXT.md) § Mailbox, [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md), [`wallet-service/CONTEXT.md`](../../game-server/wallet-service/CONTEXT.md), [`api-gateway/CONTEXT.md`](../../game-server/api-gateway/CONTEXT.md), [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Mailbox terms, [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Mailbox arrivals · Scoped 2026-11-04 in a `/charter` run; promoted the same day from the charter's locked decisions (`--from-thread`), with the user's mid-run override (gold is credited on claim; no gold pouch) applied.
 
 > **Amended 2026-11-04** by the user, before any slice was built: **S4** and **S3** are replaced
 > (two enclosure kinds, template and copy, each stored in the letter as an **item snapshot**
@@ -12,10 +12,17 @@
 > …)*. See "Amendment 2026-11-04" after the spec defaults. **[amendment default]** marks a
 > choice this amendment had to make that the user's text left open.
 
+> **Amended again 2026-11-04 (A6)** by the user, before the send slice was built: the admin send
+> also accepts a **list of members** as its recipient, for a future admin back office. It stores
+> one one-member letter per recipient, in one transaction. The letter request event does not
+> change. See "Amendment 2026-11-04 (A6)" after the first amendment block. **[charter default]**
+> marks a choice the `/charter` run made under the user's approval; **[spec default]** marks one
+> this amendment made where both left it open.
+
 ## Summary
 
 Players get a mailbox in the town. The Wardens (an admin) can send an official letter to one
-player or to everyone, and the platform can send a system letter through the broker. A letter is
+player, to a list of players or to everyone, and the platform can send a system letter through the broker. A letter is
 plain text and may carry enclosures: items (made from a template, or copied from an existing
 item) and gold. What a letter shows is a snapshot taken when it was sent, and it is exactly what
 the player gets. The player takes a letter's enclosures in one step (a **claim**): its items land
@@ -32,7 +39,7 @@ them; the reason is the charter's.
 | # | Decision | Reason |
 |---|---|---|
 | D1 | The mailbox is a new bounded context in notification-service. | It already owns per-member in-app notifications and inbox dedup; no new service, DB or deploy. (ADR-0044) |
-| D2 | Two entry points: admin `POST /api/admin/mail` (`RoleAdmin` only), to one member or to all; AMQP `mail.letter.requested` with an event id, deduplicated by the inbox. No in-repo producer in v1. | Official mail now, system compensations later. |
+| D2 | Two entry points: admin `POST /api/admin/mail` (`RoleAdmin` only), to one member or to all; AMQP `mail.letter.requested` with an event id, deduplicated by the inbox. No in-repo producer in v1. *(Amended 2026-11-04, A6: the admin send may also name a list of members; the event stays one member or all.)* | Official mail now, system compensations later. |
 | D3 | A broadcast is stored once; per-member state rows are created lazily on read/claim; later signups still see it until expiry. | No fan-out; notification doesn't know signup dates. |
 | D4 | ~~Item enclosure = template id + quantity, minted at base stats, no affix roll.~~ *(Amended 2026-11-04: replaced by A1, A2 — a template or a copy enclosure, stored as a snapshot.)* | Compensation must be deterministic. |
 | D5 | A gold enclosure `{gold: N}` is credited straight to the member's wallet on claim, as the marketplace credits a seller (`CreditSellerUC`). No pouch item. | (user override) |
@@ -77,7 +84,8 @@ override any of them before its slice is developed.
   unclaimed enclosures), because the seal's count (D12) is not derivable from the unread and
   unclaimed counts alone.
 - **S7 — a recipient member id is not checked for existence**; notification-service has no
-  member directory. A letter to an unknown id is stored and never read.
+  member directory. A letter to an unknown id is stored and never read. (Holds for every id in a
+  member list too, A6.)
 - **S8 — the gold enclosure is drawn with the existing `coins` item icon**, its amount under the
   slot (D14 said "the gold amount under a pouch"; with no pouch, the coins slot takes its place).
 
@@ -135,6 +143,44 @@ below are corrected in place.
   wax stamp. This replaces Claim / Claiming… / Claimed and the "Claimed" stamp, and settles the
   Claim-voice question in `game-client/CONTEXT.md`. Code and API names keep "claim".
 
+## Amendment 2026-11-04 (A6: admin send to a member list)
+
+Decided by the user on 2026-11-04, after the first amendment and before the send slice
+(I-1GZGD-3) was built. The admin send gains a third recipient form so that a future admin back
+office can mail a chosen set of players in one request. A1–A5 and every decision and default above
+stand. The requirements, acceptance criteria, edge states and API surface below are corrected in
+place, and each change says *(Amended 2026-11-04, A6 …)*. New requirements are R45–R51.
+
+- **A6 — the admin send accepts `recipient: { memberIds: [uuid, ...] }`**, beside
+  `{ memberId }` and `{ allMembers: true }`. Exactly one of the three forms per request.
+  - **One letter row per recipient, all written in one transaction.** Either every letter is
+    stored or none is. Each is an ordinary one-member letter. The mailbox read query, the letter
+    state rows and the claim protocol (ADR-0044) do not change, and nothing marks a letter as
+    having come from a list. **[charter default]**
+  - **Enclosures are resolved once per request.** The item enclosures go to
+    `ResolveItemSnapshots` once, and every letter of the request stores the same snapshots,
+    quantities and gold, plus the same title, body, sent time and expiry. **[charter default]**
+  - **Bounds:** at most **1000** member ids per request. Duplicate ids are de-duplicated, so a
+    member gets one letter however often they are named. An empty list is refused. The ids are not
+    checked for existence (S7 holds). **[charter default]** The 1000 counts **distinct** ids
+    after de-duplication, because the bound limits the letters one request writes. Both an empty
+    list and more than 1000 distinct ids are refused `400 · LETTER_RECIPIENTS_INVALID`, a new
+    code, by notification-service, which owns the rule; a malformed id is shape,
+    `422 · VALIDATION_FAILED`. **[spec default]**
+  - **Push:** after the commit, one `mail:arrived` `{"member_id": "<uuid>"}` per recipient
+    (ADR-0045 §Decision 1, one message per stored letter; its contract is unchanged, and
+    game-service does not change). **[charter default]** The whole batch of publishes runs under
+    one short deadline and is logged once on failure, with the letter count, so a 1000-member send
+    never waits 1000 deadlines. **[spec default]**
+  - **Only the admin endpoint gains the list.** `mail.letter.requested` stays one member or all
+    members. **[charter default]**
+  - **The `201` answers the created letters:** `{ letters: { letterId: uuid, memberId?: uuid }[],
+    expiresAt: date-time }`, one entry per letter. For a list it holds one entry per distinct
+    recipient, in the order each id first appears in the request. For `{ memberId }` it holds one
+    entry with that member. For `{ allMembers: true }` it holds one entry without `memberId`. The
+    same shape answers all three forms, so a caller never branches on the response. It replaces
+    the old `{ letterId, expiresAt }`, which nothing has built yet. **[spec default]**
+
 ## Requirements
 
 ### Letters (notification-service, Mailbox context)
@@ -145,7 +191,8 @@ below are corrected in place.
    ADR-0043). New tables come in new numbered migration pairs.
 2. A **letter** holds: id, title, body, sender kind (`official` | `system`), recipient (one
    member id, or **all members**), enclosures, sent time, expiry time. A broadcast is stored
-   **once** (D3).
+   **once** (D3). A send to a member list stores one one-member letter per recipient (R45); no
+   letter is ever addressed to a list.
 3. Title is 1–60 characters and body 1–2000 characters after trimming, plain text only (D10).
    Lengths count characters (runes), not bytes. A violation is refused by notification-service
    with its own code; the gateway does not restate the rule.
@@ -180,13 +227,16 @@ below are corrected in place.
 11. **Admin send** — `POST /api/admin/mail` on the gateway, allowed only for `RoleAdmin`
     (`common/auth`); the gateway checks the role and forwards the admin's token. The letter is
     `official`. notification-service checks the role again from the forwarded identity, so its
-    gRPC method cannot be used by a player token from inside the cluster.
+    gRPC method cannot be used by a player token from inside the cluster. The recipient is one
+    member, a list of members (R45–R51) or all members. *(Amended 2026-11-04, A6; was: one
+    member or all.)*
 12. **Letter request** — notification-service consumes `mail.letter.requested` (a new message in
     a new file under `common/api/proto/events/`, carrying an event id, recipient, title, body,
     enclosures and an optional expiry). The letter is `system`. The event is deduplicated through
     the inbox (`processed_events`, FS-PJPNA) in the same transaction that stores the letter, so a
     redelivery stores nothing. A request that breaks R3–R5 is logged at error, marked processed
-    and acked, never requeued. v1 has no producer in the repo (D2).
+    and acked, never requeued. v1 has no producer in the repo (D2). Its recipient stays one member
+    or all members; it has no list form (A6).
 
 ### Claim (notification-service → items-service, wallet-service)
 
@@ -326,7 +376,8 @@ below are corrected in place.
     one member, `{"broadcast": true}` for a broadcast. The publish runs after the commit, outside
     the transaction, under a short deadline; a failed publish is logged at warn and never fails
     or undoes the send. A redelivered letter request that stores nothing publishes nothing.
-    notification-service holds a Redis client configured by `REDIS_ADDR`.
+    notification-service holds a Redis client configured by `REDIS_ADDR`. A send to a member list
+    publishes one `{"member_id"}` per stored letter (R50). *(Amended 2026-11-04, A6.)*
 42. Every game-service pod subscribes to `mail:arrived` at boot and stays subscribed, subscribing
     again after a drop, in the same subscriber → message hub shape as world chat (FS-5SH4G). A
     message that is neither form is skipped with a warning. Nothing is stored or retried: at
@@ -338,6 +389,36 @@ below are corrected in place.
 44. A missed `mail_arrived` (Redis down, the player in a run, a dropped subscription) is recovered
     by the summary fetch on the next town entry (R34). game-service gains nothing else of the
     mailbox: it neither reads nor stores letters.
+
+### Sending to a member list (notification-service + api-gateway; added 2026-11-04, A6)
+
+45. The admin send (R11) accepts a third recipient form, a **member list**
+    `{ memberIds: [uuid, ...] }`. It stores **one one-member letter per distinct recipient**,
+    exactly as a `{ memberId }` send would store it for that member, and all of them in **one
+    transaction**: every letter commits or none does. **[charter default]**
+46. A request names exactly one recipient form. Naming two, or none, is shape and is refused
+    `422 · VALIDATION_FAILED` at the gateway. So is a list entry that is not a uuid.
+47. notification-service de-duplicates the list first. It then refuses the send
+    `LETTER_RECIPIENTS_INVALID` when no id remains (an empty list) or when more than **1000**
+    distinct ids do, and stores nothing. Duplicates themselves are never refused. Ids are not
+    checked for existence (S7). **[charter default]** for the bounds and the de-duplication;
+    **[spec default]** for counting after de-duplication and for the code.
+48. Every other rule is checked **once per request**, before anything is stored: title and body
+    (R3), enclosure bounds (S1), expiry (R5) and admin role (R11). A refusal refuses the whole
+    request.
+49. Item enclosures are resolved through `ResolveItemSnapshots` **once per request**, not once
+    per recipient. Every letter of the request stores the same snapshots and quantities, the same
+    gold, title, body, sent time and expiry (A2). An unresolvable enclosure refuses the whole
+    request with R4's codes. **[charter default]**
+50. After the commit, notification-service publishes one `mail:arrived` `{"member_id": "<uuid>"}`
+    per stored letter (R41, ADR-0045 unchanged). The batch runs outside the transaction under one
+    short deadline. A failure, partial or whole, is logged once at warn with the number of letters
+    and never fails the send. Members whose publish was lost recover at their next town entry
+    (R44). **[charter default]** for one message per recipient; **[spec default]** for the single
+    deadline and log line.
+51. The `201` lists the created letters as `{ letterId, memberId? }`, one per letter, in the order
+    each recipient first appears in the request. The same shape answers `{ memberId }` (one entry,
+    with the member) and `{ allMembers: true }` (one entry, no member). **[spec default]**
 
 ## User Stories
 
@@ -420,6 +501,24 @@ below are corrected in place.
     never send a copy of nothing.
 39. As a platform operator, I want a failed new-letter push never to fail the send, so that Redis
     trouble costs at most a late envelope, never a letter.
+
+*Added by amendment A6 (2026-11-04):*
+
+40. As an admin (later, through a back office), I want to send one letter to a chosen list of
+    players in one request, so that I can compensate the players of one incident without a
+    request per player or a broadcast to everyone.
+41. As an admin, I want a list send to reach either every listed player or none, so that a
+    failure never leaves me working out who was mailed and who was not.
+42. As an admin, I want a player named twice in my list to get one letter, so that a sloppy list
+    never doubles a compensation.
+43. As an admin, I want the send to answer with each created letter and its recipient, so that a
+    back office can record what went to whom.
+44. As an admin, I want an empty or oversized list refused with a clear code, so that I fix the
+    list rather than guess what was sent.
+45. As a listed player standing in the town, I want my envelope to light just as for a letter
+    sent to me alone, so that a list send feels no different to me.
+46. As a listed player, I want the letter to be mine alone, with my own read and claim state, so
+    that another recipient taking theirs never touches mine.
 
 ## Acceptance Criteria
 
@@ -548,6 +647,36 @@ below are corrected in place.
 - [ ] In the browser, a letter sent to a player standing in the town lights their envelope (and
       pulses) without a reload or a timer; the same player returning from a delve during which a
       letter was sent sees it lit on arrival.
+- [ ] A send to a member list of three distinct members publishes exactly three
+      `{"member_id"}` messages, one per member, after the commit; with Redis unreachable it still
+      stores all three letters and answers `201`. *(Added 2026-11-04, A6.)*
+
+### Sending to a member list (added 2026-11-04, A6)
+
+- [ ] `recipient: { memberIds: [A, B, C] }` stores three `official` one-member letters, one each
+      for A, B and C, with identical title, body, enclosures, sent time and expiry. Each member's
+      mailbox shows only their own letter, and a member not in the list sees none.
+- [ ] `[A, B, A]` stores two letters, one for A and one for B, and answers two entries in the order
+      A, B.
+- [ ] The `201` body is `{ letters: [{ letterId, memberId }...], expiresAt }`. `{ memberId }`
+      answers one entry with that member, and `{ allMembers: true }` one entry without a member.
+- [ ] An empty list, and a list of 1001 distinct ids, are each refused
+      `400 · LETTER_RECIPIENTS_INVALID` and store nothing. A list of 1000 distinct ids plus
+      duplicates is accepted and stores 1000 letters.
+- [ ] Naming both `memberId` and `memberIds`, naming no recipient form, or a non-uuid list entry
+      is refused `422 · VALIDATION_FAILED`.
+- [ ] A list send with item enclosures calls `ResolveItemSnapshots` exactly once, whatever the list
+      length, and every stored letter carries the same snapshots.
+- [ ] A list send whose title, body, enclosures or expiry break a bound is refused with that rule's
+      code and stores no letter for any recipient.
+- [ ] **All or none:** when storing one of the list's letters fails (forced in a repository test),
+      no letter of the request is stored and nothing is published.
+- [ ] Each recipient of a list send reads, marks read and claims their letter independently. A
+      claims theirs, and B's letter stays unread and unclaimed. A claim's grant id and credit key
+      come from that recipient's own letter id, so no two recipients share a key.
+- [ ] A non-admin token sending to a member list gets `403 · FORBIDDEN`.
+- [ ] A `mail.letter.requested` event carrying a member list is not accepted: the event has no list
+      form.
 
 ## Edge States
 
@@ -594,6 +723,28 @@ below are corrected in place.
 - **Broadcast with many players in the town:** one `mail:arrived` message; each pod sends one
   `mail_arrived` per HUB-world player, each of whom fetches the summary once.
 
+*Added by amendment A6 (2026-11-04):*
+
+- **Member list of one:** behaves as `{ memberId }` with that member: one letter, one entry in the
+  answer.
+- **Member list naming the same id many times:** one letter for that member (R47).
+- **Member list with ids that are no members:** their letters are stored and never read (S7).
+  Nothing in the answer tells them apart.
+- **Member list at the bound:** 1000 distinct ids are written as 1000 rows in one transaction and
+  published as 1000 messages under one deadline. 1001 are refused whole.
+- **Storage failure part-way through a list:** the transaction rolls back. No letter is stored,
+  nothing is published, and the send answers `503 · SERVICE_UNAVAILABLE`.
+- **items-service down at a list send with item enclosures:** refused `503` before anything is
+  stored, as a one-member send is.
+- **Redis down, or a publish lost part-way through a list:** every letter is stored and the send
+  answers `201`. Listed members in the town whose message was lost see their envelope at their
+  next town entry (R44).
+- **A list send retried after a timeout or a lost answer:** the admin send has no idempotency key,
+  so a retry stores a second letter for every listed member. The back office must not retry a send
+  blindly. **[spec default]** (see Out of Scope)
+- **The same member in a list send and a broadcast:** two letters, each with its own state; nothing
+  merges them.
+
 ## API surface
 
 New resources, so field-level. Identity is never in a request: the member comes from the token.
@@ -606,7 +757,11 @@ no token is `401 · UNAUTHENTICATED` on every row.
 | Read my letters | `GET /api/mail/letters` | — (≤ 50, newest first, no paging) | — | `200` `{ letters: Letter[] }` (below) | `503 · SERVICE_UNAVAILABLE` |
 | Mark a letter read | `POST /api/mail/letters/{letterId}/read` | `letterId` uuid | — | `204` | `404 · NOT_FOUND` (absent or not addressed to the caller) · `400 · LETTER_EXPIRED` · `422 · VALIDATION_FAILED` (bad uuid) |
 | Claim a letter | `POST /api/mail/letters/{letterId}/claim` | `letterId` uuid | — | `200` `{ letterId: uuid, claimState: "claimed", itemIds: uuid[], gold: int64 }` (`gold` 0 on an item-only letter) | `404 · NOT_FOUND` · `400 · LETTER_EXPIRED` · `400 · NOTHING_TO_CLAIM` · `400 · LETTER_ALREADY_CLAIMED` · `400 · LETTER_CLAIM_IN_PROGRESS` · `400 · STASH_FULL` · `503 · SERVICE_UNAVAILABLE` · `422 · VALIDATION_FAILED` |
-| Send official mail | `POST /api/admin/mail` | — | `{ recipient: { memberId: uuid } \| { allMembers: true }, title: string, body: string, enclosures?: EnclosureRequest[] (≤ 10, ≤ 1 gold), expiresAt?: date-time }` | `201` `{ letterId: uuid, expiresAt: date-time }` | `403 · FORBIDDEN` (not `RoleAdmin`) · `400 · LETTER_TITLE_INVALID` · `400 · LETTER_BODY_INVALID` · `400 · LETTER_EXPIRY_INVALID` · `400 · ENCLOSURE_INVALID` (count, gold count, quantity, amount, slot count, item level < 1, unrepresentable copy) · `400 · UNKNOWN_ITEM_TEMPLATE` · `400 · UNKNOWN_ITEM_INSTANCE` · `422 · VALIDATION_FAILED` (shape: both or neither recipient form, unknown members) · `503 · SERVICE_UNAVAILABLE` |
+| Send official mail | `POST /api/admin/mail` | — | `{ recipient: { memberId: uuid } \| { memberIds: uuid[] } \| { allMembers: true }, title: string, body: string, enclosures?: EnclosureRequest[] (≤ 10, ≤ 1 gold), expiresAt?: date-time }` | `201` `{ letters: { letterId: uuid, memberId?: uuid }[], expiresAt: date-time }` (one entry per stored letter; `memberId` absent only for `allMembers`) | `403 · FORBIDDEN` (not `RoleAdmin`) · `400 · LETTER_RECIPIENTS_INVALID` (empty list, > 1000 distinct ids) · `400 · LETTER_TITLE_INVALID` · `400 · LETTER_BODY_INVALID` · `400 · LETTER_EXPIRY_INVALID` · `400 · ENCLOSURE_INVALID` (count, gold count, quantity, amount, slot count, item level < 1, unrepresentable copy) · `400 · UNKNOWN_ITEM_TEMPLATE` · `400 · UNKNOWN_ITEM_INSTANCE` · `422 · VALIDATION_FAILED` (shape: more than one or none of the recipient forms, a non-uuid id, unknown members) · `503 · SERVICE_UNAVAILABLE` |
+
+*Admin send amended 2026-11-04 (A6): the `memberIds` form, the `letters` answer (was
+`{ letterId: uuid, expiresAt }`) and `LETTER_RECIPIENTS_INVALID` are new. **[spec default]** for
+the answer's shape and the code's name.*
 
 **Letter** (response): `{ id: uuid, title: string, body: string, sender: "official" | "system",
 sentAt: date-time, expiresAt: date-time, read: bool, claimState: "none" | "unclaimed" |
@@ -631,12 +786,12 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
 
 | Service | Method | Notes |
 |---|---|---|
-| notification | `SendLetter` | admin identity from forwarded token; recipient, title, body, enclosures, expiry |
+| notification | `SendLetter` | admin identity from forwarded token; recipient (one member, a member list or all members), title, body, enclosures, expiry → the stored letters as (letter id, member id?) and the expiry (recipient list and answer amended 2026-11-04, A6) |
 | notification | `ListLetters`, `GetMailboxSummary`, `MarkLetterRead`, `ClaimLetter` | member from token |
 | items | `GrantItems(grant_id, items[{snapshot, quantity}])` → instance ids, `already_granted` | member from forwarded token; mints from the snapshots (amended 2026-11-04) |
 | items | `ResolveItemSnapshots(templates[{template_id, item_level?}], instance_ids)` → snapshots, unknown ids, unrepresentable ids | no member token; send time only (replaces `GetTemplateSummaries`, 2026-11-04) |
 | wallet | `Credit(amount, idempotency_key)` → `applied` | member from forwarded token; no account field |
-| events | `LetterRequested` (`mail.letter.requested`) | new file under `common/api/proto/events/`; enclosures of the three request kinds |
+| events | `LetterRequested` (`mail.letter.requested`) | new file under `common/api/proto/events/`; enclosures of the three request kinds; recipient one member or all members, never a list (A6) |
 | Redis pub/sub | `mail:arrived` ← `{"member_id"}` \| `{"broadcast": true}` | published by notification after commit, subscribed by every game-service pod (added 2026-11-04, ADR-0045) |
 | game WebSocket | `{"action": "mail_arrived", "payload": {}}` | game-service → client in the HUB world (added 2026-11-04) |
 
@@ -658,5 +813,11 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
 - Affix rolls or rarity rolls on enclosed items (D4); a rarity or affixes are only ever copied
   from an existing instance (A1). Drop rules on enclosures (A1).
 - A new service, database or deploy (D1).
-- An admin UI: admin send is the HTTP endpoint only.
+- An admin UI: admin send is the HTTP endpoint only. The back office that A6 prepares for is not
+  part of this feature.
+- *(Added 2026-11-04, A6:)* a member list on `mail.letter.requested`; a member list larger than
+  1000, or paged or streamed across requests; a list stored as one letter row; checking that a
+  listed id is a member (S7); an idempotency key on the admin send, so a retried list send is
+  deduplicated (for now the back office must not retry blindly); a "sent with" grouping of a list
+  send's letters.
 - The mailbox in a delve or a field world (D11).

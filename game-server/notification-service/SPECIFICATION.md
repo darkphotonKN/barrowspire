@@ -17,7 +17,7 @@
 
 ## Mailbox
 
-- [ ] Official and system letters to one member or to every member → FS-1GZGD
+- [ ] Official and system letters to chosen members or to every member → FS-1GZGD
 - [ ] Letter requests from the broker, deduplicated → FS-1GZGD
 - [ ] A member's mailbox and its summary → FS-1GZGD
 - [ ] Claim a letter's enclosures → FS-1GZGD
