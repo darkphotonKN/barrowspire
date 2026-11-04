@@ -472,6 +472,7 @@ func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
 		PlaceHoldUC:     &usecase.PlaceHoldUC{},
 		DepositGoldUC:   &usecase.DepositGoldUC{},
 		WithdrawGoldUC:  &usecase.WithdrawGoldUC{},
+		CreditUC:        &usecase.CreditUC{},
 		AccountReader:   reader,
 	})
 
@@ -479,5 +480,90 @@ func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
 	assert.NotNil(t, h.placeHoldUC, "placeHoldUC")
 	assert.NotNil(t, h.depositGoldUC, "depositGoldUC")
 	assert.NotNil(t, h.withdrawGoldUC, "withdrawGoldUC")
+	assert.NotNil(t, h.creditUC, "creditUC")
 	assert.NotNil(t, h.accountReader, "accountReader")
+}
+
+// stubCreditor records the command the handler built, so tests can prove the
+// credit goes to the authenticated member and carries the caller's key.
+type stubCreditor struct {
+	applied bool
+	err     error
+
+	calls  int
+	gotCmd *usecase.CreditCommand
+}
+
+func (s *stubCreditor) Handle(ctx context.Context, cmd *usecase.CreditCommand) (bool, error) {
+	s.calls++
+	s.gotCmd = cmd
+	return s.applied, s.err
+}
+
+// D18: the request names no account, so the only member a credit can reach is the
+// one in the forwarded token.
+func TestCredit_CreditsTheAuthenticatedMemberWithTheCallersKey(t *testing.T) {
+	memberID := uuid.New()
+	creditor := &stubCreditor{applied: true}
+	h := NewHandler(Deps{CreditUC: creditor})
+
+	res, err := h.Credit(authedCtx(t, memberID), &pb.CreditRequest{Amount: 500, IdempotencyKey: "mail:L:M"})
+
+	require.NoError(t, err)
+	assert.True(t, res.GetApplied())
+	require.Equal(t, 1, creditor.calls)
+	assert.Equal(t, memberID, creditor.gotCmd.MemberID)
+	assert.Equal(t, 500, creditor.gotCmd.Amount)
+	assert.Equal(t, "mail:L:M", creditor.gotCmd.IdempotencyKey)
+	assert.False(t, creditor.gotCmd.Now.IsZero(), "the credit is stamped with the time it applies")
+}
+
+// Guard 4 over the wire: an already-applied key is success with applied = false,
+// never an error the claim would have to interpret.
+func TestCredit_AlreadyApplied_IsSuccessReportingNotApplied(t *testing.T) {
+	h := NewHandler(Deps{CreditUC: &stubCreditor{applied: false}})
+
+	res, err := h.Credit(authedCtx(t, uuid.New()), &pb.CreditRequest{Amount: 500, IdempotencyKey: "mail:L:M"})
+
+	require.NoError(t, err)
+	assert.False(t, res.GetApplied())
+}
+
+func TestCredit_WithoutAnIdentity_IsUnauthenticatedAndCreditsNothing(t *testing.T) {
+	creditor := &stubCreditor{applied: true}
+	h := NewHandler(Deps{CreditUC: creditor})
+
+	res, err := h.Credit(context.Background(), &pb.CreditRequest{Amount: 500, IdempotencyKey: "mail:L:M"})
+
+	assert.Nil(t, res)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	assert.Zero(t, creditor.calls)
+}
+
+// The claim tells a refusal (fix the request) from a missing account (R24: stay
+// claiming, retry later) by these codes.
+func TestCredit_MapsUseCaseErrorsToStatusCodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{"empty key", fmt.Errorf("wrapped: %w", usecase.ErrMissingCreditKey), codes.InvalidArgument},
+		{"non-positive amount", fmt.Errorf("wrapped: %w", account.ErrInvalidGold), codes.InvalidArgument},
+		{"no account", fmt.Errorf("wrapped: %w", commonconstants.ErrNotFound), codes.NotFound},
+		{"raced out", fmt.Errorf("wrapped: %w", usecase.ErrMaxRetries), codes.Aborted},
+		{"transient", fmt.Errorf("wrapped: %w", commonconstants.ErrTransient), codes.Unavailable},
+		{"unexpected", errors.New("boom"), codes.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(Deps{CreditUC: &stubCreditor{err: tt.err}})
+
+			res, err := h.Credit(authedCtx(t, uuid.New()), &pb.CreditRequest{Amount: 500, IdempotencyKey: "mail:L:M"})
+
+			assert.Nil(t, res)
+			assert.Equal(t, tt.wantCode, status.Code(err))
+		})
+	}
 }
