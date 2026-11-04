@@ -5,16 +5,22 @@ import (
 	"net"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/inbox"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/mailbox"
 	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/notification"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
-	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
-// SetupServices initializes all services and their dependencies
-func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
+// SetupServices initializes all services and their dependencies.
+//
+// itemsConn is the connection to items-service, which the mailbox resolves
+// item enclosures through at send (FS-1GZGD R4). jwtSecret verifies the
+// token the gateway forwards on every mailbox call.
+func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn grpc.ClientConnInterface, jwtSecret []byte) *grpc.Server {
 	// Create repositories
 	repo := notification.NewRepository(db)
 	inboxRepo := inbox.NewRepo()
@@ -39,11 +45,19 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
 	// Start listening for AMQP events
 	consumer.Listen()
 
-	// Create gRPC server
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+	// Mailbox (FS-1GZGD, ADR-0044)
+	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db), mailbox.NewItemsClient(itemsConn))
+	mailboxHandler := mailbox.NewHandler(mailboxService)
 
-	// Register notification service with gRPC server
-	pb.RegisterNotificationServiceServer(grpcServer, handler)
+	// Create gRPC server
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
+		commoninterceptor.Metrics(),
+		authenticate(commonauth.NewValidator(jwtSecret)),
+	))
+
+	// Register notification service with gRPC server: notification and
+	// mailbox methods are one NotificationService
+	pb.RegisterNotificationServiceServer(grpcServer, newNotificationServer(handler, mailboxHandler))
 
 	slog.Info("Notification service initialized successfully")
 
