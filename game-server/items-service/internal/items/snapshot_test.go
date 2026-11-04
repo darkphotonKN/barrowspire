@@ -3,10 +3,13 @@ package items
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc/codes"
@@ -170,6 +173,44 @@ func TestResolveItemSnapshots_ReportsWhatDidNotResolve(t *testing.T) {
 	}
 }
 
+// A resolve never makes a snapshot GrantItems refuses: whatever is checked at
+// send is what the claim checks, or a letter could be sent that no one can
+// claim. item_templates.required_level allows 0, which a minted instance
+// (required_level >= 1) cannot carry, so such a template is reported
+// unrepresentable at send. Every snapshot the resolve does answer grants.
+func TestResolveItemSnapshots_NeverResolvesWhatAGrantRefuses(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	levelZero := seedWeaponTemplate(t, ctx, db, "Training Sword", 1, 0)
+	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 5, 3)
+	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "fabled", 1, 1, "kill_frenzy", "Kills ignite.")
+	source := seedUniqueRingInstance(t, ctx, db, ring, uuid.New(), `[{"stat":"strength","tier":3,"value":500}]`)
+
+	got, err := svc.ResolveItemSnapshots(ctx,
+		[]TemplateSnapshotRequest{{TemplateID: levelZero}, {TemplateID: sword}, {TemplateID: sword, ItemLevel: intRef(40)}, {TemplateID: ring}},
+		[]uuid.UUID{source})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	if got.Templates[0] != nil {
+		t.Errorf("a template of required level 0 resolved to %+v, want it refused at send", got.Templates[0])
+	}
+	if len(got.UnrepresentableIDs) != 1 || got.UnrepresentableIDs[0] != levelZero {
+		t.Errorf("unrepresentable = %v, want only the required-level-0 template", got.UnrepresentableIDs)
+	}
+
+	member := grantMember(t, ctx, db)
+	for i, snap := range append(slices.Clone(got.Templates), got.Instances...) {
+		if snap == nil {
+			continue
+		}
+		if _, err := svc.GrantItems(ctx, member, "grant:"+uuid.NewString(), []GrantLine{{Snapshot: snap, Quantity: 1}}); err != nil {
+			t.Errorf("snapshot %d (%s) resolved but its grant is refused: %v", i, snap.Name, err)
+		}
+	}
+}
+
 // FS-1GZGD AC "A copy enclosure x2 mints two new instances, each with its own
 // id, owned by the claimer, in the stash, AVAILABLE, with no listing; the
 // source instance is untouched", end to end through items: resolve, then
@@ -302,6 +343,8 @@ func TestHandler_ResolveItemSnapshots_Refusals(t *testing.T) {
 		{name: "malformed instance id", req: &pb.ResolveItemSnapshotsRequest{InstanceIds: []string{"x"}}, wantCode: codes.InvalidArgument},
 		{name: "over 100 instance ids", req: many, wantCode: codes.InvalidArgument},
 		{name: "over 100 templates", req: manyTemplates, wantCode: codes.InvalidArgument},
+		{name: "store unavailable", req: &pb.ResolveItemSnapshotsRequest{InstanceIds: []string{uuid.NewString()}},
+			serviceErr: fmt.Errorf("resolve instance snapshots: %w", commonconstants.ErrTransient), wantCode: codes.Unavailable, reaches: true},
 		{name: "store fails", req: &pb.ResolveItemSnapshotsRequest{InstanceIds: []string{uuid.NewString()}}, serviceErr: errors.New("boom"), wantCode: codes.Internal, reaches: true},
 	}
 	for _, tt := range cases {

@@ -1424,7 +1424,8 @@ func affixesToProto(affixes Affixes) []*pb.Affix {
 }
 
 // Bounds of one grant request (FS-1GZGD S1): a letter's slot count is at most
-// the stash cap, so no entry and no entry count can exceed it.
+// the stash cap, so no entry, no entry count and no total slot count can
+// exceed it.
 const (
 	maxGrantIDLength = 200
 	maxGrantLines    = StashCapacity
@@ -1449,9 +1450,16 @@ func (h *Handler) GrantItems(ctx context.Context, req *pb.GrantItemsRequest) (*p
 		return nil, status.Errorf(codes.InvalidArgument, "1-%d items", maxGrantLines)
 	}
 	lines := make([]GrantLine, 0, len(req.GetItems()))
+	slots := 0
 	for _, item := range req.GetItems() {
-		if q := item.GetQuantity(); q < 1 || q > maxGrantQuantity {
+		q := item.GetQuantity()
+		if q < 1 || q > maxGrantQuantity {
 			return nil, status.Errorf(codes.InvalidArgument, "quantity must be 1-%d", maxGrantQuantity)
+		}
+		// no stash holds more than its cap, so a larger grant can never mint:
+		// refused before any id is made for it
+		if slots += int(q); slots > StashCapacity {
+			return nil, status.Errorf(codes.InvalidArgument, "a grant takes at most %d stash slots", StashCapacity)
 		}
 		snapshot, err := snapshotFromProto(item.GetSnapshot())
 		if err != nil {
@@ -1586,7 +1594,11 @@ func (h *Handler) ResolveItemSnapshots(ctx context.Context, req *pb.ResolveItemS
 	}
 
 	got, err := h.service.ResolveItemSnapshots(ctx, templates, instanceIDs)
-	if err != nil {
+	switch {
+	case errors.Is(err, commonconstants.ErrTransient):
+		slog.ErrorContext(ctx, "resolve item snapshots: store unavailable", "error", err)
+		return nil, status.Error(codes.Unavailable, "items store unavailable")
+	case err != nil:
 		slog.ErrorContext(ctx, "resolve item snapshots failed", "error", err)
 		return nil, status.Error(codes.Internal, "resolve item snapshots failed")
 	}
