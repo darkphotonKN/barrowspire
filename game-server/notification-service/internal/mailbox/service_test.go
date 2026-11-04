@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,19 @@ type fakeRepo struct {
 	findErr   error
 	markedAt  []time.Time
 	markedFor []uuid.UUID
+
+	// claim state rows by (letter, member); locked stands in for another
+	// claim holding the row lock
+	states    map[stateKey]*fakeState
+	locked    bool
+	finishErr error
+}
+
+type stateKey struct{ letter, member uuid.UUID }
+
+type fakeState struct {
+	claim  ClaimState
+	readAt *time.Time
 }
 
 func (f *fakeRepo) InsertLetters(_ context.Context, _ sqlx.ExtContext, letters []Letter) error {
@@ -69,6 +83,16 @@ type fakeItems struct {
 	unknownInstances map[uuid.UUID]bool
 	unrepresentable  map[uuid.UUID]bool
 	err              error
+
+	// GrantItems (claim_test.go): grants applied by grant id, every call made,
+	// and an optional gate a test holds a claim in
+	mu          sync.Mutex
+	grantCalls  []grantCall
+	granted     map[string][]uuid.UUID
+	grantErr    error
+	hadDeadline bool
+	entered     chan struct{}
+	release     chan struct{}
 }
 
 func (f *fakeItems) ResolveItemSnapshots(_ context.Context, templates []TemplateRef, instances []uuid.UUID) (*Resolution, error) {
@@ -115,9 +139,14 @@ func (f *fakeItems) ResolveItemSnapshots(_ context.Context, templates []Template
 var now = time.Date(2026, 11, 4, 9, 30, 0, 0, time.UTC)
 
 func newTestService(repo *fakeRepo, items *fakeItems) *service {
+	return newClaimService(repo, items, &fakeWallet{})
+}
+
+func newClaimService(repo *fakeRepo, items *fakeItems, wallet *fakeWallet) *service {
 	return &service{
-		repo:  repo,
-		items: items,
+		repo:   repo,
+		items:  items,
+		wallet: wallet,
 		withTx: func(_ context.Context, fn func(tx *sqlx.Tx) error) error {
 			return fn(nil)
 		},
