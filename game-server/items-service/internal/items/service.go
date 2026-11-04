@@ -1574,6 +1574,14 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 	return location, nil
 }
 
+// ReserveItem moves one of the seller's instances AVAILABLE → LISTED for a new
+// listing and puts ItemReserved in the outbox, in one transaction. Under the
+// seller's account lock, the lock an equip takes, so the two are ordered
+// (FS-HBXZN R3), the first failing check answers: not the seller's →
+// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4). The
+// reserve stays conditional on AVAILABLE, and a reserve that matches no row is
+// ITEM_NOT_AVAILABLE too. A refusal writes nothing.
+//
 // buyoutPrice is marketplace's term, not items': it is forwarded onto the event
 // unread, nil when the seller set none (FS-9XKS6).
 func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error) {
@@ -1582,23 +1590,36 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 	// fences every later write for this listing (FS-NXP1W Req 24a)
 	listingID := uuid.New()
 	var itemInstance *ItemInstance
-	err := commonutils.ExecTx(ctx, s.db, nil, func(tx *sqlx.Tx) error {
-		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt)
-		if err != nil {
-			return fmt.Errorf("Reserve item service: %w", err)
+	err := s.withTx(ctx, func(tx *sqlx.Tx) error {
+		if err := s.repo.LockAccountTx(ctx, tx, sellerID); err != nil {
+			return err
 		}
-		itemInstance = result
 
-		// outbox
-		err = s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, buyoutPrice, endsAt)
+		placement, err := s.repo.ItemPlacementTx(ctx, tx, sellerID, itemID)
 		if err != nil {
 			return err
 		}
-		return nil
-	})
+		switch {
+		case placement == nil:
+			return fmt.Errorf("reserve item %s for %s: %w", itemID, sellerID, commonconstants.ErrNotFound)
+		case placement.Status != itemStatusAvailable:
+			return errcode.Refuse(errcode.ItemNotAvailable)
+		case placement.Worn:
+			return errcode.Refuse(errcode.ItemWorn)
+		}
 
+		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt)
+		if errors.Is(err, ErrItemNotReservable) {
+			return errcode.Refuse(errcode.ItemNotAvailable)
+		}
+		if err != nil {
+			return fmt.Errorf("reserve item %s: %w", itemID, err)
+		}
+		itemInstance = result
+
+		return s.PublishItemReservedComplete(ctx, tx, itemInstance, sellerID, startPrice, buyoutPrice, endsAt)
+	})
 	if err != nil {
-		slog.Error("Failed to list item", "error", err)
 		return nil, err
 	}
 	return itemInstance, nil
