@@ -387,3 +387,21 @@ func TestHandler_AnswersNeverCarryTheSentBy(t *testing.T) {
 		assert.NotContains(t, string(wire), "test.compensation", "the sent-by source")
 	}
 }
+
+// The role comes first (R11): a non-admin is refused PermissionDenied whatever
+// the shape of their draft, so a malformed send never tells a player more
+// than "not yours to send".
+func TestHandlerSendLetter_ANonAdminIsDeniedBeforeTheDraftIsRead(t *testing.T) {
+	for name, req := range map[string]*pb.SendLetterRequest{
+		"well formed":  sendRequest(allRecipient),
+		"no recipient": sendRequest(nil),
+		"bad list id":  sendRequest(listRecipient("nope")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := &fakeService{err: ErrNotAdmin}
+			_, err := NewHandler(svc).SendLetter(as(player), req)
+			assert.Equal(t, codes.PermissionDenied, status.Code(err))
+			assert.Zero(t, svc.calls)
+		})
+	}
+}

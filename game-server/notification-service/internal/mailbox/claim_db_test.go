@@ -346,3 +346,90 @@ func TestClaimDB_WithTheCapTakenReadsStillAnswerPromptly(t *testing.T) {
 	_, err = svc.ClaimLetter(ctx, extra.ID, member)
 	require.NoError(t, err, "with the slots free the claim goes through")
 }
+
+// Mark read never waits on a claim in flight (R8, R13): the claim holds the
+// state row locked across its items and wallet calls, and already records the
+// read, so mark read skips a locked row and answers at once instead of
+// holding a connection until the claim ends.
+func TestClaimDB_MarkReadDoesNotWaitOnAClaimInFlight(t *testing.T) {
+	db := mailboxDB(t)
+	member := uuid.New()
+	letter := letterTo(&member, sentAt, itemsOf(1, potion))
+	store(t, db, letter)
+
+	itemsSvc := &fakeItems{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	svc := claimDBService(t, db, itemsSvc, &fakeWallet{})
+	ctx := context.Background()
+
+	claimed := make(chan error, 1)
+	go func() {
+		_, err := svc.ClaimLetter(ctx, letter.ID, member)
+		claimed <- err
+	}()
+	<-itemsSvc.entered // the claim holds the row lock
+
+	read := make(chan error, 1)
+	go func() { read <- svc.MarkLetterRead(ctx, letter.ID, member) }()
+	select {
+	case err := <-read:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		close(itemsSvc.release)
+		<-read
+		t.Fatal("mark read waited for the claim's row lock")
+	}
+
+	close(itemsSvc.release)
+	require.NoError(t, <-claimed)
+	rows := stateRows(t, db, letter.ID, member)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "claimed", rows[0].ClaimState)
+	assert.True(t, rows[0].ReadAt.Valid, "the claim recorded the read")
+}
+
+// The other direction: a mark read of a letter already read takes no lock on
+// its state row, so it never makes a claim's NOWAIT refuse a spurious
+// LETTER_CLAIM_IN_PROGRESS. Each claim here runs while mark reads of its
+// letter are repeated as fast as they go.
+func TestClaimDB_MarkReadNeverMakesAClaimInProgress(t *testing.T) {
+	db := mailboxDB(t)
+	member := uuid.New()
+	itemsSvc, wallet := &fakeItems{}, &fakeWallet{}
+	svc := claimDBService(t, db, itemsSvc, wallet)
+	ctx := context.Background()
+
+	const letters, readers = 25, 4
+	for i := 0; i < letters; i++ {
+		letter := letterTo(&member, sentAt, goldOf(1))
+		store(t, db, letter)
+		require.NoError(t, svc.MarkLetterRead(ctx, letter.ID, member)) // opened before Take
+
+		stop := make(chan struct{})
+		reading := make(chan error, readers)
+		for r := 0; r < readers; r++ {
+			go func() {
+				for {
+					select {
+					case <-stop:
+						reading <- nil
+						return
+					default:
+					}
+					if err := svc.MarkLetterRead(ctx, letter.ID, member); err != nil {
+						reading <- err
+						return
+					}
+				}
+			}()
+		}
+		time.Sleep(5 * time.Millisecond) // the readers are running
+
+		_, err := svc.ClaimLetter(ctx, letter.ID, member)
+		close(stop)
+		for r := 0; r < readers; r++ {
+			require.NoError(t, <-reading)
+		}
+		require.NoError(t, err, "claim %d of %d", i+1, letters)
+	}
+	assert.Equal(t, int64(letters), wallet.total())
+}
