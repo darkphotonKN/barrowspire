@@ -7,7 +7,9 @@ package mailbox
 
 import (
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -18,9 +20,39 @@ type Sender string
 const (
 	// SenderOfficial is an admin's letter, sent through the gateway.
 	SenderOfficial Sender = "official"
-	// SenderSystem is a letter made from a broker letter request.
+	// SenderSystem is a letter sent by code: a broker letter request or a
+	// letter trigger inside this service (A7).
 	SenderSystem Sender = "system"
 )
+
+// SentBy is a letter's sent-by audit (A7.2, R53-R56): who sent it, for
+// operators reading the database. An official letter records the admin's
+// member id from the token, a system letter its sent-by source; never both.
+//
+// Stored only: no read loads it and no answer carries it, so a letter read
+// back from the store has it zero.
+type SentBy struct {
+	MemberID *uuid.UUID
+	Source   SentBySource
+}
+
+// SentBySource names the service or feature that sent a system letter, e.g.
+// "marketplace.settlement", or a letter trigger's fixed name. Not checked
+// against a list. Get one from ParseSentBySource.
+type SentBySource string
+
+// maxSentBySourceRunes bounds a sent-by source after trimming (R55).
+const maxSentBySourceRunes = 64
+
+// ParseSentBySource trims raw and checks it is 1-64 characters (R55):
+// anything else is ErrSentBySourceInvalid.
+func ParseSentBySource(raw string) (SentBySource, error) {
+	source := strings.TrimSpace(raw)
+	if n := utf8.RuneCountInString(source); n < 1 || n > maxSentBySourceRunes {
+		return "", ErrSentBySourceInvalid
+	}
+	return SentBySource(source), nil
+}
 
 // ClaimState is where one member's claim of one letter stands.
 type ClaimState string
@@ -98,10 +130,12 @@ type Enclosure struct {
 
 // Letter is one stored letter. MemberID nil addresses every member.
 type Letter struct {
-	ID         uuid.UUID
-	Title      string
-	Body       string
-	Sender     Sender
+	ID     uuid.UUID
+	Title  string
+	Body   string
+	Sender Sender
+	// SentBy is written with the letter and never read back (R56).
+	SentBy     SentBy
 	MemberID   *uuid.UUID
 	Enclosures []Enclosure
 	SentAt     time.Time
@@ -223,6 +257,9 @@ var (
 	// ErrWalletUnavailable: wallet-service could not credit the gold now. The
 	// claim stays re-drivable. Retryable.
 	ErrWalletUnavailable = errors.New("wallet service unavailable")
+	// ErrSentBySourceInvalid: a sent-by source is empty, blank or longer than
+	// 64 characters after trimming (R55).
+	ErrSentBySourceInvalid = errors.New("sent-by source must be 1-64 characters")
 	// ErrStateLocked: another claim holds the row lock on this letter state.
 	ErrStateLocked = errors.New("letter state locked by another claim")
 )
