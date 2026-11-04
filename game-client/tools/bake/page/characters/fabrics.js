@@ -287,8 +287,12 @@ export const GEAR = {
   leatherDark: mix("barrowDeep", "pitch", 0.35),
   // the knight's heavy wool cloak, in the house oxblood
   cloakKnight: mix("oxblood", "barrowDeep", 0.58),
-  ranger: mix("arcaneDeep", "barrowDeep", 0.4),
-  rangerDark: mix("arcaneDeep", "pitch", 0.45),
+  // the Archer's Nightwood: a green dyed so deep it is nearly black, over muted buff leather that
+  // carries the figure. The cloak sits a shade above black, so the back still reads in a dark room.
+  rangerNight: mix("arcaneDeep", "pitch", 0.54),
+  rangerNightDark: mix("arcaneDeep", "pitch", 0.72),
+  rangerHose: mix("barrowDeep", "slate", 0.5),
+  buff: mix(mix("brass", "vellumDark", 0.5), "barrowBrown", 0.5),
   breeches: mix("barrowDeep", "slate", 0.35),
   // the Mage: a black gown under a scapular in the class's necrotic teal
   robe: mix("pitch", "charcoal", 0.6),
@@ -367,8 +371,10 @@ export function fabrics() {
     leatherDark: mat(leather(GEAR.leatherDark, { seed: 23 }), { rough: 0.65 }),
     leatherDouble: mat(leather(GEAR.leatherLight, { seed: 21 }), { rough: 0.72, side: D }),
     cloakKnight: mat(wool(GEAR.cloakKnight, { seed: 93, dirt: 0.5 }), { side: D }),
-    ranger: mat(wool(GEAR.ranger, { seed: 29, dirt: 0.45 }), { side: D }),
-    rangerDark: mat(wool(GEAR.rangerDark, { seed: 31 })),
+    rangerNight: mat(wool(GEAR.rangerNight, { seed: 29, dirt: 0.4 }), { side: D }),
+    rangerNightDark: mat(wool(GEAR.rangerNightDark, { seed: 31 })),
+    rangerHose: mat(wool(GEAR.rangerHose, { seed: 33 })),
+    buff: mat(leather(GEAR.buff, { seed: 21 }), { rough: 0.72 }),
     breeches: mat(wool(GEAR.breeches, { seed: 33 })),
     robe: mat(wool(GEAR.robe, { seed: 35, dirt: 0.3 }), { side: D }),
     scapular: mat(wool(GEAR.scapular, { seed: 37, dirt: 0.3 }), { side: D }),

@@ -257,10 +257,12 @@ lit) while the player stands inside.
   cloak hangs to the calf. He carries a longsword and a tall kite shield painted per pale in bone
   and oxblood, with an iron boss. Worn and functional kit, never bright fantasy plate. *(Amended
   at the owner's pick, 2026-11-04.)*
-- **Archer:** a ranger in forest green. A deep cowl, closed over the crown, hides most of the
+- **Archer:** a ranger in Nightwood: cowl, capelet and cloak in a green dyed so deep it is
+  nearly black, held just above black so the back still reads in a dark room, over muted buff
+  leather that carries the figure. A deep cowl, closed over the crown, hides most of the
   face in shadow down to the mouth. Its crown draws back into one long, full point that droops
   like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
-  ragged cloak hangs over light leather, with a quiver on the back. *(Amended at the owner's
+  ragged cloak hangs over the buff leather, with a quiver on the back. *(Amended at the owner's
   pick, 2026-11-04.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her waist drawn in by a
