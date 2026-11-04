@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/testutil"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -212,14 +214,190 @@ func TestMailArrivals_SkipsWhatIsNotAMailArrival(t *testing.T) {
 	assert.Equal(t, len(malformed), strings.Count(sink.String(), "mail arrival skipped"), "each malformed message is warned once")
 }
 
+// The decoder takes exactly the two forms ADR-0045 fixes, by their exact keys, and skips every
+// other payload: a key present as null, a key spelt in another case, both keys, or neither. Other
+// keys beside one form are ignored. R42; ADR-0045 "A pod skips any other payload".
+func TestDecodeMailArrival(t *testing.T) {
+	member := uuid.New()
+	id := member.String()
+	accepted := []struct {
+		raw  string
+		want mailArrival
+	}{
+		{`{"member_id":"` + id + `"}`, mailArrival{memberID: member}},
+		{`{"member_id":"` + id + `","sent_at":"2026-11-04"}`, mailArrival{memberID: member}},
+		{`{"broadcast":true}`, mailArrival{broadcast: true}},
+		{`{"broadcast":true,"note":null}`, mailArrival{broadcast: true}},
+	}
+	for _, tc := range accepted {
+		t.Run("accepts "+tc.raw, func(t *testing.T) {
+			got, err := decodeMailArrival([]byte(tc.raw))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	refused := []string{
+		`{not json`,
+		`null`,
+		`[]`,
+		`"broadcast"`,
+		`{}`,
+		`{"broadcast":false}`,
+		`{"broadcast":"true"}`,
+		`{"broadcast":null}`,
+		`{"member_id":null}`,
+		`{"member_id":"not-a-uuid"}`,
+		`{"member_id":"00000000-0000-0000-0000-000000000000"}`,
+		`{"member_id":42}`,
+		`{"member_id":"` + id + `","broadcast":true}`,
+		`{"member_id":null,"broadcast":true}`,
+		`{"member_id":"` + id + `","broadcast":null}`,
+		`{"Broadcast":true}`,
+		`{"BROADCAST":true}`,
+		`{"Member_ID":"` + id + `"}`,
+		`{"MEMBER_ID":"` + id + `"}`,
+	}
+	for _, raw := range refused {
+		t.Run("refuses "+raw, func(t *testing.T) {
+			_, err := decodeMailArrival([]byte(raw))
+			assert.Error(t, err)
+		})
+	}
+}
+
+// memberListMax is the most member ids one admin send may name (FS-1GZGD A6): it publishes one
+// `{"member_id"}` per recipient in one pipelined burst, and that burst reaches every pod.
+const memberListMax = 1000
+
+// handedCountBus counts the messages its subscriptions have handed on to the relay.
+type handedCountBus struct {
+	mailArrivalBus
+	handed atomic.Int64
+}
+
+func (b *handedCountBus) Listen(ctx context.Context, channel string, onMessage func([]byte)) error {
+	return b.mailArrivalBus.Listen(ctx, channel, func(payload []byte) {
+		onMessage(payload)
+		b.handed.Add(1)
+	})
+}
+
+// A member-list send's burst lands while the hub's loop is busy: the one member of it standing
+// in this pod's hub still gets their mail_arrived, however many arrivals for other pods' players
+// came first. A6, R43, R50.
+func TestMailArrivals_AMemberListBurst_StillReachesTheMemberHere(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	bus := &handedCountBus{mailArrivalBus: chatbus.NewRedis(client)}
+	rig := newMailPod(t, client, bus)
+	wren, _, wrenInbox := rig.inHub(t, "Wren")
+
+	// publish retries until the pod listens; the warm-up is for nobody here
+	rig.publishMember(t, uuid.New())
+	require.Eventually(t, func() bool { return bus.handed.Load() == 1 }, startSoloSettle, 10*time.Millisecond)
+
+	// the hub's loop stalls, as behind other work, until the whole burst is off the bus
+	rig.server.mu.Lock()
+	stalled := true
+	resume := func() {
+		if stalled {
+			stalled = false
+			rig.server.mu.Unlock()
+		}
+	}
+	t.Cleanup(resume)
+
+	ctx := context.Background()
+	burst := rig.redis.Pipeline()
+	for range memberListMax - 1 {
+		burst.Publish(ctx, mailArrivedChannel, `{"member_id":"`+uuid.New().String()+`"}`)
+	}
+	burst.Publish(ctx, mailArrivedChannel, `{"member_id":"`+wren.ID.String()+`"}`)
+	_, err := burst.Exec(ctx)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return bus.handed.Load() == 1+memberListMax }, startSoloSettle, 10*time.Millisecond, "the burst never came off the bus")
+
+	resume()
+	awaitMailArrived(t, wrenInbox, "Wren, last of the burst")
+}
+
+// hubTown is a pod's HUB world as the relay reads it, counting how often the whole of it is listed.
+type hubTown struct {
+	conns  map[uuid.UUID]*websocket.Conn
+	listed atomic.Int64
+}
+
+func (h *hubTown) TownConns() map[uuid.UUID]*websocket.Conn {
+	h.listed.Add(1)
+	out := make(map[uuid.UUID]*websocket.Conn, len(h.conns))
+	for id, conn := range h.conns {
+		out[id] = conn
+	}
+	return out
+}
+
+func (h *hubTown) TownConn(playerID uuid.UUID) (*websocket.Conn, bool) {
+	conn, here := h.conns[playerID]
+	return conn, here
+}
+
+// sentConns records which connections mail_arrived was sent on.
+type sentConns struct {
+	mu   sync.Mutex
+	sent []*websocket.Conn
+}
+
+func (s *sentConns) SendMessageToConn(conn *websocket.Conn, _ types.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sent = append(s.sent, conn)
+	return nil
+}
+
+// An arrival for one member looks that member up; only a broadcast lists the whole town. A
+// member-list burst is up to a thousand arrivals, nearly all for other pods' players. R43, A6.
+func TestMailArrivals_MemberArrival_LooksUpOnlyThatMember(t *testing.T) {
+	wren, marl := uuid.New(), uuid.New()
+	wrenConn, marlConn := &websocket.Conn{}, &websocket.Conn{}
+	town := &hubTown{conns: map[uuid.UUID]*websocket.Conn{wren: wrenConn, marl: marlConn}}
+	sender := &sentConns{}
+	relay := newMailArrivals(nil, town, sender)
+
+	relay.deliver(mailArrival{memberID: uuid.New()})
+	relay.deliver(mailArrival{memberID: wren})
+
+	assert.Equal(t, []*websocket.Conn{wrenConn}, sender.sent)
+	assert.Zero(t, town.listed.Load(), "a member arrival lists the whole town")
+
+	relay.deliver(mailArrival{broadcast: true})
+	assert.ElementsMatch(t, []*websocket.Conn{wrenConn, wrenConn, marlConn}, sender.sent)
+	assert.Equal(t, int64(1), town.listed.Load())
+}
+
+// A hub built with no relay, or a typed-nil one, waits on no arrivals; a typed-nil relay delivers
+// nothing and does not panic.
+func TestMessageHub_WithoutAMailRelay_WaitsOnNoArrivals(t *testing.T) {
+	var typedNil *mailArrivals
+	for name, relay := range map[string]mailArrivalRelayer{"no relay": nil, "typed-nil relay": typedNil} {
+		t.Run(name, func(t *testing.T) {
+			hub := NewMessageHub(nil, nil, testPodID, testPodAddr, noopAnnouncer{}, nil, nil, nil, newLoopJobs(), relay)
+			assert.Nil(t, hub.mailInbound())
+		})
+	}
+	assert.NotPanics(t, func() { typedNil.deliver(mailArrival{broadcast: true}) })
+}
+
 // dropAfterOneBus delivers one message on its first subscription and then drops it, as a Redis
-// connection lost mid-life would; later subscriptions pass straight through.
+// connection lost mid-life would; later subscriptions pass straight through. listens counts the
+// subscriptions asked for, so a test can wait for the one after the drop.
 type dropAfterOneBus struct {
 	mailArrivalBus
 	dropped atomic.Bool
+	listens atomic.Int64
 }
 
 func (b *dropAfterOneBus) Listen(ctx context.Context, channel string, onMessage func([]byte)) error {
+	b.listens.Add(1)
 	if b.dropped.Load() {
 		return b.mailArrivalBus.Listen(ctx, channel, onMessage)
 	}
@@ -242,7 +420,9 @@ func TestMailArrivals_SubscribesAgainAfterADrop(t *testing.T) {
 
 	rig.publishMember(t, wren.ID)
 	awaitMailArrived(t, wrenInbox, "Wren before the drop")
-	require.Eventually(t, bus.dropped.Load, startSoloSettle, 10*time.Millisecond, "the first subscription never dropped")
+	// wait for the relay to ask again: before that, a publish can be counted by the dying
+	// subscription and lost with it
+	require.Eventually(t, func() bool { return bus.listens.Load() >= 2 }, startSoloSettle, 10*time.Millisecond, "the relay never subscribed again")
 
 	// publish retries until the fresh subscription is listening
 	rig.publishMember(t, wren.ID)
@@ -251,7 +431,10 @@ func TestMailArrivals_SubscribesAgainAfterADrop(t *testing.T) {
 
 // A full queue drops the arrival instead of blocking the subscriber: at most once. R42; ADR-0045
 // "A push can be lost (... a full queue ...)".
+// The drop is logged at Debug, as chat and the pod inbox log theirs: a member-list burst behind a
+// busy loop must not write a warning per arrival.
 func TestMailArrivals_FullQueueDropsInsteadOfBlocking(t *testing.T) {
+	sink := captureLogs(t)
 	relay := newMailArrivals(nil, nil, nil)
 	raw := []byte(`{"broadcast":true}`)
 
@@ -269,4 +452,6 @@ func TestMailArrivals_FullQueueDropsInsteadOfBlocking(t *testing.T) {
 		t.Fatal("the subscriber blocked on a full queue")
 	}
 	assert.Len(t, relay.inbound(), mailArrivalBuffer, "the queue holds its buffer and drops the rest")
+	assert.Equal(t, 5, strings.Count(sink.String(), "mail arrival dropped"), "each drop is logged")
+	assert.Empty(t, warnLinesWith(sink, "mail arrival dropped"), "a drop is logged at Debug, not Warn")
 }

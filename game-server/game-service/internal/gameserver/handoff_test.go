@@ -88,7 +88,7 @@ func TestResolveMatchedPlayers_ClassifiesByPod(t *testing.T) {
 	server := newHandoffServer(t, NewMockQueueService(), noopAnnouncer{})
 	sender := messaging.NewMessageSender(server)
 	jobs := newLoopJobs()
-	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New, nil, nil, nil), newPartyRegistry(server, sender, jobs, partyRegistryConfig{podID: testPodID, podAddr: testPodAddr, size: defaultPartySize, now: time.Now, newID: uuid.New}), newPresenceKeeper(nil, nil, server, testPodID, testPodAddr, time.Now, newOrderedWriter()), jobs)
+	hub := NewMessageHub(server, sender, testPodID, testPodAddr, noopAnnouncer{}, newChatRelay(server, sender, testPodID, time.Now, uuid.New, nil, nil, nil), newPartyRegistry(server, sender, jobs, partyRegistryConfig{podID: testPodID, podAddr: testPodAddr, size: defaultPartySize, now: time.Now, newID: uuid.New}), newPresenceKeeper(nil, nil, server, testPodID, testPodAddr, time.Now, newOrderedWriter()), jobs, nil)
 
 	local := matchPlayer(testPodID)
 	registerTestConn(server, &websocket.Conn{}, &types.Player{ID: local.ID, Username: "Wren", Character: local.Character})

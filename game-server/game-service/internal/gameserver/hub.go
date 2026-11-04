@@ -55,8 +55,8 @@ type mailArrivalRelayer interface {
 	deliver(arrival mailArrival)
 }
 
-// mailArrivals is the relay's queue, or nil, which a select never receives from.
-func (h *messageHub) mailArrivals() <-chan mailArrival {
+// mailInbound is the relay's queue, or nil, which a select never receives from.
+func (h *messageHub) mailInbound() <-chan mailArrival {
 	if h.mail == nil {
 		return nil
 	}
@@ -380,7 +380,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs, mail mailArrivalRelayer) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -392,6 +392,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		party:          party,
 		presence:       presence,
 		jobs:           jobs,
+		mail:           mail,
 	}
 }
 
@@ -929,7 +930,7 @@ func (h *messageHub) Run(ctx context.Context) {
 
 		// a mail arrival off the bus: mail_arrived to HUB-world players, sent from this loop as a
 		// chat line is (FS-1GZGD R43)
-		case arrival := <-h.mailArrivals():
+		case arrival := <-h.mailInbound():
 			h.mail.deliver(arrival)
 
 		// the party registry's clock: the party cache is kept here (FS-NCC9J R4, R6)
