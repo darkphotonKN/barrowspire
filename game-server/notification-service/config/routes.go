@@ -32,12 +32,6 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// Outbound mail (FS-V6SFK R26): SMTP, Mailpit in dev
 	mailer := notification.NewSMTPMailer(LoadSMTPConfig())
 
-	// Create service with repositories and DB handle (for tx-wrapped inbox pattern)
-	service := notification.NewService(db, repo, inboxRepo, mailer)
-
-	// Create gRPC handler with service
-	handler := notification.NewHandler(service)
-
 	// Mailbox (FS-1GZGD, ADR-0044). One arrival publisher announces the
 	// letters every door stores (R41, R52); the letter request shares this
 	// service's inbox (R12).
@@ -45,6 +39,14 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
 		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals, inboxRepo)
 	mailboxHandler := mailbox.NewHandler(mailboxService)
+
+	// Create service with repositories and DB handle (for tx-wrapped inbox
+	// pattern); the signup handling stores each new account's welcome letter
+	// through the mailbox (FS-1GZGD R57)
+	service := notification.NewService(db, repo, inboxRepo, mailer, mailboxService)
+
+	// Create gRPC handler with service
+	handler := notification.NewHandler(service)
 
 	// Create AMQP consumer with service; letter requests go to the mailbox
 	consumer := notification.NewConsumer(service, mailboxService, amqpChannel)
