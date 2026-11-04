@@ -488,7 +488,6 @@ func TestClaimLetter_Failures(t *testing.T) {
 // hangingClient is notification-service holding every call (a pinned pool, a
 // stuck claim): it answers only when the call's deadline passes.
 type hangingClient struct {
-	fakeLetterClient
 	deadlines []bool
 }
 
