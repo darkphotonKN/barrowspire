@@ -8,6 +8,7 @@ import {
   DURATIONS,
   END_TIME_PASSED,
   LIST_FAILED,
+  WORN_CANNOT_LIST,
   buyoutField,
   canSubmitListing,
   createListingFailureMessage,
@@ -120,6 +121,44 @@ describe("pickerCards", () => {
   it("should name a nameless relic", () => {
     expect(pickerCards([{ id: "x" }])[0].name).toBe("Unknown relic");
   });
+
+  // FS-HBXZN R13, R15: a worn relic is shown, not choosable; a status tag wins over "Worn".
+  describe("with worn relics", () => {
+    const worn = pickerCards(
+      [
+        { id: "sword", status: "AVAILABLE" },
+        { id: "axe", status: "AVAILABLE" },
+        { id: "helm", status: "LISTED" },
+        { id: "odd", status: "DESTROYED" },
+        { id: "old" },
+      ],
+      new Set(["sword", "helm", "odd", "old"]),
+    );
+
+    it.each([
+      ["a worn available relic", "sword", false, "Worn"],
+      ["an unworn available relic", "axe", true, undefined],
+      ["a worn listed relic", "helm", false, "Listed"],
+      ["a worn relic of unknown status", "odd", false, "Unavailable"],
+      ["a worn relic with no status", "old", false, "Worn"],
+    ])("should show %s: choosable %s, tagged %s", (_l, id, selectable, tag) => {
+      const card = worn.find((c) => c.id === id)!;
+      expect(card.selectable).toBe(selectable);
+      expect(card.tag).toBe(tag);
+    });
+
+    it("should keep every worn relic in the picker", () => {
+      expect(worn.map((c) => c.id)).toEqual(["sword", "axe", "helm", "odd", "old"]);
+    });
+
+    it("should read no worn ids as today's cards", () => {
+      const instances = [
+        { id: "sword", status: "AVAILABLE" },
+        { id: "helm", status: "LISTED" },
+      ];
+      expect(pickerCards(instances, new Set())).toEqual(pickerCards(instances));
+    });
+  });
 });
 
 describe("buyoutField", () => {
@@ -182,14 +221,26 @@ describe("canSubmitListing", () => {
   ])("should refuse when %s", (_l, change) => {
     expect(canSubmitListing({ ...ok, ...change })).toBe(false);
   });
+
+  it("should refuse a worn relic, which its card does not let be chosen (FS-HBXZN R13)", () => {
+    const wornCards = pickerCards([{ id: "sword", status: "AVAILABLE" }], new Set(["sword"]));
+    expect(canSubmitListing({ ...ok, cards: wornCards })).toBe(false);
+  });
 });
 
 describe("createListingFailureMessage", () => {
   const apiError = (status: number) =>
     new ApiError({ code: "X", status, detail: "", errors: [] });
 
+  const refusal = (code: string, status = 400) =>
+    new ApiError({ code, status, detail: "", errors: [] });
+
   it.each([
-    ["a 500, the item-side refusal", apiError(500), CANNOT_LIST],
+    // FS-HBXZN R17: items' refusals are named by their code
+    ["ITEM_WORN, a worn relic", refusal("ITEM_WORN"), WORN_CANNOT_LIST],
+    ["ITEM_NOT_AVAILABLE, a relic already held", refusal("ITEM_NOT_AVAILABLE"), CANNOT_LIST],
+    ["a 404, a relic not the member's", refusal("NOT_FOUND", 404), CANNOT_LIST],
+    ["a 500, a real failure", apiError(500), LIST_FAILED],
     ["a 400, an end time already past", apiError(400), END_TIME_PASSED],
     ["a 503", apiError(503), BROWSE_UNREACHABLE],
     ["a network failure", new TypeError("Failed to fetch"), BROWSE_UNREACHABLE],
@@ -197,6 +248,18 @@ describe("createListingFailureMessage", () => {
   ])("should map %s", (_l, err, want) => {
     expect(createListingFailureMessage(err)).toBe(want);
   });
+
+  // FS-HBXZN R17–R18: a code wins over the price reading, so a refused relic never reads as a
+  // buyout or an end-time problem
+  it.each(["ITEM_WORN", "ITEM_NOT_AVAILABLE"])(
+    "should name %s by its code whatever prices were sent",
+    (code) => {
+      expect(
+        createListingFailureMessage(refusal(code), { startPrice: 50, buyoutPrice: 50 }),
+      ).not.toBe(BUYOUT_NOT_ABOVE_START);
+      expect(createListingFailureMessage(refusal(code))).not.toBe(END_TIME_PASSED);
+    },
+  );
 
   // FS-V6SFK §Requirements 38: the gate's 400 is named by its code, before any price reading
   it("should ask an unverified seller to verify their email, whatever was sent", () => {
@@ -226,5 +289,6 @@ describe("createListingFailureMessage", () => {
     expect(END_TIME_PASSED).toBe(
       "That end time has already passed — check your clock",
     );
+    expect(WORN_CANNOT_LIST).toBe("Take it off first — worn relics can't be listed.");
   });
 });
