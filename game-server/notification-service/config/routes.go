@@ -3,18 +3,29 @@ package config
 import (
 	"log/slog"
 	"net"
+	"os"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification"
+	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/inbox"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/mailbox"
 	"github.com/darkphotonKN/barrowspire-server/notification-service/internal/notification"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
-	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
 
-// SetupServices initializes all services and their dependencies
-func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
+// SetupServices initializes all services and their dependencies.
+//
+// itemsConn is the connection to items-service, which the mailbox resolves
+// item enclosures through at send (FS-1GZGD R4) and grants a claim's items
+// through (R15); walletConn is wallet-service's, which credits a claim's gold
+// (R16). redisClient carries mail arrivals to the game pods after a letter
+// commits (R41, ADR-0045). jwtSecret verifies the token the gateway forwards
+// on every mailbox call.
+func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn grpc.ClientConnInterface, redisClient *redis.Client, jwtSecret []byte) *grpc.Server {
 	// Create repositories
 	repo := notification.NewRepository(db)
 	inboxRepo := inbox.NewRepo()
@@ -22,14 +33,29 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
 	// Outbound mail (FS-V6SFK R26): SMTP, Mailpit in dev
 	mailer := notification.NewSMTPMailer(LoadSMTPConfig())
 
-	// Create service with repositories and DB handle (for tx-wrapped inbox pattern)
-	service := notification.NewService(db, repo, inboxRepo, mailer)
+	// Mailbox (FS-1GZGD, ADR-0044). One arrival publisher announces the
+	// letters every door stores (R41, R52); the letter request shares this
+	// service's inbox (R12).
+	arrivals := mailbox.NewRedisArrivalPublisher(redisClient)
+	// The welcome potion is found by catalogue name (FS-1GZGD A10): its template
+	// id differs per environment, since the dev seed mints it.
+	itemsClient := mailbox.NewItemsClient(itemsConn)
+	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
+		itemsClient, mailbox.NewWalletClient(walletConn), arrivals, inboxRepo,
+		MaxConcurrentClaims).
+		WithWelcomeGift(itemsClient, os.Getenv("WELCOME_GIFT_TEMPLATE_NAME"))
+	mailboxHandler := mailbox.NewHandler(mailboxService)
+
+	// Create service with repositories and DB handle (for tx-wrapped inbox
+	// pattern); the signup handling stores each new account's welcome letter
+	// through the mailbox (FS-1GZGD R57)
+	service := notification.NewService(db, repo, inboxRepo, mailer, mailboxService)
 
 	// Create gRPC handler with service
 	handler := notification.NewHandler(service)
 
-	// Create AMQP consumer with service
-	consumer := notification.NewConsumer(service, amqpChannel)
+	// Create AMQP consumer with service; letter requests go to the mailbox
+	consumer := notification.NewConsumer(service, mailboxService, amqpChannel)
 
 	// Set up AMQP infrastructure
 	if err := notification.SetupAMQPInfrastructure(amqpChannel); err != nil {
@@ -40,10 +66,14 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel) *grpc.Server {
 	consumer.Listen()
 
 	// Create gRPC server
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
+		commoninterceptor.Metrics(),
+		authenticate(commonauth.NewValidator(jwtSecret)),
+	))
 
-	// Register notification service with gRPC server
-	pb.RegisterNotificationServiceServer(grpcServer, handler)
+	// Register notification service with gRPC server: notification and
+	// mailbox methods are one NotificationService
+	pb.RegisterNotificationServiceServer(grpcServer, newNotificationServer(handler, mailboxHandler))
 
 	slog.Info("Notification service initialized successfully")
 

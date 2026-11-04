@@ -101,6 +101,12 @@ export interface ChatInputDeps {
   keyboard: () => SceneKeyboard | null | undefined;
   /** Whether nothing else owns Enter and Esc right now (R27). */
   mayOpen: () => boolean;
+  /**
+   * Whether what holds the keys now took them by a press elsewhere (the letter panel, opened from
+   * its envelope): the input lets go as a press in the world does, the draft kept for later.
+   * Anything else that takes the keys drops the draft (R27).
+   */
+  keepsDraft?: () => boolean;
   send: (line: ChatSend) => void;
   /** Told whenever the open state or the draft changes, so the window can redraw its hint. */
   changed?: () => void;
@@ -305,15 +311,26 @@ export class ChatInput {
 
   /**
    * Re-reads who owns the keys (once a frame, from the window). Losing them mid-line drops the
-   * draft and closes the input (R27). Returns whether the player may type now, or undefined when
-   * nothing changed since the last reading.
+   * draft and closes the input (R27), unless they went to something opened by a press elsewhere
+   * (`keepsDraft`): then the input closes and the draft stays. Returns whether the player may type
+   * now, or undefined when nothing changed since the last reading.
    */
   sync(): boolean | undefined {
     const allowed = this.deps.mayOpen();
     if (allowed === this.lastAllowed) return undefined;
     this.lastAllowed = allowed;
-    if (!allowed) this.cancel();
+    if (!allowed) {
+      if (this.deps.keepsDraft?.()) this.letGo();
+      else this.cancel();
+    }
     return allowed;
+  }
+
+  /** Closes the input with its draft kept, the keyboard given back. */
+  private letGo(): void {
+    if (!this.open) return;
+    this.deps.field.blur();
+    this.blurred();
   }
   private lastAllowed?: boolean;
 

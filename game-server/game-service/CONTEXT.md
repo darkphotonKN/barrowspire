@@ -542,6 +542,22 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
   never reach game-service state (ADR-0030).
 
+### Mailbox arrivals (FS-1GZGD amendment 2026-11-04, ADR-0045)
+
+game-service has no mailbox; it only passes on a hint that one changed.
+
+- **Mail arrival** — a message on the Redis channel `mail:arrived`, published by
+  notification-service when a mailbox letter is sent: `{"member_id"}` for one player,
+  `{"broadcast": true}` for everyone. Every pod subscribes at boot, in world chat's subscriber →
+  message hub shape. At most once; anything else on the channel is skipped.
+- **`mail_arrived`** — the WebSocket action a pod sends for a mail arrival: to the named player if
+  they stand in the HUB world on this pod, or to every player in the HUB world on this pod for a
+  broadcast. Never to a player in a run or a field world. No payload; the client asks the
+  gateway for the mailbox.
+- **Mailbox letter** vs **letter** — here a bare *letter* is a pod-inbox letter (party courier,
+  whisper). The in-game mail's letters are always written **mailbox letter**, and game-service
+  never holds one.
+
 ### Chat (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
 
 Chat is a relay, not a world concern: a message never enters an ECS world, is never stored, and

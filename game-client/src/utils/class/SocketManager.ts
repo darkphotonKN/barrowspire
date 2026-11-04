@@ -19,6 +19,7 @@ import {
   isPartyUpdate,
   usePartyStore,
 } from "@/stores/partyStore";
+import { useMailboxStore } from "@/stores/mailboxStore";
 
 export type ConnectionStatus =
   | "disconnected"
@@ -330,6 +331,12 @@ export class SocketManager {
       // door's Enter as a party back. FS-BJNYC R21, R23.
       if (!isPartyReadyCheck(data.payload)) return;
       usePartyStore.getState().receiveReadyCheck(data.payload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "mail_arrived") {
+      // A letter was just sent to this player: a hint to look, carrying no letter. The mailbox
+      // store fetches the summary while the player is in the town and drops it anywhere else.
+      // The client never sends this action. FS-1GZGD R34, R43; ADR-0045.
+      void useMailboxStore.getState().arrived();
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action && this.listeners.has(data.action)) {
       // Handle action-based messages

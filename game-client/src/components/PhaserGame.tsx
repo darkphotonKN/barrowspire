@@ -14,6 +14,7 @@ import { WORLD_SCENES, sceneFor } from "./worldRouting";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
+import { releaseGame } from "./releaseGame";
 import { installCrispText } from "@/render/crispText";
 
 export default function PhaserGame() {
@@ -121,7 +122,8 @@ export default function PhaserGame() {
     return () => {
       cancelAnimationFrame(raf);
       if (gameRef.current) {
-        gameRef.current.destroy(true);
+        // the keyboard goes back to the page now, not on the destroy's next frame (releaseGame.ts)
+        releaseGame(gameRef.current, socketManager);
         gameRef.current = null;
       }
     };

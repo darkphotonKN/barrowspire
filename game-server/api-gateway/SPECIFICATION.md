@@ -65,6 +65,13 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 
 - [x] Move an item between bag and stash → FS-VPD8Y
 
+### Mail
+
+- [ ] Read my mailbox and its summary → FS-1GZGD
+- [ ] Mark a letter read → FS-1GZGD
+- [ ] Claim a letter → FS-1GZGD
+- [ ] Send official mail as an admin → FS-1GZGD
+
 ### Characters
 
 - [x] Character level and experience read → FS-BDA7X

@@ -14,3 +14,13 @@
 - [x] Deduplicated match-result notifications → FS-PJPNA
 - [ ] Verification-code email → FS-V6SFK
 - [ ] Outbound email delivery behind a mailer → FS-V6SFK
+
+## Mailbox
+
+- [ ] Official and system letters to chosen members or to every member → FS-1GZGD
+- [ ] Letter requests from the broker, deduplicated → FS-1GZGD
+- [ ] A member's mailbox and its summary → FS-1GZGD
+- [ ] Claim a letter's enclosures → FS-1GZGD
+- [ ] New-letter arrival published to the game pods → FS-1GZGD
+- [ ] Sender audit on stored letters → FS-1GZGD
+- [ ] Welcome letter for each new account → FS-1GZGD

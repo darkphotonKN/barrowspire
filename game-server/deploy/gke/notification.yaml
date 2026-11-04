@@ -15,6 +15,10 @@ spec:
             - { containerPort: 7190, name: grpc }
           envFrom:
             - configMapRef: { name: notification }
+            # The notification Secret (created by hand, never committed) carries the
+            # sensitive values, and must carry JWT_SECRET, the same key the gateway
+            # signs with: notification verifies every forwarded mailbox token with it
+            # and refuses to start without it (FS-1GZGD).
             - secretRef: { name: notification }
           resources:
             requests: { cpu: 50m, memory: 128Mi }

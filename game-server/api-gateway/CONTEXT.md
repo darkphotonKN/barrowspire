@@ -8,6 +8,11 @@ this member's `SPECIFICATION.md`.
 
 <!-- **Term** — one-line definition -->
 
+- **Admin mail** (FS-1GZGD) — `POST /api/admin/mail`: an admin sending an **official letter** to
+  one member, to a **member list** (`memberIds`, one letter per distinct member, all stored or
+  none; A6) or to every member. The gateway checks `RoleAdmin` and the recipient's shape, and
+  forwards; the letter rules (lengths, expiry, enclosures, the list's bounds) are
+  notification-service's. "Mail" in a path here means the in-game mailbox, never email.
 - **Chat report** (FS-4HEG7) — one player's complaint about one chat message, received over HTTP
   with the evidence inside the request: the message, the few messages around it, reporter,
   reported player, chat channel and time. The gateway has no chat history to consult and asks

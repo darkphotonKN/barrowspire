@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/item"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/ledger"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/listing"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/mailbox"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/character"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/notification"
@@ -163,6 +164,10 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 	conns = append(conns, notificationClient)
 	notificationHandler := notification.NewHandler(notificationClient)
 	// Notification routes are SERIALIZED (FS-NTPW2 slice 3).
+
+	// The in-game mailbox (FS-1GZGD) lives in notification-service, so it
+	// shares that connection. Typed in internal/gateway/mailbox/typed.go.
+	mailboxHandler := mailbox.NewHandler(notificationClient, mailbox.DefaultTimeouts)
 	// --- PAYMENT MICROSERVICE ---
 
 	paymentClient, err := payment.NewClient(addrs.Payment)
@@ -247,6 +252,7 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 		Listing:        listingHandler,
 		Wallet:         walletHandler,
 		Characters:     characterHandler,
+		Mailbox:        mailboxHandler,
 		AuthMiddleware: auth.AuthMiddleware(),
 	})
 

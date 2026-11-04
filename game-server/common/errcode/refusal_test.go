@@ -23,6 +23,11 @@ func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
 		errcode.EmailAlreadyVerified,
 		// FS-V6SFK §Requirements 29
 		errcode.EmailUnverified,
+		// FS-1GZGD §API surface (mailbox), A3, A6
+		errcode.LetterTitleInvalid, errcode.LetterBodyInvalid, errcode.LetterExpiryInvalid,
+		errcode.EnclosureInvalid, errcode.UnknownItemTemplate, errcode.UnknownItemInstance,
+		errcode.LetterRecipientsInvalid, errcode.LetterExpired,
+		errcode.NothingToClaim, errcode.LetterAlreadyClaimed, errcode.LetterClaimInProgress,
 	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {

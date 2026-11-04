@@ -101,6 +101,10 @@ type Service interface {
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
+
+	// item snapshots and grants (FS-1GZGD)
+	ResolveItemSnapshots(ctx context.Context, templates []TemplateSnapshotRequest, instanceIDs []uuid.UUID) (*SnapshotResolution, error)
+	GrantItems(ctx context.Context, member uuid.UUID, grantID string, lines []GrantLine) (*GrantResult, error)
 }
 
 // checkAdminPermission checks if the user has admin permission
@@ -1417,4 +1421,219 @@ func affixesToProto(affixes Affixes) []*pb.Affix {
 		out = append(out, &pb.Affix{Stat: a.Stat, Tier: int32(a.Tier), Value: int32(a.Value)})
 	}
 	return out
+}
+
+// Bounds of one grant request (FS-1GZGD S1): a letter's slot count is at most
+// the stash cap, so no entry, no entry count and no total slot count can
+// exceed it.
+const (
+	maxGrantIDLength = 200
+	maxGrantLines    = StashCapacity
+	maxGrantQuantity = StashCapacity
+)
+
+// GrantItems mints the request's snapshots into the stash of the member in the
+// forwarded token; the request names no member (FS-1GZGD D18). A repeat of a
+// known grant id answers the first grant's ids, already_granted set. A full
+// stash is the STASH_FULL refusal; an unmintable snapshot is InvalidArgument.
+func (h *Handler) GrantItems(ctx context.Context, req *pb.GrantItemsRequest) (*pb.GrantItemsResponse, error) {
+	member, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	grantID := req.GetGrantId()
+	if grantID == "" || len(grantID) > maxGrantIDLength {
+		return nil, status.Errorf(codes.InvalidArgument, "grant_id must be 1-%d characters", maxGrantIDLength)
+	}
+	if n := len(req.GetItems()); n == 0 || n > maxGrantLines {
+		return nil, status.Errorf(codes.InvalidArgument, "1-%d items", maxGrantLines)
+	}
+	lines := make([]GrantLine, 0, len(req.GetItems()))
+	slots := 0
+	for _, item := range req.GetItems() {
+		q := item.GetQuantity()
+		if q < 1 || q > maxGrantQuantity {
+			return nil, status.Errorf(codes.InvalidArgument, "quantity must be 1-%d", maxGrantQuantity)
+		}
+		// no stash holds more than its cap, so a larger grant can never mint:
+		// refused before any id is made for it
+		if slots += int(q); slots > StashCapacity {
+			return nil, status.Errorf(codes.InvalidArgument, "a grant takes at most %d stash slots", StashCapacity)
+		}
+		snapshot, err := snapshotFromProto(item.GetSnapshot())
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, GrantLine{Snapshot: snapshot, Quantity: int(item.GetQuantity())})
+	}
+
+	got, err := h.service.GrantItems(ctx, member, grantID, lines)
+	var refusal *errcode.Refusal
+	switch {
+	case errors.As(err, &refusal):
+		return nil, refusal.GRPCStatus().Err()
+	case errors.Is(err, ErrSnapshotInvalid):
+		slog.WarnContext(ctx, "grant items: snapshot cannot be minted", "member_id", member, "grant_id", grantID, "error", err)
+		return nil, status.Error(codes.InvalidArgument, "an item snapshot cannot be minted")
+	case errors.Is(err, ErrGrantIDTaken):
+		slog.WarnContext(ctx, "grant items: grant id of another member", "member_id", member, "grant_id", grantID)
+		return nil, status.Error(codes.AlreadyExists, "grant id already used")
+	case errors.Is(err, commonconstants.ErrTransient):
+		slog.ErrorContext(ctx, "grant items: store unavailable", "member_id", member, "grant_id", grantID, "error", err)
+		return nil, status.Error(codes.Unavailable, "items store unavailable")
+	case err != nil:
+		slog.ErrorContext(ctx, "grant items failed", "member_id", member, "grant_id", grantID, "error", err)
+		return nil, status.Error(codes.Internal, "failed to grant items")
+	}
+
+	if got.AlreadyGranted {
+		slog.InfoContext(ctx, "grant items: already granted", "member_id", member, "grant_id", grantID)
+	}
+	return &pb.GrantItemsResponse{ItemIds: uuidStrings(got.ItemIDs), AlreadyGranted: got.AlreadyGranted}, nil
+}
+
+// snapshotFromProto reads a wire snapshot as it is; whether it can be minted
+// is the grant's to decide.
+func snapshotFromProto(in *pb.ItemSnapshot) (*ItemSnapshot, error) {
+	if in == nil {
+		return nil, status.Error(codes.InvalidArgument, "item snapshot missing")
+	}
+	templateID, err := uuid.Parse(in.GetTemplateId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid snapshot template_id")
+	}
+	affixes := make(Affixes, 0, len(in.GetAffixes()))
+	for _, a := range in.GetAffixes() {
+		affixes = append(affixes, Affix{Stat: a.GetStat(), Tier: int(a.GetTier()), Value: int(a.GetValue())})
+	}
+	return &ItemSnapshot{
+		TemplateID:       templateID,
+		Name:             in.GetName(),
+		Description:      in.Description,
+		ItemType:         in.GetItemType(),
+		WeaponType:       in.WeaponType,
+		ArmorSlot:        in.ArmorSlot,
+		Rarity:           in.GetRarity(),
+		AttackPower:      intPtr(in.AttackPower),
+		CriticalRate:     in.CriticalRate,
+		DefenseRating:    intPtr(in.DefenseRating),
+		MagicResistance:  intPtr(in.MagicResistance),
+		HealingAmount:    intPtr(in.HealingAmount),
+		ManaAmount:       intPtr(in.ManaAmount),
+		BuffDuration:     intPtr(in.BuffDuration),
+		Durability:       intPtr(in.Durability),
+		ItemLevel:        int(in.GetItemLevel()),
+		RequiredLevel:    int(in.GetRequiredLevel()),
+		Affixes:          affixes,
+		UniqueEffectText: in.UniqueEffectText,
+	}, nil
+}
+
+// snapshotToProto keeps absence as absence, as toProtoItemSummary does.
+func snapshotToProto(s *ItemSnapshot) *pb.ItemSnapshot {
+	return &pb.ItemSnapshot{
+		TemplateId:       s.TemplateID.String(),
+		Name:             s.Name,
+		Description:      s.Description,
+		ItemType:         s.ItemType,
+		WeaponType:       s.WeaponType,
+		ArmorSlot:        s.ArmorSlot,
+		Rarity:           s.Rarity,
+		AttackPower:      int32Ptr(s.AttackPower),
+		CriticalRate:     s.CriticalRate,
+		DefenseRating:    int32Ptr(s.DefenseRating),
+		MagicResistance:  int32Ptr(s.MagicResistance),
+		HealingAmount:    int32Ptr(s.HealingAmount),
+		ManaAmount:       int32Ptr(s.ManaAmount),
+		BuffDuration:     int32Ptr(s.BuffDuration),
+		Durability:       int32Ptr(s.Durability),
+		ItemLevel:        int32(s.ItemLevel),
+		RequiredLevel:    int32(s.RequiredLevel),
+		Affixes:          affixesToProto(s.Affixes),
+		UniqueEffectText: s.UniqueEffectText,
+	}
+}
+
+func intPtr(v *int32) *int {
+	if v == nil {
+		return nil
+	}
+	i := int(*v)
+	return &i
+}
+
+// maxSnapshotIDs bounds each list of one ResolveItemSnapshots call: a letter
+// holds at most 10 enclosures (FS-1GZGD S1), so a caller never needs more.
+const maxSnapshotIDs = 100
+
+// ResolveItemSnapshots answers item snapshots for templates and existing
+// instances (FS-1GZGD R21). Tokenless (see publicMethods in common/auth): it
+// reads no caller and answers no owner, status, location or listing. Results
+// are index-aligned with the request; what did not resolve is named in the
+// unknown and unrepresentable lists, not an error.
+func (h *Handler) ResolveItemSnapshots(ctx context.Context, req *pb.ResolveItemSnapshotsRequest) (*pb.ResolveItemSnapshotsResponse, error) {
+	if len(req.GetTemplates()) > maxSnapshotIDs || len(req.GetInstanceIds()) > maxSnapshotIDs {
+		return nil, status.Errorf(codes.InvalidArgument, "at most %d templates and %d instance ids", maxSnapshotIDs, maxSnapshotIDs)
+	}
+	if len(req.GetTemplates())+len(req.GetInstanceIds()) == 0 {
+		return &pb.ResolveItemSnapshotsResponse{}, nil
+	}
+
+	templates := make([]TemplateSnapshotRequest, 0, len(req.GetTemplates()))
+	for _, t := range req.GetTemplates() {
+		id, err := uuid.Parse(t.GetTemplateId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid template_id")
+		}
+		templates = append(templates, TemplateSnapshotRequest{TemplateID: id, ItemLevel: intPtr(t.ItemLevel)})
+	}
+	instanceIDs, err := parseIDs(req.GetInstanceIds())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid instance id")
+	}
+
+	got, err := h.service.ResolveItemSnapshots(ctx, templates, instanceIDs)
+	switch {
+	case errors.Is(err, commonconstants.ErrTransient):
+		slog.ErrorContext(ctx, "resolve item snapshots: store unavailable", "error", err)
+		return nil, status.Error(codes.Unavailable, "items store unavailable")
+	case err != nil:
+		slog.ErrorContext(ctx, "resolve item snapshots failed", "error", err)
+		return nil, status.Error(codes.Internal, "resolve item snapshots failed")
+	}
+
+	return &pb.ResolveItemSnapshotsResponse{
+		Templates:          resolvedToProto(req.GetTemplates(), got.Templates, func(t *pb.TemplateSnapshotRequest) string { return t.GetTemplateId() }),
+		Instances:          resolvedToProto(req.GetInstanceIds(), got.Instances, func(id string) string { return id }),
+		UnknownTemplateIds: uuidStrings(got.UnknownTemplateIDs),
+		UnknownInstanceIds: uuidStrings(got.UnknownInstanceIDs),
+		UnrepresentableIds: uuidStrings(got.UnrepresentableIDs),
+	}, nil
+}
+
+// resolvedToProto pairs each requested id with its snapshot, absent where it
+// did not resolve.
+func resolvedToProto[T any](requested []T, snapshots []*ItemSnapshot, idOf func(T) string) []*pb.ResolvedItemSnapshot {
+	out := make([]*pb.ResolvedItemSnapshot, 0, len(requested))
+	for i, r := range requested {
+		resolved := &pb.ResolvedItemSnapshot{Id: idOf(r)}
+		if i < len(snapshots) && snapshots[i] != nil {
+			resolved.Snapshot = snapshotToProto(snapshots[i])
+		}
+		out = append(out, resolved)
+	}
+	return out
+}
+
+func parseIDs(raw []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, r := range raw {
+		id, err := uuid.Parse(r)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

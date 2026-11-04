@@ -1,0 +1,60 @@
+syntax = "proto3";
+package events;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/events";
+
+// Events consumed by notification-service's Mailbox (FS-1GZGD R12, ADR-0044).
+//
+// LetterRequested asks for one system letter, routing key mail.letter.requested on the
+// mailbox.events exchange. No service in the repo publishes it yet (D2).
+//
+// notification-service deduplicates it on event_id through its inbox, in the same transaction
+// that stores the letter, so a redelivery stores nothing. A request that breaks the letter rules
+// (title, body, enclosures, expiry, an unknown template or instance, a missing source) is logged,
+// marked processed and acked, never requeued.
+message LetterRequested {
+  // The consumer's dedup key: a uuid the producer mints once per letter it asks for.
+  string event_id = 1;
+
+  // One member or every member; never a list (A6).
+  oneof recipient {
+    string member_id = 2;
+    // Every member: one broadcast letter (D3). Only true is meaningful.
+    bool all_members = 3;
+  }
+
+  string title = 4;
+  string body = 5;
+  repeated LetterRequestedEnclosure enclosures = 6;
+
+  // Absent: 30 days after the letter is stored (R5). Must be in the future.
+  google.protobuf.Timestamp expires_at = 7;
+
+  // Required (A7, R55): the requesting service or feature, e.g. "marketplace.settlement",
+  // 1-64 characters after trimming. Stored as the letter's sent-by source; empty is refused.
+  string source = 8;
+}
+
+// One enclosure of a requested letter, in the admin send's three kinds (A1).
+message LetterRequestedEnclosure {
+  oneof kind {
+    LetterRequestedTemplate template = 1;
+    LetterRequestedCopy copy = 2;
+    int64 gold = 3;
+  }
+}
+
+// A fresh item of a template; item_level absent means the template's min_item_level.
+message LetterRequestedTemplate {
+  string template_id = 1;
+  int32 quantity = 2;
+  optional int32 item_level = 3;
+}
+
+// A copy of an existing item instance as it stands when the letter is stored.
+message LetterRequestedCopy {
+  string instance_id = 1;
+  int32 quantity = 2;
+}

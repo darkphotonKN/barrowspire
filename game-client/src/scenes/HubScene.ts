@@ -31,6 +31,7 @@ import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
+import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
@@ -671,6 +672,13 @@ export class HubScene extends Phaser.Scene {
   private invitePrompt?: PartyInvitePrompt;
   /** The party's ready check, top centre (FS-BJNYC R23): it only happens in the town. */
   private readyCheck?: PartyReadyCheck;
+  /**
+   * The mailbox's envelope, bottom-right, and its letter panel (FS-1GZGD R33, R40): only the town
+   * has one. While the panel is open it owns the keys, as the ESC menu does.
+   */
+  private mailbox?: MailboxHud;
+  /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
+  private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -780,16 +788,37 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
-    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town
-    this.chatWindow = mountChatWindow(this, () => !this.dialogue && !this.menu && !this.gear?.isOpen());
+    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town.
+    // The letter panel is opened by a press, so it keeps a half-typed line as any press elsewhere
+    // does, and the wheel and presses under it are its own (FS-1GZGD R40)
+    this.chatWindow = mountChatWindow(
+      this,
+      () => !this.dialogue && !this.menu && !this.gear?.isOpen() && !this.mailbox?.isOpen(),
+      {
+        keepsDraft: () => !!this.mailbox?.isOpen(),
+        coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
+      },
+    );
     // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(this, () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen());
-    // party invites, hidden while the menu or the gear overlay covers the town (FS-R82NV R32, R33)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.menu || !!this.gear?.isOpen());
+    this.partyPanel = mountPartyPanel(
+      this,
+      () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen() || !!this.mailbox?.isOpen(),
+    );
+    // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
+    // (FS-R82NV R32, R33)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
     // the ready check, under the same covers; it closes no dialogue or shop (FS-BJNYC R23)
-    this.readyCheck = mountPartyReadyCheck(this, () => !!this.menu || !!this.gear?.isOpen());
+    this.readyCheck = mountPartyReadyCheck(this, () => this.coversPopups());
     // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
+    // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
+    // envelope opens nothing while a dialogue, the menu or the gear overlay is up
+    this.mailbox = mountMailbox(
+      this,
+      this.art,
+      () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen(),
+      () => this.characterLevel,
+    );
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
@@ -958,6 +987,9 @@ export class HubScene extends Phaser.Scene {
     this.readyCheck = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
+    // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
+    this.mailbox?.destroy();
+    this.mailbox = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
@@ -1134,9 +1166,10 @@ export class HubScene extends Phaser.Scene {
   private offerConversation(): void {
     if (!this.interactKey) return;
 
-    // The menu owns the keyboard while it is open (FS-G4VMQ §Requirements 5): a press to talk
-    // is read and dropped, so it does not open a dialogue the moment the menu closes.
-    if (this.menu) {
+    // The menu owns the keyboard while it is open (FS-G4VMQ §Requirements 5), and so does the
+    // letter panel (FS-1GZGD R40): a press to talk is read and dropped, so it does not open a
+    // dialogue the moment either closes.
+    if (this.menu || this.mailbox?.isOpen()) {
       Phaser.Input.Keyboard.JustDown(this.interactKey);
       return;
     }
@@ -1744,14 +1777,16 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Sends velocity only when it changes, rather than every frame. While the menu is open the
-   * keys are its (FS-G4VMQ §Requirements 5): they read as released, so a stride the menu
-   * interrupted is stopped once and nothing more is sent until it closes.
+   * Sends velocity only when it changes, rather than every frame. While the menu or the letter
+   * panel is open the keys are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40): they read as
+   * released, so a stride either interrupted is stopped once and nothing more is sent until it
+   * closes.
    */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
 
-    const held = (k: Phaser.Input.Keyboard.Key) => !this.menu && k.isDown;
+    const owned = !!this.menu || !!this.mailbox?.isOpen();
+    const held = (k: Phaser.Input.Keyboard.Key) => !owned && k.isDown;
     const left = held(this.cursors.left) || held(this.wasd.left);
     const right = held(this.cursors.right) || held(this.wasd.right);
     const up = held(this.cursors.up) || held(this.wasd.up);
@@ -1778,6 +1813,7 @@ export class HubScene extends Phaser.Scene {
       // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30)
       this.gear?.updateCharacter(state.current_player);
       this.gear?.setCharacterLevel(state.current_player.level);
+      this.characterLevel = state.current_player.level;
 
       const progress = progressOf(state.current_player);
       if (progress) {
@@ -1971,6 +2007,15 @@ export class HubScene extends Phaser.Scene {
     button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
     button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
     this.leaveButton = button;
+  }
+
+  /**
+   * Whether an overlay covers the town's party popups (the invite prompt and the ready check): the
+   * menu, the gear overlay or the letter panel, each drawn over them. The popups hide under it and
+   * their countdowns run on (FS-R82NV R32, FS-BJNYC R23, FS-1GZGD R40).
+   */
+  private coversPopups(): boolean {
+    return !!this.menu || !!this.gear?.isOpen() || !!this.mailbox?.isOpen();
   }
 
   /**
@@ -2513,12 +2558,18 @@ export class HubScene extends Phaser.Scene {
   /**
    * ESC, read once a frame on the one ESC key the hub binds (FS-G4VMQ §Requirements 1, 2, 20).
    * One press closes one thing (FS-HRH2J R5): while a dialogue is open the key is the
-   * dialogue's, read in offerConversation, so this does not touch it; then an open gear overlay
-   * closes; otherwise ESC opens the menu, and pressed again closes it.
+   * dialogue's, read in offerConversation, so this does not touch it; then an open letter panel
+   * closes (FS-1GZGD R40), then an open gear overlay; otherwise ESC opens the menu, and pressed
+   * again closes it.
    */
   private offerMenu(): void {
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
+
+    if (this.mailbox?.isOpen()) {
+      if (esc) this.mailbox.close();
+      return;
+    }
 
     if (!this.menu) {
       if (esc && !this.gear?.hide()) this.openMenu();
@@ -2535,13 +2586,13 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * I or B opens or closes the gear overlay over the live hub (FS-HRH2J R4, R40). While the menu
-   * or a dialogue is open they own the keyboard (R6): the press is read and dropped, so it does
-   * not open the overlay the moment they close.
+   * I or B opens or closes the gear overlay over the live hub (FS-HRH2J R4, R40). While the menu,
+   * a dialogue or the letter panel is open they own the keyboard (R6, FS-1GZGD R40): the press is
+   * read and dropped, so it does not open the overlay the moment they close.
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (!pressed || this.menu || this.dialogue) return;
+    if (!pressed || this.menu || this.dialogue || this.mailbox?.isOpen()) return;
     this.gear?.toggle();
   }
 

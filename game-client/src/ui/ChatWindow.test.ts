@@ -968,6 +968,91 @@ describe("ChatWindow opacity", () => {
 
 // ── The scrollbar (asked 2026-10-31) ────────────────────────────────────────────────────────
 
+describe("ChatWindow under a panel drawn over it (the letter panel, FS-1GZGD R40)", () => {
+  const frame = chatWindowFrame(X, BOTTOM);
+  const track = chatScrollTrack(frame);
+  const overMessages = { x: frame.messages.x + 20, y: frame.messages.y + 20 };
+
+  function covered() {
+    const store = createChatStore();
+    const s = fakeScene();
+    let over = true;
+    new ChatWindow(s.scene, store, X, BOTTOM, { coveredAt: () => over });
+    for (let i = 1; i <= 20; i++) store.getState().receive(stamped(`l${i}`));
+    const contents = () =>
+      s.messageTexts().map((t) => t.content.replace(/^Wren: /, ""));
+    return { ...s, contents, uncover: () => (over = false) };
+  }
+
+  it("should not scroll the lines on a wheel under the panel", () => {
+    const s = covered();
+    const before = s.contents();
+    s.wheel(overMessages.x, overMessages.y, -100);
+    expect(s.contents()).toEqual(before);
+
+    s.uncover();
+    s.wheel(overMessages.x, overMessages.y, -100);
+    expect(s.contents()).not.toEqual(before);
+  });
+
+  it("should not grab the scrollbar on a press under the panel", () => {
+    const s = covered();
+    const before = s.contents();
+    const midX = track.x + track.width / 2;
+    s.input.emit("pointerdown", { x: midX, y: track.y + 1 });
+    s.input.emit("pointermove", { x: midX, y: track.y + 1 });
+    s.input.emit("pointerup", { x: midX, y: track.y + 1 });
+    expect(s.contents()).toEqual(before);
+  });
+});
+
+describe("ChatWindow keeping the draft when the letter panel takes the keys (FS-1GZGD R40)", () => {
+  it("should keep the draft and give it back once the panel closes", () => {
+    let panelOpen = false;
+    const store = createChatStore();
+    const s = fakeScene();
+    const fields: { value: string; visible: boolean }[] = [];
+    new ChatWindow(s.scene, store, X, BOTTOM, {
+      input: {
+        mayOpen: () => !panelOpen,
+        keepsDraft: () => panelOpen,
+        send: () => undefined,
+        makeField: (_scene, _rect, events) => {
+          const f = { value: "", visible: false };
+          fields.push(f);
+          return {
+            get value() {
+              return f.value;
+            },
+            set value(v: string) {
+              f.value = v;
+            },
+            channel: "area",
+            focus: () => events.focused(),
+            blur: () => events.blurred(),
+            moveTo: () => undefined,
+            show: () => void (f.visible = true),
+            hide: () => void (f.visible = false),
+            destroy: () => undefined,
+          };
+        },
+      },
+    });
+    s.press("ENTER");
+    fields[0].value = "half a thought";
+
+    panelOpen = true;
+    s.frame();
+    expect(fields[0].visible).toBe(false);
+    expect(fields[0].value).toBe("half a thought");
+
+    panelOpen = false;
+    s.frame();
+    expect(fields[0].visible).toBe(true);
+    expect(fields[0].value).toBe("half a thought");
+  });
+});
+
 describe("ChatWindow scrollbar", () => {
   const frame = chatWindowFrame(X, BOTTOM);
   const track = chatScrollTrack(frame);

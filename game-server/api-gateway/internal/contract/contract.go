@@ -59,6 +59,7 @@ func New(router *gin.Engine) huma.API {
 		&huma.Tag{Name: "marketplace", Description: "Listings and bids"},
 		&huma.Tag{Name: "wallet", Description: "The signed-in member's gold balance"},
 		&huma.Tag{Name: "characters", Description: "The signed-in member's characters, with level and experience"},
+		&huma.Tag{Name: "mailbox", Description: "In-game letters: the signed-in member's mailbox, and the admin send"},
 	)
 
 	// Drop Huma's schema-link transformer.

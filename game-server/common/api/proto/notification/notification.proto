@@ -4,6 +4,7 @@ package notification;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
+import "api/proto/items/items.proto";
 option go_package = "github.com/darkphotonKN/barrowspire-server/common/api/proto/notification";
 
 // NotificationService external API for notification
@@ -12,6 +13,23 @@ service NotificationService {
   rpc GetNotification(NotificationRequest) returns (NotificationResponse);
   rpc MarkNotificationAsRead(MarkNotificationAsReadRequest) returns (MarkNotificationAsReadResponse);
   rpc MarkAllNotificationsAsRead(MarkAllNotificationsAsReadRequest) returns (MarkAllNotificationsAsReadResponse);
+
+  // --- Mailbox (FS-1GZGD, ADR-0044) ---
+  // Every mailbox method reads the caller from the forwarded token; no request
+  // names a member to act as.
+
+  // An admin sends an official letter to one member, a member list or every
+  // member. RoleAdmin only (R11). A list stores one one-member letter per
+  // distinct recipient, all in one transaction (A6).
+  rpc SendLetter(SendLetterRequest) returns (SendLetterResponse);
+  // The caller's mailbox: at most 50 non-expired letters, newest first (R7).
+  rpc ListLetters(ListLettersRequest) returns (ListLettersResponse);
+  // The caller's unread, unclaimed and waiting counts (R9, S6).
+  rpc GetMailboxSummary(GetMailboxSummaryRequest) returns (MailboxSummary);
+  // Marks one letter read for the caller; idempotent (R8).
+  rpc MarkLetterRead(MarkLetterReadRequest) returns (MarkLetterReadResponse);
+  // Takes every enclosure of one letter (R13-R17).
+  rpc ClaimLetter(ClaimLetterRequest) returns (ClaimLetterResponse);
 }
 
 message NotificationRequest {
@@ -58,3 +76,121 @@ message NotificationResponse {
     string message = 2;
     int32 updated_count = 3;
   }
+
+// ============ Mailbox (FS-1GZGD) ============
+
+// Exactly one recipient form.
+message LetterRecipient {
+  oneof target {
+    string member_id = 1;
+    MemberList members = 2;
+    // Every member: one broadcast letter (D3). Only true is meaningful.
+    bool all_members = 3;
+  }
+}
+
+// A member list (A6): de-duplicated by notification, then 1-1000 distinct ids.
+message MemberList {
+  repeated string member_ids = 1;
+}
+
+// A fresh item of a template, at item_level or else the template's
+// min_item_level (A1).
+message TemplateEnclosureRequest {
+  string template_id = 1;
+  int32 quantity = 2;
+  optional int32 item_level = 3;
+}
+
+// A copy of an existing item instance as it stands at send (A1).
+message CopyEnclosureRequest {
+  string instance_id = 1;
+  int32 quantity = 2;
+}
+
+message EnclosureRequest {
+  oneof kind {
+    TemplateEnclosureRequest template = 1;
+    CopyEnclosureRequest copy = 2;
+    int64 gold = 3;
+  }
+}
+
+message SendLetterRequest {
+  LetterRecipient recipient = 1;
+  string title = 2;
+  string body = 3;
+  repeated EnclosureRequest enclosures = 4;
+  // Absent: 30 days after sending (R5).
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+// One stored letter: member_id absent only for a broadcast.
+message SentLetter {
+  string letter_id = 1;
+  optional string member_id = 2;
+}
+
+message SendLetterResponse {
+  // One per stored letter, in the order each recipient first appears (R51).
+  repeated SentLetter letters = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// An item enclosure as stored: the snapshot resolved at send (A2).
+message ItemEnclosure {
+  items.ItemSnapshot item = 1;
+  int32 quantity = 2;
+}
+
+message Enclosure {
+  oneof kind {
+    ItemEnclosure item = 1;
+    int64 gold = 2;
+  }
+}
+
+message Letter {
+  string id = 1;
+  string title = 2;
+  string body = 3;
+  string sender = 4;                      // 'official' | 'system'
+  google.protobuf.Timestamp sent_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  bool read = 7;
+  string claim_state = 8;                 // 'none' | 'unclaimed' | 'claiming' | 'claimed'
+  repeated Enclosure enclosures = 9;
+}
+
+message ListLettersRequest {}
+
+message ListLettersResponse {
+  repeated Letter letters = 1;
+}
+
+message GetMailboxSummaryRequest {}
+
+message MailboxSummary {
+  int32 unread_count = 1;
+  int32 unclaimed_count = 2;
+  int32 waiting_count = 3;
+  // Absent when the mailbox is empty.
+  google.protobuf.Timestamp newest_letter_at = 4;
+}
+
+message MarkLetterReadRequest {
+  string letter_id = 1;
+}
+
+message MarkLetterReadResponse {}
+
+message ClaimLetterRequest {
+  string letter_id = 1;
+}
+
+message ClaimLetterResponse {
+  string letter_id = 1;
+  string claim_state = 2;                 // 'claimed'
+  repeated string item_ids = 3;
+  int64 gold = 4;                         // 0 on an item-only letter
+}

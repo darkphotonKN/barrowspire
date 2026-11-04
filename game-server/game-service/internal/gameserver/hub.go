@@ -42,6 +42,25 @@ type messageHub struct {
 	presence presenceTicker
 	// work finished off the loop and handed back to it: a party call's outcome, a lookup's answer
 	jobs loopJobs
+
+	// mail arrivals off Redis, passed on to HUB-world players on this loop; nil on a hub built
+	// without one, which then waits on no arrivals (FS-1GZGD R42, R43)
+	mail mailArrivalRelayer
+}
+
+// mailArrivalRelayer is what the hub needs from the mail-arrival relay: the arrivals off the bus,
+// and their delivery on this loop.
+type mailArrivalRelayer interface {
+	inbound() <-chan mailArrival
+	deliver(arrival mailArrival)
+}
+
+// mailInbound is the relay's queue, or nil, which a select never receives from.
+func (h *messageHub) mailInbound() <-chan mailArrival {
+	if h.mail == nil {
+		return nil
+	}
+	return h.mail.inbound()
 }
 
 // presenceTicker is what the hub needs from the presence keeper: a sample each tick, and
@@ -361,7 +380,7 @@ func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, er
 	return session, nil
 }
 
-func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs) *messageHub {
+func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs, mail mailArrivalRelayer) *messageHub {
 	return &messageHub{
 		sessionManager: sessionManager,
 		sessions:       make(map[string]*game.Session),
@@ -373,6 +392,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		party:          party,
 		presence:       presence,
 		jobs:           jobs,
+		mail:           mail,
 	}
 }
 
@@ -907,6 +927,11 @@ func (h *messageHub) Run(ctx context.Context) {
 		// one goroutine as for area lines (FS-5SH4G R7, R9)
 		case line := <-h.chat.inbound():
 			h.chat.deliver(line)
+
+		// a mail arrival off the bus: mail_arrived to HUB-world players, sent from this loop as a
+		// chat line is (FS-1GZGD R43)
+		case arrival := <-h.mailInbound():
+			h.mail.deliver(arrival)
 
 		// the party registry's clock: the party cache is kept here (FS-NCC9J R4, R6)
 		case <-h.party.ticks():

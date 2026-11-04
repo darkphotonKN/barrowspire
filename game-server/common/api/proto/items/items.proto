@@ -65,6 +65,17 @@ service ItemsService {
 
   // Public display facts for item instances, by id. Unknown ids are omitted.
   rpc GetItemSummaries(GetItemSummariesRequest) returns (GetItemSummariesResponse);
+
+  // Resolves templates and existing instances into item snapshots, the full
+  // description of an item a grant can mint later (FS-1GZGD R21, A1, A2). No
+  // drop rule is applied, only representability. Called by notification-service
+  // when a letter is sent, often with no member behind it: no token.
+  rpc ResolveItemSnapshots(ResolveItemSnapshotsRequest) returns (ResolveItemSnapshotsResponse);
+  // Mints item snapshots into the stash of the member in the forwarded token, in
+  // one transaction, all or nothing (STASH_FULL). grant_id is unique: a repeat
+  // mints nothing and answers the first grant's ids, already_granted set
+  // (FS-1GZGD R18-R20, ADR-0044).
+  rpc GrantItems(GrantItemsRequest) returns (GrantItemsResponse);
 }
 
 // ============ Layered Message Definitions ============
@@ -584,4 +595,95 @@ message ItemSummary {
 
 message GetItemSummariesResponse {
   repeated ItemSummary summaries = 1;
+}
+
+// ============ Item snapshots and grants (FS-1GZGD) ============
+
+// ItemSnapshot is everything a grant mints from and an item view shows, in the
+// facts of ItemSummary, without an instance id: there is no instance until a
+// grant mints one (FS-1GZGD R21, A2).
+message ItemSnapshot {
+  string template_id = 1;
+  string name = 2;
+  optional string description = 3;
+  string item_type = 4;           // 'weapon' | 'armor' | 'consumable' | 'ring'
+  optional string weapon_type = 5;
+  optional string armor_slot = 6;
+  // The rarity code: normal, uncommon, rare, runed, fabled; empty for a copy
+  // of a legacy instance that carries no rarity.
+  string rarity = 7;
+
+  // stats, present when the item type has them
+  optional int32 attack_power = 8;
+  optional double critical_rate = 9;
+  optional int32 defense_rating = 10;
+  optional int32 magic_resistance = 11;
+  optional int32 healing_amount = 12;
+  optional int32 mana_amount = 13;
+  optional int32 buff_duration = 14;
+  // The template's durability; templates carry none today, so it is absent.
+  optional int32 durability = 15;
+
+  int32 item_level = 16;          // >= 1
+  int32 required_level = 17;      // >= 1
+  repeated Affix affixes = 18;
+  // For a unique's template, its effect text; absent otherwise.
+  optional string unique_effect_text = 19;
+}
+
+// A template to resolve: a fresh item of it, at item_level when given, else
+// at the template's min_item_level. A given item_level below 1 is
+// unrepresentable.
+message TemplateSnapshotRequest {
+  string template_id = 1;
+  optional int32 item_level = 2;
+}
+
+// At most 100 templates and 100 instance ids. The same id may appear more
+// than once (a template at two item levels).
+message ResolveItemSnapshotsRequest {
+  repeated TemplateSnapshotRequest templates = 1;
+  repeated string instance_ids = 2;
+}
+
+// One requested id and, when it resolved, its snapshot.
+message ResolvedItemSnapshot {
+  string id = 1;
+  // Absent when the id is unknown or unrepresentable.
+  optional ItemSnapshot snapshot = 2;
+}
+
+message ResolveItemSnapshotsResponse {
+  // Index-aligned with the request: templates[i] answers request.templates[i],
+  // instances[i] answers request.instance_ids[i].
+  repeated ResolvedItemSnapshot templates = 1;
+  repeated ResolvedItemSnapshot instances = 2;
+  // The ids that did not resolve, each once, so the caller can refuse with
+  // UNKNOWN_ITEM_TEMPLATE, UNKNOWN_ITEM_INSTANCE or ENCLOSURE_INVALID (A3).
+  repeated string unknown_template_ids = 3;
+  repeated string unknown_instance_ids = 4;
+  // Known ids that cannot be minted: an item level below 1, or a copy source
+  // with a malformed affix.
+  repeated string unrepresentable_ids = 5;
+}
+
+message GrantItem {
+  ItemSnapshot snapshot = 1;
+  int32 quantity = 2;             // 1-60
+}
+
+// The member is the forwarded token's, never a field here (FS-1GZGD D18).
+message GrantItemsRequest {
+  // The caller's unique key for this grant (ADR-0009), 1-200 characters.
+  string grant_id = 1;
+  // 1-60 entries; their quantities together are the grant's slot count.
+  repeated GrantItem items = 2;
+}
+
+message GrantItemsResponse {
+  // The minted instances, quantity per entry, in request order; on a repeat,
+  // the first grant's ids in the same order.
+  repeated string item_ids = 1;
+  // True when grant_id was already granted and this call minted nothing.
+  bool already_granted = 2;
 }

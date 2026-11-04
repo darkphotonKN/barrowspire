@@ -23,6 +23,11 @@
 - [x] Bag and stash locations on owned instances → FS-VPD8Y
 - [x] In-run status on owned instances → FS-18Z5F
 
+## Grants
+
+- [ ] Idempotent item grants into the stash → FS-1GZGD
+- [ ] Item snapshots from templates and instances → FS-1GZGD
+
 ## Marketplace settlement
 
 - [ ] Settlement saga activities → FS-NXP1W

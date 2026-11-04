@@ -33,6 +33,7 @@ type Handler struct {
 	releaseHoldUC   HoldReleaser
 	depositGoldUC   GoldDepositor
 	withdrawGoldUC  GoldWithdrawer
+	creditUC        Creditor
 }
 
 // The handler declares what it needs from each use case rather than naming the
@@ -69,6 +70,12 @@ type GoldWithdrawer interface {
 	Handle(ctx context.Context, cmd *usecase.WithdrawGoldCommand) error
 }
 
+// Creditor reports whether the credit was applied by this call; false means the
+// key was already credited.
+type Creditor interface {
+	Handle(ctx context.Context, cmd *usecase.CreditCommand) (bool, error)
+}
+
 // Deps names every dependency the handler needs. A struct rather than positional
 // parameters on purpose: CommitHold shipped panicking because its use case was
 // declared on Handler but silently omitted from the constructor's argument list,
@@ -80,6 +87,7 @@ type Deps struct {
 	ReleaseHoldUC    HoldReleaser
 	DepositGoldUC    GoldDepositor
 	WithdrawGoldUC   GoldWithdrawer
+	CreditUC         Creditor
 	AccountReader    AccountReader
 	StaleHoldsReader StaleHoldsReader
 }
@@ -91,6 +99,7 @@ func NewHandler(deps Deps) *Handler {
 		releaseHoldUC:    deps.ReleaseHoldUC,
 		depositGoldUC:    deps.DepositGoldUC,
 		withdrawGoldUC:   deps.WithdrawGoldUC,
+		creditUC:         deps.CreditUC,
 		accountReader:    deps.AccountReader,
 		staleHoldsReader: deps.StaleHoldsReader,
 	}
@@ -244,6 +253,31 @@ func (h *Handler) Withdraw(ctx context.Context, req *pb.WithdrawRequest) (*pb.Wi
 	return &pb.WithdrawResponse{}, nil
 }
 
+// Credit adds gold to the caller's own account once per idempotency key
+// (FS-1GZGD §Req 23, ADR-0044). The member is the forwarded token's (D18): the
+// request names no account, so nobody can credit another's. A key already
+// credited answers success with applied = false.
+func (h *Handler) Credit(ctx context.Context, req *pb.CreditRequest) (*pb.CreditResponse, error) {
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	applied, err := h.creditUC.Handle(ctx, &usecase.CreditCommand{
+		MemberID:       memberID,
+		Amount:         int(req.GetAmount()),
+		IdempotencyKey: req.GetIdempotencyKey(),
+		Now:            time.Now(),
+	})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.CreditResponse{Applied: applied}, nil
+}
+
 // ========================= READ PATHS  =========================
 
 func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
@@ -323,7 +357,8 @@ func mapError(ctx context.Context, err error) error {
 	// maps to http 400 bad request
 	case errors.Is(err, account.ErrInvalidAmount) ||
 		errors.Is(err, account.ErrInvalidGold) ||
-		errors.Is(err, account.ErrInvalidHoldExpiry):
+		errors.Is(err, account.ErrInvalidHoldExpiry) ||
+		errors.Is(err, usecase.ErrMissingCreditKey):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
 

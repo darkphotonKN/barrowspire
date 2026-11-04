@@ -2158,6 +2158,26 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
   });
 });
 
+describe("HubScene the party popups under the letter panel (FS-1GZGD R40; FS-R82NV R32, FS-BJNYC R23)", () => {
+  it("should hide the invite prompt and the ready check under the letter panel, as under the gear overlay and the menu", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+    let letters = false;
+    hub.mailbox = { isOpen: () => letters, close: vi.fn() };
+    const covered = () => (hub.coversPopups as () => boolean)();
+
+    expect(covered()).toBe(false);
+    letters = true;
+    expect(covered()).toBe(true);
+    letters = false;
+    gear.open = true;
+    expect(covered()).toBe(true);
+    gear.open = false;
+    press(keys.esc);
+    expect(hub.menu).toBeDefined();
+    expect(covered()).toBe(true);
+  });
+});
+
 describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

@@ -514,6 +514,63 @@ describe("ChatInput sync", () => {
   });
 });
 
+describe("ChatInput keys taken by a press elsewhere (the letter panel, FS-1GZGD R40)", () => {
+  function keptRig() {
+    let allowed = true;
+    const field = fakeField();
+    const keyboard: SceneKeyboard = { enabled: true, resetKeys: vi.fn() };
+    const input = new ChatInput({
+      field,
+      keyboard: () => keyboard,
+      mayOpen: () => allowed,
+      keepsDraft: () => !allowed,
+      send: vi.fn(),
+    });
+    input.sync();
+    return {
+      field,
+      keyboard,
+      input,
+      take: () => {
+        allowed = false;
+        input.sync();
+      },
+      giveBack: () => {
+        allowed = true;
+        return input.sync();
+      },
+    };
+  }
+
+  it("should close mid-line but keep the draft, as any press elsewhere does", () => {
+    const { input, field, keyboard, take, giveBack } = keptRig();
+    input.requestOpen();
+    input.focused();
+    field.value = "half";
+
+    take();
+    expect(input.isOpen()).toBe(false);
+    expect(field.focused).toBe(false);
+    expect(keyboard.enabled).toBe(true);
+    expect(field.value).toBe("half");
+
+    expect(giveBack()).toBe(true);
+    expect(field.value).toBe("half");
+  });
+
+  it("should keep a draft already let go of when the keys are taken", () => {
+    const { input, field, take } = keptRig();
+    input.requestOpen();
+    input.focused();
+    field.value = "half";
+    field.blur();
+    input.blurred();
+
+    take();
+    expect(field.value).toBe("half");
+  });
+});
+
 // ── World chat open on the client (FS-5SH4G C14, I-5SH4G-3) ─────────────────────────────────
 
 describe("ChatInput with the server's open channels", () => {

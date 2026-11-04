@@ -134,6 +134,8 @@ type bootOptions struct {
 	// whether another pod still heartbeats; nil, and a connection is never redirected
 	// (FS-MCYWK R4, R6)
 	podLiveness podLiveness
+	// the `mail:arrived` subscription; nil, and no mail_arrived is ever sent (FS-1GZGD R42)
+	mailBus mailArrivalBus
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the

@@ -125,6 +125,13 @@ server state and sends intents. ✅
 - [x] The Warden as storyteller, not the queue → FS-0XMCP
 - [x] Town building interiors → FS-B0H2D
 
+### Mailbox
+
+- [ ] Mailbox in the hub HUD → FS-1GZGD
+- [ ] New-letter indicator on the mailbox → FS-1GZGD
+- [ ] Read letters → FS-1GZGD
+- [ ] Claim a letter's enclosures → FS-1GZGD
+
 ### Field worlds
 
 - [x] Field world scene → FS-X2F2H
