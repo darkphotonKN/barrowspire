@@ -21,7 +21,7 @@ import (
 
 func claimDBService(t *testing.T, db *sqlx.DB, items *fakeItems, wallet *fakeWallet) *service {
 	t.Helper()
-	svc := NewService(db, NewRepository(db), items, wallet)
+	svc := NewService(db, NewRepository(db), items, wallet, &fakeArrivals{})
 	svc.now = func() time.Time { return sentAt.Add(time.Hour) }
 	return svc
 }

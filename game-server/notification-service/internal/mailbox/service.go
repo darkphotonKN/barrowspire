@@ -50,6 +50,14 @@ type GoldCreditor interface {
 	Credit(ctx context.Context, amount int64, key string) (applied bool, err error)
 }
 
+// ArrivalPublisher announces letters that were just stored (R41, R50, R62,
+// ADR-0045): called after their transaction commits, outside it. Best-effort:
+// it answers nothing, bounds itself by a short deadline and logs its own
+// failure, so a lost announcement never fails or undoes a send. See arrival.go.
+type ArrivalPublisher interface {
+	PublishArrivals(ctx context.Context, letters []Letter)
+}
+
 // TemplateRef asks for a fresh item of a template. ItemLevel nil means the
 // template's min_item_level.
 type TemplateRef struct {
@@ -68,20 +76,22 @@ type Resolution struct {
 }
 
 type service struct {
-	repo   Repository
-	items  Items
-	wallet GoldCreditor
+	repo     Repository
+	items    Items
+	wallet   GoldCreditor
+	arrivals ArrivalPublisher
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 	now    func() time.Time
 }
 
-func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor) *service {
+func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor, arrivals ArrivalPublisher) *service {
 	return &service{
-		repo:   repo,
-		items:  items,
-		wallet: wallet,
+		repo:     repo,
+		items:    items,
+		wallet:   wallet,
+		arrivals: arrivals,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
@@ -108,8 +118,8 @@ func (s *service) SendLetter(ctx context.Context, caller commonauth.Identity, dr
 		return nil, fmt.Errorf("%w: %w", ErrStoreFailed, err)
 	}
 
-	// Committed. The mail:arrived publish (I-1GZGD-8, ADR-0045) goes here:
-	// after the commit, outside the transaction, never failing the send.
+	// committed: announce outside the transaction; it never fails the send
+	s.arrivals.PublishArrivals(ctx, letters)
 	return sentLetters(letters), nil
 }
 
