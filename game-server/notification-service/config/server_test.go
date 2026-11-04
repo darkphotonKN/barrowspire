@@ -87,12 +87,15 @@ func TestAuthenticate_AnUnlistedMethodNeedsAToken(t *testing.T) {
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
-func TestServer_ClaimLetterIsUnimplementedUntilItsSlice(t *testing.T) {
+// Every mailbox method, ClaimLetter included (I-1GZGD-4), is the mailbox
+// handler's: none falls through to the generated Unimplemented server.
+func TestServer_TheMailboxMethodsAreServedByTheMailboxHandler(t *testing.T) {
 	srv := newNotificationServer(notification.NewHandler(nil), mailbox.NewHandler(nil))
+	ctx := context.Background()
 
-	_, err := srv.ClaimLetter(context.Background(), &pb.ClaimLetterRequest{LetterId: uuid.NewString()})
-	assert.Equal(t, codes.Unimplemented, status.Code(err))
+	_, err := srv.ClaimLetter(ctx, &pb.ClaimLetterRequest{LetterId: uuid.NewString()})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err), "served by the mailbox handler")
 
-	_, err = srv.ListLetters(context.Background(), &pb.ListLettersRequest{})
+	_, err = srv.ListLetters(ctx, &pb.ListLettersRequest{})
 	assert.Equal(t, codes.Unauthenticated, status.Code(err), "served by the mailbox handler")
 }
