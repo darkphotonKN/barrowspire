@@ -123,19 +123,19 @@ export function archer() {
   const [, fy] = J(rig, "foreArmL");
   const [, wy] = J(rig, "handL");
 
-  torso(rig, F.leatherLight);
+  torso(rig, F.buff);
   neck(rig, F.skin);
-  arms(rig, F.rangerDark);
-  legs(rig, F.breeches);
+  arms(rig, F.rangerNightDark);
+  legs(rig, F.rangerHose);
   hands(rig, F.leather);
   boots(rig, F.leather, { top: 0.21 });
   head(rig, F.skin);
   // a deep cowl over a shadowed face, its crown drawn back into a long, full point that droops
-  cowl(rig, F.ranger, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
+  cowl(rig, F.rangerNight, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], F.leatherDark);
-  skirt(rig, F.leatherLight, { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094], legFollow: 0.7, panels: true, panelWeight: 0.3 });
+  skirt(rig, F.buff, { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094], legFollow: 0.7, panels: true, panelWeight: 0.3 });
   belt(rig, F.leatherDark, M.brass, { pouch: true });
-  cloak(rig, F.ranger, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
+  cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
   quiver(rig, M, F);
   const bowMount = inHand(rig, "L");
   const bow = longbow(rig, M, F);
