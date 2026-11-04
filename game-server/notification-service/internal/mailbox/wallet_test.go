@@ -48,7 +48,9 @@ func TestWalletClient_CreditForwardsThePlayersTokenTheAmountAndTheKey(t *testing
 }
 
 func TestWalletClient_CreditFailures(t *testing.T) {
-	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Aborted} {
+	// NotFound is a member whose wallet account does not exist yet (R24): the
+	// claim stays re-drivable and the caller is told to repeat later, 503.
+	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Aborted, codes.NotFound, codes.Internal} {
 		t.Run(c.String()+" is retryable", func(t *testing.T) {
 			client := &WalletClient{rpc: &fakeCreditRPC{err: status.Error(c, "busy")}, timeout: defaultWalletTimeout}
 			_, err := client.Credit(withPlayerToken("Bearer t"), 5, "k")
@@ -56,8 +58,8 @@ func TestWalletClient_CreditFailures(t *testing.T) {
 		})
 	}
 
-	t.Run("no wallet account is a failure, not an outage", func(t *testing.T) {
-		client := &WalletClient{rpc: &fakeCreditRPC{err: status.Error(codes.NotFound, "no account")}, timeout: defaultWalletTimeout}
+	t.Run("a credit wallet refuses is not an outage", func(t *testing.T) {
+		client := &WalletClient{rpc: &fakeCreditRPC{err: status.Error(codes.InvalidArgument, "amount must be positive")}, timeout: defaultWalletTimeout}
 		_, err := client.Credit(withPlayerToken("Bearer t"), 5, "k")
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, ErrWalletUnavailable)

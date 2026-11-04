@@ -57,9 +57,7 @@ func (c *ItemsClient) ResolveItemSnapshots(ctx context.Context, templates []Temp
 
 	res, err := c.rpc.ResolveItemSnapshots(ctx, req)
 	if err != nil {
-		// Only a connection failure is an outage. Anything items itself
-		// answers (its store failing is Internal) is a plain error.
-		if code := status.Code(err); code == codes.Unavailable || code == codes.DeadlineExceeded {
+		if itemsDown(err) {
 			return nil, fmt.Errorf("%w: %w", ErrItemsUnavailable, err)
 		}
 		return nil, fmt.Errorf("resolve item snapshots: %w", err)
@@ -86,7 +84,8 @@ func (c *ItemsClient) ResolveItemSnapshots(ctx context.Context, templates []Temp
 
 // GrantItems mints the lines into the stash of the member whose token ctx
 // carries, once per grant id (R15, R20). A refusal (STASH_FULL) comes back as
-// its errcode refusal; a connection failure is ErrItemsUnavailable.
+// its errcode refusal, unmintable snapshots (InvalidArgument) as
+// errGrantUnmintable, and items down as ErrItemsUnavailable.
 func (c *ItemsClient) GrantItems(ctx context.Context, grantID string, lines []ItemGrant) (*Grant, error) {
 	ctx, err := forwardToken(ctx)
 	if err != nil {
@@ -105,7 +104,12 @@ func (c *ItemsClient) GrantItems(ctx context.Context, grantID string, lines []It
 		if code, ok := errcode.RefusalReason(status.Convert(err)); ok {
 			return nil, errcode.Refuse(code)
 		}
-		if code := status.Code(err); code == codes.Unavailable || code == codes.DeadlineExceeded {
+		if status.Code(err) == codes.InvalidArgument {
+			// items checked the snapshots and minted nothing; a retry gets
+			// the same answer
+			return nil, fmt.Errorf("grant items: %w: %w", errGrantUnmintable, err)
+		}
+		if itemsDown(err) {
 			return nil, fmt.Errorf("%w: %w", ErrItemsUnavailable, err)
 		}
 		return nil, fmt.Errorf("grant items: %w", err)
@@ -116,6 +120,18 @@ func (c *ItemsClient) GrantItems(ctx context.Context, grantID string, lines []It
 		return nil, fmt.Errorf("granted item ids: %w", err)
 	}
 	return &Grant{ItemIDs: ids, AlreadyGranted: res.GetAlreadyGranted()}, nil
+}
+
+// itemsDown reports an items failure the caller should repeat later (FS-1GZGD
+// R32): items unreachable or too slow, or failing inside (Internal, its store
+// failing). A request items refuses is not one.
+func itemsDown(err error) bool {
+	switch status.Code(err) {
+	case codes.Unavailable, codes.DeadlineExceeded, codes.Internal:
+		return true
+	default:
+		return false
+	}
 }
 
 func snapshotsFromProto(resolved []*itemspb.ResolvedItemSnapshot) ([]*ItemSnapshot, error) {

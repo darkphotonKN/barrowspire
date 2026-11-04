@@ -20,7 +20,7 @@ import (
 
 func requestDBService(t *testing.T, db *sqlx.DB, items *fakeItems, arrivals *fakeArrivals) *service {
 	t.Helper()
-	svc := NewService(db, NewRepository(db), items, &fakeWallet{}, arrivals, inbox.NewRepo())
+	svc := NewService(db, NewRepository(db), items, &fakeWallet{}, arrivals, inbox.NewRepo(), 8)
 	svc.now = func() time.Time { return sentAt }
 	return svc
 }

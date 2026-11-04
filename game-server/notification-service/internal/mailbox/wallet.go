@@ -34,10 +34,10 @@ func NewWalletClient(conn grpc.ClientConnInterface) *WalletClient {
 // Credit adds amount to the wallet of the member whose token ctx carries,
 // once per key. applied false means the key was already credited: success.
 //
-// Unavailable, DeadlineExceeded and Aborted (wallet's write conflict) are
-// ErrWalletUnavailable. Anything else, a member without a wallet account
-// (NotFound) among them, is a plain error. Either way the claim stays
-// re-drivable.
+// Unavailable, DeadlineExceeded, Aborted (wallet's write conflict), Internal
+// and NotFound (a member whose wallet account does not exist yet, R24) are
+// ErrWalletUnavailable: repeat later, 503 (R32). Anything else is a plain
+// error. Either way the claim stays re-drivable.
 func (c *WalletClient) Credit(ctx context.Context, amount int64, key string) (bool, error) {
 	ctx, err := forwardToken(ctx)
 	if err != nil {
@@ -50,7 +50,7 @@ func (c *WalletClient) Credit(ctx context.Context, amount int64, key string) (bo
 	res, err := c.rpc.Credit(ctx, &walletpb.CreditRequest{Amount: amount, IdempotencyKey: key})
 	if err != nil {
 		switch status.Code(err) {
-		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted, codes.Internal, codes.NotFound:
 			return false, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 		default:
 			return false, fmt.Errorf("credit %d gold: %w", amount, err)

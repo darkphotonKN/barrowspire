@@ -314,7 +314,8 @@ func TestHandlerClaimLetter_Failures(t *testing.T) {
 		{"not addressed", ErrLetterNotFound, codes.NotFound},
 		{"items down", errors.Join(ErrItemsUnavailable, errors.New("dial")), codes.Unavailable},
 		{"wallet down", errors.Join(ErrWalletUnavailable, errors.New("dial")), codes.Unavailable},
-		{"no wallet account", errors.New("credit 5 gold: rpc error: code = NotFound"), codes.Internal},
+		{"claims at the cap", ErrClaimsBusy, codes.Unavailable},
+		{"items cannot mint the snapshot", fmt.Errorf("grant the items of letter x: %w", errGrantUnmintable), codes.Internal},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -384,5 +385,23 @@ func TestHandler_AnswersNeverCarryTheSentBy(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotContains(t, string(wire), sender.String(), "the admin's member id")
 		assert.NotContains(t, string(wire), "test.compensation", "the sent-by source")
+	}
+}
+
+// The role comes first (R11): a non-admin is refused PermissionDenied whatever
+// the shape of their draft, so a malformed send never tells a player more
+// than "not yours to send".
+func TestHandlerSendLetter_ANonAdminIsDeniedBeforeTheDraftIsRead(t *testing.T) {
+	for name, req := range map[string]*pb.SendLetterRequest{
+		"well formed":  sendRequest(allRecipient),
+		"no recipient": sendRequest(nil),
+		"bad list id":  sendRequest(listRecipient("nope")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := &fakeService{err: ErrNotAdmin}
+			_, err := NewHandler(svc).SendLetter(as(player), req)
+			assert.Equal(t, codes.PermissionDenied, status.Code(err))
+			assert.Zero(t, svc.calls)
+		})
 	}
 }

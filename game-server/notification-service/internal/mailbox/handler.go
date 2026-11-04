@@ -48,6 +48,10 @@ func (h *Handler) SendLetter(ctx context.Context, req *pb.SendLetterRequest) (*p
 	if err != nil {
 		return nil, err
 	}
+	// the role before the draft: a player learns nothing from a malformed send
+	if who.Role != commonauth.RoleAdmin {
+		return nil, statusOf(ctx, "send letter", ErrNotAdmin)
+	}
 	draft, err := draftFromProto(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -167,7 +171,8 @@ func statusOf(ctx context.Context, op string, err error) error {
 		return status.Error(codes.PermissionDenied, "only an admin may send official letters")
 	case errors.Is(err, ErrLetterNotFound):
 		return status.Error(codes.NotFound, "letter not found")
-	case errors.Is(err, ErrItemsUnavailable), errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrStoreFailed):
+	case errors.Is(err, ErrItemsUnavailable), errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrStoreFailed),
+		errors.Is(err, ErrClaimsBusy):
 		slog.WarnContext(ctx, "mailbox dependency unavailable", "op", op, "error", err)
 		return status.Error(codes.Unavailable, op+" unavailable")
 	default:

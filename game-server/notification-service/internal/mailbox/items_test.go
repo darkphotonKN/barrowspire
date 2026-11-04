@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -107,8 +107,14 @@ func TestItemsClient_ConnectionFailuresAreUnavailable(t *testing.T) {
 		})
 	}
 
-	t.Run("an items failure is not an outage", func(t *testing.T) {
+	t.Run("items failing inside is unavailable too (R32)", func(t *testing.T) {
 		client := &ItemsClient{rpc: &fakeSnapshotRPC{err: status.Error(codes.Internal, "store failed")}, timeout: defaultItemsTimeout}
+		_, err := client.ResolveItemSnapshots(context.Background(), []TemplateRef{{TemplateID: uuid.New()}}, nil)
+		assert.ErrorIs(t, err, ErrItemsUnavailable)
+	})
+
+	t.Run("a request items refuses is not an outage", func(t *testing.T) {
+		client := &ItemsClient{rpc: &fakeSnapshotRPC{err: status.Error(codes.InvalidArgument, "too many ids")}, timeout: defaultItemsTimeout}
 		_, err := client.ResolveItemSnapshots(context.Background(), []TemplateRef{{TemplateID: uuid.New()}}, nil)
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, ErrItemsUnavailable)
@@ -147,7 +153,7 @@ func TestItemsClient_GrantItemsFailures(t *testing.T) {
 		assertRefused(t, err, errcode.StashFull)
 	})
 
-	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded} {
+	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Internal} {
 		t.Run(c.String()+" is an outage", func(t *testing.T) {
 			rpc := &fakeSnapshotRPC{grantErr: status.Error(c, "down")}
 			_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(withPlayerToken("Bearer t"), "k", lines)
@@ -155,10 +161,11 @@ func TestItemsClient_GrantItemsFailures(t *testing.T) {
 		})
 	}
 
-	t.Run("an unmintable snapshot is neither a refusal nor an outage", func(t *testing.T) {
+	t.Run("an unmintable snapshot is permanent: neither a refusal code nor an outage", func(t *testing.T) {
 		rpc := &fakeSnapshotRPC{grantErr: status.Error(codes.InvalidArgument, "an item snapshot cannot be minted")}
 		_, err := (&ItemsClient{rpc: rpc, timeout: defaultItemsTimeout}).GrantItems(withPlayerToken("Bearer t"), "k", lines)
 		require.Error(t, err)
+		assert.ErrorIs(t, err, errGrantUnmintable)
 		var refusal *errcode.Refusal
 		assert.NotErrorAs(t, err, &refusal)
 		assert.NotErrorIs(t, err, ErrItemsUnavailable)

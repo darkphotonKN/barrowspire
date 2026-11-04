@@ -262,4 +262,13 @@ var (
 	ErrSentBySourceInvalid = errors.New("sent-by source must be 1-64 characters")
 	// ErrStateLocked: another claim holds the row lock on this letter state.
 	ErrStateLocked = errors.New("letter state locked by another claim")
+	// ErrClaimsBusy: as many claims as the service allows are in flight, each
+	// holding a database connection across its items and wallet calls. The
+	// claim did nothing and can be repeated at once. Retryable, 503.
+	ErrClaimsBusy = errors.New("too many claims in flight")
+
+	// errGrantUnmintable: items refused a grant's snapshots as unmintable (a
+	// retired template, the S2 backstop) and minted nothing. Permanent: a
+	// retry gets the same answer, so it is no outage.
+	errGrantUnmintable = errors.New("items cannot mint the letter's snapshots")
 )

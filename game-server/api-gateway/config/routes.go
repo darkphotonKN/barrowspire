@@ -167,7 +167,7 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 
 	// The in-game mailbox (FS-1GZGD) lives in notification-service, so it
 	// shares that connection. Typed in internal/gateway/mailbox/typed.go.
-	mailboxHandler := mailbox.NewHandler(notificationClient)
+	mailboxHandler := mailbox.NewHandler(notificationClient, mailbox.DefaultTimeouts)
 	// --- PAYMENT MICROSERVICE ---
 
 	paymentClient, err := payment.NewClient(addrs.Payment)

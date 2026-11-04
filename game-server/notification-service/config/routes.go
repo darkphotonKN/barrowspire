@@ -37,7 +37,8 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// service's inbox (R12).
 	arrivals := mailbox.NewRedisArrivalPublisher(redisClient)
 	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
-		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals, inboxRepo)
+		mailbox.NewItemsClient(itemsConn), mailbox.NewWalletClient(walletConn), arrivals, inboxRepo,
+		MaxConcurrentClaims)
 	mailboxHandler := mailbox.NewHandler(mailboxService)
 
 	// Create service with repositories and DB handle (for tx-wrapped inbox

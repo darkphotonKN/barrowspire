@@ -303,6 +303,24 @@ func TestProcessLetterRequested_StoreFailureRollsBackTheMark(t *testing.T) {
 	err := svc.ProcessLetterRequested(context.Background(), evt)
 
 	require.Error(t, err)
+	assert.ErrorIs(t, err, commonconstants.ErrTransient, "a store blip is retried, never dead-lettered at once")
+	assert.Empty(t, inbox.processed)
+	assert.Empty(t, arrivals.batches)
+}
+
+// The database failing around the letter (no transaction to begin, the commit
+// lost) is a blip like items down: retried, not dead-lettered.
+func TestProcessLetterRequested_TransactionFailureIsTransient(t *testing.T) {
+	repo := &fakeRepo{}
+	svc, arrivals, inbox := newRequestService(repo, &fakeItems{})
+	svc.withTx = func(context.Context, func(tx *sqlx.Tx) error) error {
+		return errors.New("begin transaction: connection refused")
+	}
+
+	err := svc.ProcessLetterRequested(context.Background(), letterRequest(uuid.New()))
+
+	assert.ErrorIs(t, err, commonconstants.ErrTransient)
+	assert.NotErrorIs(t, err, commonconstants.ErrAlreadyProcessed)
 	assert.Empty(t, inbox.processed)
 	assert.Empty(t, arrivals.batches)
 }
