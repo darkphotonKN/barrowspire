@@ -28,6 +28,7 @@ const (
 	ItemEventsExchange           = "item.events"
 	WalletEventsExchange         = "wallet.events"
 	MarketplaceEventsExchange    = "marketplace.events"
+	MailboxEventsExchange        = "mailbox.events" // letter requests to notification's Mailbox (FS-1GZGD R12)
 	DlxEventsExchange            = "dlx.exchange"
 	RetryExchange                = "retry.exchange"
 	MarketplaceDlxEventsExchange = "marketplace.dlx.exchange"
@@ -58,6 +59,9 @@ const (
 	// Wallet Events
 	AccountCreatedEvent = "account.created" // when a member's gold account is born
 
+	// Mailbox Events: another service asks for a system letter (FS-1GZGD R12, LetterRequested)
+	MailLetterRequestedEvent = "mail.letter.requested"
+
 	// Item Events
 	ItemCreated  = "item.created"
 	ItemReserved = "item.reserved"
@@ -69,6 +73,9 @@ const (
 
 	// a verification mail that could not be sent (FS-V6SFK R27)
 	NotificationMemberVerificationRequestedFailed = "notification.member.verification_requested.failed"
+
+	// a letter request that could not be stored after its retries (FS-1GZGD R12)
+	NotificationMailLetterRequestedFailed = "notification.mail.letter.requested.failed"
 
 	// auth events
 	AuthMemberLogin = "member.login"
@@ -104,6 +111,7 @@ const (
 	CharacterGameMatchEndedQueue    = "character.game.match.ended"
 
 	NotificationMemberVerificationRequestedQueue = "notification.auth.member.verification_requested"
+	NotificationMailLetterRequestedQueue         = "notification.mailbox.mail.letter.requested"
 )
 
 /**

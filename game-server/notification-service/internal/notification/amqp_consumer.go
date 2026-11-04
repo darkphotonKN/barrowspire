@@ -54,6 +54,13 @@ func GetEventRetryConfigs() []EventRetryConfig {
 			WorkQueue:  commonconstants.NotificationMemberVerificationRequestedQueue,
 			DLQKey:     commonconstants.NotificationMemberVerificationRequestedFailed,
 		},
+		{
+			EventType:  commonconstants.MailLetterRequestedEvent,
+			RoutingKey: commonconstants.MailLetterRequestedEvent,
+			Exchange:   commonconstants.MailboxEventsExchange,
+			WorkQueue:  commonconstants.NotificationMailLetterRequestedQueue,
+			DLQKey:     commonconstants.NotificationMailLetterRequestedFailed,
+		},
 	}
 }
 
@@ -83,6 +90,15 @@ type ConsumerService interface {
 	ProcessVerificationRequested(ctx context.Context, payload *commonconstants.MemberVerificationRequestedEventPayload) error
 }
 
+// LetterRequests is what the consumer needs from the Mailbox (FS-1GZGD R12):
+// store the system letter one mail.letter.requested event asks for. Its error
+// settles the delivery like ConsumerService's: nil (stored, or invalid and
+// marked processed) and ErrAlreadyProcessed are acked, ErrTransient retried,
+// anything else dead-lettered.
+type LetterRequests interface {
+	ProcessLetterRequested(ctx context.Context, evt *pb.LetterRequested) error
+}
+
 // retryPublisher is what the consumer needs to park a failed message's copy
 // on the retry exchange.
 type retryPublisher interface {
@@ -95,13 +111,15 @@ type retryPublisher interface {
 // must set both, or the first transient retry panics on a nil publisher.
 type Consumer struct {
 	service   ConsumerService
+	letters   LetterRequests
 	channel   *amqp.Channel
 	publisher retryPublisher
 }
 
-func NewConsumer(service ConsumerService, channel *amqp.Channel) *Consumer {
+func NewConsumer(service ConsumerService, letters LetterRequests, channel *amqp.Channel) *Consumer {
 	return &Consumer{
 		service:   service,
+		letters:   letters,
 		channel:   channel,
 		publisher: channel,
 	}
@@ -113,6 +131,7 @@ func (c *Consumer) Listen() {
 	go c.consumeItemCreated()
 	go c.consumeGameEnded()
 	go c.consumeVerificationRequested()
+	go c.consumeLetterRequested()
 	slog.Info("Notification consumer listening for events...")
 }
 
@@ -331,6 +350,62 @@ func (c *Consumer) handleVerificationRequested(msg amqp.Delivery) {
 	err := c.service.ProcessVerificationRequested(ctx, &payload)
 
 	c.handleResult(msg, err, retryCount, commonconstants.MemberVerificationRequestedEvent, payload.MemberID)
+}
+
+// ==========================================
+// Consumer: Letter Requested (FS-1GZGD R12)
+// ==========================================
+
+func (c *Consumer) consumeLetterRequested() {
+	msgs, err := c.channel.Consume(
+		commonconstants.NotificationMailLetterRequestedQueue,
+		"",    // consumer
+		false, // auto-ack
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,   // args
+	)
+	if err != nil {
+		slog.Error("Failed to register consumer", "error", err)
+		return
+	}
+
+	slog.Info("Started consuming mail.letter.requested events")
+
+	for msg := range msgs {
+		c.handleLetterRequested(msg)
+	}
+}
+
+// handleLetterRequested hands the event to the Mailbox, which dedupes on the
+// payload's event_id and settles an invalid request itself (marked processed,
+// nil). An unreadable body cannot be marked: it is dead-lettered.
+func (c *Consumer) handleLetterRequested(msg amqp.Delivery) {
+	retryCount := getRetryCount(msg)
+
+	var evt pb.LetterRequested
+	if err := proto.Unmarshal(msg.Body, &evt); err != nil {
+		slog.Error("Failed to parse LetterRequested, dead-lettering it",
+			"message_id", msg.MessageId,
+			"error", err,
+		)
+		if nackErr := msg.Nack(false, false); nackErr != nil {
+			slog.Error("Failed to dead-letter letter requested message", "message_id", msg.MessageId, "error", nackErr)
+		}
+		return
+	}
+
+	slog.Info("Received letter requested event",
+		"event_id", evt.GetEventId(),
+		"sent_by_source", evt.GetSource(),
+		"retry_count", retryCount,
+	)
+
+	ctx := context.Background()
+	err := c.letters.ProcessLetterRequested(ctx, &evt)
+
+	c.handleResult(msg, err, retryCount, commonconstants.MailLetterRequestedEvent, evt.GetEventId())
 }
 
 // ==========================================

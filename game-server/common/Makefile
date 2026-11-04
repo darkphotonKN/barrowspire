@@ -16,5 +16,6 @@ gen:
 		api/proto/events/auth.proto \
 		api/proto/events/item.proto \
 		api/proto/events/marketplace.proto \
+		api/proto/events/mailbox.proto \
 		api/proto/shared/v1/pagination.proto
 		

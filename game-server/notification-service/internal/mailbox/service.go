@@ -58,6 +58,13 @@ type ArrivalPublisher interface {
 	PublishArrivals(ctx context.Context, letters []Letter)
 }
 
+// Inbox is the consumer-side idempotency record the letter request needs
+// (FS-PJPNA), implemented by common/inbox on this service's processed_events.
+// The mark runs on the caller's transaction, beside the letters it guards.
+type Inbox interface {
+	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
+}
+
 // TemplateRef asks for a fresh item of a template. ItemLevel nil means the
 // template's min_item_level.
 type TemplateRef struct {
@@ -80,18 +87,20 @@ type service struct {
 	items    Items
 	wallet   GoldCreditor
 	arrivals ArrivalPublisher
+	inbox    Inbox
 	// withTx runs fn in one transaction, committing when fn succeeds and
 	// rolling back otherwise. Tests run fn without a database.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 	now    func() time.Time
 }
 
-func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor, arrivals ArrivalPublisher) *service {
+func NewService(db *sqlx.DB, repo Repository, items Items, wallet GoldCreditor, arrivals ArrivalPublisher, inbox Inbox) *service {
 	return &service{
 		repo:     repo,
 		items:    items,
 		wallet:   wallet,
 		arrivals: arrivals,
+		inbox:    inbox,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
