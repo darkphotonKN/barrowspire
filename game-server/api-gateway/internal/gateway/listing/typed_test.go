@@ -385,10 +385,14 @@ func TestCreateListing_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		wantCode   errcode.Code
 	}{
 		{"end time not in the future", status.Error(codes.InvalidArgument, "invalid argument"), http.StatusBadRequest, errcode.ValidationFailed},
-		{"items-side refusal", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
+		{"unexpected failure", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
 		{"marketplace unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
 		// FS-V6SFK §Requirements 31: the gateway does no gating, it passes marketplace's refusal through
 		{"seller's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
+		// FS-HBXZN §Requirements C10: items' refusals, passed through by marketplace
+		{"item worn", errcode.Refuse(errcode.ItemWorn), http.StatusBadRequest, errcode.ItemWorn},
+		{"item not available", errcode.Refuse(errcode.ItemNotAvailable), http.StatusBadRequest, errcode.ItemNotAvailable},
+		{"item not the member's", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
 	}
 
 	for _, tt := range tests {
@@ -401,6 +405,25 @@ func TestCreateListing_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})
 	}
+}
+
+// FS-HBXZN §Requirements C11: create-listing documents the refusals it now
+// answers and the 404 for an item that is not the member's.
+func TestCreateListing_DocumentsItsRefusals(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Post)
+	for _, want := range []string{"400", "401", "404", "422", "500", "503"} {
+		assert.Contains(t, path.Post.Responses, want, "create-listing documents %s", want)
+	}
+	for _, code := range []errcode.Code{errcode.ItemWorn, errcode.ItemNotAvailable, errcode.EmailUnverified} {
+		assert.Contains(t, path.Post.Description, string(code))
+	}
+	assert.Contains(t, path.Post.Description, "404")
 }
 
 // ========================= WITHDRAW BID =========================

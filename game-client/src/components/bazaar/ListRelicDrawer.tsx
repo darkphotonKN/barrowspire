@@ -47,7 +47,10 @@ export default function ListRelicDrawer({
   const panel = useRef<HTMLDivElement>(null);
   useDialogFocus(panel, { onClose, returnFocus });
 
-  const cards = useMemo(() => pickerCards(instances.items), [instances.items]);
+  const cards = useMemo(
+    () => pickerCards(instances.items, instances.worn),
+    [instances.items, instances.worn],
+  );
   const [selectedId, setSelectedId] = useState<string>();
   const [priceText, setPriceText] = useState("");
   const [buyoutText, setBuyoutText] = useState("");
@@ -229,7 +232,8 @@ export default function ListRelicDrawer({
 
 /**
  * One relic in the picker (guideline Part II "Item card"): icon, name, stats, and no price. A
- * relic already listed or in escrow is the disabled card state, tagged. The chosen card is
+ * relic listed, in escrow, settling, of unknown status, or worn (FS-HBXZN R13) is the disabled
+ * card state, tagged with why. The chosen card is
  * brass-bright, never amber: the drawer's submit holds the torch.
  */
 function RelicCard({

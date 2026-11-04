@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -476,6 +477,72 @@ func TestHandler_MoveItemInstance_NeedsAnIdentity(t *testing.T) {
 
 	if status.Code(err) != codes.Unauthenticated || svc.called {
 		t.Errorf("code = %v, called = %v; want Unauthenticated and no call", status.Code(err), svc.called)
+	}
+}
+
+// fakeReserveService answers ReserveItem with item or err and records who the
+// handler reserved for.
+type fakeReserveService struct {
+	Service
+	item *ItemInstance
+	err  error
+
+	gotSeller, gotItem uuid.UUID
+}
+
+func (f *fakeReserveService) ReserveItem(_ context.Context, seller, itemID uuid.UUID, _ int64, _ *int64, _ time.Time) (*ItemInstance, error) {
+	f.gotSeller, f.gotItem = seller, itemID
+	return f.item, f.err
+}
+
+// FS-HBXZN R5: a domain refusal → FailedPrecondition with the code as its
+// ErrorInfo reason; not found → NotFound; anything else → Internal with a fixed
+// message that never carries the error's text.
+func TestHandler_ReserveItem_Outcomes(t *testing.T) {
+	itemID := uuid.New()
+	secret := "pq: relation item_instances does not exist"
+
+	tests := []struct {
+		name       string
+		svc        *fakeReserveService
+		wantCode   codes.Code
+		wantReason errcode.Code
+	}{
+		{name: "reserved", svc: &fakeReserveService{item: &ItemInstance{ID: itemID, Status: "LISTED"}}, wantCode: codes.OK},
+		{name: "worn", svc: &fakeReserveService{err: errcode.Refuse(errcode.ItemWorn)},
+			wantCode: codes.FailedPrecondition, wantReason: errcode.ItemWorn},
+		{name: "wrapped not available", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", errcode.Refuse(errcode.ItemNotAvailable))},
+			wantCode: codes.FailedPrecondition, wantReason: errcode.ItemNotAvailable},
+		{name: "not the seller's", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", commonconstants.ErrNotFound)},
+			wantCode: codes.NotFound},
+		{name: "infrastructure failure", svc: &fakeReserveService{err: errors.New(secret)},
+			wantCode: codes.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seller := uuid.New()
+			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: seller})
+
+			res, err := NewHandler(tt.svc, nil).ReserveItem(ctx, &pb.ReserveItemRequest{ItemId: itemID.String(), StartPrice: 100})
+
+			st := status.Convert(err)
+			if st.Code() != tt.wantCode {
+				t.Fatalf("code = %v (%v), want %v", st.Code(), err, tt.wantCode)
+			}
+			if reason, ok := errcode.RefusalReason(st); tt.wantReason != "" && (!ok || reason != tt.wantReason) {
+				t.Errorf("reason = %q, %v; want %q", reason, ok, tt.wantReason)
+			}
+			if tt.svc.err != nil && strings.Contains(st.Message(), "pq:") {
+				t.Errorf("message = %q, must not carry the error's text", st.Message())
+			}
+			if tt.svc.gotSeller != seller || tt.svc.gotItem != itemID {
+				t.Errorf("service got (%v, %v), want (%v, %v)", tt.svc.gotSeller, tt.svc.gotItem, seller, itemID)
+			}
+			if tt.wantCode == codes.OK && res.GetId() != itemID.String() {
+				t.Errorf("response id = %q, want %v", res.GetId(), itemID)
+			}
+		})
 	}
 }
 

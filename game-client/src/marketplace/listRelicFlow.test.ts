@@ -103,7 +103,10 @@ describe("postListing", () => {
   });
 
   it("should answer a refusal's copy and neither hand over nor poll", async () => {
-    const t = deps({ refuse: new ApiError({ status: 500, code: "INTERNAL", detail: "", errors: [] }) });
+    // FS-HBXZN R17: an already-held relic is refused 400 · ITEM_NOT_AVAILABLE, no longer a 500
+    const t = deps({
+      refuse: new ApiError({ status: 400, code: "ITEM_NOT_AVAILABLE", detail: "", errors: [] }),
+    });
     expect(await postListing(input, t.d)).toEqual({ text: CANNOT_LIST });
     expect(t.log).toEqual([`create item-1 50 ${endsAtFor("24h", NOW)}`]);
   });

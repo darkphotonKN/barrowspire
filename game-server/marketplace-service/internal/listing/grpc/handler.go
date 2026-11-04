@@ -464,6 +464,15 @@ func mapError(ctx context.Context, err error) error {
 	var msg string
 	logLevel := slog.LevelWarn
 
+	// A domain refusal, this service's own or one items-service answered (FS-HBXZN
+	// R7), crosses unchanged: same code, same ErrorInfo reason. Its status rather
+	// than the wrapped chain, so no service context reaches the wire.
+	var refusal *errcode.Refusal
+	if errors.As(err, &refusal) {
+		slog.Log(ctx, slog.LevelInfo, "refused", "reason", refusal.Code, "err", err)
+		return refusal.GRPCStatus().Err()
+	}
+
 	switch {
 	// withRetry helper returns ErrMaxRetries, ErrConcurrentModification is internal
 	// but leaving it here for defense

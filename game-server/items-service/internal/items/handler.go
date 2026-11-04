@@ -1242,8 +1242,15 @@ func (h *Handler) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (
 	}
 
 	item, err := h.service.ReserveItem(ctx, sellerId, itemID, req.StartPrice, req.BuyoutPrice, req.EndsAt.AsTime())
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+	var refusal *errcode.Refusal
+	switch {
+	case errors.As(err, &refusal):
+		return nil, refusal.GRPCStatus().Err()
+	case errors.Is(err, commonconstants.ErrNotFound):
+		return nil, status.Error(codes.NotFound, "item instance not found")
+	case err != nil:
+		slog.Error("reserve item failed", "seller", sellerId, "item_id", itemID, "error", err)
+		return nil, status.Error(codes.Internal, "failed to reserve item")
 	}
 
 	var rarityIDStr *string
