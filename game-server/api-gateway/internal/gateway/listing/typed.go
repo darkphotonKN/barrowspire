@@ -87,11 +87,15 @@ func registerCreateListing(api huma.API, h *Handler,
 		OperationID: "create-listing",
 		Description: "Lists an item from the signed-in member's stash for auction. The listing is not " +
 			"created by this request: marketplace reserves the item, and the listing appears once the " +
-			"reservation is confirmed. The seller is taken from the token, never the request.",
+			"reservation is confirmed. The seller is taken from the token, never the request. " +
+			"Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending " +
+			"settlement or in a delve), EMAIL_UNVERIFIED (email not verified). " +
+			"An item that is not the member's answers 404.",
 		DefaultStatus: http.StatusAccepted,
 		Errors: []int{
 			http.StatusBadRequest,
 			http.StatusUnauthorized,
+			http.StatusNotFound,
 			http.StatusUnprocessableEntity,
 			http.StatusInternalServerError,
 			http.StatusServiceUnavailable,
