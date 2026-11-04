@@ -227,6 +227,17 @@ class ApiClient {
     );
   }
 
+  // Takes every enclosure of one letter at once: its items into the stash, its gold into the
+  // wallet, and marks it read (FS-1GZGD R13, R39). No body. Refusals carry a problem `code`:
+  // STASH_FULL, LETTER_EXPIRED, LETTER_ALREADY_CLAIMED, LETTER_CLAIM_IN_PROGRESS, NOTHING_TO_CLAIM.
+  async claimLetter(letterId: string) {
+    return unwrap(
+      await client.POST("/api/mail/letters/{letterId}/claim", {
+        params: { path: { letterId } },
+      }),
+    );
+  }
+
   // Get player loadout
   async getLoadout() {
     return unwrap(await client.GET("/api/items/loadout", {}));
