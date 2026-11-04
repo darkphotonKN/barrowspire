@@ -52,6 +52,8 @@ export interface LetterPanelDeps {
   store: StoreApi<MailboxState>;
   art: ArtLibrary;
   now?: () => number;
+  /** The character's level, where known: the item tip tones a requirement above it (FS-BDA7X R45). */
+  level?: () => number | undefined;
 }
 
 /** Over the HUD (1000) and the gear overlay (1100), under the menus (2000) and item tips (2200). */
@@ -134,6 +136,11 @@ export class LetterPanel {
     this.clear();
   }
 
+  /** Whether a screen point lies on the open panel: a wheel or a press there is the panel's alone. */
+  covers(x: number, y: number): boolean {
+    return this.frame !== undefined && within(this.frame.panel, x, y);
+  }
+
   private clear(): void {
     this.hideTip();
     for (const o of this.objects) o.destroy();
@@ -201,17 +208,18 @@ export class LetterPanel {
       "MAILBOX",
       style(palette.hudLabel, 12, { letterSpacing: 2 }),
     );
+    // amber, as everything that can be pressed is; brighter under the pointer
     const x = this.text(
       close.x + close.width / 2,
       close.y + close.height / 2,
       "×",
-      style(palette.hudLabel, 22),
+      style(palette.interactable, 22),
     )
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
     x.on("pointerdown", () => this.deps.store.getState().closePanel());
-    x.on("pointerover", () => x.setColor(toCss(palette.hudText)));
-    x.on("pointerout", () => x.setColor(toCss(palette.hudLabel)));
+    x.on("pointerover", () => x.setColor(toCss(palette.interactableBright)));
+    x.on("pointerout", () => x.setColor(toCss(palette.interactable)));
     // the gutter between the list and the letter
     const gutter = (list.x + list.width + right.x) / 2;
     g.lineStyle(1, palette.frame, 0.3);
@@ -245,7 +253,7 @@ export class LetterPanel {
         detail,
         takeView(
           detail,
-          state.taking === detail.id,
+          state.taking,
           warning?.letterId === detail.id ? warning.text : null,
         ),
       );
@@ -493,7 +501,7 @@ export class LetterPanel {
     g.fillRoundedRect(r.x, r.y, r.width, r.height, WELL_RADIUS);
     g.lineStyle(1, palette.frame, 0.22);
     g.strokeRoundedRect(r.x, r.y, r.width, r.height, WELL_RADIUS);
-    const view = slot.kind === "item" ? itemView(slot.item) : undefined;
+    const view = slot.kind === "item" ? this.view(slot.item) : undefined;
     const edge = view ? rarityEdge(view) : undefined;
     if (edge !== undefined) {
       g.fillStyle(edge, 0.9 * alpha);
@@ -548,11 +556,16 @@ export class LetterPanel {
     pointer: { x: number; y: number },
   ): void {
     this.hideTip();
-    const tip = buildItemTip(this.scene, itemView(item));
+    const tip = buildItemTip(this.scene, this.view(item));
     tip.container.setDepth(TIP_DEPTH).setScrollFactor(0);
     const [at] = itemTipRow([tip], pointer, this.scene.cameras.main);
     tip.container.setPosition(at.x, at.y);
     this.tip = tip;
+  }
+
+  /** An enclosed item as the gear overlay reads one: against the character's level (FS-BDA7X R45). */
+  private view(item: Extract<EnclosureSlot, { kind: "item" }>["item"]) {
+    return itemView(item, this.deps.level?.());
   }
 
   private hideTip(): void {

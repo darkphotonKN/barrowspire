@@ -66,12 +66,19 @@ export interface ChatWindowOptions {
   input?: ChatWindowInput;
   /** This player's id: a whisper they sent is their echo, `To Name` (FS-KCQ06 R14). */
   selfId?: () => string | undefined;
+  /**
+   * Whether a panel drawn over the window lies at a screen point (the letter panel): the wheel
+   * and presses there are that panel's, so the window neither scrolls nor grabs under it.
+   */
+  coveredAt?: (x: number, y: number) => boolean;
 }
 
 /** What a scene gives the window so the player can type: who owns the keys, and how a line leaves. */
 export interface ChatWindowInput {
   /** Whether nothing else (a dialogue, a menu, an overlay) owns Enter and Esc now (R27). */
   mayOpen: () => boolean;
+  /** Whether what owns the keys now was opened by a press elsewhere, so the draft is kept (`ChatInputDeps`). */
+  keepsDraft?: () => boolean;
   send: (line: ChatSend) => void;
   /** The text field and picker; the real DOM ones in a scene (`domChatInputField`), a stand-in in a test. */
   makeField: ChatInputFieldFactory;
@@ -84,6 +91,8 @@ export interface ChatWindowInput {
 export function mountChatWindow(
   scene: Phaser.Scene,
   mayOpen: () => boolean,
+  over: Pick<ChatWindowOptions, "coveredAt"> &
+    Pick<ChatWindowInput, "keepsDraft"> = {},
 ): ChatWindow {
   return new ChatWindow(
     scene,
@@ -93,10 +102,12 @@ export function mountChatWindow(
     {
       input: {
         mayOpen,
+        keepsDraft: over.keepsDraft,
         send: (line) => socketManager.sendMessage(ActionType.Chat, line),
         makeField: domChatInputField,
       },
       selfId: () => useAuthStore.getState().memberInfo?.id,
+      coveredAt: over.coveredAt,
     },
   );
 }
@@ -192,6 +203,7 @@ export class ChatWindow {
   private field?: ChatInputFieldHandle;
   private input?: ChatInput;
   private readonly selfId: () => string | undefined;
+  private readonly coveredAt: (x: number, y: number) => boolean;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
   constructor(
@@ -203,6 +215,7 @@ export class ChatWindow {
   ) {
     this.bottom = bottom;
     this.selfId = options.selfId ?? (() => undefined);
+    this.coveredAt = options.coveredAt ?? (() => false);
     this.frame = this.frameNow();
     this.drawAll();
     this.unsubscribe = store.subscribe((state, prev) =>
@@ -341,6 +354,7 @@ export class ChatWindow {
       field: this.field,
       keyboard,
       mayOpen: typing.mayOpen,
+      keepsDraft: typing.keepsDraft,
       send: typing.send,
       changed: () => this.inputChanged(),
       recall: {
@@ -400,6 +414,11 @@ export class ChatWindow {
    */
   private onPress(pointer: { x: number; y: number }): void {
     this.pressedName = null;
+    // a press on a panel drawn over the window is that panel's: nothing here is grabbed or named
+    if (this.coveredAt(pointer.x, pointer.y)) {
+      if (this.input?.isOpen()) this.field?.blur();
+      return;
+    }
     if (this.grabScrollbar(pointer)) return;
     this.pressedName = this.nameAt(pointer.x, pointer.y);
     if (!this.input?.isOpen() || this.covers(pointer.x, pointer.y)) return;
@@ -497,7 +516,8 @@ export class ChatWindow {
   ): void {
     if (
       this.store.getState().folded ||
-      !within(this.frame.messages, pointer.x, pointer.y)
+      !within(this.frame.messages, pointer.x, pointer.y) ||
+      this.coveredAt(pointer.x, pointer.y)
     )
       return;
     const next = scrolledOffset(

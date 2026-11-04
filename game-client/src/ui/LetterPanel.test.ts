@@ -13,6 +13,7 @@ import {
 } from "@/mailbox/mailbox";
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
 import { ApiError } from "@/utils/apiError";
+import { palette, toCss } from "@/utils/canvasPalette";
 import { LetterPanel } from "./LetterPanel";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
@@ -89,7 +90,7 @@ function fakeScene() {
         destroyed: false,
       };
       texts.push(t);
-      return chain(
+      const self = chain(
         {
           width: content.length * 7,
           height: 18,
@@ -97,6 +98,11 @@ function fakeScene() {
         },
         t,
       );
+      self.setColor = (color: string) => {
+        t.color = color;
+        return self;
+      };
+      return self;
     },
     zone: (x: number, y: number, w: number, h: number) => {
       const z = { rect: { x, y, w, h }, handlers: {}, destroyed: false };
@@ -237,6 +243,29 @@ describe("LetterPanel (R36, R37, R40)", () => {
     expect(live()).toHaveLength(0);
   });
 
+  it("draws × in amber, the interactable tone, brightening under the pointer", () => {
+    const { scene, store, find } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const x = find("×")!;
+    expect(x.color).toBe(toCss(palette.interactable));
+    x.handlers.pointerover();
+    expect(x.color).toBe(toCss(palette.interactableBright));
+    x.handlers.pointerout();
+    expect(x.color).toBe(toCss(palette.interactable));
+  });
+
+  it("covers its own panel while open, and nothing while closed", () => {
+    const { scene, store } = setup();
+    const panel = new LetterPanel(scene, { store, art, now: () => NOW });
+    expect(panel.covers(540, 360)).toBe(false);
+    open(store, []);
+    expect(panel.covers(540, 360)).toBe(true);
+    expect(panel.covers(2, 2)).toBe(false);
+    store.getState().closePanel();
+    expect(panel.covers(540, 360)).toBe(false);
+  });
+
   it("lists each letter with its title and time, and shows the open one's sender, dates and body", () => {
     const { scene, store, shown } = setup();
     new LetterPanel(scene, { store, art, now: () => NOW });
@@ -316,6 +345,30 @@ describe("LetterPanel (R36, R37, R40)", () => {
     expect(shown().filter((t) => t === "Barrow Blade")).toHaveLength(1);
     slot.handlers.pointerout();
     expect(shown()).not.toContain("Barrow Blade");
+  });
+
+  it("tones the tip's level requirement against the character's level, as the gear overlay does (FS-BDA7X R45)", () => {
+    const { scene, store, find, zones } = setup();
+    let level = 5;
+    new LetterPanel(scene, { store, art, now: () => NOW, level: () => level });
+    open(
+      store,
+      [
+        letter({
+          claimState: "unclaimed",
+          enclosures: [{ kind: "item", quantity: 1, item: sword }],
+        }),
+      ],
+      "a",
+    );
+    const slot = zones.find((z) => !z.destroyed && z.handlers.pointerover)!;
+    slot.handlers.pointerover({ x: 400, y: 500 });
+    expect(find("Requires level 8")?.color).toBe(toCss(palette.damageBright));
+
+    slot.handlers.pointerout();
+    level = 8;
+    slot.handlers.pointerover({ x: 400, y: 500 });
+    expect(find("Requires level 8")?.color).toBe(toCss(palette.hudLabel));
   });
 
   it("says a crumbled letter in place of the letter", () => {
@@ -412,6 +465,25 @@ describe("LetterPanel: Take (R39, A5)", () => {
     expect(shown()).not.toContain("A word from the Wardens");
   });
 
+  it("holds every other letter's Take while one is in flight: one take per panel", async () => {
+    const { scene, store, api, find } = setup();
+    let answer!: (v: ClaimedLetter) => void;
+    api.claim.mockImplementationOnce(
+      () => new Promise<ClaimedLetter>((resolve) => (answer = resolve)),
+    );
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [held, { ...held, id: "b", title: "Second" }], "a");
+    find("Take")!.handlers.pointerdown();
+
+    store.setState({ selectedId: "b" });
+    expect(find("Take")).toBeDefined();
+    expect(find("Take")!.handlers.pointerdown).toBeUndefined();
+
+    answer({ letterId: "a", claimState: "claimed", itemIds: [], gold: 500 });
+    await settle();
+    expect(find("Take")!.handlers.pointerdown).toBeDefined();
+  });
+
   it("has no button on a letter without enclosures, nor on one already taken; and never says Claim", () => {
     const { scene, store, shown } = setup();
     new LetterPanel(scene, { store, art, now: () => NOW });
@@ -475,6 +547,14 @@ describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
     hud.destroy();
     await store.getState().arrived();
     expect(api.summary).toHaveBeenCalledTimes(1);
+  });
+
+  it("covers the screen under the open panel, so nothing under it takes a wheel or a press", async () => {
+    const { scene, store } = setup();
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
+    expect(hud.covers(540, 360)).toBe(false);
+    await store.getState().openPanel();
+    expect(hud.covers(540, 360)).toBe(true);
   });
 
   it("owns the keys while the panel is open, and closes it with the town", async () => {

@@ -677,6 +677,8 @@ export class HubScene extends Phaser.Scene {
    * has one. While the panel is open it owns the keys, as the ESC menu does.
    */
   private mailbox?: MailboxHud;
+  /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
+  private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -786,25 +788,37 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
-    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town
+    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town.
+    // The letter panel is opened by a press, so it keeps a half-typed line as any press elsewhere
+    // does, and the wheel and presses under it are its own (FS-1GZGD R40)
     this.chatWindow = mountChatWindow(
       this,
       () => !this.dialogue && !this.menu && !this.gear?.isOpen() && !this.mailbox?.isOpen(),
+      {
+        keepsDraft: () => !!this.mailbox?.isOpen(),
+        coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
+      },
     );
     // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
     this.partyPanel = mountPartyPanel(
       this,
       () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen() || !!this.mailbox?.isOpen(),
     );
-    // party invites, hidden while the menu or the gear overlay covers the town (FS-R82NV R32, R33)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => !!this.menu || !!this.gear?.isOpen());
+    // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
+    // (FS-R82NV R32, R33)
+    this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
     // the ready check, under the same covers; it closes no dialogue or shop (FS-BJNYC R23)
-    this.readyCheck = mountPartyReadyCheck(this, () => !!this.menu || !!this.gear?.isOpen());
+    this.readyCheck = mountPartyReadyCheck(this, () => this.coversPopups());
     // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
     // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
     // envelope opens nothing while a dialogue, the menu or the gear overlay is up
-    this.mailbox = mountMailbox(this, this.art, () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen());
+    this.mailbox = mountMailbox(
+      this,
+      this.art,
+      () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen(),
+      () => this.characterLevel,
+    );
 
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
@@ -1799,6 +1813,7 @@ export class HubScene extends Phaser.Scene {
       // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30)
       this.gear?.updateCharacter(state.current_player);
       this.gear?.setCharacterLevel(state.current_player.level);
+      this.characterLevel = state.current_player.level;
 
       const progress = progressOf(state.current_player);
       if (progress) {
@@ -1992,6 +2007,15 @@ export class HubScene extends Phaser.Scene {
     button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
     button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
     this.leaveButton = button;
+  }
+
+  /**
+   * Whether an overlay covers the town's party popups (the invite prompt and the ready check): the
+   * menu, the gear overlay or the letter panel, each drawn over them. The popups hide under it and
+   * their countdowns run on (FS-R82NV R32, FS-BJNYC R23, FS-1GZGD R40).
+   */
+  private coversPopups(): boolean {
+    return !!this.menu || !!this.gear?.isOpen() || !!this.mailbox?.isOpen();
   }
 
   /**

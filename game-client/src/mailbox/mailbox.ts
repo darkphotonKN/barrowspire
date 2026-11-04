@@ -355,20 +355,23 @@ export interface TakeView {
 
 /**
  * The Take controls for the open letter (R39): "Take" while its enclosures are untaken,
- * "Taking…" and not pressable while the claim is in flight, and the stamp once taken.
+ * "Taking…" and not pressable while its claim is in flight, and the stamp once taken. `taking`
+ * is the letter whose claim is in flight, if any: one take at a time per panel, so while another
+ * letter's is, this one's Take cannot be pressed either.
  */
 export function takeView(
-  detail: Pick<LetterDetail, "enclosed" | "untaken">,
-  taking: boolean,
+  detail: Pick<LetterDetail, "id" | "enclosed" | "untaken">,
+  taking: string | null,
   warning: string | null,
 ): TakeView {
   if (detail.enclosed.length === 0)
     return { button: null, stamp: false, warning: null };
   if (!detail.untaken) return { button: null, stamp: true, warning: null };
   return {
-    button: taking
-      ? { label: TAKING_LABEL, enabled: false }
-      : { label: TAKE_LABEL, enabled: true },
+    button:
+      taking === detail.id
+        ? { label: TAKING_LABEL, enabled: false }
+        : { label: TAKE_LABEL, enabled: taking === null },
     stamp: false,
     warning,
   };
