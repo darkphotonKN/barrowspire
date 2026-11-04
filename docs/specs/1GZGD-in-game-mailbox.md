@@ -28,6 +28,14 @@
 > after A6. New requirements are R52–R62. **[charter default]** and **[spec default]** mean what
 > they mean in A6.
 
+> **Amended again 2026-11-04 (A8)**, before the welcome slice (I-1GZGD-11) was built: the
+> welcome gift's potion snapshot is **cached** in notification-service's memory after the first
+> successful resolve (the user's decision), and a **permanent** problem with the gift never
+> breaks signup: the welcome is stored with its gold only (the `/charter` run's default, flagged
+> to the user). See "Amendment 2026-11-04 (A8)" after A7. R60, R61, story 58, the welcome
+> acceptance criteria and two A7 edge states are corrected in place, each saying *(Amended
+> 2026-11-04, A8 …)*.
+
 ## Summary
 
 Players get a mailbox in the town. The Wardens (an admin) can send an official letter to one
@@ -278,7 +286,8 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
     its potion is resolved by `ResolveItemSnapshots` and stored as a snapshot (A2). The resolve
     runs **inside** the inbox transaction, after the inbox mark, under a short deadline, the way
     `ProcessVerificationRequested` sends its email inside its own. A duplicate delivery stops at
-    the inbox mark and never calls items-service. **[spec default]**
+    the inbox mark and never calls items-service. **[spec default]** *(Amended 2026-11-04,
+    A8.1: only while the in-memory gift cache is empty.)*
   - **When items-service is unavailable** (unreachable, a deadline, an outage answer), the
     handler returns a **transient** error (`ErrTransient`). The whole transaction rolls back
     (no inbox mark, no signup notification, no letter), and the consumer requeues the event with
@@ -287,7 +296,8 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
   - **When items-service refuses the potion** (the seeded template is gone, or unrepresentable),
     retrying cannot help: the handler logs at error and returns a permanent error, the transaction
     rolls back and the event is dead-lettered. There is never a partial welcome (gold without the
-    potions, or a letter without its gift). **[spec default]**
+    potions, or a letter without its gift). **[spec default]** *(Replaced 2026-11-04 by A8.2: a
+    refusal stores a gold-only welcome and the signup commits.)*
   - **The push:** after the transaction commits, notification-service publishes one
     `mail:arrived` `{"member_id": "<uuid>"}` through I-1GZGD-8's arrival publisher, outside the
     transaction, never failing the event (R41). A duplicate delivery stores nothing and publishes
@@ -297,6 +307,39 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
     narrow interface it owns, implemented in `internal/mailbox` and wired in `config/routes.go`:
     store the welcome letter for a member on the given transaction, and, after the commit,
     announce it. The notification package learns nothing else of letters. **[spec default]**
+  - *(Amended 2026-11-04, A8: the resolve runs only while the gift cache is empty, and a refused
+    potion stores a gold-only welcome instead of dead-lettering the event. See A8.)*
+
+## Amendment 2026-11-04 (A8: the welcome gift is cached; a refused gift never breaks signup)
+
+Decided on 2026-11-04, before the welcome slice (I-1GZGD-11) was built. A1–A7 stand except where
+this says otherwise. R60, R61, story 58, the welcome acceptance criteria and the A7 edge states
+"items-service down at signup" and "the seeded potion template removed" are corrected in place.
+
+- **A8.1 — the potion snapshot is cached for the life of the process.** *(the user's decision)*
+  After the first `ResolveItemSnapshots` that resolves the welcome potion, notification-service
+  keeps that snapshot in memory and every later welcome letter encloses it without calling
+  items-service. Only a signup that finds the cache empty (a freshly started process) resolves,
+  inside the inbox transaction as A7.3 says; if items-service is then unavailable, A7.3's transient
+  path applies unchanged (roll back whole, requeue at 5 s, 15 s, 60 s, then dead-letter).
+  - A resolve that fails or is refused leaves the cache empty, so the next signup tries again.
+    The cache is filled only by a snapshot that resolved, never by an attempt (not a
+    once-only initialiser).
+  - Concurrent signups on a cold cache may each resolve; whichever finishes fills the cache, and
+    each letter encloses a snapshot items-service resolved.
+  - **Accepted consequence:** a rebalance of the Small Health Potion template reaches new welcome
+    letters only after notification-service restarts. Letters already stored keep their snapshot
+    either way (A2).
+- **A8.2 — a permanent problem with the gift never breaks signup.** **[charter default]**,
+  flagged to the user. When items-service **refuses** the potion (`UNKNOWN_ITEM_TEMPLATE`, or an
+  unrepresentable template, `ENCLOSURE_INVALID`), retrying cannot help, so the handler logs at
+  error with the member id and stores the welcome letter with its **gold enclosure only** (100
+  gold, no potion enclosure). The inbox mark, the signup notification and that letter commit as
+  normal, the event is acked, and the push follows as for any welcome. The refusal is not cached:
+  the next signup resolves again, so a fixed seed is picked up without a restart, and a fixed
+  constant after one. This replaces A7.3's "refusal → permanent error → dead-letter" and its
+  "never a partial welcome" rule; a welcome is still never stored without its gold, and an
+  account whose welcome went out gold-only is not topped up later.
 
 ## Requirements
 
@@ -583,14 +626,20 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
     (`aa0e8400-e29b-41d4-a716-446655440006`, items migration `000002_seed_basic_data`), one named
     constant in notification's mailbox package. **[spec default]**
 60. The welcome is built through the same path as every letter (R3–R5, S1), so its potion is
-    resolved through `ResolveItemSnapshots` and stored as a snapshot. The resolve runs inside the
-    inbox transaction, after the inbox mark, under a short deadline; a duplicate delivery never
-    calls items-service. **[spec default]**
-61. If items-service is **unavailable**, the handler returns a transient error: the transaction
-    rolls back whole and the event is requeued with the consumer's delays, then dead-lettered. If
-    items-service **refuses** the potion (unknown or unrepresentable template), the handler logs
-    at error and returns a permanent error: the transaction rolls back and the event is
-    dead-lettered. A welcome letter is never stored without its whole gift. **[spec default]**
+    stored as a snapshot that `ResolveItemSnapshots` resolved. The first welcome a process builds
+    resolves it, inside the inbox transaction, after the inbox mark, under a short deadline; the
+    snapshot is then cached in memory for the life of the process and every later welcome uses
+    it without calling items-service. A failed or refused resolve does not fill the cache. A
+    duplicate delivery never calls items-service. **[spec default]** *(Amended 2026-11-04, A8.1:
+    the cache is the user's decision; was: every welcome resolves.)*
+61. If items-service is **unavailable** while the cache is empty, the handler returns a transient
+    error: the transaction rolls back whole and the event is requeued with the consumer's delays,
+    then dead-lettered. If items-service **refuses** the potion (unknown or unrepresentable
+    template), the handler logs at error and stores the welcome letter with its gold only; the
+    inbox mark, the signup notification and that letter commit, and the event is acked. The
+    refusal is not cached. **[spec default]** for the transient path; **[charter default]** for
+    the gold-only fallback. *(Amended 2026-11-04, A8.2; was: a refusal is a permanent error, the
+    event is dead-lettered, and a welcome is never stored without its whole gift.)*
 62. After the commit, notification-service publishes one `mail:arrived` `{"member_id"}` for the
     welcome letter through the arrival publisher (R41), outside the transaction; a failed publish
     is logged and the event is still acked. A duplicate delivery publishes nothing.
@@ -719,11 +768,18 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
     delivered, so that the gift cannot be farmed by redelivery.
 57. As a player making a second character, I want no second welcome gift, so that the gift
     belongs to the account and cannot be farmed by new characters.
-58. As an operator, I want a welcome that could not be built (items-service down, the potion gone)
-    to retry or dead-letter whole, never half-stored, so that every account ends with the whole
-    gift or none and a replay fixes it.
+58. As an operator, I want a welcome that could not be built because items-service is down to
+    retry or dead-letter whole, never half-stored, and a potion that items-service refuses never
+    to block a signup, so that an outage is fixed by a replay and a broken seed costs new players
+    their potions, not their signup. *(Amended 2026-11-04, A8; was: down or gone, retry or
+    dead-letter whole.)*
 59. As an existing player, I get no welcome letter after this ships, so that the welcome stays a
     welcome and is not a surprise handout.
+
+*Added by amendment A8 (2026-11-04):*
+
+60. As an operator, I want the welcome potion resolved once per process, so that a burst of
+    signups does not lean on items-service. *(Added 2026-11-04, A8.)*
 
 ## Acceptance Criteria
 
@@ -908,14 +964,21 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
       `min_item_level`) and 100 gold, expiring 30 days after it was stored.
 - [ ] The same event delivered twice stores one welcome letter and publishes `mail:arrived`
       once; the second delivery calls no items RPC.
+- [ ] After one welcome has resolved the potion, later signups in the same process store their
+      welcome with that snapshot and call no items RPC. *(Added 2026-11-04, A8.1.)*
+- [ ] Concurrent signups on a cold cache each store one whole welcome letter, with no data race.
+      *(Added 2026-11-04, A8.1.)*
 - [ ] Two different `member.signedup` events for two accounts store one welcome letter each.
 - [ ] After the commit, exactly one `{"member_id": M}` is published; with Redis unreachable the
       letter and the notification are still stored and the event acked.
-- [ ] With items-service unreachable, nothing is stored (no inbox mark, no notification, no
-      letter), and the event is requeued as transient; once items is back, the redelivery stores
-      all three once.
-- [ ] With items-service refusing the potion template, nothing is stored, the failure is logged at
-      error, and the event is dead-lettered, not requeued.
+- [ ] With the cache empty and items-service unreachable, nothing is stored (no inbox mark, no
+      notification, no letter), and the event is requeued as transient; the cache stays empty, and
+      once items is back, the redelivery resolves and stores all three once. *(Amended
+      2026-11-04, A8.1: "with the cache empty".)*
+- [ ] With items-service refusing the potion template, the inbox mark, the signup notification
+      and a welcome letter holding only the 100 gold are stored, the refusal is logged at error,
+      and the event is acked; the next signup calls items again. *(Amended 2026-11-04, A8.2; was:
+      nothing is stored and the event is dead-lettered.)*
 - [ ] A failure forced in the letter insert rolls back the inbox mark and the signup notification
       too (service or repository test).
 - [ ] The welcome letter appears in that member's mailbox and summary like any letter, and its
@@ -997,12 +1060,18 @@ here is server-side: no HTTP endpoint, no generated contract and no client scree
 - **A letter request without a `source`:** invalid (R55); nothing stored, marked processed, acked.
 - **Signup event redelivered:** the inbox stops it before any work; no second welcome, no items
   call, no push.
-- **items-service down at signup:** the whole signup handling waits with it. The event is
+- **items-service down at signup:** with the potion cached, nothing changes: the welcome needs no
+  items call. With the cache empty (a fresh process), the whole signup handling waits with it. The event is
   requeued three times (5 s, 15 s, 60 s); an outage longer than that dead-letters the event, so
   the signup notification and the welcome letter are both missing until the event is replayed.
-  Accepted for v1. **[spec default]**
-- **The seeded potion template removed or renamed by id:** every signup dead-letters, logged at
-  error, until the constant or the seed is fixed and the events are replayed. **[spec default]**
+  Accepted for v1. **[spec default]** *(Amended 2026-11-04, A8.1: only on a cold cache.)*
+- **The seeded potion template removed or renamed by id:** a process that already cached the
+  potion keeps enclosing it until it restarts. A process with an empty cache stores every welcome
+  with its gold only, logged at error, and keeps asking items-service on each signup until the
+  constant or the seed is fixed. Those accounts never get the potions. **[charter default]**
+  *(Amended 2026-11-04, A8.2; was: every signup dead-letters until fixed and replayed.)*
+- **The potion template rebalanced while the process runs:** new welcomes keep the cached
+  snapshot until notification-service restarts (A8.1, accepted). *(Added 2026-11-04, A8.)*
 - **A new player claims the welcome before wallet-service has created their account:** the
   credit fails and the claim stays `claiming`, retryable (R24); wallet creates the account from
   the same `member.signedup`.
@@ -1095,3 +1164,5 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
   the sent-by audit, and showing a sender's identity to players; checking a letter request's
   `source` against a list; a welcome letter for accounts that existed before, one per character,
   or in another language; other notification triggers besides the welcome.
+- *(Added 2026-11-04, A8:)* refreshing the cached welcome potion without a restart (a TTL, an
+  event from items-service); topping up the potions of a welcome that went out gold-only.
