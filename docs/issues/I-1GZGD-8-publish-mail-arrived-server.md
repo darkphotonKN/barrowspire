@@ -6,7 +6,7 @@ blocked_by: [I-1GZGD-3]
 labels: [ready-for-agent]
 title: "FS-1GZGD slice 8: publish mail:arrived on Redis after a letter commits (notification-service)"
 ---
-Implements FS-1GZGD §Requirements R41, R50, §Amendment 2026-11-04 (A4), §Amendment 2026-11-04 (A6), §API surface (RPC surface: the `mail:arrived` row), §Acceptance Criteria (New-letter push: publish and Redis-down criteria), §Edge States (Redis down at send); ADR-0045 §Decision 1
+Implements FS-1GZGD §Requirements R41, R50, R62, §Amendment 2026-11-04 (A4), §Amendment 2026-11-04 (A6), §Amendment 2026-11-04 (A7: A7.3), §API surface (RPC surface: the `mail:arrived` row), §Acceptance Criteria (New-letter push: publish and Redis-down criteria), §Edge States (Redis down at send); ADR-0045 §Decision 1
 
 **Lane: server (human lane; the 2026-11-04 mailbox charter authorises this feature's server work, so `/develop` may run it when Nick asks). Added by the 2026-11-04 amendment.**
 
@@ -14,6 +14,13 @@ Implements FS-1GZGD §Requirements R41, R50, §Amendment 2026-11-04 (A4), §Amen
 > recipient (I-1GZGD-3), so it publishes one `{"member_id"}` **per stored letter**, the whole
 > batch under **one** short deadline, logged **once** on failure with the letter count. The
 > channel and its two payload forms do not change (ADR-0045), and neither does game-service.
+
+> **Amended again 2026-11-04** (FS-1GZGD amendment A7): a third caller announces through this
+> publisher: the welcome letter (I-1GZGD-11), stored inside `member.signedup`'s inbox
+> transaction in `internal/notification`, publishes one `{"member_id"}` after **that**
+> transaction commits. Keep the publisher callable after a commit the mailbox's own store path
+> did not run (a "stored these letters, announce them" call), so I-1GZGD-11 needs no change
+> here. Nothing else changes.
 
 ## What to Build
 
