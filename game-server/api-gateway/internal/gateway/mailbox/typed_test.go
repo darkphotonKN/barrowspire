@@ -45,6 +45,15 @@ type fakeLetterClient struct {
 	letters []*pb.Letter
 	summary *pb.MailboxSummary
 	gotRead *pb.MarkLetterReadRequest
+
+	gotClaim *pb.ClaimLetterRequest
+	claimed  *pb.ClaimLetterResponse
+}
+
+func (f *fakeLetterClient) ClaimLetter(ctx context.Context, req *pb.ClaimLetterRequest) (*pb.ClaimLetterResponse, error) {
+	f.record(ctx)
+	f.gotClaim = req
+	return f.claimed, f.err
 }
 
 func (f *fakeLetterClient) record(ctx context.Context) {
@@ -403,4 +412,75 @@ func TestSendLetter_NotificationRefusingTheRoleIs403(t *testing.T) {
 	w := do(newRouter(client, commonauth.RoleAdmin), http.MethodPost, "/api/admin/mail", sendBody(`{"allMembers":true}`))
 
 	testsupport.AssertProblem(t, w, http.StatusForbidden, string(errcode.Forbidden))
+}
+
+func TestClaimLetter_AnswersWhatWasTakenAndForwardsTheToken(t *testing.T) {
+	letter, first, second := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	client := &fakeLetterClient{claimed: &pb.ClaimLetterResponse{
+		LetterId: letter, ClaimState: "claimed", ItemIds: []string{first, second}, Gold: 500,
+	}}
+
+	w := do(newRouter(client, commonauth.RolePlayer), http.MethodPost, "/api/mail/letters/"+letter+"/claim", "")
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, letter, client.gotClaim.GetLetterId())
+	assert.Equal(t, bearer, client.auth, "items and gold go to the token's member")
+	assert.Equal(t, map[string]any{
+		"letterId": letter, "claimState": "claimed", "itemIds": []any{first, second}, "gold": float64(500),
+	}, testsupport.Decode(t, w))
+}
+
+func TestClaimLetter_ItemOnlyAndGoldOnlyKeepBothFields(t *testing.T) {
+	letter, item := uuid.NewString(), uuid.NewString()
+
+	t.Run("item only: gold 0", func(t *testing.T) {
+		client := &fakeLetterClient{claimed: &pb.ClaimLetterResponse{LetterId: letter, ClaimState: "claimed", ItemIds: []string{item}}}
+		w := do(newRouter(client, commonauth.RolePlayer), http.MethodPost, "/api/mail/letters/"+letter+"/claim", "")
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.Equal(t, float64(0), testsupport.Decode(t, w)["gold"])
+	})
+
+	t.Run("gold only: no item ids, never null", func(t *testing.T) {
+		client := &fakeLetterClient{claimed: &pb.ClaimLetterResponse{LetterId: letter, ClaimState: "claimed", Gold: 75}}
+		w := do(newRouter(client, commonauth.RolePlayer), http.MethodPost, "/api/mail/letters/"+letter+"/claim", "")
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.Equal(t, []any{}, testsupport.Decode(t, w)["itemIds"])
+	})
+}
+
+func TestClaimLetter_Failures(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		{"not addressed", status.Error(codes.NotFound, "letter not found"), http.StatusNotFound, errcode.NotFound},
+		{"items or wallet down", status.Error(codes.Unavailable, "claim letter unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+	}
+	for _, code := range []errcode.Code{
+		errcode.LetterExpired, errcode.NothingToClaim, errcode.LetterAlreadyClaimed,
+		errcode.LetterClaimInProgress, errcode.StashFull,
+	} {
+		cases = append(cases, struct {
+			name       string
+			err        error
+			wantStatus int
+			wantCode   errcode.Code
+		}{string(code), errcode.Refuse(code), http.StatusBadRequest, code})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeLetterClient{err: tc.err}
+			w := do(newRouter(client, commonauth.RolePlayer), http.MethodPost, "/api/mail/letters/"+uuid.NewString()+"/claim", "")
+			testsupport.AssertProblem(t, w, tc.wantStatus, string(tc.wantCode))
+		})
+	}
+
+	t.Run("a non-uuid id is shape", func(t *testing.T) {
+		client := &fakeLetterClient{}
+		w := do(newRouter(client, commonauth.RolePlayer), http.MethodPost, "/api/mail/letters/nope/claim", "")
+		testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+		assert.Zero(t, client.calls)
+	})
 }
