@@ -16,8 +16,10 @@
 //  - WebGL runs on SwiftShader (software), never the GPU, whose output varies by driver; the
 //    bake refuses to run on anything else;
 //  - frames are box-filtered and PNGs encoded here, with no metadata chunks (lib/png.mjs);
-//  - each atlas records the sha256 of its raw pixels, and an atlas whose pixels are unchanged
-//    keeps its existing PNG, so a different zlib build cannot churn files either.
+//  - each atlas records the sha256 of its raw pixels, and an atlas whose PNG on disk already
+//    holds those pixels keeps it, so a different zlib build cannot churn files either. The PNG
+//    itself is read back, not the old manifest's hash: a merge can pair one branch's manifest
+//    with another's atlases, and trusting the hash would leave those atlases stale.
 // Pixels can still differ across Chrome versions (SwiftShader changes); re-bake and review.
 //
 // Browser: the installed Google Chrome (playwright-core `channel: "chrome"`), else a Playwright
@@ -28,7 +30,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { encodePng } from "./lib/png.mjs";
+import { decodePng, encodePng } from "./lib/png.mjs";
 import { meanColour } from "./lib/mean.mjs";
 import { crownHeight } from "./lib/crown.mjs";
 import { SIDE_ON, bodyLength } from "./lib/length.mjs";
@@ -74,14 +76,6 @@ const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.group === "interior"),
   ...sheets.filter((x) => x.group === "building"),
 ];
-
-function readJson(file) {
-  try {
-    return JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    return null;
-  }
-}
 
 async function bakeAll() {
   const server = await startServer();
@@ -227,6 +221,16 @@ function assemble({ tile, facings, sheets }) {
   return { manifest: { version: 1, tile, facings, atlases, sheets: manifestSheets }, images };
 }
 
+/** The sha256 of the raw pixels in the PNG at `file`, or undefined when it is missing or unreadable. */
+function pixelsOnDisk(file) {
+  if (!existsSync(file)) return undefined;
+  try {
+    return createHash("sha256").update(decodePng(readFileSync(file)).rgba).digest("hex");
+  } catch {
+    return undefined;
+  }
+}
+
 async function main() {
   const { validateManifest } = await loadManifestValidator();
   const t0 = Date.now();
@@ -236,12 +240,11 @@ async function main() {
   const result = validateManifest(manifest);
   if (!result.ok) throw new Error(`bake: the manifest fails the client's validator\n  ${result.errors.join("\n  ")}`);
 
-  const previous = readJson(MANIFEST);
   const json = `${JSON.stringify(manifest, null, 2)}\n`;
   const changed = [];
   for (const [key, atlas] of Object.entries(manifest.atlases)) {
     const file = join(OUT_DIR, atlas.image);
-    if (previous?.atlases?.[key]?.sha256 === atlas.sha256 && existsSync(file)) continue;
+    if (pixelsOnDisk(file) === atlas.sha256) continue;
     changed.push(atlas.image);
     if (!CHECK) {
       mkdirSync(OUT_DIR, { recursive: true });
