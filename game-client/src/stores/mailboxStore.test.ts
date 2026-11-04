@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import type { KeyValueStore } from "@/characters/roster";
-import type { Letter, MailboxSummary } from "@/mailbox/mailbox";
-import { LETTER_CRUMBLED } from "@/mailbox/mailbox";
+import type { ItemSnapshot, Letter, MailboxSummary } from "@/mailbox/mailbox";
+import {
+  LETTER_CRUMBLED,
+  SEAL_WOULD_NOT_BREAK,
+  type ClaimedLetter,
+} from "@/mailbox/mailbox";
 import {
   createMailboxStore,
   lastSeenKey,
   type MailboxApi,
 } from "./mailboxStore";
 
-// FS-1GZGD §Requirements R34, R35, R38, R40, R44; A4 (no timer). I-1GZGD-6: what fetches the
+// FS-1GZGD §Requirements R34, R35, R38, R39, R40, R44; A4 (no timer), A5. I-1GZGD-6 and -7: what fetches the
 // summary, when the envelope pulses, and reading letters, against a faked gateway.
 
 const ME = "member-1";
@@ -21,6 +25,16 @@ const summary = (over: Partial<MailboxSummary> = {}): MailboxSummary => ({
   unclaimedCount: 0,
   waitingCount: 0,
   ...over,
+});
+
+const snapshot = (templateId: string, name: string): ItemSnapshot => ({
+  templateId,
+  name,
+  itemType: "consumable",
+  rarity: "normal",
+  itemLevel: 1,
+  requiredLevel: 1,
+  affixes: [],
 });
 
 const letter = (over: Partial<Letter> = {}): Letter => ({
@@ -66,6 +80,14 @@ function fakeApi(start: MailboxSummary = summary(), letters: Letter[] = []) {
     summary: vi.fn(async () => state.summary),
     letters: vi.fn(async () => state.letters),
     markRead: vi.fn(async (_id: string) => undefined),
+    claim: vi.fn(
+      async (letterId: string): Promise<ClaimedLetter> => ({
+        letterId,
+        claimState: "claimed",
+        itemIds: [],
+        gold: 0,
+      }),
+    ),
   } satisfies MailboxApi;
   return { api, state };
 }
@@ -373,5 +395,155 @@ describe("mailbox store: the letter panel (R36, R38, R40)", () => {
     store.getState().closePanel();
     await store.getState().openPanel();
     expect(store.getState().notice).toBeNull();
+  });
+});
+
+describe("mailbox store: Take (R39, A5)", () => {
+  const refusal = (code: string, status = 400) =>
+    new ApiError({ code, status, detail: code, errors: [] });
+
+  const held = letter({
+    id: "held",
+    read: false,
+    claimState: "unclaimed",
+    enclosures: [
+      { kind: "item", quantity: 1, item: snapshot("t", "Blade") },
+      { kind: "item", quantity: 3, item: snapshot("p", "Draught") },
+      { kind: "gold", gold: 50 },
+    ],
+  });
+  const start = summary({ unreadCount: 1, unclaimedCount: 1, waitingCount: 1 });
+
+  async function opened() {
+    const ctx = setup({ start, letters: [held] });
+    await ctx.store.getState().openPanel();
+    return ctx;
+  }
+
+  it("claims the letter: Taking… while in flight, then taken, read and out of the counts", async () => {
+    const { store, api } = await opened();
+    let answer!: (v: ClaimedLetter) => void;
+    api.claim.mockImplementationOnce(
+      () => new Promise<ClaimedLetter>((resolve) => (answer = resolve)),
+    );
+
+    const taking = store.getState().take("held");
+    expect(store.getState().taking).toBe("held");
+    answer({
+      letterId: "held",
+      claimState: "claimed",
+      itemIds: ["i"],
+      gold: 50,
+    });
+    await taking;
+
+    expect(api.claim).toHaveBeenCalledTimes(1);
+    expect(api.claim).toHaveBeenCalledWith("held");
+    expect(store.getState().taking).toBeNull();
+    expect(store.getState().letters[0]).toMatchObject({
+      read: true,
+      claimState: "claimed",
+    });
+    expect(store.getState().summary).toEqual(summary());
+    expect(store.getState().takeWarning).toBeNull();
+  });
+
+  it("never sends twice from one panel: a second press while in flight does nothing", async () => {
+    const { store, api } = await opened();
+    const first = store.getState().take("held");
+    await store.getState().take("held");
+    await first;
+    expect(api.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim a letter with nothing left to take", async () => {
+    const { store, api } = setup({
+      letters: [letter({ id: "plain", read: true })],
+    });
+    await store.getState().openPanel();
+    await store.getState().take("plain");
+    expect(api.claim).not.toHaveBeenCalled();
+  });
+
+  it("a full stash warns with the letter's slot count and keeps the letter untaken", async () => {
+    const { store, api } = await opened();
+    api.claim.mockRejectedValueOnce(refusal("STASH_FULL"));
+    await store.getState().take("held");
+
+    expect(store.getState().takeWarning).toEqual({
+      letterId: "held",
+      text: "Your stash needs 4 free slots",
+    });
+    expect(store.getState().letters[0].claimState).toBe("unclaimed");
+    expect(store.getState().taking).toBeNull();
+    expect(store.getState().summary).toEqual(
+      summary({ unclaimedCount: 1, waitingCount: 1 }),
+    );
+  });
+
+  it("a letter that expired crumbles and leaves the list (LETTER_EXPIRED)", async () => {
+    const { store, api } = await opened();
+    api.claim.mockRejectedValueOnce(refusal("LETTER_EXPIRED"));
+    await store.getState().take("held");
+
+    expect(store.getState().letters).toEqual([]);
+    expect(store.getState().notice).toBe(LETTER_CRUMBLED);
+    expect(store.getState().summary).toEqual(summary());
+    expect(store.getState().taking).toBeNull();
+  });
+
+  it("a letter already taken elsewhere is shown taken (LETTER_ALREADY_CLAIMED)", async () => {
+    const { store, api } = await opened();
+    api.claim.mockRejectedValueOnce(refusal("LETTER_ALREADY_CLAIMED"));
+    await store.getState().take("held");
+
+    expect(store.getState().letters[0].claimState).toBe("claimed");
+    expect(store.getState().summary).toEqual(summary());
+    expect(store.getState().takeWarning).toBeNull();
+  });
+
+  it.each([
+    ["a claim already running", refusal("LETTER_CLAIM_IN_PROGRESS")],
+    ["items or wallet down", refusal("SERVICE_UNAVAILABLE", 503)],
+    ["not found", refusal("NOT_FOUND", 404)],
+    ["the network", new TypeError("Failed to fetch")],
+  ])(
+    "any other failure (%s) says the seal would not break and keeps the button",
+    async (_why, err) => {
+      const { store, api } = await opened();
+      api.claim.mockRejectedValueOnce(err);
+      await store.getState().take("held");
+
+      expect(store.getState().takeWarning).toEqual({
+        letterId: "held",
+        text: SEAL_WOULD_NOT_BREAK,
+      });
+      expect(store.getState().letters[0].claimState).toBe("unclaimed");
+      expect(store.getState().taking).toBeNull();
+    },
+  );
+
+  it("a new press clears the last warning, and so does opening another letter", async () => {
+    const other = letter({ id: "other", read: true, sentAt: T1 });
+    const { store, api } = setup({ start, letters: [held, other] });
+    await store.getState().openPanel();
+    api.claim.mockRejectedValueOnce(refusal("STASH_FULL"));
+    await store.getState().take("held");
+
+    const again = store.getState().take("held");
+    expect(store.getState().takeWarning).toBeNull();
+    await again;
+
+    api.claim.mockRejectedValueOnce(refusal("STASH_FULL"));
+    store.setState({
+      letters: store
+        .getState()
+        .letters.map((l) =>
+          l.id === "held" ? { ...l, claimState: "unclaimed" } : l,
+        ),
+    });
+    await store.getState().take("held");
+    await store.getState().select("other");
+    expect(store.getState().takeWarning).toBeNull();
   });
 });

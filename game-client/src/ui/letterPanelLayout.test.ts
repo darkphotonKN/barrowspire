@@ -8,7 +8,7 @@ import {
   type Rect,
 } from "./letterPanelLayout";
 
-// FS-1GZGD R33, R36, R37 (D11, D14). I-1GZGD-6: where the envelope and the letter panel's parts sit.
+// FS-1GZGD R33, R36, R37, R39 (D11, D14). I-1GZGD-6 and -7: where the envelope and the letter panel's parts sit.
 
 const SCREEN = { width: 1080, height: 720 };
 
@@ -72,6 +72,29 @@ describe("letterPanelFrame (R36, R37)", () => {
     for (const slot of slots) expect(inside(slot, f.detail)).toBe(true);
     expect(f.body.height).toBeGreaterThan(60);
   });
+
+  it("puts a refused Take's warning line over the Take button, right-aligned with it and clear of the caption", () => {
+    const enclosed = letterPanelFrame(SCREEN, 3).enclosed!;
+    const { warning, take, caption } = enclosed;
+    expect(warning.x + warning.width).toBe(take.x + take.width);
+    expect(warning.y + warning.height).toBeLessThanOrEqual(take.y);
+    expect(warning.y).toBe(caption.y);
+    expect(warning.x).toBeGreaterThan(caption.x + 80);
+  });
+
+  it.each([1, 3, 10])(
+    "centres the Taken stamp over the slots of %i enclosures",
+    (n) => {
+      const { slots, stamp } = letterPanelFrame(SCREEN, n).enclosed!;
+      const left = Math.min(...slots.map((s) => s.x));
+      const right = Math.max(...slots.map((s) => s.x + s.width));
+      const top = Math.min(...slots.map((s) => s.y));
+      const bottom = Math.max(...slots.map((s) => s.y + s.height));
+      expect(stamp.x).toBe((left + right) / 2);
+      expect(stamp.y).toBe((top + bottom) / 2);
+      expect(stamp.radius).toBeGreaterThan(0);
+    },
+  );
 
   it("stacks list rows down the list, as many as fit", () => {
     const f = letterPanelFrame(SCREEN, 0);
