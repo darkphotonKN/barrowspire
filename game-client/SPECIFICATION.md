@@ -174,7 +174,7 @@ server state and sends intents. ✅
 - [x] Bids stay below a listing's buyout price → FS-49Z37
 - [x] A refused bid retries under a fresh key → FS-49Z37
 - [x] View and withdraw my bids → FS-EYQ8K
-- [ ] Worn relics not listable → FS-HBXZN
+- [x] Worn relics not listable → FS-HBXZN
 - [ ] Verify-email prompt on gated marketplace actions → FS-V6SFK
 
 ### Dev tooling

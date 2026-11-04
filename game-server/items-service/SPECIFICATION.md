@@ -22,7 +22,7 @@
 - [ ] Affixes and item level on owned instances → FS-4R9M9
 - [x] Bag and stash locations on owned instances → FS-VPD8Y
 - [x] In-run status on owned instances → FS-18Z5F
-- [ ] Worn items refused for listing → FS-HBXZN
+- [x] Worn items refused for listing → FS-HBXZN
 
 ## Grants
 
