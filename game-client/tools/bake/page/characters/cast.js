@@ -15,8 +15,8 @@ import { MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
 import {
   arms,
   bareFeet,
-  beard,
   belt,
+  bust,
   boneLimbs,
   boots,
   cloak,
@@ -24,14 +24,17 @@ import {
   coif,
   cowl,
   hair,
+  hairFall,
   hands,
   head,
   legs,
   neck,
+  overTorso,
   sash,
   shortBeard,
   skirt,
   skirtBones,
+  standingCollar,
   torso,
 } from "./anatomy.js";
 import {
@@ -47,10 +50,10 @@ import {
   nasalHelm,
   quiver,
   scabbard,
+  sceptre,
   spaulder,
   spikedClub,
-  staff,
-  wizardHat,
+  tome,
 } from "./gear.js";
 import { DEMON_ANIMATIONS, demon } from "./demon.js";
 import { ghost, zombie } from "./forlorn.js";
@@ -179,29 +182,53 @@ export function archer() {
   return { rig, style };
 }
 
+/**
+ * The Mage, a woman by default: a raven-haired occultist. Her hair is drawn back from a centre
+ * parting and falls straight down her back over a low standing collar. A black gown with long
+ * trailing sleeves, girdled at the waist, under a scapular in the class's necrotic teal clasped in
+ * brass down the chest. A short iron sceptre holds the stone in its prongs, and a black tome hangs
+ * from the other hand. Narrower in the shoulder and chest than the men, the waist drawn in; no
+ * hat, no hood, no staff, so she reads as neither the ranger's cowl nor the mercenary's bare head.
+ */
 export function wizard() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.98, { shoulderW: 0.98, torsoW: 0.96 });
+  const rig = createRig(1.92, { shoulderW: 0.87, torsoW: 0.88, torsoD: 0.92, hipW: 1.04, armR: 0.86, limbR: 0.88, headR: 0.059 });
   rig.hooks = [];
-  const addBeard = beard(rig, F.beard);
   skirtBones(rig, { stiffness: 38, drag: 0.28 });
   const [, hy] = J(rig, "hips");
+  const [, cy] = J(rig, "chest");
+  const td = rig.p.torsoD;
+  // the scapular's front and back panels
+  const panels = [
+    [Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
+    [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5],
+  ];
 
-  torso(rig, F.robe);
+  torso(rig, F.robe, { waist: 0.86 });
+  bust(rig, F.robe);
   neck(rig, F.skin);
-  arms(rig, F.robe, { sleeve: (t) => 1 + 1.1 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
+  arms(rig, F.robe, { sleeve: (t) => 1 + 1.7 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
   legs(rig, F.breeches);
-  hands(rig, F.skin);
+  hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
   head(rig, F.skin);
-  wizardHat(rig, F.robeDark, M.brass);
-  addBeard();
-  skirt(rig, F.robe, { top: hy + 0.03, bottom: 0.018, rTop: [0.1, 0.078], rBottom: [0.17, 0.15], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32 });
-  belt(rig, F.linen, M.brass, { r: [0.1, 0.08], dy: 0.03, pouch: true });
+  hair(rig, F.raven, { long: true });
+  standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
+  skirt(rig, F.robe, { top: hy + 0.05, bottom: 0.016, rTop: [0.09, 0.072], rBottom: [0.155, 0.138], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+  for (const arc of panels) {
+    overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012 });
+    skirt(rig, F.scapular, { top: hy + 0.02, bottom: 0.05, rTop: [0.096, 0.08], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+  }
+  hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });
+  // the scapular's clasps
+  for (let i = 0; i < 3; i++)
+    attach(rig, "chest", new THREE.BoxGeometry(0.018 * rig.H, 0.008 * rig.H, 0.008 * rig.H), M.brass, [0, cy + 0.07 - i * 0.045, 0.086 * td + 0.012 - i * 0.004]);
+  belt(rig, F.leatherDark, M.brass, { r: [0.094, 0.08], dy: 0.07, pouch: true });
   const orbMat = M.arcane.clone();
   const base = orbMat.emissiveIntensity;
-  inHand(rig, "R").add(staff(rig, M, F, orbMat));
+  inHand(rig, "R").add(sceptre(rig, M, F, orbMat));
+  inHand(rig, "L", { rx: -Math.PI / 2 }).add(tome(rig, F));
   rig.hooks.push((r, p) => {
     orbMat.emissiveIntensity = base * (p.fx.glow ?? 1);
   });

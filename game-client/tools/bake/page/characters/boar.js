@@ -38,7 +38,7 @@ const sides = [
  * Body length in world units (a tile edge). A player stands about 2: fodder is 0.85–1.0 of that
  * by body length, and shorter than a player is tall (guideline "Size is a threat tier").
  */
-const LENGTH = 1.98;
+const LENGTH = 1.84;
 
 /** The head against the barrel: big, since a boar carries its weight in front. */
 const HEAD = 1.15;
