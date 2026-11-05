@@ -490,9 +490,9 @@ func TestWithdrawBid_LeaderInFinalWindow_FailedPrecondition(t *testing.T) {
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
 
-// FS-ZE43K Req 8: a member who has withdrawn three bids on the listing is refused
-// with the registered reason, so the gateway passes it through as 400 ·
-// BID_WITHDRAW_LIMIT_REACHED, and no gold is held for the bid.
+// FS-ZE43K Req 8: a member who has withdrawn three leading bids on the listing
+// (ADR-0055) is refused with the registered reason, so the gateway passes it
+// through as 400 · BID_WITHDRAW_LIMIT_REACHED, and no gold is held for the bid.
 func TestPlaceBid_AtTheBidWithdrawalCap_IsRefusedWithItsReason(t *testing.T) {
 	member := uuid.New()
 	now := time.Now()
@@ -500,7 +500,7 @@ func TestPlaceBid_AtTheBidWithdrawalCap_IsRefusedWithItsReason(t *testing.T) {
 	for i := range bids {
 		bids[i] = &listing.BidReconstituteParams{
 			ID: uuid.New(), MemberID: member, Type: listing.BidTypeBid, Amount: 150 + i,
-			Status: listing.BidStatusCancelled, CreatedAt: now, UpdatedAt: now,
+			Status: listing.BidStatusCancelled, WithdrawnWhileLeading: true, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 	repo, wallet := &fakeRepo{l: activeListing(t, bids...)}, &fakeWallet{}
