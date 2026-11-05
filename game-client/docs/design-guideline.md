@@ -296,11 +296,12 @@ lit) while the player stands inside.
   animation, at game scale) before scenes switch to character sheets.
 - **Legs stay inside the garment.** A tunic's skirts, a hauberk, a coat's skirts or a robe is
   built with `skirt` over legs built with `legs` (`tools/bake/page/characters/anatomy.js`). In
-  every clip except the death, no leg may come more than 2 screen px further out through the
-  cloth than it sits at rest. The bake checks every pose and fails the sheet that breaks this,
-  naming the clip and frame (`characters/clearance.js`). Never give a new garment `mirrored`:
-  that is the old weighting, which skinned each half of the skirt to the opposite thigh, kept
-  only for the legacy sheets on the guard's `KNOWN_CLIPPING` list. All four classes walked
+  every clip except the death, no leg may come more than 2 px (1x px measured in model space, an
+  upper bound on the screen) further out through the cloth than it sits at rest. The bake
+  checks every pose and fails the sheet that breaks this, naming the clip and frame
+  (`characters/clearance.js`). Never give a new garment `mirrored`: that is the old weighting,
+  which skinned each half of the skirt to the opposite thigh, kept only for the legacy sheets on
+  the guard's `MIRRORED_LEGACY` list (the bake fails any other). All four classes walked
   through their tunics and robes at 1x without anyone seeing it until the archer was baked at
   2x, so review the walk frames, not only the idle.
 

@@ -52,7 +52,9 @@ Forces:
    archer alone, at 2). It renders at the supersample × `scale` over the same camera box and
    box-filters to `scale`×, so its frame is exactly `scale` times its 1x frame and its anchor, a
    fraction, is unchanged. The manifest records `scale`; absent is 1.
-2. **Every size stays in screen px.** The client draws a scaled sheet at 1/`scale`
+2. **Every size stays in screen px** (enforced for character and creature sheets only: the
+   manifest validator rejects `scale` and `trimmed` on a sheet without a `walk` clip, see
+   Consequences). The client draws a scaled sheet at 1/`scale`
    (`CharacterAnimator.artScale`, folded into `dress(sprite, size)`); markers divide it back out of
    the sprite's scale; the run's arcade body is resized to the size a 1x sheet gives it. The bake
    measures crown and length on the frames brought back to 1x. Code that reads `frameWidth` /
@@ -83,13 +85,27 @@ Forces:
   0.65, differs at every render scale (at most 0.87 px, 0.6 px frame to frame). Nick judges it in
   the browser check. A coarser trim grid (2 screen px) would make 1.5 exact but not 1.25, 1.75 or
   the menu's 0.65, so it is not done.
-- **Only the character readers have been checked against a scaled, trimmed frame.** The world's
-  render-texture stamps (`render/world/scene.ts`, a frame placed by its top-left from
-  `frameWidth` and the anchor) and the fences' `trimCrop` (a crop from `frameWidth`) have not:
-  neither draws a character today. Before `scale` or `trim` is turned on for a prop, ground or
-  wall sheet, those readers are checked and tested against it.
+- **Only the character readers have been checked against a scaled, trimmed frame.** These
+  readers ignore `scale` and `trim`, taking `frameWidth` / `frameHeight` (or a frame's size) as
+  screen px of a whole frame:
+  - the cursors (`render/cursors/cursors.ts:83`, the cursor image's size);
+  - the item icons (`render/art/itemIcons.ts:145`, the icon's fit);
+  - the container grid's icon fit (`ui/ContainerView.ts:597`) and the gear overlay's
+    (`ui/GearOverlay.ts:565`), both from the sprite's frame size;
+  - the signpost's name rise (`scenes/FieldScene.ts:790`, `scenes/HubScene.ts:1923`,
+    `frameHeight × anchor.y`);
+  - the hub fence crop (`scenes/HubScene.ts:1496-1502`, a crop from `frameWidth`);
+  - the world's render-texture stamps (`render/world/scene.ts:235` and `:601`, a frame placed by
+    its top-left from `frameWidth` and the anchor).
+
+  None of them draws a character or creature. The manifest validator therefore accepts `scale`
+  and `trimmed` only on a sheet with a `walk` clip (a character or creature sheet), so the bake
+  fails before any of these readers meets one. Before either is turned on for a prop, ground,
+  wall, icon or cursor sheet, those readers are fixed and tested against it, and the validator
+  rule is widened.
 - **Code-review can flag** any new read of `frameWidth`, `frameHeight` or a frame's pixels that
   ignores `scale` or `trim`.
-- **The manifest validator holds the contract**: `scale` whole and at most 4, frame sizes
-  multiples of it, `trimmed` only `true`, every frame of a trimmed sheet with a `trim` inside the
-  frame on whole screen px, and no `trim` on an untrimmed sheet.
+- **The manifest validator holds the contract**: `scale` and `trimmed` only on a sheet with a
+  `walk` clip, `scale` whole and at most 4, frame sizes multiples of it, `trimmed` only `true`,
+  every frame of a trimmed sheet with a `trim` inside the frame on whole screen px, and no `trim`
+  on an untrimmed sheet.

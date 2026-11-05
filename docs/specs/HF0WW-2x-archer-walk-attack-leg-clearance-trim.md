@@ -44,7 +44,7 @@ Retroactive work order: written from the thread after the work was done on branc
 16. `skirt()` weights each half of the hem to the thigh on its own side; the follow builds from just under the waistband and is full by mid-skirt; with swaying panels, each panel is pushed out by how far the legs reach above the hem (`pushPanels`), and below the knee a robe hangs on its panels.
 17. The four classes (knight, archer, wizard, mercenary) are built with the fixed `skirt()` and re-baked.
 18. Every other sheet built on `skirt()` keeps the old weighting (`mirrored: true`), so its pixels do not move. No new garment uses `mirrored`.
-19. The bake guards every character sheet (`characters/clearance.js`): in every pose of every clip but the death, no leg vertex between a garment's waistband and hem may lie more than 2 screen px further out through the garment than it does at rest. A sheet that breaks it fails the bake, naming the clip, the frame and the px.
+19. The bake guards every character sheet (`characters/clearance.js`): in every pose of every clip but the death, no leg vertex between a garment's waistband and hem may lie more than 2 px (1x px measured in model space, an upper bound on the screen) further out through the garment than it does at rest. A sheet that breaks it fails the bake, naming the clip, the frame and the px.
 20. `KNOWN_CLIPPING` lists the legacy sheets that still clip (troll, zombie, ghost, the trousered resident, the spirewarden, the quartermaster). A listed sheet passes while it clips and fails the bake once it no longer does, so the list only shrinks; a new sheet never joins it.
 21. The design guideline carries the rule ("Legs stay inside the garment") and says to review the walk frames, not only the idle.
 
@@ -94,7 +94,7 @@ Retroactive work order: written from the thread after the work was done on branc
 - [ ] Shooting while moving plays `walk_attack` faced to the aim; shooting while standing plays `attack`; walking plays `walk`; a held charge plays `attack`.
 - [ ] Switching between moving and standing mid-shot carries the shot on from the same point.
 - [ ] Knight, wizard and mercenary are re-baked with the garment fix, and their walks on screen are the re-baked frames.
-- [ ] The bake fails a character sheet whose legs come more than 2 screen px further out through its garment than at rest, naming clip and frame; a `KNOWN_CLIPPING` sheet that no longer clips also fails it.
+- [ ] The bake fails a character sheet whose legs come more than 2 px (1x px measured in model space, an upper bound on the screen) further out through its garment than at rest, naming clip and frame; a `KNOWN_CLIPPING` sheet that no longer clips also fails it.
 - [ ] Every sheet other than the four classes is pixel-identical to before.
 - [ ] The archer's frames are trimmed: one atlas page, about 45 MB decoded (137 MB untrimmed), every frame byte-identical to its untrimmed bake when re-expanded.
 - [ ] In the world, the silhouette and the roster portrait, the trimmed archer draws pixel-identical to the untrimmed 2x archer at render scale 1 and 2; the differences at fractional scales are at most half a backing px (§ Verification).
