@@ -111,12 +111,14 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Listing buyout price → FS-9XKS6
 - [ ] Marketplace writes require a verified email → FS-V6SFK
 - [x] Item refusals passed through on listing → FS-HBXZN
+- [ ] Listings created only over a confirmed reservation → FS-04ZB6
 
 ### Auction lifecycle
 
 - [ ] BidPlaced saga orchestration
 - [ ] Auction settlement → FS-NXP1W
 - [ ] Auction timeouts and reconciliation
+- [ ] Reconcilers reach every stale candidate each pass → FS-9BJCP
 
 ### Surface
 
