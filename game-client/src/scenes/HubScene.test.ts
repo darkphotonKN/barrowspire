@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
 interface Emitter {
@@ -72,6 +73,13 @@ vi.mock("@/render/iso", async (importOriginal) => {
   return { ...real, addUprightBlock: vi.fn(real.addUprightBlock) };
 });
 
+// The camera's fit, bounds and follow under the render scale are the viewport's (camera.test.ts);
+// here the stub camera only records what it was asked to follow.
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  boundCamera: () => {},
+  followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
+}));
 const { HubScene, delveChoices, hubMenuChoices, ELDER_TALE } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
@@ -210,6 +218,8 @@ interface Made {
   width: number;
   height: number;
   children: Made[];
+  /** What a text was last rasterised again at (`setResolution`); undefined while never. */
+  resolution?: number;
   /** The pointer handlers it was given, by event, as Phaser would call them. */
   handlers: Record<string, (pointer?: { x: number; y: number }) => void>;
 }
@@ -276,6 +286,23 @@ function recordingStage() {
         if (prop === "setColor")
           return (color: string) => {
             target.color = color;
+            return proxy;
+          };
+        // moved, as Phaser moves it: a re-layout reads back where it went (FS-ZAJMH R13)
+        if (prop === "setPosition")
+          return (x: number, y: number) => {
+            target.x = x;
+            target.y = y;
+            return proxy;
+          };
+        if (prop === "setX")
+          return (x: number) => {
+            target.x = x;
+            return proxy;
+          };
+        if (prop === "setResolution")
+          return (resolution: number) => {
+            target.resolution = resolution;
             return proxy;
           };
         if (prop === "setTint")
@@ -446,6 +473,36 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     expect(style.fontSize).toBe(panelStyle.fontSize);
     expect(hub.leaveButton).toBe(leave);
   });
+
+  it.each([1, 2])(
+    "should centre the queue panel, its Leave and the open ESC menu again when the view widens, at render scale %s (FS-ZAJMH R12, R13)",
+    (renderScale) => {
+      const { hub, keys, press, option, reply } = queuedHubOnStage();
+      const relayout = () => (hub as unknown as { relayoutHud(): void }).relayoutHud();
+      Object.assign(hub, { invitePrompt: undefined, readyCheck: undefined, mailbox: undefined });
+      viewport.set({ width: 1080, height: 720, renderScale });
+      reply("queue_status", { current: 1, total: 2 });
+      press(keys.esc);
+      const panel = hub.queuePanel as Made;
+      const leave = hub.leaveButton as Made;
+      const menu = hub.menu as Made;
+      const hit = option("leave") as Made;
+      expect([panel.x, menu.x]).toEqual([540, 540]);
+      const leaveOffset = leave.x - panel.x;
+      const hitOffset = hit.x - menu.x;
+
+      viewport.set({ width: 1280, height: 720, renderScale });
+      relayout();
+      expect(panel.x).toBe(640);
+      expect(leave.x - panel.x).toBe(leaveOffset);
+      // moved, so rasterised again at the render scale of now (R5)
+      expect(panel.resolution).toBe(renderScale);
+      expect(leave.resolution).toBe(renderScale);
+      expect(menu.x).toBe(640);
+      expect(option("leave")!.x - menu.x).toBe(hitOffset);
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    },
+  );
 
   it("should show Leave the queue in the ESC menu while queued", () => {
     const { hub, keys, press, option, reply } = queuedHubOnStage();
@@ -2018,7 +2075,7 @@ describe("camera on the player across visits (reported 2026-10-29)", () => {
     hub.keepCameraOn(rebuilt);
 
     expect(hub.cameras.main.startFollow).toHaveBeenCalledTimes(2);
-    expect(hub.cameras.main.startFollow).toHaveBeenLastCalledWith(rebuilt, true, 0.1, 0.1);
+    expect(hub.cameras.main.startFollow).toHaveBeenLastCalledWith(rebuilt);
   });
 
   it("should forget whose body it followed on release", () => {

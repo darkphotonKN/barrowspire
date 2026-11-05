@@ -30,6 +30,10 @@ vi.mock("@/ui/partyInviteField", () => ({
   }),
 }));
 
+// The vignette paints into a real <canvas>: no DOM here either, and the atmosphere has its own
+// suite (utils/atmosphere.test.ts).
+vi.mock("@/utils/atmosphere", () => ({ createAtmosphere: () => undefined }));
+
 vi.mock("phaser", async () => {
   const { EventEmitter } = await import("eventemitter3");
   class Scene {
@@ -59,6 +63,7 @@ const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
+const { viewport } = await import("@/render/viewport");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
@@ -580,6 +585,24 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     expect(fill.x).toBe(bar.x);
     expect(fill.width).toBeCloseTo(bar.width / 2);
   });
+
+  it.each([1, 2])(
+    "should stand the fallen panel and its bar at the centre of a wider view, at render scale %s (FS-ZAJMH R12, R13)",
+    (renderScale) => {
+      const { field, liveText, barFills } = fallenOnStage();
+      Object.assign(field, { satchel: undefined, invitePrompt: undefined, abilityHud: undefined });
+      viewport.set({ width: 1080, height: 720, renderScale });
+      field.time.now = 1000;
+      field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+      viewport.set({ width: 1280, height: 720, renderScale });
+      (field as unknown as { relayoutHud(): void }).relayoutHud();
+      expect(barFills()).toEqual([{ colour: palette.xpFill, ...fallenFrame(1280, 720).bar }]);
+      expect(liveText("3s")).toBeDefined();
+      expect(liveText(FALLEN_LINE)).toBeDefined();
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    },
+  );
 
   it("should take the panel, the number and the bar down on rising", () => {
     const { field, liveText, barFills } = fallenOnStage();

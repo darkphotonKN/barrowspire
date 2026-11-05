@@ -1,5 +1,6 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, shade, toCss } from "@/utils/canvasPalette";
@@ -401,6 +402,25 @@ describe("ChatWindow (C21: scrolling)", () => {
       "l11",
       "l12",
     ]);
+  });
+
+  describe("at a render scale (FS-ZAJMH R15: Phaser's pointer.x/y are backing px)", () => {
+    afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+    it.each([1.5, 2])(
+      "should scroll on a wheel over the messages at render scale %s, and not beside them",
+      (rs) => {
+        viewport.set({ width: 1080, height: 720, renderScale: rs });
+        const { say, wheel, contents } = rig();
+        for (let i = 1; i <= 12; i++) say(`l${i}`);
+        // backing px that read as logical units would be over the messages: above them, really
+        expect(overMessages.y / rs).toBeLessThan(frame.messages.y);
+        wheel(overMessages.x, overMessages.y, -100);
+        expect(contents().at(-1)).toBe("l12");
+        wheel(overMessages.x * rs, overMessages.y * rs, -100);
+        expect(contents().at(-1)).toBe("l11");
+      },
+    );
   });
 
   it("should ignore the wheel away from the window", () => {

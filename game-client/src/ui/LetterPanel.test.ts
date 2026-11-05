@@ -1,5 +1,5 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import {
@@ -12,10 +12,11 @@ import {
   type Letter,
 } from "@/mailbox/mailbox";
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
+import { viewport } from "@/render/viewport";
 import { ApiError } from "@/utils/apiError";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { LetterPanel } from "./LetterPanel";
-import { letterPanelFrame } from "./letterPanelLayout";
+import { envelopeFrame, letterPanelFrame } from "./letterPanelLayout";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
 
@@ -39,6 +40,8 @@ function fakeScene() {
     rect: { x: number; y: number; w: number; h: number };
   })[] = [];
   const tweens: unknown[] = [];
+  /** Where each container was last put: an item tip's place. */
+  const containers: { x: number; y: number }[] = [];
   const chain = (self: Record<string, unknown>, record?: Pressable) => {
     for (const m of [
       "setScrollFactor",
@@ -116,7 +119,12 @@ function fakeScene() {
     zone: (x: number, y: number, w: number, h: number) => {
       const z = { rect: { x, y, w, h }, handlers: {}, destroyed: false };
       zones.push(z);
-      return chain({}, z);
+      const self = chain({}, z);
+      self.setPosition = (nx: number, ny: number) => {
+        z.rect = { ...z.rect, x: nx, y: ny };
+        return self;
+      };
+      return self;
     },
     sprite: () => chain({ frame: { width: 64, height: 64 } }),
     // as in Phaser, a container takes its children down with it
@@ -127,6 +135,13 @@ function fakeScene() {
     ) => {
       const self = chain({ add: () => undefined });
       self.destroy = () => children.forEach((c) => c.destroy());
+      const at = { x: _x, y: _y };
+      containers.push(at);
+      self.setPosition = (nx: number, ny: number) => {
+        at.x = nx;
+        at.y = ny;
+        return self;
+      };
       return self;
     },
   };
@@ -143,12 +158,12 @@ function fakeScene() {
         return { stop: () => undefined, remove: () => undefined };
       },
     },
-    cameras: { main: { width: 1080, height: 720 } },
+    // no cameras: the mailbox lays out in the logical view (viewport), never the camera's px
   } as unknown as Phaser.Scene;
   const live = () => texts.filter((t) => !t.destroyed);
   const shown = () => live().map((t) => t.content);
   const find = (content: string) => live().find((t) => t.content === content);
-  return { scene, live, shown, find, zones, tweens };
+  return { scene, live, shown, find, zones, tweens, containers };
 }
 
 const art = {
@@ -593,5 +608,56 @@ describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
     hud.destroy();
     expect(store.getState().panelOpen).toBe(false);
     expect(live()).toHaveLength(0);
+  });
+});
+
+describe("the mailbox at another logical width or render scale (FS-ZAJMH R12, R13, R15)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("keeps the envelope in the bottom-right corner and the open panel centred as the view widens", async () => {
+    const { scene, store, zones } = setup();
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    expect(plate.rect.x).toBe(envelopeFrame({ width: 1080, height: 720 }).x);
+    await store.getState().openPanel();
+    expect(hud.covers(1000, 360)).toBe(false);
+
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    hud.relayout();
+    const wide = envelopeFrame({ width: 1280, height: 720 });
+    expect(plate.rect).toMatchObject({ x: wide.x, y: wide.y });
+    // the panel, 840 wide, now spans 220–1060
+    expect(hud.covers(1000, 360)).toBe(true);
+    expect(hud.covers(200, 360)).toBe(false);
+  });
+
+  it("puts the envelope at its logical corner at render scale 2, not at the backing store's", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const { scene, store, zones } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    expect(plate.rect.x).toBe(envelopeFrame({ width: 1080, height: 720 }).x);
+  });
+
+  it("stands an enclosure's tip beside the pointer in logical units at render scale 2", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const { scene, store, zones, containers } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(
+      store,
+      [
+        letter({
+          claimState: "unclaimed",
+          enclosures: [{ kind: "item", quantity: 1, item: sword }],
+        }),
+      ],
+      "a",
+    );
+    const slot = zones.find((z) => !z.destroyed && z.handlers.pointerover)!;
+    const before = containers.length;
+    // backing px (800, 600) is logical (400, 300)
+    slot.handlers.pointerover({ x: 800, y: 600 });
+    const tip = containers.slice(before).at(-1)!;
+    expect(tip).toEqual({ x: 414, y: 290 });
   });
 });

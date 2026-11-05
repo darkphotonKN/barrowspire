@@ -1,12 +1,19 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import type { WorldType } from "@/assets/types/client";
 import { createPartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
 import { PartyPanel, type PartyPanelDeps } from "./PartyPanel";
 import { partyCommands } from "./partyCommands";
 import type { PartyInviteFieldHandle } from "./partyInviteField";
-import { PARTY_HINT, type FocusedElement } from "./partyPanelLayout";
+import {
+  PARTY_HINT,
+  PARTY_PANEL_W,
+  PARTY_PANEL_X,
+  PARTY_PANEL_Y,
+  type FocusedElement,
+} from "./partyPanelLayout";
 
 // FS-R82NV §Requirements R28–R30. I-R82NV-6: the T panel as a scene draws it, on a recording
 // stand-in for the Phaser scene.
@@ -160,7 +167,17 @@ function setup(
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
   const frame = () => scene.events.emit("postupdate");
-  return { ...scene, store, field, state, commands, panel, pressT, frame };
+  return {
+    ...scene,
+    store,
+    field,
+    handle,
+    state,
+    commands,
+    panel,
+    pressT,
+    frame,
+  };
 }
 
 describe("PartyPanel (FS-R82NV R28: T toggles it)", () => {
@@ -441,4 +458,33 @@ describe("PartyPanel (FS-R82NV R29: the invite field)", () => {
     env.pressT();
     expect(env.store.getState().panelOpen).toBe(false);
   });
+});
+
+describe("PartyPanel at a render scale (FS-ZAJMH R15: Phaser's pointer.x/y are backing px)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it.each([1.5, 2])(
+    "should keep the invite field focused on a press on the open panel at render scale %s, and let go off it",
+    (rs) => {
+      viewport.set({ width: 1080, height: 720, renderScale: rs });
+      const env = setup();
+      const blur = vi.fn();
+      env.handle.blur = blur;
+      env.pressT();
+      // near the panel's right edge: its backing px, read as logical units, lie past it
+      const onPanel = {
+        x: PARTY_PANEL_X + PARTY_PANEL_W - 10,
+        y: PARTY_PANEL_Y + 20,
+      };
+      expect(env.panel.covers(onPanel.x, onPanel.y)).toBe(true);
+      expect(env.panel.covers(onPanel.x * rs, onPanel.y * rs)).toBe(false);
+      env.input.emit("pointerdown", { x: onPanel.x * rs, y: onPanel.y * rs });
+      expect(blur).not.toHaveBeenCalled();
+      // left of the panel: its backing px, read as logical units, lie on it
+      const offPanel = { x: PARTY_PANEL_X - 60, y: PARTY_PANEL_Y + 20 };
+      expect(env.panel.covers(offPanel.x * rs, offPanel.y * rs)).toBe(true);
+      env.input.emit("pointerdown", { x: offPanel.x * rs, y: offPanel.y * rs });
+      expect(blur).toHaveBeenCalledTimes(1);
+    },
+  );
 });

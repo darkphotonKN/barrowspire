@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 import { placedKind, type ContainerKind, type ItemState } from "@/types/gameState";
 import { ActionType } from "@/assets/types/client";
 import { iconSheet, itemIcon } from "@/render/art/itemIcons";
@@ -574,5 +575,63 @@ describe("ContainerView faces (FS-1D6BX §Requirements 15, 16, D8, D9)", () => {
     view.open("b", "drop_pile");
     view.open("c", "sack");
     expect(bodies()).toEqual([COFFER_KEY, BONE_HEAP_KEY, SATCHEL_BODY_KEY]);
+  });
+});
+
+describe("ContainerView at another logical width (FS-ZAJMH R12, R13, R15)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  /** As the full-bag stub, but the view's root keeps where it is put, so a click must find it. */
+  function placedScene() {
+    const numbers: Record<string, number> = { x: 0, y: 0, scaleX: 1, scaleY: 1, alpha: 1, width: 64, height: 64, now: 0 };
+    const stub: unknown = new Proxy(function () {}, {
+      get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : typeof key === "string" && key in numbers ? numbers[key] : stub),
+      apply: () => stub,
+    });
+    const root: Record<string, unknown> = new Proxy(
+      { x: 0, y: 0, scaleX: 1, scaleY: 1 } as Record<string, unknown>,
+      {
+        get: (t, key) => {
+          if (key === "setPosition")
+            return (x: number, y: number) => ((t.x = x), (t.y = y), root);
+          if (typeof key === "string" && key in t) return t[key];
+          return () => root;
+        },
+      },
+    );
+    const scene = new Proxy({} as Record<string, unknown>, {
+      get: (_t, key) =>
+        key === "add"
+          ? new Proxy({}, { get: (_a, kind) => (kind === "container" ? () => root : stub) })
+          : stub,
+    });
+    return { scene: scene as unknown as Phaser.Scene, art: stub as ArtLibrary, root };
+  }
+
+  const sword = item({ name: "Iron Sword", weapon_type: "sword" });
+  const potion = item({ name: "Health Potion", healing_amount: 50 });
+
+  it("should stand an open view at the centre again once the view widens, and take a click there", () => {
+    const { scene, art, root } = placedScene();
+    const onLoot = vi.fn();
+    const view = new ContainerView(scene, art, { onLoot, mayTake: () => true, now: () => 0 });
+    view.open("coffer", "chest");
+    view.setItems([sword, potion]);
+    expect([root.x, root.y]).toEqual([540, 376]);
+
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    view.relayout();
+    expect([root.x, root.y]).toEqual([640, 376]);
+    const { slots } = satchelLayout([sword, potion]);
+    view.pointerDown(640 + slots[1].x, 376 + slots[1].y, true);
+    expect(onLoot).toHaveBeenCalledWith(potion);
+  });
+
+  it("should leave a closed view where it is", () => {
+    const { scene, art, root } = placedScene();
+    const view = new ContainerView(scene, art, { onLoot: vi.fn(), mayTake: () => true, now: () => 0 });
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    view.relayout();
+    expect([root.x, root.y]).toEqual([0, 0]);
   });
 });
