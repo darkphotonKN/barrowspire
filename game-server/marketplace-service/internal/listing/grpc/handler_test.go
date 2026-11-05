@@ -71,6 +71,10 @@ func (r *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uu
 	return nil
 }
 
+func (r *fakeReleaser) ReleaseHoldAndWait(ctx context.Context, listingID, bidID uuid.UUID, maxWait time.Duration) error {
+	return r.StartReleaseHold(ctx, listingID, bidID)
+}
+
 // authedCtx is a verified player's request context, the ordinary caller every
 // handler serves (FS-V6SFK §Requirements 29 gates only the unverified).
 func authedCtx(t *testing.T, memberID uuid.UUID) context.Context {
