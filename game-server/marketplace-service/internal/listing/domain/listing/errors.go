@@ -28,6 +28,9 @@ var (
 	ErrNotBidOwner             = errors.New("not bid owner")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
+	// ErrListingAlreadyExists is an insert meeting a listing with the same id: a
+	// replay of the event that created it, not a collision with another listing.
+	ErrListingAlreadyExists = errors.New("listing already exists")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

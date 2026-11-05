@@ -110,24 +110,28 @@ func (c *Client) ReleaseHold(ctx context.Context, bidID uuid.UUID) error {
 	return nil
 }
 
-// ListStaleReservedHolds asks wallet which reservations have outlived the write that
-// should have followed them. wallet reports; this service decides which were never
-// claimed, because only it can tell.
-func (c *Client) ListStaleReservedHolds(ctx context.Context, createdBefore time.Time) ([]uuid.UUID, error) {
+// ListStaleReservedHolds asks wallet for one page of the reservations that have
+// outlived the write that should have followed them, strictly after the opaque
+// position after ("" for the first page), and answers wallet's next as is ("" on
+// the last page, and from a wallet too old to page) (FS-9BJCP Req 6, 18). wallet
+// reports; this service decides which were never claimed, because only it can
+// tell.
+func (c *Client) ListStaleReservedHolds(ctx context.Context, createdBefore time.Time, after string) ([]uuid.UUID, string, error) {
 	res, err := pb.NewWalletServiceClient(c.conn).ListStaleReservedHolds(ctx, &pb.ListStaleReservedHoldsRequest{
 		ReservedBefore: timestamppb.New(createdBefore),
+		After:          after,
 	})
 	if err != nil {
 		switch status.Code(err) {
 		case codes.Unavailable, codes.DeadlineExceeded:
-			return nil, fmt.Errorf("wallet list stale reserved holds: %w: %w", commonconstants.ErrTransient, err)
+			return nil, "", fmt.Errorf("wallet list stale reserved holds: %w: %w", commonconstants.ErrTransient, err)
 		default:
-			return nil, fmt.Errorf("wallet list stale reserved holds: %w", err)
+			return nil, "", fmt.Errorf("wallet list stale reserved holds: %w", err)
 		}
 	}
 
-	bidIDs := make([]uuid.UUID, 0, len(res.BidIds))
-	for _, raw := range res.BidIds {
+	bidIDs := make([]uuid.UUID, 0, len(res.GetBidIds()))
+	for _, raw := range res.GetBidIds() {
 		bidID, err := uuid.Parse(raw)
 		if err != nil {
 			// one unparseable id must not sink the batch; it would also be an id this
@@ -138,5 +142,5 @@ func (c *Client) ListStaleReservedHolds(ctx context.Context, createdBefore time.
 		bidIDs = append(bidIDs, bidID)
 	}
 
-	return bidIDs, nil
+	return bidIDs, res.GetNext(), nil
 }

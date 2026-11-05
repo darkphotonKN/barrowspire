@@ -162,15 +162,16 @@ func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, er
 	return reconstitutedListing, nil
 }
 
-func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing) error {
-	snapshot := listing.Snapshot()
+func (r *ListingRepository) Insert(ctx context.Context, l *listing.Listing) error {
+	snapshot := l.Snapshot()
 
 	query := `
 	INSERT INTO listings (id, seller_id, buyer_id, item_id, start_price, buyout_price, sold_price, status, version, ends_at, created_at, updated_at)
 	VALUES(:id, :seller_id, :buyer_id, :item_id, :start_price, :buyout_price, :sold_price, :status, :version, :ends_at, :created_at, :updated_at)
+	ON CONFLICT (id) DO NOTHING
 	`
 
-	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
+	result, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
 		"id":           snapshot.ID,
 		"seller_id":    snapshot.SellerID,
 		"buyer_id":     snapshot.BuyerID,
@@ -185,8 +186,20 @@ func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing
 		"updated_at":   snapshot.UpdatedAt,
 	})
 	if err != nil {
-		// propogate context and sentinel errors if they match with helper
+		// any unique violation left is a different listing colliding (e.g.
+		// idx_one_active_listing_per_item), and stays a duplicate (ADR-0050 rule 3)
 		return commonhelpers.WrapDBErr("listing", "insert", err)
+	}
+
+	// only the primary key says this very listing is already there. ON CONFLICT
+	// (id) decides that by the id alone, not by the constraint name postgres
+	// reports, which is only the first unique index broken in OID order (FS-04ZB6 A13)
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("listing insert %s rows affected: %w", snapshot.ID, err)
+	}
+	if inserted == 0 {
+		return fmt.Errorf("listing insert %s: %w", snapshot.ID, listing.ErrListingAlreadyExists)
 	}
 
 	return nil

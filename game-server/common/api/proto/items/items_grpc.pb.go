@@ -43,6 +43,8 @@ const (
 	ItemsService_ListStaleReserved_FullMethodName           = "/items.ItemsService/ListStaleReserved"
 	ItemsService_CancelReservation_FullMethodName           = "/items.ItemsService/CancelReservation"
 	ItemsService_ConfirmReservation_FullMethodName          = "/items.ItemsService/ConfirmReservation"
+	ItemsService_ReleaseConfirmedReservation_FullMethodName = "/items.ItemsService/ReleaseConfirmedReservation"
+	ItemsService_ListConfirmedReservations_FullMethodName   = "/items.ItemsService/ListConfirmedReservations"
 	ItemsService_GetItemSummaries_FullMethodName            = "/items.ItemsService/GetItemSummaries"
 	ItemsService_ResolveItemSnapshots_FullMethodName        = "/items.ItemsService/ResolveItemSnapshots"
 	ItemsService_GrantItems_FullMethodName                  = "/items.ItemsService/GrantItems"
@@ -96,9 +98,16 @@ type ItemsServiceClient interface {
 	ReserveItem(ctx context.Context, in *ReserveItemRequest, opts ...grpc.CallOption) (*ReserveItemResponse, error)
 	ListStaleReserved(ctx context.Context, in *ListStaleReservedRequest, opts ...grpc.CallOption) (*ListStaleReservedResponse, error)
 	CancelReservation(ctx context.Context, in *CancelReservationRequest, opts ...grpc.CallOption) (*CancelReservationResponse, error)
-	// Marks a stale reservation as matched by its listing, so the reconciler stops
-	// asking about it.
+	// Marks a reservation as matched by its listing, so the reconciler stops asking
+	// about it and can no longer cancel it. Idempotent: confirming an already
+	// confirmed reservation for the same listing answers confirmed again.
 	ConfirmReservation(ctx context.Context, in *ConfirmReservationRequest, opts ...grpc.CallOption) (*ConfirmReservationResponse, error)
+	// Gives back an item whose reservation was confirmed but whose listing will
+	// never exist (FS-04ZB6 Req 4). Never touches a waiting reservation.
+	ReleaseConfirmedReservation(ctx context.Context, in *ReleaseConfirmedReservationRequest, opts ...grpc.CallOption) (*ReleaseConfirmedReservationResponse, error)
+	// Pages the confirmed reservations older than an age, for the backstop that
+	// releases one whose listing never got created (FS-04ZB6 Req 5).
+	ListConfirmedReservations(ctx context.Context, in *ListConfirmedReservationsRequest, opts ...grpc.CallOption) (*ListConfirmedReservationsResponse, error)
 	// Public display facts for item instances, by id. Unknown ids are omitted.
 	GetItemSummaries(ctx context.Context, in *GetItemSummariesRequest, opts ...grpc.CallOption) (*GetItemSummariesResponse, error)
 	// Resolves templates and existing instances into item snapshots, the full
@@ -351,6 +360,26 @@ func (c *itemsServiceClient) ConfirmReservation(ctx context.Context, in *Confirm
 	return out, nil
 }
 
+func (c *itemsServiceClient) ReleaseConfirmedReservation(ctx context.Context, in *ReleaseConfirmedReservationRequest, opts ...grpc.CallOption) (*ReleaseConfirmedReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleaseConfirmedReservationResponse)
+	err := c.cc.Invoke(ctx, ItemsService_ReleaseConfirmedReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *itemsServiceClient) ListConfirmedReservations(ctx context.Context, in *ListConfirmedReservationsRequest, opts ...grpc.CallOption) (*ListConfirmedReservationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListConfirmedReservationsResponse)
+	err := c.cc.Invoke(ctx, ItemsService_ListConfirmedReservations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *itemsServiceClient) GetItemSummaries(ctx context.Context, in *GetItemSummariesRequest, opts ...grpc.CallOption) (*GetItemSummariesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetItemSummariesResponse)
@@ -429,9 +458,16 @@ type ItemsServiceServer interface {
 	ReserveItem(context.Context, *ReserveItemRequest) (*ReserveItemResponse, error)
 	ListStaleReserved(context.Context, *ListStaleReservedRequest) (*ListStaleReservedResponse, error)
 	CancelReservation(context.Context, *CancelReservationRequest) (*CancelReservationResponse, error)
-	// Marks a stale reservation as matched by its listing, so the reconciler stops
-	// asking about it.
+	// Marks a reservation as matched by its listing, so the reconciler stops asking
+	// about it and can no longer cancel it. Idempotent: confirming an already
+	// confirmed reservation for the same listing answers confirmed again.
 	ConfirmReservation(context.Context, *ConfirmReservationRequest) (*ConfirmReservationResponse, error)
+	// Gives back an item whose reservation was confirmed but whose listing will
+	// never exist (FS-04ZB6 Req 4). Never touches a waiting reservation.
+	ReleaseConfirmedReservation(context.Context, *ReleaseConfirmedReservationRequest) (*ReleaseConfirmedReservationResponse, error)
+	// Pages the confirmed reservations older than an age, for the backstop that
+	// releases one whose listing never got created (FS-04ZB6 Req 5).
+	ListConfirmedReservations(context.Context, *ListConfirmedReservationsRequest) (*ListConfirmedReservationsResponse, error)
 	// Public display facts for item instances, by id. Unknown ids are omitted.
 	GetItemSummaries(context.Context, *GetItemSummariesRequest) (*GetItemSummariesResponse, error)
 	// Resolves templates and existing instances into item snapshots, the full
@@ -522,6 +558,12 @@ func (UnimplementedItemsServiceServer) CancelReservation(context.Context, *Cance
 }
 func (UnimplementedItemsServiceServer) ConfirmReservation(context.Context, *ConfirmReservationRequest) (*ConfirmReservationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConfirmReservation not implemented")
+}
+func (UnimplementedItemsServiceServer) ReleaseConfirmedReservation(context.Context, *ReleaseConfirmedReservationRequest) (*ReleaseConfirmedReservationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseConfirmedReservation not implemented")
+}
+func (UnimplementedItemsServiceServer) ListConfirmedReservations(context.Context, *ListConfirmedReservationsRequest) (*ListConfirmedReservationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListConfirmedReservations not implemented")
 }
 func (UnimplementedItemsServiceServer) GetItemSummaries(context.Context, *GetItemSummariesRequest) (*GetItemSummariesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetItemSummaries not implemented")
@@ -967,6 +1009,42 @@ func _ItemsService_ConfirmReservation_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ItemsService_ReleaseConfirmedReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseConfirmedReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).ReleaseConfirmedReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_ReleaseConfirmedReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).ReleaseConfirmedReservation(ctx, req.(*ReleaseConfirmedReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ItemsService_ListConfirmedReservations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListConfirmedReservationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ItemsServiceServer).ListConfirmedReservations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ItemsService_ListConfirmedReservations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ItemsServiceServer).ListConfirmedReservations(ctx, req.(*ListConfirmedReservationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ItemsService_GetItemSummaries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetItemSummariesRequest)
 	if err := dec(in); err != nil {
@@ -1119,6 +1197,14 @@ var ItemsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConfirmReservation",
 			Handler:    _ItemsService_ConfirmReservation_Handler,
+		},
+		{
+			MethodName: "ReleaseConfirmedReservation",
+			Handler:    _ItemsService_ReleaseConfirmedReservation_Handler,
+		},
+		{
+			MethodName: "ListConfirmedReservations",
+			Handler:    _ItemsService_ListConfirmedReservations_Handler,
 		},
 		{
 			MethodName: "GetItemSummaries",

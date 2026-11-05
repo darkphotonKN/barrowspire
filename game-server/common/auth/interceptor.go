@@ -33,15 +33,20 @@ import (
 // members the event names. Remove it with the wallet entries once a service
 // credential exists.
 //
-// items' reservation reconciler methods are the same kind of call too:
-// marketplace's ReconcileWorker sweeps on a background ticker, with no request
-// behind it and so no member token. Every write is fenced on the item id and the
-// listing id together, and only while the reservation still waits for its
-// listing (reserved_at set, the first 10-15 minutes of a listing). Both ids are
-// on the public Bazaar pages, though, and ListStaleReserved hands out the ids of
-// orphans, so until a service credential exists anyone inside the cluster could
-// cancel a fresh listing or confirm an orphan so it is never released. Remove
-// these with the others once a service credential exists.
+// items' reservation methods are the same kind of call too: marketplace's
+// ReconcileWorker sweeps on a background ticker, and its item.reserved consumer
+// confirms (and, when the listing cannot be created, releases) a reservation from
+// a broker event; neither has a request behind it and so no member token
+// (FS-04ZB6 Req 6). Every write is fenced on the item id and the listing id
+// together. Cancel acts only while the reservation still waits for its listing
+// (reserved_at set, the first 10-15 minutes of a listing); confirm also repeats on
+// a confirmed one; release acts only on a confirmed one, which is every LISTED
+// item behind an ACTIVE listing. Both ids are on the public Bazaar pages, though,
+// and ListStaleReserved and ListConfirmedReservations hand out ids too, so until a
+// service credential exists anyone inside the cluster could cancel a fresh
+// listing, confirm an orphan so it is never cancelled, or release the item under
+// an ACTIVE listing back to its seller. Remove these with the others once a
+// service credential exists.
 //
 // items' ResolveItemSnapshots is a service call too: notification-service resolves
 // a letter's item enclosures into snapshots when the letter is sent (FS-1GZGD R21),
@@ -75,13 +80,15 @@ import (
 var publicMethods = map[string]bool{
 	"/grpc.health.v1.Health/Check": true,
 
-	"/wallet.WalletService/ReleaseHold":            true,
-	"/wallet.WalletService/ListStaleReservedHolds": true,
-	"/items.ItemsService/ApplySettlement":          true,
-	"/items.ItemsService/ListStaleReserved":        true,
-	"/items.ItemsService/CancelReservation":        true,
-	"/items.ItemsService/ConfirmReservation":       true,
-	"/items.ItemsService/ResolveItemSnapshots":     true,
+	"/wallet.WalletService/ReleaseHold":               true,
+	"/wallet.WalletService/ListStaleReservedHolds":    true,
+	"/items.ItemsService/ApplySettlement":             true,
+	"/items.ItemsService/ListStaleReserved":           true,
+	"/items.ItemsService/CancelReservation":           true,
+	"/items.ItemsService/ConfirmReservation":          true,
+	"/items.ItemsService/ReleaseConfirmedReservation": true,
+	"/items.ItemsService/ListConfirmedReservations":   true,
+	"/items.ItemsService/ResolveItemSnapshots":        true,
 
 	"/marketplace.MarketplaceService/BrowseListings": true,
 	"/marketplace.MarketplaceService/GetListing":     true,

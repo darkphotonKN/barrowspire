@@ -3,6 +3,7 @@ package dto
 import (
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 )
 
@@ -17,4 +18,12 @@ type AccountDetails struct {
 	HeldGold      int       `db:"held_gold"`
 	AvailableGold int       `db:"available_gold"`
 	CreatedAt     time.Time `db:"created_at"`
+}
+
+// StaleReservedHoldsPage is one page of the reservations that outlived the write
+// meant to follow them, oldest first (FS-9BJCP Req 6). Next is the position of
+// the following page, nil on the last one.
+type StaleReservedHoldsPage struct {
+	BidIDs []uuid.UUID
+	Next   *cursor.Cursor
 }
