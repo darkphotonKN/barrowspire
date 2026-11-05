@@ -18,6 +18,13 @@ this member's `SPECIFICATION.md`.
 - **Parked settlement** — a settlement that exhausted a step's retry cap, escalated, and is waiting on a `RetryStep` signal or a re-park timer to retry that same step. The workflow is the dead-letter queue; it never fails past the pivot (ADR-0018). Say "parked settlement", not "parked": elsewhere (wallet/ledger) "parked gold" means a held balance.
 - **Escalate** — record a settlement exception and publish `settlement.failed` before parking.
 - **Settlement exception** — a `settlement_exceptions` row: the durable, human-facing record that a settlement parked or rolled back. Carries the alert; the saga state stays in the workflow.
-- **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released, listing withdrawn). Holds released, bids LOST, item unfrozen to its seller. Never re-settled.
+- **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released). Holds released, bids LOST, item unfrozen to its seller. Never re-settled. A listing withdrawn before step 0a also takes the pre-pivot rollback but stays CANCELLED, not SETTLEMENT_FAILED: the rollback's status write changes only PENDING_SETTLEMENT (FS-V7A5S Req 10).
 - **Semantic impossibility** — a step failure no retry can fix. The only failure kind that triggers a rollback, and only before the pivot. Contrast *transient* (retry, cap, park) and *already applied* (treated as success) (ADR-0018).
 - **PENDING_SETTLEMENT** — listing status from step 0a until SOLD / SETTLEMENT_FAILED; a live listing for every reconciler. (items-service has its own `PENDING_SETTLEMENT` item status, set at 0b.)
+
+### Withdrawing a listing (FS-V7A5S)
+
+- **Withdrawal** — the seller taking their own ACTIVE, unended, not-bought-out listing down: the listing becomes CANCELLED, its live bids LOST, and a `withdraw-listing` workflow returns the item and every hold (ADR-0051). Not to be confused with a bidder *withdrawing a bid*, which leaves that bid CANCELLED.
+- **Live bid** — a bid still holding gold: PENDING, WINNING or OUTBID. A listing with live bids cannot be withdrawn in its final 30 minutes.
+- **Withdraw backstop** — the reconcile-tick pass that starts the `withdraw-listing` workflow for every CANCELLED listing whose withdrawal is not yet marked started, however old, for a start that failed and was not retried or never ran, then marks it (FS-V7A5S Req 8). A duplicate start is a no-op.
+- **Withdrawal started** — the per-listing marker (`listings.withdrawal_started_at`) set once a listing's `withdraw-listing` workflow start lands or the starter answers already-started. Records "started", never "finished": once started, the workflow's uncapped retries finish it. Unmarked CANCELLED listings are exactly the backstop's candidates.

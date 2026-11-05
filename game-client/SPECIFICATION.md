@@ -170,6 +170,8 @@ server state and sends intents. ✅
 - [ ] Affixes and item level in listing detail → FS-4R9M9
 - [ ] Buy out a listing → FS-49Z37
 - [ ] Accept the leading bid on my listing → FS-49Z37
+- [ ] Withdraw my listing → FS-V7A5S
+- [ ] Listing limit refusals → FS-XEDFF
 - [x] Set a buyout price when listing → FS-49Z37
 - [x] Bids stay below a listing's buyout price → FS-49Z37
 - [x] A refused bid retries under a fresh key → FS-49Z37

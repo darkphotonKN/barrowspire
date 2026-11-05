@@ -23,6 +23,7 @@
 - [x] Bag and stash locations on owned instances → FS-VPD8Y
 - [x] In-run status on owned instances → FS-18Z5F
 - [x] Worn items refused for listing → FS-HBXZN
+- [ ] Per-seller listed-item cap → FS-XEDFF
 
 ## Grants
 
