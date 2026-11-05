@@ -11,7 +11,10 @@ import {
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
   CHAT_VISIBLE_LINES,
+  chatFieldRect,
   chatFoldButton,
+  chatPickerList,
+  chatPickerRect,
   chatScrollThumb,
   chatScrollTrack,
   chatWindowFrame,
@@ -600,6 +603,7 @@ function inputRig(
   mayOpen = () => true,
   selfId?: () => string | undefined,
   heightOf?: (content: string) => number,
+  open?: ReadonlySet<import("@/stores/chatStore").ChatChannel>,
 ) {
   const store = createChatStore();
   const s = fakeScene(heightOf);
@@ -609,6 +613,7 @@ function inputRig(
     selfId,
     input: {
       mayOpen,
+      open,
       send: (line) => sent.push(line),
       makeField: (_scene, rect, events) => {
         const f: FakeField = {
@@ -656,10 +661,10 @@ function inputRig(
 }
 
 describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
-  it("should place the field in the input row", () => {
+  it("should place the field in the input row, right of the canvas picker (FS-J267Q R1)", () => {
     const { field } = inputRig();
     const frame = chatWindowFrame(X, BOTTOM);
-    expect(field().rect).toEqual(frame.input);
+    expect(field().rect).toEqual(chatFieldRect(frame, false));
   });
 
   it("should open on Enter in the scene, send on Enter in the field and stay open, close on Enter again", () => {
@@ -691,7 +696,7 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
   it("should move the field with the window", () => {
     const { window, field } = inputRig();
     window.setBottom(600);
-    expect(field().rect).toEqual(chatWindowFrame(X, 600).input);
+    expect(field().rect).toEqual(chatFieldRect(chatWindowFrame(X, 600), false));
   });
 
   it("should drop the draft and close when cancelled", () => {
@@ -893,18 +898,210 @@ describe("ChatWindow folding", () => {
   });
 });
 
-describe("ChatWindow picker wiring", () => {
-  it("should hand a picked channel to the input", () => {
-    const { field } = inputRig();
-    field().value = "hi";
-    field().events!.picked("whisper");
-    expect(field().channel).toBe("whisper");
-    expect(field().value).toBe("@hi");
+describe("ChatWindow canvas channel picker (FS-J267Q, I-J267Q-1)", () => {
+  const frame = chatWindowFrame(X, BOTTOM);
+  const picker = chatPickerRect(frame);
+  const list = chatPickerList(frame);
+  const mid = (r: { x: number; y: number; width: number; height: number }) => ({
+    x: r.x + r.width / 2,
+    y: r.y + r.height / 2,
+  });
+  const rowOf = (channel: string) =>
+    list.rows.find((r) => r.channel === channel)!;
+  const listTexts = (s: ReturnType<typeof inputRig>) =>
+    s
+      .shown()
+      .filter(
+        (t) =>
+          t.y >= list.box.y - 4 &&
+          t.y < list.box.y + list.box.height &&
+          t.x < list.box.x + list.box.width,
+      );
+  const click = (
+    s: ReturnType<typeof inputRig>,
+    at: { x: number; y: number },
+  ) => {
+    s.input.emit("pointerdown", at);
+    s.input.emit("pointerup", at);
+  };
 
-    // trade is not open yet: the picker falls back to the draft's channel and leaves it untouched
-    field().events!.picked("trade");
-    expect(field().channel).toBe("whisper");
-    expect(field().value).toBe("@hi");
+  it("should draw the current channel and a ▾ in its colour in the picker, and none without an input", () => {
+    const s = inputRig();
+    const label = s
+      .shown()
+      .find((t) => t.content === "Area" && t.y >= frame.input.y - 4);
+    const arrow = s
+      .shown()
+      .find((t) => t.content === "▾" && t.x < picker.x + picker.width);
+    expect(label, "the picker's label").toBeDefined();
+    expect(arrow, "the picker's arrow").toBeDefined();
+    expect(label!.color).toBe(toCss(palette.chatArea));
+    expect(arrow!.color).toBe(toCss(palette.chatArea));
+    expect(label!.y).toBeGreaterThanOrEqual(frame.input.y - 4);
+    expect(label!.x).toBeGreaterThanOrEqual(picker.x);
+    expect(label!.x).toBeLessThan(picker.x + picker.width);
+
+    const bare = rig();
+    expect(
+      bare.shown().some((t) => t.content === "▾" && t.y >= frame.input.y - 4),
+    ).toBe(false);
+  });
+
+  it("should open the input and the list upward on a press on the picker, every shown channel in its colour, no Trade", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+
+    expect(s.field().focused).toBe(true);
+    const rows = listTexts(s);
+    expect(rows.map((t) => t.content)).toEqual([
+      "Area",
+      "World",
+      "Party",
+      "Whisper",
+    ]);
+    expect(rows.map((t) => t.color)).toEqual([
+      toCss(palette.chatArea),
+      toCss(palette.chatWorld),
+      toCss(palette.chatParty),
+      toCss(palette.chatWhisper),
+    ]);
+    for (const t of rows) expect(t.depth).toBeGreaterThan(1000);
+  });
+
+  it("should pick the channel released on, write its prefix, shut the list and keep the field focused", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+    s.field().value = "hi";
+
+    click(s, mid(rowOf("world")));
+
+    expect(s.field().channel).toBe("world");
+    expect(s.field().value).toBe("#hi");
+    expect(s.field().focused).toBe(true);
+    expect(listTexts(s).map((t) => t.content)).not.toContain("Whisper");
+    const label = s
+      .shown()
+      .find((t) => t.content === "World" && t.y >= frame.input.y - 4);
+    expect(label, "the picker now reads World").toBeDefined();
+    expect(label!.color).toBe(toCss(palette.chatWorld));
+  });
+
+  it("should draw a closed channel dim and do nothing when it is released on", () => {
+    const s = inputRig(
+      undefined,
+      undefined,
+      undefined,
+      new Set(["area", "world"]),
+    );
+    click(s, mid(picker));
+    const party = listTexts(s).find((t) => t.content === "Party")!;
+    const world = listTexts(s).find((t) => t.content === "World")!;
+    expect(party.alpha).toBeLessThan(world.alpha);
+
+    click(s, mid(rowOf("party")));
+    expect(s.field().channel).toBe("area");
+    expect(listTexts(s).map((t) => t.content)).toContain("Party");
+  });
+
+  it("should not whisper a name drawn under the list when a row is clicked", () => {
+    const s = inputRig(undefined, () => "me");
+    for (let i = 0; i < 8; i++)
+      s.store.getState().receive(stamped(`line ${i}`, { sender_name: "Wren" }));
+    click(s, mid(picker));
+    click(s, { x: rowOf("area").x + 4, y: mid(rowOf("area")).y });
+    expect(s.field().value.startsWith("@")).toBe(false);
+  });
+
+  it("should shut the list on a press outside it and keep typing when the press is on the panel", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+    s.input.emit("pointerdown", {
+      x: frame.messages.x + frame.messages.width - 40,
+      y: frame.messages.y + 10,
+    });
+
+    expect(listTexts(s).map((t) => t.content)).not.toContain("Whisper");
+    expect(s.field().focused).toBe(true);
+  });
+
+  it("should say the picker and the open list are its own, so the scene neither moves nor attacks there", () => {
+    const s = inputRig();
+    expect(s.window.covers(mid(picker).x, mid(picker).y)).toBe(true);
+    click(s, mid(picker));
+    expect(s.window.covers(mid(list.box).x, mid(list.box).y)).toBe(true);
+  });
+
+  it("should highlight the open row under the pointer", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+    const before = s.panels.map((p) => p.rects.length);
+    s.input.emit("pointermove", mid(rowOf("whisper")));
+    const highlight = s.panels
+      .flatMap((p) => p.rects)
+      .find(
+        (r) =>
+          r[1] === rowOf("whisper").y &&
+          r[0] >= list.box.x &&
+          r[0] < list.box.x + 8,
+      );
+    expect(highlight, "a highlight on the Whisper row").toBeDefined();
+    expect(before.length).toBeGreaterThan(0);
+  });
+
+  it("should redraw the picker on the channel Tab picks, and walk the open list with the arrows (I-J267Q-2)", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    s.field().events!.keyDown("Tab", false, false);
+    expect(s.field().channel).toBe("world");
+    expect(
+      s.shown().some((t) => t.content === "World" && t.y >= frame.input.y - 4),
+    ).toBe(true);
+
+    click(s, mid(picker));
+    s.field().events!.keyDown("ArrowDown", false);
+    s.field().events!.keyDown("Enter", false);
+    expect(s.field().channel).toBe("party");
+    expect(s.sent).toEqual([]);
+    expect(listTexts(s)).toHaveLength(0);
+
+    click(s, mid(picker));
+    s.field().events!.keyDown("Escape", false);
+    expect(listTexts(s)).toHaveLength(0);
+    expect(s.window.isTyping()).toBe(true);
+  });
+
+  it("should unfold a folded window and open the list over its lines when the picker is pressed", () => {
+    const s = inputRig();
+    s.store.getState().toggleFolded();
+    const shut = chatPickerRect(chatWindowFrame(X, BOTTOM, true));
+    click(s, mid(shut));
+    expect(s.store.getState().folded).toBe(false);
+    expect(listTexts(s).map((t) => t.content)).toEqual([
+      "Area",
+      "World",
+      "Party",
+      "Whisper",
+    ]);
+  });
+
+  it("should hide the picker and shut the list while an overlay owns the keys", () => {
+    let overlay = false;
+    const s = inputRig(() => !overlay);
+    click(s, mid(picker));
+
+    overlay = true;
+    s.frame();
+
+    expect(listTexts(s)).toHaveLength(0);
+    expect(
+      s.shown().some((t) => t.content === "Area" && t.y >= frame.input.y - 4),
+    ).toBe(false);
+
+    overlay = false;
+    s.frame();
+    expect(
+      s.shown().some((t) => t.content === "Area" && t.y >= frame.input.y - 4),
+    ).toBe(true);
   });
 });
 
@@ -971,10 +1168,10 @@ describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", ()
     expect(folded.y).toBeLessThan(shut.input.y + shut.input.height);
   });
 
-  it("should give the text field the whole input row while unfolded, and leave the button room while folded", () => {
+  it("should give the text field the row right of the picker while unfolded, and leave the button room while folded", () => {
     const { field, window } = inputRig();
     const open = chatWindowFrame(X, BOTTOM);
-    expect(field().rect).toEqual(open.input);
+    expect(field().rect).toEqual(chatFieldRect(open, false));
 
     (
       window as unknown as { store: { getState(): { toggleFolded(): void } } }
@@ -983,10 +1180,10 @@ describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", ()
       .toggleFolded();
 
     const shut = chatWindowFrame(X, BOTTOM, true);
-    expect(field().rect).toEqual({
-      ...shut.input,
-      width: shut.input.width - CHAT_FOLD_W,
-    });
+    expect(field().rect).toEqual(chatFieldRect(shut, true));
+    expect(field().rect.x + field().rect.width).toBeLessThanOrEqual(
+      shut.input.x + shut.input.width - CHAT_FOLD_W,
+    );
   });
 });
 
@@ -999,7 +1196,9 @@ describe("ChatWindow unfolding to type (asked 2026-10-31)", () => {
 
     expect(store.getState().folded).toBe(false);
     expect(field().focused).toBe(true);
-    expect(field().rect).toEqual(chatWindowFrame(X, BOTTOM).input);
+    expect(field().rect).toEqual(
+      chatFieldRect(chatWindowFrame(X, BOTTOM), false),
+    );
 
     field().value = "hi";
     field().events!.keyDown("Enter", false);

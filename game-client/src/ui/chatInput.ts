@@ -8,7 +8,7 @@
  * off, so nothing else hears them.
  */
 
-import type { ChatChannel } from "@/stores/chatStore";
+import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
 
 /**
  * Each channel's prefix, PoE style (FS-WJGFJ Amendment 2026-10-31): typed at the start of a line
@@ -30,6 +30,15 @@ export const CHAT_PREFIX: Readonly<Record<ChatChannel, string>> = {
  */
 export const CHAT_OPEN_CHANNELS: ReadonlySet<ChatChannel> =
   new Set<ChatChannel>(["area", "world", "party", "whisper"]);
+
+/**
+ * The channels the window offers, as filter tabs and as picker rows. Trade is hidden until it has
+ * its own scoping (Nick, 2026-11-03); it stays in CHAT_CHANNELS, the protocol's closed set, so a
+ * trade line is still recognised. The server relays none, so none arrives.
+ */
+export const CHAT_SHOWN_CHANNELS: readonly ChatChannel[] = CHAT_CHANNELS.filter(
+  (channel) => channel !== "trade",
+);
 
 /** The most code points a line may carry, as the server counts them (R5, R26). */
 export const CHAT_TEXT_MAX = 200;
@@ -143,12 +152,18 @@ export class ChatInput {
   /** What the player had typed before the arrows took over, given back past the newest line. */
   private draft = "";
   private readonly pickable: ReadonlySet<ChatChannel>;
+  /** The picker's list: whether it is open, and the row the pointer or the keys are on. */
+  private listOpen = false;
+  private highlight: ChatChannel = "area";
 
   constructor(private readonly deps: ChatInputDeps) {
     this.pickable = deps.open ?? CHAT_OPEN_CHANNELS;
   }
 
-  /** The picker chose a channel: its prefix replaces the draft's, if it is one the server relays. */
+  /**
+   * The picker chose a channel: its prefix replaces the draft's and the list shuts, if it is one
+   * the server relays. A closed channel changes nothing, the list included (FS-J267Q R3).
+   */
   pick(channel: ChatChannel): void {
     const field = this.deps.field;
     if (!this.pickable.has(channel)) {
@@ -160,6 +175,48 @@ export class ChatInput {
     );
     field.value = CHAT_PREFIX[channel] + body;
     field.channel = channel;
+    this.listOpen = false;
+    this.deps.changed?.();
+  }
+
+  /** Whether `channel` may be picked: one the server relays (a closed one is drawn dim). */
+  canPick(channel: ChatChannel): boolean {
+    return this.pickable.has(channel);
+  }
+
+  /** Whether the picker's list is open (FS-J267Q R3). */
+  pickerOpen(): boolean {
+    return this.listOpen;
+  }
+
+  /** The list's highlighted row, or null while it is shut. */
+  highlighted(): ChatChannel | null {
+    return this.listOpen ? this.highlight : null;
+  }
+
+  /**
+   * A press on the picker (FS-J267Q R4): it opens the input as a press on the bar does,
+   * unless something else owns the keys, and opens the list on the current channel, or shuts it.
+   */
+  togglePicker(): void {
+    if (!this.open && !this.requestOpen()) return;
+    this.listOpen = !this.listOpen;
+    this.highlight = this.deps.field.channel;
+    this.deps.changed?.();
+  }
+
+  /** The pointer is over a row: an open channel takes the highlight, a closed one never does. */
+  hover(channel: ChatChannel): void {
+    if (!this.listOpen || !this.pickable.has(channel)) return;
+    if (channel === this.highlight) return;
+    this.highlight = channel;
+    this.deps.changed?.();
+  }
+
+  /** Shuts the list, the input left as it is: a press outside it, the view resized (FS-J267Q R4, R6). */
+  closePicker(): void {
+    if (!this.listOpen) return;
+    this.listOpen = false;
     this.deps.changed?.();
   }
 
@@ -220,6 +277,8 @@ export class ChatInput {
   blurred(): void {
     if (!this.open) return;
     this.open = false;
+    // the list lives only while the player types (FS-J267Q R6)
+    this.listOpen = false;
     const keyboard = this.deps.keyboard();
     if (keyboard) keyboard.enabled = this.keyboardWasEnabled;
     this.deps.changed?.();
@@ -227,11 +286,19 @@ export class ChatInput {
 
   /**
    * A key in the open field. Enter sends what is typed and stays open for the next line; Enter on
-   * nothing closes; Esc closes and throws the draft away (R26 as revised 2026-10-31). While an input method is composing, Enter is its
-   * own (picking a character) and never sends.
+   * nothing closes; Esc closes and throws the draft away (R26 as revised 2026-10-31). Tab picks
+   * the next open channel, Shift+Tab (`shift`) the previous; while the picker's list is open the
+   * arrows, Enter and Esc are the list's (FS-J267Q R5). While an input method is
+   * composing, every key is its own (Enter picks a character) and nothing here answers.
    */
-  keyDown(key: string, composing: boolean): void {
+  keyDown(key: string, composing: boolean, shift = false): void {
     if (!this.open || composing) return;
+    if (key === "Tab") {
+      this.closePicker();
+      this.cycle(shift ? -1 : 1);
+      return;
+    }
+    if (this.listOpen && this.listKey(key)) return;
     if (key === "Enter") {
       const field = this.deps.field;
       const channel = channelOf(field.value, this.pickable);
@@ -271,6 +338,45 @@ export class ChatInput {
     }
   }
 
+  /** The open list's keys: the arrows move the highlight, Enter picks, Esc shuts the list only. */
+  private listKey(key: string): boolean {
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      const rows = this.openRows();
+      const at = rows.indexOf(this.highlight);
+      const step = key === "ArrowUp" ? -1 : 1;
+      const next = rows[Math.min(rows.length - 1, Math.max(0, at + step))];
+      if (next !== undefined && next !== this.highlight) {
+        this.highlight = next;
+        this.deps.changed?.();
+      }
+      return true;
+    }
+    if (key === "Enter") {
+      this.pick(this.highlight);
+      return true;
+    }
+    if (key === "Escape") {
+      this.closePicker();
+      return true;
+    }
+    return false;
+  }
+
+  /** The channels the list offers that may be picked, in its order. */
+  private openRows(): ChatChannel[] {
+    return CHAT_SHOWN_CHANNELS.filter((c) => this.pickable.has(c));
+  }
+
+  /** Tab: the next (or, `step` -1, the previous) open channel after the current one, wrapping. */
+  private cycle(step: -1 | 1): void {
+    const rows = this.openRows();
+    if (rows.length === 0) return;
+    const at = rows.indexOf(this.deps.field.channel);
+    const from = at === -1 ? (step === 1 ? -1 : 0) : at;
+    const next = rows[(from + step + rows.length) % rows.length];
+    if (next !== this.deps.field.channel) this.pick(next);
+  }
+
   /**
    * ArrowUp (step -1) walks back through the sent lines, ArrowDown (step +1) forward; past the
    * newest, the player's own draft comes back. A recalled line's prefix picks its channel.
@@ -297,6 +403,7 @@ export class ChatInput {
 
   /** The draft changed: cut it to the limit once the input method has committed, never mid-pick. */
   typed(composing: boolean): void {
+    this.closePicker();
     if (composing) return;
     // an edited line is the player's own again; the arrows start over from the newest
     this.recalled = null;

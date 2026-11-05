@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ChatChannel } from "@/stores/chatStore";
+import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
 import {
   CHAT_OPEN_CHANNELS,
+  CHAT_SHOWN_CHANNELS,
   CHAT_TEXT_MAX,
   ChatInput,
   clampChatText,
@@ -588,6 +589,14 @@ describe("ChatInput with the server's open channels", () => {
     return { field, send, input };
   }
 
+  it("should hide trade from the window, as a tab and as a picker row, until it is scoped", () => {
+    // the filter tabs and the canvas picker's list both draw exactly these channels
+    expect(CHAT_SHOWN_CHANNELS).not.toContain("trade");
+    expect(CHAT_SHOWN_CHANNELS).toEqual(["area", "world", "party", "whisper"]);
+    // still a channel of the protocol: a trade line is still recognised, just never offered
+    expect(CHAT_CHANNELS).toContain("trade");
+  });
+
   it("should list world, party and whisper among the open channels, and nothing else beyond area (FS-XGW7H C18, FS-KCQ06 C11)", () => {
     expect([...CHAT_OPEN_CHANNELS].sort()).toEqual([
       "area",
@@ -905,5 +914,208 @@ describe("ChatInput whisperTo (FS-KCQ06 C15)", () => {
     input.whisperTo("Kaelen");
 
     expect(field.value).toBe("@Kaelen " + "a".repeat(CHAT_TEXT_MAX));
+  });
+});
+
+// ── The canvas picker's list (FS-J267Q R3, R4, R6; I-J267Q-1) ─────────
+
+describe("ChatInput picker list (FS-J267Q)", () => {
+  const OPEN: ChatChannel[] = ["area", "world", "whisper"];
+
+  /** A field that tells the input of its focus as a browser field does, at once. */
+  function liveRig(mayOpen = () => true) {
+    const r = rig(mayOpen, OPEN);
+    const focus = r.field.focus.bind(r.field);
+    const blur = r.field.blur.bind(r.field);
+    r.field.focus = () => {
+      focus();
+      r.input.focused();
+    };
+    r.field.blur = () => {
+      blur();
+      r.input.blurred();
+    };
+    return r;
+  }
+
+  it("should open the input and the list on the current channel when the picker is pressed, and shut only the list on the next press", () => {
+    const { input, field, changed } = liveRig();
+    field.channel = "area";
+
+    input.togglePicker();
+    expect(field.focused).toBe(true);
+    expect(input.isOpen()).toBe(true);
+    expect(input.pickerOpen()).toBe(true);
+    expect(input.highlighted()).toBe("area");
+    expect(changed).toHaveBeenCalled();
+
+    input.togglePicker();
+    expect(input.pickerOpen()).toBe(false);
+    expect(input.isOpen()).toBe(true);
+    expect(field.focused).toBe(true);
+  });
+
+  it("should open neither the input nor the list while something else owns the keys", () => {
+    const { input, field } = liveRig(() => false);
+    input.togglePicker();
+    expect(field.focused).toBe(false);
+    expect(input.pickerOpen()).toBe(false);
+  });
+
+  it("should pick an open channel from the list, write its prefix, shut the list and keep the field focused", () => {
+    const { input, field } = liveRig();
+    input.togglePicker();
+    field.value = "hi";
+
+    input.pick("world");
+
+    expect(field.value).toBe("#hi");
+    expect(field.channel).toBe("world");
+    expect(input.pickerOpen()).toBe(false);
+    expect(field.focused).toBe(true);
+    expect(input.isOpen()).toBe(true);
+  });
+
+  it("should leave the list open and the draft alone when a closed channel is released on", () => {
+    const { input, field } = liveRig();
+    input.togglePicker();
+    field.value = "hi";
+
+    input.pick("party");
+
+    expect(field.value).toBe("hi");
+    expect(field.channel).toBe("area");
+    expect(input.pickerOpen()).toBe(true);
+  });
+
+  it("should highlight the open channel under the pointer and pass over a closed one", () => {
+    const { input } = liveRig();
+    input.togglePicker();
+
+    input.hover("whisper");
+    expect(input.highlighted()).toBe("whisper");
+    input.hover("party");
+    expect(input.highlighted()).toBe("whisper");
+  });
+
+  it.each<[string, (r: ReturnType<typeof liveRig>) => void]>([
+    ["the input lets go (a press in the world)", (r) => r.field.blur()],
+    ["Esc closes the input", (r) => r.input.keyDown("Escape", false)],
+    ["the keys are taken", (r) => r.input.cancel()],
+    ["the player types", (r) => ((r.field.value = "x"), r.input.typed(false))],
+    ["it is told to", (r) => r.input.closePicker()],
+  ])("should shut the list when %s", (_, act) => {
+    const r = liveRig();
+    r.input.togglePicker();
+    expect(r.input.pickerOpen()).toBe(true);
+
+    act(r);
+
+    expect(r.input.pickerOpen()).toBe(false);
+  });
+});
+
+// ── The picker's keys (FS-J267Q R5; I-J267Q-2) ─────────────────────────
+
+describe("ChatInput picker keys (FS-J267Q R5)", () => {
+  function typing(open: ChatChannel[] = ["area", "world", "party", "whisper"]) {
+    const r = rig(() => true, open);
+    const focus = r.field.focus.bind(r.field);
+    const blur = r.field.blur.bind(r.field);
+    r.field.focus = () => {
+      focus();
+      r.input.focused();
+    };
+    r.field.blur = () => {
+      blur();
+      r.input.blurred();
+    };
+    r.input.requestOpen();
+    return r;
+  }
+
+  it("should pick the next open channel on Tab, in the list's order, wrapping, and write its prefix", () => {
+    const { input, field } = typing();
+    field.value = "hi";
+    const seen: ChatChannel[] = [];
+    for (let i = 0; i < 4; i++) {
+      input.keyDown("Tab", false);
+      seen.push(field.channel);
+    }
+    expect(seen).toEqual(["world", "party", "whisper", "area"]);
+    expect(field.value).toBe("hi");
+    expect(input.isOpen()).toBe(true);
+  });
+
+  it("should pick the previous open channel on Shift+Tab, wrapping", () => {
+    const { input, field } = typing();
+    input.keyDown("Tab", false, true);
+    expect(field.channel).toBe("whisper");
+    input.keyDown("Tab", false, true);
+    expect(field.channel).toBe("party");
+  });
+
+  it("should pass over closed channels, and stay put when no other channel is open", () => {
+    const { input, field } = typing(["area", "whisper"]);
+    input.keyDown("Tab", false);
+    expect(field.channel).toBe("whisper");
+
+    const lone = typing(["area"]);
+    lone.input.keyDown("Tab", false);
+    expect(lone.field.channel).toBe("area");
+  });
+
+  it("should leave Tab to the input method while it composes", () => {
+    const { input, field } = typing();
+    input.keyDown("Tab", true);
+    expect(field.channel).toBe("area");
+  });
+
+  it("should move the highlight over the open rows with the arrows, stopping at the ends, and pick on Enter without sending", () => {
+    const { input, field, send } = typing(["area", "world", "whisper"]);
+    field.value = "hi";
+    input.togglePicker();
+    expect(input.highlighted()).toBe("area");
+
+    input.keyDown("ArrowUp", false);
+    expect(input.highlighted()).toBe("area");
+    input.keyDown("ArrowDown", false);
+    expect(input.highlighted()).toBe("world");
+    // party is closed: the highlight passes over it
+    input.keyDown("ArrowDown", false);
+    expect(input.highlighted()).toBe("whisper");
+    input.keyDown("ArrowDown", false);
+    expect(input.highlighted()).toBe("whisper");
+    // the arrows walked the list, not the sent lines
+    expect(field.value).toBe("hi");
+
+    input.keyDown("Enter", false);
+    expect(send).not.toHaveBeenCalled();
+    expect(field.channel).toBe("whisper");
+    expect(field.value).toBe("@hi");
+    expect(input.pickerOpen()).toBe(false);
+    expect(input.isOpen()).toBe(true);
+  });
+
+  it("should shut only the list on Esc, the input left open with its draft", () => {
+    const { input, field, keyboard } = typing();
+    field.value = "half";
+    input.togglePicker();
+
+    input.keyDown("Escape", false);
+
+    expect(input.pickerOpen()).toBe(false);
+    expect(input.isOpen()).toBe(true);
+    expect(field.focused).toBe(true);
+    expect(field.value).toBe("half");
+    expect(keyboard.enabled).toBe(false);
+  });
+
+  it("should shut the list and pick the next channel on Tab while the list is open", () => {
+    const { input, field } = typing();
+    input.togglePicker();
+    input.keyDown("Tab", false);
+    expect(input.pickerOpen()).toBe(false);
+    expect(field.channel).toBe("world");
   });
 });
