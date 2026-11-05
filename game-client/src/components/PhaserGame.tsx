@@ -21,9 +21,14 @@ import {
   backingSize,
   fitView,
   mountViewport,
+  roundEveryObject,
   viewport,
 } from "@/render/viewport";
 import { VIEWPORT_FIT_PLUGIN } from "@/render/viewport/ViewportFit";
+
+// Every game object rounded to the backing px (ADR-0057), installed once as the game's module
+// loads, before any game or scene exists.
+roundEveryObject(Phaser.GameObjects);
 
 /** The game frame's CSS size: what the canvas is fitted into. */
 const frameSize = (frame: HTMLElement) => ({
@@ -65,9 +70,11 @@ export default function PhaserGame() {
       // Bone & Soot. The hub and the run set their own ground.
       backgroundColor: BARROW.menuSoot,
       // Baked art is drawn smoothed (docs/design-guideline.md "Linear filtering",
-      // FS-2325V §C): linear filtering, at 1x from a 2x render. Positions stay
-      // aligned to backing px, at a fractional render scale too (keepOnPixelGrid), so a
-      // still frame is crisp and a moving one does not shimmer.
+      // FS-2325V §C): linear filtering, at 1x from a 2x render. Quads land on
+      // backing px, at a fractional render scale too: `roundPixels` here is every camera's
+      // wish, kept on and the scroll kept on the backing-px grid by keepOnPixelGrid, and
+      // every object rounds whenever its camera does (src/render/viewport/rounding.ts,
+      // ADR-0057), so a still frame is crisp and a moving one does not shimmer.
       pixelArt: false,
       render: {
         roundPixels: true,

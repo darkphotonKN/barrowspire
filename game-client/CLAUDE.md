@@ -13,7 +13,8 @@ guideline and any section below disagree on a visual decision, the design guidel
 
 - **Framework**: Next.js 15 (App Router)
 - **Language**: TypeScript
-- **Game Engine**: Phaser 3.80
+- **Game Engine**: Phaser 4 (`^4.2.1`; [ADR-0057](../docs/adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md):
+  masks only through `maskInView`)
 - **State**: Zustand (authStore, gameStore)
 - **Styling**: Tailwind CSS + globals.css
 - **Networking**: Native WebSocket, REST via apiClient

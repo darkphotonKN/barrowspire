@@ -310,6 +310,16 @@ function recordingStage() {
             target.tint = tint;
             return proxy;
           };
+        // Phaser 4's mask filter (`maskInView`): what the object is masked by
+        if (prop === "filters")
+          return {
+            external: {
+              addMask: (source: unknown) => {
+                target.maskedBy = source;
+                return { setGameObject: (next: unknown) => void (target.maskedBy = next), invert: false };
+              },
+            },
+          };
         if (prop === "getByName")
           return (name: string) => target.children.find((c) => c.name === name) ?? null;
         if (prop === "on" || prop === "once")

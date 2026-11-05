@@ -163,6 +163,6 @@ export class Blackout {
     this.dark.setVisible(!!house);
     if (!house || wallTop === undefined) return;
     this.dark.fillStyle(palette.inkDeep, 1);
-    for (const quad of blackoutQuads(house, wallTop, this.geometry.reach)) this.dark.fillPoints(quad, true);
+    for (const quad of blackoutQuads(house, wallTop, this.geometry.reach)) this.dark.fillPoints(quad as Phaser.Math.Vector2[], true);
   }
 }

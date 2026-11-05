@@ -4,7 +4,7 @@
  * mask is made of it: B's floor inside its walls, its walls and posts in the interior look, and
  * everything standing in it (furnishings, dressing, people, monsters, containers, effects), each
  * drawn into a hidden render texture where it stands. One full-view rect of `palette.inkDeep`
- * covers the world wherever that texture holds nothing (an inverted bitmap mask), so the ground
+ * covers the world wherever that texture holds nothing (an inverted mask, `maskInView`), so the ground
  * along a wall's outer face, under the front walls and over the back walls' coping goes dark to
  * the px, whatever else stands there. A second dark, at the top of the ground band and cut by B's
  * floor, lies under every world object: a px of B that is only partly opaque (a wall's contact
@@ -12,18 +12,19 @@
  *
  * The texture lives in the world, over B (its own camera looks from its corner, rounding as the
  * main camera does), so a camera that pans or eases needs no redraw: it is redrawn only when
- * something of B changed, as `stampKey` sees it. Bitmap masks are WebGL's; under the canvas
- * renderer the blackout keeps its geometric dark (`Blackout`), as the silhouette keeps its tint.
+ * something of B changed, as `stampKey` sees it. Masks are WebGL's (Phaser 4's mask filter); under
+ * the canvas renderer the blackout keeps its geometric dark (`Blackout`), as the silhouette keeps
+ * its tint.
  *
  * This module only draws. What belongs to B is the scene's rule (`BuildingView`, by footprint).
  */
 
-import type Phaser from "phaser";
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import { WORLD_DEPTH, projectRect } from "@/render/iso/shapes";
 import type { Point } from "@/render/iso/projection";
 import { palette } from "@/utils/canvasPalette";
 import { roundAtAnyZoom, roundsPixels, viewport } from "@/render/viewport";
+import { maskInView, type MaskCamera, type Maskable, type ViewMask } from "@/render/viewport/mask";
 import type { House } from "./houses";
 
 /**
@@ -202,15 +203,14 @@ interface MaskTexture {
   setScale(scale: number): this;
   setVisible(visible: boolean): this;
   clear(): this;
-  beginDraw(): this;
-  batchDraw(entry: unknown, x?: number, y?: number): this;
-  endDraw(): this;
-  createBitmapMask(): Phaser.Display.Masks.BitmapMask;
+  /** Phaser 4: the entry drawn offset by (`x`, `y`) from where it stands, once `render` runs. */
+  draw(entry: unknown, x?: number, y?: number): this;
+  render(): unknown;
   destroy(): void;
 }
 
 /** The dark itself: a rect fixed to the camera. */
-interface DarkRect {
+interface DarkRect extends Maskable {
   width: number;
   height: number;
   setOrigin(x: number, y: number): this;
@@ -218,7 +218,6 @@ interface DarkRect {
   setDepth(depth: number): this;
   setVisible(visible: boolean): this;
   setSize(width: number, height: number): this;
-  setMask(mask: Phaser.Display.Masks.BitmapMask | Phaser.Display.Masks.GeometryMask): this;
   destroy(): void;
 }
 
@@ -227,7 +226,6 @@ interface FloorShape {
   clear(): this;
   fillStyle(color: number, alpha?: number): this;
   fillPoints(points: Point[], closeShape?: boolean): this;
-  createGeometryMask(): Phaser.Display.Masks.GeometryMask;
   destroy(): void;
 }
 
@@ -238,7 +236,7 @@ export interface BlackoutMaskStage {
     rectangle(x: number, y: number, width: number, height: number, fillColor?: number, fillAlpha?: number): DarkRect;
   };
   make: { graphics(config: object, addToScene?: boolean): FloorShape };
-  cameras: { main: { roundPixels: boolean } };
+  cameras: { main: { roundPixels: boolean } & MaskCamera };
 }
 
 export class BlackoutMask {
@@ -246,10 +244,13 @@ export class BlackoutMask {
   /**
    * B's px, redrawn when they change; never on screen itself, only as the dark's mask. Made the
    * first time the player steps in, and made again at another size for a building it does not
-   * fit: Phaser 3.90's `resize` leaves a render texture's GL target at its old size.
+   * fit, not resized (ADR-0057 §Render textures): Phaser 3.90's `resize` left a render texture's
+   * GL target at its old size; Phaser 4.2.1 fixed that, and making it again is kept as harmless
+   * (it happens only on a building of another size, and the texture is redrawn then anyway).
    */
   private texture?: MaskTexture;
-  private bitmap?: Phaser.Display.Masks.BitmapMask;
+  /** The dark's mask, its source the texture: given the new one when the texture is made again. */
+  private cut?: ViewMask;
   private readonly dark: DarkRect;
   /** The ground band's dark, cut by the floor: what B's semi-transparent px lie over. */
   private readonly under: DarkRect;
@@ -273,9 +274,8 @@ export class BlackoutMask {
         .setVisible(false);
     this.dark = dark(depth);
     this.floor = stage.make.graphics({}, false);
-    const cut = this.floor.createGeometryMask();
-    cut.invertAlpha = true;
-    this.under = dark(MASK_UNDER_DEPTH).setMask(cut);
+    this.under = dark(MASK_UNDER_DEPTH);
+    maskInView(this.under, this.floor, this.camera, true);
   }
 
   /**
@@ -305,7 +305,6 @@ export class BlackoutMask {
     this.drawn = undefined;
     this.dark.destroy();
     this.under.destroy();
-    this.bitmap?.destroy();
     this.texture?.destroy();
     this.floor.destroy();
   }
@@ -313,16 +312,13 @@ export class BlackoutMask {
   /** The texture, `width` × `height`: the one there is, or a fresh one masking the dark. */
   private fitted(width: number, height: number): MaskTexture {
     if (this.texture && width === this.size.width && height === this.size.height) return this.texture;
-    this.bitmap?.destroy();
     this.texture?.destroy();
     const texture = this.stage.add.renderTexture(0, 0, width, height).setOrigin(0, 0).setVisible(false);
     // its stamps rounded to backing px as the main camera rounds the world, fractional zoom too
     roundAtAnyZoom(texture.camera, () => roundsPixels(this.camera));
-    const bitmap = texture.createBitmapMask();
-    bitmap.invertAlpha = true;
-    this.dark.setMask(bitmap);
+    if (this.cut) this.cut.setGameObject(texture);
+    else this.cut = maskInView(this.dark, texture, this.camera, true);
     this.texture = texture;
-    this.bitmap = bitmap;
     this.size = { width, height };
     return texture;
   }
@@ -336,19 +332,18 @@ export class BlackoutMask {
     texture.setPosition(b.x, b.y).setScale(1 / rs);
     texture.camera.setZoom(rs);
     texture.camera.setOrigin(0, 0);
+    // its corner stays where it is set: Phaser 4's frame set-up (`render`) no longer floors a
+    // rounding camera's scroll, and sets px rounding as the main camera rounds (roundAtAnyZoom)
     texture.camera.setScroll(b.x, b.y);
-    // off, or Phaser floors that corner to whole world units; px rounding is switched on after its
-    // frame set-up instead, as the main camera rounds (roundAtAnyZoom)
-    texture.camera.roundPixels = false;
     // only its alpha counts: the mask's colour is never seen
     this.floor.clear().fillStyle(palette.inkDeep, 1).fillPoints(maskFloor(look.house, look.wall), true);
 
-    texture.clear().beginDraw();
-    texture.batchDraw(this.floor, 0, 0);
+    texture.clear().draw(this.floor);
     for (const stamp of look.stamps) {
       const at = drawnAt(stamp);
-      if (at) texture.batchDraw(stamp, at.x, at.y);
+      // offset from its own place to where it is drawn: its containers' offsets
+      if (at) texture.draw(stamp, at.x - stamp.x, at.y - stamp.y);
     }
-    texture.endDraw();
+    texture.render();
   }
 }

@@ -6,14 +6,14 @@
  *
  * It shows only where the covering pieces' own pixels are: a hidden render texture holds them,
  * redrawn each frame, and masks the copy, so the part of the player still in sight (a head over a
- * roof's eave) stays the player, not brass. The mask is WebGL's (a bitmap mask); under the canvas
- * renderer Phaser ignores it and the whole body is tinted, as before.
+ * roof's eave) stays the player, not brass. The mask is WebGL's (a mask filter, `maskInView`);
+ * under the canvas renderer there is none and the whole body is tinted, as before.
  *
  * The helper only draws. Who is copied (the player, never anyone else, §E.2) and which pieces
  * cover them (`covering`, while outside every building, §E.1, §E.5) are the scene's rules.
  */
 
-import type Phaser from "phaser";
+import { maskInView, type MaskCamera, type Maskable } from "@/render/viewport/mask";
 import { palette } from "@/utils/canvasPalette";
 
 /**
@@ -60,7 +60,10 @@ export interface SilhouetteBody {
   parentContainer: Parent | null;
 }
 
-interface SilhouetteImage {
+/** Phaser 4's `TintModes.FILL`: the tint replaces the frame's colours, its alpha kept. */
+const TINT_FILL = 1;
+
+interface SilhouetteImage extends Maskable {
   setTexture(key: string, frame?: string | number): this;
   setPosition(x: number, y: number): this;
   setOrigin(x: number, y: number): this;
@@ -68,9 +71,9 @@ interface SilhouetteImage {
   setFlipX(flip: boolean): this;
   setDepth(depth: number): this;
   setAlpha(alpha: number): this;
-  setTintFill(color: number): this;
+  setTint(color: number): this;
+  setTintMode(mode: number): this;
   setVisible(visible: boolean): this;
-  setMask(mask: Phaser.Display.Masks.BitmapMask): this;
   destroy(): void;
 }
 
@@ -86,8 +89,9 @@ interface MaskTexture {
   setPosition(x: number, y: number): this;
   setVisible(visible: boolean): this;
   clear(): this;
+  /** Phaser 4: the entry drawn offset by (`x`, `y`) from where it stands, once `render` runs. */
   draw(entry: SilhouetteCover, x: number, y: number): this;
-  createBitmapMask(): Phaser.Display.Masks.BitmapMask;
+  render(): unknown;
   destroy(): void;
 }
 
@@ -97,6 +101,7 @@ export interface SilhouetteScene {
     image(x: number, y: number, texture: string): SilhouetteImage;
     renderTexture(x: number, y: number, width: number, height: number): MaskTexture;
   };
+  cameras: { main: MaskCamera };
 }
 
 /** Phaser's always-present blank texture: what the image holds before it copies a body. */
@@ -112,11 +117,12 @@ export class Silhouette {
     this.mask = scene.add.renderTexture(0, 0, width, height).setOrigin(0, 0).setVisible(false);
     this.image = scene.add
       .image(0, 0, BLANK)
-      .setTintFill(SILHOUETTE_TINT)
+      .setTint(SILHOUETTE_TINT)
+      .setTintMode(TINT_FILL)
       .setAlpha(SILHOUETTE_ALPHA)
       .setDepth(SILHOUETTE_DEPTH)
-      .setMask(this.mask.createBitmapMask())
       .setVisible(false);
+    maskInView(this.image, this.mask, scene.cameras.main);
   }
 
   /**
@@ -150,8 +156,9 @@ export class Silhouette {
     const left = x - SILHOUETTE_MASK.width / 2;
     const top = y - SILHOUETTE_MASK.above;
     this.mask.setPosition(left, top).clear();
-    for (const piece of covering)
-      if (piece.visible) this.mask.draw(piece, piece.x - left, piece.y - top);
+    // offset from where each piece stands to its place in the texture
+    for (const piece of covering) if (piece.visible) this.mask.draw(piece, -left, -top);
+    this.mask.render();
   }
 
   destroy(): void {

@@ -373,10 +373,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Render scale**: backing-store pixels per logical unit. Displayed CSS size ×
   `devicePixelRatio` ÷ logical size, capped at 2 (`RENDER_SCALE_CAP`). Fractional is valid. Every
   scene's main camera is zoomed by it at origin 0; canvas text rasterises at it.
-- **Pixel grid**: the 1/render-scale steps a camera's scroll is kept on, so every quad's corner
-  lands on a whole backing px and a still world keeps its px as the camera moves, at a fractional
-  render scale too (`keepOnPixelGrid`). It is why `roundPixels` holds where Phaser 3.90 would drop
-  it.
+- **Pixel grid**: the 1/render-scale steps a camera's scroll is kept on (`keepOnPixelGrid`), so
+  a still world keeps its px as the camera moves, at a fractional render scale too. With the
+  camera's `roundPixels` kept on and every game object rounding whenever its camera does
+  (`fullAuto`, set once in `src/render/viewport`, ADR-0057), every quad's corner lands on a whole
+  backing px. Phaser 4 rounds a scaled or zoomed quad only on request, which is why it is asked
+  for centrally rather than per object.
 - **Stage**: the 1080-unit-wide layout a canvas menu (main menu, character creation) is built in
   (`STAGE_WIDTH`, the narrowest logical view). Its camera centres it in a wider view
   (`centreStage`), the backdrop reaching the view's edges; a menu's own hit test reads a pointer

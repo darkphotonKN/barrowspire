@@ -3,8 +3,12 @@
 import { useEffect, useRef } from "react";
 import * as Phaser from "phaser";
 import { BARROW } from "@/utils/theme";
+import { roundEveryObject } from "@/render/viewport";
 import { EFFECT_CARDS } from "./effects";
 import { GalleryScene } from "./GalleryScene";
+
+// Rounded as the game is (ADR-0057), whichever page loaded Phaser first.
+roundEveryObject(Phaser.GameObjects);
 
 const WIDTH = 720;
 const HEIGHT = 360;

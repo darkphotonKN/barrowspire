@@ -60,7 +60,7 @@ import {
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
-import { viewport } from "@/render/viewport";
+import { fillMaskArea, maskInView, viewport } from "@/render/viewport";
 
 /** What a scene gives the window: what the input needs to let the player type, and who is playing. */
 export interface ChatWindowOptions {
@@ -185,8 +185,13 @@ export class ChatWindow {
   private bottom: number;
   private frame: ChatWindowFrame;
   private panel?: Phaser.GameObjects.Graphics;
+  /** The message area's shape, redrawn in place as the area moves; the lines' one mask. */
   private maskShape?: Phaser.GameObjects.Graphics;
-  private mask?: Phaser.Display.Masks.GeometryMask;
+  /**
+   * What the lines are drawn in: one Layer, masked once by the message area (ADR-0057 §Masks: a
+   * mask is a filter pass, so the lines share one rather than wearing one each).
+   */
+  private lineLayer?: Phaser.GameObjects.Layer;
   private lineTexts: Phaser.GameObjects.Text[] = [];
   /** Each drawn line's clickable name, where it is drawn now (FS-KCQ06 C15). */
   private nameHits: { name: string; rect: Rect }[] = [];
@@ -201,6 +206,10 @@ export class ChatWindow {
   /** Lines back from the newest; 0 is following (R21). */
   private offset = 0;
   private unsubscribe: () => void;
+  /** Stops redrawing the clip on a render-scale change. */
+  private unwatchScale: () => void;
+  /** The render scale the clip was last drawn on. */
+  private maskScale = 0;
   private field?: ChatInputFieldHandle;
   private input?: ChatInput;
   private readonly selfId: () => string | undefined;
@@ -222,6 +231,10 @@ export class ChatWindow {
     this.unsubscribe = store.subscribe((state, prev) =>
       this.onStore(state, prev),
     );
+    // the clip lies on the backing px grid, so a new render scale alone redraws it
+    this.unwatchScale = viewport.onChange((view) => {
+      if (view.renderScale !== this.maskScale) this.shapeMask();
+    });
     scene.input.on("wheel", this.onWheel, this);
     scene.input.on("pointerdown", this.onPress, this);
     scene.events.on("postupdate", this.watchKeys, this);
@@ -260,6 +273,7 @@ export class ChatWindow {
 
   destroy(): void {
     this.unsubscribe();
+    this.unwatchScale();
     this.scene.input?.off("wheel", this.onWheel, this);
     this.scene.input?.off("pointerdown", this.onPress, this);
     this.scene.input?.off("pointermove", this.onDrag, this);
@@ -275,9 +289,9 @@ export class ChatWindow {
     this.panel?.destroy();
     this.scrollbar?.destroy();
     this.scrollbar = undefined;
+    this.lineLayer?.destroy();
     this.maskShape?.destroy();
-    this.mask?.destroy();
-    this.foldText = this.panel = this.maskShape = this.mask = undefined;
+    this.foldText = this.panel = this.maskShape = this.lineLayer = undefined;
   }
 
   /** The text field's place: the whole input row, short of the fold button while folded. */
@@ -300,7 +314,7 @@ export class ChatWindow {
   }
 
   private drawAll(): void {
-    this.rebuildMask();
+    this.shapeMask();
     this.drawPanel();
     this.drawTabs();
     this.drawLines();
@@ -592,25 +606,41 @@ export class ChatWindow {
 
   /**
    * The message area's clip: a wrapped line that overflows the top is cut, not drawn over the
-   * tabs. Built once per frame geometry, never on a mere redraw. A destroyed mask that a drawn
-   * line still wears throws inside Phaser's render and stops the whole game (the cmd-tab freeze,
-   * 2026-10-31), so the old one goes only once no line wears it: `drawLines` follows every rebuild.
+   * tabs. The lines sit in one Layer, masked once by one shape when the window is first drawn
+   * (ADR-0057 §Masks: a mask is a filter pass); a new frame geometry (a resize, a fold) redraws
+   * that shape in place, so the mask is never laid twice and its shape is never destroyed under
+   * it (a destroyed mask stopped the whole game in Phaser 3: the cmd-tab freeze, 2026-10-31).
+   *
+   * A Layer has no transform and no scroll factor of its own (Phaser gives it no ScrollFactor
+   * component): its lines keep their scroll factor 0 while its filter draws them through the
+   * camera, so the clip neither slides with the world nor lands half a view off. Probed at render
+   * scale 1, 1.5 and 2 with the camera scrolled and moving (I-ADR0057-3), its lines came out
+   * within 1/255 of Phaser 3.90's per-line masks at 1 and 2, where a Container's and per-line
+   * filters' were resampled. It is given a scroll factor of 0 here all the same: `Maskable` asks a
+   * masked object for one, and should Phaser ever fix the scroll-factor bug `maskInView`
+   * describes by applying the scroll factor to a context-focused filter, a Layer without one would
+   * be placed by `undefined`. That does not change `maskInView`'s branch today: a Layer has no
+   * size, so it gets the origin correction either way.
+   *
+   * The area is drawn by `fillMaskArea` on the backing px grid of the render scale it is drawn at,
+   * so the clip's edge rows and columns let the lines through as 3.90's did (I-ADR0057-3); a new
+   * render scale alone redraws it.
    */
-  private rebuildMask(): void {
+  private shapeMask(): void {
     const { messages } = this.frame;
-    this.clearLines();
-    this.maskShape?.destroy();
-    this.mask?.destroy();
-    this.maskShape = this.scene.make.graphics({}, false).setScrollFactor(0);
-    // a mask's colour is never drawn, only its shape; any token keeps the fence's literal ban
-    this.maskShape.fillStyle(palette.chatPanel);
-    this.maskShape.fillRect(
-      messages.x,
-      messages.y,
-      messages.width,
-      messages.height,
-    );
-    this.mask = this.maskShape.createGeometryMask();
+    if (!this.maskShape || !this.lineLayer) {
+      this.maskShape = this.scene.make.graphics({}, false).setScrollFactor(0);
+      const layer = Object.assign(this.scene.add.layer(), {
+        scrollFactorX: 0,
+        scrollFactorY: 0,
+      }).setDepth(HUD_DEPTH);
+      maskInView(layer, this.maskShape, this.scene.cameras.main);
+      this.lineLayer = layer;
+    }
+    this.maskScale = viewport.renderScale;
+    this.maskShape.clear();
+    // a mask's colour is never drawn, only its alpha; any token keeps the fence's literal ban
+    fillMaskArea(this.maskShape, messages, palette.chatPanel, this.maskScale);
   }
 
   /** A tab label's width at the window's font, measured once per label. */
@@ -674,6 +704,8 @@ export class ChatWindow {
   private drawLines(): void {
     this.clearLines();
     this.drawScrollbar();
+    // above what the scene drew at HUD depth since, as when every redraw made its lines anew
+    this.lineLayer?.setToTop();
     const m = this.frame.messages;
     if (m.height === 0) return;
     const entries = visibleEntries(
@@ -705,7 +737,7 @@ export class ChatWindow {
         .setDepth(HUD_DEPTH);
       y -= t.height;
       t.setPosition(m.x + CHAT_PAD, y);
-      if (this.mask) t.setMask(this.mask);
+      this.lineLayer?.add(t);
       this.lineTexts.unshift(t);
       // the name heads the line's first row, so its hit area is that row's, as wide as the name
       const span = chatNameSpan(

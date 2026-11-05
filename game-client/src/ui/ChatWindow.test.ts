@@ -1,6 +1,6 @@
 import { EventEmitter } from "eventemitter3";
 import { afterEach, describe, expect, it } from "vitest";
-import { viewport } from "@/render/viewport";
+import { fillMaskArea, viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, shade, toCss } from "@/utils/canvasPalette";
@@ -36,19 +36,46 @@ interface FakeText {
   onPress?: () => void;
   /** The handler a button registered for pointerup, if it acts on release. */
   onRelease?: () => void;
-  /** The geometry mask the text wears, as Phaser would render it with. */
+  /** The shape the text is masked by itself, if it is (Phaser 4's mask filter, `maskInView`). */
   mask?: FakeMask;
+  /** The holder (a Phaser Layer) the text was moved into, if any. */
+  holder?: FakeHolder;
 }
 
 interface FakeMask {
   destroyed: boolean;
   destroy(): void;
+  /** What the shape draws now: its filled rects. */
+  rects(): number[][];
+  /** The alpha each of those rects is filled at. */
+  alphas(): number[];
 }
+
+/** A Phaser Layer as the window holds its lines in it. */
+interface FakeHolder {
+  depth?: number;
+  destroyed: boolean;
+  /** The shape the holder is masked by, if it is. */
+  mask?: FakeMask;
+  /** How often it was moved to the top of the scene's display list. */
+  raised: number;
+}
+
+/** The mask a drawn text shows through: its own, or its holder's while it sits in one. */
+const maskOver = (t: FakeText): FakeMask | undefined =>
+  t.mask ?? (t.holder && !t.holder.destroyed ? t.holder.mask : undefined);
 
 /** `heightOf` sets a text's drawn height by its words, as a wrapped line's would be. */
 function fakeScene(heightOf: (content: string) => number = () => 18) {
   const texts: FakeText[] = [];
   const maskRecords: FakeMask[] = [];
+  /** Each mask shape made, by the object the window holds. */
+  const shapes = new Map<object, FakeMask>();
+  /** Each text, by the object the window holds. */
+  const textOf = new Map<object, FakeText>();
+  const holders: FakeHolder[] = [];
+  /** Every mask laid, on a text or a holder (`filters.external.addMask`). */
+  let masksLaid = 0;
   const panels: {
     depth?: number;
     scroll?: number;
@@ -71,6 +98,16 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       fills: [] as [number, number][],
     };
     if (!masks) panels.push(g);
+    // a mask shape: alive until destroyed, as the lines masked by it read it
+    const mask: FakeMask | undefined = masks
+      ? {
+          destroyed: false,
+          destroy: () => void (mask!.destroyed = true),
+          rects: () => g.rects,
+          alphas: () => g.fills.map(([, alpha]) => alpha),
+        }
+      : undefined;
+    if (mask) maskRecords.push(mask);
     const self: Record<string, unknown> = {
       setScrollFactor: (s: number) => ((g.scroll = s), self),
       setDepth: (d: number) => ((g.depth = d), self),
@@ -87,16 +124,12 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       lineBetween: () => self,
       fillTriangle: () => self,
       fillCircle: () => self,
-      createGeometryMask: () => {
-        const mask: FakeMask = {
-          destroyed: false,
-          destroy: () => void (mask.destroyed = true),
-        };
-        maskRecords.push(mask);
-        return mask;
+      destroy: () => {
+        g.destroyed = true;
+        mask?.destroy();
       },
-      destroy: () => void (g.destroyed = true),
     };
+    if (mask) shapes.set(self, mask);
     return self;
   };
   const text = (
@@ -131,12 +164,56 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       get width() {
         return t.content.length * 7;
       },
-      setMask: (mask: FakeMask) => ((t.mask = mask), self),
+      scrollFactorX: 0,
+      scrollFactorY: 0,
+      filtersFocusContext: false,
+      enableFilters: () => self,
+      filters: {
+        external: {
+          addMask: (shape: object) => (
+            masksLaid++,
+            (t.mask = shapes.get(shape)),
+            {}
+          ),
+        },
+      },
       setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
-      destroy: () => void (t.destroyed = true),
+      destroy: () => {
+        t.destroyed = true;
+        t.holder = undefined;
+      },
       get height() {
         return t.height;
       },
+    };
+    textOf.set(self, t);
+    return self;
+  };
+  // a Phaser Layer: no transform and no size, so its filters focus the camera's context
+  const layer = () => {
+    const h: FakeHolder = { destroyed: false, raised: 0 };
+    holders.push(h);
+    const self: Record<string, unknown> = {
+      setDepth: (d: number) => ((h.depth = d), self),
+      setToTop: () => (h.raised++, self),
+      add: (child: object) => {
+        const t = textOf.get(child);
+        if (t) t.holder = h;
+        return self;
+      },
+      filtersFocusContext: true,
+      filterCamera: { setOrigin: () => undefined },
+      enableFilters: () => self,
+      filters: {
+        external: {
+          addMask: (shape: object) => (
+            masksLaid++,
+            (h.mask = shapes.get(shape)),
+            {}
+          ),
+        },
+      },
+      destroy: () => void (h.destroyed = true),
     };
     return self;
   };
@@ -144,8 +221,9 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
   const events = new EventEmitter();
   const scene = {
     events,
-    add: { graphics: () => graphics(), text },
+    add: { graphics: () => graphics(), text, layer },
     make: { graphics: () => graphics(true) },
+    cameras: { main: { originX: 0, originY: 0 } },
     input,
   } as unknown as Phaser.Scene;
 
@@ -166,6 +244,8 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
     messageTexts,
     panels,
     maskRecords,
+    holders,
+    masksLaid: () => masksLaid,
     input,
     keys,
     events,
@@ -1140,7 +1220,10 @@ describe("ChatWindow scrollbar", () => {
 
 describe("ChatWindow mask lifetime", () => {
   const liveMasks = (s: ReturnType<typeof inputRig>) =>
-    s.messageTexts().every((t) => t.mask !== undefined && !t.mask.destroyed);
+    s.messageTexts().every((t) => {
+      const mask = maskOver(t);
+      return mask !== undefined && !mask.destroyed;
+    });
 
   it("should leave every drawn line wearing a live mask after the input gains and loses focus", () => {
     const s = inputRig();
@@ -1162,15 +1245,135 @@ describe("ChatWindow mask lifetime", () => {
     for (let i = 1; i <= 12; i++) s.say(`l${i}`);
 
     toggleOf(s, "World").onPress!();
-    expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
-      true,
-    );
+    expect(
+      s.messageTexts().every((t) => {
+        const mask = maskOver(t);
+        return mask !== undefined && !mask.destroyed;
+      }),
+    ).toBe(true);
 
     clickFold(s);
     clickFold(s);
-    expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
+    expect(
+      s.messageTexts().every((t) => {
+        const mask = maskOver(t);
+        return mask !== undefined && !mask.destroyed;
+      }),
+    ).toBe(true);
+  });
+});
+
+// ── One mask for the message area (ADR-0057 §Masks, I-ADR0057-3) ───────────────────────────
+// Phaser 4 masks by a filter, a render pass per masked object: the lines share one holder that is
+// masked once, not a mask each.
+
+describe("ChatWindow lines share one mask (ADR-0057)", () => {
+  const messageRect = (bottom = BOTTOM) => {
+    const m = chatWindowFrame(X, bottom).messages;
+    return [m.x, m.y, m.width, m.height];
+  };
+
+  it("should lay one mask, shaped to the message area, over all the lines however many are drawn", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+
+    const lines = s.messageTexts();
+    expect(lines.length).toBeGreaterThan(1);
+    expect(s.masksLaid()).toBe(1);
+    expect(s.holders).toHaveLength(1);
+    const [holder] = s.holders;
+    expect(holder.depth).toBe(1000);
+    expect(lines.every((t) => t.holder === holder && t.mask === undefined)).toBe(
       true,
     );
+    expect(holder.mask?.destroyed).toBe(false);
+    expect(holder.mask?.rects()).toEqual([messageRect()]);
+  });
+
+  it("should keep that one mask, reshaped to the area as it is now, through a resize, a fold round trip and a tab switch", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+
+    s.window.setBottom(600);
+    expect(s.holders[0].mask?.rects()).toEqual([messageRect(600)]);
+    clickFold(s);
+    clickFold(s);
+    toggleOf(s, "World").onPress!();
+
+    expect(s.masksLaid()).toBe(1);
+    expect(s.holders).toHaveLength(1);
+    expect(s.holders[0].mask?.destroyed).toBe(false);
+    expect(s.holders[0].mask?.rects()).toEqual([messageRect(600)]);
+    expect(s.messageTexts(600).every((t) => t.holder === s.holders[0])).toBe(
+      true,
+    );
+  });
+
+  it("should raise the lines above what the scene drew at HUD depth since, as each redraw did when every line was new", () => {
+    const s = rig();
+    const before = s.holders[0].raised;
+    s.say("one");
+    expect(s.holders[0].raised).toBe(before + 1);
+  });
+
+  describe("at a fractional render scale (clipped as Phaser 3.90 clipped, I-ADR0057-3)", () => {
+    afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+    /** The area's clip as `fillMaskArea` draws it at `rs`: its rects and their alphas. */
+    const clipAt = (rs: number) => {
+      const rects: number[][] = [];
+      const alphas: number[] = [];
+      const [x, y, width, height] = messageRect();
+      fillMaskArea(
+        {
+          fillStyle: (_c: number, a = 1) => alphas.push(a),
+          fillRect: (...r: number[]) => rects.push(r),
+        },
+        { x, y, width, height },
+        0,
+        rs,
+      );
+      return { rects, alphas };
+    };
+
+    it("should clip the lines by the share of each backing px the area covers where its edges fall inside one (render scale 1.5)", () => {
+      viewport.set({ width: 1080, height: 720, renderScale: 1.5 });
+      const s = rig();
+      s.say("one");
+      const mask = s.holders[0].mask!;
+      expect({ rects: mask.rects(), alphas: mask.alphas() }).toEqual(clipAt(1.5));
+      expect(mask.alphas()).toContain(0.5);
+    });
+
+    it("should redraw the clip for a new render scale alone (fullscreen, another monitor), still one mask", () => {
+      const s = rig();
+      s.say("one");
+      viewport.set({ width: 1080, height: 720, renderScale: 1.5 });
+      const mask = s.holders[0].mask!;
+      expect({ rects: mask.rects(), alphas: mask.alphas() }).toEqual(clipAt(1.5));
+      expect(s.masksLaid()).toBe(1);
+    });
+
+    it("should stop following the render scale once the window is destroyed", () => {
+      const s = rig();
+      s.say("one");
+      s.window.destroy();
+      expect(() =>
+        viewport.set({ width: 1080, height: 720, renderScale: 1.25 }),
+      ).not.toThrow();
+      // a window still listening would lay a new holder and mask for its gone ones
+      expect(s.masksLaid()).toBe(1);
+      expect(s.holders).toHaveLength(1);
+      expect(s.holders[0].mask!.rects()).toEqual([messageRect()]);
+    });
+  });
+
+  it("should destroy the holder and its mask with the window", () => {
+    const s = rig();
+    s.say("one");
+    s.window.destroy();
+    expect(s.holders[0].destroyed).toBe(true);
+    expect(s.maskRecords.every((m) => m.destroyed)).toBe(true);
   });
 });
 

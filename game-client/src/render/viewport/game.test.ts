@@ -80,6 +80,8 @@ function fakeGame() {
     clampX: (x: number) => x,
     clampY: (y: number) => y,
     preRender: () => undefined,
+    getViewMatrix: () => ({ translate: () => undefined }),
+    matrixCombined: { translate: () => undefined },
   });
   const game: ViewGame = {
     scale: {

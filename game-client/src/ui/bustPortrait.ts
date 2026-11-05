@@ -6,6 +6,7 @@
 
 import type Phaser from "phaser";
 import { palette } from "@/utils/canvasPalette";
+import { maskInView } from "@/render/viewport/mask";
 import { bustCrop, bustSize, type Bounds } from "./bust";
 
 /** The frame to cut a bust from. */
@@ -16,7 +17,7 @@ export interface Portrait {
 
 /** The scene slice a bust draws with; without textures there is nothing to cut. */
 export type BustStage = Pick<Phaser.Scene, "add"> &
-  Partial<Pick<Phaser.Scene, "make" | "textures">>;
+  Partial<Pick<Phaser.Scene, "make" | "textures" | "cameras">>;
 
 export interface MaskedBust {
   image: Phaser.GameObjects.Image;
@@ -128,11 +129,13 @@ export function maskedBust(
 ): MaskedBust | undefined {
   const image = bustImage(scene, portrait, mx, my, r);
   if (!image) return undefined;
-  if (!scene.make) return { image };
+  if (!scene.make || !scene.cameras) return { image };
   const mask = scene.make.graphics({}, false).setScrollFactor(0);
-  // a geometry mask reads only the shape: its fill is never drawn, so any token will do
+  // a mask reads only the shape's alpha: its fill is never drawn, so any token will do. Phaser 4's
+  // mask filter draws the disc unmultisampled, so its edge is hard where 3.90's was smoothed
+  // (I-ADR0057-2 Answer, review fix round 2: left for Nick in I-ADR0057-5)
   mask.fillStyle(palette.hudText);
   mask.fillCircle(mx, my, r - 1);
-  image.setMask(mask.createGeometryMask());
+  maskInView(image, mask, scene.cameras.main);
   return { image, mask };
 }
