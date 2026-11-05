@@ -363,6 +363,29 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   (its hot core) and `light` (the glow it casts and pools at the feet). The heal look is
   `oxbloodText` / `vellum` / `oxblood`. Not a base: the same base takes any look.
 
+- **Logical view** (FS-ZAJMH): the coordinate space cameras and the HUD work in. Always **720
+  units tall**; **1080 to 1280 units wide** depending on the shape of the space the game is given.
+  At render scale 1 one logical unit is one CSS pixel of the
+  old 1080×720 canvas. Scenes and HUD read it from the viewport module (`src/render/viewport/`),
+  never from `cameras.main.width/height`, which are backing-store px. A pointer's `x/y` are backing
+  px too: a HUD hit test maps them to logical units (`viewport.toLogical`). World aim keeps
+  `pointer.worldX/worldY`.
+- **Render scale**: backing-store pixels per logical unit. Displayed CSS size ×
+  `devicePixelRatio` ÷ logical size, capped at 2 (`RENDER_SCALE_CAP`). Fractional is valid. Every
+  scene's main camera is zoomed by it at origin 0; canvas text rasterises at it.
+- **Pixel grid**: the 1/render-scale steps a camera's scroll is kept on, so every quad's corner
+  lands on a whole backing px and a still world keeps its px as the camera moves, at a fractional
+  render scale too (`keepOnPixelGrid`). It is why `roundPixels` holds where Phaser 3.90 would drop
+  it.
+- **Stage**: the 1080-unit-wide layout a canvas menu (main menu, character creation) is built in
+  (`STAGE_WIDTH`, the narrowest logical view). Its camera centres it in a wider view
+  (`centreStage`), the backdrop reaching the view's edges; a menu's own hit test reads a pointer
+  in stage units (`stagePoint`). Not the HUD: HUD widgets keep to the view's edges by anchors.
+- **Game frame**: the DOM element that holds the canvas and Phaser's DOM container. It is what
+  goes fullscreen. The fullscreen button sits over the canvas's top-right corner, never out in
+  the frame's bars.
+- **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
+
 ## Dev gallery terms (FS-1819Q)
 
 - **Tracked family**: a kind of visual piece the dev gallery must show in full. Listed once in
