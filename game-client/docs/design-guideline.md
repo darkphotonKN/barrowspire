@@ -50,9 +50,13 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Realistic light, soft shadow, texture grit.** Sprites carry their shading from the bake
   (tone-mapped, environment-lit, a warm key light from screen-left, baked contact shadows that
   fall screen-right). They look lit *before* any overlay is applied.
-- **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. The pixel-art
-  rules (nearest-neighbour, dithering, hand-placed clusters, pixel-grid outlines,
-  `image-rendering: pixelated`) no longer apply to the canvas.
+- **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. A sheet may
+  instead be baked at 2x from a 4x render and drawn at half scale, so it stays sharp at render
+  scale 2; today only the archer is
+  ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md)).
+  It stands exactly as large as at 1x, and every size around it (head height, markers, footprint)
+  stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
+  pixel-grid outlines, `image-rendering: pixelated`) no longer apply to the canvas.
 - **Readable silhouettes over detail.** At game scale a player is roughly one tile wide and a face
   is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
 - **Bake colours come from `BARROW`** (`src/utils/theme.ts`), so baked art and the in-game HUD
