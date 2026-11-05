@@ -3,6 +3,9 @@
  * fullscreen; the state is always the document's own (`fullscreenElement`), never a local
  * toggle, so leaving by Esc or the browser's UI reads the same as leaving by the button (R20).
  *
+ * Where the browser has the Keyboard Lock API (Chrome, Edge), a fullscreen entered by the button
+ * locks Esc, so it reaches the game; the player leaves by holding Esc (R21 as amended, A16).
+ *
  * Safari before 16.4 and iPadOS speak only the webkit-prefixed API; iPhone Safari has none, and
  * then there is no fullscreen to offer (R23).
  */
@@ -27,13 +30,36 @@ export interface FullscreenFrame {
   webkitRequestFullscreen?(): void;
 }
 
+/**
+ * The Keyboard Lock API, as fullscreen uses it: `navigator.keyboard` where it has `lock` (Chrome,
+ * Edge). Safari and Firefox have none.
+ */
+export interface KeyboardLock {
+  lock(keyCodes: string[]): Promise<void>;
+  unlock(): void;
+}
+
+/**
+ * The navigator's Keyboard Lock, or null where it has none. Detected as Chrome's guide does,
+ * `'keyboard' in navigator && 'lock' in navigator.keyboard`
+ * (https://developer.chrome.com/docs/capabilities/web-apis/keyboard-lock).
+ */
+export function keyboardLockOf(nav: object): KeyboardLock | null {
+  if (!("keyboard" in nav)) return null;
+  const { keyboard } = nav;
+  return typeof keyboard === "object" && keyboard !== null && "lock" in keyboard
+    ? (keyboard as KeyboardLock)
+    : null;
+}
+
 /** The document's fullscreen, as the button needs it. */
 export interface Fullscreen {
   /** Whether the page is fullscreen now. */
   active(): boolean;
   /**
-   * Windowed: asks for `frame` fullscreen. Fullscreen: leaves it. A refusal (no user gesture, a
-   * permission policy) is swallowed: the page stays windowed and the state says so (R23).
+   * Windowed: asks for `frame` fullscreen, then, given a Keyboard Lock, locks Esc for it (A16).
+   * Fullscreen: leaves it. A refusal (no user gesture, a permission policy) is swallowed: the
+   * page stays windowed and the state says so (R23).
    */
   toggle(frame: FullscreenFrame | null): Promise<void>;
   /** Hears every change of state, by any route; the returned function stops it. */
@@ -43,12 +69,48 @@ export interface Fullscreen {
 const CHANGE_EVENTS = ["fullscreenchange", "webkitfullscreenchange"] as const;
 
 /** The document's fullscreen, or null where there is none to offer (R23). */
-export function fullscreenOf(doc: FullscreenDocument): Fullscreen | null {
+export function fullscreenOf(
+  doc: FullscreenDocument,
+  keyboard?: KeyboardLock | null,
+): Fullscreen | null {
   if (doc.fullscreenEnabled !== true && doc.webkitFullscreenEnabled !== true)
     return null;
 
   const active = () =>
     (doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null) !== null;
+
+  const watch = (changed: Listener) => {
+    for (const type of CHANGE_EVENTS) doc.addEventListener(type, changed);
+    return () => {
+      for (const type of CHANGE_EVENTS) doc.removeEventListener(type, changed);
+    };
+  };
+
+  /**
+   * Gives Esc to the game for one fullscreen (R21 as amended, A16): locked once fullscreen is on,
+   * released when it is left by any route. The browser keeps its own exit, a held Esc.
+   */
+  const holdEscape = (lock: KeyboardLock) => {
+    let held = true;
+    const release = () => {
+      if (!held) return;
+      held = false;
+      stop();
+      lock.unlock();
+    };
+    const stop = watch(() => {
+      if (!active()) release();
+    });
+    // A refusal (not the top-level page, an insecure origin) leaves Esc the browser's, which is
+    // today's behaviour, so it is not an error. A lock that lands after fullscreen was left is
+    // let go at once.
+    lock.lock(["Escape"]).then(
+      () => {
+        if (!held) lock.unlock();
+      },
+      () => {},
+    );
+  };
 
   return {
     active,
@@ -60,18 +122,14 @@ export function fullscreenOf(doc: FullscreenDocument): Fullscreen | null {
         } else if (frame) {
           if (frame.requestFullscreen) await frame.requestFullscreen();
           else frame.webkitRequestFullscreen?.();
+          // after the request, as Chrome's guide orders it; a refused request never gets here
+          if (keyboard && active()) holdEscape(keyboard);
         }
       } catch {
         // refused: nothing changed, so `active()` and the button still read windowed
       }
     },
-    watch(changed) {
-      for (const type of CHANGE_EVENTS) doc.addEventListener(type, changed);
-      return () => {
-        for (const type of CHANGE_EVENTS)
-          doc.removeEventListener(type, changed);
-      };
-    },
+    watch,
   };
 }
 

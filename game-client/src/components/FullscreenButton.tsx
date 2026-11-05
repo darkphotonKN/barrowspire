@@ -20,7 +20,9 @@ import {
   fullscreenOf,
   handBackFocus,
   keepFromGame,
+  keyboardLockOf,
   type FullscreenDocument,
+  type KeyboardLock,
 } from "./fullscreen";
 
 interface Props {
@@ -28,6 +30,8 @@ interface Props {
   frame: RefObject<HTMLElement | null>;
   /** The document whose fullscreen it is; the page's own by default. */
   doc?: FullscreenDocument;
+  /** The Keyboard Lock that gives Esc to the game in fullscreen (A16); the navigator's by default. */
+  keyboard?: KeyboardLock | null;
 }
 
 /** The button's corner and height, in logical units; the CSS multiplies them by the canvas's scale. */
@@ -39,11 +43,23 @@ const FOOTPRINT = {
 /**
  * The game frame's fullscreen toggle (FS-ZAJMH §E R18–R23), DOM over the canvas in the web UI's
  * palette (ADR-0025). Its state is the document's, so Esc and the browser's own exits keep it in
- * step (R20). Nothing is rendered where there is no fullscreen to offer (R23); there is no key
+ * step (R20). Where the browser has Keyboard Lock, the fullscreen it enters gives Esc to the game
+ * and a held Esc leaves (R21 as amended, A16). Nothing is rendered where there is no fullscreen to offer (R23); there is no key
  * for it (R22).
  */
-export default function FullscreenButton({ frame, doc }: Props) {
-  const fullscreen = useMemo(() => fullscreenOf(doc ?? document), [doc]);
+export default function FullscreenButton({ frame, doc, keyboard }: Props) {
+  const fullscreen = useMemo(
+    () =>
+      fullscreenOf(
+        doc ?? document,
+        keyboard !== undefined
+          ? keyboard
+          : typeof navigator === "undefined"
+            ? null
+            : keyboardLockOf(navigator),
+      ),
+    [doc, keyboard],
+  );
   const subscribe = useCallback(
     (changed: () => void) => fullscreen?.watch(changed) ?? (() => {}),
     [fullscreen],

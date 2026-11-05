@@ -8,6 +8,21 @@ The game canvas is a fixed 1080×720 with a backing store of the same size, so o
 
 Scoped and approved in the 2026-11-05 charter run "高解析度畫布 + 全螢幕"; every decision below marked *(charter default)* is one Nick approved, with its reason.
 
+> **Amended 2026-11-06** by Nick, while the FS is still a work-order (slice 4 awaiting its browser
+> check): one owner decision, with a code change (I-ZAJMH-5). Numbered A16, after charter
+> defaults 1–15. **(A16) In fullscreen, Esc is the game's where the browser allows it.** Charter default
+> 11 rested on "a page cannot intercept Esc". It can, in Chrome and Edge: the Keyboard Lock API
+> (`navigator.keyboard.lock(['Escape'])`) gives Esc to the page while JS-initiated fullscreen is
+> active, in a secure context (localhost counts), and the player leaves by holding Esc about 2 s,
+> with Chrome's own hint on screen. Safari and Firefox have no Keyboard Lock and keep the first-Esc
+> exit. Sources: [MDN `Keyboard.lock()`](https://developer.mozilla.org/docs/Web/API/Keyboard/lock),
+> [Chrome: Keyboard Lock API](https://developer.chrome.com/docs/capabilities/web-apis/keyboard-lock),
+> [W3C/WICG Keyboard Lock §3.2, §4.1, §4.2](https://wicg.github.io/keyboard-lock/). The Chrome 131
+> keyboard-lock permission prompt was not launched
+> ([Chrome blog](https://developer.chrome.com/blog/keyboard-lock-pointer-lock-permission)). The
+> Facts line on Esc, R20, R21, User Story 22, the Esc acceptance criterion and the Edge States are
+> corrected in place; each says *(Amended 2026-11-06, A16 …)*.
+
 ## Terms
 
 Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Rendering terms* and, like those, stop at the pixel: none of them reaches the wire or a game rule. (*Screen position* there keeps its meaning: the projection's output.)
@@ -29,7 +44,7 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 - The server has no interest management (no view radius): what the view shows is purely a client matter. Distances, ranges, collisions and interact reach are world positions (server-authoritative; client checks such as `interactDistance` and `fieldPiles` `PILE_REACH` are world-space).
 - `/game` (`src/app/game/page.tsx`) sits under the root layout's `Header` and `VerifyEmailBanner`; the page wraps `PhaserGame` in a `min-h-screen` flex, so it is taller than the viewport and scrolls.
 - `dom: { createContainer: true }` carries the chat input's real `<input>` (FS-WJGFJ R26, the IME path for Chinese).
-- Keys bound in game: W A S D, 1 2 3, F (interact), Esc (close panels), Enter, Tab, T, Q, I, E, B, H, Shift. A browser exits fullscreen on Esc and a page cannot intercept it.
+- Keys bound in game: W A S D, 1 2 3, F (interact), Esc (close panels), Enter, Tab, T, Q, I, E, B, H, Shift. A browser exits fullscreen on Esc, and only the Keyboard Lock API (Chrome and Edge, JS-initiated fullscreen, secure context) lets a page have it. *(Amended 2026-11-06, A16; was: "and a page cannot intercept it".)*
 
 ## Requirements
 
@@ -71,8 +86,8 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 17. **Windowed** (the default on load): `Header` and `VerifyEmailBanner` stay; the game frame fills the viewport below them with **no page scroll** *(charter default 8)*.
 18. A **fullscreen button** sits in the game frame's top-right corner. In windowed it enters fullscreen; in fullscreen the same control reads as **縮小 / exit fullscreen** and returns to windowed. It is faded until hovered or focused, and is styled with the **web UI palette** (Bone & Soot, ADR-0025) *(charter default 9)*. It has an accessible name for each state and is keyboard-focusable.
 19. Fullscreen targets the **whole game frame** (canvas plus Phaser's DOM container), not the canvas element alone *(charter default 10: fullscreening only the canvas would lose the chat input and its IME)*. In fullscreen only the game is on screen.
-20. Leaving fullscreen by any route (the button, Esc, the browser's own UI, `F11`-style exits) returns the page to windowed and re-fits (C10). The button's state follows the document's real fullscreen state, not a local toggle.
-21. Esc in fullscreen is the browser's: the first Esc exits fullscreen *(charter default 11: pages can't intercept it)*. The game's own Esc handling is unchanged otherwise.
+20. Leaving fullscreen by any route (the button, Esc or held Esc (R21), the browser's own UI, `F11`-style exits) returns the page to windowed and re-fits (C10). The button's state follows the document's real fullscreen state, not a local toggle. *(Amended 2026-11-06, A16; was: "the button, Esc, the browser's own UI".)*
+21. In fullscreen entered by the button, Esc is the game's where the browser offers the Keyboard Lock API: the page locks `Escape` on entering and unlocks it on leaving by any route, so Esc does in fullscreen exactly what it does windowed (the hub's and the run's Esc menu, closing an open panel, cancelling the chat input), and the player leaves fullscreen by holding Esc, the browser's own exit and hint, which the page does not reimplement. Where there is no Keyboard Lock (Safari, Firefox) or the lock is refused, Esc is the browser's: the first Esc exits fullscreen. A refused lock shows nothing to the player and changes nothing else. The game's own Esc handling is unchanged. *(Amended 2026-11-06, A16; was: "Esc in fullscreen is the browser's: the first Esc exits fullscreen *(charter default 11: pages can't intercept it)*. The game's own Esc handling is unchanged otherwise.")*
 22. No keyboard shortcut for fullscreen in v1 *(charter default 12: F is interact; pick a key later)*. Clicking the button must not trigger any in-game action.
 23. Where the Fullscreen API is unavailable (e.g. iPhone Safari), the button is not rendered *(charter default 13)*. A refused `requestFullscreen` leaves the page windowed with no error shown to the player beyond the button staying in its windowed state.
 
@@ -104,7 +119,7 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 19. As a player, I want the chat input box to stay over the chat window, including in fullscreen, so that I can type (including in Chinese).
 20. As a player, I want a fullscreen button on the game frame, so that I can play with nothing else on screen.
 21. As a player in fullscreen, I want the same button to take me back to windowed, so that I can get to the site header.
-22. As a player, I want Esc to get me out of fullscreen, so that I'm never stuck in it.
+22. As a player, I want Esc to work in fullscreen as it does windowed, and a held Esc (or, where the browser has no keyboard lock, a single Esc) to get me out of fullscreen, so that the Esc menu is one key away and I'm never stuck. *(Amended 2026-11-06, A16; was: "As a player, I want Esc to get me out of fullscreen, so that I'm never stuck in it.")*
 23. As a player, I want the button out of the way until I reach for it, so that it doesn't cover the game.
 24. As a player on a browser without fullscreen, I don't want a button that does nothing.
 25. As a keyboard player, I want the fullscreen button focusable and named, so that I can use it without a mouse.
@@ -134,7 +149,8 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 - [ ] Canvas text rasterises at the render scale.
 - [ ] `/game` windowed: header and banner visible, game frame fills the rest, no page scroll.
 - [ ] The fullscreen button enters fullscreen on the game frame (canvas + DOM container) and, in fullscreen, returns to windowed.
-- [ ] Esc, the browser UI, or the button each leave fullscreen, and the button's state follows.
+- [ ] Esc (held, in Chrome and Edge; a single press elsewhere), the browser UI, or the button each leave fullscreen, and the button's state follows. *(Amended 2026-11-06, A16.)*
+- [ ] In Chrome fullscreen a single Esc opens the hub's and the run's Esc menu (closes an open panel first, cancels the chat input) and does not leave fullscreen; the lock is released on leaving by any route; no lock is asked where the API is missing, and a refused lock leaves today's behaviour. *(Amended 2026-11-06, A16.)*
 - [ ] Clicking the button triggers no in-game action; no keyboard shortcut is bound.
 - [ ] Where the Fullscreen API is unavailable, the button is not rendered.
 - [ ] The button wears the UI palette, is faded until hover/focus, and has an accessible name per state.
@@ -151,7 +167,10 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 - **Resize mid-run with a panel open**: the panel re-lays out to its anchor; its contents and state are untouched.
 - **Resize during a scene transition** (world_entered switching scenes): the incoming scene reads the current logical view on create.
 - **Fullscreen refused** (no user gesture, permission policy): stays windowed; button stays in its windowed state.
-- **Fullscreen exited by Esc or the browser**: `fullscreenchange` drives the state; page returns to windowed and re-fits.
+- **Fullscreen exited by Esc or the browser**: `fullscreenchange` drives the state; page returns to windowed and re-fits. The Escape lock is released on that change, whatever the route. *(Amended 2026-11-06, A16.)*
+- **Held Esc in Chrome fullscreen**: the first keydown reaches the game (the Esc menu opens), then the browser leaves fullscreen after about 2 s; the menu stays open in windowed. Accepted: the browser owns the hold. *(Amended 2026-11-06, A16.)*
+- **Keyboard lock missing or refused** (Safari, Firefox, an insecure origin, not the top-level page): fullscreen works as before and the first Esc leaves it; nothing is shown or logged as an error. *(Amended 2026-11-06, A16.)*
+- **Fullscreen not entered by the button** (F11, the browser menu): no lock; the browser's Esc as before (Keyboard Lock §4.2). *(Amended 2026-11-06, A16.)*
 - **Fullscreen while the chat input is focused**: the input stays in the DOM container and keeps focus or regains it on click; IME composition works.
 - **Fullscreen button vs top-right HUD**: if the button covers an anchored top-right widget at any logical width, escalate (charter escalation trigger).
 - **Frame-rate drop at render scale 2**: escalate (charter default 14); no quality setting is added in v1.
