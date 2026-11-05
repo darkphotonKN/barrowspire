@@ -134,6 +134,11 @@ type fakeReleaser struct {
 	gotListingID uuid.UUID
 	gotBidID     uuid.UUID
 	gotCtxErr    error
+
+	// waits counts the releases a caller started and then waited on, a subset of
+	// calls; gotMaxWait is how long the last one was willing to wait
+	waits      int
+	gotMaxWait time.Duration
 }
 
 func (f *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uuid.UUID) error {
@@ -142,6 +147,12 @@ func (f *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uu
 	f.gotBidID = bidID
 	f.gotCtxErr = ctx.Err()
 	return f.err
+}
+
+func (f *fakeReleaser) ReleaseHoldAndWait(ctx context.Context, listingID, bidID uuid.UUID, maxWait time.Duration) error {
+	f.waits++
+	f.gotMaxWait = maxWait
+	return f.StartReleaseHold(ctx, listingID, bidID)
 }
 
 // activeListing builds a published listing ready to receive bids.
@@ -772,4 +783,44 @@ func TestPlaceBidUC_SellerOnOwnListing_HoldsNoGold(t *testing.T) {
 // transient would answer the seller with a 503.
 func TestBidRejected_SellerCannotBid(t *testing.T) {
 	assert.True(t, bidRejected(fmt.Errorf("wrapped: %w", listing.ErrSellerCannotBid)))
+}
+
+// A refused bid answers only once its hold is back, so the bidder can never resend
+// the same key onto a hold that a release is about to take away: that resend would
+// be recorded, and the release landing after it would leave a leading bid with no
+// gold behind it (ADR-0049). The wait is bounded by releaseWait.
+func TestPlaceBid_Refused_WaitsForTheReleaseBeforeAnswering(t *testing.T) {
+	l := activeListing(t, 100)
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID:      l.Snapshot().ID,
+		MemberID:       uuid.New(),
+		Amount:         50, // under the start price
+		IdempotencyKey: uuid.New(),
+		Now:            time.Now(),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrBidTooLow)
+	assert.Equal(t, 1, release.waits, "the refusal waits on the release")
+	assert.Equal(t, releaseWait, release.gotMaxWait)
+	assert.Equal(t, wallet.gotBidID, release.gotBidID)
+}
+
+// A release still running when the wait runs out carries on in the background; the
+// bidder still hears why their bid failed, not how the cleanup is going.
+func TestPlaceBid_ReleaseStillPending_StillReportsTheRefusal(t *testing.T) {
+	l := activeListing(t, 100)
+	release := &fakeReleaser{err: fmt.Errorf("await release: %w", ErrHoldReleasePending)}
+
+	err := NewPlaceBidUC(&fakeRepo{listing: l}, &fakeWallet{}, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID,
+		MemberID:  uuid.New(),
+		Amount:    50,
+		Now:       time.Now(),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrBidTooLow)
+	assert.NotErrorIs(t, err, ErrHoldReleasePending)
+	assert.Equal(t, 1, release.waits)
 }
