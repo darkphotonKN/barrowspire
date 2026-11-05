@@ -1,6 +1,6 @@
 ---
 id: I-ZAJMH-5
-status: open
+status: in-progress
 implements: FS-ZAJMH
 blocked_by: [I-ZAJMH-4]
 labels: [ready-for-agent]
@@ -28,17 +28,17 @@ Expected files: `src/components/fullscreen.ts` (+ test), `src/components/Fullscr
 
 ## Acceptance Criteria
 
-- [ ] Entering fullscreen through the button asks for an `Escape` lock when the API exists.
-- [ ] Leaving fullscreen by any route (standard or webkit change event) releases the lock.
-- [ ] No lock is asked where the API is missing; fullscreen works as before.
-- [ ] A rejected lock is tolerated: fullscreen stays on, nothing thrown, nothing shown.
-- [ ] A refused fullscreen asks no lock (or releases it).
-- [ ] Esc passes `keepFromGame` untouched; the chat input's Esc handling is unchanged.
-- [ ] Headless Chrome: `navigator.keyboard.lock` exists and resolves in fullscreen (what headless can show).
+- [x] Entering fullscreen through the button asks for an `Escape` lock when the API exists.
+- [x] Leaving fullscreen by any route (standard or webkit change event) releases the lock.
+- [x] No lock is asked where the API is missing; fullscreen works as before.
+- [x] A rejected lock is tolerated: fullscreen stays on, nothing thrown, nothing shown.
+- [x] A refused fullscreen asks no lock (or releases it).
+- [x] Esc passes `keepFromGame` untouched; the chat input's Esc handling is unchanged.
+- [x] Headless Chrome: `navigator.keyboard.lock` exists and resolves in fullscreen (what headless can show).
 - [ ] Browser check (Nick, real Chrome): in fullscreen a single Esc opens the hub's and the run's
       Esc menu and does not leave fullscreen; holding Esc ~2 s leaves it and the button follows;
       Safari still leaves on the first Esc.
-- [ ] `npx tsc --noEmit`, `npx vitest run`, `npm run lint`, `npm run lint:fence` green.
+- [x] `npx tsc --noEmit`, `npx vitest run`, `npm run lint`, `npm run lint:fence` green.
 
 ## Blocked By
 
@@ -55,3 +55,14 @@ fullscreen", "Keyboard lock missing or refused", "Fullscreen not entered by the 
   `lock(['Escape'])`; a `fullscreenchange` (and `webkitfullscreenchange`) out calls `unlock()`;
   no keyboard means no call; a rejected lock still leaves fullscreen active and does not throw.
 - GREEN: inject the keyboard into `fullscreenOf`; the button passes `navigator.keyboard`.
+
+## Notes (2026-11-06)
+
+- Order: `requestFullscreen()` first, then `lock(['Escape'])` once fullscreen is active, as
+  Chrome's guide shows it; a refused request never asks a lock. (The W3C/WICG draft §4.1
+  suggests locking first; both orders resolve in headless Chrome 156.)
+- Headless Chrome 156 with the bundled module: `keyboardLockOf(navigator)` finds the API,
+  `lock(['Escape'])` resolves after the frame goes fullscreen, `unlock()` runs on leaving by the
+  button and by `document.exitFullscreen()`, no console errors. Headless cannot show whether a
+  real Esc stays in the page: synthetic key events skip the browser's own fullscreen exit.
+- The field scene has no Esc menu (FS-HRH2J R4): there Esc closes the gear overlay, as windowed.
