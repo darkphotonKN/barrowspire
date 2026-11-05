@@ -80,7 +80,8 @@ func main() {
 	workersWg := sync.WaitGroup{}
 	// add the number of workers
 	workersWg.Add(1)
-	outboxWorker := commonoutbox.NewOutboxWorker(time.Minute, 20, outboxServ, broker.NewAmqpPublisher(ch), &workersWg)
+	// polled every second: players wait on these events, not a background job
+	outboxWorker := commonoutbox.NewOutboxWorker(time.Second, 20, outboxServ, broker.NewAmqpPublisher(ch), &workersWg)
 
 	// WARN: we pass context.Background() here to gracefully stop workers with
 	// with an explicit cancel , take care not to remove that in main.go here
