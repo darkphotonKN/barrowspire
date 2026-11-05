@@ -530,7 +530,8 @@ func mapError(ctx context.Context, err error) error {
 
 	case errors.Is(err, listing.ErrNotBidOwner) ||
 		errors.Is(err, listing.ErrNotSeller) ||
-		errors.Is(err, listing.ErrSellerCannotBuyout):
+		errors.Is(err, listing.ErrSellerCannotBuyout) ||
+		errors.Is(err, listing.ErrSellerCannotBid):
 		code = codes.PermissionDenied
 		msg = "permission denied"
 
