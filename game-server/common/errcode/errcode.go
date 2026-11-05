@@ -213,6 +213,23 @@ const (
 	// ListingLimitReached: the seller already has 20 items listed or settling.
 	// Decided by items-service on reserve. FS-XEDFF Req 5.
 	ListingLimitReached Code = "LISTING_LIMIT_REACHED"
+
+	// BidTooLow: the bid is below the listing's start price with no contending
+	// bid, or not above the contending bid. The client re-reads the listing for
+	// the fresh minimum. Decided by marketplace-service. Added for FS-V74WE (A
+	// refused bid says why).
+	BidTooLow Code = "BID_TOO_LOW"
+
+	// BidAtOrAboveBuyout: the bid is at or above the listing's buyout price, so
+	// it must be a buyout instead. Decided by marketplace-service. Added for
+	// FS-V74WE (A refused bid says why).
+	BidAtOrAboveBuyout Code = "BID_AT_OR_ABOVE_BUYOUT"
+
+	// AlreadyLeading: the member's own bid is already the listing's leading
+	// bid, so another would only raise the price against themselves. No gold
+	// is held for it; buying out is still allowed (ADR-0054). Decided by
+	// marketplace-service. Added for FS-72KT8 (No bidding against your own lead).
+	AlreadyLeading Code = "ALREADY_LEADING"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -263,4 +280,11 @@ var domainCodes = map[Code]struct{}{
 	// FS-XEDFF
 	ListingDurationOutOfRange: {},
 	ListingLimitReached:       {},
+
+	// FS-V74WE
+	BidTooLow:          {},
+	BidAtOrAboveBuyout: {},
+
+	// FS-72KT8
+	AlreadyLeading: {},
 }

@@ -327,13 +327,20 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 	// redelivery both resend the same placement, and without this the member
 	// ends up outbidding themselves. The key is the member's own: another
 	// member's bid carrying the same key is not this one (ADR-0027).
-	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(memberID, idempotencyKey) != nil {
+	if l.HasBidByKey(memberID, idempotencyKey) {
 		return nil
 	}
 
 	// After both replay checks, so a resend of a bid recorded before the member
 	// reached the cap is still answered as that bid (ADR-0052).
 	if err := l.WithinBidWithdrawalCap(memberID); err != nil {
+		return err
+	}
+
+	// After the cap, so a capped leader keeps hearing about the cap, and before
+	// the price rules, so a leader sending any amount is told they lead (ADR-0054,
+	// FS-72KT8 Req 4).
+	if err := l.NotLeading(memberID); err != nil {
 		return err
 	}
 
@@ -396,11 +403,34 @@ func (l *Listing) WithinBidWithdrawalCap(memberID uuid.UUID) error {
 	return nil
 }
 
+// NotLeading reports whether memberID may bid on this listing without bidding
+// against themselves: refused once the contending bid (the highest WINNING or
+// PENDING, the one the price rules compare against) is theirs, however they came
+// to lead it, ADR-0028's promotion included (ADR-0054, FS-72KT8 Req 1-3, 9).
+//
+// Read-only: a caller about to hold gold for a bid asks it first, and
+// PlaceBidWithID applies it again under the lock. It limits only bidding, so
+// CanBuyout and Buyout never ask it.
+func (l *Listing) NotLeading(memberID uuid.UUID) error {
+	if contender := l.findContendingBid(); contender != nil && contender.memberID == memberID {
+		return ErrAlreadyLeading
+	}
+
+	return nil
+}
+
 // HasBid reports whether this listing carries the given bid. Callers that mint a
 // bid id up front use it to tell a recorded bid from one that was deduplicated
 // away as a replay.
 func (l *Listing) HasBid(bidID uuid.UUID) bool {
 	return l.findBidByID(bidID) != nil
+}
+
+// HasBidByKey reports whether memberID already has a bid on this listing under
+// idempotencyKey, which PlaceBidWithID answers as that bid's replay. No key never
+// matches: an unkeyed request is always a new bid.
+func (l *Listing) HasBidByKey(memberID, idempotencyKey uuid.UUID) bool {
+	return idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(memberID, idempotencyKey) != nil
 }
 
 // HasBuyoutBy reports whether memberID has already bought this listing out. A
