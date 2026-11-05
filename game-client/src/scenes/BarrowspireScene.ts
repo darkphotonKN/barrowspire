@@ -158,6 +158,16 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
+import {
+  FULLSCREEN_BUTTON_CLEARANCE,
+  anchorAt,
+  boundCamera,
+  crispen,
+  followWith,
+  relayoutOn,
+  viewport,
+  type Placement,
+} from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
 const ROOF_EAVE = 5;
@@ -238,6 +248,15 @@ const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + 6;
  * share the corner and are never up together: the card is down whenever the button is up.
  */
 const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
+/**
+ * The escaped count and the floor under it, at the top-right corner (FS-ZAJMH R12), stepped down
+ * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05).
+ */
+export const TOP_RIGHT_HUD: Placement = {
+  anchor: "top-right",
+  dx: -10,
+  dy: 10 + FULLSCREEN_BUTTON_CLEARANCE,
+};
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label. Markers draw above the light-map and vignette (FS-2325V §C.9). The
@@ -466,6 +485,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private settlementRecord?: SettlementRecord;
   /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
+  /** What the card shows, to build it again at the centre when the logical view changes. */
+  private resolvedCardView?: Extract<ResolvedView, { kind: "dead" }>;
   /** An escaped player with a teammate still in play, not yet watching: Watch stands in the row. */
   private canWatch = false;
   /**
@@ -504,6 +525,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc. */
   private menuChoices?: MenuKeys;
+  /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
+  private moveMenu?: (origin: { x: number; y: number }) => void;
   /** The state the open menu's rows were built for; a state that differs takes it down (req 6). */
   private menuFor?: MenuState;
   /** A `forfeit_run` is on its way and unanswered: Fall is dimmed until a reply or the death (req 3). */
@@ -946,11 +969,10 @@ export class BarrowspireScene extends Phaser.Scene {
       return;
     }
 
-    const cam = this.cameras.main;
     const panelW = 260;
     const panelH = 300;
-    const x = cam.width / 2;
-    const y = cam.height / 2;
+    const x = viewport.width / 2;
+    const y = viewport.height / 2;
 
     const children: Phaser.GameObjects.GameObject[] = [];
 
@@ -1084,13 +1106,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** The record's place: centred across, standing just over the bottom-centre row. */
   private recordAnchor(): { x: number; bottom: number } {
-    const cam = this.cameras.main;
-    return { x: cam.centerX, bottom: this.rowY() - BUTTON_H / 2 - RECORD_ROW_GAP };
+    return { x: viewport.centerX, bottom: this.rowY() - BUTTON_H / 2 - RECORD_ROW_GAP };
   }
 
   /** The bottom-centre row's line: the buttons' centre y. */
   private rowY(): number {
-    return this.cameras.main.height - RESOLVED_ROW_MARGIN - RESOLVED_ROW_LIFT - BUTTON_H / 2;
+    return viewport.height - RESOLVED_ROW_MARGIN - RESOLVED_ROW_LIFT - BUTTON_H / 2;
   }
 
   /**
@@ -1115,12 +1136,11 @@ export class BarrowspireScene extends Phaser.Scene {
       leave: this.leaveSpec,
       settlement: this.settlementSpec,
     };
-    const cam = this.cameras.main;
     const y = this.rowY();
     const buttons = names.map((name, i) =>
       this.hudButton(
         specs[name],
-        { x: rowSlotX(i, names.length, cam.centerX, BUTTON_W, BUTTON_GAP), y },
+        { x: rowSlotX(i, names.length, viewport.centerX, BUTTON_W, BUTTON_GAP), y },
         RESOLVED_ROW_DEPTH,
       ),
     );
@@ -2774,7 +2794,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // 相機跟隨玩家
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    followWith(this.cameras.main, this.player);
   }
 
   private defaultCursorCSS = "";
@@ -2808,7 +2828,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // margin of dark. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(this.mapWidth, this.mapHeight, CAMERA_MARGIN);
     this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
-    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(this.cameras.main, bounds);
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
@@ -2879,6 +2899,54 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // torch-lit barrow atmosphere — pure decoration, no game state
     this.createAtmosphere();
+
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
+  }
+
+  /**
+   * The logical view changed (FS-ZAJMH R13): every widget that keeps to the right or the centre
+   * goes back to its anchor, the open ones included, their state untouched. The bars, the level
+   * bar, the chat window and the party frames and panel keep to the left and the bottom, which a
+   * width change does not move; the gear overlay follows Phaser's resize itself; a passing notice
+   * is gone in moments and stays where it was said.
+   */
+  private relayoutHud(): void {
+    const corner = anchorAt(TOP_RIGHT_HUD);
+    this.escapedCountText?.setX(corner.x);
+    this.floorText?.setX(corner.x);
+    this.spectateHud?.watching.setX(viewport.centerX);
+    this.spectateHud?.hint.setX(viewport.centerX);
+    this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
+    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
+    this.abilityHud?.relayout();
+    this.invitePrompt?.relayout();
+    this.containerView?.relayout();
+    this.settlementRecord?.relayout(this.recordAnchor());
+    this.relayoutFloorVeil();
+    // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
+    crispen([
+      this.escapedCountText,
+      this.floorText,
+      this.spectateHud?.watching,
+      this.spectateHud?.hint,
+      this.controlsPanel,
+    ]);
+    // the bottom-centre row, built again about the new centre
+    this.row.names = "";
+    this.syncRow();
+    if (this.resolvedCard && this.resolvedCardView) {
+      const view = this.resolvedCardView;
+      this.resolvedCard.destroy();
+      this.resolvedCard = undefined;
+      this.leaveButton = undefined;
+      this.showResolvedCard(view);
+    } else if (this.leaveButton) {
+      // the dead spectator's corner button
+      this.leaveButton.destroy();
+      this.leaveButton = undefined;
+      this.placeLeaveInCorner();
+    }
   }
 
   /**
@@ -2978,7 +3046,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Scene-level pointer tracking for satchel hover (bypasses broken Phaser scrollFactor input)
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      this.containerView.pointerMove(pointer.x, pointer.y);
+      const at = viewport.toLogical(pointer);
+      this.containerView.pointerMove(at.x, at.y);
     });
 
     // Disable browser right-click menu for equipment panel context menus
@@ -2989,17 +3058,19 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menu) return;
       // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
       if (this.combat.aiming) return;
+      // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+      const at = viewport.toLogical(pointer);
       // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
       // clear middle band answers as with the overlay closed (FS-HRH2J R8)
-      if (this.equipment?.covers(pointer.x, pointer.y)) return;
+      if (this.equipment?.covers(at.x, at.y)) return;
       // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-      if (this.chatWindow?.covers(pointer.x, pointer.y)) return;
+      if (this.chatWindow?.covers(at.x, at.y)) return;
       // and one on the open party panel is the panel's (FS-R82NV R28)
-      if (this.partyPanel?.covers(pointer.x, pointer.y)) return;
+      if (this.partyPanel?.covers(at.x, at.y)) return;
       // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-      if (this.invitePrompt?.covers(pointer.x, pointer.y)) return;
+      if (this.invitePrompt?.covers(at.x, at.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
-      if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
+      if (this.containerView.pointerDown(at.x, at.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
@@ -3421,6 +3492,15 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /** The climb's dark and its card, over the whole view and about its centre again (FS-ZAJMH R13). */
+  private relayoutFloorVeil(): void {
+    const [veil, ...card] = this.floorVeil;
+    if (!veil?.active) return;
+    (veil as Phaser.GameObjects.Rectangle).setSize(viewport.width, viewport.height);
+    for (const obj of card) (obj as Phaser.GameObjects.Text | Phaser.GameObjects.Graphics).setX(viewport.centerX);
+    crispen(card);
+  }
+
   /**
    * The climb's transition (FS-F6F88 req 32): the view drops to dark over the floor just built,
    * then comes back up with the floor card. Presentation only: state has already applied and
@@ -3431,12 +3511,11 @@ export class BarrowspireScene extends Phaser.Scene {
     if (state.floor === undefined || state.floor_count === undefined) return;
     this.floorVeil.forEach((obj) => obj.destroy());
 
-    const cam = this.cameras.main;
     const { title, line } = floorCard({ floor: state.floor, floor_count: state.floor_count });
-    const veil = this.add.rectangle(0, 0, cam.width, cam.height, palette.inkDeep, 1);
+    const veil = this.add.rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1);
     veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
 
-    const heading = this.add.text(cam.centerX, cam.centerY - 14, title, {
+    const heading = this.add.text(viewport.centerX, viewport.centerY - 14, title, {
       fontFamily: CANVAS_FONT.body,
       fontSize: "26px",
       color: toCss(palette.hudText),
@@ -3444,8 +3523,9 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     const rule = this.add.graphics();
     rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(cam.centerX - 90, cam.centerY + 8, cam.centerX + 90, cam.centerY + 8);
-    const subtitle = this.add.text(cam.centerX, cam.centerY + 26, line, {
+    rule.lineBetween(-90, viewport.centerY + 8, 90, viewport.centerY + 8);
+    rule.setX(viewport.centerX);
+    const subtitle = this.add.text(viewport.centerX, viewport.centerY + 26, line, {
       fontFamily: CANVAS_FONT.body,
       fontSize: "15px",
       fontStyle: "italic",
@@ -4026,9 +4106,10 @@ export class BarrowspireScene extends Phaser.Scene {
     if (showsPositionReadout()) this.createPositionReadout();
 
     // Escaped players count (top-right)
+    const corner = anchorAt(TOP_RIGHT_HUD);
     this.escapedCountText = this.add.text(
-      this.cameras.main.width - 10,
-      10,
+      corner.x,
+      corner.y,
       "Escaped: 0",
       {
         fontFamily: CANVAS_FONT.body,
@@ -4044,7 +4125,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // The party's floor (FS-F6F88 req 29): neutral HUD, under the escaped count
     this.floorText = this.add.text(
-      this.cameras.main.width - 10,
+      corner.x,
       this.escapedCountText.y + this.escapedCountText.height + 6,
       "",
       {
@@ -4108,7 +4189,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showNotification(message: string, color: string): void {
     // Create notification text at top center of screen
     const notification = this.add.text(
-      this.cameras.main.centerX,
+      viewport.centerX,
       100,
       message,
       {
@@ -4154,11 +4235,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * before their first state.
    */
   private showResourceBars(state: ClientGameState): void {
-    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    const bars = anchorAt({ anchor: "bottom-left", dx: RESOURCE_HUD_X, dy: -RESOURCE_HUD_MARGIN });
+    this.resourceHud ??= new ResourceHud(this, bars.x, bars.y);
     this.resourceHud.show(hudBars(state));
     this.chatWindow?.setBottom(this.resourceHud.topEdge());
     // the potion cell is up exactly when the bars are (FS-P9G8R R24)
-    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, bars.y);
     this.potionHud.show(potionCell(state));
   }
 
@@ -4170,12 +4252,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastGameState;
     if (!state) return;
-    const cam = this.cameras.main;
-    this.abilityHud ??= new AbilityHud(
-      this,
-      cam.width - ABILITY_CARD_MARGIN,
-      cam.height - ABILITY_CARD_MARGIN,
-    );
+    this.abilityHud ??= new AbilityHud(this, {
+      anchor: "bottom-right",
+      dx: -ABILITY_CARD_MARGIN,
+      dy: -ABILITY_CARD_MARGIN,
+    });
     this.abilityHud.show(
       abilityCard(state, {
         lockedOut: this.combat.lockedOut,
@@ -4261,7 +4342,6 @@ export class BarrowspireScene extends Phaser.Scene {
    * goes on behind it, visibly. The camera stays where it is until a button says otherwise.
    */
   private showResolvedCard(card: Extract<ResolvedView, { kind: "dead" }>): void {
-    const cam = this.cameras.main;
     const cardW = 420;
     const cardH = 200;
     const panel = this.add.graphics();
@@ -4290,11 +4370,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // one row of buttons, centred: Watch and Leave (req 2)
     const buttons: ButtonSpec[] = [this.watchSpec, this.leaveSpec];
-    const made = buttons.map((button, i) => this.cardButton(cam, button, i, buttons.length));
+    const made = buttons.map((button, i) => this.cardButton(button, i, buttons.length));
 
     this.resolvedKind = card.kind;
+    this.resolvedCardView = card;
     this.resolvedCard = this.add
-      .container(cam.centerX, cam.centerY, [panel, title, body, ...made.flatMap((b) => b.parts)])
+      .container(viewport.centerX, viewport.centerY, [panel, title, body, ...made.flatMap((b) => b.parts)])
       .setScrollFactor(0)
       .setDepth(RESOLVED_CARD_DEPTH);
     // hit areas live outside containers so pointer events work reliably; they go with the card
@@ -4310,14 +4391,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * Buttons sit in one row, `index` of `count`, under the card's copy.
    */
   private cardButton(
-    cam: Phaser.Cameras.Scene2D.Camera,
     button: ButtonSpec,
     index: number,
     count: number,
   ): WorldButton {
     const x = (index - (count - 1) / 2) * (BUTTON_W + BUTTON_GAP);
     const y = 50;
-    return this.worldButton(button, { x, y }, { x: cam.centerX, y: cam.centerY }, RESOLVED_CARD_DEPTH + 1);
+    return this.worldButton(button, { x, y }, { x: viewport.centerX, y: viewport.centerY }, RESOLVED_CARD_DEPTH + 1);
   }
 
   /**
@@ -4549,19 +4629,19 @@ export class BarrowspireScene extends Phaser.Scene {
     },
   ): void {
     this.closeMenu();
-    const cam = this.cameras.main;
-    const { container, keys } = showMenuPanel(this, {
+    const { container, keys, moveTo } = showMenuPanel(this, {
       line,
       choices,
       actions: spec.actions,
       enabled: spec.enabled,
       close: () => this.closeMenu(),
-      origin: { x: cam.centerX, y: cam.centerY },
+      origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
     });
     this.menuChoices = keys;
     this.menu = container;
+    this.moveMenu = moveTo;
   }
 
   /** The menu or its confirm goes down, hit areas with it; nothing is sent (req 1, 3). */
@@ -4569,6 +4649,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.menu?.destroy();
     this.menu = undefined;
     this.menuChoices = undefined;
+    this.moveMenu = undefined;
     this.menuFor = undefined;
   }
 
@@ -4578,11 +4659,11 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private placeLeaveInCorner(): void {
     if (this.resolvedKind !== "dead" || this.leaveButton) return;
-    const cam = this.cameras.main;
-    const at = {
-      x: cam.width - LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
-      y: cam.height - LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
-    };
+    const at = anchorAt({
+      anchor: "bottom-right",
+      dx: -LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
+      dy: -LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
+    });
     this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)
@@ -4630,11 +4711,11 @@ export class BarrowspireScene extends Phaser.Scene {
     const watched = current ?? inPlay.find((w) => w.id === nextWatched(inPlay, this.watchedPlayerId));
     if (!watched) return;
     this.watchedPlayerId = watched.id;
-    // startFollow snaps the camera onto its target each time it is called, so it is called
+    // followWith snaps the camera onto its target each time it is called, so it is called
     // once per sprite: on a new watched player, or on theirs appearing after a tick without it
     const sprite = this.otherPlayers.get(watched.id);
     if (sprite && sprite !== this.followedSprite) {
-      this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+      followWith(this.cameras.main, sprite);
       this.followedSprite = sprite;
     }
     this.showSpectateHud(watched.username);
@@ -4654,7 +4735,7 @@ export class BarrowspireScene extends Phaser.Scene {
       backgroundColor: toCss(palette.hudPanel),
       padding: { x: 10, y: 5 },
     };
-    const x = this.cameras.main.centerX;
+    const x = viewport.centerX;
     const watchingText = this.add
       .text(x, SPECTATE_HUD_Y, watching, style)
       .setOrigin(0.5, 0)

@@ -39,6 +39,7 @@ import { carvedPanel } from "./carvedPanel";
 import { itemTipRow } from "./gearOverlayLayout";
 import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
 import { drawWaxSeal } from "./MailboxEnvelope";
+import { viewport } from "@/render/viewport";
 import {
   BODY_SCROLL_GAP,
   BODY_SCROLL_GRAB,
@@ -143,7 +144,7 @@ export class LetterPanel {
         this.draw();
     });
     scene.input.on("wheel", this.onWheel, this);
-    scene.input.on("pointermove", this.onDrag, this);
+    scene.input.on("pointermove", this.onMove, this);
     scene.input.on("pointerup", this.onRelease, this);
     this.draw();
   }
@@ -151,9 +152,14 @@ export class LetterPanel {
   destroy(): void {
     this.unsubscribe();
     this.scene.input?.off("wheel", this.onWheel, this);
-    this.scene.input?.off("pointermove", this.onDrag, this);
+    this.scene.input?.off("pointermove", this.onMove, this);
     this.scene.input?.off("pointerup", this.onRelease, this);
     this.clear();
+  }
+
+  /** The logical view changed: the open panel is drawn again, centred in it (FS-ZAJMH R13). */
+  relayout(): void {
+    this.draw();
   }
 
   /** Whether a screen point lies on the open panel: a wheel or a press there is the panel's alone. */
@@ -209,10 +215,7 @@ export class LetterPanel {
       this.bodyScroll = 0;
     }
     const detail = selected ? letterDetail(selected, this.now()) : undefined;
-    const frame = letterPanelFrame(
-      this.scene.cameras.main,
-      detail?.enclosed.length ?? 0,
-    );
+    const frame = letterPanelFrame(viewport, detail?.enclosed.length ?? 0);
     this.frame = frame;
 
     // the panel takes every press on it, so nothing in the world behind answers one
@@ -430,7 +433,9 @@ export class LetterPanel {
         height: track.height,
       })
         .setInteractive({ useHandCursor: true })
-        .on("pointerdown", (pointer: { y: number }) => this.grabBar(pointer.y));
+        .on("pointerdown", (pointer: { x: number; y: number }) =>
+          this.grabBar(viewport.toLogical(pointer).y),
+        );
 
     if (frame.enclosed) this.drawEnclosed(g, detail, take);
   }
@@ -481,7 +486,12 @@ export class LetterPanel {
     this.onDrag({ y });
   }
 
-  /** While the thumb is held, the body follows the pointer up and down, wherever it wanders. */
+  /** Phaser's pointer.x/y are backing px; the panel is laid out in logical units (FS-ZAJMH R15). */
+  private onMove(pointer: { x: number; y: number }): void {
+    this.onDrag(viewport.toLogical(pointer));
+  }
+
+  /** While the thumb is held, the body follows the pointer (logical units) up and down, wherever it wanders. */
   private onDrag(pointer: { y: number }): void {
     const body = this.body;
     if (this.grabbed === undefined || !body) return;
@@ -659,12 +669,12 @@ export class LetterPanel {
     this.zone(r)
       .setInteractive()
       .on("pointerover", (pointer: { x: number; y: number }) =>
-        this.showTip(item, pointer),
+        this.showTip(item, viewport.toLogical(pointer)),
       )
       .on("pointerout", () => this.hideTip());
   }
 
-  /** The bag's item tip, built from the stored snapshot, beside the pointer (R37). */
+  /** The bag's item tip, built from the stored snapshot, beside the pointer (logical units, R37). */
   private showTip(
     item: Extract<EnclosureSlot, { kind: "item" }>["item"],
     pointer: { x: number; y: number },
@@ -672,7 +682,7 @@ export class LetterPanel {
     this.hideTip();
     const tip = buildItemTip(this.scene, this.view(item));
     tip.container.setDepth(TIP_DEPTH).setScrollFactor(0);
-    const [at] = itemTipRow([tip], pointer, this.scene.cameras.main);
+    const [at] = itemTipRow([tip], pointer, viewport);
     tip.container.setPosition(at.x, at.y);
     this.tip = tip;
   }
@@ -696,7 +706,8 @@ export class LetterPanel {
   ): void {
     const frame = this.frame;
     if (!frame || !dy) return;
-    if (within(frame.list, pointer.x, pointer.y)) {
+    const at = viewport.toLogical(pointer);
+    if (within(frame.list, at.x, at.y)) {
       const letters = this.deps.store.getState().letters.length;
       const next = scrolledList(
         this.listOffset,
@@ -707,7 +718,7 @@ export class LetterPanel {
       if (next === this.listOffset) return;
       this.listOffset = next;
       this.draw();
-    } else if (within(frame.body, pointer.x, pointer.y)) {
+    } else if (within(frame.body, at.x, at.y)) {
       this.scrollBody(Math.sign(dy) * BODY_STEP);
     }
   }

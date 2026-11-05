@@ -64,6 +64,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
+import { anchorAt, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
@@ -213,7 +214,7 @@ export class FieldScene extends Phaser.Scene {
 
     const camera = this.cameras.main;
     const bounds = projectedBounds(width, height, CAMERA_MARGIN);
-    camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(camera, bounds);
 
     ensureCharacterTextures(this);
     this.art = registerArt(this);
@@ -249,9 +250,27 @@ export class FieldScene extends Phaser.Scene {
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+  }
+
+  /**
+   * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
+   * its anchor, open panels included. The bars, the chat window and the party frames and panel
+   * keep to the left and the bottom, which a width change does not move; the gear overlay follows
+   * Phaser's resize itself.
+   */
+  private relayoutHud(): void {
+    this.abilityHud?.relayout();
+    this.satchel?.relayout();
+    this.invitePrompt?.relayout();
+    if (this.fallenView) {
+      this.showFallen();
+      this.drainFallen(this.time.now);
+    }
   }
 
   /** The field's answer to leaving: a refusal keeps the player here and says why. */
@@ -379,7 +398,11 @@ export class FieldScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-ESC", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
-    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => this.satchel?.pointerMove(pointer.x, pointer.y));
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+      const at = viewport.toLogical(pointer);
+      this.satchel?.pointerMove(at.x, at.y);
+    });
   }
 
   /**
@@ -556,8 +579,8 @@ export class FieldScene extends Phaser.Scene {
    * no leave button to share the card's corner.
    */
   private showClassHud(state: ClientGameState): void {
-    const { height } = this.cameras.main;
-    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, height - HUD_MARGIN);
+    const bars = anchorAt({ anchor: "bottom-left", dx: RESOURCE_HUD_X, dy: -HUD_MARGIN });
+    this.resourceHud ??= new ResourceHud(this, bars.x, bars.y);
     this.resourceHud.show(hudBars(state));
     this.chatWindow?.setBottom(this.resourceHud.topEdge());
     this.showAbilityCard();
@@ -567,8 +590,7 @@ export class FieldScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastState;
     if (!state) return;
-    const { width, height } = this.cameras.main;
-    this.abilityHud ??= new AbilityHud(this, width - HUD_MARGIN, height - HUD_MARGIN);
+    this.abilityHud ??= new AbilityHud(this, { anchor: "bottom-right", dx: -HUD_MARGIN, dy: -HUD_MARGIN });
     this.abilityHud.show(abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }));
   }
 
@@ -611,8 +633,7 @@ export class FieldScene extends Phaser.Scene {
    */
   private showFallen(): void {
     this.hideFallen();
-    const { width, height } = this.cameras.main;
-    const f = fallenFrame(width, height);
+    const f = fallenFrame(viewport.width, viewport.height);
     const panel = this.add.graphics().setScrollFactor(0).setDepth(FALLEN_DEPTH);
     panel.fillStyle(BARROW_HEX.charcoal, 1);
     panel.fillRect(f.panel.x, f.panel.y, f.panel.width, f.panel.height);
@@ -665,7 +686,7 @@ export class FieldScene extends Phaser.Scene {
 
   private keepCameraOn(sprite: Phaser.GameObjects.Container): void {
     if (sprite === this.followedSprite) return;
-    this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+    followWith(this.cameras.main, sprite);
     this.followedSprite = sprite;
   }
 
@@ -828,9 +849,8 @@ export class FieldScene extends Phaser.Scene {
 
   /** A line said in passing, in the neutral HUD register. */
   private notice(text: string): void {
-    const { width } = this.cameras.main;
     const line = this.add
-      .text(width / 2, NOTICE_Y, text, {
+      .text(viewport.centerX, NOTICE_Y, text, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(BARROW_HEX.vellum),

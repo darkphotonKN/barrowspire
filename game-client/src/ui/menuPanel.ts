@@ -10,6 +10,7 @@
  */
 
 import type Phaser from "phaser";
+import { crispen } from "@/render/viewport";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 
 /** The popup band: menus and dialogues sit here, over the HUD (1000) and the result card (1500). */
@@ -49,8 +50,14 @@ export interface MenuChoice {
   register: "actionable" | "cancel";
 }
 
-/** A drawn row, which can redraw its colour when whether it can be pressed changes. */
-export type MenuOption = Phaser.GameObjects.Container & { retone(): void };
+/**
+ * A drawn row, which can redraw its colour when whether it can be pressed changes, and stand its
+ * hit area under the label again once the box has moved to `origin` (FS-ZAJMH R13).
+ */
+export type MenuOption = Phaser.GameObjects.Container & {
+  retone(): void;
+  place(origin: { x: number; y: number }): void;
+};
 
 /** The open menu's keys: a number for that actionable row, Enter for the first, Esc back. */
 export interface MenuKeys {
@@ -101,6 +108,7 @@ export function menuOption(scene: MenuStage, spec: MenuOptionSpec): MenuOption {
     .setOrigin(0.5);
   const option = Object.assign(scene.add.container(x, y, [text]).setName(`${name}-label`), {
     retone: () => void text.setColor(tone()),
+    place: (at: { x: number; y: number }) => void hit.setPosition(at.x + x, at.y + y),
   });
 
   const hit = scene.add
@@ -142,6 +150,8 @@ export interface MenuPanel {
   /** The camera-fixed box, in the popup band; destroying it takes the hit areas with it. */
   container: Phaser.GameObjects.Container;
   keys: MenuKeys;
+  /** The box, its hit areas with it, to a new place on the screen: the logical view changed (FS-ZAJMH R13). */
+  moveTo(origin: { x: number; y: number }): void;
 }
 
 /**
@@ -211,5 +221,10 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
     .container(origin.x, origin.y, [...parts, ...options])
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH);
-  return { container, keys };
+  const moveTo = (at: { x: number; y: number }) => {
+    container.setPosition(at.x, at.y);
+    options.forEach((option) => option.place(at));
+    crispen([container]);
+  };
+  return { container, keys, moveTo };
 }

@@ -1,5 +1,6 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import {
   createPartyStore,
@@ -383,5 +384,22 @@ describe("PartyReadyCheck countdown bar (FS-B3NDZ R1–R10)", () => {
     env.receive({ outcome: "started" });
     env.frame();
     expect(env.barTracks()).toEqual([]);
+  });
+});
+
+describe("PartyReadyCheck at another logical width (FS-ZAJMH R12, R13)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should stand the open popup centred across the top again once the view widens", () => {
+    const env = setup();
+    env.receive();
+    const at = (width: number) =>
+      readyCheckFrame(3, { canvasWidth: width, panelOpen: false }).bar.x;
+    expect(env.barTracks().map((t) => t.x)).toEqual([at(1080)]);
+
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.popup.relayout();
+    expect(env.barTracks().map((t) => t.x)).toEqual([at(1280)]);
+    expect(env.find(QUESTION)).toBeDefined();
   });
 });

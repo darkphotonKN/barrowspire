@@ -14,6 +14,7 @@ import type Phaser from "phaser";
 import type { Point } from "@/render/iso/projection";
 import { rgba } from "@/utils/canvasPalette";
 import { tileHash } from "@/render/world/ground";
+import { relayoutOn, viewport } from "@/render/viewport";
 
 /** How a field's mist looks. */
 export interface MistLook {
@@ -120,7 +121,7 @@ export function addMist(
     scene.textures.addCanvas(key, paintMist(look, seed));
   const cam = scene.cameras.main;
   const layer = scene.add
-    .tileSprite(0, 0, cam.width, cam.height, key)
+    .tileSprite(0, 0, viewport.width, viewport.height, key)
     .setOrigin(0, 0)
     .setScrollFactor(0)
     .setDepth(MIST_DEPTH)
@@ -137,5 +138,7 @@ export function addMist(
   };
   scene.events.on("update", follow);
   scene.events.once("shutdown", () => scene.events.off("update", follow));
+  // over the whole logical view, whatever its width (FS-ZAJMH R13)
+  relayoutOn(scene, () => layer.setSize(viewport.width, viewport.height));
   return layer;
 }

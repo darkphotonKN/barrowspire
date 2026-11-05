@@ -8,6 +8,7 @@ import {
   drawPanel,
   sharpenText,
 } from "@/ui/menuChrome";
+import { LOGICAL_HEIGHT, STAGE_WIDTH, centreStage } from "@/render/viewport";
 
 const ui = palette.menu;
 
@@ -23,9 +24,11 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
+    // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
+    centreStage(this.cameras.main);
     sharpenText(this);
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     // Soot, dust and a vignette, the same backdrop the main menu stands on.
     drawBackdrop(this, 120);

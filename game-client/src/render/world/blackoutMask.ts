@@ -23,6 +23,7 @@ import type Phaser from "phaser";
 import { WORLD_DEPTH, projectRect } from "@/render/iso/shapes";
 import type { Point } from "@/render/iso/projection";
 import { palette } from "@/utils/canvasPalette";
+import { roundAtAnyZoom, roundsPixels, viewport } from "@/render/viewport";
 import type { House } from "./houses";
 
 /**
@@ -82,7 +83,8 @@ const even = (n: number) => n + (n & 1);
 /**
  * Where the mask's texture stands, in world screen px: the building's projected rect and walls,
  * with {@link MASK_MARGIN} around. Whole px with even sides, so with an integer camera scroll
- * (`roundPixels` floors it) the mask's px are the screen's.
+ * (the pixel grid floors it, `keepOnPixelGrid`) the mask's px are the screen's. At a render scale
+ * the texture is laid over it on backing px ({@link maskPlacement}).
  */
 export function maskBounds(house: House, wallTop: number): { x: number; y: number; width: number; height: number } {
   const [top, right, bottom, left] = projectRect(house.x, house.y, house.width, house.height);
@@ -90,6 +92,22 @@ export function maskBounds(house: House, wallTop: number): { x: number; y: numbe
   const y = Math.floor(top.y - wallTop - MASK_MARGIN.above);
   const width = even(Math.ceil(right.x + MASK_MARGIN.side) - x);
   const height = even(Math.ceil(bottom.y + MASK_MARGIN.below) - y);
+  return { x, y, width, height };
+}
+
+/**
+ * The mask's texture over `bounds` at `renderScale`: its corner moved back onto the 1/rs grid (a
+ * whole backing px, as the main camera's scroll is: `keepOnPixelGrid`), and its size in backing px,
+ * even, reaching past the far corner. At render scale 1 it is `bounds` itself.
+ */
+export function maskPlacement(
+  bounds: { x: number; y: number; width: number; height: number },
+  renderScale: number,
+): { x: number; y: number; width: number; height: number } {
+  const x = Math.floor(bounds.x * renderScale) / renderScale;
+  const y = Math.floor(bounds.y * renderScale) / renderScale;
+  const width = even(Math.ceil((bounds.x + bounds.width - x) * renderScale));
+  const height = even(Math.ceil((bounds.y + bounds.height - y) * renderScale));
   return { x, y, width, height };
 }
 
@@ -169,9 +187,19 @@ function maskKey(look: MaskLook): string {
 
 /** The slice of a render texture the mask is drawn into. */
 interface MaskTexture {
-  camera: { setScroll(x: number, y: number): unknown; roundPixels: boolean };
+  /** Phaser types it a BaseCamera; a dynamic texture's camera is a full Camera, `preRender` and all. */
+  camera: {
+    roundPixels: boolean;
+    renderRoundPixels: boolean;
+    /** Phaser's types leave it off a BaseCamera; a render texture's Camera has it ({@link roundAtAnyZoom}). */
+    preRender?: () => void;
+    setScroll(x: number, y: number): unknown;
+    setZoom(zoom: number): unknown;
+    setOrigin(x: number, y: number): unknown;
+  };
   setOrigin(x: number, y: number): this;
   setPosition(x: number, y: number): this;
+  setScale(scale: number): this;
   setVisible(visible: boolean): this;
   clear(): this;
   beginDraw(): this;
@@ -210,7 +238,7 @@ export interface BlackoutMaskStage {
     rectangle(x: number, y: number, width: number, height: number, fillColor?: number, fillAlpha?: number): DarkRect;
   };
   make: { graphics(config: object, addToScene?: boolean): FloorShape };
-  cameras: { main: { width: number; height: number; roundPixels: boolean } };
+  cameras: { main: { roundPixels: boolean } };
 }
 
 export class BlackoutMask {
@@ -226,6 +254,7 @@ export class BlackoutMask {
   /** The ground band's dark, cut by the floor: what B's semi-transparent px lie over. */
   private readonly under: DarkRect;
   private readonly floor: FloorShape;
+  /** The texture's size in backing px. */
   private size = { width: 0, height: 0 };
   /** What was drawn last, while shown: the same again draws nothing. */
   private drawn?: string;
@@ -237,7 +266,7 @@ export class BlackoutMask {
     this.camera = stage.cameras.main;
     const dark = (at: number) =>
       stage.add
-        .rectangle(0, 0, this.camera.width, this.camera.height, palette.inkDeep, 1)
+        .rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1)
         .setOrigin(0, 0)
         .setScrollFactor(0)
         .setDepth(at)
@@ -260,12 +289,13 @@ export class BlackoutMask {
       this.drawn = undefined;
       return;
     }
-    const { width, height } = this.camera;
+    // the logical view: the camera draws it at the render scale (FS-ZAJMH R6)
+    const { width, height } = viewport;
     for (const d of [this.dark, this.under]) {
       if (d.width !== width || d.height !== height) d.setSize(width, height);
       d.setVisible(true);
     }
-    const key = maskKey(look);
+    const key = `${viewport.renderScale}|${maskKey(look)}`;
     if (key === this.drawn) return;
     this.drawn = key;
     this.redraw(look);
@@ -286,6 +316,8 @@ export class BlackoutMask {
     this.bitmap?.destroy();
     this.texture?.destroy();
     const texture = this.stage.add.renderTexture(0, 0, width, height).setOrigin(0, 0).setVisible(false);
+    // its stamps rounded to backing px as the main camera rounds the world, fractional zoom too
+    roundAtAnyZoom(texture.camera, () => roundsPixels(this.camera));
     const bitmap = texture.createBitmapMask();
     bitmap.invertAlpha = true;
     this.dark.setMask(bitmap);
@@ -297,11 +329,17 @@ export class BlackoutMask {
 
   /** Draws the floor, then every stamp shown where it stands, into the texture over the building. */
   private redraw(look: MaskLook): void {
-    const b = maskBounds(look.house, look.wallTop);
+    const rs = viewport.renderScale;
+    const b = maskPlacement(maskBounds(look.house, look.wallTop), rs);
     const texture = this.fitted(b.width, b.height);
-    texture.setPosition(b.x, b.y);
+    // backing px, drawn back at 1/rs over the building's world rect: sharp, and on the screen's px
+    texture.setPosition(b.x, b.y).setScale(1 / rs);
+    texture.camera.setZoom(rs);
+    texture.camera.setOrigin(0, 0);
     texture.camera.setScroll(b.x, b.y);
-    texture.camera.roundPixels = this.camera.roundPixels;
+    // off, or Phaser floors that corner to whole world units; px rounding is switched on after its
+    // frame set-up instead, as the main camera rounds (roundAtAnyZoom)
+    texture.camera.roundPixels = false;
     // only its alpha counts: the mask's colour is never seen
     this.floor.clear().fillStyle(palette.inkDeep, 1).fillPoints(maskFloor(look.house, look.wall), true);
 

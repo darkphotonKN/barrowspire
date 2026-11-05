@@ -7,6 +7,7 @@ import {
   VIGNETTE_OUTER,
   VIGNETTE_STOPS,
 } from "@/render/lighting/vignette";
+import { relayoutOn, viewport } from "@/render/viewport";
 
 /**
  * The static layers every world keeps above its light-map: darkness pressing in
@@ -24,17 +25,47 @@ import {
 
 const DUST_MOTES = 18;
 
-/** Builds the vignette and the dust into a scene. */
+/**
+ * Builds the vignette and the dust into a scene, over the whole logical view, and builds them
+ * again for the new view each time it changes while the scene runs (FS-ZAJMH R13).
+ */
 export function createAtmosphere(scene: Phaser.Scene): void {
-  const cam = scene.cameras.main;
-  addVignette(scene, cam.width, cam.height);
-  addDust(scene, cam.width, cam.height);
+  let layers = build(scene);
+  relayoutOn(scene, () => {
+    scene.tweens.killTweensOf(layers);
+    layers.forEach((layer) => layer.destroy());
+    layers = build(scene);
+  });
 }
 
-function addVignette(scene: Phaser.Scene, w: number, h: number): void {
-  const key = `atmoVignette_${w}x${h}`;
+function build(scene: Phaser.Scene): Phaser.GameObjects.GameObject[] {
+  return [
+    addVignette(scene, viewport.width, viewport.height),
+    ...addDust(scene, viewport.width, viewport.height),
+  ];
+}
 
-  if (!scene.textures.exists(key)) {
+/** The vignette's one texture: painted at the current view's size, and again when it changes. */
+const VIGNETTE_TEXTURE = "atmoVignette";
+
+/** Whether `key` holds a texture painted at `w` × `h`. */
+function paintedAt(scene: Phaser.Scene, key: string, w: number, h: number): boolean {
+  if (!scene.textures.exists(key)) return false;
+  const source = scene.textures.get(key).getSourceImage();
+  return source.width === w && source.height === h;
+}
+
+function addVignette(
+  scene: Phaser.Scene,
+  w: number,
+  h: number,
+): Phaser.GameObjects.Image {
+  const key = VIGNETTE_TEXTURE;
+
+  if (!paintedAt(scene, key, w, h)) {
+    // one texture, painted again for each new size: a key per size would keep every width the
+    // view ever settled at (≈3.7 MB of canvas each at 1280×720)
+    if (scene.textures.exists(key)) scene.textures.remove(key);
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
@@ -55,9 +86,15 @@ function addVignette(scene: Phaser.Scene, w: number, h: number): void {
   const vignette = scene.add.image(w / 2, h / 2, key);
   vignette.setScrollFactor(0);
   vignette.setDepth(VIGNETTE_DEPTH);
+  return vignette;
 }
 
-function addDust(scene: Phaser.Scene, w: number, h: number): void {
+function addDust(
+  scene: Phaser.Scene,
+  w: number,
+  h: number,
+): Phaser.GameObjects.Arc[] {
+  const motes: Phaser.GameObjects.Arc[] = [];
   for (let i = 0; i < DUST_MOTES; i++) {
     const mote = scene.add.circle(
       Phaser.Math.Between(0, w),
@@ -78,5 +115,7 @@ function addDust(scene: Phaser.Scene, w: number, h: number): void {
       repeat: -1,
       ease: "Sine.easeInOut",
     });
+    motes.push(mote);
   }
+  return motes;
 }

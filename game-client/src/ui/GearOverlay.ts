@@ -74,6 +74,7 @@ import {
   type RowWindow,
   type StashPanelLayout,
 } from "./gearOverlayLayout";
+import { viewport } from "@/render/viewport";
 
 /** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
 export const GEAR_OVERLAY_DEPTH = 1100;
@@ -340,8 +341,7 @@ export class GearOverlay implements HudPanel {
   // ── Building ─────────────────────────────────────────────────────────────
 
   private build(): void {
-    const cam = this.scene.cameras.main;
-    this.layout = overlayLayout(cam.width, cam.height);
+    this.layout = overlayLayout(viewport.width, viewport.height);
     this.frame = this.scene.add.container(0, 0, [
       this.panel(this.layout.left),
       this.panel(this.layout.right),
@@ -352,7 +352,10 @@ export class GearOverlay implements HudPanel {
     this.redraw();
   }
 
-  /** The canvas changed size while open: everything is laid out again (R2). */
+  /**
+   * The canvas changed size while open: everything is laid out again (R2). Phaser's resize comes
+   * on every change of the logical view too, so this is the overlay's re-layout (FS-ZAJMH R13).
+   */
   private relayout(): void {
     if (!this.visible) return;
     this.teardown();
@@ -798,8 +801,9 @@ export class GearOverlay implements HudPanel {
 
   // ── Input ────────────────────────────────────────────────────────────────
 
+  /** The pointer in logical units: Phaser's `pointer.x/y` are backing px (FS-ZAJMH R15). */
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    this.pointer = { x: pointer.x, y: pointer.y };
+    this.pointer = viewport.toLogical(pointer);
     this.updateHover();
   }
 
@@ -808,7 +812,7 @@ export class GearOverlay implements HudPanel {
    * (FS-VPD8Y R38); a left-press does nothing (R18).
    */
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    this.pointer = { x: pointer.x, y: pointer.y };
+    this.pointer = viewport.toLogical(pointer);
     this.updateHover();
     if (pointer.button === 2) this.act();
   }
@@ -824,10 +828,9 @@ export class GearOverlay implements HudPanel {
     dy: number,
   ): void {
     const step = Math.sign(dy);
+    const at = viewport.toLogical(pointer);
     const scrolls = (g: ItemGrid | undefined): g is ItemGrid =>
-      g !== undefined &&
-      g.visibleRows < g.rows &&
-      inRect(g.grid, pointer.x, pointer.y);
+      g !== undefined && g.visibleRows < g.rows && inRect(g.grid, at.x, at.y);
     /** A grid's first row a step on, kept so its last row stays in view. */
     const stepped = (g: ItemGrid, from: number) =>
       Math.min(Math.max(0, from + step), g.rows - g.visibleRows);
@@ -849,7 +852,7 @@ export class GearOverlay implements HudPanel {
     if (
       stats &&
       stats.win.count < stats.win.rows &&
-      inRect(stats.area, pointer.x, pointer.y)
+      inRect(stats.area, at.x, at.y)
     ) {
       const { first, count, rows } = stats.win;
       // the last row in view: a step further down stays put
@@ -1025,8 +1028,8 @@ export class GearOverlay implements HudPanel {
   /** The row beside the cursor, flipped or pushed in where it would leave the screen (FS-NV54P §D). */
   private moveTip(): void {
     if (!this.tips.length) return;
-    const cam = this.scene.cameras.main;
-    const at = itemTipRow(this.tips, this.pointer, cam);
+    // the pointer is in logical units, so the screen it stays on is the logical view (FS-ZAJMH R15)
+    const at = itemTipRow(this.tips, this.pointer, viewport);
     this.tips.forEach((tip, i) => tip.container.setPosition(at[i].x, at[i].y));
   }
 
@@ -1051,9 +1054,8 @@ export class GearOverlay implements HudPanel {
     bg.fillRoundedRect(0, 0, w, h, WELL_RADIUS);
     bg.lineStyle(1, palette.damageBright, 0.5);
     bg.strokeRoundedRect(0, 0, w, h, WELL_RADIUS);
-    const cam = this.scene.cameras.main;
-    const x = Math.min(this.pointer.x + 14, cam.width - w - 4);
-    const y = Math.min(this.pointer.y - 10, cam.height - h - 4);
+    const x = Math.min(this.pointer.x + 14, viewport.width - w - 4);
+    const y = Math.min(this.pointer.y - 10, viewport.height - h - 4);
     const flash = this.scene.add.container(x, y, [bg, text]);
     flash.setDepth(FLASH_DEPTH).setScrollFactor(0);
     this.scene.time.delayedCall(1500, () => flash.destroy());

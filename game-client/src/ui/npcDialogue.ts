@@ -10,6 +10,7 @@
  */
 
 import type Phaser from "phaser";
+import { anchorAt, crispen } from "@/render/viewport";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { maskedBust, type Portrait } from "./bustPortrait";
@@ -38,13 +39,15 @@ export interface DialogueCardSpec {
 }
 
 /** The scene slice the card draws with; the portrait needs the textures and an unlisted mask. */
-type CardStage = Pick<Phaser.Scene, "add" | "cameras"> & Partial<Pick<Phaser.Scene, "make" | "textures">>;
+type CardStage = Pick<Phaser.Scene, "add"> & Partial<Pick<Phaser.Scene, "make" | "textures">>;
 
 export interface DialogueCard {
   /** Camera-fixed, in the popup band; destroying it takes the rows' hit areas and the mask too. */
   container: Phaser.GameObjects.Container;
   /** Redraws each row's colour when whether it can be picked changes under the open card. */
   retone(): void;
+  /** The logical view changed: the card, its hit areas and its mask, back to the corner (FS-ZAJMH R13). */
+  relayout(): void;
 }
 
 const hex = BARROW_HEX;
@@ -56,7 +59,6 @@ const ROW_H = 38;
 const MEDALLION_R = 27;
 /** Draws the card and its rows; the caller keeps the container and closes it by destroying it. */
 export function showDialogueCard(scene: CardStage, spec: DialogueCardSpec): DialogueCard {
-  const { width, height } = scene.cameras.main;
   const line = scene.add.text(0, 0, spec.line, {
     fontFamily: CANVAS_FONT.body,
     fontSize: "15px",
@@ -65,8 +67,9 @@ export function showDialogueCard(scene: CardStage, spec: DialogueCardSpec): Dial
     wordWrap: { width: WIDTH - PAD * 2, useAdvancedWrap: true },
   });
   const h = HEAD_H + 16 + line.height + 18 + spec.rows.length * ROW_H + 14;
-  const x = width - MARGIN - WIDTH;
-  const y = height - MARGIN - h;
+  // anchored by its bottom-right corner (FS-ZAJMH R12)
+  const corner = () => anchorAt({ anchor: "bottom-right", dx: -MARGIN - WIDTH, dy: -MARGIN - h });
+  const { x, y } = corner();
 
   const panel = scene.add.graphics();
   carvedPanel(panel, x, y, WIDTH, h);
@@ -148,5 +151,14 @@ export function showDialogueCard(scene: CardStage, spec: DialogueCardSpec): Dial
   const container = scene.add.container(0, 0, parts).setScrollFactor(0).setDepth(MENU_DEPTH);
   // the mask lives outside the container, so it goes down with it by hand
   container.once("destroy", () => mask?.destroy());
-  return { container, retone: () => options.forEach((o) => o.retone()) };
+  // built in screen coordinates with the card at the origin, so a move is one offset for all
+  const relayout = () => {
+    const at = corner();
+    const offset = { x: at.x - x, y: at.y - y };
+    container.setPosition(offset.x, offset.y);
+    options.forEach((o) => o.place(offset));
+    mask?.setPosition(offset.x, offset.y);
+    crispen([container]);
+  };
+  return { container, retone: () => options.forEach((o) => o.retone()), relayout };
 }

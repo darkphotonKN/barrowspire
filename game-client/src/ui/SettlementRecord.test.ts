@@ -3,7 +3,7 @@ import type Phaser from "phaser";
 
 import type { SettlementPayload } from "@/assets/types/client";
 import { palette } from "@/utils/canvasPalette";
-import { RECORD_DEPTH, SettlementRecord } from "./SettlementRecord";
+import { RECORD_DEPTH, RECORD_W, SettlementRecord } from "./SettlementRecord";
 import { settlementRecord } from "./settlement";
 
 // FS-GV8WN §G R21: the record as a scene draws it, on a recording stand-in for the Phaser scene.
@@ -227,5 +227,30 @@ describe("SettlementRecord (FS-GV8WN R21)", () => {
     record.open();
     expect(stage.texts()).toContain("Nothing came home");
     expect(stage.texts().some((t) => /^LOST$/.test(t))).toBe(false);
+  });
+});
+
+describe("SettlementRecord at another logical width (FS-ZAJMH R13)", () => {
+  it("should stand an open record, and its hit areas, at its new anchor, still open with the same content", () => {
+    const { record, live, hit, texts } = opened();
+    const before = texts();
+    record.relayout({ x: 640, bottom: 454 });
+    expect(record.isOpen()).toBe(true);
+    expect(texts()).toEqual(before);
+    const panel = live().filter((m) => m.kind === "container");
+    expect(panel).toHaveLength(1);
+    expect(panel[0].args[0]).toBe(640 - RECORD_W / 2);
+    const blocker = live().find((m) => m.kind === "rectangle")!;
+    expect(blocker.args[0]).toBe(640);
+    expect(hit("close-the-record")?.args[0]).toBe(640);
+  });
+
+  it("should take the new anchor while closed, and open there", () => {
+    const { record, live } = opened();
+    record.close();
+    record.relayout({ x: 640, bottom: 454 });
+    expect(record.isOpen()).toBe(false);
+    record.open();
+    expect(live().find((m) => m.kind === "rectangle")!.args[0]).toBe(640);
   });
 });

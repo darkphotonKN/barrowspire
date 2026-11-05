@@ -6,6 +6,14 @@ interface Emitter {
   listenerCount(event: string): number;
 }
 
+// The camera's fit, bounds and follow under the render scale are the viewport's (camera.test.ts);
+// here the stub camera only records what it was asked to follow.
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  boundCamera: () => {},
+  followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
+}));
+
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
 // on the same emitter Phaser builds them from.
 vi.mock("phaser", async () => {
@@ -45,8 +53,9 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
-const { BarrowspireScene, projectileFlightOf } = await import("./BarrowspireScene");
+const { BarrowspireScene, projectileFlightOf, TOP_RIGHT_HUD } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
+const { FULLSCREEN_BUTTON, anchorAt, viewport } = await import("@/render/viewport");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
 const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeScene");
@@ -594,6 +603,8 @@ function sceneOnStage() {
   };
   run.tweens = { add: vi.fn(), killTweensOf: vi.fn() };
   run.time = { delayedCall: vi.fn() };
+  // the HUD lays out in the logical view, which the viewport owns (FS-ZAJMH R2)
+  viewport.set({ width: 800, height: 600, renderScale: 1 });
   run.cameras = {
     main: { width: 800, height: 600, centerX: 400, centerY: 300, startFollow: vi.fn() },
   };
@@ -1765,6 +1776,31 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       expect((t.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
     }
   });
+
+  it.each([1, 2])(
+    "should put the card and the escaped count back at their right-hand corners when the view widens, at render scale %s (FS-ZAJMH R12, R13)",
+    (renderScale) => {
+      const { run, text } = cardOnStage();
+      const hud = run as unknown as { createUI(): void; relayoutHud(): void };
+      // the satchel's own re-layout is ContainerView's test
+      Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+      hud.createUI();
+      run.handleGameStateUpdate(withMe(me()));
+      const name = text("Dash") as Made & { last: Record<string, unknown[]> };
+      const escaped = text("Escaped: 0") as Made & { last: Record<string, unknown[]> };
+      const nameX = name.last.setPosition[0] as number;
+      expect(escaped.args[0]).toBe(800 - 10);
+
+      // the harness's view is 800 wide; 200 more, as from 1080 to 1280
+      viewport.set({ width: 1000, height: 600, renderScale });
+      hud.relayoutHud();
+      expect(name.last.setPosition[0]).toBe(nameX + 200);
+      expect(escaped.last.setX).toEqual([1000 - 10]);
+      // moved, so rasterised again at the render scale of now (R5)
+      expect(escaped.last.setResolution).toEqual([renderScale]);
+      viewport.set({ width: 800, height: 600, renderScale: 1 });
+    },
+  );
 
   it("should grey the card with the pool one short of the cost, and light it at the cost", () => {
     const { run, shown } = cardOnStage();
@@ -4834,5 +4870,20 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
       const source = readFileSync(join(SRC, "scenes", scene), "utf8");
       expect(source).not.toMatch(/ShimmerFx|PotionDrinkWatcher/);
     }
+  });
+});
+
+// FS-ZAJMH R18 and the top-right escalation, decided by Nick 2026-11-05: the fullscreen button
+// keeps the game frame's top-right corner in every scene, so the run's escaped count and the
+// floor under it step down clear of it, at every logical width.
+describe("the run's top-right HUD and the fullscreen button", () => {
+  it.each([1080, 1180, 1280])("should start below the button at logical width %i", (width) => {
+    const buttonBottom = FULLSCREEN_BUTTON.inset + FULLSCREEN_BUTTON.height;
+    const hudTop = anchorAt(TOP_RIGHT_HUD, { width, height: 720 }).y;
+    expect(hudTop).toBeGreaterThanOrEqual(buttonBottom + 8);
+  });
+
+  it("should keep its right-hand offset from the corner", () => {
+    expect(anchorAt(TOP_RIGHT_HUD, { width: 1280, height: 720 }).x).toBe(1270);
   });
 });

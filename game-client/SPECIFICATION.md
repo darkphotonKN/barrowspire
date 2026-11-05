@@ -106,6 +106,9 @@ server state and sends intents. ✅
 - [x] Pre-rendered stairs → FS-8RBQY
 - [ ] One countdown style across the canvas → FS-B3NDZ
 - [ ] Shimmers: granted and invoked spell-landed glitter → FS-KZC92
+- [ ] High-density canvas rendering → FS-ZAJMH
+- [ ] Canvas that resizes with the window → FS-ZAJMH
+- [ ] Fullscreen and windowed play → FS-ZAJMH
 
 ### Hub
 
@@ -231,7 +234,10 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 
 ## Reference — Phaser integration
 
-- **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` (1080×720, pixelArt, arcade zero-gravity).
+- **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` drawn at the screen's density: a backing
+  store of the logical view × render scale, shown fitted to the game frame, every camera
+  zoomed by the render scale (`src/render/viewport/`, FS-ZAJMH); linear filtering, arcade
+  zero-gravity.
   Registered scenes: **Boot, Preload, MainMenu, Loadout, Barrowspire**. Phaser reads auth from
   `localStorage`/Zustand directly (no React→Phaser event bus).
 - **BootScene** — token gate (redirect `/login` if absent); opens the shared `SocketManager` WS

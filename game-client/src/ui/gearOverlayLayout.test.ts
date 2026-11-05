@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FULLSCREEN_BUTTON } from "@/render/viewport";
 import { BAG_CAPACITY } from "./bag";
 import {
   BAG_COLUMNS,
@@ -429,4 +430,13 @@ describe("itemTipRow (FS-NV54P §D R17–19: the item tip and its worn tips in o
         }
     },
   );
+});
+
+// FS-ZAJMH R18 escalation check: the fullscreen button in the game frame's top-right corner sits
+// above the gear panel's top edge, so the open overlay is never under it, at 1080 or 1280.
+describe("overlayLayout and the fullscreen button", () => {
+  it.each([1080, 1280])("should start the right panel below the button at logical width %i", (width) => {
+    const { right } = overlayLayout(width, 720);
+    expect(right.y).toBeGreaterThan(FULLSCREEN_BUTTON.inset + FULLSCREEN_BUTTON.height);
+  });
 });

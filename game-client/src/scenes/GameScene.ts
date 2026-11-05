@@ -3,6 +3,7 @@ import { Player } from "@/utils/class/Player";
 import { ActionMap, ActionType, ClientMessage } from "@/assets/types/client";
 import * as Phaser from "phaser";
 import { socketManager } from "@/utils/class/SocketManager";
+import { viewport } from "@/render/viewport";
 
 // {
 //   action: "move" | "attack" | "pickup" | "use" | ...,
@@ -65,8 +66,8 @@ export class GameScene extends Phaser.Scene {
     // 星空背景
     createStarfield(this);
     // 迷霧 start
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = viewport.width;
+    const height = viewport.height;
 
     // 建立視野圓圈 用於遮罩
     this.visionCircle = this.add.graphics();

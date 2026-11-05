@@ -15,6 +15,7 @@ import {
   type ButtonState,
 } from "@/ui/menuChrome";
 import { CLASS_ORDER, classCardRects, loreStatRows } from "@/ui/classSelect";
+import { STAGE_WIDTH, centreStage } from "@/render/viewport";
 
 /** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
 const ui = palette.menu;
@@ -81,9 +82,11 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   create(): void {
+    // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
+    centreStage(this.cameras.main);
     sharpenText(this);
     this.art = registerArt(this);
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
 
     // Soot with drifting dust and bone glints, under a vignette (Bone & Soot menu chrome).
     drawBackdrop(this, 90);
@@ -367,7 +370,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   private createNameInputArea(): void {
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const y = 490;
 
     this.add
@@ -432,7 +435,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   private createActionButtons(): void {
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const y = 620;
 
     // Confirm Button: the bone CTA, the one torch in this view; it commits the hero.

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 import { EventEmitter } from "eventemitter3";
 import type { EquippedItems, ItemState } from "@/types/gameState";
 import type { WorldType } from "@/assets/types/client";
@@ -84,7 +85,9 @@ function recordingKeyboard() {
  * A scene that records what the overlay draws (text, fills, depths) and the pointer, wheel,
  * resize and frame handlers it hangs on; every other call is accepted and ignored.
  */
-function recordingScene(width = 1080, height = 720) {
+function recordingScene(width = 1080, height = 720, renderScale = 1) {
+  // the overlay lays out in the logical view, read from the viewport (FS-ZAJMH R2)
+  viewport.set({ width, height, renderScale });
   const texts: {
     content: string;
     destroyed: boolean;
@@ -187,7 +190,12 @@ function recordingScene(width = 1080, height = 720) {
   } as unknown as ArtLibrary;
 
   const shown = () => texts.filter((t) => !t.destroyed).map((t) => t.content);
-  const pointer = (x: number, y: number, button = 0) => ({ x, y, button });
+  /** A pointer at logical (x, y): Phaser's `pointer.x/y` are backing px, so × the render scale. */
+  const pointer = (x: number, y: number, button = 0) => ({
+    x: x * renderScale,
+    y: y * renderScale,
+    button,
+  });
   const move = (x: number, y: number) =>
     input.emit("pointermove", pointer(x, y));
   const press = (x: number, y: number, button: number) =>
@@ -225,12 +233,15 @@ function recordingScene(width = 1080, height = 720) {
   };
 }
 
+afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
 function overlayOnStage(
   bag: ItemState[] = [],
   gear: EquippedItems = worn(),
   world?: WorldType,
+  renderScale = 1,
 ) {
-  const s = recordingScene();
+  const s = recordingScene(1080, 720, renderScale);
   const overlay = new GearOverlay(s.scene, s.art, world);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
@@ -317,6 +328,21 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     expect(onEquip).toHaveBeenLastCalledWith(sword, "weapon");
   });
 
+  it.each([1, 1.5, 2])(
+    "should land a right-click on the item under the cursor at render scale %s (FS-ZAJMH R15)",
+    (rs) => {
+      const { move, press, cell, onEquip } = overlayOnStage(
+        [axe, helm],
+        worn({ weapon: sword }),
+        undefined,
+        rs,
+      );
+      move(...cell(1));
+      press(...cell(1), 2);
+      expect(onEquip).toHaveBeenCalledWith(helm, "head");
+    },
+  );
+
   it("should do nothing on a left-click (R18), nor on E with nothing hovered (R10)", () => {
     const { overlay, move, press, cell, onEquip, onUnequip, camera } =
       overlayOnStage([axe]);
@@ -391,9 +417,8 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   });
 
   it("should lay itself out again when the canvas is resized while open (R2)", () => {
-    const { overlay, scale, camera } = overlayOnStage();
-    camera.width = 1600;
-    camera.height = 900;
+    const { overlay, scale } = overlayOnStage();
+    viewport.set({ width: 1600, height: 900, renderScale: 1 });
     scale.emit("resize");
     const { right } = overlayLayout(1600, 900);
     expect(overlay.covers(right.x + 2, right.y + 2)).toBe(true);
