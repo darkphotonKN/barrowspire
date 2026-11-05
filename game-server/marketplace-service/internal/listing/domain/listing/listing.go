@@ -255,6 +255,12 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return nil
 	}
 
+	// After both replay checks, so a resend of a bid recorded before the member
+	// reached the cap is still answered as that bid (ADR-0052).
+	if err := l.WithinBidWithdrawalCap(memberID); err != nil {
+		return err
+	}
+
 	// Compare against whoever is contending, not just the confirmed leader: a
 	// PENDING bid is not in idx_bids_single_winner, so two of them can coexist,
 	// and both would otherwise clear the bar against the same stale leader.
@@ -283,6 +289,33 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 	// if the hold then fails. Demotion happens in ConfirmBid.
 	l.bids = append(l.bids, newBid)
 	l.updatedAt = now
+
+	return nil
+}
+
+// bidWithdrawalCap is how many bids a member may withdraw on one listing before
+// they can no longer bid on it (ADR-0052). Tuning, not contract.
+const bidWithdrawalCap = 3
+
+// WithinBidWithdrawalCap reports whether memberID may still bid on this listing
+// under the bid withdrawal cap: refused once they have bidWithdrawalCap or more
+// CANCELLED bids here (ADR-0052). Only CANCELLED counts, the status a bidder's own
+// withdrawal sets; a LOST bid was ended by someone else.
+//
+// Read-only: a caller about to hold gold for a bid asks it first, and
+// PlaceBidWithID applies it again under the lock. It limits only the next bid,
+// so WithdrawBid and Buyout never ask it.
+func (l *Listing) WithinBidWithdrawalCap(memberID uuid.UUID) error {
+	withdrawals := 0
+	for _, bid := range l.bids {
+		if bid.memberID == memberID && bid.status == BidStatusCancelled {
+			withdrawals++
+		}
+	}
+
+	if withdrawals >= bidWithdrawalCap {
+		return ErrBidWithdrawLimitReached
+	}
 
 	return nil
 }

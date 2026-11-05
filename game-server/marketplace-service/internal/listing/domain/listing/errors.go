@@ -31,6 +31,7 @@ var (
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
 	ErrLeadingBidLowered       = errors.New("leading bid below the accept floor")
+	ErrBidWithdrawLimitReached = errors.New("bid withdraw limit reached")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

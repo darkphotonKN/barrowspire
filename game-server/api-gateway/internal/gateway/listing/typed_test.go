@@ -269,6 +269,8 @@ func TestPlaceBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 	}{
 		// FS-V6SFK §Requirements 31: the gateway does no gating, it passes marketplace's refusal through
 		{"bidder's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
+		// FS-ZE43K §API surface: the member has withdrawn 3+ bids on this listing
+		{"bid withdrawal cap reached", errcode.Refuse(errcode.BidWithdrawLimitReached), http.StatusBadRequest, errcode.BidWithdrawLimitReached},
 	}
 
 	for _, tt := range tests {
@@ -281,6 +283,19 @@ func TestPlaceBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})
 	}
+}
+
+// FS-ZE43K Req 11: place-bid documents the withdrawal-cap refusal.
+func TestPlaceBid_DocumentsTheWithdrawalCapRefusal(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings/{listing_id}/bids"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Post)
+	assert.Contains(t, path.Post.Responses, "400")
+	assert.Contains(t, path.Post.Description, string(errcode.BidWithdrawLimitReached))
 }
 
 // A key whose attempt was refused or abandoned, its gold returned, cannot be

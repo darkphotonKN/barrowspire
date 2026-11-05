@@ -30,6 +30,8 @@ func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
 		errcode.NothingToClaim, errcode.LetterAlreadyClaimed, errcode.LetterClaimInProgress,
 		// FS-F692V §Req 5
 		errcode.LeadingBidLowered,
+		// FS-ZE43K §Requirements 8
+		errcode.BidWithdrawLimitReached,
 	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {

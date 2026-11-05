@@ -50,16 +50,17 @@ describe("withdrawOffered", () => {
   });
 });
 
+// FS-EYQ8K §Requirements 11; FS-ZE43K §Requirements 13 (the withdrawal-cap warning)
 describe("withdrawConfirmText", () => {
   it("should warn a leading player that the next highest bid takes the lead", () => {
     expect(withdrawConfirmText({ status: "WINNING", amount: 1200 })).toBe(
-      "Withdraw your bid of 1,200 gold? The next highest bid takes the lead.",
+      "Withdraw your bid of 1,200 gold? The next highest bid takes the lead. After three withdrawals on one auction, you can't bid on it again.",
     );
   });
 
   it("should tell an outbid player their gold is returned", () => {
     expect(withdrawConfirmText({ status: "outbid", amount: 75 })).toBe(
-      "Withdraw your bid of 75 gold? Your gold is returned.",
+      "Withdraw your bid of 75 gold? Your gold is returned. After three withdrawals on one auction, you can't bid on it again.",
     );
   });
 });

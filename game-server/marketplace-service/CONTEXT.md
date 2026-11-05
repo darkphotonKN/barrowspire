@@ -25,3 +25,7 @@ this member's `SPECIFICATION.md`.
 ### Accepting a bid (FS-F692V)
 
 - **Accept floor** — the leading bid amount the seller saw when they accepted (`minAmount`). AcceptBid is refused (`LEADING_BID_LOWERED`) when the WINNING bid is now below it; at or above it, settlement starts as usual, so a higher bid landing first still wins (FS-49Z37). A floor, not a bid identity: the seller never learns which bid leads.
+
+### Bidding (FS-ZE43K)
+
+- **Bid withdrawal cap** — the number of bids a member may withdraw on one listing (3, ADR-0052) before they can no longer bid on it. Counts only that member's CANCELLED bids on that listing; withdrawing itself is never refused, and buyout is not limited. A capped bid is refused with the domain sentinel `ErrBidWithdrawLimitReached`, which crosses the wire as the registered code `BID_WITHDRAW_LIMIT_REACHED` ("limit" in the code and sentinel names this cap; the constant is `bidWithdrawalCap`).

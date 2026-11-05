@@ -147,7 +147,8 @@ func registerPlaceBid(api huma.API, h *Handler,
 			"Resending with the same Idempotency-Key is safe and holds no further gold. 403 means the caller is the listing's " +
 			"own seller, who may not bid on it. 409 CONFLICT means the listing is busy " +
 			"and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and " +
-			"its gold returned: bid again with a new key.",
+			"its gold returned: bid again with a new key. " +
+			"Refusals: BID_WITHDRAW_LIMIT_REACHED (the member has withdrawn 3 or more bids on this listing, so no gold is held and they can no longer bid on it; withdrawing and buyout are not limited).",
 		DefaultStatus: http.StatusCreated,
 		Errors: []int{
 			http.StatusBadRequest,

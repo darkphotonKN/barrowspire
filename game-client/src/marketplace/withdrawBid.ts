@@ -29,15 +29,22 @@ export function withdrawOffered(bid: WithdrawableBid, now: number): boolean {
   return WITHDRAWABLE.has(bid.status.toUpperCase()) && listingLive(bid.listing, now);
 }
 
+/** FS-ZE43K req 13: said on every confirm, since the client never knows the member's count. */
+const WITHDRAW_CAP_WARNING =
+  "After three withdrawals on one auction, you can't bid on it again.";
+
 /**
  * Req 11: the confirm's question, by the bid's status. A leading bid hands the lead to the next
- * highest (ADR-0028); an outbid one only frees its gold (ADR-0029).
+ * highest (ADR-0028); an outbid one only frees its gold (ADR-0029). Either way it ends with the
+ * withdrawal cap (FS-ZE43K req 13, ADR-0052).
  */
 export function withdrawConfirmText(bid: Pick<MyBid, "amount" | "status">): string {
   const question = `Withdraw your bid of ${formatGold(bid.amount)} gold?`;
-  return bid.status.toUpperCase() === "WINNING"
-    ? `${question} The next highest bid takes the lead.`
-    : `${question} Your gold is returned.`;
+  const effect =
+    bid.status.toUpperCase() === "WINNING"
+      ? "The next highest bid takes the lead."
+      : "Your gold is returned.";
+  return `${question} ${effect} ${WITHDRAW_CAP_WARNING}`;
 }
 
 /**

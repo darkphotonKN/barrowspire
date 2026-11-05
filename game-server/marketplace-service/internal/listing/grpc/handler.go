@@ -468,16 +468,29 @@ func toProtoMyBid(b dto.MyBid, now time.Time) *pb.MyBid {
 	}
 }
 
+// ownRefusals pairs each domain refusal this service decides with the
+// registered code it crosses the wire as. The domain stays free of errcode.
+var ownRefusals = []struct {
+	err  error
+	code errcode.Code
+}{
+	{listing.ErrLeadingBidLowered, errcode.LeadingBidLowered},             // FS-F692V Req 5
+	{listing.ErrBidWithdrawLimitReached, errcode.BidWithdrawLimitReached}, // FS-ZE43K Req 8
+}
+
 func mapError(ctx context.Context, err error) error {
 	var code codes.Code
 	var msg string
 	logLevel := slog.LevelWarn
 
-	// A rule of this service's own that the client must tell apart from a bare
-	// FAILED_PRECONDITION becomes its registered refusal here (FS-F692V §Req 5),
-	// so it crosses exactly as the refusals below do.
-	if errors.Is(err, listing.ErrLeadingBidLowered) {
-		err = fmt.Errorf("%w: %w", errcode.Refuse(errcode.LeadingBidLowered), err)
+	// This service's own refusals: the domain names the rule, the wire carries
+	// its registered code, so the client can tell them apart from a bare
+	// FAILED_PRECONDITION and they cross exactly as the refusals below do.
+	for _, r := range ownRefusals {
+		if errors.Is(err, r.err) {
+			err = fmt.Errorf("%w: %w", errcode.Refuse(r.code), err)
+			break
+		}
 	}
 
 	// A domain refusal, this service's own or one items-service answered (FS-HBXZN

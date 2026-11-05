@@ -177,6 +177,7 @@ server state and sends intents. ✅
 - [x] View and withdraw my bids → FS-EYQ8K
 - [x] Worn relics not listable → FS-HBXZN
 - [ ] Verify-email prompt on gated marketplace actions → FS-V6SFK
+- [ ] Explain the bid withdrawal cap → FS-ZE43K
 
 ### Dev tooling
 

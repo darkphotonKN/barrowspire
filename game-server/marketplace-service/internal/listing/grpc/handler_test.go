@@ -10,6 +10,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
@@ -377,4 +378,32 @@ func TestWithdrawBid_LeaderInFinalWindow_FailedPrecondition(t *testing.T) {
 	})
 
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
+
+// FS-ZE43K Req 8: a member who has withdrawn three bids on the listing is refused
+// with the registered reason, so the gateway passes it through as 400 ·
+// BID_WITHDRAW_LIMIT_REACHED, and no gold is held for the bid.
+func TestPlaceBid_AtTheBidWithdrawalCap_IsRefusedWithItsReason(t *testing.T) {
+	member := uuid.New()
+	now := time.Now()
+	bids := make([]*listing.BidReconstituteParams, 3)
+	for i := range bids {
+		bids[i] = &listing.BidReconstituteParams{
+			ID: uuid.New(), MemberID: member, Type: listing.BidTypeBid, Amount: 150 + i,
+			Status: listing.BidStatusCancelled, CreatedAt: now, UpdatedAt: now,
+		}
+	}
+	repo, wallet := &fakeRepo{l: activeListing(t, bids...)}, &fakeWallet{}
+
+	_, err := newTestHandler(repo, wallet).PlaceBid(authedCtx(t, member), &pb.PlaceBidRequest{
+		ListingId: repo.l.Snapshot().ID.String(),
+		Amount:    200,
+	})
+
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.BidWithdrawLimitReached, reason)
+	assert.Zero(t, wallet.calls)
 }

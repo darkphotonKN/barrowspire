@@ -187,11 +187,18 @@ const (
 	// it right now. FS-1GZGD R25, S5.
 	LetterClaimInProgress Code = "LETTER_CLAIM_IN_PROGRESS"
 
+	// --- Marketplace ------------------------------------------------------------
+
 	// LeadingBidLowered: the listing's WINNING bid is below the accept floor,
 	// the leading bid the seller was shown when they accepted, so nothing is
 	// sold. The client re-reads the listing. Decided by marketplace-service.
 	// Added for FS-F692V (Accept never sells below the leading bid shown).
 	LeadingBidLowered Code = "LEADING_BID_LOWERED"
+
+	// BidWithdrawLimitReached: the member has withdrawn 3 or more bids on this
+	// listing, so they can no longer bid on it. Withdrawing and buyout are not
+	// limited (ADR-0052). Added for FS-ZE43K (Bid withdrawal cap).
+	BidWithdrawLimitReached Code = "BID_WITHDRAW_LIMIT_REACHED"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -232,4 +239,7 @@ var domainCodes = map[Code]struct{}{
 
 	// FS-F692V
 	LeadingBidLowered: {},
+
+	// FS-ZE43K
+	BidWithdrawLimitReached: {},
 }

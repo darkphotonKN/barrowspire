@@ -112,6 +112,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [ ] Marketplace writes require a verified email → FS-V6SFK
 - [x] Item refusals passed through on listing → FS-HBXZN
 - [ ] Accept never sells below the leading bid shown → FS-F692V
+- [ ] Bid withdrawals capped per listing → FS-ZE43K
 
 ### Auction lifecycle
 
