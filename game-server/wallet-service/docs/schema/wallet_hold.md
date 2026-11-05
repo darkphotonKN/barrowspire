@@ -36,8 +36,9 @@ A **WalletHold** — a reservation of gold. It is an **entity inside the Account
   the expiry sweeper. ⏳ The sweeper itself is not implemented yet.
 - `wallet_hold_bid_id_key` — the unique constraint's implicit index, which also serves the
   "does a hold already exist for this bid?" lookup.
-- There is **no** `(account_id, status)` index. Summing an account's RESERVED holds currently
-  scans by `account_id`; worth adding if that read becomes hot.
+- `idx_wallet_holds_account_id` — on `(account_id)`, all statuses (migration 000009). Every
+  wallet write reconstitutes an account with all of its holds (`WHERE account_id = $1`); before
+  this index that read scanned the whole table, and holds are never deleted.
 
 **References:**
 
