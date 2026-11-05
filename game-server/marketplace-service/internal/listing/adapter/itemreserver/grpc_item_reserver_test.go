@@ -20,17 +20,19 @@ import (
 // fakeClient records the request items-service would receive.
 type fakeClient struct {
 	ItemReserverClient
-	gotReserve *pb.ReserveItemRequest
-	gotList    *pb.ListStaleReservedRequest
-	gotCancel  *pb.CancelReservationRequest
-	gotConfirm *pb.ConfirmReservationRequest
+	gotReserve       *pb.ReserveItemRequest
+	gotList          *pb.ListStaleReservedRequest
+	gotCancel        *pb.CancelReservationRequest
+	gotConfirm       *pb.ConfirmReservationRequest
+	gotRelease       *pb.ReleaseConfirmedReservationRequest
+	gotListConfirmed *pb.ListConfirmedReservationsRequest
 	// reserveErr is what items-service answers ReserveItem with; nil reserves.
 	reserveErr error
 }
 
 func (f *fakeClient) ListStaleReserved(ctx context.Context, req *pb.ListStaleReservedRequest) (*pb.ListStaleReservedResponse, error) {
 	f.gotList = req
-	return &pb.ListStaleReservedResponse{}, nil
+	return &pb.ListStaleReservedResponse{Next: "page-2"}, nil
 }
 
 func (f *fakeClient) CancelReservation(ctx context.Context, req *pb.CancelReservationRequest) (*pb.CancelReservationResponse, error) {
@@ -41,6 +43,16 @@ func (f *fakeClient) CancelReservation(ctx context.Context, req *pb.CancelReserv
 func (f *fakeClient) ConfirmReservation(ctx context.Context, req *pb.ConfirmReservationRequest) (*pb.ConfirmReservationResponse, error) {
 	f.gotConfirm = req
 	return &pb.ConfirmReservationResponse{}, nil
+}
+
+func (f *fakeClient) ReleaseConfirmedReservation(ctx context.Context, req *pb.ReleaseConfirmedReservationRequest) (*pb.ReleaseConfirmedReservationResponse, error) {
+	f.gotRelease = req
+	return &pb.ReleaseConfirmedReservationResponse{Released: true}, nil
+}
+
+func (f *fakeClient) ListConfirmedReservations(ctx context.Context, req *pb.ListConfirmedReservationsRequest) (*pb.ListConfirmedReservationsResponse, error) {
+	f.gotListConfirmed = req
+	return &pb.ListConfirmedReservationsResponse{Next: "page-2"}, nil
 }
 
 func (f *fakeClient) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (*pb.ReserveItemResponse, error) {
@@ -160,15 +172,19 @@ func reconcilerCtx() context.Context {
 }
 
 // The reconciler sends an age, which items-service measures on its own clock,
-// not a cutoff computed on this one.
-func TestListStaleReservedRequestCarriesTheAge(t *testing.T) {
+// not a cutoff computed on this one, and the keyset position and page size it
+// reads with; items' next comes back (FS-9BJCP Req 1).
+func TestListStaleReservedRequestCarriesAgePositionAndLimit(t *testing.T) {
 	client := &fakeClient{}
 
-	_, err := NewItemReserver(client).ListStaleReserved(reconcilerCtx(), 10*time.Minute)
+	res, err := NewItemReserver(client).ListStaleReserved(reconcilerCtx(), 10*time.Minute, "page-1", 100)
 
 	require.NoError(t, err)
+	assert.Equal(t, "page-2", res.GetNext())
 	require.NotNil(t, client.gotList.GetOlderThan(), "a missing age would read as zero")
 	assert.Equal(t, 10*time.Minute, client.gotList.GetOlderThan().AsDuration())
+	assert.Equal(t, "page-1", client.gotList.GetAfter())
+	assert.Equal(t, int32(100), client.gotList.GetLimit())
 }
 
 // Cancel and confirm both name the listing, so items-service fences the write to
@@ -187,4 +203,33 @@ func TestReservationWritesCarryItemAndListing(t *testing.T) {
 	assert.Equal(t, listingID.String(), client.gotCancel.GetListingId())
 	assert.Equal(t, itemID.String(), client.gotConfirm.GetItemId())
 	assert.Equal(t, listingID.String(), client.gotConfirm.GetListingId())
+}
+
+// Release names the listing too, so items-service releases only the confirmed
+// reservation for that listing (FS-04ZB6 Req 4), and items' answer comes back.
+func TestReleaseConfirmedReservationCarriesItemAndListing(t *testing.T) {
+	itemID, listingID := uuid.New(), uuid.New()
+	client := &fakeClient{}
+
+	res, err := NewItemReserver(client).ReleaseConfirmedReservation(reconcilerCtx(), itemID, listingID)
+
+	require.NoError(t, err)
+	assert.True(t, res.GetReleased())
+	assert.Equal(t, itemID.String(), client.gotRelease.GetItemId())
+	assert.Equal(t, listingID.String(), client.gotRelease.GetListingId())
+}
+
+// The backstop sends an age, measured on items' clock like the stale list's, and
+// the keyset position and page size it reads with (FS-04ZB6 Req 5, 12).
+func TestListConfirmedReservationsRequestCarriesAgePositionAndLimit(t *testing.T) {
+	client := &fakeClient{}
+
+	res, err := NewItemReserver(client).ListConfirmedReservations(reconcilerCtx(), 10*time.Minute, "page-1", 100)
+
+	require.NoError(t, err)
+	assert.Equal(t, "page-2", res.GetNext())
+	require.NotNil(t, client.gotListConfirmed.GetOlderThan(), "a missing age is refused by items")
+	assert.Equal(t, 10*time.Minute, client.gotListConfirmed.GetOlderThan().AsDuration())
+	assert.Equal(t, "page-1", client.gotListConfirmed.GetAfter())
+	assert.Equal(t, int32(100), client.gotListConfirmed.GetLimit())
 }
