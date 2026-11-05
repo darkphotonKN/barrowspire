@@ -1,5 +1,4 @@
-import { createRequire } from "node:module";
-import { describe, it, expect, vi } from "vitest";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import type Phaser from "phaser";
 import { registerArt, preloadArt, MANIFEST_KEY, type ArtScene } from "./phaser";
 import { PLACEHOLDER_TEXTURE, atlasTextureKey } from "./library";
@@ -246,10 +245,13 @@ describe("registerArt", () => {
 });
 
 /**
- * Phaser 3's own texture frame, and the size and origin a sprite takes from one, straight from its
- * source: pure JS, no canvas or WebGL, so a trimmed frame is checked against the real thing.
+ * Phaser's own texture frame (4.2.1, ADR-0057), and the size and origin a sprite takes from one,
+ * from the module the game runs: a frame and those components are pure JS, no canvas or WebGL,
+ * so a trimmed frame is checked against the real thing. Phaser 4 exports only its bundle (no
+ * `phaser/src/...` subpaths), and reads the browser as it loads (device detection, a blend-mode
+ * probe image), so the browser is stood in by an object that answers anything, as
+ * `render/viewport/rounding.phaser.test.ts` does; none of it reaches a frame or a sprite's size.
  */
-const phaserSource = createRequire(import.meta.url);
 interface RealFrame {
   name: string;
   x: number;
@@ -287,7 +289,7 @@ interface RealSprite {
   setOrigin(x: number, y: number): RealSprite;
   setSizeToFrame(frame: RealFrame): RealSprite;
 }
-const PhaserFrame = phaserSource("phaser/src/textures/Frame.js") as new (
+type PhaserFrameClass = new (
   texture: unknown,
   name: string,
   sourceIndex: number,
@@ -296,30 +298,64 @@ const PhaserFrame = phaserSource("phaser/src/textures/Frame.js") as new (
   w: number,
   h: number,
 ) => RealFrame;
-const PhaserClass = phaserSource("phaser/src/utils/Class.js") as new (definition: object) => new (
-  frame: RealFrame,
-) => RealSprite;
+type SpriteLikeClass = new (frame: RealFrame) => RealSprite;
+let PhaserFrame: PhaserFrameClass;
 /** A sprite's sizing as Phaser's `Size` and `Origin` components do it (setFrame → setSizeToFrame). */
-const SpriteLike = new PhaserClass({
-  Mixins: [
-    phaserSource("phaser/src/gameobjects/components/Size.js"),
-    phaserSource("phaser/src/gameobjects/components/Origin.js"),
-  ],
-  initialize: function SpriteLike(this: RealSprite & { frame: RealFrame; scaleX: number; scaleY: number; input: null }, frame: RealFrame) {
-    this.frame = frame;
-    this.scaleX = 1;
-    this.scaleY = 1;
-    this.input = null;
-    this.setSizeToFrame(frame);
-  },
-  setScale(this: RealSprite & { scaleX: number; scaleY: number }, x: number, y = x) {
-    this.scaleX = x;
-    this.scaleY = y;
-    return this;
-  },
-});
+let SpriteLike: SpriteLikeClass;
+
+const anything = (): unknown =>
+  new Proxy(function () {}, {
+    get: (_target, key) =>
+      key === Symbol.toPrimitive ? () => 0 : key === "then" ? undefined : anything(),
+    apply: () => anything(),
+    construct: () => anything() as object,
+    set: () => true,
+  });
+
+async function loadPhaser(): Promise<void> {
+  vi.stubGlobal("navigator", { userAgent: "node", maxTouchPoints: 0 });
+  vi.stubGlobal("window", globalThis);
+  vi.stubGlobal("document", anything());
+  vi.stubGlobal("Image", function () {
+    return anything();
+  });
+  vi.stubGlobal("HTMLCanvasElement", function () {});
+  vi.stubGlobal("screen", anything());
+  const phaser = await import("phaser");
+  expect(phaser.VERSION).toBe("4.2.1");
+  PhaserFrame = phaser.Textures.Frame as unknown as PhaserFrameClass;
+  // the class factory and the components are in the bundle, though Phaser's types give the
+  // components only as interfaces
+  const { Class: PhaserClass, GameObjects } = phaser as unknown as {
+    Class: new (definition: object) => SpriteLikeClass;
+    GameObjects: { Components: { Size: object; Origin: object } };
+  };
+  SpriteLike = new PhaserClass({
+    Mixins: [GameObjects.Components.Size, GameObjects.Components.Origin],
+    initialize: function SpriteLike(
+      this: RealSprite & { frame: RealFrame; scaleX: number; scaleY: number; input: null },
+      frame: RealFrame,
+    ) {
+      this.frame = frame;
+      this.scaleX = 1;
+      this.scaleY = 1;
+      this.input = null;
+      this.setSizeToFrame(frame);
+    },
+    setScale(this: RealSprite & { scaleX: number; scaleY: number }, x: number, y = x) {
+      this.scaleX = x;
+      this.scaleY = y;
+      return this;
+    },
+  });
+}
 
 describe("a trimmed sheet's frames (spike/archer-2x)", () => {
+  beforeAll(loadPhaser);
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
   const FRAME = { width: 160, height: 140 };
   const ANCHOR = { x: 0.4, y: 0.75 };
   // two idle frames, each cut to its pixels on whole screen px (the sheet is 2x)
@@ -412,7 +448,8 @@ describe("a trimmed sheet's frames (spike/archer-2x)", () => {
   });
 
   it("draws every px of the cut where the whole frame draws it", () => {
-    // the renderer draws a frame's texels from (-displayOriginX + frame.x) (MultiPipeline.batchSprite)
+    // the renderer draws a frame's texels from (-displayOriginX + frame.x) (Phaser 4's
+    // TransformerImage.run: x = -displayOriginX + uvSource.x, the frame's when uncropped)
     const [cut, whole] = [registered(true), registered(false)];
     cut.forEach((frame, i) => {
       // atlas px cutX + k holds frame px (trim.x, or 0) + k, drawn at local x -dox + frame.x + k
