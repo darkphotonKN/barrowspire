@@ -120,10 +120,17 @@ export function arms(rig, mat, o = {}) {
   return out;
 }
 
-/** Both legs, hip to ankle, each one continuous tube. */
+/**
+ * Both legs, hip to ankle, each one continuous tube. `o.under` is the garment the thighs are worn
+ * under (the options its `skirt` takes, the four classes): every part of a thigh that would show
+ * outside it is drawn in to UNDER_CLEAR inside its wall (`underGarment`), so the thighs no longer
+ * show as dark wedges at the sides of the waist. Without it (folk, creatures) the legs are as they
+ * always were.
+ */
 export function legs(rig, mat, o = {}) {
   const lr = rig.p.limbR * (o.r ?? 1);
   const out = [];
+  const place = o.under && underGarment(rig, o.under);
   for (const [s, sx] of sides) {
     const [x, ty] = J(rig, `thigh${s}`);
     const [, ky] = J(rig, `shin${s}`);
@@ -138,12 +145,77 @@ export function legs(rig, mat, o = {}) {
       { p: [x, ay + 0.07, 0], r: [0.029 * lr, 0.031 * lr], w: { [`shin${s}`]: 1 } },
       { p: [x, ay + 0.008, 0.002], r: [0.026 * lr, 0.029 * lr], w: { [`shin${s}`]: 0.6, [`foot${s}`]: 0.4 } },
     ];
-    const leg = skinTube(rig, cps, mat, { segs: 16, steps: 4, uv: 5 });
+    const leg = skinTube(rig, cps, mat, { segs: 16, steps: 4, uv: 5, place });
     // what the leg-clearance guard keeps inside any garment (clearance.js)
     leg.userData.leg = s;
     out.push(leg);
   }
   return out;
+}
+
+/**
+ * How far inside a garment's wall `legs({ under })` keeps a thigh (H, about one 1x px): the least
+ * that keeps every class's legs inside its garment in every clip, to the leg-clearance guard's one
+ * baked px (clearance.js). The 2x archer's walk sets it: at 0.0115 his thigh shows half a 1x px
+ * past the tunic's hem.
+ */
+const UNDER_CLEAR = 0.012;
+
+/**
+ * Draws a thigh in under the garment `g` (its `skirt` options), as rig.js `place` moves a vertex
+ * in the bind pose: a vertex the garment covers that lies further from its axis than its wall less
+ * UNDER_CLEAR is pulled in toward the axis to that line, and one inside it stays where it is, so
+ * only the outer flank of the thigh's root moves and the front a split coat shows does not. Above
+ * the garment's top, under the belt, the top's wall holds. A vertex under the hem stays where it
+ * was: the leg narrows back to itself between its last ring over the hem and its first under it.
+ */
+function underGarment(rig, g) {
+  const H = rig.H;
+  const rings = skirtRings(g);
+  // the garment's ellipse at height y (H): radii and centre's z, or null under its hem
+  const wallAt = (y) => {
+    if (y >= rings[0].y) return rings[0];
+    for (let i = 0; i + 1 < rings.length; i++) {
+      const [a, b] = [rings[i], rings[i + 1]];
+      if (y < b.y) continue;
+      const t = (a.y - y) / (a.y - b.y);
+      return { r: [a.r[0] + (b.r[0] - a.r[0]) * t, a.r[1] + (b.r[1] - a.r[1]) * t], z: a.z + (b.z - a.z) * t };
+    }
+    return null;
+  };
+  return (p) => {
+    const y = p.y / H;
+    const e = wallAt(y);
+    if (!e) return;
+    const x = p.x / H;
+    const z = p.z / H - e.z;
+    const rho = Math.hypot(x, z);
+    if (rho < 1e-9) return;
+    const wall = 1 / Math.hypot(x / rho / (e.r[0] - UNDER_CLEAR), z / rho / (e.r[1] - UNDER_CLEAR));
+    if (rho <= wall) return;
+    const k = wall / rho;
+    p.x *= k;
+    p.z = (e.z + z * k) * H;
+  };
+}
+
+/**
+ * The rings a garment made by `skirt` with options `o` is laid through, top to hem: each one's
+ * height `y`, radii `r` [lateral, depth] and centre's `z` (H).
+ */
+function skirtRings(o) {
+  const top = o.top;
+  const bottom = o.bottom;
+  const rt = o.rTop;
+  const rb = o.rBottom;
+  const mid = [(rt[0] + rb[0]) / 2 + (o.belly ?? 0), (rt[1] + rb[1]) / 2 + (o.belly ?? 0)];
+  const z = o.z ?? 0;
+  return [
+    { y: top, r: rt, z },
+    { y: top - (top - bottom) * 0.3, r: [rt[0] * 0.55 + rb[0] * 0.45, rt[1] * 0.55 + rb[1] * 0.45], z },
+    { y: (top + bottom) / 2, r: mid, z },
+    { y: bottom, r: rb, z: z - (o.trail ?? 0) },
+  ];
 }
 
 /**
@@ -342,8 +414,11 @@ function pushPanels(rig, bottom) {
  * `rBottom` radii [lateral, depth]. The hem follows the thighs by `legFollow` and, with
  * `panels`, lags on the skirt spring bones. `arc` makes an open panel; `ragged` tears the hem.
  *
- * The legs stay inside it while they move (the leg-clearance guard, clearance.js, fails a bake
- * where they do not), by three things:
+ * The legs stay inside it, at rest and while they move (the leg-clearance guard, clearance.js,
+ * fails a bake where they do not), by four things:
+ *  - the thighs are built under it (`legs(rig, mat, { under })`, the same options): a thigh is
+ *    wider at the hip than a fitted tunic's top, so without it the thighs showed as dark wedges
+ *    at both sides of the waist, through a robe too;
  *  - each half of the hem follows the thigh on ITS side. The tube is wound top to bottom, so its
  *    side axis (tangent × front, rig.js tubeGeometry) is -x and angle 0 is the character's
  *    right; the weights once read it as the left, so each half followed the OPPOSITE thigh;
@@ -358,16 +433,7 @@ function pushPanels(rig, bottom) {
 export function skirt(rig, mat, o = {}) {
   const top = o.top;
   const bottom = o.bottom;
-  const rt = o.rTop;
-  const rb = o.rBottom;
-  const mid = [(rt[0] + rb[0]) / 2 + (o.belly ?? 0), (rt[1] + rb[1]) / 2 + (o.belly ?? 0)];
-  const z = o.z ?? 0;
-  const cps = [
-    { p: [0, top, z], r: rt, w: { hips: 1 } },
-    { p: [0, top - (top - bottom) * 0.3, z], r: [rt[0] * 0.55 + rb[0] * 0.45, rt[1] * 0.55 + rb[1] * 0.45], w: { hips: 1 } },
-    { p: [0, (top + bottom) / 2, z], r: mid, w: { hips: 1 } },
-    { p: [0, bottom, z - (o.trail ?? 0)], r: rb, w: { hips: 1 } },
-  ];
+  const cps = skirtRings(o).map((c) => ({ p: [0, c.y, c.z], r: c.r, w: { hips: 1 } }));
   const follow = o.legFollow ?? 0.5;
   const [, kneeY] = J(rig, "shinL");
   const panel = o.panels ? (o.panelWeight ?? 0.5) : 0;
@@ -638,7 +704,8 @@ export function sash(rig, mat, { side = "L", depth = 0.05, pad = 0.006 } = {}) {
     ],
     { segs: 24, steps: 3, caps: false },
   );
-  attach(rig, "hips", band, mat, [0, 0, 0]);
+  // the band covers the root of the thighs under it (the leg-clearance guard, clearance.js)
+  attach(rig, "hips", band, mat, [0, 0, 0]).userData.cover = true;
   attach(rig, "hips", ellipsoid(0.022 * H, 0.02 * H, 0.016 * H, 10), mat, [sx * 0.07, hy + 0.012, 0.07]);
   const tail = mount(rig, "hips", [sx * 0.078, hy, 0.066], { rz: sx * 0.12, rx: 0.08 });
   const cloth = new THREE.BoxGeometry(0.036 * H, 0.15 * H, 0.008 * H);
@@ -663,7 +730,10 @@ export function belt(rig, mat, buckleMat, o = {}) {
   const rz = (o.r?.[1] ?? 0.076) * rig.p.torsoD;
   const band = new THREE.CylinderGeometry(1, 1, 0.024 * H, 28, 1, true);
   band.scale(rx * H, 1, rz * H);
-  attach(rig, "hips", band, mat, [0, y, 0]);
+  // the band covers the root of the thighs under it (the leg-clearance guard, clearance.js): its
+  // two rings of 29 vertices, top then bottom, as a tube lays them out (rig.js)
+  band.userData.tube = { rows: 2, cols: 29, closed: true, centres: [[0, 0.012 * H, 0], [0, -0.012 * H, 0]] };
+  attach(rig, "hips", band, mat, [0, y, 0]).userData.cover = true;
   attach(rig, "hips", new THREE.BoxGeometry(0.032 * H, 0.03 * H, 0.012 * H), buckleMat, [0, y, rz + 0.002]);
   if (o.pouch) attach(rig, "hips", new THREE.BoxGeometry(0.04 * H, 0.05 * H, 0.03 * H), mat, [rx * 0.8, y - 0.035, rz * 0.45], { ry: 0.9 });
 }

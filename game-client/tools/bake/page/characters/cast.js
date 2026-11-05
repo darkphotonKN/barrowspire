@@ -76,17 +76,18 @@ export function knight() {
   const [, ky] = J(rig, "shinL");
   // the hauberk is open across the front by `gap` radians each side of centre
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
+  const hauberk = { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112] };
 
   torso(rig, F.mail);
   neck(rig, F.mail);
   arms(rig, F.mail);
-  legs(rig, F.mailDark);
+  legs(rig, F.mailDark, { under: hauberk });
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.1 });
   head(rig, F.skin);
   coif(rig, F.mailDouble);
   nasalHelm(rig, F);
-  skirt(rig, F.mail, { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112], legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
+  skirt(rig, F.mail, { ...hauberk, legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
   belt(rig, F.leatherDark, M.brass, { r: [0.106, 0.086], dy: 0.03 });
   cloak(rig, F.cloakKnight, { length: 0.64, spread: 1.5, flare: 1.3 });
   inHand(rig, "R").add(longsword(rig, M, F));
@@ -117,18 +118,19 @@ export function archer() {
   const [, hy] = J(rig, "hips");
   const [, fy] = J(rig, "foreArmL");
   const [, wy] = J(rig, "handL");
+  const tunic = { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] };
 
   torso(rig, F.buff);
   neck(rig, F.skin);
   arms(rig, F.rangerNightDark);
-  legs(rig, F.rangerHose);
+  legs(rig, F.rangerHose, { under: tunic });
   hands(rig, F.leather);
   boots(rig, F.leather, { top: 0.21 });
   head(rig, F.skin);
   // a deep cowl over a shadowed face, its crown drawn back into a long, full point that droops
   cowl(rig, F.rangerNight, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], F.leatherDark);
-  skirt(rig, F.buff, { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094], legFollow: 0.7, panels: true, panelWeight: 0.3 });
+  skirt(rig, F.buff, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 });
   belt(rig, F.leatherDark, M.brass, { pouch: true });
   cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
   quiver(rig, M, F);
@@ -199,6 +201,7 @@ export function wizard() {
   const [, hy] = J(rig, "hips");
   const [, cy] = J(rig, "chest");
   const td = rig.p.torsoD;
+  const gown = { top: hy + 0.05, bottom: 0.016, rTop: [0.09, 0.072], rBottom: [0.155, 0.138] };
   // the scapular's front and back panels
   const panels = [
     [Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
@@ -209,13 +212,13 @@ export function wizard() {
   bust(rig, F.robe);
   neck(rig, F.skin);
   arms(rig, F.robe, { sleeve: (t) => 1 + 1.7 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
-  legs(rig, F.breeches);
+  legs(rig, F.breeches, { under: gown });
   hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
   head(rig, F.skin);
   hair(rig, F.raven, { long: true });
   standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
-  skirt(rig, F.robe, { top: hy + 0.05, bottom: 0.016, rTop: [0.09, 0.072], rBottom: [0.155, 0.138], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+  skirt(rig, F.robe, { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
   for (const arc of panels) {
     overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012 });
     skirt(rig, F.scapular, { top: hy + 0.02, bottom: 0.05, rTop: [0.096, 0.08], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
@@ -269,11 +272,12 @@ export function mercenary() {
   const [, wy] = J(rig, "handL");
   // the coat is open across the front by `gap` radians each side of centre
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
+  const coatSkirts = { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112] };
 
   torso(rig, F.coat);
   neck(rig, F.skin);
   arms(rig, F.coat, { r: 1.06 });
-  legs(rig, F.breeches);
+  legs(rig, F.breeches, { under: coatSkirts });
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.22 });
   head(rig, F.skin);
@@ -290,7 +294,7 @@ export function mercenary() {
   );
   attach(rig, "chest", collar, F.coat, [0, 0, 0]);
   // the coat's skirts, split at the front
-  skirt(rig, F.coat, { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112], legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
+  skirt(rig, F.coat, { ...coatSkirts, legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
   sash(rig, F.sash, { side: "R", depth: 0.045 });
   spaulder(rig, "L", F.darkSteelDouble, { lames: 3, size: 0.98 });
   limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.04, 0.038], F.darkSteel);
