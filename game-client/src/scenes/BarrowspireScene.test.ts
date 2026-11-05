@@ -463,6 +463,17 @@ function recordingStage() {
             target.last["setDepth"] = [depth];
             return proxy;
           };
+        // Phaser 4's mask filter (`maskInView`): recorded as an `addMask` call on the masked object
+        if (prop === "filters")
+          return {
+            external: {
+              addMask: (...args: unknown[]) => {
+                target.calls.push("addMask");
+                target.last["addMask"] = args;
+                return { setGameObject: () => undefined, invert: false };
+              },
+            },
+          };
         // no arcade body: the placeholder rig's collision circle is skipped
         if (prop === "body") return undefined;
         if (prop === "visible") return true;
@@ -2873,7 +2884,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     standAt(run, BEHIND);
     const [image] = stage.made.filter((m) => m.kind === "image" && m.args[2] === "__DEFAULT");
     const [mask] = stage.made.filter((m) => m.kind === "renderTexture");
-    expect(image.calls).toContain("setMask");
+    expect(image.calls).toContain("addMask");
     expect(mask.calls).toContain("clear");
     expect(mask.calls.filter((c) => c === "draw").length).toBeGreaterThan(0);
   });

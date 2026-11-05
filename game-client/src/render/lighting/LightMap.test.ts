@@ -34,13 +34,16 @@ function fakeScene(renderScale = 1, scroll = { x: 0, y: 0 }) {
   const stamps: Stamp[] = [];
   const events = new EventEmitter();
   /** The light-map textures made, in order: the last is the live one. */
-  const made: { width: number; height: number; destroyed: boolean }[] = [];
+  const made: { width: number; height: number; destroyed: boolean; renders: number }[] = [];
   const makeTexture = (width: number, height: number) => {
     const t = {
       width,
       height,
       destroyed: false,
       fill: vi.fn(),
+      /** Phaser 4 buffers the fill and stamps until render: how many times the frame was drawn. */
+      renders: 0,
+      render: () => void t.renders++,
       destroy: () => void (t.destroyed = true),
       stamp: (
         _key: string,
@@ -134,6 +137,13 @@ describe("LightMap short-lived sources (FS-KYPQ9 §C)", () => {
   beforeEach(() => {
     fake = fakeScene();
     map = new LightMap(fake.scene as unknown as Scene, BARROW_HEX.slate);
+  });
+
+  it("should draw the frame's fill and pools once per update: Phaser 4 buffers them until render", () => {
+    map.addTransient({ ...pool, x: 10, y: 10 });
+    frame(0);
+    frame(16);
+    expect(fake.texture.renders).toBe(2);
   });
 
   it("should light at most 16 at once, dropping the oldest first", () => {

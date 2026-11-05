@@ -237,9 +237,9 @@ describe("Blackout under WebGL: dark outside the building's own px (FS-9PN7X §D
     vi.restoreAllMocks();
   });
 
-  /** Answers any call with itself: the mask's texture, dark rect and floor shape, unwatched here. */
+  /** Answers any call, and any property, with itself: the mask's texture, dark rect and floor shape, unwatched here. */
   const chain = (): unknown => {
-    const p: unknown = new Proxy({}, { get: (_, k) => (k === "then" ? undefined : () => p) });
+    const p: unknown = new Proxy(() => p, { get: (_, k) => (k === "then" ? undefined : p) });
     return p;
   };
 

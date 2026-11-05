@@ -38,26 +38,32 @@ function stubScene() {
     "setFlipX",
     "setDepth",
     "setAlpha",
-    "setTintFill",
-    "setMask",
+    "setTint",
+    "setTintMode",
+    "enableFilters",
     "destroy",
   ])
     obj[m] = record(m);
+  // Phaser 4's mask filter (`maskInView`): what the image is masked by
+  Object.assign(obj, { scrollFactorX: 1, scrollFactorY: 1, filtersFocusContext: false });
+  obj.filters = {
+    external: { addMask: (...a: unknown[]) => ((image.calls.addMask ??= []).push(a), {}) },
+  };
   obj.setVisible = record("setVisible", (v) => (image.visible = v as boolean));
 
   // the mask's render texture: what it was cleared to and drawn with, frame by frame
-  const mask = { calls: {} as Record<string, unknown[][]>, bitmap: { kind: "bitmap-mask" } };
+  const mask = { calls: {} as Record<string, unknown[][]> };
   const rt: Record<string, unknown> = {};
-  for (const m of ["setOrigin", "setPosition", "setVisible", "clear", "draw", "destroy"])
+  for (const m of ["setOrigin", "setPosition", "setVisible", "clear", "draw", "render", "destroy"])
     rt[m] = (...a: unknown[]) => {
       (mask.calls[m] ??= []).push(a);
       return rt;
     };
-  rt.createBitmapMask = () => mask.bitmap;
 
   const add = { image: vi.fn(() => obj), renderTexture: vi.fn(() => rt) };
+  const camera = { originX: 0, originY: 0 };
   const last = (name: string) => image.calls[name]?.at(-1);
-  return { scene: { add } as unknown as SilhouetteScene, image, last, add, mask };
+  return { scene: { add, cameras: { main: camera } } as unknown as SilhouetteScene, image, last, add, mask, rt, camera };
 }
 
 /** A body sprite in a character's container, as the scenes build them. */
@@ -93,7 +99,9 @@ describe("Silhouette (FS-9PN7X §E.3)", () => {
     const { scene, last } = stubScene();
     new Silhouette(scene);
     expect(SILHOUETTE_TINT).toBe(palette.markerSelf);
-    expect(last("setTintFill")).toEqual([SILHOUETTE_TINT]);
+    expect(last("setTint")).toEqual([SILHOUETTE_TINT]);
+    // Phaser 4's TintModes.FILL: a flat fill of the body's shape
+    expect(last("setTintMode")).toEqual([1]);
     expect(SILHOUETTE_ALPHA).toBeGreaterThan(0);
     expect(SILHOUETTE_ALPHA).toBeLessThan(1);
     expect(last("setAlpha")).toEqual([SILHOUETTE_ALPHA]);
@@ -154,10 +162,11 @@ describe("Silhouette (FS-9PN7X §E.3)", () => {
   // brass too. The silhouette shows only where the covering pieces' own pixels are.
   describe("only the covered part", () => {
     it("should be masked by a hidden texture of the covering pieces, never drawn on its own", () => {
-      const { scene, last, mask, add } = stubScene();
+      const { scene, last, mask, add, rt, camera } = stubScene();
       new Silhouette(scene);
       expect(add.renderTexture).toHaveBeenCalledTimes(1);
-      expect(last("setMask")).toEqual([mask.bitmap]);
+      // in screen space, as Phaser 3's bitmap mask was: seen through the scene's camera
+      expect(last("addMask")).toEqual([rt, false, camera]);
       expect(mask.calls.setVisible?.at(-1)).toEqual([false]);
       expect(mask.calls.setOrigin?.at(-1)).toEqual([0, 0]);
     });
@@ -173,15 +182,18 @@ describe("Silhouette (FS-9PN7X §E.3)", () => {
       const top = 196 - SILHOUETTE_MASK.above;
       expect(mask.calls.setPosition?.at(-1)).toEqual([left, top]);
       expect(mask.calls.clear).toHaveLength(1);
+      // Phaser 4 draws an object offset from where it stands: each lands at its own place less the corner
       expect(mask.calls.draw).toEqual([
-        [wall, 320 - left, 230 - top],
-        [roof, 280 - left, 120 - top],
+        [wall, -left, -top],
+        [roof, -left, -top],
       ]);
+      expect(mask.calls.render).toHaveLength(1);
 
       s.update(body("hero/walk/2/1"), [roof]);
       expect(mask.calls.clear).toHaveLength(2);
-      expect(mask.calls.draw.at(-1)).toEqual([roof, 280 - left, 120 - top]);
+      expect(mask.calls.draw.at(-1)).toEqual([roof, -left, -top]);
       expect(mask.calls.draw).toHaveLength(3);
+      expect(mask.calls.render).toHaveLength(2);
     });
 
     it("should leave a hidden piece out of the mask", () => {

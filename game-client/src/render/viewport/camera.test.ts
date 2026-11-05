@@ -6,6 +6,7 @@ import {
   fitCamera,
   followWith,
   onGrid,
+  roundAtAnyZoom,
   roundsPixels,
   stagePoint,
   viewRect,
@@ -14,13 +15,41 @@ import {
 import { Viewport } from "./viewport";
 
 /**
- * A camera that does Phaser 3.90's arithmetic where it matters here: display size is
- * width ÷ zoom, `clampX/Y` assume origin 0.5, `startFollow` snaps with the origin-0.5 half
- * width, and `preRender` lerps scroll toward a followed target, floors it under roundPixels and
- * drops rounding at a fractional zoom. `lerp` 1 is a settled follow: straight onto the target.
+ * A camera that does Phaser 4.2.1's arithmetic where it matters here (`cameras/2d/Camera.js`):
+ * display size is width ÷ zoom, `clampX/Y` assume origin 0.5, `startFollow` snaps with the
+ * origin-0.5 half width and sets `roundPixels` to its argument, and `preRender` lerps scroll
+ * toward a followed target and sets `renderRoundPixels` (the canvas renderer's flag) only at a
+ * whole zoom. Unlike 3.90 it no longer floors scroll under `roundPixels`. `lerp` 1 is a settled
+ * follow: straight onto the target.
  */
+/** Phaser's `TransformMatrix`, as far as the camera's view matrices go: [a, b, c, d, e, f]. */
+function affine(m = [1, 0, 0, 1, 0, 0]) {
+  return {
+    m,
+    translate(x: number, y: number) {
+      this.m[4] += this.m[0] * x + this.m[2] * y;
+      this.m[5] += this.m[1] * x + this.m[3] * y;
+      return this;
+    },
+    multiply(rhs: unknown, into: unknown) {
+      const out = into as { m: number[] };
+      const [a, b, c, d, e, f] = this.m;
+      const [A, B, C, D, E, F] = (rhs as { m: number[] }).m;
+      out.m = [a * A + c * B, b * A + d * B, a * C + c * D, b * C + d * D, a * E + c * F + e, b * E + d * F + f];
+      return out;
+    },
+  };
+}
+
 function fakeCamera(width = 1080, height = 720) {
   const cam = {
+    matrix: affine(),
+    matrixExternal: affine(),
+    matrixCombined: affine(),
+    /** Phaser's `getViewMatrix(true)`: the camera's own matrix. */
+    getViewMatrix(_forceComposite: boolean) {
+      return this.matrix;
+    },
     width,
     height,
     zoomX: 1,
@@ -105,16 +134,18 @@ function fakeCamera(width = 1080, height = 720) {
         sx += (fx - sx) * this.lerp;
         sy += (fy - sy) * this.lerp;
       }
-      if (this.roundPixels) {
-        sx = Math.floor(sx);
-        sy = Math.floor(sy);
-      }
       if (this.useBounds) {
         sx = this.clampX(sx);
         sy = this.clampY(sy);
       }
       this.scrollX = sx;
       this.scrollY = sy;
+      // the view matrix, built from the scroll as it stands now (origin, zoom, then scroll)
+      const ox = this.width * this.originX;
+      const oy = this.height * this.originX;
+      const z = this.zoomX;
+      this.matrix.m = [z, 0, 0, z, ox + z * (-sx - ox), oy + z * (-sy - oy)];
+      this.matrixExternal.multiply(this.matrix, this.matrixCombined);
     },
   };
   return cam;
@@ -273,13 +304,29 @@ describe("followWith (camera follow stays centred under origin 0)", () => {
 });
 
 describe("the pixel grid (FS-ZAJMH R4: roundPixels stays on at a fractional render scale)", () => {
-  it.each([1.25, 1.5, 1.75])(
-    "should keep the camera's px rounding on at render scale %s, which Phaser 3.90 turns off",
+  it.each([1, 1.25, 1.5, 1.75, 2])(
+    "should keep the camera's roundPixels on at render scale %s, the flag every object's rounding reads (ADR-0057)",
     (rs) => {
       const cam = fakeCamera();
       fitCamera(cam as ViewCamera, at(rs));
+      expect(cam.roundPixels).toBe(true);
       cam.preRender();
+      expect(cam.roundPixels).toBe(true);
+      // the canvas renderer's own flag, which Phaser sets at a whole zoom only
       expect(cam.renderRoundPixels).toBe(true);
+    },
+  );
+
+  it.each([1.25, 1.5])(
+    "should keep rounding on through a follow at render scale %s, whatever startFollow is asked",
+    (rs) => {
+      const cam = fakeCamera();
+      fitCamera(cam as ViewCamera, at(rs));
+      followWith(cam as ViewCamera, { x: 1280.3, y: 720.6 });
+      expect(roundsPixels(cam)).toBe(true);
+      cam.startFollow({ x: 1280.3, y: 720.6 }, false, 0.1, 0.1, 0, 0);
+      cam.preRender();
+      expect([cam.roundPixels, roundsPixels(cam)]).toEqual([true, true]);
     },
   );
 
@@ -296,6 +343,75 @@ describe("the pixel grid (FS-ZAJMH R4: roundPixels stays on at a fractional rend
         expect(
           Math.abs(cam.scrollY * rs - Math.round(cam.scrollY * rs)),
         ).toBeLessThan(1e-9);
+      }
+    },
+  );
+
+  it.each([1.25, 1.5, 2])(
+    "should draw each frame at the scroll it keeps at render scale %s: the view matrix moves onto the grid with it",
+    (rs) => {
+      const cam = fakeCamera();
+      fitCamera(cam as ViewCamera, at(rs));
+      const target = { x: 3000.3, y: 2000.7 };
+      followWith(cam as ViewCamera, target);
+      cam.lerp = 0.1;
+      for (let frame = 0; frame < 40; frame++) {
+        target.x -= 1.37;
+        target.y += 0.91;
+        cam.preRender();
+        // what the renderer reads: a whole backing px offset, the one the scroll says
+        const [, , , , e, f] = cam.matrixCombined.m;
+        expect(e).toBeCloseTo(-cam.scrollX * rs, 9);
+        expect(f).toBeCloseTo(-cam.scrollY * rs, 9);
+        expect(Math.abs(e - Math.round(e))).toBeLessThan(1e-9);
+        expect(Math.abs(f - Math.round(f))).toBeLessThan(1e-9);
+      }
+    },
+  );
+
+  /**
+   * Where Phaser 4.2.1 draws a camera-fixed (scroll factor 0) object of `width` × `height`
+   * logical units at origin 0, 0: the camera's own view matrix with the scroll put back
+   * (`TransformMatrix.copyWithScrollFactorFrom`, as `Filters.renderWebGLFilters` builds a filtered
+   * object's matrix), its corners rounded (`renderNodes/Camera.js`, under the filter camera's
+   * `roundPixels`, which `fullAuto` takes from the game's). In backing px: [left, top, right, bottom].
+   */
+  function fixedQuad(
+    cam: ReturnType<typeof fakeCamera>,
+    width: number,
+    height: number,
+  ) {
+    const [a, b, c, d, e, f] = cam.matrix.m;
+    const x = a * cam.scrollX + c * cam.scrollY + e;
+    const y = b * cam.scrollX + d * cam.scrollY + f;
+    // + 0: a corner a hair left of 0 rounds to -0, the same px
+    return [x, y, a * width + x, d * height + y].map((v) => Math.round(v) + 0);
+  }
+
+  it.each([
+    [1280, 0.9375],
+    [1280, 1],
+    [1280, 1.2152777777777777],
+    [1080, 1.22],
+    [1280, 1.875],
+    [1080, 1.875],
+    [1280, 2],
+  ])(
+    "should keep a camera-fixed full-view rect (the indoor blackout's darks) over every backing px, last column and row too, in a %s-wide view at render scale %s (I-ADR0057-4)",
+    (width, rs) => {
+      const view = new Viewport();
+      view.set({ width, height: 720, renderScale: rs });
+      const cam = fakeCamera();
+      fitCamera(cam as ViewCamera, view);
+      const target = { x: 1275.3, y: 316.7 };
+      followWith(cam as ViewCamera, target);
+      cam.lerp = 0.1;
+      const backing = [0, 0, cam.width, cam.height];
+      for (let frame = 0; frame < 60; frame++) {
+        target.x += 0.37;
+        target.y -= 0.53;
+        cam.preRender();
+        expect(fixedQuad(cam, width, 720)).toEqual(backing);
       }
     },
   );
@@ -330,6 +446,39 @@ describe("the pixel grid (FS-ZAJMH R4: roundPixels stays on at a fractional rend
     const wrapped = cam.preRender;
     fitCamera(cam as ViewCamera, v);
     expect(cam.preRender).toBe(wrapped);
+  });
+});
+
+describe("roundAtAnyZoom (ADR-0057: a render texture's camera rounds as its owner says)", () => {
+  /** A render texture's camera: Phaser 4 runs its frame set-up from `DynamicTexture.render`. */
+  function textureCamera() {
+    return {
+      zoomX: 1.5,
+      roundPixels: false,
+      renderRoundPixels: false,
+      frames: 0,
+      preRender() {
+        this.frames++;
+        this.renderRoundPixels = this.roundPixels && Number.isInteger(this.zoomX);
+      },
+    };
+  }
+
+  it("should switch the camera's roundPixels on and off with rounds(), at each frame set-up, fractional zoom too", () => {
+    const cam = textureCamera();
+    let rounds = true;
+    roundAtAnyZoom(cam, () => rounds);
+    cam.preRender();
+    expect([cam.frames, cam.roundPixels, cam.renderRoundPixels]).toEqual([1, true, true]);
+    rounds = false;
+    cam.preRender();
+    expect([cam.frames, cam.roundPixels, cam.renderRoundPixels]).toEqual([2, false, false]);
+  });
+
+  it("should leave a camera with no frame set-up as it is", () => {
+    const cam = { roundPixels: false, renderRoundPixels: false };
+    roundAtAnyZoom(cam, () => true);
+    expect(cam).toEqual({ roundPixels: false, renderRoundPixels: false });
   });
 });
 
