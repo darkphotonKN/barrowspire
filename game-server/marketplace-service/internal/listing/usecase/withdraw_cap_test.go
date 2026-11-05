@@ -55,6 +55,8 @@ func TestPlaceBidUC_ResendOfARecordedBidAtTheCap_IsAReplay(t *testing.T) {
 		ListingID: l.Snapshot().ID, MemberID: member, Amount: 150, IdempotencyKey: uuid.New(), Now: now,
 	}
 	require.NoError(t, uc.Handle(context.Background(), cmd))
+	// another member outbids it, so the member is free to bid again (ADR-0054)
+	leadWith(t, l, uuid.New(), 160, now)
 	withdrawBids(t, l, member, 3, now)
 	require.ErrorIs(t, l.WithinBidWithdrawalCap(member), listing.ErrBidWithdrawLimitReached)
 	bids := len(l.Snapshot().Bids)

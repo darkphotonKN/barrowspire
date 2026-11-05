@@ -36,6 +36,10 @@ func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
 		errcode.ListingWithdrawLocked,
 		// FS-XEDFF §API surface (errcode)
 		errcode.ListingDurationOutOfRange, errcode.ListingLimitReached,
+		// FS-V74WE §Requirements 1
+		errcode.BidTooLow, errcode.BidAtOrAboveBuyout,
+		// FS-72KT8 §Requirements 11
+		errcode.AlreadyLeading,
 	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {
