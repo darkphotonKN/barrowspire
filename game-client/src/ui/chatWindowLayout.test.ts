@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  CHAT_CHANNELS,
-  type ChatEntry,
-  type ChatLine,
-} from "@/stores/chatStore";
+import type { ChatEntry, ChatLine } from "@/stores/chatStore";
 import { contrastRatio } from "@/render/lighting/lighting";
 import { palette } from "@/utils/canvasPalette";
 import {
   CHAT_CHANNEL_COLOUR,
-  CHAT_SHOWN_CHANNELS,
   CHAT_VISIBLE_LINES,
   CHAT_WINDOW_W,
   chatEntryColour,
@@ -18,6 +13,13 @@ import {
   CHAT_LINES_GAP,
   CHAT_SCROLL_THUMB_MIN,
   chatFoldButton,
+  chatFieldLabel,
+  chatFieldRect,
+  chatPickerList,
+  chatPickerRect,
+  CHAT_ROW_TEXT_H,
+  CHAT_ROW_TEXT_PAD,
+  rowTextY,
   chatScrollOffsetAt,
   chatScrollThumb,
   chatScrollTrack,
@@ -28,6 +30,7 @@ import {
   scrolledOffset,
   visibleEntries,
 } from "./chatWindowLayout";
+import { CHAT_SHOWN_CHANNELS } from "./chatInput";
 
 // FS-WJGFJ §Requirements C18, C19, C21, C22, C29. I-WJGFJ-3: the window's geometry and the
 // stream's presentation, as pure functions the Phaser class draws from.
@@ -333,14 +336,6 @@ describe("chatTabSegments (R24 as amended 2026-10-31: tab segments)", () => {
     expect(segments[3].width).toBeGreaterThan(segments[0].width);
   });
 
-  it("should hide trade from the window, as a tab and as a picker option, until it is scoped", () => {
-    // the picker (chatInputField) lists exactly these channels too
-    expect(CHAT_SHOWN_CHANNELS).not.toContain("trade");
-    expect(CHAT_SHOWN_CHANNELS).toEqual(["area", "world", "party", "whisper"]);
-    // still a channel of the protocol: a trade line is still recognised, just never offered
-    expect(CHAT_CHANNELS).toContain("trade");
-  });
-
   it("should stop short of the fold button at the row's right end", () => {
     const row = chatWindowFrame(10, 500).filterRow;
     const last = chatTabSegments(row, (label) => label.length * 7).at(-1)!;
@@ -459,5 +454,88 @@ describe("chat scrollbar (asked 2026-10-31: drag back through old lines)", () =>
     );
     expect(mid).toBeGreaterThan(8);
     expect(mid).toBeLessThan(16);
+  });
+});
+
+describe("the canvas channel picker (FS-J267Q R1, R3)", () => {
+  const frame = chatWindowFrame(10, 700);
+  const input = frame.input;
+
+  it("should sit at the input row's left, the row's height, the picker's width", () => {
+    const picker = chatPickerRect(frame);
+    expect(picker.x).toBeGreaterThanOrEqual(input.x);
+    expect(picker.x).toBeLessThan(input.x + 8);
+    expect(picker.y).toBe(input.y);
+    expect(picker.height).toBe(input.height);
+    expect(picker.width).toBe(84);
+  });
+
+  it("should give the text field the rest of the row right of the picker, and leave the fold button room while folded", () => {
+    const picker = chatPickerRect(frame);
+    const field = chatFieldRect(frame, false);
+    expect(field.x).toBeGreaterThan(picker.x + picker.width);
+    expect(field.y).toBe(input.y);
+    expect(field.height).toBe(input.height);
+    expect(field.x + field.width).toBeLessThanOrEqual(input.x + input.width);
+    expect(field.x + field.width).toBeGreaterThan(input.x + input.width - 8);
+
+    const shut = chatWindowFrame(10, 700, true);
+    const folded = chatFieldRect(shut, true);
+    expect(folded.x + folded.width).toBeLessThanOrEqual(
+      shut.input.x + shut.input.width - CHAT_FOLD_W,
+    );
+  });
+
+  it("should list the shown channels top to bottom, above the input row, inside the message area, clear of the field", () => {
+    const list = chatPickerList(frame);
+    expect(list.rows.map((r) => r.channel)).toEqual([...CHAT_SHOWN_CHANNELS]);
+    expect(list.rows.map((r) => r.channel)).not.toContain("trade");
+    // upward: the list ends above the input row, never over the field
+    expect(list.box.y + list.box.height).toBeLessThanOrEqual(input.y);
+    expect(list.box.y).toBeGreaterThanOrEqual(frame.messages.y);
+    expect(list.box.x).toBe(chatPickerRect(frame).x);
+    for (let i = 0; i < list.rows.length; i++) {
+      const row = list.rows[i];
+      expect(row.x).toBeGreaterThanOrEqual(list.box.x);
+      expect(row.x + row.width).toBeLessThanOrEqual(
+        list.box.x + list.box.width,
+      );
+      expect(row.y).toBeGreaterThanOrEqual(list.box.y);
+      expect(row.y + row.height).toBeLessThanOrEqual(
+        list.box.y + list.box.height,
+      );
+      if (i > 0)
+        expect(row.y).toBeGreaterThanOrEqual(
+          list.rows[i - 1].y + list.rows[i - 1].height,
+        );
+    }
+  });
+});
+
+describe("rowTextY (the picker's and the list's words on their row)", () => {
+  it.each([
+    [{ x: 0, y: 100, width: 84, height: 30 }, 105],
+    [{ x: 0, y: 40, width: 104, height: 24 }, 42],
+  ])(
+    "should set a padded 16 px line centred on %o, lifted by its padding",
+    (rect, y) => {
+      expect(rowTextY(rect)).toBe(y);
+      // the padded box (16 + 2 * 2) sits inside the row
+      expect(y).toBeGreaterThanOrEqual(rect.y);
+      expect(y + CHAT_ROW_TEXT_H + CHAT_ROW_TEXT_PAD * 2).toBeLessThanOrEqual(
+        rect.y + rect.height,
+      );
+    },
+  );
+});
+
+describe("chatFieldLabel (FS-J267Q R7: the field names its channel)", () => {
+  it.each([
+    ["area", "Chat — Area"],
+    ["world", "Chat — World"],
+    ["party", "Chat — Party"],
+    ["whisper", "Chat — Whisper"],
+  ] as const)("should name %s as %s", (channel, label) => {
+    expect(chatFieldLabel(channel)).toBe(label);
   });
 });
