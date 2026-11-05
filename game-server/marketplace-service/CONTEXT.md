@@ -21,3 +21,8 @@ this member's `SPECIFICATION.md`.
 - **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released, listing withdrawn). Holds released, bids LOST, item unfrozen to its seller. Never re-settled.
 - **Semantic impossibility** — a step failure no retry can fix. The only failure kind that triggers a rollback, and only before the pivot. Contrast *transient* (retry, cap, park) and *already applied* (treated as success) (ADR-0018).
 - **PENDING_SETTLEMENT** — listing status from step 0a until SOLD / SETTLEMENT_FAILED; a live listing for every reconciler. (items-service has its own `PENDING_SETTLEMENT` item status, set at 0b.)
+
+### Public listing reads (FS-GKHYD)
+
+- **Own** — on a public listing read, whether the viewer is that listing's seller; computed by marketplace from the caller's optional identity, false for an anonymous viewer (ADR-0053). A fact about the viewer, never a member id.
+- **Optional identity** — a public read that embeds the caller's identity when a valid bearer is present and serves anonymously otherwise, never refusing (ADR-0053). Distinct from a public method, which never reads a caller.
