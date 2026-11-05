@@ -116,8 +116,17 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 	// is already on the listing under another ID (a bid recorded before IDs were
 	// derived, ADR-0027): under the lock its key replay answers before the leading
 	// check, so refusing it here would turn a replay into a refusal.
+	//
+	// The price rules last, as PlaceBidWithID orders them, under the same guard: a
+	// legacy resend of a bid outbid since is still its replay. So a bid the read
+	// already prices out holds no gold, writes no hold row and starts no release.
+	// Advisory like the rest: a bid that lands between this read and the lock is
+	// caught there, and the hold goes back (ADR-0049).
 	if !current.HasBidByKey(cmd.MemberID, cmd.IdempotencyKey) {
 		if err := current.NotLeading(cmd.MemberID); err != nil {
+			return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+		}
+		if err := current.AcceptsBidAmount(cmd.Amount); err != nil {
 			return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
 		}
 	}

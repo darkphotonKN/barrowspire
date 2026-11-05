@@ -344,22 +344,9 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return err
 	}
 
-	// Compare against whoever is contending, not just the confirmed leader: a
-	// PENDING bid is not in idx_bids_single_winner, so two of them can coexist,
-	// and both would otherwise clear the bar against the same stale leader.
-	contender := l.findContendingBid()
-
-	if contender == nil && amount < l.startPrice {
-		return ErrBidTooLow
-	}
-
-	if contender != nil && amount <= contender.amount {
-		return ErrBidTooLow
-	}
-
-	// Paying the buyout price or more is what Buyout is for (FS-9XKS6 Req 4).
-	if l.buyoutPrice != nil && amount >= *l.buyoutPrice {
-		return ErrBidAtOrAboveBuyout
+	// Last, so every other refusal outranks a price refusal.
+	if err := l.AcceptsBidAmount(amount); err != nil {
+		return err
 	}
 
 	newBid, err := newBid(bidID, l.id, memberID, BidTypeBid, amount, idempotencyKey, now)
@@ -416,6 +403,34 @@ func (l *Listing) WithinBidWithdrawalCap(memberID uuid.UUID) error {
 func (l *Listing) NotLeading(memberID uuid.UUID) error {
 	if contender := l.findContendingBid(); contender != nil && contender.memberID == memberID {
 		return ErrAlreadyLeading
+	}
+
+	return nil
+}
+
+// AcceptsBidAmount reports whether amount is a price this listing takes a bid at
+// now: above the contending bid, or at least the starting price when there is
+// none, and below the buyout price, which is what Buyout is for (FS-9XKS6 Req 4).
+//
+// Read-only: a caller about to hold gold for a bid asks it first, so a bid the
+// listing already refuses holds nothing, and PlaceBidWithID applies it again under
+// the lock, where it decides.
+func (l *Listing) AcceptsBidAmount(amount int) error {
+	// Compare against whoever is contending, not just the confirmed leader: a
+	// PENDING bid is not in idx_bids_single_winner, so two of them can coexist,
+	// and both would otherwise clear the bar against the same stale leader.
+	contender := l.findContendingBid()
+
+	if contender == nil && amount < l.startPrice {
+		return ErrBidTooLow
+	}
+
+	if contender != nil && amount <= contender.amount {
+		return ErrBidTooLow
+	}
+
+	if l.buyoutPrice != nil && amount >= *l.buyoutPrice {
+		return ErrBidAtOrAboveBuyout
 	}
 
 	return nil
