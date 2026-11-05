@@ -111,6 +111,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Listing buyout price → FS-9XKS6
 - [ ] Marketplace writes require a verified email → FS-V6SFK
 - [x] Item refusals passed through on listing → FS-HBXZN
+- [ ] Bid withdrawals capped per listing → FS-ZE43K
 
 ### Auction lifecycle
 

@@ -21,3 +21,7 @@ this member's `SPECIFICATION.md`.
 - **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released, listing withdrawn). Holds released, bids LOST, item unfrozen to its seller. Never re-settled.
 - **Semantic impossibility** — a step failure no retry can fix. The only failure kind that triggers a rollback, and only before the pivot. Contrast *transient* (retry, cap, park) and *already applied* (treated as success) (ADR-0018).
 - **PENDING_SETTLEMENT** — listing status from step 0a until SOLD / SETTLEMENT_FAILED; a live listing for every reconciler. (items-service has its own `PENDING_SETTLEMENT` item status, set at 0b.)
+
+### Bidding (FS-ZE43K)
+
+- **Bid withdrawal cap** — the number of bids a member may withdraw on one listing (3, ADR-0052) before they can no longer bid on it. Counts only that member's CANCELLED bids on that listing; withdrawing itself is never refused, and buyout is not limited. A capped bid is refused with the domain sentinel `ErrBidWithdrawLimitReached`, which crosses the wire as the registered code `BID_WITHDRAW_LIMIT_REACHED` ("limit" in the code and sentinel names this cap; the constant is `bidWithdrawalCap`).
