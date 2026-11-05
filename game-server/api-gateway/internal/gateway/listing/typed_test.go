@@ -496,23 +496,26 @@ func TestWithdrawBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 
 // ========================= ACCEPT BID =========================
 
-func acceptBid(r *gin.Engine, listingID string) *httptest.ResponseRecorder {
+const acceptBidBody = `{"minAmount":300}`
+
+func acceptBid(r *gin.Engine, listingID, body string) *httptest.ResponseRecorder {
 	return testsupport.DoWithHeaders(r, http.MethodPost,
-		"/api/marketplace/listings/"+listingID+"/accept", "", authedHeaders())
+		"/api/marketplace/listings/"+listingID+"/accept", body, authedHeaders())
 }
 
 // Settlement runs on after the request returns, so the answer is Accepted, not
-// a finished sale.
-func TestAcceptBid_AnswersAcceptedAndForwardsTheListing(t *testing.T) {
+// a finished sale. The accept floor travels on as min_amount (FS-F692V §Req 1).
+func TestAcceptBid_AnswersAcceptedAndForwardsTheListingAndTheFloor(t *testing.T) {
 	client := &stubListingClient{}
 	listingID := uuid.New().String()
 
-	w := acceptBid(newRouter(client), listingID)
+	w := acceptBid(newRouter(client), listingID, acceptBidBody)
 
 	require.Equal(t, http.StatusAccepted, w.Code)
 	assert.Empty(t, w.Body.String())
 	require.Equal(t, 1, client.calls)
 	assert.Equal(t, listingID, client.gotAccept.GetListingId())
+	assert.Equal(t, int64(300), client.gotAccept.GetMinAmount())
 	// the seller check is marketplace's, against the token, so it must travel on
 	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
 }
@@ -520,10 +523,48 @@ func TestAcceptBid_AnswersAcceptedAndForwardsTheListing(t *testing.T) {
 func TestAcceptBid_RejectsAMalformedListingIDBeforeCallingMarketplace(t *testing.T) {
 	client := &stubListingClient{}
 
-	w := acceptBid(newRouter(client), "not-a-uuid")
+	w := acceptBid(newRouter(client), "not-a-uuid", acceptBidBody)
 
 	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
 	assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+}
+
+// FS-F692V §Req 7: the floor's shape is checked here, the way buyout's amount
+// is; whether the leading bid still meets it is marketplace's to say.
+func TestAcceptBid_RejectsAnInvalidFloorBeforeCallingMarketplace(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"missing minAmount", `{}`},
+		{"zero minAmount", `{"minAmount":0}`},
+		{"negative minAmount", `{"minAmount":-1}`},
+		{"not an integer", `{"minAmount":1.5}`},
+		{"a string", `{"minAmount":"300"}`},
+		{"unknown member", `{"minAmount":300,"bidId":"x"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{}
+
+			w := acceptBid(newRouter(client), uuid.New().String(), tt.body)
+
+			testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+			assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+		})
+	}
+}
+
+// Huma refuses a missing required body before validating its shape, with 400
+// rather than 422, as on every body-carrying route (see buyout). Still
+// VALIDATION_FAILED, and still before marketplace.
+func TestAcceptBid_NoBodyIsRefusedBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := acceptBid(newRouter(client), uuid.New().String(), "")
+
+	testsupport.AssertProblem(t, w, http.StatusBadRequest, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls)
 }
 
 func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
@@ -536,6 +577,8 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"not the seller", status.Error(codes.PermissionDenied, "permission denied"), http.StatusForbidden, errcode.Forbidden},
 		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
 		{"no bid to accept or auction closed", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
+		// FS-F692V §Req 5: the leading bid dropped below the floor, a registered code
+		{"leading bid lowered", errcode.Refuse(errcode.LeadingBidLowered), http.StatusBadRequest, errcode.LeadingBidLowered},
 		{"settlement could not start", status.Error(codes.Internal, "unhandled error"), http.StatusInternalServerError, errcode.Internal},
 	}
 
@@ -543,11 +586,29 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &stubListingClient{err: tt.err}
 
-			w := acceptBid(newRouter(client), uuid.New().String())
+			w := acceptBid(newRouter(client), uuid.New().String(), acceptBidBody)
 
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})
 	}
+}
+
+// FS-F692V §Req 8: accept-bid documents its new refusal and the 422 for a
+// malformed floor.
+func TestAcceptBid_DocumentsItsRefusals(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings/{listing_id}/accept"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Post)
+	for _, want := range []string{"400", "401", "403", "404", "409", "422", "500", "503"} {
+		assert.Contains(t, path.Post.Responses, want, "accept-bid documents %s", want)
+	}
+	assert.Contains(t, path.Post.Description, string(errcode.LeadingBidLowered))
+	require.NotNil(t, path.Post.RequestBody)
+	assert.True(t, path.Post.RequestBody.Required, "the floor is required")
 }
 
 // ========================= BUYOUT =========================

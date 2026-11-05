@@ -28,6 +28,8 @@ func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
 		errcode.EnclosureInvalid, errcode.UnknownItemTemplate, errcode.UnknownItemInstance,
 		errcode.LetterRecipientsInvalid, errcode.LetterExpired,
 		errcode.NothingToClaim, errcode.LetterAlreadyClaimed, errcode.LetterClaimInProgress,
+		// FS-F692V §Req 5
+		errcode.LeadingBidLowered,
 	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {
