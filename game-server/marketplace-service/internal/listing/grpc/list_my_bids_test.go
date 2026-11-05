@@ -44,7 +44,7 @@ func (r *fakeMyBidsReader) Execute(ctx context.Context, memberID uuid.UUID, c *c
 }
 
 func newMyBidsHandler(reader *fakeMyBidsReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, reader, nil, nil, nil, nil)
+	return NewHandler(nil, nil, nil, nil, nil, reader, nil, nil, nil, nil, nil)
 }
 
 func TestListMyBidsReadsTheCallersOwnBids(t *testing.T) {

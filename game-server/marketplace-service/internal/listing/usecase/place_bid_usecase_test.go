@@ -67,7 +67,7 @@ func (f *fakeRepo) Insert(ctx context.Context, l *listing.Listing) error {
 	return errors.New("Insert must not be called on a bid path")
 }
 
-// Save is the OCC path, which the withdraw use cases still take.
+// Save is the OCC path, which WithdrawBid still takes.
 func (f *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.ListingSnapshot) error {
 	return f.saveErr
 }

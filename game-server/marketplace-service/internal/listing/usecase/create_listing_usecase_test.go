@@ -63,3 +63,23 @@ func TestCreateListingUC_BirthsListingWithBuyoutPrice(t *testing.T) {
 	require.NotNil(t, repo.inserted.Snapshot().BuyoutPrice)
 	assert.Equal(t, 400, *repo.inserted.Snapshot().BuyoutPrice)
 }
+
+// The duration bound is checked when the seller lists, not here: ItemReserved
+// may be consumed minutes later, and a valid one-hour listing must still be born
+// when its end is now under the minimum (FS-XEDFF Req 2).
+func TestCreateListingUC_LateEventStillCreatesTheListing(t *testing.T) {
+	repo := &insertCapturingRepo{}
+	now := time.Now()
+
+	err := NewCreateListingUC(repo).Handle(context.Background(), &CreateListingCommand{
+		ListingID:  uuid.New(),
+		SellerID:   uuid.New(),
+		ItemID:     uuid.New(),
+		StartPrice: 100,
+		Now:        now,
+		EndsAt:     now.Add(30 * time.Minute),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.inserted)
+}

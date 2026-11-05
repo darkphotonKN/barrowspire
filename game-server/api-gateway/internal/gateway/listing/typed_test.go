@@ -38,17 +38,18 @@ func TestMain(m *testing.M) {
 type stubListingClient struct {
 	err error
 
-	calls       int
-	gotReq      *pb.PlaceBidRequest
-	gotListReq  *pb.ListItemRequest
-	gotWithdraw *pb.WithdrawBidRequest
-	gotAccept   *pb.AcceptBidRequest
-	gotBuyout   *pb.BuyoutRequest
-	gotMine     *pb.ListMyListingsRequest
-	gotBrowse   *pb.BrowseListingsRequest
-	gotGet      *pb.GetListingRequest
-	gotMyBids   *pb.ListMyBidsRequest
-	gotAuth     []string
+	calls              int
+	gotReq             *pb.PlaceBidRequest
+	gotListReq         *pb.ListItemRequest
+	gotWithdraw        *pb.WithdrawBidRequest
+	gotAccept          *pb.AcceptBidRequest
+	gotWithdrawListing *pb.WithdrawListingRequest
+	gotBuyout          *pb.BuyoutRequest
+	gotMine            *pb.ListMyListingsRequest
+	gotBrowse          *pb.BrowseListingsRequest
+	gotGet             *pb.GetListingRequest
+	gotMyBids          *pb.ListMyBidsRequest
+	gotAuth            []string
 
 	mine   *pb.ListMyListingsResponse
 	myBids *pb.ListMyBidsResponse
@@ -105,6 +106,13 @@ func (s *stubListingClient) AcceptBid(ctx context.Context, req *pb.AcceptBidRequ
 	s.gotAccept = req
 	s.recordAuth(ctx)
 	return &pb.AcceptBidResponse{}, s.err
+}
+
+func (s *stubListingClient) WithdrawListing(ctx context.Context, req *pb.WithdrawListingRequest) (*pb.WithdrawListingResponse, error) {
+	s.calls++
+	s.gotWithdrawListing = req
+	s.recordAuth(ctx)
+	return &pb.WithdrawListingResponse{}, s.err
 }
 
 func (s *stubListingClient) Buyout(ctx context.Context, req *pb.BuyoutRequest) (*pb.BuyoutResponse, error) {
@@ -393,6 +401,9 @@ func TestCreateListing_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"item worn", errcode.Refuse(errcode.ItemWorn), http.StatusBadRequest, errcode.ItemWorn},
 		{"item not available", errcode.Refuse(errcode.ItemNotAvailable), http.StatusBadRequest, errcode.ItemNotAvailable},
 		{"item not the member's", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
+		// FS-XEDFF §API surface: marketplace's duration bound, and items' cap passed through
+		{"duration out of range", errcode.Refuse(errcode.ListingDurationOutOfRange), http.StatusBadRequest, errcode.ListingDurationOutOfRange},
+		{"listing limit reached", errcode.Refuse(errcode.ListingLimitReached), http.StatusBadRequest, errcode.ListingLimitReached},
 	}
 
 	for _, tt := range tests {
@@ -420,10 +431,17 @@ func TestCreateListing_DocumentsItsRefusals(t *testing.T) {
 	for _, want := range []string{"400", "401", "404", "422", "500", "503"} {
 		assert.Contains(t, path.Post.Responses, want, "create-listing documents %s", want)
 	}
-	for _, code := range []errcode.Code{errcode.ItemWorn, errcode.ItemNotAvailable, errcode.EmailUnverified} {
+	for _, code := range []errcode.Code{
+		errcode.ItemWorn, errcode.ItemNotAvailable, errcode.EmailUnverified,
+		// FS-XEDFF Req 11
+		errcode.ListingDurationOutOfRange, errcode.ListingLimitReached,
+	} {
 		assert.Contains(t, path.Post.Description, string(code))
 	}
 	assert.Contains(t, path.Post.Description, "404")
+	// FS-XEDFF Req 11: the duration range is documented, not only its code
+	assert.Contains(t, path.Post.Description, "1 hour")
+	assert.Contains(t, path.Post.Description, "7 days")
 }
 
 // ========================= WITHDRAW BID =========================
@@ -548,6 +566,88 @@ func TestAcceptBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
 		})
 	}
+}
+
+// ========================= WITHDRAW LISTING =========================
+
+func withdrawListing(r *gin.Engine, listingID string) *httptest.ResponseRecorder {
+	return testsupport.DoWithHeaders(r, http.MethodDelete,
+		"/api/marketplace/listings/"+listingID, "", authedHeaders())
+}
+
+// FS-V7A5S Req 13: the listing is withdrawn by the time the call answers, so
+// the answer is No Content; the item and gold go back on their own.
+func TestWithdrawListing_AnswersNoContentAndForwardsTheListing(t *testing.T) {
+	client := &stubListingClient{}
+	listingID := uuid.New().String()
+
+	w := withdrawListing(newRouter(client), listingID)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+	assert.Empty(t, w.Body.String())
+	require.Equal(t, 1, client.calls)
+	assert.Equal(t, listingID, client.gotWithdrawListing.GetListingId())
+	// the seller check is marketplace's, against the token, so it must travel on
+	assert.Equal(t, []string{"Bearer caller-token"}, client.gotAuth)
+}
+
+func TestWithdrawListing_RejectsAMalformedListingIDBeforeCallingMarketplace(t *testing.T) {
+	client := &stubListingClient{}
+
+	w := withdrawListing(newRouter(client), "not-a-uuid")
+
+	testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+	assert.Zero(t, client.calls, "an invalid request must not reach marketplace")
+}
+
+// FS-V7A5S §API surface (HTTP).
+func TestWithdrawListing_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		{"not the seller", status.Error(codes.PermissionDenied, "permission denied"), http.StatusForbidden, errcode.Forbidden},
+		{"unknown listing", status.Error(codes.NotFound, "not found"), http.StatusNotFound, errcode.NotFound},
+		{"final 30 minutes with bids", errcode.Refuse(errcode.ListingWithdrawLocked), http.StatusBadRequest, errcode.ListingWithdrawLocked},
+		{"ended, bought out or not active", status.Error(codes.FailedPrecondition, "failed precondition"), http.StatusBadRequest, errcode.FailedPrecondition},
+		{"listing busy", status.Error(codes.Aborted, "aborted"), http.StatusConflict, errcode.Conflict},
+		{"marketplace unreachable", status.Error(codes.Unavailable, "unavailable"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubListingClient{err: tt.err}
+
+			w := withdrawListing(newRouter(client), uuid.New().String())
+
+			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
+		})
+	}
+}
+
+func TestWithdrawListing_DocumentsItsRefusals(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings/{listing_id}"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Delete)
+	assert.NotEmpty(t, path.Delete.Security, "withdrawing is a signed-in seller's action")
+	for _, want := range []string{"204", "400", "401", "403", "404", "409", "422", "503"} {
+		assert.Contains(t, path.Delete.Responses, want, "withdraw-listing documents %s", want)
+	}
+	assert.Contains(t, path.Delete.Description, string(errcode.ListingWithdrawLocked))
+	assert.Contains(t, path.Delete.Description, string(errcode.FailedPrecondition))
+	// a busy listing is a retry, and a 503 may already be a withdrawal whose
+	// follow-up has not started: the client retries both (FS-V7A5S Req 16)
+	assert.Contains(t, path.Delete.Description, "409 "+string(errcode.Conflict))
+	assert.Contains(t, path.Delete.Description, "503 ")
+	assert.Contains(t, path.Delete.Description, "retrying is safe")
+	// amended 2026-11-05: withdrawing is not email-gated
+	assert.NotContains(t, path.Delete.Description, string(errcode.EmailUnverified))
 }
 
 // ========================= BUYOUT =========================

@@ -7,6 +7,7 @@ const listing = {
   ended: false,
   endsAt: "2026-10-01T13:05:00.000Z",
   startPrice: 50,
+  bidCount: 0,
 };
 
 describe("mineRow", () => {
@@ -16,6 +17,7 @@ describe("mineRow", () => {
       live: true,
       timeLeft: "1h 5m",
       price: { gold: "50", opening: true },
+      withdraw: true,
     });
   });
 
@@ -65,5 +67,18 @@ describe("mineRow buyout (FS-49Z37 req 3)", () => {
 
   it("should carry none when it has not", () => {
     expect(mineRow(listing, NOW).buyout).toBeUndefined();
+  });
+
+  // FS-V7A5S req 14: the row offers Withdraw by the same rule as the seller block.
+  it.each([
+    ["a live auction with no bids", {}, true],
+    ["a live auction with bids, over 30 minutes from its end", { bidCount: 2, currentPrice: 90 }, true],
+    ["a contested auction inside its final 30 minutes", { bidCount: 2, currentPrice: 90, endsAt: "2026-10-01T12:20:00.000Z" }, false],
+    ["an uncontested auction inside its final 30 minutes", { endsAt: "2026-10-01T12:20:00.000Z" }, true],
+    ["a bought-out auction", { bidCount: 1, buyoutPrice: 300, currentPrice: 300 }, false],
+    ["an ended auction", { ended: true }, false],
+    ["a withdrawn listing", { status: "CANCELLED" }, false],
+  ])("should offer Withdraw on %s: %s", (_label, change, want) => {
+    expect(mineRow({ ...listing, ...change }, NOW).withdraw).toBe(want);
   });
 });

@@ -159,6 +159,29 @@ describe("apiClient.withdrawBid (FS-EYQ8K req 12)", () => {
   });
 });
 
+describe("apiClient.withdrawListing (FS-V7A5S req 13)", () => {
+  it("should DELETE the listing and resolve on a 204 with an empty body", async () => {
+    answer = empty(204);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.withdrawListing("l1")).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("DELETE");
+    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1");
+  });
+
+  it("should throw the problem's code on a refusal", async () => {
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 400, detail: "too late", code: "LISTING_WITHDRAW_LOCKED", errors: [] }),
+        { status: 400, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const { apiClient } = await loadApi();
+    const { ApiError } = await import("./apiError");
+    const err = await apiClient.withdrawListing("l1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as InstanceType<typeof ApiError>).code).toBe("LISTING_WITHDRAW_LOCKED");
+  });
+});
+
 describe("apiClient.moveItemInstance (FS-VPD8Y R22, R42)", () => {
   it("should PUT the location to the instance's location route and return the echo", async () => {
     answer = () =>

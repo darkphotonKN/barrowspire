@@ -8,6 +8,8 @@ import {
   DURATIONS,
   END_TIME_PASSED,
   LIST_FAILED,
+  LISTING_DURATION_OUT_OF_RANGE_COPY,
+  LISTING_LIMIT_REACHED_COPY,
   WORN_CANNOT_LIST,
   buyoutField,
   canSubmitListing,
@@ -228,6 +230,18 @@ describe("canSubmitListing", () => {
   });
 });
 
+describe("listing limit copy", () => {
+  // FS-XEDFF Req 12: the exact words
+  it("should say the duration range and the cap in the FS's words", () => {
+    expect(LISTING_DURATION_OUT_OF_RANGE_COPY).toBe(
+      "A listing must last between 1 hour and 7 days.",
+    );
+    expect(LISTING_LIMIT_REACHED_COPY).toBe(
+      "You already have 20 relics for sale. Wait for one to end, or withdraw one.",
+    );
+  });
+});
+
 describe("createListingFailureMessage", () => {
   const apiError = (status: number) =>
     new ApiError({ code: "X", status, detail: "", errors: [] });
@@ -245,13 +259,29 @@ describe("createListingFailureMessage", () => {
     ["a 503", apiError(503), BROWSE_UNREACHABLE],
     ["a network failure", new TypeError("Failed to fetch"), BROWSE_UNREACHABLE],
     ["a 422", apiError(422), LIST_FAILED],
+    // FS-XEDFF Req 12: the duration bound and the per-seller cap
+    [
+      "LISTING_DURATION_OUT_OF_RANGE, a listing too short or too long",
+      refusal("LISTING_DURATION_OUT_OF_RANGE"),
+      LISTING_DURATION_OUT_OF_RANGE_COPY,
+    ],
+    [
+      "LISTING_LIMIT_REACHED, a seller with 20 relics for sale",
+      refusal("LISTING_LIMIT_REACHED"),
+      LISTING_LIMIT_REACHED_COPY,
+    ],
   ])("should map %s", (_l, err, want) => {
     expect(createListingFailureMessage(err)).toBe(want);
   });
 
   // FS-HBXZN R17–R18: a code wins over the price reading, so a refused relic never reads as a
   // buyout or an end-time problem
-  it.each(["ITEM_WORN", "ITEM_NOT_AVAILABLE"])(
+  it.each([
+    "ITEM_WORN",
+    "ITEM_NOT_AVAILABLE",
+    "LISTING_DURATION_OUT_OF_RANGE",
+    "LISTING_LIMIT_REACHED",
+  ])(
     "should name %s by its code whatever prices were sent",
     (code) => {
       expect(

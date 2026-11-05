@@ -148,7 +148,7 @@ func newTestHandlerWithRelease(repo *fakeRepo, wallet *fakeWallet, release *fake
 		nil,
 		nil,
 		nil,
-	)
+		nil)
 }
 
 func TestPlaceBidRejectsACallerWithoutIdentity(t *testing.T) {
@@ -271,7 +271,7 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reserver := itemreserver.NewItemReserver(&fakeItemsClient{code: tt.itemsCode})
-			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 			_, err := h.ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
 				ItemId:     uuid.New().String(),
