@@ -5,6 +5,8 @@ Date: 2026-10-10
 Scope: `game-server/marketplace-service`, `game-server/wallet-service`
 Builds on: [ADR-0011](0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md) — extends its
 "write-path operations are activities in the owning service" rule from settlement to the bid path
+Amended by: [ADR-0049](0049-a-refused-bid-answers-only-once-its-hold-is-back.md) — "Callers start,
+never wait": PlaceBid now waits up to 3 seconds for its release before answering a refused bid
 
 ## Context
 
