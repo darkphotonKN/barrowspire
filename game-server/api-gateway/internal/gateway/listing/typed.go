@@ -155,7 +155,7 @@ func registerPlaceBid(api huma.API, h *Handler,
 			"own seller, who may not bid on it. 409 CONFLICT means the listing is busy " +
 			"and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and " +
 			"its gold returned: bid again with a new key. " +
-			"Refusals: BID_WITHDRAW_LIMIT_REACHED (the member has withdrawn 3 or more bids on this listing, so no gold is held and they can no longer bid on it; withdrawing and buyout are not limited), " +
+			"Refusals: BID_WITHDRAW_LIMIT_REACHED (the member has made 3 or more withdrawals of a leading bid on this listing, so no gold is held and they can no longer bid on it; withdrawing an outbid bid never counts; withdrawing and buyout are not limited), " +
 			"BID_TOO_LOW (the amount is below the start price with no contending bid, or not above the contending bid; re-read the listing for the current minimum), " +
 			"BID_AT_OR_ABOVE_BUYOUT (the amount is at or above the listing's buyout price; buy it out instead), " +
 			"ALREADY_LEADING (the member's own bid is already the listing's leading bid, so no gold is held; buyout is still allowed). " +
@@ -210,7 +210,9 @@ func registerWithdrawBid(api huma.API, h *Handler,
 		Description: "Withdraws a bid the signed-in member placed. A bid " +
 			"belonging to another member is refused, never silently ignored. " +
 			"A leading bid cannot be withdrawn in the auction's final 30 minutes (400 FAILED_PRECONDITION); " +
-			"an outbid bid can be withdrawn until the auction ends.",
+			"an outbid bid can be withdrawn until the auction ends. " +
+			"Withdrawing a leading bid counts toward the bid withdrawal cap (after 3 on one listing, place-bid answers 400 BID_WITHDRAW_LIMIT_REACHED); " +
+			"withdrawing an outbid bid doesn't.",
 		DefaultStatus: http.StatusNoContent,
 		Errors: []int{
 			http.StatusBadRequest,

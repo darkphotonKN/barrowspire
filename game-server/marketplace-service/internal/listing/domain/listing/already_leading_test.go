@@ -20,20 +20,20 @@ func TestPlaceBidWithID_AlreadyLeading(t *testing.T) {
 		bids    []memberBid // at 110, 120, ... in order
 		wantErr error
 	}{
-		{"own WINNING bid leads", []memberBid{{member, BidStatusWinning}}, ErrAlreadyLeading},
-		{"own PENDING bid is the contender", []memberBid{{member, BidStatusPending}}, ErrAlreadyLeading},
+		{"own WINNING bid leads", []memberBid{{member, BidStatusWinning, false}}, ErrAlreadyLeading},
+		{"own PENDING bid is the contender", []memberBid{{member, BidStatusPending, false}}, ErrAlreadyLeading},
 		{"own WINNING bid over another's OUTBID", []memberBid{
-			{other, BidStatusOutbid}, {member, BidStatusWinning},
+			{other, BidStatusOutbid, false}, {member, BidStatusWinning, false},
 		}, ErrAlreadyLeading},
 		{"OUTBID while another member leads", []memberBid{
-			{member, BidStatusOutbid}, {other, BidStatusWinning},
+			{member, BidStatusOutbid, false}, {other, BidStatusWinning, false},
 		}, nil},
 		{"own WINNING outranked by another's PENDING", []memberBid{
-			{member, BidStatusWinning}, {other, BidStatusPending},
+			{member, BidStatusWinning, false}, {other, BidStatusPending, false},
 		}, nil},
-		{"another member leads", []memberBid{{other, BidStatusWinning}}, nil},
+		{"another member leads", []memberBid{{other, BidStatusWinning, false}}, nil},
 		{"no bids", nil, nil},
-		{"own withdrawn bid only", []memberBid{{member, BidStatusCancelled}}, nil},
+		{"own withdrawn bid only", []memberBid{outbidWithdrawal(member)}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestPlaceBidWithID_AlreadyLeading_Order(t *testing.T) {
 
 	// the leader's bid is the last one, at 110 + 10*(n-1)
 	leading := func(bids ...memberBid) *Listing {
-		l := listingWithMemberBids(t, now, append(bids, memberBid{member, BidStatusWinning})...)
+		l := listingWithMemberBids(t, now, append(bids, memberBid{member, BidStatusWinning, false})...)
 		l.buyoutPrice = &buyout
 		return l
 	}
@@ -135,8 +135,8 @@ func TestPlaceBidWithID_AlreadyLeading_AfterPromotion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// a legacy stack or a rival's withdrawn bid leaves this shape reachable
 			l := listingWithMemberBids(t, now,
-				memberBid{tt.runnerUp, BidStatusOutbid},
-				memberBid{member, BidStatusWinning},
+				memberBid{tt.runnerUp, BidStatusOutbid, false},
+				memberBid{member, BidStatusWinning, false},
 			)
 			lead := l.Snapshot().Bids[1].ID
 			require.NoError(t, l.WithdrawBid(lead, member, now), "before the final 30 minutes")
@@ -159,7 +159,7 @@ func TestPlaceBidWithID_AlreadyLeading_AfterPromotion(t *testing.T) {
 func TestBuyout_WhileLeading_Succeeds(t *testing.T) {
 	now := time.Now()
 	member := uuid.New()
-	l := listingWithMemberBids(t, now, memberBid{member, BidStatusWinning})
+	l := listingWithMemberBids(t, now, memberBid{member, BidStatusWinning, false})
 	buyout := 500
 	l.buyoutPrice = &buyout
 	require.ErrorIs(t, l.NotLeading(member), ErrAlreadyLeading)

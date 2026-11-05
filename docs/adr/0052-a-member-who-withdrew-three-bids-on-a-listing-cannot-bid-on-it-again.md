@@ -10,6 +10,9 @@ on a withdrawn leader) · [ADR-0029](0029-an-outbid-bid-may-be-withdrawn.md) (an
 withdrawn) · ADR-0048 (a leading bid is locked in for the final 30 minutes; on a branch not yet
 merged) · [ADR-0024](0024-a-bids-hold-is-released-by-a-temporal-workflow-not-a-grpc-call.md)
 (every withdrawal starts a ReleaseHold workflow)
+Amended by: [ADR-0055](0055-only-a-withdrawal-of-a-leading-bid-counts-toward-the-bid-withdrawal-cap.md) — the
+"Counted per member, per listing, from … CANCELLED" clause: only CANCELLED bids that were leading
+(WINNING) when withdrawn count; withdrawing an OUTBID bid never counts
 
 ## Context
 

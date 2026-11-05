@@ -113,6 +113,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Item refusals passed through on listing → FS-HBXZN
 - [ ] Accept never sells below the leading bid shown → FS-F692V
 - [ ] Bid withdrawals capped per listing → FS-ZE43K
+- [ ] Only leading-bid withdrawals count toward the cap → FS-S109X
 - [ ] Distinct refusals for a bid too low or at buyout → FS-V74WE
 - [ ] No bidding against your own lead → FS-72KT8
 - [ ] Listings created only over a confirmed reservation → FS-04ZB6

@@ -26,9 +26,11 @@ this member's `SPECIFICATION.md`.
 
 - **Accept floor** — the leading bid amount the seller saw when they accepted (`minAmount`). AcceptBid is refused (`LEADING_BID_LOWERED`) when the WINNING bid is now below it; at or above it, settlement starts as usual, so a higher bid landing first still wins (FS-49Z37). A floor, not a bid identity: the seller never learns which bid leads.
 
-### Bidding (FS-ZE43K, FS-72KT8)
+### Bidding (FS-ZE43K, FS-72KT8, FS-S109X)
 
-- **Bid withdrawal cap** — the number of bids a member may withdraw on one listing (3, ADR-0052) before they can no longer bid on it. Counts only that member's CANCELLED bids on that listing; withdrawing itself is never refused, and buyout is not limited. A capped bid is refused with the domain sentinel `ErrBidWithdrawLimitReached`, which crosses the wire as the registered code `BID_WITHDRAW_LIMIT_REACHED` ("limit" in the code and sentinel names this cap; the constant is `bidWithdrawalCap`).
+- **Bid withdrawal cap** — the number of *leading withdrawals* a member may make on one listing (3, ADR-0052 as amended by ADR-0055) before they can no longer bid on it. Counts only that member's CANCELLED bids on that listing that were withdrawn while leading (`bids.withdrawn_while_leading`, FS-S109X); an *outbid withdrawal* never counts. Withdrawing itself is never refused, and buyout is not limited. A capped bid is refused with the domain sentinel `ErrBidWithdrawLimitReached`, which crosses the wire as the registered code `BID_WITHDRAW_LIMIT_REACHED` ("limit" in the code and sentinel names this cap; the constant is `bidWithdrawalCap`).
+- **Leading withdrawal** — a bidder withdrawing a bid whose status is WINNING at that moment. It promotes the runner-up (ADR-0028), so the price can fall back; this is the loop the cap bounds, and the only withdrawal it counts. Status at the moment of withdrawal decides: a bid promoted back to WINNING and then withdrawn is a leading withdrawal. Recorded on the bid as `withdrawn_while_leading` (FS-S109X); CANCELLED alone doesn't say which kind it was.
+- **Outbid withdrawal** — a bidder withdrawing a bid whose status is OUTBID at that moment, to free its gold (ADR-0029). Changes no price and promotes nobody; free under the cap (ADR-0055). Withdrawing a bid that once led but has since been outbid is an outbid withdrawal.
 - **Leading** — a member is leading a listing when the contending bid (the highest WINNING or PENDING bid, `findContendingBid`) is theirs, however they came to lead, promotion included (FS-72KT8). A leading member's new bid is refused with `ErrAlreadyLeading`, wire code `ALREADY_LEADING`; buying out is not refused.
 
 ### Withdrawing a listing (FS-V7A5S)

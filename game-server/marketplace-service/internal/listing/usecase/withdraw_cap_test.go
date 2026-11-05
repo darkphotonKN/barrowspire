@@ -13,7 +13,8 @@ import (
 )
 
 // withdrawBids has member place, confirm and withdraw n bids on l, the loop
-// ADR-0052 bounds. Each bid tops the current contender so the domain takes it.
+// ADR-0052 bounds. Each bid tops the current contender so the domain takes it,
+// and leads when withdrawn, so each is a leading withdrawal that counts (ADR-0055).
 func withdrawBids(t *testing.T, l *listing.Listing, member uuid.UUID, n int, now time.Time) {
 	t.Helper()
 	for i := 0; i < n; i++ {
@@ -91,4 +92,37 @@ func TestPlaceBidUC_CapFoundUnderTheLock_ReleasesTheHold(t *testing.T) {
 	assert.Equal(t, 1, repo.updateCall, "a rejection is not retried")
 	assert.Equal(t, 1, release.calls, "the hold goes back at once")
 	assert.Equal(t, wallet.gotBidID, release.gotBidID)
+}
+
+// withdrawOutbidBids has member place n bids on l, each outbid by rival and then
+// withdrawn: the bidding war ADR-0055 frees, none of which counts.
+func withdrawOutbidBids(t *testing.T, l *listing.Listing, member, rival uuid.UUID, n int, now time.Time) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		mine := uuid.New()
+		require.NoError(t, l.PlaceBidWithID(mine, member, 500+2*i, uuid.Nil, now))
+		require.NoError(t, l.ConfirmBid(mine, now))
+		leadWith(t, l, rival, 501+2*i, now)
+		require.NoError(t, l.WithdrawBid(mine, member, now))
+	}
+}
+
+// FS-S109X Req 1: a member who only ever withdrew outbid bids passes the
+// advisory check, and their bid is held and placed.
+func TestPlaceBidUC_AfterOnlyOutbidWithdrawals_PlacesTheBid(t *testing.T) {
+	now := time.Now()
+	member := uuid.New()
+	l := activeListing(t, 100)
+	withdrawOutbidBids(t, l, member, uuid.New(), 3, now)
+	repo, wallet, release := &fakeRepo{listing: l}, &fakeWallet{}, &fakeReleaser{}
+	bids := len(l.Snapshot().Bids)
+
+	err := NewPlaceBidUC(repo, wallet, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID, MemberID: member, Amount: 600, IdempotencyKey: uuid.New(), Now: now,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, wallet.calls, "the hold is placed")
+	assert.Zero(t, release.calls)
+	assert.Len(t, l.Snapshot().Bids, bids+1)
 }

@@ -280,7 +280,7 @@ func TestPlaceBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 	}{
 		// FS-V6SFK §Requirements 31: the gateway does no gating, it passes marketplace's refusal through
 		{"bidder's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
-		// FS-ZE43K §API surface: the member has withdrawn 3+ bids on this listing
+		// FS-ZE43K §API surface, FS-S109X Req 9: the member has withdrawn a leading bid 3+ times on this listing
 		{"bid withdrawal cap reached", errcode.Refuse(errcode.BidWithdrawLimitReached), http.StatusBadRequest, errcode.BidWithdrawLimitReached},
 		// FS-V74WE Req 8: the price refusals stay 400, only the code is specific
 		{"bid too low", errcode.Refuse(errcode.BidTooLow), http.StatusBadRequest, errcode.BidTooLow},
@@ -312,6 +312,23 @@ func TestPlaceBid_DocumentsTheWithdrawalCapRefusal(t *testing.T) {
 	require.NotNil(t, path.Post)
 	assert.Contains(t, path.Post.Responses, "400")
 	assert.Contains(t, path.Post.Description, string(errcode.BidWithdrawLimitReached))
+	// FS-S109X Req 8: only withdrawals of a leading bid count; an outbid one never does.
+	assert.Contains(t, path.Post.Description, "3 or more withdrawals of a leading bid")
+	assert.Contains(t, path.Post.Description, "withdrawing an outbid bid never counts")
+}
+
+// FS-S109X Req 8: withdraw-bid documents which withdrawals count toward the cap.
+func TestWithdrawBid_DocumentsWhichWithdrawalsCount(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings/{listing_id}/bids/{bid_id}"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Delete)
+	assert.Contains(t, path.Delete.Description, "Withdrawing a leading bid counts toward the bid withdrawal cap")
+	assert.Contains(t, path.Delete.Description, string(errcode.BidWithdrawLimitReached))
+	assert.Contains(t, path.Delete.Description, "withdrawing an outbid bid doesn't")
 }
 
 // FS-V74WE Req 9: place-bid documents both price refusals.
