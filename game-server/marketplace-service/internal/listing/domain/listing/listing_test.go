@@ -615,3 +615,29 @@ func TestPlaceBidWithID_SameKeyFromTheSameMember_IsAReplay(t *testing.T) {
 	assert.False(t, l.HasBid(resend))
 	assert.Len(t, l.Snapshot().Bids, 1)
 }
+
+// TestPlaceBid_SellerOnOwnListing_Refused pins that a seller cannot bid on their
+// own listing. Winning it costs them nothing (CommitHold debits and CreditSeller
+// credits the same account) and a withdrawal undoes it, so a seller's bid is a
+// free shill that raises the price real bidders must beat.
+func TestPlaceBid_SellerOnOwnListing_Refused(t *testing.T) {
+	l := activeListing(t, 100)
+	seller := l.Snapshot().SellerID
+
+	err := l.PlaceBid(seller, 500, uuid.Nil, time.Now())
+
+	assert.ErrorIs(t, err, ErrSellerCannotBid)
+	assert.Empty(t, l.Snapshot().Bids)
+}
+
+// TestCanPlaceBid pins the read-only check a caller asks before holding gold
+// for a bid: the seller is refused, and so is a listing that has ended, the
+// same rules PlaceBidWithID applies again under the lock.
+func TestCanPlaceBid(t *testing.T) {
+	l := activeListing(t, 100)
+	snap := l.Snapshot()
+
+	assert.ErrorIs(t, l.CanPlaceBid(snap.SellerID, time.Now()), ErrSellerCannotBid)
+	assert.ErrorIs(t, l.CanPlaceBid(uuid.New(), snap.EndsAt), ErrListingExpired)
+	assert.NoError(t, l.CanPlaceBid(uuid.New(), time.Now()))
+}

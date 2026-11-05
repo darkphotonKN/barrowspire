@@ -75,7 +75,7 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 	if err != nil {
 		return fmt.Errorf("place bid usecase handle reading listing %v : %w", cmd.ListingID, err)
 	}
-	if err := current.AcceptsBidAt(cmd.Now); err != nil {
+	if err := current.CanPlaceBid(cmd.MemberID, cmd.Now); err != nil {
 		return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
 	}
 	expiresAt := current.Snapshot().EndsAt.Add(settlementGrace)
@@ -198,6 +198,7 @@ func bidRejected(err error) bool {
 	for _, rejection := range []error{
 		listing.ErrBidTooLow,
 		listing.ErrBidAtOrAboveBuyout,
+		listing.ErrSellerCannotBid,
 		listing.ErrListingExpired,
 		listing.ErrListingNotAcceptingBids,
 		listing.ErrInvalidAmount,

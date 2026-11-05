@@ -330,3 +330,19 @@ func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T)
 	assert.Empty(t, repo.l.Snapshot().Bids)
 	assert.Equal(t, 1, release.calls)
 }
+
+// A seller bidding on their own listing is a who-may-do-this refusal, mapped like
+// a seller's own buyout: PermissionDenied, and no gold held for it.
+func TestPlaceBid_SellerOnOwnListing_PermissionDenied(t *testing.T) {
+	l := activeListing(t)
+	wallet := &fakeWallet{}
+	h := newTestHandler(&fakeRepo{l: l}, wallet)
+
+	_, err := h.PlaceBid(authedCtx(t, l.Snapshot().SellerID), &pb.PlaceBidRequest{
+		ListingId: l.Snapshot().ID.String(),
+		Amount:    150,
+	})
+
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+	assert.Zero(t, wallet.calls)
+}

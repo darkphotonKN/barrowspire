@@ -227,7 +227,7 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return nil
 	}
 
-	if err := l.AcceptsBidAt(now); err != nil {
+	if err := l.CanPlaceBid(memberID, now); err != nil {
 		return err
 	}
 
@@ -577,6 +577,22 @@ func (l *Listing) Buyout(bidID, memberID uuid.UUID, amount int, now time.Time) e
 	l.updatedAt = now
 
 	return nil
+}
+
+// CanPlaceBid reports whether memberID could place a bid on this listing at
+// now. Read-only: a caller about to hold gold for a bid asks it first, and
+// PlaceBidWithID applies the same rules again under the lock.
+//
+// The seller may never bid on their own listing. Winning it would cost them
+// nothing — CommitHold debits and CreditSeller credits the same account — and a
+// withdrawal undoes it, so a seller's bid is a free shill that raises the price
+// every real bidder must beat. Seller first, as in CanBuyout.
+func (l *Listing) CanPlaceBid(memberID uuid.UUID, now time.Time) error {
+	if l.sellerID == memberID {
+		return ErrSellerCannotBid
+	}
+
+	return l.AcceptsBidAt(now)
 }
 
 // AcceptsBidAt reports whether a new bid could be placed at now: the listing is

@@ -3569,7 +3569,7 @@ paths:
         - marketplace
   /api/marketplace/listings/{listing_id}/bids:
     post:
-      description: "Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. Resending with the same Idempotency-Key is safe and holds no further gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and its gold returned: bid again with a new key."
+      description: "Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. Resending with the same Idempotency-Key is safe and holds no further gold. 403 means the caller is the listing's own seller, who may not bid on it. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and its gold returned: bid again with a new key."
       operationId: place-bid
       parameters:
         - in: path
@@ -3606,6 +3606,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SeamError"
           description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
         "404":
           content:
             application/problem+json:

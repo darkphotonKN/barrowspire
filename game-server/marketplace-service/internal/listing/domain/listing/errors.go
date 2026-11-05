@@ -25,6 +25,7 @@ var (
 	ErrNoBuyoutPrice           = errors.New("listing has no buyout price")
 	ErrBuyoutAmountMismatch    = errors.New("amount is not the buyout price")
 	ErrSellerCannotBuyout      = errors.New("seller cannot buy out own listing")
+	ErrSellerCannotBid         = errors.New("seller cannot bid on own listing")
 	ErrNotBidOwner             = errors.New("not bid owner")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")

@@ -745,3 +745,31 @@ func TestPlaceBid_ResendWithTheSameKeyAfterTheBidLanded_HoldsNoGold(t *testing.T
 	assert.Zero(t, release.calls)
 	assert.Len(t, l.Snapshot().Bids, 1)
 }
+
+// A seller can never bid on their own listing, so no gold may be held for the
+// attempt: the refusal comes from the read before the hold, and the listing is
+// never written. Without the read-side check the seller's gold would be frozen
+// and then handed back on every attempt.
+func TestPlaceBidUC_SellerOnOwnListing_HoldsNoGold(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l}
+	wallet := &fakeWallet{}
+
+	err := NewPlaceBidUC(repo, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID,
+		MemberID:  l.Snapshot().SellerID,
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrSellerCannotBid)
+	assert.Zero(t, wallet.calls, "no gold may be held for a bid that cannot land")
+	assert.Zero(t, repo.updateCall, "the listing must not be written")
+}
+
+// A seller's bid refused under the lock is a definitive refusal, not an unknown
+// outcome: retrying it cannot change who the seller is, and reporting it as
+// transient would answer the seller with a 503.
+func TestBidRejected_SellerCannotBid(t *testing.T) {
+	assert.True(t, bidRejected(fmt.Errorf("wrapped: %w", listing.ErrSellerCannotBid)))
+}
