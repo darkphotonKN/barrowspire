@@ -112,11 +112,9 @@ describe("fullscreen state", () => {
 describe("fullscreenLabel", () => {
   it("should flip with the state, with a name for each", () => {
     expect(fullscreenLabel(false)).toEqual({
-      text: "全螢幕",
       name: "全螢幕 / enter fullscreen",
     });
     expect(fullscreenLabel(true)).toEqual({
-      text: "縮小",
       name: "縮小 / exit fullscreen",
     });
   });

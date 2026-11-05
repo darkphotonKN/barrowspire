@@ -78,8 +78,7 @@ export default function FullscreenButton({ frame, doc }: Props) {
       title={label.name}
       onClick={onClick}
     >
-      <Icon className="fullscreen-button-icon" />
-      <span>{label.text}</span>
+      <Icon className="fullscreen-button-icon" aria-hidden="true" />
     </button>
   );
 }

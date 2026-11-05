@@ -75,14 +75,14 @@ export function fullscreenOf(doc: FullscreenDocument): Fullscreen | null {
   };
 }
 
-/** What the button reads in each state, and its accessible name (R18). */
-export function fullscreenLabel(active: boolean): {
-  text: string;
-  name: string;
-} {
+/**
+ * The button's accessible name in each state (R18), also its hover tip. The button itself shows
+ * only its icon (asked 2026-11-05), so this is the only place the words live.
+ */
+export function fullscreenLabel(active: boolean): { name: string } {
   return active
-    ? { text: "縮小", name: "縮小 / exit fullscreen" }
-    : { text: "全螢幕", name: "全螢幕 / enter fullscreen" };
+    ? { name: "縮小 / exit fullscreen" }
+    : { name: "全螢幕 / enter fullscreen" };
 }
 
 /** What of the button the keeping listens on. An `HTMLElement` is one. */

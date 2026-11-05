@@ -825,14 +825,13 @@ body:has(.game-page) {
   top: calc(var(--fullscreen-inset) * var(--fullscreen-unit));
   right: calc(var(--fullscreen-inset) * var(--fullscreen-unit));
   z-index: 2;
+  /* a square around the icon: no words on the button, its name is the tooltip (asked 2026-11-05) */
+  width: calc(var(--fullscreen-height) * var(--fullscreen-unit));
   height: calc(var(--fullscreen-height) * var(--fullscreen-unit));
-  padding: 0 calc(7 * var(--fullscreen-unit));
+  padding: 0;
   display: inline-flex;
   align-items: center;
-  gap: calc(4 * var(--fullscreen-unit));
-  font-family: var(--font-body);
-  font-size: calc(12 * var(--fullscreen-unit));
-  line-height: 1;
+  justify-content: center;
   color: var(--color-text-dim);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
