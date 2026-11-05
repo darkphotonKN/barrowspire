@@ -1,7 +1,7 @@
 ---
 id: I-UNANCHORED-1
-status: open              # open | in-progress | done
-implements: none          # needs an FS or ADR before /develop will accept it
+status: done              # open | in-progress | done
+implements: FS-A3CQH      # anchored 2026-11-05: the wallet hold expiry sweep
 blocked_by: []
 labels: []
 title: Sweep wallet holds stranded by a failed place-bid
