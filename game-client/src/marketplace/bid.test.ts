@@ -6,6 +6,7 @@ import {
   BID_ENDED,
   BID_LAPSED,
   BID_NOT_ENOUGH_GOLD,
+  BID_WITHDRAW_LIMIT,
   PURSE_FAILED,
   PURSE_NOT_READY,
   bidAttempt,
@@ -153,6 +154,12 @@ describe("keepsBidKey", () => {
     ["a too-low bid (VALIDATION_FAILED)", apiError(400, "VALIDATION_FAILED"), false],
     ["an ended auction or short purse", apiError(400, "FAILED_PRECONDITION"), false],
     ["a spent key (409 · ALREADY_EXISTS)", apiError(409, "ALREADY_EXISTS"), false],
+    // FS-ZE43K §Requirements 12
+    [
+      "a member past the withdrawal cap (BID_WITHDRAW_LIMIT_REACHED)",
+      apiError(400, "BID_WITHDRAW_LIMIT_REACHED"),
+      false,
+    ],
     ["any other answer", apiError(400, "SOMETHING_NEW"), false],
   ])("should decide the key after %s", (_label, err, want) => {
     expect(keepsBidKey(err)).toBe(want);
@@ -200,6 +207,22 @@ describe("bidFailure", () => {
     expect(
       bidFailure(apiError(400, "EMAIL_UNVERIFIED"), { amount: 50, availableGold: 100 }),
     ).toEqual({ message: VERIFY_TO_BID });
+  });
+
+  // FS-ZE43K §Requirements 12
+  it("should tell a member past the withdrawal cap they can't bid on this auction again", () => {
+    expect(
+      bidFailure(apiError(400, "BID_WITHDRAW_LIMIT_REACHED"), { amount: 50, availableGold: 100 }),
+    ).toEqual({ message: BID_WITHDRAW_LIMIT });
+    expect(BID_WITHDRAW_LIMIT).toBe(
+      "You've withdrawn too many bids on this auction to bid on it again.",
+    );
+  });
+
+  it("should name the withdrawal cap even when the purse is short", () => {
+    expect(
+      bidFailure(apiError(400, "BID_WITHDRAW_LIMIT_REACHED"), { amount: 150, availableGold: 100 }),
+    ).toEqual({ message: BID_WITHDRAW_LIMIT });
   });
 
   it("should fall back to the server's own words for any other code", () => {
