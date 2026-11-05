@@ -344,12 +344,14 @@ class ApiClient {
     );
   }
 
-  // Ends the signed-in seller's auction early at its leading bid (FS-49Z37 req 15). No key, no
-  // body; 202 with an empty body once settlement has started.
-  async acceptBid(listingId: string): Promise<void> {
+  // Ends the signed-in seller's auction early at its leading bid (FS-49Z37 req 15). No key; the
+  // body is the accept floor, the leading bid the seller was shown, so nothing sells below it
+  // (FS-F692V req 1). 202 with an empty body once settlement has started.
+  async acceptBid(listingId: string, minAmount: number): Promise<void> {
     unwrap(
       await client.POST("/api/marketplace/listings/{listing_id}/accept", {
         params: { path: { listing_id: listingId } },
+        body: { minAmount },
       }),
     );
   }

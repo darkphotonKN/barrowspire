@@ -1180,8 +1180,12 @@ func (x *WithdrawBidResponse) GetCurrentPrice() int64 {
 // supplied by the caller. No bid ID: whichever bid is WINNING is the one
 // accepted, chosen by settlement itself.
 type AcceptBidRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ListingId string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	// The accept floor (FS-F692V): the leading bid amount the seller was shown.
+	// Refused with LEADING_BID_LOWERED when the WINNING bid is now below it;
+	// at or above it, the accept proceeds whoever leads. Must be > 0.
+	MinAmount     int64 `protobuf:"varint,2,opt,name=min_amount,json=minAmount,proto3" json:"min_amount,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1221,6 +1225,13 @@ func (x *AcceptBidRequest) GetListingId() string {
 		return x.ListingId
 	}
 	return ""
+}
+
+func (x *AcceptBidRequest) GetMinAmount() int64 {
+	if x != nil {
+		return x.MinAmount
+	}
+	return 0
 }
 
 type AcceptBidResponse struct {
@@ -1474,10 +1485,12 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\x13WithdrawBidResponse\x12\x15\n" +
 	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
-	"\rcurrent_price\x18\x03 \x01(\x03R\fcurrentPrice\"1\n" +
+	"\rcurrent_price\x18\x03 \x01(\x03R\fcurrentPrice\"P\n" +
 	"\x10AcceptBidRequest\x12\x1d\n" +
 	"\n" +
-	"listing_id\x18\x01 \x01(\tR\tlistingId\"\x13\n" +
+	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x1d\n" +
+	"\n" +
+	"min_amount\x18\x02 \x01(\x03R\tminAmount\"\x13\n" +
 	"\x11AcceptBidResponse\"o\n" +
 	"\rBuyoutRequest\x12\x1d\n" +
 	"\n" +

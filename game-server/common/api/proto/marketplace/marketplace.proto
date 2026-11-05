@@ -190,6 +190,10 @@ message WithdrawBidResponse {
 // accepted, chosen by settlement itself.
 message AcceptBidRequest {
   string listing_id = 1;
+  // The accept floor (FS-F692V): the leading bid amount the seller was shown.
+  // Refused with LEADING_BID_LOWERED when the WINNING bid is now below it;
+  // at or above it, the accept proceeds whoever leads. Must be > 0.
+  int64  min_amount = 2;
 }
 
 message AcceptBidResponse {}

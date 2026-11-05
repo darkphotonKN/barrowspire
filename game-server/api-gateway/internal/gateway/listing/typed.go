@@ -234,6 +234,8 @@ func registerAcceptBid(api huma.API, h *Handler,
 		// Read only to forward downstream: marketplace checks the listing is the
 		// seller's in this token. Hidden because the bearer scheme documents it.
 		Authorization string `header:"Authorization" hidden:"true"`
+
+		Body AcceptBidBody
 	}
 
 	type output struct{}
@@ -241,9 +243,13 @@ func registerAcceptBid(api huma.API, h *Handler,
 	huma.Register(api, huma.Operation{
 		OperationID: "accept-bid",
 		Description: "Ends the signed-in seller's auction early at its current leading bid. " +
-			"There is no bid to choose: whichever bid leads is the one accepted. " +
+			"There is no bid to choose: whichever bid leads is the one accepted, as long as it is at least " +
+			"minAmount, the leading bid the seller was shown; a higher bid landing first still wins. " +
 			"Answers once settlement has started; the sale completes asynchronously. " +
-			"Refused when the caller is not the seller, the auction is closed, or nobody leads.",
+			"Refused when the caller is not the seller, the auction is closed, or nobody leads. " +
+			"Refusals: LEADING_BID_LOWERED (the leading bid is now below minAmount; nothing is sold, " +
+			"re-read the listing). A body whose minAmount is missing, not an integer or below 1 answers " +
+			"422 VALIDATION_FAILED; a request with no body at all answers 400 VALIDATION_FAILED.",
 		DefaultStatus: http.StatusAccepted,
 		Errors: []int{
 			http.StatusBadRequest,
@@ -264,6 +270,7 @@ func registerAcceptBid(api huma.API, h *Handler,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		_, err := h.client.AcceptBid(withBearer(ctx, in.Authorization), &pb.AcceptBidRequest{
 			ListingId: in.ListingID,
+			MinAmount: in.Body.MinAmount,
 		})
 		if err != nil {
 			return nil, err

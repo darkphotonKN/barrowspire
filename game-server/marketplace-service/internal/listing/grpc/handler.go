@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -180,9 +181,17 @@ func (h *Handler) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.
 		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
 
+	// The accept floor (FS-F692V §Req 7). The gateway already refuses a missing
+	// or non-positive one as malformed; this guards every other caller, so
+	// sending zero never skips the floor.
+	if req.GetMinAmount() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "min amount must be positive")
+	}
+
 	if err := h.acceptBid.Handle(ctx, usecase.AcceptBidCommand{
 		ListingID: listingID,
 		MemberID:  memberID,
+		MinAmount: int(req.GetMinAmount()),
 		Now:       time.Now(),
 	}); err != nil {
 		return nil, mapError(ctx, err)
@@ -463,6 +472,13 @@ func mapError(ctx context.Context, err error) error {
 	var code codes.Code
 	var msg string
 	logLevel := slog.LevelWarn
+
+	// A rule of this service's own that the client must tell apart from a bare
+	// FAILED_PRECONDITION becomes its registered refusal here (FS-F692V §Req 5),
+	// so it crosses exactly as the refusals below do.
+	if errors.Is(err, listing.ErrLeadingBidLowered) {
+		err = fmt.Errorf("%w: %w", errcode.Refuse(errcode.LeadingBidLowered), err)
+	}
 
 	// A domain refusal, this service's own or one items-service answered (FS-HBXZN
 	// R7), crosses unchanged: same code, same ErrorInfo reason. Its status rather

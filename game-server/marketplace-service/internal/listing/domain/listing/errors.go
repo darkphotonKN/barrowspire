@@ -28,6 +28,7 @@ var (
 	ErrNotBidOwner             = errors.New("not bid owner")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
+	ErrLeadingBidLowered       = errors.New("leading bid below the accept floor")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

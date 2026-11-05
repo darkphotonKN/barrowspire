@@ -54,6 +54,13 @@ type BuyoutBody struct {
 	Amount int64 `json:"amount" minimum:"1" doc:"Gold the buyer agrees to pay. Must equal the listing's buyoutPrice; the buyer is always charged that price."`
 }
 
+// AcceptBidBody is the wire shape of an accept. The listing comes from the path
+// and the seller from the token; the floor is the leading bid the seller was
+// shown, so nothing sells below it (FS-F692V).
+type AcceptBidBody struct {
+	MinAmount int64 `json:"minAmount" minimum:"1" doc:"The leading bid amount the seller was shown. The accept is refused with LEADING_BID_LOWERED when the leading bid is now below it; at or above it, whichever bid leads is accepted."`
+}
+
 // Listing is a listing as its seller sees it. The optimistic-locking version is
 // internal to marketplace and has no field here.
 type Listing struct {
