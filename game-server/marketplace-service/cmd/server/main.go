@@ -26,6 +26,7 @@ import (
 	listinggrpc "github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/grpc"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/releasehold"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/withdrawlisting"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	sdklog "go.temporal.io/sdk/log"
@@ -139,6 +140,8 @@ func main() {
 		settlement.Register,
 		// gives one bid's hold back, retried until it lands
 		releasehold.Register,
+		// returns a withdrawn listing's item and every hold (FS-V7A5S)
+		withdrawlisting.Register,
 		func(w worker.Worker) { services.Activities.Register(w) },
 		// raise and resolve for escalate and park (FS-NXP1W Req 10)
 		func(w worker.Worker) { services.ExceptionActivities.Register(w) },

@@ -35,6 +35,12 @@ var (
 	// ErrListingAlreadyExists is an insert meeting a listing with the same id: a
 	// replay of the event that created it, not a collision with another listing.
 	ErrListingAlreadyExists = errors.New("listing already exists")
+	// ErrListingWithdrawLocked: the listing has live bids and is in its final
+	// ListingWithdrawLock, so its seller can no longer withdraw it (ADR-0051).
+	ErrListingWithdrawLocked = errors.New("listing withdraw locked")
+	// ErrListingDurationOutOfRange: a requested listing ends in the future but
+	// too soon or too late (see CheckDuration; FS-XEDFF Req 1).
+	ErrListingDurationOutOfRange = errors.New("listing duration out of range")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

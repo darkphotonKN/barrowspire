@@ -52,6 +52,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ### Marketplace
 
 - [x] Create a listing → FS-none
+- [ ] Withdraw a listing → FS-V7A5S
 - [x] Place a bid on a listing → FS-none
 - [x] Typed marketplace surface → FS-0YXG6
 - [x] Public listing browse and read → FS-8EGFA

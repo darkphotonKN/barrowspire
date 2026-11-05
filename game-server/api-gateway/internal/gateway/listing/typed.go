@@ -42,6 +42,7 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerPlaceBid(api, h, protect)
 	registerWithdrawBid(api, h, protect)
 	registerAcceptBid(api, h, protect)
+	registerWithdrawListing(api, h, protect)
 	registerBuyout(api, h, protect)
 	registerListMyListings(api, h, protect)
 	registerListMyBids(api, h, protect)
@@ -88,8 +89,12 @@ func registerCreateListing(api huma.API, h *Handler,
 		Description: "Lists an item from the signed-in member's stash for auction. The listing is not " +
 			"created by this request: marketplace reserves the item, and the listing appears once the " +
 			"reservation is confirmed. The seller is taken from the token, never the request. " +
+			"endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. " +
 			"Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending " +
-			"settlement or in a delve), EMAIL_UNVERIFIED (email not verified). " +
+			"settlement or in a delve), EMAIL_UNVERIFIED (email not verified), " +
+			"LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than " +
+			"7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed " +
+			"or settling). " +
 			"An item that is not the member's answers 404.",
 		DefaultStatus: http.StatusAccepted,
 		Errors: []int{
@@ -276,6 +281,59 @@ func registerAcceptBid(api huma.API, h *Handler,
 		_, err := h.client.AcceptBid(withBearer(ctx, in.Authorization), &pb.AcceptBidRequest{
 			ListingId: in.ListingID,
 			MinAmount: in.Body.MinAmount,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &output{}, nil
+	}))
+}
+
+// FS-V7A5S Req 13. Not email-gated: a withdrawal only exits a commitment
+// (FS-V7A5S Req 11 as amended 2026-11-05).
+func registerWithdrawListing(api huma.API, h *Handler,
+	protect func(huma.Context, func(huma.Context)),
+) {
+	type input struct {
+		ListingID string `path:"listing_id" format:"uuid"`
+
+		// Read only to forward downstream: marketplace checks the listing is the
+		// seller's in this token. Hidden because the bearer scheme documents it.
+		Authorization string `header:"Authorization" hidden:"true"`
+	}
+
+	type output struct{}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "withdraw-listing",
+		Description: "Withdraws the signed-in seller's own listing. The listing is withdrawn (CANCELLED) when " +
+			"this answers; the item returns to the seller and every bidder's gold is given back asynchronously. " +
+			"Withdrawing a listing already withdrawn is success. A listing of another member answers 403. " +
+			"Refusals: LISTING_WITHDRAW_LOCKED (the listing has bids and ends within 30 minutes), " +
+			"FAILED_PRECONDITION (the auction has ended, was bought out, or is no longer active). " +
+			"409 CONFLICT means the listing is busy and may be retried. 503 SERVICE_UNAVAILABLE can mean the listing " +
+			"was withdrawn but its follow-up (item return, bid refunds) has not yet started; retrying is safe and starts it.",
+		DefaultStatus: http.StatusNoContent,
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+			http.StatusServiceUnavailable,
+		},
+		Middlewares: huma.Middlewares{protect},
+		Security:    securedOp,
+		Method:      http.MethodDelete,
+		Path:        "/api/marketplace/listings/{listing_id}",
+		Summary:     "Withdraw a listing",
+		Tags:        []string{"marketplace"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		_, err := h.client.WithdrawListing(withBearer(ctx, in.Authorization), &pb.WithdrawListingRequest{
+			ListingId: in.ListingID,
 		})
 		if err != nil {
 			return nil, err

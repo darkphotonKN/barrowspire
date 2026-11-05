@@ -10,7 +10,7 @@ import RarityBadge from "@/components/RarityBadge";
 import BuyoutAction from "@/components/bazaar/BuyoutAction";
 import NoteText from "@/components/bazaar/NoteText";
 import { NOTE_TONE } from "@/components/bazaar/noteTone";
-import SellerBlock from "@/components/bazaar/SellerBlock";
+import SellerBlock, { CONFIRM_CANCEL } from "@/components/bazaar/SellerBlock";
 import { useDialogFocus } from "@/components/bazaar/useDialogFocus";
 import type { ItemLines } from "@/items/itemLines";
 import {
@@ -42,6 +42,7 @@ const endTime = (endsAt: string) =>
  * One listing in full, with the bid box (FS-8EGFA req 24, 26–29). It opens on the row's copy
  * and refetches the listing at once. `onListing` hears every newer read, so the table can show
  * a landed bid without a reload. Focus moves in on open and returns to `returnFocus` on close.
+ * `startWithdraw` opens it on the seller's withdraw confirm (FS-V7A5S req 14, 15).
  */
 export default function ListingDetailDialog({
   listing: initial,
@@ -49,15 +50,21 @@ export default function ListingDetailDialog({
   onListing,
   onClose,
   returnFocus,
+  startWithdraw = false,
 }: {
   listing: Listing;
   memberId: string | undefined;
   onListing: (listing: Listing) => void;
   onClose: () => void;
   returnFocus: RefObject<HTMLElement | null>;
+  startWithdraw?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef, { onClose, returnFocus, initialFocus: "input" });
+  useDialogFocus(dialogRef, {
+    onClose,
+    returnFocus,
+    initialFocus: startWithdraw ? CONFIRM_CANCEL : "input",
+  });
 
   const [listing, setListing] = useState(initial);
   // What is shown, readable from inside the reader, which drops any read older than it. A failed
@@ -174,7 +181,13 @@ export default function ListingDetailDialog({
         {/* Mounted for the seller whatever the panel, so Sell's answer outlives the re-read that
             ends the sale; it offers nothing unless the panel is "own" (FS-49Z37 req 13). */}
         {memberId !== undefined && memberId === listing.sellerId && (
-          <SellerBlock listing={listing} memberId={memberId} now={now} refresh={refresh} />
+          <SellerBlock
+            listing={listing}
+            memberId={memberId}
+            now={now}
+            refresh={refresh}
+            startWithdraw={startWithdraw}
+          />
         )}
         {/* One mount for "bid" and "closed", so the box keeps its answer as the auction ends. */}
         {(panel === "bid" || panel === "closed") && (

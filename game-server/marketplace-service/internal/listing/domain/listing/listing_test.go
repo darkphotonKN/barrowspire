@@ -148,7 +148,7 @@ func TestPlaceBidOnNonActiveListing(t *testing.T) {
 			name: "withdrawn listing is closed",
 			setup: func(t *testing.T) *Listing {
 				l := activeListing(t, 100)
-				require.NoError(t, l.Cancel(now))
+				require.NoError(t, l.Withdraw(l.Snapshot().SellerID, now))
 				return l
 			},
 		},

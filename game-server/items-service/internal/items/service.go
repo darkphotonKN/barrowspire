@@ -134,6 +134,7 @@ type Repository interface {
 	ReleaseRunExceptTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, settled []uuid.UUID) (int64, error)
 
 	// marketplace
+	CountListedTx(ctx context.Context, tx *sqlx.Tx, seller uuid.UUID) (int, error)
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt time.Time) (*ItemInstance, error)
 	ListStaleReserved(ctx context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) ([]StaleReservation, error)
 	CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
@@ -1590,7 +1591,10 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 // listing and puts ItemReserved in the outbox, in one transaction. Under the
 // seller's account lock, the lock an equip takes, so the two are ordered
 // (FS-HBXZN R3), the first failing check answers: not the seller's →
-// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4). The
+// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4); the
+// seller already at the listed-item cap → LISTING_LIMIT_REACHED (FS-XEDFF R5,
+// R8). The count runs under the same lock, so two reserves cannot both pass at
+// one under the cap, and a reservation not yet a listing counts (R6). The
 // reserve stays conditional on AVAILABLE, and a reserve that matches no row is
 // ITEM_NOT_AVAILABLE too. A refusal writes nothing.
 //
@@ -1618,6 +1622,14 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 			return errcode.Refuse(errcode.ItemNotAvailable)
 		case placement.Worn:
 			return errcode.Refuse(errcode.ItemWorn)
+		}
+
+		listed, err := s.repo.CountListedTx(ctx, tx, sellerID)
+		if err != nil {
+			return fmt.Errorf("reserve item %s: %w", itemID, err)
+		}
+		if listed >= MaxListedItems {
+			return errcode.Refuse(errcode.ListingLimitReached)
 		}
 
 		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt)

@@ -199,6 +199,20 @@ const (
 	// listing, so they can no longer bid on it. Withdrawing and buyout are not
 	// limited (ADR-0052). Added for FS-ZE43K (Bid withdrawal cap).
 	BidWithdrawLimitReached Code = "BID_WITHDRAW_LIMIT_REACHED"
+
+	// ListingWithdrawLocked: the listing has live bids (PENDING, WINNING or
+	// OUTBID) and is in its final 30 minutes, so its seller can no longer
+	// withdraw it. Decided by marketplace-service (ADR-0051). FS-V7A5S Req 12.
+	ListingWithdrawLocked Code = "LISTING_WITHDRAW_LOCKED"
+
+	// ListingDurationOutOfRange: the requested listing ends in the future but
+	// less than 1 h − 5 min or more than 7 d + 5 min away. Decided by
+	// marketplace-service when the seller lists. FS-XEDFF Req 1.
+	ListingDurationOutOfRange Code = "LISTING_DURATION_OUT_OF_RANGE"
+
+	// ListingLimitReached: the seller already has 20 items listed or settling.
+	// Decided by items-service on reserve. FS-XEDFF Req 5.
+	ListingLimitReached Code = "LISTING_LIMIT_REACHED"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -242,4 +256,11 @@ var domainCodes = map[Code]struct{}{
 
 	// FS-ZE43K
 	BidWithdrawLimitReached: {},
+
+	// FS-V7A5S
+	ListingWithdrawLocked: {},
+
+	// FS-XEDFF
+	ListingDurationOutOfRange: {},
+	ListingLimitReached:       {},
 }

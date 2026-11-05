@@ -1751,6 +1751,24 @@ func (r *repository) CountUnwornAtTx(ctx context.Context, tx *sqlx.Tx, member uu
 	return count, nil
 }
 
+// CountListedTx counts seller's instances LISTED or PENDING_SETTLEMENT on tx,
+// a reservation still waiting for its listing among them: what the listed-item
+// cap counts (FS-XEDFF R5, R6).
+func (r *repository) CountListedTx(ctx context.Context, tx *sqlx.Tx, seller uuid.UUID) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM item_instances
+		WHERE owner_member_id = $1
+		AND status IN ('LISTED', 'PENDING_SETTLEMENT')
+	`
+
+	var count int
+	if err := tx.GetContext(ctx, &count, query, seller); err != nil {
+		return 0, wrapDBErr("count listed items", err)
+	}
+	return count, nil
+}
+
 // MoveItemInstanceTx sets itemID's location, only while owner owns it and it
 // is AVAILABLE; false when that no longer holds, so a listing that reserved it
 // first is never moved (FS-VPD8Y R10).

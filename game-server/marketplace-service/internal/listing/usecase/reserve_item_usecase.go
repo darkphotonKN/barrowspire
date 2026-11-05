@@ -50,6 +50,12 @@ func (uc *ReserveItemUC) Handle(ctx context.Context, cmd *ReserveItemCommand) er
 	if _, err := listing.NewListing(uuid.New(), cmd.SellerID, cmd.ItemID, cmd.StartPrice, cmd.BuyoutPrice, cmd.Now, cmd.EndsAt); err != nil {
 		return fmt.Errorf("reserve item usecase validating listing terms: %w", err)
 	}
+	// The duration bound is the seller's request's rule, so it is applied here
+	// and not at birth: the listing is born when ItemReserved is consumed, maybe
+	// minutes later, and must not fail the minimum then (FS-XEDFF Req 2).
+	if err := listing.CheckDuration(cmd.Now, cmd.EndsAt); err != nil {
+		return fmt.Errorf("reserve item usecase checking listing duration: %w", err)
+	}
 
 	// check item and set item status listed
 	_, err := uc.itemReserver.ReserveItem(ctx, cmd.ItemID, cmd.StartPrice, cmd.BuyoutPrice, cmd.EndsAt)

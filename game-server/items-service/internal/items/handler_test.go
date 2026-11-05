@@ -514,6 +514,9 @@ func TestHandler_ReserveItem_Outcomes(t *testing.T) {
 			wantCode: codes.FailedPrecondition, wantReason: errcode.ItemWorn},
 		{name: "wrapped not available", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", errcode.Refuse(errcode.ItemNotAvailable))},
 			wantCode: codes.FailedPrecondition, wantReason: errcode.ItemNotAvailable},
+		// FS-XEDFF R5: the listed-item cap
+		{name: "wrapped listing limit reached", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", errcode.Refuse(errcode.ListingLimitReached))},
+			wantCode: codes.FailedPrecondition, wantReason: errcode.ListingLimitReached},
 		{name: "not the seller's", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", commonconstants.ErrNotFound)},
 			wantCode: codes.NotFound},
 		{name: "infrastructure failure", svc: &fakeReserveService{err: errors.New(secret)},

@@ -114,6 +114,8 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [ ] Accept never sells below the leading bid shown → FS-F692V
 - [ ] Bid withdrawals capped per listing → FS-ZE43K
 - [ ] Listings created only over a confirmed reservation → FS-04ZB6
+- [ ] Withdraw a listing → FS-V7A5S
+- [ ] Listing duration bounds → FS-XEDFF
 
 ### Auction lifecycle
 

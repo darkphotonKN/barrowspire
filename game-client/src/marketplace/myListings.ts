@@ -1,12 +1,14 @@
 /**
  * How a row reads under Mine (FS-8EGFA req 23): the player's listings in every status. The status
- * label replaces the Bid action, and only a live auction counts down.
+ * label replaces the Bid action, and only a live auction counts down. A withdrawable one also
+ * offers Withdraw (FS-V7A5S req 14).
  */
 
 import { formatGold } from "./gold";
 import { listingStatusLabel } from "./listingStatus";
 import { buyoutBadge } from "./rows";
 import { ENDED, formatTimeLeft } from "./timeLeft";
+import { listingWithdrawable } from "./withdrawListing";
 
 export interface MineListing {
   status: string;
@@ -16,6 +18,7 @@ export interface MineListing {
   currentPrice?: number;
   soldPrice?: number;
   buyoutPrice?: number;
+  bidCount: number;
 }
 
 export interface MineRow {
@@ -26,6 +29,8 @@ export interface MineRow {
   price: { gold: string; opening: boolean };
   /** `Buyout {price}` when the seller set one (FS-49Z37 req 3). */
   buyout?: string;
+  /** The seller may withdraw it now (FS-V7A5S req 14). */
+  withdraw: boolean;
 }
 
 export function mineRow(listing: MineListing, now: number): MineRow {
@@ -42,5 +47,6 @@ export function mineRow(listing: MineListing, now: number): MineRow {
       opening: gold === undefined,
     },
     buyout: buyoutBadge(listing),
+    withdraw: listingWithdrawable(listing, now),
   };
 }

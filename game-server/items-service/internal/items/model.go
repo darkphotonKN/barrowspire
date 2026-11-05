@@ -166,6 +166,11 @@ const (
 	StashCapacity = 60
 )
 
+// MaxListedItems is the listed-item cap: the most instances one seller may
+// have LISTED or PENDING_SETTLEMENT at once, counted on reserve under the
+// seller's account lock (FS-XEDFF R5-R7). Tuning, not contract.
+const MaxListedItems = 20
+
 // ItemInstance mirrors the item_instances table — a concrete owned item
 // (rolled from a template) belonging to a member.
 type ItemInstance struct {

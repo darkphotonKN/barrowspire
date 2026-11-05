@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -740,17 +741,20 @@ func TestServiceUpdateLoadout_RefusesAnItemNotAvailable(t *testing.T) {
 	}
 }
 
-// reserveRepo stubs the three calls a reservation makes, in a transaction run
+// reserveRepo stubs the four calls a reservation makes, in a transaction run
 // inline, and records the order they come in. The embedded interface is nil:
 // anything else the service reaches for panics the test.
 type reserveRepo struct {
 	Repository
 	placement  *ItemPlacement
+	listed     int
+	countErr   error
 	reserveErr error
 
 	calls     []string
 	lockedFor uuid.UUID
 	readFor   uuid.UUID
+	countFor  uuid.UUID
 }
 
 func (r *reserveRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member uuid.UUID) error {
@@ -763,6 +767,12 @@ func (r *reserveRepo) ItemPlacementTx(_ context.Context, _ *sqlx.Tx, owner, _ uu
 	r.calls = append(r.calls, "read")
 	r.readFor = owner
 	return r.placement, nil
+}
+
+func (r *reserveRepo) CountListedTx(_ context.Context, _ *sqlx.Tx, seller uuid.UUID) (int, error) {
+	r.calls = append(r.calls, "count")
+	r.countFor = seller
+	return r.listed, r.countErr
 }
 
 func (r *reserveRepo) ReserveItemTx(_ context.Context, _ *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, _ time.Time) (*ItemInstance, error) {
@@ -790,9 +800,11 @@ func (o *recordingOutbox) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, params c
 
 // FS-HBXZN R1-R4: under the seller's account lock the placement is read, and
 // the first failing check answers: not the seller's → ErrNotFound; not
-// AVAILABLE → ITEM_NOT_AVAILABLE, worn or not; worn → ITEM_WORN. Only then is
-// the conditional reserve run, and a reserve that matches no row is
-// ITEM_NOT_AVAILABLE. A refused reservation writes no outbox row.
+// AVAILABLE → ITEM_NOT_AVAILABLE, worn or not; worn → ITEM_WORN. Then the
+// seller's listed items are counted, and at the cap the reserve is refused
+// LISTING_LIMIT_REACHED (FS-XEDFF R5, R6, R8). Only then is the conditional
+// reserve run, and a reserve that matches no row is ITEM_NOT_AVAILABLE. A
+// refused reservation writes no outbox row.
 func TestServiceReserveItem_Rules(t *testing.T) {
 	available := func(worn bool) *ItemPlacement {
 		return &ItemPlacement{Status: itemStatusAvailable, Location: LocationBag, Worn: worn}
@@ -817,11 +829,23 @@ func TestServiceReserveItem_Rules(t *testing.T) {
 		{name: "worn and in a run is not available, not worn",
 			repo: &reserveRepo{placement: &ItemPlacement{Status: itemStatusInRun, Location: LocationBag, Worn: true}}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
 		{name: "unworn and available is reserved",
-			repo: &reserveRepo{placement: available(false)}, wantCalls: []string{"lock", "read", "reserve"}},
+			repo: &reserveRepo{placement: available(false)}, wantCalls: []string{"lock", "read", "count", "reserve"}},
+		{name: "one under the cap is reserved",
+			repo: &reserveRepo{placement: available(false), listed: MaxListedItems - 1}, wantCalls: []string{"lock", "read", "count", "reserve"}},
+		{name: "at the cap is refused",
+			repo: &reserveRepo{placement: available(false), listed: MaxListedItems}, wantRefusal: errcode.ListingLimitReached, wantCalls: []string{"lock", "read", "count"}},
+		{name: "over the cap is refused",
+			repo: &reserveRepo{placement: available(false), listed: MaxListedItems + 3}, wantRefusal: errcode.ListingLimitReached, wantCalls: []string{"lock", "read", "count"}},
+		{name: "worn at the cap is still worn",
+			repo: &reserveRepo{placement: available(true), listed: MaxListedItems}, wantRefusal: errcode.ItemWorn, wantCalls: []string{"lock", "read"}},
+		{name: "listed at the cap is still not available",
+			repo: &reserveRepo{placement: &ItemPlacement{Status: "LISTED", Location: LocationBag}, listed: MaxListedItems}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
+		{name: "a count failure is returned, not read as a refusal",
+			repo: &reserveRepo{placement: available(false), countErr: dbDown}, wantErr: dbDown, wantCalls: []string{"lock", "read", "count"}},
 		{name: "a reserve that matches no row is not available",
-			repo: &reserveRepo{placement: available(false), reserveErr: ErrItemNotReservable}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read", "reserve"}},
+			repo: &reserveRepo{placement: available(false), reserveErr: ErrItemNotReservable}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read", "count", "reserve"}},
 		{name: "a reserve failure is returned, not read as a refusal",
-			repo: &reserveRepo{placement: available(false), reserveErr: dbDown}, wantErr: dbDown, wantCalls: []string{"lock", "read", "reserve"}},
+			repo: &reserveRepo{placement: available(false), reserveErr: dbDown}, wantErr: dbDown, wantCalls: []string{"lock", "read", "count", "reserve"}},
 	}
 
 	for _, tt := range tests {
@@ -868,7 +892,19 @@ func TestServiceReserveItem_Rules(t *testing.T) {
 			if tt.repo.lockedFor != seller || tt.repo.readFor != seller {
 				t.Errorf("locked %v, read for %v; want the seller %v", tt.repo.lockedFor, tt.repo.readFor, seller)
 			}
+			if slices.Contains(tt.repo.calls, "count") && tt.repo.countFor != seller {
+				t.Errorf("counted for %v, want the seller %v", tt.repo.countFor, seller)
+			}
 		})
+	}
+}
+
+// refusedWith fails t unless err is the refusal code.
+func refusedWith(t *testing.T, err error, code errcode.Code) {
+	t.Helper()
+	var refusal *errcode.Refusal
+	if !errors.As(err, &refusal) || refusal.Code != code {
+		t.Fatalf("err = %v, want refusal %s", err, code)
 	}
 }
 
@@ -893,13 +929,6 @@ func TestServiceReserveItem_AgainstTheSchema(t *testing.T) {
 		outbox := &recordingOutbox{}
 		_, err := NewService(NewRepository(db), db, nil, outbox, nil).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
 		return outbox, err
-	}
-	refusedWith := func(t *testing.T, err error, code errcode.Code) {
-		t.Helper()
-		var refusal *errcode.Refusal
-		if !errors.As(err, &refusal) || refusal.Code != code {
-			t.Fatalf("err = %v, want refusal %s", err, code)
-		}
 	}
 
 	for _, column := range []string{"weapon_instance_id", "consumable_1_id"} {
@@ -971,6 +1000,140 @@ func TestServiceReserveItem_AgainstTheSchema(t *testing.T) {
 			t.Errorf("foreign item = %+v, want untouched", r)
 		}
 	})
+}
+
+// seedListed gives owner n instances that count toward the listed-item cap,
+// alternating LISTED and PENDING_SETTLEMENT.
+func seedListed(t *testing.T, ctx context.Context, db *sqlx.DB, owner uuid.UUID, n int) {
+	t.Helper()
+	for i := range n {
+		status := "LISTED"
+		if i%2 == 1 {
+			status = "PENDING_SETTLEMENT"
+		}
+		seedAt(t, ctx, db, owner, status, LocationStash)
+	}
+}
+
+// Opt-in and committed. The listed-item cap against a real schema: with 19
+// listed or settling the 20th reserve succeeds, and the 21st, counting the
+// 20th's reservation not yet a listing, is refused LISTING_LIMIT_REACHED with
+// nothing written. AVAILABLE and IN_RUN instances, and another member's
+// listings, do not count; a worn or unavailable item at the cap answers its
+// own code (FS-XEDFF R5, R6, R8).
+func TestServiceReserveItem_ListedItemCap(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	reserve := func(seller, itemID uuid.UUID) (*recordingOutbox, error) {
+		outbox := &recordingOutbox{}
+		_, err := NewService(NewRepository(db), db, nil, outbox, nil).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
+		return outbox, err
+	}
+	untouched := func(t *testing.T, item uuid.UUID) {
+		t.Helper()
+		if r := reservationOf(t, ctx, db, item); r.Status != itemStatusAvailable || r.ListingID != nil || r.ReservedAt != nil {
+			t.Errorf("item = %+v, want AVAILABLE with no listing and no reserved_at", r)
+		}
+	}
+
+	t.Run("the 20th is reserved and the 21st refused, writing nothing", func(t *testing.T) {
+		owner := uuid.New()
+		seedListed(t, ctx, db, owner, MaxListedItems-1)
+		twentieth := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+		twentyFirst := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+
+		if _, err := reserve(owner, twentieth); err != nil {
+			t.Fatalf("20th reserve: %v", err)
+		}
+		outbox, err := reserve(owner, twentyFirst)
+
+		refusedWith(t, err, errcode.ListingLimitReached)
+		untouched(t, twentyFirst)
+		if len(outbox.rows) != 0 {
+			t.Errorf("outbox rows = %d, want none", len(outbox.rows))
+		}
+	})
+
+	t.Run("available, in-run and another member's items do not count", func(t *testing.T) {
+		owner := uuid.New()
+		seedListed(t, ctx, db, owner, MaxListedItems-1)
+		for range 3 {
+			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
+			seedInRun(t, ctx, db, owner, LocationBag, uuid.New())
+		}
+		seedListed(t, ctx, db, uuid.New(), MaxListedItems)
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+
+		if _, err := reserve(owner, item); err != nil {
+			t.Fatalf("reserve at 19: %v", err)
+		}
+	})
+
+	t.Run("at the cap a worn item is still worn and an unavailable one still unavailable", func(t *testing.T) {
+		owner := uuid.New()
+		seedListed(t, ctx, db, owner, MaxListedItems)
+		worn := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+		wearIn(t, ctx, db, owner, worn, "weapon_instance_id")
+		inRun := seedInRun(t, ctx, db, owner, LocationBag, uuid.New())
+
+		_, err := reserve(owner, worn)
+		refusedWith(t, err, errcode.ItemWorn)
+		_, err = reserve(owner, inRun)
+		refusedWith(t, err, errcode.ItemNotAvailable)
+	})
+}
+
+// Opt-in and committed. Two reserves of different items for one seller at 19,
+// run at once and repeated: the account lock orders the counts, so every run
+// ends with exactly one reserved and the other refused LISTING_LIMIT_REACHED,
+// never 21 listed (FS-XEDFF R6, §User Stories 5).
+func TestServiceReserveItem_ConcurrentReservesAt19(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+
+	for i := range 10 {
+		owner := uuid.New()
+		seedListed(t, ctx, db, owner, MaxListedItems-1)
+		items := []uuid.UUID{
+			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag),
+			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag),
+		}
+
+		errs := make(chan error, len(items))
+		start := make(chan struct{})
+		for _, id := range items {
+			go func() {
+				<-start
+				_, err := svc.ReserveItem(ctx, owner, id, 100, nil, time.Now().Add(time.Hour))
+				errs <- err
+			}()
+		}
+		close(start)
+
+		var ok, capped int
+		for range items {
+			err := <-errs
+			var refusal *errcode.Refusal
+			switch {
+			case err == nil:
+				ok++
+			case errors.As(err, &refusal) && refusal.Code == errcode.ListingLimitReached:
+				capped++
+			default:
+				t.Errorf("run %d: unexpected error: %v", i, err)
+			}
+		}
+		if ok != 1 || capped != 1 {
+			t.Fatalf("run %d: reserved %d, refused LISTING_LIMIT_REACHED %d; want 1 and 1", i, ok, capped)
+		}
+
+		var listed int
+		if err := db.GetContext(ctx, &listed, `SELECT COUNT(*) FROM item_instances WHERE owner_member_id = $1 AND status IN ('LISTED', 'PENDING_SETTLEMENT')`, owner); err != nil {
+			t.Fatalf("run %d: count: %v", i, err)
+		}
+		if listed != MaxListedItems {
+			t.Fatalf("run %d: listed = %d, want %d", i, listed, MaxListedItems)
+		}
+	}
 }
 
 // midEquipRepo starts a reservation of the item being equipped after the

@@ -25,6 +25,11 @@ export const LIST_FAILED = "That relic could not be listed — try again.";
 export const WORN_CANNOT_LIST = "Take it off first — worn relics can't be listed.";
 /** FS-49Z37 req 2: the form's own check and the server's refusal read the same. */
 export const BUYOUT_NOT_ABOVE_START = "The buyout price must be above the starting bid.";
+/** FS-XEDFF Req 12: marketplace refused an end less than 1 hour or more than 7 days away. */
+export const LISTING_DURATION_OUT_OF_RANGE_COPY = "A listing must last between 1 hour and 7 days.";
+/** FS-XEDFF Req 12: items-service refused a seller who already has 20 relics for sale. */
+export const LISTING_LIMIT_REACHED_COPY =
+  "You already have 20 relics for sale. Wait for one to end, or withdraw one.";
 
 // ── Duration ────────────────────────────────────────────────────────────────
 
@@ -225,6 +230,8 @@ const REFUSAL_COPY: Record<string, string> = {
   [EMAIL_UNVERIFIED]: VERIFY_TO_LIST,
   ITEM_WORN: WORN_CANNOT_LIST,
   ITEM_NOT_AVAILABLE: CANNOT_LIST,
+  LISTING_DURATION_OUT_OF_RANGE: LISTING_DURATION_OUT_OF_RANGE_COPY,
+  LISTING_LIMIT_REACHED: LISTING_LIMIT_REACHED_COPY,
 };
 
 /**

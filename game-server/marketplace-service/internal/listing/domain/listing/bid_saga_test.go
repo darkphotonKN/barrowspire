@@ -135,13 +135,14 @@ func TestConfirmBid(t *testing.T) {
 		require.NoError(t, l.PlaceBid(uuid.New(), 200, uuid.Nil, time.Now()))
 		late := l.Snapshot().Bids[1].ID
 
-		require.NoError(t, l.Cancel(time.Now()))
+		require.NoError(t, l.Withdraw(l.Snapshot().SellerID, time.Now()))
 
 		assert.ErrorIs(t, l.ConfirmBid(late, time.Now()), ErrListingNotAcceptingBids)
 
+		// the withdrawal lost both; a late confirmation must not revive either
 		bids := l.Snapshot().Bids
-		assert.Equal(t, BidStatusWinning, bids[0].Status)
-		assert.Equal(t, BidStatusPending, bids[1].Status)
+		assert.Equal(t, BidStatusLost, bids[0].Status)
+		assert.Equal(t, BidStatusLost, bids[1].Status)
 	})
 }
 
