@@ -43,6 +43,14 @@ type Downstreams struct {
 	Character    string
 }
 
+// Features switches on routes that must not exist in every environment.
+type Features struct {
+	// DevEndpoints mounts routes that exist only to set up a dev environment,
+	// such as POST /wallet/deposit: it mints gold from nothing, with no payment
+	// and no ledger entry (ADR-0006), so it is off unless explicitly enabled.
+	DevEndpoints bool
+}
+
 /**
 * Sets up API prefix route and all routers.
 *
@@ -52,7 +60,7 @@ type Downstreams struct {
 * The returned close func releases every downstream connection; call it on
 * shutdown.
 **/
-func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gin.Engine, func() error, error) {
+func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel, features Features) (*gin.Engine, func() error, error) {
 	var conns []io.Closer
 	closeAll := func() error {
 		var errs []error
@@ -272,8 +280,15 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel) (*gi
 	// Gin and Huma cannot both own it, so it is not registered here.
 	walletRoutes.Use(auth.AuthMiddleware())
 	walletRoutes.POST("/account", walletHandler.CreateAccountHandler)
-	walletRoutes.POST("/deposit", walletHandler.DepositHandler)
 	walletRoutes.POST("/withdraw", walletHandler.WithdrawHandler)
+
+	// Deposit mints gold out of nothing — no payment behind it and no ledger
+	// entry, since a deposit has no counterparty until a system account exists
+	// (ADR-0006). Only scripts/seed-dev.sh uses it, so it is mounted only when
+	// dev endpoints are on; everywhere else it is an unrouted 404.
+	if features.DevEndpoints {
+		walletRoutes.POST("/deposit", walletHandler.DepositHandler)
+	}
 
 	// NOTE: PlaceHold / CommitHold are intentionally not exposed. They are steps
 	// inside the bidding saga owned by marketplace-service, not user actions.

@@ -256,6 +256,8 @@ for u in $PLAYERS; do
       [ "$gold" -ge 10000 ] && { ok=1; break; }
       req POST /wallet/deposit "{\"gold\":$((10000 - gold))}"
       [ "$CODE" = 200 ] && { ok=1; break; }
+      # the deposit route is dev-only: the gateway mounts it only when ENVIRONMENT=development
+      [ "$CODE" = 404 ] && die "POST /wallet/deposit is not mounted: start api-gateway with ENVIRONMENT=development (e.g. in api-gateway/.env)"
     fi
     sleep 1
   done
