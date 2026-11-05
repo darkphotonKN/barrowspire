@@ -161,6 +161,7 @@ server state and sends intents. ✅
 
 - [x] In-game chat window → FS-WJGFJ
 - [x] Channel filters on one chat stream → FS-WJGFJ
+- [ ] Canvas chat channel picker → FS-J267Q
 - [x] Send to the world channel from the chat window → FS-5SH4G
 - [ ] Send to the party channel from the chat window → FS-XGW7H
 - [ ] Whisper a player from the chat window → FS-KCQ06

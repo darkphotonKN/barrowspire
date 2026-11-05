@@ -90,8 +90,9 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   world switch; the player walks from town into the Spire and the lines stay.
 - **Fold** — the window folded down to its input row by its button, and unfolded again. It stays
   as the player left it; a folded window still sends, and new lines do not unfold it.
-- **Channel picker** — the drop-down at the input row's left: which channel the next line goes
-  to. Every channel is listed; one the server does not relay yet is listed disabled.
+- **Channel picker** — the drop-down at the input row's left, drawn on the canvas: which channel
+  the next line goes to. Only the shown channels are listed (Trade is absent); one the server does
+  not relay yet is dim and cannot be picked. Tab and Shift+Tab cycle it from the text field.
 - **Prefix** — the mark at the start of a line that names its channel: `#` World, `$` Trade,
   `%` Party, `@` Whisper (then a name), none for Area. Picking a channel writes its prefix, and
   typing a prefix picks its channel. A closed channel's prefix is just text.
