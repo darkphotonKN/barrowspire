@@ -194,7 +194,9 @@ func registerWithdrawBid(api huma.API, h *Handler,
 	huma.Register(api, huma.Operation{
 		OperationID: "withdraw-bid",
 		Description: "Withdraws a bid the signed-in member placed. A bid " +
-			"belonging to another member is refused, never silently ignored.",
+			"belonging to another member is refused, never silently ignored. " +
+			"A leading bid cannot be withdrawn in the auction's final 30 minutes (400 FAILED_PRECONDITION); " +
+			"an outbid bid can be withdrawn until the auction ends.",
 		DefaultStatus: http.StatusNoContent,
 		Errors: []int{
 			http.StatusBadRequest,

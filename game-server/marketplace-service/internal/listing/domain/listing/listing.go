@@ -453,6 +453,12 @@ func (l *Listing) LoseAllBids(now time.Time) error {
 	return nil
 }
 
+// LeaderWithdrawLock is how long before the end a WINNING bid can no longer be
+// withdrawn. Closed at its start: at exactly endsAt - LeaderWithdrawLock the
+// leader is already locked in. Tuning, not contract: the rule is ADR-0048's,
+// the number is not.
+const LeaderWithdrawLock = 30 * time.Minute
+
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
 	// Ended means what it means to PlaceBid. Between the end and settlement's freeze
 	// the listing is still ACTIVE, and a withdrawal there would change the outcome:
@@ -473,6 +479,15 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 	}
 
 	wasLeading := bid.status == BidStatusWinning
+
+	// A leader is locked in for the auction's final window. Withdrawing it then
+	// promotes the runner-up (ADR-0028) too late for anyone to outbid them, which
+	// is bid shielding: a high bid scares rivals off, then leaves a low bid to win.
+	// An OUTBID bid changes no outcome by leaving, so it stays free (ADR-0029,
+	// ADR-0048).
+	if wasLeading && !now.Before(l.endsAt.Add(-LeaderWithdrawLock)) {
+		return ErrLeadingBidLocked
+	}
 
 	// the FSM rejects anything already won, lost or cancelled; an OUTBID bid may be
 	// withdrawn (ADR-0029) and, not leading, promotes nobody

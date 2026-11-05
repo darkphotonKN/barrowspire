@@ -518,6 +518,7 @@ func mapError(ctx context.Context, err error) error {
 		errors.Is(err, listing.ErrListingExpired) ||
 		errors.Is(err, listing.ErrInvalidBidTransition) ||
 		errors.Is(err, listing.ErrNoBidToAccept) ||
+		errors.Is(err, listing.ErrLeadingBidLocked) ||
 		errors.Is(err, listing.ErrNoBuyoutPrice) ||
 		errors.Is(err, commonconstants.ErrInsufficientGold):
 		code = codes.FailedPrecondition
