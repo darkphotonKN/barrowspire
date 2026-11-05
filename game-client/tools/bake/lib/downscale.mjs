@@ -1,4 +1,4 @@
-// A frame baked at `scale` px per screen px (spike/archer-2x), brought back to 1× for the measures
+// A frame baked at `scale` px per screen px (FS-HF0WW), brought back to 1× for the measures
 // the manifest records in screen px (`crown`, `length`), so a 2× sheet's head height means what a
 // 1× sheet's does.
 

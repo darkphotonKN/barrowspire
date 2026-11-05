@@ -39,7 +39,7 @@ export const MERC_ANIMATIONS = {
 export const WALK_ATTACK_CYCLES = 2;
 
 /**
- * The Archer's clips (spike/archer-2x): the four, and `walk_attack`, the shot from the waist up
+ * The Archer's clips (FS-HF0WW): the four, and `walk_attack`, the shot from the waist up
  * over the walk from the waist down, played while he shoots on the move. It lasts exactly as long
  * as the attack (14 frames at 24 fps, the attack's 7 at 12), so the client's attack window times
  * it unchanged. The upper body steps through the attack's own 7 keys, each held two frames, just

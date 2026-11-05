@@ -350,7 +350,7 @@ async function loadPhaser(): Promise<void> {
   });
 }
 
-describe("a trimmed sheet's frames (spike/archer-2x)", () => {
+describe("a trimmed sheet's frames (FS-HF0WW)", () => {
   beforeAll(loadPhaser);
   afterAll(() => {
     vi.unstubAllGlobals();

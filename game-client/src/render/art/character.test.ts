@@ -62,7 +62,7 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#mercenary",
         licence: "Barrowspire-original",
       },
-      // the Archer's (spike/archer-2x): baked at 2x, carrying the attack on the move, which
+      // the Archer's (FS-HF0WW): baked at 2x, carrying the attack on the move, which
       // lasts as long as the attack (14 frames at 24 fps, 7 at 12)
       char_archer_base: {
         atlas: "characters-0",
@@ -418,7 +418,7 @@ describe("CharacterAnimator", () => {
     expect(anim.step({ x: 0, y: 0 }, 500, FRAME, false).animation).toBe("idle");
   });
 
-  describe("a sheet baked at 2x (spike/archer-2x)", () => {
+  describe("a sheet baked at 2x (FS-HF0WW)", () => {
     it("should draw it at half scale, so it stands exactly as large as a 1x sheet", () => {
       const archer = new CharacterAnimator(art(), "archer");
       const knight = new CharacterAnimator(art(), "warrior");
@@ -451,7 +451,7 @@ describe("CharacterAnimator", () => {
     });
   });
 
-  describe("attacking on the move (walk_attack, spike/archer-2x)", () => {
+  describe("attacking on the move (walk_attack, FS-HF0WW)", () => {
     /** An archer drawn walking east at the server's pace, then loosing at `aim`. */
     function shootingWhileWalking(aim: { x: number; y: number }) {
       const anim = new CharacterAnimator(art(), "archer");

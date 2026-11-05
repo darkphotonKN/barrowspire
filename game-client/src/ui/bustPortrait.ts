@@ -48,7 +48,7 @@ function figureOf(
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (frame && image && ctx) {
-    // the whole frame, so the bounds are in its px: a trimmed frame's cut (spike/archer-2x) is put
+    // the whole frame, so the bounds are in its px: a trimmed frame's cut (FS-HF0WW) is put
     // back at its offset, which is 0, 0 on a whole frame; a crop reads the same px (`setCrop`)
     const w = (canvas.width = frame.realWidth);
     const h = (canvas.height = frame.realHeight);

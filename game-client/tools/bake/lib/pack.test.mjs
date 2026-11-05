@@ -127,7 +127,7 @@ describe("packAtlases", () => {
   });
 });
 
-describe("a trimmed sheet (spike/archer-2x, lib/trim.mjs)", () => {
+describe("a trimmed sheet (FS-HF0WW, lib/trim.mjs)", () => {
   // frames cut to their pixels: each its own size, none larger than the 160 x 140 frame
   const sizes = (n, seed = 1) =>
     Array.from({ length: n }, (_, i) => ({ w: 40 + ((i * 37 + seed * 11) % 120), h: 50 + ((i * 53 + seed * 7) % 90) }));

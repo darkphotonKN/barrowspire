@@ -30,11 +30,11 @@
  *   silhouette in the facings that lay its body along the screen (ne, sw), the longest. Its size
  *   tier is taken by body length, not height (guideline "Size is a threat tier", FS-X2F2H R61).
  * - A sheet's `scale` (absent: 1) is how many of its px make one screen px: a sheet baked at 2x
- *   (spike/archer-2x) holds twice the detail each way and is drawn at half size
+ *   (FS-HF0WW) holds twice the detail each way and is drawn at half size
  *   ({@link sheetScale}), so it stands exactly as large as a 1x sheet. Its frame geometry
  *   (`frameWidth`, `frameHeight`, frame positions) is in its own px, as the atlas holds them; the
  *   anchor is a fraction, so it holds either way; `crown`, `length` and a light stay screen px.
- * - A `trimmed` sheet (spike/archer-2x) had each frame cut to the box that holds its pixels before
+ * - A `trimmed` sheet (FS-HF0WW) had each frame cut to the box that holds its pixels before
  *   packing, so its atlas stores no empty margin. Each frame then also records its `trim`: where
  *   the cut sits inside the sheet's `frameWidth` x `frameHeight`, in the sheet's px and on whole
  *   screen px (multiples of `scale`). The atlas holds the cut, `trim.w` x `trim.h`, at the frame's

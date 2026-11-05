@@ -16,7 +16,7 @@ export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const
 /**
  * Those, the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
  * raised into and then held on its last frame; and the Archer's attack on the move
- * (spike/archer-2x): `walk_attack`, the attack from the waist up over the walk from the waist
+ * (FS-HF0WW): `walk_attack`, the attack from the waist up over the walk from the waist
  * down, lasting exactly as long as the attack, which only his sheet carries.
  */
 export type CharacterAnimation =
@@ -60,7 +60,7 @@ export interface CharacterState {
    */
   guarding?: boolean;
   /**
-   * The sheet carries `walk_attack` (the Archer's, spike/archer-2x): an attack drawn while the
+   * The sheet carries `walk_attack` (the Archer's, FS-HF0WW): an attack drawn while the
    * body moves keeps the legs walking instead of sliding the whole attack pose along. Without it,
    * or during a charge's held pose, the attack plays as before.
    */

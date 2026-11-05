@@ -73,7 +73,7 @@ export class CharacterMotion {
   private charging = false;
 
   /**
-   * `walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, spike/archer-2x), so an
+   * `walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, FS-HF0WW), so an
    * attack drawn while moving keeps the legs walking.
    */
   constructor(
@@ -160,7 +160,7 @@ export class CharacterAnimator {
   private readonly guards: boolean;
   /**
    * The sprite scale that draws the sheet at its true size: 1 over its `scale` (a 2x sheet's
-   * 0.5, spike/archer-2x). Not a size: markers, the crown and the footprint stay screen px. 1
+   * 0.5, FS-HF0WW). Not a size: markers, the crown and the footprint stay screen px. 1
    * when there is no baked sheet.
    */
   readonly artScale: number;
@@ -266,7 +266,7 @@ export class CharacterAnimator {
       const at = current ? Math.max(0, current.frames.indexOf(anims.currentFrame)) : 0;
       let startFrame = 0;
       if (current && this.loops(clip) && from === clip) startFrame = at;
-      // starting or stopping mid-swing (spike/archer-2x): the other swing clip carries on from
+      // starting or stopping mid-swing (FS-HF0WW): the other swing clip carries on from
       // as far through as this one got, rather than drawing the shot again from the start
       else if (current && from !== clip && from && this.swingClips.has(from) && this.swingClips.has(clip))
         startFrame = Math.min(

@@ -179,7 +179,7 @@ const grown = (r: { x: number; y: number; width: number; height: number }, by: n
   height: r.height + by * 2,
 });
 /**
- * A sheet baked at 2x is drawn at half scale (spike/archer-2x). The arcade body is sized off the
+ * A sheet baked at 2x is drawn at half scale (FS-HF0WW). The arcade body is sized off the
  * sprite's scale, so it is doubled here to keep the size a 1x sheet's body has.
  */
 function keepBodySize(sprite: Phaser.Physics.Arcade.Sprite, artScale: number): void {

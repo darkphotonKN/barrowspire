@@ -45,7 +45,7 @@ describe("the Mercenary's parry clip (FS-MAMHR §G.35)", () => {
   });
 });
 
-describe("the Archer's attack on the move (walk_attack, spike/archer-2x)", () => {
+describe("the Archer's attack on the move (walk_attack, FS-HF0WW)", () => {
   const archer = {
     attack: "shot",
     hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0] }),

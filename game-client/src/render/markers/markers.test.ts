@@ -234,7 +234,7 @@ describe("markerBase", () => {
     expect(markerBase(sheet, 76, true)).toBeNull();
   });
 
-  describe("on a sheet baked at 2x, drawn at half scale (spike/archer-2x)", () => {
+  describe("on a sheet baked at 2x, drawn at half scale (FS-HF0WW)", () => {
     // the same figure: its frame twice the px, the sprite at 0.5, the crown still screen px
     const sheet2x = { y: 300, displayOriginY: 216, scaleY: 0.5 };
 

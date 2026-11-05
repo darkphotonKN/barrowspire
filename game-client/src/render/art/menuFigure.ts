@@ -65,10 +65,10 @@ export class MenuFigure {
   private animator: CharacterAnimator;
   private destroyed = false;
   /**
-   * A trimmed sheet's portrait window, set again after every frame change. Phaser 3.90 crops a
-   * trimmed frame by overwriting the crop with its overlap with that frame's cut
-   * (`Frame.setCropUVs`), and crops the next frame of the animation from that overlap
-   * (`updateCropUVs`), so the window would shrink as the clip plays.
+   * A trimmed sheet's portrait window, set again after every frame change. Phaser (3.90 and
+   * 4.2.1 alike) crops a trimmed frame by overwriting the crop with its overlap with that frame's
+   * cut (`Frame.setCropUVs`), and crops the next frame of the animation from that overlap
+   * (`TextureCrop.setFrame` → `updateCropUVs`), so the window would shrink as the clip plays.
    */
   private trimmedCrop?: [x: number, y: number, width: number, height: number];
 
@@ -175,7 +175,7 @@ export class MenuFigure {
       return;
     }
     // The window and the head are screen px; the crop is in the frame's own px, `k` of them to
-    // a screen px on a 2x sheet (spike/archer-2x).
+    // a screen px on a 2x sheet (FS-HF0WW).
     const k = sheetScale(sheet);
     const anchorX = Math.round((sheet.anchor.x * sheet.frameWidth) / k);
     const anchorY = Math.round((sheet.anchor.y * sheet.frameHeight) / k);

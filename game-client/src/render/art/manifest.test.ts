@@ -256,7 +256,7 @@ describe("validateManifest", () => {
     });
   });
 
-  describe("a sheet baked at more px than it is drawn (scale, spike/archer-2x)", () => {
+  describe("a sheet baked at more px than it is drawn (scale, FS-HF0WW)", () => {
     // the door fixture: a 50 x 70 frame, anchor at 0.9; at scale 2 that is 25 x 35 screen px
     const withScale =
       (scale: unknown, more: Record<string, unknown> = {}) =>
@@ -296,7 +296,7 @@ describe("validateManifest", () => {
     });
   });
 
-  describe("a trimmed sheet: frames cut to their pixels (spike/archer-2x)", () => {
+  describe("a trimmed sheet: frames cut to their pixels (FS-HF0WW)", () => {
     // the door fixture: 50 x 70 frames at (40, 0) and (90, 0) of a 256 x 128 atlas
     type Cut = { x: number; y: number; w: number; h: number };
     const cut = { x: 10, y: 20, w: 30, h: 46 };
@@ -1138,7 +1138,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
 
     /**
      * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), and the
-     * Archer's attack on the move (spike/archer-2x).
+     * Archer's attack on the move (FS-HF0WW).
      */
     const OWN_CLIPS: Record<string, string[]> = {
       char_mercenary_base: ["parry"],
@@ -1195,7 +1195,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(sheet.animations, name).toHaveProperty("idle");
     });
 
-    it("trims the archer's frames, and only the archer's (spike/archer-2x)", () => {
+    it("trims the archer's frames, and only the archer's (FS-HF0WW)", () => {
       const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
         .filter(([, sheet]) => sheet.trimmed)
         .map(([name]) => name);
@@ -1316,7 +1316,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
 
     it("writes a per-animation atlas only on the boss's spilled animations, never on existing sheets", () => {
-      // spike/archer-2x: the 2x archer is too big for one page, so it spills too, in its own group
+      // FS-HF0WW: the 2x archer is too big for one page, so it spills too, in its own group
       const spills = [...ROSTER.map(([n]) => n), "char_archer_base"];
       for (const [name, sheet] of Object.entries(baked.sheets) as [
         string,

@@ -62,7 +62,7 @@ function library({ trimmedArcher = false } = {}): ArtLibrary {
     sheets: {
       char_knight_base: sheet("characters-0"),
       char_wizard_base: sheet("characters-1"),
-      // the knight's figure baked at 2x (spike/archer-2x): twice the px each way, same anchor
+      // the knight's figure baked at 2x (FS-HF0WW): twice the px each way, same anchor
       // fraction, same crown in screen px
       char_archer_base: {
         ...sheet("characters-1"),
@@ -275,7 +275,7 @@ describe("MenuFigure", () => {
     );
   });
 
-  describe("a sheet baked at 2x (spike/archer-2x)", () => {
+  describe("a sheet baked at 2x (FS-HF0WW)", () => {
     it("stands exactly as large as a 1x sheet at every menu scale, swapping class included", () => {
       const scene = fakeScene();
       const figure = new MenuFigure(asScene(scene), library(), 0, 0, "archer", { scale: 1.5 });

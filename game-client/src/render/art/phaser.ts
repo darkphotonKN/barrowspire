@@ -172,7 +172,7 @@ function registerFrames(
               trim?.w ?? sheet.frameWidth,
               trim?.h ?? sheet.frameHeight,
             );
-            // A trimmed frame (spike/archer-2x): the atlas holds only its cut, so it is put back
+            // A trimmed frame (FS-HF0WW): the atlas holds only its cut, so it is put back
             // where it was cut from, as Phaser's own TexturePacker parsers do. The frame then
             // reports the whole frame's size (`realWidth`), which sizes the sprite, its origin
             // and its arcade body, and the cut is drawn at its offset.

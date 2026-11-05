@@ -506,7 +506,7 @@ export function troll() {
  */
 export const CAST = [
   { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
-  // spike/archer-2x: baked at 2× (twice the px per screen px, drawn at half scale) with the shot
+  // FS-HF0WW: baked at 2× (twice the px per screen px, drawn at half scale) with the shot
   // layered over the walk, in its own group; each frame trimmed to its pixels (lib/trim.mjs)
   { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: ARCHER_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },

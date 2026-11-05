@@ -11,7 +11,7 @@
 // skinned rig, hand-keyed clips, baked in the 8 facings of page/facing.js, whose order the
 // manifest records as `facings`.
 //
-// A catalogue entry with `trim: true` (today only the archer, spike/archer-2x) has each frame cut
+// A catalogue entry with `trim: true` (today only the archer, FS-HF0WW) has each frame cut
 // to the box that holds its pixels before packing (lib/trim.mjs); the manifest marks the sheet
 // `trimmed` and records each frame's cut, which the client puts back where it was.
 //
@@ -126,7 +126,7 @@ async function bakeAll() {
 function assemble({ tile, facings, sheets }) {
   // Every frame of a sheet in manifest order: animation, then direction, then frame.
   const frameList = (s) => Object.values(s.animations).flatMap((a) => a.frames.flat());
-  // A trimmed sheet's frames (spike/archer-2x, lib/trim.mjs), each cut to its pixels on whole
+  // A trimmed sheet's frames (FS-HF0WW, lib/trim.mjs), each cut to its pixels on whole
   // screen px, by sheet and then by the frame's pixels as baked. The atlas holds the cut and the
   // manifest says where it sits in the frame; the measures (crown, length, mean) still read the
   // whole frames.
@@ -220,7 +220,7 @@ function assemble({ tile, facings, sheets }) {
     }
     // the ground's measured colour, which lighting's readability floor is judged against
     const mean = s.group === "ground" || s.name.startsWith("ground_") ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
-    // crown and length are screen px: a sheet baked at `scale` px per screen px (spike/archer-2x)
+    // crown and length are screen px: a sheet baked at `scale` px per screen px (FS-HF0WW)
     // is measured back at 1×, so its head height means what any other sheet's does
     const scale = s.scale ?? 1;
     const at1x = (b64) => downscale(Buffer.from(b64, "base64"), s.frameWidth, s.frameHeight, scale);

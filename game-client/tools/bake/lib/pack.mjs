@@ -9,7 +9,7 @@
 // each page's `parts` rather than its `placements`. An animation too big for a page on its own
 // is still an error: trim the frame box or the frame count.
 //
-// A trimmed sheet (spike/archer-2x, lib/trim.mjs) gives each frame's own size as `frames`. Its
+// A trimmed sheet (FS-HF0WW, lib/trim.mjs) gives each frame's own size as `frames`. Its
 // frames cannot share a grid, so its block is shelf-packed instead: tallest first, each frame on
 // the first shelf with room, at the block width that leaves the smallest page. It is split by
 // animation the same way when it cannot fit one page.

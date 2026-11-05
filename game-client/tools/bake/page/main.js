@@ -118,7 +118,7 @@ function bakeCharacterSheet(sheet) {
   // the guard: no clip may carry a leg out through the garment (characters/clearance.js)
   const error = clearanceError(sheet.name, legClearance(rig, poses, { restPose: pose(), applyPose, groundPose }));
   if (error) throw new Error(error);
-  // a sheet baked at `scale` px per screen px (spike/archer-2x): the same frame box and anchor,
+  // a sheet baked at `scale` px per screen px (FS-HF0WW): the same frame box and anchor,
   // every frame `scale` times as many px each way
   const scale = sheet.scale ?? 1;
   const out = baker.bakeCharacter(

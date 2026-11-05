@@ -216,7 +216,7 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should give the archer alone walk_attack: 8-way, played once, and exactly as long as his attack (spike/archer-2x)", () => {
+  it("should give the archer alone walk_attack: 8-way, played once, and exactly as long as his attack (FS-HF0WW)", () => {
     const archer = manifest.sheets[characterSheet("archer")];
     const { attack, walk_attack: walkAttack } = archer.animations;
     expect(walkAttack?.loop).toBe(false);
@@ -227,7 +227,7 @@ describe("the shipped character sheets", () => {
       expect(manifest.sheets[characterSheet(cls)].animations.walk_attack, cls).toBeUndefined();
   });
 
-  it("should bake the archer alone at 2x, frames twice a 1x sheet's px each way (spike/archer-2x)", () => {
+  it("should bake the archer alone at 2x, frames twice a 1x sheet's px each way (FS-HF0WW)", () => {
     const archer = manifest.sheets[characterSheet("archer")];
     expect(archer.scale).toBe(2);
     expect(archer.frameWidth % 2).toBe(0);

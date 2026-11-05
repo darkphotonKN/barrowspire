@@ -72,7 +72,7 @@ export interface StandingSprite {
  * - A placeholder (no `crown`) keeps the frame's top, exactly where its markers always were.
  *
  * `artScale` is the part of the sprite's scale that only draws a 2x sheet at its true size
- * (`CharacterAnimator.artScale`, spike/archer-2x): the crown is screen px already, so only the
+ * (`CharacterAnimator.artScale`, FS-HF0WW): the crown is screen px already, so only the
  * rest of the scale (a monster's tier, a menu's size) lifts the stack.
  */
 export function markerBase(

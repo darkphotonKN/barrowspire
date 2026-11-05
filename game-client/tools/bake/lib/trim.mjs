@@ -1,4 +1,4 @@
-// Trimming a sheet's frames (spike/archer-2x): each frame is cut down to the box that holds its
+// Trimming a sheet's frames (FS-HF0WW): each frame is cut down to the box that holds its
 // pixels, so the atlas stops storing the empty margin every frame carries for the widest pose of
 // the sheet. The manifest records where the cut sits in the frame (`trim`), and the client puts
 // it back there (Phaser `Frame.setTrim`), so a trimmed frame draws, anchors and sizes exactly as
@@ -13,10 +13,12 @@
 //    half a texel outside the last opaque texel still takes some of it. The whole frame's quad
 //    covers that px, a quad cut flush to the pixels would not, and the sprite's soft edge would
 //    lose that half-texel of fringe. One texel of margin puts every such px inside the quad.
-//  - out to whole screen px (multiples of the sheet's `scale`), so the cut's corner sits on the
-//    same screen px grid the whole frame's does. Phaser rounds a sprite's quad by its top-left
-//    corner (`TransformMatrix.setQuad` under `roundPixels`); a corner a fraction of a px from the
-//    whole frame's would round to a different px and shift the sprite by up to one.
+//  - out to whole screen px (multiples of the sheet's `scale`), so the cut's corners sit on the
+//    same screen px grid the whole frame's do. Phaser 4 rounds each corner of a sprite's quad to
+//    the backing px (`TransformerImage.run`, ADR-0057); where a screen px is a whole number of
+//    backing px (render scale 1 and 2, a sprite at its true size) the cut's corners then round
+//    exactly as the whole frame's, and the trimmed sprite draws the same px. Elsewhere it can land
+//    up to half a backing px off (ADR-0058, measured in FS-HF0WW).
 
 /** Transparent px kept around each frame's pixels, for linear filtering (see above). */
 export const TRIM_MARGIN = 1;
