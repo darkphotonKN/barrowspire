@@ -12,6 +12,8 @@ releases which hold)
 Amended by: [ADR-0048](0048-a-leading-bid-is-locked-in-for-the-auctions-final-30-minutes.md) — a
 WINNING bid can no longer be withdrawn in the auction's final 30 minutes, so the promotion runs only
 before that window
+Amended by: [ADR-0054](0054-a-member-already-leading-a-listing-cannot-bid-on-it-again.md) — when
+the promoted bid is the withdrawing member's own, that member is leading and cannot bid again
 
 ## Context
 

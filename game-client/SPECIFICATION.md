@@ -181,6 +181,8 @@ server state and sends intents. ✅
 - [x] Worn relics not listable → FS-HBXZN
 - [ ] Verify-email prompt on gated marketplace actions → FS-V6SFK
 - [ ] Explain the bid withdrawal cap → FS-ZE43K
+- [ ] Explain a bid refused for its price → FS-V74WE
+- [ ] Explain a bid refused because you already lead → FS-72KT8
 
 ### Dev tooling
 
