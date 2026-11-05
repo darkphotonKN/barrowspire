@@ -13,7 +13,7 @@ import {
   SkeletonRow,
   type SkeletonCell,
 } from "@/components/bazaar/cells";
-import { useListingDetail } from "@/components/bazaar/useListingDetail";
+import { PUBLIC_ROWS, useListingDetail } from "@/components/bazaar/useListingDetail";
 import {
   SIGN_IN_TO_MARKETPLACE,
   ariaSort,
@@ -21,7 +21,7 @@ import {
   rowAction,
   typeLabel,
 } from "@/marketplace/browse";
-import type { Listing } from "@/marketplace/listing";
+import type { PublicListing } from "@/marketplace/listing";
 import { buyoutBadge, type RowSort, type SortKey } from "@/marketplace/rows";
 import { formatTimeLeft } from "@/marketplace/timeLeft";
 
@@ -49,14 +49,14 @@ export default function ListingTable({
   memberId,
   now,
 }: {
-  rows: Listing[];
+  rows: PublicListing[];
   loading: boolean;
   sort: RowSort;
   onSort: (key: SortKey) => void;
   memberId: string | undefined;
   now: number;
 }) {
-  const detail = useListingDetail(rows);
+  const detail = useListingDetail(rows, PUBLIC_ROWS);
 
   return (
     <div className="overflow-hidden rounded-[10px] border border-[color:var(--color-border)] bg-card shadow-[var(--shadow-card)]">
@@ -150,7 +150,7 @@ function ListingRow({
   now,
   onOpen,
 }: {
-  listing: Listing;
+  listing: PublicListing;
   memberId: string | undefined;
   now: number;
   onOpen: (id: string, row: HTMLElement) => void;

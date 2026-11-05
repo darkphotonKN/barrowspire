@@ -40,7 +40,7 @@ export type SellerBlock =
  */
 export function sellerBlock(
   listing: {
-    sellerId: string;
+    own: boolean;
     status: string;
     ended?: boolean;
     endsAt: string;

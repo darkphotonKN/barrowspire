@@ -80,6 +80,13 @@ export default function MarketplacePage() {
   const showMine = useCallback(() => setView("mine"), []);
   const showAll = useCallback(() => setView("all"), []);
   const listing = useListRelic({ onPosted: showMine, refreshMine: mine.refreshFirstPage });
+  // After a sale accepted from Mine's dialog, so the row shows what it fetched (FS-GKHYD Req 3).
+  // A failed re-read leaves the rows as they were; the next visit to Mine reads them afresh.
+  const refreshMinePage = mine.refreshFirstPage;
+  const refreshMine = useCallback(
+    () => void refreshMinePage().catch(() => {}),
+    [refreshMinePage],
+  );
 
   return (
     <main className="relative z-[1] mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:px-8">
@@ -128,6 +135,7 @@ export default function MarketplacePage() {
           now={now}
           onRetry={mine.reload}
           onShowMore={mine.showMore}
+          onSold={refreshMine}
           onList={listing.open}
         />
       ) : browse.state.phase === "failed" ? (
@@ -212,6 +220,7 @@ function MineView({
   now,
   onRetry,
   onShowMore,
+  onSold,
   onList,
 }: {
   state: BrowseState<Listing>;
@@ -219,6 +228,7 @@ function MineView({
   now: number;
   onRetry: () => void;
   onShowMore: () => void;
+  onSold: () => void;
   onList: (e: React.MouseEvent<HTMLElement>) => void;
 }) {
   if (state.phase === "failed")
@@ -242,6 +252,7 @@ function MineView({
         loading={state.phase === "loading"}
         memberId={memberId}
         now={now}
+        onSold={onSold}
       />
       <ShowMore state={state} onShowMore={onShowMore} />
     </>

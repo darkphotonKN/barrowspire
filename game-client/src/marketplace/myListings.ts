@@ -4,6 +4,7 @@
  */
 
 import { formatGold } from "./gold";
+import type { Listing, PublicListing } from "./listing";
 import { listingStatusLabel } from "./listingStatus";
 import { buyoutBadge } from "./rows";
 import { ENDED, formatTimeLeft } from "./timeLeft";
@@ -43,4 +44,25 @@ export function mineRow(listing: MineListing, now: number): MineRow {
     },
     buyout: buyoutBadge(listing),
   };
+}
+
+/**
+ * A Mine row as the detail dialog reads it: the public shape, and the seller's own by definition,
+ * since Mine lists only the caller's listings (FS-GKHYD Req 7). The dialog's re-read then answers
+ * `own` from the server.
+ */
+export function asOwnListing(row: Listing): PublicListing {
+  const { sellerId: _seller, buyerId: _buyer, soldPrice: _sold, ...rest } = row;
+  return { ...rest, own: true };
+}
+
+/**
+ * A Mine row updated by the detail's public read: rebuilt from the read, plus only the seller's
+ * own fields the public read leaves out (FS-GKHYD Req 3), so Mine keeps its sold price. Rebuilt,
+ * not merged: the read omits an absent optional field, so a field it dropped (the only leading
+ * bid withdrawn, say) must not survive from the row.
+ */
+export function mineWithRead(row: Listing, read: PublicListing): Listing {
+  const { own: _own, ...fields } = read;
+  return { ...fields, sellerId: row.sellerId, buyerId: row.buyerId, soldPrice: row.soldPrice };
 }

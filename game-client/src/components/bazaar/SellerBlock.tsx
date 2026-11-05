@@ -10,7 +10,7 @@ import {
 import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import { submitAccept } from "@/marketplace/acceptFlow";
 import type { BidNote } from "@/marketplace/bid";
-import type { Listing } from "@/marketplace/listing";
+import type { PublicListing } from "@/marketplace/listing";
 import { apiClient } from "@/utils/api";
 
 const CONFIRM_ID = "bazaar-accept-confirm";
@@ -26,11 +26,13 @@ export default function SellerBlock({
   memberId,
   now,
   refresh,
+  onSold,
 }: {
-  listing: Listing;
+  listing: PublicListing;
   memberId: string | undefined;
   now: number;
-  refresh: () => Promise<Listing | undefined>;
+  refresh: () => Promise<PublicListing | undefined>;
+  onSold?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -56,6 +58,7 @@ export default function SellerBlock({
       const result = await submitAccept({
         acceptBid: () => apiClient.acceptBid(listing.id),
         refresh,
+        onSold,
       });
       setSold(result.sold);
       setNote(result.note);

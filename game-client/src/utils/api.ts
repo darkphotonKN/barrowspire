@@ -55,6 +55,8 @@ const authMiddleware: Middleware = {
 
 client.use(authMiddleware);
 
+type Result<T> = { data?: T; error?: unknown; response: Response };
+
 /**
  * Turns openapi-fetch's `{ data, error }` result into the throwing shape the app
  * already expects, and preserves the FS-22WKC contract: errors arrive as
@@ -63,19 +65,21 @@ client.use(authMiddleware);
  * `error` here is the parsed problem+json body, so it goes through the same
  * fromProblem the hand-rolled client used — one parser, not two.
  */
-function unwrap<T>(result: {
-  data?: T;
-  error?: unknown;
-  response: Response;
-}): T {
+function settle<T>(result: Result<T>): T {
   if (result.error !== undefined || !result.response.ok) {
-    const apiError = fromProblem(result.response.status, result.error);
-    if (result.response.status === 401) {
-      handleUnauthorized();
-    }
-    throw apiError;
+    throw fromProblem(result.response.status, result.error);
   }
   return result.data as T;
+}
+
+/** {@link settle}, and a 401 signs the player out: the authenticated client's handling. */
+function unwrap<T>(result: Result<T>): T {
+  if (result.response.status === 401) {
+    const apiError = fromProblem(result.response.status, result.error);
+    handleUnauthorized();
+    throw apiError;
+  }
+  return settle(result);
 }
 
 class ApiClient {
@@ -380,14 +384,25 @@ export const apiClient = new ApiClient();
 export const publicClient = createClient<paths>({ baseUrl: API_BASE_URL });
 
 /**
- * Public reads: routes the gateway answers without a token, called the same way signed in or
- * out, so a token that expires mid-session never breaks them (FS-8EGFA req 21).
+ * The client for public reads: the stored bearer when there is one, and nothing else. It is its
+ * own instance so that no sign-out or refresh handling added to the authenticated client reaches
+ * a public read.
+ */
+const publicReadClient = createClient<paths>({ baseUrl: API_BASE_URL });
+publicReadClient.use(authMiddleware);
+
+/**
+ * Public reads: routes the gateway answers with or without a token. Signed in they carry the
+ * bearer, so the server can tell the seller their own listing (`own`, FS-GKHYD Req 12); signed
+ * out they carry none. A token that expired mid-session is read as anonymous by the server
+ * (ADR-0053), and an error here never signs the player out, so a stale token never breaks the
+ * page (FS-8EGFA req 21).
  */
 class PublicApi {
   // One page of the Bazaar's active listings, soonest-ending first, each with its item joined.
   async browseListings(cursor?: string) {
-    return unwrap(
-      await publicClient.GET("/api/marketplace/listings", {
+    return settle(
+      await publicReadClient.GET("/api/marketplace/listings", {
         params: { query: { cursor } },
       }),
     );
@@ -396,8 +411,8 @@ class PublicApi {
   // One listing in any status, with its item joined (FS-8EGFA req 24): the detail dialog reads
   // the same signed in or out.
   async getListing(listingId: string) {
-    return unwrap(
-      await publicClient.GET("/api/marketplace/listings/{listing_id}", {
+    return settle(
+      await publicReadClient.GET("/api/marketplace/listings/{listing_id}", {
         params: { path: { listing_id: listingId } },
       }),
     );

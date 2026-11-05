@@ -123,3 +123,32 @@ in api post /api/payment/subscribe api path removed without deprecation
 in api get /api/payment/subscription/permission api path removed without deprecation
 in api post /api/payment/subscription/setup api path removed without deprecation
 in api get /api/payment/subscriptions/{customerid} api path removed without deprecation
+
+# ---------------------------------------------------------------------------
+# FS-GKHYD (I-GKHYD-2) — public listing reads expose no member ids.
+#
+# WHY: browse-listings and get-listing are public, and they answered every
+# listing's sellerId, plus buyerId and soldPrice once sold. Joined with the
+# public leaderboard's member id -> username, that let anyone list everything a
+# named player sells, and what they bought and for how much. FS-GKHYD
+# §Requirements 1-4 drop the three fields from the two public operations only;
+# they now answer PublicListing, whose new `own` boolean (an addition, not
+# breaking) replaces the client's one use of sellerId ("is this mine").
+# list-my-listings keeps sellerId, buyerId and soldPrice unchanged (P2), and
+# marketplace's gRPC Listing keeps them for internal readers.
+#
+# Removed WITHOUT a deprecation window deliberately: the only consumer is this
+# repo's own generated client, cut over to `own` in I-GKHYD-3, and client and
+# gateway ship together. A field kept for a release would keep publishing the
+# very ids this change exists to stop publishing.
+#
+# One line per removed property and operation (FS-GKHYD §Requirements 14).
+# Owner to review before merge.
+#
+# Lines copied verbatim from `make openapi-breaking` output, lowercased.
+in api get /api/marketplace/listings removed the required property `listings/items/sellerid` from the response with the `200` status
+in api get /api/marketplace/listings removed the optional property `listings/items/buyerid` from the response with the `200` status
+in api get /api/marketplace/listings removed the optional property `listings/items/soldprice` from the response with the `200` status
+in api get /api/marketplace/listings/{listing_id} removed the required property `sellerid` from the response with the `200` status
+in api get /api/marketplace/listings/{listing_id} removed the optional property `buyerid` from the response with the `200` status
+in api get /api/marketplace/listings/{listing_id} removed the optional property `soldprice` from the response with the `200` status

@@ -6,6 +6,7 @@
 
 import { ApiError } from "@/utils/apiError";
 import { formatGold } from "./gold";
+import { viewerOwns } from "./listing";
 import {
   rowPrice,
   type ListingRow,
@@ -113,7 +114,8 @@ export function browseFailureMessage(err: unknown): string {
 export const SIGN_IN_TO_MARKETPLACE = "/login?redirect=%2Fmarketplace";
 
 /**
- * What a row's action cell offers: "Your listing" to its seller (req 27), nothing to act on once
+ * What a row's action cell offers: "Your listing" to its seller (req 27), told by
+ * {@link viewerOwns} and never by comparing member ids (FS-GKHYD Req 13), nothing to act on once
  * the auction has ended — by the server's word or by the countdown running out while shown, and
  * signed in or out, since there is nothing to sign in for — "Sign in to bid" when signed out
  * (req 28), and otherwise Bid.
@@ -121,11 +123,11 @@ export const SIGN_IN_TO_MARKETPLACE = "/login?redirect=%2Fmarketplace";
 export type RowAction = "own" | "signIn" | "ended" | "bid";
 
 export function rowAction(
-  listing: { sellerId: string; endsAt: string; ended: boolean },
+  listing: { own: boolean; endsAt: string; ended: boolean },
   viewer: { memberId: string | undefined },
   now: number,
 ): RowAction {
-  if (viewer.memberId && viewer.memberId === listing.sellerId) return "own";
+  if (viewerOwns(listing, viewer.memberId)) return "own";
   if (listing.ended || Date.parse(listing.endsAt) <= now) return "ended";
   if (!viewer.memberId) return "signIn";
   return "bid";
