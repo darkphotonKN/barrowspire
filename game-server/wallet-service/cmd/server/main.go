@@ -22,6 +22,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/config"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account"
+	accountworker "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/worker"
 	appConfig "github.com/darkphotonKN/barrowspire-server/wallet-service/internal/config"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
@@ -113,6 +114,12 @@ func main() {
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	go outboxWorker.Run(workerCtx)
 
+	// The hold sweep releases holds whose expiry has passed, wallet's own timeout
+	// Cancel of the hold's TCC (FS-A3CQH). It stops with the other workers.
+	workersWg.Add(1)
+	holdSweeper := accountworker.NewHoldSweeper(accountworker.HoldSweepInterval, services.ExpireHoldsUC, &workersWg)
+	go holdSweeper.Run(workerCtx)
+
 	consumer := account.NewConsumer(ch, services.CreateOnSignupUC)
 	if err := consumer.SetupConsumer(); err != nil {
 		log.Fatalf("Failed to set up wallet consumer: %v", err)
@@ -183,7 +190,7 @@ func main() {
 		grpcServer.Stop()
 	}
 
-	// then shutdown the outbox workers
+	// then shutdown the background workers: the outbox worker and the hold sweeper
 	workerCancel() // cancel and let workers finish
 
 	workersDone := make(chan struct{})
@@ -195,9 +202,9 @@ func main() {
 
 	select {
 	case <-workersDone:
-		slog.Info("outbox workers shutdown gracefully...")
+		slog.Info("background workers (outbox, hold sweeper) shutdown gracefully...")
 		// back up, don't allow more than 10 seconds
 	case <-time.After(time.Second * 10):
-		slog.Info("outbox workers stopped after waiting 10 seconds...")
+		slog.Info("background workers (outbox, hold sweeper) stopped after waiting 10 seconds...")
 	}
 }

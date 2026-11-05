@@ -18,3 +18,11 @@ type AccountDetails struct {
 	AvailableGold int       `db:"available_gold"`
 	CreatedAt     time.Time `db:"created_at"`
 }
+
+// ExpiredHold is one hold sweep candidate: a RESERVED hold the database clock
+// says has lapsed. Its (ExpiredAt, BidID) is also the keyset position the next
+// page of candidates starts after (FS-A3CQH §Req 5).
+type ExpiredHold struct {
+	BidID     uuid.UUID `db:"bid_id"`
+	ExpiredAt time.Time `db:"expired_at"`
+}
