@@ -177,7 +177,7 @@ func (a *Account) CommitHold(bidID uuid.UUID, expectedAmount int, now time.Time)
 	// after the shortcut on purpose: a hold committed in time is still applied
 	// however late its retry arrives, but a reserved one past expiry no longer
 	// protects the gold
-	if now.After(h.expiredAt) {
+	if h.expired(now) {
 		return 0, ErrHoldExpired
 	}
 
@@ -228,6 +228,40 @@ func (a *Account) ReleaseHold(bidID uuid.UUID, now time.Time) error {
 	a.updatedAt = now
 
 	return nil
+}
+
+// ExpireHold is the hold sweep's write, the timeout Cancel of the hold's TCC
+// (FS-A3CQH §Req 1, 3): an expired RESERVED hold moves to RELEASED, the same end
+// state as a caller-driven release. No gold moves.
+//
+// released reports whether this call released the hold, so the sweep can count
+// releases apart from no-ops.
+func (a *Account) ExpireHold(bidID uuid.UUID, now time.Time) (released bool, err error) {
+	h := a.findHoldByBidID(bidID)
+
+	if h == nil {
+		return false, ErrHoldNotFound
+	}
+
+	// past the Cancel's reach: a COMMITTED hold is never undone after its
+	// Confirm (ADR-0017), and a RELEASED one is already cancelled. Checked before
+	// expiry so a settled hold is a no-op whatever the clock says
+	if h.status != StatusReserved {
+		return false, nil
+	}
+
+	// a stale candidate list must never release a hold still backing a bid
+	if !h.expired(now) {
+		return false, ErrHoldNotExpired
+	}
+
+	if err = h.transitionTo(StatusReleased, now); err != nil {
+		return false, err
+	}
+
+	a.updatedAt = now
+
+	return true, nil
 }
 
 // --- Helpers ---

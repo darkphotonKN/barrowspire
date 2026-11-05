@@ -16,6 +16,7 @@ var (
 	ErrInsufficientGold       = errors.New("gold below the hold being committed")
 	ErrInvalidHoldExpiry      = errors.New("hold expiry must be in the future")
 	ErrBidAlreadyHeld         = errors.New("bid already has a hold that is not this one")
+	ErrHoldNotExpired         = errors.New("hold not expired")
 )
 
 // checks if error matches the predefined sentinel to determine if its retriable

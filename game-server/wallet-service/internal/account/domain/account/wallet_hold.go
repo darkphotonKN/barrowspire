@@ -64,6 +64,14 @@ func newWalletHold(id uuid.UUID, bidID uuid.UUID, accountID uuid.UUID, amount in
 	}, nil
 }
 
+// expired reports whether the hold has lapsed at now. It is the one boundary
+// Confirm and Cancel share (FS-A3CQH §Req 2): CommitHold refuses once it is true
+// and ExpireHold releases only once it is true, so at expiredAt itself a commit
+// still lands and a sweep still refuses.
+func (h *WalletHold) expired(now time.Time) bool {
+	return now.After(h.expiredAt)
+}
+
 type HoldReconstituteParams struct {
 	ID        uuid.UUID
 	AccountID uuid.UUID

@@ -139,7 +139,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Place a hold against an account
 - [ ] Release a hold
 - [ ] Commit a hold
-- [ ] Expire stale holds
+- [ ] Expire stale holds → FS-A3CQH
 - [ ] List an account's individual holds
 
 ### Saga participation
