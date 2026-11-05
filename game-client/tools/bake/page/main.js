@@ -9,7 +9,7 @@ import { CATALOGUE, ICON_SIZE } from "./catalogue.js";
 import { TILE_H, TILE_W } from "./projection.js";
 import { FACINGS, yawFor } from "./facing.js";
 import { cssRgb } from "./palette.js";
-import { ANIMATIONS, applyPose, clipsFor, groundPose, pose, simulateSprings } from "./characters/clips.js";
+import { ANIMATIONS, applyPose, clipsFor, groundPose, simulateSprings } from "./characters/clips.js";
 import { clearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
 
 let baker = null;
@@ -115,14 +115,12 @@ window.bakeSheet = (name) => {
  */
 function bakeCharacterSheet(sheet) {
   const { rig, poses, animations } = characterPoses(sheet);
-  // the guard: no clip may carry a leg out through the garment (characters/clearance.js)
-  const error = clearanceError(sheet.name, legClearance(rig, poses, { restPose: pose(), applyPose, groundPose }), {
-    mirrored: mirroredGarment(rig),
-  });
-  if (error) throw new Error(error);
   // a sheet baked at `scale` px per screen px (FS-HF0WW): the same frame box and anchor,
   // every frame `scale` times as many px each way
   const scale = sheet.scale ?? 1;
+  // the guard: no clip may show a leg outside its garment by a baked px (characters/clearance.js)
+  const error = clearanceError(sheet.name, legClearance(rig, poses), { scale, mirrored: mirroredGarment(rig) });
+  if (error) throw new Error(error);
   const out = baker.bakeCharacter(
     rig.root,
     poses.map((p) => p.apply),
@@ -153,14 +151,14 @@ function bakeCharacterSheet(sheet) {
 }
 
 /**
- * How far each clip of a character sheet carries a leg out through its garment (1x px past where
- * it sits at rest), without baking it: the guard's numbers, for tools/bake review and probes.
+ * How far each clip of a character sheet shows a leg outside its garment (1x px, model space),
+ * without baking it: the guard's numbers, for tools/bake review and probes.
  */
 window.bakeClearance = (name) => {
   const sheet = CATALOGUE.find((s) => s.name === name && s.kind === "character");
   if (!sheet) throw new Error(`bake: no character sheet "${name}"`);
   const { rig, poses } = characterPoses(sheet);
-  return legClearance(rig, poses, { restPose: pose(), applyPose, groundPose });
+  return legClearance(rig, poses);
 };
 
 /** A character sheet's rig and every pose it bakes (clip, frame, how to apply it), in bake order. */
