@@ -101,6 +101,8 @@ window.bakeSheet = (name) => {
     directions: 1,
     animations,
     ...(light ? { light } : {}),
+    // frames cut to their pixels at pack time (bake.mjs, lib/trim.mjs)
+    ...(sheet.trim ? { trim: true } : {}),
     source: sheet.source,
     licence: sheet.licence,
   };
@@ -138,6 +140,8 @@ function bakeCharacterSheet(sheet) {
     anchor: { x: out.anchorPx[0] / out.frameWidth, y: out.anchorPx[1] / out.frameHeight },
     directions: FACINGS.length,
     ...(scale !== 1 ? { scale } : {}),
+    // frames cut to their pixels at pack time (bake.mjs, lib/trim.mjs)
+    ...(sheet.trim ? { trim: true } : {}),
     animations,
     // a quadruped's size tier is taken by its length (bake.mjs measures it), not its height
     ...(rig.p.quadruped ? { quadruped: true } : {}),

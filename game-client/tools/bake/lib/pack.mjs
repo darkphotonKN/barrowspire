@@ -8,6 +8,11 @@
 // sheet's animations may then sit on several pages of its group. Such a sheet comes back in
 // each page's `parts` rather than its `placements`. An animation too big for a page on its own
 // is still an error: trim the frame box or the frame count.
+//
+// A trimmed sheet (spike/archer-2x, lib/trim.mjs) gives each frame's own size as `frames`. Its
+// frames cannot share a grid, so its block is shelf-packed instead: tallest first, each frame on
+// the first shelf with room, at the block width that leaves the smallest page. It is split by
+// animation the same way when it cannot fit one page.
 
 export const MAX_SIZE = 4096;
 const PAGE_WIDTH = 2048;
@@ -16,10 +21,11 @@ const PAD = 2;
 const roundUp4 = (n) => Math.ceil(n / 4) * 4;
 
 /**
- * @param sheets [{ name, group, frameWidth, frameHeight, frameCount, animations? }], where
- *   `animations` lists [{ name, frameCount }] in frame order (needed only to split a sheet)
+ * @param sheets [{ name, group, frameWidth, frameHeight, frameCount, animations?, frames? }],
+ *   where `animations` lists [{ name, frameCount }] in frame order (needed only to split a
+ *   sheet), and `frames` gives a trimmed sheet's [{ w, h }] per frame, in frame order
  * @returns [{ key, group, width, height, placements: { [sheet]: [{ x, y }] },
- *   parts: { [sheet]: { [animation]: [{ x, y }] } } }]
+ *   parts: { [sheet]: { [animation]: [{ x, y }] } } }]: each frame's top-left, in frame order
  */
 export function packAtlases(sheets) {
   const groups = new Map();
@@ -48,19 +54,75 @@ function grid(s, count, wide = false) {
   if (Math.ceil(count / cols) > maxRows) cols = Math.min(Math.floor((MAX_SIZE - PAD) / sx), Math.ceil(count / maxRows));
   const rows = Math.ceil(count / cols);
   if (rows * sy + PAD > MAX_SIZE) return null;
-  return { cols, w: cols * sx, h: rows * sy, sx, sy, count };
+  const cells = Array.from({ length: count }, (_, i) => ({ x: (i % cols) * sx, y: Math.floor(i / cols) * sy }));
+  return { w: cols * sx, h: rows * sy, cells };
+}
+
+/**
+ * Frames of their own sizes (`sizes`: [{ w, h }] in frame order) shelf-packed `width` wide:
+ * tallest first (ties by frame order), each on the first shelf with room, a new shelf under the
+ * last when none has. Each cell keeps PAD after it, as a grid cell does. Null when the page it
+ * needs would be taller than MAX_SIZE.
+ */
+function shelves(sizes, width) {
+  const order = sizes.map((_, i) => i).sort((a, b) => sizes[b].h - sizes[a].h || a - b);
+  const rows = [];
+  const cells = new Array(sizes.length);
+  let w = 0;
+  let h = 0;
+  for (const i of order) {
+    const cw = sizes[i].w + PAD;
+    let row = rows.find((r) => r.x + cw <= width);
+    if (!row) {
+      row = { x: 0, y: h };
+      rows.push(row);
+      h += sizes[i].h + PAD;
+    }
+    cells[i] = { x: row.x, y: row.y };
+    row.x += cw;
+    w = Math.max(w, row.x);
+  }
+  // on its page the block has PAD before it, as well as the PAD after its last cell
+  if (h + 2 * PAD > MAX_SIZE) return null;
+  return { w, h, cells };
+}
+
+/**
+ * A trimmed sheet's block (or an animation's): its frames shelf-packed at the width, in steps
+ * of 4 up to a page's, that leaves the smallest page, the narrower on a tie. A `wide` block (an
+ * animation of a split sheet) takes a page's full width, so the animations stack as bands. Null
+ * when no width fits one page.
+ */
+function packed(sizes, wide = false) {
+  const limit = MAX_SIZE - 2 * PAD;
+  if (wide) return shelves(sizes, limit);
+  let best = null;
+  for (let width = roundUp4(Math.max(...sizes.map((f) => f.w + PAD))); width <= limit; width += 4) {
+    const b = shelves(sizes, width);
+    if (!b) continue;
+    const area = roundUp4(b.w + 2 * PAD) * roundUp4(b.h + 2 * PAD);
+    if (!best || area < best.area) best = { block: b, area };
+  }
+  return best?.block ?? null;
 }
 
 function packGroup(group, sheets) {
   const blocks = sheets.flatMap((s) => {
     if (s.frameWidth + 2 * PAD > MAX_SIZE || s.frameHeight + 2 * PAD > MAX_SIZE)
       throw new Error(`pack: ${s.name} frame ${s.frameWidth}x${s.frameHeight} exceeds ${MAX_SIZE}`);
-    const whole = grid(s, s.frameCount);
+    if (s.frames && s.frames.length !== s.frameCount)
+      throw new Error(`pack: ${s.name} gives ${s.frames.length} frame sizes for ${s.frameCount} frames`);
+    // a trimmed sheet's frames each have their own size; every other sheet's share a grid
+    const layout = (from, count, wide = false) =>
+      s.frames ? packed(s.frames.slice(from, from + count), wide) : grid(s, count, wide);
+    const whole = layout(0, s.frameCount);
     if (whole) return [{ sheet: s, key: s.name, ...whole }];
     if (!s.animations) throw new Error(`pack: ${s.name} (${s.frameCount} frames) cannot fit one ${MAX_SIZE}² page`);
     // oversized: one block per animation, each of which must fit a page by itself
+    let from = 0;
     return s.animations.map((a) => {
-      const part = grid(s, a.frameCount, true);
+      const part = layout(from, a.frameCount, true);
+      from += a.frameCount;
       if (!part) throw new Error(`pack: ${s.name} animation ${a.name} (${a.frameCount} frames) cannot fit one ${MAX_SIZE}² page`);
       return { sheet: s, anim: a.name, key: `${s.name}/${a.name}`, ...part };
     });
@@ -83,10 +145,7 @@ function packGroup(group, sheets) {
       shelf = 0;
     }
     if (y + b.h > MAX_SIZE) return false;
-    const spots = Array.from({ length: b.count }, (_, i) => ({
-      x: x + (i % b.cols) * b.sx,
-      y: y + Math.floor(i / b.cols) * b.sy,
-    }));
+    const spots = b.cells.map((c) => ({ x: x + c.x, y: y + c.y }));
     const page = st.page;
     if (b.anim) (page.parts[b.sheet.name] ??= {})[b.anim] = spots;
     else page.placements[b.sheet.name] = spots;

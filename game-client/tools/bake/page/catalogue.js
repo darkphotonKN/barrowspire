@@ -352,6 +352,7 @@ function characterSheets() {
     build: c.build,
     ...(c.animations ? { animations: c.animations } : {}),
     ...(c.scale ? { scale: c.scale } : {}),
+    ...(c.trim ? { trim: true } : {}),
     source: `authored: tools/bake/page/characters/${c.module ?? "cast"}.js#${c.fn}`,
   }));
 }

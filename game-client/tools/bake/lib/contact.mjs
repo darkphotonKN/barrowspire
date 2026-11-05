@@ -192,8 +192,10 @@ for (const [k, src] of Object.entries(D.atlases)) { imgs[k] = new Image(); imgs[
 function frameCanvas(s, img, pos, z) {
   const c = document.createElement("canvas");
   c.width = s.frameWidth * z; c.height = s.frameHeight * z;
+  // a trimmed frame's cut goes back where it was cut from (lib/trim.mjs)
   const draw = (p) => { const g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height);
-    g.drawImage(img, p.x, p.y, s.frameWidth, s.frameHeight, 0, 0, c.width, c.height); };
+    const t = p.trim || { x: 0, y: 0, w: s.frameWidth, h: s.frameHeight };
+    g.drawImage(img, p.x, p.y, t.w, t.h, t.x * z, t.y * z, t.w * z, t.h * z); };
   if (img.complete) draw(pos); else img.addEventListener("load", () => draw(pos));
   c.draw = draw;
   return c;
