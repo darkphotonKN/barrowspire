@@ -89,6 +89,10 @@ server state and sends intents. ✅
 - [x] Isometric projection of the game world → FS-2325V
 - [x] Pre-rendered world and prop art → FS-2325V
 - [x] Pre-rendered character and creature art → FS-2325V
+- [ ] High-detail character art → FS-HF0WW
+- [ ] Walk-and-attack animation → FS-HF0WW
+- [ ] Legs stay inside garments → FS-HF0WW
+- [ ] Baked frames trimmed to their pixels → FS-HF0WW
 - [x] Light-map lighting with placed light sources → FS-2325V
 - [x] Container-open presentation → FS-2325V
 - [x] Distinct look per container kind → FS-1D6BX
