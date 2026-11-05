@@ -368,9 +368,10 @@ func TestMapError_TransientStaysUnavailable(t *testing.T) {
 	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
 
-// A bid at the buyout price is refused like a bid too low, and the gold held
-// for it is given back (FS-9XKS6 Req 4, 10).
-func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T) {
+// FS-V74WE Req 2, 3, 5: a bid at the buyout price is refused with its own
+// registered reason, so the gateway passes it through as 400 ·
+// BID_AT_OR_ABOVE_BUYOUT, and the gold held for it is given back (FS-9XKS6 Req 4).
+func TestPlaceBid_AtBuyoutPrice_IsRefusedWithItsReasonAndReleasesTheHold(t *testing.T) {
 	now := time.Now()
 	buyout := 500
 	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, &buyout, now, now.Add(time.Hour))
@@ -383,9 +384,66 @@ func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T)
 		Amount:    500,
 	})
 
-	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.BidAtOrAboveBuyout, reason)
 	assert.Empty(t, repo.l.Snapshot().Bids)
 	assert.Equal(t, 1, release.calls)
+}
+
+// FS-V74WE Req 2, 3, 5: a bid not above the contending bid is refused with its
+// own registered reason, so the gateway passes it through as 400 · BID_TOO_LOW;
+// no bid is recorded and the hold is given back.
+func TestPlaceBid_NotAboveTheLeader_IsRefusedWithItsReasonAndReleasesTheHold(t *testing.T) {
+	repo := &fakeRepo{l: activeListing(t, winningBid(uuid.New(), uuid.New()))}
+	release := &fakeReleaser{}
+
+	_, err := newTestHandlerWithRelease(repo, &fakeWallet{}, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+		ListingId: repo.l.Snapshot().ID.String(),
+		Amount:    150, // the leader's amount: not above it
+	})
+
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.BidTooLow, reason)
+	assert.Len(t, repo.l.Snapshot().Bids, 1, "only the leader's bid")
+	assert.Equal(t, 1, release.calls)
+}
+
+// FS-V74WE Req 2, 6: the two price refusals cross as FailedPrecondition with
+// their registered reason; a non-positive amount and a buyout amount mismatch
+// stay InvalidArgument (400 · VALIDATION_FAILED at the gateway).
+func TestMapError_BidPriceRefusals(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   codes.Code
+		wantReason errcode.Code // empty: no registered reason
+	}{
+		{"too low", listing.ErrBidTooLow, codes.FailedPrecondition, errcode.BidTooLow},
+		{"at or above buyout", listing.ErrBidAtOrAboveBuyout, codes.FailedPrecondition, errcode.BidAtOrAboveBuyout},
+		{"invalid amount", listing.ErrInvalidAmount, codes.InvalidArgument, ""},
+		{"buyout amount mismatch", listing.ErrBuyoutAmountMismatch, codes.InvalidArgument, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// wrapped with context, as the use case returns it
+			st := status.Convert(mapError(context.Background(), fmt.Errorf("place bid: %w", tt.err)))
+
+			assert.Equal(t, tt.wantCode, st.Code())
+			reason, ok := errcode.RefusalReason(st)
+			if tt.wantReason == "" {
+				assert.False(t, ok, "reason %q", reason)
+				return
+			}
+			assert.True(t, ok)
+			assert.Equal(t, tt.wantReason, reason)
+		})
+	}
 }
 
 // A seller bidding on their own listing is a who-may-do-this refusal, mapped like
@@ -458,4 +516,36 @@ func TestPlaceBid_AtTheBidWithdrawalCap_IsRefusedWithItsReason(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, errcode.BidWithdrawLimitReached, reason)
 	assert.Zero(t, wallet.calls)
+}
+
+// FS-72KT8 Req 12: a member whose bid already leads is refused with the
+// registered reason, so the gateway passes it through as 400 · ALREADY_LEADING,
+// and no gold is held for the bid.
+func TestPlaceBid_WhileLeading_IsRefusedWithItsReason(t *testing.T) {
+	member := uuid.New()
+	repo, wallet := &fakeRepo{l: activeListing(t, winningBid(uuid.New(), member))}, &fakeWallet{}
+
+	_, err := newTestHandler(repo, wallet).PlaceBid(authedCtx(t, member), &pb.PlaceBidRequest{
+		ListingId: repo.l.Snapshot().ID.String(),
+		Amount:    200,
+	})
+
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.AlreadyLeading, reason)
+	assert.Zero(t, wallet.calls)
+	assert.Len(t, repo.l.Snapshot().Bids, 1)
+}
+
+// FS-72KT8 Req 12: wrapped as the use case returns it, ErrAlreadyLeading maps to
+// FailedPrecondition with reason ALREADY_LEADING.
+func TestMapError_AlreadyLeading(t *testing.T) {
+	st := status.Convert(mapError(context.Background(), fmt.Errorf("place bid: %w", listing.ErrAlreadyLeading)))
+
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.AlreadyLeading, reason)
 }

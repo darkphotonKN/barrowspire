@@ -20,6 +20,8 @@ export const BID_AT_BUYOUT = "Bids must stay below the buyout price — to buy n
 /** FS-ZE43K req 12: the member has withdrawn three bids on this listing (ADR-0052). */
 export const BID_WITHDRAW_LIMIT =
   "You've withdrawn too many bids on this auction to bid on it again.";
+/** FS-72KT8 req 16: the member's own bid already leads this listing; no re-read is needed. */
+export const BID_ALREADY_LEADING = "You're already the highest bidder.";
 
 export const outbidMessage = (minimumBid: number): string =>
   `Someone bid higher — the minimum is now ⟡${formatGold(minimumBid)}.`;
@@ -131,17 +133,24 @@ export function keepsBidKey(err: unknown): boolean {
 
 /**
  * What a refused bid means (req 29), routed by the problem's `code`. `refetch` asks the caller
- * to reload the listing and then let {@link validationRefusal} name the cause.
+ * to reload the listing first: `"outbid"` then names the fresh minimum with
+ * {@link outbidMessage} (`BID_TOO_LOW`, FS-V74WE req 11); `"infer"` lets
+ * {@link validationRefusal} name the cause (`VALIDATION_FAILED`, req 13). A bid at or above the
+ * buyout price needs no re-read (req 12).
  */
 export function bidFailure(
   err: unknown,
   context: { amount: number; availableGold?: number },
-): { refetch: true } | { message: string } {
+): { refetch: "outbid" | "infer" } | { message: string } {
   if (!(err instanceof ApiError) || err.status === 503)
     return { message: BROWSE_UNREACHABLE };
   switch (err.code) {
+    case "BID_TOO_LOW":
+      return { refetch: "outbid" };
+    case "BID_AT_OR_ABOVE_BUYOUT":
+      return { message: BID_AT_BUYOUT };
     case "VALIDATION_FAILED":
-      return { refetch: true };
+      return { refetch: "infer" };
     case "FAILED_PRECONDITION":
       return context.availableGold !== undefined && context.availableGold < context.amount
         ? { message: BID_NOT_ENOUGH_GOLD }
@@ -152,6 +161,8 @@ export function bidFailure(
       return { message: VERIFY_TO_BID };
     case "BID_WITHDRAW_LIMIT_REACHED":
       return { message: BID_WITHDRAW_LIMIT };
+    case "ALREADY_LEADING":
+      return { message: BID_ALREADY_LEADING };
   }
   if (err.status === 409) return { message: BID_CONFLICT };
   return { message: err.detail };
@@ -159,7 +170,8 @@ export function bidFailure(
 
 /**
  * What a `VALIDATION_FAILED` bid meant, judged by the listing re-read after it (FS-49Z37 req 21).
- * The server answers a bid at or above the buyout price and a plain too-low bid alike, so an
+ * The fallback only (FS-V74WE req 13): a current server names the cause with `BID_TOO_LOW` or
+ * `BID_AT_OR_ABOVE_BUYOUT`, but an older one answers both alike during a rolling deploy, so an
  * amount at or above the re-read buyout price was the cap; anything else was outbid.
  */
 export function validationRefusal(

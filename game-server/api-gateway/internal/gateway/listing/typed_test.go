@@ -256,9 +256,12 @@ func TestPlaceBid_RejectsInvalidInputBeforeCallingMarketplace(t *testing.T) {
 	}
 }
 
-// A bid below the current price is marketplace's InvalidArgument, and must
-// surface through the seam as a problem+json the client can switch on.
-func TestPlaceBid_BidTooLowIsABadRequest(t *testing.T) {
+// The generic path: a bare InvalidArgument from marketplace surfaces through
+// the seam as 400 · VALIDATION_FAILED. On place-bid today that only comes from
+// a malformed listing id; a non-positive amount never reaches marketplace (the
+// gateway refuses it with 422 above), and inside the domain a non-positive bid
+// is ErrBidTooLow. The price refusals carry their own codes (rows below).
+func TestPlaceBid_BareInvalidArgumentIsTheGenericValidationFailed(t *testing.T) {
 	client := &stubListingClient{err: status.Error(codes.InvalidArgument, "invalid argument")}
 	r := newRouter(client)
 
@@ -279,6 +282,11 @@ func TestPlaceBid_MarketplaceRefusalsGoThroughTheSeam(t *testing.T) {
 		{"bidder's email unverified", errcode.Refuse(errcode.EmailUnverified), http.StatusBadRequest, errcode.EmailUnverified},
 		// FS-ZE43K §API surface: the member has withdrawn 3+ bids on this listing
 		{"bid withdrawal cap reached", errcode.Refuse(errcode.BidWithdrawLimitReached), http.StatusBadRequest, errcode.BidWithdrawLimitReached},
+		// FS-V74WE Req 8: the price refusals stay 400, only the code is specific
+		{"bid too low", errcode.Refuse(errcode.BidTooLow), http.StatusBadRequest, errcode.BidTooLow},
+		{"bid at or above the buyout price", errcode.Refuse(errcode.BidAtOrAboveBuyout), http.StatusBadRequest, errcode.BidAtOrAboveBuyout},
+		// FS-72KT8 Req 13: the member's own bid already leads
+		{"already leading", errcode.Refuse(errcode.AlreadyLeading), http.StatusBadRequest, errcode.AlreadyLeading},
 	}
 
 	for _, tt := range tests {
@@ -304,6 +312,31 @@ func TestPlaceBid_DocumentsTheWithdrawalCapRefusal(t *testing.T) {
 	require.NotNil(t, path.Post)
 	assert.Contains(t, path.Post.Responses, "400")
 	assert.Contains(t, path.Post.Description, string(errcode.BidWithdrawLimitReached))
+}
+
+// FS-V74WE Req 9: place-bid documents both price refusals.
+func TestPlaceBid_DocumentsThePriceRefusals(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings/{listing_id}/bids"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Post)
+	assert.Contains(t, path.Post.Description, string(errcode.BidTooLow))
+	assert.Contains(t, path.Post.Description, string(errcode.BidAtOrAboveBuyout))
+}
+
+// FS-72KT8 Req 14: place-bid documents the already-leading refusal.
+func TestPlaceBid_DocumentsTheAlreadyLeadingRefusal(t *testing.T) {
+	api := contract.New(gin.New())
+	listing.RegisterOperations(api, listing.NewHandler(&stubListingClient{}, &stubItemSummaries{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/marketplace/listings/{listing_id}/bids"]
+	require.NotNil(t, path)
+	require.NotNil(t, path.Post)
+	assert.Contains(t, path.Post.Description, string(errcode.AlreadyLeading))
 }
 
 // A key whose attempt was refused or abandoned, its gold returned, cannot be

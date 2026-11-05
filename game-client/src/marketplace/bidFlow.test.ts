@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
-import { BID_AT_BUYOUT, BID_CONFLICT, BID_LAPSED, BID_NOT_ENOUGH_GOLD, type BidAttempt } from "./bid";
+import {
+  BID_ALREADY_LEADING,
+  BID_AT_BUYOUT,
+  BID_CONFLICT,
+  BID_LAPSED,
+  BID_NOT_ENOUGH_GOLD,
+  outbidMessage,
+  type BidAttempt,
+} from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { VERIFY_TO_BID } from "./emailGate";
 import { submitBid, type BidSubmitDeps } from "./bidFlow";
@@ -102,8 +110,46 @@ describe("submitBid", () => {
     });
   });
 
+  // FS-V74WE §Requirements 11: the code decides, not the re-read. A contending bid is always
+  // below the buyout, so this re-read never happens; it proves the inference is not consulted.
+  it("should name the fresh minimum on BID_TOO_LOW even when the re-read buyout is at the amount", async () => {
+    const { d, log } = deps([apiError(400, "BID_TOO_LOW")], { minimumAfter: 151, buyoutAfter: 150 });
+    const result = await submitBid({ amount: 150, previous: undefined, availableGold: 500 }, d);
+    expect(log).toEqual(["place 150", "resetTouched", "refresh"]);
+    expect(result.note).toEqual({ tone: "error", text: outbidMessage(151) });
+  });
+
+  // FS-V74WE §Requirements 11
+  it("should say the Bazaar is unreachable when the BID_TOO_LOW re-read fails", async () => {
+    const { d, log } = deps([apiError(400, "BID_TOO_LOW")], { refreshFails: true });
+    const result = await submitBid({ amount: 60, previous: undefined, availableGold: 100 }, d);
+    expect(log).toEqual(["place 60", "resetTouched", "refresh"]);
+    expect(result.note).toEqual({ tone: "error", text: BROWSE_UNREACHABLE });
+  });
+
+  // FS-V74WE §Requirements 12
+  it("should point a BID_AT_OR_ABOVE_BUYOUT refusal at Buy out without re-reading", async () => {
+    const { d, log } = deps([apiError(400, "BID_AT_OR_ABOVE_BUYOUT")], { buyoutAfter: 200 });
+    const result = await submitBid({ amount: 100, previous: undefined, availableGold: 500 }, d);
+    expect(log).toEqual(["place 100"]);
+    expect(result.note).toEqual({ tone: "error", text: BID_AT_BUYOUT });
+    expect(result.attempt).toBeUndefined();
+  });
+
+  // FS-72KT8 §Requirements 16
+  it("should tell a leading member they already lead without re-reading", async () => {
+    const { d, log } = deps([apiError(400, "ALREADY_LEADING")]);
+    const result = await submitBid({ amount: 150, previous: undefined, availableGold: 500 }, d);
+    expect(log).toEqual(["place 150"]);
+    expect(result.note).toEqual({ tone: "error", text: BID_ALREADY_LEADING });
+    expect(result.attempt).toBeUndefined();
+  });
+
   it.each([
     ["VALIDATION_FAILED", apiError(400, "VALIDATION_FAILED")],
+    // FS-V74WE §Requirements 14
+    ["BID_TOO_LOW", apiError(400, "BID_TOO_LOW")],
+    ["BID_AT_OR_ABOVE_BUYOUT", apiError(400, "BID_AT_OR_ABOVE_BUYOUT")],
     ["FAILED_PRECONDITION", apiError(400, "FAILED_PRECONDITION")],
     ["ALREADY_EXISTS", apiError(409, "ALREADY_EXISTS")],
   ])("should drop a key spent by %s, so the same amount goes under a new key", async (_, refusal) => {

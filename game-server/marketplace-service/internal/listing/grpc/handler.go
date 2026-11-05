@@ -532,6 +532,9 @@ var ownRefusals = []struct {
 	{listing.ErrBidWithdrawLimitReached, errcode.BidWithdrawLimitReached},     // FS-ZE43K Req 8
 	{listing.ErrListingWithdrawLocked, errcode.ListingWithdrawLocked},         // FS-V7A5S Req 11
 	{listing.ErrListingDurationOutOfRange, errcode.ListingDurationOutOfRange}, // FS-XEDFF Req 1
+	{listing.ErrBidTooLow, errcode.BidTooLow},                                 // FS-V74WE Req 2
+	{listing.ErrBidAtOrAboveBuyout, errcode.BidAtOrAboveBuyout},               // FS-V74WE Req 2
+	{listing.ErrAlreadyLeading, errcode.AlreadyLeading},                       // FS-72KT8 Req 12, ADR-0054
 }
 
 func mapError(ctx context.Context, err error) error {
@@ -592,8 +595,6 @@ func mapError(ctx context.Context, err error) error {
 
 	// the caller sent a structurally valid request carrying a nonsensical value
 	case errors.Is(err, listing.ErrInvalidAmount) ||
-		errors.Is(err, listing.ErrBidTooLow) ||
-		errors.Is(err, listing.ErrBidAtOrAboveBuyout) ||
 		errors.Is(err, listing.ErrBuyoutAmountMismatch):
 		code = codes.InvalidArgument
 		msg = "invalid argument"

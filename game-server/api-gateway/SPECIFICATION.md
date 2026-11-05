@@ -63,6 +63,8 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [ ] Affixes and item level in item summaries → FS-4R9M9
 - [x] Read my bids → FS-EYQ8K
 - [ ] Withdrawal-cap refusal on place-bid → FS-ZE43K
+- [ ] Bid-price refusals on place-bid → FS-V74WE
+- [ ] Already-leading refusal on place-bid → FS-72KT8
 
 ### Items
 

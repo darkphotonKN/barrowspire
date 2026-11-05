@@ -110,6 +110,18 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 		return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
 	}
 
+	// After the replay shortcut and the cap, as PlaceBidWithID orders them, so a
+	// leader's bid holds no gold. Advisory too: PlaceBidWithID decides it again
+	// under the lock (ADR-0054, FS-72KT8 Req 6). Not asked of a resend whose key
+	// is already on the listing under another ID (a bid recorded before IDs were
+	// derived, ADR-0027): under the lock its key replay answers before the leading
+	// check, so refusing it here would turn a replay into a refusal.
+	if !current.HasBidByKey(cmd.MemberID, cmd.IdempotencyKey) {
+		if err := current.NotLeading(cmd.MemberID); err != nil {
+			return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+		}
+	}
+
 	if err := uc.wallet.PlaceHold(ctx, cmd.MemberID, bidID, cmd.Amount, expiresAt); err != nil {
 		return fmt.Errorf("place bid usecase handle placing hold for bid %v : %w", bidID, err)
 	}
@@ -222,6 +234,7 @@ func bidRejected(err error) bool {
 		listing.ErrBidNotFound,
 		listing.ErrInvalidBidTransition,
 		listing.ErrBidWithdrawLimitReached,
+		listing.ErrAlreadyLeading, // FS-72KT8 Req 5
 		commonconstants.ErrConstraintViolation,
 		commonconstants.ErrDuplicateResource,
 	} {
