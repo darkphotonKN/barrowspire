@@ -90,6 +90,17 @@ describe("apiClient.createListing", () => {
   });
 });
 
+describe("apiClient.acceptBid", () => {
+  it("should send the leading bid the seller was shown as the floor (FS-F692V req 1, 9)", async () => {
+    answer = empty(202);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.acceptBid("l1", 300)).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("POST");
+    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1/accept");
+    expect(await requests[0].json()).toEqual({ minAmount: 300 });
+  });
+});
+
 describe("publicApi.getListing", () => {
   it("should read one listing without a token", async () => {
     answer = () =>

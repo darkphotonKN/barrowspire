@@ -2,7 +2,7 @@
  * One press of Sell, start to answer (FS-49Z37 req 15–17). The fetchers are injected, so the
  * order of the steps is testable without a dialog:
  *
- * 1. send the accept (no key, no body);
+ * 1. send the accept (no key; the body is the floor the confirm showed, FS-F692V req 9);
  * 2. accepted: re-read the listing, and only the listing. The seller's gold arrives at
  *    settlement, so the purse would not change. Then say it is sold;
  *    no longer for sale: re-read the listing, so it shows why;

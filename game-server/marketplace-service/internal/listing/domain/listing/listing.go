@@ -162,7 +162,14 @@ func copyInt(p *int) *int {
 //
 // Seller first, so a member who is not the seller learns nothing about the
 // listing's state from the refusal.
-func (l *Listing) CanAcceptBid(memberID uuid.UUID, now time.Time) error {
+//
+// minAmount is the accept floor (FS-F692V): the leading bid the seller was
+// shown. It is checked last, after the seller, open and someone-leads checks, so
+// a non-seller learns nothing about the leading bid from the refusal. It is a
+// floor, not an identity: a WINNING bid at or above it is accepted whoever leads.
+// A floor below 1 is no floor at all, so it is refused as ErrInvalidAmount rather
+// than read as "accept whatever leads", whoever the caller is.
+func (l *Listing) CanAcceptBid(memberID uuid.UUID, minAmount int, now time.Time) error {
 	if l.sellerID != memberID {
 		return ErrNotSeller
 	}
@@ -171,8 +178,17 @@ func (l *Listing) CanAcceptBid(memberID uuid.UUID, now time.Time) error {
 		return err
 	}
 
-	if l.findWinningBid() == nil {
+	winning := l.findWinningBid()
+	if winning == nil {
 		return ErrNoBidToAccept
+	}
+
+	if minAmount <= 0 {
+		return ErrInvalidAmount
+	}
+
+	if winning.amount < minAmount {
+		return ErrLeadingBidLowered
 	}
 
 	return nil

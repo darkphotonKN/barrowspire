@@ -30,6 +30,7 @@ var (
 	ErrLeadingBidLocked        = errors.New("leading bid cannot be withdrawn in the auction's final window")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
+	ErrLeadingBidLowered       = errors.New("leading bid below the accept floor")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

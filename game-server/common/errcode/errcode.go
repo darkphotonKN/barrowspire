@@ -186,6 +186,12 @@ const (
 	// LetterClaimInProgress: another claim of this letter by this member holds
 	// it right now. FS-1GZGD R25, S5.
 	LetterClaimInProgress Code = "LETTER_CLAIM_IN_PROGRESS"
+
+	// LeadingBidLowered: the listing's WINNING bid is below the accept floor,
+	// the leading bid the seller was shown when they accepted, so nothing is
+	// sold. The client re-reads the listing. Decided by marketplace-service.
+	// Added for FS-F692V (Accept never sells below the leading bid shown).
+	LeadingBidLowered Code = "LEADING_BID_LOWERED"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -223,4 +229,7 @@ var domainCodes = map[Code]struct{}{
 	NothingToClaim:          {},
 	LetterAlreadyClaimed:    {},
 	LetterClaimInProgress:   {},
+
+	// FS-F692V
+	LeadingBidLowered: {},
 }

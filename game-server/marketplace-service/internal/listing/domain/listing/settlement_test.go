@@ -359,9 +359,69 @@ func TestCanAcceptBid(t *testing.T) {
 				now = before.EndsAt
 			}
 
-			err := l.CanAcceptBid(member, now)
+			err := l.CanAcceptBid(member, 1, now)
 
 			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, before, l.Snapshot(), "CanAcceptBid must not change the listing")
+		})
+	}
+}
+
+// The accept floor (FS-F692V §Req 2, 3): the WINNING amount must be at least the
+// leading bid the seller was shown. It is a floor, not an identity, so equal or
+// higher is allowed whoever leads. It is checked last, so the earlier refusals
+// hold whatever the floor, and a non-seller learns nothing about the leading bid.
+// listingWithBids gives the WINNING bid an amount of 150 when it is the only bid.
+func TestCanAcceptBid_Floor(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  ListingStatus
+		bids    []BidStatus
+		asOther bool
+		late    bool
+		floor   int
+		wantErr error
+	}{
+		{"winning above the floor", StatusActive, []BidStatus{BidStatusWinning}, false, false, 100, nil},
+		{"winning equal to the floor", StatusActive, []BidStatus{BidStatusWinning}, false, false, 150, nil},
+		{"winning below the floor", StatusActive, []BidStatus{BidStatusWinning}, false, false, 151, ErrLeadingBidLowered},
+		{"floor far above anything bid", StatusActive, []BidStatus{BidStatusWinning}, false, false, 1000, ErrLeadingBidLowered},
+		{"non-seller with a floor above the winning bid", StatusActive, []BidStatus{BidStatusWinning}, true, false, 1000, ErrNotSeller},
+		{"closed with a floor above the winning bid", StatusPendingSettlement, []BidStatus{BidStatusWinning}, false, false, 1000, ErrListingNotAcceptingBids},
+		{"ended with a floor above the winning bid", StatusActive, []BidStatus{BidStatusWinning}, false, true, 1000, ErrListingExpired},
+		{"nobody leading with any floor", StatusActive, []BidStatus{BidStatusPending}, false, false, 1000, ErrNoBidToAccept},
+		// a non-positive floor is no floor at all, so the aggregate refuses it
+		// itself rather than trusting every caller to; still last, so the
+		// earlier refusals hold and a non-seller learns nothing
+		{"zero floor", StatusActive, []BidStatus{BidStatusWinning}, false, false, 0, ErrInvalidAmount},
+		{"negative floor", StatusActive, []BidStatus{BidStatusWinning}, false, false, -1, ErrInvalidAmount},
+		{"non-seller with a zero floor", StatusActive, []BidStatus{BidStatusWinning}, true, false, 0, ErrNotSeller},
+		{"closed with a zero floor", StatusPendingSettlement, []BidStatus{BidStatusWinning}, false, false, 0, ErrListingNotAcceptingBids},
+		{"ended with a zero floor", StatusActive, []BidStatus{BidStatusWinning}, false, true, 0, ErrListingExpired},
+		{"nobody leading with a zero floor", StatusActive, []BidStatus{BidStatusPending}, false, false, 0, ErrNoBidToAccept},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := listingWithBids(t, tt.status, tt.bids...)
+			before := l.Snapshot()
+
+			member := before.SellerID
+			if tt.asOther {
+				member = uuid.New()
+			}
+			now := time.Now()
+			if tt.late {
+				now = before.EndsAt
+			}
+
+			err := l.CanAcceptBid(member, tt.floor, now)
+
+			if tt.wantErr == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, tt.wantErr)
+			}
 			assert.Equal(t, before, l.Snapshot(), "CanAcceptBid must not change the listing")
 		})
 	}

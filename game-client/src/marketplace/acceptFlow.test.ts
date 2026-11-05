@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
-import { ACCEPT_CONFLICT, ACCEPT_GONE, ACCEPT_SOLD } from "./accept";
+import { ACCEPT_CONFLICT, ACCEPT_GONE, ACCEPT_LEADING_BID_LOWERED, ACCEPT_SOLD } from "./accept";
 import { submitAccept, type AcceptSubmitDeps } from "./acceptFlow";
 import { BROWSE_UNREACHABLE } from "./browse";
 
@@ -35,6 +35,16 @@ describe("submitAccept", () => {
     const result = await submitAccept(d);
     expect(log).toEqual(["accept", "refresh"]);
     expect(result).toEqual({ sold: false, note: { tone: "error", text: ACCEPT_GONE } });
+  });
+
+  it("should re-read the listing and say the leading bid dropped when the floor refuses", async () => {
+    const { d, log } = deps(apiError(400, "LEADING_BID_LOWERED"));
+    const result = await submitAccept(d);
+    expect(log).toEqual(["accept", "refresh"]);
+    expect(result).toEqual({
+      sold: false,
+      note: { tone: "error", text: ACCEPT_LEADING_BID_LOWERED },
+    });
   });
 
   it.each([

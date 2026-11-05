@@ -21,3 +21,7 @@ this member's `SPECIFICATION.md`.
 - **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released, listing withdrawn). Holds released, bids LOST, item unfrozen to its seller. Never re-settled.
 - **Semantic impossibility** — a step failure no retry can fix. The only failure kind that triggers a rollback, and only before the pivot. Contrast *transient* (retry, cap, park) and *already applied* (treated as success) (ADR-0018).
 - **PENDING_SETTLEMENT** — listing status from step 0a until SOLD / SETTLEMENT_FAILED; a live listing for every reconciler. (items-service has its own `PENDING_SETTLEMENT` item status, set at 0b.)
+
+### Accepting a bid (FS-F692V)
+
+- **Accept floor** — the leading bid amount the seller saw when they accepted (`minAmount`). AcceptBid is refused (`LEADING_BID_LOWERED`) when the WINNING bid is now below it; at or above it, settlement starts as usual, so a higher bid landing first still wins (FS-49Z37). A floor, not a bid identity: the seller never learns which bid leads.

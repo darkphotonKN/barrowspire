@@ -48,13 +48,16 @@ export default function SellerBlock({
   }, [open]);
 
   const sell = async () => {
-    if (inFlight.current) return;
+    // Sell is only on the confirm, which shows only for an acceptable listing.
+    if (block.kind !== "accept" || inFlight.current) return;
+    // The floor is the price the confirm displays now (FS-F692V req 9).
+    const minAmount = block.currentPrice;
     inFlight.current = true;
     setSubmitting(true);
     setNote(undefined);
     try {
       const result = await submitAccept({
-        acceptBid: () => apiClient.acceptBid(listing.id),
+        acceptBid: () => apiClient.acceptBid(listing.id, minAmount),
         refresh,
       });
       setSold(result.sold);

@@ -511,7 +511,7 @@ export interface paths {
         put?: never;
         /**
          * Accept the leading bid
-         * @description Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads.
+         * @description Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted, as long as it is at least minAmount, the leading bid the seller was shown; a higher bid landing first still wins. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads. Refusals: LEADING_BID_LOWERED (the leading bid is now below minAmount; nothing is sold, re-read the listing). A body whose minAmount is missing, not an integer or below 1 answers 422 VALIDATION_FAILED; a request with no body at all answers 400 VALIDATION_FAILED.
          */
         post: operations["accept-bid"];
         delete?: never;
@@ -904,6 +904,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AcceptBidBody: {
+            /**
+             * Format: int64
+             * @description The leading bid amount the seller was shown. The accept is refused with LEADING_BID_LOWERED when the leading bid is now below it; at or above it, whichever bid leads is accepted.
+             */
+            minAmount: number;
+        };
         Affix: {
             /** @description The stat the affix raises, by its stat code. */
             stat: string;
@@ -4002,7 +4009,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptBidBody"];
+            };
+        };
         responses: {
             /** @description Accepted */
             202: {

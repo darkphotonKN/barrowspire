@@ -123,3 +123,16 @@ in api post /api/payment/subscribe api path removed without deprecation
 in api get /api/payment/subscription/permission api path removed without deprecation
 in api post /api/payment/subscription/setup api path removed without deprecation
 in api get /api/payment/subscriptions/{customerid} api path removed without deprecation
+
+# ---------------------------------------------------------------------------
+# FS-F692V Req 1, 8 (I-F692V-1) — accept-bid gains a required body.
+#
+# WHY: the seller's accept now carries the accept floor, { "minAmount" }, the
+# leading bid the seller was shown, so a withdrawal they did not see can never
+# sell their relic for less. Required on purpose (charter defaults D1, D3): an
+# optional floor would let an old client skip the check silently. The only
+# consumer is this repo's generated client, regenerated in the same change, and
+# SellerBlock sends the confirm's currentPrice.
+#
+# Line copied verbatim from `make openapi-breaking` output, lowercased.
+in api post /api/marketplace/listings/{listing_id}/accept added required request body
