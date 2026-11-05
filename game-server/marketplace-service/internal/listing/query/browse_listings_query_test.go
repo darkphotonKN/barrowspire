@@ -187,7 +187,9 @@ func TestBrowseListingsCarriesThePriceFacts(t *testing.T) {
 			wantCount:   2,
 		},
 		{
-			// no promotion: the outbid bid does not become the leader
+			// rows from before ADR-0028, when a withdrawn leader promoted nobody;
+			// WithdrawBid now promotes the OUTBID bid. The read still must not
+			// count an OUTBID bid as the leader.
 			name:        "leader withdrawn, an OUTBID bid left",
 			bids:        []bid{{60, listing.BidStatusOutbid}, {75, listing.BidStatusCancelled}},
 			wantMinimum: start,

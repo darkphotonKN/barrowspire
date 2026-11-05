@@ -47,9 +47,10 @@ type PriceFacts struct {
 // It restates the threshold in listing.PlaceBidWithID, which the aggregate
 // applies against findContendingBid (the highest WINNING or PENDING bid): with
 // no contender a bid must reach the start price, otherwise it must exceed the
-// contender. Withdrawal promotes nobody (WithdrawBid only cancels), so a
-// withdrawn leader sends the minimum back to the start price even when an OUTBID
-// bid remains. listing_dto_test pins this to the aggregate.
+// contender. A withdrawn leader promotes the highest OUTBID bid (ADR-0028), so
+// the minimum becomes that bid's amount plus one, and falls back to the start
+// price only when no OUTBID bid remains. listing_dto_test pins this to the
+// aggregate.
 func (l ListingDetails) MinimumBid() int {
 	if l.CurrentPrice == nil {
 		return l.StartPrice
