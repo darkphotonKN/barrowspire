@@ -757,9 +757,10 @@ func (l *Listing) Expire(now time.Time) error {
 //
 // No leader is a legitimate ending, not corruption: every bid may have been
 // withdrawn (CANCELLED), refused by wallet (FAILED) or still waiting on its hold
-// (PENDING). Even OUTBID bids with no leader are reachable, because a WINNING
-// bidder may withdraw and nothing promotes the runner-up. Two WINNING bids is
-// the real corruption, and Reconstitute already refuses to load that listing.
+// (PENDING). A withdrawn leader promotes the highest OUTBID bid (ADR-0028), so
+// OUTBID bids with no leader are no longer reached through WithdrawBid, but
+// listings written before that rule may still hold them. Two WINNING bids is the
+// real corruption, and Reconstitute already refuses to load that listing.
 func (l *Listing) FindWinningBid() (*Bid, error) {
 	return l.findWinningBid(), nil
 }
