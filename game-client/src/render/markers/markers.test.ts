@@ -233,4 +233,22 @@ describe("markerBase", () => {
   it("should show no markers over a baked corpse", () => {
     expect(markerBase(sheet, 76, true)).toBeNull();
   });
+
+  describe("on a sheet baked at 2x, drawn at half scale (spike/archer-2x)", () => {
+    // the same figure: its frame twice the px, the sprite at 0.5, the crown still screen px
+    const sheet2x = { y: 300, displayOriginY: 216, scaleY: 0.5 };
+
+    it("should seat the markers exactly where the 1x sheet's sit", () => {
+      expect(markerBase(sheet2x, 76, false, 0.5)).toBe(markerBase(sheet, 76, false));
+    });
+
+    it("should still scale with a size on top of the art scale (a menu's 1.5)", () => {
+      const sized = markerBase({ ...sheet2x, scaleY: 0.75 }, 76, false, 0.5);
+      expect(sized).toBe(markerBase({ ...sheet, scaleY: 1.5 }, 76, false));
+    });
+
+    it("should keep a placeholder's frame top, read off the sprite as drawn", () => {
+      expect(markerBase(sheet2x, undefined, false, 0.5)).toBe(300 - 108);
+    });
+  });
 });

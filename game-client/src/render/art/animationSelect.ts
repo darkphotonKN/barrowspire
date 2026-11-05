@@ -14,10 +14,15 @@ import { directionIndex } from "./manifest";
 /** The clips every character and creature sheet carries (FS-2325V §E.2). */
 export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const;
 /**
- * Those, and the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
- * raised into and then held on its last frame.
+ * Those, the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
+ * raised into and then held on its last frame; and the Archer's attack on the move
+ * (spike/archer-2x): `walk_attack`, the attack from the waist up over the walk from the waist
+ * down, lasting exactly as long as the attack, which only his sheet carries.
  */
-export type CharacterAnimation = (typeof CHARACTER_ANIMATIONS)[number] | "parry";
+export type CharacterAnimation =
+  | (typeof CHARACTER_ANIMATIONS)[number]
+  | "parry"
+  | "walk_attack";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
@@ -54,6 +59,12 @@ export interface CharacterState {
    * A swing started inside the stance plays over it; death over both.
    */
   guarding?: boolean;
+  /**
+   * The sheet carries `walk_attack` (the Archer's, spike/archer-2x): an attack drawn while the
+   * body moves keeps the legs walking instead of sliding the whole attack pose along. Without it,
+   * or during a charge's held pose, the attack plays as before.
+   */
+  walkAttack?: boolean;
 }
 
 export interface AnimationChoice {
@@ -65,9 +76,14 @@ export interface AnimationChoice {
   timeScale: number;
 }
 
-/** Dead over attacking over guarding over holding an aim over moving over idle. */
+/**
+ * Dead over attacking over guarding over holding an aim over moving over idle. Attacking while
+ * moving on a sheet that carries `walk_attack` plays that, turned the way the attack would be (to
+ * the aim when known): the legs walk toward the aim, whichever way the body is going.
+ */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim, holding, guarding } = state;
+  const { velocity, facing, attacking, dead, aim, holding, guarding, walkAttack } =
+    state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
 
@@ -82,7 +98,10 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
 
   const walking = moving ? facingFrom(velocity.vx, velocity.vy, facing) : facing;
   if (attacking)
-    return choose("attack", aim ? facingFrom(aim.x, aim.y, walking) : walking);
+    return choose(
+      moving && walkAttack ? "walk_attack" : "attack",
+      aim ? facingFrom(aim.x, aim.y, walking) : walking,
+    );
 
   // not directional (§C.10): he guards whichever way he is going
   if (guarding) return choose("parry", walking);

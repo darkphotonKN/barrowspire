@@ -48,9 +48,22 @@ function figureOf(
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (frame && image && ctx) {
-    const w = (canvas.width = frame.cutWidth);
-    const h = (canvas.height = frame.cutHeight);
-    ctx.drawImage(image, frame.cutX, frame.cutY, w, h, 0, 0, w, h);
+    // the whole frame, so the bounds are in its px: a trimmed frame's cut (spike/archer-2x) is put
+    // back at its offset, which is 0, 0 on a whole frame; a crop reads the same px (`setCrop`)
+    const w = (canvas.width = frame.realWidth);
+    const h = (canvas.height = frame.realHeight);
+    const [cw, ch] = [frame.cutWidth, frame.cutHeight];
+    ctx.drawImage(
+      image,
+      frame.cutX,
+      frame.cutY,
+      cw,
+      ch,
+      frame.x,
+      frame.y,
+      cw,
+      ch,
+    );
     const { data } = ctx.getImageData(0, 0, w, h);
     const solid = (x: number, y: number) => data[(y * w + x) * 4 + 3] > 40;
 
@@ -100,7 +113,7 @@ function bustImage(
     portrait.frame,
   );
   if (!frame || !figure) return undefined;
-  const crop = bustCrop(figure.bounds, figure.centreX, frame.cutWidth);
+  const crop = bustCrop(figure.bounds, figure.centreX, frame.realWidth);
   const scale = (r * 2) / crop.size;
   // Placed by the figure's centre, not the crop's edge: a figure near its frame's edge has
   // its crop clamped, and would otherwise sit off-centre in the ring.

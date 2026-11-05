@@ -16,7 +16,7 @@
 
 import type { Facing8, Point } from "@/render/iso";
 import type { ArtLibrary } from "./library";
-import { directionIndex } from "./manifest";
+import { directionIndex, sheetScale } from "./manifest";
 import {
   characterSheet,
   selectAnimation,
@@ -46,6 +46,7 @@ export interface CharacterLook {
 export interface AnimatedSprite {
   setTexture(key: string, frame?: string | number): unknown;
   setOrigin(x: number, y: number): unknown;
+  setScale(x: number, y?: number): unknown;
   play(
     key: string | { key: string; startFrame?: number },
     ignoreIfPlaying?: boolean,
@@ -68,10 +69,17 @@ export class CharacterMotion {
   private aim?: Point;
   private holding?: Point;
   private guarding = false;
+  /** The swing running is a charge, its pose held past the clip: never split over the walk. */
+  private charging = false;
 
+  /**
+   * `walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, spike/archer-2x), so an
+   * attack drawn while moving keeps the legs walking.
+   */
   constructor(
     public facing: Facing8 = "se",
     private readonly attackMs = PLACEHOLDER_ATTACK_MS,
+    private readonly walkAttack = false,
   ) {}
 
   /**
@@ -84,6 +92,7 @@ export class CharacterMotion {
    */
   attack(now: number, aim?: Point, holdMs = 0): void {
     this.attackEnds = now + Math.max(this.attackMs, holdMs);
+    this.charging = holdMs > this.attackMs;
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
   }
 
@@ -130,6 +139,7 @@ export class CharacterMotion {
       aim: attacking ? this.aim : undefined,
       holding: this.holding,
       guarding: this.guarding,
+      walkAttack: this.walkAttack && !this.charging,
     });
     this.facing = choice.facing;
     return choice;
@@ -148,6 +158,12 @@ export class CharacterAnimator {
   private guardPending = false;
   /** Whether the sheet carries the parry clip: only the Mercenary's does (FS-MAMHR §G.35). */
   private readonly guards: boolean;
+  /**
+   * The sprite scale that draws the sheet at its true size: 1 over its `scale` (a 2x sheet's
+   * 0.5, spike/archer-2x). Not a size: markers, the crown and the footprint stay screen px. 1
+   * when there is no baked sheet.
+   */
+  readonly artScale: number;
 
   private readonly variant?: string;
 
@@ -163,11 +179,14 @@ export class CharacterAnimator {
     const attack = art.sheet(this.sheet)?.animations.attack;
     this.baked = art.animationKey(this.sheet, this.clip("idle")) !== undefined;
     this.guards = art.animationKey(this.sheet, this.clip("parry")) !== undefined;
+    const sheet = this.baked ? art.sheet(this.sheet) : undefined;
+    this.artScale = sheet ? 1 / sheetScale(sheet) : 1;
     this.motion = new CharacterMotion(
       facing,
       attack && attack.fps > 0
         ? (attack.frames[0].length / attack.fps) * 1000
         : PLACEHOLDER_ATTACK_MS,
+      art.animationKey(this.sheet, this.clip("walk_attack")) !== undefined,
     );
   }
 
@@ -210,8 +229,10 @@ export class CharacterAnimator {
   /**
    * Puts the sheet on a sprite, standing on its footprint: the anchor is where the feet meet
    * the ground, so the sprite's position is the projection of the world position (FS-2325V §E.5).
+   * `size` is how large to draw it (a menu figure's 1.5, a monster's tier); the sprite's scale is
+   * that times {@link artScale}, so a 2x sheet stands exactly as large as a 1x one would.
    */
-  dress(sprite: AnimatedSprite): void {
+  dress(sprite: AnimatedSprite, size = 1): void {
     const frame = this.art.resolve(this.sheet, {
       animation: this.clip("idle"),
       direction: directionIndex(this.motion.facing),
@@ -219,12 +240,14 @@ export class CharacterAnimator {
     if (frame.placeholder) sprite.setTexture(frame.texture);
     else sprite.setTexture(frame.texture, frame.frame);
     sprite.setOrigin(frame.anchor.x, frame.anchor.y);
+    sprite.setScale(size * this.artScale);
   }
 
   /**
    * Plays the chosen clip. The same clip carries on (a finished attack, guard or death holds its
    * last frame rather than replaying) unless a new attack or guard was started; a looping clip turning to a new facing keeps its place in the
-   * cycle, so a stride does not restart at every turn.
+   * cycle, so a stride does not restart at every turn, and a swing that starts or stops moving
+   * swaps between `attack` and `walk_attack` at the same point of the shot.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
     const clip = this.clip(choice.animation);
@@ -232,20 +255,36 @@ export class CharacterAnimator {
     if (!key) return;
     const anims = sprite.anims;
     const current = anims.currentAnim;
-    if (choice.animation === "attack" && this.swingPending) {
+    if (SWINGS.has(choice.animation) && this.swingPending) {
       this.swingPending = false;
       sprite.play({ key, startFrame: 0 });
     } else if (choice.animation === "parry" && this.guardPending) {
       this.guardPending = false;
       sprite.play({ key, startFrame: 0 });
     } else if (current?.key !== key) {
-      const startFrame =
-        current && this.loops(clip) && animationOf(current.key) === clip
-          ? Math.max(0, current.frames.indexOf(anims.currentFrame))
-          : 0;
+      const from = current ? animationOf(current.key) : undefined;
+      const at = current ? Math.max(0, current.frames.indexOf(anims.currentFrame)) : 0;
+      let startFrame = 0;
+      if (current && this.loops(clip) && from === clip) startFrame = at;
+      // starting or stopping mid-swing (spike/archer-2x): the other swing clip carries on from
+      // as far through as this one got, rather than drawing the shot again from the start
+      else if (current && from !== clip && from && this.swingClips.has(from) && this.swingClips.has(clip))
+        startFrame = Math.min(
+          this.frameCount(clip) - 1,
+          Math.floor((at * this.frameCount(clip)) / Math.max(1, current.frames.length)),
+        );
       sprite.play({ key, startFrame });
     }
     anims.timeScale = choice.timeScale;
+  }
+
+  /** The manifest clips one swing may play: the attack, and the attack on the move. */
+  private get swingClips(): ReadonlySet<string> {
+    return new Set([...SWINGS].map((a) => this.clip(a)));
+  }
+
+  private frameCount(clip: string): number {
+    return this.art.sheet(this.sheet)?.animations[clip]?.frames[0]?.length ?? 1;
   }
 
   private loops(clip: string): boolean {
@@ -260,3 +299,6 @@ export class CharacterAnimator {
 
 /** `sheet/animation/direction` (library.ts `animationName`) → `animation`. */
 const animationOf = (key: string) => key.split("/")[1];
+
+/** The clips an attack plays: standing, or on the move where the sheet carries it. */
+const SWINGS: ReadonlySet<CharacterAnimation> = new Set(["attack", "walk_attack"]);

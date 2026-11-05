@@ -256,6 +256,114 @@ describe("validateManifest", () => {
     });
   });
 
+  describe("a sheet baked at more px than it is drawn (scale, spike/archer-2x)", () => {
+    // the door fixture: a 50 x 70 frame, anchor at 0.9; at scale 2 that is 25 x 35 screen px
+    const withScale =
+      (scale: unknown, more: Record<string, unknown> = {}) =>
+      (m: Fixture) => {
+        Object.assign(m.sheets.door, { scale, ...more });
+      };
+
+    it("accepts a whole scale that divides the frame, and none at all (1)", () => {
+      for (const scale of [1, 2]) {
+        const m = fixture();
+        withScale(scale)(m);
+        expect(validateManifest(m).ok, String(scale)).toBe(true);
+      }
+      expect(fixture().sheets.door).not.toHaveProperty("scale");
+    });
+
+    it.each([0, -2, 1.5, "2", 5])("rejects a scale of %s", (scale) => {
+      rejects(withScale(scale), /door.*scale/);
+    });
+
+    it("rejects a frame that is not a whole number of screen px", () => {
+      rejects(withScale(3), /door.*multiples of scale/);
+    });
+
+    it("judges the crown in screen px: no higher than half the frame's px above the anchor at 2x", () => {
+      const m = fixture();
+      withScale(2, { crown: 32 })(m);
+      expect(validateManifest(m).ok).toBe(true);
+      rejects(withScale(2, { crown: 40 }), /door.*crown/);
+    });
+
+    it("judges a quadruped's length in screen px too", () => {
+      const m = fixture();
+      withScale(2, { length: 25 })(m);
+      expect(validateManifest(m).ok).toBe(true);
+      rejects(withScale(2, { length: 26 }), /door.*length/);
+    });
+  });
+
+  describe("a trimmed sheet: frames cut to their pixels (spike/archer-2x)", () => {
+    // the door fixture: 50 x 70 frames at (40, 0) and (90, 0) of a 256 x 128 atlas
+    type Cut = { x: number; y: number; w: number; h: number };
+    const cut = { x: 10, y: 20, w: 30, h: 46 };
+    /** Marks the door trimmed and gives each of its frames `trims[i]` (or `cut`). */
+    const trimmed =
+      (trims: (Cut | undefined)[] = [cut, cut], more: Record<string, unknown> = {}) =>
+      (m: Fixture) => {
+        Object.assign(m.sheets.door, { trimmed: true, ...more });
+        const frames = [m.sheets.door.animations.locked.frames[0][0], m.sheets.door.animations.open.frames[0][0]];
+        frames.forEach((f, i) => trims[i] && Object.assign(f, { trim: trims[i] }));
+      };
+    const accepts = (mutate: (m: Fixture) => void) => {
+      const m = fixture();
+      mutate(m);
+      const result = validateManifest(m);
+      expect(result.ok ? [] : result.errors).toEqual([]);
+    };
+
+    it("accepts a trimmed sheet whose every frame records its cut", () => {
+      accepts(trimmed());
+      expect(fixture().sheets.door).not.toHaveProperty("trimmed");
+    });
+
+    it.each([false, "yes", 1])("rejects trimmed set to %s", (value) => {
+      rejects(trimmed(undefined, { trimmed: value }), /door: trimmed must be true/);
+    });
+
+    it("rejects a frame of a trimmed sheet that does not record its cut", () => {
+      rejects(trimmed([cut, undefined]), /door animation open: frame 0\/0 of a trimmed sheet needs its trim/);
+    });
+
+    it("rejects a cut on a frame of a sheet that is not trimmed", () => {
+      rejects((m) => {
+        Object.assign(m.sheets.door.animations.open.frames[0][0], { trim: cut });
+      }, /door animation open: frame 0\/0 has a trim, but the sheet is not trimmed/);
+    });
+
+    it.each([
+      ["no width", { ...cut, w: 0 }],
+      ["a negative offset", { ...cut, x: -2 }],
+      ["a fractional offset", { ...cut, y: 1.5 }],
+      ["a missing height", { x: 0, y: 0, w: 10 }],
+    ])("rejects a cut with %s", (_, bad) => {
+      rejects(trimmed([bad as Cut, cut]), /door animation locked: frame 0\/0 trim needs integer/);
+    });
+
+    it("rejects a cut reaching past the frame", () => {
+      rejects(trimmed([{ ...cut, x: 22 }, cut]), /locked: frame 0\/0 trim must lie inside the frame/);
+      rejects(trimmed([cut, { ...cut, y: 26 }]), /open: frame 0\/0 trim must lie inside the frame/);
+    });
+
+    it("rejects a cut off whole screen px on a 2x sheet, and accepts one on them", () => {
+      // the door at scale 2 is 25 x 35 screen px; the cut (10, 20) 30 x 46 is (5, 10) 15 x 23
+      accepts(trimmed(undefined, { scale: 2 }));
+      for (const bad of [{ ...cut, x: 11 }, { ...cut, y: 21 }, { ...cut, w: 29 }, { ...cut, h: 45 }])
+        rejects(trimmed([bad, cut], { scale: 2 }), /locked: frame 0\/0 trim must be on whole screen px/);
+    });
+
+    it("judges a frame against its atlas by the cut it holds, not the whole frame", () => {
+      // at x 220 a whole 50-wide frame would end at 270, past the 256-wide atlas; the 30-wide cut ends at 250
+      const at = (x: number) => (m: Fixture) => Object.assign(m.sheets.door.animations.open.frames[0][0], { x });
+      accepts((m) => (trimmed()(m), at(220)(m)));
+      rejects((m) => (trimmed([cut, { ...cut, w: 40 }])(m), at(220)(m)), /open: frame 0\/0 lies outside atlas props-0/);
+      rejects(at(220), /open: frame 0\/0 lies outside atlas props-0/);
+    });
+  });
+
   it("rejects a sheet that names an unknown atlas", () => {
     rejects((m) => {
       m.sheets.door.atlas = "missing-0";
@@ -1028,8 +1136,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "creature_ghost_base",
     ];
 
-    /** Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35). */
-    const OWN_CLIPS: Record<string, string[]> = { char_mercenary_base: ["parry"] };
+    /**
+     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), and the
+     * Archer's attack on the move (spike/archer-2x).
+     */
+    const OWN_CLIPS: Record<string, string[]> = {
+      char_mercenary_base: ["parry"],
+      char_archer_base: ["walk_attack"],
+    };
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
       const sheet = baked.sheets[name];
@@ -1079,6 +1193,13 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ][])
         if (sheet.crown !== undefined)
           expect(sheet.animations, name).toHaveProperty("idle");
+    });
+
+    it("trims the archer's frames, and only the archer's (spike/archer-2x)", () => {
+      const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
+        .filter(([, sheet]) => sheet.trimmed)
+        .map(([name]) => name);
+      expect(trimmed).toEqual(["char_archer_base"]);
     });
 
     it("loops idle and walk, and plays attack and death once", () => {
@@ -1195,6 +1316,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
 
     it("writes a per-animation atlas only on the boss's spilled animations, never on existing sheets", () => {
+      // spike/archer-2x: the 2x archer is too big for one page, so it spills too, in its own group
+      const spills = [...ROSTER.map(([n]) => n), "char_archer_base"];
       for (const [name, sheet] of Object.entries(baked.sheets) as [
         string,
         RosterSheet,
@@ -1204,10 +1327,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           { atlas?: string },
         ][]) {
           if (a.atlas === undefined) continue;
-          expect(
-            ROSTER.map(([n]) => n),
-            `${name}/${anim}`,
-          ).toContain(name);
+          expect(spills, `${name}/${anim}`).toContain(name);
           expect(a.atlas, `${name}/${anim}`).not.toBe(sheet.atlas);
           expect(atlasGroup(a.atlas)).toBe(atlasGroup(sheet.atlas));
         }

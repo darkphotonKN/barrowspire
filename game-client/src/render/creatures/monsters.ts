@@ -463,9 +463,8 @@ export class MonsterRoster {
     const facing = facingFrom(state.facing.x, state.facing.y, "se");
     const anim = new CharacterAnimator(this.art, { sheet }, facing);
     const sprite = this.stage.sprite();
-    anim.dress(sprite);
     const scale = monsterScale(look, this.art);
-    sprite.setScale(scale);
+    anim.dress(sprite, scale);
 
     const plate = elitePlate(state);
     const name = this.stage.text(
@@ -568,7 +567,7 @@ export class MonsterRoster {
   private mark(view: MonsterView): void {
     const { sprite, name, prefix, bar, state } = view;
     const dead = state.action === "dead";
-    const base = dead ? null : markerBase(sprite, view.anim.crown, false);
+    const base = dead ? null : markerBase(sprite, view.anim.crown, false, view.anim.artScale);
     name.setVisible(base !== null);
     prefix?.setVisible(base !== null);
     bar.setVisible(base !== null);

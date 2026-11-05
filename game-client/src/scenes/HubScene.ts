@@ -1268,7 +1268,7 @@ export class HubScene extends Phaser.Scene {
       // folk idle and walk on their own legs, read off the position just drawn
       const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
       if (npc.anim.baked && body) npc.anim.show(body, npc.anim.step(npc.pos, time, delta, false));
-      this.placeMarker(npc.sprite, npc.name, npc.anim.crown, npc.sigil);
+      this.placeMarker(npc.sprite, npc.name, npc.anim, npc.sigil);
     }
 
     for (const view of this.views.values()) {
@@ -2455,7 +2455,7 @@ export class HubScene extends Phaser.Scene {
       const pos = { x: npc.position.x, y: npc.position.y };
       const sprite = this.add.container(0, 0, [body]);
       standAt(sprite, pos, 1);
-      this.placeMarker(sprite, name, anim.crown, sigil);
+      this.placeMarker(sprite, name, anim, sigil);
 
       this.npcs.set(npc.entity_id, {
         state: npc,
@@ -2742,7 +2742,7 @@ export class HubScene extends Phaser.Scene {
 
   /** A player's name plate over their head ({@link markerBase}); the hub has no corpses. */
   private placeName(view: PlayerView): void {
-    this.placeMarker(view.sprite, view.name, view.anim.crown);
+    this.placeMarker(view.sprite, view.name, view.anim);
   }
 
   /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
@@ -2764,7 +2764,7 @@ export class HubScene extends Phaser.Scene {
   private placeMarker(
     sprite: Phaser.GameObjects.Container,
     name: Phaser.GameObjects.Text,
-    crown: number | undefined,
+    figure: Pick<CharacterAnimator, "crown" | "artScale">,
     sigil?: Phaser.GameObjects.Graphics,
   ): void {
     const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
@@ -2775,8 +2775,9 @@ export class HubScene extends Phaser.Scene {
         displayOriginY: body.displayOriginY,
         scaleY: body.scaleY,
       },
-      crown,
+      figure.crown,
       false,
+      figure.artScale,
     );
     name.setPosition(sprite.x + body.x, (base ?? sprite.y) - NAME_GAP);
     // over the name, not the crown, so a placeholder with no measured head is marked the same
