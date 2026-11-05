@@ -11,6 +11,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/domain/account"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/dto"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // stubReader stands in for the read-side query the handler depends on. It
@@ -565,6 +567,90 @@ func TestCredit_MapsUseCaseErrorsToStatusCodes(t *testing.T) {
 
 			assert.Nil(t, res)
 			assert.Equal(t, tt.wantCode, status.Code(err))
+		})
+	}
+}
+
+// ========================= STALE RESERVED HOLDS  =========================
+
+// stubStaleHolds records the position and limit the handler decoded, and answers
+// a fixed page.
+type stubStaleHolds struct {
+	page *dto.StaleReservedHoldsPage
+	err  error
+
+	calls     int
+	gotBefore time.Time
+	gotAfter  *cursor.Cursor
+	gotLimit  int
+}
+
+func (s *stubStaleHolds) Execute(ctx context.Context, createdBefore time.Time, after *cursor.Cursor, limit int) (*dto.StaleReservedHoldsPage, error) {
+	s.calls++
+	s.gotBefore, s.gotAfter, s.gotLimit = createdBefore, after, limit
+	return s.page, s.err
+}
+
+// FS-9BJCP Req 6, 7: the handler reads strictly after the decoded position and
+// hands back the next position encoded, so a caller pages with the strings alone.
+func TestListStaleReservedHolds_PagesWithAnOpaquePosition(t *testing.T) {
+	before := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	sent := cursor.Cursor{CreatedAt: before.Add(-time.Hour), ID: uuid.New()}
+	next := cursor.Cursor{CreatedAt: before.Add(-30 * time.Minute), ID: uuid.New()}
+	bid := uuid.New()
+	reader := &stubStaleHolds{page: &dto.StaleReservedHoldsPage{BidIDs: []uuid.UUID{bid}, Next: &next}}
+	h := NewHandler(Deps{StaleHoldsReader: reader})
+
+	res, err := h.ListStaleReservedHolds(context.Background(), &pb.ListStaleReservedHoldsRequest{
+		ReservedBefore: timestamppb.New(before),
+		Limit:          50,
+		After:          sent.Encode(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{bid.String()}, res.GetBidIds())
+	assert.Equal(t, next.Encode(), res.GetNext())
+	require.NotNil(t, reader.gotAfter)
+	assert.Equal(t, sent.ID, reader.gotAfter.ID)
+	assert.True(t, sent.CreatedAt.Equal(reader.gotAfter.CreatedAt))
+	assert.Equal(t, 50, reader.gotLimit)
+	assert.True(t, before.Equal(reader.gotBefore))
+}
+
+// Req 7, 18: no after reads from the first page, and the last page answers no
+// next — the shape an old caller sees today.
+func TestListStaleReservedHolds_NoPosition_ReadsTheFirstPageAndTheLastAnswersNoNext(t *testing.T) {
+	reader := &stubStaleHolds{page: &dto.StaleReservedHoldsPage{BidIDs: []uuid.UUID{uuid.New()}}}
+	h := NewHandler(Deps{StaleHoldsReader: reader})
+
+	res, err := h.ListStaleReservedHolds(context.Background(), &pb.ListStaleReservedHoldsRequest{
+		ReservedBefore: timestamppb.Now(),
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, reader.gotAfter)
+	assert.Empty(t, res.GetNext())
+}
+
+// Req 9: a position that cannot be read is refused, never read as "start over";
+// so is a missing cutoff, as today.
+func TestListStaleReservedHolds_BadRequest_IsInvalidArgumentAndReadsNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *pb.ListStaleReservedHoldsRequest
+	}{
+		{"malformed after", &pb.ListStaleReservedHoldsRequest{ReservedBefore: timestamppb.Now(), After: "not-a-cursor"}},
+		{"missing reserved_before", &pb.ListStaleReservedHoldsRequest{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := &stubStaleHolds{page: &dto.StaleReservedHoldsPage{}}
+			h := NewHandler(Deps{StaleHoldsReader: reader})
+
+			_, err := h.ListStaleReservedHolds(context.Background(), tt.req)
+
+			assert.Equal(t, codes.InvalidArgument, status.Code(err))
+			assert.Zero(t, reader.calls)
 		})
 	}
 }

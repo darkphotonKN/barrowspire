@@ -32,6 +32,9 @@ var (
 	ErrNoBidToAccept           = errors.New("no bid to accept")
 	ErrLeadingBidLowered       = errors.New("leading bid below the accept floor")
 	ErrBidWithdrawLimitReached = errors.New("bid withdraw limit reached")
+	// ErrListingAlreadyExists is an insert meeting a listing with the same id: a
+	// replay of the event that created it, not a collision with another listing.
+	ErrListingAlreadyExists = errors.New("listing already exists")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

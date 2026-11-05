@@ -98,10 +98,16 @@ message ReleaseHoldResponse {}
 message ListStaleReservedHoldsRequest {
   google.protobuf.Timestamp reserved_before = 1;
   int32 limit = 2;  // batch ceiling, so one sweep cannot pull the whole table
+  // Opaque position to read after: the previous page's next. Empty for the first
+  // page.
+  string after = 3;
 }
 
 message ListStaleReservedHoldsResponse {
+  // Oldest hold first.
   repeated string bid_ids = 1;
+  // Position of the following page; empty on the last page.
+  string next = 2;
 }
 
 // Deposit

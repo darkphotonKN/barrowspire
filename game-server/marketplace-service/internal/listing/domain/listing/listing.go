@@ -2,6 +2,7 @@ package listing
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,21 @@ const (
 	// settlement can never succeed (FS-NXP1W §Req 12). Final: never re-settled.
 	StatusSettlementFailed ListingStatus = "SETTLEMENT_FAILED"
 )
+
+// LiveStatuses are the statuses in which a listing still needs its item: on sale
+// (ACTIVE) or settling (PENDING_SETTLEMENT). Every other status is one a listing
+// ends in. It is the one statement of the set: IsLive reads it, and SQL that
+// filters on liveness (the reservation reconciler's HasLiveListing) is handed it.
+// Each call answers a fresh slice, so no caller can change the set.
+func LiveStatuses() []ListingStatus {
+	return []ListingStatus{StatusActive, StatusPendingSettlement}
+}
+
+// IsLive reports whether a listing in this status still needs its item; see
+// LiveStatuses.
+func (s ListingStatus) IsLive() bool {
+	return slices.Contains(LiveStatuses(), s)
+}
 
 type Listing struct {
 	id         uuid.UUID

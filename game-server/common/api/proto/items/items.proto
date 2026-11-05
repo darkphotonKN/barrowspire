@@ -59,9 +59,16 @@ service ItemsService {
   rpc ReserveItem(ReserveItemRequest) returns (ReserveItemResponse);
   rpc ListStaleReserved(ListStaleReservedRequest) returns (ListStaleReservedResponse);
   rpc CancelReservation(CancelReservationRequest) returns (CancelReservationResponse);
-  // Marks a stale reservation as matched by its listing, so the reconciler stops
-  // asking about it.
+  // Marks a reservation as matched by its listing, so the reconciler stops asking
+  // about it and can no longer cancel it. Idempotent: confirming an already
+  // confirmed reservation for the same listing answers confirmed again.
   rpc ConfirmReservation(ConfirmReservationRequest) returns (ConfirmReservationResponse);
+  // Gives back an item whose reservation was confirmed but whose listing will
+  // never exist (FS-04ZB6 Req 4). Never touches a waiting reservation.
+  rpc ReleaseConfirmedReservation(ReleaseConfirmedReservationRequest) returns (ReleaseConfirmedReservationResponse);
+  // Pages the confirmed reservations older than an age, for the backstop that
+  // releases one whose listing never got created (FS-04ZB6 Req 5).
+  rpc ListConfirmedReservations(ListConfirmedReservationsRequest) returns (ListConfirmedReservationsResponse);
 
   // Public display facts for item instances, by id. Unknown ids are omitted.
   rpc GetItemSummaries(GetItemSummariesRequest) returns (GetItemSummariesResponse);
@@ -538,6 +545,11 @@ message ListStaleReservedRequest {
   // measures it on its own database clock, the same clock that stamped the
   // reservation. Must be positive.
   google.protobuf.Duration older_than = 2;
+  // Opaque position to read after: the previous page's next. Empty for the first
+  // page.
+  string after = 3;
+  // At most 100; a missing or larger limit is 100.
+  int32 limit = 4;
 }
 message StaleReservation {
   string item_id = 1;
@@ -547,7 +559,10 @@ message ListStaleReservedResponse {
   // was the item ids alone; the listing id now fences the follow-up write
   reserved 1;
   reserved "item_ids";
+  // Oldest reservation first.
   repeated StaleReservation reservations = 2;
+  // Position of the following page; empty on the last page.
+  string next = 3;
 }
 // Both ids are required: the write acts only on the reservation for that listing.
 message CancelReservationRequest {
@@ -559,7 +574,43 @@ message ConfirmReservationRequest {
   string item_id = 1;
   string listing_id = 2;
 }
-message ConfirmReservationResponse {}
+message ConfirmReservationResponse {
+  // true when the item is LISTED for this listing, now confirmed (a repeat
+  // included); false when it is not: cancelled, relisted or past LISTED.
+  bool confirmed = 1;
+}
+// Both ids are required: the write acts only on the confirmed reservation for
+// that listing.
+message ReleaseConfirmedReservationRequest {
+  string item_id = 1;
+  string listing_id = 2;
+}
+message ReleaseConfirmedReservationResponse {
+  // true when the item was LISTED and confirmed for this listing and is now
+  // AVAILABLE with no listing; false when nothing matched and nothing changed.
+  bool released = 1;
+}
+message ListConfirmedReservationsRequest {
+  // How long ago a reservation must have been confirmed. items-service measures
+  // it on its own database clock, the clock that stamped the confirmation. Must
+  // be positive.
+  google.protobuf.Duration older_than = 1;
+  // Opaque position to read after: the previous page's next. Empty for the first
+  // page.
+  string after = 2;
+  // At most 100; a missing or larger limit is 100.
+  int32 limit = 3;
+}
+message ConfirmedReservation {
+  string item_id = 1;
+  string listing_id = 2;
+}
+message ListConfirmedReservationsResponse {
+  // Oldest confirmation first.
+  repeated ConfirmedReservation reservations = 1;
+  // Position of the following page; empty on the last page.
+  string next = 2;
+}
 
 // GetItemSummaries
 // What anyone may see of an item instance: no owner, no source, no price.

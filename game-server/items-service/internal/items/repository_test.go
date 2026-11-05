@@ -15,6 +15,7 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -1873,10 +1874,11 @@ func TestReserveItemTx_StampsReservedAtOnTheDatabaseClock(t *testing.T) {
 
 // Opt-in and committed. Only a LISTED reservation older than the age, still
 // waiting for its listing (reserved_at set), is stale; it comes back with the
-// listing it was made for.
+// listing it was made for. Every page is read, so rows other tests committed
+// cannot push the seeded ones out of view.
 func TestListStaleReserved_OnlyReservationsOlderThanTheAge(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	repo := NewRepository(db)
+	svc := NewService(NewRepository(db), nil, nil, nil, nil)
 	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	seed := func(status string, reservedAgo time.Duration, confirmed bool) StaleReservation {
@@ -1895,16 +1897,11 @@ func TestListStaleReserved_OnlyReservationsOlderThanTheAge(t *testing.T) {
 	confirmed := seed("LISTED", 30*time.Minute, true)
 	notListed := seed("AVAILABLE", 30*time.Minute, false)
 
-	got, err := repo.ListStaleReserved(ctx, 10*time.Minute)
-	if err != nil {
-		t.Fatalf("ListStaleReserved: %v", err)
-	}
-
 	found := map[uuid.UUID]StaleReservation{}
-	for _, r := range got {
+	for _, r := range allStaleReserved(t, ctx, svc) {
 		found[r.ItemID] = r
 	}
-	if r, ok := found[stale.ItemID]; !ok || r != stale {
+	if r, ok := found[stale.ItemID]; !ok || r.ListingID != stale.ListingID {
 		t.Errorf("stale reservation = %v, %v; want %v", r, ok, stale)
 	}
 	for name, r := range map[string]StaleReservation{"younger than the age": fresh, "already confirmed": confirmed, "not listed": notListed} {
@@ -1914,10 +1911,107 @@ func TestListStaleReserved_OnlyReservationsOlderThanTheAge(t *testing.T) {
 	}
 }
 
-// Opt-in and committed. The reconciler's two writes act only on the reservation
-// for the named listing, and only while it is still waiting (reserved_at set).
-// Cancel gives the item back AVAILABLE with no listing; confirm keeps it LISTED
-// and stops it being asked about again.
+// Opt-in and committed. Stale reservations page by keyset on (reserved_at, id)
+// (FS-9BJCP Req 1, 2): a page is at most 100 whatever the limit asked, next is
+// set only when another row follows, and a run of reservations sharing one
+// reserved_at, longer than a page, is split across pages with none skipped or
+// repeated.
+func TestListStaleReserved_PagesByReservedAtAndID(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	svc := NewService(NewRepository(db), nil, nil, nil, nil)
+	// older than any reservation other tests stamp from NOW(), so these lead
+	tied := time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
+	before := tied.Add(-time.Hour)
+
+	// each row is committed; seedItem's own t.Cleanup deletes it (instance,
+	// template, weapon), so none of the 1999 rows outlives the test
+	seed := func(reservedAt time.Time) uuid.UUID {
+		itemID, listingID := uuid.New(), uuid.New()
+		seedItemInstanceForListing(t, ctx, db, itemID, uuid.New(), "LISTED", tied, &listingID)
+		markReservedAt(t, ctx, db, itemID, reservedAt)
+		return itemID
+	}
+	first := seed(before)
+	seeded := map[uuid.UUID]bool{first: true}
+	for range 101 {
+		seeded[seed(tied)] = true
+	}
+
+	for _, limit := range []int{0, 500} {
+		page, err := svc.ListStaleReserved(ctx, 10*time.Minute, nil, limit)
+		if err != nil {
+			t.Fatalf("limit %d: %v", limit, err)
+		}
+		if len(page.Reservations) != 100 {
+			t.Fatalf("limit %d: page of %d, want 100", limit, len(page.Reservations))
+		}
+		if page.Next == nil {
+			t.Fatalf("limit %d: no next with rows still behind the page", limit)
+		}
+	}
+
+	seen := map[uuid.UUID]int{}
+	var prev *StaleReservation
+	for _, r := range allStaleReserved(t, ctx, svc) {
+		if seeded[r.ItemID] && r.ItemID != first && seen[first] == 0 {
+			t.Fatalf("tied reservation %s came before the older %s", r.ItemID, first)
+		}
+		seen[r.ItemID]++
+		if prev != nil && (r.ReservedAt.Before(prev.ReservedAt) || (r.ReservedAt.Equal(prev.ReservedAt) && r.ItemID.String() <= prev.ItemID.String())) {
+			t.Fatalf("%s (%s) came after %s (%s): not ordered by (reserved_at, id)", r.ItemID, r.ReservedAt, prev.ItemID, prev.ReservedAt)
+		}
+		r := r
+		prev = &r
+	}
+	for id := range seeded {
+		if seen[id] != 1 {
+			t.Errorf("seeded reservation %s seen %d times, want once", id, seen[id])
+		}
+	}
+}
+
+// allStaleReserved reads every page of stale reservations older than 10
+// minutes, failing on a page that answers no progress.
+func allStaleReserved(t *testing.T, ctx context.Context, svc *service) []StaleReservation {
+	t.Helper()
+	var all []StaleReservation
+	var after *cursor.ReservedAt
+	for pages := 0; ; pages++ {
+		if pages > 10000 {
+			t.Fatal("paging never ended")
+		}
+		page, err := svc.ListStaleReserved(ctx, 10*time.Minute, after, 0)
+		if err != nil {
+			t.Fatalf("ListStaleReserved: %v", err)
+		}
+		all = append(all, page.Reservations...)
+		if page.Next == nil {
+			if len(page.Reservations) > 100 {
+				t.Fatalf("last page of %d, want at most 100", len(page.Reservations))
+			}
+			return all
+		}
+		if after != nil && *page.Next == *after {
+			t.Fatal("next equals the position sent: no progress")
+		}
+		after = page.Next
+	}
+}
+
+func markReservedAt(t *testing.T, ctx context.Context, db *sqlx.DB, itemID uuid.UUID, at time.Time) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `UPDATE item_instances SET reserved_at = $2 WHERE id = $1`, itemID, at); err != nil {
+		t.Fatalf("stamp reservation: %v", err)
+	}
+}
+
+// Opt-in and committed. The reservation writes act only on the reservation for
+// the named listing of a LISTED item. Cancel takes only a waiting one
+// (reserved_at set) and gives the item back AVAILABLE with no listing; confirm
+// takes a waiting or an already confirmed one and keeps it LISTED, so it stops
+// being asked about again (FS-04ZB6 Req 1, 3). Release takes only a confirmed
+// one (reserved_at NULL) and gives the item back AVAILABLE with no listing
+// (Req 4). A miss changes nothing.
 func TestReservationReconcileWrites(t *testing.T) {
 	ctx, db := catalogueDB(t)
 	repo := NewRepository(db)
@@ -1928,10 +2022,14 @@ func TestReservationReconcileWrites(t *testing.T) {
 	confirm := func(itemID, listingID uuid.UUID) (bool, error) {
 		return repo.ConfirmReservation(ctx, itemID, listingID)
 	}
+	release := func(itemID, listingID uuid.UUID) (bool, error) {
+		return repo.ReleaseConfirmedReservation(ctx, itemID, listingID)
+	}
 
 	tests := []struct {
 		name         string
 		write        write
+		status       string // the seeded status; LISTED when empty
 		otherListing bool
 		confirmed    bool
 		wantOK       bool
@@ -1944,11 +2042,23 @@ func TestReservationReconcileWrites(t *testing.T) {
 		{name: "cancel an already confirmed reservation", write: cancel, confirmed: true, wantStatus: "LISTED", wantListing: true},
 		{name: "confirm a waiting reservation", write: confirm, wantOK: true, wantStatus: "LISTED", wantListing: true},
 		{name: "confirm names another listing", write: confirm, otherListing: true, wantStatus: "LISTED", wantListing: true, wantReserved: true},
+		{name: "confirm an already confirmed reservation", write: confirm, confirmed: true, wantOK: true, wantStatus: "LISTED", wantListing: true},
+		{name: "confirm an AVAILABLE item", write: confirm, status: "AVAILABLE", wantStatus: "AVAILABLE", wantListing: true, wantReserved: true},
+		{name: "confirm a PENDING_SETTLEMENT item", write: confirm, status: "PENDING_SETTLEMENT", wantStatus: "PENDING_SETTLEMENT", wantListing: true, wantReserved: true},
+		{name: "release a confirmed reservation", write: release, confirmed: true, wantOK: true, wantStatus: "AVAILABLE"},
+		{name: "release a waiting reservation", write: release, wantStatus: "LISTED", wantListing: true, wantReserved: true},
+		{name: "release names another listing", write: release, confirmed: true, otherListing: true, wantStatus: "LISTED", wantListing: true},
+		{name: "release a PENDING_SETTLEMENT item", write: release, status: "PENDING_SETTLEMENT", confirmed: true, wantStatus: "PENDING_SETTLEMENT", wantListing: true},
+		{name: "release an AVAILABLE item", write: release, status: "AVAILABLE", confirmed: true, wantStatus: "AVAILABLE", wantListing: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			status := tt.status
+			if status == "" {
+				status = "LISTED"
+			}
 			itemID, listingID := uuid.New(), uuid.New()
-			seedItemInstanceForListing(t, ctx, db, itemID, uuid.New(), "LISTED", earlier, &listingID)
+			seedItemInstanceForListing(t, ctx, db, itemID, uuid.New(), status, earlier, &listingID)
 			markReservedAgo(t, ctx, db, itemID, 11*time.Minute)
 			if tt.confirmed {
 				if _, err := db.ExecContext(ctx, `UPDATE item_instances SET reserved_at = NULL WHERE id = $1`, itemID); err != nil {
@@ -1976,5 +2086,191 @@ func TestReservationReconcileWrites(t *testing.T) {
 				t.Errorf("reserved_at = %v, want set = %v", row.ReservedAt, tt.wantReserved)
 			}
 		})
+	}
+}
+
+// backdateUpdatedAt sets itemID's updated_at to at. The BEFORE UPDATE trigger
+// stamps updated_at on every UPDATE, so it is switched off for this one write,
+// inside a transaction no other session sees it disabled in.
+func backdateUpdatedAt(t *testing.T, ctx context.Context, db *sqlx.DB, itemID uuid.UUID, at time.Time) {
+	t.Helper()
+	err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE item_instances DISABLE TRIGGER item_instances_updated_at`); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE item_instances SET updated_at = $2 WHERE id = $1`, itemID, at); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `ALTER TABLE item_instances ENABLE TRIGGER item_instances_updated_at`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("backdate updated_at: %v", err)
+	}
+}
+
+// updatedAgo is how long ago itemID's updated_at was, on the database clock.
+func updatedAgo(t *testing.T, ctx context.Context, db *sqlx.DB, itemID uuid.UUID) time.Duration {
+	t.Helper()
+	var secs float64
+	if err := db.GetContext(ctx, &secs, `SELECT EXTRACT(EPOCH FROM NOW() - updated_at) FROM item_instances WHERE id = $1`, itemID); err != nil {
+		t.Fatalf("read updated_at age: %v", err)
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
+// Opt-in and committed. Confirm is idempotent (FS-04ZB6 Req 1): a redelivered
+// event confirms again and is told it matched. It stamps updated_at, the age the
+// confirmed-reservation backstop reads (Req 13). Once confirmed, cancel can never
+// take the item back (Req 3).
+func TestConfirmReservation_RepeatsAndThenFencesCancel(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+	itemID, listingID := uuid.New(), uuid.New()
+	seedItemInstanceForListing(t, ctx, db, itemID, uuid.New(), "LISTED", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), &listingID)
+	markReservedAgo(t, ctx, db, itemID, 11*time.Minute)
+	backdateUpdatedAt(t, ctx, db, itemID, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	for _, attempt := range []string{"first", "repeated"} {
+		ok, err := repo.ConfirmReservation(ctx, itemID, listingID)
+		if err != nil || !ok {
+			t.Fatalf("%s confirm = %v, %v; want true, nil", attempt, ok, err)
+		}
+		row := reservationOf(t, ctx, db, itemID)
+		if row.Status != "LISTED" || row.ListingID == nil || *row.ListingID != listingID || row.ReservedAt != nil {
+			t.Errorf("%s confirm left %+v, want LISTED under %s with reserved_at NULL", attempt, row, listingID)
+		}
+		if age := updatedAgo(t, ctx, db, itemID); age < 0 || age > time.Minute {
+			t.Errorf("%s confirm: updated_at %s ago, want stamped just now", attempt, age)
+		}
+	}
+
+	ok, err := repo.CancelReservation(ctx, itemID, listingID)
+	if err != nil || ok {
+		t.Fatalf("cancel after confirm = %v, %v; want false, nil", ok, err)
+	}
+	if row := reservationOf(t, ctx, db, itemID); row.Status != "LISTED" || row.ListingID == nil || *row.ListingID != listingID {
+		t.Errorf("cancel after confirm left %+v, want still LISTED under %s", row, listingID)
+	}
+}
+
+// Opt-in and committed. Once the reconciler has cancelled a waiting reservation,
+// a late confirm for it misses and the item stays with its seller (FS-04ZB6
+// Edge States, "late event after cancel").
+func TestConfirmReservation_AfterCancelMisses(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+	itemID, listingID := uuid.New(), uuid.New()
+	seedItemInstanceForListing(t, ctx, db, itemID, uuid.New(), "LISTED", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), &listingID)
+	markReservedAgo(t, ctx, db, itemID, 11*time.Minute)
+
+	if ok, err := repo.CancelReservation(ctx, itemID, listingID); err != nil || !ok {
+		t.Fatalf("cancel = %v, %v; want true, nil", ok, err)
+	}
+	ok, err := repo.ConfirmReservation(ctx, itemID, listingID)
+	if err != nil || ok {
+		t.Fatalf("confirm after cancel = %v, %v; want false, nil", ok, err)
+	}
+	if row := reservationOf(t, ctx, db, itemID); row.Status != "AVAILABLE" || row.ListingID != nil {
+		t.Errorf("confirm after cancel left %+v, want AVAILABLE with no listing", row)
+	}
+}
+
+// Opt-in and committed. ListConfirmedReservations returns only confirmed
+// reservations (LISTED, listing set, reserved_at NULL) whose confirmation is
+// older than the age on the database clock, ordered by (updated_at, id), and
+// pages by keyset without skipping or repeating one, ties on updated_at
+// included (FS-04ZB6 Req 5).
+func TestListConfirmedReservations_FiltersOrdersAndPages(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+	at := func(hour int) time.Time { return time.Date(1999, 1, 1, hour, 0, 0, 0, time.UTC) }
+
+	seed := func(status string, updatedAt time.Time, withListing bool) ConfirmedReservation {
+		r := ConfirmedReservation{ItemID: uuid.New(), ListingID: uuid.New(), UpdatedAt: updatedAt}
+		listing := &r.ListingID
+		if !withListing {
+			listing = nil
+		}
+		seedItemInstanceForListing(t, ctx, db, r.ItemID, uuid.New(), status, updatedAt, listing)
+		return r
+	}
+
+	// two share one updated_at, so only the id orders them
+	first := seed("LISTED", at(1), true)
+	tieA, tieB := seed("LISTED", at(2), true), seed("LISTED", at(2), true)
+	if tieB.ItemID.String() < tieA.ItemID.String() {
+		tieA, tieB = tieB, tieA
+	}
+	last := seed("LISTED", at(3), true)
+	want := []ConfirmedReservation{first, tieA, tieB, last}
+
+	waiting := seed("LISTED", at(1), true)
+	markReservedAgo(t, ctx, db, waiting.ItemID, 11*time.Minute)
+	backdateUpdatedAt(t, ctx, db, waiting.ItemID, at(1))
+	fresh := seed("LISTED", at(1), true)
+	if ok, err := repo.ConfirmReservation(ctx, fresh.ItemID, fresh.ListingID); err != nil || !ok {
+		t.Fatalf("confirm fresh = %v, %v", ok, err)
+	}
+	excluded := map[string]ConfirmedReservation{
+		"waiting":            waiting,
+		"confirmed just now": fresh,
+		"available":          seed("AVAILABLE", at(1), true),
+		"pending settlement": seed("PENDING_SETTLEMENT", at(1), true),
+		"no listing":         seed("LISTED", at(1), false),
+	}
+
+	seeded := map[uuid.UUID]bool{}
+	for _, r := range want {
+		seeded[r.ItemID] = true
+	}
+	var got []ConfirmedReservation
+	seen := map[uuid.UUID]bool{}
+	var after *cursor.UpdatedAt
+	var prev *ConfirmedReservation
+	for pages := 0; ; pages++ {
+		if pages > 10000 {
+			t.Fatal("paging never ended")
+		}
+		page, err := repo.ListConfirmedReservations(ctx, 10*time.Minute, after, 2)
+		if err != nil {
+			t.Fatalf("ListConfirmedReservations: %v", err)
+		}
+		if len(page) > 2 {
+			t.Fatalf("page of %d, want at most the limit 2", len(page))
+		}
+		for _, r := range page {
+			if seen[r.ItemID] {
+				t.Fatalf("%s came back on two pages", r.ItemID)
+			}
+			seen[r.ItemID] = true
+			if prev != nil && (r.UpdatedAt.Before(prev.UpdatedAt) || (r.UpdatedAt.Equal(prev.UpdatedAt) && r.ItemID.String() < prev.ItemID.String())) {
+				t.Fatalf("%s (%s) came after %s (%s): not ordered by (updated_at, id)", r.ItemID, r.UpdatedAt, prev.ItemID, prev.UpdatedAt)
+			}
+			r := r
+			prev = &r
+			if seeded[r.ItemID] {
+				got = append(got, r)
+			}
+		}
+		if len(page) < 2 {
+			break
+		}
+		lastRow := page[len(page)-1]
+		after = &cursor.UpdatedAt{ID: lastRow.ItemID, UpdatedAt: lastRow.UpdatedAt}
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("got %d of the seeded confirmed reservations, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i].ItemID != want[i].ItemID || got[i].ListingID != want[i].ListingID || !got[i].UpdatedAt.Equal(want[i].UpdatedAt) {
+			t.Errorf("position %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	for name, r := range excluded {
+		if seen[r.ItemID] {
+			t.Errorf("%s item %s came back as a confirmed reservation", name, r.ItemID)
+		}
 	}
 }

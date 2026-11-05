@@ -15,6 +15,7 @@ import (
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/constants/types"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -95,9 +96,11 @@ type Service interface {
 
 	// marketplace
 	ReserveItem(ctx context.Context, seller, itemID uuid.UUID, startPrice int64, buyoutPrice *int64, endsAt time.Time) (*ItemInstance, error)
-	ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error)
+	ListStaleReserved(ctx context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) (*StaleReservationPage, error)
 	CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
 	ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
+	ReleaseConfirmedReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
+	ListConfirmedReservations(ctx context.Context, olderThan time.Duration, after *cursor.UpdatedAt, limit int) (*ConfirmedReservationPage, error)
 
 	// public item facts, for listing pages
 	GetItemSummaries(ctx context.Context, ids []uuid.UUID) ([]*ItemSummary, error)
@@ -1287,32 +1290,43 @@ func (h *Handler) ReserveItem(ctx context.Context, req *pb.ReserveItemRequest) (
 	}, nil
 }
 
-// ListStaleReserved answers the reservations older than older_than that still
-// wait for their listing. A missing or non-positive age would make every
-// reservation stale, a listing created a second ago included, so it is refused.
+// ListStaleReserved answers one page of the reservations older than older_than
+// that still wait for their listing (FS-9BJCP Req 1). A missing or non-positive
+// age would make every reservation stale, a listing created a second ago
+// included, so it is refused, as is a position that cannot be read (Req 4).
 //
-// The three reconciler methods take no caller: marketplace's background worker
-// has no member token to forward (see publicMethods in common/auth).
+// The reservation methods take no caller: marketplace's background worker and
+// its item.reserved consumer have no member token to forward (see publicMethods
+// in common/auth).
 func (h *Handler) ListStaleReserved(ctx context.Context, req *pb.ListStaleReservedRequest) (*pb.ListStaleReservedResponse, error) {
 	olderThan := req.GetOlderThan()
 	if olderThan == nil || olderThan.CheckValid() != nil || olderThan.AsDuration() <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "older_than must be a positive duration")
 	}
 
-	stale, err := h.service.ListStaleReserved(ctx, olderThan.AsDuration())
+	after, err := cursor.DecodeReservedAt(req.GetAfter())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "after is not a valid position")
+	}
+
+	page, err := h.service.ListStaleReserved(ctx, olderThan.AsDuration(), after, int(req.GetLimit()))
 	if err != nil {
 		slog.ErrorContext(ctx, "list stale reserved failed", "error", err)
 		return nil, status.Error(codes.Internal, "list stale reserved failed")
 	}
 
-	reservations := make([]*pb.StaleReservation, 0, len(stale))
-	for _, r := range stale {
+	reservations := make([]*pb.StaleReservation, 0, len(page.Reservations))
+	for _, r := range page.Reservations {
 		reservations = append(reservations, &pb.StaleReservation{
 			ItemId:    r.ItemID.String(),
 			ListingId: r.ListingID.String(),
 		})
 	}
-	return &pb.ListStaleReservedResponse{Reservations: reservations}, nil
+	res := &pb.ListStaleReservedResponse{Reservations: reservations}
+	if page.Next != nil {
+		res.Next = page.Next.Encode()
+	}
+	return res, nil
 }
 
 // CancelReservation gives back an item whose listing was never created. Zero
@@ -1330,18 +1344,71 @@ func (h *Handler) CancelReservation(ctx context.Context, req *pb.CancelReservati
 	return &pb.CancelReservationResponse{}, nil
 }
 
-// ConfirmReservation marks a reservation as matched by its listing. Zero rows is
-// success, for the same reason as CancelReservation.
+// ConfirmReservation marks a reservation as matched by its listing and answers
+// whether it matched: false means the item is no longer reserved for this
+// listing (cancelled, relisted or past LISTED), which is an answer, not an error
+// (FS-04ZB6 Req 2).
 func (h *Handler) ConfirmReservation(ctx context.Context, req *pb.ConfirmReservationRequest) (*pb.ConfirmReservationResponse, error) {
 	itemID, listingID, err := reservationIDs(req.GetItemId(), req.GetListingId())
 	if err != nil {
 		return nil, err
 	}
-	if _, err := h.service.ConfirmReservation(ctx, itemID, listingID); err != nil {
+	confirmed, err := h.service.ConfirmReservation(ctx, itemID, listingID)
+	if err != nil {
 		slog.ErrorContext(ctx, "confirm reservation failed", "item_id", itemID, "listing_id", listingID, "error", err)
 		return nil, status.Error(codes.Internal, "confirm reservation failed")
 	}
-	return &pb.ConfirmReservationResponse{}, nil
+	return &pb.ConfirmReservationResponse{Confirmed: confirmed}, nil
+}
+
+// ReleaseConfirmedReservation gives back an item whose reservation was confirmed
+// but whose listing will never exist, and answers whether it matched (FS-04ZB6
+// Req 4).
+func (h *Handler) ReleaseConfirmedReservation(ctx context.Context, req *pb.ReleaseConfirmedReservationRequest) (*pb.ReleaseConfirmedReservationResponse, error) {
+	itemID, listingID, err := reservationIDs(req.GetItemId(), req.GetListingId())
+	if err != nil {
+		return nil, err
+	}
+	released, err := h.service.ReleaseConfirmedReservation(ctx, itemID, listingID)
+	if err != nil {
+		slog.ErrorContext(ctx, "release confirmed reservation failed", "item_id", itemID, "listing_id", listingID, "error", err)
+		return nil, status.Error(codes.Internal, "release confirmed reservation failed")
+	}
+	return &pb.ReleaseConfirmedReservationResponse{Released: released}, nil
+}
+
+// ListConfirmedReservations answers one page of the reservations confirmed
+// longer than older_than ago (FS-04ZB6 Req 5). A missing or non-positive age
+// would list a reservation confirmed a second ago, whose listing may be about to
+// be inserted, so it is refused, as is a position that cannot be read.
+func (h *Handler) ListConfirmedReservations(ctx context.Context, req *pb.ListConfirmedReservationsRequest) (*pb.ListConfirmedReservationsResponse, error) {
+	olderThan := req.GetOlderThan()
+	if olderThan == nil || olderThan.CheckValid() != nil || olderThan.AsDuration() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "older_than must be a positive duration")
+	}
+	after, err := cursor.DecodeUpdatedAt(req.GetAfter())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "after is not a valid position")
+	}
+
+	page, err := h.service.ListConfirmedReservations(ctx, olderThan.AsDuration(), after, int(req.GetLimit()))
+	if err != nil {
+		slog.ErrorContext(ctx, "list confirmed reservations failed", "error", err)
+		return nil, status.Error(codes.Internal, "list confirmed reservations failed")
+	}
+
+	reservations := make([]*pb.ConfirmedReservation, 0, len(page.Reservations))
+	for _, r := range page.Reservations {
+		reservations = append(reservations, &pb.ConfirmedReservation{
+			ItemId:    r.ItemID.String(),
+			ListingId: r.ListingID.String(),
+		})
+	}
+	res := &pb.ListConfirmedReservationsResponse{Reservations: reservations}
+	if page.Next != nil {
+		res.Next = page.Next.Encode()
+	}
+	return res, nil
 }
 
 // reservationIDs parses the two ids that name one reservation; both are

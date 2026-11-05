@@ -29,6 +29,11 @@
 - [x] Idempotent item grants into the stash → FS-1GZGD
 - [x] Item snapshots from templates and instances → FS-1GZGD
 
+## Marketplace reservation
+
+- [ ] Reservation confirm and release by listing → FS-04ZB6
+- [ ] Page through stale reservations → FS-9BJCP
+
 ## Marketplace settlement
 
 - [ ] Settlement saga activities → FS-NXP1W

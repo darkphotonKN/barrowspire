@@ -9,6 +9,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/wallet"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/domain/account"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/dto"
 	"github.com/darkphotonKN/barrowspire-server/wallet-service/internal/account/usecase"
@@ -44,10 +45,10 @@ type AccountReader interface {
 	Execute(ctx context.Context, memberID uuid.UUID) (*dto.AccountDetails, error)
 }
 
-// StaleHoldsReader lists reservations that outlived the write meant to follow them.
-// A read: wallet reports, the caller that minted the bid ids decides.
+// StaleHoldsReader lists one page of the reservations that outlived the write meant
+// to follow them. A read: wallet reports, the caller that minted the bid ids decides.
 type StaleHoldsReader interface {
-	Execute(ctx context.Context, createdBefore time.Time, limit int) ([]uuid.UUID, error)
+	Execute(ctx context.Context, createdBefore time.Time, after *cursor.Cursor, limit int) (*dto.StaleReservedHoldsPage, error)
 }
 
 type AccountCreator interface {
@@ -190,10 +191,13 @@ func (h *Handler) ReleaseHold(ctx context.Context, req *pb.ReleaseHoldRequest) (
 	return &pb.ReleaseHoldResponse{}, nil
 }
 
-// ListStaleReservedHolds reports reservations still held after the point their bid
-// should have been recorded. It judges nothing: wallet has no bid or listing concept,
-// so it cannot tell an orphan from a hold whose auction is simply still running. The
-// caller compares these ids against its own records and decides.
+// ListStaleReservedHolds reports one page of the reservations still held after the
+// point their bid should have been recorded, oldest first, starting strictly after
+// the opaque position after (FS-9BJCP Req 6). It judges nothing: wallet has no bid
+// or listing concept, so it cannot tell an orphan from a hold whose auction is
+// simply still running. The caller compares these ids against its own records and
+// decides. A position that cannot be read is refused, never read as "start over"
+// (Req 9).
 func (h *Handler) ListStaleReservedHolds(ctx context.Context, req *pb.ListStaleReservedHoldsRequest) (*pb.ListStaleReservedHoldsResponse, error) {
 	if req.GetReservedBefore() == nil {
 		// without a cutoff this would return holds placed moments ago, whose bids may
@@ -202,17 +206,26 @@ func (h *Handler) ListStaleReservedHolds(ctx context.Context, req *pb.ListStaleR
 		return nil, status.Error(codes.InvalidArgument, "reserved_before is required")
 	}
 
-	bidIDs, err := h.staleHoldsReader.Execute(ctx, req.GetReservedBefore().AsTime(), int(req.GetLimit()))
+	after, err := cursor.Decode(req.GetAfter())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "after is not a valid position")
+	}
+
+	page, err := h.staleHoldsReader.Execute(ctx, req.GetReservedBefore().AsTime(), after, int(req.GetLimit()))
 	if err != nil {
 		return nil, mapError(ctx, err)
 	}
 
-	ids := make([]string, 0, len(bidIDs))
-	for _, bidID := range bidIDs {
+	ids := make([]string, 0, len(page.BidIDs))
+	for _, bidID := range page.BidIDs {
 		ids = append(ids, bidID.String())
 	}
 
-	return &pb.ListStaleReservedHoldsResponse{BidIds: ids}, nil
+	res := &pb.ListStaleReservedHoldsResponse{BidIds: ids}
+	if page.Next != nil {
+		res.Next = page.Next.Encode()
+	}
+	return res, nil
 }
 
 func (h *Handler) Deposit(ctx context.Context, req *pb.DepositRequest) (*pb.DepositResponse, error) {

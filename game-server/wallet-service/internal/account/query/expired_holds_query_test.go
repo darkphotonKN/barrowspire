@@ -96,7 +96,7 @@ func TestExpiredHoldsQuery_ReturnsOnlyReservedHoldsPastExpiry(t *testing.T) {
 	})
 	expired, released, committed, live := bidIDs[0], bidIDs[1], bidIDs[2], bidIDs[3]
 
-	got := bidsOf(readAll(t, NewExpiredHoldsQuery(db), 100))
+	got := bidsOf(readAllExpired(t, NewExpiredHoldsQuery(db), 100))
 
 	assert.Contains(t, got, expired)
 	assert.NotContains(t, got, released)
@@ -104,8 +104,8 @@ func TestExpiredHoldsQuery_ReturnsOnlyReservedHoldsPastExpiry(t *testing.T) {
 	assert.NotContains(t, got, live)
 }
 
-// readAll pages through every candidate the way the sweep does.
-func readAll(t *testing.T, q *ExpiredHoldsQuery, limit int) []dto.ExpiredHold {
+// readAllExpired pages through every candidate the way the sweep does.
+func readAllExpired(t *testing.T, q *ExpiredHoldsQuery, limit int) []dto.ExpiredHold {
 	t.Helper()
 
 	var all []dto.ExpiredHold
@@ -174,7 +174,7 @@ func TestExpiredHoldsQuery_KeysetPages_VisitEveryCandidateOnceInOrder(t *testing
 	})
 
 	// the seeded holds are the oldest in the table, so they lead the walk
-	got := bidsOf(readAll(t, NewExpiredHoldsQuery(db), 2))
+	got := bidsOf(readAllExpired(t, NewExpiredHoldsQuery(db), 2))
 
 	require.GreaterOrEqual(t, len(got), len(want))
 	assert.Equal(t, want, got[:len(want)])

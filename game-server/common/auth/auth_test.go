@@ -187,6 +187,8 @@ var serviceCalled = []string{
 	"/items.ItemsService/ListStaleReserved",
 	"/items.ItemsService/CancelReservation",
 	"/items.ItemsService/ConfirmReservation",
+	"/items.ItemsService/ReleaseConfirmedReservation",
+	"/items.ItemsService/ListConfirmedReservations",
 	"/items.ItemsService/ResolveItemSnapshots",
 }
 

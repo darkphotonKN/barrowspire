@@ -12,6 +12,7 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/proto"
@@ -1111,5 +1112,180 @@ func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
 		if placement.Worn && placement.Status == "LISTED" {
 			t.Fatalf("run %d: item is both worn and LISTED", i)
 		}
+	}
+}
+
+// confirmedListRepo stubs the one repository call ListConfirmedReservations
+// makes and records what it was asked for.
+type confirmedListRepo struct {
+	Repository
+	rows []ConfirmedReservation
+	err  error
+
+	gotOlderThan time.Duration
+	gotAfter     *cursor.UpdatedAt
+	gotLimit     int
+}
+
+func (r *confirmedListRepo) ListConfirmedReservations(_ context.Context, olderThan time.Duration, after *cursor.UpdatedAt, limit int) ([]ConfirmedReservation, error) {
+	r.gotOlderThan, r.gotAfter, r.gotLimit = olderThan, after, limit
+	if r.err != nil {
+		return nil, r.err
+	}
+	if len(r.rows) > limit {
+		return r.rows[:limit], nil
+	}
+	return r.rows, nil
+}
+
+func confirmedRows(n int) []ConfirmedReservation {
+	rows := make([]ConfirmedReservation, n)
+	for i := range rows {
+		rows[i] = ConfirmedReservation{ItemID: uuid.New(), ListingID: uuid.New(), UpdatedAt: time.Date(2026, 1, 1, i, 0, 0, 0, time.UTC)}
+	}
+	return rows
+}
+
+// A page holds at most 100 confirmed reservations (FS-04ZB6 Req 5): a missing,
+// non-positive or larger limit is clamped to that. Next is the position of the
+// page's last entry only while more follow, so the caller stops on an empty one.
+func TestServiceListConfirmedReservations_ClampsAndPositionsTheNextPage(t *testing.T) {
+	tests := []struct {
+		name      string
+		limit     int
+		stored    int
+		wantLimit int
+		wantRows  int
+		wantNext  bool
+	}{
+		{name: "no limit is the cap", limit: 0, stored: 3, wantLimit: 100, wantRows: 3},
+		{name: "negative limit is the cap", limit: -1, stored: 3, wantLimit: 100, wantRows: 3},
+		{name: "over the cap is the cap", limit: 500, stored: 150, wantLimit: 100, wantRows: 100, wantNext: true},
+		{name: "a full page with more after it", limit: 2, stored: 3, wantLimit: 2, wantRows: 2, wantNext: true},
+		{name: "exactly the last page", limit: 3, stored: 3, wantLimit: 3, wantRows: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stored := confirmedRows(tt.stored)
+			repo := &confirmedListRepo{rows: stored}
+			after := &cursor.UpdatedAt{ID: uuid.New(), UpdatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
+
+			page, err := NewService(repo, nil, nil, nil, nil).ListConfirmedReservations(context.Background(), 10*time.Minute, after, tt.limit)
+
+			if err != nil {
+				t.Fatalf("ListConfirmedReservations: %v", err)
+			}
+			if repo.gotOlderThan != 10*time.Minute || repo.gotAfter != after {
+				t.Errorf("repo asked for olderThan %v after %v, want 10m after %v", repo.gotOlderThan, repo.gotAfter, after)
+			}
+			if len(page.Reservations) != tt.wantRows {
+				t.Fatalf("page of %d, want %d (limit %d)", len(page.Reservations), tt.wantRows, tt.wantLimit)
+			}
+			if !tt.wantNext {
+				if page.Next != nil {
+					t.Errorf("next = %+v, want none on the last page", page.Next)
+				}
+				return
+			}
+			last := page.Reservations[len(page.Reservations)-1]
+			if page.Next == nil || page.Next.ID != last.ItemID || !page.Next.UpdatedAt.Equal(last.UpdatedAt) {
+				t.Errorf("next = %+v, want the position of the last entry %s at %s", page.Next, last.ItemID, last.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestServiceListConfirmedReservations_WrapsARepositoryFailure(t *testing.T) {
+	dbDown := errors.New("connection refused")
+
+	_, err := NewService(&confirmedListRepo{err: dbDown}, nil, nil, nil, nil).ListConfirmedReservations(context.Background(), 10*time.Minute, nil, 10)
+
+	if !errors.Is(err, dbDown) {
+		t.Errorf("err = %v, want it to wrap %v", err, dbDown)
+	}
+}
+
+// staleListRepo stubs the one repository call ListStaleReserved makes and
+// records what it was asked for.
+type staleListRepo struct {
+	Repository
+	rows []StaleReservation
+	err  error
+
+	gotOlderThan time.Duration
+	gotAfter     *cursor.ReservedAt
+	gotLimit     int
+}
+
+func (r *staleListRepo) ListStaleReserved(_ context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) ([]StaleReservation, error) {
+	r.gotOlderThan, r.gotAfter, r.gotLimit = olderThan, after, limit
+	if r.err != nil {
+		return nil, r.err
+	}
+	if len(r.rows) > limit {
+		return r.rows[:limit], nil
+	}
+	return r.rows, nil
+}
+
+// A page holds at most 100 stale reservations (FS-9BJCP Req 1): a missing,
+// non-positive or larger limit is the cap. One row past the page is read, and
+// next is the position of the page's last entry only while more follow (Req 2).
+func TestServiceListStaleReserved_ClampsAndPositionsTheNextPage(t *testing.T) {
+	tests := []struct {
+		name      string
+		limit     int
+		stored    int
+		wantLimit int
+		wantRows  int
+		wantNext  bool
+	}{
+		{name: "no limit is the cap", limit: 0, stored: 3, wantLimit: 100, wantRows: 3},
+		{name: "negative limit is the cap", limit: -1, stored: 3, wantLimit: 100, wantRows: 3},
+		{name: "over the cap is the cap", limit: 500, stored: 150, wantLimit: 100, wantRows: 100, wantNext: true},
+		{name: "a full page with more after it", limit: 2, stored: 3, wantLimit: 2, wantRows: 2, wantNext: true},
+		{name: "exactly the last page", limit: 3, stored: 3, wantLimit: 3, wantRows: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stored := make([]StaleReservation, tt.stored)
+			for i := range stored {
+				stored[i] = StaleReservation{ItemID: uuid.New(), ListingID: uuid.New(), ReservedAt: time.Date(2026, 1, 1, i, 0, 0, 0, time.UTC)}
+			}
+			repo := &staleListRepo{rows: stored}
+			after := &cursor.ReservedAt{ID: uuid.New(), ReservedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
+
+			page, err := NewService(repo, nil, nil, nil, nil).ListStaleReserved(context.Background(), 10*time.Minute, after, tt.limit)
+
+			if err != nil {
+				t.Fatalf("ListStaleReserved: %v", err)
+			}
+			if repo.gotOlderThan != 10*time.Minute || repo.gotAfter != after || repo.gotLimit != tt.wantLimit+1 {
+				t.Errorf("repo asked for olderThan %v after %v limit %d, want 10m after %v limit %d", repo.gotOlderThan, repo.gotAfter, repo.gotLimit, after, tt.wantLimit+1)
+			}
+			if len(page.Reservations) != tt.wantRows {
+				t.Fatalf("page of %d, want %d (limit %d)", len(page.Reservations), tt.wantRows, tt.wantLimit)
+			}
+			if !tt.wantNext {
+				if page.Next != nil {
+					t.Errorf("next = %+v, want none on the last page", page.Next)
+				}
+				return
+			}
+			last := page.Reservations[len(page.Reservations)-1]
+			if page.Next == nil || page.Next.ID != last.ItemID || !page.Next.ReservedAt.Equal(last.ReservedAt) {
+				t.Errorf("next = %+v, want the position of the last entry %s at %s", page.Next, last.ItemID, last.ReservedAt)
+			}
+		})
+	}
+}
+
+func TestServiceListStaleReserved_WrapsARepositoryFailure(t *testing.T) {
+	dbDown := errors.New("connection refused")
+
+	_, err := NewService(&staleListRepo{err: dbDown}, nil, nil, nil, nil).ListStaleReserved(context.Background(), 10*time.Minute, nil, 10)
+
+	if !errors.Is(err, dbDown) {
+		t.Errorf("err = %v, want it to wrap %v", err, dbDown)
 	}
 }

@@ -113,12 +113,14 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Item refusals passed through on listing → FS-HBXZN
 - [ ] Accept never sells below the leading bid shown → FS-F692V
 - [ ] Bid withdrawals capped per listing → FS-ZE43K
+- [ ] Listings created only over a confirmed reservation → FS-04ZB6
 
 ### Auction lifecycle
 
 - [ ] BidPlaced saga orchestration
 - [ ] Auction settlement → FS-NXP1W
 - [ ] Auction timeouts and reconciliation
+- [ ] Reconcilers reach every stale candidate each pass → FS-9BJCP
 
 ### Surface
 

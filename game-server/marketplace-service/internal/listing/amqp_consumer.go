@@ -231,16 +231,15 @@ func (c *consumer) itemReservedConsumerLoop(ctx context.Context, msgs <-chan amq
 			}
 			err = c.createListingUC.Handle(ctx, cmd)
 
+			// a replay, or an item no longer reserved for this listing, is nil: the
+			// use case decides both, so a duplicate never reaches here as success
 			if err != nil {
-				if errors.Is(err, commonconstants.ErrDuplicateResource) {
-					msg.Ack(false)
-					continue
-				}
 				if isPermanentRefusal(err) {
 					// can never become a listing: dead-letter rather than redeliver forever
 					slog.Error("amqp create listing refused, dead-lettering",
 						"event_id", event.EventId,
 						"item_id", event.Id,
+						"listing_id", listingID,
 						"error", err)
 					if nackErr := msg.Nack(false, false); nackErr != nil {
 						slog.Error("amqp nack failed", "event_id", event.EventId, "error", nackErr)
@@ -267,15 +266,17 @@ func (c *consumer) itemReservedConsumerLoop(ctx context.Context, msgs <-chan amq
 
 // isPermanentRefusal reports whether a create-listing failure can never succeed
 // on redelivery: the listing refused the event's terms, or the row breaks a
-// schema constraint. Anything else (transient, concurrent modification, or an
-// unclassified failure) is left to the requeue path.
+// schema constraint or a unique index other than its own primary key (another
+// listing holds the item; ADR-0050 rule 3). Anything else (transient, concurrent
+// modification, or an unclassified failure) is left to the requeue path.
 func isPermanentRefusal(err error) bool {
 	return errors.Is(err, listing.ErrInvalidUUID) ||
 		errors.Is(err, listing.ErrInvalidEndTime) ||
 		errors.Is(err, listing.ErrInvalidStartPrice) ||
 		errors.Is(err, listing.ErrInvalidBuyoutPrice) ||
 		errors.Is(err, listing.ErrInvalidListingState) ||
-		errors.Is(err, commonconstants.ErrConstraintViolation)
+		errors.Is(err, commonconstants.ErrConstraintViolation) ||
+		errors.Is(err, commonconstants.ErrDuplicateResource)
 }
 
 // buyoutPriceOf reads the event's optional buyout. Presence matters: an absent

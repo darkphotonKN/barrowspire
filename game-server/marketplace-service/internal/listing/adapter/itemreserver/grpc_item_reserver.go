@@ -82,16 +82,19 @@ func reserveError(itemID uuid.UUID, err error) error {
 	}
 }
 
-// The three reconciler calls go out without a token: the worker runs on a
+// The reconciler and backstop calls go out without a token: the worker runs on a
 // background ticker with no request, and so no member, behind it. items-service
 // lets them through for that reason (publicMethods in common/auth).
 
-// ListStaleReserved asks for the reservations older than olderThan. The age is
-// sent rather than a cutoff, so items-service measures it on the clock that
-// stamped the reservation.
-func (i *GrpcItemReserver) ListStaleReserved(ctx context.Context, olderThan time.Duration) (*pb.ListStaleReservedResponse, error) {
+// ListStaleReserved reads one page of the reservations older than olderThan,
+// after the keyset position after ("" for the first page) (FS-9BJCP Req 1). The
+// age is sent rather than a cutoff, so items-service measures it on the clock
+// that stamped the reservation.
+func (i *GrpcItemReserver) ListStaleReserved(ctx context.Context, olderThan time.Duration, after string, limit int) (*pb.ListStaleReservedResponse, error) {
 	return i.client.ListStaleReserved(ctx, &pb.ListStaleReservedRequest{
 		OlderThan: durationpb.New(olderThan),
+		After:     after,
+		Limit:     int32(limit),
 	})
 }
 
@@ -108,5 +111,29 @@ func (i *GrpcItemReserver) ConfirmReservation(ctx context.Context, itemID, listi
 	return i.client.ConfirmReservation(ctx, &pb.ConfirmReservationRequest{
 		ItemId:    itemID.String(),
 		ListingId: listingID.String(),
+	})
+}
+
+// ReleaseConfirmedReservation hands the item back to its seller when it was
+// confirmed for listingID and that listing will never exist (FS-04ZB6 Req 4).
+// It goes out without a token, like the reconciler calls: the item.reserved
+// consumer has no member behind it either.
+func (i *GrpcItemReserver) ReleaseConfirmedReservation(ctx context.Context, itemID, listingID uuid.UUID) (*pb.ReleaseConfirmedReservationResponse, error) {
+	return i.client.ReleaseConfirmedReservation(ctx, &pb.ReleaseConfirmedReservationRequest{
+		ItemId:    itemID.String(),
+		ListingId: listingID.String(),
+	})
+}
+
+// ListConfirmedReservations reads one page of the reservations confirmed longer
+// than olderThan ago, after the keyset position after ("" for the first page),
+// for the confirmed-without-listing backstop (FS-04ZB6 Req 5, 12). Like the stale
+// list it sends an age, so items measures it on the clock that stamped the
+// confirmation, and it goes out without a token.
+func (i *GrpcItemReserver) ListConfirmedReservations(ctx context.Context, olderThan time.Duration, after string, limit int) (*pb.ListConfirmedReservationsResponse, error) {
+	return i.client.ListConfirmedReservations(ctx, &pb.ListConfirmedReservationsRequest{
+		OlderThan: durationpb.New(olderThan),
+		After:     after,
+		Limit:     int32(limit),
 	})
 }

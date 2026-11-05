@@ -64,7 +64,23 @@ func (c *Client) CancelReservation(ctx context.Context, req *pb.CancelReservatio
 func (c *Client) ConfirmReservation(ctx context.Context, req *pb.ConfirmReservationRequest) (*pb.ConfirmReservationResponse, error) {
 	res, err := pb.NewItemsServiceClient(c.conn).ConfirmReservation(ctx, req)
 	if err != nil {
-		slog.Info("ConfirmReservation err", "err", err)
+		slog.ErrorContext(ctx, "ConfirmReservation err", "err", err)
+	}
+	return res, err
+}
+
+func (c *Client) ReleaseConfirmedReservation(ctx context.Context, req *pb.ReleaseConfirmedReservationRequest) (*pb.ReleaseConfirmedReservationResponse, error) {
+	res, err := pb.NewItemsServiceClient(c.conn).ReleaseConfirmedReservation(ctx, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "ReleaseConfirmedReservation err", "err", err)
+	}
+	return res, err
+}
+
+func (c *Client) ListConfirmedReservations(ctx context.Context, req *pb.ListConfirmedReservationsRequest) (*pb.ListConfirmedReservationsResponse, error) {
+	res, err := pb.NewItemsServiceClient(c.conn).ListConfirmedReservations(ctx, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "ListConfirmedReservations err", "err", err)
 	}
 	return res, err
 }

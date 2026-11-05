@@ -3,6 +3,7 @@ package items
 import (
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 )
 
@@ -231,10 +232,36 @@ type ItemInstance struct {
 }
 
 // StaleReservation is a LISTED item whose reservation has waited longer than
-// the reconciler's age for its listing to be confirmed.
+// the reconciler's age for its listing to be confirmed. ReservedAt is when it
+// was reserved, on the database clock, and with ItemID its position in a keyset
+// page.
 type StaleReservation struct {
+	ItemID     uuid.UUID `db:"id"`
+	ListingID  uuid.UUID `db:"listing_id"`
+	ReservedAt time.Time `db:"reserved_at"`
+}
+
+// StaleReservationPage is one keyset page of stale reservations. Next is the
+// position to read the following page from, nil on the last page.
+type StaleReservationPage struct {
+	Reservations []StaleReservation
+	Next         *cursor.ReservedAt
+}
+
+// ConfirmedReservation is a LISTED item whose reservation has been confirmed
+// (reserved_at NULL) for ListingID. UpdatedAt is when it was confirmed, on the
+// database clock, and with ItemID its position in a keyset page.
+type ConfirmedReservation struct {
 	ItemID    uuid.UUID `db:"id"`
 	ListingID uuid.UUID `db:"listing_id"`
+	UpdatedAt time.Time `db:"updated_at"`
+}
+
+// ConfirmedReservationPage is one keyset page of confirmed reservations. Next is
+// the position to read the following page from, nil on the last page.
+type ConfirmedReservationPage struct {
+	Reservations []ConfirmedReservation
+	Next         *cursor.UpdatedAt
 }
 
 // PlayerLoadout mirrors the player_loadouts table — a member's currently
