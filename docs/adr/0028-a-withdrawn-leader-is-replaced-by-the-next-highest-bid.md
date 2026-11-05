@@ -9,6 +9,9 @@ Replaces: the "撤回領先者不遞補亞軍" (no promotion) trade-off in
 formally; its paragraph is now wrong and points here.
 Builds on: [ADR-0024](0024-a-bids-hold-is-released-by-a-temporal-workflow-not-a-grpc-call.md) (who
 releases which hold)
+Amended by: [ADR-0048](0048-a-leading-bid-is-locked-in-for-the-auctions-final-30-minutes.md) — a
+WINNING bid can no longer be withdrawn in the auction's final 30 minutes, so the promotion runs only
+before that window
 
 ## Context
 
