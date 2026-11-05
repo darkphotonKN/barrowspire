@@ -19,8 +19,9 @@ const NOW = Date.parse("2026-10-01T12:00:00Z");
 const MIN = 60 * 1000;
 const endsIn = (ms: number) => new Date(NOW + ms).toISOString();
 
+// Whose listing it is comes from the server's `own` (FS-GKHYD Req 13), never an id comparison.
 const live = {
-  sellerId: "aldric",
+  own: true,
   status: "ACTIVE",
   ended: false,
   endsAt: endsIn(24 * 60 * MIN),
@@ -54,9 +55,10 @@ describe("withdrawListingOffered", () => {
 
   it.each([
     ["another member", "brenna"],
+    ["the seller whose read says not theirs (an expired token)", "aldric"],
     ["a visitor", undefined],
-  ])("should never offer it to %s", (_label, memberId) => {
-    expect(withdrawListingOffered(live, memberId, NOW)).toBe(false);
+  ])("should never offer it to %s on a listing not theirs", (_label, memberId) => {
+    expect(withdrawListingOffered({ ...live, own: false }, memberId, NOW)).toBe(false);
   });
 
   it("should not offer it on the seller's listing inside the contested final 30 minutes", () => {

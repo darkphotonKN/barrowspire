@@ -145,6 +145,10 @@ func TestListMyListingsMapsEveryListingField(t *testing.T) {
 	assert.Nil(t, unsold.BuyerId)
 	assert.Nil(t, unsold.SoldPrice)
 
+	// every listing on the caller's own list is theirs (FS-GKHYD R7)
+	assert.True(t, got.GetOwn())
+	assert.True(t, unsold.GetOwn())
+
 	assert.Equal(t, "next-page", res.GetPagination().GetNextCursor())
 }
 

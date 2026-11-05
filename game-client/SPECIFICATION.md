@@ -167,6 +167,7 @@ server state and sends intents. ✅
 - [x] List an owned item for auction → FS-8EGFA
 - [x] Bid on a listing → FS-8EGFA
 - [x] Filter to my own listings → FS-8EGFA
+- [ ] Own-listing check without the seller's id → FS-GKHYD
 - [ ] Affixes and item level in listing detail → FS-4R9M9
 - [ ] Buy out a listing → FS-49Z37
 - [ ] Accept the leading bid on my listing → FS-49Z37

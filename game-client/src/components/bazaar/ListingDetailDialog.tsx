@@ -26,7 +26,7 @@ import { submitBid } from "@/marketplace/bidFlow";
 import { SIGN_IN_TO_MARKETPLACE } from "@/marketplace/browse";
 import { actionArea, itemStats, listingItemLines, listingReader } from "@/marketplace/detail";
 import { formatGold } from "@/marketplace/gold";
-import type { Listing } from "@/marketplace/listing";
+import { viewerOwns, type PublicListing } from "@/marketplace/listing";
 import { listingStatusLabel } from "@/marketplace/listingStatus";
 import { rarityOf } from "@/marketplace/rarity";
 import { formatTimeLeft } from "@/marketplace/timeLeft";
@@ -48,13 +48,16 @@ export default function ListingDetailDialog({
   listing: initial,
   memberId,
   onListing,
+  onSold,
   onClose,
   returnFocus,
   startWithdraw = false,
 }: {
-  listing: Listing;
+  listing: PublicListing;
   memberId: string | undefined;
-  onListing: (listing: Listing) => void;
+  onListing: (listing: PublicListing) => void;
+  /** Hears the seller's accepted sale, for a table whose rows the public read cannot update. */
+  onSold?: () => void;
   onClose: () => void;
   returnFocus: RefObject<HTMLElement | null>;
   startWithdraw?: boolean;
@@ -72,7 +75,7 @@ export default function ListingDetailDialog({
   const shown = useRef(initial);
   const refresh = useMemo(
     () =>
-      listingReader<Listing>({
+      listingReader<PublicListing>({
         fetch: () => publicApi.getListing(initial.id),
         current: () => shown.current,
         apply: (read) => {
@@ -179,14 +182,16 @@ export default function ListingDetailDialog({
           </Link>
         )}
         {/* Mounted for the seller whatever the panel, so Sell's answer outlives the re-read that
-            ends the sale; it offers nothing unless the panel is "own" (FS-49Z37 req 13). */}
-        {memberId !== undefined && memberId === listing.sellerId && (
+            ends the sale; it offers nothing unless the panel is "own" (FS-49Z37 req 13). The
+            seller is the read's `own`, never a member-id comparison (FS-GKHYD Req 13). */}
+        {viewerOwns(listing, memberId) && (
           <SellerBlock
             listing={listing}
             memberId={memberId}
             now={now}
             refresh={refresh}
             startWithdraw={startWithdraw}
+            onSold={onSold}
           />
         )}
         {/* One mount for "bid" and "closed", so the box keeps its answer as the auction ends. */}
@@ -257,9 +262,9 @@ function BidBox({
   ended,
   refresh,
 }: {
-  listing: Listing;
+  listing: PublicListing;
   ended: boolean;
-  refresh: () => Promise<Listing | undefined>;
+  refresh: () => Promise<PublicListing | undefined>;
 }) {
   const [purse, setPurse] = useState<Purse>({ state: "loading" });
   const [text, setText] = useState(String(listing.minimumBid));

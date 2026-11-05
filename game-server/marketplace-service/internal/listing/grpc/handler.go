@@ -358,7 +358,8 @@ func (h *Handler) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequ
 	now := time.Now()
 	listings := make([]*pb.Listing, 0, len(page.Listings))
 	for _, l := range page.Listings {
-		listings = append(listings, toProtoListing(l, now))
+		// every listing here is the caller's (FS-GKHYD R7)
+		listings = append(listings, toProtoListing(l, now, true))
 	}
 
 	res := &pb.ListMyListingsResponse{Listings: listings}
@@ -402,8 +403,9 @@ func (h *Handler) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*p
 	return res, nil
 }
 
-// BrowseListings pages every seller's live auctions. Public (see publicMethods
-// in common/auth): it reads no caller, so the page is the same for everyone.
+// BrowseListings pages every seller's live auctions. Optional-auth (see
+// optionalAuthMethods in common/auth): every visitor is served the same
+// listings, and a signed-in one also learns which are their own (ADR-0053).
 func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
 	// a transport-shape failure, answered here like ListMyListings answers one
 	cursor, err := commoncursor.DecodeEndsAt(req.GetCursor())
@@ -416,10 +418,11 @@ func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequ
 		return nil, mapError(ctx, err)
 	}
 
+	owns := ownedBy(ctx)
 	now := time.Now()
 	listings := make([]*pb.Listing, 0, len(page.Listings))
 	for _, l := range page.Listings {
-		listings = append(listings, toProtoListing(l, now))
+		listings = append(listings, toProtoListing(l, now, owns(l.SellerID)))
 	}
 
 	res := &pb.BrowseListingsResponse{Listings: listings}
@@ -430,8 +433,9 @@ func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequ
 	return res, nil
 }
 
-// GetListing reads one listing in any status. Public (see publicMethods in
-// common/auth): it reads no caller, so every visitor sees the same listing.
+// GetListing reads one listing in any status. Optional-auth, like
+// BrowseListings: every visitor sees the same listing, and own tells a
+// signed-in seller it is theirs (ADR-0053).
 func (h *Handler) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
 	listingID, err := uuid.Parse(req.GetListingId())
 	if err != nil {
@@ -443,15 +447,27 @@ func (h *Handler) GetListing(ctx context.Context, req *pb.GetListingRequest) (*p
 		return nil, mapError(ctx, err)
 	}
 
-	return &pb.GetListingResponse{Listing: toProtoListing(*l, time.Now())}, nil
+	return &pb.GetListingResponse{Listing: toProtoListing(*l, time.Now(), ownedBy(ctx)(l.SellerID))}, nil
+}
+
+// ownedBy answers, for an optional-auth read, whether the caller sells a given
+// listing: true only for a signed-in caller who is its seller. A caller with no
+// identity (anonymous, or a token the interceptor did not accept) owns nothing
+// (FS-GKHYD R5).
+func ownedBy(ctx context.Context) func(sellerID uuid.UUID) bool {
+	viewer, signedIn := commonauth.MemberIDFromCtx(ctx)
+	return func(sellerID uuid.UUID) bool {
+		return signedIn && viewer == sellerID
+	}
 }
 
 // toProtoListing maps the read model to the wire. The optimistic-locking
-// version is internal and never leaves the service.
+// version is internal and never leaves the service. own is a fact about the
+// caller, not the listing, so the read decides it and passes it in.
 //
 // The price facts are only as complete as the read that built l: a read that
 // did not select them maps a zero bid count and the start price as the minimum.
-func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
+func toProtoListing(l dto.ListingDetails, now time.Time, own bool) *pb.Listing {
 	out := &pb.Listing{
 		Id:          l.ID.String(),
 		SellerId:    l.SellerID.String(),
@@ -465,6 +481,7 @@ func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
 		MinimumBid:  int64(l.MinimumBid()),
 		BidCount:    int32(l.BidCount),
 		Ended:       l.EndedAt(now),
+		Own:         own,
 	}
 
 	if l.CurrentPrice != nil {

@@ -4,6 +4,7 @@
  */
 
 import { sellerBlock } from "./accept";
+import { viewerOwns } from "./listing";
 import { withdrawListingOffered, type WithdrawableListing } from "./withdrawListing";
 
 export type SellerConfirm = "accept" | "withdraw" | undefined;
@@ -26,7 +27,7 @@ export interface SellerConfirmState {
  * (req 16 as amended 2026-11-05). That exception is still the seller's alone.
  */
 export function openSellerConfirm(
-  listing: WithdrawableListing & { sellerId: string },
+  listing: WithdrawableListing & { own: boolean },
   memberId: string | undefined,
   now: number,
   { asked, retrying, done }: SellerConfirmState,
@@ -35,7 +36,7 @@ export function openSellerConfirm(
   if (asked === "accept")
     return sellerBlock(listing, memberId, now).kind === "accept" ? "accept" : undefined;
   if (asked === "withdraw") {
-    const awaitingRetry = retrying && memberId !== undefined && listing.sellerId === memberId;
+    const awaitingRetry = retrying && viewerOwns(listing, memberId);
     return awaitingRetry || withdrawListingOffered(listing, memberId, now) ? "withdraw" : undefined;
   }
   return undefined;

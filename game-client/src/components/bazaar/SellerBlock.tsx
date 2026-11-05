@@ -10,7 +10,7 @@ import {
 import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import { submitAccept } from "@/marketplace/acceptFlow";
 import type { BidNote } from "@/marketplace/bid";
-import type { Listing } from "@/marketplace/listing";
+import type { PublicListing } from "@/marketplace/listing";
 import { openSellerConfirm, type SellerConfirm } from "@/marketplace/sellerConfirm";
 import { withdrawListingConfirmText, withdrawListingOffered } from "@/marketplace/withdrawListing";
 import { submitWithdrawListing } from "@/marketplace/withdrawListingFlow";
@@ -37,12 +37,14 @@ export default function SellerBlock({
   now,
   refresh,
   startWithdraw = false,
+  onSold,
 }: {
-  listing: Listing;
+  listing: PublicListing;
   memberId: string | undefined;
   now: number;
-  refresh: () => Promise<Listing | undefined>;
+  refresh: () => Promise<PublicListing | undefined>;
   startWithdraw?: boolean;
+  onSold?: () => void;
 }) {
   const [confirming, setConfirming] = useState<SellerConfirm>(startWithdraw ? "withdraw" : undefined);
   const [submitting, setSubmitting] = useState(false);
@@ -88,6 +90,7 @@ export default function SellerBlock({
       const r = await submitAccept({
         acceptBid: () => apiClient.acceptBid(listing.id, minAmount),
         refresh,
+        onSold,
       });
       return { done: r.sold, note: r.note };
     });

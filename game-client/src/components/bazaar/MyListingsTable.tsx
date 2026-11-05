@@ -12,9 +12,12 @@ import {
   SkeletonRow,
   type SkeletonCell,
 } from "@/components/bazaar/cells";
-import { useListingDetail } from "@/components/bazaar/useListingDetail";
+import { useListingDetail, type DetailRows } from "@/components/bazaar/useListingDetail";
 import type { Listing } from "@/marketplace/listing";
-import { mineRow } from "@/marketplace/myListings";
+import { asOwnListing, mineRow, mineWithRead } from "@/marketplace/myListings";
+
+// Mine keeps the seller's shape (FS-GKHYD Req 3); the detail reads the public one.
+const MINE_ROWS: DetailRows<Listing> = { detail: asOwnListing, merge: mineWithRead };
 
 const SKELETON_ROWS = 3;
 // Bids is the lesser column.
@@ -38,13 +41,16 @@ export default function MyListingsTable({
   loading,
   memberId,
   now,
+  onSold,
 }: {
   rows: Listing[];
   loading: boolean;
   memberId: string | undefined;
   now: number;
+  /** A sale accepted from the dialog: the public read carries no sold price, so Mine re-reads. */
+  onSold: () => void;
 }) {
-  const detail = useListingDetail(rows);
+  const detail = useListingDetail(rows, MINE_ROWS);
   // Whether the open detail was asked for by a row's Withdraw rather than by the row itself.
   const [withdrawing, setWithdrawing] = useState(false);
   const { open: openDetail } = detail;
@@ -89,6 +95,7 @@ export default function MyListingsTable({
           listing={detail.openListing}
           memberId={memberId}
           onListing={detail.onListing}
+          onSold={onSold}
           onClose={detail.close}
           returnFocus={detail.opener}
           startWithdraw={withdrawing}

@@ -1576,6 +1576,83 @@ components:
           format: int32
           type: integer
       type: object
+    PublicListing:
+      additionalProperties: false
+      properties:
+        bidCount:
+          description: "Bids that are or were in the running: winning, pending or outbid."
+          format: int32
+          minimum: 0
+          type: integer
+        buyoutPrice:
+          description: Gold that buys the item outright. Absent when the seller set none.
+          format: int64
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        currentPrice:
+          description: The leading bid. Absent when nobody leads.
+          format: int64
+          type: integer
+        ended:
+          description: True when the auction is past endsAt but not yet settled; it no longer accepts bids.
+          type: boolean
+        endsAt:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        item:
+          $ref: "#/components/schemas/ItemSummary"
+          description: The listed item. Absent only when items has no such instance.
+        itemId:
+          format: uuid
+          type: string
+        minimumBid:
+          description: "The least amount a bid would be accepted at now: the start price with no leading bid, otherwise one more than the leading bid."
+          format: int64
+          minimum: 1
+          type: integer
+        own:
+          description: True only when the caller is signed in and is this listing's seller. False for anyone else, for a signed-out caller, and for a token that is invalid or expired.
+          type: boolean
+        startPrice:
+          format: int64
+          type: integer
+        status:
+          description: Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED.
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - itemId
+        - startPrice
+        - status
+        - endsAt
+        - createdAt
+        - updatedAt
+        - minimumBid
+        - bidCount
+        - ended
+        - own
+      type: object
+    PublicListingPage:
+      additionalProperties: false
+      properties:
+        listings:
+          items:
+            $ref: "#/components/schemas/PublicListing"
+          type: array
+        nextCursor:
+          description: Pass back as cursor for the next page. Absent on the last page.
+          type: string
+      required:
+        - listings
+      type: object
     ReadEnvelope:
       additionalProperties: false
       properties:
@@ -3297,7 +3374,7 @@ paths:
         - marketplace
   /api/marketplace/listings:
     get:
-      description: "Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a page is never returned without its items."
+      description: "Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. No listing carries a member id or a sold price. Sent with a bearer token, own marks the caller's own listings; without one, or with a token that is invalid or expired, the caller reads as signed out and own is false on every listing, never 401. If the items lookup fails the whole request fails; a page is never returned without its items."
       operationId: browse-listings
       parameters:
         - description: Opaque position from a previous page's nextCursor. Do not construct.
@@ -3321,8 +3398,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ListingPage"
+                $ref: "#/components/schemas/PublicListingPage"
           description: OK
+          headers:
+            Cache-Control:
+              schema:
+                description: private when the request carried an Authorization; absent otherwise.
+                type: string
+            Vary:
+              schema:
+                description: "Includes Authorization: own depends on the caller."
+                type: string
         "400":
           content:
             application/problem+json:
@@ -3534,7 +3620,7 @@ paths:
       tags:
         - marketplace
     get:
-      description: "Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. If the items lookup fails the request fails."
+      description: "Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. The listing carries no member id and no sold price, in any status. Sent with a bearer token, own is true when the caller is the seller; without one, or with a token that is invalid or expired, the caller reads as signed out and own is false, never 401. If the items lookup fails the request fails."
       operationId: get-listing
       parameters:
         - in: path
@@ -3548,8 +3634,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Listing"
+                $ref: "#/components/schemas/PublicListing"
           description: OK
+          headers:
+            Cache-Control:
+              schema:
+                description: private when the request carried an Authorization; absent otherwise.
+                type: string
+            Vary:
+              schema:
+                description: "Includes Authorization: own depends on the caller."
+                type: string
         "404":
           content:
             application/problem+json:

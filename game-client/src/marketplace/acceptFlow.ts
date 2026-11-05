@@ -4,7 +4,8 @@
  *
  * 1. send the accept (no key; the body is the floor the confirm showed, FS-F692V req 9);
  * 2. accepted: re-read the listing, and only the listing. The seller's gold arrives at
- *    settlement, so the purse would not change. Then say it is sold;
+ *    settlement, so the purse would not change. Tell the caller (`onSold`: Mine re-reads its
+ *    rows, so a sold row shows what it fetched). Then say it is sold;
  *    no longer for sale: re-read the listing, so it shows why;
  *    any other refusal: say what it means.
  */
@@ -16,6 +17,8 @@ export interface AcceptSubmitDeps {
   acceptBid: () => Promise<void>;
   /** Re-reads the listing. */
   refresh: () => Promise<unknown>;
+  /** Hears a sale that went through, after the listing's re-read. */
+  onSold?: () => void;
 }
 
 export async function submitAccept(
@@ -29,5 +32,6 @@ export async function submitAccept(
     return { sold: false, note: { tone: "error", text: failure.message } };
   }
   await deps.refresh();
+  deps.onSold?.();
   return { sold: true, note: { tone: "ok", text: ACCEPT_SOLD } };
 }

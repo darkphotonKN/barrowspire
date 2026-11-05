@@ -62,8 +62,9 @@ type AcceptBidBody struct {
 	MinAmount int64 `json:"minAmount" minimum:"1" doc:"The leading bid amount the seller was shown. The accept is refused with LEADING_BID_LOWERED when the leading bid is now below it; at or above it, whichever bid leads is accepted."`
 }
 
-// Listing is a listing as its seller sees it. The optimistic-locking version is
-// internal to marketplace and has no field here.
+// Listing is a listing as its seller sees it, on the seller's own reads only.
+// The optimistic-locking version is internal to marketplace and has no field
+// here. A public read answers PublicListing instead (FS-GKHYD).
 type Listing struct {
 	ID          string    `json:"id" format:"uuid"`
 	ItemID      string    `json:"itemId" format:"uuid"`
@@ -85,6 +86,40 @@ type Listing struct {
 	Ended        bool   `json:"ended" doc:"True when the auction is past endsAt but not yet settled; it no longer accepts bids."`
 
 	Item *ItemSummary `json:"item,omitempty" doc:"The listed item. Absent only when items has no such instance."`
+}
+
+// PublicListing is a listing as anyone may see it (FS-GKHYD §Requirements 1–2).
+// It names no member: no seller, no buyer, and no sold price, since joined with
+// the public leaderboard those profile named players. Own replaces the seller
+// for the one question the client asked of it.
+type PublicListing struct {
+	ID          string    `json:"id" format:"uuid"`
+	ItemID      string    `json:"itemId" format:"uuid"`
+	StartPrice  int64     `json:"startPrice"`
+	BuyoutPrice *int64    `json:"buyoutPrice,omitempty" doc:"Gold that buys the item outright. Absent when the seller set none."`
+	Status      string    `json:"status" doc:"Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED."`
+	EndsAt      time.Time `json:"endsAt"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+
+	// Price facts, as on Listing.
+	CurrentPrice *int64 `json:"currentPrice,omitempty" doc:"The leading bid. Absent when nobody leads."`
+	MinimumBid   int64  `json:"minimumBid" minimum:"1" doc:"The least amount a bid would be accepted at now: the start price with no leading bid, otherwise one more than the leading bid."`
+	BidCount     int32  `json:"bidCount" minimum:"0" doc:"Bids that are or were in the running: winning, pending or outbid."`
+	Ended        bool   `json:"ended" doc:"True when the auction is past endsAt but not yet settled; it no longer accepts bids."`
+
+	// marketplace decides it from the verified caller; the gateway never
+	// compares ids (ADR-0053)
+	Own bool `json:"own" doc:"True only when the caller is signed in and is this listing's seller. False for anyone else, for a signed-out caller, and for a token that is invalid or expired."`
+
+	Item *ItemSummary `json:"item,omitempty" doc:"The listed item. Absent only when items has no such instance."`
+}
+
+// PublicListingPage is one page of public listings, in the order the operation
+// documents.
+type PublicListingPage struct {
+	Listings   []PublicListing `json:"listings" nullable:"false"`
+	NextCursor *string         `json:"nextCursor,omitempty" doc:"Pass back as cursor for the next page. Absent on the last page."`
 }
 
 // ItemSummary is what anyone may see of a listed item. It has no owner, source
@@ -182,12 +217,21 @@ func affixesFromProto(in []*itempb.Affix) []wire.Affix {
 	return out
 }
 
+// requireTimestamps refuses a listing marketplace sent without one of the
+// timestamps both wire shapes carry.
+func requireTimestamps(l *pb.Listing) error {
+	if l.GetEndsAt() == nil || l.GetCreatedAt() == nil || l.GetUpdatedAt() == nil {
+		return fmt.Errorf("marketplace returned listing %s without a required timestamp", l.GetId())
+	}
+	return nil
+}
+
 // listingFromProto maps one marketplace listing to the wire. A listing missing
 // a required timestamp is a fault in marketplace, answered as 500 rather than
 // shown to the client as 1970.
 func listingFromProto(l *pb.Listing) (Listing, error) {
-	if l.GetEndsAt() == nil || l.GetCreatedAt() == nil || l.GetUpdatedAt() == nil {
-		return Listing{}, fmt.Errorf("marketplace returned listing %s without a required timestamp", l.GetId())
+	if err := requireTimestamps(l); err != nil {
+		return Listing{}, err
 	}
 
 	return Listing{
@@ -222,6 +266,52 @@ func listingPageFromProto(in []*pb.Listing, pagination *pbshared.PageInfo) (List
 	}
 
 	page := ListingPage{Listings: listings}
+	if next := pagination.GetNextCursor(); next != "" {
+		page.NextCursor = &next
+	}
+
+	return page, nil
+}
+
+// publicListingFromProto maps one marketplace listing to the public wire
+// shape. The member facts marketplace still sends are dropped here, not
+// forwarded. A missing timestamp is a 500, as for listingFromProto.
+func publicListingFromProto(l *pb.Listing) (PublicListing, error) {
+	if err := requireTimestamps(l); err != nil {
+		return PublicListing{}, err
+	}
+
+	return PublicListing{
+		ID:          l.GetId(),
+		ItemID:      l.GetItemId(),
+		StartPrice:  l.GetStartPrice(),
+		BuyoutPrice: l.BuyoutPrice,
+		Status:      l.GetStatus(),
+		EndsAt:      l.GetEndsAt().AsTime(),
+		CreatedAt:   l.GetCreatedAt().AsTime(),
+		UpdatedAt:   l.GetUpdatedAt().AsTime(),
+
+		CurrentPrice: l.CurrentPrice,
+		MinimumBid:   l.GetMinimumBid(),
+		BidCount:     l.GetBidCount(),
+		Ended:        l.GetEnded(),
+
+		Own: l.GetOwn(),
+	}, nil
+}
+
+// publicListingPageFromProto maps marketplace's page to the public wire shape.
+func publicListingPageFromProto(in []*pb.Listing, pagination *pbshared.PageInfo) (PublicListingPage, error) {
+	listings := make([]PublicListing, 0, len(in))
+	for _, l := range in {
+		listing, err := publicListingFromProto(l)
+		if err != nil {
+			return PublicListingPage{}, err
+		}
+		listings = append(listings, listing)
+	}
+
+	page := PublicListingPage{Listings: listings}
 	if next := pagination.GetNextCursor(); next != "" {
 		page.NextCursor = &next
 	}
@@ -273,3 +363,13 @@ func myBidPageFromProto(in []*pb.MyBid, pagination *pbshared.PageInfo) (MyBidPag
 
 	return page, nil
 }
+
+// The rows an item summary is joined onto. Each names its item and takes the
+// summary back; embedItems needs nothing else of them.
+
+func (l *Listing) joinItemID() string            { return l.ItemID }
+func (l *Listing) joinItem(s *ItemSummary)       { l.Item = s }
+func (l *PublicListing) joinItemID() string      { return l.ItemID }
+func (l *PublicListing) joinItem(s *ItemSummary) { l.Item = s }
+func (b *MyBid) joinItemID() string              { return b.itemID }
+func (b *MyBid) joinItem(s *ItemSummary)         { b.Item = s }

@@ -101,17 +101,85 @@ describe("apiClient.acceptBid", () => {
   });
 });
 
-describe("publicApi.getListing", () => {
-  it("should read one listing without a token", async () => {
-    answer = () =>
-      new Response(JSON.stringify({ id: "l1" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    const { publicApi } = await loadApi();
-    await expect(publicApi.getListing("l1")).resolves.toEqual({ id: "l1" });
-    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1");
+describe("publicApi reads (FS-GKHYD Req 12)", () => {
+  const listing = () =>
+    new Response(JSON.stringify({ id: "l1", own: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  const page = () =>
+    new Response(JSON.stringify({ listings: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  /** A browser with this access token stored, as the auth store persists it. */
+  function signIn(accessToken: string): { location: { pathname: string; href: string } } {
+    const win = { location: { pathname: "/marketplace", href: "/marketplace" } };
+    vi.stubGlobal("window", win);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) =>
+        key === "auth-storage" ? JSON.stringify({ state: { accessToken } }) : null,
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    return win;
+  }
+
+  it.each([
+    ["getListing", listing, (api: Api) => api.publicApi.getListing("l1"), "/api/marketplace/listings/l1"],
+    ["browseListings", page, (api: Api) => api.publicApi.browseListings(), "/api/marketplace/listings"],
+  ] as const)("%s should read without a token when signed out", async (_name, body, call, path) => {
+    answer = body;
+    const api = await loadApi();
+    await call(api);
+    expect(new URL(requests[0].url).pathname).toBe(path);
     expect(requests[0].headers.get("Authorization")).toBeNull();
+  });
+
+  // Without the token `own` is always false and a seller loses Accept and Withdraw.
+  it.each([
+    ["getListing", listing, (api: Api) => api.publicApi.getListing("l1")],
+    ["browseListings", page, (api: Api) => api.publicApi.browseListings()],
+  ] as const)("%s should carry the bearer when signed in", async (_name, body, call) => {
+    signIn("tok-1");
+    answer = body;
+    const api = await loadApi();
+    await call(api);
+    expect(requests[0].headers.get("Authorization")).toBe("Bearer tok-1");
+  });
+
+  it("should answer the listing's own as the server read it", async () => {
+    signIn("tok-1");
+    answer = listing;
+    const { publicApi } = await loadApi();
+    await expect(publicApi.getListing("l1")).resolves.toEqual({ id: "l1", own: true });
+  });
+
+  // An expired token reads as anonymous server-side (ADR-0053); even a 401 must never sign the
+  // player out or send them to the login page from a public read (FS-8EGFA Req 21's property).
+  it.each([
+    ["getListing", (api: Api) => api.publicApi.getListing("l1")],
+    ["browseListings", (api: Api) => api.publicApi.browseListings()],
+  ] as const)("%s should never sign out or redirect on a 401", async (_name, call) => {
+    const win = signIn("expired");
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 401, detail: "expired", code: "UNAUTHENTICATED", errors: [] }),
+        { status: 401, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const api = await loadApi();
+    // the store instance api.ts holds: loadApi reset the registry, so this import shares it
+    const { useAuthStore } = await import("@/stores/authStore");
+    const logout = vi.fn();
+    useAuthStore.setState({ logout });
+    const { ApiError } = await import("./apiError");
+
+    const err = await call(api).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(logout).not.toHaveBeenCalled();
+    expect(win.location.href).toBe("/marketplace");
   });
 });
 

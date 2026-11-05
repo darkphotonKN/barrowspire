@@ -31,7 +31,7 @@ export const buyoutQuestion = (relic: string, price: number): string =>
 
 export interface BuyoutActionInput {
   listing: {
-    sellerId: string;
+    own: boolean;
     status: string;
     ended?: boolean;
     endsAt: string;

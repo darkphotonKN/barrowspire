@@ -6,8 +6,9 @@ const MIN = 60 * 1000;
 const endsIn = (ms: number) => new Date(NOW + ms).toISOString();
 
 const SELLER = "aldric";
+// Whose listing it is comes from the server's `own` (FS-GKHYD Req 13), never an id comparison.
 const live = {
-  sellerId: SELLER,
+  own: true,
   status: "ACTIVE",
   ended: false,
   endsAt: endsIn(24 * 60 * MIN),
@@ -52,8 +53,9 @@ describe("openSellerConfirm (FS-49Z37 req 13–17, FS-V7A5S req 14–16)", () =>
   });
 
   it("should not hold a retrying confirm open for anyone but the seller", () => {
+    const notTheirs = { ...live, own: false };
     expect(
-      openSellerConfirm(live, "brenna", NOW, state({ asked: "withdraw", retrying: true })),
+      openSellerConfirm(notTheirs, "brenna", NOW, state({ asked: "withdraw", retrying: true })),
     ).toBeUndefined();
   });
 

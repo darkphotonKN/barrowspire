@@ -36,3 +36,8 @@ this member's `SPECIFICATION.md`.
 - **Live bid** — a bid still holding gold: PENDING, WINNING or OUTBID. A listing with live bids cannot be withdrawn in its final 30 minutes.
 - **Withdraw backstop** — the reconcile-tick pass that starts the `withdraw-listing` workflow for every CANCELLED listing whose withdrawal is not yet marked started, however old, for a start that failed and was not retried or never ran, then marks it (FS-V7A5S Req 8). A duplicate start is a no-op.
 - **Withdrawal started** — the per-listing marker (`listings.withdrawal_started_at`) set once a listing's `withdraw-listing` workflow start lands or the starter answers already-started. Records "started", never "finished": once started, the workflow's uncapped retries finish it. Unmarked CANCELLED listings are exactly the backstop's candidates.
+
+### Public listing reads (FS-GKHYD)
+
+- **Own** — on a public listing read, whether the viewer is that listing's seller; computed by marketplace from the caller's optional identity, false for an anonymous viewer (ADR-0053). A fact about the viewer, never a member id.
+- **Optional identity** — a public read that embeds the caller's identity when a valid bearer is present and serves anonymously otherwise, never refusing (ADR-0053). Distinct from a public method, which never reads a caller.

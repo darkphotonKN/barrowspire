@@ -38,11 +38,15 @@ type Listing struct {
 	CreatedAt  *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Price facts, derived from the bids at read time.
-	CurrentPrice  *int64 `protobuf:"varint,11,opt,name=current_price,json=currentPrice,proto3,oneof" json:"current_price,omitempty"` // the leading bid; absent when nobody leads
-	MinimumBid    int64  `protobuf:"varint,12,opt,name=minimum_bid,json=minimumBid,proto3" json:"minimum_bid,omitempty"`             // the least amount a bid would be accepted at now
-	BidCount      int32  `protobuf:"varint,13,opt,name=bid_count,json=bidCount,proto3" json:"bid_count,omitempty"`                   // bids in WINNING, PENDING or OUTBID
-	Ended         bool   `protobuf:"varint,14,opt,name=ended,proto3" json:"ended,omitempty"`                                         // ACTIVE but past ends_at, not yet settled
-	BuyoutPrice   *int64 `protobuf:"varint,15,opt,name=buyout_price,json=buyoutPrice,proto3,oneof" json:"buyout_price,omitempty"`    // absent when the seller set none (FS-9XKS6)
+	CurrentPrice *int64 `protobuf:"varint,11,opt,name=current_price,json=currentPrice,proto3,oneof" json:"current_price,omitempty"` // the leading bid; absent when nobody leads
+	MinimumBid   int64  `protobuf:"varint,12,opt,name=minimum_bid,json=minimumBid,proto3" json:"minimum_bid,omitempty"`             // the least amount a bid would be accepted at now
+	BidCount     int32  `protobuf:"varint,13,opt,name=bid_count,json=bidCount,proto3" json:"bid_count,omitempty"`                   // bids in WINNING, PENDING or OUTBID
+	Ended        bool   `protobuf:"varint,14,opt,name=ended,proto3" json:"ended,omitempty"`                                         // ACTIVE but past ends_at, not yet settled
+	BuyoutPrice  *int64 `protobuf:"varint,15,opt,name=buyout_price,json=buyoutPrice,proto3,oneof" json:"buyout_price,omitempty"`    // absent when the seller set none (FS-9XKS6)
+	// Whether the caller is this listing's seller (FS-GKHYD, ADR-0053). Set from the
+	// caller's verified identity, never from the request: false for an anonymous
+	// caller, always true on ListMyListings.
+	Own           bool `protobuf:"varint,16,opt,name=own,proto3" json:"own,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,6 +184,13 @@ func (x *Listing) GetBuyoutPrice() int64 {
 		return *x.BuyoutPrice
 	}
 	return 0
+}
+
+func (x *Listing) GetOwn() bool {
+	if x != nil {
+		return x.Own
+	}
+	return false
 }
 
 // ListItem
@@ -1460,7 +1471,7 @@ var File_api_proto_marketplace_marketplace_proto protoreflect.FileDescriptor
 
 const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\n" +
-	"'api/proto/marketplace/marketplace.proto\x12\vmarketplace\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$api/proto/shared/v1/pagination.proto\"\xdc\x04\n" +
+	"'api/proto/marketplace/marketplace.proto\x12\vmarketplace\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$api/proto/shared/v1/pagination.proto\"\xee\x04\n" +
 	"\aListing\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tseller_id\x18\x02 \x01(\tR\bsellerId\x12\x1e\n" +
@@ -1482,7 +1493,8 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"minimumBid\x12\x1b\n" +
 	"\tbid_count\x18\r \x01(\x05R\bbidCount\x12\x14\n" +
 	"\x05ended\x18\x0e \x01(\bR\x05ended\x12&\n" +
-	"\fbuyout_price\x18\x0f \x01(\x03H\x03R\vbuyoutPrice\x88\x01\x01B\v\n" +
+	"\fbuyout_price\x18\x0f \x01(\x03H\x03R\vbuyoutPrice\x88\x01\x01\x12\x10\n" +
+	"\x03own\x18\x10 \x01(\bR\x03ownB\v\n" +
 	"\t_buyer_idB\r\n" +
 	"\v_sold_priceB\x10\n" +
 	"\x0e_current_priceB\x0f\n" +

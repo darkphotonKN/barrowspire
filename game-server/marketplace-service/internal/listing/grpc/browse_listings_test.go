@@ -130,3 +130,33 @@ func TestBrowseListingsSendsReadFailuresThroughMapError(t *testing.T) {
 
 	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
+
+// own answers whether the viewer sells the listing: true only for the seller,
+// and false for every other member and every anonymous viewer (FS-GKHYD R5).
+func TestBrowseListings_AnswersOwnPerViewer(t *testing.T) {
+	seller := uuid.New()
+	mine := dto.ListingDetails{
+		ID: uuid.New(), SellerID: seller, ItemID: uuid.New(),
+		StartPrice: 50, Status: listing.StatusActive, EndsAt: time.Now().Add(time.Hour),
+	}
+	theirs := dto.ListingDetails{
+		ID: uuid.New(), SellerID: uuid.New(), ItemID: uuid.New(),
+		StartPrice: 50, Status: listing.StatusActive, EndsAt: time.Now().Add(time.Hour),
+	}
+
+	for _, tt := range ownCases(seller) {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := &fakeBrowseReader{page: &dto.ListingsPage{Listings: []dto.ListingDetails{mine, theirs}}}
+			ctx := tt.ctx(t, "/marketplace.MarketplaceService/BrowseListings")
+
+			res, err := newBrowseHandler(reader).BrowseListings(ctx, &pb.BrowseListingsRequest{})
+
+			require.NoError(t, err)
+			require.Len(t, res.GetListings(), 2)
+			assert.Equal(t, tt.wantOwn, res.GetListings()[0].GetOwn())
+			assert.False(t, res.GetListings()[1].GetOwn(), "nobody here sells the second listing")
+			// the gRPC listing keeps its member ids for internal readers (R6)
+			assert.Equal(t, seller.String(), res.GetListings()[0].GetSellerId())
+		})
+	}
+}

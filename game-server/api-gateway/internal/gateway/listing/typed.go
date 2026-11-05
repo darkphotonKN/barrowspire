@@ -62,8 +62,10 @@ func guard[I, O any](fn func(context.Context, *I) (*O, error)) func(context.Cont
 }
 
 // withBearer forwards the caller's Authorization header to marketplace, whose
-// own interceptor re-validates it and reads the bidder from it. The gateway's
-// middleware has already validated the same token by this point.
+// own interceptor re-validates it and reads the caller from it. On a protected
+// operation the gateway's middleware has already validated the same token; on
+// a public read it has not, and marketplace serves a token it cannot validate
+// anonymously (ADR-0053). No header forwards nothing.
 func withBearer(ctx context.Context, authorization string) context.Context {
 	if authorization == "" {
 		return ctx
@@ -454,7 +456,7 @@ func registerListMyListings(api huma.API, h *Handler,
 			return nil, err
 		}
 
-		if err := h.embedItems(ctx, page.Listings); err != nil {
+		if err := embedItems(ctx, h.items, page.Listings); err != nil {
 			return nil, err
 		}
 
@@ -511,7 +513,7 @@ func registerListMyBids(api huma.API, h *Handler,
 			return nil, err
 		}
 
-		if err := h.embedBidItems(ctx, page.Bids); err != nil {
+		if err := embedItems(ctx, h.items, page.Bids); err != nil {
 			return nil, err
 		}
 
@@ -525,17 +527,28 @@ func registerBrowseListings(api huma.API, h *Handler) {
 		// its refusal comes back through the seam.
 		Cursor string `query:"cursor" doc:"Opaque position from a previous page's nextCursor. Do not construct."`
 		Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+
+		// Optional and read only to forward downstream, where marketplace sets
+		// own from it. Hidden: the operation declares no security, and a
+		// documented header would read as a requirement.
+		Authorization string `header:"Authorization" hidden:"true"`
 	}
 
-	type output struct{ Body ListingPage }
+	type output struct {
+		ViewerRelative
+		Body PublicListingPage
+	}
 
 	// Public: no protect middleware and no Security. The page is for visitors
-	// who are not signed in, and it carries nothing that belongs to a member.
+	// who are not signed in, and it names no member (FS-GKHYD). A signed-in
+	// caller's token only lets marketplace answer own.
 	huma.Register(api, huma.Operation{
 		OperationID: "browse-listings",
 		Description: "Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with " +
-			"its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a " +
-			"page is never returned without its items.",
+			"its item embedded. Public: no token is needed. No listing carries a member id or a sold price. " +
+			"Sent with a bearer token, own marks the caller's own listings; without one, or with a token that " +
+			"is invalid or expired, the caller reads as signed out and own is false on every listing, never 401. " +
+			"If the items lookup fails the whole request fails; a page is never returned without its items.",
 		Errors: []int{
 			http.StatusBadRequest,
 			http.StatusUnprocessableEntity,
@@ -547,7 +560,7 @@ func registerBrowseListings(api huma.API, h *Handler) {
 		Summary: "Browse live auctions",
 		Tags:    []string{"marketplace"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		res, err := h.client.BrowseListings(ctx, &pb.BrowseListingsRequest{
+		res, err := h.client.BrowseListings(withBearer(ctx, in.Authorization), &pb.BrowseListingsRequest{
 			Cursor: in.Cursor,
 			Limit:  int32(in.Limit),
 		})
@@ -555,31 +568,40 @@ func registerBrowseListings(api huma.API, h *Handler) {
 			return nil, err
 		}
 
-		page, err := listingPageFromProto(res.GetListings(), res.GetPagination())
+		page, err := publicListingPageFromProto(res.GetListings(), res.GetPagination())
 		if err != nil {
 			return nil, err
 		}
 
-		if err := h.embedItems(ctx, page.Listings); err != nil {
+		if err := embedItems(ctx, h.items, page.Listings); err != nil {
 			return nil, err
 		}
 
-		return &output{Body: page}, nil
+		return &output{ViewerRelative: viewerRelativeTo(in.Authorization), Body: page}, nil
 	}))
 }
 
 func registerGetListing(api huma.API, h *Handler) {
 	type input struct {
 		ListingID string `path:"listing_id" format:"uuid"`
+
+		// Optional, forwarded and hidden exactly as for browse-listings.
+		Authorization string `header:"Authorization" hidden:"true"`
 	}
 
-	type output struct{ Body Listing }
+	type output struct {
+		ViewerRelative
+		Body PublicListing
+	}
 
 	// Public, like browse-listings: no protect middleware and no Security.
 	huma.Register(api, huma.Operation{
 		OperationID: "get-listing",
 		Description: "Reads one listing in any status, with its item embedded. An active listing past endsAt answers " +
-			"ended: true. Public: no token is needed. If the items lookup fails the request fails.",
+			"ended: true. Public: no token is needed. The listing carries no member id and no sold price, in any " +
+			"status. Sent with a bearer token, own is true when the caller is the seller; without one, or with a " +
+			"token that is invalid or expired, the caller reads as signed out and own is false, never 401. If the " +
+			"items lookup fails the request fails.",
 		Errors: []int{
 			http.StatusNotFound,
 			http.StatusUnprocessableEntity,
@@ -591,28 +613,56 @@ func registerGetListing(api huma.API, h *Handler) {
 		Summary: "Get a listing",
 		Tags:    []string{"marketplace"},
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		res, err := h.client.GetListing(ctx, &pb.GetListingRequest{ListingId: in.ListingID})
+		res, err := h.client.GetListing(withBearer(ctx, in.Authorization), &pb.GetListingRequest{ListingId: in.ListingID})
 		if err != nil {
 			return nil, err
 		}
 
-		listing, err := listingFromProto(res.GetListing())
+		listing, err := publicListingFromProto(res.GetListing())
 		if err != nil {
 			return nil, err
 		}
 
 		// one listing is a page of one to the join
-		one := []Listing{listing}
-		if err := h.embedItems(ctx, one); err != nil {
+		one := []PublicListing{listing}
+		if err := embedItems(ctx, h.items, one); err != nil {
 			return nil, err
 		}
 
-		return &output{Body: one[0]}, nil
+		return &output{ViewerRelative: viewerRelativeTo(in.Authorization), Body: one[0]}, nil
 	}))
 }
 
-// embedItems joins each listing's item summary onto it, with one items call for
-// the whole page. An id items does not know leaves that listing's item absent.
+// ViewerRelative is the cache headers of a public read whose answer depends on
+// who asks (own, FS-GKHYD; ADR-0053): it always varies by Authorization, and
+// an answer to a bearer is private, so no shared cache hands one viewer's
+// answer to another. Exported only because huma reads headers from exported
+// embedded fields. Vary is a slice so huma appends it: a string would be set,
+// replacing the Vary: Origin the CORS middleware already wrote.
+type ViewerRelative struct {
+	Vary         []string `header:"Vary" doc:"Includes Authorization: own depends on the caller."`
+	CacheControl string   `header:"Cache-Control" doc:"private when the request carried an Authorization; absent otherwise."`
+}
+
+func viewerRelativeTo(authorization string) ViewerRelative {
+	h := ViewerRelative{Vary: []string{"Authorization"}}
+	if authorization != "" {
+		h.CacheControl = "private"
+	}
+	return h
+}
+
+// itemRow is a row the item join fills: a listing in either shape, or a bid.
+// The pointer constraint lets embedItems set the summary on the row in place.
+type itemRow[T any] interface {
+	*T
+	joinItemID() string
+	joinItem(*ItemSummary)
+}
+
+// embedItems joins each row's item summary onto it, with one items call for
+// the whole page. An id items does not know leaves that row's item absent.
+// Seller, public and bid rows all join this way (FS-EYQ8K §Requirements 7).
 //
 // Any failure of the call fails the request (FS-8EGFA §Requirements 16): a page
 // of listings without their items must not pass for a good one. The failure is
@@ -620,42 +670,24 @@ func registerGetListing(api huma.API, h *Handler) {
 // the wrong thing to the client — an Unauthenticated from items would read as
 // "your session ended" and sign a visitor out. Unreachable is 503, so the client
 // retries; anything else is 500. See joinFailure for the exact mapping.
-func (h *Handler) embedItems(ctx context.Context, listings []Listing) error {
-	ids := make([]string, 0, len(listings))
-	for _, l := range listings {
-		ids = append(ids, l.ItemID)
+//
+// ctx is the request's own, never the one carrying the caller's bearer: items
+// is asked for public facts and is not told who is asking.
+func embedItems[T any, P itemRow[T]](ctx context.Context, items ItemSummaries, rows []T) error {
+	ids := make([]string, 0, len(rows))
+	for i := range rows {
+		ids = append(ids, P(&rows[i]).joinItemID())
 	}
 
-	byID, err := h.itemSummaries(ctx, ids)
+	byID, err := itemSummaries(ctx, items, ids)
 	if err != nil {
 		return err
 	}
 
-	for i := range listings {
-		if s, ok := byID[listings[i].ItemID]; ok {
-			listings[i].Item = itemSummaryFromProto(s)
-		}
-	}
-
-	return nil
-}
-
-// embedBidItems joins each bid's listed item onto it, exactly as embedItems
-// does for listings (FS-EYQ8K §Requirements 7).
-func (h *Handler) embedBidItems(ctx context.Context, bids []MyBid) error {
-	ids := make([]string, 0, len(bids))
-	for _, b := range bids {
-		ids = append(ids, b.itemID)
-	}
-
-	byID, err := h.itemSummaries(ctx, ids)
-	if err != nil {
-		return err
-	}
-
-	for i := range bids {
-		if s, ok := byID[bids[i].itemID]; ok {
-			bids[i].Item = itemSummaryFromProto(s)
+	for i := range rows {
+		row := P(&rows[i])
+		if s, ok := byID[row.joinItemID()]; ok {
+			row.joinItem(itemSummaryFromProto(s))
 		}
 	}
 
@@ -664,12 +696,12 @@ func (h *Handler) embedBidItems(ctx context.Context, bids []MyBid) error {
 
 // itemSummaries looks up the given items with one items call, keyed by id. No
 // ids makes no call. A failed call is already re-coded by joinFailure.
-func (h *Handler) itemSummaries(ctx context.Context, ids []string) (map[string]*itempb.ItemSummary, error) {
+func itemSummaries(ctx context.Context, items ItemSummaries, ids []string) (map[string]*itempb.ItemSummary, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
-	res, err := h.items.GetItemSummaries(ctx, &itempb.GetItemSummariesRequest{Ids: ids})
+	res, err := items.GetItemSummaries(ctx, &itempb.GetItemSummariesRequest{Ids: ids})
 	if err != nil {
 		return nil, joinFailure(ctx, err)
 	}

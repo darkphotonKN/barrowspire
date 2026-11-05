@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -31,11 +32,20 @@ type stubItemSummaries struct {
 
 	calls  int
 	gotIDs []string
+	// gotAuth is every authorization the call carried, outgoing or incoming:
+	// items is asked for public facts and must never be told who is asking.
+	gotAuth []string
 }
 
 func (s *stubItemSummaries) GetItemSummaries(ctx context.Context, req *pbitems.GetItemSummariesRequest) (*pbitems.GetItemSummariesResponse, error) {
 	s.calls++
 	s.gotIDs = req.GetIds()
+	if md, ok := metadata.FromOutgoingContext(ctx); ok {
+		s.gotAuth = append(s.gotAuth, md.Get("authorization")...)
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		s.gotAuth = append(s.gotAuth, md.Get("authorization")...)
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -126,7 +136,6 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 			{
 				"id": "11111111-1111-1111-1111-111111111111",
 				"itemId": "44444444-4444-4444-4444-444444444444",
-				"sellerId": "22222222-2222-2222-2222-222222222222",
 				"startPrice": 50,
 				"status": "ACTIVE",
 				"endsAt": "2026-12-02T18:00:00Z",
@@ -136,6 +145,7 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 				"minimumBid": 76,
 				"bidCount": 2,
 				"ended": false,
+				"own": false,
 				"item": {
 					"id": "44444444-4444-4444-4444-444444444444",
 					"name": "Longsword",
@@ -153,7 +163,6 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 			{
 				"id": "55555555-5555-5555-5555-555555555555",
 				"itemId": "66666666-6666-6666-6666-666666666666",
-				"sellerId": "22222222-2222-2222-2222-222222222222",
 				"startPrice": 50,
 				"status": "ACTIVE",
 				"endsAt": "2026-12-02T19:00:00Z",
@@ -162,6 +171,7 @@ func TestBrowseListings_AnswersWithoutATokenAndEmbedsEachItem(t *testing.T) {
 				"minimumBid": 50,
 				"bidCount": 0,
 				"ended": false,
+				"own": false,
 				"item": {
 					"id": "66666666-6666-6666-6666-666666666666",
 					"name": "Iron Helm",

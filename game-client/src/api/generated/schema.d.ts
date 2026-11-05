@@ -445,7 +445,7 @@ export interface paths {
         };
         /**
          * Browse live auctions
-         * @description Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a page is never returned without its items.
+         * @description Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. No listing carries a member id or a sold price. Sent with a bearer token, own marks the caller's own listings; without one, or with a token that is invalid or expired, the caller reads as signed out and own is false on every listing, never 401. If the items lookup fails the whole request fails; a page is never returned without its items.
          */
         get: operations["browse-listings"];
         put?: never;
@@ -489,7 +489,7 @@ export interface paths {
         };
         /**
          * Get a listing
-         * @description Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. If the items lookup fails the request fails.
+         * @description Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. The listing carries no member id and no sold price, in any status. Sent with a bearer token, own is true when the caller is the seller; without one, or with a token that is invalid or expired, the caller reads as signed out and own is false, never 401. If the items lookup fails the request fails.
          */
         get: operations["get-listing"];
         put?: never;
@@ -1940,6 +1940,53 @@ export interface components {
              * @description Wins
              */
             wins?: number;
+        };
+        PublicListing: {
+            /**
+             * Format: int32
+             * @description Bids that are or were in the running: winning, pending or outbid.
+             */
+            bidCount: number;
+            /**
+             * Format: int64
+             * @description Gold that buys the item outright. Absent when the seller set none.
+             */
+            buyoutPrice?: number;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description The leading bid. Absent when nobody leads.
+             */
+            currentPrice?: number;
+            /** @description True when the auction is past endsAt but not yet settled; it no longer accepts bids. */
+            ended: boolean;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: uuid */
+            id: string;
+            /** @description The listed item. Absent only when items has no such instance. */
+            item?: components["schemas"]["ItemSummary"];
+            /** Format: uuid */
+            itemId: string;
+            /**
+             * Format: int64
+             * @description The least amount a bid would be accepted at now: the start price with no leading bid, otherwise one more than the leading bid.
+             */
+            minimumBid: number;
+            /** @description True only when the caller is signed in and is this listing's seller. False for anyone else, for a signed-out caller, and for a token that is invalid or expired. */
+            own: boolean;
+            /** Format: int64 */
+            startPrice: number;
+            /** @description Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED. */
+            status: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PublicListingPage: {
+            listings: components["schemas"]["PublicListing"][];
+            /** @description Pass back as cursor for the next page. Absent on the last page. */
+            nextCursor?: string;
         };
         ReadEnvelope: {
             /** @description Message chosen by notification-service */
@@ -3757,10 +3804,12 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Cache-Control"?: string;
+                    Vary?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ListingPage"];
+                    "application/json": components["schemas"]["PublicListingPage"];
                 };
             };
             /** @description Bad Request */
@@ -3960,10 +4009,12 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Cache-Control"?: string;
+                    Vary?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Listing"];
+                    "application/json": components["schemas"]["PublicListing"];
                 };
             };
             /** @description Not Found */

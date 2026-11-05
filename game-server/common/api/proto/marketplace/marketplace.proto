@@ -66,6 +66,11 @@ message Listing {
   bool ended = 14;                    // ACTIVE but past ends_at, not yet settled
 
   optional int64 buyout_price = 15;   // absent when the seller set none (FS-9XKS6)
+
+  // Whether the caller is this listing's seller (FS-GKHYD, ADR-0053). Set from the
+  // caller's verified identity, never from the request: false for an anonymous
+  // caller, always true on ListMyListings.
+  bool own = 16;
 }
 // ListItem
 // Empty by design: the member identity is derived from the authenticated

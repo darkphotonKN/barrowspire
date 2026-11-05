@@ -62,7 +62,7 @@ export function listingWithdrawable(listing: WithdrawableListing, now: number): 
 
 /** Withdraw on the detail: only the seller's own live listing, and only while withdrawable. */
 export function withdrawListingOffered(
-  listing: WithdrawableListing & { sellerId: string },
+  listing: WithdrawableListing & { own: boolean },
   memberId: string | undefined,
   now: number,
 ): boolean {
