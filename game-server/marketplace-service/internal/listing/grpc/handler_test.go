@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -108,6 +109,57 @@ func identityCtx(t *testing.T, id commonauth.Identity) context.Context {
 	require.NoError(t, err)
 
 	return captured
+}
+
+// viewerCtx is the context an optional-auth read (BrowseListings, GetListing)
+// arrives with, by driving the real interceptor for that method. A nil viewer
+// sends a bearer that fails validation, as an expired or invalid token does, so
+// the read runs anonymously (ADR-0053).
+func viewerCtx(t *testing.T, method string, viewer *uuid.UUID) context.Context {
+	t.Helper()
+
+	var captured context.Context
+
+	interceptor := commonauth.Auth(func(token string) (commonauth.Identity, error) {
+		if viewer == nil {
+			return commonauth.Identity{}, errors.New("token is expired")
+		}
+		return commonauth.Identity{MemberID: *viewer, Role: commonauth.RolePlayer, EmailVerified: true}, nil
+	})
+
+	incoming := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.New(map[string]string{"authorization": "Bearer test-token"}),
+	)
+
+	_, err := interceptor(incoming, nil, &grpclib.UnaryServerInfo{FullMethod: method},
+		func(ctx context.Context, req any) (any, error) {
+			captured = ctx
+			return nil, nil
+		})
+	require.NoError(t, err)
+
+	return captured
+}
+
+// ownCases are the viewers an optional-auth read answers own for: only the
+// listing's seller, signed in, reads true (FS-GKHYD §Requirements 2, 5).
+func ownCases(seller uuid.UUID) []struct {
+	name    string
+	ctx     func(t *testing.T, method string) context.Context
+	wantOwn bool
+} {
+	other := uuid.New()
+	return []struct {
+		name    string
+		ctx     func(t *testing.T, method string) context.Context
+		wantOwn bool
+	}{
+		{"the seller", func(t *testing.T, m string) context.Context { return viewerCtx(t, m, &seller) }, true},
+		{"another member", func(t *testing.T, m string) context.Context { return viewerCtx(t, m, &other) }, false},
+		{"an invalid or expired token", func(t *testing.T, m string) context.Context { return viewerCtx(t, m, nil) }, false},
+		{"no identity at all", func(*testing.T, string) context.Context { return context.Background() }, false},
+	}
 }
 
 // activeListing is an ACTIVE listing, open for another hour, with the given

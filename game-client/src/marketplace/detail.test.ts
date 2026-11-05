@@ -110,26 +110,36 @@ describe("formatCriticalRate", () => {
 
 describe("actionArea", () => {
   const NOW = Date.parse("2026-10-01T12:00:00Z");
+  // Whose listing it is comes from the server's `own` (FS-GKHYD Req 13): aldric is the seller
+  // only where the read says so, never by comparing ids.
   const live = {
-    sellerId: "aldric",
+    own: false,
     status: "ACTIVE",
     ended: false,
     endsAt: "2026-10-02T12:00:00Z",
   };
+  const mine = { ...live, own: true };
 
   it.each([
-    ["a signed-out visitor", undefined, "signIn"],
-    ["the listing's seller", "aldric", "own"],
-    ["any other player", "brenna", "bid"],
-  ])("should show %s the right panel on a live listing", (_label, memberId, want) => {
-    expect(actionArea(live, memberId, NOW)).toBe(want);
+    ["a signed-out visitor", live, undefined, "signIn"],
+    ["the listing's seller", mine, "aldric", "own"],
+    ["any other player", live, "brenna", "bid"],
+    ["the seller whose read says not theirs (an expired token)", live, "aldric", "bid"],
+    // own counts only for a signed-in viewer, the rule the browse row uses too.
+    ["a signed-out viewer on a listing a stale read marks own", mine, undefined, "signIn"],
+  ])("should show %s the right panel on a live listing", (_label, listing, memberId, want) => {
+    expect(actionArea(listing, memberId, NOW)).toBe(want);
   });
 
   it.each(["PENDING_SETTLEMENT", "SOLD", "CANCELLED", "SETTLEMENT_FAILED", "EXPIRED"])(
     "should offer nobody anything once the listing is %s",
     (status) => {
-      for (const memberId of [undefined, "aldric", "brenna"]) {
-        expect(actionArea({ ...live, status }, memberId, NOW)).toBe("none");
+      for (const [listing, memberId] of [
+        [live, undefined],
+        [mine, "aldric"],
+        [live, "brenna"],
+      ] as const) {
+        expect(actionArea({ ...listing, status }, memberId, NOW)).toBe("none");
       }
     },
   );
@@ -145,10 +155,9 @@ describe("actionArea", () => {
     ["by the server's word", { ended: true }],
     ["by the countdown", { endsAt: "2026-10-01T12:00:00Z" }],
   ])("should close the bid box once the listing has ended %s", (_label, ended) => {
-    const listing = { ...live, ...ended };
-    expect(actionArea(listing, "brenna", NOW)).toBe("closed");
-    expect(actionArea(listing, "aldric", NOW)).toBe("none");
-    expect(actionArea(listing, undefined, NOW)).toBe("none");
+    expect(actionArea({ ...live, ...ended }, "brenna", NOW)).toBe("closed");
+    expect(actionArea({ ...mine, ...ended }, "aldric", NOW)).toBe("none");
+    expect(actionArea({ ...live, ...ended }, undefined, NOW)).toBe("none");
   });
 
   it("should read an absent ended flag as not ended", () => {

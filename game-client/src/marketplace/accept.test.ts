@@ -16,7 +16,7 @@ const apiError = (status: number, code: string) =>
 describe("sellerBlock", () => {
   const NOW = Date.parse("2026-10-01T12:00:00Z");
   const live = {
-    sellerId: "aldric",
+    own: true,
     status: "ACTIVE",
     ended: false,
     endsAt: "2026-10-02T12:00:00Z",
@@ -44,9 +44,10 @@ describe("sellerBlock", () => {
 
   it.each([
     ["another player", "brenna"],
+    ["the seller whose read says not theirs (an expired token)", "aldric"],
     ["a signed-out visitor", undefined],
-  ])("should give %s no seller block", (_label, memberId) => {
-    expect(sellerBlock(live, memberId, NOW)).toEqual({ kind: "none" });
+  ])("should give %s no seller block on a listing not theirs", (_label, memberId) => {
+    expect(sellerBlock({ ...live, own: false }, memberId, NOW)).toEqual({ kind: "none" });
   });
 });
 

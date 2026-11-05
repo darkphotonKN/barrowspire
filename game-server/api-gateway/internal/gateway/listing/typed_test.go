@@ -709,6 +709,9 @@ func TestListMyListings_AnswersThePageInTheDocumentedShape(t *testing.T) {
 		UpdatedAt:  timestamppb.New(time.Date(2026, 12, 1, 18, 5, 0, 0, time.UTC)),
 		MinimumBid: 176,
 		BidCount:   3,
+		// marketplace marks every listing on the seller's own list as theirs;
+		// the HTTP shape of list-my-listings does not carry it (FS-GKHYD Req 7)
+		Own: true,
 	}
 	active := &pb.Listing{
 		Id:          "55555555-5555-5555-5555-555555555555",

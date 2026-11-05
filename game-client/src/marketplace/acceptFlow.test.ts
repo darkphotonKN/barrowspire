@@ -18,15 +18,20 @@ function deps(answer?: Error) {
     refresh: async () => {
       log.push("refresh");
     },
+    onSold: () => {
+      log.push("sold");
+    },
   };
   return { d, log };
 }
 
 describe("submitAccept", () => {
-  it("should re-read only the listing once the sale is accepted, then say it is sold", async () => {
+  // The listing's re-read is the dialog's; onSold lets Mine re-read its rows, so a sold row
+  // shows what it fetched rather than the bid it was accepting.
+  it("should re-read the listing once the sale is accepted, tell the caller, then say it is sold", async () => {
     const { d, log } = deps();
     const result = await submitAccept(d);
-    expect(log).toEqual(["accept", "refresh"]);
+    expect(log).toEqual(["accept", "refresh", "sold"]);
     expect(result).toEqual({ sold: true, note: { tone: "ok", text: ACCEPT_SOLD } });
   });
 

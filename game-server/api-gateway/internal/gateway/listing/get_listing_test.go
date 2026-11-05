@@ -51,7 +51,6 @@ func TestGetListing_AnswersWithoutATokenAndEmbedsTheItem(t *testing.T) {
 	assert.JSONEq(t, `{
 		"id": "11111111-1111-1111-1111-111111111111",
 		"itemId": "44444444-4444-4444-4444-444444444444",
-		"sellerId": "22222222-2222-2222-2222-222222222222",
 		"startPrice": 50,
 		"status": "ACTIVE",
 		"endsAt": "2026-12-02T18:00:00Z",
@@ -61,6 +60,7 @@ func TestGetListing_AnswersWithoutATokenAndEmbedsTheItem(t *testing.T) {
 		"minimumBid": 76,
 		"bidCount": 2,
 		"ended": true,
+		"own": false,
 		"item": {
 			"id": "44444444-4444-4444-4444-444444444444",
 			"name": "Longsword",
