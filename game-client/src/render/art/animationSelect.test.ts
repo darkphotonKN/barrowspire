@@ -65,6 +65,31 @@ describe("selectAnimation", () => {
       { animation: "attack", facing: "sw", direction: 3 },
     ],
     [
+      "attacking while walking on a sheet with walk_attack keeps the legs walking, turned to the aim",
+      { attacking: true, walkAttack: true, velocity: { vx: 200, vy: 0 }, aim: { x: -30, y: 30 } },
+      { animation: "walk_attack", facing: "sw", direction: 3 },
+    ],
+    [
+      "attacking while walking on a sheet with walk_attack, with no aim, faces the way it walks",
+      { attacking: true, walkAttack: true, velocity: { vx: 0, vy: -200 } },
+      { animation: "walk_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while standing on a sheet with walk_attack is the whole-body attack",
+      { attacking: true, walkAttack: true, aim: { x: 0, y: -50 } },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a drift below walking speed is still the whole-body attack",
+      { attacking: true, walkAttack: true, velocity: { vx: 5, vy: 0 }, aim: { x: 50, y: 0 } },
+      { animation: "attack", facing: "e", direction: 0 },
+    ],
+    [
+      "dead wins over an attack on the move",
+      { dead: true, attacking: true, walkAttack: true, facing: "w", velocity: { vx: 200, vy: 0 } },
+      { animation: "death", facing: "w", direction: 4 },
+    ],
+    [
       "holding an aim stands idle turned to it (FS-JTNPR req 10)",
       { facing: "se", holding: { x: -50, y: 0 } },
       { animation: "idle", facing: "w", direction: 4 },
@@ -190,6 +215,26 @@ describe("the shipped character sheets", () => {
       expect(sheet.animations.death.loop).toBe(false);
     },
   );
+
+  it("should give the archer alone walk_attack: 8-way, played once, and exactly as long as his attack (FS-HF0WW)", () => {
+    const archer = manifest.sheets[characterSheet("archer")];
+    const { attack, walk_attack: walkAttack } = archer.animations;
+    expect(walkAttack?.loop).toBe(false);
+    expect(walkAttack?.frames).toHaveLength(8);
+    // the client times the window by the attack clip, so the two must last alike
+    expect(walkAttack.frames[0].length / walkAttack.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
+    for (const cls of ["warrior", "mage", "mercenary"])
+      expect(manifest.sheets[characterSheet(cls)].animations.walk_attack, cls).toBeUndefined();
+  });
+
+  it("should bake the archer alone at 2x, frames twice a 1x sheet's px each way (FS-HF0WW)", () => {
+    const archer = manifest.sheets[characterSheet("archer")];
+    expect(archer.scale).toBe(2);
+    expect(archer.frameWidth % 2).toBe(0);
+    expect(archer.frameHeight % 2).toBe(0);
+    for (const [name, sheet] of Object.entries(manifest.sheets))
+      if (name !== "char_archer_base") expect(sheet.scale, name).toBeUndefined();
+  });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {
     const merc = manifest.sheets[characterSheet("mercenary")];

@@ -11,6 +11,10 @@
 // skinned rig, hand-keyed clips, baked in the 8 facings of page/facing.js, whose order the
 // manifest records as `facings`.
 //
+// A catalogue entry with `trim: true` (today only the archer, FS-HF0WW) has each frame cut
+// to the box that holds its pixels before packing (lib/trim.mjs); the manifest marks the sheet
+// `trimmed` and records each frame's cut, which the client puts back where it was.
+//
 // Determinism. A re-bake with unchanged inputs must produce no git diff (FS-2325V §B.3):
 //  - all randomness is seeded (page/noise.js); nothing calls Math.random();
 //  - WebGL runs on SwiftShader (software), never the GPU, whose output varies by driver; the
@@ -35,6 +39,8 @@ import { meanColour } from "./lib/mean.mjs";
 import { crownHeight } from "./lib/crown.mjs";
 import { SIDE_ON, bodyLength } from "./lib/length.mjs";
 import { packAtlases } from "./lib/pack.mjs";
+import { downscale } from "./lib/downscale.mjs";
+import { cropFrame, trimRect } from "./lib/trim.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
 import { labelTexts, writeReview } from "./lib/contact.mjs";
@@ -120,6 +126,22 @@ async function bakeAll() {
 function assemble({ tile, facings, sheets }) {
   // Every frame of a sheet in manifest order: animation, then direction, then frame.
   const frameList = (s) => Object.values(s.animations).flatMap((a) => a.frames.flat());
+  // A trimmed sheet's frames (FS-HF0WW, lib/trim.mjs), each cut to its pixels on whole
+  // screen px, by sheet and then by the frame's pixels as baked. The atlas holds the cut and the
+  // manifest says where it sits in the frame; the measures (crown, length, mean) still read the
+  // whole frames.
+  const cuts = new Map();
+  for (const s of sheets.filter((x) => x.trim)) {
+    const own = new Map();
+    for (const b64 of frameList(s)) {
+      if (own.has(b64)) continue;
+      const px = Buffer.from(b64, "base64");
+      const rect = trimRect(px, s.frameWidth, s.frameHeight, { grid: s.scale ?? 1 });
+      own.set(b64, { rect, px: cropFrame(px, s.frameWidth, rect) });
+    }
+    cuts.set(s.name, own);
+  }
+  const cutOf = (s, b64) => cuts.get(s.name)?.get(b64);
   const pages = packAtlases(
     sheets.map((s) => ({
       name: s.name,
@@ -128,6 +150,7 @@ function assemble({ tile, facings, sheets }) {
       frameHeight: s.frameHeight,
       frameCount: frameList(s).length,
       animations: Object.entries(s.animations).map(([name, a]) => ({ name, frameCount: a.frames.flat().length })),
+      ...(s.trim ? { frames: frameList(s).map((b64) => ({ w: cutOf(s, b64).rect.w, h: cutOf(s, b64).rect.h })) } : {}),
     })),
   );
   // where each sheet's frames went: a whole sheet on one page, or (an oversized sheet, FS-Q14EV
@@ -138,11 +161,15 @@ function assemble({ tile, facings, sheets }) {
   const atlases = {};
   const blit = (rgba, width, s, frames, spots) =>
     frames.forEach((b64, i) => {
-      const px = Buffer.from(b64, "base64");
+      const cut = cutOf(s, b64);
+      const px = cut ? cut.px : Buffer.from(b64, "base64");
+      const w = cut ? cut.rect.w : s.frameWidth;
+      const h = cut ? cut.rect.h : s.frameHeight;
       const { x, y } = spots[i];
-      for (let row = 0; row < s.frameHeight; row++)
-        px.copy(rgba, ((y + row) * width + x) * 4, row * s.frameWidth * 4, (row + 1) * s.frameWidth * 4);
+      for (let row = 0; row < h; row++) px.copy(rgba, ((y + row) * width + x) * 4, row * w * 4, (row + 1) * w * 4);
     });
+  // a frame in the manifest: its top-left in the atlas, plus a trimmed frame's cut
+  const placed = (s, b64, spot) => (s.trim ? { ...spot, trim: cutOf(s, b64).rect } : spot);
   for (const p of pages) {
     const rgba = Buffer.alloc(p.width * p.height * 4);
     for (const [name, spots] of Object.entries(p.placements)) {
@@ -174,7 +201,7 @@ function assemble({ tile, facings, sheets }) {
       key = atlasOf[s.name].key;
       let k = 0;
       for (const [anim, a] of Object.entries(s.animations))
-        animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
+        animations[anim] = { fps: a.fps, loop: a.loop, frames: a.frames.map((dir) => dir.map((b64) => placed(s, b64, spots[k++]))) };
     } else {
       // split: the sheet's atlas is its first animation's page; any animation on another page
       // names it (and only those, so a sheet that fits one page never carries the field)
@@ -183,30 +210,35 @@ function assemble({ tile, facings, sheets }) {
       for (const [anim, a] of Object.entries(s.animations)) {
         const { key: page, spots } = parts[anim];
         let k = 0;
-        animations[anim] = { fps: a.fps, loop: a.loop, ...(page !== key ? { atlas: page } : {}), frames: a.frames.map((dir) => dir.map(() => spots[k++])) };
+        animations[anim] = {
+          fps: a.fps,
+          loop: a.loop,
+          ...(page !== key ? { atlas: page } : {}),
+          frames: a.frames.map((dir) => dir.map((b64) => placed(s, b64, spots[k++]))),
+        };
       }
     }
     // the ground's measured colour, which lighting's readability floor is judged against
     const mean = s.group === "ground" || s.name.startsWith("ground_") ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
+    // crown and length are screen px: a sheet baked at `scale` px per screen px (FS-HF0WW)
+    // is measured back at 1×, so its head height means what any other sheet's does
+    const scale = s.scale ?? 1;
+    const at1x = (b64) => downscale(Buffer.from(b64, "base64"), s.frameWidth, s.frameHeight, scale);
+    const width1x = s.frameWidth / scale;
     // a standing sheet's head height over every facing's idle, where name plates and HP bars sit
     const crown = s.animations.idle
-      ? crownHeight(
-          s.animations.idle.frames.flat().map((b64) => Buffer.from(b64, "base64")),
-          s.frameWidth,
-          Math.round(s.anchor.y * s.frameHeight),
-        )
+      ? crownHeight(s.animations.idle.frames.flat().map(at1x), width1x, Math.round((s.anchor.y * s.frameHeight) / scale))
       : undefined;
     // a quadruped's body length, side-on over its idle: the measure its size tier is taken by
     const length = s.quadruped
-      ? bodyLength(
-          SIDE_ON.flatMap((f) => s.animations.idle.frames[facings.indexOf(f)]).map((b64) => Buffer.from(b64, "base64")),
-          s.frameWidth,
-        )
+      ? bodyLength(SIDE_ON.flatMap((f) => s.animations.idle.frames[facings.indexOf(f)]).map(at1x), width1x)
       : undefined;
     manifestSheets[s.name] = {
       atlas: key,
       frameWidth: s.frameWidth,
       frameHeight: s.frameHeight,
+      ...(scale !== 1 ? { scale } : {}),
+      ...(s.trim ? { trimmed: true } : {}),
       anchor: s.anchor,
       directions: s.directions,
       animations,

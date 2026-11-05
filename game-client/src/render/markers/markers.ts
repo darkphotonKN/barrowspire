@@ -70,14 +70,19 @@ export interface StandingSprite {
  * - A baked corpse shows none: it lies at the feet, and a plate over the empty air where the
  *   head was reads as a bug.
  * - A placeholder (no `crown`) keeps the frame's top, exactly where its markers always were.
+ *
+ * `artScale` is the part of the sprite's scale that only draws a 2x sheet at its true size
+ * (`CharacterAnimator.artScale`, FS-HF0WW): the crown is screen px already, so only the
+ * rest of the scale (a monster's tier, a menu's size) lifts the stack.
  */
 export function markerBase(
   sprite: StandingSprite,
   crown: number | undefined,
   dead: boolean,
+  artScale = 1,
 ): number | null {
   if (crown === undefined)
     return sprite.y - sprite.displayOriginY * sprite.scaleY;
   if (dead) return null;
-  return sprite.y - (crown + HEAD_GAP) * sprite.scaleY;
+  return sprite.y - (crown + HEAD_GAP) * (sprite.scaleY / artScale);
 }

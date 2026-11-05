@@ -62,6 +62,26 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#mercenary",
         licence: "Barrowspire-original",
       },
+      // the Archer's (FS-HF0WW): baked at 2x, carrying the attack on the move, which
+      // lasts as long as the attack (14 frames at 24 fps, 7 at 12)
+      char_archer_base: {
+        atlas: "characters-0",
+        frameWidth: 326,
+        frameHeight: 288,
+        scale: 2,
+        anchor: { x: 0.423, y: 0.75 },
+        directions: 8,
+        animations: {
+          idle: clip(5, true, 6),
+          walk: clip(10, true, 8),
+          attack: clip(12, false, 7),
+          death: clip(9, false, 7),
+          walk_attack: clip(24, false, 14),
+        },
+        crown: 78,
+        source: "authored: tools/bake/page/characters/cast.js#archer",
+        licence: "Barrowspire-original",
+      },
       // a hub resident's build: its first palette plain, a second as a variant
       folk_resident_trousers: {
         atlas: "characters-0",
@@ -90,6 +110,7 @@ function fakeSprite() {
     texture: "",
     frame: undefined as string | number | undefined,
     origin: { x: 0.5, y: 0.5 },
+    scale: 1,
     plays: [] as { key: string; startFrame?: number }[],
     anims: {
       currentAnim: null as { key: string; frames: unknown[] } | null,
@@ -102,6 +123,9 @@ function fakeSprite() {
     },
     setOrigin(x: number, y: number) {
       sprite.origin = { x, y };
+    },
+    setScale(x: number) {
+      sprite.scale = x;
     },
     play(config: string | { key: string; startFrame?: number }) {
       const c = typeof config === "string" ? { key: config } : config;
@@ -392,6 +416,134 @@ describe("CharacterAnimator", () => {
     anim.attack(0);
     expect(anim.step({ x: 0, y: 0 }, 499, FRAME, false).animation).toBe("attack");
     expect(anim.step({ x: 0, y: 0 }, 500, FRAME, false).animation).toBe("idle");
+  });
+
+  describe("a sheet baked at 2x (FS-HF0WW)", () => {
+    it("should draw it at half scale, so it stands exactly as large as a 1x sheet", () => {
+      const archer = new CharacterAnimator(art(), "archer");
+      const knight = new CharacterAnimator(art(), "warrior");
+      expect(archer.artScale).toBe(0.5);
+      expect(knight.artScale).toBe(1);
+      const a = fakeSprite();
+      const k = fakeSprite();
+      archer.dress(a);
+      knight.dress(k);
+      expect(a.scale).toBe(0.5);
+      expect(k.scale).toBe(1);
+      // the anchor is a fraction of the frame: the feet land on the world position either way
+      expect(a.origin).toEqual({ x: 0.423, y: 0.75 });
+    });
+
+    it("should compose a size with the art scale: a menu's 1.5 is 0.75 on a 2x sheet", () => {
+      const sprite = fakeSprite();
+      new CharacterAnimator(art(), "archer").dress(sprite, 1.5);
+      expect(sprite.scale).toBe(0.75);
+      new CharacterAnimator(art(), "warrior").dress(sprite, 1.5);
+      expect(sprite.scale).toBe(1.5);
+    });
+
+    it("should keep its head height in screen px, not the frame's px", () => {
+      expect(new CharacterAnimator(art(), "archer").crown).toBe(78);
+    });
+
+    it("should have no art scale without a baked sheet", () => {
+      expect(new CharacterAnimator(ArtLibrary.empty(quiet), "archer").artScale).toBe(1);
+    });
+  });
+
+  describe("attacking on the move (walk_attack, FS-HF0WW)", () => {
+    /** An archer drawn walking east at the server's pace, then loosing at `aim`. */
+    function shootingWhileWalking(aim: { x: number; y: number }) {
+      const anim = new CharacterAnimator(art(), "archer");
+      const pos = { x: 0, y: 0 };
+      for (let t = 0; t <= 300; t += FRAME) {
+        pos.x += (200 * FRAME) / 1000;
+        anim.step(pos, t, FRAME, false);
+      }
+      anim.attack(300, aim);
+      pos.x += (200 * FRAME) / 1000;
+      return { anim, choice: anim.step(pos, 300 + FRAME, FRAME, false), pos };
+    }
+
+    it("should keep the legs walking while the archer shoots on the move, turned to the aim", () => {
+      const { choice } = shootingWhileWalking({ x: 0, y: -40 });
+      expect(choice).toMatchObject({ animation: "walk_attack", facing: "n", timeScale: 1 });
+    });
+
+    it("should shoot standing still with the whole-body attack", () => {
+      const anim = new CharacterAnimator(art(), "archer");
+      anim.attack(0, { x: 40, y: 0 });
+      expect(anim.step({ x: 0, y: 0 }, 0, FRAME, false).animation).toBe("attack");
+    });
+
+    it("should leave every sheet without the clip sliding its attack along, as before", () => {
+      const anim = new CharacterAnimator(art(), "warrior");
+      const pos = { x: 0, y: 0 };
+      for (let t = 0; t <= 300; t += FRAME) {
+        pos.x += (200 * FRAME) / 1000;
+        anim.step(pos, t, FRAME, false);
+      }
+      anim.attack(300, { x: 0, y: -40 });
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + FRAME, FRAME, false).animation).toBe("attack");
+    });
+
+    it("should end with the attack window, which the attack clip times (583 ms)", () => {
+      const { anim, pos } = shootingWhileWalking({ x: 40, y: 0 });
+      pos.x += 3;
+      expect(anim.step(pos, 300 + 583, FRAME, false).animation).toBe("walk_attack");
+      pos.x += 3;
+      expect(anim.step(pos, 300 + 584, FRAME, false).animation).toBe("walk");
+    });
+
+    it("should play it from its first frame on each new shot", () => {
+      const sprite = fakeSprite();
+      const anim = new CharacterAnimator(art(), "archer");
+      const shot = { animation: "walk_attack", facing: "e", direction: 0, timeScale: 1 } as const;
+      anim.attack(0);
+      anim.show(sprite, shot);
+      sprite.at(6);
+      anim.show(sprite, shot);
+      anim.attack(600);
+      anim.show(sprite, shot);
+      expect(sprite.plays).toEqual([
+        { key: "char_archer_base/walk_attack/0", startFrame: 0 },
+        { key: "char_archer_base/walk_attack/0", startFrame: 0 },
+      ]);
+    });
+
+    it("should carry a shot on from where it got when the archer starts or stops moving mid-draw", () => {
+      const sprite = fakeSprite();
+      const anim = new CharacterAnimator(art(), "archer");
+      anim.attack(0);
+      anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
+      sprite.at(3); // the attack's 4th of 7 (the fake lists 8 frames: 3 of 8 → 5 of 14)
+      anim.show(sprite, { animation: "walk_attack", facing: "e", direction: 0, timeScale: 1 });
+      expect(sprite.plays[1]).toEqual({ key: "char_archer_base/walk_attack/0", startFrame: 5 });
+      sprite.at(6);
+      anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
+      expect(sprite.plays[2]).toEqual({ key: "char_archer_base/attack/0", startFrame: 5 });
+    });
+
+    it("should still start a walk from its first frame when the shot ends", () => {
+      const sprite = fakeSprite();
+      const anim = new CharacterAnimator(art(), "archer");
+      anim.show(sprite, { animation: "walk_attack", facing: "e", direction: 0, timeScale: 1 });
+      sprite.at(7);
+      anim.show(sprite, { animation: "walk", facing: "e", direction: 0, timeScale: 2.7 });
+      expect(sprite.plays[1]).toEqual({ key: "char_archer_base/walk/0", startFrame: 0 });
+    });
+
+    it("should hold a charge's pose whole, never split over the walk", () => {
+      const motion = new CharacterMotion("se", 500, { walkAttack: true });
+      motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
+      motion.attack(1000, { x: 40, y: 0 }, 800);
+      const pos = { x: 0, y: 0 };
+      for (let t = 1000 + FRAME; t < 1799; t += FRAME) {
+        pos.x += (450 * FRAME) / 1000;
+        expect(motion.step(pos, t, FRAME, false).animation).toBe("attack");
+      }
+    });
   });
 
   describe("drawing a look rather than a class (hub folk, FS-2325V §G)", () => {

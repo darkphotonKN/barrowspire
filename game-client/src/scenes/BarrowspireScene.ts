@@ -178,6 +178,21 @@ const grown = (r: { x: number; y: number; width: number; height: number }, by: n
   width: r.width + by * 2,
   height: r.height + by * 2,
 });
+/** Px each way of the arcade body a 1x sheet's player sprite has: the 60x60 placeholder's. */
+const PLAYER_BODY_PX = 60;
+/**
+ * A sheet baked at 2x is drawn at half scale (FS-HF0WW). The arcade body is sized off the
+ * sprite's scale, so it is sized here from the fixed 1x size to keep the size a 1x sheet's body
+ * has; calling it again leaves it as it is.
+ */
+export function keepBodySize(
+  sprite: Pick<Phaser.Physics.Arcade.Sprite, "body">,
+  artScale: number,
+): void {
+  const body = sprite.body as Phaser.Physics.Arcade.Body | null | undefined;
+  if (!body || artScale === 1) return;
+  body.setSize(PLAYER_BODY_PX / artScale, PLAYER_BODY_PX / artScale, false);
+}
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
 /**
@@ -2763,7 +2778,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // The class's baked sheet, stood on its footprint by the sheet's anchor
     // (FS-2325V §E.5); the placeholder texture only when the sheet is missing.
     this.playerAnim = new CharacterAnimator(this.art, effectiveClass, this.playerFacing);
-    if (this.playerAnim.baked) this.playerAnim.dress(this.player);
+    if (this.playerAnim.baked) {
+      this.playerAnim.dress(this.player);
+      keepBodySize(this.player, this.playerAnim.artScale);
+    }
     // set circular physics body to match backend collision (radius 20), offset for 60x60 texture
     else this.player.body?.setCircle(20, 10, 10);
     this.settleDustOnDeath(this.player, "self", () => this.playerPos);
@@ -2775,7 +2793,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drawLegs(this.playerLegs, at.x, at.y, this.playerFacing, 0, false, palette.hudLabel);
 
     // username label above player
-    const base = markerBase(this.player, this.playerAnim.crown, false) ?? at.y;
+    const base = markerBase(this.player, this.playerAnim.crown, false, this.playerAnim.artScale) ?? at.y;
     this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
@@ -3643,7 +3661,12 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private ownMarkerBase(): number | null {
     if (!this.player) return null;
-    return markerBase(this.player, this.playerAnim?.crown, isDead(this.lastGameState?.current_player));
+    return markerBase(
+      this.player,
+      this.playerAnim?.crown,
+      isDead(this.lastGameState?.current_player),
+      this.playerAnim?.artScale,
+    );
   }
 
   private updateOtherPlayers(
@@ -3704,8 +3727,10 @@ export class BarrowspireScene extends Phaser.Scene {
         // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing.
         const anim = new CharacterAnimator(this.art, cls);
         this.otherPlayersAnim.set(playerData.id, anim);
-        if (anim.baked) anim.dress(sprite);
-        else if (sprite.body) {
+        if (anim.baked) {
+          anim.dress(sprite);
+          keepBodySize(sprite, anim.artScale);
+        } else if (sprite.body) {
           (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
         }
         this.settleDustOnDeath(sprite, playerData.id, () => this.otherPlayersPos.get(playerData.id));
@@ -3736,7 +3761,7 @@ export class BarrowspireScene extends Phaser.Scene {
         // their name, always over their head in the ally channel (FS-77AB6 req 40, FS-CH21F R13)
         const nameText = this.add.text(
           sprite.x,
-          (markerBase(sprite, anim.crown, false) ?? sprite.y) - NAME_GAP,
+          (markerBase(sprite, anim.crown, false, anim.artScale) ?? sprite.y) - NAME_GAP,
           playerData.username || "Unknown",
           {
             fontSize: "11px",
@@ -5032,7 +5057,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const sprite = this.otherPlayers.get(playerId);
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
-    const base = markerBase(sprite, this.otherPlayersAnim.get(playerId)?.crown, dead);
+    const anim = this.otherPlayersAnim.get(playerId);
+    const base = markerBase(sprite, anim?.crown, dead, anim?.artScale);
     // the switch alone decides, not whether a bar happens to be in the map
     const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
     const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;

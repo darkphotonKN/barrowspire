@@ -6,6 +6,7 @@ Scope: `game-client` in-game canvas (Phaser scenes, sprites, tiles, lighting). N
 Builds on: [ADR-0013](0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (token-only colour), which stands unchanged
 Realized by: FS-2325V
 Amended by: ADR-0021 — Decision 6 (characters are authored in code, not sourced)
+Amended by: ADR-0058 — Decision 5 (the manifest also records a sheet's `scale` and a trimmed sheet's per-frame `trim`)
 
 ## Context
 

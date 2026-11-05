@@ -29,6 +29,18 @@
  * - A quadruped's `length` is measured the same way, side-on: screen px across its opaque idle
  *   silhouette in the facings that lay its body along the screen (ne, sw), the longest. Its size
  *   tier is taken by body length, not height (guideline "Size is a threat tier", FS-X2F2H R61).
+ * - A sheet's `scale` (absent: 1) is how many of its px make one screen px: a sheet baked at 2x
+ *   (FS-HF0WW) holds twice the detail each way and is drawn at half size
+ *   ({@link sheetScale}), so it stands exactly as large as a 1x sheet. Its frame geometry
+ *   (`frameWidth`, `frameHeight`, frame positions) is in its own px, as the atlas holds them; the
+ *   anchor is a fraction, so it holds either way; `crown`, `length` and a light stay screen px.
+ * - A `trimmed` sheet (FS-HF0WW) had each frame cut to the box that holds its pixels before
+ *   packing, so its atlas stores no empty margin. Each frame then also records its `trim`: where
+ *   the cut sits inside the sheet's `frameWidth` x `frameHeight`, in the sheet's px and on whole
+ *   screen px (multiples of `scale`). The atlas holds the cut, `trim.w` x `trim.h`, at the frame's
+ *   (x, y). The client registers it as a trimmed frame of the whole frame's size (`phaser.ts`), so
+ *   it draws, anchors and sizes as the whole frame would; anything else reading frames from the
+ *   atlas must put the cut back at `trim.x`, `trim.y` itself.
  */
 
 import type { Facing8 } from "@/render/iso/facing";
@@ -61,9 +73,22 @@ export function directionIndex(facing: Facing8): number {
   return DIRECTION_ORDER.indexOf(facing);
 }
 
+/**
+ * Where a trimmed frame's cut sits inside its whole frame: the offset of its top-left and its
+ * size, in the sheet's px, each a multiple of the sheet's `scale`.
+ */
+export interface ArtFrameTrim {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface ArtFramePosition {
   x: number;
   y: number;
+  /** A `trimmed` sheet's frames only: the cut the atlas holds at (x, y), and where it sits. */
+  trim?: ArtFrameTrim;
 }
 
 export interface ArtAnimation {
@@ -99,6 +124,13 @@ export interface ArtLight {
   flicker: number;
 }
 
+/** The most px per screen px a sheet may be baked at. */
+export const MAX_SHEET_SCALE = 4;
+
+/** A sheet's px per screen px: its `scale`, or 1. */
+export const sheetScale = (sheet: Pick<ArtSheet, "scale">): number =>
+  sheet.scale ?? 1;
+
 /** An sRGB colour, 0..255 per channel. */
 export interface ArtRgb {
   r: number;
@@ -108,8 +140,19 @@ export interface ArtRgb {
 
 export interface ArtSheet {
   atlas: string;
+  /** In the sheet's own px: `scale` of them to a screen px. */
   frameWidth: number;
   frameHeight: number;
+  /**
+   * The sheet's px per screen px, a whole number; absent is 1. Read it through
+   * {@link sheetScale}.
+   */
+  scale?: number;
+  /**
+   * The frames were cut to their pixels at bake time: every frame records its `trim`. Absent,
+   * every frame is whole, `frameWidth` x `frameHeight` in the atlas.
+   */
+  trimmed?: true;
   anchor: { x: number; y: number };
   directions: 1 | 8;
   animations: Record<string, ArtAnimation>;
@@ -251,6 +294,31 @@ function checkSheet(
     if (!isPositiveInt(sheet[dim]))
       errors.push(`${at}: ${dim} must be a positive integer`);
 
+  // only a character or creature sheet (one with a walk clip) is drawn through sheetScale and
+  // registered trimmed; every other reader of the atlas takes its frames whole at 1x (ADR-0058)
+  const walks =
+    isObject(sheet.animations) && sheet.animations.walk !== undefined;
+  for (const key of ["scale", "trimmed"] as const)
+    if (sheet[key] !== undefined && !walks)
+      errors.push(
+        `${at}: ${key} is read on character and creature sheets only (a sheet with a walk clip)`,
+      );
+
+  const scale = sheet.scale !== undefined ? sheet.scale : 1;
+  if (!isPositiveInt(scale) || scale > MAX_SHEET_SCALE)
+    errors.push(
+      `${at}: scale must be a whole number from 1 to ${MAX_SHEET_SCALE}`,
+    );
+  else if (
+    isPositiveInt(sheet.frameWidth) &&
+    isPositiveInt(sheet.frameHeight) &&
+    (sheet.frameWidth % scale !== 0 || sheet.frameHeight % scale !== 0)
+  )
+    errors.push(`${at}: frameWidth and frameHeight must be multiples of scale`);
+
+  if (sheet.trimmed !== undefined && sheet.trimmed !== true)
+    errors.push(`${at}: trimmed must be true, or left out`);
+
   const anchor = sheet.anchor;
   if (!isObject(anchor) || !isFraction(anchor.x) || !isFraction(anchor.y))
     errors.push(`${at}: anchor must be {x, y} fractions within 0..1`);
@@ -273,6 +341,9 @@ function checkSheet(
         errors,
       );
 
+  if (isObject(animations) && animations.walk_attack !== undefined)
+    checkWalkAttack(at, animations, errors);
+
   if (sheet.light !== undefined) checkLight(`${at} light`, sheet.light, errors);
   if (sheet.mean !== undefined && !isRgb(sheet.mean))
     errors.push(`${at}: mean must be {r, g, b} integers within 0..255`);
@@ -282,7 +353,7 @@ function checkSheet(
     !(
       isPositiveInt(sheet.length) &&
       isPositiveInt(sheet.frameWidth) &&
-      sheet.length <= sheet.frameWidth
+      sheet.length <= sheet.frameWidth / screenScale(sheet)
     )
   )
     errors.push(
@@ -293,12 +364,46 @@ function checkSheet(
   if (!isText(sheet.licence)) errors.push(`${at}: licence must be recorded`);
 }
 
-/** A crown is a whole number of px, above the anchor and no higher than the frame's top. */
+/** An animation's length in seconds, or undefined when its fps or frames are unsound. */
+const clipSeconds = (anim: unknown): number | undefined =>
+  isObject(anim) &&
+  isFinite(anim.fps) &&
+  anim.fps > 0 &&
+  Array.isArray(anim.frames) &&
+  Array.isArray(anim.frames[0])
+    ? anim.frames[0].length / anim.fps
+    : undefined;
+
+/**
+ * `walk_attack` plays in the window the client times from `attack` (FS-HF0WW), so it must last
+ * exactly as long: frame count over fps the same.
+ */
+function checkWalkAttack(at: string, animations: Json, errors: string[]) {
+  const walkAttack = clipSeconds(animations.walk_attack);
+  const attack = clipSeconds(animations.attack);
+  if (
+    walkAttack === undefined ||
+    attack === undefined ||
+    Math.abs(walkAttack - attack) > 1e-9
+  )
+    errors.push(
+      `${at}: walk_attack must last as long as attack (frame count / fps)`,
+    );
+}
+
+/** A sheet's scale while validating it: a bad one is reported once, and read here as 1. */
+const screenScale = (sheet: Json): number =>
+  isPositiveInt(sheet.scale) ? sheet.scale : 1;
+
+/**
+ * A crown is a whole number of screen px, above the anchor and no higher than the frame's top
+ * (both taken in screen px, so a 2x sheet's frame counts at half its px).
+ */
 function checkCrown(at: string, sheet: Json, errors: string[]) {
   const { crown, anchor, frameHeight } = sheet;
   const anchorPx =
     isObject(anchor) && isFraction(anchor.y) && isPositiveInt(frameHeight)
-      ? Math.round(anchor.y * frameHeight)
+      ? Math.round((anchor.y * frameHeight) / screenScale(sheet))
       : Infinity;
   if (!isPositiveInt(crown) || crown > anchorPx)
     errors.push(
@@ -346,8 +451,7 @@ function checkAnimation(
       `${at}: frame count must be at least 1 and equal in every direction`,
     );
 
-  const fw = sheet.frameWidth;
-  const fh = sheet.frameHeight;
+  const trimmed = sheet.trimmed === true;
   frames.forEach((dir: unknown[], d: number) =>
     dir.forEach((frame, i) => {
       if (
@@ -358,19 +462,64 @@ function checkAnimation(
         return void errors.push(
           `${at}: frame ${d}/${i} needs integer x, y >= 0`,
         );
+      if (trimmed !== (frame.trim !== undefined))
+        return void errors.push(
+          trimmed
+            ? `${at}: frame ${d}/${i} of a trimmed sheet needs its trim`
+            : `${at}: frame ${d}/${i} has a trim, but the sheet is not trimmed`,
+        );
+      // what the atlas holds at (x, y): the cut of a trimmed frame, else the whole frame
+      const size = trimmed
+        ? checkTrim(`${at}: frame ${d}/${i} trim`, frame.trim, sheet, errors)
+        : { w: sheet.frameWidth, h: sheet.frameHeight };
       if (
+        size &&
         isObject(atlas) &&
-        isPositiveInt(fw) &&
-        isPositiveInt(fh) &&
+        isPositiveInt(size.w) &&
+        isPositiveInt(size.h) &&
         isPositiveInt(atlas.width) &&
         isPositiveInt(atlas.height) &&
-        (frame.x + fw > atlas.width || frame.y + fh > atlas.height)
+        (frame.x + size.w > atlas.width || frame.y + size.h > atlas.height)
       )
         errors.push(
           `${at}: frame ${d}/${i} lies outside atlas ${String(atlasKey)}`,
         );
     }),
   );
+}
+
+/**
+ * A trimmed frame's cut: whole px, a non-empty rect inside the frame, on whole screen px
+ * (multiples of the sheet's scale). Returns its size when it is sound, so the caller can check
+ * the cut against the atlas.
+ */
+function checkTrim(
+  at: string,
+  trim: unknown,
+  sheet: Json,
+  errors: string[],
+): { w: number; h: number } | undefined {
+  if (
+    !isObject(trim) ||
+    !isNonNegativeInt(trim.x) ||
+    !isNonNegativeInt(trim.y) ||
+    !isPositiveInt(trim.w) ||
+    !isPositiveInt(trim.h)
+  )
+    return void errors.push(`${at} needs integer x, y >= 0 and w, h > 0`);
+  const { frameWidth: fw, frameHeight: fh } = sheet;
+  if (
+    isPositiveInt(fw) &&
+    isPositiveInt(fh) &&
+    (trim.x + trim.w > fw || trim.y + trim.h > fh)
+  )
+    return void errors.push(`${at} must lie inside the frame`);
+  const scale = screenScale(sheet);
+  if ([trim.x, trim.y, trim.w, trim.h].some((v) => v % scale !== 0))
+    return void errors.push(
+      `${at} must be on whole screen px (multiples of scale)`,
+    );
+  return { w: trim.w, h: trim.h };
 }
 
 function checkLight(at: string, light: unknown, errors: string[]) {

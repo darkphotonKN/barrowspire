@@ -40,7 +40,7 @@ const sheet = (atlas: string) => ({
   licence: "Barrowspire-original",
 });
 
-function library(): ArtLibrary {
+function library({ trimmedArcher = false } = {}): ArtLibrary {
   const manifest: ArtManifest = {
     version: 1,
     tile: { width: 64, height: 32 },
@@ -62,6 +62,15 @@ function library(): ArtLibrary {
     sheets: {
       char_knight_base: sheet("characters-0"),
       char_wizard_base: sheet("characters-1"),
+      // the knight's figure baked at 2x (FS-HF0WW): twice the px each way, same anchor
+      // fraction, same crown in screen px
+      char_archer_base: {
+        ...sheet("characters-1"),
+        frameWidth: 320,
+        frameHeight: 292,
+        scale: 2,
+        ...(trimmedArcher ? { trimmed: true as const } : {}),
+      },
     },
   };
   return new ArtLibrary(manifest, quiet);
@@ -264,6 +273,52 @@ describe("MenuFigure", () => {
     expect(new Set(sprite.plays.map((p) => p.key))).toEqual(
       new Set(["char_knight_base/idle/1"]),
     );
+  });
+
+  describe("a sheet baked at 2x (FS-HF0WW)", () => {
+    it("stands exactly as large as a 1x sheet at every menu scale, swapping class included", () => {
+      const scene = fakeScene();
+      const figure = new MenuFigure(asScene(scene), library(), 0, 0, "archer", { scale: 1.5 });
+      const sprite = scene.sprites[0];
+      expect(sprite.scale).toBe(0.75);
+      figure.setClass("warrior");
+      expect(sprite.scale).toBe(1.5);
+      figure.setClass("archer");
+      expect(sprite.scale).toBe(0.75);
+    });
+
+    it("crops a portrait to the same window and head as the 1x sheet, in the frame's own px", () => {
+      const portrait = { width: 50, height: 60 };
+      const knight = fakeScene();
+      new MenuFigure(asScene(knight), library(), 0, 0, "warrior", { portrait });
+      const archer = fakeScene();
+      new MenuFigure(asScene(archer), library(), 0, 0, "archer", { portrait });
+      const [k] = knight.sprites;
+      const [a] = archer.sprites;
+      expect(a.scale).toBe(0.5);
+      expect(a.crop).toEqual(k.crop!.map((v) => v * 2));
+      expect(a.y).toBe(k.y);
+    });
+
+    it("sets a trimmed sheet's portrait window again each frame, as Phaser narrows it when a trimmed frame changes", () => {
+      const portrait = { width: 50, height: 60 };
+      const archer = fakeScene();
+      new MenuFigure(asScene(archer), library({ trimmedArcher: true }), 0, 0, "archer", { portrait });
+      const [a] = archer.sprites;
+      const window = a.crop;
+      // what Frame.updateCropUVs leaves after a frame change: the overlap with the last cut
+      a.crop = [window![0] + 6, window![1], window![2] - 6, window![3]];
+      archer.frame(0);
+      expect(a.crop).toEqual(window);
+
+      // a whole-frame sheet's crop is Phaser's own to keep: set once
+      const knight = fakeScene();
+      new MenuFigure(asScene(knight), library({ trimmedArcher: true }), 0, 0, "warrior", { portrait });
+      const [k] = knight.sprites;
+      k.crop = [1, 2, 3, 4];
+      knight.frame(0);
+      expect(k.crop).toEqual([1, 2, 3, 4]);
+    });
   });
 
   it("with no art, stands a neutral placeholder and never throws", () => {

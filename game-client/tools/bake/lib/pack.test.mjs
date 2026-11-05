@@ -126,3 +126,84 @@ describe("packAtlases", () => {
     });
   });
 });
+
+describe("a trimmed sheet (FS-HF0WW, lib/trim.mjs)", () => {
+  // frames cut to their pixels: each its own size, none larger than the 160 x 140 frame
+  const sizes = (n, seed = 1) =>
+    Array.from({ length: n }, (_, i) => ({ w: 40 + ((i * 37 + seed * 11) % 120), h: 50 + ((i * 53 + seed * 7) % 90) }));
+  const trimmed = (name, group, frames, animations) => ({
+    ...sheet(name, group, 160, 140, frames.length),
+    frames,
+    ...(animations ? { animations } : {}),
+  });
+  const rectsOf = (page, s) =>
+    Object.entries(page.placements)
+      .filter(([name]) => name === s.name)
+      .flatMap(([, spots]) => spots.map((o, i) => ({ ...o, w: s.frames[i].w, h: s.frames[i].h })));
+
+  it("packs each frame at its own size, within the page, never overlapping, PAD apart", () => {
+    const s = trimmed("archer", "archer", sizes(80));
+    const [page, more] = packAtlases([s]);
+    expect(more).toBeUndefined();
+    const rects = rectsOf(page, s);
+    expect(rects).toHaveLength(80);
+    for (const r of rects) {
+      expect(r.x).toBeGreaterThanOrEqual(2);
+      expect(r.y).toBeGreaterThanOrEqual(2);
+      expect(r.x + r.w).toBeLessThanOrEqual(page.width);
+      expect(r.y + r.h).toBeLessThanOrEqual(page.height);
+    }
+    // grown by the padding, no two frames touch: the packer keeps PAD (2) between them
+    const grown = rects.map((r) => ({ x: r.x, y: r.y, w: r.w + 2, h: r.h + 2 }));
+    grown.forEach((a, i) => grown.slice(i + 1).forEach((b) => expect(overlaps(a, b)).toBe(false)));
+  });
+
+  it("needs a smaller page than the same frames uncut", () => {
+    const cut = trimmed("archer", "archer", sizes(80));
+    const whole = sheet("archer", "archer", 160, 140, 80);
+    const area = (pages) => pages.reduce((n, p) => n + p.width * p.height, 0);
+    expect(area(packAtlases([cut]))).toBeLessThan(area(packAtlases([whole])) * 0.75);
+  });
+
+  it("packs identically every time", () => {
+    const s = trimmed("archer", "archer", sizes(60));
+    expect(packAtlases([s])).toEqual(packAtlases([structuredClone(s)]));
+  });
+
+  it("splits by animation when the cut frames cannot fit one page, each animation whole on one page", () => {
+    const frames = Array.from({ length: 4 * 120 }, () => ({ w: 300, h: 260 }));
+    const anims = ["idle", "walk", "attack", "death"].map((name) => ({ name, frameCount: 120 }));
+    const s = trimmed("big", "big", frames, anims);
+    s.frameWidth = 320;
+    s.frameHeight = 280;
+    const pages = packAtlases([s]);
+    expect(pages.length).toBeGreaterThan(1);
+    const seen = {};
+    for (const p of pages) {
+      expect(p.placements.big).toBeUndefined();
+      expect(p.width).toBeLessThanOrEqual(MAX_SIZE);
+      expect(p.height).toBeLessThanOrEqual(MAX_SIZE);
+      for (const [anim, spots] of Object.entries(p.parts.big ?? {})) {
+        expect(seen[anim]).toBeUndefined();
+        seen[anim] = p.key;
+        expect(spots).toHaveLength(120);
+        for (const o of spots) {
+          expect(o.x + 300).toBeLessThanOrEqual(p.width);
+          expect(o.y + 260).toBeLessThanOrEqual(p.height);
+        }
+      }
+    }
+    expect(Object.keys(seen).sort()).toEqual(["attack", "death", "idle", "walk"]);
+  });
+
+  it("leaves every other group's pages as they were", () => {
+    const others = [sheet("a", "creatures", 216, 191, 224), sheet("b", "creatures", 124, 125, 224)];
+    const withArcher = packAtlases([...others, trimmed("archer", "archer", sizes(80))]);
+    expect(withArcher.filter((p) => p.group === "creatures")).toEqual(packAtlases(others));
+  });
+
+  it("refuses frame sizes that do not match the frame count", () => {
+    const s = { ...trimmed("archer", "archer", sizes(5)), frameCount: 6 };
+    expect(() => packAtlases([s])).toThrow(/archer.*5 frame sizes for 6/);
+  });
+});

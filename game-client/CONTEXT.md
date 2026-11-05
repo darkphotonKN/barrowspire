@@ -192,7 +192,17 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Sprite manifest**: `public/art/manifest.json`, the bake's index. It records, per sheet: frame
   size, anchor, directions, frame counts, fps, declared light source, asset source/licence, and
   two measured values: a ground sheet's mean colour and a standing sheet's head height (`crown`).
-  The client learns about art only through it.
+  A sheet may also record its **sheet scale** and be **trimmed** (both below). The client learns
+  about art only through it.
+- **Sheet scale**: how many of a sheet's px make one screen px (`scale` in the manifest; absent
+  is 1). A sheet baked at 2x holds twice the detail each way and is drawn at half size, so it
+  stands exactly as large as at 1x; its frame size and atlas positions are in its own px, while
+  `crown`, markers, the footprint and every other size stay screen px (ADR-0058, FS-HF0WW).
+- **Trimmed sheet**: a sheet whose frames were each cut, at bake time, to the box that holds their
+  pixels; the atlas stores only the cut and the manifest says where it sits in the whole frame
+  (`trim`). Drawn, anchored and sized as the whole frame (ADR-0058, FS-HF0WW).
+- **Walk-attack** (`walk_attack`): the archer's attack drawn while he moves: the shot from the
+  waist up over the walk from the waist down, the legs facing the aim (FS-HF0WW).
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
   player's torch pool). It is declared per prop type in the sprite manifest, or attached to the
   player. Purely visual: it has no effect on what anyone can see or hit.

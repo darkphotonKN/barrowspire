@@ -189,11 +189,15 @@ const D = ${data};
 const root = document.getElementById("root");
 const imgs = {};
 for (const [k, src] of Object.entries(D.atlases)) { imgs[k] = new Image(); imgs[k].src = src; }
-function frameCanvas(s, img, pos, z) {
+function frameCanvas(s, img, pos, zoom) {
+  // a sheet baked at 2x (FS-HF0WW) is drawn at half its px, as the game draws it
+  const z = zoom / (s.scale || 1);
   const c = document.createElement("canvas");
   c.width = s.frameWidth * z; c.height = s.frameHeight * z;
+  // a trimmed frame's cut goes back where it was cut from (lib/trim.mjs)
   const draw = (p) => { const g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height);
-    g.drawImage(img, p.x, p.y, s.frameWidth, s.frameHeight, 0, 0, c.width, c.height); };
+    const t = p.trim || { x: 0, y: 0, w: s.frameWidth, h: s.frameHeight };
+    g.drawImage(img, p.x, p.y, t.w, t.h, t.x * z, t.y * z, t.w * z, t.h * z); };
   if (img.complete) draw(pos); else img.addEventListener("load", () => draw(pos));
   c.draw = draw;
   return c;

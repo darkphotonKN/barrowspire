@@ -9,7 +9,8 @@ import { CATALOGUE, ICON_SIZE } from "./catalogue.js";
 import { TILE_H, TILE_W } from "./projection.js";
 import { FACINGS, yawFor } from "./facing.js";
 import { cssRgb } from "./palette.js";
-import { ANIMATIONS, applyPose, clipsFor, groundPose, simulateSprings } from "./characters/clips.js";
+import { ANIMATIONS, applyPose, clipsFor, groundPose, pose, simulateSprings } from "./characters/clips.js";
+import { clearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
 
 let baker = null;
 
@@ -100,6 +101,8 @@ window.bakeSheet = (name) => {
     directions: 1,
     animations,
     ...(light ? { light } : {}),
+    // frames cut to their pixels at pack time (bake.mjs, lib/trim.mjs)
+    ...(sheet.trim ? { trim: true } : {}),
     source: sheet.source,
     licence: sheet.licence,
   };
@@ -111,48 +114,20 @@ window.bakeSheet = (name) => {
  * Frame lists come back in FACINGS order, which the manifest records.
  */
 function bakeCharacterSheet(sheet) {
-  const { rig, style, variants = [{ name: null, dress: () => {} }] } = sheet.build();
-  const specs = sheet.animations ?? ANIMATIONS;
-  const clips = clipsFor(style, specs);
-  const poses = [];
-  const animations = {};
-  const springs = {};
-  for (const [anim, spec] of Object.entries(specs)) {
-    const frames = clips[anim];
-    if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
-    springs[anim] = simulateSprings(rig, frames, {
-      ...spec,
-      speed: anim === "walk" ? (style.speed ?? 1) : 0,
-      settle: anim === "death",
-      calm: anim === "attack" || anim === "parry" ? 0.25 : 1,
-    });
-  }
-  // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
-  // first palette's as `<anim>_<palette>` (src/render/art/hubFolk.ts reads them so).
-  variants.forEach((variant, v) => {
-    for (const [anim, spec] of Object.entries(specs)) {
-      const frames = clips[anim];
-      const name = v === 0 ? anim : `${anim}_${variant.name}`;
-      animations[name] = { fps: spec.fps, loop: spec.loop, frames: FACINGS.map(() => []) };
-      frames.forEach((p, i) =>
-        poses.push({
-          anim: name,
-          i,
-          apply: () => {
-            variant.dress();
-            applyPose(rig, p, springs[anim][i]);
-            groundPose(rig);
-            for (const hook of rig.hooks ?? []) hook(rig, p);
-          },
-        }),
-      );
-    }
+  const { rig, poses, animations } = characterPoses(sheet);
+  // the guard: no clip may carry a leg out through the garment (characters/clearance.js)
+  const error = clearanceError(sheet.name, legClearance(rig, poses, { restPose: pose(), applyPose, groundPose }), {
+    mirrored: mirroredGarment(rig),
   });
+  if (error) throw new Error(error);
+  // a sheet baked at `scale` px per screen px (FS-HF0WW): the same frame box and anchor,
+  // every frame `scale` times as many px each way
+  const scale = sheet.scale ?? 1;
   const out = baker.bakeCharacter(
     rig.root,
     poses.map((p) => p.apply),
     FACINGS.map(yawFor),
-    rig.opacity ? { opacity: rig.opacity } : {},
+    { ...(rig.opacity ? { opacity: rig.opacity } : {}), scale, sizing: poses.map((p) => p.sizing) },
   );
   poses.forEach((p, k) =>
     FACINGS.forEach((_, d) => {
@@ -166,12 +141,72 @@ function bakeCharacterSheet(sheet) {
     frameHeight: out.frameHeight,
     anchor: { x: out.anchorPx[0] / out.frameWidth, y: out.anchorPx[1] / out.frameHeight },
     directions: FACINGS.length,
+    ...(scale !== 1 ? { scale } : {}),
+    // frames cut to their pixels at pack time (bake.mjs, lib/trim.mjs)
+    ...(sheet.trim ? { trim: true } : {}),
     animations,
     // a quadruped's size tier is taken by its length (bake.mjs measures it), not its height
     ...(rig.p.quadruped ? { quadruped: true } : {}),
     source: sheet.source,
     licence: sheet.licence,
   };
+}
+
+/**
+ * How far each clip of a character sheet carries a leg out through its garment (1x px past where
+ * it sits at rest), without baking it: the guard's numbers, for tools/bake review and probes.
+ */
+window.bakeClearance = (name) => {
+  const sheet = CATALOGUE.find((s) => s.name === name && s.kind === "character");
+  if (!sheet) throw new Error(`bake: no character sheet "${name}"`);
+  const { rig, poses } = characterPoses(sheet);
+  return legClearance(rig, poses, { restPose: pose(), applyPose, groundPose });
+};
+
+/** A character sheet's rig and every pose it bakes (clip, frame, how to apply it), in bake order. */
+function characterPoses(sheet) {
+  const { rig, style, variants = [{ name: null, dress: () => {} }] } = sheet.build();
+  const specs = sheet.animations ?? ANIMATIONS;
+  const clips = clipsFor(style, specs);
+  const poses = [];
+  const animations = {};
+  const springs = {};
+  for (const [anim, spec] of Object.entries(specs)) {
+    const frames = clips[anim];
+    if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
+    // walk_attack (the Archer's shot on the move) walks its cloth like the walk and calms the
+    // shot's fling like the attack
+    springs[anim] = simulateSprings(rig, frames, {
+      ...spec,
+      speed: anim === "walk" || anim === "walk_attack" ? (style.speed ?? 1) : 0,
+      settle: anim === "death",
+      calm: anim === "attack" || anim === "parry" || anim === "walk_attack" ? 0.25 : 1,
+    });
+  }
+  // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
+  // first palette's as `<anim>_<palette>` (src/render/art/hubFolk.ts reads them so).
+  variants.forEach((variant, v) => {
+    for (const [anim, spec] of Object.entries(specs)) {
+      const frames = clips[anim];
+      const name = v === 0 ? anim : `${anim}_${variant.name}`;
+      animations[name] = { fps: spec.fps, loop: spec.loop, frames: FACINGS.map(() => []) };
+      frames.forEach((p, i) =>
+        poses.push({
+          anim: name,
+          i,
+          // a clip `boxed` into the frame the others set (the archer's walk_attack) never widens it
+          sizing: !spec.boxed,
+          apply: () => {
+            variant.dress();
+            applyPose(rig, p, springs[anim][i]);
+            groundPose(rig);
+            for (const hook of rig.hooks ?? []) hook(rig, p);
+          },
+        }),
+      );
+    }
+  });
+  return { rig, poses, animations };
 }
 
 /**

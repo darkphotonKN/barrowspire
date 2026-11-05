@@ -138,7 +138,10 @@ export function legs(rig, mat, o = {}) {
       { p: [x, ay + 0.07, 0], r: [0.029 * lr, 0.031 * lr], w: { [`shin${s}`]: 1 } },
       { p: [x, ay + 0.008, 0.002], r: [0.026 * lr, 0.029 * lr], w: { [`shin${s}`]: 0.6, [`foot${s}`]: 0.4 } },
     ];
-    out.push(skinTube(rig, cps, mat, { segs: 16, steps: 4, uv: 5 }));
+    const leg = skinTube(rig, cps, mat, { segs: 16, steps: 4, uv: 5 });
+    // what the leg-clearance guard keeps inside any garment (clearance.js)
+    leg.userData.leg = s;
+    out.push(leg);
   }
   return out;
 }
@@ -299,9 +302,58 @@ export function skirtBones(rig, o = {}) {
 }
 
 /**
+ * Keeps a skirt's swaying panels (skirtBones) out of the legs: cloth can sway away from a leg but
+ * not through it. The front panel swings at least as far forward as any leg reaches, the back
+ * panel at least as far back, and each side panel at least as far as the leg on its side, the way
+ * that leg goes: a one-sided limit on the spring's angle (applyPose, clips.js), the collision a
+ * cloth simulation would do, for the one shape a skirt has. How far a leg reaches is taken down
+ * to the deepest hem on the rig: the knee (the thigh's own angle) and, for a hem below the knee
+ * (a robe), the point on the shin at the hem, which the calf carries back as the knee folds.
+ * Bone angles are pose offsets about the hips, +x swinging back.
+ */
+function pushPanels(rig, bottom) {
+  const [, ty] = J(rig, "thighL");
+  const [, ky] = J(rig, "shinL");
+  const [, ay] = J(rig, "footL");
+  const thigh = ty - ky;
+  const shin = ky - ay;
+  rig.hemDepth = Math.max(rig.hemDepth ?? 0, ty - bottom);
+  // [furthest forward, furthest back] a leg reaches above the hem, as angles about the hips
+  const swing = (p, s) => {
+    const t = p.b[`thigh${s}`]?.[0] ?? 0;
+    if (rig.hemDepth <= thigh) return [t, t];
+    const k = t + (p.b[`shin${s}`]?.[0] ?? 0);
+    const d = Math.min(rig.hemDepth - thigh, shin);
+    const a = Math.atan2(thigh * Math.sin(t) + d * Math.sin(k), thigh * Math.cos(t) + d * Math.cos(k));
+    return [Math.min(t, a), Math.max(t, a)];
+  };
+  const side = (x, [fwd, back]) => (fwd < 0 && -fwd > back ? Math.min(x, fwd) : Math.max(x, back));
+  const push = {
+    skirtF: (x, p) => Math.min(x, swing(p, "L")[0], swing(p, "R")[0]),
+    skirtB: (x, p) => Math.max(x, swing(p, "L")[1], swing(p, "R")[1]),
+    skirtL: (x, p) => side(x, swing(p, "L")),
+    skirtR: (x, p) => side(x, swing(p, "R")),
+  };
+  for (const s of rig.springs) if (push[s.bone]) s.push = push[s.bone];
+}
+
+/**
  * A skirt, robe or tabard hem hanging from the waist. `top`/`bottom` are heights (H); `rTop`,
  * `rBottom` radii [lateral, depth]. The hem follows the thighs by `legFollow` and, with
  * `panels`, lags on the skirt spring bones. `arc` makes an open panel; `ragged` tears the hem.
+ *
+ * The legs stay inside it while they move (the leg-clearance guard, clearance.js, fails a bake
+ * where they do not), by three things:
+ *  - each half of the hem follows the thigh on ITS side. The tube is wound top to bottom, so its
+ *    side axis (tangent × front, rig.js tubeGeometry) is -x and angle 0 is the character's
+ *    right; the weights once read it as the left, so each half followed the OPPOSITE thigh;
+ *  - the follow builds from just under the waistband, full by mid-skirt, where a fitted skirt
+ *    already touches the thigh (it once built slowly toward the hem, lagging the thigh above it);
+ *  - with `panels`, the swaying panels cannot swing in through a leg: each is pushed out by how
+ *    far the legs reach above the hem (`pushPanels`); below the knee a robe hangs on the panels
+ *    alone, since the thigh does not carry the shin that kicks it.
+ * `mirrored: true` keeps the old weighting and none of the rest, for the sheets baked with it and
+ * not yet re-baked, so their pixels do not move; never use it on new work.
  */
 export function skirt(rig, mat, o = {}) {
   const top = o.top;
@@ -317,21 +369,25 @@ export function skirt(rig, mat, o = {}) {
     { p: [0, bottom, z - (o.trail ?? 0)], r: rb, w: { hips: 1 } },
   ];
   const follow = o.legFollow ?? 0.5;
+  const [, kneeY] = J(rig, "shinL");
   const panel = o.panels ? (o.panelWeight ?? 0.5) : 0;
   const weight = (t, a) => {
-    const down = Math.max(0, (t - 0.12) / 0.88) ** 1.3;
-    const lat = Math.cos(a); // +1 left, -1 right
+    const down = o.mirrored ? Math.max(0, (t - 0.12) / 0.88) ** 1.3 : THREE.MathUtils.smoothstep(t, 0.05, 0.55);
+    const lat = (o.mirrored ? 1 : -1) * Math.cos(a); // +1 left (+x), -1 right
     const fr = Math.sin(a); // +1 front, -1 back
     const L = THREE.MathUtils.smoothstep(lat, -0.35, 0.35);
     const w = { hips: 1 };
-    const legs = follow * down * (0.35 + 0.65 * Math.abs(fr) ** 0.5);
+    const reach = follow * down * (0.35 + 0.65 * Math.abs(fr) ** 0.5);
+    // under the knee the thigh's share passes to the pushed panels
+    const below = o.mirrored || !panel ? 0 : THREE.MathUtils.smoothstep(kneeY - (top - (top - bottom) * t), 0, 0.1);
+    const legs = reach * (1 - below);
     if (legs > 0) {
       w.hips -= legs;
       w.thighL = legs * L;
       w.thighR = legs * (1 - L);
     }
     if (panel > 0) {
-      const pw = panel * down;
+      const pw = panel * down + reach * below;
       w.hips -= pw;
       const f = Math.max(0, fr);
       const b = Math.max(0, -fr);
@@ -353,7 +409,13 @@ export function skirt(rig, mat, o = {}) {
         return ((t - 0.7) / 0.3) * o.ragged.depth * (0.2 + hash2(j, 3, o.ragged.seed ?? 1));
       }
     : undefined;
-  return skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false });
+  if (panel > 0 && !o.mirrored) pushPanels(rig, bottom);
+  const mesh = skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false });
+  // a garment the legs must stay inside while they move (clearance.js)
+  mesh.userData.garment = true;
+  // the bake fails a sheet off MIRRORED_LEGACY that still asks for the old weighting (clearance.js)
+  if (o.mirrored) mesh.userData.mirrored = true;
+  return mesh;
 }
 
 /**

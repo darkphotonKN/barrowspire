@@ -31,6 +31,18 @@ export const DEFAULT_ART_URL = "/art/";
 
 const PLACEHOLDER_SIZE = 32;
 
+/** The slice of a Phaser texture frame that {@link registerArt} uses: `Frame.setTrim`. */
+export interface TrimmableFrame {
+  setTrim(
+    actualWidth: number,
+    actualHeight: number,
+    destX: number,
+    destY: number,
+    destWidth: number,
+    destHeight: number,
+  ): unknown;
+}
+
 /** The slice of a Phaser scene that {@link registerArt} uses. */
 export interface ArtScene {
   cache: { json: { get(key: string): unknown } };
@@ -38,6 +50,7 @@ export interface ArtScene {
     exists(key: string): boolean;
     get(key: string): {
       has(name: string): boolean;
+      /** Phaser's `Texture.add`: the new frame, or null when the name is taken. */
       add(
         name: string,
         source: number,
@@ -45,7 +58,7 @@ export interface ArtScene {
         y: number,
         w: number,
         h: number,
-      ): unknown;
+      ): TrimmableFrame | null;
     };
   };
   anims: {
@@ -149,15 +162,30 @@ function registerFrames(
       anim.frames.forEach((frames, direction) => {
         const names = frames.map((pos, index) => {
           const frame = frameName(name, animation, direction, index);
-          if (!texture.has(frame))
-            texture.add(
+          if (!texture.has(frame)) {
+            const trim = pos.trim;
+            const added = texture.add(
               frame,
               0,
               pos.x,
               pos.y,
-              sheet.frameWidth,
-              sheet.frameHeight,
+              trim?.w ?? sheet.frameWidth,
+              trim?.h ?? sheet.frameHeight,
             );
+            // A trimmed frame (FS-HF0WW): the atlas holds only its cut, so it is put back
+            // where it was cut from, as Phaser's own TexturePacker parsers do. The frame then
+            // reports the whole frame's size (`realWidth`), which sizes the sprite, its origin
+            // and its arcade body, and the cut is drawn at its offset.
+            if (trim)
+              added?.setTrim(
+                sheet.frameWidth,
+                sheet.frameHeight,
+                trim.x,
+                trim.y,
+                trim.w,
+                trim.h,
+              );
+          }
           return frame;
         });
         const key = animationName(name, animation, direction);
