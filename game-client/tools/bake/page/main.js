@@ -10,7 +10,7 @@ import { TILE_H, TILE_W } from "./projection.js";
 import { FACINGS, yawFor } from "./facing.js";
 import { cssRgb } from "./palette.js";
 import { ANIMATIONS, applyPose, clipsFor, groundPose, pose, simulateSprings } from "./characters/clips.js";
-import { clearanceError, legClearance } from "./characters/clearance.js";
+import { clearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
 
 let baker = null;
 
@@ -116,7 +116,9 @@ window.bakeSheet = (name) => {
 function bakeCharacterSheet(sheet) {
   const { rig, poses, animations } = characterPoses(sheet);
   // the guard: no clip may carry a leg out through the garment (characters/clearance.js)
-  const error = clearanceError(sheet.name, legClearance(rig, poses, { restPose: pose(), applyPose, groundPose }));
+  const error = clearanceError(sheet.name, legClearance(rig, poses, { restPose: pose(), applyPose, groundPose }), {
+    mirrored: mirroredGarment(rig),
+  });
   if (error) throw new Error(error);
   // a sheet baked at `scale` px per screen px (FS-HF0WW): the same frame box and anchor,
   // every frame `scale` times as many px each way

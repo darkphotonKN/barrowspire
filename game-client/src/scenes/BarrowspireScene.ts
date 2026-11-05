@@ -178,14 +178,20 @@ const grown = (r: { x: number; y: number; width: number; height: number }, by: n
   width: r.width + by * 2,
   height: r.height + by * 2,
 });
+/** Px each way of the arcade body a 1x sheet's player sprite has: the 60x60 placeholder's. */
+const PLAYER_BODY_PX = 60;
 /**
  * A sheet baked at 2x is drawn at half scale (FS-HF0WW). The arcade body is sized off the
- * sprite's scale, so it is doubled here to keep the size a 1x sheet's body has.
+ * sprite's scale, so it is sized here from the fixed 1x size to keep the size a 1x sheet's body
+ * has; calling it again leaves it as it is.
  */
-function keepBodySize(sprite: Phaser.Physics.Arcade.Sprite, artScale: number): void {
+export function keepBodySize(
+  sprite: Pick<Phaser.Physics.Arcade.Sprite, "body">,
+  artScale: number,
+): void {
   const body = sprite.body as Phaser.Physics.Arcade.Body | null | undefined;
   if (!body || artScale === 1) return;
-  body.setSize(body.sourceWidth / artScale, body.sourceHeight / artScale, false);
+  body.setSize(PLAYER_BODY_PX / artScale, PLAYER_BODY_PX / artScale, false);
 }
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;

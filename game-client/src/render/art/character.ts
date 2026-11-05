@@ -72,15 +72,19 @@ export class CharacterMotion {
   /** The swing running is a charge, its pose held past the clip: never split over the walk. */
   private charging = false;
 
+  private readonly walkAttack: boolean;
+
   /**
-   * `walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, FS-HF0WW), so an
+   * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, FS-HF0WW), so an
    * attack drawn while moving keeps the legs walking.
    */
   constructor(
     public facing: Facing8 = "se",
     private readonly attackMs = PLACEHOLDER_ATTACK_MS,
-    private readonly walkAttack = false,
-  ) {}
+    clips: { walkAttack?: boolean } = {},
+  ) {
+    this.walkAttack = clips.walkAttack ?? false;
+  }
 
   /**
    * Starts the attack clip, facing `aim` (a world vector toward the target) when given. A new
@@ -186,7 +190,7 @@ export class CharacterAnimator {
       attack && attack.fps > 0
         ? (attack.frames[0].length / attack.fps) * 1000
         : PLACEHOLDER_ATTACK_MS,
-      art.animationKey(this.sheet, this.clip("walk_attack")) !== undefined,
+      { walkAttack: art.animationKey(this.sheet, this.clip("walk_attack")) !== undefined },
     );
   }
 

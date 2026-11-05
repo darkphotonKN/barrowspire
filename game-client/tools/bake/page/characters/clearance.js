@@ -21,8 +21,8 @@ import * as THREE from "three";
 import { K1 } from "../projection.js";
 
 /**
- * How far (screen px at 1x) a pose may carry a leg further out through a garment than the bind
- * pose has it. Not zero: a garment's waistband stays with the belt while the thigh under it
+ * How far (1x px, measured in model space: an upper bound on the screen) a pose may carry a leg
+ * further out through a garment than the bind pose has it. Not zero: a garment's waistband stays with the belt while the thigh under it
  * swings, so skinning alone leaves the cloth there about 1 px behind a fitted thigh (the classes
  * measure 0.9 to 1.3 px at worst); the old opposite-thigh weighting measured 4.6 to 12 px.
  */
@@ -36,18 +36,42 @@ export const UNGUARDED = ["death"];
 
 /**
  * Sheets baked before the guard whose legs still pass through their garment, each still built
- * with the old opposite-thigh weighting (`skirt({ mirrored: true })`) so its pixels do not move.
- * The list only shrinks: a sheet leaves it when it is fixed and re-baked (the guard fails a
- * listed sheet that passes, so the entry cannot outlive the fix), and a new sheet never joins it.
+ * with the old opposite-thigh weighting (`skirt({ mirrored: true })`) so its pixels do not move,
+ * each with a ceiling: its worst poke as measured on 2026-11-06 (1x px, as CLEARANCE_PX), rounded
+ * up a little. The guard fails a listed sheet that pokes past its ceiling, so a listed sheet
+ * cannot get worse unseen. The list only shrinks: a sheet leaves it when it is fixed and re-baked
+ * (the guard fails a listed sheet that passes, so the entry cannot outlive the fix), and a new
+ * sheet never joins it.
  */
-export const KNOWN_CLIPPING = new Set([
-  "creature_troll_base",
-  "creature_zombie_base",
-  "creature_ghost_base",
-  "folk_resident_trousers",
-  "folk_spirewarden",
-  "folk_quartermaster",
+export const KNOWN_CLIPPING = new Map([
+  ["creature_troll_base", 10], // 9.42
+  ["creature_zombie_base", 6.5], // 5.94
+  ["creature_ghost_base", 7], // 6.50
+  ["folk_resident_trousers", 5], // 4.64
+  ["folk_spirewarden", 9.5], // 9.03
+  ["folk_quartermaster", 9], // 8.28
 ]);
+
+/**
+ * The sheets still built with `skirt({ mirrored: true })`, the old weighting kept so their pixels
+ * do not move: the KNOWN_CLIPPING sheets, and those whose legs no garment covers. The guard fails
+ * any other sheet that asks for it, and a listed sheet that no longer does. It only shrinks.
+ */
+export const MIRRORED_LEGACY = new Set([
+  ...KNOWN_CLIPPING.keys(),
+  "creature_ghoul_base",
+  "creature_demon_base",
+  "folk_resident_skirt",
+]);
+
+/** Whether any garment on the rig was made with `skirt({ mirrored: true })` (anatomy.js). */
+export function mirroredGarment(rig) {
+  let mirrored = false;
+  rig.root.traverse((o) => {
+    if (o.userData.garment && o.userData.mirrored) mirrored = true;
+  });
+  return mirrored;
+}
 
 /**
  * Where a ray from the origin through `p` (2D) leaves the polygon `poly` (points, 2D; consecutive
@@ -179,7 +203,7 @@ export function legsInGarments(rig) {
   };
 }
 
-/** The most any leg vertex is further outside the garments in `now` than at `rest`, in 1x screen px. */
+/** The most any leg vertex is further outside the garments in `now` than at `rest`, in 1x px (model space). */
 export function worstPoke(rest, now) {
   let worst = 0;
   for (let i = 0; i < now.length; i++) {
@@ -192,7 +216,7 @@ export function worstPoke(rest, now) {
 
 /**
  * Runs every baked pose of a sheet (`poses`: { anim, i, apply } as page/main.js builds them) and
- * returns, per clip, the worst poke (1x screen px) and the frame it happens on; null when the rig
+ * returns, per clip, the worst poke (1x px, model space) and the frame it happens on; null when the rig
  * has no garment over its legs. The bind pose is the baseline, with every spring at rest.
  */
 export function legClearance(rig, poses, { restPose, applyPose, groundPose }) {
@@ -214,16 +238,35 @@ export function legClearance(rig, poses, { restPose, applyPose, groundPose }) {
 
 /**
  * The guard's verdict for a sheet: an error naming each clip that carries a leg through, or null.
- * A sheet on `known` (KNOWN_CLIPPING) passes while it clips and fails once it no longer does.
+ * A sheet on `known` (KNOWN_CLIPPING) passes while it clips up to its ceiling and fails once it
+ * pokes past it or no longer clips at all. `mirrored` (from {@link mirroredGarment}) fails a sheet
+ * off `legacy` (MIRRORED_LEGACY), and a listed sheet that no longer asks for the old weighting.
  */
-export function clearanceError(name, clips, { limit = CLEARANCE_PX, known = KNOWN_CLIPPING } = {}) {
+export function clearanceError(
+  name,
+  clips,
+  { limit = CLEARANCE_PX, known = KNOWN_CLIPPING, mirrored = false, legacy = MIRRORED_LEGACY } = {},
+) {
+  if (mirrored && !legacy.has(name))
+    return `bake: ${name}: skirt({ mirrored: true }) is kept for the sheets on MIRRORED_LEGACY only (characters/clearance.js); skin the garment to its own thighs`;
+  if (!mirrored && legacy.has(name))
+    return `bake: ${name} no longer asks for skirt({ mirrored: true }): take it off MIRRORED_LEGACY (characters/clearance.js)`;
+  const over = (max) => Object.entries(clips ?? {}).filter(([, c]) => c.px > max);
+  const list = (bad) => bad.map(([anim, c]) => `${anim} frame ${c.frame} by ${c.px.toFixed(2)} px`).join(", ");
+  if (known.has(name)) {
+    const ceiling = known.get(name);
+    if (!over(limit).length)
+      return `bake: ${name} no longer carries a leg through its garment: take it off KNOWN_CLIPPING (characters/clearance.js)`;
+    const bad = over(ceiling);
+    return bad.length
+      ? `bake: ${name}: a leg passes through the garment past its KNOWN_CLIPPING ceiling of ${ceiling} px (characters/clearance.js): ${list(bad)}`
+      : null;
+  }
   if (!clips) return null;
-  const bad = Object.entries(clips).filter(([, c]) => c.px > limit);
-  if (known.has(name))
-    return bad.length ? null : `bake: ${name} no longer carries a leg through its garment: take it off KNOWN_CLIPPING (characters/clearance.js)`;
+  const bad = over(limit);
   if (!bad.length) return null;
   return (
     `bake: ${name}: a leg passes through the garment, more than ${limit} px further out than at rest ` +
-    `(characters/clearance.js): ${bad.map(([anim, c]) => `${anim} frame ${c.frame} by ${c.px.toFixed(2)} px`).join(", ")}`
+    `(characters/clearance.js): ${list(bad)}`
   );
 }

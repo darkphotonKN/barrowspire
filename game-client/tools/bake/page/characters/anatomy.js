@@ -413,6 +413,8 @@ export function skirt(rig, mat, o = {}) {
   const mesh = skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false });
   // a garment the legs must stay inside while they move (clearance.js)
   mesh.userData.garment = true;
+  // the bake fails a sheet off MIRRORED_LEGACY that still asks for the old weighting (clearance.js)
+  if (o.mirrored) mesh.userData.mirrored = true;
   return mesh;
 }
 
