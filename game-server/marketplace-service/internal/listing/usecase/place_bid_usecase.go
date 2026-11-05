@@ -94,6 +94,13 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 		return nil
 	}
 
+	// After the replay shortcut, so a resend of a bid recorded before the member
+	// reached the cap is still its replay. Advisory too: PlaceBidWithID applies the
+	// cap again under the lock (ADR-0052).
+	if err := current.WithinBidWithdrawalCap(cmd.MemberID); err != nil {
+		return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+	}
+
 	if err := uc.wallet.PlaceHold(ctx, cmd.MemberID, bidID, cmd.Amount, expiresAt); err != nil {
 		return fmt.Errorf("place bid usecase handle placing hold for bid %v : %w", bidID, err)
 	}
@@ -204,6 +211,7 @@ func bidRejected(err error) bool {
 		listing.ErrInvalidUUID,
 		listing.ErrBidNotFound,
 		listing.ErrInvalidBidTransition,
+		listing.ErrBidWithdrawLimitReached,
 		commonconstants.ErrConstraintViolation,
 		commonconstants.ErrDuplicateResource,
 	} {

@@ -17,6 +17,9 @@ export const PURSE_NOT_READY = "Your purse isn't ready yet — try again shortly
 export const PURSE_FAILED = "Your purse could not be read — try again shortly.";
 const NOT_WHOLE = "Enter a whole amount of gold.";
 export const BID_AT_BUYOUT = "Bids must stay below the buyout price — to buy now, use Buy out.";
+/** FS-ZE43K req 12: the member has withdrawn three bids on this listing (ADR-0052). */
+export const BID_WITHDRAW_LIMIT =
+  "You've withdrawn too many bids on this auction to bid on it again.";
 
 export const outbidMessage = (minimumBid: number): string =>
   `Someone bid higher — the minimum is now ⟡${formatGold(minimumBid)}.`;
@@ -147,6 +150,8 @@ export function bidFailure(
       return { message: BID_LAPSED };
     case EMAIL_UNVERIFIED:
       return { message: VERIFY_TO_BID };
+    case "BID_WITHDRAW_LIMIT_REACHED":
+      return { message: BID_WITHDRAW_LIMIT };
   }
   if (err.status === 409) return { message: BID_CONFLICT };
   return { message: err.detail };

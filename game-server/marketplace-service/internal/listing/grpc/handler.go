@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -459,10 +460,28 @@ func toProtoMyBid(b dto.MyBid, now time.Time) *pb.MyBid {
 	}
 }
 
+// ownRefusals pairs each domain refusal this service decides with the
+// registered code it crosses the wire as. The domain stays free of errcode.
+var ownRefusals = []struct {
+	err  error
+	code errcode.Code
+}{
+	{listing.ErrBidWithdrawLimitReached, errcode.BidWithdrawLimitReached}, // FS-ZE43K Req 8
+}
+
 func mapError(ctx context.Context, err error) error {
 	var code codes.Code
 	var msg string
 	logLevel := slog.LevelWarn
+
+	// This service's own refusals: the domain names the rule, the wire carries
+	// its registered code.
+	for _, r := range ownRefusals {
+		if errors.Is(err, r.err) {
+			err = fmt.Errorf("%w: %w", errcode.Refuse(r.code), err)
+			break
+		}
+	}
 
 	// A domain refusal, this service's own or one items-service answered (FS-HBXZN
 	// R7), crosses unchanged: same code, same ErrorInfo reason. Its status rather

@@ -186,6 +186,13 @@ const (
 	// LetterClaimInProgress: another claim of this letter by this member holds
 	// it right now. FS-1GZGD R25, S5.
 	LetterClaimInProgress Code = "LETTER_CLAIM_IN_PROGRESS"
+
+	// --- Marketplace ------------------------------------------------------------
+
+	// BidWithdrawLimitReached: the member has withdrawn 3 or more bids on this
+	// listing, so they can no longer bid on it. Withdrawing and buyout are not
+	// limited (ADR-0052). Added for FS-ZE43K (Bid withdrawal cap).
+	BidWithdrawLimitReached Code = "BID_WITHDRAW_LIMIT_REACHED"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -223,4 +230,7 @@ var domainCodes = map[Code]struct{}{
 	NothingToClaim:          {},
 	LetterAlreadyClaimed:    {},
 	LetterClaimInProgress:   {},
+
+	// FS-ZE43K
+	BidWithdrawLimitReached: {},
 }
