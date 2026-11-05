@@ -6,6 +6,8 @@ import {
   fullscreenOf,
   type FullscreenDocument,
   type FullscreenFrame,
+  type KeyboardLock,
+  keyboardLockOf,
 } from "./fullscreen";
 
 type Listener = () => void;
@@ -276,5 +278,155 @@ describe("handBackFocus (FS-ZAJMH R18, R22: keyboard-focusable, and no stolen ga
 
   it("should keep focus on the button after Enter or Space, so a keyboard player is not lost", () => {
     expect(click(0)).not.toHaveBeenCalled();
+  });
+});
+
+/** A keyboard that records the Keyboard Lock calls; `refuse` makes `lock` reject, as a browser may. */
+function fakeKeyboard(refuse = false) {
+  const calls: string[] = [];
+  const keyboard: KeyboardLock = {
+    lock: (codes) => {
+      calls.push(`lock ${codes.join(",")}`);
+      return refuse
+        ? Promise.reject(new DOMException("not top-level", "InvalidStateError"))
+        : Promise.resolve();
+    },
+    unlock: () => void calls.push("unlock"),
+  };
+  return { keyboard, calls };
+}
+
+/** A frame the browser puts on screen when asked, as the button's own frame. */
+function framedFullscreen(become: (element: unknown, event?: string) => void) {
+  const frame: FullscreenFrame = {
+    requestFullscreen: () => {
+      become(FRAME);
+      return Promise.resolve();
+    },
+  };
+  return frame;
+}
+
+// R21 as amended 2026-11-06 (A16): in fullscreen entered by the button, Esc is the game's where
+// the Keyboard Lock API exists; held Esc, the browser's own exit, still leaves.
+describe("fullscreen Escape lock", () => {
+  it("should lock Escape on entering fullscreen through the toggle", async () => {
+    const { doc, become } = fakeDocument();
+    const { keyboard, calls } = fakeKeyboard();
+    const fs = fullscreenOf(doc, keyboard)!;
+    await fs.toggle(framedFullscreen(become));
+    expect(fs.active()).toBe(true);
+    expect(calls).toEqual(["lock Escape"]);
+  });
+
+  it.each(["fullscreenchange", "webkitfullscreenchange"])(
+    "should unlock once fullscreen is left by any route (%s: held Esc, the browser's UI)",
+    async (event) => {
+      const { doc, become, listening } = fakeDocument();
+      const { keyboard, calls } = fakeKeyboard();
+      const fs = fullscreenOf(doc, keyboard)!;
+      await fs.toggle(framedFullscreen(become));
+      become(null, event);
+      expect(calls).toEqual(["lock Escape", "unlock"]);
+      expect(listening()).toBe(0);
+    },
+  );
+
+  it("should ask no lock when the browser refuses fullscreen", async () => {
+    const { doc, listening } = fakeDocument();
+    const { keyboard, calls } = fakeKeyboard();
+    const fs = fullscreenOf(doc, keyboard)!;
+    await fs.toggle(fakeFrame(true).frame);
+    expect(fs.active()).toBe(false);
+    expect(calls).toEqual([]);
+    expect(listening()).toBe(0);
+  });
+
+  // A16: a rejected lock (not the top-level page, an insecure origin) leaves today's Esc
+  it("should stay fullscreen, throw nothing and report nothing when the lock is refused", async () => {
+    const { doc, become } = fakeDocument();
+    const { keyboard } = fakeKeyboard(true);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    const warn = vi.spyOn(console, "warn");
+    const error = vi.spyOn(console, "error");
+    try {
+      const fs = fullscreenOf(doc, keyboard)!;
+      await expect(
+        fs.toggle(framedFullscreen(become)),
+      ).resolves.toBeUndefined();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fs.active()).toBe(true);
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  // A16: Safari, Firefox: no Keyboard Lock, so the first Esc is the browser's as before
+  it("should enter and leave fullscreen as before where there is no Keyboard Lock", async () => {
+    const { doc, become, listening } = fakeDocument();
+    const fs = fullscreenOf(doc, null)!;
+    await fs.toggle(framedFullscreen(become));
+    expect(fs.active()).toBe(true);
+    expect(listening()).toBe(0);
+    become(null);
+    expect(fs.active()).toBe(false);
+  });
+
+  it("should not lock again when the toggle leaves fullscreen", async () => {
+    const { doc, become } = fakeDocument({
+      fullscreenEnabled: true,
+      exitFullscreen: () => {
+        become(null);
+        return Promise.resolve();
+      },
+    });
+    const { keyboard, calls } = fakeKeyboard();
+    const fs = fullscreenOf(doc, keyboard)!;
+    await fs.toggle(framedFullscreen(become));
+    await fs.toggle(framedFullscreen(become));
+    expect(fs.active()).toBe(false);
+    expect(calls).toEqual(["lock Escape", "unlock"]);
+  });
+
+  // a lock that settles after fullscreen was already left must not stay behind it
+  it("should unlock again when the lock settles after fullscreen was left", async () => {
+    const { doc, become } = fakeDocument();
+    let settle = () => {};
+    const calls: string[] = [];
+    const keyboard: KeyboardLock = {
+      lock: () => {
+        calls.push("lock");
+        return new Promise<void>((r) => (settle = r));
+      },
+      unlock: () => void calls.push("unlock"),
+    };
+    const fs = fullscreenOf(doc, keyboard)!;
+    await fs.toggle(framedFullscreen(become));
+    become(null);
+    settle();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual(["lock", "unlock", "unlock"]);
+  });
+});
+
+// A16: feature-detected as Chrome documents it, `'keyboard' in navigator && 'lock' in navigator.keyboard`
+describe("keyboardLockOf", () => {
+  it("should find the Keyboard Lock API where the navigator has one (Chrome, Edge)", () => {
+    const keyboard = { lock: () => Promise.resolve(), unlock: () => {} };
+    expect(keyboardLockOf({ keyboard })).toBe(keyboard);
+  });
+
+  it.each([
+    ["no keyboard at all (Safari, Firefox)", {}],
+    ["a keyboard without lock (Keyboard Map only)", { keyboard: {} }],
+    ["a keyboard that is null", { keyboard: null }],
+  ])("should find none with %s", (_, nav) => {
+    expect(keyboardLockOf(nav)).toBeNull();
   });
 });
