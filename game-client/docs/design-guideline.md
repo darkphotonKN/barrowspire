@@ -295,15 +295,20 @@ lit) while the player stands inside.
 - **The owner approves a contact sheet** (every class and creature x 8 directions x each
   animation, at game scale) before scenes switch to character sheets.
 - **Legs stay inside the garment.** A tunic's skirts, a hauberk, a coat's skirts or a robe is
-  built with `skirt` over legs built with `legs` (`tools/bake/page/characters/anatomy.js`). In
-  every clip except the death, no leg may come more than 2 px (1x px measured in model space, an
-  upper bound on the screen) further out through the cloth than it sits at rest. The bake
-  checks every pose and fails the sheet that breaks this, naming the clip and frame
-  (`characters/clearance.js`). Never give a new garment `mirrored`: that is the old weighting,
-  which skinned each half of the skirt to the opposite thigh, kept only for the legacy sheets on
-  the guard's `MIRRORED_LEGACY` list (the bake fails any other). All four classes walked
-  through their tunics and robes at 1x without anyone seeing it until the archer was baked at
-  2x, so review the walk frames, not only the idle.
+  built with `skirt` over legs built with `legs` (`tools/bake/page/characters/anatomy.js`), and
+  the legs are built under it: `legs(rig, mat, { under })` with the garment's own `skirt`
+  options, which draws the thighs in where the garment covers them (a thigh is wider at the hip
+  than a fitted tunic's top: without it they showed as dark wedges at both sides of the waist on
+  all four classes, through the mage's robe too). At rest and in every clip except the death, no
+  leg may lie more than one baked px outside the cloth over it, from the garment's waistband to
+  its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, half a px at 2x (1x
+  px measured in model space, an upper bound on the screen). The bake checks every pose and
+  fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
+  give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt
+  to the opposite thigh, kept only for the legacy sheets on the guard's `MIRRORED_LEGACY` list
+  (the bake fails any other). All four classes walked through their tunics and robes at 1x
+  without anyone seeing it until the archer was baked at 2x, so review the walk frames, not
+  only the idle.
 
 
 ### Enemy design language
