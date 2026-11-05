@@ -451,7 +451,7 @@ export interface paths {
         put?: never;
         /**
          * List an item for auction
-         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified). An item that is not the member's answers 404.
+         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404.
          */
         post: operations["create-listing"];
         delete?: never;
@@ -494,7 +494,11 @@ export interface paths {
         get: operations["get-listing"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Withdraw a listing
+         * @description Withdraws the signed-in seller's own listing. The listing is withdrawn (CANCELLED) when this answers; the item returns to the seller and every bidder's gold is given back asynchronously. Withdrawing a listing already withdrawn is success. A listing of another member answers 403. Refusals: LISTING_WITHDRAW_LOCKED (the listing has bids and ends within 30 minutes), FAILED_PRECONDITION (the auction has ended, was bought out, or is no longer active). 409 CONFLICT means the listing is busy and may be retried. 503 SERVICE_UNAVAILABLE can mean the listing was withdrawn but its follow-up (item return, bid refunds) has not yet started; retrying is safe and starts it.
+         */
+        delete: operations["withdraw-listing"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3957,6 +3961,98 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "withdraw-listing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

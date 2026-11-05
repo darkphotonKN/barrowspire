@@ -33,6 +33,12 @@ service MarketplaceService {
   // settlement and returns; the sale completes asynchronously.
   rpc AcceptBid(AcceptBidRequest) returns (AcceptBidResponse) {}
 
+  // The seller withdraws their own listing (FS-V7A5S): it becomes CANCELLED and
+  // every live bid LOST; the item and the held gold go back asynchronously.
+  // Refused with reason LISTING_WITHDRAW_LOCKED in the final 30 minutes of a
+  // listing with live bids. Withdrawing a listing already CANCELLED is success.
+  rpc WithdrawListing(WithdrawListingRequest) returns (WithdrawListingResponse) {}
+
   // Buyout buys the listing outright at its buyout price and starts
   // settlement; the sale completes asynchronously (FS-NXP1W Req 4). The buyer
   // is the authenticated caller.
@@ -193,6 +199,15 @@ message AcceptBidRequest {
 }
 
 message AcceptBidResponse {}
+
+// WithdrawListing
+// The seller is derived from the authenticated context server-side, never
+// supplied by the caller.
+message WithdrawListingRequest {
+  string listing_id = 1;
+}
+
+message WithdrawListingResponse {}
 
 // Buyout
 // The buyer is derived from the authenticated context server-side. amount is

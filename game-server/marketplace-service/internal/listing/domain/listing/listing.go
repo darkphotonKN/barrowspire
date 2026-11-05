@@ -110,6 +110,32 @@ func NewListing(id, sellerID, itemID uuid.UUID, startPrice int, buyoutPrice *int
 	}, nil
 }
 
+// Bounds on a new listing's duration (FS-XEDFF Req 3). Tuning, not contract.
+const (
+	MinListingDuration = time.Hour
+	MaxListingDuration = 7 * 24 * time.Hour
+	// ListingDurationSlack widens the range both ways, for the client's clock
+	// and the request's latency.
+	ListingDurationSlack = 5 * time.Minute
+)
+
+// CheckDuration applies the duration bound to a seller's request to list: endsAt
+// must lie in [MinListingDuration − slack, MaxListingDuration + slack] from now,
+// inclusive (FS-XEDFF Req 1). An end at or before now is ErrInvalidEndTime.
+//
+// It is the request's rule, not the listing's: NewListing does not call it, so a
+// listing born from a late ItemReserved event is not refused (FS-XEDFF Req 2).
+func CheckDuration(now, endsAt time.Time) error {
+	if !endsAt.After(now) {
+		return ErrInvalidEndTime
+	}
+	d := endsAt.Sub(now)
+	if d < MinListingDuration-ListingDurationSlack || d > MaxListingDuration+ListingDurationSlack {
+		return ErrListingDurationOutOfRange
+	}
+	return nil
+}
+
 func (l *Listing) Snapshot() ListingSnapshot {
 	// copy field by field, not the slice — sharing the *Bid pointers would give
 	// callers a write path back into the aggregate
@@ -178,14 +204,48 @@ func (l *Listing) CanAcceptBid(memberID uuid.UUID, now time.Time) error {
 	return nil
 }
 
-func (l *Listing) Cancel(now time.Time) error {
-	if l.status != StatusActive {
-		return ErrInvalidListingState
-	}
-	l.status = StatusCancelled
-	l.updatedAt = now
+// ListingWithdrawLock is how long before its end a listing with live bids can no
+// longer be withdrawn (ADR-0051). Tuning, not contract.
+const ListingWithdrawLock = 30 * time.Minute
 
-	return nil
+// Withdraw is the seller taking their own listing down (FS-V7A5S Reqs 1–5): the
+// listing becomes CANCELLED and every live bid LOST, in one change.
+//
+// Seller first, as in CanAcceptBid. Then an already-CANCELLED listing is success
+// and changes nothing, so a repeated withdrawal is harmless. Otherwise the auction
+// must still be open — the same rule a bid change meets — and, if any bid still
+// holds gold, not yet in its final ListingWithdrawLock, closed at its start.
+//
+// CANCELLED and FAILED bids are left as they are: their gold was already given
+// back or never held. LOST is reused for the live ones; CANCELLED stays a bidder's
+// own withdrawal.
+func (l *Listing) Withdraw(memberID uuid.UUID, now time.Time) error {
+	if l.sellerID != memberID {
+		return ErrNotSeller
+	}
+
+	if l.status == StatusCancelled {
+		return nil
+	}
+
+	if err := l.AcceptsBidAt(now); err != nil {
+		return err
+	}
+
+	if l.hasLiveBid() && !now.Before(l.endsAt.Add(-ListingWithdrawLock)) {
+		return ErrListingWithdrawLocked
+	}
+
+	for _, bid := range l.bids {
+		if !bid.isLive() {
+			continue
+		}
+		if err := bid.transitionTo(BidStatusLost, now); err != nil {
+			return fmt.Errorf("withdraw listing, bid %v in %v: %w", bid.id, bid.status, err)
+		}
+	}
+
+	return l.transitionTo(StatusCancelled, now)
 }
 
 func (l *Listing) MarkSold(now time.Time) error {
@@ -623,6 +683,17 @@ func (l *Listing) acceptingBidChanges() error {
 func (l *Listing) boughtOut() bool {
 	for _, bid := range l.bids {
 		if bid.bidType == BidTypeBuyout {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasLiveBid reports whether any bid on this listing still holds gold.
+func (l *Listing) hasLiveBid() bool {
+	for _, bid := range l.bids {
+		if bid.isLive() {
 			return true
 		}
 	}

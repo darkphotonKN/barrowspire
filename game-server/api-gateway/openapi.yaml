@@ -3340,7 +3340,7 @@ paths:
       tags:
         - marketplace
     post:
-      description: "Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified). An item that is not the member's answers 404."
+      description: "Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404."
       operationId: create-listing
       requestBody:
         content:
@@ -3456,6 +3456,72 @@ paths:
       tags:
         - marketplace
   /api/marketplace/listings/{listing_id}:
+    delete:
+      description: "Withdraws the signed-in seller's own listing. The listing is withdrawn (CANCELLED) when this answers; the item returns to the seller and every bidder's gold is given back asynchronously. Withdrawing a listing already withdrawn is success. A listing of another member answers 403. Refusals: LISTING_WITHDRAW_LOCKED (the listing has bids and ends within 30 minutes), FAILED_PRECONDITION (the auction has ended, was bought out, or is no longer active). 409 CONFLICT means the listing is busy and may be retried. 503 SERVICE_UNAVAILABLE can mean the listing was withdrawn but its follow-up (item return, bid refunds) has not yet started; retrying is safe and starts it."
+      operationId: withdraw-listing
+      parameters:
+        - in: path
+          name: listing_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Withdraw a listing
+      tags:
+        - marketplace
     get:
       description: "Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. If the items lookup fails the request fails."
       operationId: get-listing

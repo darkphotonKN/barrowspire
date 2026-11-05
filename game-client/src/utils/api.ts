@@ -354,6 +354,16 @@ class ApiClient {
     );
   }
 
+  // Withdraws the signed-in seller's own listing (FS-V7A5S req 13): it reads CANCELLED at once,
+  // the item and every bidder's gold go back on their own. No key, no body; 204 with an empty body.
+  async withdrawListing(listingId: string): Promise<void> {
+    unwrap(
+      await client.DELETE("/api/marketplace/listings/{listing_id}", {
+        params: { path: { listing_id: listingId } },
+      }),
+    );
+  }
+
   // Withdraws one of the signed-in player's leading or outbid bids, releasing its hold (FS-EYQ8K
   // req 12; ADR-0029). No key, no body; 204 with an empty body.
   async withdrawBid(listingId: string, bidId: string): Promise<void> {

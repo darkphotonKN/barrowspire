@@ -121,3 +121,15 @@ func (b *Bid) Snapshot() BidSnapshot {
 		UpdatedAt:      b.updatedAt,
 	}
 }
+
+// isLive reports whether this bid still holds gold: PENDING (its hold may be
+// landing), WINNING or OUTBID. Every other status has given its gold back, never
+// held any, or spent it.
+func (b *Bid) isLive() bool {
+	switch b.status {
+	case BidStatusPending, BidStatusWinning, BidStatusOutbid:
+		return true
+	default:
+		return false
+	}
+}

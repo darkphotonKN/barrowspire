@@ -101,3 +101,14 @@ type ExpiredListing struct {
 	ID     uuid.UUID
 	EndsAt time.Time
 }
+
+// CancelledListing is one withdrawn listing not yet marked started, as the
+// withdraw backstop pages them (FS-V7A5S Req 8): what the withdraw workflow's
+// start needs, and its update time as the paging cursor. BidIDs is every bid on
+// the listing, statuses unfiltered, as the use case passes them.
+type CancelledListing struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	BidIDs    []uuid.UUID
+	UpdatedAt time.Time
+}

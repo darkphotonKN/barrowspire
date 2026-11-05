@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/api/activity/walletactivity"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/activitypolicy"
 )
 
 const WorkflowName = "ReleaseHold"
@@ -21,7 +22,7 @@ type Input struct {
 // — the run outlives the request that started it, and a marketplace restart in
 // between loses nothing.
 func Workflow(ctx workflow.Context, in Input) error {
-	walletCtx := workflow.WithActivityOptions(ctx, ReleaseOptions(bstemporal.QueueWallet))
+	walletCtx := workflow.WithActivityOptions(ctx, activitypolicy.Uncapped(bstemporal.QueueWallet))
 
 	return workflow.ExecuteActivity(walletCtx,
 		walletactivity.ReleaseHoldActivityName,

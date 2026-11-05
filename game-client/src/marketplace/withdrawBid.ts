@@ -8,7 +8,7 @@ import { ApiError } from "@/utils/apiError";
 import { BID_CONFLICT } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { formatGold } from "./gold";
-import { listingLive, type MyBid } from "./myBids";
+import { GOLD_RETURNED, listingLive, type MyBid } from "./myBids";
 
 export const WITHDRAW_GONE = "This bid can no longer be withdrawn.";
 /** Said once a withdraw lands, as the bid leaves the list and its gold returns to the purse. */
@@ -37,7 +37,7 @@ export function withdrawConfirmText(bid: Pick<MyBid, "amount" | "status">): stri
   const question = `Withdraw your bid of ${formatGold(bid.amount)} gold?`;
   return bid.status.toUpperCase() === "WINNING"
     ? `${question} The next highest bid takes the lead.`
-    : `${question} Your gold is returned.`;
+    : `${question} ${GOLD_RETURNED}`;
 }
 
 /**

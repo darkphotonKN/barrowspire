@@ -28,6 +28,12 @@ var (
 	ErrNotBidOwner             = errors.New("not bid owner")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
+	// ErrListingWithdrawLocked: the listing has live bids and is in its final
+	// ListingWithdrawLock, so its seller can no longer withdraw it (ADR-0051).
+	ErrListingWithdrawLocked = errors.New("listing withdraw locked")
+	// ErrListingDurationOutOfRange: a requested listing ends in the future but
+	// too soon or too late (see CheckDuration; FS-XEDFF Req 1).
+	ErrListingDurationOutOfRange = errors.New("listing duration out of range")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

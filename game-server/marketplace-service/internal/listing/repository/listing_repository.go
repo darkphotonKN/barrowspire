@@ -536,3 +536,23 @@ func (r *ListingRepository) Update(ctx context.Context, id uuid.UUID, updateFn f
 		return r.writeChanges(ctx, tx, &after, changes, false)
 	})
 }
+
+// MarkWithdrawalStarted records that a withdrawn listing's withdraw workflow has
+// started (FS-V7A5S Req 8 as amended 2026-11-05), so the withdraw backstop stops
+// selecting it. Fenced on CANCELLED and not yet marked: an ACTIVE listing, an
+// already-marked one or an unknown id is left as it is, and that is not an error.
+//
+// It is not an aggregate change, so it takes no row lock and moves neither
+// version nor updated_at, the backstop's paging cursor.
+func (r *ListingRepository) MarkWithdrawalStarted(ctx context.Context, id uuid.UUID) error {
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE listings
+		SET withdrawal_started_at = NOW()
+		WHERE id = $1
+		  AND status = 'CANCELLED'
+		  AND withdrawal_started_at IS NULL
+	`, id); err != nil {
+		return commonhelpers.WrapDBErr("listing", "MarkWithdrawalStarted", err)
+	}
+	return nil
+}

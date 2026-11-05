@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -40,6 +41,7 @@ type Handler struct {
 	withdrawBidUC   *usecase.WithdrawBidUC
 	acceptBid       AcceptBid
 	buyout          Buyout
+	withdrawListing WithdrawListing
 }
 
 // AcceptBid starts settlement for a listing its seller is ending early.
@@ -50,6 +52,12 @@ type AcceptBid interface {
 // Buyout records a buyout and starts settlement for it.
 type Buyout interface {
 	Handle(ctx context.Context, cmd usecase.BuyoutCommand) error
+}
+
+// WithdrawListing takes a seller's listing down and starts returning its item
+// and every hold.
+type WithdrawListing interface {
+	Handle(ctx context.Context, cmd usecase.WithdrawListingCommand) error
 }
 
 // MyListingsReader reads one page of a seller's listings, newest first. A nil
@@ -86,7 +94,8 @@ func NewHandler(
 	browseReader BrowseListingsReader,
 	listingReader ListingReader,
 	acceptBid AcceptBid,
-	buyout Buyout) *Handler {
+	buyout Buyout,
+	withdrawListing WithdrawListing) *Handler {
 	return &Handler{
 		reserveItemUC:    reserveItemUC,
 		createListingUC:  createListingUC,
@@ -98,6 +107,7 @@ func NewHandler(
 		listingReader:    listingReader,
 		acceptBid:        acceptBid,
 		buyout:           buyout,
+		withdrawListing:  withdrawListing,
 	}
 }
 
@@ -189,6 +199,34 @@ func (h *Handler) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.
 	}
 
 	return &pb.AcceptBidResponse{}, nil
+}
+
+// WithdrawListing lets a seller take their own listing down (FS-V7A5S). It
+// returns once the listing is withdrawn; the item and the held gold go back on
+// their own.
+func (h *Handler) WithdrawListing(ctx context.Context, req *pb.WithdrawListingRequest) (*pb.WithdrawListingResponse, error) {
+	// the domain's seller check compares against this, so it is only ever the
+	// authenticated caller. Not email-gated: a withdrawal only exits a
+	// commitment (FS-V6SFK §Requirements 30; FS-V7A5S Req 11 as amended)
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	if err := h.withdrawListing.Handle(ctx, usecase.WithdrawListingCommand{
+		ListingID: listingID,
+		MemberID:  memberID,
+		Now:       time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.WithdrawListingResponse{}, nil
 }
 
 // Buyout buys a listing outright at its buyout price and starts settlement
@@ -459,10 +497,29 @@ func toProtoMyBid(b dto.MyBid, now time.Time) *pb.MyBid {
 	}
 }
 
+// ownRefusals pairs each domain refusal this service decides with the
+// registered code it crosses the wire as.
+var ownRefusals = []struct {
+	err  error
+	code errcode.Code
+}{
+	{listing.ErrListingWithdrawLocked, errcode.ListingWithdrawLocked},         // FS-V7A5S Req 11
+	{listing.ErrListingDurationOutOfRange, errcode.ListingDurationOutOfRange}, // FS-XEDFF Req 1
+}
+
 func mapError(ctx context.Context, err error) error {
 	var code codes.Code
 	var msg string
 	logLevel := slog.LevelWarn
+
+	// This service's own refusals: the domain names the rule, the wire carries
+	// its registered code.
+	for _, r := range ownRefusals {
+		if errors.Is(err, r.err) {
+			err = fmt.Errorf("%w: %w", errcode.Refuse(r.code), err)
+			break
+		}
+	}
 
 	// A domain refusal, this service's own or one items-service answered (FS-HBXZN
 	// R7), crosses unchanged: same code, same ErrorInfo reason. Its status rather
