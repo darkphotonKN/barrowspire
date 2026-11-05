@@ -363,42 +363,40 @@ describe("a trimmed sheet's frames (FS-HF0WW)", () => {
     { x: 40, y: 18, w: 64, h: 96 },
     { x: 36, y: 20, w: 72, h: 94 },
   ];
-  const sheetManifest = (trimmed: boolean) => ({
-    ...manifest,
-    atlases: {
-      "archer-0": { image: "archer-0.png", width: 512, height: 256, sha256: "f".repeat(64) },
-    },
-    sheets: {
-      archer: {
-        atlas: "archer-0",
-        frameWidth: FRAME.width,
-        frameHeight: FRAME.height,
-        scale: 2,
-        ...(trimmed ? { trimmed: true } : {}),
-        anchor: ANCHOR,
-        directions: 1,
-        animations: {
-          idle: {
-            fps: 5,
-            loop: true,
-            frames: [
-              trimmed
-                ? [
-                    { x: 2, y: 2, trim: cuts[0] },
-                    { x: 68, y: 2, trim: cuts[1] },
-                  ]
-                : [
-                    { x: 2, y: 2 },
-                    { x: 164, y: 2 },
-                  ],
-            ],
-          },
-        },
-        source: "authored: test",
-        licence: "Barrowspire-original",
+  const sheetManifest = (trimmed: boolean) => {
+    const frames = [
+      trimmed
+        ? [
+            { x: 2, y: 2, trim: cuts[0] },
+            { x: 68, y: 2, trim: cuts[1] },
+          ]
+        : [
+            { x: 2, y: 2 },
+            { x: 164, y: 2 },
+          ],
+    ];
+    return {
+      ...manifest,
+      atlases: {
+        "archer-0": { image: "archer-0.png", width: 512, height: 256, sha256: "f".repeat(64) },
       },
-    },
-  });
+      sheets: {
+        archer: {
+          atlas: "archer-0",
+          frameWidth: FRAME.width,
+          frameHeight: FRAME.height,
+          scale: 2,
+          ...(trimmed ? { trimmed: true } : {}),
+          anchor: ANCHOR,
+          directions: 1,
+          // a walk clip too: only a sheet that walks may carry a scale and a trim (ADR-0058)
+          animations: { idle: { fps: 5, loop: true, frames }, walk: { fps: 5, loop: true, frames } },
+          source: "authored: test",
+          licence: "Barrowspire-original",
+        },
+      },
+    };
+  };
 
   /** Registers the sheet on a scene whose textures make Phaser's real frames. */
   function registered(trimmed: boolean): RealFrame[] {
@@ -447,7 +445,7 @@ describe("a trimmed sheet's frames (FS-HF0WW)", () => {
     });
   });
 
-  it("draws every px of the cut where the whole frame draws it", () => {
+  it("draws every px of the cut where the whole frame draws it, in local px, before Phaser 4's vertex rounding", () => {
     // the renderer draws a frame's texels from (-displayOriginX + frame.x) (Phaser 4's
     // TransformerImage.run: x = -displayOriginX + uvSource.x, the frame's when uncropped)
     const [cut, whole] = [registered(true), registered(false)];

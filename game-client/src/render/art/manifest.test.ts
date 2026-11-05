@@ -76,6 +76,12 @@ function fixture() {
 
 type Fixture = ReturnType<typeof fixture>;
 
+/** Gives the door a walk clip (its locked frames), so it may carry a scale and a trim. */
+function walking(m: Fixture) {
+  const { locked } = m.sheets.door.animations;
+  Object.assign(m.sheets.door.animations, { walk: { ...locked, frames: locked.frames } });
+}
+
 function rejects(mutate: (m: Fixture) => void, expected: RegExp) {
   const m = fixture();
   mutate(m);
@@ -256,11 +262,51 @@ describe("validateManifest", () => {
     });
   });
 
+  describe("scale and trimmed on a sheet that does not walk (ADR-0058)", () => {
+    it.each([
+      ["scale", 2],
+      ["trimmed", true],
+    ])("rejects %s: only a character or creature sheet is read at its scale and trim", (key, value) => {
+      rejects(
+        (m) => Object.assign(m.sheets.brazier, { [key]: value }),
+        new RegExp(`brazier: ${key} is read on character and creature sheets only \\(a sheet with a walk clip\\)`),
+      );
+    });
+  });
+
+  describe("a sheet's walk_attack (FS-HF0WW)", () => {
+    /** Gives the door an attack of 7 frames at 12 fps and a walk_attack of `count` at `fps`. */
+    const withWalkAttack = (count: number, fps: number, attack = true) => (m: Fixture) => {
+      const clip = (n: number, f: number) => ({ fps: f, loop: false, frames: [Array(n).fill({ x: 0, y: 0 })] });
+      Object.assign(m.sheets.door.animations, {
+        ...(attack ? { attack: clip(7, 12) } : {}),
+        walk_attack: clip(count, fps),
+      });
+    };
+
+    it("accepts one as long as the attack, at any frame count", () => {
+      for (const [count, fps] of [[7, 12], [14, 24]]) {
+        const m = fixture();
+        withWalkAttack(count, fps)(m);
+        expect(validateManifest(m).ok, `${count}/${fps}`).toBe(true);
+      }
+    });
+
+    it.each([
+      ["more frames", 8, 12, true],
+      ["a faster fps", 14, 25, true],
+      ["no attack", 7, 12, false],
+    ])("rejects one with %s", (_, count, fps, attack) => {
+      rejects(withWalkAttack(count, fps, attack), /door: walk_attack must last as long as attack/);
+    });
+  });
+
   describe("a sheet baked at more px than it is drawn (scale, FS-HF0WW)", () => {
     // the door fixture: a 50 x 70 frame, anchor at 0.9; at scale 2 that is 25 x 35 screen px
     const withScale =
       (scale: unknown, more: Record<string, unknown> = {}) =>
       (m: Fixture) => {
+        walking(m);
         Object.assign(m.sheets.door, { scale, ...more });
       };
 
@@ -273,7 +319,7 @@ describe("validateManifest", () => {
       expect(fixture().sheets.door).not.toHaveProperty("scale");
     });
 
-    it.each([0, -2, 1.5, "2", 5])("rejects a scale of %s", (scale) => {
+    it.each([0, -2, 1.5, "2", 5, null])("rejects a scale of %s", (scale) => {
       rejects(withScale(scale), /door.*scale/);
     });
 
@@ -304,6 +350,7 @@ describe("validateManifest", () => {
     const trimmed =
       (trims: (Cut | undefined)[] = [cut, cut], more: Record<string, unknown> = {}) =>
       (m: Fixture) => {
+        walking(m);
         Object.assign(m.sheets.door, { trimmed: true, ...more });
         const frames = [m.sheets.door.animations.locked.frames[0][0], m.sheets.door.animations.open.frames[0][0]];
         frames.forEach((f, i) => trims[i] && Object.assign(f, { trim: trims[i] }));

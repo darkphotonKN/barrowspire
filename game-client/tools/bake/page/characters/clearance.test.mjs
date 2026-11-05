@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { createRig, jointAt as J } from "./rig.js";
 import { legs, skirt, skirtBones, torso } from "./anatomy.js";
 import { applyPose, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS } from "./clips.js";
-import { CLEARANCE_PX, KNOWN_CLIPPING, UNGUARDED, clearanceError, legClearance, outside, wallAlong } from "./clearance.js";
+import { CLEARANCE_PX, KNOWN_CLIPPING, MIRRORED_LEGACY, UNGUARDED, clearanceError, legClearance, mirroredGarment, outside, wallAlong } from "./clearance.js";
 
 const mat = () => new THREE.MeshBasicMaterial();
 const bones = { restPose: pose(), applyPose, groundPose };
@@ -101,12 +101,38 @@ describe("the leg-clearance guard (characters/clearance.js)", () => {
   });
 
   it("lets a listed sheet clip until it is fixed, then insists it leave the list", () => {
-    const known = new Set(["folk_test"]);
+    const known = new Map([["folk_test", CLEARANCE_PX + 4]]);
     const clips = { walk: { px: CLEARANCE_PX + 3, frame: 2 } };
     expect(clearanceError("folk_test", clips, { known })).toBeNull();
     expect(clearanceError("folk_test", { walk: { px: 0.4, frame: 0 } }, { known })).toMatch(/take it off KNOWN_CLIPPING/);
     expect(clearanceError("char_test", clips, { known })).toMatch(/walk frame 2/);
     for (const cls of ["char_knight_base", "char_archer_base", "char_wizard_base", "char_mercenary_base"]) expect(KNOWN_CLIPPING.has(cls)).toBe(false);
+  });
+
+  it("fails a listed sheet that pokes past its ceiling: it may not get worse unseen", () => {
+    const known = new Map([["folk_test", 5]]);
+    expect(clearanceError("folk_test", { walk: { px: 4.9, frame: 1 } }, { known })).toBeNull();
+    expect(clearanceError("folk_test", { idle: { px: 0.5, frame: 0 }, walk: { px: 5.2, frame: 3 } }, { known })).toMatch(
+      /folk_test: a leg passes through the garment past its KNOWN_CLIPPING ceiling of 5 px.*walk frame 3 by 5\.20 px/,
+    );
+    for (const [name, ceiling] of KNOWN_CLIPPING) expect(ceiling, name).toBeGreaterThan(CLEARANCE_PX);
+  });
+
+  it("insists a listed sheet whose legs no garment covers any more leave the list", () => {
+    const known = new Map([["folk_test", 5]]);
+    expect(clearanceError("folk_test", null, { known })).toMatch(/folk_test no longer carries a leg.*take it off KNOWN_CLIPPING/);
+  });
+
+  it("keeps the old weighting to the legacy sheets: fails any other sheet that asks for it, and a listed one that no longer does", () => {
+    const legacy = new Set(["folk_test"]);
+    const { rig } = figure({ mirrored: true });
+    expect(mirroredGarment(rig)).toBe(true);
+    expect(mirroredGarment(figure().rig)).toBe(false);
+    expect(clearanceError("folk_test", null, { mirrored: true, legacy })).toBeNull();
+    expect(clearanceError("char_test", null, { mirrored: true, legacy })).toMatch(/char_test: skirt\(\{ mirrored: true \}\) is kept for the sheets on MIRRORED_LEGACY only/);
+    expect(clearanceError("folk_test", null, { legacy })).toMatch(/folk_test no longer asks for skirt.*take it off MIRRORED_LEGACY/);
+    for (const name of KNOWN_CLIPPING.keys()) expect(MIRRORED_LEGACY.has(name), name).toBe(true);
+    for (const cls of ["char_knight_base", "char_archer_base", "char_wizard_base", "char_mercenary_base"]) expect(MIRRORED_LEGACY.has(cls)).toBe(false);
   });
 });
 

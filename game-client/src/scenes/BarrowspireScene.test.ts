@@ -53,7 +53,7 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
-const { BarrowspireScene, projectileFlightOf, TOP_RIGHT_HUD } = await import("./BarrowspireScene");
+const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_HUD } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { FULLSCREEN_BUTTON, anchorAt, viewport } = await import("@/render/viewport");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
@@ -4896,5 +4896,37 @@ describe("the run's top-right HUD and the fullscreen button", () => {
 
   it("should keep its right-hand offset from the corner", () => {
     expect(anchorAt(TOP_RIGHT_HUD, { width: 1280, height: 720 }).x).toBe(1270);
+  });
+});
+
+describe("keepBodySize (FS-HF0WW)", () => {
+  /** An arcade body's setSize: the source size, times the sprite's scale. */
+  const spriteAt = (scale: number) => {
+    const body = {
+      sourceWidth: 60,
+      sourceHeight: 60,
+      width: 60 * scale,
+      height: 60 * scale,
+      setSize(w: number, h: number) {
+        this.sourceWidth = w;
+        this.sourceHeight = h;
+        this.width = w * scale;
+        this.height = h * scale;
+      },
+    };
+    return { body } as unknown as Parameters<typeof keepBodySize>[0] & { body: typeof body };
+  };
+
+  it("should keep a 2x sheet's body at the 1x size, however often it is called", () => {
+    const sprite = spriteAt(0.5);
+    keepBodySize(sprite, 0.5);
+    keepBodySize(sprite, 0.5);
+    expect([sprite.body.width, sprite.body.height]).toEqual([60, 60]);
+  });
+
+  it("should leave a 1x sheet's body alone", () => {
+    const sprite = spriteAt(1);
+    keepBodySize(sprite, 1);
+    expect(sprite.body.sourceWidth).toBe(60);
   });
 });

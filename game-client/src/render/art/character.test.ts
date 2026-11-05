@@ -535,7 +535,7 @@ describe("CharacterAnimator", () => {
     });
 
     it("should hold a charge's pose whole, never split over the walk", () => {
-      const motion = new CharacterMotion("se", 500, true);
+      const motion = new CharacterMotion("se", 500, { walkAttack: true });
       motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
       motion.attack(1000, { x: 40, y: 0 }, 800);
       const pos = { x: 0, y: 0 };
