@@ -138,6 +138,7 @@ import {
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
 import { trimCrop } from "@/render/world/walls";
+import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -602,6 +603,8 @@ export class HubScene extends Phaser.Scene {
     /** The n-th actionable choice, as the number keys count them. */
     pick: (index: number) => void;
     retone: () => void;
+    /** The card back to its corner: the logical view changed (FS-ZAJMH R13). */
+    relayout: () => void;
   };
   /** The open dialogue is the Spire door's panel, which walking out of the gate closes. */
   private doorOpen = false;
@@ -633,6 +636,8 @@ export class HubScene extends Phaser.Scene {
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
   private menuChoices?: MenuKeys;
+  /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
+  private moveMenu?: (origin: { x: number; y: number }) => void;
   /** Shown while queued, wherever the player walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
@@ -748,7 +753,7 @@ export class HubScene extends Phaser.Scene {
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
-    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(this.cameras.main, bounds);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
@@ -820,9 +825,32 @@ export class HubScene extends Phaser.Scene {
       () => this.characterLevel,
     );
 
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
+
     // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+  }
+
+  /**
+   * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
+   * its anchor, open panels included, their state untouched. The level bar, the chat window and
+   * the party frames and panel keep to the left, which a width change does not move; the gear
+   * overlay follows Phaser's resize itself.
+   */
+  private relayoutHud(): void {
+    this.invitePrompt?.relayout();
+    this.readyCheck?.relayout();
+    this.mailbox?.relayout();
+    this.dialogueChoices?.relayout();
+    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
+    if (this.queuePanel?.active) {
+      this.queuePanel.setX(viewport.centerX);
+      if (this.leaveButton?.visible) this.showLeaveButton();
+      // moved, not made again: rasterised at the render scale of now (FS-ZAJMH R5)
+      crispen([this.queuePanel, this.leaveButton]);
+    }
   }
 
   /**
@@ -2024,7 +2052,9 @@ export class HubScene extends Phaser.Scene {
    * takes it. The run and the field world apply the same rule to their presses.
    */
   private overGear(pointer: Phaser.Input.Pointer): boolean {
-    return this.gear?.covers(pointer.x, pointer.y) ?? false;
+    // the overlay is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
+    return this.gear?.covers(at.x, at.y) ?? false;
   }
 
   /** The queue is behind the player: no entry, nothing pending, no way out to offer. */
@@ -2061,9 +2091,8 @@ export class HubScene extends Phaser.Scene {
    * and it goes on its own.
    */
   private notice(text: string): void {
-    const { width } = this.cameras.main;
     const line = this.add
-      .text(width / 2, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
+      .text(viewport.centerX, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(1000);
@@ -2080,7 +2109,7 @@ export class HubScene extends Phaser.Scene {
     // vellum, not amber: the player cannot act on it (FS-KYPQ9 §I). Top centre, clear of the chat
     // window at the bottom left (FS-WJGFJ), and on no ground of its own.
     this.queuePanel = this.add
-      .text(this.cameras.main.width / 2, QUEUE_Y, text, queueLine(BARROW_HEX.vellum))
+      .text(viewport.centerX, QUEUE_Y, text, queueLine(BARROW_HEX.vellum))
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(1000);
@@ -2544,7 +2573,7 @@ export class HubScene extends Phaser.Scene {
       tones: MENU_TONES,
     });
 
-    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone };
+    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone, relayout: card.relayout };
     this.dialogue = card.container;
   }
 
@@ -2616,34 +2645,34 @@ export class HubScene extends Phaser.Scene {
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
    */
   private openMenu(): void {
-    const { width, height } = this.cameras.main;
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.leaveQueue(),
       back: () => this.closeMenu(),
     };
-    const { container, keys } = showMenuPanel(this, {
+    const { container, keys, moveTo } = showMenuPanel(this, {
       choices: hubMenuChoices({ queued: this.queued }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
       close: () => this.closeMenu(),
-      origin: { x: width / 2, y: height / 2 },
+      origin: { x: viewport.centerX, y: viewport.centerY },
       hit: CHOICE_HIT,
       tones: MENU_TONES,
     });
     this.menuChoices = keys;
     this.menu = container;
+    this.moveMenu = moveTo;
   }
 
   /**
    * The camera on the player's own body. Latched by sprite, not by entity id: a scene restart
    * (back from a run, re-entering the hub) rebuilds every sprite under the same id, and
-   * startFollow snaps the camera each time it is called, so it is called once per sprite.
+   * followWith snaps the camera each time it is called, so it is called once per sprite.
    */
   private keepCameraOn(sprite: Phaser.GameObjects.Container): void {
     if (sprite === this.followedSprite) return;
-    this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+    followWith(this.cameras.main, sprite);
     this.followedSprite = sprite;
   }
 
@@ -2651,6 +2680,7 @@ export class HubScene extends Phaser.Scene {
     this.menu?.destroy();
     this.menu = undefined;
     this.menuChoices = undefined;
+    this.moveMenu = undefined;
   }
 
   /**

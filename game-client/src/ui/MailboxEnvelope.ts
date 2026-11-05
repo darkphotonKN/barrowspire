@@ -16,6 +16,7 @@ import { sealState } from "@/mailbox/mailbox";
 import type { MailboxState } from "@/stores/mailboxStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
+import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
 
 export interface MailboxEnvelopeDeps {
@@ -59,7 +60,7 @@ export function drawWaxSeal(
 }
 
 export class MailboxEnvelope {
-  private readonly frame: Rect;
+  private frame: Rect;
   private readonly glow: Phaser.GameObjects.Graphics;
   private readonly body: Phaser.GameObjects.Graphics;
   private readonly seal: Phaser.GameObjects.Graphics;
@@ -73,7 +74,7 @@ export class MailboxEnvelope {
     private readonly scene: Phaser.Scene,
     private readonly deps: MailboxEnvelopeDeps,
   ) {
-    this.frame = envelopeFrame(scene.cameras.main);
+    this.frame = envelopeFrame(viewport);
     const hud = <T extends Phaser.GameObjects.Graphics>(g: T) =>
       g.setScrollFactor(0).setDepth(HUD_DEPTH);
     this.glow = hud(scene.add.graphics());
@@ -98,6 +99,15 @@ export class MailboxEnvelope {
       if (state.summary !== prev.summary) this.drawSeal();
       if (state.pulses > prev.pulses) this.playPulse();
     });
+  }
+
+  /** The logical view changed: the envelope goes back to the bottom-right corner (FS-ZAJMH R12, R13). */
+  relayout(): void {
+    this.frame = envelopeFrame(viewport);
+    this.zone.setPosition(this.frame.x, this.frame.y);
+    this.drawGlow();
+    this.drawBody();
+    this.drawSeal();
   }
 
   destroy(): void {

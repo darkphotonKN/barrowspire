@@ -60,6 +60,7 @@ import {
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
+import { viewport } from "@/render/viewport";
 
 /** What a scene gives the window: what the input needs to let the player type, and who is playing. */
 export interface ChatWindowOptions {
@@ -98,7 +99,7 @@ export function mountChatWindow(
     scene,
     useChatStore,
     CHAT_WINDOW_X,
-    scene.cameras.main.height - CHAT_WINDOW_MARGIN,
+    viewport.height - CHAT_WINDOW_MARGIN,
     {
       input: {
         mayOpen,
@@ -414,14 +415,16 @@ export class ChatWindow {
    */
   private onPress(pointer: { x: number; y: number }): void {
     this.pressedName = null;
+    // Phaser's pointer.x/y are backing px; the window is laid out in logical units (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
     // a press on a panel drawn over the window is that panel's: nothing here is grabbed or named
-    if (this.coveredAt(pointer.x, pointer.y)) {
+    if (this.coveredAt(at.x, at.y)) {
       if (this.input?.isOpen()) this.field?.blur();
       return;
     }
-    if (this.grabScrollbar(pointer)) return;
-    this.pressedName = this.nameAt(pointer.x, pointer.y);
-    if (!this.input?.isOpen() || this.covers(pointer.x, pointer.y)) return;
+    if (this.grabScrollbar(at)) return;
+    this.pressedName = this.nameAt(at.x, at.y);
+    if (!this.input?.isOpen() || this.covers(at.x, at.y)) return;
     this.field?.blur();
   }
 
@@ -442,6 +445,7 @@ export class ChatWindow {
   /**
    * A press on the scrollbar (asked 2026-10-31): on the thumb it is held where it was caught; on the
    * bare track the thumb jumps to centre on the press. Reports whether the press was the bar's.
+   * `pointer` in logical units.
    */
   private grabScrollbar(pointer: { x: number; y: number }): boolean {
     if (this.store.getState().folded) return false;
@@ -462,7 +466,7 @@ export class ChatWindow {
 
   /** While the thumb is held, the view follows the pointer up and down, wherever it wanders. */
   private onDrag(pointer: { x: number; y: number }): void {
-    if (this.grabbed !== null) this.scrollTo(pointer.y);
+    if (this.grabbed !== null) this.scrollTo(viewport.toLogical(pointer).y);
   }
 
   /**
@@ -474,7 +478,8 @@ export class ChatWindow {
     this.grabbed = null;
     const pressed = this.pressedName;
     this.pressedName = null;
-    if (pressed !== null && pressed === this.nameAt(pointer.x, pointer.y)) {
+    const at = viewport.toLogical(pointer);
+    if (pressed !== null && pressed === this.nameAt(at.x, at.y)) {
       this.input?.whisperTo(pressed);
     }
   }
@@ -514,10 +519,11 @@ export class ChatWindow {
     _dx: number,
     dy: number,
   ): void {
+    const at = viewport.toLogical(pointer);
     if (
       this.store.getState().folded ||
-      !within(this.frame.messages, pointer.x, pointer.y) ||
-      this.coveredAt(pointer.x, pointer.y)
+      !within(this.frame.messages, at.x, at.y) ||
+      this.coveredAt(at.x, at.y)
     )
       return;
     const next = scrolledOffset(

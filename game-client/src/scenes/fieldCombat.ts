@@ -17,6 +17,7 @@ import { playFireballCast } from "@/render/effects/fireball";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
+import { viewport } from "@/render/viewport";
 
 /**
  * A field's fighting (FS-X2F2H §Requirements 56), composed from the pieces the run scene draws
@@ -275,7 +276,9 @@ export function fieldCombatOnScene(
     // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
     if (combat.aiming) return;
     // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
-    if (hooks.takesPointer?.(pointer.x, pointer.y, pointer.button === 0)) return;
+    // in logical units, as the HUD is laid out; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
+    if (hooks.takesPointer?.(at.x, at.y, pointer.button === 0)) return;
     const target = screenToWorld(pointer.worldX, pointer.worldY);
     if (pointer.leftButtonDown() || pointer.button === 0) combat.cast("primary", target);
     else if (pointer.rightButtonDown() || pointer.button === RIGHT_BUTTON) combat.cast("special", target);

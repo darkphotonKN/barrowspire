@@ -767,68 +767,103 @@
 }
 
 /* Game Wrapper Styles */
-.treasure-hunt-wrapper {
+/* The /game page, windowed (FS-ZAJMH R17): the header and the banner stay, and the game frame
+   fills the viewport below them with no page scroll. The body becomes a column only while the
+   game page is in it, so no other page's layout changes. */
+body:has(.game-page) {
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 0;
 }
 
-.treasure-hunt-title {
-  color: var(--color-text);
-  margin-bottom: 10px;
-  font-size: 24px;
-  font-weight: bold;
-  letter-spacing: 0.1em;
-}
-
-.treasure-hunt-info {
-  color: var(--color-text-dim);
-  margin-bottom: 20px;
-  text-align: center;
-  font-size: 14px;
-}
-
-.treasure-hunt-game-container {
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.8);
-  border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
-}
-
-.treasure-hunt-controls {
-  color: var(--color-text-dim);
+.game-page {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  gap: 12px;
-  font-size: 12px;
 }
 
-.treasure-hunt-control-group {
-  background: color-mix(in srgb, var(--color-bg-inset) 80%, transparent);
-  padding: 8px 14px;
+/* The game frame: the canvas and Phaser's DOM layer, centred; what the canvas does not fill
+   (outside 3:2–16:9) is bars in the frame's own ground (R8, R9). It is what goes fullscreen. */
+.game-frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--color-bg-dark);
+}
+
+/* The canvas and the fullscreen button: exactly the canvas's size, centred in the frame, so the
+   button keeps the canvas's corner whether or not the frame shows bars (R18). */
+.game-stage {
+  position: relative;
+  flex: none;
+}
+
+/* Phaser's parent: exactly the canvas's size, so the DOM layer laid over it lines up. */
+.game-canvas {
+  position: relative;
+}
+
+.game-canvas canvas {
+  display: block;
+}
+
+/* The fullscreen toggle (FS-ZAJMH R18): the canvas's top-right corner (its stage's, never the
+   frame's, where a bar may be), over the canvas and Phaser's DOM layer, in the web UI's palette
+   (ADR-0025) as a secondary button. Its inset and height are logical units (FullscreenButton sets
+   them from FULLSCREEN_BUTTON) times the canvas's CSS scale (--game-scale, mountViewport), so it
+   covers the same corner of the view at every fit and the run's top-right HUD can step clear of
+   it. Faded until hovered or focused. */
+.fullscreen-button {
+  --fullscreen-unit: calc(var(--game-scale, 1) * 1px);
+  position: absolute;
+  top: calc(var(--fullscreen-inset) * var(--fullscreen-unit));
+  right: calc(var(--fullscreen-inset) * var(--fullscreen-unit));
+  z-index: 2;
+  height: calc(var(--fullscreen-height) * var(--fullscreen-unit));
+  padding: 0 calc(7 * var(--fullscreen-unit));
+  display: inline-flex;
+  align-items: center;
+  gap: calc(4 * var(--fullscreen-unit));
+  font-family: var(--font-body);
+  font-size: calc(12 * var(--fullscreen-unit));
+  line-height: 1;
+  color: var(--color-text-dim);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  border: 1px solid var(--color-border);
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
-.treasure-hunt-control-group h3 {
+.fullscreen-button:hover,
+.fullscreen-button:focus-visible {
+  opacity: 1;
   color: var(--color-text);
-  margin-bottom: 4px;
-  font-size: 12px;
+  border-color: var(--color-border-strong);
 }
 
-.treasure-hunt-control-group p {
-  margin: 0;
+.fullscreen-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
-.treasure-hunt-status {
-  padding: 10px 20px;
-  background: color-mix(in srgb, var(--color-bg-inset) 80%, transparent);
-  border-radius: 8px;
-  font-size: 14px;
-  transition: color 0.3s ease;
-  border: 1px solid var(--color-border);
+.fullscreen-button-icon {
+  width: calc(12 * var(--fullscreen-unit));
+  height: calc(12 * var(--fullscreen-unit));
+  flex: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .fullscreen-button {
+    background: var(--color-bg-card-opaque);
+  }
 }
 
 /* Profile Page Styles */

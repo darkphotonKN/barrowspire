@@ -1,4 +1,5 @@
 import * as Phaser from "phaser";
+import { viewport } from "@/render/viewport";
 
 /**
  * Barrow dust. Replaces the old starfield — faint motes of dust and stray
@@ -9,8 +10,8 @@ export function createStarfield(
   scene: Phaser.Scene,
   starCount: number = 200,
 ): void {
-  const width = scene.cameras.main.width;
-  const height = scene.cameras.main.height;
+  const width = viewport.width;
+  const height = viewport.height;
 
   // dust mote palette — cold ash with the occasional warm ember
   const motes = [0x8a7d5c, 0x52555c, 0x5a4632];

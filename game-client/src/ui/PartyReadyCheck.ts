@@ -41,6 +41,7 @@ import {
   readyCheckFrame,
   readyCheckView,
 } from "./partyReadyCheckLayout";
+import { viewport } from "@/render/viewport";
 
 export interface PartyReadyCheckDeps {
   store: StoreApi<PartyState>;
@@ -105,6 +106,11 @@ export class PartyReadyCheck {
         this.render(true);
     });
     scene.events.on("postupdate", this.tick, this);
+    this.render(true);
+  }
+
+  /** The logical view changed: what is shown is drawn again, centred across its top (FS-ZAJMH R13). */
+  relayout(): void {
     this.render(true);
   }
 
@@ -226,7 +232,7 @@ export class PartyReadyCheck {
 
     const view = readyCheckView(check, this.deps.selfId());
     const f = readyCheckFrame(view.rows.length, {
-      canvasWidth: this.scene.cameras.main.width,
+      canvasWidth: viewport.width,
       panelOpen,
     });
     const g = this.scene.add

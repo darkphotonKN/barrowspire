@@ -37,6 +37,7 @@ import {
   SATCHEL_FLAP_KEY,
   ensureSatchelTextures,
 } from "./satchel";
+import { anchorAt, crispen, type Placement } from "@/render/viewport";
 
 // ── Item detail ───────────────────────────────────────────────────────────
 
@@ -288,6 +289,8 @@ export const CONTAINER_VIEW_DEPTH = 1000;
 
 /** The composite (lifted flap to hint) is taller above the body's centre than below it. */
 const CENTRE_DROP = 16;
+/** The view stands at the screen's centre, a little low (FS-ZAJMH R12). */
+const VIEW_PLACE: Placement = { anchor: "centre", dx: 0, dy: CENTRE_DROP };
 const FLAP_OPEN = -0.42;
 const STAGGER_MS = 55;
 /** When the first icon starts to drop, measured from open: while the flap is still rising. */
@@ -388,6 +391,17 @@ export class ContainerView {
     return this.openFor;
   }
 
+  /** The logical view changed: an open view goes back to the centre, its contents untouched (FS-ZAJMH R13). */
+  relayout(): void {
+    if (this.isOpen) this.place();
+  }
+
+  private place(): void {
+    const at = anchorAt(VIEW_PLACE);
+    this.root.setPosition(at.x, at.y);
+    crispen([this.root]);
+  }
+
   /**
    * Pops in wearing the face for the container's kind (FS-1D6BX §Requirements 15). The satchel
    * then lifts its flap and its icons drop in as the contents arrive (§D.1); the coffer and the
@@ -398,8 +412,7 @@ export class ContainerView {
     this.openFor = entityId;
     this.face = containerFace(kind);
     const lifts = this.lifts;
-    const cam = this.scene.cameras.main;
-    this.root.setPosition(cam.width / 2, cam.height / 2 + CENTRE_DROP);
+    this.place();
     this.root.setVisible(true).setAlpha(0).setScale(0.85);
     this.body.setTexture(FACES[this.face].body);
     this.flap.setVisible(lifts).setScale(1).clearTint();

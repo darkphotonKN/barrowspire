@@ -20,6 +20,14 @@ import {
 } from "@/ui/menuChrome";
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
+import {
+  LOGICAL_HEIGHT,
+  LOGICAL_MAX_WIDTH,
+  STAGE_WIDTH,
+  centreStage,
+  stagePoint,
+  viewport,
+} from "@/render/viewport";
 
 /** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
 const ui = palette.menu;
@@ -98,10 +106,12 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
+    centreStage(this.cameras.main);
     sharpenText(this);
     this.art = registerArt(this);
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     // The Spire: a soot silhouette rising behind the title, edged in iron (Perfectly Centered)
     const spire = this.add.graphics();
@@ -297,7 +307,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private createHeroRightSidebar(): void {
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const panelW = 200;
     const panelH = 440;
     const panelX = width - panelW - 24;
@@ -422,7 +432,10 @@ export class MainMenuScene extends Phaser.Scene {
       this.heroSidebarCards.push(cardObj);
 
       hitArea.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-        const dist = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY);
+        // a click, not a drag: 8 logical units, whatever the render scale (FS-ZAJMH R15)
+        const dist =
+          Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY) /
+          viewport.renderScale;
         if (dist < 8) {
           useGameStore.getState().selectCharacter(char.id);
           this.refreshHeroSidebar();
@@ -448,17 +461,20 @@ export class MainMenuScene extends Phaser.Scene {
     let startDragY = 0;
     let startScrollY = 0;
 
+    // the sidebar is laid out on the centred stage; Phaser's pointer.x/y are backing px (FS-ZAJMH R11, R15)
     this.onSidebarPointerDown = (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x >= panelX && pointer.x <= panelX + panelW && pointer.y >= maskY && pointer.y <= maskY + maskH) {
+      const at = stagePoint(this.cameras.main, pointer);
+      if (at.x >= panelX && at.x <= panelX + panelW && at.y >= maskY && at.y <= maskY + maskH) {
         isDragging = true;
-        startDragY = pointer.y;
+        startDragY = at.y;
         startScrollY = this.sidebarScrollY;
       }
     };
     this.input.on("pointerdown", this.onSidebarPointerDown);
 
     this.onSidebarWheel = (pointer: Phaser.Input.Pointer, _gameObjects: any, _deltaX: number, deltaY: number) => {
-      if (pointer.x >= panelX && pointer.x <= panelX + panelW && pointer.y >= panelY && pointer.y <= panelY + panelH) {
+      const at = stagePoint(this.cameras.main, pointer);
+      if (at.x >= panelX && at.x <= panelX + panelW && at.y >= panelY && at.y <= panelY + panelH) {
         const currentCount = useGameStore.getState().characters.length;
         const totH = currentCount * (cardH + gap) + 8;
         const maxScr = Math.max(0, totH - maskH);
@@ -479,7 +495,7 @@ export class MainMenuScene extends Phaser.Scene {
       const maxScr = Math.max(0, totH - maskH);
       if (maxScr <= 0) return;
 
-      const dy = pointer.y - startDragY;
+      const dy = stagePoint(this.cameras.main, pointer).y - startDragY;
       this.sidebarScrollY = Phaser.Math.Clamp(startScrollY - dy, 0, maxScr);
       this.updateSidebarScrollPosition(maskY, maskH, panelX + panelW - 6, totH);
     };
@@ -559,8 +575,8 @@ export class MainMenuScene extends Phaser.Scene {
   private refreshCenterHeroShowcase(): void {
     const store = useGameStore.getState();
     const activeChar = store.getActiveCharacter();
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     const centerX = width / 2;
     const centerY = height / 2 - 95;
@@ -677,7 +693,7 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const panelW = 200;
     const panelH = 440;
     const panelX = width - panelW - 24;
@@ -821,12 +837,12 @@ export class MainMenuScene extends Phaser.Scene {
 
   private drawDelveButton(state: ButtonState): void {
     if (!this.cameras || !this.cameras.main) return;
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const titleX = width / 2;
     const btnW = ENTER_BUTTON.width;
     const btnH = ENTER_BUTTON.height;
     const btnX = titleX - btnW / 2;
-    const btnY = this.cameras.main.height / 2 + 55;
+    const btnY = LOGICAL_HEIGHT / 2 + 55;
 
     if (this.buttonBg) drawButton(this.buttonBg, btnX, btnY, btnW, btnH, "primary", state);
     this.startButtonText?.setColor(toCss(buttonTextColor("primary", state)));
@@ -842,7 +858,8 @@ export class MainMenuScene extends Phaser.Scene {
   private showRefusal(message: string): void {
     this.refusalText?.destroy();
 
-    const { width, height } = this.cameras.main;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     this.refusalText = this.add
       .text(width / 2, height / 2 + 150, message, {
@@ -871,13 +888,14 @@ export class MainMenuScene extends Phaser.Scene {
     }
     this.queuePopupActive = true;
 
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
+    // over the whole view, however much wider than the stage it is
     this.queueOverlay = this.add.rectangle(
       width / 2,
       height / 2,
-      width,
+      LOGICAL_MAX_WIDTH,
       height,
       ui.well,
       0.7
