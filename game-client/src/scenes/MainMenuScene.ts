@@ -25,6 +25,8 @@ import {
   LOGICAL_MAX_WIDTH,
   STAGE_WIDTH,
   centreStage,
+  fillMaskArea,
+  maskInView,
   stagePoint,
   viewport,
 } from "@/render/viewport";
@@ -92,6 +94,13 @@ export class MainMenuScene extends Phaser.Scene {
   private sidebarContainer?: Phaser.GameObjects.Container;
   private sidebarCardsContainer?: Phaser.GameObjects.Container;
   private sidebarScrollY: number = 0;
+  /** The cards' clip: its shape, its area on the stage and the render scale it was drawn at. */
+  private sidebarMask?: {
+    shape: Phaser.GameObjects.Graphics;
+    area: { x: number; y: number; width: number; height: number };
+    scale: number;
+  };
+  private unwatchScale?: () => void;
   private sidebarScrollbarGraphics?: Phaser.GameObjects.Graphics;
   private onSidebarWheel?: (pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => void;
   private onSidebarDrag?: (pointer: Phaser.Input.Pointer) => void;
@@ -317,6 +326,9 @@ export class MainMenuScene extends Phaser.Scene {
       // Portraits live in the cards container and go with it (MenuFigure stops on destroy).
       this.sidebarContainer.destroy();
     }
+    // the old clip goes after the cards it masked, never under them
+    this.sidebarMask?.shape.destroy();
+    this.sidebarMask = undefined;
     this.sidebarContainer = this.add.container(0, 0);
 
     const characters = useGameStore.getState().characters;
@@ -351,12 +363,20 @@ export class MainMenuScene extends Phaser.Scene {
     const maskX = panelX + 8;
 
     const maskShape = this.make.graphics({});
-    maskShape.fillStyle(ui.text); // any opaque fill: a geometry mask reads shape, not colour
-    maskShape.fillRect(maskX, maskY, maskW, maskH);
-    const mask = maskShape.createGeometryMask();
+    this.sidebarMask = {
+      shape: maskShape,
+      area: { x: maskX, y: maskY, width: maskW, height: maskH },
+      scale: viewport.renderScale,
+    };
+    this.shapeSidebarMask();
+    // the clip lies on the backing px grid, so a new render scale alone redraws it
+    this.unwatchScale ??= viewport.onChange((view) => {
+      if (this.sidebarMask && view.renderScale !== this.sidebarMask.scale)
+        this.shapeSidebarMask();
+    });
 
     this.sidebarCardsContainer = this.add.container(0, 0);
-    this.sidebarCardsContainer.setMask(mask);
+    maskInView(this.sidebarCardsContainer, maskShape, this.cameras.main);
     this.sidebarContainer.add(this.sidebarCardsContainer);
 
     this.sidebarScrollbarGraphics = this.add.graphics();
@@ -958,7 +978,25 @@ export class MainMenuScene extends Phaser.Scene {
     this.queuePopupActive = false;
   }
 
+  /**
+   * Draws the cards' clip on the backing px grid of the render scale now (`fillMaskArea`), so its
+   * edge rows and columns let the cards through as Phaser 3.90's multisampled stencil did
+   * (ADR-0057 §Masks, as the chat's clip). The clip is in stage units, drawn through the camera;
+   * the camera's scroll is kept on the same grid (`keepOnPixelGrid`), so the stage's grid is the
+   * screen's. Redrawn in place for a new render scale alone, the mask staying laid.
+   */
+  private shapeSidebarMask(): void {
+    if (!this.sidebarMask) return;
+    const { shape, area } = this.sidebarMask;
+    this.sidebarMask.scale = viewport.renderScale;
+    shape.clear();
+    // a mask's colour is never drawn, only its alpha: any opaque token
+    fillMaskArea(shape, area, ui.text, this.sidebarMask.scale);
+  }
+
   private shutdown(): void {
+    this.unwatchScale?.();
+    this.unwatchScale = undefined;
     if (this.unsubscribeConnectionStatus) {
       this.unsubscribeConnectionStatus();
       this.unsubscribeConnectionStatus = undefined;
@@ -976,6 +1014,8 @@ export class MainMenuScene extends Phaser.Scene {
       this.sidebarContainer.destroy();
       this.sidebarContainer = undefined;
     }
+    this.sidebarMask?.shape.destroy();
+    this.sidebarMask = undefined;
     this.closeQueuePopup();
   }
 }

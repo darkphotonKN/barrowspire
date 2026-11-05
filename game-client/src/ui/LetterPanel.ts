@@ -39,7 +39,7 @@ import { carvedPanel } from "./carvedPanel";
 import { itemTipRow } from "./gearOverlayLayout";
 import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
 import { drawWaxSeal } from "./MailboxEnvelope";
-import { viewport } from "@/render/viewport";
+import { fillMaskArea, maskInView, viewport } from "@/render/viewport";
 import {
   BODY_SCROLL_GAP,
   BODY_SCROLL_GRAB,
@@ -125,6 +125,13 @@ export class LetterPanel {
   private shownLetter: string | null = null;
   private readonly now: () => number;
   private readonly unsubscribe: () => void;
+  /** The body's clip: its shape, its area and the render scale it was last drawn on the grid of. */
+  private bodyMask?: {
+    shape: Phaser.GameObjects.Graphics;
+    rect: Rect;
+    scale: number;
+  };
+  private readonly unwatchScale: () => void;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -143,6 +150,11 @@ export class LetterPanel {
       )
         this.draw();
     });
+    // the body's clip lies on the backing px grid, so a new render scale alone redraws it
+    this.unwatchScale = viewport.onChange((view) => {
+      if (this.bodyMask && view.renderScale !== this.bodyMask.scale)
+        this.shapeBodyMask();
+    });
     scene.input.on("wheel", this.onWheel, this);
     scene.input.on("pointermove", this.onMove, this);
     scene.input.on("pointerup", this.onRelease, this);
@@ -151,6 +163,7 @@ export class LetterPanel {
 
   destroy(): void {
     this.unsubscribe();
+    this.unwatchScale();
     this.scene.input?.off("wheel", this.onWheel, this);
     this.scene.input?.off("pointermove", this.onMove, this);
     this.scene.input?.off("pointerup", this.onRelease, this);
@@ -172,12 +185,28 @@ export class LetterPanel {
     for (const o of this.objects) o.destroy();
     this.objects = [];
     this.body = undefined;
+    this.bodyMask = undefined;
     this.frame = undefined;
   }
 
   private keep<T extends { destroy(): void }>(o: T): T {
     this.objects.push(o);
     return o;
+  }
+
+  /**
+   * Draws the body's clip on the backing px grid of the render scale now (`fillMaskArea`), so its
+   * edge rows and columns let the text through as Phaser 3.90's multisampled stencil did
+   * (ADR-0057 §Masks, as the chat's clip). Redrawn in place for a new render scale alone: the
+   * mask stays laid, and the body text is not drawn again.
+   */
+  private shapeBodyMask(): void {
+    if (!this.bodyMask) return;
+    const { shape, rect } = this.bodyMask;
+    this.bodyMask.scale = viewport.renderScale;
+    shape.clear();
+    // a mask's colour is never drawn, only its alpha; any token keeps the fence's literal ban
+    fillMaskArea(shape, rect, palette.hudText, this.bodyMask.scale);
   }
 
   private text(
@@ -409,10 +438,9 @@ export class LetterPanel {
     const maskShape = this.keep(
       this.scene.make.graphics({}, false).setScrollFactor(0),
     );
-    // a mask's colour is never drawn, only its shape; any token keeps the fence's literal ban
-    maskShape.fillStyle(palette.hudText);
-    maskShape.fillRect(rect.x, rect.y, rect.width, rect.height);
-    text.setMask(maskShape.createGeometryMask());
+    this.bodyMask = { shape: maskShape, rect, scale: viewport.renderScale };
+    this.shapeBodyMask();
+    maskInView(text, maskShape, this.scene.cameras.main);
     const bar = this.keep(
       this.scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH),
     );

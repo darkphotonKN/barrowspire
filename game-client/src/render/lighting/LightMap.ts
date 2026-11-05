@@ -223,12 +223,10 @@ export class LightMap {
     const view = viewRect(cam);
     this.carriedAlpha = this.carrying ? 1 : this.carriedAlpha * CARRY_FADE;
 
-    // The fill inherits whatever GL blend the last draw of the previous frame left
-    // bound (see forceNormalBlend), so it is forced before the fill as well as after.
-    this.forceNormalBlend();
-    // One stamp at a time, not a beginDraw/endDraw batch: a batched stamp's
-    // transparent corners overwrite the pools under it (seen as hard rectangles in
-    // the light). There are a few dozen sources at most, and only those in view.
+    // Each pool is its own ADD stamp over the ambient fill: Phaser 4 switches the blend per
+    // stamp as it plays the texture's commands back, so a stamp's transparent corners add
+    // nothing to the pools under it. There are a few dozen sources at most, and only those in
+    // view. The commands are buffered until render(), below.
     this.texture.fill(this.ambient, 1);
     const lit = cullInto(this.sources, view, this.visible);
     for (const s of lit) this.stamp(s, view, cam.zoomX, timeMs, 1);
@@ -237,7 +235,7 @@ export class LightMap {
       if (!(s as Transient).hidden) this.stamp(s, view, cam.zoomX, timeMs, 1);
     if (this.carriedAlpha > 0.01)
       this.stamp(this.carried, view, cam.zoomX, timeMs, this.carriedAlpha);
-    this.forceNormalBlend();
+    this.texture.render();
 
     this.placeHalos(lit, timeMs);
   }
@@ -261,20 +259,6 @@ export class LightMap {
     light.alive = false;
     const i = this.transients.indexOf(light);
     if (i >= 0) this.transients.splice(i, 1);
-  }
-
-  /**
-   * Phaser can leave a blend bound on the GL context while its own state says NORMAL: after
-   * an ADD stamp, the camera's background fill then draws additively (seen: the map edge
-   * rendered as the game's clear colour plus pitch). Forcing NORMAL rebinds it either way.
-   */
-  private forceNormalBlend(): void {
-    const renderer = this.scene.sys.renderer;
-    if (renderer.type === Phaser.WEBGL)
-      (renderer as Phaser.Renderer.WebGL.WebGLRenderer).setBlendMode(
-        Phaser.BlendModes.NORMAL,
-        true,
-      );
   }
 
   /** A pool at its place in the view, in the texture's backing px: `zoom` px per world unit. */
@@ -335,8 +319,10 @@ export class LightMap {
       this.texture.width !== cam.width ||
       this.texture.height !== cam.height
     ) {
-      // made again, not resized: Phaser 3.90's DynamicTexture.setSize leaves its GL target at the
-      // old size, and the pools land off their place (as the blackout's render texture, below)
+      // made again, not resized (ADR-0057 §Render textures): the reason is gone, Phaser 3.90's
+      // DynamicTexture.setSize left its GL target at the old size and Phaser 4.2.1's resizes it
+      // (probe: drawn right after 64 -> 200x160). Kept because it is harmless: a resize is rare
+      // and the texture is refilled every frame, so a fresh one costs nothing seen.
       this.texture.destroy();
       this.texture = this.scene.textures.addDynamicTexture(
         TEXTURE_KEY,

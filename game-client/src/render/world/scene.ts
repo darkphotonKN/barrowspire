@@ -166,10 +166,10 @@ export class GroundLayer {
     else this.rt.setTint(look.tint);
     this.lift(look);
     this.rt.clear();
-    this.rt.beginDraw();
     const { fadeEdge, ...plan } = world;
     this.draw(planGroundLayer({ ...plan, houses, look, seed: this.floor?.seed }));
-    this.rt.endDraw();
+    // Phaser 4 buffers a render texture's drawing until render()
+    this.rt.render();
     if (fadeEdge) this.fadeEdge();
   }
 
@@ -192,9 +192,11 @@ export class GroundLayer {
       ].map((p) => ({ x: p.x - this.origin.x, y: p.y - this.origin.y }));
       // only the alpha erases; the colour is never seen
       g.fillStyle(BARROW_HEX.pitch, band.erase);
-      g.fillPoints(corners, true);
+      g.fillPoints(corners as Phaser.Math.Vector2[], true);
     }
     this.rt.erase(g, 0, 0);
+    // drawn before the shape goes: the erase reads it when the texture renders
+    this.rt.render();
     g.destroy();
   }
 
@@ -227,13 +229,13 @@ export class GroundLayer {
       });
       if (!sheet || frame.placeholder) continue;
       const s = worldToScreen(p.at.x, p.at.y);
-      this.rt.batchDrawFrame(
+      this.rt.stamp(
         frame.texture,
         frame.frame,
         Math.round(s.x - sheet.anchor.x * sheet.frameWidth - this.origin.x),
         Math.round(s.y - sheet.anchor.y * sheet.frameHeight - this.origin.y),
-        p.alpha ?? 1,
-        p.shade,
+        // a frame's top-left at (x, y), as Phaser 3's batched frame draw placed it
+        { alpha: p.alpha ?? 1, tint: p.shade, originX: 0, originY: 0 },
       );
     }
   }

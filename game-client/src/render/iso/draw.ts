@@ -38,15 +38,15 @@ export function addUprightBlock(
     const g = scene.add.graphics();
 
     g.fillStyle(style.south, 1);
-    g.fillPoints(south, true);
+    g.fillPoints(south as Phaser.Math.Vector2[], true);
     g.fillStyle(style.east, 1);
-    g.fillPoints(east, true);
+    g.fillPoints(east as Phaser.Math.Vector2[], true);
     g.fillStyle(style.top, 1);
-    g.fillPoints(top, true);
+    g.fillPoints(top as Phaser.Math.Vector2[], true);
 
     if (style.edge) {
       g.lineStyle(style.edge.width, style.edge.color, style.edge.alpha);
-      g.strokePoints(top, true);
+      g.strokePoints(top as Phaser.Math.Vector2[], true);
     }
 
     g.setDepth(

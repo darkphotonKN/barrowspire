@@ -5,7 +5,9 @@ import { fitCamera } from "./camera";
  * Fits every scene's main camera to the viewport as the scene starts, before its `init` and
  * `create` run (Phaser's READY follows the camera manager's START), so a scene's own bounds,
  * follow and layout already see the render scale. A scene plugin, so no scene has to remember
- * to call it. Re-fits on a render-scale change are `fitGame`'s.
+ * to call it. Re-fits on a render-scale change are `fitGame`'s. Rounding every game object to the
+ * backing px is not a scene's: it is installed once where the game is configured (ADR-0057,
+ * `roundEveryObject`).
  */
 export class ViewportFit extends Phaser.Plugins.ScenePlugin {
   boot(): void {

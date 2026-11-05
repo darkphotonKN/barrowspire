@@ -2755,9 +2755,9 @@ export class HubScene extends Phaser.Scene {
     return this.add
       .graphics()
       .fillStyle(palette.markerFunction, 1)
-      .fillPoints(points, true)
+      .fillPoints(points as Phaser.Math.Vector2[], true)
       .lineStyle(1.5, palette.markerStroke, 1)
-      .strokePoints(points, true)
+      .strokePoints(points as Phaser.Math.Vector2[], true)
       .setDepth(MARKER_DEPTH.name);
   }
 

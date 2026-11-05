@@ -28,6 +28,11 @@ interface Point {
   y: number;
 }
 
+/** What of Phaser's `TransformMatrix` the pixel grid moves: a camera's view matrices. */
+interface ViewMatrix {
+  translate(x: number, y: number): unknown;
+}
+
 /** What of a Phaser camera the viewport drives. A `Phaser.Cameras.Scene2D.Camera` is one. */
 export interface ViewCamera {
   readonly width: number;
@@ -57,6 +62,12 @@ export interface ViewCamera {
   clampX(x: number): number;
   clampY(y: number): number;
   preRender(): void;
+  /**
+   * Built by `preRender` from the scroll. `getViewMatrix(true)` is the camera's own `matrix`
+   * (Phaser's typings leave the field out); the renderer reads it or `matrixCombined`.
+   */
+  getViewMatrix(forceComposite: boolean): ViewMatrix;
+  readonly matrixCombined: ViewMatrix;
 }
 
 /** What of a camera the pixel grid reads and writes ({@link keepOnPixelGrid}). */
@@ -71,6 +82,8 @@ export type PixelGridCamera = Pick<
   | "useBounds"
   | "clampX"
   | "clampY"
+  | "getViewMatrix"
+  | "matrixCombined"
 >;
 
 /** How fast the camera catches its target, as every world has always followed. */
@@ -165,15 +178,16 @@ function applyBounds(cam: ViewCamera, b: Rect): void {
 
 /**
  * Follows `target`, kept in the middle of the view, and on it from this frame: Phaser's own snap
- * uses the origin-0.5 half width and would start a whole view off. Phaser's rounding is left off
- * (it would floor the scroll to whole world units); the pixel grid rounds instead.
+ * uses the origin-0.5 half width and would start a whole view off. The camera's rounding is left
+ * as it is (Phaser's `startFollow` sets `roundPixels` to its argument); the pixel grid keeps the
+ * scroll on whole backing px.
  */
 export function followWith(cam: ViewCamera, target: Point): void {
   const state = stateOf(cam);
   state.target = target;
   cam.startFollow(
     target,
-    false,
+    roundsPixels(cam),
     FOLLOW_LERP,
     FOLLOW_LERP,
     cam.displayWidth / 2,
@@ -230,67 +244,96 @@ const GRID_EPSILON = 1e-6;
 const gridded = new WeakMap<object, boolean>();
 
 /**
- * Whether `cam` draws rounded to px. A camera on the pixel grid keeps Phaser's own `roundPixels`
- * off ({@link keepOnPixelGrid}), so this, not that flag, is what another texture matching it reads.
+ * Whether `cam` draws rounded to px: for a camera on the pixel grid, the rounding it keeps
+ * ({@link keepOnPixelGrid}), which a `startFollow` may have cleared from Phaser's flag until the
+ * next frame; for any other, its `roundPixels`. What another texture matching it reads.
  */
 export function roundsPixels(cam: { roundPixels: boolean }): boolean {
   return gridded.get(cam) ?? cam.roundPixels;
 }
 
 /**
- * Keeps px rounding on at a fractional render scale (FS-ZAJMH R4). Phaser 3.90 drops px rounding
- * at any non-integer zoom, and under `roundPixels` floors scroll to whole world units: at 1.5 that
- * leaves every sprite half a backing px out on an odd scroll, and a lerp step under a unit is
- * thrown away, so a following camera sticks. So Phaser's `roundPixels` is kept off, and after its
- * own frame set-up the scroll is floored onto the 1/zoom grid (whole backing px) and rounding is
- * switched on: each quad's corner lands on a backing px, a still world keeps its px as the camera
- * moves, and every lerp step left or up moves it. At zoom 1 it is Phaser's own floor. The game's
- * `roundPixels` at the first wrap is the wish; a later `roundPixels = true` (a `startFollow` asking
- * for it) is taken over before Phaser floors. Wraps a camera's frame set-up once, however often
- * it is called.
+ * Keeps px rounding on at a fractional render scale (FS-ZAJMH R4, ADR-0057). Every game object
+ * rounds its quad's corners to backing px whenever the camera's `roundPixels` is on (`fullAuto`,
+ * `roundEveryObject`), at any zoom; so this camera's `roundPixels` stays on, and after Phaser's
+ * own frame set-up its scroll is floored onto the 1/zoom grid (whole backing px), and the view
+ * matrix Phaser built from the unfloored scroll is moved with it, so the frame is drawn at the
+ * scroll kept. A still world then keeps its px, and each sprite its width, as the camera moves,
+ * at 1.25 and 1.5 too, and every lerp step left or up moves it, so a following camera never
+ * sticks. At zoom 1 the grid is whole world units.
+ *
+ * The game's `roundPixels` at the first wrap is the wish, and a later `roundPixels = true` is
+ * taken over; it is put back before each frame, since Phaser's `startFollow` sets the flag to
+ * its argument. Phaser 4's `preRender` no longer floors scroll under `roundPixels` (3.90 did, which
+ * threw away lerp steps under a unit), so the flag can stay on. `renderRoundPixels` is forced on
+ * for the canvas renderer alone, which reads it and which Phaser sets at a whole zoom only; WebGL
+ * never reads it. Wraps a camera's frame set-up once, however often it is called.
  */
 export function keepOnPixelGrid(cam: PixelGridCamera): void {
   if (gridded.has(cam)) return;
   gridded.set(cam, cam.roundPixels);
-  cam.roundPixels = false;
   const frame = cam.preRender.bind(cam);
   cam.preRender = () => {
-    if (cam.roundPixels) {
-      gridded.set(cam, true);
-      cam.roundPixels = false;
-    }
+    if (cam.roundPixels) gridded.set(cam, true);
+    const rounds = gridded.get(cam) === true;
+    cam.roundPixels = rounds;
     frame();
-    if (!gridded.get(cam)) return;
+    if (!rounds) return;
     const z = cam.zoomX;
-    cam.scrollX = onGrid(
+    const x = onGrid(
       cam.scrollX,
       z,
       cam.useBounds ? (v) => cam.clampX(v) : undefined,
     );
-    cam.scrollY = onGrid(
+    const y = onGrid(
       cam.scrollY,
       z,
       cam.useBounds ? (v) => cam.clampY(v) : undefined,
     );
+    drawAt(cam, x, y);
     cam.renderRoundPixels = true;
   };
 }
 
 /**
- * Px rounding switched on after each of `cam`'s frame set-ups while `rounds()` says so, at any
+ * Moves `cam` to scroll (`x`, `y`) after its frame set-up, its view matrices with it. Phaser built
+ * `matrix` from the scroll as it was, the scroll applied last (innermost), and `matrixCombined` as
+ * `matrixExternal` × `matrix`; so moving the scroll by d is a translate by −d on the right of
+ * both, which is what `translate` does.
+ */
+function drawAt(cam: PixelGridCamera, x: number, y: number): void {
+  const dx = x - cam.scrollX;
+  const dy = y - cam.scrollY;
+  cam.scrollX = x;
+  cam.scrollY = y;
+  if (dx === 0 && dy === 0) return;
+  cam.getViewMatrix(true).translate(-dx, -dy);
+  cam.matrixCombined.translate(-dx, -dy);
+}
+
+/**
+ * Px rounding switched on or off after each of `cam`'s frame set-ups as `rounds()` says, at any
  * zoom, its scroll untouched: for a camera whose owner keeps its scroll on the 1/zoom grid itself
- * (a render texture's). Such a camera must have `roundPixels` off, or Phaser floors that scroll to
- * whole world units first. Phaser types a render texture's camera as a `BaseCamera`, which has no
- * frame set-up; the one it makes is a full `Camera`, but a camera without one is left as it is.
+ * (a render texture's, whose frame set-up Phaser 4 runs from `DynamicTexture.render`). Its
+ * `roundPixels` is what an object stamped into the texture reads (`fullAuto`, ADR-0057), so the
+ * stamps round as the main camera rounds the world; `renderRoundPixels` is the same for the
+ * canvas renderer. Phaser types a render texture's camera as a `BaseCamera`, which has no frame
+ * set-up; the one it makes is a full `Camera`, but a camera without one is left as it is.
  */
 export function roundAtAnyZoom(
-  cam: { preRender?: () => void; renderRoundPixels: boolean },
+  cam: {
+    preRender?: () => void;
+    roundPixels: boolean;
+    renderRoundPixels: boolean;
+  },
   rounds: () => boolean,
 ): void {
   if (!cam.preRender) return;
   const frame = cam.preRender.bind(cam);
   cam.preRender = () => {
     frame();
-    cam.renderRoundPixels = rounds();
+    const on = rounds();
+    cam.roundPixels = on;
+    cam.renderRoundPixels = on;
   };
 }

@@ -14,7 +14,7 @@ Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT 
 
 ## Assumptions (verify first)
 
-- The client is a **Next.js 15 (App Router) + React 19 + Phaser 3.80** app; platform/account UI
+- The client is a **Next.js 15 (App Router) + React 19 + Phaser 4** app; platform/account UI
   is React, the actual escape-run is Phaser. State is **Zustand**; networking is **native
   WebSocket + a REST `apiClient`**.
 - It implements the **current escape-run + platform** surface only. The MMO-refactor HUB world
@@ -234,10 +234,10 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 
 ## Reference — Phaser integration
 
-- **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` drawn at the screen's density: a backing
-  store of the logical view × render scale, shown fitted to the game frame, every camera
-  zoomed by the render scale (`src/render/viewport/`, FS-ZAJMH); linear filtering, arcade
-  zero-gravity.
+- **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` (Phaser 4, ADR-0057) drawn at the screen's
+  density: a backing store of the logical view × render scale, shown fitted to the game frame,
+  every camera zoomed by the render scale (`src/render/viewport/`, FS-ZAJMH); linear filtering,
+  arcade zero-gravity.
   Registered scenes: **Boot, Preload, MainMenu, Loadout, Barrowspire**. Phaser reads auth from
   `localStorage`/Zustand directly (no React→Phaser event bus).
 - **BootScene** — token gate (redirect `/login` if absent); opens the shared `SocketManager` WS
