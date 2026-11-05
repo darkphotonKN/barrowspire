@@ -552,7 +552,7 @@ export interface paths {
         post?: never;
         /**
          * Withdraw a bid
-         * @description Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored.
+         * @description Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored. A leading bid cannot be withdrawn in the auction's final 30 minutes (400 FAILED_PRECONDITION); an outbid bid can be withdrawn until the auction ends.
          */
         delete: operations["withdraw-bid"];
         options?: never;

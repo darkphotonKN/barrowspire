@@ -27,6 +27,7 @@ var (
 	ErrSellerCannotBuyout      = errors.New("seller cannot buy out own listing")
 	ErrSellerCannotBid         = errors.New("seller cannot bid on own listing")
 	ErrNotBidOwner             = errors.New("not bid owner")
+	ErrLeadingBidLocked        = errors.New("leading bid cannot be withdrawn in the auction's final window")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
 )

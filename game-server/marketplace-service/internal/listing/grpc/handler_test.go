@@ -346,3 +346,31 @@ func TestPlaceBid_SellerOnOwnListing_PermissionDenied(t *testing.T) {
 	assert.Equal(t, codes.PermissionDenied, status.Code(err))
 	assert.Zero(t, wallet.calls)
 }
+
+// A leader locked in by the final window answers FAILED_PRECONDITION, the code
+// the client already reads as "this bid can no longer be withdrawn" (FS-0YXG6).
+func TestWithdrawBid_LeaderInFinalWindow_FailedPrecondition(t *testing.T) {
+	memberID := uuid.New()
+	bidID := uuid.New()
+	now := time.Now()
+	l, err := listing.Reconstitute(listing.ReconstituteParams{
+		ID:         uuid.New(),
+		SellerID:   uuid.New(),
+		ItemID:     uuid.New(),
+		StartPrice: 100,
+		Status:     listing.StatusActive,
+		EndsAt:     now.Add(10 * time.Minute),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Bids:       []*listing.BidReconstituteParams{winningBid(bidID, memberID)},
+	})
+	require.NoError(t, err)
+	h := newTestHandler(&fakeRepo{l: l}, &fakeWallet{})
+
+	_, err = h.WithdrawBid(authedCtx(t, memberID), &pb.WithdrawBidRequest{
+		ListingId: l.Snapshot().ID.String(),
+		BidId:     bidID.String(),
+	})
+
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
