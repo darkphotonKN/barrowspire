@@ -39,7 +39,7 @@ func (r *repository) Create(ctx context.Context, name, email, password string) (
 	memberId := uuid.New()
 	query := `INSERT INTO members (id, name, email, password) VALUES ($1, $2, $3, $4)`
 
-	_, err := r.DB.Exec(query, memberId, name, email, password)
+	_, err := r.DB.ExecContext(ctx, query, memberId, name, email, password)
 	if err != nil {
 		slog.Error("Error creating member", "error", err)
 		return uuid.Nil, wrapDBErr("create member", err)
@@ -69,7 +69,7 @@ func (r *repository) CreateTx(ctx context.Context, tx *sqlx.Tx, name, email, pas
 func (r *repository) UpdatePassword(ctx context.Context, params MemberUpdatePasswordParams) error {
 	query := `UPDATE members SET password = :password WHERE id = :id`
 
-	result, err := r.DB.NamedExec(query, params)
+	result, err := r.DB.NamedExecContext(ctx, query, params)
 	if err != nil {
 		return wrapDBErr("update password", err)
 	}
@@ -95,7 +95,7 @@ func (r *repository) UpdateMemberInfo(ctx context.Context, id uuid.UUID, name, s
 
 	query := `UPDATE members SET name = :name, status = :status WHERE id = :id`
 
-	result, err := r.DB.NamedExec(query, params)
+	result, err := r.DB.NamedExecContext(ctx, query, params)
 	if err != nil {
 		return wrapDBErr("update member info", err)
 	}
@@ -116,7 +116,7 @@ func (r *repository) GetByIdWithPassword(ctx context.Context, id uuid.UUID) (*mo
 	query := `SELECT * FROM members WHERE members.id = $1`
 
 	var member models.Member
-	err := r.DB.Get(&member, query, id)
+	err := r.DB.GetContext(ctx, &member, query, id)
 	if err != nil {
 		return nil, wrapDBErr("get member by id with password", err)
 	}
@@ -128,7 +128,7 @@ func (r *repository) GetById(ctx context.Context, id uuid.UUID) (*models.Member,
 	query := `SELECT * FROM members WHERE members.id = $1`
 
 	var member models.Member
-	err := r.DB.Get(&member, query, id)
+	err := r.DB.GetContext(ctx, &member, query, id)
 	if err != nil {
 		return nil, wrapDBErr("get member by id", err)
 	}
@@ -143,7 +143,7 @@ func (r *repository) GetMemberByEmail(ctx context.Context, email string) (*model
 	var member models.Member
 	query := `SELECT * FROM members WHERE members.email = $1`
 
-	err := r.DB.Get(&member, query, email)
+	err := r.DB.GetContext(ctx, &member, query, email)
 	if err != nil {
 		return nil, wrapDBErr("get member by email", err)
 	}
@@ -168,7 +168,7 @@ func (r *repository) CreateDefaultMembers(ctx context.Context, members []CreateD
 	VALUES(:id, :email, :name, :password, :status)
 	ON CONFLICT (id) DO NOTHING
 	`
-	_, err := r.DB.NamedExec(query, members)
+	_, err := r.DB.NamedExecContext(ctx, query, members)
 
 	if err != nil {
 		return wrapDBErr("create default members", err)
