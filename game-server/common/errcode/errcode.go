@@ -195,9 +195,10 @@ const (
 	// Added for FS-F692V (Accept never sells below the leading bid shown).
 	LeadingBidLowered Code = "LEADING_BID_LOWERED"
 
-	// BidWithdrawLimitReached: the member has withdrawn 3 or more bids on this
-	// listing, so they can no longer bid on it. Withdrawing and buyout are not
-	// limited (ADR-0052). Added for FS-ZE43K (Bid withdrawal cap).
+	// BidWithdrawLimitReached: the member has withdrawn a leading bid 3 or more
+	// times on this listing, so they can no longer bid on it. Withdrawing an
+	// outbid bid never counts (ADR-0055). Withdrawing and buyout are not limited
+	// (ADR-0052). Added for FS-ZE43K (Bid withdrawal cap).
 	BidWithdrawLimitReached Code = "BID_WITHDRAW_LIMIT_REACHED"
 
 	// ListingWithdrawLocked: the listing has live bids (PENDING, WINNING or

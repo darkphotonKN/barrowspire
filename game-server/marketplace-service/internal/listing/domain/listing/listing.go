@@ -376,14 +376,16 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 	return nil
 }
 
-// bidWithdrawalCap is how many bids a member may withdraw on one listing before
-// they can no longer bid on it (ADR-0052). Tuning, not contract.
+// bidWithdrawalCap is how many leading bids a member may withdraw on one listing
+// before they can no longer bid on it (ADR-0052, ADR-0055). Tuning, not contract.
 const bidWithdrawalCap = 3
 
 // WithinBidWithdrawalCap reports whether memberID may still bid on this listing
 // under the bid withdrawal cap: refused once they have bidWithdrawalCap or more
-// CANCELLED bids here (ADR-0052). Only CANCELLED counts, the status a bidder's own
-// withdrawal sets; a LOST bid was ended by someone else.
+// leading withdrawals here, CANCELLED bids that were WINNING when withdrawn
+// (ADR-0052 as amended by ADR-0055). Only CANCELLED counts, the status a bidder's
+// own withdrawal sets; a LOST bid was ended by someone else. An outbid withdrawal
+// promotes nobody and moves no price, so it never counts.
 //
 // Read-only: a caller about to hold gold for a bid asks it first, and
 // PlaceBidWithID applies it again under the lock. It limits only the next bid,
@@ -391,7 +393,7 @@ const bidWithdrawalCap = 3
 func (l *Listing) WithinBidWithdrawalCap(memberID uuid.UUID) error {
 	withdrawals := 0
 	for _, bid := range l.bids {
-		if bid.memberID == memberID && bid.status == BidStatusCancelled {
+		if bid.memberID == memberID && bid.status == BidStatusCancelled && bid.withdrawnWhileLeading {
 			withdrawals++
 		}
 	}
@@ -649,6 +651,9 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 	if err := bid.transitionTo(BidStatusCancelled, now); err != nil {
 		return err
 	}
+	// recorded in the same change as CANCELLED, so the two reach the table in one
+	// write: only a leading withdrawal counts toward the cap (ADR-0055)
+	bid.withdrawnWhileLeading = wasLeading
 
 	// A withdrawn leader is replaced by the highest bid still held (ADR-0028), so the
 	// auction keeps a leader backed by gold whenever another bid remains.
@@ -983,15 +988,16 @@ func Reconstitute(params ReconstituteParams) (*Listing, error) {
 
 	for _, bid := range params.Bids {
 		bids = append(bids, &Bid{
-			id:             bid.ID,
-			listingID:      bid.ListingID,
-			memberID:       bid.MemberID,
-			bidType:        bid.Type,
-			amount:         bid.Amount,
-			status:         bid.Status,
-			idempotencyKey: bid.IdempotencyKey,
-			createdAt:      bid.CreatedAt,
-			updatedAt:      bid.UpdatedAt,
+			id:                    bid.ID,
+			listingID:             bid.ListingID,
+			memberID:              bid.MemberID,
+			bidType:               bid.Type,
+			amount:                bid.Amount,
+			status:                bid.Status,
+			idempotencyKey:        bid.IdempotencyKey,
+			withdrawnWhileLeading: bid.WithdrawnWhileLeading,
+			createdAt:             bid.CreatedAt,
+			updatedAt:             bid.UpdatedAt,
 		})
 	}
 
