@@ -176,26 +176,31 @@ func TestPlaceBidUC(t *testing.T) {
 		updateErr error
 		wantErr   error
 		wantBids  int
+		// wantUpdates is 0 when the unlocked read already refuses the bid
+		wantUpdates int
 	}{
 		{
-			name:     "a valid bid is placed as pending",
-			amount:   150,
-			wantErr:  nil,
-			wantBids: 1,
+			name:        "a valid bid is placed as pending",
+			amount:      150,
+			wantErr:     nil,
+			wantBids:    1,
+			wantUpdates: 1,
 		},
 		{
-			// below the 100 reserve, so the domain refuses before a bid exists
-			name:     "a bid below the reserve is rejected",
-			amount:   50,
-			wantErr:  listing.ErrBidTooLow,
-			wantBids: 0,
+			// below the 100 reserve: refused on the read, before any hold or write
+			name:        "a bid below the reserve is rejected",
+			amount:      50,
+			wantErr:     listing.ErrBidTooLow,
+			wantBids:    0,
+			wantUpdates: 0,
 		},
 		{
-			name:      "a repository failure surfaces to the caller",
-			amount:    150,
-			updateErr: commonconstants.ErrNotFound,
-			wantErr:   commonconstants.ErrNotFound,
-			wantBids:  0,
+			name:        "a repository failure surfaces to the caller",
+			amount:      150,
+			updateErr:   commonconstants.ErrNotFound,
+			wantErr:     commonconstants.ErrNotFound,
+			wantBids:    0,
+			wantUpdates: 1,
 		},
 	}
 
@@ -218,7 +223,7 @@ func TestPlaceBidUC(t *testing.T) {
 				assert.ErrorIs(t, err, tt.wantErr)
 			}
 
-			assert.Equal(t, 1, repo.updateCall, "the write must go through Update")
+			assert.Equal(t, tt.wantUpdates, repo.updateCall, "a bid the read allows is written through Update")
 			assert.Len(t, l.Snapshot().Bids, tt.wantBids)
 		})
 	}
@@ -591,6 +596,10 @@ func TestPlaceBidUC_WriteOutcome(t *testing.T) {
 			seeded := len(l.Snapshot().Bids)
 
 			repo := &fakeRepo{listing: l, updateScript: tt.script(t)}
+			if tt.seed > 0 {
+				// the seeded bid landed after the unlocked read, so only the lock sees it
+				repo.found = activeListing(t, 100)
+			}
 			wallet, release := &fakeWallet{}, &fakeReleaser{}
 
 			err := NewPlaceBidUC(repo, wallet, release).Handle(context.Background(), PlaceBidCommand{
@@ -716,11 +725,13 @@ func TestPlaceBid_ResendOfABidRecordedUnderARandomID_IsRecognisedByItsKey(t *tes
 // a new bid needs a new key (ADR-0027). Before IDs were derived, this re-judged
 // the bid and answered too-low again.
 func TestPlaceBid_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
+	// outbid between the unlocked read and the lock, so the hold is placed first
 	l := activeListing(t, 100)
+	leadWith(t, l, uuid.New(), 200, time.Now())
 	wallet, release := &fakeWallet{released: map[uuid.UUID]bool{}}, &fakeReleaser{}
-	uc := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, release)
+	uc := NewPlaceBidUC(&fakeRepo{found: activeListing(t, 100), listing: l}, wallet, release)
 	cmd := PlaceBidCommand{
-		ListingID: l.Snapshot().ID, MemberID: uuid.New(), Amount: 50, IdempotencyKey: uuid.New(), Now: time.Now(),
+		ListingID: l.Snapshot().ID, MemberID: uuid.New(), Amount: 150, IdempotencyKey: uuid.New(), Now: time.Now(),
 	}
 
 	require.ErrorIs(t, uc.Handle(context.Background(), cmd), listing.ErrBidTooLow)
@@ -730,7 +741,7 @@ func TestPlaceBid_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
 	err := uc.Handle(context.Background(), cmd)
 
 	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
-	assert.Empty(t, l.Snapshot().Bids)
+	assert.Len(t, l.Snapshot().Bids, 1, "only the leader's bid")
 }
 
 // A resend with the same key derives the same bid ID, finds its bid already on
@@ -790,13 +801,15 @@ func TestBidRejected_SellerCannotBid(t *testing.T) {
 // be recorded, and the release landing after it would leave a leading bid with no
 // gold behind it (ADR-0049). The wait is bounded by releaseWait.
 func TestPlaceBid_Refused_WaitsForTheReleaseBeforeAnswering(t *testing.T) {
+	// outbid between the unlocked read and the lock, so the refusal comes after the hold
 	l := activeListing(t, 100)
+	leadWith(t, l, uuid.New(), 200, time.Now())
 	wallet, release := &fakeWallet{}, &fakeReleaser{}
 
-	err := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, release).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(&fakeRepo{found: activeListing(t, 100), listing: l}, wallet, release).Handle(context.Background(), PlaceBidCommand{
 		ListingID:      l.Snapshot().ID,
 		MemberID:       uuid.New(),
-		Amount:         50, // under the start price
+		Amount:         150, // not above the leader the lock sees
 		IdempotencyKey: uuid.New(),
 		Now:            time.Now(),
 	})
@@ -811,12 +824,13 @@ func TestPlaceBid_Refused_WaitsForTheReleaseBeforeAnswering(t *testing.T) {
 // bidder still hears why their bid failed, not how the cleanup is going.
 func TestPlaceBid_ReleaseStillPending_StillReportsTheRefusal(t *testing.T) {
 	l := activeListing(t, 100)
+	leadWith(t, l, uuid.New(), 200, time.Now())
 	release := &fakeReleaser{err: fmt.Errorf("await release: %w", ErrHoldReleasePending)}
 
-	err := NewPlaceBidUC(&fakeRepo{listing: l}, &fakeWallet{}, release).Handle(context.Background(), PlaceBidCommand{
+	err := NewPlaceBidUC(&fakeRepo{found: activeListing(t, 100), listing: l}, &fakeWallet{}, release).Handle(context.Background(), PlaceBidCommand{
 		ListingID: l.Snapshot().ID,
 		MemberID:  uuid.New(),
-		Amount:    50,
+		Amount:    150,
 		Now:       time.Now(),
 	})
 

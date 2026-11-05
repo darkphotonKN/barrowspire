@@ -370,16 +370,17 @@ func TestMapError_TransientStaysUnavailable(t *testing.T) {
 
 // FS-V74WE Req 2, 3, 5: a bid at the buyout price is refused with its own
 // registered reason, so the gateway passes it through as 400 ·
-// BID_AT_OR_ABOVE_BUYOUT, and the gold held for it is given back (FS-9XKS6 Req 4).
-func TestPlaceBid_AtBuyoutPrice_IsRefusedWithItsReasonAndReleasesTheHold(t *testing.T) {
+// BID_AT_OR_ABOVE_BUYOUT (FS-9XKS6 Req 4). The unlocked read already prices it
+// out, so no gold is held for it and there is nothing to give back.
+func TestPlaceBid_AtBuyoutPrice_IsRefusedWithItsReasonAndHoldsNoGold(t *testing.T) {
 	now := time.Now()
 	buyout := 500
 	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, &buyout, now, now.Add(time.Hour))
 	require.NoError(t, err)
 	repo := &fakeRepo{l: l}
-	release := &fakeReleaser{}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
 
-	_, err = newTestHandlerWithRelease(repo, &fakeWallet{}, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+	_, err = newTestHandlerWithRelease(repo, wallet, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
 		ListingId: l.Snapshot().ID.String(),
 		Amount:    500,
 	})
@@ -390,17 +391,18 @@ func TestPlaceBid_AtBuyoutPrice_IsRefusedWithItsReasonAndReleasesTheHold(t *test
 	assert.True(t, ok)
 	assert.Equal(t, errcode.BidAtOrAboveBuyout, reason)
 	assert.Empty(t, repo.l.Snapshot().Bids)
-	assert.Equal(t, 1, release.calls)
+	assert.Zero(t, wallet.calls, "no gold is held")
+	assert.Zero(t, release.calls)
 }
 
 // FS-V74WE Req 2, 3, 5: a bid not above the contending bid is refused with its
 // own registered reason, so the gateway passes it through as 400 · BID_TOO_LOW;
-// no bid is recorded and the hold is given back.
-func TestPlaceBid_NotAboveTheLeader_IsRefusedWithItsReasonAndReleasesTheHold(t *testing.T) {
+// no bid is recorded, and the unlocked read already prices it out, so no gold is held.
+func TestPlaceBid_NotAboveTheLeader_IsRefusedWithItsReasonAndHoldsNoGold(t *testing.T) {
 	repo := &fakeRepo{l: activeListing(t, winningBid(uuid.New(), uuid.New()))}
-	release := &fakeReleaser{}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
 
-	_, err := newTestHandlerWithRelease(repo, &fakeWallet{}, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+	_, err := newTestHandlerWithRelease(repo, wallet, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
 		ListingId: repo.l.Snapshot().ID.String(),
 		Amount:    150, // the leader's amount: not above it
 	})
@@ -411,7 +413,8 @@ func TestPlaceBid_NotAboveTheLeader_IsRefusedWithItsReasonAndReleasesTheHold(t *
 	assert.True(t, ok)
 	assert.Equal(t, errcode.BidTooLow, reason)
 	assert.Len(t, repo.l.Snapshot().Bids, 1, "only the leader's bid")
-	assert.Equal(t, 1, release.calls)
+	assert.Zero(t, wallet.calls, "no gold is held")
+	assert.Zero(t, release.calls)
 }
 
 // FS-V74WE Req 2, 6: the two price refusals cross as FailedPrecondition with
