@@ -482,6 +482,9 @@ function tubeGeometry(H, cps, o, pack) {
   geo.setIndex(index);
   geo.computeVertexNormals();
   if (closed) weldSeam(geo, R, cols);
+  // the ring layout (R rows of `cols` vertices, top to bottom, then any caps) and each ring's
+  // centre in bind, which the leg-clearance guard reads (clearance.js); render ignores it
+  geo.userData.tube = { rows: R, cols, closed, centres: rings.map((g) => g.pos.toArray()) };
   return geo;
 }
 

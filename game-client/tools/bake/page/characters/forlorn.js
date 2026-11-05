@@ -305,6 +305,7 @@ export function zombie() {
     panelWeight: 0.45,
     ragged: { teeth: 11, depth: 0.15, seed: 21 },
     segs: 30,
+    mirrored: true,
   });
 
   const hold = pose({
@@ -523,6 +524,7 @@ export function ghost() {
     panelWeight: 0.55,
     ragged: { teeth: 17, depth: 0.07, seed: 33 },
     segs: 34,
+    mirrored: true,
   });
   ghostOpacity(rig, eye);
   // it hovers, bobbing (`fx.bob`), and stretches thin as it dissolves (`fx.thin`)

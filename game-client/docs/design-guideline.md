@@ -290,6 +290,15 @@ lit) while the player stands inside.
   player picks in a menu is exactly what walks in the world.
 - **The owner approves a contact sheet** (every class and creature x 8 directions x each
   animation, at game scale) before scenes switch to character sheets.
+- **Legs stay inside the garment.** A tunic's skirts, a hauberk, a coat's skirts or a robe is
+  built with `skirt` over legs built with `legs` (`tools/bake/page/characters/anatomy.js`). In
+  every clip except the death, no leg may come more than 2 screen px further out through the
+  cloth than it sits at rest. The bake checks every pose and fails the sheet that breaks this,
+  naming the clip and frame (`characters/clearance.js`). Never give a new garment `mirrored`:
+  that is the old weighting, which skinned each half of the skirt to the opposite thigh, kept
+  only for the legacy sheets on the guard's `KNOWN_CLIPPING` list. All four classes walked
+  through their tunics and robes at 1x without anyone seeing it until the archer was baked at
+  2x, so review the walk frames, not only the idle.
 
 
 ### Enemy design language

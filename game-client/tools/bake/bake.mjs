@@ -35,6 +35,7 @@ import { meanColour } from "./lib/mean.mjs";
 import { crownHeight } from "./lib/crown.mjs";
 import { SIDE_ON, bodyLength } from "./lib/length.mjs";
 import { packAtlases } from "./lib/pack.mjs";
+import { downscale } from "./lib/downscale.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
 import { labelTexts, writeReview } from "./lib/contact.mjs";
@@ -188,25 +189,24 @@ function assemble({ tile, facings, sheets }) {
     }
     // the ground's measured colour, which lighting's readability floor is judged against
     const mean = s.group === "ground" || s.name.startsWith("ground_") ? meanColour(frameList(s).map((b64) => Buffer.from(b64, "base64"))) : undefined;
+    // crown and length are screen px: a sheet baked at `scale` px per screen px (spike/archer-2x)
+    // is measured back at 1×, so its head height means what any other sheet's does
+    const scale = s.scale ?? 1;
+    const at1x = (b64) => downscale(Buffer.from(b64, "base64"), s.frameWidth, s.frameHeight, scale);
+    const width1x = s.frameWidth / scale;
     // a standing sheet's head height over every facing's idle, where name plates and HP bars sit
     const crown = s.animations.idle
-      ? crownHeight(
-          s.animations.idle.frames.flat().map((b64) => Buffer.from(b64, "base64")),
-          s.frameWidth,
-          Math.round(s.anchor.y * s.frameHeight),
-        )
+      ? crownHeight(s.animations.idle.frames.flat().map(at1x), width1x, Math.round((s.anchor.y * s.frameHeight) / scale))
       : undefined;
     // a quadruped's body length, side-on over its idle: the measure its size tier is taken by
     const length = s.quadruped
-      ? bodyLength(
-          SIDE_ON.flatMap((f) => s.animations.idle.frames[facings.indexOf(f)]).map((b64) => Buffer.from(b64, "base64")),
-          s.frameWidth,
-        )
+      ? bodyLength(SIDE_ON.flatMap((f) => s.animations.idle.frames[facings.indexOf(f)]).map(at1x), width1x)
       : undefined;
     manifestSheets[s.name] = {
       atlas: key,
       frameWidth: s.frameWidth,
       frameHeight: s.frameHeight,
+      ...(scale !== 1 ? { scale } : {}),
       anchor: s.anchor,
       directions: s.directions,
       animations,

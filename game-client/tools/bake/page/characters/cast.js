@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { ARCHER_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
 import {
   arms,
   bareFeet,
@@ -383,7 +383,7 @@ export function ghoul() {
   hands(rig, F.bone, { size: 0.82, claws: F.bone });
   bareFeet(rig, F.bone, { size: 0.8 });
   skull(rig, F.bone, M);
-  skirt(rig, F.rag, { top: hy + 0.012, bottom: hy - 0.2, rTop: [0.074, 0.058], rBottom: [0.098, 0.084], legFollow: 0.5, panels: true, ragged: { teeth: 11, depth: 0.07, seed: 3 } });
+  skirt(rig, F.rag, { top: hy + 0.012, bottom: hy - 0.2, rTop: [0.074, 0.058], rBottom: [0.098, 0.084], legFollow: 0.5, panels: true, ragged: { teeth: 11, depth: 0.07, seed: 3 }, mirrored: true });
   cloak(rig, F.rag, { length: 0.34, spread: 0.85, flare: 0.2, back: 0.065, ragged: { teeth: 7, depth: 0.14, seed: 5 } });
   inHand(rig, "R", { rx: 0.2 }).add(cleaver(rig, M, F));
 
@@ -464,7 +464,7 @@ export function troll() {
   hands(rig, F.troll, { size: 1.45, claws: F.bone });
   bareFeet(rig, F.troll, { size: 1.35, claws: F.bone });
   trollHead(rig, F.troll, F, M);
-  skirt(rig, F.fur, { top: hy + 0.02, bottom: hy - 0.19, rTop: [0.128, 0.104], rBottom: [0.15, 0.13], legFollow: 0.55, panels: true, ragged: { teeth: 12, depth: 0.06, seed: 8 } });
+  skirt(rig, F.fur, { top: hy + 0.02, bottom: hy - 0.19, rTop: [0.128, 0.104], rBottom: [0.15, 0.13], legFollow: 0.55, panels: true, ragged: { teeth: 12, depth: 0.06, seed: 8 }, mirrored: true });
   belt(rig, F.leatherDark, F.bone, { r: [0.13, 0.108], dy: 0.03 });
   // a necklace of bones
   const [, ny] = J(rig, "neck");
@@ -506,7 +506,9 @@ export function troll() {
  */
 export const CAST = [
   { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
-  { sheet: "char_archer_base", group: "characters", fn: "archer", build: archer },
+  // spike/archer-2x: baked at 2× (twice the px per screen px, drawn at half scale) with the shot
+  // layered over the walk, in its own group
+  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: ARCHER_ANIMATIONS, scale: 2 },
   { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },
   { sheet: "char_mercenary_base", group: "characters", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
