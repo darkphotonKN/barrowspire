@@ -300,6 +300,67 @@ func TestGenerateDungeon_Floor1Params_EverySeedValid(t *testing.T) {
 		seeds, minRooms, maxRooms, halls, maxWalls, maxRegions, minSegment, loop4, retried, maxAttempt, p.RetryLimit)
 }
 
+// sizeShares checks that every value in r turns up in counts within tolerance
+// of an even share of total: drawn uniformly.
+func sizeShares(t *testing.T, what string, counts map[int]int, total int, r IntRange, tolerance float64) {
+	t.Helper()
+	even := float64(total) / float64(r.Max-r.Min+1)
+	for v := r.Min; v <= r.Max; v++ {
+		if share := float64(counts[v]) / even; math.Abs(share-1) > tolerance {
+			t.Errorf("%s %d: %d of %d rooms, %.2f of an even share (tolerance %.2f)",
+				what, v, counts[v], total, share, tolerance)
+		}
+	}
+}
+
+// FS-KE075 §A.3: a room's width and height are drawn uniformly. Each room's
+// size is drawn once and only its position is retried, so a large room is
+// turned away no more often than a small one.
+func TestGenerateDungeon_RoomSizesDrawnUniformly(t *testing.T) {
+	const seeds = 2000
+	p := DungeonFloor1Params
+	widths, heights := map[int]int{}, map[int]int{}
+	rooms := 0
+	for seed := uint64(0); seed < seeds; seed++ {
+		for _, room := range generateDungeon(t, seed).Rooms {
+			widths[room.Rect.W]++
+			heights[room.Rect.H]++
+			rooms++
+		}
+	}
+	// about 6,500 rooms per width: sampling noise is near 1%
+	sizeShares(t, "width", widths, rooms, p.RoomWidth, 0.1)
+	sizeShares(t, "height", heights, rooms, p.RoomHeight, 0.1)
+}
+
+// FS-KE075 §A.3: the room count is drawn once per seed and kept across the
+// retries, so it stays uniform. Starving placement makes seeds retry; it never
+// changes how many rooms a seed's floor has.
+func TestGenerateDungeon_RetriesKeepTheDrawnRoomCount(t *testing.T) {
+	starved := DungeonFloor1Params
+	starved.PlaceTries = 40
+	starved.RetryLimit = 200
+
+	retried := 0
+	for seed := uint64(0); seed < 100; seed++ {
+		roomy := generateDungeon(t, seed)
+		tight, err := GenerateDungeon(starved, seed)
+		if err != nil {
+			t.Fatalf("seed %d: starved GenerateDungeon() error = %v", seed, err)
+		}
+		if tight.Attempt > 0 {
+			retried++
+		}
+		if len(tight.Rooms) != len(roomy.Rooms) {
+			t.Errorf("seed %d: %d rooms after %d retries, %d with placement to spare",
+				seed, len(tight.Rooms), tight.Attempt, len(roomy.Rooms))
+		}
+	}
+	if retried == 0 {
+		t.Fatal("no seed in 0..99 retried; starve placement harder")
+	}
+}
+
 // FS-KE075 §A.9: same seed, byte-identical layout, regions and roles.
 func TestGenerateDungeon_SameSeed_ByteIdenticalJSON(t *testing.T) {
 	for seed := uint64(0); seed < 20; seed++ {

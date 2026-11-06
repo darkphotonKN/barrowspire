@@ -63,35 +63,72 @@ func populatedRun(b *testing.B, depth int, classes []string, count int, clear fl
 		keepOut: mapKeepOut(entities),
 		delvers: inPlayPositions(delversOf(entities)),
 	}
-	if s.dungeon != nil {
-		area.ground = s.dungeon.monsterGround()
-	}
 	fits := func(x, y float64) bool { return area.open(x, y) && area.nearestDelver(x, y) >= clear }
+	place := func() (x, y float64, ok bool) {
+		for range MonsterPlacementAttempts {
+			if x, y = area.candidate(s.spawnRand); fits(x, y) {
+				return x, y, true
+			}
+		}
+		return 0, 0, false
+	}
+	if s.dungeon != nil {
+		place = onDungeonRooms(s, &area, fits)
+	}
 	for i := range count {
 		archetype := components.MonsterArchetypeGhoul
 		if i%3 == 0 {
 			archetype = components.MonsterArchetypeTroll
 		}
-		x, y, ok := 0.0, 0.0, false
-		for range MonsterPlacementAttempts {
-			if x, y = area.candidate(s.spawnRand); fits(x, y) {
-				ok = true
-				break
-			}
-		}
+		x, y, ok := place()
 		if !ok {
 			b.Fatalf("monster %d found no spawn point", i)
 		}
 		CreateMonsterEntity(em, MonsterConfig{Archetype: archetype, Level: 3, X: x, Y: y})
 		area.placed = append(area.placed, point{x, y})
 	}
+
+	demon := MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 5, Boss: true}
+	if s.dungeon != nil {
+		// in the farthest room, as a dungeon floor's own demon stands
+		s.placeDungeonDemon(s.dungeon, &area, demon, depth, true)
+		for _, m := range monstersInWorld(em) {
+			if monsterOf(m).Boss {
+				return s, delvers, m
+			}
+		}
+		b.Fatal("the demon found no spawn point")
+	}
 	x, y, ok := area.placeFarthest(s.spawnRand, area.valid)
 	if !ok {
 		b.Fatal("the demon found no spawn point")
 	}
-	demon := CreateMonsterEntity(em, MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 5, Boss: true, X: x, Y: y})
+	demon.X, demon.Y = x, y
+	return s, delvers, CreateMonsterEntity(em, demon)
+}
 
-	return s, delvers, demon
+// onDungeonRooms places one monster at a time on a dungeon floor's rooms but
+// the start, room after room in turn, by the population's own region
+// sampling (placeOnRegion): walkable cells, off doorways, fits accepting.
+func onDungeonRooms(s *Session, area *spawnArea, fits func(x, y float64) bool) func() (x, y float64, ok bool) {
+	d := s.dungeon
+	var rooms []int
+	for room := range d.layout.Rooms {
+		if room != d.layout.Roles.Start {
+			rooms = append(rooms, room)
+		}
+	}
+	next := 0
+	return func() (x, y float64, ok bool) {
+		for range rooms {
+			room := rooms[next%len(rooms)]
+			next++
+			if x, y, ok = area.placeOnRegion(s.spawnRand, d, d.roomRegion(room), fits); ok {
+				return x, y, true
+			}
+		}
+		return 0, 0, false
+	}
 }
 
 func monstersInWorld(em *ecs.EntityManager) []*ecs.Entity {
