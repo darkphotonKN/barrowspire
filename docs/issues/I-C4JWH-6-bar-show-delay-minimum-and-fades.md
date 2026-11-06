@@ -66,3 +66,18 @@ events removed), `pace.phaser.test.ts` (the hold on Phaser 4.2.1's own `SceneMan
 `loadComplete` and `create`), and the hub, field and run bar tests. `PreloadScene.test.ts`'s
 snapshot unchanged. Full suite 5489 passed, tsc clean, lint no errors, lint:fence verified.
 Browser check: FS-C4JWH § Verification, "After Amendment A1".
+
+## Review fix round 1
+
+- S1: the paced create enters only a scene still LOADING (`pace.phaser.test.ts`, a missed removal
+  of the manager's listener creates once, on the load's completion): test ec0a6ced, fix 19ee3867.
+- Prettier: ecc0017f (the tests; `phaser.ts` with 19ee3867).
+- S2: Phaser 4.2.1's own Clock and `SceneManager.stop` → `Systems.shutdown` during the hold and the
+  download: create never runs, no timer left on the clock.
+- S4: prettier on `phaser.ts` and both new test files.
+- P1: the FS header names the amendment and ADR-0057.
+- The pre-existing Leave bug the browser check ran into (reachable by a player): `ResultHold.release`
+  says whether it let a world in, a Leave that did sends no `leave_run`, and each run starts with no
+  Leave pending (tests 0a22018a, d8c90b61; fix 825ac405).
+
+Full suite 5497 passed, tsc clean.

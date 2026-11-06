@@ -1,6 +1,6 @@
 # FS-C4JWH: Art loaded per scene, and freed when the next scene does not use it
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Art loaded and freed per scene", "Loading bar on entering a world" → this FS · Related ADRs: [ADR-0059](../adr/0059-scene-scoped-atlas-groups-are-evicted-with-their-animations-once-the-next-scene-has-loaded.md) (resident and scene-scoped groups, eviction), [ADR-0058](../adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md) (2x sheets, the memory they cost), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art, "texture memory needs budgeting"), [ADR-0056](../adr/0056-every-scene-camera-runs-at-origin-0-with-zoom-equal-to-render-scale.md) (scene cameras) · Surface: game-client only (client art code and scenes; no bake, art, manifest or server change)
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Art loaded and freed per scene", "Loading bar on entering a world" → this FS (amended 2026-11-06, A1: the bar's show delay, minimum visible time and fades, and a world's fade-in) · Related ADRs: [ADR-0059](../adr/0059-scene-scoped-atlas-groups-are-evicted-with-their-animations-once-the-next-scene-has-loaded.md) (resident and scene-scoped groups, eviction), [ADR-0058](../adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md) (2x sheets, the memory they cost), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art, "texture memory needs budgeting"), [ADR-0056](../adr/0056-every-scene-camera-runs-at-origin-0-with-zoom-equal-to-render-scale.md) (scene cameras), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (every object rounded to the backing px; A1.5's fade leaves the camera as it is) · Surface: game-client only (client art code and scenes; no bake, art, manifest or server change)
 
 ## Summary
 
@@ -264,7 +264,9 @@ The numbers here sit at or past both: 300 ms before the bar, 600 ms at least onc
   until the bar has faded out and been destroyed; the scene stays LOADING until then, so a world
   switch stops it as it stops any scene still loading (`switchWorld`), its one-shots stay held
   (`holdOneShots`), and a run's held settlement keeps the hub behind the record (FS-GV8WN R23).
-  With no bar, `create` runs on the load's completion, as before. (Derived here: the alternative,
+  With no bar, `create` runs on the load's completion, as before. The pacing enters only a scene
+  still LOADING, so a hold that ever misses (Phaser attaching its listener another way) degrades to
+  creating on the load's completion, never twice. (Derived here: the alternative,
   the bar outliving `create` drawn over the new world, needs an opaque layer of its own above every
   HUD depth and a stage that ignores the world camera's bounds and follow, since the bar's soot is
   the camera's background and its stage is a camera scroll; holding `create` keeps the bar and the
@@ -467,10 +469,14 @@ the session scratchpad.
   aborted (`net::ERR_ABORTED`) and no `art:boss` texture after they were let go; the hub queued
   nothing (folk-0 still a texture), faded in, and held exactly the 17 resident pages and folk-0
   (223.3 MB). No page error, no console error, no `art:` warning in any run.
-- Found on the way, not changed (it predates A1 and no player can reach it): `leaveTheBarrow`
-  called while the run is still LOADING releases the result hold, whose switch stops the run and
-  resets it, and then sets `leavePending` on the stopped scene, so the next run's Leave does
-  nothing. A player has no Leave before the run's create; only a script calling the method does.
+- Found on the way, and fixed in review fix round 1 (825ac405): `leaveTheBarrow` released the
+  result hold, whose held hub goes through `switchWorld` and stops the run synchronously
+  (`resetRun`: `runEnded` and `leavePending` false), then read `runEnded` and set `leavePending`
+  on the stopped scene. A player reached it: a run that ended with the record open and the hub
+  held, then Leave (the row's or the menu's), sent `leave_run` from the hub, and the next run's
+  Leave stayed dimmed until that run stopped. The first note here said no player could reach it;
+  that was wrong. Now `ResultHold.release` says whether it let a world in, a Leave that did is
+  done, and each run starts with no Leave pending.
 
 ## Out of Scope
 
