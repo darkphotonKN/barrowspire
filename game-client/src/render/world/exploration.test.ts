@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FloorRegion } from "@/types/gameState";
 import { RegionGrid } from "./dungeon";
-import { Exploration, partyPositions } from "./exploration";
+import { Exploration, SHOWN_WITHIN, partyPositions } from "./exploration";
 
 const CELL = 80;
 
@@ -136,5 +136,66 @@ describe("who uncovers a region (FS-SRA9J §B.3, §B.5)", () => {
 
   it("counts the others while the local player is gone (escaped: no current player)", () => {
     expect(partyPositions({ current_player: null, other_players: [member(mid(7, 2))] })).toEqual([mid(7, 2)]);
+  });
+});
+
+describe("which monsters and drop piles the fog shows (FS-SRA9J §D.15, §D.16, B3)", () => {
+  // a member at the middle of cell (2, 2) of room A, x 200: the corridor runs east of x 400
+  const member = mid(2, 2);
+  const east = (px: number) => ({ x: member.x + px, y: member.y });
+
+  it("shows within 400 px", () => {
+    expect(SHOWN_WITHIN).toBe(400);
+  });
+
+  it.each([
+    [399, true],
+    [400, true],
+    [401, false],
+  ])("shows one %i px from a member in an unexplored region: %s", (px, shown) => {
+    const seen = new Exploration(walk());
+    seen.see([member]);
+    expect(seen.state(C)).toBe("unexplored");
+    expect(seen.shows(east(px))).toBe(shown);
+  });
+
+  it("shows one anywhere in a visible region, however far from every member", () => {
+    // one long room, 800 px across
+    const seen = new Exploration(floor(12, 3, [room(1, 0, 0, 10, 2)]));
+    seen.see([mid(0, 0)]);
+    expect(seen.shows(mid(9, 1))).toBe(true);
+  });
+
+  it("hides one in an explored region more than 400 px from every member, and shows one within it", () => {
+    const seen = new Exploration(walk());
+    seen.see([mid(2, 2)]);
+    seen.see([mid(12, 3)]);
+    expect(seen.state(A)).toBe("explored");
+    expect(seen.shows(mid(2, 2))).toBe(false);
+    // the corridor's east end, explored, 1 cell from the member's room
+    seen.see([mid(7, 2)]);
+    seen.see([mid(11, 2)]);
+    expect(seen.state(C)).toBe("explored");
+    expect(seen.shows(mid(9, 2))).toBe(true);
+  });
+
+  it("counts only the positions of the latest look: a member gone from it shows nothing", () => {
+    const seen = new Exploration(walk());
+    seen.see([member]);
+    seen.see([]);
+    expect(seen.shows(east(100))).toBe(false);
+    expect(seen.shows(member)).toBe(false);
+  });
+
+  it("shows nothing before the party has been seen at all", () => {
+    expect(new Exploration(walk()).shows(member)).toBe(false);
+  });
+
+  it("shows one by distance alone where it stands on no region", () => {
+    const seen = new Exploration(walk());
+    seen.see([member]);
+    // north of room A, past its shell: no walkable cell near
+    expect(seen.shows({ x: member.x, y: -205 })).toBe(false);
+    expect(seen.shows({ x: member.x, y: -150 })).toBe(true);
   });
 });

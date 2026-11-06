@@ -72,7 +72,7 @@ const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
-const { markerBase } = await import("@/render/markers");
+const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
@@ -5881,6 +5881,177 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       handle({ ...dungeonState(inRoom), floor: 2 });
       expect(run.dungeon!.seen.state(stairsRoom)).toBe("unexplored");
       expect(run.dungeon!.seen.state(ROOM)).toBe("visible");
+    });
+
+    describe("monsters and drop piles (FS-SRA9J §D)", () => {
+      const ME = at(2560, 3080);
+      const { Exploration } = await_exploration;
+      /** A cell's middle in a region the player's look leaves not visible, within 380 px of them. */
+      const near = (() => {
+        const seen = new Exploration(grid);
+        seen.see([ME]);
+        for (let cy = 0; cy < grid.rows; cy++)
+          for (let cx = 0; cx < grid.cols; cx++) {
+            const id = grid.region(cx, cy);
+            const p = at((cx + 0.5) * 80, (cy + 0.5) * 80);
+            if (id && seen.state(id) !== "visible" && Math.hypot(p.x - ME.x, p.y - ME.y) < 380) return p;
+          }
+        throw new Error("the fixture has no region beside room 1");
+      })();
+      /** Far off in an unexplored region: the escape door's. */
+      const far = placedAt.door;
+      const inRoomAt = at(2400, 3050);
+      const beast = (entity_id: string, p: { x: number; y: number }, fields: Record<string, unknown> = {}) => ({
+        ...monster(entity_id, 0),
+        position: p,
+        ...fields,
+      });
+      const elite = { elite: true, name: "Hollow Ghoul" };
+      interface MonsterRun extends FoggedRun {
+        monsters: InstanceType<typeof MonsterRoster>;
+        projectiles?: unknown;
+        fx?: unknown;
+        trails: { placed(): Iterable<{ bed: Made; glow: Made }> };
+        time: { now: number; delayedCall: unknown };
+        createUI(): void;
+        updateTargetFrame(deltaMs: number): void;
+        targetFrame?: { texts(): Made[] };
+      }
+      const stageWith = (party: Partial<Party> = inRoom) => {
+        const staged = stageIn(party);
+        const run = staged.run as unknown as MonsterRun;
+        /** One broadcast with these monsters and containers, then a frame: eased, then hidden. */
+        const frame = (fields: Partial<GameState>, who: Partial<Party> = party) => {
+          staged.handle({ ...dungeonState(who), ...fields } as GameState);
+          run.monsters.update(16);
+          run.checkBuildingStatus();
+        };
+        const shownMonsters = () => run.monsters.standing().map((m) => shownNow(m.parts[0] as unknown as Made));
+        return { ...staged, run, frame, shownMonsters };
+      };
+
+      it("should show a monster in the player's room or within 400 px of them, and hide one beyond, plate, prefix and bar with it", () => {
+        const { run, stage, handle, shownMonsters } = stageWith();
+        // floor 2 laid out as floor 1: its plates are overhead (FS-48CTQ §A.1)
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({
+          ...dungeonState(inRoom),
+          floor: 2,
+          monsters: [beast("room", inRoomAt), beast("near", near, elite), beast("far", far, elite)],
+        } as GameState);
+        run.monsters.update(16);
+        run.checkBuildingStatus();
+        expect(shownMonsters()).toEqual([true, true, false]);
+        const plates = stage.made.filter(
+          (m) => m.kind === "text" && !m.destroyed && ["Ghoul · Lv 1", "Hollow"].includes(m.args[2] as string),
+        );
+        expect(plates.map(shownNow)).toEqual([true, true, true, false, false]);
+        // each monster's bar is the first bar made after its name
+        const bars = plates
+          .filter((m) => m.args[2] !== "Hollow")
+          .map((name) => stage.made.slice(stage.made.indexOf(name)).find((m) => m.kind === "graphics" && m.depth === MARKER_DEPTH.bar)!);
+        expect(bars.map(shownNow)).toEqual([true, true, false]);
+        expect(run.monsters.targetable().map((m) => m.entity_id)).toEqual(["room", "near"]);
+      });
+
+      it("should hide a monster in an explored region once no member is within 400 px of it", () => {
+        const { frame, shownMonsters, run } = stageWith();
+        frame({ monsters: [beast("room", inRoomAt)] });
+        expect(shownMonsters()).toEqual([true]);
+        // the player walks to the stairs' region: room 1 is left explored, far behind them
+        frame({ monsters: [beast("room", inRoomAt)] }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(run.dungeon!.seen.state(ROOM)).toBe("explored");
+        expect(shownMonsters()).toEqual([false]);
+        expect(run.monsters.targetable()).toEqual([]);
+      });
+
+      it("should name no hidden monster in the target frame, not even an engaged boss, and name a shown one", () => {
+        const { run, frame } = stageWith();
+        run.time.now = 0;
+        run.createUI();
+        const named = () => {
+          const lines = run.targetFrame!.texts().filter((t) => t.shown && t.args[2] !== "");
+          return lines.length ? lines.map((t) => t.args[2]).join(" ") : null;
+        };
+        // a demon below its maximum health is engaged (FS-48CTQ §D.10), wherever it stands
+        const boss = (id: string, p: { x: number; y: number }) =>
+          beast(id, p, { archetype: "demon", name: "Demon", boss: true, current_health: 50, max_health: 100 });
+        frame({ monsters: [boss("hidden", far)] });
+        run.updateTargetFrame(200);
+        expect(named()).toBeNull();
+        frame({ monsters: [boss("hidden", far), boss("shown", inRoomAt)] });
+        run.updateTargetFrame(200);
+        expect(named()).toBe("Demon · Lv 1");
+      });
+
+      it("should give a hidden monster no strike-mark and no attack, and drop the strike-mark when the hovered one is hidden", () => {
+        const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+        const { run, frame, cursor } = stageWith();
+        frame({ monsters: [beast("room", inRoomAt), beast("far", far)] });
+        const [room, hidden] = run.monsters.standing().map((m) => m.parts[0] as unknown as Made);
+        hidden.handlers.pointerover();
+        hidden.handlers.pointerdown();
+        expect(cursor).not.toHaveBeenCalledWith("strike-mark");
+        expect(sent).not.toHaveBeenCalledWith(ActionType.Attack, expect.anything());
+        // the pointer rests on the room's monster while the player walks off and it goes dark
+        room.handlers.pointerover();
+        expect(cursor).toHaveBeenLastCalledWith("strike-mark");
+        frame({ monsters: [beast("room", inRoomAt), beast("far", far)] }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(cursor).toHaveBeenLastCalledWith("hand");
+        expect(run.monsters.hoveredId).toBeUndefined();
+        sent.mockRestore();
+      });
+
+      it("should show a drop pile by the monster rule, while a chest in an explored region stays drawn", () => {
+        const { run, frame } = stageWith();
+        const item = { item_id: "i1", entity_id: "ie1", name: "Notched Blade", quantity: 1, attack_power: 6 };
+        const heap = (entity_id: string, p: { x: number; y: number }) => ({
+          container_id: entity_id,
+          entity_id,
+          kind: "drop_pile" as const,
+          position: p,
+          is_open: true,
+          items: [item],
+        });
+        const piles = [heap("p_room", inRoomAt), heap("p_near", near), heap("p_far", far)];
+        const shownPiles = () => ["p_room", "p_near", "p_far"].map((id) => shownNow(run.chests.get(id)!.sprite));
+        const containers = (extra: unknown[]) => [...dungeonState().containers, ...extra] as GameState["containers"];
+        frame({ containers: containers(piles) });
+        expect(shownPiles()).toEqual([true, true, false]);
+        // room 1 left explored, the player far off at the stairs
+        frame({ containers: containers(piles) }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(shownPiles()).toEqual([false, false, false]);
+        expect(shownNow(run.chests.get("c1")!.sprite)).toBe(true);
+      });
+
+      it("should hide projectiles, effects and burning trails in an unexplored region, and leave them in an explored one", () => {
+        const { run, frame } = stageWith();
+        const hidden = { projectiles: vi.fn(), fx: vi.fn() };
+        run.projectiles = { sync: vi.fn(), clear: vi.fn(), standing: () => [], hideWhere: hidden.projectiles };
+        run.fx = { standing: () => [], hideWhere: hidden.fx, clearAll: vi.fn(), release: vi.fn() };
+        const trail = (entity_id: string, from: { x: number; y: number }) => ({
+          entity_id,
+          from,
+          to: at(from.x + 40, from.y),
+          half_width: 12,
+          remaining: 1,
+        });
+        // the player at the stairs, room 1 explored behind them
+        frame(
+          { trails: [trail("t_room", inRoomAt), trail("t_far", far)] },
+          { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] },
+        );
+        expect(run.dungeon!.seen.state(ROOM)).toBe("explored");
+        for (const rule of [hidden.projectiles, hidden.fx]) {
+          const hides = rule.mock.lastCall![0] as (p: { x: number; y: number }) => boolean;
+          expect([hides(far), hides(inRoomAt), hides(placedAt.stairs)]).toEqual([true, false, false]);
+        }
+        const trails = [...run.trails.placed()];
+        expect(trails.map((t) => [shownNow(t.bed), shownNow(t.glow)])).toEqual([
+          [true, true],
+          [false, false],
+        ]);
+      });
     });
   });
 });
