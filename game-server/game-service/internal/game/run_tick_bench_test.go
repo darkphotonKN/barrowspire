@@ -13,9 +13,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// fullRun is a built floor holding 2 delvers, 14 standard monsters and a demon,
-// the heaviest population a floor rolls. FS-77AB6 AC "benchmark".
-func fullRun(b *testing.B) (*Session, []uuid.UUID, *ecs.Entity) {
+// fullRun is a built floor at depth holding 2 delvers, 14 standard monsters and
+// a demon, the heaviest population a floor rolls. FS-77AB6 AC "benchmark". A
+// floor above the first is reached by the floor change itself, so its walls are
+// the ones a climb leaves standing (FS-KE075 §E: floors 2–3 move as today).
+func fullRun(b *testing.B, depth int) (*Session, []uuid.UUID, *ecs.Entity) {
 	b.Helper()
 
 	em := ecs.NewEntityManager()
@@ -34,6 +36,11 @@ func fullRun(b *testing.B) (*Session, []uuid.UUID, *ecs.Entity) {
 	}
 
 	s.InitialMapObjects(nil)
+	for range depth - firstFloor {
+		if err := s.regenerateFloor(); err != nil {
+			b.Fatal(err)
+		}
+	}
 
 	// replace whatever the floor rolled with the full population
 	for _, m := range monstersInWorld(em) {
@@ -95,7 +102,17 @@ func keepStanding(em *ecs.EntityManager) {
 // 30 ticks a second is 33 ms. FS-77AB6 AC "benchmark"; FS-QG1HR parked wall/door
 // index.
 func BenchmarkRunTick_FullFloor(b *testing.B) {
-	s, delvers, demon := fullRun(b)
+	benchmarkRunTick(b, firstFloor)
+}
+
+// The same tick on floor 2, built by today's generator: a static wall index must
+// leave it no slower (FS-KE075 §E, I-KE075-2).
+func BenchmarkRunTick_FullFloor2(b *testing.B) {
+	benchmarkRunTick(b, firstFloor+1)
+}
+
+func benchmarkRunTick(b *testing.B, depth int) {
+	s, delvers, demon := fullRun(b, depth)
 	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	ctx := context.Background()
 	deltaTime := 1.0 / float64(constants.GameFrameRate)

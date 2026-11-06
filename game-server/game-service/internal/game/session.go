@@ -236,9 +236,32 @@ type WorldBounds struct {
 	Width, Height float64
 }
 
-// RunBounds is the map an escape run is built on.
+// RunBounds is the map an escape run is built on: its first floor's.
 func RunBounds() WorldBounds {
-	return WorldBounds{Type: types.WorldTypeRun, Width: constants.MapWidth, Height: constants.MapHeight}
+	width, height := floorSize(firstFloor)
+	return WorldBounds{Type: types.WorldTypeRun, Width: width, Height: height}
+}
+
+// floorSize is a run floor's map size. Every floor is today's map until floor 1
+// is a dungeon (FS-KE075 §B Requirement 11).
+func floorSize(depth int) (width, height float64) {
+	return constants.MapWidth, constants.MapHeight
+}
+
+// setFloorSize makes the session's map the floor's. The tick hands it to the
+// MovementSystem; nothing else of the session holds a size of its own.
+//
+// An unchanged size is left alone: the first floor is built on the server's
+// goroutine while the loop already runs, and the build's own placement reads
+// the size without the lock, so a write that changes nothing is not made.
+func (s *Session) setFloorSize(width, height float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.mapWidth == width && s.mapHeight == height {
+		return
+	}
+	s.mapWidth, s.mapHeight = width, height
 }
 
 // HubBounds is the hub world, larger than a run's map and larger than the
@@ -761,7 +784,11 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
-	// movement, by the world's own rules, fixed as it was built
+	// movement, by the world's own rules, fixed as it was built, bounded to
+	// the floor the world stands on now (FS-KE075 §B R11)
+	s.mu.RLock()
+	s.movementSystem.MapWidth, s.movementSystem.MapHeight = s.mapWidth, s.mapHeight
+	s.mu.RUnlock()
 	s.movementSystem.Update(deltaTime, entities)
 
 	// projectile
@@ -3164,6 +3191,9 @@ func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	slog.Debug("Building floor", "sessionID", s.ID, "depth", depth)
 
+	// the map is the floor's own size, before anything is placed on it
+	s.setFloorSize(floorSize(depth))
+
 	// a floor is placed on empty ground: nothing from an earlier floor occupies it
 	s.objectOccupiedPlaceAreas = nil
 
@@ -3452,8 +3482,8 @@ func (s *Session) CreateContainer() {
 	containerH := constants.ContainerHeightRadius*2 + 20
 	for i := 0; i < 100; i++ {
 		placeArea := PlaceArea{
-			X: rand.Float64() * (constants.MapWidth - containerW),
-			Y: rand.Float64() * (constants.MapHeight - containerH),
+			X: rand.Float64() * (s.mapWidth - containerW),
+			Y: rand.Float64() * (s.mapHeight - containerH),
 			W: containerW,
 			H: containerH,
 		}

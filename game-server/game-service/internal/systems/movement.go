@@ -6,12 +6,12 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
-	"github.com/google/uuid"
 )
 
 // MovementSystem integrates velocity into position, resolves collision and keeps
 // entities inside the world. Bounds belong to the world, not to the system: a run's
-// map and the hub are different sizes.
+// map and the hub are different sizes, and a run's floors may differ too (the
+// session hands its floor's size over every tick, FS-KE075 §B R11).
 //
 // A charge in flight (DashComponent) carries its body in place of the walk: a
 // step a tick at the charge's speed, through bodies but never through a wall, a
@@ -21,12 +21,24 @@ import (
 // PlayersPassThrough belongs to the world, like its bounds: in the hub and the
 // fields two player bodies never push each other; in a run they do. Every other
 // pair of bodies collides either way (FS-0XMCP §Requirements 26–29).
+//
+// Walls and doors are tested through a static index over the world's rects,
+// built the first tick a set of them stands and rebuilt whenever it changes: on
+// a run, once per floor (FS-KE075 §E R28–29). It is built here, on the tick,
+// because the first floor is built on another goroutine while the loop already
+// runs (gameserver.CreateGameSession); a set changed by anything else, a wall
+// added mid-floor included, is caught the same way.
 type MovementSystem struct {
 	MapWidth, MapHeight float64
 	PlayersPassThrough  bool
+
+	// the tick's alone
+	walls *wallIndex
 }
 
-// NewMovementSystem returns a system bounded to a run's map.
+// NewMovementSystem returns a system bounded to a run floor of today's size. A
+// session sets its own floor's size on the system it ticks; this default is for
+// a system standing alone.
 func NewMovementSystem() *MovementSystem {
 	return &MovementSystem{
 		MapWidth:  constants.MapWidth,
@@ -34,16 +46,50 @@ func NewMovementSystem() *MovementSystem {
 	}
 }
 
+// hashCellSize is a spatial-hash cell's side: one body's width.
+const hashCellSize = 2 * constants.PlayerRadius
+
+// hashRowBits is how many low bits of a cell's key hold its row.
+const hashRowBits = 8
+
+// SpatialHashMaxRows is the most rows the spatial hash's key keeps apart: a
+// world taller than this many cells shares keys between rows (FS-QG1HR D4).
+const SpatialHashMaxRows = 1<<hashRowBits - 1
+
+// SpatialHashRows is how many spatial-hash rows a world height tall spans.
+func SpatialHashRows(height float64) int {
+	return int(math.Ceil(height / hashCellSize))
+}
+
+// hashKey is a spatial-hash cell's key.
+func hashKey(cellX, cellY int) int {
+	return cellX<<hashRowBits | cellY
+}
+
 // NOTE: this runs every game tick
 func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
+	s.update(deltaTime, entities, s.wallIndexOf)
+}
+
+// wallIndexOf is the index over these walls and doors: the one already built,
+// unless the set has changed since.
+func (s *MovementSystem) wallIndexOf(walls, doors []*ecs.Entity) wallTests {
+	if s.walls == nil || !s.walls.indexes(walls, doors) {
+		s.walls = newWallIndex(walls, doors)
+	}
+	return s.walls
+}
+
+// update is Update with the wall tests taken from against, so a test can set
+// the full scan beside the index.
+func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, against func(walls, doors []*ecs.Entity) wallTests) {
 	// O(n) spatial hashing for collision. A cell holds every body in it: bodies
 	// close enough to collide are the likeliest to share one (FS-QG1HR D4).
 	cells := make(map[int][]*ecs.Entity)
 	// what this tick moves, iterated in place of the index so no body is skipped
 	movers := make([]*ecs.Entity, 0, len(entities))
 
-	wallEntities := make(map[uuid.UUID]*ecs.Entity, 0)
-	doorEntities := make(map[uuid.UUID]*ecs.Entity, 0)
+	var wallEntities, doorEntities []*ecs.Entity
 	for _, entity := range entities {
 
 		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
@@ -52,12 +98,12 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 		_, hasWallComp := entity.GetComponent(ecs.ComponentTypeWall)
 		if hasWallComp {
-			wallEntities[entity.ID] = entity
+			wallEntities = append(wallEntities, entity)
 		}
 
 		_, hasDoorComp := entity.GetComponent(ecs.ComponentTypeDoor)
 		if hasDoorComp {
-			doorEntities[entity.ID] = entity
+			doorEntities = append(doorEntities, entity)
 		}
 
 		// Projectiles are moved and processed by ProjectileSystem
@@ -76,10 +122,10 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			// type assertion
 			transform := transformComp.(*components.TransformComponent)
 
-			entityCellX := int(transform.X / (2 * constants.PlayerRadius))
-			entityCellY := int(transform.Y / (2 * constants.PlayerRadius))
+			entityCellX := int(transform.X / hashCellSize)
+			entityCellY := int(transform.Y / hashCellSize)
 
-			key := entityCellX<<8 | entityCellY
+			key := hashKey(entityCellX, entityCellY)
 
 			cells[key] = append(cells[key], entity)
 			movers = append(movers, entity)
@@ -87,14 +133,16 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 	}
 
+	blockers := against(wallEntities, doorEntities)
+
 	for _, entity := range movers {
 		targetEntity := entity
 		transformComp, _ := targetEntity.GetComponent(ecs.ComponentTypeTransform)
 		// type assertion
 		transform := transformComp.(*components.TransformComponent)
 		// calculate if there are other nearby entities in the 9-grid cells around this targetentity
-		cellX := int(transform.X / (2 * constants.PlayerRadius))
-		cellY := int(transform.Y / (2 * constants.PlayerRadius))
+		cellX := int(transform.X / hashCellSize)
+		cellY := int(transform.Y / hashCellSize)
 
 		// a charge in flight replaces the walk: held input neither adds to it
 		// nor steers it, so it can never stack into a faster move
@@ -112,89 +160,17 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			dy = velocity.VY * velocity.Speed * deltaTime
 		}
 
-		// split-axis swept collision, X first
-		minTx := 1.0
+		// split-axis swept collision against walls and closed doors, X first
+		newX := transform.X + dx*blockers.sweepX(transform.X, transform.Y, dx)
 
-		// walls
-		for _, wallEntity := range wallEntities {
-			wallC, _ := wallEntity.GetComponent(ecs.ComponentTypeWall)
-			wallTransformComp, _ := wallEntity.GetComponent(ecs.ComponentTypeTransform)
-			wallTransform := wallTransformComp.(*components.TransformComponent)
-			wall := wallC.(*components.WallComponent)
-
-			tX := SweptX(transform.X, transform.Y, wallTransform.X, wallTransform.Y, wall.Width, wall.Height, dx)
-			if tX < minTx {
-				minTx = tX
-			}
-		}
-
-		// doors (skip if open)
-		for _, doorEntity := range doorEntities {
-			openableC, hasOpenable := doorEntity.GetComponent(ecs.ComponentTypeOpenable)
-			if hasOpenable {
-				openable := openableC.(*components.OpenableComponent)
-				if openable.IsOpen {
-					continue
-				}
-			}
-
-			doorC, _ := doorEntity.GetComponent(ecs.ComponentTypeDoor)
-			doorTransformComp, _ := doorEntity.GetComponent(ecs.ComponentTypeTransform)
-			doorTransform := doorTransformComp.(*components.TransformComponent)
-			door := doorC.(*components.DoorComponent)
-
-			tX := SweptX(transform.X, transform.Y, doorTransform.X, doorTransform.Y, door.Width, door.Height, dx)
-			if tX < minTx {
-				minTx = tX
-			}
-		}
-
-		newX := transform.X + dx*minTx
-
-		// split-axis swept collision, Y second
-		minTy := 1.0
-
-		// walls
-		for _, wallEntity := range wallEntities {
-			wallC, _ := wallEntity.GetComponent(ecs.ComponentTypeWall)
-			wallTransformComp, _ := wallEntity.GetComponent(ecs.ComponentTypeTransform)
-			wallTransform := wallTransformComp.(*components.TransformComponent)
-			wall := wallC.(*components.WallComponent)
-
-			tY := SweptY(newX, transform.Y, wallTransform.X, wallTransform.Y, wall.Width, wall.Height, dy)
-			if tY < minTy {
-				minTy = tY
-			}
-		}
-
-		// doors, skip if open
-		for _, doorEntity := range doorEntities {
-			openableC, hasOpenable := doorEntity.GetComponent(ecs.ComponentTypeOpenable)
-			if hasOpenable {
-				openable := openableC.(*components.OpenableComponent)
-				if openable.IsOpen {
-					continue
-				}
-			}
-
-			doorC, _ := doorEntity.GetComponent(ecs.ComponentTypeDoor)
-			doorTransformComp, _ := doorEntity.GetComponent(ecs.ComponentTypeTransform)
-			doorTransform := doorTransformComp.(*components.TransformComponent)
-			door := doorC.(*components.DoorComponent)
-
-			tY := SweptY(newX, transform.Y, doorTransform.X, doorTransform.Y, door.Width, door.Height, dy)
-			if tY < minTy {
-				minTy = tY
-			}
-		}
-
-		newY := transform.Y + dy*minTy
+		// Y second
+		newY := transform.Y + dy*blockers.sweepY(newX, transform.Y, dy)
 
 		// check collision in 9-grid and resolve position by hashmap; a charge
 		// runs through bodies, as the teleport it replaced did
 		for i := -1; i <= 1 && !charging; i++ {
 			for j := -1; j <= 1; j++ {
-				cellKey := (cellX+i)<<8 | (cellY + j)
+				cellKey := hashKey(cellX+i, cellY+j)
 				for _, other := range cells[cellKey] {
 					if other.ID == targetEntity.ID {
 						continue
@@ -211,30 +187,9 @@ func (s *MovementSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 			}
 		}
 
-		// depenetration: push player out of walls after entity collision resolve
-		for _, wallEntity := range wallEntities {
-			wallC, _ := wallEntity.GetComponent(ecs.ComponentTypeWall)
-			wallTransformComp, _ := wallEntity.GetComponent(ecs.ComponentTypeTransform)
-			wallTransform := wallTransformComp.(*components.TransformComponent)
-			wall := wallC.(*components.WallComponent)
-
-			newX, newY = depenetrate(newX, newY, wallTransform.X, wallTransform.Y, wall.Width, wall.Height)
-		}
-		for _, doorEntity := range doorEntities {
-			openableC, hasOpenable := doorEntity.GetComponent(ecs.ComponentTypeOpenable)
-			if hasOpenable {
-				openable := openableC.(*components.OpenableComponent)
-				if openable.IsOpen {
-					continue
-				}
-			}
-			doorC, _ := doorEntity.GetComponent(ecs.ComponentTypeDoor)
-			doorTransformComp, _ := doorEntity.GetComponent(ecs.ComponentTypeTransform)
-			doorTransform := doorTransformComp.(*components.TransformComponent)
-			door := doorC.(*components.DoorComponent)
-
-			newX, newY = depenetrate(newX, newY, doorTransform.X, doorTransform.Y, door.Width, door.Height)
-		}
+		// depenetration: push player out of walls, then closed doors, after
+		// entity collision resolve
+		newX, newY = blockers.depenetrate(newX, newY)
 
 		// clamp position to this world's boundaries
 		mapWidth, mapHeight := s.bounds()
@@ -427,8 +382,9 @@ func depenetrate(playerX, playerY, wallX, wallY, wallW, wallH float64) (float64,
 	return playerX + pushX, playerY + pushY
 }
 
-// bounds falls back to a run's map so a zero-value MovementSystem — which the
-// tick loop builds fresh every frame — never clamps everyone to the origin.
+// bounds falls back to a run floor of today's size so a zero-value
+// MovementSystem never clamps everyone to the origin. A session always sets its
+// own size, so the fallback is only ever a bare system's.
 func (s *MovementSystem) bounds() (width, height float64) {
 	width, height = s.MapWidth, s.MapHeight
 
