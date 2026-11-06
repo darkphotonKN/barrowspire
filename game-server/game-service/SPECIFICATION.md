@@ -171,6 +171,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Route client messages from server-held session state → FS-29KSH
 - [ ] Reconnect returns to the pod still holding the player → FS-MCYWK
 - [ ] Renew the held member token over the socket → FS-ZPX58
+- [ ] Compressed game-state broadcast → FS-5QC03
 
 ### Results
 

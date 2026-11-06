@@ -203,6 +203,10 @@ server state and sends intents. ✅
 
 - [ ] Dev gallery of reusable visual pieces → FS-1819Q
 
+### Transport
+
+- [ ] Read the compressed game-state broadcast → FS-5QC03
+
 ### Deployment
 
 - [ ] Externalize the WebSocket URL and remove hardcoded hosts
