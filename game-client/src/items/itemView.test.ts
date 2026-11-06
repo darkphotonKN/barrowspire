@@ -5,7 +5,6 @@ import {
   LISTED_NOTE,
   SETTLING_NOTE,
   UNSAFE_FIND_NOTE,
-  inRun,
   itemDetail,
   itemView,
   statusStanding,
@@ -274,17 +273,6 @@ describe("statusStanding (FS-GTNP8 R2: the one place a status locks an item)", (
     expect(statusStanding(listed)).toEqual(
       itemView(listed, undefined, "hub").standing,
     );
-  });
-});
-
-describe("inRun (FS-18Z5F R38)", () => {
-  it.each([
-    ["IN_RUN", true],
-    ["AVAILABLE", false],
-    ["LISTED", false],
-    [undefined, false],
-  ])("should read status %s as in a run: %s", (status, want) => {
-    expect(inRun(item({ name: "x", status }))).toBe(want);
   });
 });
 

@@ -12,8 +12,9 @@
  * stash mode, the stash in the left panel, loaded by the same open (FS-VPD8Y §F R35–37). There a
  * hovered bag or stash item moves to the other side as one `moveItemInstance`, pre-checked against
  * both caps and the item's status, under the same one-at-a-time rule and refusal path (R38–42).
- * An item still in a delve (`IN_RUN`, FS-18Z5F R38), worn or carried, takes no change: no equip,
- * unequip, swap or move of it is sent, and the notice says why. Every open, the stash chest's
+ * An item still in a delve (`IN_RUN`, FS-18Z5F R38), listed on the Bazaar or its sale settling
+ * (FS-GTNP8 §D), worn or carried, takes no change: no equip, unequip, swap or move of it is sent,
+ * and the notice says why, by the item's standing. Every open, the stash chest's
  * too, reads the purse line's gold, and the hub asks again after a Take that carries gold
  * (FS-7TGZ3 R8–9).
  * Phaser-free: the hub hands it the overlay, the REST calls and its notice.
@@ -30,7 +31,7 @@ import {
   rarityNames,
   type ItemInstance,
 } from "@/items/loadoutItem";
-import { inRun } from "@/items/itemView";
+import { statusStanding, type LockedKind } from "@/items/itemView";
 import { ApiError } from "@/utils/apiError";
 import { BAG_FULL_NOTICE, bagFull } from "./bag";
 import {
@@ -83,6 +84,17 @@ export const GEAR_LOAD_FAILED =
 export const GEAR_CHANGE_FAILED = "Could not change your gear.";
 /** The words a change of an item still in a delve shows; nothing is sent (FS-18Z5F R38). */
 export const IN_RUN_NOTICE = "That item is still in a delve.";
+/** The words a change of an item listed on the Bazaar shows; nothing is sent (FS-GTNP8 R10). */
+export const LISTED_NOTICE = "Listed on the Bazaar: withdraw it to use it.";
+/** The words a change of an item whose sale is settling shows; nothing is sent (FS-GTNP8 R10). */
+export const SETTLING_NOTICE = "That item's sale is settling.";
+
+/** What a change of a locked item says, by its standing (FS-18Z5F R38, FS-GTNP8 R10). */
+const LOCKED_NOTICE: Readonly<Record<LockedKind, string>> = {
+  inRun: IN_RUN_NOTICE,
+  listed: LISTED_NOTICE,
+  settling: SETTLING_NOTICE,
+};
 
 /** The loadout's field for each overlay slot. */
 const LOADOUT_FIELD: Record<EquipmentSlot, keyof Loadout> = {
@@ -372,13 +384,18 @@ export class HubGear {
   }
 
   /**
-   * Whether none of `items` is still in a delve; when one is, the hub's notice says so and
-   * nothing is sent (FS-18Z5F R38). The server's refusal stays the authority.
+   * Whether none of `items` is locked by its status: still in a delve (FS-18Z5F R38), listed or
+   * settling (FS-GTNP8 R10). When one is, the hub's notice says why, by the first locked item's
+   * standing, and nothing is sent. The server's refusal stays the authority (FS-GTNP8 R13).
    */
   private free(...items: (ItemState | null | undefined)[]): boolean {
-    if (!items.some((item) => item && inRun(item))) return true;
-    this.port.notice(IN_RUN_NOTICE);
-    return false;
+    for (const item of items) {
+      const locked = item && statusStanding(item);
+      if (!locked) continue;
+      this.port.notice(LOCKED_NOTICE[locked.kind]);
+      return false;
+    }
+    return true;
   }
 
   /** A loadout change, as {@link send} sends it. */

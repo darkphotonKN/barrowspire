@@ -71,6 +71,44 @@ export function inRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
+// ── The listed mark ───────────────────────────────────────────────────────
+
+/** The listed mark's legs: this share of the well's shorter side, within these bounds (px). */
+const LISTED_MARK_SHARE = 0.3;
+const LISTED_MARK_MIN = 8;
+const LISTED_MARK_MAX = 14;
+/** How far the mark sits inside the well's top and right edges, so it keeps to the rounded corner. */
+const LISTED_MARK_INSET = 2;
+
+/** A triangle's three corners, in the order Phaser's `fillTriangle` takes them. */
+export type TrianglePoints = readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/**
+ * The listed mark of a well (FS-GTNP8 R5–R7): a right triangle in its top-right corner, its legs
+ * along the top and right edges, 2 px in. The legs are 30% of the well's shorter side, 8 to 14
+ * px, so it reads at render scale 1 on the smallest cell and stays a mark on the largest. Corners
+ * are whole logical pixels. Its corners run top-left, top-right (the right angle), bottom-right.
+ */
+export function listedMark(well: Rect): TrianglePoints {
+  const legs = Math.min(
+    LISTED_MARK_MAX,
+    Math.max(
+      LISTED_MARK_MIN,
+      Math.round(Math.min(well.w, well.h) * LISTED_MARK_SHARE),
+    ),
+  );
+  const right = Math.round(well.x + well.w - LISTED_MARK_INSET);
+  const top = Math.round(well.y + LISTED_MARK_INSET);
+  return [right - legs, top, right, top, right, top + legs];
+}
+
 // ── Scrolling ─────────────────────────────────────────────────────────────
 
 /** Which rows of a scrolled list show: from `first`, the next `count` of its `rows`. */

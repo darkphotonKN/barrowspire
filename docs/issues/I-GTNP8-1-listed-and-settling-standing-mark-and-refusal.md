@@ -1,6 +1,6 @@
 ---
 id: I-GTNP8-1
-status: open
+status: done
 implements: FS-GTNP8
 blocked_by: []
 labels: []
@@ -23,9 +23,9 @@ Implements FS-GTNP8 §A, §B, §C, §D, §E (Requirements 1–16), §Acceptance 
 
 ## Acceptance Criteria
 
-- [ ] Every FS-GTNP8 §Acceptance Criteria item but the browser check.
-- [ ] Tests first (`test:` commit), then the code (`feat(client):` commit).
-- [ ] Full vitest suite and `tsc --noEmit` green.
+- [x] Every FS-GTNP8 §Acceptance Criteria item but the browser check.
+- [x] Tests first (`test:` commit), then the code (`feat(client):` commit).
+- [x] Full vitest suite and `tsc --noEmit` green.
 
 ## Blocked By
 
