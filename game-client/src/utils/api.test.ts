@@ -193,3 +193,11 @@ describe("apiClient.moveItemInstance (FS-VPD8Y R22, R42)", () => {
     expect((err as InstanceType<typeof ApiError>).code).toBe("STASH_FULL");
   });
 });
+
+describe("apiClient (FS-TVCZQ req 6)", () => {
+  it("should offer no photo upload call", async () => {
+    const { apiClient } = await loadApi();
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(apiClient));
+    expect(methods.filter((name) => /upload/i.test(name))).toEqual([]);
+  });
+});

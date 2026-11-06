@@ -558,7 +558,7 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
-.user-avatar {
+.user-badge {
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -570,13 +570,7 @@
   background: color-mix(in srgb, var(--color-brass) 5%, transparent);
 }
 
-.user-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.default-avatar {
+.user-silhouette {
   width: 20px;
   height: 20px;
   color: var(--color-text-dim);
@@ -902,109 +896,6 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.profile-avatar-section {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 2rem;
-  position: relative;
-}
-
-.profile-avatar {
-  width: 150px;
-  height: 150px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
-  position: relative;
-  cursor: pointer;
-  overflow: hidden;
-  transition: all 0.3s ease;
-}
-
-.profile-avatar:hover {
-  border-color: color-mix(in srgb, var(--color-brass) 50%, transparent);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
-}
-
-.profile-avatar.uploading {
-  pointer-events: none;
-}
-
-.profile-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.profile-avatar-placeholder {
-  width: 100%;
-  height: 100%;
-  background: color-mix(in srgb, var(--color-brass) 5%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-brass-bright);
-}
-
-.profile-avatar-icon {
-  width: 60px;
-  height: 60px;
-}
-
-.profile-avatar-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.profile-avatar:hover .profile-avatar-overlay {
-  opacity: 1;
-}
-
-.profile-avatar-text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text);
-  text-align: center;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-}
-
-.profile-camera-icon {
-  width: 24px;
-  height: 24px;
-}
-
-.profile-upload-progress {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text-dim);
-}
-
-.profile-spinner {
-  width: 32px;
-  height: 32px;
-  border: 2px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
-  border-top: 2px solid var(--color-brass);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.profile-file-input {
-  display: none;
-}
-
 .profile-info {
   text-align: center;
   margin-bottom: 2rem;
@@ -1051,34 +942,6 @@
 .profile-detail-value {
   color: var(--color-text);
   font-weight: 500;
-}
-
-.profile-message {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 1rem;
-  border-radius: 8px;
-  margin-top: 1rem;
-  animation: slideIn 0.3s ease;
-}
-
-.profile-message-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.profile-error {
-  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 20%, transparent);
-  color: var(--color-danger-text);
-}
-
-.profile-success {
-  background: color-mix(in srgb, var(--color-brass) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
-  color: var(--color-brass-bright);
 }
 
 /* ── Email verification (FS-V6SFK R35–R36) ────────────────────────────────
@@ -1246,17 +1109,6 @@
   text-transform: uppercase;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 640px) {
   .profile-container {
     padding: 1rem;
@@ -1266,11 +1118,6 @@
   background-image: var(--surface-gradient);
   box-shadow: var(--shadow-card), var(--edge-carved);
     padding: 1.5rem;
-  }
-
-  .profile-avatar {
-    width: 120px;
-    height: 120px;
   }
 
   .profile-title {

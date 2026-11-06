@@ -123,19 +123,6 @@ export default function LeaderboardPage() {
 //
 //                   <div className="leaderboard-col player-col">
 //                     <div className="player-info">
-//                       <div className="player-avatar">
-//                         {player.avatar_url ? (
-//                           <img
-//                             src={player.avatar_url}
-//                             alt={player.username}
-//                             className="avatar-img"
-//                           />
-//                         ) : (
-//                           <div className="avatar-placeholder">
-//                             {player.username?.charAt(0)?.toUpperCase() || "?"}
-//                           </div>
-//                         )}
-//                       </div>
 //                       <span className="player-name">{player.username || "Unknown"}</span>
 //                     </div>
 //                   </div>
@@ -399,33 +386,6 @@ export default function LeaderboardPage() {
 //           gap: 1rem;
 //         }
 //
-//         .player-avatar {
-//           width: 36px;
-//           height: 36px;
-//           border-radius: 50%;
-//           overflow: hidden;
-//           border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
-//         }
-//
-//         .avatar-img {
-//           width: 100%;
-//           height: 100%;
-//           object-fit: cover;
-//         }
-//
-//         .avatar-placeholder {
-//           width: 100%;
-//           height: 100%;
-//           background: color-mix(in srgb, var(--color-brass) 6%, transparent);
-//           display: flex;
-//           align-items: center;
-//           justify-content: center;
-//           color: var(--color-text-dim);
-//           font-weight: 600;
-//           font-size: 1rem;
-//           font-family: var(--font-heading);
-//         }
-//
 //         .player-name {
 //           font-weight: 500;
 //           color: var(--color-text);
@@ -488,11 +448,6 @@ export default function LeaderboardPage() {
 //           .leaderboard-title {
 //             /* 28px is the blackletter floor — do not go below it on mobile. */
 //             font-size: 1.75rem;
-//           }
-//
-//           .player-avatar {
-//             width: 28px;
-//             height: 28px;
 //           }
 //
 //           .rank-badge {

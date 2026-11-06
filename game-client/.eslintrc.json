@@ -5,7 +5,7 @@
       "error",
       {
         "selector": "CallExpression[callee.name='fetch']",
-        "message": "Hand-written fetch is banned outside src/utils/api.ts (ADR-0001 §4). Use the generated client from '@/utils/api' so a contract change breaks the build rather than a user's session. WebSocket traffic is plane 2 and uses `new WebSocket`, which this rule does not match; the one legitimate raw fetch (the S3 presigned upload, which is not a gateway path) lives in api.ts and is exempted below."
+        "message": "Hand-written fetch is banned outside src/utils/api.ts (ADR-0001 §4). Use the generated client from '@/utils/api' so a contract change breaks the build rather than a user's session. WebSocket traffic is plane 2 and uses `new WebSocket`, which this rule does not match; the one legitimate raw fetch (fetchArtManifest, whose static file is not a gateway path) lives in api.ts and is exempted below."
       },
       {
         "selector": "Literal[value=/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
