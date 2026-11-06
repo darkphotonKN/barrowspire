@@ -230,6 +230,19 @@ describe("a wall piece under the fog (FS-SRA9J §C.8, §C.9, §C.11)", () => {
     expect([piece.visible, piece.tint]).toEqual([true, undefined]);
   });
 
+  it("standing on a region's floor (run dressing), takes that region's state: hidden while unexplored, never tinted", () => {
+    const grid = walk();
+    const { fog } = fogOver(grid);
+    const piece = new FakePiece();
+    // in room B, by its doorway to the corridor: B's own state, not the corridor's
+    fog.gate(piece, mid(11, 2));
+    fog.show(states({ [C]: "visible" }));
+    expect(piece.visible).toBe(false);
+    // explored: the fog over its floor dims it already
+    fog.show(states({ [B]: "explored" }));
+    expect([piece.visible, piece.tint]).toEqual([true, undefined]);
+  });
+
   it("stays hidden while its ground chunk is far from the camera, whatever the fog says", () => {
     const grid = walk();
     const { fog } = fogOver(grid);
