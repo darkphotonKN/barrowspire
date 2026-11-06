@@ -196,6 +196,7 @@ server state and sends intents. ✅
 - [ ] Withdraw confirm says whether it counts → FS-S109X
 - [ ] Explain a bid refused for its price → FS-V74WE
 - [ ] Explain a bid refused because you already lead → FS-72KT8
+- [ ] Only listable stash relics offered for listing → FS-3R77D
 
 ### Dev tooling
 
