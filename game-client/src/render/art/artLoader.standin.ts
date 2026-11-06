@@ -45,12 +45,17 @@ export const RESIDENT_ART_PAGES = [
  *   becomes a texture, the manifest is cached, then `filecomplete-<type>-<key>` and `progress`
  *   (files done over files queued, `updateProgress`) fire; a file added meanwhile joins the load.
  *   Once every file has finished or failed, `complete` fires.
+ * - `load.start` emits `start` first, before anything completes (`LoaderPlugin.start`).
  * - `boot(scene, data)` runs a scene as `SceneManager.bootScene` does: `init(data)`, the loader
- *   reset, `preload()`, then the manager's own `complete` listener (calling `create(data)`) added
- *   after `preload()` returned, then `start()`. A `complete` listener added in `preload()` runs
- *   first.
- * - `stop()` is a scene stop mid-load: the loader resets and drops every listener
- *   (`LoaderPlugin.shutdown`), so `create` never runs.
+ *   reset, `preload()`, the status LOADING, then the manager's own `complete` listener
+ *   (`loader.once(COMPLETE, this.loadComplete, this)`, which calls `create(data)` and sets the
+ *   status RUNNING) added after `preload()` returned, then `start()`. A `complete` listener added
+ *   in `preload()` runs first. The manager is `scene.sys.game.scene`.
+ * - `stop()` is a scene stop: the loader resets and drops every listener
+ *   (`LoaderPlugin.shutdown`), so `create` never runs, and the status is SHUTDOWN.
+ * - `scene.time.delayedCall` runs on `setTimeout` (vitest's fake timers in a test that uses them).
+ *   Phaser's Clock also drops its events on a stop (`Clock.shutdown`); this one keeps them, so a
+ *   test sees whether the scene cancelled its own.
  *
  * With `{ hold: true }` a load starts but completes only on `finish()`, so a test can look at the
  * scene while it downloads.
@@ -63,6 +68,8 @@ export function artLoaderStandin(opts: {
   textures?: string[];
   /** Keys whose download fails. */
   failing?: string[];
+  /** Every load is held until `finish()`, as `boot(…, { hold: true })` does: for a load started by Phaser's own scene manager. */
+  hold?: boolean;
 }) {
   const json = new Map<string, unknown>(
     opts.cachedManifest ? [[MANIFEST_KEY, opts.manifest]] : [],
@@ -137,7 +144,7 @@ export function artLoaderStandin(opts: {
     loaderEvents.emit("complete", load, done, 0);
   };
 
-  let hold = false;
+  let hold = opts.hold ?? false;
   const load = Object.assign(loaderEvents, {
     image: (key: string, _url?: string) => add("image", key),
     json: (key: string, _url?: string) => add("json", key),
@@ -146,6 +153,7 @@ export function artLoaderStandin(opts: {
       loading = false;
     },
     start: () => {
+      loaderEvents.emit("start", load);
       total = list.length;
       done = 0;
       if (list.length === 0) return complete();
@@ -163,8 +171,27 @@ export function artLoaderStandin(opts: {
   };
 
   const stage = drawingStage(textures);
+  /** Phaser 4.2.1's scene statuses (`scene/const.js`) that a boot passes through. */
+  const status = { INIT: 1, LOADING: 3, CREATING: 4, RUNNING: 5, SHUTDOWN: 8 };
+  const settings = { status: 0 };
+  let booted: { create?(data?: unknown): void; data?: unknown } = {};
+  const manager = {
+    /** `SceneManager.loadComplete` → `create`: the scene's create, then RUNNING. */
+    loadComplete(_loader: unknown) {
+      settings.status = status.CREATING;
+      booted.create?.(booted.data);
+      settings.status = status.RUNNING;
+    },
+  };
   const scene = {
     load,
+    sys: { settings, game: { scene: manager } },
+    time: {
+      delayedCall: (ms: number, step: () => void) => {
+        const id = setTimeout(step, ms);
+        return { remove: (_dispatch?: boolean) => clearTimeout(id) };
+      },
+    },
     textures,
     anims,
     add: stage.add,
@@ -190,10 +217,13 @@ export function artLoaderStandin(opts: {
       run: { hold?: boolean } = {},
     ) {
       hold = run.hold ?? false;
+      booted = { create: target.create?.bind(target), data };
       target.init?.(data);
+      settings.status = status.INIT;
       load.reset();
       target.preload?.();
-      load.once("complete", () => target.create?.(data));
+      settings.status = status.LOADING;
+      load.once("complete", manager.loadComplete, manager);
       load.start();
     },
     /** Completes a held load. */
@@ -220,6 +250,8 @@ export function artLoaderStandin(opts: {
     /** What the scene drew, in order (`add.graphics`, `add.text`, `add.image`). */
     drawn: stage.drawn,
     camera: stage.camera,
+    /** The scene's status, as Phaser's `sys.settings.status`. */
+    status: () => settings.status,
     /**
      * A scene stop mid-load: the loader resets and drops its listeners (`LoaderPlugin.shutdown`),
      * the display list destroys every child (`DisplayList.shutdown`), then SHUTDOWN is heard.
@@ -229,6 +261,7 @@ export function artLoaderStandin(opts: {
       load.reset();
       loaderEvents.removeAllListeners();
       for (const object of stage.drawn) object.destroy();
+      settings.status = status.SHUTDOWN;
       stage.events.emit("shutdown");
     },
   };
@@ -297,6 +330,31 @@ export function drawingStage(textures: { addImage(key: string): void; exists(key
     setBackgroundColor(color: unknown) {
       this.background = color;
       return this;
+    },
+    /**
+     * The camera's fades, as `fadeIn(ms, r, g, b)` / `fadeOut(…)`, then `reset` for each
+     * `fadeEffect.reset()`. A fade completes after its `ms` on `setTimeout`, emitting
+     * `camerafadeincomplete` / `camerafadeoutcomplete`, as Phaser's `Fade.effectComplete` does.
+     */
+    fades: [] as string[],
+    events: new EventEmitter(),
+    fadeIn(ms: number, r?: number, g?: number, b?: number) {
+      return this.fade("fadeIn", "camerafadeincomplete", ms, r, g, b);
+    },
+    fadeOut(ms: number, r?: number, g?: number, b?: number) {
+      return this.fade("fadeOut", "camerafadeoutcomplete", ms, r, g, b);
+    },
+    fade(kind: string, done: string, ms: number, r = 0, g = 0, b = 0) {
+      this.fades.push(`${kind}(${ms}, ${r}, ${g}, ${b})`);
+      setTimeout(() => this.events.emit(done, this), ms);
+      return this;
+    },
+    once(event: string, fn: (...args: unknown[]) => void) {
+      this.events.once(event, fn);
+      return this;
+    },
+    get fadeEffect() {
+      return { reset: () => void camera.fades.push("reset") };
     },
   };
   return {

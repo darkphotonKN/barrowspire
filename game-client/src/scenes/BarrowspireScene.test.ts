@@ -5044,7 +5044,8 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
     expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
   });
 
-  it("should show the torch bar while the creatures and the boss download, gone before create (FS-C4JWH §D R17)", () => {
+  it("should show the torch bar over creatures and boss still downloading at 300 ms, gone before create, then fade the run in (FS-C4JWH §D R17, A1)", () => {
+    vi.useFakeTimers();
     const art = artLoaderStandin({
       manifest: shippedManifest(),
       cachedManifest: true,
@@ -5056,10 +5057,17 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
     }) as unknown as { preload(): void };
     let atCreate: boolean[] = [];
 
-    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) });
+    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
+      hold: true,
+    });
+    vi.advanceTimersByTime(300);
+    art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
 
     expect(atCreate.length).toBeGreaterThan(0);
     expect(atCreate.every(Boolean)).toBe(true);
+    expect(art.camera.fades.at(-2)).toBe("fadeIn(200, 18, 18, 18)");
   });
 });
 

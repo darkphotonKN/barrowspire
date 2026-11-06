@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { RESIDENT_ART_PAGES, artLoaderStandin, shippedManifest } from "./artLoader.standin";
 import { atlasTextureKey } from "./library";
@@ -162,8 +162,16 @@ describe("eviction once the next scene has loaded (FS-C4JWH §C, ADR-0059)", () 
   });
 });
 
-describe("the loading bar on the same complete (FS-C4JWH §D R17)", () => {
-  /** A bar that says what happens to it, in `order`. */
+describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A bar that says what happens to it, in `order`, with the time. */
   function recordingBar(order: string[]) {
     const progress: number[] = [];
     let shown = 0;
@@ -172,50 +180,92 @@ describe("the loading bar on the same complete (FS-C4JWH §D R17)", () => {
       shown: () => shown,
       bar: () => {
         shown++;
-        order.push("bar shown");
-        return { progress: (v: number) => progress.push(v), destroy: () => order.push("bar destroyed") };
+        order.push(`${Date.now()} bar shown`);
+        return {
+          progress: (v: number) => progress.push(v),
+          destroy: () => order.push(`${Date.now()} bar destroyed`),
+        };
       },
     };
   }
 
-  /** Enters a scene holding `groups` with a bar, recording bar, eviction and create in `order`. */
-  function enterWithBar(art: ReturnType<typeof artLoaderStandin>, groups: SceneGroups, hold = false) {
+  /**
+   * Enters a scene holding `groups` with a bar, its load held until the test finishes it,
+   * recording bar, eviction and create in `order`.
+   */
+  function enterWithBar(art: ReturnType<typeof artLoaderStandin>, groups: SceneGroups, opts: { fadeIn?: boolean } = {}) {
     const order: string[] = [];
     const bar = recordingBar(order);
     const remove = art.textures.remove.bind(art.textures);
-    art.textures.remove = (key: string) => (order.push(`evicted ${key}`), remove(key));
+    art.textures.remove = (key: string) => (order.push(`${Date.now()} evicted ${key}`), remove(key));
     art.boot(
       {
-        preload: () => preloadArt(art.scene as unknown as Phaser.Scene, groups, { bar: bar.bar }),
-        create: () => order.push("create"),
+        preload: () => preloadArt(art.scene as unknown as Phaser.Scene, groups, { bar: bar.bar, fadeIn: opts.fadeIn }),
+        create: () => order.push(`${Date.now()} create`),
       },
       undefined,
-      { hold },
+      { hold: true },
     );
     return { order, bar };
   }
 
-  it("should show the bar while the scene downloads, and take it down before eviction and create", () => {
+  it("should show no bar over a load done within 300 ms: evict, then create at once", () => {
     const art = after(SCENE_ART.BarrowspireScene);
-
     const { order, bar } = enterWithBar(art, SCENE_ART.HubScene);
 
+    vi.advanceTimersByTime(250);
+    art.finish();
+    vi.runAllTimers();
+
+    expect(bar.shown()).toBe(0);
     expect(order).toEqual([
-      "bar shown",
-      "bar destroyed",
-      "evicted art:boss-0",
-      "evicted art:boss-1",
-      "evicted art:creatures-0",
-      "evicted art:creatures-1",
-      "create",
+      "250 evicted art:boss-0",
+      "250 evicted art:boss-1",
+      "250 evicted art:creatures-0",
+      "250 evicted art:creatures-1",
+      "250 create",
     ]);
-    expect(bar.progress.at(-1)).toBe(1);
   });
 
-  it("should fill the bar from the loader's progress, file by file", () => {
-    const art = after(SCENE_ART.HubScene);
+  it("should show the bar at 300 ms, evict on the load's completion under it, and create once it is down", () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+    const { order } = enterWithBar(art, SCENE_ART.HubScene);
 
+    vi.advanceTimersByTime(400);
+    art.finish();
+    vi.runAllTimers();
+
+    expect(order).toEqual([
+      "300 bar shown",
+      "400 evicted art:boss-0",
+      "400 evicted art:boss-1",
+      "400 evicted art:creatures-0",
+      "400 evicted art:creatures-1",
+      "1050 bar destroyed",
+      "1050 create",
+    ]);
+  });
+
+  it("should keep the scene LOADING while the bar is up after the load, and RUNNING from its create", () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+    enterWithBar(art, SCENE_ART.HubScene);
+
+    vi.advanceTimersByTime(400);
+    art.finish();
+    vi.advanceTimersByTime(500);
+    const behindTheBar = art.status();
+    vi.runAllTimers();
+
+    expect(behindTheBar).toBe(3);
+    expect(art.status()).toBe(5);
+  });
+
+  it("should fill the bar from the loader's progress, starting from what loaded before it showed", () => {
+    const art = after(SCENE_ART.HubScene);
     const { bar } = enterWithBar(art, SCENE_ART.BarrowspireScene);
+
+    vi.advanceTimersByTime(300);
+    art.finish();
 
     expect(bar.progress).toEqual([0, 0.25, 0.5, 0.75, 1]);
   });
@@ -224,28 +274,133 @@ describe("the loading bar on the same complete (FS-C4JWH §D R17)", () => {
     const art = after(SCENE_ART.HubScene);
 
     const { order, bar } = enterWithBar(art, SCENE_ART.HubScene);
+    vi.runAllTimers();
 
     expect(bar.shown()).toBe(0);
-    expect(order).toEqual(["create"]);
+    expect(order).toEqual(["0 create"]);
   });
 
-  it("should show the bar when only the manifest has to load", () => {
+  it("should pace a load of the manifest alone as any other", () => {
     const art = artLoaderStandin({ manifest, textures: [...resident, ...pages("folk-0")] });
-
     const { order } = enterWithBar(art, SCENE_ART.HubScene);
 
-    expect(order).toEqual(["bar shown", "bar destroyed", "create"]);
+    vi.advanceTimersByTime(1200);
+    art.finish();
+    vi.runAllTimers();
+
+    expect(order).toEqual(["300 bar shown", "1350 bar destroyed", "1350 create"]);
   });
 
-  it("should leave the bar to the stopped scene's display list when the scene is stopped mid-load", () => {
-    const art = after(SCENE_ART.BarrowspireScene);
-    const { order, bar } = enterWithBar(art, SCENE_ART.HubScene, true);
+  describe("the camera's fades (A1.4, A1.5)", () => {
+    const soot = "18, 18, 18";
 
-    art.stop();
-    art.finish();
+    it("should fade a world in from the soot as its create runs, with no bar, and reset the fade once done", () => {
+      const art = after(SCENE_ART.BarrowspireScene);
+      enterWithBar(art, SCENE_ART.HubScene, { fadeIn: true });
 
-    expect(order).toEqual(["bar shown"]);
-    expect(bar.progress).toEqual([0]);
+      vi.advanceTimersByTime(100);
+      art.finish();
+      vi.runAllTimers();
+
+      expect(art.camera.fades).toEqual([`fadeIn(200, ${soot})`, "reset"]);
+    });
+
+    it("should fade a world in when it queued nothing", () => {
+      const art = after(SCENE_ART.HubScene);
+      enterWithBar(art, SCENE_ART.HubScene, { fadeIn: true });
+      vi.runAllTimers();
+
+      expect(art.camera.fades).toEqual([`fadeIn(200, ${soot})`, "reset"]);
+    });
+
+    it("should not fade a menu that queued nothing or loaded within the delay", () => {
+      const quick = after(SCENE_ART.HubScene);
+      enterWithBar(quick, SCENE_ART.MainMenuScene);
+      vi.advanceTimersByTime(100);
+      quick.finish();
+      vi.runAllTimers();
+
+      expect(quick.camera.fades).toEqual([]);
+    });
+
+    it("should fade the bar in and out, then the scene in, a world's or a menu's", () => {
+      for (const fadeIn of [true, false]) {
+        const art = after(SCENE_ART.BarrowspireScene);
+        enterWithBar(art, SCENE_ART.HubScene, { fadeIn });
+
+        vi.advanceTimersByTime(400);
+        art.finish();
+        vi.runAllTimers();
+
+        expect(art.camera.fades).toEqual([
+          `fadeIn(150, ${soot})`,
+          "reset",
+          `fadeOut(150, ${soot})`,
+          `fadeIn(200, ${soot})`,
+          "reset",
+        ]);
+      }
+    });
+  });
+
+  describe("a stop while paced (A1.8)", () => {
+    it.each([
+      ["during the delay", 100, false],
+      ["while the bar is up and the load runs", 500, false],
+      ["while the bar waits out its 600 ms after the load", 500, true],
+      ["during the bar's fade-out", 950, true],
+    ])("should never create, and leave no timer, when the scene stops %s", (_when, stopAt, loadedFirst) => {
+      const art = after(SCENE_ART.BarrowspireScene);
+      const { order } = enterWithBar(art, SCENE_ART.HubScene);
+      if (loadedFirst) {
+        vi.advanceTimersByTime(400);
+        art.finish();
+      }
+      vi.advanceTimersByTime(stopAt - Date.now());
+
+      art.stop();
+      art.finish();
+      // the camera's own fade timers in the stand-in stand for Phaser's, which go with the camera
+      vi.runAllTimers();
+
+      expect(order.filter((o) => o.endsWith("create") || o.endsWith("bar destroyed"))).toEqual([]);
+      expect(art.status()).toBe(8);
+    });
+
+    it("should cancel its own clock events on a stop", () => {
+      const art = after(SCENE_ART.BarrowspireScene);
+      const removed: number[] = [];
+      const delayedCall = art.scene.time.delayedCall;
+      art.scene.time.delayedCall = (ms: number, step: () => void) => {
+        const event = delayedCall(ms, step);
+        return { remove: (dispatch?: boolean) => (removed.push(ms), event.remove(dispatch)) };
+      };
+      enterWithBar(art, SCENE_ART.HubScene);
+      vi.advanceTimersByTime(500);
+
+      art.stop();
+
+      expect(removed).toEqual([600]);
+    });
+
+    it("should ask the clock nothing on a game destroy, and never create", () => {
+      const art = after(SCENE_ART.BarrowspireScene);
+      const removed: number[] = [];
+      const delayedCall = art.scene.time.delayedCall;
+      art.scene.time.delayedCall = (ms: number, step: () => void) => {
+        delayedCall(ms, step);
+        return { remove: () => void removed.push(ms) };
+      };
+      const { order } = enterWithBar(art, SCENE_ART.HubScene);
+      vi.advanceTimersByTime(500);
+
+      art.scene.events.emit("destroy");
+      art.finish();
+      vi.runAllTimers();
+
+      expect(removed).toEqual([]);
+      expect(order.filter((o) => o.endsWith("create"))).toEqual([]);
+    });
   });
 });
 
