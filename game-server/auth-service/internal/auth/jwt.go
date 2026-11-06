@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 /**
@@ -53,34 +55,38 @@ func GenerateJWT(user models.Member, tokenType commonconstants.TokenType, expira
 	return token.SignedString(JWTSecret)
 }
 
-/**
-* RefreshToken validates a refresh token and generates a new access token if
-* valid.
-**/
-func RefreshToken(refreshToken string, user models.Member) (string, int, error) {
-	// Parse the refresh token
-	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
+// AccessTokenTTL and RefreshTokenTTL are the platform's two token lifetimes
+// (ADR-0066 §1). Sign-in, verification and renewal all mint from these; there
+// is no third lifetime.
+const (
+	AccessTokenTTL  = 60 * time.Minute
+	RefreshTokenTTL = 7 * 24 * time.Hour
+)
+
+// ParseRefreshToken answers the member a refresh token names, or an error when
+// it is not redeemable (FS-ZPX58 §Requirements 2): it must be HS256 with the
+// platform secret, carry an expiry that has not passed, be typed refresh, and
+// name the member by UUID. The error says which check failed, for the log only;
+// the caller turns every one of them into the same refusal.
+func ParseRefreshToken(tokenString string) (uuid.UUID, error) {
+	var claims commonauth.Claims
+	_, err := jwt.ParseWithClaims(tokenString, &claims, func(*jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
-
-	if err != nil || !token.Valid {
-		return "", 0, errors.New("invalid refresh token")
-	}
-
-	// Check if the token type is "refresh"
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || claims["tokenType"] != string(commonconstants.Refresh) {
-		return "", 0, errors.New("invalid token type")
-	}
-
-	// Generate a new access token with a 15-minute expiration
-	newAccessToken, err := GenerateJWT(user, commonconstants.Access, 15*time.Minute)
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 	if err != nil {
-		return "", 0, errors.New("could not generate new access token")
+		return uuid.Nil, fmt.Errorf("parse refresh token: %w", err)
 	}
 
-	// Return the new access token and expiration time (in seconds)
-	return newAccessToken, int(15 * 60), nil
+	if claims.TokenType != string(commonconstants.Refresh) {
+		return uuid.Nil, fmt.Errorf("token type %q is not refresh", claims.TokenType)
+	}
+
+	memberID, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("parse refresh token sub: %w", err)
+	}
+
+	return memberID, nil
 }
 
 // ValidateJWT validates a JWT token and returns the claims

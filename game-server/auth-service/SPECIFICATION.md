@@ -116,6 +116,8 @@ gRPC port default **7116** (`GRPC_AUTH_ADDR`); callers reach it at `AUTH_ADDR`. 
   `{Success,Message}`) — verify match + current password; hash + update.
   > REVIEW: on validation failure it returns a populated `{Success:false, Message}` **and** a
   > non-nil gRPC error; the error drops the response body, so `Message` never reaches the client.
+- **RefreshAccessToken** (`{RefreshToken}` → `{AccessToken, AccessExpiresIn, MemberInfo}`) — see
+  FS-ZPX58.
 - **ValidateToken** (`{Token}` → `{Valid,MemberId}`) — parse/verify JWT, return `sub`.
   > REVIEW: does **not** check `tokenType`, so a 7-day **refresh** token is accepted as a valid
   > access credential.
@@ -178,8 +180,8 @@ result is discarded (no reply/correlation).
 - **Passwords**: bcrypt, `DefaultCost` (10). Compare via `bcrypt.CompareHashAndPassword`.
 - **JWT** (`JWT_SECRET`, HS256): claims `{sub, exp, iat, tokenType}`; access = 60 min, refresh =
   7 days. `ValidateJWT` verifies signature + exp, returns `sub`, ignores `tokenType`.
-  > REVIEW: `RefreshToken` (mints a 15-min access token from a refresh token) exists but is
-  > **dead** — no RPC/caller.
+  The 15-minute `RefreshToken` helper is gone; renewal is `RefreshAccessToken` (FS-ZPX58,
+  ADR-0066), minting from the same two lifetimes as sign-in.
 
 ## Infra dependencies
 
