@@ -293,8 +293,9 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
       }
     });
     expect(moved).toBeGreaterThan(0);
-    // the thigh's root, under the belt: in by a couple of 1x px at most
+    // the thigh's root, under the belt: in by a few 1x px at most (UNDER_CLEAR is about 3.3 1x px
+    // inside the wall, FS-3V7GC R10, plus how far the root stood outside it)
     expect(most * K1).toBeGreaterThan(1);
-    expect(most * K1).toBeLessThan(3);
+    expect(most * K1).toBeLessThan(6);
   });
 });

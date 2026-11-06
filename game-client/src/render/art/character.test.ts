@@ -44,7 +44,8 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#knight",
         licence: "Barrowspire-original",
       },
-      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35)
+      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35), and the
+      // attack on the move, as long as his attack (12 frames at 24 fps, 6 at 12; FS-3V7GC)
       char_mercenary_base: {
         atlas: "characters-0",
         frameWidth: 147,
@@ -57,6 +58,7 @@ function manifest(): ArtManifest {
           attack: clip(12, false, 6),
           death: clip(9, false, 7),
           parry: clip(24, false, 4),
+          walk_attack: clip(24, false, 12),
         },
         crown: 80,
         source: "authored: tools/bake/page/characters/cast.js#mercenary",
@@ -451,7 +453,7 @@ describe("CharacterAnimator", () => {
     });
   });
 
-  describe("attacking on the move (walk_attack, FS-HF0WW)", () => {
+  describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
     /** An archer drawn walking east at the server's pace, then loosing at `aim`. */
     function shootingWhileWalking(aim: { x: number; y: number }) {
       const anim = new CharacterAnimator(art(), "archer");
@@ -532,6 +534,35 @@ describe("CharacterAnimator", () => {
       sprite.at(7);
       anim.show(sprite, { animation: "walk", facing: "e", direction: 0, timeScale: 2.7 });
       expect(sprite.plays[1]).toEqual({ key: "char_archer_base/walk/0", startFrame: 0 });
+    });
+
+    /** Walks the character east at the server's pace for 300 ms; returns where it got. */
+    function walking(anim: CharacterAnimator) {
+      const pos = { x: 0, y: 0 };
+      for (let t = 0; t <= 300; t += FRAME) {
+        pos.x += (200 * FRAME) / 1000;
+        anim.step(pos, t, FRAME, false);
+      }
+      return pos;
+    }
+
+    it("should keep a melee class's legs walking while it swings on the move, turned to its target (FS-3V7GC)", () => {
+      const anim = new CharacterAnimator(art(), "mercenary");
+      const pos = walking(anim);
+      anim.attack(300, { x: -30, y: 30 });
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + FRAME, FRAME, false)).toMatchObject({ animation: "walk_attack", facing: "sw" });
+    });
+
+    it("should leave the mercenary's parry on the move whole-body, and a cut inside it on the move over the walk (FS-3V7GC)", () => {
+      const anim = new CharacterAnimator(art(), "mercenary");
+      const pos = walking(anim);
+      anim.guard(true, 300);
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + FRAME, FRAME, false).animation).toBe("parry");
+      anim.attack(300 + FRAME, { x: 40, y: 0 });
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + 2 * FRAME, FRAME, false).animation).toBe("walk_attack");
     });
 
     it("should hold a charge's pose whole, never split over the walk", () => {

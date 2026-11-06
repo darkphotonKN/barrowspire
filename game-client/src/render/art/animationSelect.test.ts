@@ -216,24 +216,54 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should give the archer alone walk_attack: 8-way, played once, and exactly as long as his attack (FS-HF0WW)", () => {
-    const archer = manifest.sheets[characterSheet("archer")];
-    const { attack, walk_attack: walkAttack } = archer.animations;
-    expect(walkAttack?.loop).toBe(false);
-    expect(walkAttack?.frames).toHaveLength(8);
-    // the client times the window by the attack clip, so the two must last alike
-    expect(walkAttack.frames[0].length / walkAttack.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
-    for (const cls of ["warrior", "mage", "mercenary"])
-      expect(manifest.sheets[characterSheet(cls)].animations.walk_attack, cls).toBeUndefined();
+  const CLASSES = ["warrior", "mage", "archer", "mercenary"];
+  const CLASS_SHEETS = CLASSES.map(characterSheet);
+
+  it.each(CLASSES)(
+    "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
+    (cls) => {
+      const { attack, walk_attack: walkAttack } = manifest.sheets[characterSheet(cls)].animations;
+      expect(walkAttack?.loop).toBe(false);
+      expect(walkAttack?.frames).toHaveLength(8);
+      // the client times the window by the attack clip, so the two must last alike
+      expect(walkAttack.frames[0].length / walkAttack.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
+    },
+  );
+
+  it("should give walk_attack to the four classes alone, never a creature or a resident (FS-3V7GC)", () => {
+    for (const [name, sheet] of Object.entries(manifest.sheets))
+      if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
   });
 
-  it("should bake the archer alone at 2x, frames twice a 1x sheet's px each way (FS-HF0WW)", () => {
-    const archer = manifest.sheets[characterSheet("archer")];
-    expect(archer.scale).toBe(2);
-    expect(archer.frameWidth % 2).toBe(0);
-    expect(archer.frameHeight % 2).toBe(0);
+  it.each(CLASSES)(
+    "should bake %s at 2x, trimmed, frames twice a 1x sheet's px each way (FS-HF0WW, FS-3V7GC)",
+    (cls) => {
+      const sheet = manifest.sheets[characterSheet(cls)];
+      expect(sheet.scale).toBe(2);
+      expect(sheet.trimmed).toBe(true);
+      expect(sheet.frameWidth % 2).toBe(0);
+      expect(sheet.frameHeight % 2).toBe(0);
+    },
+  );
+
+  it("should bake the four classes alone at 2x and trimmed (FS-3V7GC)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (name !== "char_archer_base") expect(sheet.scale, name).toBeUndefined();
+      if (!CLASS_SHEETS.includes(name)) {
+        expect(sheet.scale, name).toBeUndefined();
+        expect(sheet.trimmed, name).toBeUndefined();
+      }
+  });
+
+  it("should pack each class into its own atlas pages, shared with no other sheet (FS-3V7GC)", () => {
+    const pages = (sheet: (typeof manifest.sheets)[string]) =>
+      new Set([sheet.atlas, ...Object.values(sheet.animations).map((a) => a.atlas)].filter(Boolean));
+    for (const name of CLASS_SHEETS) {
+      const own = pages(manifest.sheets[name]);
+      expect(own.size, name).toBeGreaterThan(0);
+      for (const [other, sheet] of Object.entries(manifest.sheets))
+        if (other !== name) for (const page of pages(sheet)) expect(own.has(page), `${other} on ${name}'s ${page}`).toBe(false);
+    }
+    expect(Object.keys(manifest.atlases).filter((k) => k.startsWith("characters-"))).toEqual([]);
   });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {
