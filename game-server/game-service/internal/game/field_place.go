@@ -20,6 +20,8 @@ const (
 	FieldGentleMeadows FieldID = "gentle_meadows"
 	// FieldForlornForest is the generated forest west of the hub (FS-3QHQZ).
 	FieldForlornForest FieldID = "forlorn_forest"
+	// FieldDevTestRoom is the dev-only room, built only when it is on (FS-BDRTJ).
+	FieldDevTestRoom FieldID = "dev_test_room"
 )
 
 // FieldPoint is a point on a field's map.
@@ -192,6 +194,10 @@ func (s *Session) InitialFieldMapObjects(place FieldPlace, layout FieldLayout) {
 		CreateContainerEntity(s.EntityManager, ContainerConfig{X: at.X, Y: at.Y, Kind: kind}, nil)
 		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
 			centredArea(at.X, at.Y, constants.ContainerWidthRadius, constants.ContainerHeightRadius))
+	}
+
+	if place.ID == FieldDevTestRoom {
+		s.buildDevTestRoom()
 	}
 
 	slog.Info("Field channel built",

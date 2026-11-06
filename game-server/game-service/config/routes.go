@@ -44,7 +44,7 @@ type Downstreams struct {
 * liveness key, then releases every downstream connection; call it on
 * shutdown, before redis is closed.
 **/
-func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, partySize int, outbox game.OutboxWriter, outboxWaker game.OutboxWaker) (*gin.Engine, func() error, error) {
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, partySize int, outbox game.OutboxWriter, outboxWaker game.OutboxWaker, devTestRoom bool) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -114,6 +114,8 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		// notification-service's mail arrivals ride it too: mail_arrived to HUB-world players
 		// (FS-1GZGD R42, ADR-0045)
 		gameserver.WithMailArrivals(chatbus.NewRedis(redisClient)),
+		// off unless main says ENVIRONMENT is development (FS-BDRTJ R1)
+		gameserver.WithDevTestRoom(devTestRoom),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())

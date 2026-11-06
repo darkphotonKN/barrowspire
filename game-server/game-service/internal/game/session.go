@@ -60,6 +60,8 @@ type Session struct {
 	// and a run. The pointer is guarded by mu, its contents are the tick's alone.
 	// FS-X2F2H §Requirements 26–27.
 	fieldPopulation *fieldPopulation
+	// the dev test room's chests and enemies; nil in every other world (FS-BDRTJ)
+	devTestRoom *devTestRoomState
 	// a field channel's chest restock delay, its place's, cached as it is built
 	// so the tick reads one number rather than the place; 0 never restocks.
 	// Guarded by mu. FS-3QHQZ §Requirements 19.
@@ -864,6 +866,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.ageFieldDropPiles(deltaTime, entities)
 		// a field's opened chests fill again (FS-3QHQZ §Requirements 19)
 		s.restockFieldChests(deltaTime, entities)
+		// the dev test room's chests and enemies come back (FS-BDRTJ R13, R16)
+		s.tickDevTestRoom(deltaTime)
 	}
 
 	// interaction

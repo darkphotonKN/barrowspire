@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -136,6 +137,8 @@ type bootOptions struct {
 	podLiveness podLiveness
 	// the `mail:arrived` subscription; nil, and no mail_arrived is ever sent (FS-1GZGD R42)
 	mailBus mailArrivalBus
+	// whether this pod builds the dev test room; the zero value is off (FS-BDRTJ R1)
+	devTestRoom bool
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
@@ -164,6 +167,12 @@ func WithBootSeed(seed uint64) Option {
 	return func(o *bootOptions) { o.seed = seed }
 }
 
+// WithDevTestRoom builds the dev test room and its hub gate when on. main decides
+// on from ENVIRONMENT. FS-BDRTJ §Requirements 1, 3.
+func WithDevTestRoom(on bool) Option {
+	return func(o *bootOptions) { o.devTestRoom = on }
+}
+
 // laidOutField is a field place with the layout of the one channel this pod
 // builds of it.
 type laidOutField struct {
@@ -189,6 +198,9 @@ func layOutFields(boot bootOptions) ([]laidOutField, error) {
 	}
 
 	places := game.FieldPlaces(forest)
+	if boot.devTestRoom {
+		places = append(places, game.DevTestRoom())
+	}
 	fields := make([]laidOutField, 0, len(places))
 	for _, place := range places {
 		layout, err := place.Layout.Layout()
@@ -302,11 +314,18 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 	// the pre-checks above and before the field's lock, so a slow items-service
 	// delays only this entry (FS-18Z5F §C R13, R14, R16)
 	visitID := uuid.New()
-	checkoutCtx, cancelCheckout := context.WithTimeout(ctx, fieldReadTimeout)
-	gear, err := s.setupHandoffConnectingPlayer(checkoutCtx, player.ID, visitID, s.tokenOf(player))
-	cancelCheckout()
-	if err != nil {
-		return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)
+	var gear *items.CheckOutRunGearResponse
+	if place.ID == game.FieldDevTestRoom {
+		// no items-service call: real gear stays behind, and only this copy of
+		// the character is max level (FS-BDRTJ R8, R9)
+		character, gear = game.DevTestRoomSeat(character)
+	} else {
+		checkoutCtx, cancelCheckout := context.WithTimeout(ctx, fieldReadTimeout)
+		gear, err = s.setupHandoffConnectingPlayer(checkoutCtx, player.ID, visitID, s.tokenOf(player))
+		cancelCheckout()
+		if err != nil {
+			return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)
+		}
 	}
 
 	visit, err := field.SeatVisitor(player.ID, character, visitID, gear)
@@ -471,6 +490,13 @@ func (s *Server) endVisit(ctx context.Context, field *game.Session, memberID uui
 * the next load would not show what the visit earned.
 **/
 func (s *Server) settleVisit(ctx context.Context, visit game.FieldVisit) {
+	// the dev test room never settles: no outbox write, no XP, no items, no run
+	// progress. This is what keeps test gear out of every inventory, and a level
+	// 20 body's level off the record. FS-BDRTJ R10, the ADR-0031 exception.
+	if visit.Field == game.FieldDevTestRoom {
+		return
+	}
+
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), visitSettleTimeout)
 	defer cancel()
 
