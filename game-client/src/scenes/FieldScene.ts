@@ -55,6 +55,7 @@ import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
+import { onSceneEnd, type SceneEnd } from "./sceneEnd";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -253,8 +254,8 @@ export class FieldScene extends Phaser.Scene {
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+    // a stop, or the game's destroy mid-field (the page unmounts), which skips SHUTDOWN
+    onSceneEnd(this, (end) => this.release(end));
   }
 
   /**
@@ -426,10 +427,11 @@ export class FieldScene extends Phaser.Scene {
     if (this.piles?.loot(item)) this.equipment?.taken(item);
   }
 
-  /** Everything one visit made is let go: Phaser reuses the scene instance for the next. */
-  private release(): void {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.release, this);
+  /**
+   * Everything one visit made is let go: Phaser reuses the scene instance for the next. On the
+   * game's destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
+   */
+  private release(end: SceneEnd = "shutdown"): void {
     this.unsubscribeState?.();
     socketManager.offError(ActionType.LeaveField);
     socketManager.off(ActionType.Interact);
@@ -465,6 +467,9 @@ export class FieldScene extends Phaser.Scene {
     this.fight = undefined;
     this.lightMap = undefined;
     this.lastSent = { vx: 0, vy: 0 };
+    // the fight's hand or strike-mark is the field's: the next world sets its own. A destroyed
+    // game took its input manager, and the cursor with it.
+    if (end === "shutdown") this.input.setDefaultCursor("");
   }
 
   update(time: number, delta: number): void {

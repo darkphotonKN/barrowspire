@@ -3217,7 +3217,8 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
   function hubToEnd() {
     const queued = queuedHubOnStage();
     const { hub } = queued;
-    const systems = sceneSystems({ add: hub.add, cameras: hub.cameras, time: hub.time, scene: hub.scene });
+    const { add, cameras, time, scene } = hub as unknown as Record<string, object>;
+    const systems = sceneSystems({ add, cameras, time, scene });
     Object.assign(hub, systems.scene);
     const release = (end: "shutdown" | "destroy") =>
       (hub as unknown as { release(end: string): void }).release(end);

@@ -53,6 +53,7 @@ import { PotionHud } from "@/ui/PotionHud";
 import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
+import { onSceneEnd, type SceneEnd } from "./sceneEnd";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -817,20 +818,18 @@ export class BarrowspireScene extends Phaser.Scene {
   init(data?: { sessionID?: string }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
-    // DESTROY too: tearing the game down mid-run (the page unmounts) skips SHUTDOWN.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
+    // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
+    onSceneEnd(this, (end) => this.resetRun(end));
   }
 
   /**
    * Drops every subscription and every reference to the stopped run's world. Phaser
    * has already destroyed the game objects; what is left here are the maps and flags
    * that would otherwise make the next start skip building walls, roofs and players,
-   * or touch sprites that no longer exist.
+   * or touch sprites that no longer exist. On the game's destroy the scene's plugins are already
+   * gone and are asked nothing (`SceneEnd`).
    */
-  private resetRun(): void {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
+  private resetRun(end: SceneEnd = "shutdown"): void {
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.connectionStatusUnsubscribe?.();
@@ -917,9 +916,6 @@ export class BarrowspireScene extends Phaser.Scene {
     // down with the scene's.
     this.resultHold.clear();
     this.settlementRecord = undefined;
-    // the run's end locks the keyboard, and Phaser keeps the plugin
-    // across restarts, so the next run would start unable to move
-    if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.resolvedCard = undefined;
     this.canWatch = false;
     this.canLeave = false;
@@ -939,9 +935,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dismissKey = undefined;
     this.confirmKey = undefined;
     this.choiceKeys = [];
-    // Phaser destroys the run's keys on shutdown but keeps their captures; a teardown
-    // without a shutdown keeps both. Either way the next run binds Tab afresh.
-    if (this.tabKey) this.input?.keyboard?.removeKey(this.tabKey, true, true);
+    // on a stop the keyboard is handed back; either way the next run binds Tab afresh
+    if (end === "shutdown") this.handBackKeyboard();
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
@@ -975,6 +970,19 @@ export class BarrowspireScene extends Phaser.Scene {
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;
     this.escapedPlayers.clear();
+  }
+
+  /**
+   * What the run left on the scene's keyboard, which Phaser keeps across restarts. Only on a stop:
+   * a destroyed game took its keyboard, keys and captures with it (`SceneEnd`).
+   */
+  private handBackKeyboard(): void {
+    const keyboard = this.input?.keyboard;
+    if (!keyboard) return;
+    // the run's end locks the keyboard, so the next run would start unable to move
+    keyboard.enabled = true;
+    // Phaser destroys the run's keys on shutdown but keeps their captures
+    if (this.tabKey) keyboard.removeKey(this.tabKey, true, true);
   }
 
   private toggleControlsPanel(): void {

@@ -31,12 +31,14 @@ export function sceneSystems(plugins: Record<string, object> = {}) {
         const value: unknown = Reflect.get(target, key);
         if (typeof value === "function") {
           return (...args: unknown[]) => {
-            if (destroyed && !LETTING_GO.has(key)) touched.push(`${name}.${String(key)}()`);
+            if (destroyed && !LETTING_GO.has(key))
+              touched.push(`${name}.${String(key)}()`);
             return (value as (...a: unknown[]) => unknown).apply(target, args);
           };
         }
         // a plugin's own plugin (the input's keyboard) is watched the same way
-        if (value instanceof EventEmitter) return watched(`${name}.${String(key)}`, value);
+        if (value instanceof EventEmitter)
+          return watched(`${name}.${String(key)}`, value);
         return value;
       },
       set(target, key, value) {
@@ -55,7 +57,10 @@ export function sceneSystems(plugins: Record<string, object> = {}) {
     events,
     input: watched("input", input),
     ...Object.fromEntries(
-      Object.entries(plugins).map(([name, plugin]) => [name, watched(name, plugin)]),
+      Object.entries(plugins).map(([name, plugin]) => [
+        name,
+        watched(name, plugin),
+      ]),
     ),
   };
 
@@ -137,7 +142,9 @@ class KeyboardStandIn extends EventEmitter {
   }
 
   removeCapture(keyCode: number): this {
-    this.manager!.captures = this.manager!.captures.filter((code) => code !== keyCode);
+    this.manager!.captures = this.manager!.captures.filter(
+      (code) => code !== keyCode,
+    );
     return this;
   }
 

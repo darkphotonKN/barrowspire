@@ -150,7 +150,7 @@ export class FieldCombat {
 
   /** Everything one visit drew is let go: the next visit starts ready and empty. */
   release(): void {
-    this.monsters.sync([]);
+    this.monsters.clear();
     this.parts.projectiles?.clear();
     this.parts.hits?.clearAll();
     this.parts.clearEffects?.();

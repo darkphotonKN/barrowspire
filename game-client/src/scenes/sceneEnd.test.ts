@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "eventemitter3";
 
 vi.mock("phaser", () => {
-  const phaser = { Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } } };
+  const phaser = {
+    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
+  };
   return { ...phaser, default: phaser };
 });
 
@@ -20,7 +22,9 @@ describe("onSceneEnd", () => {
   it("should say shutdown on a stop, after the plugins shut down, and not run again on a later destroy", () => {
     const systems = sceneSystems();
     const ends: string[] = [];
-    onSceneEnd(systems.scene, (end) => ends.push(`${end}: input ${systems.input.state}`));
+    onSceneEnd(systems.scene, (end) =>
+      ends.push(`${end}: input ${systems.input.state}`),
+    );
 
     systems.shutdown();
     systems.destroy();
@@ -31,7 +35,9 @@ describe("onSceneEnd", () => {
   it("should say destroy on a game destroy, which runs after the plugins destroyed themselves", () => {
     const systems = sceneSystems();
     const ends: string[] = [];
-    onSceneEnd(systems.scene, (end) => ends.push(`${end}: input ${systems.input.state}`));
+    onSceneEnd(systems.scene, (end) =>
+      ends.push(`${end}: input ${systems.input.state}`),
+    );
 
     systems.destroy();
 
@@ -84,7 +90,9 @@ describe("the Phaser stand-in", () => {
 
   it("should let the input be used after a stop", () => {
     const systems = sceneSystems();
-    systems.scene.events.once("shutdown", () => systems.scene.input.setDefaultCursor(""));
+    systems.scene.events.once("shutdown", () =>
+      systems.scene.input.setDefaultCursor(""),
+    );
 
     expect(() => systems.shutdown()).not.toThrow();
   });

@@ -112,6 +112,8 @@ function fieldOnStage() {
   field.time = { delayedCall: vi.fn() };
   field.scene = { start: vi.fn() };
   Object.assign(field, {
+    // the cursor is handed back on release
+    input: { setDefaultCursor: vi.fn() },
     placePlayer: vi.fn(),
     drawGround: vi.fn(),
     drawObstacles: vi.fn(),
@@ -744,6 +746,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
       on: vi.fn(),
+      setDefaultCursor: vi.fn(),
     };
     field.bindHudKeys();
     const press = (key: string) => keys.get(`keydown-${key}`)?.();
