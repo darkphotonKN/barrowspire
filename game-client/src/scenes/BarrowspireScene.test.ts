@@ -5077,9 +5077,12 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
       run.time.now += ms;
       run.updateTargetFrame(ms);
     };
-    /** The roster's own plate texts: made with the 11px plate style. */
+    /** The roster's own plate texts: the 11px plate in the hostile ink. */
     const plates = () =>
-      stage.stage.made.filter((m) => m.kind === "text" && (m.args[3] as { fontSize?: string })?.fontSize === "11px");
+      stage.stage.made.filter((m) => {
+        const style = m.args[3] as { fontSize?: string; color?: string } | undefined;
+        return m.kind === "text" && style?.fontSize === "11px" && style.color === toCss(palette.markerHostile);
+      });
     return { ...stage, run, state, named, tick, plates };
   }
 
@@ -5184,7 +5187,7 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
   it("should let the frame go with the run", () => {
     const { run } = framed();
     expect(run.targetFrame).toBeDefined();
-    run.events.emit("shutdown");
+    run.resetRun("shutdown");
     expect(run.targetFrame).toBeUndefined();
   });
 
