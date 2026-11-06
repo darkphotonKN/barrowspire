@@ -11,6 +11,7 @@ import {
   LISTING_DURATION_OUT_OF_RANGE_COPY,
   LISTING_LIMIT_REACHED_COPY,
   NOT_IN_STASH_CANNOT_LIST,
+  NOTHING_LISTABLE,
   WORN_CANNOT_LIST,
   buyoutField,
   canSubmitListing,
@@ -87,29 +88,50 @@ describe("instanceStatus", () => {
 });
 
 describe("pickerCards", () => {
-  const cards = pickerCards([
-    { id: "sword", name: "Longsword", status: "AVAILABLE", attack_power: 12, critical_rate: 0.05 },
-    { id: "helm", name: "Iron Helm", status: "LISTED", defense_rating: 4 },
-    { id: "ring", name: "Ring", status: "IN_ESCROW" },
-    { id: "odd", name: "Odd", status: "DESTROYED" as "AVAILABLE" },
-    { id: "old", name: "Old Dagger" },
-    { name: "No id" },
-  ]);
+  // FS-3R77D R10–R12: only stash relics that can be listed right now get a card.
+  const cards = pickerCards(
+    [
+      { id: "sword", name: "Longsword", status: "AVAILABLE", location: "stash", attack_power: 12, critical_rate: 0.05 },
+      { id: "axe", name: "Axe", status: "AVAILABLE", location: "bag" },
+      { id: "helm", name: "Iron Helm", status: "LISTED", location: "stash", defense_rating: 4 },
+      { id: "ring", name: "Ring", status: "IN_ESCROW", location: "stash" },
+      { id: "cloak", name: "Cloak", status: "PENDING_SETTLEMENT", location: "stash" },
+      { id: "bow", name: "Bow", status: "IN_RUN", location: "stash" },
+      { id: "odd", name: "Odd", status: "DESTROYED", location: "stash" },
+      { id: "crown", name: "Crown", status: "AVAILABLE", location: "stash" },
+      { id: "old", name: "Old Dagger", location: "STASH" },
+      { id: "nowhere", name: "Nowhere", status: "AVAILABLE" },
+      { name: "No id", status: "AVAILABLE", location: "stash" },
+    ],
+    new Set(["crown"]),
+  );
 
-  it("should make one card per instance with an id", () => {
-    expect(cards.map((c) => c.id)).toEqual(["sword", "helm", "ring", "odd", "old"]);
+  it("should make a card only for an available, unworn stash relic with an id, in order", () => {
+    expect(cards.map((c) => c.id)).toEqual(["sword", "old"]);
   });
 
   it.each([
-    ["sword", true, undefined],
-    ["helm", false, "Listed"],
-    ["ring", false, "In escrow"],
-    ["odd", false, "Unavailable"],
-    ["old", true, undefined],
-  ])("should let %s be chosen: %s, tagged %s", (id, selectable, tag) => {
-    const card = cards.find((c) => c.id === id)!;
-    expect(card.selectable).toBe(selectable);
-    expect(card.tag).toBe(tag);
+    ["a bag relic", "axe"],
+    ["a listed relic", "helm"],
+    ["a relic in escrow", "ring"],
+    ["a settling relic", "cloak"],
+    ["a relic in a run", "bow"],
+    ["a relic of unknown status", "odd"],
+    ["a worn stash relic", "crown"],
+    ["a relic with no location", "nowhere"],
+  ])("should leave out %s", (_l, id) => {
+    expect(cards.find((c) => c.id === id)).toBeUndefined();
+  });
+
+  it("should read a stash relic with no status as available, the server staying the authority", () => {
+    expect(cards.find((c) => c.id === "old")).toBeDefined();
+  });
+
+  it("should mark nothing: a card has no choosable flag and no tag (FS-3R77D R11)", () => {
+    for (const card of cards) {
+      expect(card).not.toHaveProperty("selectable");
+      expect(card).not.toHaveProperty("tag");
+    }
   });
 
   it("should show the stats the relic has, and no price", () => {
@@ -122,45 +144,22 @@ describe("pickerCards", () => {
   });
 
   it("should name a nameless relic", () => {
-    expect(pickerCards([{ id: "x" }])[0].name).toBe("Unknown relic");
+    expect(pickerCards([{ id: "x", location: "stash" }])[0].name).toBe("Unknown relic");
   });
 
-  // FS-HBXZN R13, R15: a worn relic is shown, not choosable; a status tag wins over "Worn".
-  describe("with worn relics", () => {
-    const worn = pickerCards(
-      [
-        { id: "sword", status: "AVAILABLE" },
-        { id: "axe", status: "AVAILABLE" },
-        { id: "helm", status: "LISTED" },
-        { id: "odd", status: "DESTROYED" },
-        { id: "old" },
-      ],
-      new Set(["sword", "helm", "odd", "old"]),
+  it("should read no worn ids as nothing worn", () => {
+    const instances = [
+      { id: "sword", status: "AVAILABLE", location: "stash" },
+      { id: "helm", status: "LISTED", location: "stash" },
+    ];
+    expect(pickerCards(instances, new Set())).toEqual(pickerCards(instances));
+    expect(pickerCards(instances).map((c) => c.id)).toEqual(["sword"]);
+  });
+
+  it("should say plainly when the stash holds nothing to list (FS-3R77D R14)", () => {
+    expect(NOTHING_LISTABLE).toBe(
+      "Nothing in your stash to list. Move a relic into your stash in town.",
     );
-
-    it.each([
-      ["a worn available relic", "sword", false, "Worn"],
-      ["an unworn available relic", "axe", true, undefined],
-      ["a worn listed relic", "helm", false, "Listed"],
-      ["a worn relic of unknown status", "odd", false, "Unavailable"],
-      ["a worn relic with no status", "old", false, "Worn"],
-    ])("should show %s: choosable %s, tagged %s", (_l, id, selectable, tag) => {
-      const card = worn.find((c) => c.id === id)!;
-      expect(card.selectable).toBe(selectable);
-      expect(card.tag).toBe(tag);
-    });
-
-    it("should keep every worn relic in the picker", () => {
-      expect(worn.map((c) => c.id)).toEqual(["sword", "axe", "helm", "odd", "old"]);
-    });
-
-    it("should read no worn ids as today's cards", () => {
-      const instances = [
-        { id: "sword", status: "AVAILABLE" },
-        { id: "helm", status: "LISTED" },
-      ];
-      expect(pickerCards(instances, new Set())).toEqual(pickerCards(instances));
-    });
   });
 });
 
@@ -201,8 +200,8 @@ describe("buyoutField", () => {
 
 describe("canSubmitListing", () => {
   const cards = pickerCards([
-    { id: "sword", status: "AVAILABLE" },
-    { id: "helm", status: "LISTED" },
+    { id: "sword", status: "AVAILABLE", location: "stash" },
+    { id: "helm", status: "LISTED", location: "stash" },
   ]);
   const ok = { cards, selectedId: "sword", priceText: "50", submitting: false };
 
@@ -216,7 +215,7 @@ describe("canSubmitListing", () => {
 
   it.each([
     ["nothing is chosen", { selectedId: undefined }],
-    ["the chosen relic is listed", { selectedId: "helm" }],
+    ["the chosen relic is listed, so it has no card", { selectedId: "helm" }],
     ["the chosen relic is gone", { selectedId: "gone" }],
     ["the price is not a whole number of 1 or more", { priceText: "0" }],
     ["a listing is already on its way", { submitting: true }],
@@ -225,8 +224,11 @@ describe("canSubmitListing", () => {
     expect(canSubmitListing({ ...ok, ...change })).toBe(false);
   });
 
-  it("should refuse a worn relic, which its card does not let be chosen (FS-HBXZN R13)", () => {
-    const wornCards = pickerCards([{ id: "sword", status: "AVAILABLE" }], new Set(["sword"]));
+  it("should refuse a worn relic, which gets no card (FS-3R77D R10)", () => {
+    const wornCards = pickerCards(
+      [{ id: "sword", status: "AVAILABLE", location: "stash" }],
+      new Set(["sword"]),
+    );
     expect(canSubmitListing({ ...ok, cards: wornCards })).toBe(false);
   });
 });
