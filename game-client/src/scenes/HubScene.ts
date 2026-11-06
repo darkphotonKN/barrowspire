@@ -61,6 +61,7 @@ import {
   type Point,
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART } from "@/render/art/sceneArt";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
@@ -750,8 +751,8 @@ export class HubScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // baked world and prop art (FS-2325V §B.6)
-    preloadArt(this);
+    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.HubScene);
   }
 
   create(): void {
@@ -762,7 +763,7 @@ export class HubScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.HubScene);
     this.occluders = new Occluders();
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
     // `default` without its sheet. Nothing hostile here, so no strike-mark.

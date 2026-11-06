@@ -5,9 +5,10 @@ import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
 import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
-import { registerArt } from "@/render/art/phaser";
+import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
-import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
+import { MenuFigure } from "@/render/art/menuFigure";
+import { SCENE_ART } from "@/render/art/sceneArt";
 import {
   buttonTextColor,
   drawBackdrop,
@@ -112,14 +113,15 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadMenuArt(this);
+    // the class figures: resident art only (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.MainMenuScene);
   }
 
   create(): void {
     // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
     centreStage(this.cameras.main);
     sharpenText(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.MainMenuScene);
     const width = STAGE_WIDTH;
     const height = LOGICAL_HEIGHT;
 

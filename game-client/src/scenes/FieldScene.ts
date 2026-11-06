@@ -16,6 +16,7 @@ import {
   type Point,
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { fieldArt } from "@/render/art/sceneArt";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { LightMap } from "@/render/lighting";
@@ -205,12 +206,19 @@ export class FieldScene extends Phaser.Scene {
     super({ key: "FieldScene" });
   }
 
-  preload(): void {
-    preloadArt(this);
+  /**
+   * The field this start is for, from the start data: Phaser hands it to `init` and `create`,
+   * never to `preload`, which loads this field's own creatures (FS-C4JWH §B R8).
+   */
+  init(data?: { field?: FieldId }): void {
+    this.field = data?.field ?? "gentle_meadows";
   }
 
-  create(data?: { field?: FieldId }): void {
-    this.field = data?.field ?? "gentle_meadows";
+  preload(): void {
+    preloadArt(this, fieldArt(this.field));
+  }
+
+  create(): void {
     this.look = fieldLook(this.field);
     this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
     const { width, height } = this.size;
@@ -220,7 +228,7 @@ export class FieldScene extends Phaser.Scene {
     boundCamera(camera, bounds);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, fieldArt(this.field));
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);

@@ -6,8 +6,8 @@
 
 import * as Phaser from "phaser";
 import { BARROW_HEX } from "@/utils/theme";
-import { registerArt } from "@/render/art/phaser";
-import { preloadMenuArt } from "@/render/art/menuFigure";
+import { preloadArt, registerArt } from "@/render/art/phaser";
+import { RESIDENT_ART } from "@/render/art/sceneArt";
 import { CharacterAnimator } from "@/render/art/character";
 import { directionIndex } from "@/render/art/manifest";
 import type { ArtLibrary } from "@/render/art/library";
@@ -58,11 +58,12 @@ export class GalleryScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadMenuArt(this);
+    // the mage and its effects: resident art (FS-C4JWH §A R3)
+    preloadArt(this, RESIDENT_ART);
   }
 
   create(): void {
-    this.art = registerArt(this);
+    this.art = registerArt(this, RESIDENT_ART);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
     this.floor();
     this.lightMap = new LightMap(this, AMBIENT.run);

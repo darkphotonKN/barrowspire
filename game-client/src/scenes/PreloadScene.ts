@@ -1,7 +1,8 @@
 import * as Phaser from "phaser";
 
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import { preloadMenuArt } from "@/render/art/menuFigure";
+import { preloadArt } from "@/render/art/phaser";
+import { RESIDENT_ART } from "@/render/art/sceneArt";
 import {
   addTorchPool,
   drawBackdrop,
@@ -102,9 +103,10 @@ export class PreloadScene extends Phaser.Scene {
       flavourText.destroy();
     });
 
-    // The baked art, behind the torch bar: the main menu shows the cast straight after this
-    // (FS-2325V §F), and every later scene finds it already loaded.
-    preloadMenuArt(this);
+    // The resident art, behind the torch bar: the main menu shows the cast straight after this
+    // (FS-2325V §F), and every later scene finds it already loaded; each world loads its own
+    // creatures or townsfolk as it is entered (FS-C4JWH §B R6).
+    preloadArt(this, RESIDENT_ART);
   }
 
   create(): void {

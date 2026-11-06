@@ -2,8 +2,8 @@
  * Phaser side of the art pipeline (FS-2325V §B.6): load the manifest and its atlases, register
  * every frame and animation once, and build sprites by manifest name.
  *
- *   preload() { preloadArt(this); }
- *   create()  { const art = registerArt(this, logger); artSprite(this, art, x, y, "door_x", { animation: "open" }); }
+ *   preload() { preloadArt(this, SCENE_ART.HubScene); }
+ *   create()  { const art = registerArt(this, SCENE_ART.HubScene); artSprite(this, art, x, y, "door_x", { animation: "open" }); }
  *
  * Frame geometry never leaves this module and `library.ts`: scenes speak manifest names only.
  */
@@ -25,6 +25,7 @@ import {
   validateManifest,
   type ArtManifest,
 } from "./manifest";
+import { sceneAtlases, type SceneGroups } from "./sceneArt";
 
 export const MANIFEST_KEY = "art:manifest";
 export const DEFAULT_ART_URL = "/art/";
@@ -78,9 +79,11 @@ export interface ArtScene {
 }
 
 /**
- * Queues the manifest, then every atlas it names that is not already a texture, on the scene's
- * loader. Call from `preload()`. A missing manifest only fails its own file; {@link registerArt}
- * then falls back.
+ * Queues, on the scene's loader, the manifest if it is not cached, then every atlas page of the
+ * scene's set (every resident page, and the pages of its own scene-scoped `groups`, `sceneArt.ts`)
+ * that is not already a texture, and nothing else (FS-C4JWH §B R6–R7). Call from `preload()`, with
+ * the scene's {@link SCENE_ART} entry; then {@link registerArt} in `create()` with the same one.
+ * A missing manifest only fails its own file; {@link registerArt} then falls back.
  *
  * The manifest may already be cached by another scene whose atlases are still in flight: a
  * refresh lands the player in the hub while the preload scene is still fetching. Phaser skips a
@@ -89,14 +92,16 @@ export interface ArtScene {
  */
 export function preloadArt(
   scene: Phaser.Scene,
+  groups: SceneGroups,
   baseUrl = DEFAULT_ART_URL,
 ): void {
   const queueAtlases = (data: unknown) => {
     const result = validateManifest(data);
     if (!result.ok) return; // registerArt reports it with the scene's logger
-    for (const [key, atlas] of Object.entries(result.manifest.atlases))
+    const { atlases } = result.manifest;
+    for (const key of sceneAtlases(result.manifest, groups))
       if (!scene.textures.exists(atlasTextureKey(key)))
-        scene.load.image(atlasTextureKey(key), `${baseUrl}${atlas.image}`);
+        scene.load.image(atlasTextureKey(key), `${baseUrl}${atlases[key].image}`);
   };
 
   if (scene.cache.json.exists(MANIFEST_KEY)) {
@@ -111,11 +116,16 @@ export function preloadArt(
 }
 
 /**
- * Registers the loaded art with the scene and returns the library scenes draw from. Idempotent:
- * a second scene registering the same manifest reuses the frames and animations already there.
+ * Registers the scene's loaded art and returns the library it draws from: the atlas pages of its
+ * set (`groups`, as given to {@link preloadArt}) that are textures. One that is not warns once
+ * and its sheets draw as placeholders (FS-C4JWH §B R10, §E R19); a page outside the set is not
+ * the scene's, is never warned about, and its sheets draw as the placeholder even while it is
+ * still a texture (§E R20). Idempotent: a second scene registering the same manifest reuses the
+ * frames and animations already there.
  */
 export function registerArt(
   scene: ArtScene,
+  groups: SceneGroups,
   logger: ArtLogger = console,
 ): ArtLibrary {
   ensurePlaceholder(scene);
@@ -136,7 +146,7 @@ export function registerArt(
   }
 
   const loaded = new Set<string>();
-  for (const key of Object.keys(result.manifest.atlases)) {
+  for (const key of sceneAtlases(result.manifest, groups)) {
     if (scene.textures.exists(atlasTextureKey(key))) loaded.add(key);
     else
       logger.warn(
