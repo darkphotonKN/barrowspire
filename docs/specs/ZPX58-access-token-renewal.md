@@ -227,7 +227,7 @@ mints is typed.
 - **Access token expired while the tab slept:** browsers may delay the proactive timer. The next call's `401` renews reactively, and the socket's next handshake reads the renewed token.
 - **Concurrent:** many `401`s at once share one renewal (R14). A `401` for a token already replaced retries without renewing (R15).
 - **Two tabs:** both tabs read the token from the same `localStorage`. Without rotation the refresh token is never invalidated, so either tab can renew and neither signs the other out. (Rotation would make this a race. See ADR-0066.)
-- **Retried writes:** the gateway answers a `401` at the edge, in its JWT middleware, before any downstream call. So a retried bid, buyout or listing has not run the first time. The Idempotency-Key calls resend the same key anyway.
+- **Retried writes:** an expired token is answered `401` by the gateway's JWT middleware, before any downstream call, so a retried bid, buyout or listing has normally not run the first time. The Idempotency-Key calls resend the same key anyway. A downstream service could still answer `401` after a side effect, right at the `exp` boundary; that is not traced for every route (Follow-up 6).
 - **Auth down:** renewal answers `503`, and the client keeps the session (R17 Unavailable). The `401` that triggered it is thrown to the caller.
 - **Member deleted:** renewal is refused, and the player signs out.
 - **Role demoted:** the next renewal mints `player`. The old access token keeps its role until it expires, at most 60 minutes.
@@ -282,3 +282,18 @@ gRPC (auth-service): `AuthService.RefreshAccessToken(RefreshAccessTokenRequest{r
      (I-GV8WN-11). **Still the long-term fix, and due before GKE**: it ends the pod holding member
      credentials at all.
 4. ~~**`ValidateToken` accepts a refresh token.**~~ Closed by R25 in fix round 1.
+5. **Tabs keep separate renewal timers (review L3).** Each tab's timer follows its own in-memory
+   store. N open tabs make N renewals an hour, and a renewal in one tab does not reschedule the
+   others. This is harmless without rotation. Once rotation lands (follow-up 1), the tabs would
+   race to redeem the same refresh token. **Before rotation is added, coordinate the tabs** with
+   one renewal leader, through a `BroadcastChannel` or a storage-event lock. A related, older
+   problem: a write in one tab's memory (for example `updateMemberInfo`) can persist an older
+   access token over a newer one. R15 heals it on the next call: the 401 retries with the stored
+   token, and the timer renews.
+6. **Retried writes at the expiry boundary (review L6).** The claim that "a 401 is answered at the
+   edge before any downstream call" was not traced for every route. A downstream service that
+   checks the forwarded member token could answer Unauthenticated (401) after an upstream side
+   effect, right at the `exp` boundary. The client would then retry a non-idempotent write once
+   (R13). Proactive renewal (R18) makes this rare. **Before relying on it, audit the authenticated
+   write routes.** Either confirm that every 401 happens before any side effect, or restrict the
+   automatic retry to idempotent requests and requests that carry an `Idempotency-Key`.
