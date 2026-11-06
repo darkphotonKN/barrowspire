@@ -1,6 +1,6 @@
 ---
 id: I-ZPX58-4
-status: open
+status: done
 implements: FS-ZPX58
 blocked_by: [I-ZPX58-3]
 labels: []
@@ -20,9 +20,9 @@ Implements FS-ZPX58 §D (Requirements 20–21)
 
 ## Acceptance Criteria
 
-- [ ] SocketManager tests: each URL takes the current token; 4001 → renew → reconnect;
+- [x] SocketManager tests: each URL takes the current token; 4001 → renew → reconnect;
       refused → auth error; 4001 twice → auth error.
-- [ ] Full vitest and `tsc --noEmit` green.
+- [x] Full vitest and `tsc --noEmit` green.
 
 ## Blocked By
 

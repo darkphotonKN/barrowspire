@@ -93,9 +93,10 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
     token from the first connect, so a run handoff more than an hour after sign-in sent an
     expired token.
 21. When the game socket closes with `4001` (auth error), the client renews the session once and
-    reconnects with the new token. If renewal is refused, or the reconnect closes with `4001`
-    again before it opens, the client signs out and redirects as it does today. A socket that
-    opens resets the one-retry allowance.
+    reconnects with the new token. If renewal does not renew (refused or unavailable: the socket
+    has nothing valid to reconnect with), or the reconnect closes with `4001` again before it
+    opens, the client signs out and redirects as it does today. A socket that opens resets the
+    one-retry allowance.
 
 ### E. game-service (no change; recorded finding)
 

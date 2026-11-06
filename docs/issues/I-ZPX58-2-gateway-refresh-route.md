@@ -1,6 +1,6 @@
 ---
 id: I-ZPX58-2
-status: open
+status: done
 implements: FS-ZPX58
 blocked_by: [I-ZPX58-1]
 labels: []
@@ -20,10 +20,10 @@ Implements FS-ZPX58 §B (Requirements 8–12), §API surface
 
 ## Acceptance Criteria
 
-- [ ] Tests: 200 bare result and the token passed to auth; 401 · UNAUTHENTICATED on
+- [x] Tests: 200 bare result and the token passed to auth; 401 · UNAUTHENTICATED on
       `Unauthenticated`; 422 on missing / empty / unknown member; 503 on `Unavailable`; works
       with no Authorization header.
-- [ ] `go test ./...`, `go vet ./...`, `make openapi-diff`, `make openapi-breaking` (no break),
+- [x] `go test ./...`, `go vet ./...`, `make openapi-diff`, `make openapi-breaking` (no break),
       `make contract-auth` green.
 
 ## Blocked By

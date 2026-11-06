@@ -1,6 +1,6 @@
 ---
 id: I-ZPX58-3
-status: open
+status: done
 implements: FS-ZPX58
 blocked_by: [I-ZPX58-2]
 labels: []
@@ -23,8 +23,8 @@ Implements FS-ZPX58 §C (Requirements 13–19)
 
 ## Acceptance Criteria
 
-- [ ] Tests for each R13–R19 behaviour, with fake timers for R18.
-- [ ] Full vitest and `tsc --noEmit` green.
+- [x] Tests for each R13–R19 behaviour, with fake timers for R18.
+- [x] Full vitest and `tsc --noEmit` green.
 
 ## Blocked By
 

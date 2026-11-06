@@ -1,6 +1,6 @@
 ---
 id: I-ZPX58-1
-status: open
+status: done
 implements: FS-ZPX58
 blocked_by: []
 labels: []
@@ -24,11 +24,11 @@ Implements FS-ZPX58 §A (Requirements 1–7)
 
 ## Acceptance Criteria
 
-- [ ] Table-driven tests: valid, expired, wrong secret, `none`/non-HMAC alg, access-typed,
+- [x] Table-driven tests: valid, expired, wrong secret, `none`/non-HMAC alg, access-typed,
       malformed, non-UUID sub, unknown member, lookup failure.
-- [ ] Claims come from the row (role / account id / email_verified changed since sign-in).
-- [ ] Sign-in and verify still mint 60 min / 7 days from the same constants.
-- [ ] `go test ./...` and `go vet ./...` green in auth-service.
+- [x] Claims come from the row (role / account id / email_verified changed since sign-in).
+- [x] Sign-in and verify still mint 60 min / 7 days from the same constants.
+- [x] `go test ./...` and `go vet ./...` green in auth-service.
 
 ## Blocked By
 
