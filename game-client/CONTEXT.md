@@ -45,6 +45,8 @@ translation belongs to the surface that renders words.
   - **Gentle Meadows** — east of the hub: cozy greens, sparse trees, a horizon; low-level animals.
   - **Forlorn Forest** — west of the hub: a gloomy branching trail; zombies, and rarely a ghost
     (FS-3QHQZ).
+  - **Dev test room** — not one of the two: a dev-only field for trying builds, drawn as the
+    Meadows, whose gate a production build ignores (FS-BDRTJ).
 - **Gate** — a place in the hub a player walks into to go somewhere (FS-0XMCP). The **Spire
   gate** (north, the tower's entrance) opens the gather / go-alone panel; a **field gate** (west
   trail to the Forlorn Forest, east road to Gentle Meadows) takes the player into that field. Once
