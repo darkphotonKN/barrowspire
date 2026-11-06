@@ -40,9 +40,21 @@ describe("pickTarget (FS-48CTQ §C.5: hovered, else an engaged boss, else the la
 
   it.each([
     ["hovered over last-hit", { hovered: "a", lastHit: "b" }, "a"],
-    ["hovered over an engaged boss", { hovered: "a", engagedBoss: "boss" }, "a"],
-    ["an engaged boss over last-hit", { engagedBoss: "boss", lastHit: "b" }, "boss"],
-    ["all three: hovered", { hovered: "b", engagedBoss: "boss", lastHit: "a" }, "b"],
+    [
+      "hovered over an engaged boss",
+      { hovered: "a", engagedBoss: "boss" },
+      "a",
+    ],
+    [
+      "an engaged boss over last-hit",
+      { engagedBoss: "boss", lastHit: "b" },
+      "boss",
+    ],
+    [
+      "all three: hovered",
+      { hovered: "b", engagedBoss: "boss", lastHit: "a" },
+      "b",
+    ],
     ["last-hit alone", { lastHit: "b" }, "b"],
   ])("should rank %s", (_, slots, want) => {
     expect(pickTarget({ shown, ...slots })?.entity_id).toBe(want);
@@ -58,7 +70,9 @@ describe("pickTarget (FS-48CTQ §C.5: hovered, else an engaged boss, else the la
     ["dead", [monster("a", { action: "dead", current_health: 0 }), b]],
     ["hidden (not among the shown)", [b]],
   ])("should pass over a %s monster to the next slot", (_, list) => {
-    expect(pickTarget({ shown: list, hovered: "a", lastHit: "b" })?.entity_id).toBe("b");
+    expect(
+      pickTarget({ shown: list, hovered: "a", lastHit: "b" })?.entity_id,
+    ).toBe("b");
   });
 
   it("should hide when the only monster it could name is gone", () => {
@@ -66,7 +80,9 @@ describe("pickTarget (FS-48CTQ §C.5: hovered, else an engaged boss, else the la
   });
 
   it("should never name an id that is not a monster (a party member's)", () => {
-    expect(pickTarget({ shown, hovered: "e_ally", lastHit: "e_me" })).toBeNull();
+    expect(
+      pickTarget({ shown, hovered: "e_ally", lastHit: "e_me" }),
+    ).toBeNull();
   });
 });
 

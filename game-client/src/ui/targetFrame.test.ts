@@ -49,7 +49,10 @@ function fakeStage() {
   return { stage, texts, graphics };
 }
 
-function fakeText(content: string, style: { color: string; fontFamily: string }) {
+function fakeText(
+  content: string,
+  style: { color: string; fontFamily: string },
+) {
   const t = {
     content,
     style,
@@ -102,8 +105,20 @@ function fakeText(content: string, style: { color: string; fontFamily: string })
 function fakeGraphics() {
   let colour = 0;
   const g = {
-    fills: [] as { colour: number; x: number; y: number; w: number; h: number }[],
-    strokes: [] as { colour: number; x: number; y: number; w: number; h: number }[],
+    fills: [] as {
+      colour: number;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }[],
+    strokes: [] as {
+      colour: number;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }[],
     lineColour: 0,
     alpha: 1,
     visible: true,
@@ -189,9 +204,12 @@ describe("fadeStep (FS-48CTQ §C.8: in over 120 ms, out over 200 ms)", () => {
     [1, 100, false, 0.5],
     [0.5, 100, false, 0],
     [0, 100, false, 0],
-  ])("from alpha %s over %s ms, showing %s, should reach %s", (from, ms, showing, want) => {
-    expect(fadeStep(from, ms, showing)).toBeCloseTo(want);
-  });
+  ])(
+    "from alpha %s over %s ms, showing %s, should reach %s",
+    (from, ms, showing, want) => {
+      expect(fadeStep(from, ms, showing)).toBeCloseTo(want);
+    },
+  );
 });
 
 describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
@@ -201,7 +219,9 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     const parts = [...texts, ...graphics];
     expect(parts.length).toBeGreaterThan(0);
     expect(parts.every((p) => !p.visible)).toBe(true);
-    expect(parts.every((p) => p.depth >= TARGET_FRAME_DEPTH && p.scrollFactor === 0)).toBe(true);
+    expect(
+      parts.every((p) => p.depth >= TARGET_FRAME_DEPTH && p.scrollFactor === 0),
+    ).toBe(true);
     expect(TARGET_FRAME_DEPTH).toBeGreaterThanOrEqual(1000);
   });
 
@@ -229,12 +249,22 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
   });
 
   it("should back it with the HUD panel and a brass rim, and fill the bar in the marker bar's colours", () => {
-    const { graphics } = shownFrame(monster({ current_health: 30, max_health: 120 }));
+    const { graphics } = shownFrame(
+      monster({ current_health: 30, max_health: 120 }),
+    );
     const fills = graphics.flatMap((g) => g.fills);
     const strokes = graphics.flatMap((g) => g.strokes);
     const r = targetFrameRect(540);
-    expect(fills[0]).toMatchObject({ colour: palette.hudPanel, x: r.x, y: r.y, w: r.width, h: r.height });
-    expect(strokes.some((s) => s.colour === palette.frame && s.w === r.width)).toBe(true);
+    expect(fills[0]).toMatchObject({
+      colour: palette.hudPanel,
+      x: r.x,
+      y: r.y,
+      w: r.width,
+      h: r.height,
+    });
+    expect(
+      strokes.some((s) => s.colour === palette.frame && s.w === r.width),
+    ).toBe(true);
     const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
     const hp = fills.find((f) => f.colour === MARKER_BAR.hp)!;
     expect(hp.w).toBeCloseTo(backing.w / 4, 0);
@@ -248,7 +278,9 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     ["with no maximum", 5, 0, 1],
     ["below zero", -4, 120, 0],
   ])("should clamp the bar to 0–1 with health %s", (_, hp, max, ratio) => {
-    const { graphics } = shownFrame(monster({ current_health: hp, max_health: max }));
+    const { graphics } = shownFrame(
+      monster({ current_health: hp, max_health: max }),
+    );
     const fills = graphics.flatMap((g) => g.fills);
     const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
     const fill = fills.filter((f) => f.colour === MARKER_BAR.hp);
@@ -269,7 +301,9 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
 
 describe("TargetFrame fades and covers (FS-48CTQ §C.8, §E.15–16)", () => {
   const alphas = (parts: ReturnType<typeof fakeStage>) =>
-    [...parts.texts, ...parts.graphics].filter((p) => p.visible).map((p) => p.alpha);
+    [...parts.texts, ...parts.graphics]
+      .filter((p) => p.visible)
+      .map((p) => p.alpha);
 
   it("should fade in over 120 ms", () => {
     const parts = fakeStage();
@@ -283,19 +317,29 @@ describe("TargetFrame fades and covers (FS-48CTQ §C.8, §E.15–16)", () => {
   it("should fade out over 200 ms, still naming the monster it showed, then hide", () => {
     const { frame, texts, graphics, live } = shownFrame(monster());
     frame.update(100, null, false);
-    expect(live().map((t) => [t.content, t.alpha])).toEqual([["Ghoul · Lv 14", 0.5]]);
+    expect(live().map((t) => [t.content, t.alpha])).toEqual([
+      ["Ghoul · Lv 14", 0.5],
+    ]);
     frame.update(100, null, false);
     expect([...texts, ...graphics].every((p) => !p.visible)).toBe(true);
   });
 
   it("should switch from one monster to another at once, with no fade", () => {
     const { frame, live } = shownFrame(monster());
-    frame.update(16, monster({ entity_id: "m2", name: "Troll", archetype: "troll", level: 9 }), false);
-    expect(live().map((t) => [t.content, t.alpha])).toEqual([["Troll · Lv 9", 1]]);
+    frame.update(
+      16,
+      monster({ entity_id: "m2", name: "Troll", archetype: "troll", level: 9 }),
+      false,
+    );
+    expect(live().map((t) => [t.content, t.alpha])).toEqual([
+      ["Troll · Lv 9", 1],
+    ]);
   });
 
   it("should drop a common monster's line when it goes from an elite to it", () => {
-    const { frame, live } = shownFrame(monster({ name: "Hollow Ghoul", elite: true }));
+    const { frame, live } = shownFrame(
+      monster({ name: "Hollow Ghoul", elite: true }),
+    );
     frame.update(16, monster({ entity_id: "m2" }), false);
     expect(live().map((t) => t.content)).toEqual(["Ghoul · Lv 14"]);
   });
@@ -324,6 +368,8 @@ describe("TargetFrame fades and covers (FS-48CTQ §C.8, §E.15–16)", () => {
   it("should destroy every part", () => {
     const parts = fakeStage();
     new TargetFrame(parts.stage, () => 540).destroy();
-    expect([...parts.texts, ...parts.graphics].every((p) => p.destroyed)).toBe(true);
+    expect([...parts.texts, ...parts.graphics].every((p) => p.destroyed)).toBe(
+      true,
+    );
   });
 });
