@@ -132,15 +132,65 @@ func BenchmarkRunTick_FullFloor2(b *testing.B) {
 }
 
 // The FS-KE075 target on the generated floor 1: 4 delvers and 70 monsters, all
-// chasing (straight, until A* in I-KE075-8), with each delver's snapshot cut
-// by distance. A mean tick under 8 ms, a quarter of the 33 ms budget
-// (FS-KE075 AC "run tick bench").
+// chasing by A* path (I-KE075-8), with each delver's snapshot cut by distance.
+// A mean tick under 8 ms, a quarter of the 33 ms budget (FS-KE075 AC "run tick
+// bench").
 func BenchmarkRunTick_DungeonFloor1(b *testing.B) {
 	s, delvers, demon := populatedRun(b, firstFloor, []string{"archer", "mage", "warrior", "archer"}, 70, 0)
 	if s.dungeon == nil {
 		b.Fatal("floor 1 is not a dungeon")
 	}
-	hunt := func() {
+	runTicks(b, s, delvers, demon, 71, huntAll(s, delvers))
+}
+
+// The same floor with every delver stepping a cell to and fro every half
+// second, so every chasing monster's target keeps changing cell and each
+// searches again as often as the 0.5 s repath interval lets it: the
+// pathfinding's steady worst (FS-KE075 §D R24).
+func BenchmarkRunTick_DungeonFloor1_DelversChangingCell(b *testing.B) {
+	s, delvers, demon := populatedRun(b, firstFloor, []string{"archer", "mage", "warrior", "archer"}, 70, 0)
+	if s.dungeon == nil {
+		b.Fatal("floor 1 is not a dungeon")
+	}
+	hunt := huntAll(s, delvers)
+	centre := s.dungeon.roomCentre(s.dungeon.layout.Roles.Start)
+	cell := s.dungeon.layout.CellSize
+
+	type stance struct {
+		at      *components.TransformComponent
+		x, step float64
+	}
+	var stances []stance
+	for _, id := range delvers {
+		e, _ := s.EntityManager.GetEntity(s.playerIDToEntitiesID[id])
+		tc, _ := e.GetComponent(ecs.ComponentTypeTransform)
+		at := tc.(*components.TransformComponent)
+		// a cell towards the start room's centre stays in the room
+		step := cell
+		if at.X > centre.x {
+			step = -cell
+		}
+		stances = append(stances, stance{at: at, x: at.X, step: step})
+	}
+
+	tick := 0
+	runTicks(b, s, delvers, demon, 71, func() {
+		hunt()
+		away := (tick/(constants.GameFrameRate/2))%2 == 1
+		for _, st := range stances {
+			st.at.X = st.x
+			if away {
+				st.at.X += st.step
+			}
+		}
+		tick++
+	})
+}
+
+// huntAll has every monster without a target take up one of the delvers, as
+// if each had been hit.
+func huntAll(s *Session, delvers []uuid.UUID) func() {
+	return func() {
 		for i, m := range monstersInWorld(s.EntityManager) {
 			monster := monsterOf(m)
 			if monster.Target == uuid.Nil {
@@ -148,7 +198,6 @@ func BenchmarkRunTick_DungeonFloor1(b *testing.B) {
 			}
 		}
 	}
-	runTicks(b, s, delvers, demon, 71, hunt)
 }
 
 func benchmarkRunTick(b *testing.B, depth int) {
