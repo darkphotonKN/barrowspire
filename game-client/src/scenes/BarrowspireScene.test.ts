@@ -3504,6 +3504,20 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
   });
 
+  // a run still loading has not heard its end (end_game is held until create), so only the hub the
+  // release let in says the Leave is done
+  it("should send no leave_run when the Leave lets a held hub in before the run knows it ended", () => {
+    const { run, sent } = settlingOnStage();
+    run.init();
+    run.resultHold.raise();
+    run.resultHold.hold(hub, () => run.events.emit("shutdown"));
+
+    (run as unknown as { leaveTheBarrow(): void }).leaveTheBarrow();
+
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toEqual([]);
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
   it("should start each run with no Leave pending, whatever the last one left", () => {
     const { run } = settlingOnStage();
     (run as unknown as { leavePending: boolean }).leavePending = true;
