@@ -1688,6 +1688,34 @@ components:
             type: string
           type: array
       type: object
+    RefreshBody:
+      additionalProperties: false
+      properties:
+        refresh_token:
+          description: The refresh token from sign-in or verification
+          minLength: 1
+          type: string
+      required:
+        - refresh_token
+      type: object
+    RefreshResult:
+      additionalProperties: false
+      properties:
+        access_expires_in:
+          description: Access token lifetime in seconds
+          format: int32
+          type: integer
+        access_token:
+          description: Bearer token for the Authorization header
+          type: string
+        member_info:
+          $ref: "#/components/schemas/Member"
+          description: The member, as the new access token was minted from
+      required:
+        - access_token
+        - access_expires_in
+        - member_info
+      type: object
     RequestAvatarUploadBody:
       additionalProperties: false
       properties:
@@ -4242,6 +4270,50 @@ paths:
       security:
         - bearerAuth: []
       summary: Verify the signed-in member's email
+      tags:
+        - member
+  /api/member/refresh:
+    post:
+      description: "Takes the refresh token from sign-in or verification and returns a new access token, minted from the member as they are now, with that member. No refresh token is returned: keep the one you hold; it stays valid until its own expiry. An expired, invalid or wrong-type token, or one naming no member, answers 401 UNAUTHENTICATED, one code for every cause."
+      operationId: refresh-access-token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResult"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      summary: Renew the access token
       tags:
         - member
   /api/member/signin:

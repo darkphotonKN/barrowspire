@@ -97,3 +97,8 @@ func (c *Client) ResendVerification(ctx context.Context, req *pb.ResendVerificat
 func (c *Client) ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error) {
 	return pb.NewAuthServiceClient(c.conn).ChangeUnverifiedEmail(ctx, req)
 }
+
+// RefreshAccessToken mints a new access token from a refresh token (FS-ZPX58).
+func (c *Client) RefreshAccessToken(ctx context.Context, req *pb.RefreshAccessTokenRequest) (*pb.RefreshAccessTokenResponse, error) {
+	return pb.NewAuthServiceClient(c.conn).RefreshAccessToken(ctx, req)
+}
