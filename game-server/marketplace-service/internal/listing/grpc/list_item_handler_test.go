@@ -163,6 +163,7 @@ func TestListItem_ItemsAnswerReachesTheCaller(t *testing.T) {
 		{"worn", errcode.Refuse(errcode.ItemWorn), codes.FailedPrecondition, errcode.ItemWorn},
 		{"not available", errcode.Refuse(errcode.ItemNotAvailable), codes.FailedPrecondition, errcode.ItemNotAvailable},
 		{"listing limit reached (FS-XEDFF)", errcode.Refuse(errcode.ListingLimitReached), codes.FailedPrecondition, errcode.ListingLimitReached},
+		{"not in the stash (FS-3R77D)", errcode.Refuse(errcode.ItemNotInStash), codes.FailedPrecondition, errcode.ItemNotInStash},
 		{"not found", fmt.Errorf("reserve item: %w", commonconstants.ErrNotFound), codes.NotFound, ""},
 		{"transient", fmt.Errorf("reserve item: %w", commonconstants.ErrTransient), codes.Unavailable, ""},
 		{"anything else", errors.New("boom"), codes.Internal, ""},
