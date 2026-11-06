@@ -128,9 +128,11 @@ func TestRequestFloorMap_OutsideARun_Ignored(t *testing.T) {
 	assert.False(t, got, "answered with %q", reply.Action)
 }
 
-// One connection's requests are answered at most once a second; another
-// connection has its own second. FS-KE075 §F Requirement 33.
-func TestFloorMapAnswers_AtMostOnceASecondPerConnection(t *testing.T) {
+// One connection's requests are answered at most once every 900 ms; another
+// connection has its own window. The client asks once a second, so a retry
+// that arrives up to 100 ms early is still answered rather than refused every
+// other time. FS-KE075 §F Requirement 33.
+func TestFloorMapAnswers_AtMostOnceEvery900msPerConnection(t *testing.T) {
 	t0 := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	wren, kaelen := &websocket.Conn{}, &websocket.Conn{}
 
@@ -142,15 +144,41 @@ func TestFloorMapAnswers_AtMostOnceASecondPerConnection(t *testing.T) {
 	}{
 		{"the first ask", wren, 0, true},
 		{"again at once", wren, 0, false},
-		{"again inside the second", wren, 999 * time.Millisecond, false},
+		{"again inside the window", wren, 899 * time.Millisecond, false},
 		{"another connection inside it", kaelen, 500 * time.Millisecond, true},
-		{"a second after the answer", wren, time.Second, true},
-		{"the other, a second after its own", kaelen, 1500 * time.Millisecond, true},
+		{"the next second's ask, 50 ms early", wren, 950 * time.Millisecond, true},
+		{"the other, 900 ms after its own", kaelen, 1400 * time.Millisecond, true},
+		{"inside the window of the early answer", wren, 1849 * time.Millisecond, false},
+		{"the window after the early answer", wren, 1850 * time.Millisecond, true},
 	}
 
 	var answers floorMapAnswers
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, answers.allow(tt.conn, t0.Add(tt.at)), tt.name)
 	}
-	assert.LessOrEqual(t, len(answers.last), 2, "only the last second's answers are kept")
+	assert.LessOrEqual(t, len(answers.last), 2, "only the last window's answers are kept")
+}
+
+// A matched run's local members are each told world_entered, then sent the
+// run's floor map: the map never comes ahead of the world it maps.
+// FS-KE075 §F Requirement 32 (startMatchedRun).
+func TestStartMatchedRun_WorldEnteredThenFloorMap(t *testing.T) {
+	rig := newPartyRig(t)
+	players := seatedForMatch(t, rig, "Wren", "Kaelen")
+
+	pushMatch(rig, players)
+
+	worldEntered, floorMap := string(constants.ActionWorldEntered), string(constants.ActionFloorMap)
+	for _, p := range players {
+		who := p.player.Character.Name
+		first, got := p.inbox.await(worldEntered, floorMap)
+		require.True(t, got, "%s was sent neither world_entered nor floor_map", who)
+		require.Equal(t, worldEntered, first.Action, "%s: world_entered comes first", who)
+		require.Equal(t, string(types.WorldTypeRun), first.Payload["world_type"], "%s entered a run", who)
+
+		run, exists := rig.server.GetGameSession(uuid.MustParse(first.Payload["session_id"].(string)))
+		require.True(t, exists, "the run %s entered exists", who)
+		t.Cleanup(run.Shutdown)
+		awaitFloorMapOf(t, p.inbox, run, who)
+	}
 }

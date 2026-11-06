@@ -69,7 +69,7 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	if s.dungeon != nil {
 		s.populateDungeon(s.dungeon, &area, level, floor)
 		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
-			s.placeDungeonDemon(s.dungeon, &area, demon, floor, topFloor)
+			s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
 		}
 		return
 	}
@@ -333,20 +333,11 @@ type spawnArea struct {
 	keepOut       []PlaceArea
 	delvers       []point
 	placed        []point
-	// ground, when set, is the cells candidate draws from and open requires:
-	// a dungeon floor's rooms but the start, for a caller placing over the
-	// whole floor (the run tick bench). nil on a floor of buildings, drawn
-	// anywhere on the map. populateDungeon leaves it nil and places by region
-	// (placeOnRegion).
-	ground *cellGround
 }
 
-// candidate is a point to try: drawn from the ground's cells on a dungeon
-// floor, anywhere on the map, a body's radius in from its edge, otherwise.
+// candidate is a point to try anywhere on the map, a body's radius in from its
+// edge. A dungeon floor draws from a region's cells instead (placeOnRegion).
 func (a *spawnArea) candidate(rng populationRand) (x, y float64) {
-	if a.ground != nil {
-		return a.ground.draw(rng)
-	}
 	r := constants.PlayerRadius
 	return r + rng.Float64()*(a.width-2*r), r + rng.Float64()*(a.height-2*r)
 }
@@ -388,12 +379,8 @@ func (a *spawnArea) valid(x, y float64) bool {
 	return a.open(x, y) && a.nearestDelver(x, y) >= MonsterDelverExclusion
 }
 
-// open is ground a body may stand on: on the ground's cells on a dungeon
-// floor, in no keep-out, on no placed monster.
+// open is ground a body may stand on: in no keep-out, on no placed monster.
 func (a *spawnArea) open(x, y float64) bool {
-	if a.ground != nil && !a.ground.holds(x, y) {
-		return false
-	}
 	for _, area := range a.keepOut {
 		if area.overlapsBody(x, y, constants.PlayerRadius) {
 			return false

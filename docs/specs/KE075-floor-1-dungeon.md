@@ -33,6 +33,12 @@ directly ("那就不用看到隊友的背包了") and set the rule for any later
 fetch at the moment of looting, never stream ("就算之後要改應該也是撿的當下再撈就好了").
 Recorded without adversarial review.
 
+**Amended 2026-11-06 (review fix round 1).** The slice review found room sizes and the room count
+skewed small by redraws on rejection, a fixture fallback that skipped R14's checks, and a
+request window that refused every other client retry. R3, R14, R17, R18 and R33 now say what the
+code does, each settled point marked **derived here**. No requirement's intent changed; the
+16 KB per-tick AC waits on Nick and is not touched here.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c. Paths under `game-server/game-service/` unless they
@@ -162,6 +168,13 @@ start with `game-client/`.
    from the grid's edge, so each room has its own shell and no walkable cell lies on the edge
    ring. **(derived here: a 2-cell gap keeps a shell wall on each side, so rooms meet only through
    corridors)** (A3)
+   - The count is drawn once per seed and kept across the seed's retries (§A.9); each room's size
+     is drawn once per attempt and only its position is retried. **(derived here: a count or size
+     redrawn on every rejection is turned away more often the larger it is, so the survivors skew
+     small; measured before the fix, width 4 came out twice as often as width 10)**
+   - An attempt places its rooms largest first, by area. **(derived here: with each size fixed, a
+     large room left to the end often finds no gap among the small ones; largest first, no seed in
+     5,000 exhausted its retries. The order moves rooms, never which sizes are drawn)**
 4. **Corridors.** Rooms are joined along a connection graph: a minimum spanning tree over room
    centres by straight distance, plus `round(0.2 × rooms)` extra edges, taken from the shortest
    non-tree pairs. Each edge is carved as an L-shaped corridor, 2 or 3 cells wide (drawn per
@@ -214,7 +227,12 @@ start with `game-client/`.
 14. **Fixed interactables.** The switch, escape door and stairs each stand on a walkable,
     non-doorway cell of their room, clear of walls, and are placed through the occupied-area
     check, so nothing later overlaps them. **On floor 1 the escape door and switch do go through
-    the check** (today they skip it). The stairs are always placed (FS-F6F88 §7). (A4)
+    the check** (today they skip it). The stairs are always placed (FS-F6F88 §7). (A4) A room whose
+    random draws all miss is searched whole, on a lattice finer than any fixture's slack in a
+    cell. A room with no such spot at all fails its layout: the floor build tries a fresh seed,
+    then today's floor (§B.17). A fixture is never forced onto a doorway or over another.
+    **(derived here: forcing it onto the room's centre broke R14; the spots are found before
+    anything is laid, so a failed layout leaves nothing behind)**
 15. **Containers.** Floor 1 has `clamp(round(rooms / 2), 10, 14)` containers. Each treasure room
     holds one **chest**. The rest go one per room into rooms drawn from those that are not the
     start or a treasure room, each a chest or, at today's sack share (33%), a sack. Loot tables,
@@ -223,8 +241,9 @@ start with `game-client/`.
     interactable, monster) is drawn from walkable cells of the target region, inset from the cell
     edges that touch a wall by the body's radius, never by testing "outside every keep-out rect".
     Floors 2–3 keep today's sampling. (A6)
-17. **A failed generation never strands a run.** If the generator exhausts its retries, the floor
-    build logs an error and falls back to a fresh seed; if that fails too, floor 1 is built by
+17. **A failed generation never strands a run.** If the generator exhausts its retries, or its
+    layout leaves a fixture no spot (§B.14), the floor build logs an error and falls back to a
+    fresh seed; if that fails too, floor 1 is built by
     today's generator at 1440×960 so the run still starts. **(derived here: a run that cannot
     start is worse than a small floor; a test pins that the fallback is reachable only through the
     error path)**
@@ -234,9 +253,10 @@ start with `game-client/`.
 18. **Per-room population.** (A6)
     - The start room has no monsters, and no monster spawns within 350 px of a delver (today's
       rule).
-    - A **hall** is a room of at least 8×6 cells. Each hall that is not the start or a treasure
-      room holds one **hall pack**: 1 troll and 2–4 ghouls, placed within 160 px of the troll.
-      **(derived here: the size threshold)**
+    - A **hall** is a room of at least 8×6 cells: width W ≥ 8 and height H ≥ 6, so a 6×8 room
+      (6 wide, 8 tall) is not a hall. Each hall that is not the start or a treasure room holds one
+      **hall pack**: 1 troll and 2–4 ghouls, placed within 160 px of the troll. **(derived here:
+      the size threshold, and that it is oriented: W ≥ 8 and H ≥ 6, never 6×8)**
     - Every other room (switch, escape door and stairs rooms included) holds 0–3 monsters, the
       count uniform, each rolled as today (75% ghoul / 25% troll on floor 1).
     - **Corridors** hold 4–8 monsters in all, at most one per corridor segment.
@@ -244,8 +264,9 @@ start with `game-client/`.
       archetype rolled; every guard is elite. **(derived here: "guarded by an elite or a pack" and
       "guards are always elite" together)**
     - The total of the above is held to 45–70: below 45, single monsters are added to random
-      non-start, non-treasure rooms (at most 4 per room); above 70, monsters are removed from
-      ordinary rooms, then corridors.
+      ordinary rooms, those that are not the start, a treasure room or a hall (at most 4 per
+      room); above 70, monsters are removed from ordinary rooms, then corridors. **(derived here:
+      the top-up skips halls, so every eligible hall holds exactly its one troll pack)**
 19. **Unchanged rolls.** Levels (party ± 1 on floor 1), the 3% elite chance for every monster that
     is not a treasure guard, the troll share for rolled monsters and the 1% demon on floor 1 stay
     as today. A demon, when rolled, goes in a room among the farthest from the start, never the
@@ -319,9 +340,11 @@ the contract between the two halves.
     the run's broadcast on every floor change, after the floor is rebuilt and before the new
     floor's first broadcast, from the loop goroutine; and in answer to `request_floor_map`. (A9)
 33. **A new inbound action, `request_floor_map`** (no payload), answered with the current
-    floor's `floor_map`, at most once per second per connection; ignored outside a run. **(derived
-    here: every outbound message can be dropped on a full queue, `server.go:1418-1424`, so a client
-    must be able to ask again)**
+    floor's `floor_map`, at most once every 900 ms per connection; ignored outside a run.
+    **(derived here: every outbound message can be dropped on a full queue, `server.go:1418-1424`,
+    so a client must be able to ask again; the client asks every second (§H.41), and a window of a
+    full second refused every other retry that arrived a little early, so the window is 100 ms
+    short of the client's period)**
 34. **Walls leave the run snapshot.** A run world's per-tick state carries no `walls` key, on every
     floor. Doors stay in the snapshot (they open and close). Hub and field worlds keep `walls` in
     their snapshot as today. **(derived here: hub and fields are outside this charter)** (A9)
@@ -493,7 +516,7 @@ only what an `other_players` entry carries.
 **Wire (§F, §G)**
 
 - [ ] A member gets `floor_map` after every `world_entered` for the run (entry, handoff, reconnect), and every recipient gets it on a floor change before the new floor's first state.
-- [ ] `request_floor_map` is answered with the current floor's map at most once per second; outside a run it is ignored.
+- [ ] `request_floor_map` is answered with the current floor's map at most once every 900 ms; outside a run it is ignored.
 - [ ] Run snapshots have no `walls` key on any floor; hub and field snapshots keep it.
 - [ ] Floor 2–3 `floor_map` walls are exactly the walls today's snapshot carried, `house_id` included; no `regions`, no `cell_size`.
 - [ ] On floor 1, a recipient's snapshot holds exactly the monsters, drop piles and containers within 1600 px of its interest centres, and always every player, door, switch, escape door and stairs; a spectator's centres are the living members.
@@ -526,6 +549,7 @@ only what an `other_players` entry carries.
 
 - **Generator exhausts its retries:** fresh seed, then today's floor (§B.17); logged.
 - **Too few far rooms for three roles:** the attempt is invalid and retried (§A.8).
+- **A role room with no spot off its doorways:** the layout is not laid; fresh seed, then today's floor (§B.14, §B.17); logged.
 - **A pack does not fit in its hall** (spacing): members that cannot be placed are skipped, then the total floor rule tops up.
 - **Party bigger than the start room's slots:** the start room is at least 5×5 cells (400 px a side), more than a party of four needs; a test pins that every expected slot fits.
 - **Monster aggroes through rock** (no line of sight, FS-77AB6): it walks the long way round by path. Accepted for v1; line of sight is out of scope.

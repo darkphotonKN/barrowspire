@@ -24,13 +24,31 @@ The floor build step chooses the generator by floor: floor 1 from the dungeon ge
 
 ## Acceptance Criteria
 
-- [ ] Floor 1 is 5760×3840 and built by the generator; floors 2–3 are 1440×960 and their tests pass unchanged
-- [ ] Roles placed: switch, door and stairs in three different far rooms; 3–4 treasure chests; every party slot in the start room
-- [ ] 10–14 containers, at most one per room outside treasure rooms
-- [ ] Every spawned body on floor 1 is on a walkable cell, inset by its radius
-- [ ] The floor map for floor 1 carries `cell_size` 80 and regions
-- [ ] A forced generator failure still starts the run and logs an error
+- [x] Floor 1 is 5760×3840 and built by the generator; floors 2–3 are 1440×960 and their tests pass unchanged
+- [x] Roles placed: switch, door and stairs in three different far rooms; 3–4 treasure chests; every party slot in the start room
+- [x] 10–14 containers, at most one per room outside treasure rooms
+- [x] Every spawned body on floor 1 is on a walkable cell, inset by its radius
+- [x] The floor map for floor 1 carries `cell_size` 80 and regions
+- [x] A forced generator failure still starts the run and logs an error
 - [ ] `go test ./...` and `golangci-lint run` pass
+
+## Verified (2026-11-06, review fix round 1, branch floor1/fix-KE075-server)
+
+- `TestDungeonFloor1_SizeAndCellSizePerFloor`, `TestDungeonFloor1_RolesPlaced` (40 seeds),
+  `TestDungeonFloor1_PartySlotsInTheStartRoom`, `TestDungeonFloor1_ContainersPerRoom`,
+  `TestDungeonFloor1_EveryBodyOnWalkableCells`, `TestDungeonFloor1_FloorMapCarriesCellSizeAndRegions`,
+  `TestDungeonFloor1_GeneratorFailureStillStartsTheRun`, `TestDungeonFloor1_FallbackOnlyOnError`.
+- Review L5: a fixture is never forced onto its room's centre. `TestDungeonFloor1_FixtureDrawsMiss_TheRoomIsSearched`
+  (every random draw misses; the room's one free cell is found by search),
+  `TestDungeonFloor1_FixtureRoomWithNoSpot_FreshSeedBuilt` and
+  `TestDungeonFloor1_NoLayoutWithASpot_FloorOfBuildings` (injected all-doorway role rooms).
+- Floor-1 `floor_map`: `TestDungeonFloor1_FloorMapAtMost128KB`, 200 builds, mean 18,218 B, largest
+  22,908 B (limit 131,072 B).
+- game-service `go test ./...`, `go vet ./...` and `-race` on game pass.
+- **Not ticked: `golangci-lint run`.** Run over the whole module it fails on 7 errcheck findings
+  in `cmd/server/main.go` (5) and `auth/middleware.go` (2), files untouched by FS-KE075 and
+  unchanged since 48ece46c, where the same 7 are reported. `golangci-lint run` on `./internal/...`
+  packages this slice touches is clean. The status stays open until the module-wide run passes.
 
 ## Blocked By
 

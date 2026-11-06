@@ -49,7 +49,7 @@ func dungeonRun(t *testing.T, seed uint64, seated, expected int) (*Session, []uu
 func assertOnRegion(t *testing.T, d *dungeonFloor, region int, x, y, rw, rh float64, what string) {
 	t.Helper()
 	area := centredArea(x, y, rw, rh)
-	assert.True(t, d.stands(area, region, false), "%s at (%.0f, %.0f) is not wholly on region %d", what, x, y, region)
+	assert.True(t, d.stands(area, region, onDoorways), "%s at (%.0f, %.0f) is not wholly on region %d", what, x, y, region)
 }
 
 // Every arrival slot of floor 1, the seated party's and those kept for the
@@ -141,7 +141,7 @@ func TestDungeonFloor1_RolesPlaced(t *testing.T) {
 		for _, f := range fixtures {
 			at := transformOf(t, onlyEntity(t, s, f.kind))
 			assert.Equal(t, f.room, roomOf(d, at.X, at.Y), "seed %d: the %s stands in its room", seed, f.what)
-			assert.True(t, d.stands(centredArea(at.X, at.Y, f.rw, f.rh), d.roomRegion(f.room), true),
+			assert.True(t, d.stands(centredArea(at.X, at.Y, f.rw, f.rh), d.roomRegion(f.room), offDoorways),
 				"seed %d: the %s is on walkable cells off the doorways", seed, f.what)
 			rooms[f.room] = true
 		}
@@ -242,7 +242,7 @@ func TestDungeonFloor1_EveryBodyOnWalkableCells(t *testing.T) {
 			region := d.regionAt(at.X, at.Y)
 			require.NotZero(t, region, "seed %d: monster %d stands on walkable cells", seed, i)
 			assert.NotEqual(t, d.roomRegion(d.layout.Roles.Start), region, "seed %d: monster %d in the start room", seed, i)
-			assert.True(t, d.stands(centredArea(at.X, at.Y, r, r), region, true),
+			assert.True(t, d.stands(centredArea(at.X, at.Y, r, r), region, offDoorways),
 				"seed %d: monster %d is not wholly on walkable cells off the doorways", seed, i)
 			for _, p := range delvers {
 				assert.GreaterOrEqual(t, dist(at.X, at.Y, p.x, p.y), MonsterDelverExclusion, "seed %d", seed)
@@ -316,6 +316,31 @@ func TestDungeonFloor1_FloorMapCarriesCellSizeAndRegions(t *testing.T) {
 		corner := [4]float64{pos["x"].(float64), pos["y"].(float64), wall["width"].(float64), wall["height"].(float64)}
 		assert.True(t, byCorner[corner], "wall %v is a shell rect, top-left", corner)
 	}
+}
+
+// floorMapLimit is the most a floor's map may weigh on the wire. FS-KE075 AC
+// "its map at most 128 KB".
+const floorMapLimit = 128 * 1024
+
+// Floor 1's floor_map, encoded as the writer encodes it, stays within 128 KB on
+// every one of 200 builds; the mean and largest are logged for the slice's
+// record. FS-KE075 §F R31, AC "the floor-1 floor_map size".
+func TestDungeonFloor1_FloorMapAtMost128KB(t *testing.T) {
+	const builds = 200
+	sum, largest := 0, 0
+	for seed := uint64(1); seed <= builds; seed++ {
+		s, _ := dungeonRun(t, seed, 1, 0)
+		message, ok := s.FloorMapMessage()
+		require.True(t, ok, "seed %d: the run has its floor map", seed)
+		raw, err := json.Marshal(message)
+		require.NoError(t, err)
+
+		assert.LessOrEqual(t, len(raw), floorMapLimit, "seed %d: the floor map is %d B", seed, len(raw))
+		sum += len(raw)
+		largest = max(largest, len(raw))
+	}
+	t.Logf("floor-1 floor_map over %d builds: mean %d B, largest %d B (limit %d B)",
+		builds, sum/builds, largest, floorMapLimit)
 }
 
 // capturedLog collects every record the default logger takes while a test runs.

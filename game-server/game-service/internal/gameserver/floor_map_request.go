@@ -8,13 +8,15 @@ import (
 )
 
 // floorMapAnswerEvery is how often one connection's request_floor_map is
-// answered at most. FS-KE075 §F Requirement 33.
-const floorMapAnswerEvery = time.Second
+// answered at most. The client asks once a second while its map is missing; a
+// window 100 ms short of that answers a retry that arrives a little early,
+// where a full second refused every other one. FS-KE075 §F Requirement 33.
+const floorMapAnswerEvery = 900 * time.Millisecond
 
 // floorMapAnswers is when each connection's request_floor_map was last
-// answered. It lives on the hub's loop alone. Only the last second's answers
+// answered. It lives on the hub's loop alone. Only the last window's answers
 // are kept, so it never holds more than the connections that asked within it,
-// and a closed connection is forgotten a second after its last answer.
+// and a closed connection is forgotten a window after its last answer.
 type floorMapAnswers struct {
 	last map[*websocket.Conn]time.Time
 }

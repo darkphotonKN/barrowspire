@@ -186,7 +186,7 @@ func TestDungeonPopulation_OffDoorwaysClearAndApart(t *testing.T) {
 
 		for i, m := range monsters {
 			require.NotZero(t, m.region, "seed %d: monster %d stands on rock", seed, i)
-			assert.True(t, d.stands(centredArea(m.at.x, m.at.y, r, r), m.region, true),
+			assert.True(t, d.stands(centredArea(m.at.x, m.at.y, r, r), m.region, offDoorways),
 				"seed %d: monster %d is not wholly on its region off the doorways", seed, i)
 			for _, area := range keepOut {
 				assert.False(t, area.overlapsBody(m.at.x, m.at.y, r),
@@ -244,7 +244,7 @@ func TestPlaceDungeonDemon_TheFarthestRoom(t *testing.T) {
 			area.placed = append(area.placed, point{at.X, at.Y})
 		}
 
-		s.placeDungeonDemon(d, &area, MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 3, Boss: true}, firstFloor, false)
+		s.placeDungeonDemon(d, &area, MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 3, Boss: true}, firstFloor, demonRolled)
 
 		var demon *floor1Monster
 		for _, m := range floor1Monsters(t, s) {
