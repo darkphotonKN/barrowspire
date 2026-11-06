@@ -1123,3 +1123,51 @@ describe("SocketManager and the current access token (FS-ZPX58 §D)", () => {
     expect(env.authError).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("SocketManager hands a renewed token to the server (FS-ZPX58 R27)", () => {
+  function connected() {
+    const sockets: FakeSocket[] = [];
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    });
+    const messageError = vi.fn();
+    manager.setOnMessageError(messageError);
+    manager.connectToGame("jwt-1", "Ash");
+    return { manager, sockets, messageError };
+  }
+  const sentOn = (socket: FakeSocket) => socket.sent.map((raw) => JSON.parse(raw));
+
+  it("should send renew_token with the new token on the open game socket", () => {
+    const { manager, sockets } = connected();
+    sockets[0].open();
+
+    manager.renewToken("jwt-2");
+
+    expect(sentOn(sockets[0])).toEqual([
+      expect.objectContaining({ action: "renew_token", payload: expect.objectContaining({ token: "jwt-2" }) }),
+    ]);
+  });
+
+  it("should send nothing when the socket is not open", () => {
+    const { manager, sockets } = connected();
+
+    manager.renewToken("jwt-2"); // still connecting
+    sockets[0].serverClose(1006);
+    manager.renewToken("jwt-3"); // gone
+
+    expect(sockets[0].sent).toEqual([]);
+  });
+
+  it("should never treat a refused renew_token as a session problem", () => {
+    const { manager, sockets, messageError } = connected();
+    sockets[0].open();
+    manager.renewToken("jwt-2");
+
+    sockets[0].receive({ action: "renew_token", error: "Too many token renewals.", payload: { message: "Too many token renewals." } });
+
+    expect(messageError).not.toHaveBeenCalled();
+    expect(sockets[0].closedWith).toBeUndefined();
+  });
+});
