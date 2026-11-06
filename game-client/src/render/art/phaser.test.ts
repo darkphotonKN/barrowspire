@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import type Phaser from "phaser";
 import { registerArt, preloadArt, MANIFEST_KEY, type ArtScene } from "./phaser";
 import { PLACEHOLDER_TEXTURE, atlasTextureKey } from "./library";
+import { RESIDENT_ART, SCENE_ART } from "./sceneArt";
 
 const manifest = {
   version: 1,
@@ -59,6 +60,50 @@ const manifest = {
   },
 };
 
+/** A two-frame looping sheet on `atlas`, for the scene-scoped fixture below. */
+const looping = (atlas: string, extra: Record<string, unknown> = {}) => ({
+  atlas,
+  frameWidth: 40,
+  frameHeight: 60,
+  anchor: { x: 0.5, y: 0.8 },
+  directions: 1,
+  animations: {
+    idle: { fps: 8, loop: true, frames: [[{ x: 0, y: 0 }, { x: 40, y: 0 }]] },
+    ...extra,
+  },
+  source: "procedural",
+  licence: "Barrowspire-original",
+});
+
+const page = (image: string) => ({ image, width: 256, height: 128, sha256: "a".repeat(64) });
+
+/**
+ * The fixture manifest plus scene-scoped groups (FS-C4JWH §A): folk, wildlife, and the run's
+ * creatures and boss on two pages each, the boss's attack spilled onto its second page.
+ */
+const scoped = {
+  ...manifest,
+  atlases: {
+    ...manifest.atlases,
+    "folk-0": page("folk-0.png"),
+    "wildlife-0": page("wildlife-0.png"),
+    "creatures-0": page("creatures-0.png"),
+    "creatures-1": page("creatures-1.png"),
+    "boss-0": page("boss-0.png"),
+    "boss-1": page("boss-1.png"),
+  },
+  sheets: {
+    ...manifest.sheets,
+    folk_resident_skirt: looping("folk-0"),
+    creature_boar_base: looping("wildlife-0"),
+    creature_ghoul_base: looping("creatures-0"),
+    creature_troll_base: looping("creatures-1"),
+    creature_demon_base: looping("boss-0", {
+      attack: { fps: 8, loop: false, atlas: "boss-1", frames: [[{ x: 0, y: 0 }, { x: 40, y: 0 }]] },
+    }),
+  },
+};
+
 /** A scene double exposing only what registerArt touches. */
 function fakeScene(json: unknown, loadedTextures: string[]) {
   const frames: Record<string, string[]> = {};
@@ -105,14 +150,15 @@ function fakeScene(json: unknown, loadedTextures: string[]) {
  * A loader that behaves as Phaser's does: queuing a key its cache already holds is skipped
  * silently (`LoaderPlugin.keyExists`), so no `filecomplete` event ever fires for it.
  */
-function loadingScene(opts: { cachedManifest: boolean; textures: string[] }) {
+function loadingScene(opts: { cachedManifest: boolean; textures: string[]; manifest?: unknown }) {
+  const json = opts.manifest ?? manifest;
   const listeners = new Map<string, (...args: unknown[]) => void>();
   const images: string[] = [];
   const scene = {
     cache: {
       json: {
         exists: (key: string) => opts.cachedManifest && key === MANIFEST_KEY,
-        get: (key: string) => (opts.cachedManifest && key === MANIFEST_KEY ? manifest : undefined),
+        get: (key: string) => (opts.cachedManifest && key === MANIFEST_KEY ? json : undefined),
       },
     },
     textures: { exists: (key: string) => opts.textures.includes(key) },
@@ -120,7 +166,7 @@ function loadingScene(opts: { cachedManifest: boolean; textures: string[] }) {
       once: (event: string, fn: (...args: unknown[]) => void) => listeners.set(event, fn),
       json: (key: string) => {
         if (opts.cachedManifest) return; // Phaser: cache conflict, file skipped
-        listeners.get(`filecomplete-json-${key}`)?.(key, "json", manifest);
+        listeners.get(`filecomplete-json-${key}`)?.(key, "json", json);
       },
       image: (key: string) => images.push(key),
     },
@@ -131,7 +177,7 @@ function loadingScene(opts: { cachedManifest: boolean; textures: string[] }) {
 describe("preloadArt", () => {
   it("should queue every atlas when the manifest loads with the scene", () => {
     const { scene, images } = loadingScene({ cachedManifest: false, textures: [] });
-    preloadArt(scene);
+    preloadArt(scene, RESIDENT_ART);
     expect(images.sort()).toEqual([atlasTextureKey("props-0"), atlasTextureKey("props-1")].sort());
   });
 
@@ -139,8 +185,42 @@ describe("preloadArt", () => {
   // so the hub starts with the manifest cached and the atlases not yet in.
   it("should still queue the atlases not yet loaded when another scene already cached the manifest", () => {
     const { scene, images } = loadingScene({ cachedManifest: true, textures: [atlasTextureKey("props-0")] });
-    preloadArt(scene);
+    preloadArt(scene, RESIDENT_ART);
     expect(images).toEqual([atlasTextureKey("props-1")]);
+  });
+
+  describe("by the scene's own groups (FS-C4JWH §B R6–R7)", () => {
+    const pages = (...keys: string[]) => keys.map(atlasTextureKey).sort();
+
+    it.each([
+      ["boot (resident only)", RESIDENT_ART, ["props-0", "props-1"]],
+      ["the hub", SCENE_ART.HubScene, ["props-0", "props-1", "folk-0"]],
+      ["the run", SCENE_ART.BarrowspireScene, ["props-0", "props-1", "creatures-0", "creatures-1", "boss-0", "boss-1"]],
+    ])("should queue %s's pages and no other scene-scoped page", (_scene, groups, keys) => {
+      const { scene, images } = loadingScene({ cachedManifest: false, textures: [], manifest: scoped });
+      preloadArt(scene, groups);
+      expect(images.sort()).toEqual(pages(...keys));
+    });
+
+    it("should queue only what is not yet a texture, the manifest being cached", () => {
+      const { scene, images } = loadingScene({
+        cachedManifest: true,
+        textures: pages("props-0", "boss-0"),
+        manifest: scoped,
+      });
+      preloadArt(scene, SCENE_ART.BarrowspireScene);
+      expect(images.sort()).toEqual(pages("props-1", "creatures-0", "creatures-1", "boss-1"));
+    });
+
+    it("should queue nothing for a scene whose set is loaded", () => {
+      const { scene, images } = loadingScene({
+        cachedManifest: true,
+        textures: pages("props-0", "props-1", "folk-0", "wildlife-0"),
+        manifest: scoped,
+      });
+      preloadArt(scene, SCENE_ART.HubScene);
+      expect(images).toEqual([]);
+    });
   });
 });
 
@@ -150,7 +230,7 @@ describe("registerArt", () => {
       "art:props-0",
       "art:props-1",
     ]);
-    registerArt(scene, { warn: vi.fn() });
+    registerArt(scene, RESIDENT_ART, { warn: vi.fn() });
     expect(frames["art:props-0"]).toEqual([
       "switch/inactive/0/0",
       "switch/active/0/0",
@@ -166,7 +246,7 @@ describe("registerArt", () => {
       "art:props-0",
       "art:props-1",
     ]);
-    registerArt(scene, { warn: vi.fn() });
+    registerArt(scene, RESIDENT_ART, { warn: vi.fn() });
     expect(anims.get("brazier/burn/0")).toMatchObject({
       frameRate: 8,
       repeat: -1,
@@ -180,14 +260,14 @@ describe("registerArt", () => {
 
   it("always provides the placeholder texture", () => {
     const { scene, textures } = fakeScene(undefined, []);
-    registerArt(scene, { warn: vi.fn() });
+    registerArt(scene, RESIDENT_ART, { warn: vi.fn() });
     expect(textures.has(PLACEHOLDER_TEXTURE)).toBe(true);
   });
 
   it("falls back to an empty library and logs when the manifest is missing", () => {
     const log = { warn: vi.fn() };
     const { scene } = fakeScene(undefined, []);
-    const lib = registerArt(scene, log);
+    const lib = registerArt(scene, RESIDENT_ART, log);
     expect(lib.available).toBe(false);
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining("manifest"),
@@ -198,15 +278,64 @@ describe("registerArt", () => {
   it("falls back to an empty library and logs when the manifest is corrupt", () => {
     const log = { warn: vi.fn() };
     const { scene } = fakeScene({ version: 1, sheets: "nope" }, []);
-    const lib = registerArt(scene, log);
+    const lib = registerArt(scene, RESIDENT_ART, log);
     expect(lib.available).toBe(false);
     expect(log.warn).toHaveBeenCalled();
+  });
+
+  describe("by the scene's own groups (FS-C4JWH §B R10, §E R19–R20)", () => {
+    const textures = (...atlases: string[]) => atlases.map(atlasTextureKey);
+    const atlasWarnings = (log: { warn: ReturnType<typeof vi.fn> }) =>
+      log.warn.mock.calls.map(([message]) => String(message)).filter((m) => m.includes("atlas"));
+
+    it("should warn once for each atlas the scene expected that is not a texture", () => {
+      const log = { warn: vi.fn() };
+      const { scene } = fakeScene(scoped, textures("props-0", "props-1", "creatures-0", "boss-0"));
+      registerArt(scene, SCENE_ART.BarrowspireScene, log);
+      const warned = atlasWarnings(log);
+      expect(warned).toHaveLength(2);
+      expect(warned.some((m) => m.includes("creatures-1"))).toBe(true);
+      expect(warned.some((m) => m.includes("boss-1"))).toBe(true);
+    });
+
+    it("should say nothing of an atlas outside the scene's set", () => {
+      const log = { warn: vi.fn() };
+      const { scene } = fakeScene(scoped, textures("props-0", "props-1", "folk-0"));
+      registerArt(scene, SCENE_ART.HubScene, log);
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it("should draw a sheet of a group the scene does not hold as the placeholder, naming it once, though its page is a texture", () => {
+      const log = { warn: vi.fn() };
+      const { scene, frames } = fakeScene(scoped, textures("props-0", "props-1", "folk-0", "wildlife-0"));
+      const art = registerArt(scene, SCENE_ART.HubScene, log);
+      expect(art.has("folk_resident_skirt")).toBe(true);
+      expect(art.has("creature_boar_base")).toBe(false);
+      expect(frames["art:wildlife-0"]).toBeUndefined();
+      expect(art.resolve("creature_boar_base", { animation: "idle" }).placeholder).toBe(true);
+      art.resolve("creature_boar_base", { animation: "idle" });
+      expect(log.warn).toHaveBeenCalledTimes(1);
+      expect(log.warn.mock.calls[0][0]).toContain("creature_boar_base");
+      expect(JSON.stringify(log.warn.mock.calls[0][1])).toContain("wildlife-0");
+    });
+
+    it("should register every frame and animation of the scene's own groups", () => {
+      const { scene, frames, anims } = fakeScene(
+        scoped,
+        textures("props-0", "props-1", "creatures-0", "creatures-1", "boss-0", "boss-1"),
+      );
+      const art = registerArt(scene, SCENE_ART.BarrowspireScene, { warn: vi.fn() });
+      expect(art.has("creature_demon_base")).toBe(true);
+      expect(frames["art:boss-1"]).toEqual(["creature_demon_base/attack/0/0", "creature_demon_base/attack/0/1"]);
+      expect(anims.has("creature_ghoul_base/idle/0")).toBe(true);
+      expect(anims.has("creature_demon_base/attack/0")).toBe(true);
+    });
   });
 
   it("falls back per sheet when one atlas failed to load", () => {
     const log = { warn: vi.fn() };
     const { scene } = fakeScene(manifest, ["art:props-0"]);
-    const lib = registerArt(scene, log);
+    const lib = registerArt(scene, RESIDENT_ART, log);
     expect(lib.has("switch")).toBe(true);
     expect(lib.has("brazier")).toBe(false);
     expect(log.warn).toHaveBeenCalledWith(
@@ -230,14 +359,14 @@ describe("registerArt", () => {
         "art:props-0",
         "art:props-1",
       ]);
-      registerArt(scene, { warn: vi.fn() });
+      registerArt(scene, RESIDENT_ART, { warn: vi.fn() });
       expect(frames["art:props-0"]).toEqual(["switch/inactive/0/0"]);
       expect(frames["art:props-1"]).toContain("switch/active/0/0");
     });
 
     it("skips the whole sheet when one of its pages did not load", () => {
       const { scene, frames } = fakeScene(spilled(), ["art:props-0"]);
-      const lib = registerArt(scene, { warn: vi.fn() });
+      const lib = registerArt(scene, RESIDENT_ART, { warn: vi.fn() });
       expect(frames["art:props-0"] ?? []).not.toContain("switch/inactive/0/0");
       expect(lib.has("switch")).toBe(false);
     });
@@ -418,7 +547,7 @@ describe("a trimmed sheet's frames (FS-HF0WW)", () => {
       anims: { exists: () => false, create: () => undefined },
       add: { graphics: () => new Proxy({}, { get: () => () => undefined }) },
     } as unknown as ArtScene;
-    registerArt(scene, { warn: vi.fn() });
+    registerArt(scene, RESIDENT_ART, { warn: vi.fn() });
     return ["archer/idle/0/0", "archer/idle/0/1"].map((name) => made.get(name)!);
   }
 

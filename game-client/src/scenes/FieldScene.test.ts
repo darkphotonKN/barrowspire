@@ -155,6 +155,7 @@ function fieldOnStage() {
  */
 function fieldToCreate<T>() {
   const field = new FieldScene() as unknown as T & {
+    init(data?: { field?: string }): void;
     create(data?: { field?: string }): void;
   };
   const stub: unknown = new Proxy(function () {}, {
@@ -920,6 +921,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       { get: (_target, key) => (key === "keyboard" ? keyboard : stub) },
     );
 
+    field.init({ field: "gentle_meadows" });
     field.create({ field: "gentle_meadows" });
 
     expect(field.equipment).toBeInstanceOf(EquipmentHud);
@@ -950,6 +952,7 @@ describe("FieldScene ending (game destroy on leaving /game)", () => {
     // the plugins boot before the scene's create runs, so they hear DESTROY first
     const systems = sceneSystems();
     field.events = systems.scene.events;
+    field.init({ field: "gentle_meadows" });
     field.create({ field: "gentle_meadows" });
     field.input = systems.scene.input;
     const off = vi.spyOn(socketManager, "off");
@@ -1003,6 +1006,7 @@ describe("FieldScene the Forest's bounds (FS-KSD6K §Requirements 17)", () => {
       ),
     };
 
+    field.init({ field: "forlorn_forest" });
     field.create({ field: "forlorn_forest" });
 
     // constants.ForestMapWidth/Height, and the golden layout the fixture copies
@@ -1123,5 +1127,34 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     fight.aiming = false;
     field.update(32, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
+  });
+});
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+// Each field loads its own wildlife or dead from its preload, its id read in init, before preload
+// runs: Phaser hands the start data to init and create only (FS-C4JWH §B R7–R8, §A R5).
+describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
+
+  it.each([
+    ["gentle_meadows", ["wildlife-0", "wildlife-1"]],
+    ["forlorn_forest", ["fodder-0", "fodder-1"]],
+    ["a field the client does not know", ["wildlife-0", "wildlife-1"]],
+  ])("should queue %s's own group and nothing else, the resident art being loaded", (id, own) => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const field = Object.assign(new FieldScene(), art.scene) as unknown as {
+      init(data?: { field?: string }): void;
+      preload(): void;
+    };
+
+    field.init({ field: id });
+    field.preload();
+
+    expect(art.queued.sort()).toEqual(own.map(atlasTextureKey));
   });
 });

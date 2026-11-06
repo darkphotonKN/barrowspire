@@ -3300,3 +3300,22 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
   });
 
 });
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+describe("HubScene art loading (FS-C4JWH §B R7)", () => {
+
+  it("should queue the folk and nothing else, the resident art being loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
+  });
+});

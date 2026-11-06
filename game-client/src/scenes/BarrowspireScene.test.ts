@@ -5014,3 +5014,25 @@ describe("keepBodySize (FS-HF0WW)", () => {
     expect(sprite.body.sourceWidth).toBe(60);
   });
 });
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+// The run loads its creatures and the boss at entry, for every floor (FS-C4JWH §B R9).
+describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
+  it("should queue the creatures and the boss and nothing else, the resident art being loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+
+    run.preload();
+
+    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
+  });
+});
