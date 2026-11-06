@@ -126,7 +126,7 @@ import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
 import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
-import { LastHitTracker, pickTarget } from "@/render/creatures/targetPick";
+import { LastHitTracker, engagedBoss, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
@@ -4412,21 +4412,26 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else the last-hit one, of
+   * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else an engaged boss
+   * (§D.10, read against the run's players, this client's among them), else the last-hit one, of
    * those shown and living; nothing on an `overhead` floor. Hidden while the spectate HUD or the
    * floor veil holds the top centre (§E.15–16). Run after the frame's hide rule, which says what
    * is shown.
    */
   private updateTargetFrame(deltaMs: number): void {
     if (!this.targetFrame) return;
-    const target =
-      this.markers === "frame" && this.monsters
-        ? pickTarget({
-            shown: this.monsters.targetable(),
-            hovered: this.monsters.hoveredId,
-            lastHit: this.lastHit.current(this.time.now),
-          })
-        : null;
+    let target = null;
+    if (this.markers === "frame" && this.monsters) {
+      const shown = this.monsters.targetable();
+      const { current_player, other_players = [] } = this.lastGameState ?? {};
+      const members = current_player ? [current_player, ...other_players] : other_players;
+      target = pickTarget({
+        shown,
+        hovered: this.monsters.hoveredId,
+        engagedBoss: engagedBoss(shown, members),
+        lastHit: this.lastHit.current(this.time.now),
+      });
+    }
     const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
     this.targetFrame.update(deltaMs, target, covered);
   }
