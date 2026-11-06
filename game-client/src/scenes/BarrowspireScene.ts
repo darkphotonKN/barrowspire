@@ -35,6 +35,7 @@ import {
   floorCard,
   floorLabel,
   interactNotice,
+  refusesContainer,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
@@ -3448,6 +3449,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
     socketManager.on("interact", (payload: InteractReply) => {
       console.log("Interact response:", payload);
+      // a guarded chest stays shut: the coffer the E key opened closes again (FS-KE075 §J R60)
+      if (refusesContainer(payload)) this.containerView.close();
       const notice = interactNotice(payload);
       if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
     });

@@ -74,6 +74,9 @@ var (
 	// ErrLootReserved refuses taking from a field drop pile still reserved for
 	// someone else's kill. FS-X2F2H §Requirements 33.
 	ErrLootReserved = errors.New("loot is reserved for its killer")
+	// ErrContainerGuarded refuses opening a floor-1 chest while any monster its
+	// room spawned as guards still stands. FS-KE075 §J Requirement 60.
+	ErrContainerGuarded = errors.New("container is guarded")
 
 	// queue
 	ErrPlayerAlreadyInQueue = errors.New("player already in queue")

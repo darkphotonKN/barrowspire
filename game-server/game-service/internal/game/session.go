@@ -562,8 +562,9 @@ func (s *Session) manageClientMessages() {
 
 				s.queueIntent(func() {
 					if err := s.handleInteract(playerID, entityIDUUID); err != nil {
-						// the client pre-checks the bag; a stale one is refused quietly (FS-HRH2J R37)
-						if errors.Is(err, ErrBagFull) {
+						// the client pre-checks the bag; a stale one is refused quietly (FS-HRH2J R37);
+						// a guarded chest is play, not a fault (FS-KE075 §J R60)
+						if errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) {
 							slog.Debug("Pickup refused into a full bag.",
 								"player_id", playerID,
 								"entity_id", entityIDUUID,
@@ -2029,6 +2030,13 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		}
 
 		containerOpenable := containerOpenableComponent.(*components.OpenableComponent)
+
+		// a floor-1 chest stays shut while any of its room's guards stands,
+		// asked now, on the tick (FS-KE075 §J Requirements 58–60)
+		if !containerOpenable.HasBeenOpened && s.guardStands(targetEntity) {
+			s.sendRefusalToPlayer(playerID, string(constants.ActionInteract), "its guards still stand", RefusalContainerGuarded, nil)
+			return ErrContainerGuarded
+		}
 
 		// only open, never close (chest stays open once opened)
 		containerOpenable.IsOpen = true
