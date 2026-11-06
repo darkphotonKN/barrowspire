@@ -10,6 +10,7 @@ import {
   LIST_FAILED,
   LISTING_DURATION_OUT_OF_RANGE_COPY,
   LISTING_LIMIT_REACHED_COPY,
+  NOT_IN_STASH_CANNOT_LIST,
   WORN_CANNOT_LIST,
   buyoutField,
   canSubmitListing,
@@ -253,6 +254,8 @@ describe("createListingFailureMessage", () => {
     // FS-HBXZN R17: items' refusals are named by their code
     ["ITEM_WORN, a worn relic", refusal("ITEM_WORN"), WORN_CANNOT_LIST],
     ["ITEM_NOT_AVAILABLE, a relic already held", refusal("ITEM_NOT_AVAILABLE"), CANNOT_LIST],
+    // FS-3R77D R15: a relic outside the stash
+    ["ITEM_NOT_IN_STASH, a relic not in the stash", refusal("ITEM_NOT_IN_STASH"), NOT_IN_STASH_CANNOT_LIST],
     ["a 404, a relic not the member's", refusal("NOT_FOUND", 404), CANNOT_LIST],
     ["a 500, a real failure", apiError(500), LIST_FAILED],
     ["a 400, an end time already past", apiError(400), END_TIME_PASSED],
