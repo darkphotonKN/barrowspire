@@ -74,6 +74,7 @@ func TestReserveItem_TranslatesItemsAnswer(t *testing.T) {
 	}{
 		{"worn refusal", status.Convert(errcode.Refuse(errcode.ItemWorn)).Err(), errcode.ItemWorn, nil},
 		{"not available refusal", status.Convert(errcode.Refuse(errcode.ItemNotAvailable)).Err(), errcode.ItemNotAvailable, nil},
+		{"not in the stash refusal (FS-3R77D)", status.Convert(errcode.Refuse(errcode.ItemNotInStash)).Err(), errcode.ItemNotInStash, nil},
 		{"not found", status.Error(codes.NotFound, "item not found"), "", commonconstants.ErrNotFound},
 		{"unavailable", status.Error(codes.Unavailable, "down"), "", commonconstants.ErrTransient},
 		{"deadline exceeded", status.Error(codes.DeadlineExceeded, "slow"), "", commonconstants.ErrTransient},
