@@ -451,7 +451,7 @@ export interface paths {
         put?: never;
         /**
          * List an item for auction
-         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404.
+         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), ITEM_NOT_IN_STASH (the item is in the bag; only stash items can be listed), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404.
          */
         post: operations["create-listing"];
         delete?: never;

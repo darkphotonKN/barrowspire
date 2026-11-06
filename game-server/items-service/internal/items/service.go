@@ -1591,12 +1591,15 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 // listing and puts ItemReserved in the outbox, in one transaction. Under the
 // seller's account lock, the lock an equip takes, so the two are ordered
 // (FS-HBXZN R3), the first failing check answers: not the seller's →
-// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4); the
-// seller already at the listed-item cap → LISTING_LIMIT_REACHED (FS-XEDFF R5,
-// R8). The count runs under the same lock, so two reserves cannot both pass at
-// one under the cap, and a reservation not yet a listing counts (R6). The
-// reserve stays conditional on AVAILABLE, and a reserve that matches no row is
-// ITEM_NOT_AVAILABLE too. A refusal writes nothing.
+// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4); not
+// in the stash → ITEM_NOT_IN_STASH, since only stash items can be listed
+// (FS-3R77D R2, R4; ADR-0065); the seller already at the listed-item cap →
+// LISTING_LIMIT_REACHED (FS-XEDFF R5, R8). The count runs under the same
+// lock, so two reserves cannot both pass at one under the cap, and a
+// reservation not yet a listing counts (R6). The reserve stays conditional on
+// AVAILABLE only: every write that moves an AVAILABLE instance takes the same
+// account lock, so the location read cannot go stale (FS-3R77D R5). A reserve
+// that matches no row is ITEM_NOT_AVAILABLE too. A refusal writes nothing.
 //
 // buyoutPrice is marketplace's term, not items': it is forwarded onto the event
 // unread, nil when the seller set none (FS-9XKS6).
@@ -1622,6 +1625,8 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 			return errcode.Refuse(errcode.ItemNotAvailable)
 		case placement.Worn:
 			return errcode.Refuse(errcode.ItemWorn)
+		case placement.Location != LocationStash:
+			return errcode.Refuse(errcode.ItemNotInStash)
 		}
 
 		listed, err := s.repo.CountListedTx(ctx, tx, sellerID)

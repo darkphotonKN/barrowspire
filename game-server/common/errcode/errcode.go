@@ -93,6 +93,12 @@ const (
 	// or the stash to move. Added for FS-VPD8Y (Town stash).
 	ItemWorn Code = "ITEM_WORN"
 
+	// ItemNotInStash: the item is not in the member's stash (it is in the
+	// bag), so it cannot be listed. Only stash items can be listed
+	// (ADR-0065). Decided by items-service on reserve. Added for FS-3R77D
+	// (Only stash items can be listed).
+	ItemNotInStash Code = "ITEM_NOT_IN_STASH"
+
 	// PasswordTooShort: a password being set has fewer than 10 characters,
 	// counted as Unicode code points. Checked only when a password is set
 	// (signup, password change), never at login (ADR-0041). Added for
@@ -242,6 +248,9 @@ var domainCodes = map[Code]struct{}{
 	StashFull:        {},
 	ItemNotAvailable: {},
 	ItemWorn:         {},
+
+	// FS-3R77D
+	ItemNotInStash: {},
 
 	// FS-V6SFK
 	PasswordTooShort:  {},

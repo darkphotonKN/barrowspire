@@ -20,7 +20,8 @@ import type { InstancesState } from "@/marketplace/useItemInstances";
 
 /**
  * The List-a-relic drawer (FS-8EGFA req 25; design guideline Part II "Item grid"). The player
- * picks one of their relics from a card grid, sets a start price and a duration, and submits.
+ * picks one of the stash relics they can list right now from a card grid (FS-3R77D R10; nothing
+ * else is shown), sets a start price and a duration, and submits.
  * `onSubmit` resolves to the refusal to show, or null once the listing is posted, when the
  * page closes the drawer. Esc and the close control dismiss it; focus stays inside while open
  * and returns to `returnFocus` on close.
@@ -58,7 +59,8 @@ export default function ListRelicDrawer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ListingRefusal>();
 
-  const nothingListable = instances.phase === "ready" && !cards.some((c) => c.selectable);
+  // FS-3R77D R14: the relics were read and none of them can be listed right now.
+  const nothingListable = instances.phase === "ready" && cards.length === 0;
   const ready = canSubmitListing({ cards, selectedId, priceText, buyoutText, submitting });
   const buyout = buyoutField(buyoutText, parseStartPrice(priceText));
   const buyoutError = buyout.valid ? undefined : buyout.error;
@@ -117,24 +119,21 @@ export default function ListRelicDrawer({
               <p className="text-vellum-dim" role="status">
                 {instances.error}
               </p>
+            ) : nothingListable ? (
+              <p className="text-vellum-dim" role="status">
+                {NOTHING_LISTABLE}
+              </p>
             ) : (
-              <>
-                {nothingListable && (
-                  <p className="text-vellum-dim" role="status">
-                    {NOTHING_LISTABLE}
-                  </p>
-                )}
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-                  {cards.map((card) => (
-                    <RelicCard
-                      key={card.id}
-                      card={card}
-                      selected={card.id === selectedId}
-                      onSelect={() => setSelectedId(card.id)}
-                    />
-                  ))}
-                </div>
-              </>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+                {cards.map((card) => (
+                  <RelicCard
+                    key={card.id}
+                    card={card}
+                    selected={card.id === selectedId}
+                    onSelect={() => setSelectedId(card.id)}
+                  />
+                ))}
+              </div>
             )}
           </fieldset>
 
@@ -231,10 +230,9 @@ export default function ListRelicDrawer({
 }
 
 /**
- * One relic in the picker (guideline Part II "Item card"): icon, name, stats, and no price. A
- * relic listed, in escrow, settling, of unknown status, or worn (FS-HBXZN R13) is the disabled
- * card state, tagged with why. The chosen card is
- * brass-bright, never amber: the drawer's submit holds the torch.
+ * One relic in the picker (guideline Part II "Item card"): icon, name, stats, and no price. Every
+ * card can be chosen; a relic that cannot be listed gets no card (FS-3R77D R11). The chosen card
+ * is brass-bright, never amber: the drawer's submit holds the torch.
  */
 function RelicCard({
   card,
@@ -249,22 +247,14 @@ function RelicCard({
     <button
       type="button"
       aria-pressed={selected}
-      disabled={!card.selectable}
       onClick={onSelect}
       className={`flex min-h-[40px] flex-col gap-3 rounded-[8px] border bg-card p-4 text-left transition-colors ${
         selected
           ? "border-brass-bright"
-          : "border-[color:var(--color-border)] enabled:hover:border-[color:var(--color-border-strong)] enabled:hover:bg-card-2"
-      } disabled:cursor-not-allowed disabled:opacity-60`}
+          : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)] hover:bg-card-2"
+      }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <ItemIcon item={card.icon} size={48} />
-        {card.tag && (
-          <span className="rounded border border-[color:var(--color-border-strong)] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-vellum-dim">
-            {card.tag}
-          </span>
-        )}
-      </div>
+      <ItemIcon item={card.icon} size={48} />
       <span className={`font-semibold ${selected ? "text-brass-bright" : "text-vellum"}`}>
         {card.name}
       </span>

@@ -1,7 +1,7 @@
 /**
- * The List-a-relic drawer's decisions (FS-8EGFA req 25, 29): which relics can be chosen, what a
- * start price and a duration become on the wire, when submit is allowed, and what a refusal says.
- * Pure, so the drawer only wires them to state.
+ * The List-a-relic drawer's decisions (FS-8EGFA req 25, 29; FS-3R77D): which relics are offered,
+ * what a start price and a duration become on the wire, when submit is allowed, and what a refusal
+ * says. Pure, so the drawer only wires them to state.
  */
 
 import { ApiError } from "@/utils/apiError";
@@ -15,14 +15,18 @@ export const POSTED = "Posted — your listing will appear in a moment.";
 export const POSTED_LIVE = "Your listing is live.";
 export const STILL_PROCESSING = "Still processing — refresh in a minute";
 export const NOTHING_LISTED = "You have nothing listed.";
+/** FS-3R77D R14: the stash holds nothing that can be listed right now. */
 export const NOTHING_LISTABLE =
-  "None of your relics can be listed right now — take off worn ones, or wait for listings to end.";
+  "Nothing in your stash to list. Move a relic into your stash in town.";
 export const CANNOT_LIST =
   "That relic can't be listed right now — it may already be listed.";
 export const END_TIME_PASSED = "That end time has already passed — check your clock";
 export const LIST_FAILED = "That relic could not be listed — try again.";
 /** FS-HBXZN R17: items-service refused a relic the member is wearing. */
 export const WORN_CANNOT_LIST = "Take it off first — worn relics can't be listed.";
+/** FS-3R77D R15: items-service refused a relic that is not in the stash (ADR-0065). */
+export const NOT_IN_STASH_CANNOT_LIST =
+  "Only relics in your stash can be listed. Move it into your stash in town.";
 /** FS-49Z37 req 2: the form's own check and the server's refusal read the same. */
 export const BUYOUT_NOT_ABOVE_START = "The buyout price must be above the starting bid.";
 /** FS-XEDFF Req 12: marketplace refused an end less than 1 hour or more than 7 days away. */
@@ -94,10 +98,10 @@ export type InstanceStatus =
 
 /**
  * An instance's status. The generated type marks `status` optional, though the server always
- * sends it (FS-8EGFA req 11); an absent one is read as AVAILABLE, so an older server leaves every
- * relic choosable and the server stays the authority (it refuses with ITEM_NOT_AVAILABLE,
+ * sends it (FS-8EGFA req 11); an absent one is read as AVAILABLE, so an older server still offers
+ * the relic and the server stays the authority (it refuses with ITEM_NOT_AVAILABLE,
  * {@link CANNOT_LIST}).
- * A status the page does not know is never choosable.
+ * A status the page does not know is never offered.
  */
 export function instanceStatus(status: string | undefined): InstanceStatus {
   if (status === undefined) return "AVAILABLE";
@@ -110,19 +114,13 @@ export function instanceStatus(status: string | undefined): InstanceStatus {
     : "UNKNOWN";
 }
 
-const TAGS: Record<InstanceStatus, string | undefined> = {
-  AVAILABLE: undefined,
-  LISTED: "Listed",
-  IN_ESCROW: "In escrow",
-  PENDING_SETTLEMENT: "Settling",
-  UNKNOWN: "Unavailable",
-};
-
 /** The `list-item-instances` fields the picker reads. The wire is snake_case. */
 export interface PickerInstance {
   id?: string;
   name?: string;
   status?: string;
+  /** "bag" or "stash"; only a stash relic can be listed (FS-3R77D R10, ADR-0065). */
+  location?: string;
   weapon_type?: string;
   armor_slot?: string;
   attack_power?: number;
@@ -133,18 +131,10 @@ export interface PickerInstance {
   mana_amount?: number;
 }
 
-/** A worn relic that is otherwise listable (FS-HBXZN R13). */
-const WORN_TAG = "Worn";
-
+/** A relic the member can list right now; every card can be chosen (FS-3R77D R11). */
 export interface PickerCard {
   id: string;
   name: string;
-  selectable: boolean;
-  /**
-   * Why a card cannot be chosen: its status ("Listed", "In escrow", "Settling", "Unavailable"),
-   * or "Worn" for an available relic in the member's loadout. The status tag wins (FS-HBXZN R15).
-   */
-  tag?: string;
   /** The stats the relic has. No price: the picker chooses a relic, it does not sell one. */
   stats: { label: string; value: string }[];
   /** What the icon is drawn from. */
@@ -152,24 +142,22 @@ export interface PickerCard {
 }
 
 /**
- * One card per relic with an id. `worn` is the ids in the member's loadout (FS-HBXZN R13): a worn
- * relic stays in the picker but cannot be chosen. None worn, or a loadout that could not be read,
- * leaves every card to its status (R16); the server stays the authority.
+ * One card per relic the member can list right now (FS-3R77D R10–R12): it has an id, it is in the
+ * stash, its status reads AVAILABLE, and it is not in `worn`, the ids in the member's loadout.
+ * Anything else gets no card and no mark (R11). An absent location is not the stash (R12). A
+ * loadout that could not be read leaves `worn` empty (FS-HBXZN R16); the server stays the
+ * authority.
  */
 export function pickerCards(
   instances: readonly PickerInstance[],
   worn: ReadonlySet<string> = new Set(),
 ): PickerCard[] {
   return instances.flatMap((inst) => {
-    if (!inst.id) return [];
-    const status = instanceStatus(inst.status);
-    const isWorn = worn.has(inst.id);
+    if (!inst.id || !listable(inst, worn)) return [];
     return [
       {
         id: inst.id,
         name: inst.name?.trim() || "Unknown relic",
-        selectable: status === "AVAILABLE" && !isWorn,
-        tag: TAGS[status] ?? (isWorn ? WORN_TAG : undefined),
         stats: statsOf(inst),
         icon: {
           name: inst.name,
@@ -181,6 +169,14 @@ export function pickerCards(
       },
     ];
   });
+}
+
+function listable(inst: PickerInstance, worn: ReadonlySet<string>): boolean {
+  return (
+    inst.location?.toLowerCase() === "stash" &&
+    instanceStatus(inst.status) === "AVAILABLE" &&
+    !worn.has(inst.id ?? "")
+  );
 }
 
 function statsOf(inst: PickerInstance): { label: string; value: string }[] {
@@ -215,7 +211,7 @@ export function canSubmitListing(form: {
   const chosen = form.cards.find((c) => c.id === form.selectedId);
   const startPrice = parseStartPrice(form.priceText);
   return (
-    !!chosen?.selectable &&
+    !!chosen &&
     startPrice !== null &&
     buyoutField(form.buyoutText ?? "", startPrice).valid
   );
@@ -224,12 +220,13 @@ export function canSubmitListing(form: {
 /**
  * A create-listing refusal named by its code, read before the status so the price reading never
  * mistakes it: the email-verified gate (FS-V6SFK R38), and items-service refusing the relic itself,
- * worn or already held (FS-HBXZN R17).
+ * worn or already held (FS-HBXZN R17), or not in the stash (FS-3R77D R15).
  */
 const REFUSAL_COPY: Record<string, string> = {
   [EMAIL_UNVERIFIED]: VERIFY_TO_LIST,
   ITEM_WORN: WORN_CANNOT_LIST,
   ITEM_NOT_AVAILABLE: CANNOT_LIST,
+  ITEM_NOT_IN_STASH: NOT_IN_STASH_CANNOT_LIST,
   LISTING_DURATION_OUT_OF_RANGE: LISTING_DURATION_OUT_OF_RANGE_COPY,
   LISTING_LIMIT_REACHED: LISTING_LIMIT_REACHED_COPY,
 };
