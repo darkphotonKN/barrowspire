@@ -210,6 +210,17 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   waist up over the walk from the waist down, the legs facing the aim (for a melee swing, its
   target). Every playable class's sheet carries it; no creature's or resident's does (FS-HF0WW,
   FS-3V7GC).
+- **Atlas group**: the atlas pages one group of sheets is packed onto, named by the manifest's
+  atlas keys without the page number (`boss-0` and `boss-1` are the `boss` group). The unit the
+  client loads and frees art by (FS-C4JWH).
+- **Resident group**: an atlas group loaded at boot and kept for the whole game: the four class
+  groups and every small one. Always "resident group" or "resident art", never a bare "resident",
+  which is a townsperson (ADR-0059).
+- **Scene-scoped group**: an atlas group loaded only by the scenes that draw it (folk, wildlife,
+  fodder, creatures, boss) and freed when the next scene does not use it (ADR-0059, FS-C4JWH).
+- **Eviction**: removing a scene-scoped group's pages from the texture manager (and so the GPU),
+  with every animation registered on them, once the next scene's preload completes. Only ever of
+  art; "unload" is not used for it (ADR-0059).
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
   player's torch pool). It is declared per prop type in the sprite manifest, or attached to the
   player. Purely visual: it has no effect on what anyone can see or hit.
