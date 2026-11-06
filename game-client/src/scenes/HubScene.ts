@@ -35,6 +35,7 @@ import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
+import { PurseReader } from "@/ui/purse";
 import { apiClient } from "@/utils/api";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
@@ -2628,14 +2629,20 @@ export class HubScene extends Phaser.Scene {
   /**
    * The run's gear and bag overlay, fed from the REST loadout (FS-HRH2J §E R41–43); a refused
    * change in the hub's passing notice. A change answered after this visit ended says nothing.
+   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeGear(): HubGear {
     const overlay = new GearOverlay(this, this.art, WorldType.Hub);
-    const gear: HubGear = new HubGear(overlay, apiClient, {
-      notice: (text) => {
-        if (this.gear === gear) this.notice(text);
+    const gear: HubGear = new HubGear(
+      overlay,
+      apiClient,
+      {
+        notice: (text) => {
+          if (this.gear === gear) this.notice(text);
+        },
       },
-    });
+      new PurseReader(apiClient, overlay),
+    );
     return gear;
   }
 

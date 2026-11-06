@@ -44,6 +44,8 @@ import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { ContainerView } from "@/ui/ContainerView";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
+import { PurseReader } from "@/ui/purse";
+import { apiClient } from "@/utils/api";
 import { ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
@@ -365,12 +367,19 @@ export class FieldScene extends Phaser.Scene {
   /**
    * The run's gear and bag overlay over the live field (FS-HRH2J), its sends the run's, its
    * full-bag refusals in the field's notice (R22). A field marks no unsafe finds (FS-18Z5F R37).
+   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Field), {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-      notice: (text) => this.notice(text),
-    });
+    const overlay = new GearOverlay(this, this.art, WorldType.Field);
+    return new EquipmentHud(
+      overlay,
+      {
+        send: (action, payload) => socketManager.sendMessage(action, payload),
+        notice: (text) => this.notice(text),
+      },
+      Date.now,
+      new PurseReader(apiClient, overlay),
+    );
   }
 
   /** Whether the bag can take one more pickup from a pile or chest (FS-HRH2J R21); the notice says when not. */

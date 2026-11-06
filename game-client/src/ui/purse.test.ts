@@ -34,7 +34,9 @@ function reader(api: PurseApi) {
 const notFound = () =>
   new ApiError({ code: "NOT_FOUND", status: 404, detail: "", errors: [] });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("purseView (FS-7TGZ3 §A R3, §B R5, R7)", () => {
   it.each([
@@ -58,9 +60,12 @@ describe("purseView (FS-7TGZ3 §A R3, §B R5, R7)", () => {
       "9,007,199,254,740,991",
       "Available 9,007,199,254,740,991 · Held in bids 0",
     ],
-  ])("should show the total of %s, grouped, with the split in its tip", (_l, a, amount, tip) => {
-    expect(purseView(a)).toEqual({ amount, tip });
-  });
+  ])(
+    "should show the total of %s, grouped, with the split in its tip",
+    (_l, a, amount, tip) => {
+      expect(purseView(a)).toEqual({ amount, tip });
+    },
+  );
 
   it("should show the dash and no tip without an account", () => {
     expect(purseView(undefined)).toEqual({ amount: PURSE_UNKNOWN });
