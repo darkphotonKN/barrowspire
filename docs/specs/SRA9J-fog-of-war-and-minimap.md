@@ -1,12 +1,12 @@
 # FS-SRA9J: Fog of war and minimap on dungeon floors
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" → "Fog of war", "Minimap" → this FS · Related ADRs: [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog is client presentation, region-based, party-shared), [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map, interest), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) Decision 12 (per-floor opt-ins), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only) · Builds on: [FS-KE075](KE075-floor-1-dungeon.md) (regions on the floor map, the dungeon-floor look, chunk grid, interest), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (the indoor blackout, which a dungeon floor does without), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (fullscreen button, resizable view) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Fog of war**, **Minimap**, **Region**, **Light source**
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" → "Fog of war", "Minimap" → this FS · Related ADRs: [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog is client presentation, region-based, party-shared), [ADR-0068](../adr/0068-unexplored-regions-are-veiled-not-blacked-out-and-fog-edges-are-feathered-and-faded.md) (unexplored veiled, not black; edges feathered; changes faded), [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map, interest), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) Decision 12 (per-floor opt-ins), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only) · Builds on: [FS-KE075](KE075-floor-1-dungeon.md) (regions on the floor map, the dungeon-floor look, chunk grid, interest), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (the indoor blackout, which a dungeon floor does without), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (fullscreen button, resizable view) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Fog of war**, **Minimap**, **Region**, **Light source**
 
 ## Summary
 
-On floor 1, the dungeon is no longer laid bare. A room or corridor the party has never entered is
-black. One the party has walked through stays drawn, dim, with no monsters shown. The regions
-where a party member stands now are drawn in full, along with any monster within 400 px of a
+On floor 1, the dungeon is no longer laid bare. A room or corridor the party has never entered lies
+under a dense fog, its floor and walls only faintly seen. One the party has walked through stays
+drawn, dim, with no monsters shown. Fog edges are soft and a change eases in. The regions where a party member stands now are drawn in full, along with any monster within 400 px of a
 party member. What one member uncovers, the whole party sees. A minimap at the top right shows
 the explored floor, the party and, once found, the switch, escape door and stairs; M hides and
 shows it.
@@ -27,6 +27,16 @@ clear, §C.18 what that costs at an open boundary, each marked **derived here**.
 points are recorded, not changed: the B3 question below (Nick: "先按照目前做法我看看感覺再決定",
 keep today's rule and decide after a look), the shared hide rule's small change on floors 2–3, and
 explored dressing dimmed only by its floor's fog (Edge States). No requirement's intent changed.
+
+**Amended 2026-11-06 (owner, playtest 2026-11-06).** Nick playtested floor 1: "看不到的區塊會像斷橋一樣感覺
+還是要可以看到 只是用迷霧擋住" (an unexplored region feels like a broken bridge; it should still be
+seen, only covered by fog), and "看不到的區塊有一種撕裂感 然後才突然出現" (it looks torn, then
+suddenly appears). So an unexplored region's ground and walls are now drawn under a dense veil
+(§C.8), the fog's edges are feathered (§C.26), and a change of state is faded (§C.27). This amends
+B1's "black" ([ADR-0068](../adr/0068-unexplored-regions-are-veiled-not-blacked-out-and-fog-edges-are-feathered-and-faded.md)
+amends ADR-0063 Decision 2). §C.13 and §C.18 are restated for it. The minimap (§E), the monster
+rule (§D, B3 still owner-pending with C current) and what is hidden in an unexplored region are
+unchanged.
 
 ## Facts this spec rests on
 
@@ -76,12 +86,16 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 
 ### §C. What each state shows
 
-8. **Unexplored**: drawn as `palette.inkDeep`, the void's ink. Its ground, its walls and
-   everything in it (containers, the switch, escape door, stairs, drop piles, monsters, effects)
-   are not seen. (B1)
-9. **Explored**: its ground and walls drawn, dimmed by a fixed share of `palette.inkDeep` over
-   them; containers and the switch, escape door and stairs drawn dim; no monster and no drop pile
-   shown (§D). (B1)
+8. **Unexplored**: its ground and walls drawn under a dense veil of `palette.inkDeep`, darker than
+   the explored one but not opaque (`FOG.unexplored`, 0.8 of the ink over its ground; its walls
+   tinted by the same share), so the layout reads faintly. Everything else in it is not seen:
+   containers, the switch, escape door, stairs, drop piles, run dressing, monsters (by §D),
+   effects and its lights (§C.12). The void and off the floor stay opaque (`FOG.void`). (B1,
+   **amended: owner, playtest 2026-11-06**)
+9. **Explored**: its ground and walls drawn under a lighter veil (`FOG.explored`, 0.55 of the
+   ink; its walls tinted by the same share); containers and the switch, escape door and stairs
+   drawn dim; no monster and no drop pile shown (§D). Both veils are named constants in one place
+   (`render/world/fog.ts` `FOG`), so they can be tuned. (B1)
 10. **Visible**: drawn in full, as FS-KE075 draws it. (B1)
 11. **A wall shows the brightest state of the regions it borders** (visible over explored over
     unexplored), so a visible room's walls are whole even where the far side is unexplored.
@@ -89,20 +103,38 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 12. **Light sources** in a region that is not visible are off; the player's own torch pool is
     unchanged. Lighting stays presentation-only. (B5)
 13. **One fog layer** at the blackout's depth (over the world, light-map and world effects, under
-    dust, vignette, markers and the HUD), drawn geometrically from region footprints projected to
-    iso, the way the blackout's canvas fallback is, under both renderers. It is redrawn only when a
-    region's state changes, never per frame. **(derived here: 18–28 rooms plus their corridor
-    segments change state a few dozen times a floor; no mask is needed)** Since the layer is over
-    the world, it leaves clear only what stands in front of the floor behind it, cut to its shape:
-    a drawn wall's slab (the wall on its cell's centreline, edge to edge, raised to its height and
-    a few px for its top) and its corner posts where a wall strip ends; and a visible region's
-    floor only where a member's head could be, 100 px over and 12 px either side of anywhere their
-    feet can be (the server's `PlayerRadius`, 20 px, off every cell no one can walk on). Every
-    screen px still has one shade, so the explored dim never compounds. **(derived here, review
-    round 1: a wall's whole diamond raised, or a floor raised 100 px everywhere, left the floor
-    behind it in sight)**
+    dust, vignette, markers and the HUD), worked out from region footprints projected to iso and
+    painted, chunk by ground chunk, into canvas textures under both renderers (§C.26). It is worked
+    out again only when a region's state changes, never per frame. **(derived here: 18–28 rooms
+    plus their corridor segments change state a few dozen times a floor; no mask is needed)**
+    Since the layer is over the world, it leaves clear only what stands in front of the floor
+    behind it, cut to its shape: a drawn wall's slab (the wall on its cell's centreline, edge to
+    edge, raised to its height and a few px for its top) and its corner posts where a wall run
+    ends, every wall bordering a region being drawn; and a visible region's floor only where a
+    member's head could be, 100 px over and 12 px either side of anywhere their feet can be (the
+    server's `PlayerRadius`, 20 px, off every cell no one can walk on). Every screen px still has
+    one veil, so no veil compounds. **(derived here, review round 1: a wall's whole diamond raised,
+    or a floor raised 100 px everywhere, left the floor behind it in sight; kept in the 2026-11-06
+    amendment: a translucent veil over a member's head or a wall in front of the fog would still
+    darken it, and two veils over one px would compound)**
 14. **Objects in an unexplored region are hidden, not only covered** (`setVisible(false)`), since
-    markers draw above the fog and nothing hidden may be hovered or clicked. **(derived here)**
+    markers draw above the fog and nothing hidden may be hovered or clicked; a translucent veil
+    would not hide them. **(derived here)**
+26. **Soft edges** (owner, playtest 2026-11-06): the fog's edges are feathered, never cut hard. The
+    partition is laid on a lattice of 8 px texels and each chunk's field is
+    `min(sharp, blur(erode(equiv)))`, a drawn wall standing as its tint's share. So the fog eases
+    in over 32 px (`FEATHER.reach` texels) from every edge with something lighter, and only on
+    the fog's side: it never lays fog on a px the sharp fog leaves clear (a member's head, a drawn
+    wall in front of them), and never makes a px darker than the sharp veil. A wall tinted as dark
+    as the fog behind it feathers nothing. **(derived here: Phaser 4.2.1's Blur filter is WebGL
+    only, runs per object every frame, and spills over the clear edges; the CPU field costs
+    nothing per frame)**
+27. **Fades** (owner, playtest 2026-11-06): a region's change of state eases over `FOG.fade`
+    (320 ms) on the scene's clock, its walls' tints with it; a second change mid-fade starts from
+    what is on screen. Fog that comes eases in over the world; fog that lifts eases out at
+    `FOG.floorDepth` (1), under every standing thing, so a member stepping into a veiled region is
+    never veiled. Only layer alphas and tints change while it runs; nothing is worked out or
+    painted again. The fade stops with its floor (`Fog.destroy`). **(derived here)**
 
 ### §D. Monsters and drop piles
 
@@ -114,10 +146,11 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 17. **A hidden monster cannot be targeted**: no strike-mark cursor on hover, no click-to-attack, no
     target frame (FS-48CTQ). **(derived here)**
 18. **Fog never hides a party member.** A living member is always in a visible region by §B.3,
-    and the fog leaves their head clear wherever they can stand (§C.13). So at an open boundary
-    (a doorway or a corridor's mouth) the floor of the region behind them on screen, up to a head's
-    height over the boundary, stays in sight while it is unexplored. **(derived here, review round
-    1: covering it would cover a member standing at the boundary)**
+    and the fog leaves their head clear wherever they can stand (§C.13), and neither the feather
+    (§C.26) nor a fade (§C.27) lays any over it. So at an open boundary (a doorway or a corridor's
+    mouth) the floor of the region behind them on screen, up to a head's height over the boundary,
+    stays clear while it is unexplored, the veil easing in above it (§C.26). **(derived here,
+    review round 1: covering it would cover a member standing at the boundary)**
 
 ### §E. Minimap
 
@@ -168,7 +201,12 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 
 - [ ] On a fixture dungeon floor: every region starts unexplored; a member stepping in makes it visible; stepping out leaves it explored.
 - [ ] Other members' positions uncover regions for this client (party-shared); dead and escaped members uncover nothing.
-- [ ] Unexplored regions draw as `palette.inkDeep` with nothing in them shown; explored regions draw dim with no monster or drop pile; visible regions draw in full.
+- [ ] Unexplored regions draw their ground and walls under the dense veil (`FOG.unexplored` 0.8), nothing else in them shown; explored regions under the lighter one (`FOG.explored` 0.55) with no monster or drop pile; visible regions draw in full; the void opaque.
+- [x] An unexplored region's walls are drawn and tinted as dense as its veil, never hidden; run dressing in it stays hidden (`fog.test.ts`; the scene test over the walls near the view).
+- [x] The feather never lays fog on a px the sharp fog leaves clear, never darkens a px past it, and eases from a member's head clearance to the full veil rather than cutting (`fogField.test.ts`; `fog.test.ts` over the fixture with regions visible and a member at a corridor's mouth).
+- [x] A change of state fades over `FOG.fade` (320 ms): lifting fog under what stands (`FOG.floorDepth`), coming fog over the world, wall tints with them; only alphas and tints change on the way; a second change starts from what is on screen; the fade stops with its floor (`fog.test.ts`).
+- [x] Headless captures at render scales 1, 1.5 and 2 (room 1, a corridor's mouth, the corridor, and a fade frozen half way), the veil values checked at each (I-SRA9J review, 2026-11-06).
+- [x] Per frame the fog costs nothing measurable against no fog (1.3–1.7 ms mean step against 1.2–2.0 ms, fixture floor, scale 1); a change of state is worked out and painted in 9–17 ms against the opaque fog's 4–8 ms, the changed chunks in view at once, those in the camera's margin three a frame.
 - [ ] A wall between a visible and an unexplored region draws in full.
 - [x] With one region visible on the fixture floor, every other region's cell middle is fogged, behind a drawn wall's slab, or where a member's head could be (`fog.test.ts`, every region in turn; on the fixture refreshed from the levelgen golden in round 1, 0 left clear, against 190 before review round 1).
 - [ ] A monster is shown in a visible region, or within 400 px of a living member in an explored or unexplored region, and hidden otherwise, markers included (unit tests over the rule; a scene test over the markers).
@@ -193,7 +231,20 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - **Reconnect:** exploration starts over (v1); the regions the party stands in are visible at once.
 - **Two members in different regions:** both regions visible.
 - **Window resized:** the minimap re-anchors; the fog layer is in world space and needs no redraw.
-- **Canvas renderer fallback:** the fog is geometric under both renderers.
+- **Canvas renderer fallback:** the fog's textures and fades are the same under both renderers;
+  its field is worked out on the CPU.
+- **A change mid-fade:** the next fade starts from what is on screen, with no jump (§C.27).
+- **Arriving on the floor:** the first draw is all unexplored, then the party's regions lift
+  their veil over one fade.
+- **A chunk changed out of the camera's view:** painted three a frame while the fade's counter
+  runs, before the camera can reach it; one changed while far off is painted when it comes near,
+  at once; a fade a chunk leaves the camera's reach during ends at once.
+- **Objects at a fade-in:** a container, the switch, escape door, stairs, dressing and lights
+  appear at once when their region is uncovered, while the floor under them is still easing.
+  Accepted for v1 (ADR-0068).
+- **A wall in front of the veil it borders:** a wall bordering a visible region stands plain, so
+  the veil just above its top eases in from it (§C.26) and shows a little more of the floor behind
+  than the sharp cut did. Accepted: it is what a soft edge is.
 - **Floor-1 demon (1%):** follows the monster rule like any monster.
 - **A monster within 400 px in an unexplored region (owner-pending, review round 1, B3):** today
   it is shown (§D.15), so its plate and bar draw over the fog while its body is under it, and it
@@ -206,7 +257,7 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
   shown, and one that died hidden lies fallen when shown again, with no fall replayed on blackout
   re-entry. This is a small change from today's floors 2–3, accepted as consistent with FS-48CTQ
   §C.7 (a hidden monster is no candidate). **(derived here, review round 1)**
-- **Explored dressing standing tall:** the fog dims explored dressing with its floor, so where its
+- **Explored dressing standing tall:** the veil dims explored dressing with its floor, so where its
   top rises over a drawn wall's slab or a member's head clearance it stays undimmed, and where it
   rises over an unexplored region's floor it is darkened. Accepted for v1: tinting the piece would
   dim its foot twice. **(derived here, review round 1)**
