@@ -1171,3 +1171,153 @@ describe("SocketManager hands a renewed token to the server (FS-ZPX58 R27)", () 
     expect(sockets[0].closedWith).toBeUndefined();
   });
 });
+
+describe("SocketManager round 2: late opens and disposal (FS-ZPX58 L-a, L-b)", () => {
+  type Outcome = "renewed" | "refused" | "unavailable";
+  const marl = { characterId: "c-1", class: "warrior", className: "warrior", characterName: "Marl", username: "Marl" };
+
+  function rig() {
+    const sockets: FakeSocket[] = [];
+    const arrival = { enterHub: vi.fn(() => marl), refused: vi.fn() };
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    }, arrival);
+    let token = "jwt-1";
+    manager.setTokenSource(() => token);
+    const authError = vi.fn();
+    manager.setOnAuthError(authError);
+    manager.connectToGame("jwt-1", "Ash");
+    return {
+      manager,
+      sockets,
+      arrival,
+      authError,
+      setToken: (next: string) => {
+        token = next;
+      },
+    };
+  }
+  const renewSent = (socket: FakeSocket) =>
+    socket.sent.map((raw) => JSON.parse(raw)).filter((m) => m.action === "renew_token");
+  /** A renewal the test settles by hand. */
+  function deferredRenewal() {
+    let settle!: (o: Outcome) => void;
+    const renew = vi.fn(() => new Promise<Outcome>((r) => (settle = r)));
+    return { renew, settle: (o: Outcome) => settle(o) };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("should hand over a token renewed while the game socket was still connecting, once it opens (L-a)", () => {
+    const env = rig();
+
+    env.setToken("jwt-2"); // renewed while CONNECTING: renewToken had no open socket
+    env.manager.renewToken("jwt-2");
+    env.sockets[0].open();
+
+    expect(renewSent(env.sockets[0]).map((m) => m.payload.token)).toEqual(["jwt-2"]);
+  });
+
+  it("should send nothing on open when the token is the one the URL carried (L-a)", () => {
+    const env = rig();
+
+    env.sockets[0].open();
+
+    expect(renewSent(env.sockets[0])).toEqual([]);
+  });
+
+  it("should hand over a token renewed while a run handoff was pending, once it is promoted (L-a)", () => {
+    const env = rig();
+    env.sockets[0].open();
+    env.sockets[0].receive(handoff("run-1"));
+    const next = env.sockets[1];
+    next.open();
+
+    env.setToken("jwt-2");
+    env.manager.renewToken("jwt-2"); // reaches the old socket, not the pending one
+    next.receive(runEntered);
+
+    expect(renewSent(next).map((m) => m.payload.token)).toEqual(["jwt-2"]);
+  });
+
+  it("should hand over a token renewed while a hub handoff was pending, once it is promoted (L-a)", () => {
+    const env = rig();
+    env.sockets[0].open();
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: "ws://pod-a.test/game/ws", hub: true } });
+    const next = env.sockets[1];
+    next.open();
+
+    env.setToken("jwt-2");
+    next.receive({ action: "world_entered", payload: { session_id: "hub-a", world_type: "hub" } });
+
+    expect(renewSent(next).map((m) => m.payload.token)).toEqual(["jwt-2"]);
+  });
+
+  it("should do nothing with a renewal that resolves after disconnect: game socket (L-b)", async () => {
+    const env = rig();
+    const { renew, settle } = deferredRenewal();
+    env.manager.setRenewSession(renew);
+
+    env.sockets[0].refuse();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(renew).toHaveBeenCalledTimes(1);
+    env.manager.disconnect();
+    settle("renewed");
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(env.sockets).toHaveLength(1);
+    expect(env.authError).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing with a refused renewal that resolves after disconnect (L-b)", async () => {
+    const env = rig();
+    const { renew, settle } = deferredRenewal();
+    env.manager.setRenewSession(renew);
+
+    env.sockets[0].refuse();
+    await vi.advanceTimersByTimeAsync(0);
+    env.manager.disconnect();
+    settle("refused");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(env.authError).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing with a renewal that resolves after disconnect: run handoff (L-b)", async () => {
+    const env = rig();
+    const { renew, settle } = deferredRenewal();
+    env.manager.setRenewSession(renew);
+    env.sockets[0].open();
+
+    env.sockets[0].receive(handoff("run-1"));
+    env.sockets[1].refuse();
+    env.manager.disconnect();
+    settle("renewed");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(env.sockets).toHaveLength(2);
+  });
+
+  it("should do nothing with a renewal that resolves after disconnect: hub handoff (L-b)", async () => {
+    const env = rig();
+    const { renew, settle } = deferredRenewal();
+    env.manager.setRenewSession(renew);
+    env.sockets[0].open();
+
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: "ws://pod-a.test/game/ws", hub: true } });
+    env.sockets[1].refuse();
+    env.manager.disconnect();
+    settle("renewed");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(env.sockets).toHaveLength(2);
+    expect(env.arrival.refused).not.toHaveBeenCalled();
+  });
+});

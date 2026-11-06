@@ -265,7 +265,7 @@ describe("scheduleRenewals and a skewed client clock (FS-ZPX58 L2)", () => {
     vi.useRealTimers();
   });
 
-  it("should renew at most once a minute when the client clock runs two hours fast", () => {
+  it("should renew once, then a lifetime later, when the client clock runs two hours fast (L-c)", () => {
     // the server is two hours behind the client: every fresh token looks long expired
     const serverNow = () => Date.now() - 2 * HOUR;
     token = mintedAt(serverNow());
@@ -277,12 +277,27 @@ describe("scheduleRenewals and a skewed client clock (FS-ZPX58 L2)", () => {
 
     vi.advanceTimersByTime(0);
     expect(renew).toHaveBeenCalledTimes(1);
+    // the token the renewal just brought lives its whole lifetime from its arrival
+    vi.advanceTimersByTime(HOUR - RENEW_AHEAD_MS - 1);
+    expect(renew).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(renew).toHaveBeenCalledTimes(2);
+  });
+
+  it("should still keep a minute between renewals when a renewed token's iat cannot be read", () => {
+    const serverNow = () => Date.now() - 2 * HOUR;
+    token = mintedAt(serverNow());
+    const renew = vi.fn(async (): Promise<RenewOutcome> => {
+      setToken(jwtWith({ exp: Math.floor((serverNow() + HOUR) / 1000) })); // no iat
+      return "renewed";
+    });
+    scheduleRenewals({ ...store, renew });
+
+    vi.advanceTimersByTime(0);
     vi.advanceTimersByTime(RENEW_FLOOR_MS - 1);
     expect(renew).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1);
     expect(renew).toHaveBeenCalledTimes(2);
-    vi.advanceTimersByTime(10 * 60 * 1000);
-    expect(renew.mock.calls.length).toBeLessThanOrEqual(12);
   });
 
   it("should never wait longer than the token lives when the client clock runs slow", () => {

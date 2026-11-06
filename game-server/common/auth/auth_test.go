@@ -94,6 +94,18 @@ func TestNewValidator(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// FS-ZPX58 round 2: HS256 only, as auth-service mints.
+			name: "HS512 is refused",
+			token: func() string {
+				tok, err := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+					"sub": memberID.String(), "tokenType": "access", "role": "player",
+				}).SignedString([]byte(testSecret))
+				require.NoError(t, err)
+				return tok
+			}(),
+			wantErr: true,
+		},
+		{
 			name: "no token type is refused",
 			token: sign(t, jwt.MapClaims{
 				"sub": memberID.String(), "role": "player",
