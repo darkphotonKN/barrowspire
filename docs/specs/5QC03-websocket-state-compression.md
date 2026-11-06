@@ -76,9 +76,33 @@ maps, party in the most crowded room, 30 consecutive ticks, 600 frames.
 - **B. App-level streaming deflate.** One persistent `flate.Writer` per connection on the
   server, `Flush` per message, sent as **binary** frames. On the client, one persistent inflater
   per socket: browser `DecompressionStream('deflate-raw')` or a library such as pako.
-  **Still to verify:** browser support, and whether `DecompressionStream` yields each message's
-  output after a sync flush without closing the stream (cross-message streaming). Client needs
-  `binaryType = 'arraybuffer'`.
+  Client needs `binaryType = 'arraybuffer'`. **Still to verify in a spike:** that one long-lived
+  `DecompressionStream` yields each message's output after a sync flush without closing the
+  stream (cross-message streaming in practice).
+  **Browser support (researched 2026-11-06):**
+  - `DecompressionStream('deflate-raw')` has been **Baseline widely available since May 2023**
+    (MDN). Per caniuse's mirror of MDN data, `deflate-raw` first shipped in **Chrome/Edge 103,
+    Firefox 113, Safari 16.4**.
+  - Go's `compress/flate` emits **raw DEFLATE**, which is the format `deflate-raw` expects.
+  - Sources:
+    <https://developer.mozilla.org/en-US/docs/Web/API/DecompressionStream/DecompressionStream>,
+    <https://caniuse.com/mdn-api_decompressionstream_decompressionstream_deflate-raw>.
+  **Client design notes (researched 2026-11-06, not decided):**
+  - **One persistent `DecompressionStream` per connection.** Write each binary frame into it in
+    arrival order.
+  - **Output chunks don't line up with message boundaries**, so each JSON message ends with a
+    trailing `\n` and the client splits on `\n`. A bare `\n` never appears inside a message
+    because Go's `json.Marshal` escapes newlines in strings and compact output has none.
+    (Aside, mine: gorilla's `WriteJSON` uses `json.Encoder.Encode`, which already appends a
+    `\n`. Check that a replacement writer keeps it. A multi-byte UTF-8 character can also be split
+    across output chunks, so decode with `TextDecoder` in `{stream: true}` mode.)
+  - The server calls **`Flush()` after each message** (sync flush), so each message's bytes can
+    be fully inflated without waiting for the next one.
+  - **On reconnect, create a new stream and a new writer.**
+  - **A decode error means desync:** disconnect, then reconnect fresh. This is a proposed answer to
+    the desync open question below.
+  - Compression is **lossless** (the same JSON comes back) and is **not encryption**.
+    Confidentiality comes from wss/TLS.
   Hard constraints:
   - **Compress at the actual socket write**, in handler.go's writer goroutine
     (`internal/gameserver/handler.go:439`), never upstream of the queue. Outbound messages are
