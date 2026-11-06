@@ -56,6 +56,7 @@ server state and sends intents. ✅
 - [ ] Monsters with level and elite nameplates → FS-77AB6
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [x] Floor transitions → FS-F6F88
+- [ ] Floor layout from the floor map → FS-KE075
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
@@ -111,6 +112,7 @@ server state and sends intents. ✅
 - [x] Indoor blackout → FS-9PN7X
 - [x] Per-floor variation of the run look → FS-8RBQY
 - [x] Pre-rendered stairs → FS-8RBQY
+- [ ] Room-and-corridor floor look → FS-KE075
 - [ ] One countdown style across the canvas → FS-B3NDZ
 - [ ] Shimmers: granted and invoked spell-landed glitter → FS-KZC92
 - [ ] High-density canvas rendering → FS-ZAJMH

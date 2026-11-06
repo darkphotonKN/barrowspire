@@ -217,6 +217,36 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   (`ChestRestockDelay`; 5 minutes in the Forest), so its next opening rolls afresh. What a player
   already took is theirs. Timed from the first open, not from the last item taken.
 
+### Dungeon floors and the floor map (FS-KE075, ADR-0060, ADR-0061, ADR-0062)
+
+- **Cell** — one square of a generated floor's grid, 80 px a side (`levelgen`). A cell is
+  **walkable** or not. Not the movement system's spatial-hash cell (40 px), which is unrelated.
+- **Dungeon floor** — a run floor built as rooms and corridors on a cell grid (floor 1 today).
+  The other run floors are built by the building generator and have no regions.
+- **Region** — one named part of a dungeon floor's walkable cells: a **room** or a **corridor
+  segment**. Every walkable cell belongs to exactly one region. Regions have ids, carried on the
+  floor map; the client's fog and minimap are built on them.
+- **Room** — a rectangular region carved as a chamber, from a 4×4-cell crypt to a 10×8-cell hall.
+  In game-service the word means only this; the walls of floors 2–3 make **buildings**.
+- **Corridor segment** — a region of corridor cells: corridors are cut into segments so that a
+  long corridor is not one region.
+- **Doorway** — a walkable cell of a room that touches a corridor cell. Always open: a dungeon
+  floor has no door entities (v1).
+- **Shell wall** — a dungeon floor's wall: the non-walkable cells next to a walkable one (diagonals
+  included), merged into axis-aligned rects. Rock deeper than the shell is **void**: no entity, no
+  collision, never reached.
+- **Room role** — what a room is for on its floor: **start** (the party's spawn), **switch**,
+  **escape door**, **stairs**, **treasure** (a chest and an elite guard), or none. Server-only:
+  never on the wire.
+- **Floor map** — the static description of the current floor sent to a client once (`floor_map`):
+  size, cell size, regions (dungeon floors only) and wall rects. Sent on run entry, floor change,
+  reconnect and on request. Never per tick.
+- **Interest** — the per-recipient cut of a snapshot: on a dungeon floor, monsters, drop piles and
+  containers farther than the **interest radius** (1600 px) from the recipient are left out. Party
+  members and the floor's fixed interactables are always sent. Not anti-cheat (ADR-0060).
+- **Path** — the cell-by-cell route a monster follows on a dungeon floor (A*, ADR-0062). A
+  monster's **repath** is its search for a new path.
+
 ### Field combat (FS-X2F2H)
 
 - **Kill credit** — in a field world, the XP and the loot roll of a kill belong to the player who

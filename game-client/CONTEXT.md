@@ -291,6 +291,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Room**: in the tower theme, the space enclosed by one group of server walls sharing a
   `house_id`. The same server thing the exterior theme draws as a **house** (and game-service
   calls a building). One entity, three names by layer; the screen word follows the world theme.
+  On a **dungeon floor** (one whose floor map carries regions, FS-KE075) a room is instead a
+  **region** of kind `room` from the floor map: no `house_id`, no building exterior, no roof or
+  stone cap, no indoor blackout. Say *dungeon room* where either could be meant.
+- **Floor map**: the static layout of the current run floor, sent once by the server
+  (`floor_map`, FS-KE075, ADR-0060): size, cell size, regions and walls. The scene builds the floor
+  from it; per-tick snapshots no longer carry walls in a run.
+- **Region**: a room or a corridor segment of a dungeon floor, by id, as cell rects on the floor
+  map. Every walkable cell is in exactly one. The unit of fog and of the minimap.
+- **Void**: the rock of a dungeon floor outside every region and its shell walls. Drawn as the
+  canvas's darkest ink; nothing stands in it.
 - **Partition wall**: a server wall as the tower theme draws it: masonry, cut into wall pieces
   with the same geometry and cut-away rule as a house wall. It is a server wall, with collision.
 - **Perimeter wall**: the tower's outer wall, drawn by the client alone around the outside of the
