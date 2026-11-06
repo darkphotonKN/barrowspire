@@ -1079,7 +1079,7 @@ radius `10–12`, rises in from below (`.enter-from-below`) over a fading scrim;
 trap focus; `Esc` closes.
 
 **Feedback** — *inline:* error → oxblood tint, copy in `--color-danger-text`
-(`.login-error`/`.profile-error`); success → **bone/iron, not green** (success uses the torch,
+(`.login-error`); success → **bone/iron, not green** (success uses the torch,
 per palette rules). *Toasts:* dark panel, iron border, auto-dismiss. *Empty state:* muted
 bone-grey copy + one action ("The coffers are bare — return after the next delve"). *Loading:*
 skeletons shimmer with a faint **iron** sweep, never a bright one; spinner = iron ring.

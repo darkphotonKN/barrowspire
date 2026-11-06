@@ -16,15 +16,16 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/game-service/config"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -94,12 +95,20 @@ func main() {
 	// --- observability ---
 
 	// -- default --
+	shutdownTracing, err := commontracing.Init(ctx, serviceName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer commontracing.Close(shutdownTracing)
+
+	// tick metrics go over OTLP to the local docker collector only; GKE has no
+	// collector and sets no COLLECTOR_ENDPOINT, so they stay off there
 	shutdown, err := commontelemetry.Init(ctx, commontelemetry.Config{
 		ServiceName:       serviceName,
 		ServiceVersion:    serviceVersion,
 		Environment:       environment,
 		CollectorEndpoint: collectorEndpoint,
-		Enabled:           otelEnabled,
+		Enabled:           otelEnabled && os.Getenv("COLLECTOR_ENDPOINT") != "",
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -130,7 +139,7 @@ func main() {
 	redisClient := config.GetClient()
 
 	// --- grpc ---
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+	grpcServer := grpc.NewServer(commontracing.ServerHandler(), grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)

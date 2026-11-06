@@ -22,7 +22,6 @@ type Member struct {
 	// exists to avoid.
 	AccountID                   *uuid.UUID `db:"account_id" json:"account_id,omitempty"`
 	AverageRating               float64    `db:"average_rating"`
-	AvatarURL                   *string    `db:"avatar_url" json:"avatar_url,omitempty"`
 	StripeCustomerID            *string    `db:"stripe_customer_id" json:"stripe_customer_id,omitempty"`
 	StripeSubscriptionProductID *string    `db:"stripe_subscription_product_id" json:"stripe_subscription_product_id,omitempty"`
 	StripeSubscriptionStatus    string     `db:"stripe_subscription_status" json:"stripe_subscription_status"`

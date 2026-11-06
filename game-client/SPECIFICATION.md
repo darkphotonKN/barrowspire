@@ -24,7 +24,7 @@ Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT 
 
 ## Purpose
 
-The player-facing client: account/auth, profile & avatar, leaderboard,
+The player-facing client: account/auth, profile, leaderboard,
 and the **Phaser escape-run** (queue → play → resolve). Server-authoritative; the client renders
 server state and sends intents. ✅
 
@@ -39,7 +39,6 @@ server state and sends intents. ✅
 - [x] Register without polling → FS-83TJK
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
-- [x] Upload and confirm an avatar
 - [ ] Refresh an expired access token → FS-ZPX58
 - [ ] Game socket connects with the current access token → FS-ZPX58
 - [ ] Password policy at registration → FS-V6SFK
@@ -230,7 +229,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 | `/register` | `POST /api/member/signup` → `/login` | public |
 | `/portal` | Presentational splash → `/login` | public |
 | `/game` | Auth-gated in-component; dynamically imports `PhaserGame` (`ssr:false`) | client-gated |
-| `/profile` | Show member; 3-step avatar upload | client-gated |
+| `/profile` | Show member | client-gated |
 | `/leaderboard` | Paginated (`getLeaderboard`, page 20) | public |
 
 > REVIEW: `middleware.ts` is a **no-op** (`NextResponse.next()`; comment says auth is
@@ -251,7 +250,6 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **Resolve:** server `end_game` → in-scene end overlay (`current_player === null` in state ⇒ escaped).
 - **Loadout (pre-game):** LoadoutScene, REST only (`getItemInstances`, `getLoadout`,
   `PUT /api/items/loadout`).
-- **Profile/avatar:** request presigned URL → `PUT` to S3 → confirm.
 
 ## Reference — Phaser integration
 
@@ -269,7 +267,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 ## Reference — state model (Zustand)
 
 - **`authStore`** — `{accessToken, refreshToken, memberInfo, isAuthenticated}`; **persisted** to
-  `localStorage["auth-storage"]`. `memberInfo = {id,name,email,status,average_rating,avatar_url?,…}`.
+  `localStorage["auth-storage"]`. `memberInfo = {id,name,email,status,average_rating,…}`.
 - **`gameStore`** — `{sessionId}`, in-memory; set by SocketManager on `game_found`.
   The refresh token renews the access token (FS-ZPX58): before `exp` and on a 401 / `4001`;
   only a refused renewal forces re-login.
@@ -280,7 +278,6 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
   `Authorization: Bearer <accessToken>` from localStorage; `401` → renew once and resend
   (`POST /api/member/refresh`), a refused renewal → logout + `/login` (FS-ZPX58).
 - Endpoints called: `POST /api/member/{signin,signup}`, `GET /api/member`,
-  `POST /api/member/avatar/{upload-request,confirm}`,
   `GET /api/stats/leaderboard`, `GET /api/notification/` + `PATCH /:id/read` + `/read-all`,
   `GET /api/items/{loadout,instances}` + `PUT /api/items/loadout`.
 > REVIEW: item JSON casing is split — `/api/items/instances` returns **snake_case** (proto),

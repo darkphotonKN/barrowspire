@@ -165,8 +165,7 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 - Public: `POST /api/member/signup` _(gRPC, synchronous → 201 with the member)_,
   `POST /api/member/signin`, `POST /api/member/refresh` _(renewal, FS-ZPX58)_
 - Private (JWT): `GET /api/member`, `PATCH /api/member/update-password`,
-  `PATCH /api/member/update-info`, `POST /api/member/avatar/upload-request`,
-  `POST /api/member/avatar/confirm`
+  `PATCH /api/member/update-info`
 
 **stats → `stats`**
 

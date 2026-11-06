@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/gateway:4ca1793
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/gateway:c8cd23bc
           ports: [{ containerPort: 7114, name: http }]
           envFrom:
             - configMapRef: { name: gateway }
@@ -25,8 +25,11 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gateway
+  labels: { app: gateway }
   annotations:
     cloud.google.com/backend-config: '{"default": "gateway"}'
 spec:
   selector: { app: gateway }
-  ports: [{ port: 7114, targetPort: http }]
+  ports:
+    - { name: http, port: 7114, targetPort: http }
+    - { name: metrics, port: 8193, targetPort: 8193 }

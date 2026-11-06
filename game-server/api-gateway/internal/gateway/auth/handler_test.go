@@ -30,8 +30,6 @@ type stubAuthClient struct {
 	login          *pb.LoginResponse
 	updatePassword *pb.UpdatePasswordResponse
 	validateToken  *pb.ValidateTokenResponse
-	requestAvatar  *pb.RequestAvatarUploadResponse
-	confirmAvatar  *pb.ConfirmAvatarUploadResponse
 
 	// the requests the verification routes sent, so a test can assert the
 	// member id came from the token and the body reached auth untouched
@@ -89,14 +87,6 @@ func (s *stubAuthClient) UpdateMemberPassword(context.Context, *pb.UpdatePasswor
 
 func (s *stubAuthClient) ValidateToken(context.Context, *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
 	return s.validateToken, s.err
-}
-
-func (s *stubAuthClient) RequestAvatarUpload(context.Context, *pb.RequestAvatarUploadRequest) (*pb.RequestAvatarUploadResponse, error) {
-	return s.requestAvatar, s.err
-}
-
-func (s *stubAuthClient) ConfirmAvatarUpload(context.Context, *pb.ConfirmAvatarUploadRequest) (*pb.ConfirmAvatarUploadResponse, error) {
-	return s.confirmAvatar, s.err
 }
 
 // newRouter mounts the public auth routes the way config/routes.go does. The

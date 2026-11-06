@@ -17,7 +17,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
-	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/stats-service/config"
 	_ "github.com/joho/godotenv/autoload"
@@ -30,9 +30,7 @@ var (
 	environment = commonhelpers.GetEnvString("ENVIRONMENT", "production")
 
 	// observability
-	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
-	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
-	serviceVersion    = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
+	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	serviceName = "stats"
 	grpcAddr    = commonhelpers.GetEnvString("GRPC_STATS_ADDR", "7124")
@@ -59,17 +57,11 @@ func main() {
 	commonhelpers.SetupLogger(environment)
 
 	// --- observability ---
-	shutdown, err := commontelemetry.Init(ctx, commontelemetry.Config{
-		ServiceName:       serviceName,
-		ServiceVersion:    serviceVersion,
-		Environment:       environment,
-		CollectorEndpoint: collectorEndpoint,
-		Enabled:           otelEnabled,
-	})
+	shutdownTracing, err := commontracing.Init(ctx, serviceName)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer shutdown(ctx)
+	defer commontracing.Close(shutdownTracing)
 
 	// --- database setup ---
 	db := config.InitDB()

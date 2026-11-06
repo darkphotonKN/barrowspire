@@ -8,6 +8,10 @@ import type { ClientGameState, EquipmentState } from "@/types/gameState";
 import { RUN_ACTIONS } from "@/scenes/runActions";
 import { hudBars } from "./resources";
 
+/** The cell's width, and its gap from the resource bars it stands right of (R24). */
+export const POTION_CELL_W = 72;
+export const POTION_CELL_GAP = 6;
+
 /** The slots a potion is drunk from, in the order the server tries them (R5). */
 const CONSUMABLE_SLOTS = [
   "consumable_1",

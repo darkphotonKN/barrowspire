@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log"
 	"log/slog"
 	"net"
@@ -9,6 +11,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/payment"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/payment-service/config"
@@ -16,7 +19,6 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/stripe/stripe-go/v82"
-	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -34,6 +36,13 @@ var (
 )
 
 func main() {
+	// --- tracing ---
+	shutdownTracing, tracingErr := commontracing.Init(context.Background(), "payment")
+	if tracingErr != nil {
+		log.Fatal(tracingErr)
+	}
+	defer commontracing.Close(shutdownTracing)
+
 	// --- stripe setup ---
 	if stripeSecretKey == "" {
 		log.Fatal("STRIPE_SECRET_KEY is required")
@@ -52,7 +61,7 @@ func main() {
 	defer db.Close()
 
 	// --- grpc ---
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+	grpcServer := grpc.NewServer(commontracing.ServerHandler(), grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {

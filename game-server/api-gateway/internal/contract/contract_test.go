@@ -163,3 +163,28 @@ func TestRegisterOperations_ExposeNoPaymentPath(t *testing.T) {
 		assert.NotContains(t, path, "/api/payment/", "payment operation %s is still exposed", path)
 	}
 }
+
+// FS-TVCZQ §Requirements 11-13: no avatar path, and no avatar_url on a schema
+// that used to carry one. Read from the published document rather than a stubbed
+// response, so it outlives the proto fields I-TVCZQ-3 and I-TVCZQ-4 remove.
+func TestRegisterOperations_ExposeNoAvatarSurface(t *testing.T) {
+	api := contract.New(gin.New())
+	contract.RegisterOperations(api, contract.Deps{})
+
+	for path := range api.OpenAPI().Paths {
+		assert.NotContains(t, path, "/api/member/avatar/", "avatar operation %s is still exposed", path)
+	}
+
+	schemas := api.OpenAPI().Components.Schemas.Map()
+	for _, name := range []string{"Member", "PlayerRankingStats"} {
+		schema, ok := schemas[name]
+		require.True(t, ok, "schema %s must still be published", name)
+		assert.NotContains(t, schema.Properties, "avatar_url", "%s still publishes avatar_url", name)
+	}
+	for _, name := range []string{
+		"AvatarUploadResult", "AvatarUploadEnvelope", "ConfirmAvatarEnvelope",
+		"RequestAvatarUploadBody", "ConfirmAvatarUploadBody",
+	} {
+		assert.NotContains(t, schemas, name, "schema %s is still published", name)
+	}
+}

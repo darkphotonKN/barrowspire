@@ -11,6 +11,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	_ "github.com/joho/godotenv/autoload"
 )
@@ -19,14 +20,16 @@ var (
 	environment = commonhelpers.GetEnvString("ENVIRONMENT", "production")
 
 	// observability
-	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
-	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
-	serviceVersion    = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
+	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	serviceName = "api-gateway"
 
 	// http
 	httpAddr = commonhelpers.GetEnvString("PORT", "7114")
+
+	// prometheus scrape port, off the public router. Unique per service so local
+	// runs on one host never clash; the same port is used in k8s.
+	metricsPort = commonhelpers.GetEnvString("METRICS_PORT", "8193")
 
 	// browser origins allowed by CORS, comma separated (the frontend URLs)
 	corsOrigins = commonhelpers.GetEnvString("CORS_ORIGINS", "http://localhost:3938,http://localhost:3000")
@@ -62,19 +65,13 @@ func main() {
 	commonhelpers.SetupLogger(environment)
 
 	// --- observability ---
-	shutdown, err := commontelemetry.Init(ctx, commontelemetry.Config{
-		ServiceName:       serviceName,
-		ServiceVersion:    serviceVersion,
-		Environment:       environment,
-		CollectorEndpoint: collectorEndpoint,
-		Enabled:           otelEnabled,
-	})
-
+	shutdownTracing, err := commontracing.Init(ctx, serviceName)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer commontracing.Close(shutdownTracing)
+	commontelemetry.ServeMetrics(metricsPort)
 
-	defer shutdown(ctx)
 	// --- database setup removed - api gateway is stateless ---
 
 	// --- message broker - rabbit mq ---

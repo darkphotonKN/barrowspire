@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
+	pbstats "github.com/darkphotonKN/barrowspire-server/common/api/proto/stats"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commontypes "github.com/darkphotonKN/barrowspire-server/common/types"
@@ -48,12 +49,6 @@ func (m *mockRepo) GetPlayerMatchStatsTx(ctx context.Context, tx *sqlx.Tx, membe
 
 func (m *mockRepo) GetPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*PlayerRankingStats, error) {
 	return nil, nil
-}
-
-func (m *mockRepo) UpsertPlayerRankingStats(ctx context.Context, params *UpdatePlayerRankingsParams) (*PlayerRankingStats, error) {
-	m.upsertPlayerRankingsCalled = true
-	m.upsertPlayerRankingParams = params
-	return nil, m.upsertErr
 }
 
 func (m *mockRepo) GetPlayerRankings(ctx context.Context, params *GetPlayerRankings) ([]*PlayerRankingStats, error) {
@@ -120,4 +115,13 @@ func TestMatchEndedPlayerWrites_BadMemberID_UUIDCouldNotBeParsed(t *testing.T) {
 			assert.ErrorIs(t, err, commonconstants.ErrUUIDCouldNotBeParsed)
 		})
 	}
+}
+
+// FS-TVCZQ §Requirements 26: the retired field number can't be reused with a
+// different meaning by a pod or client still on the old schema.
+func TestStatsProto_PlayerRankingStatsField6Reserved(t *testing.T) {
+	message := pbstats.File_api_proto_stats_stats_proto.Messages().ByName("PlayerRankingStats")
+
+	assert.Nil(t, message.Fields().ByNumber(6))
+	assert.True(t, message.ReservedRanges().Has(6))
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log/slog"
 	"net"
 	"os"
@@ -73,6 +74,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *a
 	// Create gRPC server
 	validate := commonauth.NewValidator([]byte(os.Getenv("JWT_SECRET")))
 	grpcServer := grpc.NewServer(
+		commontracing.ServerHandler(),
 		grpc.ChainUnaryInterceptor(
 			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),

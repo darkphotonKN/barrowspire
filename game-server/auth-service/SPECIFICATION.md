@@ -12,9 +12,8 @@ file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architecture context:
 
 ## Assumptions (verify these first)
 
-- auth-service owns the **member identity & authentication** bounded context, plus **avatar
-  uploads**. It is the service behind the gateway's `/api/member` routes (`AUTH_ADDR` in its callers).
-- It exposes two gRPC services (`AuthService`, `UploadService`), consumes one AMQP command
+- auth-service owns the **member identity & authentication** bounded context. It is the service behind the gateway's `/api/member` routes (`AUTH_ADDR` in its callers).
+- It exposes one gRPC service (`AuthService`), consumes one AMQP command
   (`member.create`), and publishes member events via a transactional outbox.
 - A large amount of wired-but-unused infrastructure exists (Redis cache, refresh-token
   minting, seed paths, several structs). These are called out as `> REVIEW:` rather than
@@ -23,8 +22,8 @@ file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architecture context:
 ## Purpose
 
 auth-service is the **identity & auth authority**: it creates members, authenticates them
-(password + JWT), serves member profile reads/updates, tracks Stripe linkage on the member
-record, and manages **avatar uploads** to S3. It publishes a `member.signedup` event so
+(password + JWT), serves member profile reads/updates, and tracks Stripe linkage on the member
+record. It publishes a `member.signedup` event so
 downstream services (notification, analytics) learn about new members. ✅ DONE
 
 ## Domain terms
@@ -38,12 +37,9 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
     > if ever written back. Works today only because sqlx coerces. Confirm the intended type.
   - `role` VARCHAR(50) NOT NULL DEFAULT `'player'` (player | admin).
   - `average_rating` DECIMAL(2,1) DEFAULT 0, CHECK 0–5.
-  - `avatar_url` TEXT nullable.
   - `stripe_customer_id` TEXT nullable, partial UNIQUE where not null;
     `stripe_subscription_product_id` nullable; `stripe_subscription_status` TEXT NOT NULL DEFAULT ''.
   - `created_at` / `updated_at` TIMESTAMPTZ, `updated_at` auto-set by trigger.
-- **avatar_uploads** — upload-tracking rows; status FSM `pending → uploaded → synced`, or
-  `→ failed`. FK `member_id` ON DELETE CASCADE.
 - **outbox** — transactional event outbox (`id, routing_key, exchange, payload BYTEA,
   created_at, published_at`); `published_at IS NULL` = pending.
 - **player_profile** — level/xp row, FK to member (exists in schema; **not** exposed by any RPC here).
@@ -74,12 +70,6 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [x] Mint account and role claims into the access token → FS-9KW9F
 - [ ] Mint an email-verified claim into the access token → FS-V6SFK
 - [ ] Renew an access token from a refresh token → FS-ZPX58
-
-### Avatars
-
-- [x] Request a presigned avatar upload
-- [x] Confirm an avatar upload and publish `profile.updated`
-- [ ] Authorize confirmation against the requesting member
 
 ### Billing linkage
 
@@ -137,21 +127,6 @@ gRPC port default **7116** (`GRPC_AUTH_ADDR`); callers reach it at `AUTH_ADDR`. 
 > REVIEW: `CreateDefaultMembers` (seed: `communitybuildsmoderator@gmail.com` / hardcoded
 > password) exists on the service interface but is **not wired into main.go** — dead seed path.
 
-## gRPC — UploadService contract (avatars)
-
-Registered **only if S3 init succeeds**; otherwise the whole service is absent and clients get
-"unimplemented". ✅ DONE
-- **RequestAvatarUpload** (`{MemberId,Filename}` → `{UploadId,PresignedUrl,S3Key,ExpiresAt,
-  MaxFileSize=5MB,AllowedContentTypes}`) — validate extension (jpg/jpeg/png/webp); build key
-  `avatars/{memberId}/{ts}_{uuid8}{ext}`; presign an S3 **PUT** (5-min expiry); insert
-  `avatar_uploads` row status `pending`.
-- **ConfirmAvatarUpload** (`{MemberId,UploadId}` → `{Success,Message,AvatarUrl}`) — load upload;
-  require status `pending`; `HeadObject` to confirm the object exists and is ≤5MB (else mark
-  `failed`); in a tx set member `avatar_url` + upload status `synced`; then publish
-  `profile.updated`. Avatar URL = `{CDN_URL}/{key}` if set, else `https://{bucket}.s3.amazonaws.com/{key}`.
-  > REVIEW: authorization uses the **upload row's** `member_id`, not the request's `MemberId`
-  > (which is only logged) — anyone who knows an `UploadId` can confirm it.
-
 ## Messaging
 
 **AMQP consumer** ✅ — durable topic exchange `auth.events`, durable queue `auth.signup`, bound
@@ -167,10 +142,6 @@ result is discarded (no reply/correlation).
   written to the **outbox** inside CreateMember's tx; drained by the outbox worker (5s cycle,
   batch 20).
   > REVIEW: `SignedUpAt` is always `""` (`// TODO: update to legit date`) — the event carries no timestamp.
-- **profile.updated** (`MemberProfileUpdated{MemberId,Username,AvatarUrl}`) → `auth.events`,
-  published **directly** (not via outbox) after ConfirmAvatarUpload commits.
-  > REVIEW: publish error is discarded and it's post-commit/non-transactional, so a broker blip
-  > loses the event — inconsistent with the outbox guarantee used for signup.
 - Constants `member.signedin`, `member.login`, `PasswordResetEvent` are defined but **never
   published** (Login/UpdatePassword emit nothing).
 
@@ -191,8 +162,6 @@ result is discarded (no reply/correlation).
 - **Redis** — connected and a cache injected into the member service…
   > REVIEW: …but the cache is **never read or written** anywhere. Whole Redis subsystem is
   > currently dead infra (no signup-polling/check-email caching implemented). Decide: wire it or remove it.
-- **S3** — presigned-PUT avatar flow; bucket/`CDN_URL` from env; if init fails the service runs
-  but UploadService is silently unregistered.
 
 ## Invariants (observed)
 
@@ -201,15 +170,13 @@ result is discarded (no reply/correlation).
 - CreateMember inserts only (id, name, email, password); status/role/rating come from DB defaults.
 - Reads blank the password hash except the internal auth lookups (`GetByIdWithPassword`,
   `GetMemberByEmail`).
-- avatar upload status ∈ {pending, uploaded, synced, failed}.
 
 ## Suspected issues / open questions (draft — confirm before trusting)
 
 Security-relevant, flagged for a real review:
 - ~~Refresh tokens accepted as access tokens~~ — closed by FS-ZPX58 L1.
-- ConfirmAvatarUpload doesn't verify the requester owns the `UploadId`.
 - Login email enumeration; CheckEmailExists reports "available" on DB errors.
-- **Secrets committed to `.env`** (`JWT_SECRET`, AWS keys); migration seeds a default admin
+- **Secrets committed to `.env`** (`JWT_SECRET`); migration seeds a default admin
   `admin@barrowspire.com` with bcrypt of `123456`; seed constant hardcodes a password.
 - AMQP consumer acks on handler failure → silent message loss.
 - A committed 43MB `server` binary and `.air.toml` sit in the repo root (likely accidental).
@@ -217,5 +184,4 @@ Security-relevant, flagged for a real review:
 Behavioral open questions:
 - Is the Redis cache meant to be used (and for what), or removed?
 - Should signup remain double-reachable (gRPC + AMQP), or one canonical path?
-- Should `profile.updated` move to the outbox for the same delivery guarantee as `member.signedup`?
 - Is the `Status` field meant to be int or string end-to-end?

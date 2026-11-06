@@ -17,9 +17,9 @@ import (
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
-	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	bstemporal "github.com/darkphotonKN/barrowspire-server/common/temporal"
 	"github.com/darkphotonKN/barrowspire-server/common/temporal/smoke"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/config"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
@@ -32,9 +32,7 @@ import (
 
 var (
 	// observability
-	environment       = commonhelpers.GetEnvString("ENVIRONMENT", "development")
-	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
-	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
+	environment = commonhelpers.GetEnvString("ENVIRONMENT", "development")
 
 	serviceName    = "items"
 	grpcAddr       = commonhelpers.GetEnvString("GRPC_ITEMS_ADDR", "7126")
@@ -54,17 +52,11 @@ func main() {
 	ctx := context.Background()
 
 	// --- observability ---
-	shutdown, err := commontelemetry.Init(ctx, commontelemetry.Config{
-		ServiceName:       serviceName,
-		ServiceVersion:    serviceVersion,
-		Environment:       environment,
-		CollectorEndpoint: collectorEndpoint,
-		Enabled:           otelEnabled,
-	})
+	shutdownTracing, err := commontracing.Init(ctx, serviceName)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer shutdown(ctx)
+	defer commontracing.Close(shutdownTracing)
 
 	// test
 	// repo := items.NewRepository(db)

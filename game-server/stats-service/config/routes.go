@@ -2,17 +2,18 @@ package config
 
 import (
 	"fmt"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log/slog"
 	"net"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/stats"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
+	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cache"
 	"github.com/darkphotonKN/barrowspire-server/stats-service/internal/stats"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
-	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	"google.golang.org/grpc"
 )
 
@@ -55,7 +56,7 @@ func SetupServices(db *sqlx.DB, amqpChannel, republishCh *amqp.Channel) (*grpc.S
 	}
 
 	// create gRPC server
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+	grpcServer := grpc.NewServer(commontracing.ServerHandler(), grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
 
 	// Register stats service with gRPC server
 	pb.RegisterStatsServiceServer(grpcServer, handler)

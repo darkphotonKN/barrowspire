@@ -1,19 +1,36 @@
 /**
- * The player's Health bar and class resource bar at the bottom left of a run (FS-8AY7S req
- * 20–25). The scene hands it every state's bars (`hudBars` in `./resources`); an empty list takes
- * the panel down, so it is up only while the player is in the delve.
+ * The player's Health bar and class resource bar at the top left of a run or a field (FS-8AY7S
+ * req 20–25). The scene hands it every state's bars (`hudBars` in `./resources`); an empty list
+ * takes the panel down, so it is up only while the player is in the delve.
  *
  * Neutral HUD, as `ProgressHud`: vellum labels in the body serif (the blackletter bound) on the
  * HUD panel, a brass frame, each bar on a dark track in a brass rim. Parry charges are pips. It
- * sits at the HUD's depth and grows upward from its bottom edge, clear of the leave button in the
- * bottom-right corner and of everything along the top.
+ * sits at the HUD's depth and grows down from its top edge, on the left-edge column the level/XP
+ * bar and the party frames share.
  */
 
 import type Phaser from "phaser";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
 import type { HudBar, HudChannel } from "./resources";
 
-export const RESOURCE_HUD_W = 220;
+/** One column with the level/XP bar and the party frames, so it clears the T panel. */
+export const RESOURCE_HUD_W = PROGRESS_HUD_W;
+/** The gap kept under the run's XP bar. */
+const UNDER_XP_BAR = 6;
+/**
+ * Where each scene stands the panel, its top-left corner: under the XP bar in a run, in the corner
+ * of a field, which has none. A hub has no bars.
+ */
+export const RESOURCE_HUD_AT: Readonly<
+  Record<"run" | "field", { x: number; y: number }>
+> = {
+  run: {
+    x: PROGRESS_HUD_AT.run.x,
+    y: PROGRESS_HUD_AT.run.y + PROGRESS_HUD_H + UNDER_XP_BAR,
+  },
+  field: { x: 10, y: 16 },
+};
 const HUD_DEPTH = 1000;
 const PAD = 10;
 /** Panel padding above the first row and below the last. */
@@ -33,7 +50,7 @@ export const HUD_BAR_FILL: Readonly<Record<HudChannel, number>> = {
   unknown: palette.hudResourceOther,
 };
 
-/** The panel's height for `rows` bars: what the chat window stacks on (FS-WJGFJ R18). */
+/** The panel's height for `rows` bars: what the potion cell and the party frames measure from. */
 export function resourceHudHeight(rows: number): number {
   return rows * ROW_H + PAD_Y * 2;
 }
@@ -43,23 +60,13 @@ export class ResourceHud {
   private labels: Phaser.GameObjects.Text[] = [];
   /** What the panel last drew, so the states that change nothing redraw nothing. */
   private drawn?: string;
-  /** The panel's top edge as last drawn. */
-  private top = 0;
 
-  /** `bottom` is the screen y of the panel's bottom edge. */
+  /** `top` is the screen y of the panel's top edge. */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly x: number,
-    private readonly bottom: number,
+    private readonly top: number,
   ) {}
-
-  /**
-   * The screen y of the panel's top edge while it is up, or of its bottom edge while it is down:
-   * where whatever stacks above it (the chat window, FS-WJGFJ R18) sets its own bottom.
-   */
-  topEdge(): number {
-    return this.panel ? this.top : this.bottom;
-  }
 
   show(bars: HudBar[]): void {
     const key = JSON.stringify(bars);
@@ -70,8 +77,7 @@ export class ResourceHud {
       return;
     }
 
-    const top = this.bottom - resourceHudHeight(bars.length);
-    this.top = top;
+    const { top } = this;
     const g = (this.panel ??= this.scene.add
       .graphics()
       .setScrollFactor(0)

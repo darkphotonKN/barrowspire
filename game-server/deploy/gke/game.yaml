@@ -1,10 +1,13 @@
 apiVersion: v1
 kind: Service
-metadata: { name: game-headless }
+# the only game Service labelled app: game, so Prometheus scrapes each pod once
+metadata: { name: game-headless, labels: { app: game } }
 spec:
   clusterIP: None
   selector: { app: game }
-  ports: [{ name: ws, port: 5668 }]
+  ports:
+    - { name: ws, port: 5668 }
+    - { name: metrics, port: 8195, targetPort: 8195 }
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -19,7 +22,7 @@ spec:
       terminationGracePeriodSeconds: 330 # live games get up to 5m30s to finish after SIGTERM
       containers:
         - name: game
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/game:a316ee6
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/game:61e4da18
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 5668, name: ws }

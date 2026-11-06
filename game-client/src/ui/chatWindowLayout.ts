@@ -8,7 +8,7 @@ import type { ChatChannel, ChatEntry, ChatLine } from "@/stores/chatStore";
 import { palette } from "@/utils/canvasPalette";
 import { CHAT_SHOWN_CHANNELS } from "./chatInput";
 
-/** The window's left edge and its gap from the canvas bottom, as the ResourceHud's (R18). */
+/** The window's left edge and its gap from the canvas bottom, in every world (R18). */
 export const CHAT_WINDOW_X = 10;
 export const CHAT_WINDOW_MARGIN = 16;
 /** The window's width (R19). */
@@ -79,10 +79,10 @@ export interface ChatWindowFrame {
 }
 
 /**
- * Where everything sits for a window whose left edge is `x` and whose bottom edge is `bottom`:
- * directly above the ResourceHud when there is one, on the canvas bottom otherwise (R18). The
- * filter row, the message area and the input stack top to bottom inside the panel's carved frame
- * (R19). Folded, the window is its input row alone in the frame, on the same bottom edge.
+ * Where everything sits for a window whose left edge is `x` and whose bottom edge is `bottom`,
+ * the canvas bottom margin in every world (R18). The filter row, the message area and the input
+ * stack top to bottom inside the panel's carved frame (R19). Folded, the window is its input row
+ * alone in the frame, on the same bottom edge.
  */
 export function chatWindowFrame(
   x: number,

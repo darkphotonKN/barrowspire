@@ -48,7 +48,7 @@ import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
 import { apiClient } from "@/utils/api";
-import { ResourceHud } from "@/ui/ResourceHud";
+import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
@@ -69,7 +69,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
-import { anchorAt, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
@@ -83,7 +83,7 @@ import { anchorAt, boundCamera, followWith, relayoutOn, viewport } from "@/rende
  * (`EquipmentHud` on the gear and bag overlay, FS-HRH2J), on the run's keys: I or B opens it,
  * E over it equips, and a full bag refuses pickups and unequips with the field's notice.
  * The class kit is the run's too (FS-8AY7S, FS-JTNPR, FS-MAMHR): the Health and class resource
- * bars bottom-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
+ * bars top-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
  * released while it is drawn) and the Mercenary's cut, riposte and parry, all through `fieldCombat`.
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
@@ -110,8 +110,7 @@ const NOTICE_MS = 3200;
 const FALLEN_DEPTH = 1000;
 /** The fallen line's size, as it has always been. */
 const FALLEN_LINE_PX = 18;
-/** The run's HUD corners: the resource bars bottom-left, the ability card bottom-right (FS-8AY7S req 20, 29). */
-const RESOURCE_HUD_X = 10;
+/** The ability card's corner, bottom-right (FS-8AY7S req 29); the resource bars stand at `RESOURCE_HUD_AT`. */
 const HUD_MARGIN = 16;
 
 /** What the entrance gate is called on the ground, for a player to walk to. */
@@ -615,10 +614,8 @@ export class FieldScene extends Phaser.Scene {
    * no leave button to share the card's corner.
    */
   private showClassHud(state: ClientGameState): void {
-    const bars = anchorAt({ anchor: "bottom-left", dx: RESOURCE_HUD_X, dy: -HUD_MARGIN });
-    this.resourceHud ??= new ResourceHud(this, bars.x, bars.y);
+    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_AT.field.x, RESOURCE_HUD_AT.field.y);
     this.resourceHud.show(hudBars(state));
-    this.chatWindow?.setBottom(this.resourceHud.topEdge());
     this.showAbilityCard();
   }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log"
 	"log/slog"
 	"net"
@@ -51,6 +52,13 @@ var (
 )
 
 func main() {
+	// --- tracing ---
+	shutdownTracing, tracingErr := commontracing.Init(context.Background(), "marketplace")
+	if tracingErr != nil {
+		log.Fatal(tracingErr)
+	}
+	defer commontracing.Close(shutdownTracing)
+
 	// --- root context ---
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -167,6 +175,7 @@ func main() {
 
 	// -- server --
 	grpcServer := grpc.NewServer(
+		commontracing.ServerHandler(),
 		grpc.ChainUnaryInterceptor(
 			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),

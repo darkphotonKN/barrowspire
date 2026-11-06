@@ -35,8 +35,6 @@ func RegisterOperations(api huma.API, h *Handler,
 	registerGetMember(api, h, protect)
 	registerUpdatePassword(api, h, protect)
 	registerUpdateInfo(api, h, protect)
-	registerRequestAvatarUpload(api, h, protect)
-	registerConfirmAvatarUpload(api, h, protect)
 	registerVerifyEmail(api, h, protect)
 	registerResendVerification(api, h, protect)
 	registerChangeEmail(api, h, protect)
@@ -324,103 +322,6 @@ func registerUpdateInfo(api huma.API, h *Handler,
 	}))
 }
 
-func registerRequestAvatarUpload(api huma.API, h *Handler,
-	protect func(huma.Context, func(huma.Context)),
-) {
-	type input struct {
-		Body RequestAvatarUploadBody
-	}
-	type output struct{ Body avatarUploadEnvelope }
-
-	huma.Register(api, huma.Operation{
-		OperationID: "request-avatar-upload",
-		Description: "Returns a presigned S3 URL to PUT an avatar to, plus the constraints the upload must satisfy.",
-		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusInternalServerError},
-		Middlewares: huma.Middlewares{protect},
-		Security:    securedOp,
-		Method:      http.MethodPost,
-		Path:        "/api/member/avatar/upload-request",
-		Summary:     "Get a presigned URL for an avatar upload",
-		Tags:        []string{"member"},
-	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		caller, ok := commonauth.IdentityFromCtx(ctx)
-		if !ok {
-			return nil, unauthenticated()
-		}
-		id := caller.MemberID.String()
-
-		res, err := h.client.RequestAvatarUpload(ctx, &pb.RequestAvatarUploadRequest{
-			MemberId: id,
-			Filename: in.Body.Filename,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		return &output{Body: avatarUploadEnvelope{
-			StatusCode: http.StatusOK,
-			Message:    "Avatar upload request successful",
-			Result: &AvatarUploadResult{
-				UploadID:            res.UploadId,
-				PresignedURL:        res.PresignedUrl,
-				S3Key:               res.S3Key,
-				ExpiresAt:           timestampFromProto(res.ExpiresAt),
-				MaxFileSize:         res.MaxFileSize,
-				AllowedContentTypes: res.AllowedContentTypes,
-			},
-		}}, nil
-	}))
-}
-
-func registerConfirmAvatarUpload(api huma.API, h *Handler,
-	protect func(huma.Context, func(huma.Context)),
-) {
-	type input struct {
-		Body ConfirmAvatarUploadBody
-	}
-	type output struct{ Body confirmAvatarEnvelope }
-
-	huma.Register(api, huma.Operation{
-		OperationID: "confirm-avatar-upload",
-		Description: "Confirms a previously requested avatar upload completed, and returns the stored avatar URL.",
-		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
-		Middlewares: huma.Middlewares{protect},
-		Security:    securedOp,
-		Method:      http.MethodPost,
-		Path:        "/api/member/avatar/confirm",
-		Summary:     "Confirm an avatar upload completed",
-		Tags:        []string{"member"},
-	}, guard(func(ctx context.Context, in *input) (*output, error) {
-		caller, ok := commonauth.IdentityFromCtx(ctx)
-		if !ok {
-			return nil, unauthenticated()
-		}
-		id := caller.MemberID.String()
-
-		res, err := h.client.ConfirmAvatarUpload(ctx, &pb.ConfirmAvatarUploadRequest{
-			MemberId: id,
-			UploadId: in.Body.UploadID,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		if !res.Success {
-			// Transcribed from the legacy handler: a non-success reply becomes a
-			// 400, and the downstream's own message is replaced because it is not
-			// client-safe (FS-22WKC §Requirements 9).
-			return nil, apperr.WithDetail(apperr.ErrValidation, "Avatar upload could not be confirmed")
-		}
-
-		return &output{Body: confirmAvatarEnvelope{
-			StatusCode: http.StatusOK,
-			Message:    res.Message,
-			Success:    res.Success,
-			AvatarURL:  res.AvatarUrl,
-		}}, nil
-	}))
-}
-
 // ---------------------------------------------------------------------------
 // Email verification (FS-V6SFK). New operations, so they answer bare, without
 // the statusCode/message envelope, like signup after FS-83TJK.
@@ -565,7 +466,6 @@ func memberFromProto(m *pb.Member) *Member {
 		AverageRating: m.AverageRating,
 		CreatedAt:     timestampFromProto(m.CreatedAt),
 		UpdatedAt:     timestampFromProto(m.UpdatedAt),
-		AvatarURL:     m.AvatarUrl,
 		Role:          m.Role,
 		EmailVerified: m.EmailVerified,
 	}

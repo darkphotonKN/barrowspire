@@ -191,48 +191,6 @@ class ApiClient {
     );
   }
 
-  // Request avatar upload presigned URL
-  async requestAvatarUpload(filename: string) {
-    return authed(() =>
-      client.POST("/api/member/avatar/upload-request", {
-        body: { filename },
-      }),
-    );
-  }
-
-  // Confirm avatar upload
-  async confirmAvatarUpload(uploadId: string) {
-    return authed(() =>
-      client.POST("/api/member/avatar/confirm", {
-        body: { upload_id: uploadId },
-      }),
-    );
-  }
-
-  // Upload file directly to S3.
-  //
-  // NOT a gateway call: the presigned URL points at S3, which has no OpenAPI
-  // document and is not part of this contract. Left as a raw fetch on purpose,
-  // and exempted from the lint rule for the same reason.
-  async uploadToS3(presignedUrl: string, file: File) {
-    const response = await fetch(presignedUrl, {
-      method: "PUT",
-      body: file,
-      headers: { "Content-Type": file.type },
-    });
-
-    if (!response.ok) {
-      throw new ApiError({
-        code: "UPLOAD_FAILED",
-        status: response.status,
-        detail: `S3 upload failed with status ${response.status}`,
-        errors: [],
-      });
-    }
-
-    return response;
-  }
-
   // Leaderboard is off for now (the stats service still records finished games).
   // // Get leaderboard
   // async getLeaderboard(limit: number = 50, offset: number = 0) {

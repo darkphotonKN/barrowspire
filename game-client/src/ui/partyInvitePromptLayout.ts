@@ -57,9 +57,9 @@ export const INVITE_PROMPT_H =
 /** The note's row under the buttons, when Accept is greyed (FS-NCC9J R24). */
 const NOTE_H = 16;
 /**
- * The most prompts shown at once: four stacked stay clear of the chat window on the canvas bottom
- * (the town's); where it sits higher, the floor shows fewer. A fifth waits its turn in the store
- * (its countdown running) until one above it closes.
+ * The most prompts shown at once: four stacked stay clear of the chat window on the canvas bottom;
+ * where a note makes each taller (a run), the floor shows fewer. A fifth waits its turn in the
+ * store (its countdown running) until one above it closes.
  */
 export const INVITE_PROMPT_MAX = 4;
 /** Between two stacked prompts. */
@@ -83,16 +83,15 @@ export interface InvitePromptFrame {
 export interface InvitePromptPlacement {
   canvasWidth: number;
   /**
-   * Whether the party panel is open. It stands at x 208–508 from y 56 down, across the top
+   * Whether the party panel is open. It stands at x 280–580 from y 56 down, across the top
    * centre, so while it is open the prompts step right of it rather than under it.
    */
   panelOpen: boolean;
   /** Whether each prompt carries a note row under its buttons (Accept greyed, FS-NCC9J R24). */
   note?: boolean;
   /**
-   * The screen y the stack stays above: the chat window's top edge, which climbs onto the
-   * ResourceHud in a field or a run (FS-WJGFJ R18). A prompt that would reach it waits its turn,
-   * as a fifth does; the oldest always shows.
+   * The screen y the stack stays above: the chat window's top edge in a field or a run. A prompt
+   * that would reach it waits its turn, as a fifth does; the oldest always shows.
    */
   floor?: number;
 }

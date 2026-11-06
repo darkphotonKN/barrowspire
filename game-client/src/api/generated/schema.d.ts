@@ -604,46 +604,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/member/avatar/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm an avatar upload completed
-         * @description Confirms a previously requested avatar upload completed, and returns the stored avatar URL.
-         */
-        post: operations["confirm-avatar-upload"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/member/avatar/upload-request": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get a presigned URL for an avatar upload
-         * @description Returns a presigned S3 URL to PUT an avatar to, plus the constraints the upload must satisfy.
-         */
-        post: operations["request-avatar-upload"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/member/email": {
         parameters: {
             query?: never;
@@ -971,34 +931,6 @@ export interface components {
             required_level?: number;
             updated_at?: components["schemas"]["Timestamp"];
         };
-        AvatarUploadEnvelope: {
-            /** @description Human-readable summary */
-            message: string;
-            /** @description Presigned upload details */
-            result: components["schemas"]["AvatarUploadResult"];
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-        };
-        AvatarUploadResult: {
-            /** @description Accepted content types */
-            allowed_content_types?: string[] | null;
-            /** @description Presigned URL expiry */
-            expires_at?: components["schemas"]["Timestamp"];
-            /**
-             * Format: int64
-             * @description Maximum accepted size in bytes
-             */
-            max_file_size?: number;
-            /** @description S3 URL to PUT the file to */
-            presigned_url?: string;
-            /** @description Object key */
-            s3_key?: string;
-            /** @description Correlates the request with its confirmation */
-            upload_id?: string;
-        };
         BuyoutBody: {
             /**
              * Format: int64
@@ -1071,23 +1003,6 @@ export interface components {
             itemIds: string[];
             /** Format: uuid */
             letterId: string;
-        };
-        ConfirmAvatarEnvelope: {
-            /** @description The stored avatar URL */
-            avatar_url: string;
-            /** @description Message chosen by auth-service */
-            message: string;
-            /**
-             * Format: int64
-             * @description Duplicates the HTTP status
-             */
-            statusCode: number;
-            /** @description Whether the operation succeeded */
-            success: boolean;
-        };
-        ConfirmAvatarUploadBody: {
-            /** @description The upload_id returned by the upload request */
-            upload_id: string;
         };
         ConsumableDetail: {
             /** Format: int32 */
@@ -1756,8 +1671,6 @@ export interface components {
             waitingCount: number;
         };
         Member: {
-            /** @description Avatar URL, empty when unset */
-            avatar_url?: string;
             /**
              * Format: float
              * @description Average rating
@@ -1926,8 +1839,6 @@ export interface components {
             wins?: number;
         };
         PlayerRankingStats: {
-            /** @description Avatar URL */
-            avatar_url?: string;
             /** @description Creation time */
             created_at?: components["schemas"]["Timestamp"];
             /** @description Ranking row id */
@@ -2044,10 +1955,6 @@ export interface components {
             access_token: string;
             /** @description The member, as the new access token was minted from */
             member_info: components["schemas"]["Member"];
-        };
-        RequestAvatarUploadBody: {
-            /** @description Name of the file to upload */
-            filename?: string;
         };
         ResultEnvelopeArmorDetail: {
             /** @description Human-readable summary */
@@ -4598,117 +4505,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "confirm-avatar-upload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConfirmAvatarUploadBody"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfirmAvatarEnvelope"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "request-avatar-upload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RequestAvatarUploadBody"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AvatarUploadEnvelope"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

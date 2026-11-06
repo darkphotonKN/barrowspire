@@ -1,6 +1,7 @@
 package config
 
 import (
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log/slog"
 	"net"
 	"os"
@@ -66,7 +67,7 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	consumer.Listen()
 
 	// Create gRPC server
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
+	grpcServer := grpc.NewServer(commontracing.ServerHandler(), grpc.ChainUnaryInterceptor(
 		commoninterceptor.Metrics(),
 		authenticate(commonauth.NewValidator(jwtSecret)),
 	))

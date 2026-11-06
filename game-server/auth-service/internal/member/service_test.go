@@ -227,3 +227,15 @@ func TestUpdateMemberPassword_Policy(t *testing.T) {
 		})
 	}
 }
+
+// FS-TVCZQ §Requirements 18: AuthService is the proto's only service, and
+// Member's retired field number can't be reused with a different meaning.
+func TestAuthProto_OnlyAuthService_MemberField8Reserved(t *testing.T) {
+	file := pb.File_api_proto_auth_auth_proto
+	require.Equal(t, 1, file.Services().Len())
+	assert.Equal(t, "AuthService", string(file.Services().Get(0).Name()))
+
+	message := file.Messages().ByName("Member")
+	assert.Nil(t, message.Fields().ByNumber(8))
+	assert.True(t, message.ReservedRanges().Has(8))
+}

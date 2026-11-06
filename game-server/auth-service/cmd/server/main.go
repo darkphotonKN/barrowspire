@@ -13,7 +13,6 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/config"
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
-	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/upload"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -22,12 +21,11 @@ import (
 	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
-	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -40,9 +38,7 @@ var (
 	environment = commonhelpers.GetEnvString("ENVIRONMENT", "production")
 
 	// observability
-	collectorEndpoint = commonhelpers.GetEnvString("COLLECTOR_ENDPOINT", "localhost:4430")
-	otelEnabled       = commonhelpers.GetEnvString("OTEL_ENABLED", "true") == "true"
-	serviceVersion    = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
+	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	// grpc
 	serviceName = "auth"
@@ -64,33 +60,15 @@ func main() {
 	commonhelpers.SetupLogger(environment)
 
 	// --- observability ---
-	shutdown, err := commontelemetry.Init(ctx, commontelemetry.Config{
-		ServiceName:       serviceName,
-		ServiceVersion:    serviceVersion,
-		Environment:       environment,
-		CollectorEndpoint: collectorEndpoint,
-		Enabled:           otelEnabled,
-	})
-
+	shutdownTracing, err := commontracing.Init(ctx, serviceName)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	defer shutdown(ctx)
+	defer commontracing.Close(shutdownTracing)
 
 	// --- database setup ---
 
 	db := config.InitDB()
-
-	// --- S3 setup ---
-	s3Config := config.LoadS3Config()
-	s3Client, err := config.InitS3Client(ctx, s3Config)
-	if err != nil {
-		log.Printf("Warning: S3 client initialization failed: %v", err)
-		log.Println("Avatar upload functionality will be disabled")
-		// Continue without S3 avatar uploads will not work but service runs
-		s3Client = nil
-	}
 
 	// --- grpc ---
 	// Recovery outermost so a panic below it still becomes a status rather than
@@ -100,7 +78,7 @@ func main() {
 	// codes.Unknown and land on the gateway's catch-all — a wrong password
 	// answering 500 INTERNAL_ERROR instead of 401 UNAUTHENTICATED.
 	grpcServer := grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		commontracing.ServerHandler(),
 		grpc.ChainUnaryInterceptor(
 			commoninterceptor.Metrics(),
 			commoninterceptor.Recovery(slog.Default()),
@@ -188,26 +166,6 @@ func main() {
 		log.Fatalf("Failed to set up account.created consumer: %v", err)
 	}
 	accountConsumer.Listen()
-
-	// --- upload service setup ---
-	if s3Client != nil {
-		uploadRepo := upload.NewRepository(db)
-		logger := slog.Default()
-
-		uploadService := upload.NewService(
-			uploadRepo,
-			s3Client,
-			memberService,
-			s3Config.BucketName,
-			s3Config.CDNUrl,
-			logger,
-			publishCh,
-			db,
-		)
-
-		uploadHandler := upload.NewHandler(uploadService)
-		pb.RegisterUploadServiceServer(grpcServer, uploadHandler)
-	}
 
 	pb.RegisterAuthServiceServer(grpcServer, memberHandler)
 

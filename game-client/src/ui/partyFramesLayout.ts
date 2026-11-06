@@ -17,6 +17,7 @@ import type { FrameQuery } from "@/render/art/library";
 import { directionIndex } from "@/render/art/manifest";
 import type { Rect } from "./partyPanelLayout";
 import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
+import { RESOURCE_HUD_AT, resourceHudHeight } from "./ResourceHud";
 import { fillOf, resourceBar, type HudBar } from "./resources";
 
 /**
@@ -230,7 +231,7 @@ export interface PartyFrameRect {
 /**
  * A frame's width (R34): exactly the level/XP frame's outer width, so the left edge of the HUD
  * reads as one column; a field, which has no XP bar, keeps the same. It ends left of the T panel
- * (`PARTY_PANEL_X` 208, R28).
+ * (`PARTY_PANEL_X` 280, R28).
  */
 const FRAME_W = PROGRESS_HUD_W;
 const ROW_H = 40;
@@ -281,8 +282,8 @@ const TRAVEL_RIGHT_PAD = 4;
 
 /**
  * Where the Travel button sits (FS-NCC9J R28): inside the leader's frame, on the name line at its
- * right end, above the bars. Inside, not past the frame's edge: the T panel opens 18 px to its
- * right, and a button out there would sit under it.
+ * right end, above the bars. Inside, not past the frame's edge, so the left edge of the HUD stays
+ * one column.
  */
 export function partyTravelButtonRect(frame: PartyFrameRect): Rect {
   return {
@@ -321,19 +322,36 @@ export function partyNameRoom(
 /** The gap kept under the XP bar, as the T panel keeps under the hub's. */
 const UNDER_XP_BAR = 6;
 
+/** The clear gap kept under the resource bars, so a frame never reads as a copy of them. */
+const UNDER_RESOURCE_BARS = 24;
+/** Health and a class resource: the tallest the resource bars get. */
+const RESOURCE_BAR_ROWS = 2;
+
 /**
- * Where the frames stand in each world (R34): on the left edge, under the level/XP bar where
- * there is one (`PROGRESS_HUD_AT`, the scenes' own corners), at the top-left corner of a field,
- * which has none. All clear of the chat window bottom-left; the layout test pins the clearance.
+ * Where the frames stand in each world (R34): on the left edge, under the resource bars where a
+ * world has them (`RESOURCE_HUD_AT`, a run and a field), under the hub's level/XP bar otherwise.
+ * A fixed top per world, measured from the bars at their tallest, so the frames stay put when the
+ * bars come down (fallen, resolved). All clear of the chat window bottom-left; the layout test
+ * pins the clearance.
  */
 export const PARTY_FRAMES_PLACEMENT: Readonly<
   Record<WorldType, { x: number; top: number }>
 > = {
   hub: underXpBar(PROGRESS_HUD_AT.hub),
-  run: underXpBar(PROGRESS_HUD_AT.run),
-  field: { x: 10, top: 16 },
+  run: underResourceBars(RESOURCE_HUD_AT.run),
+  field: underResourceBars(RESOURCE_HUD_AT.field),
 };
 
 function underXpBar(at: { x: number; y: number }): { x: number; top: number } {
   return { x: at.x, top: at.y + PROGRESS_HUD_H + UNDER_XP_BAR };
+}
+
+function underResourceBars(at: { x: number; y: number }): {
+  x: number;
+  top: number;
+} {
+  return {
+    x: at.x,
+    top: at.y + resourceHudHeight(RESOURCE_BAR_ROWS) + UNDER_RESOURCE_BARS,
+  };
 }

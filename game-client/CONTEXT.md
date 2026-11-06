@@ -127,8 +127,9 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
 
 - **Party panel** — the carved panel **T** toggles: the members, the leader's crown, and the
   actions the player may use (create, invite, kick, transfer, leave). Not the frames.
-- **Party frames** — the column on the left edge under the level bar, one frame per member, the
-  player first. A frame shows bars only for a teammate in the player's own world; any other
+- **Party frames** — the column on the left edge, under the resource bars where a world has them
+  (a run, a field) and under the level bar in the hub, one frame per member, the player first. A
+  frame shows bars only for a teammate in the player's own world; any other
   teammate shows name and class bust alone, so missing bars *are* the "not here" signal. An away
   member is greyed. Not the panel.
 - **Skeleton row** — the frame drawn for a **reserved slot** (game-service: an open invite counted
@@ -397,7 +398,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   Never in the hub. The ability itself is game-service's term
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
-  bottom left of a run or a field world, each labelled with its own name ("Health:", "Mana:",
+  top left of a run or a field world, under the level bar in a run, each labelled with its own
+  name ("Health:", "Mana:",
   "Stamina:", "Parry:"). The mercenary's bar is drawn as 3 pips. There are no overhead bars over
   other players for now: teammates' health and resource live in the party frames (FS-CH21F R14).
   The player has no bar over their own head (FS-8AY7S).

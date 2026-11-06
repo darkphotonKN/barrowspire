@@ -36,9 +36,9 @@ const (
 	// request that would have succeeded a second later, and buries real outages in
 	// the same bucket as genuine bugs.
 	//
-	// Added during I-22WKC-3: RequestAvatarUploadHandler already mapped gRPC
-	// Unavailable to 503 by hand, and FS-22WKC's original table would have
-	// downgraded it. The spec was amended rather than the handler.
+	// Added during I-22WKC-3: one handler already mapped gRPC Unavailable to 503
+	// by hand, and FS-22WKC's original table would have downgraded it. The spec
+	// was amended rather than the handler.
 	ServiceUnavailable Code = "SERVICE_UNAVAILABLE"
 
 	// FailedPrecondition is 400 with a valid request: the resource's own state
