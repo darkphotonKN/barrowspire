@@ -7,6 +7,7 @@ import {
   gearPanelLayout,
   HINT_H,
   itemTipRow,
+  listedMark,
   overlayLayout,
   overPanel,
   PANEL_PAD,
@@ -473,8 +474,79 @@ describe("itemTipRow (FS-NV54P §D R17–19: the item tip and its worn tips in o
 // FS-ZAJMH R18 escalation check: the fullscreen button in the game frame's top-right corner sits
 // above the gear panel's top edge, so the open overlay is never under it, at 1080 or 1280.
 describe("overlayLayout and the fullscreen button", () => {
-  it.each([1080, 1280])("should start the right panel below the button at logical width %i", (width) => {
-    const { right } = overlayLayout(width, 720);
-    expect(right.y).toBeGreaterThan(FULLSCREEN_BUTTON.inset + FULLSCREEN_BUTTON.height);
+  it.each([1080, 1280])(
+    "should start the right panel below the button at logical width %i",
+    (width) => {
+      const { right } = overlayLayout(width, 720);
+      expect(right.y).toBeGreaterThan(
+        FULLSCREEN_BUTTON.inset + FULLSCREEN_BUTTON.height,
+      );
+    },
+  );
+});
+
+describe("listedMark (FS-GTNP8 §C R5–R7: a corner triangle in a listed item's well)", () => {
+  const well = (x: number, y: number, w: number, h = w) => ({ x, y, w, h });
+  /** The triangle's corners as points. */
+  const corners = (t: readonly number[]) => [
+    { x: t[0], y: t[1] },
+    { x: t[2], y: t[3] },
+    { x: t[4], y: t[5] },
+  ];
+
+  it.each([
+    [26, 8],
+    [40, 12],
+    [72, 14],
+    [120, 14],
+    [20, 8],
+  ])(
+    "should give a %i px well legs of %i px: 30%% of it, 8 to 14 (R6)",
+    (size, legs) => {
+      const [a, b, c] = corners(listedMark(well(100, 50, size)));
+      // the right angle sits in the top-right corner, 2 px in
+      expect(b).toEqual({ x: 100 + size - 2, y: 52 });
+      expect(b.x - a.x).toBe(legs);
+      expect(a.y).toBe(b.y);
+      expect(c.y - b.y).toBe(legs);
+      expect(c.x).toBe(b.x);
+    },
+  );
+
+  it("should size by the well's shorter side (R6)", () => {
+    const [a, b] = corners(listedMark(well(0, 0, 72, 40)));
+    expect(b.x - a.x).toBe(12);
   });
+
+  it("should land on whole logical pixels for a well at a fractional place (R6)", () => {
+    for (const p of listedMark(well(10.4, 20.6, 33.3)))
+      expect(Number.isInteger(p)).toBe(true);
+  });
+
+  it.each(SIZES)(
+    "should sit inside every bag cell, stash cell and worn slot at %ix%i, clear of the rarity and unsafe edges, legible at render scale 1 (R6–R7)",
+    (width, height) => {
+      const { left, right } = overlayLayout(width, height);
+      const gear = gearPanelLayout(right, BAG_CAPACITY);
+      const stash = stashPanelLayout(left, STASH_CAPACITY, 0);
+      const wells = [
+        ...gear.cells.map((c) => c.rect),
+        ...Object.values(gear.slots),
+        ...stash.cells.map((c) => c.rect),
+      ];
+      for (const r of wells) {
+        const pts = corners(listedMark(r));
+        for (const p of pts) {
+          expect(p.x).toBeGreaterThanOrEqual(r.x);
+          // 2 px in, give or take the half pixel it is rounded by
+          expect(p.x).toBeLessThanOrEqual(r.x + r.w - 1.5);
+          expect(p.y).toBeGreaterThanOrEqual(r.y + 1.5);
+          expect(p.y).toBeLessThanOrEqual(r.y + r.h);
+        }
+        // the rarity edge runs to x + 4, the unsafe inner edge's left run to x + 5
+        expect(Math.min(...pts.map((p) => p.x))).toBeGreaterThan(r.x + 5);
+        expect(pts[1].x - pts[0].x).toBeGreaterThanOrEqual(8);
+      }
+    },
+  );
 });

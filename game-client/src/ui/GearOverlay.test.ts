@@ -3,9 +3,14 @@ import { viewport } from "@/render/viewport";
 import { EventEmitter } from "eventemitter3";
 import type { EquippedItems, ItemState } from "@/types/gameState";
 import type { WorldType } from "@/assets/types/client";
-import { IN_RUN_NOTE, UNSAFE_FIND_NOTE } from "@/items/itemView";
+import {
+  IN_RUN_NOTE,
+  LISTED_NOTE,
+  SETTLING_NOTE,
+  UNSAFE_FIND_NOTE,
+} from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
-import { palette } from "@/utils/canvasPalette";
+import { palette, toCss } from "@/utils/canvasPalette";
 import {
   GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
@@ -17,6 +22,7 @@ import { BAG_CAPACITY } from "./bag";
 import { STASH_CAPACITY } from "./stash";
 import {
   gearPanelLayout,
+  listedMark,
   overlayLayout,
   stashPanelLayout,
   statsPanelArea,
@@ -94,12 +100,20 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     x: number;
     y: number;
     size: number;
+    /** The CSS colour it is drawn in. */
+    color: string | undefined;
   }[] = [];
   const fills = new Set<number>();
   /** Every line colour drawn (borders, edges). */
   const strokes = new Set<number>();
   /** Every icon sprite drawn, with the alpha it was given (1 unless dimmed). */
-  const sprites: { x: number; y: number; alpha: number }[] = [];
+  const sprites: { x: number; y: number; alpha: number; seq: number }[] = [];
+  /**
+   * Every filled triangle, in the fill colour it was drawn in, and the creation order (`seq`) of
+   * its graphics, which is its place in the draw order beside the sprites.
+   */
+  const triangles: { color: number; points: number[]; seq: number }[] = [];
+  let seq = 0;
   const depths = new Set<number>();
   const keys = recordingKeyboard();
   const input = Object.assign(new EventEmitter(), {
@@ -123,9 +137,15 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     return self;
   };
   const graphics = () => {
+    const at = seq++;
+    let fill = -1;
     const g: Record<string, unknown> = chain({
-      fillStyle: (c: number) => (fills.add(c), g),
+      fillStyle: (c: number) => (fills.add(c), (fill = c), g),
       lineStyle: (_w: number, c: number) => (strokes.add(c), g),
+      fillTriangle: (...points: number[]) => (
+        triangles.push({ color: fill, points, seq: at }),
+        g
+      ),
     });
     return g;
   };
@@ -133,7 +153,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     x: number,
     y: number,
     content: string,
-    style: { fontSize?: string } = {},
+    style: { fontSize?: string; color?: string } = {},
   ) => {
     const t = {
       content,
@@ -141,6 +161,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
       x,
       y,
       size: parseInt(style.fontSize ?? "0", 10),
+      color: style.color,
     };
     texts.push(t);
     const self: Record<string, unknown> = chain({
@@ -167,7 +188,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
       text,
       container,
       sprite: (x: number, y: number) => {
-        const s = { x, y, alpha: 1 };
+        const s = { x, y, alpha: 1, seq: seq++ };
         sprites.push(s);
         const self: Record<string, unknown> = chain({
           setAlpha: (a: number) => ((s.alpha = a), self),
@@ -221,6 +242,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     fills,
     strokes,
     sprites,
+    triangles,
     depths,
     move,
     press,
@@ -1386,5 +1408,169 @@ describe("GearOverlay purse line (FS-7TGZ3 §A, §B)", () => {
     overlay.setPurse({ amount: "7", tip: "Available 7 · Held in bids 0" });
     overlay.openStash();
     expect(shown()).toEqual(expect.arrayContaining(["STASH", "7"]));
+  });
+});
+
+describe("GearOverlay listed and settling items (FS-GTNP8)", () => {
+  const listedHelm = item("listed-helm", {
+    armor_slot: "head",
+    status: "LISTED",
+  });
+  const listedRing = item("listed-ring", { rarity: "rare", status: "LISTED" });
+  const settlingAxe = item("settling-axe", {
+    weapon_type: "sword",
+    status: "PENDING_SETTLEMENT",
+  });
+
+  /** The overlay in the hub at the stash chest: `stash` on the left, `bag` and `gear` on the right. */
+  function hubOnStage(
+    bag: ItemState[] = [],
+    gear: EquippedItems = worn(),
+    stash?: ItemState[],
+    renderScale = 1,
+  ) {
+    const s = recordingScene(1080, 720, renderScale);
+    const overlay = new GearOverlay(s.scene, s.art, "hub");
+    if (stash) overlay.openStash();
+    overlay.updateInventory(bag);
+    overlay.updateEquipment(gear);
+    if (stash) overlay.updateStash(stash);
+    else overlay.show();
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const gearLayout = gearPanelLayout(right, bag.length);
+    const centre = (r: { x: number; y: number; w: number; h: number }) =>
+      [r.x + r.w / 2, r.y + r.h / 2] as const;
+    const cellRect = (i: number) => gearLayout.cells[i].rect;
+    const slotRect = (name: keyof EquippedItems) => gearLayout.slots[name];
+    const stashRect = (i: number) =>
+      stashPanelLayout(left, stash?.length ?? 0, 0).cells.find(
+        (c) => c.index === i,
+      )!.rect;
+    /** The listed marks drawn, as their corner points. */
+    const marks = () =>
+      s.triangles
+        .filter((t) => t.color === palette.listed)
+        .map((t) => t.points);
+    /** The colour the live text `words` is drawn in. */
+    const colorOf = (words: string) =>
+      s.texts.filter((t) => !t.destroyed && t.content === words).at(-1)?.color;
+    return {
+      ...s,
+      overlay,
+      cellRect,
+      slotRect,
+      stashRect,
+      cell: (i: number) => centre(cellRect(i)),
+      slot: (name: keyof EquippedItems) => centre(slotRect(name)),
+      stashCell: (i: number) => centre(stashRect(i)),
+      marks,
+      colorOf,
+    };
+  }
+
+  it("should draw the listed red from the palette's danger channel, the unsafe edge's lifted oxblood (R4)", () => {
+    expect(palette.listed).toBe(palette.unsafeFind);
+  });
+
+  it("should mark a listed bag item, a listed worn item and a settling stash item in its well's top-right corner (R5)", () => {
+    const { marks, cellRect, slotRect, stashRect } = hubOnStage(
+      [listedRing],
+      worn({ head: listedHelm }),
+      [settlingAxe],
+    );
+    expect(marks()).toEqual(
+      expect.arrayContaining([
+        [...listedMark(cellRect(0))],
+        [...listedMark(slotRect("head"))],
+        [...listedMark(stashRect(0))],
+      ]),
+    );
+    expect(marks()).toHaveLength(3);
+  });
+
+  it("should draw the mark over the faint icon, so the fading never hides it (R5, R9)", () => {
+    const { triangles, sprites, cellRect } = hubOnStage([listedRing]);
+    const r = cellRect(0);
+    const icon = sprites.find(
+      (sp) => sp.x === r.x + r.w / 2 && sp.y === r.y + r.h / 2,
+    )!;
+    const mark = triangles.find((t) => t.color === palette.listed)!;
+    expect(icon.alpha).toBe(UNAVAILABLE_ALPHA);
+    expect(mark.seq).toBeGreaterThan(icon.seq);
+  });
+
+  it("should keep the rarity edge beside the mark (R6)", () => {
+    const { fills, marks } = hubOnStage([listedRing]);
+    expect(marks()).toHaveLength(1);
+    expect(fills).toContain(palette.rarity.rare);
+  });
+
+  it("should mark the same wells at render scale 2, in logical units (R7)", () => {
+    const { marks, cellRect } = hubOnStage([listedRing], worn(), undefined, 2);
+    expect(marks()).toEqual([[...listedMark(cellRect(0))]]);
+  });
+
+  it("should mark no free, in-delve or status-less item in the hub (R8)", () => {
+    const { marks } = hubOnStage(
+      [
+        item("free", { status: "AVAILABLE" }),
+        item("old"),
+        item("away", { status: "IN_RUN" }),
+      ],
+      worn({ head: item("held", { armor_slot: "head", status: "IN_ESCROW" }) }),
+      [item("stored", { status: "AVAILABLE" })],
+    );
+    expect(marks()).toEqual([]);
+  });
+
+  it("should mark no unsafe find in a run (R8)", () => {
+    const { triangles } = overlayOnStage(
+      [item("charm", { unsafe: true })],
+      worn(),
+      "run",
+    );
+    expect(triangles.filter((t) => t.color === palette.listed)).toEqual([]);
+  });
+
+  it("should say a listed item is on the Bazaar, in red, in a bag, worn and stash tip (R4)", () => {
+    const { move, cell, slot, stashCell, shown, colorOf } = hubOnStage(
+      [listedRing],
+      worn({ head: listedHelm }),
+      [item("listed-cloak", { armor_slot: "chest", status: "LISTED" })],
+    );
+    for (const at of [cell(0), slot("head"), stashCell(0)]) {
+      move(...at);
+      expect(shown()).toContain(LISTED_NOTE);
+      expect(colorOf(LISTED_NOTE)).toBe(toCss(palette.listed));
+    }
+  });
+
+  it("should say a settling item's sale is settling, in red (R4)", () => {
+    const { move, cell, shown, colorOf } = hubOnStage([settlingAxe]);
+    move(...cell(0));
+    expect(shown()).toContain(SETTLING_NOTE);
+    expect(colorOf(SETTLING_NOTE)).toBe(toCss(palette.listed));
+  });
+
+  it("should keep the in-delve note in the label tone (R4)", () => {
+    const { move, cell, colorOf } = hubOnStage([
+      item("away", { status: "IN_RUN" }),
+    ]);
+    move(...cell(0));
+    expect(colorOf(IN_RUN_NOTE)).toBe(toCss(palette.hudLabel));
+  });
+
+  it("should carry the note on a listed worn item's Shift-compare tip (R14)", () => {
+    const listedSword = item("listed-sword", {
+      weapon_type: "sword",
+      status: "LISTED",
+    });
+    const { move, cell, shift, shown } = hubOnStage(
+      [axe],
+      worn({ weapon: listedSword }),
+    );
+    move(...cell(0));
+    shift(true);
+    expect(shown()).toContain(LISTED_NOTE);
   });
 });

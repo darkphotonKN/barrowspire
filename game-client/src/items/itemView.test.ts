@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ItemState } from "@/types/gameState";
 import {
   IN_RUN_NOTE,
+  LISTED_NOTE,
+  SETTLING_NOTE,
   UNSAFE_FIND_NOTE,
   inRun,
   itemDetail,
   itemView,
+  statusStanding,
 } from "./itemView";
 
 const item = (fields: Partial<ItemState> & { name: string }): ItemState => ({
@@ -200,10 +203,78 @@ describe("itemView standing (FS-18Z5F §H)", () => {
     "should not mark an item of status %s as in a delve",
     (status) => {
       expect(
+        itemView(item({ name: "Helm", status }), undefined, "hub").standing
+          ?.kind,
+      ).not.toBe("inRun");
+    },
+  );
+});
+
+describe("itemView listed and settling standing (FS-GTNP8 §A)", () => {
+  it("should mark a LISTED item as listed, with its tip note (R1)", () => {
+    expect(
+      itemView(item({ name: "Helm", status: "LISTED" }), undefined, "hub")
+        .standing,
+    ).toEqual({ kind: "listed", note: "Listed on the Bazaar." });
+    expect(LISTED_NOTE).toBe("Listed on the Bazaar.");
+  });
+
+  it("should mark a PENDING_SETTLEMENT item as settling, with its tip note (R1)", () => {
+    expect(
+      itemView(
+        item({ name: "Helm", status: "PENDING_SETTLEMENT" }),
+        undefined,
+        "hub",
+      ).standing,
+    ).toEqual({ kind: "settling", note: "Sale settling…" });
+    expect(SETTLING_NOTE).toBe("Sale settling…");
+  });
+
+  it.each([
+    ["hub" as const],
+    ["run" as const],
+    ["field" as const],
+    [undefined],
+  ])(
+    "should read listed and settling from the status alone, in world %s, as in-run is (R1)",
+    (world) => {
+      const listed = item({ name: "Ring", status: "LISTED", unsafe: true });
+      const settling = item({ name: "Ring", status: "PENDING_SETTLEMENT" });
+      expect(itemView(listed, undefined, world).standing?.kind).toBe("listed");
+      expect(itemView(settling, undefined, world).standing?.kind).toBe(
+        "settling",
+      );
+    },
+  );
+
+  it.each([["AVAILABLE"], ["IN_ESCROW"], [undefined]])(
+    "should give an item of status %s no standing in the hub (R8)",
+    (status) => {
+      expect(
         itemView(item({ name: "Helm", status }), undefined, "hub").standing,
       ).toBeUndefined();
     },
   );
+});
+
+describe("statusStanding (FS-GTNP8 R2: the one place a status locks an item)", () => {
+  it.each([
+    ["IN_RUN", "inRun"],
+    ["LISTED", "listed"],
+    ["PENDING_SETTLEMENT", "settling"],
+    ["AVAILABLE", undefined],
+    ["IN_ESCROW", undefined],
+    [undefined, undefined],
+  ])("should read status %s as standing %s", (status, kind) => {
+    expect(statusStanding(item({ name: "x", status }))?.kind).toBe(kind);
+  });
+
+  it("should agree with the view's standing", () => {
+    const listed = item({ name: "x", status: "LISTED" });
+    expect(statusStanding(listed)).toEqual(
+      itemView(listed, undefined, "hub").standing,
+    );
+  });
 });
 
 describe("inRun (FS-18Z5F R38)", () => {
