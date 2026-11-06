@@ -73,6 +73,7 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 - [ ] Reject a refresh token presented as an access credential
 - [x] Mint account and role claims into the access token → FS-9KW9F
 - [ ] Mint an email-verified claim into the access token → FS-V6SFK
+- [ ] Renew an access token from a refresh token → FS-ZPX58
 
 ### Avatars
 

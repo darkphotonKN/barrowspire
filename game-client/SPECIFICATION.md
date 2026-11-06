@@ -40,7 +40,8 @@ server state and sends intents. ✅
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
 - [x] Upload and confirm an avatar
-- [ ] Refresh an expired access token
+- [ ] Refresh an expired access token → FS-ZPX58
+- [ ] Game socket connects with the current access token → FS-ZPX58
 - [ ] Password policy at registration → FS-V6SFK
 - [ ] Verify email from the client → FS-V6SFK
 - [ ] Change an unverified email → FS-V6SFK

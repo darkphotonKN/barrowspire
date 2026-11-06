@@ -90,6 +90,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] gRPC fan-out to env-configured downstreams
 - [x] Synchronous signup → FS-83TJK
 - [ ] Member email verification routes → FS-V6SFK
+- [ ] Access-token renewal route → FS-ZPX58
 
 ## Purpose
 
