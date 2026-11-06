@@ -10,6 +10,12 @@ type FloorComponent struct {
 	Depth int
 	// Count is how many floors the run has; Depth == Count is the top.
 	Count int
+	// CellSize is the edge, in world px, of the cell grid the current floor
+	// is built on: a dungeon floor's (ADR-0061). 0 on a floor of buildings,
+	// which has no grid. A dungeon floor's snapshots are cut per recipient by
+	// distance (FS-KE075 §G, ADR-0060 Decision 4); whoever builds a floor sets
+	// it, and clears it for a floor of buildings.
+	CellSize float64
 }
 
 func (f *FloorComponent) Type() ecs.ComponentType {

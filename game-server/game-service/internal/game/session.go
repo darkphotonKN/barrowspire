@@ -1694,8 +1694,10 @@ func (s *Session) broadcastFullState(entities []*ecs.Entity) error {
 
 	// The recipients are read under the lock and the serialization done outside
 	// it: Admit, RemovePlayer and a run's return to the hub write this map on
-	// other goroutines (FS-QG1HR D2, race A). The pool's aliasing (race B) is
-	// not addressed here.
+	// other goroutines (FS-QG1HR D2, race A). A recipient's state shares no
+	// memory the next tick's serialization writes (race B, closed in the
+	// serializer's pool reset), and on a dungeon floor carries only what lies
+	// within its interest (FS-KE075 §G).
 	s.mu.RLock()
 	recipients := s.recipientsLocked()
 	s.mu.RUnlock()
