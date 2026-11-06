@@ -397,3 +397,30 @@ func TestMonsterAISystem_TargetOffTheWalkableCells_SteersStraightWithoutASearch(
 	assert.InDelta(t, math.Cos(want), velocityOf(t, g).VX, 1e-9)
 	assert.InDelta(t, math.Sin(want), velocityOf(t, g).VY, 1e-9)
 }
+
+// A monster whose corner cut lands it in the farthest cell it steered for,
+// without standing in any cell of its route between, counts that cell as its
+// progress and steers on past it, rather than dithering on its centre.
+func TestMonsterAISystem_CutLandsOnTheFarthestCell_ProgressMovesOn(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid := openGround(t, em)
+	row := make([]int, 10)
+	for i := range row {
+		row[i] = 2*20 + i // cells (0..9, 2)
+	}
+	far := 1 + lookahead // the farthest cell the route steers for from progress 0
+	sx, sy := grid.Centre(row[far])
+	g := hunter(em, sx, sy)
+	tx, ty := grid.Centre(row[9])
+	d := delver(em, tx, ty)
+	provoke(g, d)
+	monster(g).Target = d.ID
+	monster(g).Route = components.Route{Cells: row, Next: 0, Goal: row[9], SearchIn: repathInterval}
+	counting := &countingGrid{Grid: grid}
+
+	NewMonsterAISystem(firstRoll, counting).Update(tickSeconds, em.GetAllEntities())
+
+	assert.Empty(t, counting.searches, "the route still holds")
+	assert.Equal(t, far, monster(g).Route.Next)
+	assert.InDelta(t, 1.0, velocityOf(t, g).VX, 1e-9, "steering on east")
+}
