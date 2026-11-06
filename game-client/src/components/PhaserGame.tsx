@@ -10,7 +10,7 @@ import { PreloadScene } from "@/scenes/PreloadScene";
 import { BootScene } from "@/scenes/BootScene";
 import { HubScene } from "@/scenes/HubScene";
 import { FieldScene } from "@/scenes/FieldScene";
-import { WORLD_SCENES, sceneFor } from "./worldRouting";
+import { switchWorld } from "./worldRouting";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
@@ -114,21 +114,8 @@ export default function PhaserGame() {
     // per scene, so no scene has to know what comes after it.
     // FS-29KSH §Requirements 15, 36.
     // Everything a world transition replaces: WORLD_SCENES (worldRouting.ts).
-    const enterWorld = (payload: WorldEnteredPayload) => {
-      const target = sceneFor(payload.world_type);
-
-      // scene.start() from the manager does not stop what is already running,
-      // unlike the same call from inside a scene, so the previous world would
-      // stay live underneath.
-      for (const key of WORLD_SCENES) {
-        if (key !== target && game.scene.isActive(key)) game.scene.stop(key);
-      }
-
-      game.scene.start(target, {
-        sessionID: payload.session_id,
-        field: payload.field,
-      });
-    };
+    const enterWorld = (payload: WorldEnteredPayload) =>
+      switchWorld(game.scene, payload);
 
     socketManager.on("world_entered", (payload: WorldEnteredPayload) => {
       if (!payload?.world_type) return;
