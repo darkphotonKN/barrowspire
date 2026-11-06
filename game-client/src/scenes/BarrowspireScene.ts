@@ -123,6 +123,9 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
+import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
+import { LastHitTracker, pickTarget } from "@/render/creatures/targetPick";
+import { TargetFrame } from "@/ui/targetFrame";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import {
@@ -792,12 +795,23 @@ export class BarrowspireScene extends Phaser.Scene {
   private readonly deathDust = new DeathDust();
   /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
   private monsters?: MonsterRoster;
-  /** What a living monster under the pointer does (FS-77AB6 req 39): strike-mark, and a strike. */
+  /**
+   * What a living monster under the pointer does (FS-77AB6 req 39): strike-mark, and a strike. A
+   * strike sent names its monster the last-hit one (FS-48CTQ §C.6).
+   */
   private readonly monsterTargeting: MonsterTargeting = {
-    strike: (monster) => this.strike(monster.entity_id, monster.position),
+    strike: (monster) => {
+      if (this.strike(monster.entity_id, monster.position)) this.lastHit.aimed(monster, this.time.now);
+    },
     hover: (monster) =>
       this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
   };
+  /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
+  private markers: MarkerMode = "overhead";
+  /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
+  private targetFrame?: TargetFrame;
+  /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
+  private readonly lastHit = new LastHitTracker();
   private occluders = new Occluders();
   /** How far above the floor a house's walls reach on screen, for the blackout's hole. */
   private wallTop = WALL_HEIGHT;
@@ -988,6 +1002,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
+    // the frame went down with the scene's objects; the next run's first state sets its floor's mode
+    this.targetFrame = undefined;
+    this.lastHit.clear();
+    this.markers = "overhead";
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
     this.floorVeil = [];
@@ -1955,17 +1973,18 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * A targeted `attack` on the entity standing at world point `them` (FS-77AB6 req 39): only a
    * monster is ever one, players being allies (req 40). Sent only from a player still in the
-   * delve, off cooldown and within reach, as the server would refuse anything else.
+   * delve, off cooldown and within reach, as the server would refuse anything else. Whether it
+   * was sent.
    */
-  private strike(entityId: string, them: Point): void {
+  private strike(entityId: string, them: Point): boolean {
     const me = this.playerPos;
-    if (!this.player || !me || this.runEnded) return;
-    if (resolved(this.lastGameState?.current_player)) return;
+    if (!this.player || !me || this.runEnded) return false;
+    if (resolved(this.lastGameState?.current_player)) return false;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
-    if (this.menu) return;
+    if (this.menu) return false;
 
     // an archer's right button is the Shadow Shot hold, never a strike (FS-JTNPR req 8, 16)
-    this.combat.strike(me, entityId, them, this.ownClass(), this.input.activePointer?.button);
+    return this.combat.strike(me, entityId, them, this.ownClass(), this.input.activePointer?.button);
   }
 
   /**
@@ -3006,8 +3025,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
     this.relayoutFloorVeil();
+    this.targetFrame?.relayout();
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
     crispen([
+      ...(this.targetFrame?.texts() ?? []),
       this.escapedCountText,
       this.floorText,
       this.spectateHud?.watching,
@@ -3441,8 +3462,13 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update other players on screen
     this.updateOtherPlayers(state.other_players || [], state.world_type);
 
-    // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36)
+    // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36), plated or not
+    // as the floor's marker mode says (FS-48CTQ §A.1); a drop in the last-hit monster's health may
+    // be the player's own hit (§C.6)
+    this.markers = markerMode("run", state.floor);
+    this.monsters?.setMarkerMode(this.markers);
     this.monsters?.sync(state.monsters ?? []);
+    this.lastHit.observe(state.monsters ?? [], this.time.now);
 
     // The tower's outer wall, once per floor; it stands on no server state (FS-8RBQY §B.5)
     this.buildPerimeter();
@@ -3559,6 +3585,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.projectiles?.clear();
     this.trails.clear();
     this.monsters?.sync([]);
+    this.lastHit.clear();
 
     this.occluders.clear();
     this.lightMap?.clear();
@@ -4240,6 +4267,35 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorText.setScrollFactor(0);
     this.floorText.setDepth(1000);
     this.floorText.setVisible(false);
+
+    // The target frame (FS-48CTQ §C, §E.14): top centre, hidden until a frame floor names a monster
+    this.targetFrame = new TargetFrame(
+      {
+        text: (content, style) => this.add.text(0, 0, content, style),
+        graphics: () => this.add.graphics(),
+      },
+      () => viewport.centerX,
+    );
+  }
+
+  /**
+   * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else the last-hit one, of
+   * those shown and living; nothing on an `overhead` floor. Hidden while the spectate HUD or the
+   * floor veil holds the top centre (§E.15–16). Run after the frame's hide rule, which says what
+   * is shown.
+   */
+  private updateTargetFrame(deltaMs: number): void {
+    if (!this.targetFrame) return;
+    const target =
+      this.markers === "frame" && this.monsters
+        ? pickTarget({
+            shown: this.monsters.targetable(),
+            hovered: this.monsters.hoveredId,
+            lastHit: this.lastHit.current(this.time.now),
+          })
+        : null;
+    const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
+    this.targetFrame.update(deltaMs, target, covered);
   }
 
   /** The debug position line (top-left): the player's x/y, refreshed every frame. */
@@ -4953,6 +5009,7 @@ export class BarrowspireScene extends Phaser.Scene {
       // still update other players smoothly, and keep hiding what stands in the rooms
       this.updateOtherPlayersSmooth(time, delta);
       this.checkBuildingStatus();
+      this.updateTargetFrame(delta);
       return;
     }
 
@@ -5059,6 +5116,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
+    this.updateTargetFrame(delta);
 
     // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
     if (this.containerView.isOpen) {
