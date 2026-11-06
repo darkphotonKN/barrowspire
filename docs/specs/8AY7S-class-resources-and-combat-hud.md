@@ -12,6 +12,7 @@ free. In a run, the delver sees their own Health bar with their class resource b
 the bottom left, and a card at the bottom right naming their ability and saying how it works,
 greyed out when they cannot use it right now. Teammates show an overhead health bar; the
 delver's own overhead bar goes away.
+*(Amended 2026-11-06, user, as R20: the bars are at the top left. Was: the bottom left.)*
 
 ## Requirements
 
@@ -116,6 +117,11 @@ delver's own overhead bar goes away.
 
 20. **Bottom left, own delver only, in a run:** a Health bar, and the class resource bar
     directly below it.
+    *(Amended 2026-11-06, user: "when glancing my party i can see a tiny health and mana version of me in comparison so it needs to be spaced out". The bars are top left, not
+    bottom left, on the left-edge column the level/XP bar and the party frames share. In a run
+    the panel stands at x 10, y 84, under the XP bar; in a field, which has no XP bar, at x 10,
+    y 16. It is 180 px wide and grows down from its top edge. Was: bottom left on the canvas's
+    bottom margin, 220 px wide, growing up.)*
 21. Each bar is labelled in the HUD serif (EB Garamond, `var(--font-body)`'s canvas counterpart;
     never blackletter, per the guideline's blackletter bound) with the resource's **own name**:
     "Health:", then "Mana:", "Stamina:" or "Parry:". The label comes from `resource.kind`
@@ -134,10 +140,13 @@ delver's own overhead bar goes away.
     (dead or spectating) — reason: a dead delver's bars are noise.* Escaped is folded in
     because an escaped delver is out of the delve the same way (`resolved()` in `ui/party.ts`).
 25. **Not in the hub.** No bottom-left bars there.
+    *(Amended 2026-11-06, user, as R20: still no bars in the hub; elsewhere they are top left. Was:
+    named as bottom-left.)*
 
 ### HUD: overhead bars (game-client)
 
 26. **The delver's own overhead HP/MP bar is removed** in a run. The bottom-left bars replace it.
+    *(Amended 2026-11-06, user, as R20: the top-left bars replace it. Was: the bottom-left bars.)*
 27. **Each teammate shows an overhead health bar** (health only, no resource) in a run, at the
     marker base as the own bar sits today, using the existing overhead-bar style and the
     readability floor. It is not drawn over a dead teammate's corpse (no marker base, as for
@@ -183,6 +192,7 @@ delver's own overhead bar goes away.
    or cooldown on a failed press.
 7. As a delver, I want my Health and class resource at the bottom left, so that I can read them
    without looking at my own head.
+   *(Amended 2026-11-06, user, as R20: at the top left. Was: at the bottom left.)*
 8. As a delver, I want the resource bar to say its own name ("Mana:", "Stamina:", "Parry:"), so
    that I know what I am spending.
 9. As a mercenary, I want my parry charges drawn as three pips, so that I can count them at a
@@ -263,11 +273,14 @@ delver's own overhead bar goes away.
 
 - [ ] In a run, the bottom left shows "Health:" with a bar and, below it, "Mana:" (mage) or
       "Stamina:" (warrior, archer), each filling by current / max from the broadcast.
+      *(Amended 2026-11-06, user, as R20: the top left, at x 10, y 84. Was: the bottom left.)*
 - [ ] A state whose `resource.kind` is `parry_charges` draws 3 pips, lit per charge (0, 1, 2, 3
       all render correctly), labelled "Parry:".
 - [ ] The own delver has no overhead bar in a run.
 - [ ] Each living teammate has an overhead health-only bar in a run; a dead teammate has none.
 - [ ] In the hub: no bottom-left bars, no ability card, no overhead health bars.
+      *(Amended 2026-11-06, user, as R20: no resource bars in the hub, wherever they stand elsewhere.
+      Was: named as bottom-left.)*
 - [ ] The ability card at the bottom right shows the class's ability name, the right-mouse
       glyph and its line, keyed by class.
 - [ ] The card greys when `resource.current < resource.ability_cost` and when the client's own

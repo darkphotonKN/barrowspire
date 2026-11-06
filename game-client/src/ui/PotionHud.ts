@@ -14,11 +14,10 @@ import { artSprite } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { iconSheet } from "@/render/art/itemIcons";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import type { PotionCellView } from "./potions";
+import { POTION_CELL_W, type PotionCellView } from "./potions";
 import { resourceHudHeight } from "./ResourceHud";
 
 const HUD_DEPTH = 1000;
-const CELL_W = 72;
 /** The resource panel's height with Health and a class resource, so the two read as one row. */
 const CELL_H = resourceHudHeight(2);
 const PAD = 8;
@@ -35,12 +34,12 @@ export class PotionHud {
   /** What the cell last drew, so the states that change nothing redraw nothing. */
   private shown: PotionCellView | null = null;
 
-  /** `left` and `bottom` are the screen x and y of the cell's bottom-left corner. */
+  /** `left` and `top` are the screen x and y of the cell's top-left corner, the bars' own top. */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly left: number,
-    private readonly bottom: number,
+    private readonly top: number,
   ) {}
 
   show(view: PotionCellView | null): void {
@@ -63,12 +62,12 @@ export class PotionHud {
 
   /** The panel, icon and text, made once while the cell is up; only their content changes. */
   private build(): void {
-    const top = this.bottom - CELL_H;
+    const { top } = this;
     const g = this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
     g.fillStyle(palette.hudPanel, 0.85);
-    g.fillRect(this.left, top, CELL_W, CELL_H);
+    g.fillRect(this.left, top, POTION_CELL_W, CELL_H);
     g.lineStyle(1, palette.frame, 0.35);
-    g.strokeRect(this.left, top, CELL_W, CELL_H);
+    g.strokeRect(this.left, top, POTION_CELL_W, CELL_H);
     this.panel = g;
 
     const icon = artSprite(

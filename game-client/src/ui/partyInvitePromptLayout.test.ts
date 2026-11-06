@@ -132,19 +132,39 @@ describe("invitePromptFrames (FS-NCC9J R24: the note under a greyed Accept)", ()
 });
 
 describe("invitePromptFrames (FS-NCC9J R24: a floor in a field or a run)", () => {
-  /** Where the chat window's top sits once it stacks on a three-bar ResourceHud (FS-WJGFJ R18). */
-  const RAISED_CHAT_TOP = 396;
+  /** A floor higher than the chat window's top on the canvas bottom, so it comes first. */
+  const HIGH_FLOOR = 396;
+
+  it("should show all four over the chat window's own top, and three with a note row each (a run)", () => {
+    const floor = chatWindowFrame(
+      CHAT_WINDOW_X,
+      CANVAS.height - CHAT_WINDOW_MARGIN,
+    ).panel.y;
+    const plain = invitePromptFrames(INVITE_PROMPT_MAX, {
+      canvasWidth: CANVAS.width,
+      panelOpen: false,
+      floor,
+    });
+    const noted = invitePromptFrames(INVITE_PROMPT_MAX, {
+      canvasWidth: CANVAS.width,
+      panelOpen: false,
+      note: true,
+      floor,
+    });
+    expect(plain).toHaveLength(INVITE_PROMPT_MAX);
+    expect(noted).toHaveLength(3);
+  });
 
   it("should show only the prompts that end above the floor, the rest waiting their turn", () => {
     const frames = invitePromptFrames(INVITE_PROMPT_MAX, {
       canvasWidth: CANVAS.width,
       panelOpen: false,
-      floor: RAISED_CHAT_TOP,
+      floor: HIGH_FLOOR,
     });
     expect(frames.length).toBeGreaterThan(0);
     expect(frames.length).toBeLessThan(INVITE_PROMPT_MAX);
     for (const f of frames)
-      expect(f.panel.y + f.panel.height).toBeLessThan(RAISED_CHAT_TOP);
+      expect(f.panel.y + f.panel.height).toBeLessThan(HIGH_FLOOR);
   });
 
   it("should always show the oldest prompt, even over a floor too high for it", () => {

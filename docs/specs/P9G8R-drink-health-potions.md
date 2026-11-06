@@ -147,6 +147,9 @@ defaults; each is marked *(charter default)* below with its reason.
     key label `[1]` signalling "this key drinks". It is shown exactly when the Health / resource
     panel is (in the delve: up from the first state, down once resolved) and never overlaps the
     ability card or the leave button. Neutral HUD register, per `game-client/docs/design-guideline.md`.
+    *(Amended 2026-11-06, user: "when glancing my party i can see a tiny health and mana version of me in comparison so it needs to be spaced out". The bars moved to the top left
+    (FS-8AY7S R20), so the cell stands right of them, top-aligned with them, at x 196, y 84. Was:
+    beside the bars at the bottom left, bottom-aligned with them.)*
 25. **At 0 the cell stays, dimmed, showing "0"** *(charter default: a stable layout, and the key
     stays learnable even with no potion equipped)*. It is not hidden.
 26. **A named action `drinkPotion` mapped to key ONE in one place** *(charter default:

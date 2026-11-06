@@ -24,8 +24,9 @@ export const PROGRESS_HUD_W = 180;
 export const PROGRESS_HUD_H = 34;
 /**
  * Where each scene stands the bar, its top-left corner: the hub's in the corner's inset, the
- * run's under the position line and clear of the notice band (100 to 150) across the middle. The
- * party frames stand under it (FS-R82NV R34); a field has none.
+ * run's under the position line and clear of the notice band (100 to 150) across the middle. In
+ * the hub the party frames stand under it (FS-R82NV R34), in a run the resource bars do
+ * (`RESOURCE_HUD_AT`) with the frames under them; a field has none.
  */
 export const PROGRESS_HUD_AT: Readonly<
   Record<"hub" | "run", { x: number; y: number }>

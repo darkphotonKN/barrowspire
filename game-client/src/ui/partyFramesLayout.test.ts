@@ -3,6 +3,7 @@ import type { PartyMember, PartyUpdatePayload } from "@/stores/partyStore";
 import type { PlayerState } from "@/types/gameState";
 import { chatWindowFrame, CHAT_WINDOW_X } from "./chatWindowLayout";
 import { invitePromptFrames } from "./partyInvitePromptLayout";
+import { POTION_CELL_GAP, POTION_CELL_W } from "./potions";
 import { PARTY_PANEL_X } from "./partyPanelLayout";
 import {
   PARTY_FRAMES_PLACEMENT,
@@ -16,7 +17,11 @@ import {
   type PartyMemberFrameRow,
 } from "./partyFramesLayout";
 import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
-import { resourceHudHeight } from "./ResourceHud";
+import {
+  RESOURCE_HUD_AT,
+  RESOURCE_HUD_W,
+  resourceHudHeight,
+} from "./ResourceHud";
 
 // FS-R82NV §Requirements R34, R35. I-R82NV-9: the party frames' pure half; I-R82NV-12: every
 // member, the player first with their own bars, as wide as the level/XP frame.
@@ -516,28 +521,88 @@ describe("partyFramesFrame", () => {
   const W = 1080;
   const H = 720;
   const MARGIN = 16;
+  // chat sits on the canvas bottom margin in every world
+  const chatBottom = H - MARGIN;
+  /** The resource bars at their tallest (Health and a class resource). */
+  const barsAt = (at: { x: number; y: number }): Rect => ({
+    ...at,
+    width: RESOURCE_HUD_W,
+    height: resourceHudHeight(2),
+  });
+  /** The run's potion cell, glued right of the bars and top-aligned with them. */
+  const potionCell = (): Rect => {
+    const bars = barsAt(RESOURCE_HUD_AT.run);
+    return {
+      ...bars,
+      x: bars.x + bars.width + POTION_CELL_GAP,
+      width: POTION_CELL_W,
+    };
+  };
+
   it.each([
-    // the run: resource bars bottom-left (two rows), chat above them
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 160 },
+    { world: "field" as const, bars: RESOURCE_HUD_AT.field, top: 92 },
+  ])(
+    "in the $world, the frames stand 24 px below the bars at their tallest",
+    ({ world, bars, top }) => {
+      const at = barsAt(bars);
+      expect(PARTY_FRAMES_PLACEMENT[world].top).toBe(top);
+      expect(PARTY_FRAMES_PLACEMENT[world].top).toBe(at.y + at.height + 24);
+      expect(PARTY_FRAMES_PLACEMENT[world].x).toBe(at.x);
+    },
+  );
+
+  it("stands the run's bars under the XP bar on one left edge, and the field's in the corner", () => {
+    const xp = PROGRESS_HUD_AT.run;
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: xp.x, y: 84 });
+    expect(RESOURCE_HUD_AT.run.y).toBeGreaterThanOrEqual(xp.y + PROGRESS_HUD_H);
+    expect(RESOURCE_HUD_W).toBe(PROGRESS_HUD_W);
+    expect(RESOURCE_HUD_AT.field).toEqual({ x: 10, y: 16 });
+  });
+
+  it("keeps the hub's frames under its XP bar, where it has no resource bars", () => {
+    const xp = PROGRESS_HUD_AT.hub;
+    expect(PARTY_FRAMES_PLACEMENT.hub).toEqual({
+      x: xp.x,
+      top: xp.y + PROGRESS_HUD_H + 6,
+    });
+  });
+
+  it("opens the T panel just right of the run's potion cell, in every world", () => {
+    const cell = potionCell();
+    expect(PARTY_PANEL_X).toBe(cell.x + cell.width + 12);
+  });
+
+  it("keeps the most prompts clear of the bars and the potion cell, open panel or not", () => {
+    for (const panelOpen of [false, true])
+      for (const note of [false, true])
+        for (const prompt of invitePromptFrames(4, {
+          canvasWidth: W,
+          panelOpen,
+          note,
+          floor: chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel.y,
+        })) {
+          expect(overlaps(prompt.panel, potionCell())).toBe(false);
+          expect(overlaps(prompt.panel, barsAt(RESOURCE_HUD_AT.field))).toBe(
+            false,
+          );
+        }
+  });
+
+  it.each([
+    // the run: resource bars under the XP bar, the frames under them
     {
       world: "run" as const,
       xpBar: PROGRESS_HUD_AT.run,
-      chatBottom: H - MARGIN - resourceHudHeight(2),
+      bars: RESOURCE_HUD_AT.run,
     },
-    // the hub: no resource bars, chat on the canvas bottom
-    {
-      world: "hub" as const,
-      xpBar: PROGRESS_HUD_AT.hub,
-      chatBottom: H - MARGIN,
-    },
-    // a field: no XP bar, resource bars and chat as the run's
-    {
-      world: "field" as const,
-      xpBar: null,
-      chatBottom: H - MARGIN - resourceHudHeight(2),
-    },
+    // the hub: no resource bars, the frames under the XP bar
+    { world: "hub" as const, xpBar: PROGRESS_HUD_AT.hub, bars: null },
+    // a field: no XP bar, the bars in the corner and the frames under them
+    { world: "field" as const, xpBar: null, bars: RESOURCE_HUD_AT.field },
   ])(
-    "in the $world, four rows clear the XP bar, the chat window, the T panel and the prompts",
-    ({ world, xpBar, chatBottom }) => {
+    "in the $world, four rows clear the XP bar, the resource bars, the chat window, the T panel and the prompts",
+    ({ world, xpBar, bars }) => {
       const { x, top } = PARTY_FRAMES_PLACEMENT[world];
       // the fullest party at the largest cap (PARTY_SIZE max 4): two members, two open invites
       const fullest = partyFrameRows(
@@ -570,17 +635,21 @@ describe("partyFramesFrame", () => {
         expect(frames.y).toBeGreaterThanOrEqual(bar.y + bar.height);
         expect(frames.x).toBe(bar.x);
       }
+      if (bars) expect(overlaps(frames, barsAt(bars))).toBe(false);
       expect(
         overlaps(frames, chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel),
       ).toBe(false);
       // the T panel stands right of the frames (R28)
       expect(frames.x + frames.width).toBeLessThan(PARTY_PANEL_X);
       for (const panelOpen of [false, true])
-        for (const prompt of invitePromptFrames(4, {
-          canvasWidth: W,
-          panelOpen,
-        }))
-          expect(overlaps(frames, prompt.panel)).toBe(false);
+        for (const note of [false, true])
+          for (const prompt of invitePromptFrames(4, {
+            canvasWidth: W,
+            panelOpen,
+            note,
+            floor: chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel.y,
+          }))
+            expect(overlaps(frames, prompt.panel)).toBe(false);
       expect(frames.y + frames.height).toBeLessThan(H);
     },
   );

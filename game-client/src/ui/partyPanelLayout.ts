@@ -84,10 +84,10 @@ export function partyPanelTitle(party: PartyUpdatePayload | null): string {
 }
 
 /**
- * Right of the party frames (R28): those sit on the left edge under the XP bar, so the panel
- * starts past their width, below the XP bar's band.
+ * Right of the party frames (R28), in every world: the panel starts past the left-edge column and
+ * the run's potion cell beside it (right edge x 268), 12 px clear, below the XP bar's band.
  */
-export const PARTY_PANEL_X = 208;
+export const PARTY_PANEL_X = 280;
 export const PARTY_PANEL_Y = 56;
 export const PARTY_PANEL_W = 300;
 const PAD = 12;

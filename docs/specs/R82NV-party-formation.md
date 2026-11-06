@@ -209,6 +209,12 @@ slice as with chat); the client side is agent lane.
       with FS-CH21F, and its bar stays empty until then). When absent (hub, or the member is in
       another world) the bar slot shows a short state word instead: "village", "afield",
       "delving", "away". Teammates' bars in the hub are FS-CH21F's.
+    *(Amended 2026-11-06, user: "when glancing my party i can see a tiny health and mana version of me in comparison so it needs to be spaced out". The frames stand under the
+    resource bars where a world has them, at a fixed top per world: run y 160, field y 92, the
+    bars' two-row bottom + 24, so they do not jump when the bars come down. The hub has no bars;
+    its frames stay under the XP bar at y 56. R28 still holds, with `PARTY_PANEL_X` now 280. Was:
+    under the level/XP bar where there is one (run y 84), at y 16 in a field, `PARTY_PANEL_X`
+    208.)*
 35. Frames and panel update from `party_update` and each state tick; nothing is requested.
 
 ### Notice copy (game-client)

@@ -438,14 +438,12 @@ describe("ChatWindow (C21: scrolling)", () => {
   });
 });
 
-describe("ChatWindow (C18: moving with the ResourceHud)", () => {
-  it("should move its bottom edge when told to sit somewhere else", () => {
-    const { window, panels, say, messageTexts } = rig();
+describe("ChatWindow (C18: seated on its bottom edge)", () => {
+  it("should draw its panel and lines up from the bottom edge it was given", () => {
+    const { panels, say, messageTexts } = rig();
     say("hi");
 
-    window.setBottom(600);
-
-    const frame = chatWindowFrame(X, 600);
+    const frame = chatWindowFrame(X, BOTTOM);
     const live = panels.filter((p) => !p.destroyed)[0]!;
     // the carved panel's shadow comes first; its ground is the panel's own rect
     expect(live.rects).toContainEqual([
@@ -454,18 +452,16 @@ describe("ChatWindow (C18: moving with the ResourceHud)", () => {
       frame.panel.width,
       frame.panel.height,
     ]);
-    const [line] = messageTexts(600);
-    expect(line.y).toBeLessThan(600);
+    const [line] = messageTexts();
+    expect(line.y).toBeLessThan(BOTTOM);
     expect(line.y).toBeGreaterThanOrEqual(frame.messages.y);
   });
 
   it("should say where its top edge now is, for what stacks down to it (FS-NCC9J R24)", () => {
     const { window, store } = rig();
     expect(window.topEdge()).toBe(chatWindowFrame(X, BOTTOM).panel.y);
-    window.setBottom(600);
-    expect(window.topEdge()).toBe(chatWindowFrame(X, 600).panel.y);
     store.getState().toggleFolded();
-    expect(window.topEdge()).toBe(chatWindowFrame(X, 600, true).panel.y);
+    expect(window.topEdge()).toBe(chatWindowFrame(X, BOTTOM, true).panel.y);
   });
 });
 
@@ -586,12 +582,6 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
     const { press, field } = inputRig(() => false);
     press("ENTER");
     expect(field().focused).toBe(false);
-  });
-
-  it("should move the field with the window", () => {
-    const { window, field } = inputRig();
-    window.setBottom(600);
-    expect(field().rect).toEqual(chatWindowFrame(X, 600).input);
   });
 
   it("should drop the draft and close when cancelled", () => {

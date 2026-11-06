@@ -79,6 +79,11 @@ hand-coded unless the user says otherwise; agent help is tests. The client is th
     bars, FS-8AY7S) is present, the window sits **directly above it**, flush to its top edge; in
     worlds without a ResourceHud it sits flush to the bottom edge. The ResourceHud does not move.
     **[user]**
+    *(Amended 2026-11-06, user: "when glancing my party i can see a tiny health and mana version of me in comparison so it needs to be spaced out". The window sits on the canvas
+    bottom margin in every world: bottom edge y 704, top y 468 unfolded. It no longer stacks on
+    the ResourceHud, and "The ResourceHud does not move" no longer holds: the bars moved to the
+    top left (FS-8AY7S R20). Was: directly above the ResourceHud where one is present, the
+    ResourceHud fixed in place.)*
 19. **Shape.** Width 360 px. The message area shows the newest 8 lines, newest at the bottom, in
     a dark-vellum, carved-stone panel per the guideline's "Panels in the world"; lines wrap
     inside the width. Above it, the filter row (R24); below it, the input (R26). Every colour is
@@ -221,6 +226,8 @@ the requirement named. Built as I-WJGFJ-6.
     acceptance criterion "in the hub and fields the window's bottom edge is the canvas bottom"
     reads as R18 does: 16 px above it, or on the field's ResourceHud. Typing still needs the input focused
   (R26), and an open window never holds the keys while the player plays.
+    *(Amended 2026-11-06, user, as R18: the window sits on no ResourceHud now, so in every world the
+    criterion reads 16 px above the canvas bottom. Was: "or on the field's ResourceHud".)*
 
 ## User Stories
 
@@ -304,6 +311,9 @@ the requirement named. Built as I-WJGFJ-6.
       MainMenuScene, CharacterCreationScene and GameOverScene.
 - [ ] In a run with a ResourceHud the window's bottom edge equals the ResourceHud's top edge; in
       the hub and fields the window's bottom edge is the canvas bottom.
+      *(Amended 2026-11-06, user, as R18: in every world the window's bottom edge is on the canvas
+      bottom margin, y 704, and does not follow the ResourceHud. Was: on the ResourceHud's top
+      edge in a run.)*
 - [ ] Width is 360 px; 8 lines visible; panel and text colours resolve to `BARROW_HEX` tokens and
       the lint fence passes.
 - [ ] 101 messages leave 100 in the store, the oldest gone; hidden-channel lines count.
@@ -379,3 +389,5 @@ the requirement named. Built as I-WJGFJ-6.
   scope type if ever wanted.
 - **Mobile / narrow layouts.**
 - **Moving the ResourceHud** — rejected during promotion; the window stacks above it.
+  *(Amended 2026-11-06, user, as R18: no longer out of scope. The ResourceHud has moved to the top left
+  (FS-8AY7S R20) and the window no longer stacks above it. Was: rejected.)*

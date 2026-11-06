@@ -48,9 +48,9 @@ import {
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
+import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
 import { PotionHud } from "@/ui/PotionHud";
-import { healthPotionCount, potionCell } from "@/ui/potions";
+import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
@@ -226,13 +226,13 @@ const BUTTON_GAP = 16;
 const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
 const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
 /**
- * Where the Health and class resource bars sit (FS-8AY7S req 20): bottom-left, on the progress
- * bar's left edge and the leave button's bottom margin, so nothing else on the HUD shares the corner.
+ * Where the Health and class resource bars sit (FS-8AY7S req 20): top-left, under the progress bar
+ * on its left edge (`RESOURCE_HUD_AT`), with the party frames under them.
  */
-const RESOURCE_HUD_X = PROGRESS_HUD_X;
-const RESOURCE_HUD_MARGIN = 16;
-/** The potion cell (FS-P9G8R R24): just right of the resource bars, bottom-aligned with them. */
-const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + 6;
+const RESOURCE_HUD_X = RESOURCE_HUD_AT.run.x;
+const RESOURCE_HUD_Y = RESOURCE_HUD_AT.run.y;
+/** The potion cell (FS-P9G8R R24): just right of the resource bars, top-aligned with them. */
+const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
 /**
  * The ability card (FS-8AY7S req 29, 32): bottom-right, on the leave button's margins. The two
  * share the corner and are never up together: the card is down whenever the button is up.
@@ -533,7 +533,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private tabKey?: Phaser.Input.Keyboard.Key;
   /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
   private progressHud?: ProgressHud;
-  /** The Health and class resource bars, bottom-left (FS-8AY7S req 20). */
+  /** The Health and class resource bars, top-left (FS-8AY7S req 20). */
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
@@ -4154,11 +4154,10 @@ export class BarrowspireScene extends Phaser.Scene {
    * before their first state.
    */
   private showResourceBars(state: ClientGameState): void {
-    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, RESOURCE_HUD_Y);
     this.resourceHud.show(hudBars(state));
-    this.chatWindow?.setBottom(this.resourceHud.topEdge());
     // the potion cell is up exactly when the bars are (FS-P9G8R R24)
-    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, this.cameras.main.height - RESOURCE_HUD_MARGIN);
+    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, RESOURCE_HUD_Y);
     this.potionHud.show(potionCell(state));
   }
 

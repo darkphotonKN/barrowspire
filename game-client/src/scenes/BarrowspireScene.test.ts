@@ -63,6 +63,7 @@ const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
 const { markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
+const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
@@ -1616,14 +1617,15 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     return { ...scene, cam, labels, label };
   }
 
-  it("should show Health: and Mana: at the bottom left in a run, in the body serif", () => {
+  it("should show Health: and Mana: at the top left in a run, under the XP bar, in the body serif", () => {
     const { run, cam, labels, label } = barsOnStage();
     run.handleGameStateUpdate(withMe(me()));
     expect(labels()).toEqual(["Health:", "Mana:"]);
     for (const name of ["Health:", "Mana:"]) {
       const text = label(name)!;
       expect(text.args[0] as number).toBeLessThan(cam.width / 2);
-      expect(text.args[1] as number).toBeGreaterThan(cam.height / 2);
+      expect(text.args[1] as number).toBeLessThan(cam.height / 2);
+      expect(text.args[1] as number).toBeGreaterThanOrEqual(RESOURCE_HUD_AT.run.y);
       expect((text.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
     }
     // the resource bar sits under the health bar

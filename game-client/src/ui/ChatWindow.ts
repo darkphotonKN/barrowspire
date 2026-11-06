@@ -181,7 +181,6 @@ const lineStyle = (colour: number) => ({
 });
 
 export class ChatWindow {
-  private bottom: number;
   private frame: ChatWindowFrame;
   private panel?: Phaser.GameObjects.Graphics;
   private maskShape?: Phaser.GameObjects.Graphics;
@@ -210,10 +209,9 @@ export class ChatWindow {
     private readonly scene: Phaser.Scene,
     private readonly store: StoreApi<ChatState>,
     private readonly x: number,
-    bottom: number,
+    private readonly bottom: number,
     options: ChatWindowOptions = {},
   ) {
-    this.bottom = bottom;
     this.selfId = options.selfId ?? (() => undefined);
     this.coveredAt = options.coveredAt ?? (() => false);
     this.frame = this.frameNow();
@@ -243,13 +241,6 @@ export class ChatWindow {
   /** The scene takes the keys back (the end-of-run overlay): close the input and drop the draft (R27). */
   cancelInput(): void {
     this.input?.cancel();
-  }
-
-  /** Re-seat the window with its bottom edge at `bottom`: on the ResourceHud's top edge, or the canvas bottom (R18). */
-  setBottom(bottom: number): void {
-    if (bottom === this.bottom) return;
-    this.bottom = bottom;
-    this.relayout();
   }
 
   /** The screen y of the panel's top edge as it now sits: what the invite prompts stack down to (FS-NCC9J R24). */
