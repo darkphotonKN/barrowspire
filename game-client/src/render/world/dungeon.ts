@@ -9,7 +9,7 @@
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
-import type { Point } from "@/render/iso/projection";
+import type { Point, Rect } from "@/render/iso/projection";
 import type { FloorMap, FloorRegion, WallState } from "@/types/gameState";
 import { axisOf, type PieceRule, type WallHeight } from "./walls";
 
@@ -27,8 +27,10 @@ export class RegionGrid {
   readonly rows: number;
   private readonly ids: Uint16Array;
   private readonly kinds = new Map<number, FloorRegion["kind"]>();
+  private readonly listed: readonly FloorRegion[];
 
   constructor(map: DungeonMap) {
+    this.listed = [...map.regions].sort((a, b) => a.id - b.id);
     this.cell = map.cell_size;
     this.cols = Math.ceil(map.width / this.cell);
     this.rows = Math.ceil(map.height / this.cell);
@@ -67,6 +69,24 @@ export class RegionGrid {
     for (let dx = -1; dx <= 1; dx++)
       for (let dy = -1; dy <= 1; dy++) if (this.walkable(cx + dx, cy + dy)) return true;
     return false;
+  }
+
+  /**
+   * Whether cell (cx, cy) is a doorway: a room's cell where another region meets it side on, as
+   * the generator places a corridor's mouth (FS-KE075 §A).
+   */
+  doorway(cx: number, cy: number): boolean {
+    const id = this.region(cx, cy);
+    if (this.kinds.get(id) !== "room") return false;
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      const other = this.region(cx + dx, cy + dy);
+      return other !== 0 && other !== id;
+    });
+  }
+
+  /** Every region, by id, with its cells. */
+  get regions(): readonly FloorRegion[] {
+    return this.listed;
   }
 
   /** The cell a world point lies in. */
@@ -124,4 +144,48 @@ export function stripWalls(walls: readonly WallState[], cell: number): WallState
         : { ...w, position: { x: w.position.x + k * cell, y: w.position.y }, width: cell },
     );
   });
+}
+
+/** A room of a dungeon floor, as its dressing sees it (§H.47). */
+export interface DressingRoom {
+  id: number;
+  /** The room's cells' bounding rect, world px. */
+  rect: Rect;
+  /**
+   * Whether a footprint square (world px) may stand here: every cell it touches is this room's,
+   * so never in a corridor or over the shell, and none lies within one cell of a doorway.
+   */
+  clear(square: Rect): boolean;
+}
+
+/** Every room of the floor, by region id: where run dressing may stand (§H.47). */
+export function dressingRooms(grid: RegionGrid): DressingRoom[] {
+  const c = grid.cell;
+  const nearDoorway = (cx: number, cy: number) => {
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++) if (grid.doorway(cx + dx, cy + dy)) return true;
+    return false;
+  };
+  return grid.regions
+    .filter((r) => r.kind === "room")
+    .map((region) => {
+      const x0 = Math.min(...region.cells.map((r) => r.x));
+      const y0 = Math.min(...region.cells.map((r) => r.y));
+      const x1 = Math.max(...region.cells.map((r) => r.x + r.w));
+      const y1 = Math.max(...region.cells.map((r) => r.y + r.h));
+      const clear = (sq: Rect): boolean => {
+        // the cells the square touches: one ending on a cell edge does not touch the next
+        const from = grid.cellOf({ x: sq.x, y: sq.y });
+        const to = { cx: Math.ceil((sq.x + sq.width) / c) - 1, cy: Math.ceil((sq.y + sq.height) / c) - 1 };
+        for (let cx = from.cx; cx <= to.cx; cx++)
+          for (let cy = from.cy; cy <= to.cy; cy++)
+            if (grid.region(cx, cy) !== region.id || nearDoorway(cx, cy)) return false;
+        return true;
+      };
+      return {
+        id: region.id,
+        rect: { x: x0 * c, y: y0 * c, width: (x1 - x0) * c, height: (y1 - y0) * c },
+        clear,
+      };
+    });
 }
