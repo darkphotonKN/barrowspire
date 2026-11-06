@@ -179,3 +179,72 @@ func TestGenerateJWT_EmailVerifiedClaim(t *testing.T) {
 		})
 	}
 }
+
+// ADR-0066 §1: two lifetimes, defined once. Sign-in, verification and renewal
+// all mint from these, so a third lifetime (the deleted 15-minute path) cannot
+// come back unnoticed.
+func TestTokenLifetimes_AreTheOnesADR0066Fixes(t *testing.T) {
+	assert.Equal(t, 60*time.Minute, auth.AccessTokenTTL)
+	assert.Equal(t, 7*24*time.Hour, auth.RefreshTokenTTL)
+}
+
+func signed(t *testing.T, method jwt.SigningMethod, claims jwt.Claims, secret string) string {
+	t.Helper()
+	token, err := jwt.NewWithClaims(method, claims).SignedString([]byte(secret))
+	require.NoError(t, err)
+	return token
+}
+
+// FS-ZPX58 §Requirements 2: a refresh token is redeemable only when it is
+// HS256 with the platform secret, unexpired, typed refresh, and names a member
+// by UUID. Everything else is refused, whatever the reason.
+func TestParseRefreshToken(t *testing.T) {
+	t.Setenv("JWT_SECRET", testSecret)
+	memberID := uuid.New()
+	now := time.Now()
+
+	refreshClaims := func(sub string, exp time.Time) jwt.MapClaims {
+		return jwt.MapClaims{"sub": sub, "exp": exp.Unix(), "iat": now.Unix(), "tokenType": "refresh"}
+	}
+
+	minted, err := auth.GenerateJWT(models.Member{ID: memberID, Role: "player"}, commonconstants.Refresh, auth.RefreshTokenTTL)
+	require.NoError(t, err)
+	mintedAccess, err := auth.GenerateJWT(models.Member{ID: memberID, Role: "player"}, commonconstants.Access, auth.AccessTokenTTL)
+	require.NoError(t, err)
+
+	noneToken, err := jwt.NewWithClaims(jwt.SigningMethodNone, refreshClaims(memberID.String(), now.Add(time.Hour))).
+		SignedString(jwt.UnsafeAllowNoneSignatureType)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		token   string
+		wantErr bool
+	}{
+		{name: "a refresh token minted at sign-in", token: minted},
+		{name: "a hand-signed refresh token", token: signed(t, jwt.SigningMethodHS256, refreshClaims(memberID.String(), now.Add(time.Hour)), testSecret)},
+		{name: "expired", token: signed(t, jwt.SigningMethodHS256, refreshClaims(memberID.String(), now.Add(-time.Minute)), testSecret), wantErr: true},
+		{name: "no expiry", token: signed(t, jwt.SigningMethodHS256, jwt.MapClaims{"sub": memberID.String(), "tokenType": "refresh"}, testSecret), wantErr: true},
+		{name: "wrong secret", token: signed(t, jwt.SigningMethodHS256, refreshClaims(memberID.String(), now.Add(time.Hour)), "not-the-secret"), wantErr: true},
+		{name: "HS512, not HS256", token: signed(t, jwt.SigningMethodHS512, refreshClaims(memberID.String(), now.Add(time.Hour)), testSecret), wantErr: true},
+		{name: "alg none", token: noneToken, wantErr: true},
+		{name: "an access token presented as a refresh token", token: mintedAccess, wantErr: true},
+		{name: "no token type", token: signed(t, jwt.SigningMethodHS256, jwt.MapClaims{"sub": memberID.String(), "exp": now.Add(time.Hour).Unix()}, testSecret), wantErr: true},
+		{name: "sub not a uuid", token: signed(t, jwt.SigningMethodHS256, refreshClaims("not-a-uuid", now.Add(time.Hour)), testSecret), wantErr: true},
+		{name: "garbage", token: "not.a.jwt", wantErr: true},
+		{name: "empty", token: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := auth.ParseRefreshToken(tt.token)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Equal(t, uuid.Nil, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, memberID, got)
+		})
+	}
+}
