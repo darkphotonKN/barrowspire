@@ -7,6 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 )
 
 var (
@@ -24,6 +26,8 @@ var (
 // Middleware records RED metrics per route. It labels by the matched route
 // template (/api/items/:id), never the raw path, so ids cannot blow up the
 // series count. Requests that match no route share one "unmatched" label.
+// Latency observations carry the request's trace_id as an exemplar, so a slow
+// bucket on the dashboard links to a trace that shows why.
 func Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -36,6 +40,16 @@ func Middleware() gin.HandlerFunc {
 		method := c.Request.Method
 
 		requests.WithLabelValues(method, route, strconv.Itoa(c.Writer.Status())).Inc()
-		duration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
+		observe(duration.WithLabelValues(method, route), time.Since(start).Seconds(), commontracing.Exemplar(c.Request.Context()))
 	}
+}
+
+// observe records v with exemplar when there is one. Histograms always
+// implement ExemplarObserver; the plain Observe is only for a nil exemplar.
+func observe(o prometheus.Observer, v float64, exemplar prometheus.Labels) {
+	if eo, ok := o.(prometheus.ExemplarObserver); ok && exemplar != nil {
+		eo.ObserveWithExemplar(v, exemplar)
+		return
+	}
+	o.Observe(v)
 }

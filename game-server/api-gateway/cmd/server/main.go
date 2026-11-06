@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/config"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/slowroute"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
@@ -30,6 +31,9 @@ var (
 	// prometheus scrape port, off the public router. Unique per service so local
 	// runs on one host never clash; the same port is used in k8s.
 	metricsPort = commonhelpers.GetEnvString("METRICS_PORT", "8193")
+
+	// load-test aid: "route=duration[,...]" slows those routes down. Empty = off.
+	debugSlowRoute = commonhelpers.GetEnvString("DEBUG_SLOW_ROUTE", "")
 
 	// browser origins allowed by CORS, comma separated (the frontend URLs)
 	corsOrigins = commonhelpers.GetEnvString("CORS_ORIGINS", "http://localhost:3938,http://localhost:3000")
@@ -91,8 +95,16 @@ func main() {
 		slog.Warn("ENVIRONMENT is development: dev-only routes such as POST /api/wallet/deposit are mounted")
 	}
 
+	slowRoutes, err := slowroute.Parse(debugSlowRoute)
+	if err != nil {
+		log.Fatalf("DEBUG_SLOW_ROUTE: %v", err)
+	}
+	if len(slowRoutes) > 0 {
+		slog.Warn("DEBUG_SLOW_ROUTE is set: these routes sleep before handling", "routes", debugSlowRoute)
+	}
+
 	router, closeDownstreams, err := config.SetupRouter(downstreams, splitOrigins(corsOrigins), ch,
-		config.Features{DevEndpoints: devEndpoints})
+		config.Features{DevEndpoints: devEndpoints, SlowRoutes: slowRoutes})
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}

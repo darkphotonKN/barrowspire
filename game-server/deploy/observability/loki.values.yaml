@@ -1,0 +1,94 @@
+# Loki, single binary, for pod logs shipped by Alloy (alloy.values.yaml).
+#
+#   helm repo add grafana https://grafana.github.io/helm-charts && helm repo update
+#   helm upgrade --install loki grafana/loki --version 7.5.0 \
+#     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev \
+#     -n monitoring -f deploy/observability/loki.values.yaml
+#
+# Service loki.monitoring:3100 takes pushes from Alloy and queries from Grafana
+# on the same port. One pod holds everything (ingest, index, query, compactor);
+# chunks and the TSDB index live on a 10Gi PVC, so logs survive a restart. The
+# compactor deletes anything older than 3 days.
+
+deploymentMode: SingleBinary
+
+loki:
+  # single tenant: no X-Scope-OrgID header needed from Alloy or Grafana
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: "2026-11-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  limits_config:
+    retention_period: 72h
+    # Alloy tails via the API and may replay a little after a restart
+    reject_old_samples: true
+    reject_old_samples_max_age: 72h
+    volume_enabled: true
+  compactor:
+    # retention only runs when the compactor is told to delete
+    retention_enabled: true
+    delete_request_store: filesystem
+  pattern_ingester:
+    enabled: false
+
+singleBinary:
+  replicas: 1
+  # The chart default is hard anti-affinity across nodes, which Autopilot only
+  # allows on pods requesting 500m+ CPU. null, not {}: Helm merges an empty map
+  # into the default and keeps it; null deletes the key.
+  affinity: null
+  extraEnv:
+    - { name: GOMEMLIMIT, value: "450MiB" }
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Everything below belongs to the scalable modes or is optional extra pods.
+# Each is off so Autopilot bills only the one Loki pod.
+backend: { replicas: 0 }
+read: { replicas: 0 }
+write: { replicas: 0 }
+ingester: { replicas: 0 }
+querier: { replicas: 0 }
+queryFrontend: { replicas: 0 }
+queryScheduler: { replicas: 0 }
+distributor: { replicas: 0 }
+compactor: { replicas: 0 }
+indexGateway: { replicas: 0 }
+bloomGateway: { replicas: 0 }
+bloomPlanner: { replicas: 0 }
+bloomBuilder: { replicas: 0 }
+
+# nginx in front of Loki; nothing needs it with auth off and one pod
+gateway:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+minio:
+  enabled: false
+# no alerting/recording rules in Loki, so no rules sidecar container
+sidecar:
+  rules:
+    enabled: false

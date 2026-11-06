@@ -6,6 +6,8 @@ import (
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 )
 
 // one set per process: registering a second one on the default registry panics
@@ -18,7 +20,8 @@ var serverMetrics = sync.OnceValue(func() *grpcprom.ServerMetrics {
 // Metrics records grpc_server_handled_total and grpc_server_handling_seconds
 // per method and code on the default registry, so the existing /metrics
 // endpoints serve them. Chain it first, so it sees the code Recovery and
-// Status settle on, not the raw handler error.
+// Status settle on, not the raw handler error. Each latency observation carries
+// the request's trace_id as an exemplar, so a p99 spike links to its trace.
 func Metrics() grpc.UnaryServerInterceptor {
-	return serverMetrics().UnaryServerInterceptor()
+	return serverMetrics().UnaryServerInterceptor(grpcprom.WithExemplarFromContext(commontracing.Exemplar))
 }

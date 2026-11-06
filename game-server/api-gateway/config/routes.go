@@ -20,6 +20,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/stats"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httpmetrics"
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/slowroute"
 
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/gateway/wallet"
 	"github.com/gin-contrib/cors"
@@ -49,6 +50,10 @@ type Features struct {
 	// such as POST /wallet/deposit: it mints gold from nothing, with no payment
 	// and no ledger entry (ADR-0006), so it is off unless explicitly enabled.
 	DevEndpoints bool
+
+	// SlowRoutes adds artificial latency to the named route templates, for
+	// load tests that need one visibly slow route. Empty in normal running.
+	SlowRoutes map[string]time.Duration
 }
 
 /**
@@ -95,6 +100,11 @@ func SetupRouter(addrs Downstreams, corsOrigins []string, ch *amqp.Channel, feat
 
 	// after Recovery, so a panic unwinds past it uncounted: the 500 shows in logs, not here
 	router.Use(httpmetrics.Middleware())
+
+	// after tracing and RED, so the injected delay shows in both
+	if len(features.SlowRoutes) > 0 {
+		router.Use(slowroute.Middleware(features.SlowRoutes))
+	}
 
 	// skip /healthz: LB probes it every few seconds; failures still show as an unhealthy LB backend and in `kubectl describe pod`
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/healthz"}}))
