@@ -837,7 +837,12 @@ export class BarrowspireScene extends Phaser.Scene {
     onSceneEnd(this, (end) => this.resetRun(end));
     // the run's creatures may download before create subscribes: a refresh into a run whose art the
     // menu evicted (FS-C4JWH Edge States); handed over at the end of create
-    this.held = holdOneShots(this, socketManager, RUN_ONE_SHOTS);
+    this.held = holdOneShots(this, socketManager, RUN_ONE_SHOTS, (action, payload) => {
+      // A run that ends while it still downloads: its own settlement will open the record once
+      // create hands it over, so the hub that comes with the end waits behind it, as it does once
+      // the run has loaded (FS-GV8WN R23). Another run's settlement opens nothing, and holds nothing.
+      if (action === "settlement" && this.ownSettlement(payload as SettlementPayload)) this.resultHold.raise();
+    });
   }
 
   /**
@@ -1144,13 +1149,17 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private showSettlement(payload: SettlementPayload): void {
     // a late confirmation of an earlier run, landing in this one, is not its record (R20)
-    if (payload.run_id !== undefined && this.sessionID !== undefined && payload.run_id !== this.sessionID)
-      return;
+    if (!this.ownSettlement(payload)) return;
     const first = !this.settlementRecord;
     this.settlementRecord ??= new SettlementRecord(this, this.recordAnchor(), () => this.closeRecord());
     this.settlementRecord.set(settlementRecord(payload));
     if (first) this.openRecord();
     this.syncRow();
+  }
+
+  /** Whether a settlement is this run's record: one for another run is a late confirmation (R20). */
+  private ownSettlement(payload: SettlementPayload): boolean {
+    return payload?.run_id === undefined || this.sessionID === undefined || payload.run_id === this.sessionID;
   }
 
   /** The record up, and the return to the town held behind it unless a Leave is on its way (R23). */

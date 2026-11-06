@@ -29,10 +29,16 @@ export interface HeldMessages {
   replay(handlers: OneShotHandlers): void;
 }
 
+/**
+ * @param onHeld told of each message as it is held (not of one passed on after create): for a
+ *   scene that must act on what is coming before it can draw it, as the run holds the town behind
+ *   a settlement record it will open.
+ */
 export function holdOneShots(
   scene: EndingScene,
   socket: OneShotSocket,
   actions: readonly string[],
+  onHeld?: (action: string, payload: unknown) => void,
 ): HeldMessages {
   const held: [action: string, payload: unknown][] = [];
   let handlers: OneShotHandlers | undefined;
@@ -41,7 +47,10 @@ export function holdOneShots(
   for (const action of actions)
     socket.on(action, (payload: unknown) => {
       if (handlers) handlers[action]?.(payload);
-      else held.push([action, payload]);
+      else {
+        held.push([action, payload]);
+        onHeld?.(action, payload);
+      }
     });
 
   onSceneEnd(scene, () => {
