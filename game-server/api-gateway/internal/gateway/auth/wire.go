@@ -30,7 +30,6 @@ type Member struct {
 	AverageRating float32         `json:"average_rating,omitempty" doc:"Average rating"`
 	CreatedAt     *wire.Timestamp `json:"created_at,omitempty" doc:"Creation time"`
 	UpdatedAt     *wire.Timestamp `json:"updated_at,omitempty" doc:"Last update time"`
-	AvatarURL     string          `json:"avatar_url,omitempty" doc:"Avatar URL, empty when unset"`
 	Role          string          `json:"role,omitempty" doc:"Member role"`
 	// No omitempty, unlike every other member here: false is the state a
 	// client acts on, so it must be on the wire, not absent (FS-V6SFK §API
@@ -47,19 +46,6 @@ type LoginResult struct {
 	MemberInfo       *Member `json:"member_info,omitempty" doc:"The signed-in member"`
 }
 
-// AvatarUploadResult is the `result` member of an avatar upload request.
-type AvatarUploadResult struct {
-	UploadID     string `json:"upload_id,omitempty" doc:"Correlates the request with its confirmation"`
-	PresignedURL string `json:"presigned_url,omitempty" doc:"S3 URL to PUT the file to"`
-	S3Key        string `json:"s3_key,omitempty" doc:"Object key"`
-	// A Timestamp object, not a Unix integer — same {seconds, nanos} shape the
-	// rest of this surface uses. Assumed int64 while transcribing; the compiler
-	// disagreed, which is the argument for transport types over hand-checking.
-	ExpiresAt           *wire.Timestamp `json:"expires_at,omitempty" doc:"Presigned URL expiry"`
-	MaxFileSize         int64           `json:"max_file_size,omitempty" doc:"Maximum accepted size in bytes"`
-	AllowedContentTypes []string        `json:"allowed_content_types,omitempty" doc:"Accepted content types"`
-}
-
 // ---------------------------------------------------------------------------
 // Request bodies
 //
@@ -68,9 +54,6 @@ type AvatarUploadResult struct {
 // the downstream decides — which is why signing in with `{}` reaches
 // auth-service rather than failing at the edge. Adding `required` here would
 // move a 401 to a 422 and is a behavior change (ADR-0002 §1).
-//
-// The exception is ConfirmAvatarUploadBody: its legacy struct already carries
-// `binding:"required"`, so `required` is transcribed, not invented.
 // ---------------------------------------------------------------------------
 
 type SignupBody struct {
@@ -95,10 +78,6 @@ type UpdateInfoBody struct {
 	Status string `json:"status,omitempty" doc:"New status"`
 }
 
-type RequestAvatarUploadBody struct {
-	Filename string `json:"filename,omitempty" doc:"Name of the file to upload"`
-}
-
 // VerifyEmailBody and ChangeEmailBody are new with FS-V6SFK, not
 // transcriptions, so they declare what they require. Only the shape is checked
 // here; auth-service owns every rule about the code and the address.
@@ -108,10 +87,6 @@ type VerifyEmailBody struct {
 
 type ChangeEmailBody struct {
 	Email string `json:"email" required:"true" doc:"The new email address"`
-}
-
-type ConfirmAvatarUploadBody struct {
-	UploadID string `json:"upload_id" required:"true" doc:"The upload_id returned by the upload request"`
 }
 
 // ---------------------------------------------------------------------------
@@ -135,21 +110,8 @@ type loginEnvelope struct {
 	Result     *LoginResult `json:"result" doc:"Tokens and member info"`
 }
 
-type avatarUploadEnvelope struct {
-	StatusCode int                 `json:"statusCode" doc:"Duplicates the HTTP status"`
-	Message    string              `json:"message" doc:"Human-readable summary"`
-	Result     *AvatarUploadResult `json:"result" doc:"Presigned upload details"`
-}
-
 type successEnvelope struct {
 	StatusCode int    `json:"statusCode" doc:"Duplicates the HTTP status"`
 	Message    string `json:"message" doc:"Message chosen by auth-service"`
 	Success    bool   `json:"success" doc:"Whether the operation succeeded"`
-}
-
-type confirmAvatarEnvelope struct {
-	StatusCode int    `json:"statusCode" doc:"Duplicates the HTTP status"`
-	Message    string `json:"message" doc:"Message chosen by auth-service"`
-	Success    bool   `json:"success" doc:"Whether the operation succeeded"`
-	AvatarURL  string `json:"avatar_url" doc:"The stored avatar URL"`
 }

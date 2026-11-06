@@ -72,20 +72,6 @@ func (c *Client) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest
 	return response, err
 }
 
-func (c *Client) RequestAvatarUpload(ctx context.Context, req *pb.RequestAvatarUploadRequest) (*pb.RequestAvatarUploadResponse, error) {
-	client := pb.NewUploadServiceClient(c.conn)
-
-	response, err := client.RequestAvatarUpload(ctx, req)
-	return response, err
-}
-
-func (c *Client) ConfirmAvatarUpload(ctx context.Context, req *pb.ConfirmAvatarUploadRequest) (*pb.ConfirmAvatarUploadResponse, error) {
-	client := pb.NewUploadServiceClient(c.conn)
-
-	response, err := client.ConfirmAvatarUpload(ctx, req)
-	return response, err
-}
-
 func (c *Client) VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error) {
 	return pb.NewAuthServiceClient(c.conn).VerifyEmail(ctx, req)
 }

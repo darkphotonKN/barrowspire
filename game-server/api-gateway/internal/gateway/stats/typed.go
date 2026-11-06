@@ -45,7 +45,6 @@ type PlayerRankingStats struct {
 	Username         string          `json:"username,omitempty" doc:"Display name"`
 	Wins             int32           `json:"wins,omitempty" doc:"Wins"`
 	TopThrees        int32           `json:"top_threes,omitempty" doc:"Top-three finishes"`
-	AvatarURL        string          `json:"avatar_url,omitempty" doc:"Avatar URL"`
 	Rating           int32           `json:"rating,omitempty" doc:"Rating"`
 	RankPosition     *int32          `json:"rank_position,omitempty" doc:"Position on the leaderboard"`
 	LastCalculatedAt *wire.Timestamp `json:"last_calculated_at,omitempty" doc:"When the ranking was last computed"`

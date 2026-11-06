@@ -213,60 +213,6 @@
             },
             "description": "Update member information (requires authentication)"
           }
-        },
-        {
-          "name": "Request Avatar Upload",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"filename\": \"avatar.jpg\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/member/avatar/upload-request",
-              "host": ["{{base_url}}"],
-              "path": ["api", "member", "avatar", "upload-request"]
-            },
-            "description": "Request a pre-signed URL for avatar upload (requires authentication)"
-          }
-        },
-        {
-          "name": "Confirm Avatar Upload",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"upload_id\": \"upload-123-xyz\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/member/avatar/confirm",
-              "host": ["{{base_url}}"],
-              "path": ["api", "member", "avatar", "confirm"]
-            },
-            "description": "Confirm avatar upload completion (requires authentication)"
-          }
         }
       ]
     },

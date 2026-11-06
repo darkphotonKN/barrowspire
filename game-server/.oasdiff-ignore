@@ -123,3 +123,28 @@ in api post /api/payment/subscribe api path removed without deprecation
 in api get /api/payment/subscription/permission api path removed without deprecation
 in api post /api/payment/subscription/setup api path removed without deprecation
 in api get /api/payment/subscriptions/{customerid} api path removed without deprecation
+
+# ---------------------------------------------------------------------------
+# FS-TVCZQ (I-TVCZQ-2): avatar upload removed; no photo surface on the gateway.
+#
+# WHY: players can no longer upload a profile photo, so the two operations that
+# minted and confirmed S3 upload URLs go, and avatar_url leaves Member and
+# PlayerRankingStats because no data stands behind it. Their only consumer is
+# this repo's generated client, regenerated in the same change, and I-TVCZQ-1
+# already removed the calls and reads. Removed without a deprecation window for
+# the same reason.
+#
+# --fail-on WARN makes each removed optional property a failure, hence one line
+# per operation that embeds the schema.
+#
+# Lines copied verbatim from `make openapi-breaking` output, lowercased.
+in api post /api/member/avatar/confirm api path removed without deprecation
+in api post /api/member/avatar/upload-request api path removed without deprecation
+in api get /api/member removed the optional property `result/avatar_url` from the response with the `200` status
+in api put /api/member/email removed the optional property `avatar_url` from the response with the `200` status
+in api post /api/member/email/verify removed the optional property `member_info/avatar_url` from the response with the `200` status
+in api post /api/member/refresh removed the optional property `member_info/avatar_url` from the response with the `200` status
+in api post /api/member/signin removed the optional property `result/member_info/avatar_url` from the response with the `200` status
+in api post /api/member/signup removed the optional property `avatar_url` from the response with the `201` status
+in api patch /api/member/update-info removed the optional property `result/avatar_url` from the response with the `200` status
+in api get /api/stats/leaderboard removed the optional property `players/items/avatar_url` from the response with the `200` status

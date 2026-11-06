@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/testsupport"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,5 +40,28 @@ func TestSetupRouter_CharacterRoutesAreTypedOnly(t *testing.T) {
 		http.MethodDelete + " /api/characters/:characterId",
 	} {
 		assert.Equal(t, 1, owned[want], "%s must be registered exactly once", want)
+	}
+}
+
+// FS-TVCZQ §Requirements 11, §API surface: nothing mints S3 upload URLs through
+// the gateway any more, so both old paths fall through to the no-route handler.
+// A registered route would answer 401 here first, because neither request
+// carries a token.
+func TestSetupRouter_AvatarPaths_AnswerNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	unused := "localhost:1"
+	r, closeDownstreams, err := SetupRouter(Downstreams{
+		Auth: unused, Stats: unused, Notification: unused, Payment: unused, Items: unused,
+		Ledger: unused, Marketplace: unused, Wallet: unused, Character: unused,
+	}, []string{"http://localhost:3938"}, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = closeDownstreams() })
+
+	for _, path := range []string{"/api/member/avatar/upload-request", "/api/member/avatar/confirm"} {
+		t.Run(path, func(t *testing.T) {
+			w := testsupport.Do(r, http.MethodPost, path, `{}`)
+
+			testsupport.AssertProblem(t, w, http.StatusNotFound, string(errcode.NotFound))
+		})
 	}
 }
