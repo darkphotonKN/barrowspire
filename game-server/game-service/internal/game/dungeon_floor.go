@@ -1,9 +1,9 @@
 package game
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
-	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -50,6 +50,11 @@ const dungeonGenerations = 2
 // dungeon floor before it gives up on that region.
 const dungeonPlacementAttempts = 200
 
+// fixtureSearchStep is the lattice, in px, a fixture's room is searched on
+// when its random draws all miss: finer than the least slack a fixture has in
+// one cell, the stairs' 68 px footprint in an 80 px cell leaving 12 px.
+const fixtureSearchStep = 10.0
+
 // containerPadding is the ground a container, switch, escape door or stairs
 // keeps clear around its footprint, as a floor of buildings keeps for its
 // chest and stairs.
@@ -87,14 +92,18 @@ func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
 	return d
 }
 
-// generateDungeonFloor draws the floor's seed and generates its layout,
-// trying a fresh seed if the first is exhausted. nil when depth is not a
-// dungeon floor, or when both seeds fail: the floor is then built of buildings
-// so the run still starts (FS-KE075 §B R17, ADR-0061 Decision 13).
-func (s *Session) generateDungeonFloor(depth int) *dungeonFloor {
+/**
+* generateDungeonFloor draws the floor's seed, generates its layout and finds
+* where its switch, escape door and stairs stand, trying a fresh seed if the
+* first is exhausted or leaves a fixture no spot (FS-KE075 §B R14, R17). nil
+* when depth is not a dungeon floor, or when both seeds fail: the floor is then
+* built of buildings so the run still starts (ADR-0061 Decision 13). Nothing is
+* laid yet; a seed that fails leaves nothing behind.
+**/
+func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixtures) {
 	params, isDungeon := dungeonParams(depth)
 	if !isDungeon {
-		return nil
+		return nil, dungeonFixtures{}
 	}
 
 	for try := range dungeonGenerations {
@@ -107,32 +116,68 @@ func (s *Session) generateDungeonFloor(depth int) *dungeonFloor {
 				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
 			continue
 		}
+		d := newDungeonFloor(layout)
+		fixtures, err := s.placeFixtures(depth, d)
+		if err != nil {
+			// the next seed's floor is placed on empty ground again
+			s.objectOccupiedPlaceAreas = nil
+			slog.Error("Dungeon floor not laid",
+				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
+			continue
+		}
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
-		return newDungeonFloor(layout)
+		return d, fixtures
 	}
 
 	slog.Error("Dungeon floor fell back to a floor of buildings: the run starts on a small floor",
 		"sessionID", s.ID, "floor", depth, "tries", dungeonGenerations)
-	return nil
+	return nil, dungeonFixtures{}
+}
+
+// dungeonFixtures is where a dungeon floor's escape door, switch and stairs
+// stand, found before anything is laid. stairs is unset on the top floor.
+type dungeonFixtures struct {
+	exitDoor, exitSwitch, stairs point
+}
+
+// hasStairs is whether the floor at depth has a way up: every floor but the
+// top, and floor 1 is never the top (FS-F6F88 §Requirements 7).
+func hasStairs(depth int) bool { return depth < constants.RunFloorCount }
+
+// placeFixtures finds the escape door's, the switch's and the stairs' spots in
+// their rooms, each through the occupied-area check. An error when a room has
+// none: the layout cannot be laid (FS-KE075 §B R14).
+func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, error) {
+	roles := d.layout.Roles
+	var f dungeonFixtures
+	var ok bool
+	if f.exitDoor, ok = s.placeFixture(d, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
+		return f, fmt.Errorf("the escape door's room %d has no spot off its doorways", roles.EscapeDoor)
+	}
+	if f.exitSwitch, ok = s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
+		return f, fmt.Errorf("the switch's room %d has no spot off its doorways", roles.Switch)
+	}
+	if hasStairs(depth) {
+		if f.stairs, ok = s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius); !ok {
+			return f, fmt.Errorf("the stairs' room %d has no spot off its doorways", roles.Stairs)
+		}
+	}
+	return f, nil
 }
 
 // layDungeon lays a dungeon floor out: its shell walls, then the switch,
-// escape door and stairs in their rooms, then its containers. The party and
-// the monsters come after, as on every floor.
-func (s *Session) layDungeon(depth int, d *dungeonFloor) {
+// escape door and stairs where they were found, then its containers. The party
+// and the monsters come after, as on every floor.
+func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixtures) {
 	// the shell walls belong to no building: a floor map carries them with no
 	// house (FS-KE075 §F R31); a wall's top-left is its position, as WallState's
 	for _, wall := range d.layout.Walls {
 		CreateWallEntity(s.EntityManager, WallConfig{X: wall.X, Y: wall.Y, Width: wall.W, Height: wall.H}, uuid.Nil)
 	}
 
-	roles := d.layout.Roles
-	exitX, exitY := s.placeFixture(d, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius, "escape door")
-	exitDoor := CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{X: exitX, Y: exitY})
-
-	switchX, switchY := s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius, "switch")
-	switchEntity := CreateSwitchEntity(s.EntityManager, SwitchConfig{X: switchX, Y: switchY, SwitchID: 1})
+	exitDoor := CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{X: fixtures.exitDoor.x, Y: fixtures.exitDoor.y})
+	switchEntity := CreateSwitchEntity(s.EntityManager, SwitchConfig{X: fixtures.exitSwitch.x, Y: fixtures.exitSwitch.y, SwitchID: 1})
 
 	// the switch handler reads these from the message goroutine
 	s.mu.Lock()
@@ -140,35 +185,34 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor) {
 	s.switchEntityIDs = []uuid.UUID{switchEntity.ID}
 	s.mu.Unlock()
 
-	// every floor but the top has a way up, and floor 1 is never the top
-	// (FS-F6F88 §Requirements 7)
-	if depth < constants.RunFloorCount {
-		stairsX, stairsY := s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius, "stairs")
-		CreateStairsEntity(s.EntityManager, StairsConfig{X: stairsX, Y: stairsY})
+	if hasStairs(depth) {
+		CreateStairsEntity(s.EntityManager, StairsConfig{X: fixtures.stairs.x, Y: fixtures.stairs.y})
 	}
 
 	s.layDungeonContainers(d)
 }
 
 /**
-* placeFixture stands one of the floor's fixed objects, of half-size (rw, rh),
-* in room: on walkable cells of the room, off its doorways, clear of what is
-* already placed, through the occupied-area check (FS-KE075 §B R14). It never
-* fails: a room with no free spot puts it on the room's centre, loudly, since
-* a floor without its switch, door or stairs strands the party.
+* placeFixture finds a spot for one of the floor's fixed objects, of half-size
+* (rw, rh), in room: on walkable cells of the room, off its doorways, clear of
+* what is already placed, through the occupied-area check, and holds it
+* (FS-KE075 §B R14). A room whose random draws all miss is searched whole; false
+* when even that finds no spot, since a fixture forced onto a doorway or over
+* another would break R14.
 **/
-func (s *Session) placeFixture(d *dungeonFloor, room int, rw, rh float64, what string) (x, y float64) {
+func (s *Session) placeFixture(d *dungeonFloor, room int, rw, rh float64) (point, bool) {
 	region := d.roomRegion(room)
-	x, y, ok := d.spot(s.spawnRand, region, rw+containerPadding, rh+containerPadding, true, s.isFree)
+	rw, rh = rw+containerPadding, rh+containerPadding
+	need := footing{doorways: offDoorways, free: s.isFree}
+	x, y, ok := d.spot(s.spawnRand, region, rw, rh, need)
 	if !ok {
-		centre := d.roomCentre(room)
-		slog.Error("Fixture forced onto its room's centre: no free spot",
-			"sessionID", s.ID, "what", what, "room", room)
-		x, y = centre.x, centre.y
+		x, y, ok = d.search(region, rw, rh, need)
 	}
-	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas,
-		centredArea(x, y, rw+containerPadding, rh+containerPadding))
-	return x, y
+	if !ok {
+		return point{}, false
+	}
+	s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, centredArea(x, y, rw, rh))
+	return point{x, y}, true
 }
 
 /**
@@ -220,7 +264,7 @@ func (s *Session) layDungeonContainers(d *dungeonFloor) {
 // stands a fixture, but reports a room with no free spot instead of forcing it.
 func (s *Session) placeDungeonContainer(d *dungeonFloor, room int, kind components.ContainerKind) bool {
 	rw, rh := constants.ContainerWidthRadius+containerPadding, constants.ContainerHeightRadius+containerPadding
-	x, y, ok := d.spot(s.spawnRand, d.roomRegion(room), rw, rh, true, s.isFree)
+	x, y, ok := d.spot(s.spawnRand, d.roomRegion(room), rw, rh, footing{doorways: offDoorways, free: s.isFree})
 	if !ok {
 		slog.Warn("Container skipped: its room has no free spot", "sessionID", s.ID, "room", room)
 		return false
@@ -255,18 +299,65 @@ func (d *dungeonFloor) regionCells(region int) []levelgen.CellRect {
 	return d.layout.Regions[region-1].Cells
 }
 
+// doorwayRule says whether a placed area may overlap a room's doorway cells.
+type doorwayRule int
+
+const (
+	// onDoorways lets it: the party in its start room
+	onDoorways doorwayRule = iota
+	// offDoorways keeps it off them: fixtures, containers and monsters
+	// (FS-KE075 §B R14, §C R20)
+	offDoorways
+)
+
+// footing is what a placed area must meet beyond standing on its region: its
+// doorway rule, and free, when set, accepting it.
+type footing struct {
+	doorways doorwayRule
+	free     func(PlaceArea) bool
+}
+
+// fits is whether an area of half-size (rw, rh) centred on (x, y) stands on
+// region and meets need.
+func (d *dungeonFloor) fits(x, y float64, region int, rw, rh float64, need footing) bool {
+	area := centredArea(x, y, rw, rh)
+	return d.stands(area, region, need.doorways) && (need.free == nil || need.free(area))
+}
+
 /**
 * spot draws a point in region where an area of half-size (rw, rh) centred on
-* it stands (stands) and free accepts it, a bounded number of times. The
-* centre is drawn uniformly over the region's cells: positive sampling, the
-* point always on the ground it is meant for (FS-KE075 §B R16).
+* it stands and meets need, a bounded number of times. The centre is drawn
+* uniformly over the region's cells: positive sampling, the point always on
+* the ground it is meant for (FS-KE075 §B R16).
 **/
-func (d *dungeonFloor) spot(rng populationRand, region int, rw, rh float64, offDoorway bool, free func(PlaceArea) bool) (x, y float64, ok bool) {
+func (d *dungeonFloor) spot(rng populationRand, region int, rw, rh float64, need footing) (x, y float64, ok bool) {
 	for range dungeonPlacementAttempts {
 		x, y = d.draw(rng, region)
-		area := centredArea(x, y, rw, rh)
-		if d.stands(area, region, offDoorway) && (free == nil || free(area)) {
+		if d.fits(x, y, region, rw, rh, need) {
 			return x, y, true
+		}
+	}
+	return 0, 0, false
+}
+
+/**
+* search walks region's cell rects, row by row on a fixtureSearchStep lattice,
+* for the first point where an area of half-size (rw, rh) stands and meets
+* need: the whole room looked over when its random draws all missed
+* (FS-KE075 §B R14). Deterministic, and only ever a fallback.
+**/
+func (d *dungeonFloor) search(region int, rw, rh float64, need footing) (x, y float64, ok bool) {
+	cell := d.layout.CellSize
+	for _, r := range d.regionCells(region) {
+		left, top := float64(r.X)*cell+rw, float64(r.Y)*cell+rh
+		right, bottom := float64(r.X+r.W)*cell-rw, float64(r.Y+r.H)*cell-rh
+		for row := 0; top+float64(row)*fixtureSearchStep <= bottom; row++ {
+			y := top + float64(row)*fixtureSearchStep
+			for col := 0; left+float64(col)*fixtureSearchStep <= right; col++ {
+				if x := left + float64(col)*fixtureSearchStep; d.fits(x, y, region, rw, rh, need) {
+					return x, y, true
+				}
+			}
 		}
 	}
 	return 0, 0, false
@@ -295,11 +386,11 @@ func (d *dungeonFloor) draw(rng populationRand, region int) (x, y float64) {
 
 /**
 * stands reports whether area lies wholly on cells of region: every cell it
-* overlaps is walkable and in region, and, with offDoorway, none is a doorway.
+* overlaps is walkable and in region, and, under offDoorways, none is a doorway.
 * A body centred in the area is then inset from every wall by its half-size,
 * diagonal corners included (FS-KE075 §B R16).
 **/
-func (d *dungeonFloor) stands(area PlaceArea, region int, offDoorway bool) bool {
+func (d *dungeonFloor) stands(area PlaceArea, region int, doorways doorwayRule) bool {
 	cell := d.layout.CellSize
 	c0, r0 := int(math.Floor(area.X/cell)), int(math.Floor(area.Y/cell))
 	c1, r1 := int(math.Ceil((area.X+area.W)/cell))-1, int(math.Ceil((area.Y+area.H)/cell))-1
@@ -309,7 +400,7 @@ func (d *dungeonFloor) stands(area PlaceArea, region int, offDoorway bool) bool 
 	for y := r0; y <= r1; y++ {
 		for x := c0; x <= c1; x++ {
 			c := y*d.layout.Cols + x
-			if d.region[c] != region || (offDoorway && d.doorway[c]) {
+			if d.region[c] != region || (doorways == offDoorways && d.doorway[c]) {
 				return false
 			}
 		}
@@ -344,7 +435,7 @@ func (d *dungeonFloor) regionAt(x, y float64) int {
 func (d *dungeonFloor) startSpot(rng populationRand) (x, y float64) {
 	r := constants.PlayerRadius
 	start := d.layout.Roles.Start
-	if x, y, ok := d.spot(rng, d.roomRegion(start), r, r, false, nil); ok {
+	if x, y, ok := d.spot(rng, d.roomRegion(start), r, r, footing{doorways: onDoorways}); ok {
 		return x, y
 	}
 	centre := d.roomCentre(start)
@@ -359,48 +450,10 @@ func (d *dungeonFloor) startSpot(rng populationRand) (x, y float64) {
 // formation on its centre, loudly.
 func (s *Session) dungeonPartyArea(d *dungeonFloor, w, h float64) PlaceArea {
 	start := d.layout.Roles.Start
-	if x, y, ok := d.spot(s.spawnRand, d.roomRegion(start), w/2, h/2, false, s.isFree); ok {
+	if x, y, ok := d.spot(s.spawnRand, d.roomRegion(start), w/2, h/2, footing{doorways: onDoorways, free: s.isFree}); ok {
 		return centredArea(x, y, w/2, h/2)
 	}
 	slog.Error("Party forced onto the start room's centre: no free spot", "sessionID", s.ID)
 	centre := d.roomCentre(start)
 	return centredArea(centre.x, centre.y, w/2, h/2)
-}
-
-// cellGround is where a monster may stand on a dungeon floor: walkable cells
-// of its regions, off doorways, a body's radius clear of every other region
-// and wall (FS-KE075 §B R16, §C R20).
-type cellGround struct {
-	floor   *dungeonFloor
-	regions []int
-}
-
-// monsterGround is every room but the start room: no monster spawns where the
-// party does (FS-KE075 §C R18). A floor's population places by room and role
-// (populateDungeon); this whole-floor ground serves a caller that does not.
-func (d *dungeonFloor) monsterGround() *cellGround {
-	g := &cellGround{floor: d}
-	for i, room := range d.layout.Rooms {
-		if i != d.layout.Roles.Start {
-			g.regions = append(g.regions, room.Region)
-		}
-	}
-	return g
-}
-
-// draw is a point drawn from one of the ground's regions, each region as
-// likely as any other, then uniformly over its cells.
-func (g *cellGround) draw(rng populationRand) (x, y float64) {
-	return g.floor.draw(rng, g.regions[rng.IntN(len(g.regions))])
-}
-
-// holds is whether a body centred on (x, y) stands on the ground: its region is
-// one of the ground's, and the body lies wholly on it, off its doorways.
-func (g *cellGround) holds(x, y float64) bool {
-	region := g.floor.regionAt(x, y)
-	if region == 0 || !slices.Contains(g.regions, region) {
-		return false
-	}
-	r := constants.PlayerRadius
-	return g.floor.stands(centredArea(x, y, r, r), region, true)
 }

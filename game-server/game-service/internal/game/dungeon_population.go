@@ -303,13 +303,30 @@ func (p *dungeonPopulation) rollAs(archetype components.MonsterArchetype, elite 
 	return rollAs(p.rng, archetype, p.level, p.depth, elite)
 }
 
+// demonOdds is how a floor came by its demon: on its rare roll, or guaranteed
+// on the top floor.
+type demonOdds int
+
+const (
+	demonRolled demonOdds = iota
+	demonGuaranteed
+)
+
+// demonOddsOf is the top floor's guaranteed demon, any other floor's rolled one.
+func demonOddsOf(topFloor bool) demonOdds {
+	if topFloor {
+		return demonGuaranteed
+	}
+	return demonRolled
+}
+
 /**
 * placeDungeonDemon stands a dungeon floor's demon in the room farthest from
 * the start, by walking distance, that has a valid spot, never the start room
 * (FS-KE075 §C R19). A guaranteed demon finding none tries again with the
 * delver exclusion relaxed, as placeDemon does.
 **/
-func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon MonsterConfig, floor int, guaranteed bool) {
+func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon MonsterConfig, floor int, odds demonOdds) {
 	var rooms []int
 	for room := range d.layout.Rooms {
 		if room != d.layout.Roles.Start {
@@ -319,7 +336,7 @@ func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon Mons
 	slices.SortStableFunc(rooms, func(a, b int) int { return d.layout.Rooms[b].Distance - d.layout.Rooms[a].Distance })
 
 	fits := []func(x, y float64) bool{area.valid}
-	if guaranteed {
+	if odds == demonGuaranteed {
 		fits = append(fits, area.open)
 	}
 	for _, fit := range fits {
@@ -342,7 +359,7 @@ func (a *spawnArea) placeOnRegion(rng populationRand, d *dungeonFloor, region in
 	r := constants.PlayerRadius
 	for range MonsterPlacementAttempts {
 		x, y = d.draw(rng, region)
-		if d.stands(centredArea(x, y, r, r), region, true) && fits(x, y) {
+		if d.stands(centredArea(x, y, r, r), region, offDoorways) && fits(x, y) {
 			return x, y, true
 		}
 	}

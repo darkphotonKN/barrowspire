@@ -91,7 +91,7 @@ func populatedRun(b *testing.B, depth int, classes []string, count int, clear fl
 	demon := MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 5, Boss: true}
 	if s.dungeon != nil {
 		// in the farthest room, as a dungeon floor's own demon stands
-		s.placeDungeonDemon(s.dungeon, &area, demon, depth, true)
+		s.placeDungeonDemon(s.dungeon, &area, demon, depth, demonGuaranteed)
 		for _, m := range monstersInWorld(em) {
 			if monsterOf(m).Boss {
 				return s, delvers, m

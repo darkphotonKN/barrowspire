@@ -49,7 +49,7 @@ func dungeonRun(t *testing.T, seed uint64, seated, expected int) (*Session, []uu
 func assertOnRegion(t *testing.T, d *dungeonFloor, region int, x, y, rw, rh float64, what string) {
 	t.Helper()
 	area := centredArea(x, y, rw, rh)
-	assert.True(t, d.stands(area, region, false), "%s at (%.0f, %.0f) is not wholly on region %d", what, x, y, region)
+	assert.True(t, d.stands(area, region, onDoorways), "%s at (%.0f, %.0f) is not wholly on region %d", what, x, y, region)
 }
 
 // Every arrival slot of floor 1, the seated party's and those kept for the
@@ -141,7 +141,7 @@ func TestDungeonFloor1_RolesPlaced(t *testing.T) {
 		for _, f := range fixtures {
 			at := transformOf(t, onlyEntity(t, s, f.kind))
 			assert.Equal(t, f.room, roomOf(d, at.X, at.Y), "seed %d: the %s stands in its room", seed, f.what)
-			assert.True(t, d.stands(centredArea(at.X, at.Y, f.rw, f.rh), d.roomRegion(f.room), true),
+			assert.True(t, d.stands(centredArea(at.X, at.Y, f.rw, f.rh), d.roomRegion(f.room), offDoorways),
 				"seed %d: the %s is on walkable cells off the doorways", seed, f.what)
 			rooms[f.room] = true
 		}
@@ -242,7 +242,7 @@ func TestDungeonFloor1_EveryBodyOnWalkableCells(t *testing.T) {
 			region := d.regionAt(at.X, at.Y)
 			require.NotZero(t, region, "seed %d: monster %d stands on walkable cells", seed, i)
 			assert.NotEqual(t, d.roomRegion(d.layout.Roles.Start), region, "seed %d: monster %d in the start room", seed, i)
-			assert.True(t, d.stands(centredArea(at.X, at.Y, r, r), region, true),
+			assert.True(t, d.stands(centredArea(at.X, at.Y, r, r), region, offDoorways),
 				"seed %d: monster %d is not wholly on walkable cells off the doorways", seed, i)
 			for _, p := range delvers {
 				assert.GreaterOrEqual(t, dist(at.X, at.Y, p.x, p.y), MonsterDelverExclusion, "seed %d", seed)

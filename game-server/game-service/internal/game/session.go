@@ -129,9 +129,12 @@ type Session struct {
 	// whether delvers damage delvers here; fixed at world build (FS-77AB6 §12)
 	playerDamage systems.PlayerDamage
 
-	movementSystem     *systems.MovementSystem
-	combatSystem       *systems.CombatSystem
-	monsterAISystem    *systems.MonsterAISystem
+	movementSystem  *systems.MovementSystem
+	combatSystem    *systems.CombatSystem
+	monsterAISystem *systems.MonsterAISystem
+	// what every floor's monster AI rolls from (wander picks); injected, so a
+	// test's roll holds across floor changes
+	monsterRoll        func() float64
 	monsterDeathSystem *systems.MonsterDeathSystem
 	skillSystem        *systems.SkillSystem
 
@@ -308,9 +311,20 @@ func NewSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	return s
 }
 
+// sessionOption replaces one of the dependencies newSession gives a world by
+// default.
+type sessionOption func(*Session)
+
+// withMonsterRoll has every floor's monster AI roll from roll rather than the
+// global source; each floor's AI is built from it, so it holds across floor
+// changes.
+func withMonsterRoll(roll func() float64) sessionOption {
+	return func(s *Session) { s.monsterRoll = roll }
+}
+
 // newSession builds a world without starting its loops, so a test can step its
-// tick by hand.
-func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds) *Session {
+// tick by hand. opts replace its default dependencies.
+func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds, opts ...sessionOption) *Session {
 	sessionId := uuid.New()
 	playerDamage := systems.PlayerDamage(constants.RunPlayerDamage)
 	runExperience := NewRunExperience()
@@ -336,7 +350,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerDamage:       playerDamage,
 		movementSystem:     movementSystem,
 		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
-		monsterAISystem:    newMonsterAI(nil),
+		monsterRoll:        rand.Float64,
 		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
 		skillSystem:        systems.NewSkillSystem(),
 		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
@@ -375,6 +389,11 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	if sender != nil {
 		s.sender = sender
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	// no floor yet: the AI steers straight until a floor build hands it a grid
+	s.monsterAISystem = newMonsterAI(s.monsterRoll, nil)
 	// a run's kill awards the whole party; a field's, the killer alone
 	// (FS-X2F2H §Requirements 30)
 	// and drops from the Spire's own row, a field's from that row at its
@@ -3245,15 +3264,15 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	// a floor is placed on empty ground: nothing from an earlier floor occupies it
 	s.objectOccupiedPlaceAreas = nil
 
-	// a dungeon floor's layout, or nil for a floor of buildings, a generation
-	// that failed included (FS-KE075 §B R17)
-	dungeon := s.generateDungeonFloor(depth)
+	// a dungeon floor's layout and where its fixtures stand, or nil for a
+	// floor of buildings, a generation that failed included (FS-KE075 §B R17)
+	dungeon, fixtures := s.generateDungeonFloor(depth)
 
 	// the map is the floor's own size, before anything is placed on it
 	s.setFloorLayout(depth, dungeon)
 
 	if dungeon != nil {
-		s.layDungeon(depth, dungeon)
+		s.layDungeon(depth, dungeon, fixtures)
 	} else {
 		s.layBuildings(depth)
 	}
@@ -3293,21 +3312,22 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 	s.mu.Unlock()
 
 	// only the tick reads the AI, and a floor build holds buildMu as a tick does
-	s.monsterAISystem = newMonsterAI(dungeon)
+	s.monsterAISystem = newMonsterAI(s.monsterRoll, dungeon)
 
 	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
 		floor.CellSize = cellSize
 	}
 }
 
-// newMonsterAI is the monster AI for a floor: on a dungeon floor it paths over
-// the floor's cells; on any other (nil) it steers straight, as floors 2-3 and
-// the fields always have (FS-KE075 §D R26, ADR-0062).
-func newMonsterAI(dungeon *dungeonFloor) *systems.MonsterAISystem {
+// newMonsterAI is the monster AI for a floor, rolling from roll: on a dungeon
+// floor it paths over the floor's cells; on any other (nil) it steers
+// straight, as floors 2-3 and the fields always have (FS-KE075 §D R26,
+// ADR-0062).
+func newMonsterAI(roll func() float64, dungeon *dungeonFloor) *systems.MonsterAISystem {
 	if dungeon == nil {
-		return systems.NewMonsterAISystem(rand.Float64, nil)
+		return systems.NewMonsterAISystem(roll, nil)
 	}
-	return systems.NewMonsterAISystem(rand.Float64, dungeon.navGrid())
+	return systems.NewMonsterAISystem(roll, dungeon.navGrid())
 }
 
 /**
