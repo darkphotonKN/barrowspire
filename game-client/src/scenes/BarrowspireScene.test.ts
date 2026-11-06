@@ -80,6 +80,7 @@ const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
+const await_minimap = await import("@/ui/minimap");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -5252,6 +5253,39 @@ describe("the run's top-right HUD and the fullscreen button", () => {
   });
 });
 
+// FS-SRA9J §E.20–21 (I-SRA9J-3): the minimap hangs under the floor indicator in the same column,
+// 216 × 108, right-aligned at TOP_RIGHT_HUD's x, as FS-48CTQ's target frame test assumes.
+describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21)", () => {
+  const { MINIMAP, minimapRect } = await_minimap;
+  const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  type Box = { x: number; y: number; width: number; height: number };
+  /** A 14 px HUD line in its 5 px padding (the escaped count, the floor indicator), at its largest. */
+  const LINE = { width: 160, height: 30 };
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  it.each([1080, 1280])(
+    "should sit 6 px under the floor indicator, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
+    (width) => {
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const escaped = { x: corner.x - LINE.width, y: corner.y, ...LINE };
+      const floor = { x: corner.x - LINE.width, y: escaped.y + LINE.height + 6, ...LINE };
+      const map = minimapRect(corner.x, floor.y + floor.height);
+      expect(map).toEqual({ x: corner.x - 216, y: floor.y + floor.height + 6, width: 216, height: 108 });
+      expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
+      // the fullscreen button in the canvas's corner, however wide its icon; a top-centre notice
+      // (20 px text in 10 px padding, centred on y 100) up to 600 px wide; either target frame
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const notice = { x: width / 2 - 300, y: 100 - 22, width: 600, height: 44 };
+      for (const other of [button, escaped, floor, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
+        expect(overlaps(map, other)).toBe(false);
+      expect(map.x).toBeGreaterThan(0);
+      expect(map.y + map.height).toBeLessThan(720 / 2);
+    },
+  );
+});
+
 describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-48CTQ-1)", () => {
   const { TARGET_FRAME, TARGET_FRAME_TOP, targetFrameRect } = await_targetFrame;
 
@@ -6051,6 +6085,223 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           [true, true],
           [false, false],
         ]);
+      });
+    });
+
+    describe("the minimap (FS-SRA9J §E, I-SRA9J-3)", () => {
+      const { Minimap, minimapRect } = await_minimap;
+      type Map = InstanceType<typeof Minimap>;
+      interface MappedRun extends FoggedRun {
+        dungeon?: FoggedRun["dungeon"] & { minimap?: Map };
+        floorText?: object;
+        menu?: unknown;
+        chatWindow?: { isTyping(): boolean };
+        minimapOn: boolean;
+        createUI(): void;
+        relayoutHud(): void;
+        bindRunInput(): void;
+        resetRun(end: "shutdown" | "destroy"): void;
+      }
+      type Key = (event?: { repeat?: boolean }) => void;
+      const { Exploration } = await_exploration;
+      /** What the party sees with only this client's player in room 1: the room and any tiny segment seen with it. */
+      const roomOnly = (() => {
+        const seen = new Exploration(grid);
+        seen.see([at(2560, 3080)]);
+        return grid.regions.filter((r) => seen.state(r.id) !== "unexplored").map((r) => [r.id, seen.state(r.id)]);
+      })();
+      /** The floor indicator's box in the column: from y 71, 27 px tall, as a 14 px line is. */
+      const FLOOR_LINE = { y: 71, height: 27 };
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+        viewport.set({ width: 800, height: 600, renderScale: 1 });
+      });
+
+      /** Floor 1 with the run's HUD up and its keys bound, then a broadcast with `party`. */
+      const mapped = (party: Partial<Party> = inRoom) => {
+        const placed = vi.spyOn(Minimap.prototype, "place");
+        const dots = vi.spyOn(Minimap.prototype, "party");
+        const staged = stageIn(party);
+        const run = staged.run as unknown as MappedRun;
+        const keys: Record<string, Key> = {};
+        Object.assign(run, {
+          input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) }, on: vi.fn() },
+        });
+        Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+        run.createUI();
+        run.bindRunInput();
+        Object.assign(run.floorText!, FLOOR_LINE);
+        const view = (width: number) => {
+          viewport.set({ width, height: 720, renderScale: 1 });
+          run.relayoutHud();
+        };
+        view(1080);
+        const frame = (who: Partial<Party> = party, fields: Partial<GameState> = {}) =>
+          staged.handle({ ...dungeonState(who), ...fields } as GameState);
+        frame();
+        const map = () => run.dungeon?.minimap;
+        return { ...staged, run, keys, view, frame, map, placed, dots };
+      };
+      const ally = (id: string, p: { x: number; y: number }, fields: { escape?: boolean; current_health?: number } = {}) => ({
+        ...player(id, id, 0, fields),
+        position: p,
+      });
+
+      it("should show the minimap on floor 1 by default, 6 px under the floor indicator, right-aligned, and move it with the view", () => {
+        const { map, view, placed } = mapped();
+        expect(map()).toBeDefined();
+        expect(map()!.shown).toBe(true);
+        const under = FLOOR_LINE.y + FLOOR_LINE.height;
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, under));
+        view(1280);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, under));
+        expect(minimapRect(1270, under)).toMatchObject({ x: 1054, y: under + 6 });
+      });
+
+      it("should hide and show it on M, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats", () => {
+        const { run, keys, map } = mapped();
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(false);
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(true);
+        keys["keydown-M"]({ repeat: true });
+        expect(map()!.shown).toBe(true);
+        run.menu = {};
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(true);
+        run.menu = undefined;
+        run.chatWindow = { isTyping: () => true };
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(true);
+        run.chatWindow = undefined;
+      });
+
+      it("should bind M as a keydown event, never a captured key, so a stop has no capture of it to hand back", () => {
+        const scene = sceneOnStage();
+        const run = scene.run as unknown as MappedRun & { bindKeys(): void };
+        const added: number[] = [];
+        const heard: string[] = [];
+        const key = (code: number) => ({ keyCode: code, on: vi.fn() });
+        Object.assign(run, {
+          input: {
+            setDefaultCursor: vi.fn(),
+            on: vi.fn(),
+            keyboard: {
+              createCursorKeys: () => ({}),
+              addKey: (code: number) => (added.push(code), key(code)),
+              on: (event: string) => heard.push(event),
+            },
+          },
+        });
+        run.bindKeys();
+        run.bindRunInput();
+        expect(heard).toContain("keydown-M");
+        expect(added).not.toContain(77);
+      });
+
+      it("should keep M's choice for the run scene: across a floor change, and back on for the next run scene", () => {
+        const { run, keys, map, handle } = mapped();
+        const first = map()!;
+        keys["keydown-M"]();
+        // floor 2 laid out as floor 1 was: a new floor, a new minimap, still hidden
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(map()).toBeDefined();
+        expect(map()).not.toBe(first);
+        expect(map()!.shown).toBe(false);
+        run.resetRun("shutdown");
+        expect(run.minimapOn).toBe(true);
+      });
+
+      it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
+        const { map, handle } = mapped({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        const first = map()!;
+        const destroyed = vi.spyOn(first, "destroy");
+        const stairsRoom = regionAt(grid, placedAt.stairs);
+        expect(first.content.regions.map((r) => r.id)).toContain(stairsRoom);
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(destroyed).toHaveBeenCalled();
+        expect(map()!.content.regions.map((r) => [r.id, r.state])).toEqual(roomOnly);
+        expect(roomOnly).toContainEqual([ROOM, "visible"]);
+      });
+
+      it("should show explored and visible regions and the party's living dots, nothing for monsters or containers", () => {
+        const { map, frame, dots } = mapped();
+        const monsters = [monster("m_room", 0), monster("m_far", 0)].map((m, i) => ({ ...m, position: [at(2400, 3050), placedAt.door][i] }));
+        frame(
+          {
+            ...inRoom,
+            other_players: [
+              ally("near", at(2600, 3100)),
+              ally("dead", placedAt.lever, { current_health: 0 }),
+              ally("gone", placedAt.lever, { escape: true }),
+            ] as GameState["other_players"],
+          },
+          { monsters },
+        );
+        expect(map()!.content.regions.map((r) => [r.id, r.state])).toEqual(roomOnly);
+        // the chest in room 1 and the monsters are never on it; the lever's region the dead and the
+        // escaped stand in is not uncovered
+        expect(map()!.content.fixtures).toEqual([]);
+        expect(dots).toHaveBeenLastCalledWith({ self: at(2560, 3080), allies: [at(2600, 3100)] });
+      });
+
+      it("should mark the switch, escape door and stairs once a member has uncovered their regions", () => {
+        const { map, frame } = mapped();
+        frame({ ...inRoom, other_players: [ally("a", placedAt.door), ally("b", placedAt.stairs)] as GameState["other_players"] });
+        expect(map()!.content.fixtures).toEqual([
+          { kind: "escape-door", at: placedAt.door },
+          { kind: "stairs", at: placedAt.stairs },
+        ]);
+        // they walk on: the regions stay explored, the marks stay
+        frame(inRoom);
+        expect(map()!.content.fixtures.map((f) => f.kind)).toEqual(["escape-door", "stairs"]);
+        frame({ ...inRoom, other_players: [ally("c", placedAt.lever)] as GameState["other_players"] });
+        expect(map()!.content.fixtures.map((f) => f.kind)).toEqual(["switch", "escape-door", "stairs"]);
+      });
+
+      it("should keep it for a dead player watching the party, the living's dots only", () => {
+        const { map, frame, dots } = mapped();
+        frame({
+          current_player: { ...player("me", "Aldric", 0, { current_health: 0 }), position: at(2560, 3080) } as Party["current_player"],
+          other_players: [ally("a", placedAt.stairs)] as GameState["other_players"],
+        });
+        expect(map()).toBeDefined();
+        expect(map()!.shown).toBe(true);
+        expect(dots).toHaveBeenLastCalledWith({ self: undefined, allies: [placedAt.stairs] });
+        expect(map()!.content.regions.map((r) => r.id)).toContain(regionAt(grid, placedAt.stairs));
+      });
+
+      it("should redraw its map only when a region's state changes, as a member walks across the floor", () => {
+        const { map, frame } = mapped();
+        const once = map()!.redraws;
+        for (const dx of [0, 40, 80]) frame({ current_player: { ...player("me", "Aldric", 0), position: at(2560 + dx, 3080) } as Party["current_player"] });
+        expect(map()!.redraws).toBe(once);
+        frame({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(map()!.redraws).toBe(once + 1);
+      });
+
+      it("should take it down on a climb to a floor of buildings, and build none on floors 2 and 3", () => {
+        const { run, map, handle } = mapped();
+        const first = map()!;
+        const destroyed = vi.spyOn(first, "destroy");
+        const shown = vi.spyOn(Minimap.prototype, "show");
+        for (const floor of [2, 3]) {
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(floor)));
+          handle(bare(floorState(floor)));
+          expect(run.dungeon).toBeUndefined();
+        }
+        expect(destroyed).toHaveBeenCalled();
+        expect(shown).not.toHaveBeenCalled();
+      });
+
+      it("should not exist in the hub or field scenes", () => {
+        for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
+          const source = readFileSync(join(__dirname, scene), "utf8");
+          expect(source).not.toMatch(/minimap/i);
+        }
       });
     });
   });

@@ -129,6 +129,7 @@ import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/rend
 import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { LastHitTracker, engagedBoss, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
+import { Minimap, minimapRect, type MinimapFixture } from "@/ui/minimap";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import {
@@ -413,6 +414,8 @@ interface DungeonFloor {
   seen: Exploration;
   /** The fog over it, once its walls stand. */
   fog?: Fog;
+  /** Its minimap (FS-SRA9J §E), built with the fog and gone with the floor. */
+  minimap?: Minimap;
 }
 
 /** Limited barrow palette for the wizard-player sprite (0x ints). */
@@ -862,6 +865,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private markers: MarkerMode = "overhead";
   /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
   private targetFrame?: TargetFrame;
+  /** Whether the minimap is up (FS-SRA9J §E.19): on each time a run scene starts, M toggles it. */
+  private minimapOn = true;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
   private occluders = new Occluders();
@@ -1059,6 +1064,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorText = undefined;
     // the frame went down with the scene's objects; the next run's first state sets its floor's mode
     this.targetFrame = undefined;
+    // the next run scene starts with the minimap up; it went down with the scene's objects
+    this.minimapOn = true;
     this.lastHit.clear();
     this.markers = "overhead";
     this.shownFloorLabel = null;
@@ -3081,6 +3088,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.settlementRecord?.relayout(this.recordAnchor());
     this.relayoutFloorVeil();
     this.targetFrame?.relayout();
+    this.dungeon?.minimap?.place(this.minimapPlace());
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
     crispen([
       ...(this.targetFrame?.texts() ?? []),
@@ -3199,6 +3207,15 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-H", () => {
       if (this.menu) return;
       this.toggleControlsPanel();
+    });
+
+    // M hides and shows the minimap for the rest of the run scene (FS-SRA9J §E.19). An event, never
+    // an added key: nothing is captured, so the letter types in any field and a stop has nothing
+    // of it to hand back (`handBackKeyboard`). While chat has focus the field stops every key
+    // before Phaser's window listener and the keyboard is off; the check stands in case either moves.
+    this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
+      if (this.menu || event?.repeat || this.chatWindow?.isTyping()) return;
+      this.toggleMinimap();
     });
 
     // 1 drinks a health potion (FS-P9G8R R27, R28). An event, never a JustDown poll: the menu polls
@@ -3707,18 +3724,62 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     // every region unexplored until the party is placed in it, this same broadcast (§B.6)
     fog.show((id) => dungeon.seen.state(id));
+    // the floor's minimap, drawn from the same exploration (§E.23)
+    dungeon.minimap = new Minimap({ graphics: () => this.add.graphics() }, dungeon.grid);
+    dungeon.minimap.place(this.minimapPlace());
+    dungeon.minimap.setShown(this.minimapOn);
+  }
+
+  /**
+   * Where the minimap stands (FS-SRA9J §E.20): right-aligned on the top-right column, 6 px under the
+   * floor indicator, which stands under the escaped count.
+   */
+  private minimapPlace(): { x: number; y: number } {
+    const corner = anchorAt(TOP_RIGHT_HUD);
+    const floor = this.floorText;
+    return minimapRect(corner.x, floor ? floor.y + floor.height : corner.y);
+  }
+
+  /** M (FS-SRA9J §E.19): the minimap down or up for the rest of the run scene, this floor's and the next. */
+  private toggleMinimap(): void {
+    this.minimapOn = !this.minimapOn;
+    this.dungeon?.minimap?.setShown(this.minimapOn);
+  }
+
+  /**
+   * The minimap from this broadcast (FS-SRA9J §E.22–§E.24): the regions explored and visible, the
+   * switch, escape door and stairs in them, and the living, in-play members' dots, this client's
+   * player apart; a dead or escaped player watching keeps it, their own dot gone. Each layer
+   * redraws only on a change.
+   */
+  private showMinimap(state: ClientGameState): void {
+    const dungeon = this.dungeon;
+    const minimap = dungeon?.minimap;
+    if (!minimap) return;
+    const fixtures: MinimapFixture[] = [
+      ...[...this.switches.values()].map(({ pos }) => ({ kind: "switch" as const, at: pos })),
+      ...[...this.escapeDoors.values()].map(({ pos }) => ({ kind: "escape-door" as const, at: pos })),
+      ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
+    ];
+    minimap.show((id) => dungeon.seen.state(id), fixtures);
+    const [self] = partyPositions({ current_player: state.current_player });
+    minimap.party({ self, allies: partyPositions({ other_players: state.other_players }) });
   }
 
   /**
    * The party's exploration of a dungeon floor from this broadcast's living positions
    * (FS-SRA9J §B), and, when a region's state changed, the fog and the floor's lights redrawn
-   * for it (§C.12, §C.13). Nothing before the floor's walls stand, nor on a floor of buildings.
+   * for it (§C.12, §C.13); then the minimap from it (§E.23). Nothing before the floor's walls
+   * stand, nor on a floor of buildings.
    */
   private explore(state: ClientGameState): void {
     const dungeon = this.dungeon;
-    if (!dungeon?.fog || !dungeon.seen.see(partyPositions(state))) return;
-    dungeon.fog.show((id) => dungeon.seen.state(id));
-    this.lightNearChunks();
+    if (!dungeon?.fog) return;
+    if (dungeon.seen.see(partyPositions(state))) {
+      dungeon.fog.show((id) => dungeon.seen.state(id));
+      this.lightNearChunks();
+    }
+    this.showMinimap(state);
   }
 
   /**
@@ -3857,6 +3918,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.chunks.clear();
     // the fog goes with its floor; the next floor's exploration starts over (FS-SRA9J §B.6)
     this.dungeon?.fog?.destroy();
+    this.dungeon?.minimap?.destroy();
     this.dungeon = undefined;
     this.floorWalls = [];
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
