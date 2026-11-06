@@ -1358,6 +1358,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // demon is never drawn before its art is in (FS-C4JWH §B R9)
     preloadArt(this, SCENE_ART.BarrowspireScene, {
       bar: () => drawTorchBar(this),
+      fadeIn: true,
     });
   }
 

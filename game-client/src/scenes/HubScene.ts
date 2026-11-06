@@ -773,7 +773,10 @@ export class HubScene extends Phaser.Scene {
 
   preload(): void {
     // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
-    preloadArt(this, SCENE_ART.HubScene, { bar: () => drawTorchBar(this) });
+    preloadArt(this, SCENE_ART.HubScene, {
+      bar: () => drawTorchBar(this),
+      fadeIn: true,
+    });
   }
 
   create(): void {
