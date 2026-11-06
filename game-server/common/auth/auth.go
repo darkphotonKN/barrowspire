@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -15,6 +16,12 @@ import (
 // the minter adds cannot silently go unread here.
 func NewValidator(secret []byte) func(string) (Identity, error) {
 	return func(tokenStr string) (Identity, error) {
+		// An empty secret would accept a token signed with the empty key, so
+		// it accepts nothing (FS-ZPX58 L7).
+		if len(secret) == 0 {
+			return Identity{}, errors.New("no token secret configured")
+		}
+
 		var claims Claims
 		_, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
 			// TODO: READ UP
@@ -32,6 +39,13 @@ func NewValidator(secret []byte) func(string) (Identity, error) {
 		memberID, err := uuid.Parse(claims.Subject)
 		if err != nil {
 			return Identity{}, fmt.Errorf("parse sub: %w", err)
+		}
+
+		// Only an access token is a credential here (FS-ZPX58 L1). Every token
+		// auth-service mints is typed, so this refuses nothing it handed out as
+		// access, and a refresh token is refused even if it carried a role.
+		if claims.TokenType != string(commonconstants.Access) {
+			return Identity{}, fmt.Errorf("token type %q is not access", claims.TokenType)
 		}
 
 		// FS-F9R7Q §Requirement 29: every access token carries a role, so a token
