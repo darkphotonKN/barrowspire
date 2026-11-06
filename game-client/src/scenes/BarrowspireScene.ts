@@ -695,7 +695,7 @@ export class BarrowspireScene extends Phaser.Scene {
   // fog shows them by the monster rule (FS-SRA9J §D.16)
   private chests: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point; pile?: boolean }
+    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point; pile: boolean }
   > = new Map();
 
   // 逃脫門 (從後端同步)
