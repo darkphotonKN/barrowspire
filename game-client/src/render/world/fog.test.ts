@@ -517,6 +517,24 @@ describe("the fog layer (FS-SRA9J §C.13)", () => {
     // no fade where none was watched
     expect(images.filter((m) => m.depth === FOG.floorDepth && m.visible)).toEqual([]);
   });
+  it("paints a changed chunk near the camera but out of its view a few a frame on the fade's counter, not at once", () => {
+    const grid = walk();
+    const { fog, canvases, chunks, alphaAt, tweens } = fogOver(grid, 128);
+    fog.show(() => "unexplored");
+    const b = onScreen(13, 2);
+    const at = chunks.grid.rects[chunks.grid.indexAt(b)];
+    // the view just left of room B's chunk: near it, not on it
+    chunks.update({ x: at.x - 200, y: at.y, width: 199, height: at.height });
+    const image = alphaAt(b).image!;
+    const canvas = canvases.find((c) => c.key === image.key)!;
+    const puts = canvas.puts;
+    fog.show(states({ [B]: "visible" }));
+    expect(canvas.puts).toBe(puts);
+    for (let i = 1; i <= 20 && canvas.puts === puts; i++) tweens.run(i / 20);
+    expect(canvas.puts).toBeGreaterThan(puts);
+    expect(alphaAt(b).alpha).toBe(0);
+    expect(FOG.paints).toBeGreaterThan(0);
+  });
 });
 
 describe("the feather at the fog's edges (FS-SRA9J §C.13, owner playtest 2026-11-06)", () => {

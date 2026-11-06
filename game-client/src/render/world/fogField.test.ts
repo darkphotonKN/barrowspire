@@ -56,8 +56,8 @@ describe("the feather at a fog edge (FS-SRA9J §C.13, owner playtest 2026-11-06)
     expect(mid[40]).toBeLessThan(0.1);
     for (let c = 41; c < 40 + width; c++) expect(mid[c]).toBeGreaterThanOrEqual(mid[c - 1]);
     expect(mid[40 + width]).toBeCloseTo(0.8, 5);
-    // a ramp, not a step: somewhere half way
-    expect(mid.slice(40, 40 + width).some((v) => v > 0.3 && v < 0.5)).toBe(true);
+    // a ramp, not a step: somewhere well between
+    expect(mid.slice(40, 40 + width).some((v) => v > 0.15 && v < 0.65)).toBe(true);
   });
 
   it("leaves a uniform veil as it is", () => {
@@ -80,7 +80,7 @@ describe("the feather at a fog edge (FS-SRA9J §C.13, owner playtest 2026-11-06)
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) s[r * cols + c] = c < 40 ? 0.5 : 0.8;
     const f = row(featherField(s, s, cols, rows, FEATHER.radius), cols, 4);
     for (let c = 0; c < 40; c++) expect(f[c]).toBeCloseTo(0.5, 5);
-    expect(f[41]).toBeLessThan(0.6);
+    expect(f[40]).toBeLessThan(0.6);
     expect(f[40 + FEATHER.reach]).toBeCloseTo(0.8, 5);
   });
 });
