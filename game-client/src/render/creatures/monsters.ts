@@ -29,6 +29,7 @@ import { worldToScreen, type Point } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { footprintHitArea } from "@/render/world/footprint";
+import type { MarkerMode } from "./markerMode";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
@@ -244,6 +245,8 @@ export const FLASH_MS = 200;
 const STILL = { x: 0, y: 0 };
 
 export interface MonsterSprite extends AnimatedSprite {
+  /** Whether it is drawn: the hide rule's and the fog's say (FS-48CTQ §C.7 reads it). */
+  readonly visible: boolean;
   x: number;
   y: number;
   displayOriginY: number;
@@ -359,6 +362,8 @@ export class MonsterRoster {
   private readonly views = new Map<string, MonsterView>();
   /** The living monster under the pointer, by `entity_id`. */
   private hovered?: string;
+  /** Plates over every head, or none for the target frame (FS-48CTQ §A.1, §B.3). */
+  private mode: MarkerMode = "overhead";
 
   constructor(
     private readonly stage: MonsterStage,
@@ -379,6 +384,30 @@ export class MonsterRoster {
   clear(): void {
     this.hovered = undefined;
     this.sync([]);
+  }
+
+  /**
+   * The floor's marker mode (FS-48CTQ §A.1): on `frame` no monster carries a plate or bar, from
+   * the next {@link update} on; its sprite and any elite wash are drawn as ever (§B.3).
+   */
+  setMarkerMode(mode: MarkerMode): void {
+    this.mode = mode;
+  }
+
+  /** The living monster under the pointer, by `entity_id`: the target frame's first pick (§C.5). */
+  get hoveredId(): string | undefined {
+    return this.hovered;
+  }
+
+  /**
+   * The monsters the target frame may name (FS-48CTQ §C.7): the living ones whose sprites are
+   * shown, as the latest broadcast has them. A corpse, and one the hide rule or the fog has hidden,
+   * are left out. Read it after the frame's hide rule has run.
+   */
+  targetable(): MonsterState[] {
+    return [...this.views.values()]
+      .filter((view) => view.sprite.visible && alive(view.state))
+      .map((view) => view.state);
   }
 
   /** The broadcast's monsters are the whole truth: anyone absent from it is gone. */
@@ -573,11 +602,14 @@ export class MonsterRoster {
     view.sprite.setDepth(worldDepth(view.pos.x, view.pos.y, 1));
   }
 
-  /** The plate and HP bar over a living monster's head; none over a corpse. */
+  /**
+   * The plate and HP bar over a living monster's head; none over a corpse, and none at all on a
+   * frame floor, where the target frame names the monster instead (FS-48CTQ §B.3).
+   */
   private mark(view: MonsterView): void {
     const { sprite, name, prefix, bar, state } = view;
-    const dead = state.action === "dead";
-    const base = dead ? null : markerBase(sprite, view.anim.crown, false, view.anim.artScale);
+    const plated = this.mode === "overhead" && state.action !== "dead";
+    const base = plated ? markerBase(sprite, view.anim.crown, false, view.anim.artScale) : null;
     name.setVisible(base !== null);
     prefix?.setVisible(base !== null);
     bar.setVisible(base !== null);
