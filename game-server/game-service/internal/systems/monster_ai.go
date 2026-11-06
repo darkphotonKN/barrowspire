@@ -316,10 +316,10 @@ func (s *MonsterAISystem) search(route *components.Route, from, goal int) {
 	route.SearchIn = repathInterval
 	route.Goal = goal
 	route.Next = 0
-	cells, found := s.grid.Path(route.Cells[:0], from, goal)
-	route.Cells = cells
+	var found bool
+	// with no path, Path hands the emptied buffer back: no route to follow
+	route.Cells, found = s.grid.Path(route.Cells[:0], from, goal)
 	if !found {
-		route.Cells = route.Cells[:0]
 		slog.Debug("Monster found no path: steering straight until its next search", "from", from, "to", goal)
 	}
 }
