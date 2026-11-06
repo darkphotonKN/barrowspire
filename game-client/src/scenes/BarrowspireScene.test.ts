@@ -3484,6 +3484,35 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toHaveLength(1);
   });
 
+  // The held hub a Leave lets in is applied through switchWorld, whose stop is synchronous: the
+  // scene has stopped (resetRun) before the release returns, and the Leave must not then send
+  // leave_run from the hub or leave its pending flag on the stopped scene for the next run.
+  it("should send nothing and leave no Leave pending when the Leave's release stops the scene", () => {
+    const { run, held, sent } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.init();
+    run.showSettlement(settlement({ outcome: "died" }));
+    run.endRun();
+    held();
+    const stopped = vi.fn(() => run.events.emit("shutdown"));
+    run.resultHold.hold(hub, stopped);
+
+    // the menu's Leave, or the dead player's card
+    (run as unknown as { leaveTheBarrow(): void }).leaveTheBarrow();
+
+    expect(stopped).toHaveBeenCalledWith(hub);
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toEqual([]);
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
+  it("should start each run with no Leave pending, whatever the last one left", () => {
+    const { run } = settlingOnStage();
+    (run as unknown as { leavePending: boolean }).leavePending = true;
+
+    run.init();
+
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
   // R24: the record replaces the FS-QPDKN result card
   it("should put up no result card when the run ends", () => {
     const { run, shown, stage } = settlingOnStage();
