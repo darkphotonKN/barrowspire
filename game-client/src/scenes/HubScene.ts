@@ -36,6 +36,7 @@ import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
 import { PurseReader } from "@/ui/purse";
+import { useMailboxStore } from "@/stores/mailboxStore";
 import { apiClient } from "@/utils/api";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
@@ -683,6 +684,8 @@ export class HubScene extends Phaser.Scene {
    * has one. While the panel is open it owns the keys, as the ESC menu does.
    */
   private mailbox?: MailboxHud;
+  /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
+  private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
   private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
@@ -825,6 +828,10 @@ export class HubScene extends Phaser.Scene {
       () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen(),
       () => this.characterLevel,
     );
+    // a Take that carried gold: the purse line reads the wallet again, open or closed (FS-7TGZ3 R9)
+    this.unsubscribeGoldTaken = useMailboxStore.subscribe((state, prev) => {
+      if (state.goldTaken !== prev.goldTaken) this.gear?.refreshPurse();
+    });
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
@@ -1019,6 +1026,8 @@ export class HubScene extends Phaser.Scene {
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
+    this.unsubscribeGoldTaken?.();
+    this.unsubscribeGoldTaken = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
