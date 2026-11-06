@@ -36,23 +36,53 @@ your stash can be listed. Move it into your stash in town."`, mapped from `ITEM_
 
 ## Acceptance Criteria
 
-- [ ] `ITEM_NOT_IN_STASH` crosses gRPC as `FailedPrecondition` with `ErrorInfo` reason
+- [x] `ITEM_NOT_IN_STASH` crosses gRPC as `FailedPrecondition` with `ErrorInfo` reason
       `ITEM_NOT_IN_STASH` (errcode test).
-- [ ] Service table test: an AVAILABLE, unworn bag placement answers `ITEM_NOT_IN_STASH` after
+- [x] Service table test: an AVAILABLE, unworn bag placement answers `ITEM_NOT_IN_STASH` after
       lock and read, without counting or reserving; a stash placement reserves; a worn bag
       placement answers `ITEM_WORN`; a LISTED bag placement answers `ITEM_NOT_AVAILABLE`; a bag
       placement at the cap answers `ITEM_NOT_IN_STASH`. No outbox row on any refusal.
-- [ ] Opt-in schema test (throwaway database): a bag item is refused and left AVAILABLE with no
+- [x] Opt-in schema test (throwaway database): a bag item is refused and left AVAILABLE with no
       listing and no outbox row; a stash item is reserved as before; the other opt-in reserve
       tests pass with stash seeds.
-- [ ] marketplace: the reserver and `ListItem` pass `ITEM_NOT_IN_STASH` through as
+- [x] Opt-in race (added in fix round 1): a stash→bag `MoveItemInstance` racing `ReserveItem`
+      of the same item ends with exactly one success, and the item is never LISTED in the bag,
+      with no location predicate in the reserve's UPDATE (FS-3R77D R5).
+- [x] marketplace: the reserver and `ListItem` pass `ITEM_NOT_IN_STASH` through as
       `FailedPrecondition` with that reason.
-- [ ] gateway: the generated `openapi.yaml` lists `ITEM_NOT_IN_STASH` on `create-listing`;
-      `make gates` passes.
-- [ ] client: `createListingFailureMessage` maps `ITEM_NOT_IN_STASH` to its copy; the other rows
+- [x] gateway: the generated `openapi.yaml` lists `ITEM_NOT_IN_STASH` on `create-listing`;
+      `make gates` passes every gate this slice can affect. The seam gate (and its selftest,
+      which requires the real tree to pass it) fails on 11 direct error writes in
+      `internal/gateway/wallet/handler.go`, pre-existing since 5583980f (FS-8EGFA) and untouched
+      here.
+- [x] client: `createListingFailureMessage` maps `ITEM_NOT_IN_STASH` to its copy; the other rows
       are unchanged.
-- [ ] `go test ./...`, `go vet` and `golangci-lint run` clean in common, items-service,
-      marketplace-service and api-gateway; client tests and `tsc` clean.
+- [x] `go test ./...` and `go vet` clean in common, items-service, marketplace-service and
+      api-gateway; `golangci-lint run --new-from-rev=500b6b3d` reports no new findings (the
+      services carry pre-existing findings in untouched files); client tests and `tsc` clean.
+
+## Evidence (2026-11-06, fix round 1, at 64a35a84)
+
+- **Opt-in DB tests, fresh throwaway database** on the local docker Postgres
+  (`barrowspire-postgres`), never a service's own database:
+  `CREATE DATABASE items_stash_only_throwaway2` →
+  `migrate -path ./migrations -database "$DSN" up` (version 30) →
+  `ITEMS_TEST_DSN="$DSN" go test ./internal/items/ -count=1 -v` → `ok`, 167 top-level tests
+  passed, 0 failed, **0 skipped**; among them `TestServiceReserveItem_Rules`, `_AgainstTheSchema`,
+  `_ListedItemCap`, `_ConcurrentReservesAt19`, `_WaitsForAnEquipInProgress`, `_RacingAnEquip`,
+  `_RacingAMoveToTheBag` → `DROP DATABASE items_stash_only_throwaway2`.
+- **Mutation check of the race test**: with the `placement.Location != LocationStash` case
+  removed from `ReserveItem`, `TestServiceReserveItem_RacingAMoveToTheBag` failed ("run 1: both
+  the move and the reservation succeeded"); restored with `git checkout`, it passes.
+- **`make gates`** (api-gateway): openapi-diff "committed spec matches regenerated";
+  lint-contract 0 errors (1 pre-existing warning, `paths./api/notification/`); openapi-breaking
+  "No breaking changes"; gates-selftest "gates observed rejecting known-bad input";
+  contract-auth "43 secured, 6 public, none inconsistent"; seam gate FAILED on
+  `wallet/handler.go` only (pre-existing, see above); `make seam-gate-selftest` fails for the
+  same reason.
+- **Go**, without the DB: `go test ./...` common 17 packages ok, items-service 1, marketplace-service
+  14, api-gateway 14, 0 failures; `go vet ./...` exit 0 in all four.
+- **Client**: `npx vitest run` 230 files, 5543 tests passed; `npx tsc --noEmit -p .` exit 0.
 
 ## Blocked By
 

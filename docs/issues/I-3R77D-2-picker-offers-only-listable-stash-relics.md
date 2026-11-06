@@ -29,14 +29,25 @@ Both touch `listRelic.ts` (different functions), so a trivial merge if run in pa
 
 ## Acceptance Criteria
 
-- [ ] `pickerCards` table test: an AVAILABLE unworn stash relic gets a card; a bag relic, a
+- [x] `pickerCards` table test: an AVAILABLE unworn stash relic gets a card; a bag relic, a
       listed / in-escrow / settling / in-run / unknown-status stash relic, a worn stash relic and
       a relic with no location get none; a stash relic with no status gets a card.
-- [ ] Cards carry no `selectable` and no `tag`; `canSubmitListing` is true for any chosen card
+- [x] Cards carry no `selectable` and no `tag`; `canSubmitListing` is true for any chosen card
       with valid prices.
-- [ ] A failed loadout read still lists the unworn-by-default stash relics.
-- [ ] Reopening the drawer re-reads, so a relic moved into the stash shows.
-- [ ] Full vitest suite, `tsc` and lint clean.
+- [x] A failed loadout read still lists the unworn-by-default stash relics.
+- [x] Reopening the drawer re-reads, so a relic moved into the stash shows. Covered at the loader:
+      `loadPickerRelics` reads afresh on every load (pickerRelics.test.ts); the hook's re-read on
+      every opening is unchanged FS-HBXZN code. Seen live in I-3R77D-3 step 5.
+- [x] Full vitest suite, `tsc` and lint clean.
+
+## Evidence (2026-11-06, fix round 1, at 64a35a84)
+
+- `npx vitest run src/marketplace/listRelic.test.ts src/marketplace/pickerRelics.test.ts`:
+  RED at 67799cd3 (13 failed), GREEN at 3cd8e803 (94 passed).
+- `npx vitest run` (full suite): 230 files, 5543 tests passed.
+- `npx tsc --noEmit -p .`: exit 0.
+- `npx next lint --file` on the changed files: "No ESLint warnings or errors";
+  `npm run lint:fence`: "lint fences verified".
 
 ## Blocked By
 
