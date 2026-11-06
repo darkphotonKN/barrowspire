@@ -2,8 +2,8 @@
  * Monsters on the canvas (FS-77AB6 req 34–39): each monster in a run's state broadcast drawn from
  * its baked creature sheet, playing what the server says it is doing, with a hostile nameplate
  * and HP bar over its head; on a `frame` floor it has none, and the target frame names it instead
- * (FS-48CTQ §B.3). A living monster is a target: the pointer over its footprint reports it, a
- * click strikes it, and a hit the server confirms flashes it.
+ * (FS-48CTQ §B.3). A living monster is a target: the pointer over its footprint or its drawn body
+ * reports it, a click strikes it, and a hit the server confirms flashes it.
  *
  * Nothing about a monster is client-held. The server sends where it stands, which way it faces
  * and what it is doing (`action`); the roster eases the position between ticks like a player's
@@ -29,7 +29,7 @@ import { facingFrom, type Facing8 } from "@/render/iso/facing";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
-import { footprintHitArea } from "@/render/world/footprint";
+import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/footprint";
 import type { MarkerMode } from "./markerMode";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
@@ -161,6 +161,30 @@ const BODY_RADIUS = 20;
  */
 export function footprintRadius(look: MonsterLook): number {
   return BODY_RADIUS * Math.max(1, SIZE_TIERS[look.tier].aim);
+}
+
+/**
+ * Half a standing body's width, as a share of its crown. Measured on the baked sheets' idle and
+ * walk frames (2026-11-06): a column this wide either side of the anchor holds 97–99% of a ghoul's,
+ * zombie's or ghost's opaque body above its feet, 93% of a troll's and 89% of the winged demon's;
+ * what it leaves out is a flung arm or a wingtip. Any wider and it takes more of the empty floor
+ * beside a narrow body, and of whatever stands behind it.
+ */
+export const BODY_HALF_WIDTH = 0.4;
+
+/**
+ * Where a monster is hit over its drawn body (FS-48CTQ §C.5, owner playtest 2026-11-06), in screen
+ * px at drawn size `scale`: from its feet up to its crown, {@link BODY_HALF_WIDTH} of a crown either
+ * side, or half its body length for a quadruped, which is longer than it is tall. None for a sheet
+ * that records no crown (no baked art): its footprint alone answers.
+ */
+export function bodyColumn(
+  sheet: { crown?: number; length?: number } | undefined,
+  scale: number,
+): BodyColumn | undefined {
+  if (!sheet?.crown) return undefined;
+  const half = Math.max(BODY_HALF_WIDTH * sheet.crown, (sheet.length ?? 0) / 2);
+  return { halfWidth: half * scale, height: sheet.crown * scale };
 }
 
 // ── Clips and nameplate ───────────────────────────────────────────────────
@@ -580,26 +604,32 @@ export class MonsterRoster {
       state,
     };
     this.wear(view);
-    this.target(view, look);
+    this.target(view, look, sheet);
     this.stand(view);
     if (state.action === "dead") this.layCorpse(view, sheet);
     return view;
   }
 
   /**
-   * Makes a monster a target (req 39): hit-tested on the ground it stands on, never its frame or
-   * its plate, and answering only while it lives and is shown (FS-SRA9J §D.17). Phaser hit-tests
+   * Makes a monster a target (req 39): hit-tested on the ground it stands on and over its drawn
+   * body (FS-48CTQ §C.5), never its frame's empty margin or its plate, one hit test for the hover
+   * and the click. It answers only while it lives and is shown (FS-SRA9J §D.17). Phaser hit-tests
    * no hidden object (`InputManager.inputCandidate` asks `willRender`), so the shown check only
-   * holds the rule here too. Each event reads the latest broadcast.
+   * holds the rule here too; a corpse is hit nowhere, so under Phaser's top-only input it never
+   * takes the pointer from a living monster behind it. Each event reads the latest broadcast.
    */
-  private target(view: MonsterView, look: MonsterLook): void {
+  private target(view: MonsterView, look: MonsterLook, sheet: string): void {
     const { sprite } = view;
     const id = view.state.entity_id;
+    const live = () => alive(view.state) && sprite.visible;
+    const ground = footprintHitArea(() => view.pos, footprintRadius(look));
+    const column = bodyColumn(this.art.sheet(sheet), view.scale);
+    const body = column && bodyHitArea(() => view.pos, column);
     sprite.setInteractive({
       hitArea: {},
-      hitAreaCallback: footprintHitArea(() => view.pos, footprintRadius(look)),
+      hitAreaCallback: (area, x, y, obj) =>
+        live() && (ground(area, x, y, obj) || (body?.(area, x, y, obj) ?? false)),
     });
-    const live = () => alive(view.state) && sprite.visible;
     sprite.on("pointerdown", () => {
       if (live()) this.targeting?.strike(view.state);
     });
