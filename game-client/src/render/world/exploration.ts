@@ -127,12 +127,23 @@ export function partyPositions(state: {
     .map((m) => ({ x: m.position.x, y: m.position.y }));
 }
 
-/** Every region of one floor, by its exploration state (§B.2–§B.6). */
+/**
+ * How near a living, in-play member a monster or drop pile is shown, in world px, whatever its
+ * region's state (FS-SRA9J §D.15, §D.16, B3).
+ */
+export const SHOWN_WITHIN = 400;
+
+/**
+ * Every region of one floor, by its exploration state (§B.2–§B.6), and which monsters and drop
+ * piles the party is shown (§D).
+ */
 export class Exploration {
   /** By group root (a region, or a tiny segment's group): ever visible. */
   private readonly explored = new Set<number>();
   /** By group root: a living member stands in it now. */
   private visible = new Set<number>();
+  /** The party's living, in-play positions as last seen. */
+  private party: readonly Point[] = [];
   private readonly group: Map<number, number>;
 
   constructor(private readonly grid: RegionGrid) {
@@ -152,7 +163,19 @@ export class Exploration {
     const changed = now.size !== this.visible.size || [...now].some((id) => !this.visible.has(id));
     for (const id of now) this.explored.add(id);
     this.visible = now;
+    this.party = positions.map((p) => ({ x: p.x, y: p.y }));
     return changed;
+  }
+
+  /**
+   * Whether a monster or drop pile at world point `at` is shown (§D.15, §D.16): it stands in a
+   * visible region, or within {@link SHOWN_WITHIN} px of a position the latest {@link see} was
+   * given, whatever its region's state. Nothing is shown before the party is first seen.
+   */
+  shows(at: Point): boolean {
+    const id = regionAt(this.grid, at);
+    if (id && this.visible.has(this.root(id))) return true;
+    return this.party.some((p) => Math.hypot(p.x - at.x, p.y - at.y) <= SHOWN_WITHIN);
   }
 
   /** A region's state; unexplored for one never seen. */

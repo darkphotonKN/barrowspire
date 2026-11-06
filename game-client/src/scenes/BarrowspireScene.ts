@@ -691,10 +691,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private roofCover: Cover[] = [];
 
   // 寶箱 (從後端同步) — `pos` is the world position; the sprite is drawn at its projection.
-  // Drop piles with loot left in them are held here too: they open and loot like a chest
+  // Drop piles with loot left in them are held here too: they open and loot like a chest, but the
+  // fog shows them by the monster rule (FS-SRA9J §D.16)
   private chests: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
+    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point; pile?: boolean }
   > = new Map();
 
   // 逃脫門 (從後端同步)
@@ -2394,7 +2395,7 @@ export class BarrowspireScene extends Phaser.Scene {
                 .sprite(0, 0, DROP_PILE.texture)
                 .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
             : this.add.sprite(0, 0, (kind === "sack" ? SACK : CHEST).placeholder.closed);
-        chest = { sprite, entityId: container.entity_id, pos };
+        chest = { sprite, entityId: container.entity_id, pos, pile: kind === "drop_pile" };
         this.chests.set(container.entity_id, chest);
         // one coming back into the snapshot is drawn as it now is, open or shut, in the pool it
         // already has (FS-KE075 §H.48)
@@ -3733,6 +3734,16 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * Whether the fog hides a monster or drop pile at world point `at` (FS-SRA9J §D.15, §D.16): on
+   * a dungeon floor, it is neither in a visible region nor within 400 px of a living, in-play
+   * member. Never before the floor's fog is up (§Edge "Floor map not yet in").
+   */
+  private fogHides(at: Point): boolean {
+    const dungeon = this.dungeon;
+    return !!dungeon?.fog && !dungeon.seen.shows(at);
+  }
+
+  /**
    * Shows what stands in the ground chunks near the camera and hides the rest, and puts the fixed
    * lights near it on the light-map (FS-KE075 §H.45): only when the camera crosses a chunk edge.
    * Nothing on a floor of buildings.
@@ -4539,9 +4550,15 @@ export class BarrowspireScene extends Phaser.Scene {
    * stairs, run dressing, projectiles, burning trails and world effects. The plates and bars over
    * monsters and teammates stand over the blackout, so they are hidden here, never left to it
    * (§C.2). The player is never hidden: their building is picked by the same rule (§C.3).
+   *
+   * On a dungeon floor the fog hides too (FS-SRA9J): monsters and drop piles by its monster rule
+   * (§D.15, §D.16), a hidden monster no target (§D.17); everything else that stands in an
+   * unexplored region (§C.8, §C.14). Teammates never (§D.18).
    */
   private hideWhatIsElsewhere(): void {
     const hiddenAt = (at: Point) => this.view?.hidden(at) ?? false;
+    /** Out of sight: elsewhere by the blackout's rule, or in an unexplored region. */
+    const unseen = (at: Point) => hiddenAt(at) || this.unexplored(at);
 
     this.otherPlayers.forEach((sprite, playerId) => {
       const pos = this.otherPlayersPos.get(playerId);
@@ -4553,25 +4570,25 @@ export class BarrowspireScene extends Phaser.Scene {
       // shown, the name keeps what the hover said this frame
       if (!shown) this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
     });
-    this.monsters?.hideWhere(hiddenAt);
+    this.monsters?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
 
+    for (const { sprite, pos, pile } of this.chests.values())
+      sprite.setVisible(!hiddenAt(pos) && !(pile ? this.fogHides(pos) : this.unexplored(pos)));
     const placed = [
-      ...this.chests.values(),
       ...this.escapeDoors.values(),
       ...this.switches.values(),
       ...this.stairs.placed(),
       ...this.dressingAt,
     ];
-    // in an unexplored region of a dungeon floor too (FS-SRA9J §C.14)
-    for (const { sprite, pos } of placed) sprite.setVisible(!hiddenAt(pos) && !this.unexplored(pos));
+    for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
     for (const { bed, glow, trail } of this.trails.placed()) {
       // a trail is a line on the floor: hidden once neither end is in sight
-      const shown = !hiddenAt(trail.from) || !hiddenAt(trail.to);
+      const shown = !unseen(trail.from) || !unseen(trail.to);
       bed.setVisible(shown);
       glow.setVisible(shown);
     }
-    this.projectiles?.hideWhere(hiddenAt);
-    this.fx?.hideWhere(hiddenAt);
+    this.projectiles?.hideWhere(unseen);
+    this.fx?.hideWhere(unseen);
   }
 
   private createUI(): void {

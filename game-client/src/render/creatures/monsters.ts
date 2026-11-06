@@ -442,7 +442,8 @@ export class MonsterRoster {
    * The broadcast's monsters are the whole truth: anyone absent from it is gone, slain away or,
    * on a dungeon floor, out of the recipient's interest (FS-KE075 §H.48). It goes with nothing
    * replayed, and one that comes back is drawn as it now is: no flash for health lost meanwhile, a
-   * corpse already fallen.
+   * corpse already fallen. So too one hidden by the hide rule or the fog (FS-SRA9J §D.15): a hit
+   * taken unseen does not flash.
    */
   sync(monsters: readonly MonsterState[]): void {
     const present = new Set(monsters.map((m) => m.entity_id));
@@ -461,7 +462,7 @@ export class MonsterRoster {
         this.views.set(monster.entity_id, this.create(monster));
         continue;
       }
-      if (monster.current_health < view.state.current_health) this.flash(view);
+      if (monster.current_health < view.state.current_health && view.sprite.visible) this.flash(view);
       view.state = monster;
     }
 
@@ -494,8 +495,11 @@ export class MonsterRoster {
         view.scale,
       );
       view.facing = choice.facing;
+      // one that dies unseen lies where it fell, and is never seen mid-fall when it is shown again
+      const fellUnseen = state.action === "dead" && !view.fallen && !view.sprite.visible;
       view.fallen = state.action === "dead";
-      if (view.anim.baked) view.anim.show(view.sprite, choice);
+      if (fellUnseen) this.layCorpse(view, monsterSheet(monsterLook(state.archetype), state));
+      else if (view.anim.baked) view.anim.show(view.sprite, choice);
       if (view.flashMs > 0) {
         view.flashMs -= deltaMs;
         if (view.flashMs <= 0) this.wear(view);
@@ -506,18 +510,26 @@ export class MonsterRoster {
   }
 
   /**
-   * The hide rule (FS-9PN7X §C.2): a monster whose drawn position `hidden` names goes, body, plate
-   * and bar; the rest show their bodies, and keep the plate and bar this frame's {@link update}
-   * seated. Call it after `update`, once the frame knows which building is the player's.
+   * The hide rule (FS-9PN7X §C.2) and the fog's (FS-SRA9J §D.15), as one: a monster whose drawn
+   * position `hidden` names goes, body, plate, elite prefix and bar; the rest show their bodies, and
+   * keep the plate and bar this frame's {@link update} seated. A hidden monster is no target
+   * (§D.17): the hover on it ends, since a pointer resting still is not hit-tested again, and a
+   * flash on it ends, so it does not flash when shown again. Call it after `update`, once the frame
+   * knows which building is the player's.
    */
   hideWhere(hidden: (at: Point) => boolean): void {
-    for (const view of this.views.values()) {
+    for (const [id, view] of this.views) {
       const shown = !hidden(view.pos);
       view.sprite.setVisible(shown);
       if (shown) continue;
       view.name.setVisible(false);
       view.prefix?.setVisible(false);
       view.bar.setVisible(false);
+      if (this.hovered === id) this.unhover();
+      if (view.flashMs > 0) {
+        view.flashMs = 0;
+        this.wear(view);
+      }
     }
   }
 
@@ -576,7 +588,9 @@ export class MonsterRoster {
 
   /**
    * Makes a monster a target (req 39): hit-tested on the ground it stands on, never its frame or
-   * its plate, and answering only while it lives. Each event reads the latest broadcast.
+   * its plate, and answering only while it lives and is shown (FS-SRA9J §D.17). Phaser hit-tests
+   * no hidden object (`InputManager.inputCandidate` asks `willRender`), so the shown check only
+   * holds the rule here too. Each event reads the latest broadcast.
    */
   private target(view: MonsterView, look: MonsterLook): void {
     const { sprite } = view;
@@ -585,11 +599,12 @@ export class MonsterRoster {
       hitArea: {},
       hitAreaCallback: footprintHitArea(() => view.pos, footprintRadius(look)),
     });
+    const live = () => alive(view.state) && sprite.visible;
     sprite.on("pointerdown", () => {
-      if (alive(view.state)) this.targeting?.strike(view.state);
+      if (live()) this.targeting?.strike(view.state);
     });
     sprite.on("pointerover", () => {
-      if (!alive(view.state)) return;
+      if (!live()) return;
       this.hovered = id;
       this.targeting?.hover(view.state);
     });
