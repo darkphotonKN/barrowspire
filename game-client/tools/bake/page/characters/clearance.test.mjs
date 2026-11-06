@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import { createRig, jointAt as J } from "./rig.js";
-import { belt, legs, skirt, skirtBones, torso } from "./anatomy.js";
+import { UNDER_CLEAR, belt, legs, skirt, skirtBones, torso } from "./anatomy.js";
 import { applyPose, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS } from "./clips.js";
 import {
   CLEARANCE_PX,
@@ -293,8 +293,9 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
       }
     });
     expect(moved).toBeGreaterThan(0);
-    // the thigh's root, under the belt: in by a couple of 1x px at most
+    // the thigh's root, under the belt: in to UNDER_CLEAR inside the wall (FS-3V7GC R10, about
+    // 3.5 1x px on this figure), from no more than a couple of px outside it
     expect(most * K1).toBeGreaterThan(1);
-    expect(most * K1).toBeLessThan(3);
+    expect(most * K1).toBeLessThan(UNDER_CLEAR * H * K1 + 2);
   });
 });

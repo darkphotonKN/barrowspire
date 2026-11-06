@@ -1017,3 +1017,59 @@ describe("HubGear with items still in a delve (FS-18Z5F R38)", () => {
     },
   );
 });
+
+describe("HubGear purse line (FS-7TGZ3 §C R8–9)", () => {
+  function withPurse() {
+    const panel = fakePanel();
+    const api = fakeApi();
+    const purse = { refresh: vi.fn(), forget: vi.fn() };
+    const gear = new HubGear(panel, api, { notice: vi.fn() }, purse);
+    return { panel, gear, purse };
+  }
+
+  it("should read the purse on every open, and not on closing (R8)", () => {
+    const { gear, purse } = withPurse();
+    gear.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    gear.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    gear.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("should read the purse when it opens at the stash chest (R8, stash mode)", () => {
+    const { gear, purse } = withPurse();
+    expect(gear.openStash()).toBe(true);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    // an open overlay is left as it is: no second open, no second read
+    expect(gear.openStash()).toBe(false);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("should read the purse again when asked after a Take, open or closed (R9)", () => {
+    const { gear, purse } = withPurse();
+    gear.refreshPurse();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    gear.toggle();
+    gear.refreshPurse();
+    expect(purse.refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("should let a purse read in flight go on release", () => {
+    const { gear, purse } = withPurse();
+    gear.toggle();
+    gear.release();
+    expect(purse.forget).toHaveBeenCalledTimes(1);
+  });
+
+  it("should open and load as before without a purse", async () => {
+    const panel = fakePanel();
+    const gear = new HubGear(panel, fakeApi([instance("sword")]), {
+      notice: vi.fn(),
+    });
+    gear.toggle();
+    gear.refreshPurse();
+    await settle();
+    expect(panel.inventory.map((i) => i.entity_id)).toEqual(["sword"]);
+  });
+});

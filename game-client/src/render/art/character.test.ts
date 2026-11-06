@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CharacterAnimator, CharacterMotion, type AnimatedSprite } from "./character";
 import { ArtLibrary } from "./library";
+import { CHARGE_MS } from "@/render/effects/charge";
 import type { ArtAnimation, ArtManifest } from "./manifest";
 
 const quiet = { warn: () => {} };
@@ -44,7 +45,8 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#knight",
         licence: "Barrowspire-original",
       },
-      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35)
+      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35), and the
+      // attack on the move, as long as his attack (12 frames at 24 fps, 6 at 12; FS-3V7GC)
       char_mercenary_base: {
         atlas: "characters-0",
         frameWidth: 147,
@@ -57,6 +59,7 @@ function manifest(): ArtManifest {
           attack: clip(12, false, 6),
           death: clip(9, false, 7),
           parry: clip(24, false, 4),
+          walk_attack: clip(24, false, 12),
         },
         crown: 80,
         source: "authored: tools/bake/page/characters/cast.js#mercenary",
@@ -206,7 +209,7 @@ describe("CharacterMotion", () => {
     // a charge: the server carries the body for longer than the swing lasts
     const motion = new CharacterMotion("se", 500);
     motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
-    motion.attack(1000, { x: 40, y: 0 }, 800);
+    motion.attack(1000, { x: 40, y: 0 }, { charge: true, holdMs: 800 });
     const pos = { x: 0, y: 0 };
     let choice = motion.step(pos, 1000, FRAME, false);
     for (let t = 1000 + FRAME; t < 1799; t += FRAME) {
@@ -221,7 +224,7 @@ describe("CharacterMotion", () => {
 
   it("should keep the clip's length when the hold asked for is shorter", () => {
     const motion = new CharacterMotion("se", 500);
-    motion.attack(1000, { x: 0, y: -40 }, 100);
+    motion.attack(1000, { x: 0, y: -40 }, { charge: true, holdMs: 100 });
     expect(motion.step({ x: 0, y: 0 }, 1499, FRAME, false).animation).toBe("attack");
     expect(motion.step({ x: 0, y: 0 }, 1500, FRAME, false).animation).toBe("idle");
   });
@@ -363,7 +366,7 @@ describe("CharacterAnimator", () => {
   it("should hold a charge's pose past the clip on its last frame, without replaying the swing", () => {
     const sprite = fakeSprite();
     const anim = new CharacterAnimator(art(), "warrior");
-    anim.attack(0, { x: 40, y: 0 }, 700);
+    anim.attack(0, { x: 40, y: 0 }, { charge: true, holdMs: 700 });
     const swing = anim.step({ x: 0, y: 0 }, 0, FRAME, false);
     anim.show(sprite, swing);
     sprite.at(6);
@@ -451,7 +454,7 @@ describe("CharacterAnimator", () => {
     });
   });
 
-  describe("attacking on the move (walk_attack, FS-HF0WW)", () => {
+  describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
     /** An archer drawn walking east at the server's pace, then loosing at `aim`. */
     function shootingWhileWalking(aim: { x: number; y: number }) {
       const anim = new CharacterAnimator(art(), "archer");
@@ -534,10 +537,61 @@ describe("CharacterAnimator", () => {
       expect(sprite.plays[1]).toEqual({ key: "char_archer_base/walk/0", startFrame: 0 });
     });
 
+    it("should play the warrior's real charge (CHARGE_MS) whole on a class sheet whose attack outlasts it (FS-3V7GC R6)", () => {
+      // every class's attack is 7 frames at 12 fps, 583 ms: longer than the charge's 470 ms, so
+      // only the explicit charge, never the hold's length, keeps the swing off the walk
+      const attackMs = (7 / 12) * 1000;
+      expect(CHARGE_MS).toBeLessThan(attackMs);
+      const motion = new CharacterMotion("se", attackMs, { walkAttack: true });
+      motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
+      motion.attack(1000, { x: 40, y: 0 }, { charge: true, holdMs: CHARGE_MS });
+      const pos = { x: 0, y: 0 };
+      for (let t = 1000 + FRAME; t < 1000 + attackMs; t += FRAME) {
+        pos.x += (450 * FRAME) / 1000;
+        expect(motion.step(pos, t, FRAME, false).animation, `at ${(t - 1000).toFixed(0)} ms`).toBe("attack");
+      }
+      // the hold is shorter than the swing, so the window is the swing's
+      pos.x += (200 * FRAME) / 1000;
+      expect(motion.step(pos, 1000 + attackMs, FRAME, false).animation).toBe("walk");
+      // the next swing on the move, not a charge, walks again
+      motion.attack(1700, { x: 40, y: 0 });
+      pos.x += (200 * FRAME) / 1000;
+      expect(motion.step(pos, 1700 + FRAME, FRAME, false).animation).toBe("walk_attack");
+    });
+
+    /** Walks the character east at the server's pace for 300 ms; returns where it got. */
+    function walking(anim: CharacterAnimator) {
+      const pos = { x: 0, y: 0 };
+      for (let t = 0; t <= 300; t += FRAME) {
+        pos.x += (200 * FRAME) / 1000;
+        anim.step(pos, t, FRAME, false);
+      }
+      return pos;
+    }
+
+    it("should keep a melee class's legs walking while it swings on the move, turned to its target (FS-3V7GC)", () => {
+      const anim = new CharacterAnimator(art(), "mercenary");
+      const pos = walking(anim);
+      anim.attack(300, { x: -30, y: 30 });
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + FRAME, FRAME, false)).toMatchObject({ animation: "walk_attack", facing: "sw" });
+    });
+
+    it("should leave the mercenary's parry on the move whole-body, and a cut inside it on the move over the walk (FS-3V7GC)", () => {
+      const anim = new CharacterAnimator(art(), "mercenary");
+      const pos = walking(anim);
+      anim.guard(true, 300);
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + FRAME, FRAME, false).animation).toBe("parry");
+      anim.attack(300 + FRAME, { x: 40, y: 0 });
+      pos.x += (200 * FRAME) / 1000;
+      expect(anim.step(pos, 300 + 2 * FRAME, FRAME, false).animation).toBe("walk_attack");
+    });
+
     it("should hold a charge's pose whole, never split over the walk", () => {
       const motion = new CharacterMotion("se", 500, { walkAttack: true });
       motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
-      motion.attack(1000, { x: 40, y: 0 }, 800);
+      motion.attack(1000, { x: 40, y: 0 }, { charge: true, holdMs: 800 });
       const pos = { x: 0, y: 0 };
       for (let t = 1000 + FRAME; t < 1799; t += FRAME) {
         pos.x += (450 * FRAME) / 1000;

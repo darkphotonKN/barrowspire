@@ -899,6 +899,15 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(field.equipment).toBeUndefined();
   });
 
+  it("should release the HUD on release, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
+    const { field } = hudOnStage();
+    const release = vi.spyOn(field.equipment!, "release");
+
+    field.release();
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it("should compose the run's equip HUD and bind its keys when the field is created", () => {
     // the keys the keyboard is asked to answer; the rest of the input answers anything
     const keys = new Map<string, () => void>();

@@ -256,7 +256,7 @@ export function createBaker() {
     prep(root);
     scene.add(root);
     // pass 1: bounds over every pose and facing, from the skinned vertices themselves. A pose
-    // whose `sizing` is false (FS-HF0WW: the archer's walk_attack) does not set the frame;
+    // whose `sizing` is false (FS-HF0WW, FS-3V7GC: a class's walk_attack) does not set the frame;
     // it must fit the frame the others set, pad included, or the bake fails rather than clip it.
     const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
     const fit = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };

@@ -20,15 +20,6 @@ export const ANIMATIONS = {
   death: { frames: 7, fps: 9, loop: false },
 };
 
-/**
- * The Mercenary's clips (FS-MAMHR §H): the four, and the parry, which raises into the guard fast
- * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
- * long as the stance is up.
- */
-export const MERC_ANIMATIONS = {
-  ...ANIMATIONS,
-  parry: { frames: 4, fps: 24, loop: false },
-};
 
 /**
  * How many walk cycles the legs of `walk_attack` take while the upper body shoots once. The run
@@ -39,17 +30,33 @@ export const MERC_ANIMATIONS = {
 export const WALK_ATTACK_CYCLES = 2;
 
 /**
- * The Archer's clips (FS-HF0WW): the four, and `walk_attack`, the shot from the waist up
- * over the walk from the waist down, played while he shoots on the move. It lasts exactly as long
- * as the attack (14 frames at 24 fps, the attack's 7 at 12), so the client's attack window times
- * it unchanged. The upper body steps through the attack's own 7 keys, each held two frames, just
- * as the attack plays them; the legs stride at 24 fps. It is `boxed`: drawn in the frame the four
- * set, never widening it, so the sheet keeps today's frame box (the bake fails if it would clip).
+ * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
+ * walk from the waist down, played while a class attacks on the move. It lasts exactly as long as
+ * `specs.attack` (twice its frames at twice its fps: 14 at 24 for the 7 at 12), so the client's
+ * attack window times it unchanged. The upper body steps through the attack's own keys, each held
+ * two frames, just as the attack plays them; the legs stride at the doubled rate. It is `boxed`:
+ * drawn in the frame the other clips set, never widening it, so the sheet keeps its frame box
+ * (the bake fails if it would clip).
  */
-export const ARCHER_ANIMATIONS = {
+export function withWalkAttack(specs) {
+  return { ...specs, walk_attack: { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true } };
+}
+
+/**
+ * The playable classes' clips (FS-3V7GC): the four, and `walk_attack`. The knight, the archer
+ * and the wizard; the mercenary's are {@link MERC_ANIMATIONS}.
+ */
+export const CLASS_ANIMATIONS = withWalkAttack(ANIMATIONS);
+
+/**
+ * The Mercenary's clips (FS-MAMHR §H): a class's, and the parry, which raises into the guard fast
+ * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
+ * long as the stance is up. There is no parry on the move: the guard is whole-body (FS-3V7GC R7).
+ */
+export const MERC_ANIMATIONS = withWalkAttack({
   ...ANIMATIONS,
-  walk_attack: { frames: ANIMATIONS.attack.frames * 2, fps: ANIMATIONS.attack.fps * 2, loop: false, boxed: true },
-};
+  parry: { frames: 4, fps: 24, loop: false },
+});
 
 /**
  * Hub folk (FS-2325V §G.1) only idle and walk: they never fight or fall. Their idle is a shorter

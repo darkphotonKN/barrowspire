@@ -87,6 +87,7 @@ const { palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
 const { usePartyStore } = await import("@/stores/partyStore");
 const { useAuthStore } = await import("@/stores/authStore");
+const { useMailboxStore } = await import("@/stores/mailboxStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
@@ -2223,6 +2224,45 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     const { hub } = hubOnStage();
     hub.release();
     expect(hub.gear).toBeUndefined();
+  });
+});
+
+describe("HubScene reads the purse after a gold Take (FS-7TGZ3 R9)", () => {
+  /** A gold Take, as the mailbox store records one. */
+  const goldTake = () => useMailboxStore.setState({ goldTaken: useMailboxStore.getState().goldTaken + 1 });
+  const withPurse = (hub: Record<string, unknown>) => {
+    const refreshPurse = vi.fn();
+    hub.gear = { ...fakeGear(), refreshPurse };
+    return refreshPurse;
+  };
+
+  it("should read once per gold Take, and nothing for a mailbox change that is not one", () => {
+    const { hub } = hubOnStage();
+    const refreshPurse = withPurse(hub);
+    (hub.watchGoldTakes as () => void)();
+
+    goldTake();
+    expect(refreshPurse).toHaveBeenCalledTimes(1);
+    useMailboxStore.setState({ pulses: useMailboxStore.getState().pulses + 1 });
+    expect(refreshPurse).toHaveBeenCalledTimes(1);
+    hub.release();
+  });
+
+  it("should stop listening on release, and a second visit's one Take reads exactly once", () => {
+    const { hub } = hubOnStage();
+    withPurse(hub);
+    (hub.watchGoldTakes as () => void)();
+    hub.release();
+
+    // a later visit's overlay, before that visit listens: the first visit's watch must be gone
+    const second = withPurse(hub);
+    goldTake();
+    expect(second).not.toHaveBeenCalled();
+
+    (hub.watchGoldTakes as () => void)();
+    goldTake();
+    expect(second).toHaveBeenCalledTimes(1);
+    hub.release();
   });
 });
 

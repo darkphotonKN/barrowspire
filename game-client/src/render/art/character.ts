@@ -58,6 +58,14 @@ export interface AnimatedSprite {
   };
 }
 
+/** How a swing is drawn beyond its aim ({@link CharacterMotion.attack}). */
+export interface Swing {
+  /** A charge (the warrior's dash): the whole attack pose, never over the walk. */
+  charge?: boolean;
+  /** Keep the attack pose this long (ms) if that is longer than the clip. */
+  holdMs?: number;
+}
+
 /**
  * The motion half, Phaser-free: measures the drawn velocity, keeps the facing, and times the
  * attack window, then asks {@link selectAnimation} for the clip.
@@ -75,8 +83,8 @@ export class CharacterMotion {
   private readonly walkAttack: boolean;
 
   /**
-   * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, FS-HF0WW), so an
-   * attack drawn while moving keeps the legs walking.
+   * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the four classes', FS-HF0WW,
+   * FS-3V7GC), so an attack drawn while moving keeps the legs walking.
    */
   constructor(
     public facing: Facing8 = "se",
@@ -91,12 +99,15 @@ export class CharacterMotion {
    * attack restarts the window: skill cooldowns are shorter than the clip, and every cast the
    * server receives should show a swing.
    *
-   * `holdMs` keeps the attack pose for longer than the clip, its last frame held: a charge the
-   * server carries for longer than the swing lasts. A hold shorter than the clip changes nothing.
+   * `swing.charge`: the swing is a charge (the warrior's dash), played whole as `attack` while
+   * the server carries the body, never split over the walk (FS-3V7GC R6). Told, not inferred from
+   * the hold's length: the charge (CHARGE_MS) is shorter than a class's attack.
+   * `swing.holdMs` keeps the attack pose for longer than the clip, its last frame held. A hold
+   * shorter than the clip changes nothing.
    */
-  attack(now: number, aim?: Point, holdMs = 0): void {
-    this.attackEnds = now + Math.max(this.attackMs, holdMs);
-    this.charging = holdMs > this.attackMs;
+  attack(now: number, aim?: Point, swing: Swing = {}): void {
+    this.attackEnds = now + Math.max(this.attackMs, swing.holdMs ?? 0);
+    this.charging = swing.charge ?? false;
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
   }
 
@@ -206,9 +217,9 @@ export class CharacterAnimator {
     return this.baked ? this.art.sheet(this.sheet)?.crown : undefined;
   }
 
-  /** Starts a swing from its first frame; `holdMs` as {@link CharacterMotion.attack}. */
-  attack(now: number, aim?: Point, holdMs?: number): void {
-    this.motion.attack(now, aim, holdMs);
+  /** Starts a swing from its first frame; `swing` as {@link CharacterMotion.attack}. */
+  attack(now: number, aim?: Point, swing?: Swing): void {
+    this.motion.attack(now, aim, swing);
     this.swingPending = true;
   }
 

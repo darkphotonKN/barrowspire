@@ -2,6 +2,7 @@ import type * as Phaser from "phaser";
 import type { ClientGameState, PlayerState, ProjectileState } from "@/types/gameState";
 import { screenToWorld, type Point } from "@/render/iso";
 import type { ArtLibrary } from "@/render/art/library";
+import type { Swing } from "@/render/art/character";
 import type { LightMap } from "@/render/lighting";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
 import { PlayerCombat, type CastButton, type CombatLook, type CombatPort } from "@/render/combat/playerCombat";
@@ -180,7 +181,7 @@ export function fieldCombatOnScene(
   hooks: {
     selfAnim():
       | {
-          attack(now: number, aim?: Point, holdMs?: number): void;
+          attack(now: number, aim?: Point, swing?: Swing): void;
           holdAim(aim: Point | undefined): void;
           guard(up: boolean, now: number): void;
         }
@@ -241,7 +242,7 @@ export function fieldCombatOnScene(
         kit.endAim();
         hooks.selfAnim()?.holdAim(undefined);
       },
-      attackClip: (aim, holdMs) => hooks.selfAnim()?.attack(scene.time.now, aim, holdMs),
+      attackClip: (aim, swing) => hooks.selfAnim()?.attack(scene.time.now, aim, swing),
       lockout: () => hooks.lockout?.(),
     },
     kit,
