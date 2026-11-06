@@ -289,6 +289,25 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     expect(fill.reduce((w, f) => w + f.w, 0)).toBeCloseTo(backing.w * ratio, 0);
   });
 
+  it.each([
+    [1, 71],
+    [1.5, 106 / 1.5],
+    [2, 71],
+  ])(
+    "should round the bar's fill to whole backing px at render scale %s, as the overhead bar does (review T1)",
+    (scale, want) => {
+      const parts = fakeStage();
+      const frame = new TargetFrame(parts.stage, () => 540, () => scale);
+      // 30% of the 236-unit bar is 70.8 logical units: 70.8, 106.2 and 141.6 backing px
+      frame.update(16, monster({ current_health: 36, max_health: 120 }), false);
+      const hp = parts.graphics
+        .flatMap((g) => g.fills)
+        .find((f) => f.colour === MARKER_BAR.hp)!;
+      expect(hp.w).toBeCloseTo(want, 6);
+      expect(Number.isInteger(Math.round(hp.w * scale * 1e6) / 1e6)).toBe(true);
+    },
+  );
+
   it("should follow the monster's health every update", () => {
     const parts = fakeStage();
     const frame = new TargetFrame(parts.stage, () => 540);
