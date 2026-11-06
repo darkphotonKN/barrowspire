@@ -548,3 +548,16 @@ describe("planGroundLayer", () => {
     expect(planGroundLayer({ ...world, look: TOWER_GROUND, seed: 5 })).not.toEqual(base);
   });
 });
+
+describe("planGroundLayer on a dungeon floor (FS-KE075 §H.44)", () => {
+  const world = { width: 12 * T, height: 8 * T, kind: "run" as const, houses: [] };
+  // ground only west of x = 4 tiles: a stand-in for a floor's walkable and shell cells
+  const where = (p: { x: number }) => p.x < 4 * T;
+
+  it("should lay ground only where the floor has it, each piece as the whole floor lays it", () => {
+    const whole = planGroundLayer({ ...world, look: TOWER_GROUND });
+    const masked = planGroundLayer({ ...world, look: TOWER_GROUND, where });
+    expect(masked).toEqual(whole.filter((p) => where(p.at)));
+    expect(masked).toHaveLength(4 * 8);
+  });
+});
