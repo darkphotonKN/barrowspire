@@ -132,8 +132,9 @@ func TestFormatStateToClientState_PartyMembersCarryResource(t *testing.T) {
 	assert.Equal(t, float64(4), w.frameFor(t, types.WorldTypeHub, w.wren)[w.stranger]["level"], "a stranger's level")
 }
 
-// A non-member's entry in other_players is byte-for-byte the bare player
-// state, as it was before party members carried more. FS-CH21F R2, R4.
+// A non-member's entry in other_players is byte-for-byte the bare shown player
+// state, as it was before party members carried more: what the player shows,
+// without their bag and worn gear. FS-CH21F R2, R4; FS-KE075 §I R51.
 func TestFormatStateToClientState_NonMemberWireUnchanged(t *testing.T) {
 	w := newPartyWorld()
 	s := NewStateSerializer(w.em, w.parties)
@@ -148,7 +149,7 @@ func TestFormatStateToClientState_NonMemberWireUnchanged(t *testing.T) {
 			}
 			got, err := json.Marshal(other)
 			require.NoError(t, err)
-			want, err := json.Marshal(backendState.Players[w.stranger])
+			want, err := json.Marshal(backendState.Players[w.stranger].PublicPlayerState)
 			require.NoError(t, err)
 			assert.JSONEq(t, string(want), string(got))
 			assert.Equal(t, string(want), string(got), "byte for byte")

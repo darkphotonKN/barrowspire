@@ -2,7 +2,7 @@ import * as Phaser from "phaser";
 import { ActionType, WorldType, type FieldId } from "@/assets/types/client";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
-import type { ClientGameState, GateState, ItemState, PlayerState, Position, WallState } from "@/types/gameState";
+import type { ClientGameState, GateState, ItemState, PlayerState, Position, PublicPlayerState, WallState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ensureCharacterTextures, placeholderTexture } from "@/utils/characterTextures";
 import {
@@ -844,7 +844,7 @@ export class FieldScene extends Phaser.Scene {
       .setDepth(MARKER_DEPTH.name);
   }
 
-  private placePlayer(player: PlayerState, isSelf: boolean): void {
+  private placePlayer(player: PublicPlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
     const fallen = isFallen(player);
     if (existing) {

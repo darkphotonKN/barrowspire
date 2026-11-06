@@ -10,7 +10,7 @@ import {
   ClientGameState,
   GateState,
   NPCState,
-  PlayerState,
+  PublicPlayerState,
   Position,
   WallState,
 } from "@/types/gameState";
@@ -2049,7 +2049,7 @@ export class HubScene extends Phaser.Scene {
    * The character textures have no walk frames — one static image per class per
    * facing — so the stride is animated by drawing legs, the same as in a run.
    */
-  private updateAppearance(view: PlayerView, player: PlayerState): void {
+  private updateAppearance(view: PlayerView, player: PublicPlayerState): void {
     // a baked sheet is turned and strided each frame instead (easeTowardServerPositions)
     if (view.anim.baked) return;
     const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
@@ -2870,7 +2870,7 @@ export class HubScene extends Phaser.Scene {
     sigil?.setPosition(name.x, name.y - name.height / 2 - SIGIL_GAP);
   }
 
-  private placePlayer(player: PlayerState, isSelf: boolean): void {
+  private placePlayer(player: PublicPlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
 
     // Existing players ease toward the target in update(); only a player seen

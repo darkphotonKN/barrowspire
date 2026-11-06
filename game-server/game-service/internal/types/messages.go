@@ -117,12 +117,13 @@ type CurrentPlayerState struct {
 }
 
 // OtherPlayerState is another player as one recipient is told them: what every
-// player shows, plus, when they are in the recipient's party, their class
-// resource and a mercenary's parry fields, as their own HUD gets them. For
-// anyone else both are nil and the JSON is the bare PlayerState's.
+// player shows, never their bag or worn gear (FS-KE075 §I R51, ADR-0064),
+// plus, when they are in the recipient's party, their class resource and a
+// mercenary's parry fields, as their own HUD gets them. For anyone else both
+// are nil and the JSON is the bare PublicPlayerState's.
 // FS-CH21F §Requirements 1–4.
 type OtherPlayerState struct {
-	*PlayerState
+	*PublicPlayerState
 	Resource *ResourceState `json:"resource,omitempty"`
 	*ParryState
 }

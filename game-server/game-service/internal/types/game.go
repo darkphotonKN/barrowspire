@@ -24,15 +24,27 @@ type Player struct {
 	Token BearerToken `json:"-"`
 }
 
+// PlayerState is one player's state in a broadcast: what they show anyone in
+// their world, and their bag and worn gear, which only their own frame carries
+// (CurrentPlayerState). Another recipient is sent the shown part alone
+// (OtherPlayerState). FS-KE075 §I Requirements 51–52, ADR-0064.
 type PlayerState struct {
+	PublicPlayerState
+	Inventory []*ItemState    `json:"inventory"`
+	Equipment *EquipmentState `json:"equipment"`
+}
+
+// PublicPlayerState is what a player shows anyone in their world: who they
+// are, where they stand, how hale and how far along they are. Never their bag
+// or worn gear: a later feature that needs those fetches them on demand.
+// ADR-0064.
+type PublicPlayerState struct {
 	ID            uuid.UUID        `json:"id"`
 	EntityID      uuid.UUID        `json:"entity_id"`
 	Username      string           `json:"username"`
 	Class         string           `json:"class"`
 	Position      *Position        `json:"position"`
 	Direction     *PlayerDirection `json:"direction"`
-	Inventory     []*ItemState     `json:"inventory"`
-	Equipment     *EquipmentState  `json:"equipment"`
 	Escape        bool             `json:"escape"`
 	CurrentHealth int              `json:"current_health"`
 	MaxHealth     int              `json:"max_health"`
