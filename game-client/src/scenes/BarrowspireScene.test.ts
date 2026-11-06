@@ -5563,6 +5563,52 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
   });
 });
 
+// A floor-1 chest whose guards still stand is refused by the server: the coffer the E key opened
+// at once closes again, and the notice says only that it will not open (FS-KE075 §J R60).
+describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function connected() {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      showNotification(message: string, color: string): void;
+      containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
+    };
+    run.init({ sessionID: "run-a" });
+    run.containerView = { entityId: "chest-1", close: vi.fn() };
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    run.connectToServer();
+    return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+  }
+
+  it("should close the coffer it opened and say it will not open", () => {
+    const { run, notified, reply } = connected();
+    reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
+
+    expect(run.containerView.close).toHaveBeenCalledTimes(1);
+    expect(notified).toHaveBeenCalledTimes(1);
+    expect(notified.mock.calls[0][0]).toBe("It will not open.");
+  });
+
+  it("should leave the coffer open on any other reply", () => {
+    const { run, reply } = connected();
+    reply({ success: false, message: "too far away to interact" });
+    reply({ success: false, message: "" });
+
+    expect(run.containerView.close).not.toHaveBeenCalled();
+  });
+});
+
 // A refresh into a run: the menu evicted its creatures, so the run downloads them again, and an
 // end_game or a settlement sent meanwhile must still reach it (FS-C4JWH Edge States).
 describe("BarrowspireScene messages while its art downloads (FS-C4JWH Edge States)", () => {
