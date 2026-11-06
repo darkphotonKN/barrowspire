@@ -8,8 +8,9 @@
  * hub maps its REST item instances into the same shape first.
  *
  * Given the world it is drawn in, it also says where the item stands (FS-18Z5F §H): an unsafe
- * find in a run, or an item still in a delve in the hub. A view given no world (the container
- * view: what it holds is not the player's yet) marks nothing.
+ * find in a run. An owned item's status alone, in any world, says when it is still in a delve,
+ * listed on the Bazaar or its sale settling (FS-GTNP8 §A); only the hub's items carry one. A view
+ * given no world (the container view: what it holds is not the player's yet) marks no unsafe find.
  */
 
 import { itemStats, type StatLine } from "@/marketplace/detail";
@@ -39,31 +40,62 @@ export const UNSAFE_FIND_NOTE =
   "Found this run: lost if you die before you escape.";
 /** The tip note on an item still in a delve, in the hub (FS-18Z5F R38). */
 export const IN_RUN_NOTE = "Still in a delve.";
+/** The tip note on an item listed on the Bazaar (FS-GTNP8 R1). */
+export const LISTED_NOTE = "Listed on the Bazaar.";
+/** The tip note on an item whose sale is settling (FS-GTNP8 R1). */
+export const SETTLING_NOTE = "Sale settling…";
+
+/**
+ * The standings an owned item's status alone gives it, each locking it in the hub: still in a
+ * delve (FS-18Z5F R38), listed on the Bazaar, or its sale settling (FS-GTNP8 §A).
+ */
+export type LockedKind = "inRun" | "listed" | "settling";
 
 /**
  * Where an item stands, when a view marks it (FS-18Z5F §H): an unsafe find, edged and noted in a
- * run (R36), or an in-run item, dimmed, noted and locked in the hub (R38).
+ * run (R36); or locked by its status, dimmed, noted and refused in the hub: in a delve (R38),
+ * listed, or settling, these two also marked on the slot (FS-GTNP8).
  */
 export interface ItemStanding {
-  kind: "unsafeFind" | "inRun";
+  kind: "unsafeFind" | LockedKind;
   /** The line the item tip adds. */
   note: string;
 }
 
 /**
- * Whether an owned item is checked out into a live run or field world (`IN_RUN`): in the hub it
- * cannot be equipped, unequipped or moved (FS-18Z5F R38). The server stays the authority.
+ * Each status that locks an item, by its standing. `IN_RUN` is checked out into a live run or
+ * field world: in the hub it cannot be equipped, unequipped or moved (FS-18Z5F R38). The server
+ * stays the authority.
  */
-export function inRun(item: ItemState): boolean {
-  return item.status === "IN_RUN";
+const LOCKED_BY_STATUS: Readonly<
+  Record<string, { kind: LockedKind; note: string }>
+> = {
+  IN_RUN: { kind: "inRun", note: IN_RUN_NOTE },
+  LISTED: { kind: "listed", note: LISTED_NOTE },
+  PENDING_SETTLEMENT: { kind: "settling", note: SETTLING_NOTE },
+};
+
+/**
+ * The standing an item's status alone gives it, in any world: in a delve, listed or settling
+ * (FS-GTNP8 R2: the one place a status locks an item); none for any other status.
+ */
+export function statusStanding(
+  item: ItemState,
+): (ItemStanding & { kind: LockedKind }) | undefined {
+  const locked =
+    item.status !== undefined && Object.hasOwn(LOCKED_BY_STATUS, item.status)
+      ? LOCKED_BY_STATUS[item.status]
+      : undefined;
+  return locked && { ...locked };
 }
 
-/** An item's standing in `world`: only a run marks unsafe finds (R36–37). */
+/** An item's standing in `world`: its status first, then only a run marks unsafe finds (R36–37). */
 function standingOf(
   item: ItemState,
   world: WorldType | undefined,
 ): ItemStanding | undefined {
-  if (inRun(item)) return { kind: "inRun", note: IN_RUN_NOTE };
+  const locked = statusStanding(item);
+  if (locked) return locked;
   if (world === "run" && item.unsafe)
     return { kind: "unsafeFind", note: UNSAFE_FIND_NOTE };
   return undefined;

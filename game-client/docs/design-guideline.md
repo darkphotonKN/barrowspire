@@ -525,13 +525,18 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   pop in. Every face keeps the satchel's footprint and item slots. Item icons are baked, with a
   generic fallback.
 - **Item marks in the gear and bag overlay.** A held item's rarity shows only as its **rarity
-  edge**, a thin bar down the left side of its bag cell or worn slot. Two more marks sit beside
+  edge**, a thin bar down the left side of its bag cell or worn slot. The other marks sit beside
   it and never take a rarity colour. In a run, an **unsafe find** (picked up this run, lost if
   the player dies before escaping) gets a lifted-oxblood **inner edge** inside its well, clear of
   the rarity edge, and its tip adds "Found this run: lost if you die before you escape." in the
   same tone (`palette.unsafeFind`, the danger channel). Field worlds and the hub show no unsafe
   mark. In the hub, an item **still in a delve** is drawn faint, as a listed item is, and its tip
-  says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)*
+  says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)* An item **on the Bazaar** (listed, or
+  its sale settling) is drawn faint too, and carries the **listed mark**: a small filled
+  triangle in its well's top-right corner, drawn in code over the faint icon, in the danger
+  channel (`palette.listed`, the same lifted oxblood as the unsafe edge). Its tip adds "Listed on
+  the Bazaar." or "Sale settling…" in that tone. *(Added by
+  [FS-GTNP8](../../docs/specs/GTNP8-listed-items-marked-in-the-gear-overlay.md), 2026-11-06.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right

@@ -79,6 +79,7 @@ server state and sends intents. ✅
 - [x] Character stats overlay → FS-HRH2J
 - [x] Compare a bag item with worn gear → FS-NV54P
 - [x] Gold in the gear overlay → FS-7TGZ3
+- [ ] Listed items marked in the gear overlay → FS-GTNP8
 - [ ] A character name is one word → FS-KCQ06
 
 ### Presentation
