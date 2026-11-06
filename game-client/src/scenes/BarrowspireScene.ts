@@ -833,6 +833,8 @@ export class BarrowspireScene extends Phaser.Scene {
   init(data?: { sessionID?: string }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
+    // a Leave the last run left pending (one pressed while it still loaded) is not this run's
+    this.leavePending = false;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
     onSceneEnd(this, (end) => this.resetRun(end));
     // the run's creatures may download before create subscribes: a refresh into a run whose art the
@@ -4573,8 +4575,11 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private leaveTheBarrow(): void {
     if (this.leavePending) return;
-    this.resultHold.release();
-    if (this.runEnded) return;
+    // A held hub let in is the leave done: it goes through switchWorld, whose stop is synchronous,
+    // so this scene has stopped (resetRun, runEnded false) by the time the release returns, and
+    // nothing of it may be read or set after. Otherwise, once the run has ended there is nothing
+    // to ask the server for.
+    if (this.resultHold.release() || this.runEnded) return;
     this.leavePending = true;
     this.dimLeave();
     socketManager.sendMessage(ActionType.LeaveRun, {});
