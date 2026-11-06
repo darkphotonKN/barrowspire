@@ -8,6 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/navigation"
 	"github.com/google/uuid"
 )
 
@@ -314,6 +315,17 @@ func (d *dungeonFloor) stands(area PlaceArea, region int, offDoorway bool) bool 
 		}
 	}
 	return true
+}
+
+// navGrid is the floor's walkable cells as a navigation grid, for the monster
+// AI (FS-KE075 §D R21). A new grid each call: its searches write the grid's own
+// scratch, and the floor itself is read by any goroutine.
+func (d *dungeonFloor) navGrid() *navigation.Grid {
+	walkable := make([]bool, len(d.region))
+	for c, region := range d.region {
+		walkable[c] = region != 0
+	}
+	return navigation.NewGrid(d.layout.Cols, d.layout.Rows, d.layout.CellSize, walkable)
 }
 
 // regionAt is the region of the cell holding (x, y), 0 on rock or off the grid.

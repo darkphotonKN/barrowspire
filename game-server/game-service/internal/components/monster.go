@@ -75,6 +75,9 @@ type MonsterComponent struct {
 	// Wander is its walk around home while it has no target.
 	Wander Wandering
 
+	// Route is the path it follows on a dungeon floor; unused on any other.
+	Route Route
+
 	// The archetype's fixed timings and radii, copied from its sheet at spawn.
 	// None of them scale with level.
 	AttackInterval float64 // seconds between strikes
@@ -92,4 +95,21 @@ type MonsterComponent struct {
 
 func (m *MonsterComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypeEnemy
+}
+
+// Route is a monster's path over a dungeon floor's cell grid, to its target or
+// to its wander destination (FS-KE075 §D, ADR-0062). Pure data: the
+// MonsterAISystem searches and follows it.
+type Route struct {
+	// Cells are the path's cells, its start cell first and Goal last; empty
+	// while it has no path to follow.
+	Cells []int
+	// Next is the index of the cell whose centre it steers for; len(Cells)
+	// once the path is used up.
+	Next int
+	// Goal is the cell the path was searched to.
+	Goal int
+	// SearchIn is how long, in seconds, before it may search again: a search
+	// sets it to the repath interval (FS-KE075 §D R24).
+	SearchIn float64
 }
