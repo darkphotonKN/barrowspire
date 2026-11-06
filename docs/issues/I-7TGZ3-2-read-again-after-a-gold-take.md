@@ -1,6 +1,6 @@
 ---
 id: I-7TGZ3-2
-status: open
+status: done
 implements: FS-7TGZ3
 blocked_by: [I-7TGZ3-1]
 labels: []
@@ -19,9 +19,9 @@ Implements FS-7TGZ3 §C R9
 
 ## Acceptance Criteria
 
-- [ ] Store tests: a Take of a gold letter raises `goldTaken`; an items-only letter and a refused Take do not; `LETTER_ALREADY_CLAIMED` on a gold letter raises it.
-- [ ] `HubGear` test: `refreshPurse` reads the purse, open or closed.
-- [ ] `npx vitest run`, `npx tsc --noEmit` pass.
+- [x] Store tests: a Take of a gold letter raises `goldTaken`; an items-only letter and a refused Take do not; `LETTER_ALREADY_CLAIMED` on a gold letter raises it.
+- [x] `HubGear` test: `refreshPurse` reads the purse, open or closed.
+- [x] `npx vitest run`, `npx tsc --noEmit` pass.
 
 ## Blocked By
 
@@ -30,3 +30,7 @@ I-7TGZ3-1 (the purse reader).
 ## Spec Reference
 
 FS-7TGZ3 §C R9, user story 4.
+
+## Commits
+
+d26173e7 (tests), 45ba6b83 (feature), and the docs commit that closes this issue.

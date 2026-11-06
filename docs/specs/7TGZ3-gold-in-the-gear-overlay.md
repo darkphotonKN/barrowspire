@@ -117,6 +117,17 @@ None changed. The client reads the existing `GET /api/wallet/account` (`get-wall
 - **World switch:** the next world's overlay starts at "—" and reads on its first open.
 - **Signed out (401):** the client's usual sign-out redirect; nothing purse-specific.
 
+## Verification (2026-11-06, agent, headless Chrome on its own dev server, port 3961)
+
+A fresh local account (wallet 0 gold, welcome letter with 100 gold), archer, in the hub at a
+1280-wide logical view. Opening the overlay read the wallet once and showed the coins icon and
+"0" under the bag grid, above the hint; hovering it showed "Available 0 · Held in bids 0".
+Taking the welcome letter read the wallet again. Reopening showed "100", with the tip
+"Available 100 · Held in bids 0", and each open read the wallet once. Not checked by the agent:
+a run, a field world, stash mode, held gold, the "—" of a real outage (all left for
+I-7TGZ3-3; the unit tests cover the logic). The gateway's CORS admits only port 3938, so the
+headless profile ran with web security off; nothing on the server was changed.
+
 ## Out of Scope
 
 - A purse anywhere else in the canvas (HUD, menus, the letter panel).
