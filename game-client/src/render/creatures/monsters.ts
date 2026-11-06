@@ -1,8 +1,9 @@
 /**
  * Monsters on the canvas (FS-77AB6 req 34–39): each monster in a run's state broadcast drawn from
  * its baked creature sheet, playing what the server says it is doing, with a hostile nameplate
- * and HP bar over its head. A living monster is a target: the pointer over its footprint reports
- * it, a click strikes it, and a hit the server confirms flashes it.
+ * and HP bar over its head; on a `frame` floor it has none, and the target frame names it instead
+ * (FS-48CTQ §B.3). A living monster is a target: the pointer over its footprint reports it, a
+ * click strikes it, and a hit the server confirms flashes it.
  *
  * Nothing about a monster is client-held. The server sends where it stands, which way it faces
  * and what it is doing (`action`); the roster eases the position between ticks like a player's
@@ -225,6 +226,25 @@ export function elitePlate(
   };
 }
 
+/** Screen px between an elite's prefix and the rest of its plate: a word space at 11px. */
+const PREFIX_GAP = 3;
+
+/**
+ * Where a plate's two parts stand on one line centred on `centreX`: the rest, centre-anchored, at
+ * `rest`; an elite's prefix, right-anchored, at `prefix`, `gap` px to its left. With no prefix
+ * (`prefixWidth` 0) the rest is centred alone. Shared by the overhead plate and the target frame.
+ */
+export function seatPlate(
+  centreX: number,
+  restWidth: number,
+  prefixWidth: number,
+  gap: number = PREFIX_GAP,
+): { rest: number; prefix: number } {
+  if (prefixWidth <= 0) return { rest: centreX, prefix: centreX };
+  const rest = centreX + (prefixWidth + gap) / 2;
+  return { rest, prefix: rest - restWidth / 2 - gap };
+}
+
 // ── The roster ────────────────────────────────────────────────────────────
 
 /** Eased toward the server position each frame, as players are. */
@@ -237,8 +257,6 @@ const BAR_W = 38;
 const BAR_H = 4;
 /** Screen px from the top of the HP bar to the bottom of the name. */
 const NAME_GAP = 2;
-/** Screen px between an elite's prefix and the rest of its plate: a word space at 11px. */
-const PREFIX_GAP = 3;
 /** How long a confirmed hit holds the damage flash, in ms: as long as a player's. */
 export const FLASH_MS = 200;
 /** No facing: the clip keeps the one it has. */
@@ -645,9 +663,8 @@ export class MonsterRoster {
       return;
     }
     prefix.setText(plate.prefix);
-    const lead = prefix.width + PREFIX_GAP;
-    const restCentre = sprite.x + lead / 2;
-    name.setPosition(restCentre, y);
-    prefix.setPosition(restCentre - name.width / 2 - PREFIX_GAP, y);
+    const seat = seatPlate(sprite.x, name.width, prefix.width);
+    name.setPosition(seat.rest, y);
+    prefix.setPosition(seat.prefix, y);
   }
 }
