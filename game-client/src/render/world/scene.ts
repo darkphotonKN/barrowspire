@@ -96,8 +96,13 @@ interface GroundWorldBase {
    * texture over the whole ground, as the hub and the fields have it.
    */
   chunk?: number;
-  /** Where the world has ground, by world point (a dungeon floor's cells); absent, everywhere. */
+  /**
+   * Where the world has ground, by world point (a dungeon floor's cells); absent, everywhere. With
+   * chunks, a chunk no ground falls in gets no render texture (FS-KE075 §H.44).
+   */
   where?: (at: Point) => boolean;
+  /** The floor's own look and seed, when known as the ground is made: its first paint is theirs. */
+  floor?: FloorGround;
 }
 
 /**
@@ -130,10 +135,13 @@ export interface GroundChunk extends Toggle {
   readonly rect: Rect;
 }
 
-/** A chunk as painted: its render texture, and the lift drawn over it once a look asks for one. */
+/**
+ * A chunk as painted: its render texture (on a ground with `where`, made only once a tile falls in
+ * it), and the lift drawn over it once a look asks for one.
+ */
 interface GroundPart {
   rect: Rect;
-  rt: Phaser.GameObjects.RenderTexture;
+  rt?: Phaser.GameObjects.RenderTexture;
   lifted?: Phaser.GameObjects.Image;
   shown: boolean;
 }
@@ -151,6 +159,10 @@ export class GroundLayer {
   private floor?: FloorGround;
   /** The share the painted ground is added over itself at: a look's lift; 0 for none. */
   private liftShare = 0;
+  /** The multiply over the painted ground: a look's tint; none for none. */
+  private tint?: number;
+  /** What was painted last, so the same paint asked again is not redrawn (FS-KE075 §H.44). */
+  private painted?: { houses: readonly House[]; look: GroundLook; seed?: number };
   /** Each chunk, to show and hide as the camera passes (FS-KE075 §H.45). */
   readonly chunks: readonly GroundChunk[];
 
@@ -164,29 +176,43 @@ export class GroundLayer {
     const rects = world.chunk
       ? new ChunkGrid(b, world.chunk).rects
       : [{ x: b.x, y: b.y, width: Math.ceil(b.width), height: Math.ceil(b.height) }];
+    // a ground with gaps (a dungeon's void) makes a chunk's texture only once a tile falls in it
+    const lazy = !!world.where && !!world.chunk;
     this.parts = rects.map((rect) => {
-      const rt = scene.add.renderTexture(rect.x, rect.y, rect.width, rect.height);
-      rt.setOrigin(0, 0).setDepth(GROUND_DEPTH);
-      return { rect, rt, shown: true };
+      const part: GroundPart = { rect, shown: true };
+      if (!lazy) this.make(part);
+      return part;
     });
     this.chunks = this.parts.map((part) => ({
       rect: part.rect,
       setVisible: (visible: boolean) => {
         part.shown = visible;
-        part.rt.setVisible(visible);
+        part.rt?.setVisible(visible);
         part.lifted?.setVisible(visible && this.liftShare > 0);
         return part;
       },
     }));
-    this.paint([]);
+    this.paint([], world.floor);
   }
 
   /** The ground goes, its lift with it: a floor of another size paints its own (FS-KE075 §H.42). */
   destroy(): void {
     for (const part of this.parts) {
       part.lifted?.destroy();
-      part.rt.destroy();
+      part.rt?.destroy();
     }
+  }
+
+  /** A chunk's render texture, as its ground now looks: tinted, lifted, shown as its chunk is. */
+  private make(part: GroundPart): Phaser.GameObjects.RenderTexture {
+    const { rect } = part;
+    const rt = this.scene.add.renderTexture(rect.x, rect.y, rect.width, rect.height);
+    rt.setOrigin(0, 0).setDepth(GROUND_DEPTH);
+    if (this.tint !== undefined) rt.setTint(this.tint);
+    if (!part.shown) rt.setVisible(false);
+    part.rt = rt;
+    this.liftPart(part);
+    return rt;
   }
 
   /** Whether the ground has art; when not, the scene keeps its placeholder floor. */
@@ -203,19 +229,27 @@ export class GroundLayer {
   /** Paints `houses`' floors over the ground; with `floor`, that floor's ground from now on. */
   paint(houses: readonly House[], floor?: FloorGround): void {
     if (floor) this.floor = floor;
-    const { look: worldLook = OUTDOOR_GROUND, chunk: _chunk, ...world } = this.world;
+    const { look: worldLook = OUTDOOR_GROUND, chunk: _chunk, floor: _floor, ...world } = this.world;
     const look = this.floor?.look ?? worldLook;
+    const seed = this.floor?.seed;
+    // the same ground asked again (a dungeon floor's walls, after the ground took its look) is
+    // already there: painting is a whole texture's worth of stamps a chunk
+    const last = this.painted;
+    if (last && last.look === look && last.seed === seed && (last.houses === houses || (last.houses.length === 0 && houses.length === 0)))
+      return;
+    this.painted = { houses, look, seed };
+    // a recoloured ground (a field's greens): the whole painted layer under one multiply
+    this.tint = look.tint;
     for (const { rt } of this.parts) {
-      // a recoloured ground (a field's greens): the whole painted layer under one multiply
-      if (look.tint === undefined) rt.clearTint();
-      else rt.setTint(look.tint);
+      if (look.tint === undefined) rt?.clearTint();
+      else rt?.setTint(look.tint);
     }
     this.lift(look);
-    for (const { rt } of this.parts) rt.clear();
+    for (const { rt } of this.parts) rt?.clear();
     const { fadeEdge, ...plan } = world;
-    this.draw(planGroundLayer({ ...plan, houses, look, seed: this.floor?.seed }));
+    this.draw(planGroundLayer({ ...plan, houses, look, seed }));
     // Phaser 4 buffers a render texture's drawing until render()
-    for (const { rt } of this.parts) rt.render();
+    for (const { rt } of this.parts) rt?.render();
     if (fadeEdge) this.fadeEdge();
   }
 
@@ -241,6 +275,7 @@ export class GroundLayer {
       g.fillPoints(corners as Phaser.Math.Vector2[], true);
     }
     for (const { rect, rt } of this.parts) {
+      if (!rt) continue;
       // the shape is drawn from the ground's corner; each chunk stands that far from it
       rt.erase(g, this.origin.x - rect.x, this.origin.y - rect.y);
       // drawn before the shape goes: the erase reads it when the texture renders
@@ -255,20 +290,23 @@ export class GroundLayer {
    */
   private lift(look: GroundLook): void {
     this.liftShare = look.lift ?? 0;
-    for (const part of this.parts) {
-      if (this.liftShare <= 0) {
-        part.lifted?.setVisible(false);
-        continue;
-      }
-      part.lifted ??= this.scene.add
-        .image(part.rect.x, part.rect.y, part.rt.texture)
-        .setOrigin(0, 0)
-        .setDepth(GROUND_DEPTH)
-        .setBlendMode("ADD");
-      part.lifted.setVisible(part.shown).setAlpha(Math.min(1, this.liftShare));
-      if (look.tint === undefined) part.lifted.clearTint();
-      else part.lifted.setTint(look.tint);
+    for (const part of this.parts) this.liftPart(part);
+  }
+
+  /** One chunk's lift, as the ground's look now asks: none, or its texture added over itself. */
+  private liftPart(part: GroundPart): void {
+    if (this.liftShare <= 0 || !part.rt) {
+      part.lifted?.setVisible(false);
+      return;
     }
+    part.lifted ??= this.scene.add
+      .image(part.rect.x, part.rect.y, part.rt.texture)
+      .setOrigin(0, 0)
+      .setDepth(GROUND_DEPTH)
+      .setBlendMode("ADD");
+    part.lifted.setVisible(part.shown).setAlpha(Math.min(1, this.liftShare));
+    if (this.tint === undefined) part.lifted.clearTint();
+    else part.lifted.setTint(this.tint);
   }
 
   /** Each piece into every chunk its frame overlaps, on the same screen px whichever chunk. */
@@ -284,11 +322,13 @@ export class GroundLayer {
       // the frame's top-left from the ground's corner, on whole px
       const x = Math.round(s.x - sheet.anchor.x * sheet.frameWidth - this.origin.x);
       const y = Math.round(s.y - sheet.anchor.y * sheet.frameHeight - this.origin.y);
-      for (const { rect, rt } of this.parts) {
+      for (const part of this.parts) {
+        const { rect } = part;
         const dx = rect.x - this.origin.x;
         const dy = rect.y - this.origin.y;
         if (x >= dx + rect.width || y >= dy + rect.height) continue;
         if (x + sheet.frameWidth <= dx || y + sheet.frameHeight <= dy) continue;
+        const rt = part.rt ?? this.make(part);
         // a frame's top-left at (x, y), as Phaser 3's batched frame draw placed it
         rt.stamp(frame.texture, frame.frame, x - dx, y - dy, {
           alpha: p.alpha ?? 1,
