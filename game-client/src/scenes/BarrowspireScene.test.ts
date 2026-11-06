@@ -5333,6 +5333,30 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     expect(named()).toBeNull();
   });
 
+  // FS-48CTQ §D.10, I-48CTQ-2: the run's players, the local one among them, are who it may be
+  // fighting
+  it.each([
+    ["hurt", { boss: true, current_health: 4 }, "Ghoul · Lv 1"],
+    ["moving near the party at full health", { boss: true, action: "move" }, "Ghoul · Lv 1"],
+    ["idle at full health", { boss: true }, null],
+    ["hurt but not a boss", { current_health: 4 }, null],
+  ] as const)("should hold the frame on an engaged boss with nothing hovered or hit: %s", (_, fields, want) => {
+    const { run, named, tick, state } = framed();
+    run.handleGameStateUpdate(state(fields as Partial<ReturnType<typeof monster>>));
+    tick(120);
+    expect(named()).toBe(want);
+  });
+
+  it("should not take a boss moving at full health for engaged when every player is out of play", () => {
+    const { run, named, tick, state } = framed();
+    const out = { ...state({ boss: true, action: "move" } as unknown as Partial<ReturnType<typeof monster>>) } as GameState;
+    out.current_player = player("me", "Aldric", 130, { current_health: 0 }) as GameState["current_player"];
+    out.other_players = [player("ally", "Wenna", 160, { escape: true })] as GameState["other_players"];
+    run.handleGameStateUpdate(out);
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
   it("should name the monster the player strikes, then let go 3 s after the last own hit", () => {
     const { run, monsters, named, tick, state, sent } = framed();
     monsters()[0].handlers.pointerdown();
