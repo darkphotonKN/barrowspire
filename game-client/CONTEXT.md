@@ -79,6 +79,10 @@ translation belongs to the surface that renders words.
   the result card: never say "result card". (FS-GV8WN R19–R24)
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
+- **Purse line** — the player's gold as the gear and bag panel shows it, under the bag grid:
+  the coin icon and the account's total, with "Available X · Held in bids Y" on hover. Read from
+  the wallet on every open of the overlay and after a Take that carries gold; "—" when it could
+  not be read. Not an item and takes no bag cell. (FS-7TGZ3)
 
 ## Chat terms (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
 
