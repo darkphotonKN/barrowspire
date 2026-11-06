@@ -127,7 +127,7 @@ import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
 import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
-import { LastHitTracker, engagedBoss, pickTarget } from "@/render/creatures/targetPick";
+import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, minimapRect, type MinimapFixture } from "@/ui/minimap";
 import { PlayerCombat } from "@/render/combat/playerCombat";
@@ -777,6 +777,11 @@ export class BarrowspireScene extends Phaser.Scene {
       sendMessage: (action, payload) => socketManager.sendMessage(action, payload),
       later: (ms, fn) => this.time.delayedCall(ms, fn),
       now: () => this.time.now,
+      // a cast sent over a living, shown monster names it the last-hit one (FS-48CTQ §C.6)
+      castSent: () => {
+        const named = castTarget(this.monsters?.hoveredId, this.monsters?.targetable() ?? []);
+        if (named) this.lastHit.aimed(named, this.time.now);
+      },
     },
     {
       slash: (from, to) => this.playWarriorSlashEffect(from.x, from.y, to.x, to.y),
@@ -869,6 +874,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private minimapOn = true;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
+  /** The boss engaged with the party, latched across broadcasts (FS-48CTQ §D.10). */
+  private readonly bosses = new BossEngagement();
   private occluders = new Occluders();
   /** How far above the floor a house's walls reach on screen, for the blackout's hole. */
   private wallTop = WALL_HEIGHT;
@@ -1067,6 +1074,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the next run scene starts with the minimap up; it went down with the scene's objects
     this.minimapOn = true;
     this.lastHit.clear();
+    this.bosses.clear();
     this.markers = "overhead";
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
@@ -3971,6 +3979,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.trails.clear();
     this.monsters?.sync([]);
     this.lastHit.clear();
+    this.bosses.clear();
 
     this.occluders.clear();
     this.lightMap?.clear();
@@ -4700,6 +4709,7 @@ export class BarrowspireScene extends Phaser.Scene {
         graphics: () => this.add.graphics(),
       },
       () => viewport.centerX,
+      () => viewport.renderScale,
     );
   }
 
@@ -4720,7 +4730,7 @@ export class BarrowspireScene extends Phaser.Scene {
       target = pickTarget({
         shown,
         hovered: this.monsters.hoveredId,
-        engagedBoss: engagedBoss(shown, members),
+        engagedBoss: this.bosses.observe(this.lastGameState?.monsters ?? [], members, shown),
         lastHit: this.lastHit.current(this.time.now),
       });
     }

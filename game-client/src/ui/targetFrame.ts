@@ -23,7 +23,6 @@ import {
 } from "@/render/creatures/monsters";
 import type { MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import type { Rect } from "./partyPanelLayout";
 
 /** The frame's top edge, in logical px (§E.14). */
 export const TARGET_FRAME_TOP = 10;
@@ -60,11 +59,19 @@ const FRAME_STYLES = {
   boss: { size: TARGET_BOSS_FRAME, barHeight: BAR_H * 2 },
 } as const;
 
+/** A box in logical units: the frame's own, so it borrows no other panel's layout type. */
+export interface FrameRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** Where the frame stands: its top at y 10, centred on `centreX` (§E.14). */
 export function targetFrameRect(
   centreX: number,
   size: { width: number; height: number } = TARGET_FRAME,
-): Rect {
+): FrameRect {
   return {
     x: centreX - size.width / 2,
     y: TARGET_FRAME_TOP,
@@ -132,7 +139,7 @@ const lettering = (ink: number): FrameTextStyle => ({
 });
 
 /** What a drawn frame shows: redrawn only when one of these changes. */
-const drawnKey = (m: MonsterState, centreX: number) =>
+const drawnKey = (m: MonsterState, centreX: number, scale: number) =>
   [
     m.entity_id,
     m.name,
@@ -143,6 +150,7 @@ const drawnKey = (m: MonsterState, centreX: number) =>
     m.current_health,
     m.max_health,
     centreX,
+    scale,
   ].join("|");
 
 export class TargetFrame {
@@ -156,10 +164,14 @@ export class TargetFrame {
   private prefixed = false;
   private drawn?: string;
 
-  /** `centreX` reads the logical view's centre now (`viewport.centerX`). */
+  /**
+   * `centreX` reads the logical view's centre now (`viewport.centerX`), `renderScale` its backing
+   * px per logical unit (`viewport.renderScale`), so the bar's fill ends on a whole backing px.
+   */
   constructor(
     stage: TargetFrameStage,
     private readonly centreX: () => number,
+    private readonly renderScale: () => number = () => 1,
   ) {
     this.panel = stage.graphics();
     this.prefix = stage.text("", lettering(palette.markerElite));
@@ -217,7 +229,7 @@ export class TargetFrame {
 
   private draw(monster: MonsterState): void {
     const centreX = this.centreX();
-    const key = drawnKey(monster, centreX);
+    const key = drawnKey(monster, centreX, this.renderScale());
     this.shown = monster;
     if (key === this.drawn) return;
     this.drawn = key;
@@ -244,7 +256,10 @@ export class TargetFrame {
     const ratio = healthFraction(monster);
     if (ratio > 0) {
       g.fillStyle(MARKER_BAR.hp, 1);
-      g.fillRect(bar.x, bar.y, bar.width * ratio, bar.height);
+      // whole backing px, as the overhead bar rounds its fill (review T1)
+      const scale = this.renderScale() || 1;
+      const fill = Math.round(bar.width * ratio * scale) / scale;
+      g.fillRect(bar.x, bar.y, fill, bar.height);
     }
 
     const plate = elitePlate(monster);

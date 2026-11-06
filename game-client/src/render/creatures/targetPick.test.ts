@@ -203,7 +203,11 @@ describe("castTarget (FS-48CTQ §C.6: a cast sent over a monster names it)", () 
 
   it.each([
     ["nothing is hovered", undefined, [a]],
-    ["the hovered one has died", "a", [monster("a", { action: "dead", current_health: 0 })]],
+    [
+      "the hovered one has died",
+      "a",
+      [monster("a", { action: "dead", current_health: 0 })],
+    ],
     ["the hovered one is not shown (fog, the dark, gone)", "a", [monster("b")]],
     ["the hovered id is not a monster (a party member's)", "e_ally", [a]],
   ] as const)("should name nothing when %s", (_, hovered, shown) => {
@@ -267,10 +271,14 @@ describe("a ranged cast at a hovered monster holds the frame (FS-48CTQ §C.6, re
 
       // the pointer leaves; the arrow or fireball lands 600 ms later
       stage.hovered = undefined;
-      const hurt = monster("far", { position: far.position, current_health: 12 });
+      const hurt = monster("far", {
+        position: far.position,
+        current_health: 12,
+      });
       stage.tracker.observe([hurt], 1600);
       const frame = (ms: number) =>
-        pickTarget({ shown: [hurt], lastHit: stage.tracker.current(ms) })?.entity_id;
+        pickTarget({ shown: [hurt], lastHit: stage.tracker.current(ms) })
+          ?.entity_id;
       expect(frame(4599)).toBe("far");
       expect(frame(4600)).toBeUndefined();
     },
@@ -283,7 +291,9 @@ describe("a ranged cast at a hovered monster holds the frame (FS-48CTQ §C.6, re
     combat.cast("primary", "archer", me, far.position);
     const hurt = monster("far", { position: far.position, current_health: 12 });
     stage.tracker.observe([hurt], 1500);
-    expect(pickTarget({ shown: [hurt], lastHit: stage.tracker.current(1500) })).toBeNull();
+    expect(
+      pickTarget({ shown: [hurt], lastHit: stage.tracker.current(1500) }),
+    ).toBeNull();
   });
 
   it("should name nothing for a cast the cooldown holds back", () => {
@@ -405,7 +415,9 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
   /** Each broadcast in turn: the boss's fields and the members; what the latch named after each. */
   const run = (steps: [Partial<MonsterState>, PartyMember[]][]) => {
     const latch = new BossEngagement();
-    return steps.map(([fields, members]) => latch.observe([demon(fields)], members));
+    return steps.map(([fields, members]) =>
+      latch.observe([demon(fields)], members),
+    );
   };
 
   it("a demon wandering 500 px from the party (outside its aggro radius) should never take the frame", () => {
@@ -446,7 +458,10 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
       run([
         [{ action: "move" }, [member(200)]],
         [{ action: "idle" }, [member(700)]],
-        [{ action: "idle" }, [member(701), member(-650, { current_health: 0 })]],
+        [
+          { action: "idle" },
+          [member(701), member(-650, { current_health: 0 })],
+        ],
         // released: idle at 600 px does not engage it again
         [{ action: "idle" }, [member(600)]],
       ]),
@@ -483,9 +498,13 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
 
   it("should release when it leaves the snapshot, and not hold again on its return until re-engaged", () => {
     const latch = new BossEngagement();
-    expect(latch.observe([demon({ action: "attack" })], [member(40)])).toBe("boss");
+    expect(latch.observe([demon({ action: "attack" })], [member(40)])).toBe(
+      "boss",
+    );
     expect(latch.observe([monster("a")], [member(40)])).toBeUndefined();
-    expect(latch.observe([demon({ action: "idle" })], [member(500)])).toBeUndefined();
+    expect(
+      latch.observe([demon({ action: "idle" })], [member(500)]),
+    ).toBeUndefined();
   });
 
   it("should keep the latch while the boss is merely hidden by fog: the picker passes it over", () => {
@@ -496,8 +515,11 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
     const engagedId = latch.observe([demon({ action: "idle" })], [member(500)]);
     expect(engagedId).toBe("boss");
     expect(
-      pickTarget({ shown: [monster("b")], engagedBoss: engagedId, lastHit: "b" })
-        ?.entity_id,
+      pickTarget({
+        shown: [monster("b")],
+        engagedBoss: engagedId,
+        lastHit: "b",
+      })?.entity_id,
     ).toBe("b");
   });
 
@@ -528,7 +550,9 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
     const latch = new BossEngagement();
     latch.observe([demon({ action: "attack" })], [member(40)]);
     latch.clear();
-    expect(latch.observe([demon({ action: "idle" })], [member(500)])).toBeUndefined();
+    expect(
+      latch.observe([demon({ action: "idle" })], [member(500)]),
+    ).toBeUndefined();
   });
 
   it("should hold the frame ahead of the last-hit monster, a hovered one still winning", () => {
