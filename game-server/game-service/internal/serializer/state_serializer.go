@@ -177,27 +177,29 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 
 			playerState := &types.PlayerState{
-				ID:       player.MemberID,
-				EntityID: entity.ID,
-				Username: player.Username,
-				Class:    player.Class,
-				Position: &types.Position{
-					X: transform.X,
-					Y: transform.Y,
+				PublicPlayerState: types.PublicPlayerState{
+					ID:       player.MemberID,
+					EntityID: entity.ID,
+					Username: player.Username,
+					Class:    player.Class,
+					Position: &types.Position{
+						X: transform.X,
+						Y: transform.Y,
+					},
+					Direction: &types.PlayerDirection{
+						VX:    velocity.VX,
+						VY:    velocity.VY,
+						Speed: velocity.Speed,
+					},
+					Escape:        player.Escape,
+					CurrentHealth: curHP,
+					MaxHealth:     maxHP,
+					Level:         level,
+					Experience:    experience,
+					LevelFloor:    progression.LevelFloor(int32(level)),
 				},
-				Direction: &types.PlayerDirection{
-					VX:    velocity.VX,
-					VY:    velocity.VY,
-					Speed: velocity.Speed,
-				},
-				Inventory:     inventory,
-				Equipment:     equipmentState,
-				Escape:        player.Escape,
-				CurrentHealth: curHP,
-				MaxHealth:     maxHP,
-				Level:         level,
-				Experience:    experience,
-				LevelFloor:    progression.LevelFloor(int32(level)),
+				Inventory: inventory,
+				Equipment: equipmentState,
 			}
 			if next, ok := progression.NextLevelAt(int32(level)); ok {
 				playerState.NextLevelAt = &next
@@ -498,14 +500,18 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 	}
 
 	// the shared PlayerState is wrapped, never written: a teammate's resource
-	// is added for this recipient's frame alone. FS-CH21F §Requirements 1–4
+	// is added for this recipient's frame alone. FS-CH21F §Requirements 1–4.
+	// Only its shown part is wrapped, so another player's bag and worn gear are
+	// never sent; the part lives in this tick's PlayerState, made afresh by
+	// SerializeBackendState, never in the pool's lists. FS-KE075 §I R51, R53,
+	// ADR-0064
 	party, grouped := backendState.PartyOf[playerID]
 	otherPlayers := make([]types.OtherPlayerState, 0, playerCap)
 	for id, playerState := range backendState.Players {
 		if id == playerID {
 			continue
 		}
-		other := types.OtherPlayerState{PlayerState: playerState}
+		other := types.OtherPlayerState{PublicPlayerState: &playerState.PublicPlayerState}
 		if grouped && backendState.PartyOf[id] == party {
 			other.Resource = backendState.Resources[id]
 			other.ParryState = backendState.Parries[id]

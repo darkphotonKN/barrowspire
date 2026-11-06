@@ -1,6 +1,6 @@
 ---
 id: I-KE075-10
-status: in-progress
+status: done
 implements: FS-KE075
 blocked_by: []
 labels: [ready-for-agent]
@@ -31,15 +31,34 @@ Bench: `BenchmarkFormatStateToClientState_BytesPerRecipient` gains a hub case at
 - `game-server/game-service/internal/serializer/state_serializer.go` (`FormatStateToClientState`)
 - `game-server/game-service/internal/serializer/*_test.go`, `state_serializer_bench_test.go`
 - `game-client/src/types/gameState.ts` (+ a type test)
+- `game-client/src/scenes/HubScene.ts`, `FieldScene.ts` (`placePlayer` takes the shown part only, so a kit read there fails `tsc` too)
 
 ## Acceptance Criteria
 
-- [ ] Run (floor 1 cut, floor 2), field and hub: no `other_players` entry has `inventory` or `equipment`; every other key stays
-- [ ] `current_player` keeps its own `inventory` and `equipment` in every world, and when left behind or escaped
-- [ ] The shared player states are unwritten; a `-race` test shows a sent frame untouched by the next tick's pool reset
-- [ ] The client's `other_players` entry type has no `inventory`/`equipment`; a type test proves a read fails `tsc`
-- [ ] Bench before/after recorded below for floor 1 cut, floor 2, hub
-- [ ] game-service `go test ./...`, `go vet ./...`, `-race` on serializer and game; game-client vitest and `tsc` pass
+- [x] Run (floor 1 cut, floor 2), field and hub: no `other_players` entry has `inventory` or `equipment`; every other key stays
+- [x] `current_player` keeps its own `inventory` and `equipment` in every world, and when left behind or escaped
+- [x] The shared player states are unwritten; a `-race` test shows a sent frame untouched by the next tick's pool reset
+- [x] The client's `other_players` entry type has no `inventory`/`equipment`; a type test proves a read fails `tsc`
+- [x] Bench before/after recorded below for floor 1 cut, floor 2, hub
+- [x] game-service `go test ./...`, `go vet ./...`, `-race` on serializer and game; game-client vitest and `tsc` pass
+
+## Measured (2026-11-06, Apple M5 Pro, `-benchtime 20x`)
+
+`BenchmarkFormatStateToClientState_BytesPerRecipient`, JSON bytes per recipient per tick. Fixtures:
+a party of four, each with a bag of eight and five worn; the hub case is 40 players
+(`HubOccupancyCap`), each kitted the same.
+
+| Case | Before | After | Other players before → after |
+|---|---|---|---|
+| floor 1, cut, party mid | 29,015 | 18,017 | 11,950 → 952 |
+| floor 1, cut, party corner | 19,474 | 8,476 | 11,944 → 946 |
+| floor 1, uncut, party mid | 48,922 | 37,924 | 11,950 → 952 |
+| floor 2 | 25,333 | 14,335 | 11,944 → 946 |
+| hub at cap (40) | 160,660 | 17,686 | 156,397 → 13,423 |
+
+Floor 1 cut with the party mid-floor is still over the 16 KB target by about 1.6 KB: of the
+18,017 B, 12,353 B are the monsters and containers inside the interest radius and most of the rest
+is the recipient's own bag and worn gear, which R52 keeps.
 
 ## Blocked By
 

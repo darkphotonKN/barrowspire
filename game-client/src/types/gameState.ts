@@ -16,16 +16,18 @@ export interface PlayerDirection {
   speed: number;
 }
 
-// Individual player state
-export interface PlayerState {
+/**
+ * What a player shows anyone in their world, as an `other_players` entry carries it: never their
+ * bag (`inventory`) or worn gear (`equipment`), which are not sent for anyone but the recipient
+ * (FS-KE075 §I R51, R54; ADR-0064). Mirrors Go types.PublicPlayerState.
+ */
+export interface PublicPlayerState {
   id: UUID; // Player's permanent user ID (from signup)
   entity_id: UUID; // Temporary entity ID in game session
   username: string;
   class: string;
   position: Position;
   direction: PlayerDirection;
-  inventory?: ItemState[]; // 玩家背包
-  equipment?: EquipmentState; // 玩家已裝備的 loadout
   escape: boolean;
   current_health?: number;
   max_health?: number;
@@ -56,6 +58,15 @@ export interface PlayerState {
    * and it still rises at 3 parry charges, where the charge count does not move.
    */
   parries?: number;
+}
+
+/**
+ * A player's own state, as `current_player` carries it: what they show, and their own bag and worn
+ * gear (FS-KE075 §I R52). Mirrors Go types.PlayerState.
+ */
+export interface PlayerState extends PublicPlayerState {
+  inventory?: ItemState[]; // 玩家背包
+  equipment?: EquipmentState; // 玩家已裝備的 loadout
 }
 
 /** What a class resource is (FS-8AY7S req 17): mage mana, warrior/archer stamina, mercenary parry charges. */
@@ -296,7 +307,8 @@ export interface ClientGameState {
   /** Which kind of world this state came from. Mirrors types.WorldType. */
   world_type?: "hub" | "run" | "field";
   current_player: PlayerState | null; // This client's player state
-  other_players: PlayerState[]; // Other players in session
+  /** Other players in the world: what they show, never their bag or worn gear (FS-KE075 §I). */
+  other_players: PublicPlayerState[];
   items: string[]; // TODO: Update when items are structured
   doors: DoorState[];
   /**
