@@ -5942,10 +5942,15 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         run.monsters.update(16);
         run.checkBuildingStatus();
         expect(shownMonsters()).toEqual([true, true, false]);
-        const plates = stage.made.filter((m) => m.kind === "text" && ["Ghoul · Lv 1", "Hollow"].includes(m.args[2] as string));
+        const plates = stage.made.filter(
+          (m) => m.kind === "text" && !m.destroyed && ["Ghoul · Lv 1", "Hollow"].includes(m.args[2] as string),
+        );
         expect(plates.map(shownNow)).toEqual([true, true, true, false, false]);
-        const bars = stage.made.filter((m) => m.kind === "graphics" && m.depth === MARKER_DEPTH.bar && !m.destroyed);
-        expect(bars.slice(-3).map(shownNow)).toEqual([true, true, false]);
+        // each monster's bar is the first bar made after its name
+        const bars = plates
+          .filter((m) => m.args[2] !== "Hollow")
+          .map((name) => stage.made.slice(stage.made.indexOf(name)).find((m) => m.kind === "graphics" && m.depth === MARKER_DEPTH.bar)!);
+        expect(bars.map(shownNow)).toEqual([true, true, false]);
         expect(run.monsters.targetable().map((m) => m.entity_id)).toEqual(["room", "near"]);
       });
 
