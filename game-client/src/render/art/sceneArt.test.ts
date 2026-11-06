@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MONSTER_LOOKS, PLAYER_REFERENCE_SHEET, monsterLook } from "@/render/creatures/monsters";
 import { characterSheet } from "./animationSelect";
@@ -146,6 +148,28 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
     const sheets = ["mage", "archer", "mercenary", "warrior", undefined].map(characterSheet);
     expect(new Set(sheets).size).toBe(4);
     expect(outsideScene(manifest, RESIDENT_ART, [...sheets, PLAYER_REFERENCE_SHEET])).toEqual([]);
+  });
+
+  // What ties MET and the hub's row to the code: the client draws a folk sheet only through
+  // folkLook and a creature only through a MonsterRoster, and names those sheets nowhere else.
+  it("should find folk drawn only by the hub, and creatures only by the run and the fields", () => {
+    const src = join(__dirname, "../..");
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? files(join(dir, e.name)) : /\.tsx?$/.test(e.name) && !/\.(test|standin)\./.test(e.name) ? [join(dir, e.name)] : [],
+      );
+    const using = (pattern: RegExp) =>
+      files(src)
+        .filter((f) => pattern.test(readFileSync(f, "utf8")))
+        .map((f) => relative(src, f))
+        .sort();
+
+    expect(using(/\bfolkLook\(/)).toEqual(["render/art/hubFolk.ts", "scenes/HubScene.ts"]);
+    // fieldCombat is the field's (FieldScene's fieldCombatOnScene), for both fields in MET
+    expect(using(/new MonsterRoster\(/)).toEqual(["scenes/BarrowspireScene.ts", "scenes/fieldCombat.ts"]);
+    expect(using(/fieldCombatOnScene\(/)).toEqual(["scenes/FieldScene.ts", "scenes/fieldCombat.ts"]);
+    expect(using(/["`](folk|creature)_/)).toEqual(["render/art/hubFolk.ts", "render/creatures/monsters.ts"]);
+    expect(MET.map((s) => s.scene)).toEqual(["gentle_meadows", "forlorn_forest", "the run"]);
   });
 
   describe("the coverage check itself", () => {

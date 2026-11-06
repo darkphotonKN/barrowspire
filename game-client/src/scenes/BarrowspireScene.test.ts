@@ -5056,3 +5056,36 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
     expect(atCreate.every(Boolean)).toBe(true);
   });
 });
+
+// A refresh into a run: the menu evicted its creatures, so the run downloads them again, and an
+// end_game or a settlement sent meanwhile must still reach it (FS-C4JWH Edge States).
+describe("BarrowspireScene messages while its art downloads (FS-C4JWH Edge States)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should end the run on an end_game that arrived before create, once create is done", () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      openHeldMessages(): void;
+      endRun(): void;
+    };
+    const endRun = vi.spyOn(run, "endRun").mockImplementation(() => {});
+
+    run.init({ sessionID: "run-a" });
+    listeners.get("end_game")?.({});
+    expect(endRun).not.toHaveBeenCalled();
+    run.connectToServer();
+    run.openHeldMessages();
+
+    expect(endRun).toHaveBeenCalledTimes(1);
+  });
+});

@@ -248,3 +248,58 @@ describe("the loading bar on the same complete (FS-C4JWH §D R17)", () => {
     expect(bar.progress).toEqual([0]);
   });
 });
+
+// A stop resets the loader, but Phaser 4.2.1 aborts nothing: a download in flight still lands and
+// adds itself to the texture manager (LoaderPlugin.reset clears its Sets only; File.onLoad →
+// nextFile → onProcess → fileProcessComplete → addToCache). FS-C4JWH Edge States.
+describe("downloads a stopped scene left in flight (FS-C4JWH Edge States: a world switch mid-download)", () => {
+  /** The run started from the hub, held mid-download, then stopped. */
+  function runStoppedMidLoad() {
+    const art = after(SCENE_ART.HubScene);
+    art.boot(
+      { preload: () => preloadArt(art.scene as unknown as Phaser.Scene, SCENE_ART.BarrowspireScene) },
+      undefined,
+      { hold: true },
+    );
+    art.stop();
+    return art;
+  }
+
+  it("should not let the run's creatures and boss land after the hub has loaded", () => {
+    const art = runStoppedMidLoad();
+    const seen = enter(art, SCENE_ART.HubScene);
+
+    art.landStrays();
+
+    expect(seen.textures).toEqual(artKeys([...resident, ...pages("folk-0")]));
+    expect(artKeys(art.textures.getTextureKeys())).toEqual(artKeys([...resident, ...pages("folk-0")]));
+    expect(art.consoleErrors).toEqual([]);
+  });
+
+  it("should load each page once, with no error, when the next scene wants the same pages", () => {
+    const art = runStoppedMidLoad();
+    art.boot(
+      { preload: () => preloadArt(art.scene as unknown as Phaser.Scene, SCENE_ART.BarrowspireScene) },
+      undefined,
+      { hold: true },
+    );
+
+    art.landStrays();
+    art.finish();
+
+    expect(artKeys(art.textures.getTextureKeys())).toEqual(
+      artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1")]),
+    );
+    expect(art.consoleErrors).toEqual([]);
+  });
+
+  it("should still let a finished scene's own downloads in", () => {
+    const art = after(SCENE_ART.HubScene);
+    const seen = enter(art, SCENE_ART.BarrowspireScene);
+
+    art.landStrays();
+
+    expect(seen.textures).toEqual(artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1")]));
+    expect(art.consoleErrors).toEqual([]);
+  });
+});

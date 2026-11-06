@@ -71,30 +71,61 @@ export function artLoaderStandin(opts: {
   const anims = new AnimationManagerStandIn();
   const failing = new Set(opts.failing ?? []);
 
-  type File = { type: "image" | "json"; key: string };
+  /**
+   * A queued file, as far as Phaser's `File` goes here: its XHR (`xhrLoader`, `resetXHR`) and the
+   * step that adds it to its cache (`onProcessComplete` → `LoaderPlugin.fileProcessComplete` →
+   * `addToCache`). A file in flight when its loader is reset keeps going: its download lands later
+   * and still adds itself, unless its XHR was aborted or its completion taken away.
+   */
+  type File = {
+    type: "image" | "json";
+    key: string;
+    xhrLoader: { aborted: boolean; abort(): void } | null;
+    resetXHR(): void;
+    onProcessComplete(): void;
+    onProcessError(): void;
+  };
   const loaderEvents = new EventEmitter();
   let list: File[] = [];
+  /** Files in flight when their loader was reset (a stop mid-load): {@link landStrays} lands them. */
+  let strays: File[] = [];
   let total = 0;
   let done = 0;
   let loading = false;
   /** Every image key queued, across loads, in order. */
   const queued: string[] = [];
+  /** What Phaser would print with `console.error`: `TextureManager.checkKey` on a key in use. */
+  const consoleErrors: string[] = [];
 
-  const exists = (file: File) =>
-    (file.type === "image" ? textures.exists(file.key) : json.has(file.key)) ||
-    list.some((f) => f.key === file.key);
-  const add = (file: File) => {
-    if (exists(file)) return;
+  const exists = (type: File["type"], key: string) =>
+    (type === "image" ? textures.exists(key) : json.has(key)) ||
+    list.some((f) => f.key === key);
+  const addToCache = (file: File) => {
+    if (file.type === "json") return void json.set(file.key, opts.manifest);
+    if (textures.exists(file.key)) consoleErrors.push(`Texture key already in use: ${file.key}`);
+    else textures.addImage(file.key);
+  };
+  const add = (type: File["type"], key: string) => {
+    if (exists(type, key)) return;
+    const xhr = { aborted: false, abort: () => void (xhr.aborted = true) };
+    const file: File = {
+      type,
+      key,
+      xhrLoader: xhr,
+      resetXHR: () => undefined,
+      onProcessComplete: () => addToCache(file),
+      onProcessError: () => undefined,
+    };
     list.push(file);
-    if (file.type === "image") queued.push(file.key);
+    if (type === "image") queued.push(key);
     if (loading) total++;
+    loaderEvents.emit("addfile", key, type, load, file);
   };
   const completeOne = (file: File) => {
     list = list.filter((f) => f !== file);
     done++;
     if (!failing.has(file.key)) {
-      if (file.type === "image") textures.addImage(file.key);
-      else json.set(file.key, opts.manifest);
+      file.onProcessComplete();
       loaderEvents.emit(`filecomplete-${file.type}-${file.key}`, file.key, file.type, opts.manifest);
     }
     loaderEvents.emit("progress", 1 - list.length / total);
@@ -107,8 +138,8 @@ export function artLoaderStandin(opts: {
 
   let hold = false;
   const load = Object.assign(loaderEvents, {
-    image: (key: string, _url?: string) => add({ type: "image", key }),
-    json: (key: string, _url?: string) => add({ type: "json", key }),
+    image: (key: string, _url?: string) => add("image", key),
+    json: (key: string, _url?: string) => add("json", key),
     reset: () => {
       list = [];
       loading = false;
@@ -166,6 +197,15 @@ export function artLoaderStandin(opts: {
     },
     /** Completes a held load. */
     finish,
+    consoleErrors,
+    /**
+     * The downloads a stop left in flight arrive: each adds itself to its cache as Phaser's would,
+     * unless its XHR was aborted (no `onload` then) or its completion was taken away.
+     */
+    landStrays() {
+      for (const file of strays.splice(0))
+        if (!failing.has(file.key) && !file.xhrLoader?.aborted) file.onProcessComplete();
+    },
     /** What the scene drew, in order (`add.graphics`, `add.text`, `add.image`). */
     drawn: stage.drawn,
     camera: stage.camera,
@@ -174,6 +214,7 @@ export function artLoaderStandin(opts: {
      * the display list destroys every child (`DisplayList.shutdown`), then SHUTDOWN is heard.
      */
     stop() {
+      strays.push(...list);
       load.reset();
       loaderEvents.removeAllListeners();
       for (const object of stage.drawn) object.destroy();
