@@ -40,6 +40,15 @@ class FakeSocket implements SocketLike {
     this.readyState = 3;
     this.onclose?.({ code, reason });
   }
+  /**
+   * A handshake game-service refuses, as it really does: it upgrades first, so the socket OPENS,
+   * then says auth_error and closes 4001 (game-service auth/middleware.go rejectWebSocket).
+   */
+  refuse() {
+    this.open();
+    this.receive({ action: "auth_error", payload: { message: "invalid or expired token" } });
+    this.serverClose(4001, "invalid or expired token");
+  }
   /** A server that cannot be reached, as a browser reports it: error, then close (1006), never open. */
   unreachable() {
     this.readyState = 3;
@@ -842,130 +851,274 @@ describe("SocketManager mailbox (FS-1GZGD R34, R43, A4: mail_arrived goes to the
 });
 
 describe("SocketManager and the current access token (FS-ZPX58 §D)", () => {
-  function signedIn() {
+  type Outcome = "renewed" | "refused" | "unavailable";
+  const LEADER = "ws://pod-a.test/game/ws";
+  const marl = { characterId: "c-1", class: "warrior", className: "warrior", characterName: "Marl", username: "Marl" };
+
+  function signedIn(outcomes: Outcome[] = []) {
     const sockets: FakeSocket[] = [];
+    const arrival = { enterHub: vi.fn(() => marl), refused: vi.fn() };
     const manager = new SocketManager((url) => {
       const socket = new FakeSocket(url);
       sockets.push(socket);
       return socket;
-    });
+    }, arrival);
     let token = "jwt-1";
+    let renewals = 0;
     manager.setTokenSource(() => token);
+    const renew = vi.fn(async (): Promise<Outcome> => {
+      const outcome = outcomes[Math.min(renewals, outcomes.length - 1)] ?? "renewed";
+      renewals++;
+      if (outcome === "renewed") token = `jwt-${renewals + 1}`;
+      return outcome;
+    });
     const authError = vi.fn();
     manager.setOnAuthError(authError);
     manager.connectToGame("jwt-1", "Ash");
-    return {
-      manager,
-      sockets,
-      authError,
-      renewTo: (next: string) => {
-        token = next;
-      },
-    };
+    return { manager, sockets, authError, renew, arrival, last: () => sockets[sockets.length - 1] };
   }
 
-  // a renewal that has finished by the time the test looks
-  const settle = () => new Promise((r) => setTimeout(r, 0));
+  /** Lets a renewal's promise settle and runs any backoff timer due by then. */
+  const flush = async (ms = 0) => {
+    await vi.advanceTimersByTimeAsync(ms);
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("should open every socket with the token current at that moment (R20)", () => {
     const env = signedIn();
+    let token = "jwt-1";
+    env.manager.setTokenSource(() => token);
     env.sockets[0].open();
 
-    env.renewTo("jwt-2");
+    token = "jwt-2";
     env.sockets[0].receive(handoff("run-1"));
     expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-2&session_id=run-1`);
 
     env.sockets[1].serverClose(4002);
-    env.renewTo("jwt-3");
+    token = "jwt-3";
     env.sockets[0].serverClose(1006);
     env.manager.reconnect();
-    expect(env.sockets.at(-1)!.url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-3&name=Ash`);
+    expect(env.last().url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-3&name=Ash`);
   });
 
   it("should open a hub handoff with the current token (R20)", () => {
-    const sockets: FakeSocket[] = [];
-    const manager = new SocketManager(
-      (url) => {
-        const socket = new FakeSocket(url);
-        sockets.push(socket);
-        return socket;
-      },
-      { enterHub: () => ({ characterId: "c-1", class: "warrior", className: "warrior", characterName: "Marl", username: "Marl" }), refused: vi.fn() },
-    );
+    const env = signedIn();
     let token = "jwt-1";
-    manager.setTokenSource(() => token);
-    manager.connectToGame("jwt-1", "Ash");
-    sockets[0].open();
+    env.manager.setTokenSource(() => token);
+    env.sockets[0].open();
 
     token = "jwt-2";
-    sockets[0].receive({ action: "world_handoff", payload: { addr: HOST, hub: true } });
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: LEADER, hub: true } });
 
-    expect(sockets.at(-1)!.url).toContain("token=jwt-2&name=Ash&redirected=1");
+    expect(env.last().url).toBe(`${LEADER}?token=jwt-2&name=Ash&redirected=1`);
   });
 
-  it("should renew and reconnect with the new token when the game socket closes 4001 (R21)", async () => {
-    const env = signedIn();
-    const renew = vi.fn(async () => {
-      env.renewTo("jwt-2");
-      return true;
-    });
-    env.manager.setRenewSession(renew);
+  it("should renew and reconnect at once with the new token when the handshake is refused (R21)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
 
-    env.sockets[0].serverClose(4001);
-    await settle();
+    env.sockets[0].refuse();
+    await flush();
 
-    expect(renew).toHaveBeenCalledTimes(1);
+    expect(env.renew).toHaveBeenCalledTimes(1);
     expect(env.authError).not.toHaveBeenCalled();
     expect(env.sockets).toHaveLength(2);
     expect(env.sockets[1].url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-2&name=Ash`);
   });
 
-  it("should sign out when renewal does not succeed (R21)", async () => {
-    const env = signedIn();
-    env.manager.setRenewSession(async () => false);
+  it("should sign out only when renewal is refused (R21)", async () => {
+    const env = signedIn(["refused"]);
+    env.manager.setRenewSession(env.renew);
 
-    env.sockets[0].serverClose(4001);
-    await settle();
+    env.sockets[0].refuse();
+    await flush();
 
     expect(env.authError).toHaveBeenCalledTimes(1);
     expect(env.sockets).toHaveLength(1);
   });
 
-  it("should sign out when the reconnect is refused 4001 again before it opens (R21)", async () => {
-    const env = signedIn();
-    const renew = vi.fn(async () => true);
-    env.manager.setRenewSession(renew);
+  it("should not loop: a handshake refused again after a renewal retries only after a backoff (H1)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
 
-    env.sockets[0].serverClose(4001);
-    await settle();
-    env.sockets[1].serverClose(4001);
-    await settle();
+    env.sockets[0].refuse();
+    await flush();
+    env.sockets[1].refuse(); // opened, then refused: opening proves nothing
+    await flush();
 
-    expect(renew).toHaveBeenCalledTimes(1);
-    expect(env.authError).toHaveBeenCalledTimes(1);
+    expect(env.sockets).toHaveLength(2);
+    expect(env.renew).toHaveBeenCalledTimes(1);
+    expect(env.authError).not.toHaveBeenCalled();
+    expect(env.manager.getConnectionStatus()).toBe("connecting");
+
+    await flush(999);
+    expect(env.sockets).toHaveLength(2);
+    await flush(1);
+    expect(env.renew).toHaveBeenCalledTimes(2);
+    expect(env.sockets).toHaveLength(3);
+  });
+
+  it("should back off further on every refusal, up to 30 s (H1)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+
+    env.sockets[0].refuse();
+    await flush();
+    const waits: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      env.last().refuse();
+      const before = env.sockets.length;
+      let waited = 0;
+      while (env.sockets.length === before) {
+        await flush(250);
+        waited += 250;
+      }
+      waits.push(waited);
+    }
+
+    expect(waits).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+    expect(env.authError).not.toHaveBeenCalled();
+  });
+
+  it("should keep retrying with a backoff, never signing out, while renewal is unavailable (M3)", async () => {
+    const env = signedIn(["unavailable"]);
+    env.manager.setRenewSession(env.renew);
+
+    env.sockets[0].refuse();
+    await flush();
+    expect(env.sockets).toHaveLength(2);
+    env.sockets[1].refuse();
+    await flush(1000);
+    expect(env.sockets).toHaveLength(3);
+
+    expect(env.authError).not.toHaveBeenCalled();
+    expect(env.manager.getConnectionStatus()).toBe("connecting");
+  });
+
+  it("should start over once a socket is really let in: its first message is not auth_error (H1)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+
+    env.sockets[0].refuse();
+    await flush();
+    env.sockets[1].open();
+    env.sockets[1].receive({ action: "world_entered", payload: { session_id: "hub-1", world_type: "hub" } });
+    env.sockets[1].refuse();
+    await flush();
+
+    expect(env.renew).toHaveBeenCalledTimes(2);
+    expect(env.sockets).toHaveLength(3);
+  });
+
+  it("should cancel a pending retry on disconnect", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+    env.sockets[0].refuse();
+    await flush();
+    env.sockets[1].refuse();
+    await flush();
+
+    env.manager.disconnect();
+    await flush(60_000);
+
     expect(env.sockets).toHaveLength(2);
   });
 
-  it("should allow one more renewal once a socket has opened (R21)", async () => {
-    const env = signedIn();
-    const renew = vi.fn(async () => true);
-    env.manager.setRenewSession(renew);
+  it("should keep redirected=1 when the refused socket was a redirect target (L4, FS-MCYWK C17)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+    env.sockets[0].open();
 
-    env.sockets[0].serverClose(4001);
-    await settle();
-    env.sockets[1].open();
-    env.sockets[1].serverClose(4001);
-    await settle();
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: LEADER, reconnect: true } });
+    env.sockets[1].refuse();
+    await flush();
 
-    expect(renew).toHaveBeenCalledTimes(2);
-    expect(env.authError).not.toHaveBeenCalled();
     expect(env.sockets).toHaveLength(3);
+    expect(env.sockets[2].url).toBe(`${LEADER}?token=jwt-2&name=Ash&redirected=1`);
+    // a redirect arriving on it is still never followed
+    env.sockets[2].open();
+    env.sockets[2].receive({ action: "world_handoff", payload: { addr: HOST, reconnect: true } });
+    expect(env.sockets).toHaveLength(3);
+  });
+
+  it("should renew once and open the run handoff again when its host refuses the token (L4)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+    const failed = vi.fn();
+    env.manager.on("world_handoff_failed", failed);
+    env.sockets[0].open();
+
+    env.sockets[0].receive(handoff("run-1"));
+    env.sockets[1].refuse();
+    await flush();
+
+    expect(failed).not.toHaveBeenCalled();
+    expect(env.sockets).toHaveLength(3);
+    expect(env.sockets[2].url).toBe(`${HOST}?token=jwt-2&session_id=run-1`);
+
+    env.sockets[2].open();
+    env.sockets[2].receive(runEntered);
+    expect(env.manager.getServerAddress()).toBe(HOST);
+  });
+
+  it("should report the run handoff failed when its host refuses the renewed token too (L4)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+    const failed = vi.fn();
+    env.manager.on("world_handoff_failed", failed);
+    env.sockets[0].open();
+
+    env.sockets[0].receive(handoff("run-1"));
+    env.sockets[1].refuse();
+    await flush();
+    env.sockets[2].refuse();
+    await flush();
+
+    expect(env.renew).toHaveBeenCalledTimes(1);
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(env.authError).not.toHaveBeenCalled();
+  });
+
+  it("should sign out when a refused handoff's renewal is refused (L4)", async () => {
+    const env = signedIn(["refused"]);
+    env.manager.setRenewSession(env.renew);
+    env.sockets[0].open();
+
+    env.sockets[0].receive(handoff("run-1"));
+    env.sockets[1].refuse();
+    await flush();
+
+    expect(env.authError).toHaveBeenCalledTimes(1);
+  });
+
+  it("should renew once and open the hub handoff again, flagged redirected, when refused (L4)", async () => {
+    const env = signedIn(["renewed"]);
+    env.manager.setRenewSession(env.renew);
+    env.sockets[0].open();
+
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: LEADER, hub: true } });
+    env.sockets[1].refuse();
+    await flush();
+
+    expect(env.arrival.refused).not.toHaveBeenCalled();
+    expect(env.sockets).toHaveLength(3);
+    expect(env.sockets[2].url).toBe(`${LEADER}?token=jwt-2&name=Ash&redirected=1`);
+
+    env.sockets[2].refuse();
+    await flush();
+    expect(env.arrival.refused).toHaveBeenCalledWith(TRAVEL_UNREACHABLE);
   });
 
   it("should sign out on 4001 as before when no renewal is wired", () => {
     const env = signedIn();
 
-    env.sockets[0].serverClose(4001);
+    env.sockets[0].refuse();
 
     expect(env.authError).toHaveBeenCalledTimes(1);
   });

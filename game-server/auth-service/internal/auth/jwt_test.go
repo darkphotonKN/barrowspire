@@ -248,3 +248,67 @@ func TestParseRefreshToken(t *testing.T) {
 		})
 	}
 }
+
+// FS-ZPX58 L1: ValidateJWT, behind the ValidateToken RPC game-service's socket
+// handshake uses, accepts only an access token. A 7-day refresh token must not
+// open a game socket.
+func TestValidateJWT_AcceptsOnlyAnAccessToken(t *testing.T) {
+	t.Setenv("JWT_SECRET", testSecret)
+	memberID := uuid.New()
+	member := models.Member{ID: memberID, Role: "player"}
+	now := time.Now()
+
+	access, err := auth.GenerateJWT(member, commonconstants.Access, auth.AccessTokenTTL)
+	require.NoError(t, err)
+	refresh, err := auth.GenerateJWT(member, commonconstants.Refresh, auth.RefreshTokenTTL)
+	require.NoError(t, err)
+	expired, err := auth.GenerateJWT(member, commonconstants.Access, -time.Minute)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		token   string
+		wantErr bool
+	}{
+		{name: "an access token", token: access},
+		{name: "a refresh token", token: refresh, wantErr: true},
+		{name: "no token type", token: signed(t, jwt.SigningMethodHS256, jwt.MapClaims{"sub": memberID.String(), "exp": now.Add(time.Hour).Unix()}, testSecret), wantErr: true},
+		{name: "expired", token: expired, wantErr: true},
+		{name: "wrong secret", token: signed(t, jwt.SigningMethodHS256, jwt.MapClaims{"sub": memberID.String(), "tokenType": "access", "exp": now.Add(time.Hour).Unix()}, "not-the-secret"), wantErr: true},
+		{name: "garbage", token: "not.a.jwt", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claims, err := auth.ValidateJWT(tt.token)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, memberID.String(), claims.ID)
+		})
+	}
+}
+
+// FS-ZPX58 L7: with no JWT_SECRET, nothing is minted and nothing validates,
+// rather than every token being signed and checked with the empty key.
+func TestEmptySecret_MintsAndAcceptsNothing(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	member := models.Member{ID: uuid.New(), Role: "player"}
+	emptyKeyed := signed(t, jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": member.ID.String(), "tokenType": "refresh", "exp": time.Now().Add(time.Hour).Unix(),
+	}, "")
+	emptyKeyedAccess := signed(t, jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": member.ID.String(), "tokenType": "access", "exp": time.Now().Add(time.Hour).Unix(),
+	}, "")
+
+	_, err := auth.GenerateJWT(member, commonconstants.Access, auth.AccessTokenTTL)
+	assert.Error(t, err, "mint")
+
+	_, err = auth.ParseRefreshToken(emptyKeyed)
+	assert.Error(t, err, "renew")
+
+	_, err = auth.ValidateJWT(emptyKeyedAccess)
+	assert.Error(t, err, "validate")
+}

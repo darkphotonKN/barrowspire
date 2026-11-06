@@ -151,6 +151,8 @@ describe("apiClient renews on a 401 (FS-ZPX58 R13, R16, R17)", () => {
     ["the refresh route refuses it", () => problem(401, "UNAUTHENTICATED")],
     ["the refresh body is refused as shape", () => problem(422, "VALIDATION_FAILED")],
     ["the answer carries no access token", () => json(200, { access_expires_in: 3600 })],
+    // the route does not exist (a client deployed before its gateway): waiting cannot help (M2)
+    ["the refresh route is not there", () => problem(404, "NOT_FOUND")],
   ])("should sign out and go to /login when %s", async (_label, refreshAnswer) => {
     route = (req) => (isRefresh(req) ? refreshAnswer() : problem(401, "UNAUTHENTICATED"));
     const { apiClient } = await loadApi();
@@ -163,6 +165,58 @@ describe("apiClient renews on a 401 (FS-ZPX58 R13, R16, R17)", () => {
     expect(storedState().accessToken).toBeNull();
     expect(win.location.href).toBe("/login");
     expect(requests.filter(isWallet)).toHaveLength(1);
+  });
+
+  it("should not bring a session back that was signed out while the renewal was out (M1)", async () => {
+    let signOut = () => {};
+    route = (req) => {
+      if (isRefresh(req)) {
+        // the player signs out (the header's Sign out) before the renewal's answer lands
+        signOut();
+        return renewed();
+      }
+      return bearer(req) === `Bearer ${NEW}` ? json(200, {}) : problem(401, "UNAUTHENTICATED");
+    };
+    const { apiClient } = await loadApi();
+    const { useAuthStore } = await import("@/stores/authStore");
+    signOut = () => useAuthStore.getState().logout();
+
+    await apiClient.getWalletAccount().catch(() => undefined);
+
+    expect(storedState().accessToken).toBeNull();
+    expect(storedState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(requests.filter(isWallet)).toHaveLength(1);
+  });
+
+  it("should not overwrite a session another sign-in made while the renewal was out (M1)", async () => {
+    const OTHER = jwtWith({ sub: "m-2", exp: 1_800_007_200 });
+    route = (req) => {
+      if (isRefresh(req)) {
+        storeSession({ accessToken: OTHER, refreshToken: "refresh-token-2", memberInfo: { id: "m-2" }, isAuthenticated: true });
+        return renewed();
+      }
+      return bearer(req) === `Bearer ${OTHER}` ? json(200, {}) : problem(401, "UNAUTHENTICATED");
+    };
+    const { apiClient } = await loadApi();
+
+    await apiClient.getWalletAccount();
+
+    expect(storedState().accessToken).toBe(OTHER);
+    expect(storedState().refreshToken).toBe("refresh-token-2");
+    expect(bearer(requests.filter(isWallet)[1])).toBe(`Bearer ${OTHER}`);
+  });
+
+  it("should not ask again during the cooldown after an unavailable renewal (M2)", async () => {
+    route = (req) => (isRefresh(req) ? problem(503, "SERVICE_UNAVAILABLE") : problem(401, "UNAUTHENTICATED"));
+    const { apiClient } = await loadApi();
+
+    await apiClient.getWalletAccount().catch(() => undefined);
+    await apiClient.getLoadout().catch(() => undefined);
+    await apiClient.getItemInstances().catch(() => undefined);
+
+    expect(requests.filter(isRefresh)).toHaveLength(1);
+    expect(win.location.href).toBe("/game");
   });
 
   it("should sign out without calling the route when no refresh token is stored", async () => {
