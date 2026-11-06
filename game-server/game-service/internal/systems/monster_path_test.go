@@ -370,3 +370,30 @@ func TestMonsterAISystem_TargetDropped_ForgetsThePath(t *testing.T) {
 	assert.True(t, monster(g).Wander.HasDestination)
 	assert.Empty(t, monster(g).Route.Cells, "still holding the path to the dropped target")
 }
+
+// A target whose centre is off the walkable cells (pushed onto a rock cell's
+// edge, say) has no cell to search to: the monster steers straight at them,
+// today's chase, and never searches, so it cannot spin on searches that fail.
+// FS-KE075 §D R27, §Edge States.
+func TestMonsterAISystem_TargetOffTheWalkableCells_SteersStraightWithoutASearch(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid, _ := floorOf(t, em, []string{
+		"......",
+		"......",
+		".....#",
+	})
+	counting := &countingGrid{Grid: grid}
+	g := hunter(em, 40, 40)
+	d := delver(em, 420, 200) // in the rock cell at (5, 2)
+	provoke(g, d)
+	ai := NewMonsterAISystem(firstRoll, counting)
+
+	for range ticks(2) {
+		ai.Update(tickSeconds, em.GetAllEntities())
+	}
+
+	assert.Empty(t, counting.searches)
+	want := math.Atan2(200-40, 420-40)
+	assert.InDelta(t, math.Cos(want), velocityOf(t, g).VX, 1e-9)
+	assert.InDelta(t, math.Sin(want), velocityOf(t, g).VY, 1e-9)
+}
