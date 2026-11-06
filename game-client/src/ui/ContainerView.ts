@@ -462,6 +462,16 @@ export class ContainerView {
     });
   }
 
+  /**
+   * Closed at once, nothing animated: the scene is ending (FieldPiles.release on a stop or a game
+   * destroy). Its tween manager has let every tween go already, and one added now would play on
+   * this view, and fire its reset, in the scene's next visit.
+   */
+  closeNow(): void {
+    this.openFor = undefined;
+    this.clearView();
+  }
+
   /** The open coffer's contents from the server. Rebuilds only when what is shown changes. */
   setItems(items: readonly ItemState[]): void {
     if (!this.isOpen) return;
@@ -667,10 +677,14 @@ export class ContainerView {
   /** Hidden and empty, whether it closed or is about to reopen. */
   private reset(): void {
     this.scene.tweens.killTweensOf([this.root, this.flap]);
-    for (const icon of this.icons.values()) {
+    for (const icon of this.icons.values())
       this.scene.tweens.killTweensOf(icon.sprite);
-      icon.sprite.destroy();
-    }
+    this.clearView();
+  }
+
+  /** Hidden and empty, its tweens already gone. */
+  private clearView(): void {
+    for (const icon of this.icons.values()) icon.sprite.destroy();
     this.icons.clear();
     this.unhover();
     this.contents.clear();

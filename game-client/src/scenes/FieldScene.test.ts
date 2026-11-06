@@ -64,6 +64,7 @@ const { AbilityHud } = await import("@/ui/AbilityHud");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
+const { sceneSystems } = await import("./sceneEnd.standin");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
@@ -83,7 +84,7 @@ interface FieldUnderTest {
   time: { delayedCall: ReturnType<typeof vi.fn> };
   scene: { start: ReturnType<typeof vi.fn> };
   listen(): void;
-  release(): void;
+  release(end: "shutdown" | "destroy"): void;
   renderState(state: unknown): void;
   followEntrance(pos: { x: number; y: number }, gates: unknown[]): void;
   placePlayer(...args: unknown[]): void;
@@ -111,6 +112,8 @@ function fieldOnStage() {
   field.time = { delayedCall: vi.fn() };
   field.scene = { start: vi.fn() };
   Object.assign(field, {
+    // the cursor is handed back on release
+    input: { setDefaultCursor: vi.fn() },
     placePlayer: vi.fn(),
     drawGround: vi.fn(),
     drawObstacles: vi.fn(),
@@ -236,7 +239,7 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     standAt(ARRIVAL);
     standAt(ROAD_HOME.position);
 
-    field.release();
+    field.release("shutdown");
     field.listen();
     standAt(ROAD_HOME.position);
 
@@ -343,7 +346,7 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
     const fight = { sync: vi.fn(), update: vi.fn(), release: vi.fn() };
     Object.assign(field, { fight });
 
-    field.release();
+    field.release("shutdown");
 
     expect(fight.release).toHaveBeenCalledTimes(1);
     expect((field as unknown as { fight?: unknown }).fight).toBeUndefined();
@@ -422,7 +425,7 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
     const piles = fakePiles();
     Object.assign(field, { piles });
 
-    field.release();
+    field.release("shutdown");
 
     expect(piles.release).toHaveBeenCalledTimes(1);
     expect(socketManager.off).toHaveBeenCalledWith(ActionType.Interact);
@@ -646,7 +649,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     const { field } = fallenOnStage();
     field.renderState(stateAt(0, { x: 900, y: 420 }));
 
-    field.release();
+    field.release("shutdown");
 
     expect(field.fallenView).toBeUndefined();
   });
@@ -743,6 +746,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
       on: vi.fn(),
+      setDefaultCursor: vi.fn(),
     };
     field.bindHudKeys();
     const press = (key: string) => keys.get(`keydown-${key}`)?.();
@@ -890,7 +894,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   it("should let the HUD go on release, so the next visit starts empty", () => {
     const { field } = hudOnStage();
 
-    field.release();
+    field.release("shutdown");
 
     expect(field.equipment).toBeUndefined();
   });
@@ -899,7 +903,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     const { field } = hudOnStage();
     const release = vi.spyOn(field.equipment!, "release");
 
-    field.release();
+    field.release("shutdown");
 
     expect(release).toHaveBeenCalledTimes(1);
   });
@@ -929,6 +933,58 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
         "keydown-F",
       ]),
     );
+  });
+});
+
+// Leaving /game mid-field destroys the game: Phaser emits the scene's DESTROY only, after every
+// plugin has destroyed itself (sceneEnd.standin.ts). The field must still let go of what outlives
+// the game and ask the dead plugins nothing; on a stop it hands the cursor back (asked 2026-11-06).
+describe("FieldScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A field made by its create(), its scene events and input those of Phaser's stand-in. */
+  function createdField() {
+    const { field } = fieldToCreate<{ input: unknown; events: unknown }>();
+    // the plugins boot before the scene's create runs, so they hear DESTROY first
+    const systems = sceneSystems();
+    field.events = systems.scene.events;
+    field.create({ field: "gentle_meadows" });
+    field.input = systems.scene.input;
+    const off = vi.spyOn(socketManager, "off");
+    const offError = vi.spyOn(socketManager, "offError");
+    return { field, systems, off, offError };
+  }
+
+  it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
+    const { systems, off, offError } = createdField();
+
+    expect(() => systems.destroy()).not.toThrow();
+    expect(systems.touched).toEqual([]);
+    expect(off).toHaveBeenCalledWith(ActionType.Interact);
+    expect(offError).toHaveBeenCalledWith(ActionType.LeaveField);
+  });
+
+  it("should hand the cursor back to the page on a stop", () => {
+    const { systems } = createdField();
+    systems.input.manager!.defaultCursor = "url(hand) 0 0, default";
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.defaultCursor).toBe("");
+  });
+
+  // Phaser's stop destroys the field's keys and keeps their captures, the game's (sceneEnd.ts).
+  it("should hand back the captures its keys made on a stop", () => {
+    const { field, systems } = createdField();
+    // the rig stubs bindInput; the real one binds on the stand-in's keyboard
+    (FieldScene.prototype as unknown as { bindInput(): void }).bindInput.call(field);
+    expect(systems.input.manager?.captures.length).toBeGreaterThan(0);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
   });
 });
 

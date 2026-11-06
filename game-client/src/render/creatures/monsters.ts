@@ -371,6 +371,16 @@ export class MonsterRoster {
     return this.views.size;
   }
 
+  /**
+   * Every monster let go, the one under the pointer with them and no hover ending reported: the
+   * world is going, and the cursor is its scene's to hand back (on a game destroy the scene's input
+   * has destroyed itself first, scenes/sceneEnd.ts).
+   */
+  clear(): void {
+    this.hovered = undefined;
+    this.sync([]);
+  }
+
   /** The broadcast's monsters are the whole truth: anyone absent from it is gone. */
   sync(monsters: readonly MonsterState[]): void {
     const present = new Set(monsters.map((m) => m.entity_id));

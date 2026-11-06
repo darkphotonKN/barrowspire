@@ -139,6 +139,7 @@ import {
   stashPlate,
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { trimCrop } from "@/render/world/walls";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 
@@ -833,9 +834,12 @@ export class HubScene extends Phaser.Scene {
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
-    // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+    this.listenForEnd();
+  }
+
+  /** A stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN. */
+  private listenForEnd(): void {
+    onSceneEnd(this, (end) => this.release(end));
   }
 
   /**
@@ -986,11 +990,10 @@ export class HubScene extends Phaser.Scene {
   /**
    * Everything one visit made is let go here. Phaser reuses the scene instance for the next
    * visit, and a reference to something the last visit's display list destroyed draws nothing
-   * (commit 0a35e36): forget it, and make it again only while it is `.active`.
+   * (commit 0a35e36): forget it, and make it again only while it is `.active`. On the game's
+   * destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
    */
-  private release(): void {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.release, this);
+  private release(end: SceneEnd): void {
     this.unsubscribeState?.();
     this.unsubscribeQueue?.();
     this.views.clear();
@@ -1053,8 +1056,23 @@ export class HubScene extends Phaser.Scene {
     this.stashMarks = [];
     this.interiors = [];
     this.stashChest = undefined;
+    // a destroyed game took its input manager, the cursor and the captures with it
+    if (end === "shutdown") this.handBackInput();
+  }
+
+  /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
+  private handBackInput(): void {
     // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's
     this.input.setDefaultCursor("");
+    releaseCaptures(this.input.keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+      this.interactKey,
+      this.confirmKey,
+      this.dismissKey,
+      ...this.gearKeys,
+      ...this.choiceKeys,
+    ]);
   }
 
   update(time: number, delta: number): void {

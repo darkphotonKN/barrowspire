@@ -310,6 +310,9 @@ export class ChatWindow {
   }
 
   destroy(): void {
+    // closing the input below draws nothing: the window is going, and on a game destroy (leaving
+    // /game) the scene's game-object factory has destroyed itself first (scenes/sceneEnd.ts)
+    this.destroyed = true;
     this.unsubscribe();
     this.unwatchScale();
     this.scene.input?.off("wheel", this.onWheel, this);
@@ -432,6 +435,7 @@ export class ChatWindow {
 
   /** The input opened, closed or its draft changed: the panel redraws only when its opacity flips. */
   private inputChanged(): void {
+    if (this.destroyed) return;
     this.drawPicker();
     const typing = this.isTyping();
     if (typing !== this.drawnTyping) {
@@ -446,6 +450,8 @@ export class ChatWindow {
     }
   }
   private drawnTyping = false;
+  /** Set as the window is let go: nothing is drawn after. */
+  private destroyed = false;
 
   /**
    * Once a frame: the DOM row is shown while the player may type and hidden while something else

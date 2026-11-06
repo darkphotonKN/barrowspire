@@ -38,7 +38,8 @@ vi.mock("phaser", async () => {
           key.justDown = false;
           return pressed;
         },
-        KeyCodes: {},
+        // the codes the run binds (bindKeys), as Phaser's KeyCodes has them
+        KeyCodes: { W: 87, A: 65, S: 83, D: 68, TAB: 9, ESC: 27, ENTER: 13, ONE: 49, TWO: 50 },
       },
     },
     // interact range is measured between world positions
@@ -62,6 +63,7 @@ const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeSc
 const { ProjectileFlights } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
+const { sceneSystems } = await import("./sceneEnd.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
@@ -218,6 +220,75 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     }
     expect(run.events.listenerCount("shutdown")).toBe(1);
     expect(run.events.listenerCount("destroy")).toBe(1);
+  });
+});
+
+// Leaving /game mid-run destroys the game: Phaser emits the scene's DESTROY only, after every plugin
+// has destroyed itself (sceneEnd.standin.ts). The run must still let go of what outlives the game,
+// and ask the dead plugins nothing: in the hub the same teardown threw on the input (asked 2026-11-06).
+describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should let the run go on a game destroy without asking the destroyed plugins anything", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as RunState & { tabKey?: object };
+    // the plugins boot before the scene's init runs, so they hear DESTROY first
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    run.tabKey = { keyCode: 9 };
+    run.player = {};
+    const off = vi.spyOn(socketManager, "off");
+
+    systems.destroy();
+
+    expect(systems.touched).toEqual([]);
+    expect(off).toHaveBeenCalledWith("end_game");
+    expect(run.player).toBeUndefined();
+  });
+
+  it("should still give the next run back the keyboard the run's end locked, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    systems.input.keyboard.enabled = false;
+
+    systems.shutdown();
+
+    expect(systems.input.keyboard.enabled).toBe(true);
+  });
+
+  // Phaser's stop destroys the run's keys before the run's own handler (KeyboardPlugin.shutdown →
+  // removeAllKeys(true)) and keeps their captures, the game's: removeKey then found no Tab, and
+  // Tab's default stayed prevented in the hub and its DOM overlays until the game died (review
+  // 2026-11-06).
+  it("should hand back the Tab capture on a stop, though Phaser destroyed the key first", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { tabKey?: object };
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    run.tabKey = systems.input.keyboard.addKey(9, true);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).not.toContain(9);
+  });
+
+  it("should hand back the captures every key it binds made, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    (scene as unknown as { bindKeys(): void }).bindKeys();
+    expect(systems.input.manager?.captures).toContain(9);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
   });
 });
 
@@ -1020,7 +1091,7 @@ describe("BarrowspireScene teammate health bars, switched on (FS-8AY7S req 27, 2
   it("should forget every bar on a restart", () => {
     const { run, bars } = barsOnStage();
     run.handleGameStateUpdate(partyState());
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     expect(bars.size).toBe(0);
   });
 });
@@ -1035,7 +1106,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     tabKey?: unknown;
     cycleWatched(): void;
     canSendMove(): boolean;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   const dead = { current_health: 0 };
@@ -1148,9 +1219,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     it("should forget the button on a restart, and the rebuilt run raises it again, not spectating", () => {
       const { run, stage, state } = resolvedOnStage(player("me", "Aldric", 130, escaped));
       const before = watchHit(stage)!;
-      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
-      run.resetRun();
+      run.resetRun("shutdown");
       expect((run as unknown as { watchButton?: unknown }).watchButton).toBeUndefined();
       expect(run.watchedPlayerId).toBeUndefined();
       expect(run.spectateHud).toBeUndefined();
@@ -1322,14 +1393,14 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
   it("should forget the watched player, the follow, the Tab key, the card and the HUD on a restart", () => {
     const { run, pressWatch } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    const removeKey = vi.fn();
-    const tabKey = {};
-    run.tabKey = tabKey;
-    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey } };
+    const removeCapture = vi.fn();
+    run.tabKey = { keyCode: 9 };
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture } };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
-    expect(removeKey).toHaveBeenCalledWith(tabKey, true, true);
+    // Phaser's stop has destroyed the key already; the capture is handed back by its code
+    expect(removeCapture).toHaveBeenCalledWith(expect.arrayContaining([9]));
     expect(run.tabKey).toBeUndefined();
     expect(run.watchedPlayerId).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
@@ -1387,7 +1458,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     leaveButton?: unknown;
     runEnded?: boolean;
     leaveRefused(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   const dead = { current_health: 0 };
@@ -1566,8 +1637,8 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
 
     it("should forget the escape on a restart, so the next run starts with no Leave", () => {
       const { run, stage } = leavingOnStage(player("me", "Aldric", 130, escaped));
-      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
-      run.resetRun();
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
+      run.resetRun("shutdown");
       // the old run's buttons went down with the scene; only what is drawn after the reset counts
       const before = stage.made.length;
       (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
@@ -1603,9 +1674,9 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     const off = vi.spyOn(socketManager, "off");
     const { run, press } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("leave-the-barrow");
-    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
     expect(run.leavePending).toBe(false);
     expect(run.leaveButton).toBeUndefined();
@@ -1712,7 +1783,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
   it("should build the bars afresh after a restart", () => {
     const { run, labels } = barsOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
     expect(labels().filter((l) => l === "Health:").length).toBeGreaterThanOrEqual(1);
   });
@@ -1733,7 +1804,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     abilityHud?: { shown: { name: string; greyed: boolean } | null };
     leaveButton?: unknown;
     bindRunInput(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   function cardOnStage() {
@@ -1875,7 +1946,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
   it("should build the card afresh after a restart", () => {
     const { run, carded, text } = cardOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    carded.resetRun();
+    carded.resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
     expect(text("Dash")).toBeDefined();
   });
@@ -1952,7 +2023,7 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
   it("should treat the first state after a restart as the baseline again", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me(4, 400, 390, 600)));
     expect(cues()).toHaveLength(0);
   });
@@ -2256,7 +2327,7 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
   it("should forget the stopped run's trails, so the next start burns them fresh", () => {
     const { run, marks } = onStage();
     run.handleGameStateUpdate(withTrails([trail("t1")]));
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withTrails([trail("t1")]));
     // Phaser destroyed the stopped run's marks; the new run makes its own
     expect(marks("t1")).toHaveLength(4);
@@ -2609,7 +2680,7 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     const { run } = spire();
     run.handleGameStateUpdate(floorState(1));
     standAt(run, IN_ROOM);
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     expect(run.view).toBeUndefined();
     expect(run.currentBuilding).toBeUndefined();
   });
@@ -3459,7 +3530,7 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     sessionID?: string;
     acceptsFrame(s: { session_id: string }): boolean;
     handleGameStateUpdate(s: unknown): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   it("should accept only frames of the session the scene was started for", () => {
@@ -3480,12 +3551,12 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
 
   it("should release the equip HUD on reset, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
     const scene = new BarrowspireScene();
-    const run = scene as unknown as { resetRun(): void; equipment?: { release(): void } };
+    const run = scene as unknown as { resetRun(end: "shutdown" | "destroy"): void; equipment?: { release(): void } };
     scene.init();
     const release = vi.fn();
     run.equipment = { release };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
     expect(release).toHaveBeenCalledTimes(1);
     expect(run.equipment).toBeUndefined();
@@ -3498,7 +3569,7 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     expect(run.acceptsFrame({ session_id: "whatever" })).toBe(true);
 
     scene.init({ sessionID: "run-a" });
-    run.resetRun();
+    run.resetRun("shutdown");
     expect(run.sessionID).toBeUndefined();
     expect(run.acceptsFrame({ session_id: "run-b" })).toBe(true);
   });
@@ -3529,7 +3600,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     toggleControlsPanel(): void;
     fallRefused(info: { message?: string }): void;
     endRun(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   const dead = { current_health: 0 };
@@ -3803,9 +3874,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     press(keys.esc);
     pick("fall");
     pick("fall-now");
-    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
     expect(run.menu).toBeUndefined();
     expect(run.menuChoices).toBeUndefined();
@@ -4130,7 +4201,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     equipment?: unknown;
     menu?: unknown;
     bindRunInput(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
     leaveFloor(): void;
     openMenu(): void;
     endRun(): void;
@@ -4391,7 +4462,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
     ["the window losing focus", (s) => s.game.events.emit("blur")],
     ["the tab going hidden", (s) => s.game.events.emit("hidden")],
-    ["the scene tearing down", (s) => s.run.resetRun()],
+    ["the scene tearing down", (s) => s.run.resetRun("shutdown")],
   ];
 
   it.each(cancels)("should end a hold on %s with nothing sent and no line left", (_, cancel) => {
@@ -4424,7 +4495,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
   it("should stop hearing window blur once the scene tears down", () => {
     const s = aimOnStage();
-    s.run.resetRun();
+    s.run.resetRun("shutdown");
     expect(s.game.events.listenerCount("blur")).toBe(0);
     expect(s.game.events.listenerCount("hidden")).toBe(0);
   });
@@ -4529,7 +4600,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.leftClick();
       const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
       expect(live().length).toBeGreaterThan(0);
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       expect(live()).toHaveLength(0);
     });
 
@@ -4610,7 +4681,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
     it("should flash on a rise in parries, at 3 parry charges too, and not on the first state", () => {
       const s = aimOnStage("mercenary");
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       s.run.handleGameStateUpdate(partyState(merc({ parries: 7 })));
       expect(flashes(s)).toBe(0);
       s.run.handleGameStateUpdate(partyState(merc({ parries: 8, parry_open: true })));
@@ -4625,13 +4696,13 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.run.handleGameStateUpdate(partyState(merc({ parries: 2, parry_open: true })));
       const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
       expect(live().length).toBeGreaterThanOrEqual(2);
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       expect(live()).toHaveLength(0);
     });
 
     it("should take the first state after a restart (a reconnect) as the baseline", () => {
       const s = parryOnStage({ parries: 1 });
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       s.run.handleGameStateUpdate(partyState(merc({ parries: 4 })));
       expect(flashes(s)).toBe(0);
     });
@@ -4733,7 +4804,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.leftClick();
       const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
       expect(live().length).toBeGreaterThan(0);
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       expect(armed(s)).toBe(false);
       expect(live()).toHaveLength(0);
     });

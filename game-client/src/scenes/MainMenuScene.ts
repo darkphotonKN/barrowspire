@@ -20,6 +20,7 @@ import {
 } from "@/ui/menuChrome";
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
+import { onSceneEnd } from "./sceneEnd";
 import {
   LOGICAL_HEIGHT,
   LOGICAL_MAX_WIDTH,
@@ -291,10 +292,15 @@ export class MainMenuScene extends Phaser.Scene {
     });
     this.loadRoster();
 
-    // Register scene shutdown listener
-    this.events.once("shutdown", () => {
-      this.shutdown();
-    });
+    this.listenForEnd();
+  }
+
+  /**
+   * A stop, or the game's destroy while in the menu (the page unmounts), which skips SHUTDOWN: the
+   * connection status is the socket's and outlives the game. What `shutdown` does asks no plugin.
+   */
+  private listenForEnd(): void {
+    onSceneEnd(this, () => this.shutdown());
   }
 
   /**
