@@ -286,9 +286,9 @@ the two share a cell or are one legal step apart, or when either is off the
 walkable cells; otherwise it is the next point of the monster's path there
 (FS-KE075 §D R23). The path is searched again when the goal has moved to
 another cell or the path is used up, and never more often than every
-repathInterval (R24); between searches the monster keeps to the path it has. A
-search that finds nothing leaves it steering straight at (x, y) until its next
-search (R27).
+repathInterval (R24); between searches the monster keeps to the path it has, and with its
+path used up it holds on its own cell's centre. A search that finds nothing
+leaves it steering straight at (x, y) until its next search (R27).
 */
 func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *components.TransformComponent, x, y float64) (float64, float64) {
 	if s.grid == nil {
@@ -306,6 +306,11 @@ func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *comp
 	}
 	if px, py, ok := s.follow(route, from, at); ok {
 		return px, py
+	}
+	if len(route.Cells) > 0 {
+		// used up, and not yet allowed to search again: from its own cell's
+		// centre any path is clear
+		return s.grid.Centre(from)
 	}
 	return x, y
 }
@@ -325,36 +330,50 @@ func (s *MonsterAISystem) search(route *components.Route, from, goal int) {
 }
 
 /*
-follow is the point a monster at at, in cell from, steers for along its route:
-the centre of the farthest of the next few cells it can walk to straight
-without its body overlapping rock, so it cuts the path's corners only where
-the cut is clear (ADR-0062 Consequences "smoothing"). Reaching the last cell's
-centre uses the route up. A monster pushed off its route, with none of those
-cells clear, has used it up too and steers for its own cell's centre, from
-where any path is clear, until it may search again. False with no route.
+follow is the point a monster at at, in cell from, steers for along its route.
+
+Its progress is the last cell of the route it has stood in: Next, moved on
+when it stands in one of the cells ahead, the next few after Next that it
+steers among. It steers for the centre of the farthest of those it can walk to
+straight without its body overlapping rock, so it cuts the path's corners only where the cut is clear
+(ADR-0062 Consequences "smoothing"). With none clear, a cut that grazed a
+corner say, it goes back to its own cell's centre, from where the next cell of
+its path is a legal step and so clear. Standing there with still none clear,
+it was pushed off its route; standing in the route's last cell, it has
+reached it. Either way the route is used up and follow reports false, as it
+does with no route.
 */
 func (s *MonsterAISystem) follow(route *components.Route, from int, at *components.TransformComponent) (float64, float64, bool) {
-	if route.Next >= len(route.Cells) {
+	last := len(route.Cells) - 1
+	// a corner cut can land it in any cell ahead, the farthest included,
+	// without its standing in those between
+	for i := min(last, route.Next+1+lookahead); i > route.Next; i-- {
+		if route.Cells[i] == from {
+			route.Next = i
+			break
+		}
+	}
+	if route.Next >= last {
+		route.Next = len(route.Cells)
 		return 0, 0, false
 	}
-	last := len(route.Cells) - 1
+
 	best := -1
-	for i := route.Next; i <= min(last, route.Next+lookahead); i++ {
+	for i := route.Next + 1; i <= min(last, route.Next+1+lookahead); i++ {
 		cx, cy := s.grid.Centre(route.Cells[i])
 		if s.grid.Clear(at.X, at.Y, cx, cy, constants.PlayerRadius) {
 			best = i
 		}
 	}
-	if best < 0 {
-		route.Next = len(route.Cells)
-		x, y := s.grid.Centre(from)
+	if best >= 0 {
+		x, y := s.grid.Centre(route.Cells[best])
 		return x, y, true
 	}
 
-	route.Next = best
-	x, y := s.grid.Centre(route.Cells[best])
-	if best == last && math.Hypot(x-at.X, y-at.Y) <= arrivalRadius {
+	x, y := s.grid.Centre(from)
+	if math.Hypot(x-at.X, y-at.Y) <= arrivalRadius {
 		route.Next = len(route.Cells)
+		return 0, 0, false
 	}
 	return x, y, true
 }
