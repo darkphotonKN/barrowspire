@@ -1306,6 +1306,62 @@ func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
 	}
 }
 
+// Opt-in and committed. A move of a stash item to the bag and a reservation of
+// the same item, run at once and repeated: both take the seller's account lock,
+// so every run ends with exactly one of them succeeding. Move first, the
+// reserve reads the bag and is refused ITEM_NOT_IN_STASH; reserve first, the
+// move reads LISTED and is refused ITEM_NOT_AVAILABLE. A bag item is never
+// LISTED, with no location predicate in the reserve's UPDATE (FS-3R77D R5,
+// §Edge States "Move and list race").
+func TestServiceReserveItem_RacingAMoveToTheBag(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+
+	for i := range 25 {
+		owner := uuid.New()
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
+
+		start := make(chan struct{})
+		moved, reserved := make(chan error, 1), make(chan error, 1)
+		go func() {
+			<-start
+			_, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: item, Location: LocationBag})
+			moved <- err
+		}()
+		go func() {
+			<-start
+			_, err := svc.ReserveItem(ctx, owner, item, 100, nil, time.Now().Add(time.Hour))
+			reserved <- err
+		}()
+		close(start)
+		moveErr, reserveErr := <-moved, <-reserved
+
+		var refusal *errcode.Refusal
+		switch {
+		case moveErr == nil && reserveErr == nil:
+			t.Fatalf("run %d: both the move and the reservation succeeded", i)
+		case moveErr == nil:
+			if !errors.As(reserveErr, &refusal) || refusal.Code != errcode.ItemNotInStash {
+				t.Fatalf("run %d: move won, reserve = %v, want ITEM_NOT_IN_STASH", i, reserveErr)
+			}
+		case reserveErr == nil:
+			if !errors.As(moveErr, &refusal) || refusal.Code != errcode.ItemNotAvailable {
+				t.Fatalf("run %d: reserve won, move = %v, want ITEM_NOT_AVAILABLE", i, moveErr)
+			}
+		default:
+			t.Fatalf("run %d: neither succeeded: move = %v, reserve = %v", i, moveErr, reserveErr)
+		}
+
+		placement := &ItemPlacement{}
+		if err := db.GetContext(ctx, placement, placementQuery, item, owner); err != nil {
+			t.Fatalf("run %d: read back: %v", i, err)
+		}
+		if placement.Location == LocationBag && placement.Status == "LISTED" {
+			t.Fatalf("run %d: item is LISTED in the bag", i)
+		}
+	}
+}
+
 // confirmedListRepo stubs the one repository call ListConfirmedReservations
 // makes and records what it was asked for.
 type confirmedListRepo struct {
