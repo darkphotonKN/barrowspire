@@ -828,10 +828,7 @@ export class HubScene extends Phaser.Scene {
       () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen(),
       () => this.characterLevel,
     );
-    // a Take that carried gold: the purse line reads the wallet again, open or closed (FS-7TGZ3 R9)
-    this.unsubscribeGoldTaken = useMailboxStore.subscribe((state, prev) => {
-      if (state.goldTaken !== prev.goldTaken) this.gear?.refreshPurse();
-    });
+    this.watchGoldTakes();
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
@@ -2633,6 +2630,16 @@ export class HubScene extends Phaser.Scene {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
     if (!pressed || this.menu || this.dialogue || this.mailbox?.isOpen()) return;
     this.gear?.toggle();
+  }
+
+  /**
+   * A Take that carried gold: the purse line reads the wallet again, open or closed (FS-7TGZ3 R9).
+   * Let go of on release, so a later visit hears each Take once.
+   */
+  private watchGoldTakes(): void {
+    this.unsubscribeGoldTaken = useMailboxStore.subscribe((state, prev) => {
+      if (state.goldTaken !== prev.goldTaken) this.gear?.refreshPurse();
+    });
   }
 
   /**

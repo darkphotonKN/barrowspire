@@ -445,6 +445,7 @@ export class FieldScene extends Phaser.Scene {
     this.piles?.release();
     this.piles = undefined;
     this.satchel = undefined;
+    this.equipment?.release();
     this.equipment = undefined;
     this.resourceHud = undefined;
     this.chatWindow?.destroy();

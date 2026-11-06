@@ -257,6 +257,11 @@ export class HubGear {
     this.refreshPurse();
   }
 
+  /** Its visit is over: a purse read still in flight answers nobody (FS-7TGZ3). */
+  release(): void {
+    this.purse?.forget();
+  }
+
   /** Reads the purse again, open or closed: after a Take that carried gold (FS-7TGZ3 R9). */
   refreshPurse(): void {
     void this.purse?.refresh();

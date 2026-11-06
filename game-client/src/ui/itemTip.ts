@@ -150,11 +150,7 @@ export function buildItemTip(
   }
 
   const height = Math.round(y + PAD - LINE_GAP);
-  const bg = scene.add.graphics();
-  bg.fillStyle(palette.mapEdge, 0.97);
-  bg.fillRoundedRect(0, 0, width, height, 6);
-  bg.lineStyle(1, palette.frame, 0.5);
-  bg.strokeRoundedRect(0, 0, width, height, 6);
+  const bg = tipGround(scene, width, height);
   bg.fillStyle(
     view.rarity ? palette.rarity[view.rarity.token] : palette.frame,
     view.rarity ? 0.9 : 0.4,
@@ -166,6 +162,20 @@ export function buildItemTip(
     width,
     height,
   };
+}
+
+/** A tip's ground: the item tip's dark fill and faint brass border, `width × height` from 0, 0. */
+export function tipGround(
+  scene: Phaser.Scene,
+  width: number,
+  height: number,
+): Phaser.GameObjects.Graphics {
+  const bg = scene.add.graphics();
+  bg.fillStyle(palette.mapEdge, 0.97);
+  bg.fillRoundedRect(0, 0, width, height, 6);
+  bg.lineStyle(1, palette.frame, 0.5);
+  bg.strokeRoundedRect(0, 0, width, height, 6);
+  return bg;
 }
 
 /** The rarity accent colour a row or slot edge takes for an item, if it has a rarity. */

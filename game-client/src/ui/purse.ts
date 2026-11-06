@@ -43,7 +43,8 @@ export function purseView(account: WalletAccount | undefined): PurseView {
 /**
  * Reads the wallet and hands the shelf what it says. Until an answer lands the shelf keeps what
  * it shows (R10); an answer a later read overtook is dropped (R11); a failure shows the dash
- * (R12–13), and only one that is not the expected 404 is logged.
+ * (R12–13), and only one that is not the expected `404 · NOT_FOUND` is logged. Once its world is
+ * torn down, {@link forget} drops whatever is still in flight, so nothing draws on a dead scene.
  */
 export class PurseReader {
   private reads = 0;
@@ -60,11 +61,23 @@ export class PurseReader {
       view = purseView(await this.api.getWalletAccount());
     } catch (err) {
       if (read !== this.reads) return;
-      if (!(err instanceof ApiError && err.status === 404))
+      if (!notCreatedYet(err))
         console.warn("purse: the wallet could not be read", err);
       view = purseView(undefined);
     }
     if (read !== this.reads) return;
     this.shelf.setPurse(view);
   }
+
+  /** Drops every read in flight: its answer, or its failure, reaches nobody. A later refresh reads afresh. */
+  forget(): void {
+    this.reads++;
+  }
+}
+
+/** The wallet is made after signup (ADR-0014): its `404 · NOT_FOUND` is expected, not a fault. */
+function notCreatedYet(err: unknown): boolean {
+  return (
+    err instanceof ApiError && err.status === 404 && err.code === "NOT_FOUND"
+  );
 }

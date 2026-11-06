@@ -232,7 +232,9 @@ describe("PurseReader.forget (FS-7TGZ3: an answer outliving its world)", () => {
   });
 
   it("should still read after forget, when asked again", async () => {
-    const { purse, last } = reader({ getWalletAccount: async () => account(4) });
+    const { purse, last } = reader({
+      getWalletAccount: async () => account(4),
+    });
     purse.forget();
     await purse.refresh();
     expect(last().amount).toBe("4");

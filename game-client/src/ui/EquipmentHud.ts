@@ -40,9 +40,11 @@ export interface HudPanel {
   updateCharacter(player: CharacterSource): void;
 }
 
-/** The purse line's reader (FS-7TGZ3): asked once per open of the overlay. */
+/** The purse line's reader (FS-7TGZ3): asked once per open of the overlay, let go with its world. */
 export interface PurseRefresh {
   refresh(): void | Promise<void>;
+  /** Drops a read in flight, so its answer draws nothing on a torn-down scene. */
+  forget(): void;
 }
 
 /** Messages to the server (the run's equip and unequip), and the world's passing notice. */
@@ -173,6 +175,11 @@ export class EquipmentHud {
   taken(item: ItemState): void {
     this.carried.push({ ...item, lootedAt: this.now() });
     if (this.panel.isVisible()) this.panel.updateInventory(this.carried);
+  }
+
+  /** Its world is torn down: a purse read still in flight answers nobody (FS-7TGZ3). */
+  release(): void {
+    this.purse?.forget();
   }
 
   /** Everything one world drew is let go. */

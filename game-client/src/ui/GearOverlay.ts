@@ -47,7 +47,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { nothingWorn, type HudPanel } from "./EquipmentHud";
 import { satchelIcon } from "./ContainerView";
-import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
+import { buildItemTip, rarityEdge, tipGround, type ItemTip } from "./itemTip";
 import {
   characterSheet,
   type CharacterSheet,
@@ -702,7 +702,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.purseTip.container.setPosition(at.x, at.y);
   }
 
-  /** One line on the item tip's ground and border (design-guideline "UI Chrome"). */
+  /** One line on the item tip's own ground (design-guideline "UI Chrome"). */
   private buildPurseTip(words: string) {
     const text = this.scene.add.text(PURSE_TIP_PAD, PURSE_TIP_PAD, words, {
       fontFamily: CANVAS_FONT.body,
@@ -712,11 +712,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     });
     const width = Math.round(text.width + PURSE_TIP_PAD * 2);
     const height = Math.round(text.height + PURSE_TIP_PAD * 2);
-    const bg = this.scene.add.graphics();
-    bg.fillStyle(palette.mapEdge, 0.97);
-    bg.fillRoundedRect(0, 0, width, height, PANEL_RADIUS);
-    bg.lineStyle(1, palette.frame, 0.5);
-    bg.strokeRoundedRect(0, 0, width, height, PANEL_RADIUS);
+    const bg = tipGround(this.scene, width, height);
     const container = this.scene.add.container(0, 0, [bg, text]);
     container.setDepth(TIP_DEPTH).setScrollFactor(0);
     return { container, width, height };

@@ -965,6 +965,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
     this.game?.events.off(Phaser.Core.Events.HIDDEN, this.cancelAim, this);
     this.characterLevel = undefined;
+    this.equipment?.release();
     this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
