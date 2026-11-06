@@ -5601,3 +5601,158 @@ describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edg
     expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(false);
   });
 });
+
+const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
+const { RegionGrid } = await import("@/render/world/dungeon");
+const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
+const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
+const { GROUND_DEPTH, GROUND_MARGIN } = await import("@/render/world/scene");
+
+describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () => {
+  const manifest = JSON.parse(readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"));
+  const { projectedBounds, screenToWorld } = await_iso;
+  type Dungeon = import("@/render/world/dungeon").DungeonMap;
+  const grid = new RegionGrid(fixture as Dungeon);
+
+  interface DungeonRun extends MapRun {
+    worldLook: unknown;
+    buildings: unknown[];
+    view?: unknown;
+    showNearChunks(): void;
+  }
+
+  /** The golden's floor as floor 1's map, and floor 1's snapshot with no walls, its chest in room 1. */
+  const dungeonMap = { session_id: "run", floor: 1, ...(fixture as Dungeon & { walls: GameState["walls"] }) };
+  const dungeonState = (): GameState => ({
+    ...bare(floorState(1)),
+    doors: [],
+    containers: [{ container_id: "c", entity_id: "c1", kind: "chest", position: at(2400, 3000), is_open: false, items: [] }],
+    escape_doors: [{ entity_id: "e1", position: at(4000, 1200), is_open: false, is_locked: true }],
+    switches: [{ entity_id: "s1", position: at(3000, 900), switch_id: 1, is_activated: false }],
+    stairs: [{ entity_id: "st1", position: at(1000, 1200) }],
+  });
+
+  function dungeonStage() {
+    const scene = sceneOnStage();
+    const { stage } = scene;
+    const run = scene.run as unknown as DungeonRun;
+    run.worldLook = WORLD_THEMES.tower;
+    run.art = new ArtLibrary(manifest, { warn: () => {} });
+    // the ground is the scene's own, painted in the stage's render textures
+    run.groundLayer = undefined;
+    const camera = run.cameras as { main: Record<string, unknown> };
+    Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    // every stamp into each render texture the stage makes (it keeps only the last call's args)
+    const stamped = new Map<Made, unknown[][]>();
+    const add = run.add as Record<string, (...a: unknown[]) => unknown>;
+    run.add = new Proxy(add, {
+      get: (target, kind) => {
+        if (kind !== "renderTexture") return target[kind as string];
+        return (...args: unknown[]) => {
+          const rt = target.renderTexture(...args) as Record<string, (...a: unknown[]) => unknown>;
+          const list: unknown[][] = [];
+          stamped.set(stage.made.at(-1)!, list);
+          return new Proxy(rt, {
+            get: (o, prop) => (prop === "stamp" ? (...a: unknown[]) => (list.push(a), o) : o[prop as string]),
+          });
+        };
+      },
+    });
+    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    handle(dungeonState());
+    /** Looks at a screen point: the camera's view centred on it, and what stands near it shown. */
+    const look = (x: number, y: number) => {
+      Object.assign(camera.main, { scrollX: x - 640, scrollY: y - 360 });
+      run.showNearChunks();
+    };
+    return { ...scene, run, handle, look, camera, stamped };
+  }
+
+  afterEach(() => useGameStore.setState({ floorMap: null }));
+
+  const chunks = new ChunkGrid(projectedBounds(5760, 3840, GROUND_MARGIN), DUNGEON_CHUNK);
+  /** The sprites a sheet name starts with: its frame name is `{sheet}/…`. */
+  const drawn = (made: Made[], prefix: string) =>
+    made.filter((m) => m.kind === "sprite" && !m.destroyed && String(m.args[3] ?? "").startsWith(prefix));
+  const chunkOf = (m: Made) => chunks.indexAt({ x: m.args[0] as number, y: m.args[1] as number });
+  /** Whether a recorded object is shown: as made, until setVisible says otherwise. */
+  const shownNow = (m: Made) => (m as Made & { visible?: boolean }).visible !== false;
+
+  it("should stand no building, roof, stone cap, blackout or perimeter wall on a dungeon floor", () => {
+    const { run, stage } = dungeonStage();
+    expect(run.walls.size).toBe(dungeonMap.walls!.length);
+    expect(run.buildings).toEqual([]);
+    expect(run.view).toBeUndefined();
+    expect(run.perimeter ?? []).toEqual([]);
+    for (const sheet of ["tower_cap", "tower_perimeter", "tower_wall_exterior", "roof_"])
+      expect(drawn(stage.made, sheet)).toEqual([]);
+    expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
+  });
+
+  it("should paint the ground in chunks no larger than 2048 px, nothing on a void cell", () => {
+    const { stage, stamped } = dungeonStage();
+    const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
+    expect(rts.length).toBeGreaterThan(1);
+    for (const rt of rts) expect(Math.max(rt.args[2] as number, rt.args[3] as number)).toBeLessThanOrEqual(CHUNK_MAX);
+    // each stamp back to the world tile it was laid for: the frame's top-left plus its anchor
+    const sheet = manifest.sheets.ground_flags;
+    let stamps = 0;
+    for (const rt of rts)
+      for (const [, , x, y] of stamped.get(rt) ?? []) {
+        const sx = (rt.args[0] as number) + (x as number) + sheet.anchor.x * sheet.frameWidth;
+        const sy = (rt.args[1] as number) + (y as number) + sheet.anchor.y * sheet.frameHeight;
+        expect(grid.hasGround(screenToWorld(sx, sy))).toBe(true);
+        stamps++;
+      }
+    // every ground cell's four tiles, at least once
+    let cells = 0;
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 1, y: cy * 80 + 1 })) cells++;
+    expect(stamps).toBeGreaterThanOrEqual(cells * 4);
+  });
+
+  it("should leave void to the camera's background, the darkest ink", () => {
+    const { camera } = dungeonStage();
+    expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.inkDeep);
+  });
+
+  it("should build floor 2 as a floor of buildings after a climb from the dungeon, the dungeon gone", () => {
+    const { run, stage, handle, camera } = dungeonStage();
+    const dungeonWalls = drawn(stage.made, "tower_wall_");
+    const ground = () => stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH && !m.destroyed);
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    handle(bare(floorState(2)));
+
+    expect(dungeonWalls.every((m) => m.destroyed)).toBe(true);
+    expect((run as unknown as { dungeon?: unknown }).dungeon).toBeUndefined();
+    expect(run.perimeter!.length).toBeGreaterThan(0);
+    expect(run.buildings).toHaveLength(1);
+    expect(run.view).toBeDefined();
+    // one ground texture over the whole of floor 2, as before chunks
+    const b = projectedBounds(1440, 960, GROUND_MARGIN);
+    expect(ground().map((m) => m.args)).toEqual([[b.x, b.y, Math.ceil(b.width), Math.ceil(b.height)]]);
+    expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
+  });
+
+  it("should show wall pieces, dressing and wall lights only within one chunk of the view, as the camera pans", () => {
+    const { run, stage, lights, look } = dungeonStage();
+    const walls = drawn(stage.made, "tower_wall_");
+    const dressing = (run.dressing ?? []) as unknown as Made[];
+    expect(dressing.length).toBeGreaterThan(16);
+    const sconces = () =>
+      (lights as { x: number; y: number; radius: number }[]).filter((l) => l.radius === manifest.sheets.tower_wall_back_sconce_x.light.radius);
+    let lit = 0;
+    for (const [x, y] of [[0, 600], [-2400, 1400], [2400, 1400], [600, 2800], [-600, 3400], [3000, 2000]]) {
+      look(x, y);
+      const near = new Set(chunks.near({ x: x - 640, y: y - 360, width: 1280, height: 720 }));
+      for (const m of [...walls, ...dressing]) expect(shownNow(m)).toBe(near.has(chunkOf(m)));
+      for (const l of sconces()) expect(near.has(chunks.indexAt(l))).toBe(true);
+      expect(lights.length).toBeLessThanOrEqual(FIXED_LIGHT_CAP);
+      lit += sconces().length;
+    }
+    // some of the floor's wall lights were lit along the way, never all of them at once
+    expect(lit).toBeGreaterThan(0);
+    expect(walls.filter(shownNow).length).toBeLessThan(walls.length);
+  });
+});

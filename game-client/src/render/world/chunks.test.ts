@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { projectedBounds } from "@/render/iso/projection";
-import { CHUNK_MAX, ChunkGrid, ChunkVisibility } from "./chunks";
+import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "./chunks";
 
 /** Floor 1's ground as the run paints it: the projected map and a 48 px margin. */
 const DUNGEON = projectedBounds(5760, 3840, 48);
@@ -21,6 +21,13 @@ describe("ChunkGrid (FS-KE075 §H.44)", () => {
     expect(grid.rects[0]).toMatchObject({ x: DUNGEON.x, y: DUNGEON.y });
     expect(grid.rects[1].x).toBe(grid.rects[0].x + grid.rects[0].width);
     expect(grid.rects[grid.cols].y).toBe(grid.rects[0].y + grid.rects[0].height);
+  });
+
+  it("cuts a dungeon floor small enough that the view's reach is a part of it, not all", () => {
+    const grid = new ChunkGrid(DUNGEON, DUNGEON_CHUNK);
+    const view = { x: grid.rects[0].x + 3000, y: grid.rects[0].y + 1500, width: 1280, height: 720 };
+    expect(DUNGEON_CHUNK).toBeLessThanOrEqual(CHUNK_MAX);
+    expect(grid.near(view).length).toBeLessThan(grid.rects.length / 3);
   });
 
   it("never makes a chunk larger than a drawing context every GPU takes", () => {

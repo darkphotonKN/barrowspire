@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FloorRegion } from "@/types/gameState";
-import { RegionGrid, dressingRooms, stripWalls, wallRule, type DungeonMap } from "./dungeon";
+import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
 
 const CELL = 80;
@@ -162,5 +162,15 @@ describe("a dungeon floor's rooms, for its dressing (FS-KE075 §H.47)", () => {
     ] as const)("%s: %s", (_name, clear, sq) => {
       expect(inRoom.clear(sq)).toBe(clear);
     });
+  });
+});
+
+describe("isDungeon (FS-KE075 §F.31, §H)", () => {
+  it.each([
+    ["a map with a cell size and regions", true, { cell_size: 80, regions: [room(1, 1, 1, 2, 2)] }],
+    ["a floor of buildings: no cell size, no regions", false, {}],
+    ["a cell size but no region", false, { cell_size: 80, regions: [] }],
+  ] as const)("%s: %s", (_name, dungeon, map) => {
+    expect(isDungeon(map)).toBe(dungeon);
   });
 });

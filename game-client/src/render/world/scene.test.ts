@@ -14,6 +14,7 @@ import {
   PLACEHOLDER_STONE,
   addBuildings,
   addGables,
+  addWalls,
   showLook,
   type GroundWorld,
 } from "./scene";
@@ -503,5 +504,31 @@ describe("GroundLayer in chunks (FS-KE075 §H.44)", () => {
     expect(rts.map((r) => r.visible)).toEqual(rts.map((_, i) => i !== 1));
     ground.destroy();
     expect(rts.every((r) => r.destroyed)).toBe(true);
+  });
+});
+
+// ── Walls by a piece rule (FS-KE075 §H.46) ────────────────────────────────
+
+describe("addWalls by a piece rule (a dungeon floor)", () => {
+  const TOWER_ART = ["plain", "pillar", "sconce", "cobweb", "banner"].flatMap((k) =>
+    ["back", "front"].flatMap((h) => ["x", "y"].map((a) => `tower_wall_${h}_${k}_${a}`)),
+  );
+  const rule = {
+    height: (p: { x: number }) => (p.x < 200 ? ("front" as const) : ("back" as const)),
+    lit: () => true,
+  };
+
+  it("should draw each piece at the rule's height, and say where every piece and post stands", () => {
+    const { scene } = stubScene();
+    const { art } = library([...TOWER_ART, "tower_post_back", "tower_post_front"]);
+    const built = addWalls(scene, art, [wall(0, 0, 400, 80)], 7, MASONRY_WALLS, rule)!;
+    const sheets = built.standing.map(({ sprite }) => sheetOf(sprite));
+    // pieces and posts: west of x 200 low, the rest full height
+    built.standing.forEach(({ at }, i) =>
+      expect(sheets[i]!.includes(at.x < 200 ? "front" : "back")).toBe(true),
+    );
+    expect(built.standing).toHaveLength(built.byWall.get(wall(0, 0, 400, 80).entity_id)!.length);
+    // the tall ones are the full-height ones
+    expect(built.tall.every((s) => sheetOf(s)!.includes("back"))).toBe(true);
   });
 });
