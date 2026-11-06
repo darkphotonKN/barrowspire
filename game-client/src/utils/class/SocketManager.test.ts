@@ -840,3 +840,30 @@ describe("SocketManager mailbox (FS-1GZGD R34, R43, A4: mail_arrived goes to the
     expect(old.sent.some((m) => JSON.parse(m).action === "mail_arrived")).toBe(false);
   });
 });
+
+describe("SocketManager floor map (FS-KE075 §H.40: floor_map goes to the game store)", () => {
+  const map = {
+    session_id: "run-1",
+    floor: 2,
+    width: 1440,
+    height: 960,
+    walls: [{ house_id: "h1", entity_id: "w1", position: { x: 10, y: 20 }, width: 200, height: 20 }],
+  };
+
+  it("hands a floor_map to the game store, after the world it belongs to", () => {
+    const { old } = setup();
+    old.receive(runEntered);
+    old.receive({ action: "floor_map", payload: map });
+
+    expect(useGameStore.getState().floorMap).toEqual(map);
+  });
+
+  it("drops a floor_map that is not one", () => {
+    const { old } = setup();
+    old.receive(runEntered);
+    old.receive({ action: "floor_map", payload: map });
+    old.receive({ action: "floor_map", payload: { session_id: "run-1", floor: 3 } });
+
+    expect(useGameStore.getState().floorMap).toEqual(map);
+  });
+});

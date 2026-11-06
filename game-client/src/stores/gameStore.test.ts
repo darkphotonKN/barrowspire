@@ -274,3 +274,63 @@ describe("gameStore characters (FS-BDA7X req 39-40)", () => {
     expect(store.getState().characters.map((c) => c.id)).toEqual([a.id]);
   });
 });
+
+describe("gameStore floor map (FS-KE075 §H.40)", () => {
+  const map = (session_id: string, floor: number, width = 1440) => ({
+    session_id,
+    floor,
+    width,
+    height: 960,
+    walls: [{ house_id: "h1", entity_id: `w${floor}`, position: { x: 0, y: 0 }, width: 200, height: 20 }],
+  });
+  const store = () => {
+    const { api } = fakeApi();
+    const { storage } = memoryStorage();
+    const s = createGameStore({ api, storage: () => storage });
+    s.getState().setWorld("run-1", "run");
+    return s;
+  };
+
+  it("holds no map until one comes", () => {
+    expect(store().getState().floorMap).toBeNull();
+  });
+
+  it("keeps the latest map, the next floor's after the first", () => {
+    const s = store();
+    s.getState().receiveFloorMap(map("run-1", 1));
+    s.getState().receiveFloorMap(map("run-1", 2));
+    expect(s.getState().floorMap).toEqual(map("run-1", 2));
+  });
+
+  it("ignores a map for a lower floor of the run than the one held", () => {
+    const s = store();
+    s.getState().receiveFloorMap(map("run-1", 2));
+    s.getState().receiveFloorMap(map("run-1", 1));
+    expect(s.getState().floorMap?.floor).toBe(2);
+  });
+
+  it("takes the same floor's map again (an answer to request_floor_map)", () => {
+    const s = store();
+    const first = map("run-1", 2);
+    s.getState().receiveFloorMap(first);
+    const again = map("run-1", 2);
+    s.getState().receiveFloorMap(again);
+    expect(s.getState().floorMap).toBe(again);
+  });
+
+  it("takes another run's map whatever its floor", () => {
+    const s = store();
+    s.getState().receiveFloorMap(map("run-1", 3));
+    s.getState().receiveFloorMap(map("run-2", 1));
+    expect(s.getState().floorMap).toEqual(map("run-2", 1));
+  });
+
+  it("lets the map go when the player enters another world, and keeps it on a reconnect to the same run", () => {
+    const s = store();
+    s.getState().receiveFloorMap(map("run-1", 2));
+    s.getState().setWorld("run-1", "run");
+    expect(s.getState().floorMap?.floor).toBe(2);
+    s.getState().setWorld("hub-1", "hub");
+    expect(s.getState().floorMap).toBeNull();
+  });
+});

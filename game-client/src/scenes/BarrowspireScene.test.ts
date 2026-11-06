@@ -684,7 +684,20 @@ function sceneOnStage() {
   const painted: { id: string }[][] = [];
   const grounds: unknown[] = [];
   run.add = stage.add;
+  // no run's map is held until the server sends one (FS-KE075 §H.40)
+  useGameStore.setState({ floorMap: null });
+  // the server's part (FS-KE075 §F.32): a floor's map goes before its first state, so a fixture
+  // state's walls become that floor's map and the state itself carries none, as a run's never does
+  const apply = run.handleGameStateUpdate.bind(run);
+  run.handleGameStateUpdate = (state: GameState) => {
+    const { walls, ...frame } = state;
+    const held = useGameStore.getState().floorMap;
+    if (walls && state.floor !== undefined && (held?.floor !== state.floor || held.session_id !== state.session_id))
+      useGameStore.getState().receiveFloorMap({ session_id: state.session_id, floor: state.floor, width: 1440, height: 960, walls });
+    apply(frame as GameState);
+  };
   run.physics = {
+    world: { setBounds: vi.fn() },
     add: {
       staticGroup: () => stage.make("staticGroup"),
       sprite: (...args: unknown[]) => stage.make("sprite", args),
@@ -823,6 +836,168 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
 
     expect(texts().some((t) => /Floor$/.test(String(t.content)))).toBe(false);
     expect(stage.made.filter((m) => !m.destroyed).length).toBe(built);
+  });
+});
+
+/** What the scene built of a floor: its walls, its perimeter and dressing once done, its size. */
+interface MapRun extends FloorRun {
+  walls: Map<string, unknown>;
+  perimeter?: unknown[];
+  dressing?: unknown[];
+  lastFloor?: number;
+  floorVeil: unknown[];
+  mapWidth: number;
+  mapHeight: number;
+  subscribeFloorMap(): void;
+  floorMapUnsubscribe?: () => void;
+}
+
+/** `state` as the server sends a run's: no walls key (FS-KE075 §F.34). */
+const bare = (state: GameState): GameState => {
+  const { walls: _walls, ...frame } = state;
+  return frame as GameState;
+};
+
+/** The floor map of `state`'s floor, its walls the fixture's. */
+const mapOf = (state: GameState, size = { width: 1440, height: 960 }) => ({
+  session_id: state.session_id,
+  floor: state.floor!,
+  ...size,
+  walls: state.walls!,
+});
+
+describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGameStore.setState({ floorMap: null });
+  });
+
+  function mapStage() {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as MapRun;
+    // the real state path, without the harness' map-first shim
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    const clock = { now: 0 };
+    run.time = { delayedCall: vi.fn(), get now() { return clock.now; } };
+    const asks = () => sent.mock.calls.filter(([action]) => action === "request_floor_map").length;
+    return { ...scene, run, handle, clock, asks };
+  }
+
+  it("builds the floor from a map held before the first snapshot, once", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+
+    handle(bare(floorState(2)));
+    const built = run.walls.size;
+    handle(bare(floorState(2)));
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    handle(bare(floorState(2)));
+
+    expect(built).toBe(4);
+    expect(run.walls.size).toBe(4);
+    expect(run.perimeter).toBeDefined();
+    expect(run.dressing).toBeDefined();
+  });
+
+  it("applies a snapshot whose floor has no map for its entities, and builds the floor when the map comes", () => {
+    const { run, handle, stage } = mapStage();
+    run.subscribeFloorMap();
+
+    handle(bare(floorState(2)));
+    expect(run.walls.size).toBe(0);
+    expect(run.perimeter).toBeUndefined();
+    expect(run.dressing).toBeUndefined();
+    // the dynamic entities stand: the chest, the doors, the monsters
+    expect(stage.made.some((m) => m.kind === "sprite")).toBe(true);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    expect(run.walls.size).toBe(4);
+    expect(run.perimeter).toBeDefined();
+    expect(run.dressing).toBeDefined();
+
+    const made = stage.made.length;
+    handle(bare(floorState(2)));
+    expect(stage.made.length).toBe(made);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("asks for a withheld map after a second, then every second, and stops once it comes", () => {
+    const { run, handle, clock, asks } = mapStage();
+    run.subscribeFloorMap();
+    for (clock.now = 0; clock.now <= 3100; clock.now += 50) handle(bare(floorState(2)));
+    expect(asks()).toBe(3);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    for (; clock.now <= 6000; clock.now += 50) handle(bare(floorState(2)));
+    expect(asks()).toBe(3);
+    expect(run.walls.size).toBe(4);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("drops a late snapshot of the floor below the map's, and never climbs back down", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    handle(bare(floorState(1)));
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+
+    handle(bare(floorState(1)));
+    expect(run.lastFloor).toBe(1);
+    expect(run.floorVeil).toHaveLength(0);
+
+    handle(bare(floorState(2)));
+    expect(run.lastFloor).toBe(2);
+    expect(run.walls.has("w3_2")).toBe(true);
+  });
+
+  it("keeps the climb's veil up until the new floor's map is built", () => {
+    const { run, handle } = mapStage();
+    run.subscribeFloorMap();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    handle(bare(floorState(1)));
+    const tweens = (run.tweens as { add: ReturnType<typeof vi.fn> }).add;
+    const veilFades = () => tweens.mock.calls.filter(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0).length;
+
+    handle(bare(floorState(2)));
+    expect(run.floorVeil.length).toBeGreaterThan(0);
+    expect(run.walls.size).toBe(0);
+    expect(veilFades()).toBe(0);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    expect(run.walls.size).toBe(4);
+    expect(veilFades()).toBe(1);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("lifts the veil on time when the new floor's map came first", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    handle(bare(floorState(1)));
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    const tweens = (run.tweens as { add: ReturnType<typeof vi.fn> }).add;
+
+    handle(bare(floorState(2)));
+
+    const fade = tweens.mock.calls.find(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0);
+    expect(fade).toBeDefined();
+  });
+
+  it("takes the map's size for the floor, not a fixed one", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2), { width: 2880, height: 1920 }));
+
+    handle(bare(floorState(2)));
+
+    expect([run.mapWidth, run.mapHeight]).toEqual([2880, 1920]);
+    const bounds = (run.physics as { world: { setBounds: ReturnType<typeof vi.fn> } }).world.setBounds;
+    const projected = await_iso.projectedBounds(2880, 1920, 0);
+    expect(bounds.mock.calls.at(-1)![2]).toBeGreaterThan(projected.width - 1);
+  });
+
+  it("never reads walls from a run snapshot", () => {
+    const { run, handle } = mapStage();
+    handle(floorState(2));
+    expect(run.walls.size).toBe(0);
   });
 });
 
@@ -3030,10 +3205,12 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     const stamped = (run as unknown as { stampedLights: number }).stampedLights;
     expect(stamped).toBe(before.length);
 
-    // one of r1's walls goes: the room is redrawn from the walls left, its sconces with it
+    // one of r1's walls goes: the room is redrawn from the walls left, its sconces with it. A run's
+    // walls come once per floor from its map (FS-KE075 §H.43), so the redraw is driven directly
     const state = rooms(false);
-    state.walls = state.walls.filter((w) => w.entity_id !== "a1sl");
-    run.handleGameStateUpdate(state);
+    const redrawn = run as unknown as { updateWalls(walls: unknown[]): void; stampLights(): void };
+    redrawn.updateWalls(state.walls!.filter((w) => w.entity_id !== "a1sl"));
+    redrawn.stampLights();
     const run1 = run as unknown as { roomLights: { room: string; source: unknown; hung: boolean }[]; stampedLights: number };
     expect(run1.stampedLights).toBe(lights.length);
     // every r1 wall light is on the light-map once, and none of the old ones is left behind
@@ -3186,7 +3363,7 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
     // a long north wall of sconces: 30 pieces, more than the budget holds with the slits; the
     // room it walls stands clear of the stairs, whose pool would otherwise be the room's (FS-9PN7X §D.6)
     state.walls = [
-      ...state.walls,
+      ...state.walls!,
       { house_id: "big", entity_id: "bn", position: at(100, 750), width: 1200, height: 10 },
       { house_id: "big", entity_id: "bs", position: at(100, 900), width: 1200, height: 10 },
     ];
