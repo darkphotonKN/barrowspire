@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FloorRegion } from "@/types/gameState";
-import { RegionGrid, stripWalls, wallRule } from "./dungeon";
+import { RegionGrid, dressingRooms, stripWalls, wallRule, type DungeonMap } from "./dungeon";
+import fixture from "./dungeon.fixture.json";
 
 const CELL = 80;
 
@@ -117,5 +118,49 @@ describe("where a dungeon floor has ground (FS-KE075 §H.44)", () => {
     ["off the floor", false, { x: -40, y: 200 }],
   ] as const)("%s: %s", (_name, ground, at) => {
     expect(grid.hasGround(at)).toBe(ground);
+  });
+});
+
+describe("a dungeon floor's rooms, for its dressing (FS-KE075 §H.47)", () => {
+  /** The levelgen golden (dungeon_seed_20261106) as a floor map: its size, cells, regions, walls. */
+  const golden = new RegionGrid(fixture as DungeonMap);
+
+  it("finds a room's doorways where a corridor meets it, as the generator placed them", () => {
+    // region 1's doorways, as the golden's `rooms[0].doorways` lists them
+    const want = [[32, 35], [33, 35], [35, 37], [28, 38], [35, 38], [28, 39], [35, 39]];
+    const got: number[][] = [];
+    for (let cx = 28; cx < 36; cx++)
+      for (let cy = 35; cy < 42; cy++) if (golden.doorway(cx, cy)) got.push([cx, cy]);
+    expect(new Set(got.map(String))).toEqual(new Set(want.map(String)));
+  });
+
+  it("lists every room, none of the corridors, each with its rect in world px", () => {
+    const rooms = dressingRooms(golden);
+    expect(rooms).toHaveLength(22);
+    expect(rooms[0]).toMatchObject({ id: 1, rect: { x: 28 * CELL, y: 35 * CELL, width: 8 * CELL, height: 7 * CELL } });
+  });
+
+  describe("where a room's dressing may stand", () => {
+    // a room 6×6 at (2, 2) with a corridor leaving its east side at rows 4–5: doorways (7, 4), (7, 5)
+    const grid = floor(16, 10, [room(1, 2, 2, 6, 6), corridor(2, 8, 4, 6, 2)]);
+    const [inRoom] = dressingRooms(grid);
+    const square = (cx: number, cy: number, side = 20) => ({
+      x: (cx + 0.5) * CELL - side / 2,
+      y: (cy + 0.5) * CELL - side / 2,
+      width: side,
+      height: side,
+    });
+
+    it.each([
+      ["wholly in the room, clear of its doorways", true, square(3, 3)],
+      ["in a corridor", false, square(10, 4)],
+      ["half out of the room, over its shell", false, { ...square(2, 3), x: 2 * CELL - 10 }],
+      ["on a doorway", false, square(7, 4)],
+      ["one cell from a doorway", false, square(6, 5)],
+      ["diagonally one cell from a doorway", false, square(6, 3)],
+      ["two cells from a doorway", true, square(5, 4)],
+    ] as const)("%s: %s", (_name, clear, sq) => {
+      expect(inRoom.clear(sq)).toBe(clear);
+    });
   });
 });

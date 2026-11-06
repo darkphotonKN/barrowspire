@@ -9,6 +9,7 @@ import { doorGaps } from "./buildingLooks";
 import { worldDepth, worldToScreen } from "@/render/iso";
 import { planGables } from "./roofs";
 import {
+  GroundLayer,
   Occluders,
   PLACEHOLDER_STONE,
   addBuildings,
@@ -16,6 +17,9 @@ import {
   showLook,
   type GroundWorld,
 } from "./scene";
+import { projectedBounds } from "@/render/iso";
+import { ChunkGrid } from "./chunks";
+import { TOWER_GROUND } from "./ground";
 import { MASONRY_WALLS } from "./walls";
 
 describe("GroundLayer's world (FS-KSD6K §Requirements 16)", () => {
@@ -419,5 +423,85 @@ describe("addGables (FS-9PN7X §B.3, ADR-0036)", () => {
     expect(addGables(scene, library(["roof_slope"]).art, house, 20)).toEqual([]);
     expect(addGables(scene, ArtLibrary.empty({ warn: () => {} }), house, 20)).toEqual([]);
     expect(made).toHaveLength(0);
+  });
+});
+
+// ── Chunked ground (FS-KE075 §H.44) ───────────────────────────────────────
+
+/** A render texture as the ground paints it: where it stands, its size, and every stamp. */
+interface RecordedRT {
+  at: [number, number, number, number];
+  stamps: { x: number; y: number }[];
+  visible: boolean;
+  destroyed: boolean;
+}
+
+/** The slice of a Phaser scene a GroundLayer paints with, recording each render texture. */
+function groundStage() {
+  const rts: RecordedRT[] = [];
+  const renderTexture = (x: number, y: number, w: number, h: number) => {
+    const rec: RecordedRT = { at: [x, y, w, h], stamps: [], visible: true, destroyed: false };
+    rts.push(rec);
+    const rt: Record<string, unknown> = { texture: { key: `rt${rts.length}` } };
+    for (const m of ["setOrigin", "setDepth", "clear", "render", "setTint", "clearTint", "erase"])
+      rt[m] = () => rt;
+    rt.stamp = (_t: unknown, _f: unknown, sx: number, sy: number) => (rec.stamps.push({ x: sx, y: sy }), rt);
+    rt.setVisible = (v: boolean) => ((rec.visible = v), rt);
+    rt.destroy = () => (rec.destroyed = true);
+    return rt;
+  };
+  const scene = { add: { renderTexture } } as unknown as Phaser.Scene;
+  return { scene, rts };
+}
+
+describe("GroundLayer in chunks (FS-KE075 §H.44)", () => {
+  const { art } = library(["ground_flags"]);
+  const world = { width: 1440, height: 960, kind: "run" as const, look: TOWER_GROUND };
+  const bounds = projectedBounds(1440, 960, 48);
+  /** Every stamp on the screen, wherever its chunk stands. */
+  const onScreen = (rts: RecordedRT[]) =>
+    rts.flatMap((rt) => rt.stamps.map((s) => `${s.x + rt.at[0]},${s.y + rt.at[1]}`));
+
+  it("should paint one render texture over the whole ground when asked for no chunks, as it always has", () => {
+    const { scene, rts } = groundStage();
+    new GroundLayer(scene, art, world);
+    expect(rts.map((r) => r.at)).toEqual([[bounds.x, bounds.y, Math.ceil(bounds.width), Math.ceil(bounds.height)]]);
+  });
+
+  it("should paint the ground in render textures no larger than its chunks, one per chunk", () => {
+    const { scene, rts } = groundStage();
+    new GroundLayer(scene, art, { ...world, chunk: 512 });
+    const grid = new ChunkGrid(bounds, 512);
+    expect(rts.map((r) => r.at)).toEqual(grid.rects.map((r) => [r.x, r.y, r.width, r.height]));
+    for (const r of rts) expect(Math.max(r.at[2], r.at[3])).toBeLessThanOrEqual(512);
+  });
+
+  it("should stamp each tile into every chunk it overlaps, landing on the same screen px as one texture", () => {
+    const whole = groundStage();
+    new GroundLayer(whole.scene, art, world);
+    const chunked = groundStage();
+    new GroundLayer(chunked.scene, art, { ...world, chunk: 512 });
+    expect(new Set(onScreen(chunked.rts))).toEqual(new Set(onScreen(whole.rts)));
+    // a tile across a chunk edge is in both
+    expect(onScreen(chunked.rts).length).toBeGreaterThan(onScreen(whole.rts).length);
+  });
+
+  it("should lay ground only where the world has it", () => {
+    const { scene, rts } = groundStage();
+    new GroundLayer(scene, art, { ...world, chunk: 512, where: (p) => p.x < 400 });
+    const all = groundStage();
+    new GroundLayer(all.scene, art, { ...world, chunk: 512 });
+    expect(onScreen(rts).length).toBeGreaterThan(0);
+    expect(onScreen(rts).length).toBeLessThan(onScreen(all.rts).length);
+  });
+
+  it("should show and hide each chunk on its own, and destroy them all", () => {
+    const { scene, rts } = groundStage();
+    const ground = new GroundLayer(scene, art, { ...world, chunk: 512 });
+    expect(ground.chunks.map((c) => c.rect)).toEqual(new ChunkGrid(bounds, 512).rects);
+    ground.chunks[1].setVisible(false);
+    expect(rts.map((r) => r.visible)).toEqual(rts.map((_, i) => i !== 1));
+    ground.destroy();
+    expect(rts.every((r) => r.destroyed)).toBe(true);
   });
 });
