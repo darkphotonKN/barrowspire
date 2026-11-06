@@ -40,7 +40,7 @@ export function bust(rig, mat, k = 1) {
   const [, cy] = J(rig, "chest");
   const td = rig.p.torsoD;
   for (const [, sx] of sides)
-    attach(rig, "chest", ellipsoid(0.038 * k * H, 0.034 * k * H, 0.03 * k * H, 12), mat, [sx * 0.037, cy + 0.028, 0.062 * td], { rz: sx * 0.15 });
+    attach(rig, "chest", ellipsoid(0.03 * k * H, 0.03 * k * H, 0.028 * k * H, 12), mat, [sx * 0.028, cy + 0.03, 0.062 * td], { rz: sx * 0.15 });
 }
 
 /**
@@ -200,7 +200,8 @@ export function head(rig, mat, o = {}) {
   const r = rig.p.headR;
   const H = rig.H;
   attach(rig, "head", ellipsoid(r * 0.92 * H, r * 1.02 * H, r * 1.0 * H, 20), mat, [0, hy + 0.058, hz - 0.002]);
-  attach(rig, "head", ellipsoid(r * 0.72 * H, r * 0.72 * H, r * 0.78 * H, 16), mat, [0, hy + 0.028, hz + 0.016]);
+  const jaw = o.jaw ?? 1;
+  attach(rig, "head", ellipsoid(r * 0.72 * jaw * H, r * 0.72 * H, r * 0.78 * H, 16), mat, [0, hy + 0.028, hz + 0.016]);
   if (o.nose !== false) {
     const nose = new THREE.ConeGeometry(0.009 * H, 0.024 * H, 6);
     attach(rig, "head", nose, mat, [0, hy + 0.046, hz + 0.066], { rx: 1.35 });
@@ -651,6 +652,29 @@ export function hairFall(rig, mat, { length = 0.22, width = 0.075, depth = 0.09,
     { segs: 20, steps: 4, caps: false, arc: [-Math.PI / 2 - arc, -Math.PI / 2 + arc] },
   );
   return attach(rig, "chest", geo, mat, [0, 0, 0]);
+}
+
+/**
+ * Two long locks from the parting down either side of the face, resting on the front of the
+ * shoulders. Skinned from head to chest, so a turn of the head bends them instead of parting them.
+ */
+export function faceLocks(rig, mat, { width = 0.017, depth = 0.012 } = {}) {
+  const [, ny] = J(rig, "neck");
+  const [, hy, hz] = J(rig, "head");
+  for (const [, sx] of sides)
+    skinTube(
+      rig,
+      [
+        { p: [sx * 0.022, hy + 0.114, hz + 0.028], r: [width * 0.7, depth], w: { head: 1 } },
+        { p: [sx * 0.05, hy + 0.088, hz + 0.04], r: [width * 0.95, depth], w: { head: 1 } },
+        { p: [sx * 0.06, hy + 0.05, hz + 0.036], r: [width, depth], w: { head: 1 } },
+        { p: [sx * 0.06, hy + 0.01, hz + 0.03], r: [width, depth], w: { head: 0.6, chest: 0.4 } },
+        { p: [sx * 0.062, ny - 0.005, 0.042], r: [width * 0.95, depth * 0.9], w: { head: 0.15, chest: 0.85 } },
+        { p: [sx * 0.066, ny - 0.052, 0.062], r: [width * 0.45, depth * 0.45], w: { chest: 1 } },
+      ],
+      mat,
+      { segs: 10, steps: 4, ground: false, uv: 4 },
+    );
 }
 
 /** A soft felt cap with a short brim, worn over the crown. */

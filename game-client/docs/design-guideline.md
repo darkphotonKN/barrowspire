@@ -265,13 +265,15 @@ lit) while the player stands inside.
   ragged cloak hangs over the buff leather, with a quiver on the back. *(Amended at the owner's
   pick, 2026-11-04.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
-  never a pointed hat. She is narrower in the shoulder than the men, her waist drawn in by a
-  belt. Her black hair is drawn back from a centre parting and falls straight down her back over
-  a low standing collar, with a cold sheen so it parts from the gown behind it. She wears a black
+  never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
+  waist and opening from the hip, so she reads as a woman from the front. Her black hair falls
+  from a centre parting in two long locks down either side of her face to the shoulders, and
+  straight down her back over a low standing collar, with a cold sheen so it parts from the gown
+  behind it. She wears a black
   gown with long trailing sleeves under a scapular in necrotic teal, clasped in brass down the
   chest. A short iron sceptre holds the glowing stone in its prongs, and a black tome hangs from
   her other hand. No hood, no hat, no staff: her long hair and collar keep her apart from the
-  archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04.)*
+  archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
 - **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
   open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
   mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall
