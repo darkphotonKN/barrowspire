@@ -8,12 +8,16 @@ type Point struct {
 // Rect is an axis-aligned rect in world px with a top-left origin, the same
 // convention as game.WallConfig and game.PlaceArea.
 type Rect struct {
-	X, Y, W, H float64
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
 }
 
 // Size is a width and height in world px.
 type Size struct {
-	W, H float64
+	W float64 `json:"w"`
+	H float64 `json:"h"`
 }
 
 // Entrance is where the trail meets the map edge.

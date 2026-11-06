@@ -245,9 +245,9 @@ func TestGenerateDungeon_Floor1Params_EverySeedValid(t *testing.T) {
 	p := DungeonFloor1Params
 	var (
 		retried, maxAttempt, maxWalls, maxRegions int
-		minRooms, maxRooms                       = math.MaxInt, 0
-		halls, loop4                             int
-		minSegment                               = math.MaxInt
+		minRooms, maxRooms                        = math.MaxInt, 0
+		halls, loop4                              int
+		minSegment                                = math.MaxInt
 	)
 	for seed := uint64(0); seed < seeds; seed++ {
 		l := generateDungeon(t, seed)
