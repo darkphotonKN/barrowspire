@@ -4,6 +4,7 @@
  * health bar in the marker bar's colours. Which monster is the scene's to say (`pickTarget`); the
  * frame draws it, fades in over {@link TARGET_FADE_IN_MS} and out over {@link TARGET_FADE_OUT_MS},
  * switches content at once, and hides at once while covered (the spectate HUD, the floor veil).
+ * A boss's frame is wider (§D.12): its bar 1.5 × the normal bar's width and twice its height.
  *
  * The look is the HUD's (design-guideline "UI Chrome"): a `hudPanel` backing with a 1px brass rim
  * and the body serif, the name in the hostile channel ("Gameplay accent"). Diablo II is the
@@ -42,6 +43,22 @@ const NAME_TOP = 6;
 const BAR_INSET_X = 12;
 const BAR_INSET_BOTTOM = 8;
 const BAR_H = 8;
+
+/**
+ * A boss's frame (§D.12, §E.14): around a bar 1.5 × the normal bar's width and twice its height,
+ * with the same insets and name line, so 378 × 54, within 420 × 60. At the 1080 minimum it spans
+ * x 351–729, clear of the top-right column from x 854, and ends at y 64, above the notices.
+ */
+export const TARGET_BOSS_FRAME = {
+  width: (TARGET_FRAME.width - BAR_INSET_X * 2) * 1.5 + BAR_INSET_X * 2,
+  height: TARGET_FRAME.height + BAR_H,
+} as const;
+
+/** Each kind of frame: its size and its bar's height. */
+const FRAME_STYLES = {
+  normal: { size: TARGET_FRAME, barHeight: BAR_H },
+  boss: { size: TARGET_BOSS_FRAME, barHeight: BAR_H * 2 },
+} as const;
 
 /** Where the frame stands: its top at y 10, centred on `centreX` (§E.14). */
 export function targetFrameRect(
@@ -122,6 +139,7 @@ const drawnKey = (m: MonsterState, centreX: number) =>
     m.level,
     m.elite,
     m.archetype,
+    m.boss,
     m.current_health,
     m.max_health,
     centreX,
@@ -204,7 +222,8 @@ export class TargetFrame {
     if (key === this.drawn) return;
     this.drawn = key;
 
-    const r = targetFrameRect(centreX);
+    const style = FRAME_STYLES[monster.boss ? "boss" : "normal"];
+    const r = targetFrameRect(centreX, style.size);
     const g = this.panel;
     g.clear();
     g.fillStyle(palette.hudPanel, 0.85);
@@ -214,9 +233,9 @@ export class TargetFrame {
 
     const bar = {
       x: r.x + BAR_INSET_X,
-      y: r.y + r.height - BAR_INSET_BOTTOM - BAR_H,
+      y: r.y + r.height - BAR_INSET_BOTTOM - style.barHeight,
       width: r.width - BAR_INSET_X * 2,
-      height: BAR_H,
+      height: style.barHeight,
     };
     g.fillStyle(MARKER_BAR.backing, 0.9);
     g.fillRect(bar.x, bar.y, bar.width, bar.height);
