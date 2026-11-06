@@ -25,6 +25,11 @@ coordinator; every requirement below cites it as **charter default (owner revisi
 limit as **(owner: floor 1 only)**, and anything this spec settled as **derived here**. Recorded
 without adversarial review: no `challenge-me` pass.
 
+Amended 2026-11-06 after review (fix round 1): §C.6 counts a cast sent over a hovered monster as
+an intent, so ranged classes hold the frame (S1); §D.10 latches engagement and counts `move` only
+within the demon's aggro radius (S2). Both honour the owner's references above. The Facts lines
+the amendment touched cite floor1/fix-48CTQ at 26387087.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/`.
@@ -35,12 +40,17 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - **No hit attribution on the wire.** `MonsterState` carries no attacker
   (`game-server/game-service/internal/types/game.go:327-344`) and `ProjectileState` no owner
   (`internal/types/messages.go:37-42`); the client flashes a monster on any drop in its health
-  (`monsters.ts:402`). What the client does know is its own intent: a click sends
-  `attack {enemy_entity_id}` (`utils/gameSession.ts:109-110`).
+  (`monsters.ts:402`). What the client does know is its own intent: a click on a monster within
+  60 px sends `attack {enemy_entity_id}` (`utils/gameSession.ts:109-110`; `STRIKE_RANGE`,
+  `render/combat/playerCombat.ts:120-127`), but every class's left click also sends a world-point
+  `cast_skill` (slash, arrow, cut, fireball; `playerCombat.ts:260-285`) that names no monster, so
+  a ranged class names its target only by where the pointer is.
 - **No target or aggro on the wire.** `MonsterState` has `action` (`idle | move | attack | dead`),
   health and `boss`. The demon's aggro radius is 320 px and its leash 700 px
-  (`game-service/internal/game/monster_tuning.go:198-202`); it is 1% on floor 1 and guaranteed on
-  floor 3 (FS-77AB6).
+  (`game-service/internal/game/monster_tuning.go:238-242`); it is 1% on floor 1 and guaranteed on
+  floor 3 (FS-77AB6). Its `action` flickers: unaggroed it wanders and reports `move`
+  (`internal/systems/monster_ai.go:113-115`, `:233-236`), and it reports `idle` between wander
+  legs (`:233-235`) and between melee swings (`:124-128`).
 - Hovering a living monster already shows the strike-mark cursor (FS-77AB6 §39).
 - **The top centre today**: while the local player is resolved, the spectate HUD at y 10
   ("Watching …" and "Tab: next player", to about y 62, `SPECTATE_HUD_Y`,
@@ -80,13 +90,18 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
    3. else the **last-hit** monster (§C.6), while it lives and for 3 s after the player's last hit
       on it;
    4. else nothing: the frame is hidden.
-6. **The last-hit monster** is the monster named by the local player's latest `attack` intent. It
-   becomes the last-hit monster the moment the intent is sent; its 3 s restart on every drop in its
-   health that arrives within 1 s of an `attack` intent naming it. A drop with no such intent (a
-   teammate's hit, an aimed skill that names no monster) restarts nothing. **(derived here: the
+6. **The last-hit monster** is the monster named by the local player's latest **intent**. An
+   intent is either an `attack` naming a monster (a melee strike), or a cast the player sends while
+   a living, shown monster is hovered, which names that monster: the left-click primary of every
+   class, a right-click ability sent at once (the warrior's dash, the mage's triple fireball), or a
+   fired Shadow Shot, the hover read as the cast is sent. The archer's right-press (which only
+   starts the hold and sends nothing) and the Mercenary's parry (which strikes nothing) are not
+   intents. The monster becomes the last-hit monster the moment the intent is sent; its 3 s restart
+   on every drop in its health that arrives within 1 s of an intent naming it. A drop with no such
+   intent (a teammate's hit, a cast with nothing hovered) restarts nothing. **(derived here: the
    wire has no attacker, Facts; "only the player's own hits count" is honoured by counting only
-   hits the player aimed at that monster. Aimed skills that name no entity, such as Shadow Shot,
-   do not count in v1; exact attribution would need a server field, out of scope)**
+   hits the player aimed at that monster, by click or by pointer, so a ranged class holds the frame
+   as a melee one does (review S1); exact attribution would need a server field, out of scope)**
 7. **The frame never names** a dead monster, a monster hidden by fog (FS-SRA9J §D: a monster whose
    sprite is hidden is not a candidate), a monster no longer in the snapshot, or a party member.
    When the monster it names dies or leaves, it moves to the next in §C.5 or hides. **(derived
@@ -99,10 +114,17 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 
 9. **The boss uses the frame**, never a head plate, on a `frame` floor. **(charter default, owner
    revision, C3)**
-10. **Engaged** while it lives and either its health is below its maximum (only the party can hurt
-    it), or it stands within its leash radius (700 px) of a living party member while its action
-    is `move` or `attack`. **(derived here: the wire carries no aggro target, Facts; this reads
-    "aggroed on the party or damaged by it" from what is sent)**
+10. **Engaged** is latched. A living boss **becomes** engaged when its health is below its maximum
+    (only the party can hurt it), or its action is `move` within its aggro radius (320 px) of a
+    living party member, or `attack` within its leash radius (700 px) of one. Once engaged it
+    **stays** engaged, whatever its action, until it is back at full health **and** beyond 700 px
+    of every living member, or it dies, or it leaves the snapshot; then it engages again only by the
+    same rule. A boss merely hidden by fog keeps its latch, but the frame names only a shown one
+    (§C.7), and of two engaged bosses the shown one. **(derived here: the wire carries no aggro
+    target, Facts; this reads "aggroed on the party or damaged by it" from what is sent. The
+    server's `move` while wandering unaggroed and its `idle` between wander legs and between swings
+    would otherwise flip the frame, so the rule latches and counts `move` only within the radius at
+    which the demon would aggro (review S2); values from `monster_tuning.go:238-242`)**
 11. **Engaged, it holds the frame whenever nothing is hovered**, ahead of the last-hit monster. A
     hovered monster still wins. (C3)
 12. **A boss frame is wider**: its bar is 1.5 × the normal frame's width and twice its height.
@@ -149,10 +171,10 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - [ ] The marker-mode table names run floor 1 `frame` and nothing else; floors 2–3 and fields are `overhead`; a test adds a floor to the table and sees the frame there.
 - [ ] On floor 1 no monster, elite or boss draws an overhead name, level or bar; the elite tint stays; party members' overhead names and bars are unchanged.
 - [ ] Hovering a living monster shows it in the frame with `nameplate` text and its bar; an elite's prefix is in the hostile accent.
-- [ ] After an `attack` intent at a monster and with nothing hovered, the frame shows it; a drop in its health within 1 s of an intent restarts 3 s; with no further own hit it hides 3 s after the last one.
+- [ ] After an intent at a monster (an `attack`, or a cast sent while it is hovered) and with nothing hovered, the frame shows it; a drop in its health within 1 s of an intent restarts 3 s; with no further own hit it hides 3 s after the last one. An archer's or mage's cast at a hovered monster 250 px away, hit within 1 s, holds it 3 s after the pointer leaves; a cast with nothing hovered holds nothing.
 - [ ] A teammate's hit on the last-hit monster does not restart its 3 s; a teammate's target is never shown unless hovered.
 - [ ] Hover wins over an engaged boss, which wins over the last-hit monster (selection tests over every pair).
-- [ ] A boss is engaged when damaged, or within 700 px of a living member while moving or attacking; its frame bar is 1.5 × wider and twice as tall.
+- [ ] A boss becomes engaged when damaged, moving within 320 px or attacking within 700 px of a living member; it stays engaged through wander, pause and swing-idle cycles until it is at full health beyond 700 px of every living member, dies or leaves; its frame bar is 1.5 × wider and twice as tall.
 - [ ] Dead, fog-hidden, departed monsters and party members are never named; the frame moves on or hides when its monster dies or leaves.
 - [ ] The frame fades in over 120 ms and out over 200 ms, switches content without a fade, and is hidden while the spectate HUD or the floor-change veil is up.
 - [ ] Layout test at 1080 and 1280: top at y 10, centred; normal ≤ 280 × 52, boss ≤ 420 × 60; no overlap with the notice band, the top-right column, the fullscreen button or the minimap.
@@ -167,8 +189,10 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - **Last-hit monster leaves interest (beyond 1600 px):** gone from the snapshot, so the frame hides or moves on.
 - **Last-hit monster walks into fog:** its sprite is hidden, so the frame hides or moves on; hovering it is impossible.
 - **Two attacks at different monsters within 1 s:** the latest intent names the last-hit monster.
-- **Shadow Shot or an area skill kills a monster:** it never held the frame unless clicked; accepted for v1.
-- **Boss engaged, then the party runs past 700 px at full health:** it stops being engaged; damaged, it stays engaged until it dies.
+- **A cast lands on a monster that was not hovered as it was sent** (an arrow at empty ground that strays into one, an area skill catching a bystander, the pointer moved off before the press): it holds nothing; accepted for v1.
+- **The demon wanders near the party but never aggroes:** a `move` beyond 320 px does not engage it, so it never takes the frame unless hovered.
+- **Boss engaged, then the party runs past 700 px at full health:** it stops being engaged; damaged, it stays engaged until it heals to full with the party beyond 700 px, or dies.
+- **Boss engaged, pausing between wander legs or between swings (`idle`):** it stays engaged.
 - **Local player dies mid-fight:** the spectate HUD takes the top centre and the frame hides.
 - **Window resized:** the frame re-anchors at the new centre.
 - **Monster health above max or missing max:** the bar clamps to 0–1 as `mark` does today.
@@ -176,6 +200,6 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 ## Out of Scope
 
 The frame on floors 2–3, the field worlds or the hub; hiding party members' plates; a server field
-for hit attribution or aggro target; counting aimed skills that name no monster; a target frame for
+for hit attribution or aggro target; counting a cast with nothing hovered; a target frame for
 players; a target lock key or click-to-select; damage numbers; new art; changing the elite tint or
 the strike-mark cursor.
