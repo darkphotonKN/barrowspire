@@ -39,7 +39,7 @@ server state and sends intents. ✅
 - [x] Register without polling → FS-83TJK
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
-- [x] Upload and confirm an avatar
+- [ ] ~Upload and confirm an avatar~ → removed FS-TVCZQ
 - [ ] Refresh an expired access token
 - [ ] Password policy at registration → FS-V6SFK
 - [ ] Verify email from the client → FS-V6SFK

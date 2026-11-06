@@ -76,9 +76,9 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 
 ### Avatars
 
-- [x] Request a presigned avatar upload
-- [x] Confirm an avatar upload and publish `profile.updated`
-- [ ] Authorize confirmation against the requesting member
+- [ ] ~Request a presigned avatar upload~ → removed FS-TVCZQ
+- [ ] ~Confirm an avatar upload and publish `profile.updated`~ → removed FS-TVCZQ
+- [ ] ~Authorize confirmation against the requesting member~ → removed FS-TVCZQ
 
 ### Billing linkage
 
