@@ -414,11 +414,13 @@ func TestRegenerateFloor_RepopulatesTheNewFloor(t *testing.T) {
 	}
 }
 
-// Every monster on the floor reaches every delver's broadcast.
-// FS-77AB6 §Requirements 32.
+// Every monster on a floor of buildings reaches every delver's broadcast.
+// FS-77AB6 §Requirements 32. Floor 1, a dungeon, is cut by distance instead
+// (FS-KE075 §G, interest_test.go).
 func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	s := rosterOnRun(t, 5, delverAt{level: 1, x: 100, y: 100})
 	s.InitialMapObjects(nil)
+	require.NoError(t, s.regenerateFloor())
 	require.NotEmpty(t, monstersIn(s))
 
 	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
