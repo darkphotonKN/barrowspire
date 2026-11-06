@@ -328,6 +328,12 @@ describe("satchelLayout", () => {
     },
   );
 
+  it("should reach every one of the 16 icons in the dev test room's armor chest (FS-BDRTJ R12)", () => {
+    const items = many(16);
+    const { slots } = satchelLayout(items);
+    expect(slots.map((s) => itemAt(items, s.x, s.y))).toEqual(items);
+  });
+
   it("should draw full size while a coffer's plunder fits, and shrink only when it does not", () => {
     expect(satchelLayout(many(12)).scale).toBe(1);
     expect(satchelLayout(many(13)).scale).toBeLessThan(1);
@@ -362,6 +368,27 @@ describe("itemAt", () => {
 });
 
 describe("satchelIcon", () => {
+  // The room's template ids match no catalogue row and its bands no catalogue name (FS-BDRTJ R11).
+  it.each([
+    { name: "Blackiron Sword", item_type: "weapon", weapon_type: "sword", icon: "sword" },
+    { name: "Grave Seax", item_type: "weapon", weapon_type: "knife", icon: "dagger" },
+    { name: "Blackiron Mace", item_type: "weapon", weapon_type: "mace", icon: "generic" },
+    { name: "Partisan", item_type: "weapon", weapon_type: "spear", icon: "generic" },
+    { name: "Dane Axe", item_type: "weapon", weapon_type: "axe", icon: "generic" },
+    { name: "Blackiron Cestus", item_type: "weapon", weapon_type: "fist", icon: "generic" },
+    { name: "Scale Coif", item_type: "armor", armor_slot: "head", icon: "helm" },
+    { name: "Scale Tunic", item_type: "armor", armor_slot: "chest", icon: "cuirass" },
+    { name: "Scale Leggings", item_type: "armor", armor_slot: "legs", icon: "greaves" },
+    { name: "Scale Gauntlets", item_type: "armor", armor_slot: "gloves", icon: "gauntlets" },
+    { name: "Barrow-gold Band of Might", item_type: "ring", icon: "ring" },
+    { name: "Barrow-gold Band of Haste", item_type: "ring", icon: "ring" },
+    { name: "Barrow-gold Band of Wits", item_type: "ring", icon: "ring" },
+    { name: "Barrow-gold Band of Warding", item_type: "ring", icon: "ring" },
+    { name: "Lantern of the Drowned", item_type: "ring", icon: "ring" },
+  ])("should draw the dev test room's $name with the $icon icon", ({ icon, ...fields }) => {
+    expect(satchelIcon(item(fields as Partial<ItemState> & { name: string }))).toBe(`icon_${icon}`);
+  });
+
   it("should draw a ring with the ring icon though the run names no item type (FS-4R9M9 R60)", () => {
     expect(
       satchelIcon(

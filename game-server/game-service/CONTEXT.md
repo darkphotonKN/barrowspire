@@ -65,6 +65,8 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   - **Gentle Meadows** — the easy field, east of the hub: open, hand-laid map, low-level animals.
   - **Forlorn Forest** — the harder field, west of the hub: a generated branching trail, zombies
     and the rare ghost (FS-3QHQZ).
+  - **Dev test room** — a dev-only field for trying builds (FS-BDRTJ). Built only when
+    `ENVIRONMENT` is development. Unlike every other field, its visits never settle.
 - **Channel** — one pod's copy of a field world (ADR-0030). Every pod runs one channel of each
   field, created at boot; two players on different pods are in different channels of the same
   field. **Collides with the Redis pub/sub channel** (`matchstart:pod:<podID>`, the hub's state

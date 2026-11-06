@@ -207,6 +207,7 @@ server state and sends intents. ✅
 ### Dev tooling
 
 - [ ] Dev gallery of reusable visual pieces → FS-1819Q
+- [ ] Dev-only test room entry and view → FS-BDRTJ
 
 ### Transport
 

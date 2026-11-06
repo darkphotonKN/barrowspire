@@ -66,6 +66,7 @@ const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
 const { projectedBounds } = await import("@/render/iso/projection");
+const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
 /** The road home as the Meadows' state carries it. */
@@ -1017,6 +1018,31 @@ describe("FieldScene the Forest's bounds (FS-KSD6K §Requirements 17)", () => {
     expect({ x, y, width, height }).toEqual(
       projectedBounds(FOREST_SIZE.width, FOREST_SIZE.height, margin),
     );
+  });
+});
+
+describe("FieldScene the dev test room (FS-BDRTJ §Requirements 6)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should frame the 900 x 600 room the server builds, in the Meadows' look", () => {
+    const setBounds = vi.fn();
+    const { field, stub } = fieldToCreate<{ cameras: unknown; look: unknown }>();
+    field.cameras = {
+      main: new Proxy(
+        {},
+        { get: (_target, key) => (key === "setBounds" ? setBounds : stub) },
+      ),
+    };
+
+    field.init({ field: "dev_test_room" });
+    field.create({ field: "dev_test_room" });
+
+    const [x, y, width, height] = setBounds.mock.calls[0];
+    const margin = projectedBounds(900, 600).x - x;
+    expect({ x, y, width, height }).toEqual(projectedBounds(900, 600, margin));
+    expect(field.look).toBe(MEADOWS_LOOK);
   });
 });
 

@@ -16,6 +16,9 @@ const (
 	// GateDestinationHub is a field's entrance gate: the road back to the hub.
 	// It stands in a field world, never in the hub. FS-X2F2H §Requirements 3.
 	GateDestinationHub GateDestination = "hub"
+	// GateDestinationDevTestRoom is the dev test room's gate, in the hub only
+	// when the room is on. FS-BDRTJ §Requirements 4.
+	GateDestinationDevTestRoom GateDestination = "dev_test_room"
 )
 
 // GateArrival is where a player coming back through a gate is set down: just

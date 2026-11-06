@@ -251,7 +251,10 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	inbox.start(ctx)
 	mail.start(ctx)
 
-	server.createHubSession()
+	hub := server.createHubSession()
+	if boot.devTestRoom {
+		hub.AddDevTestRoomGate()
+	}
 	server.createFieldSessions(fields)
 
 	return server, nil

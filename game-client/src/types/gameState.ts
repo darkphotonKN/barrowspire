@@ -251,7 +251,7 @@ export interface ProjectileState {
 export interface GateState {
   entity_id: UUID;
   /** `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). */
-  destination: "spire" | "forest" | "meadows" | "hub";
+  destination: "spire" | "forest" | "meadows" | "dev_test_room" | "hub";
   position: Position;
   /** World px from `position` within which a player is at the gate. */
   range: number;

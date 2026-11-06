@@ -213,7 +213,7 @@ export const WorldType = {
 export type WorldType = (typeof WorldType)[keyof typeof WorldType];
 
 /** A field world's stable id, sent as `field` in its world_entered (FS-X2F2H §Requirements 2). */
-export type FieldId = "gentle_meadows" | "forlorn_forest";
+export type FieldId = "gentle_meadows" | "forlorn_forest" | "dev_test_room";
 
 /**
  * The one message that tells the client which world it is now in. It arrives on

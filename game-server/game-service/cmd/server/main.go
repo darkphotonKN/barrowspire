@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -57,6 +58,13 @@ var (
 	amqpHost     = commonhelpers.GetEnvString("RABBITMQ_HOST", "localhost")
 	amqpPort     = commonhelpers.GetEnvString("RABBITMQ_PORT", "5672")
 )
+
+// devTestRoomOn is the dev test room's server guard: on only for development,
+// off for production, a typo and unset (environment defaults to production).
+// FS-BDRTJ §Requirements 1.
+func devTestRoomOn(environment string) bool {
+	return strings.EqualFold(environment, "development")
+}
 
 func main() {
 	// --- root context ---
@@ -192,7 +200,7 @@ func main() {
 	log.Printf("grpc Game Server started on PORT: %s\n", grpcAddr)
 
 	// routes setup
-	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, partySize, outboxServ, outboxWorker)
+	routes, closeDownstreams, err := config.SetupRouter(ctx, db, downstreams, ch, redisClient, pod, partySize, outboxServ, outboxWorker, devTestRoomOn(environment))
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}
