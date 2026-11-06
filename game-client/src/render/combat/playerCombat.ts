@@ -13,6 +13,7 @@ import type { socketManager } from "@/utils/class/SocketManager";
 import type { PlayerState, ResourceState } from "@/types/gameState";
 import type { Point } from "@/render/iso";
 import { CHARGE_MS } from "@/render/effects/charge";
+import type { Swing } from "@/render/art/character";
 import { riposteArmed } from "@/render/effects/riposte";
 import { parryRefused } from "@/ui/abilityCard";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
@@ -65,8 +66,11 @@ export interface CombatLook {
   aim(from: Point, ready: boolean): void;
   /** The hold ended: no line left behind, the figure let go to its idle (req 15). */
   endAim(): void;
-  /** The class attack clip, aimed; `holdMs` keeps the pose while a charge carries the player. */
-  attackClip(aim: Point, holdMs?: number): void;
+  /**
+   * The class attack clip, aimed; `swing` marks a charge, its pose held while the server carries
+   * the player (`CharacterMotion.attack`).
+   */
+  attackClip(aim: Point, swing?: Swing): void;
   /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
   lockout?(): void;
 }
@@ -151,8 +155,9 @@ export class PlayerCombat {
       this.lockFor(PRIMARY_COOLDOWN_MS, false);
     } else {
       this.special(playerClass, me, target);
-      // a warrior's charge holds the pose for as long as the server carries them (§D.2)
-      this.look.attackClip(aim, playerClass === "warrior" ? CHARGE_MS : undefined);
+      // a warrior's charge holds the whole pose for as long as the server carries them (§D.2),
+      // never split over the walk (FS-3V7GC R6)
+      this.look.attackClip(aim, playerClass === "warrior" ? { charge: true, holdMs: CHARGE_MS } : undefined);
       this.lockFor(SPECIAL_COOLDOWN_MS, true);
     }
     return true;

@@ -154,15 +154,15 @@ export function legs(rig, mat, o = {}) {
 }
 
 /**
- * How far inside a garment's wall `legs({ under })` keeps a thigh (H, about 3.3 1x px): one value
- * for the four classes, the least (in 0.0025 steps) that keeps every class's legs inside its
- * garment in every clip, to the leg-clearance guard's one baked px (clearance.js). The 2x
+ * How far inside a garment's wall `legs({ under })` keeps a thigh (H; about 3.5–3.6 1x px on the
+ * classes, H 1.92–2.0): one value for the four classes, the least (in 0.0025 steps) that keeps
+ * every class's legs inside its garment in every clip, to the leg-clearance guard's one baked px (clearance.js). The 2x
  * wizard's walk and walk_attack set it (FS-3V7GC §C): her leading thigh and knee swing out
  * through the robe, which follows a thigh by only a fifth of its swing; at 0.0375 she shows 0.52
  * 1x px, past the half px a 2x sheet allows. Under the cloth, so no garment changes for it. (It
  * was 0.012, set by the 2x archer's walk, before the other classes were baked at 2x.)
  */
-const UNDER_CLEAR = 0.04;
+export const UNDER_CLEAR = 0.04;
 
 /**
  * Draws a thigh in under the garment `g` (its `skirt` options), as rig.js `place` moves a vertex

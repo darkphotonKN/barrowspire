@@ -726,11 +726,11 @@ export class BarrowspireScene extends Phaser.Scene {
       },
       aim: (from, ready) => this.drawAim(from, ready),
       endAim: () => this.endAimDrawing(),
-      // a hold only when a charge carries the player: every other clip is the plain attack
-      attackClip: (aim, holdMs) =>
-        holdMs === undefined
+      // a charge only when one carries the player (FS-3V7GC R6): every other clip is the plain attack
+      attackClip: (aim, swing) =>
+        swing === undefined
           ? this.playerAnim?.attack(this.time.now, aim)
-          : this.playerAnim?.attack(this.time.now, aim, holdMs),
+          : this.playerAnim?.attack(this.time.now, aim, swing),
       lockout: () => this.showAbilityCard(),
     },
     () => this.lastGameState?.current_player,
