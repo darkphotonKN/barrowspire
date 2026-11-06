@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Point, Rect } from "@/render/iso";
 import type { ClientGameState } from "@/types/gameState";
 import {
+  dressingStandsBy,
   DRESSING_MAX,
   dressingBreaches,
   dressingStatics,
@@ -265,5 +266,19 @@ describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 �
   it("should hold a sheet's floor-wide most across every room", () => {
     const braziers = planRoomDressing(TOWER_BANDS.upper.dressing, 41, statics, rooms).filter((p) => p.sheet === "brazier");
     expect(braziers.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("a dungeon floor's dressing and a container seen later (FS-KE075 §H.47, review M1)", () => {
+  // a piece of radius 14 at (400, 400): its square spans 386–414 each way
+  const piece = { at: { x: 400, y: 400 }, r: 14 };
+
+  it.each([
+    ["on it", { x: 400, y: 400 }, true],
+    ["a use's reach from its square's side", { x: 414 + 60, y: 400 }, true],
+    ["just past a use's reach", { x: 414 + 61, y: 400 }, false],
+    ["far off", { x: 900, y: 900 }, false],
+  ] as const)("a container %s: stands by it %s", (_name, at, by) => {
+    expect(dressingStandsBy(piece, at)).toBe(by);
   });
 });

@@ -1,7 +1,23 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { FloorRegion } from "@/types/gameState";
+import { FIXTURE, GOLDEN, fixtureFrom, format } from "../../../tools/fixtures/dungeon-fixture.mjs";
 import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
+
+/** The levelgen golden layout the fixture is cut from (game-server levelgen testdata). */
+interface GoldenLayout {
+  rooms: { rect: { x: number; y: number; w: number; h: number }; region: number; doorways: { x: number; y: number }[] }[];
+}
+const layout = JSON.parse(readFileSync(GOLDEN, "utf8")) as GoldenLayout;
+
+describe("the dungeon fixture (FS-KE075 §F.31)", () => {
+  it("is the levelgen golden's floor map, size, cells, regions and walls, and none of its roles: regenerate with node tools/fixtures/dungeon-fixture.mjs", () => {
+    expect(fixture).toEqual(fixtureFrom(layout));
+    expect(readFileSync(FIXTURE, "utf8")).toBe(format(fixture));
+    expect(Object.keys(fixture)).not.toContain("roles");
+  });
+});
 
 const CELL = 80;
 
@@ -126,18 +142,22 @@ describe("a dungeon floor's rooms, for its dressing (FS-KE075 §H.47)", () => {
   const golden = new RegionGrid(fixture as DungeonMap);
 
   it("finds a room's doorways where a corridor meets it, as the generator placed them", () => {
-    // region 1's doorways, as the golden's `rooms[0].doorways` lists them
-    const want = [[32, 35], [33, 35], [35, 37], [28, 38], [35, 38], [28, 39], [35, 39]];
-    const got: number[][] = [];
-    for (let cx = 28; cx < 36; cx++)
-      for (let cy = 35; cy < 42; cy++) if (golden.doorway(cx, cy)) got.push([cx, cy]);
-    expect(new Set(got.map(String))).toEqual(new Set(want.map(String)));
+    // each room's doorways, as the golden's `rooms[].doorways` lists them
+    for (const { rect, doorways } of layout.rooms) {
+      const got: string[] = [];
+      for (let cx = rect.x; cx < rect.x + rect.w; cx++)
+        for (let cy = rect.y; cy < rect.y + rect.h; cy++) if (golden.doorway(cx, cy)) got.push(`${cx},${cy}`);
+      expect(new Set(got)).toEqual(new Set(doorways.map(({ x, y }) => `${x},${y}`)));
+    }
   });
 
   it("lists every room, none of the corridors, each with its rect in world px", () => {
     const rooms = dressingRooms(golden);
-    expect(rooms).toHaveLength(22);
-    expect(rooms[0]).toMatchObject({ id: 1, rect: { x: 28 * CELL, y: 35 * CELL, width: 8 * CELL, height: 7 * CELL } });
+    expect(rooms).toHaveLength(layout.rooms.length);
+    for (const { region, rect } of layout.rooms)
+      expect(rooms.find((r) => r.id === region)).toMatchObject({
+        rect: { x: rect.x * CELL, y: rect.y * CELL, width: rect.w * CELL, height: rect.h * CELL },
+      });
   });
 
   describe("where a room's dressing may stand", () => {
