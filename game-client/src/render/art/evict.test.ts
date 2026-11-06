@@ -102,7 +102,8 @@ describe("eviction once the next scene has loaded (FS-C4JWH §C, ADR-0059)", () 
 
     const seen = enter(art, fieldArt("gentle_meadows"));
 
-    expect(art.queued).toEqual(pages("wildlife-0", "wildlife-1"));
+    // the hub's folk on the way in, then the meadows' wildlife again
+    expect(art.queued).toEqual(pages("folk-0", "wildlife-0", "wildlife-1"));
     expect(seen.textures).toEqual(artKeys([...resident, ...pages("wildlife-0", "wildlife-1")]));
     for (const key of sheetAnims("creature_boar_base")) expect(art.anims.list.has(key)).toBe(true);
     expect(art.textures.get("art:wildlife-0").getFrameNames()).toContain("creature_boar_base/idle/0/0");

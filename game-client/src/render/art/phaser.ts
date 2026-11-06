@@ -25,6 +25,7 @@ import {
   validateManifest,
   type ArtManifest,
 } from "./manifest";
+import { evictOutside } from "./evict";
 import { sceneAtlases, type SceneGroups } from "./sceneArt";
 
 export const MANIFEST_KEY = "art:manifest";
@@ -85,6 +86,13 @@ export interface ArtScene {
  * the scene's {@link SCENE_ART} entry; then {@link registerArt} in `create()` with the same one.
  * A missing manifest only fails its own file; {@link registerArt} then falls back.
  *
+ * Once the load completes, and before `create`, the scene-scoped pages outside the scene's set
+ * are evicted with their animations (`evict.ts`, FS-C4JWH §C). A `complete` listener added here
+ * runs before the scene manager's own, which calls `create`: Phaser 4.2.1 `SceneManager.bootScene`
+ * adds that one after `preload()` returns; with nothing queued, `start` completes synchronously
+ * and the same order holds. A scene stopped mid-load drops this listener with its loader's
+ * (`LoaderPlugin.shutdown`), and the next scene's load evicts instead.
+ *
  * The manifest may already be cached by another scene whose atlases are still in flight: a
  * refresh lands the player in the hub while the preload scene is still fetching. Phaser skips a
  * cached key without firing `filecomplete`, so the atlases are queued straight from the cache
@@ -103,6 +111,11 @@ export function preloadArt(
       if (!scene.textures.exists(atlasTextureKey(key)))
         scene.load.image(atlasTextureKey(key), `${baseUrl}${atlases[key].image}`);
   };
+
+  scene.load.once("complete", () => {
+    const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
+    if (result.ok) evictOutside(scene, result.manifest, groups);
+  });
 
   if (scene.cache.json.exists(MANIFEST_KEY)) {
     queueAtlases(scene.cache.json.get(MANIFEST_KEY));
