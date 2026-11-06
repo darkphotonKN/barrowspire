@@ -15,9 +15,9 @@ import { directionIndex } from "./manifest";
 export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const;
 /**
  * Those, the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
- * raised into and then held on its last frame; and the Archer's attack on the move
- * (FS-HF0WW): `walk_attack`, the attack from the waist up over the walk from the waist
- * down, lasting exactly as long as the attack, which only his sheet carries.
+ * raised into and then held on its last frame; and a class's attack on the move
+ * (FS-HF0WW, FS-3V7GC): `walk_attack`, the attack from the waist up over the walk from the
+ * waist down, lasting exactly as long as the attack, which the four classes' sheets carry.
  */
 export type CharacterAnimation =
   | (typeof CHARACTER_ANIMATIONS)[number]
@@ -60,9 +60,9 @@ export interface CharacterState {
    */
   guarding?: boolean;
   /**
-   * The sheet carries `walk_attack` (the Archer's, FS-HF0WW): an attack drawn while the
-   * body moves keeps the legs walking instead of sliding the whole attack pose along. Without it,
-   * or during a charge's held pose, the attack plays as before.
+   * The sheet carries `walk_attack` (the four classes', FS-HF0WW, FS-3V7GC): an attack drawn
+   * while the body moves keeps the legs walking instead of sliding the whole attack pose along.
+   * Without it, or during a charge's held pose, the attack plays as before.
    */
   walkAttack?: boolean;
 }

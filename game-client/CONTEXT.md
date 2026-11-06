@@ -206,8 +206,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Trimmed sheet**: a sheet whose frames were each cut, at bake time, to the box that holds their
   pixels; the atlas stores only the cut and the manifest says where it sits in the whole frame
   (`trim`). Drawn, anchored and sized as the whole frame (ADR-0058, FS-HF0WW).
-- **Walk-attack** (`walk_attack`): the archer's attack drawn while he moves: the shot from the
-  waist up over the walk from the waist down, the legs facing the aim (FS-HF0WW).
+- **Walk-attack** (`walk_attack`): a class's attack drawn while it moves: the attack from the
+  waist up over the walk from the waist down, the legs facing the aim (for a melee swing, its
+  target). Every playable class's sheet carries it; no creature's or resident's does (FS-HF0WW,
+  FS-3V7GC).
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
   player's torch pool). It is declared per prop type in the sprite manifest, or attached to the
   player. Purely visual: it has no effect on what anyone can see or hit.

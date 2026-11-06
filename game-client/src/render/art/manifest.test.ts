@@ -1184,12 +1184,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     ];
 
     /**
-     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), and the
-     * Archer's attack on the move (FS-HF0WW).
+     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), and every
+     * class's attack on the move (FS-HF0WW, FS-3V7GC).
      */
     const OWN_CLIPS: Record<string, string[]> = {
-      char_mercenary_base: ["parry"],
+      char_knight_base: ["walk_attack"],
       char_archer_base: ["walk_attack"],
+      char_wizard_base: ["walk_attack"],
+      char_mercenary_base: ["parry", "walk_attack"],
     };
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
@@ -1242,11 +1244,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(sheet.animations, name).toHaveProperty("idle");
     });
 
-    it("trims the archer's frames, and only the archer's (FS-HF0WW)", () => {
+    it("trims the four classes' frames, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
       const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
         .filter(([, sheet]) => sheet.trimmed)
         .map(([name]) => name);
-      expect(trimmed).toEqual(["char_archer_base"]);
+      expect(trimmed.sort()).toEqual([
+        "char_archer_base",
+        "char_knight_base",
+        "char_mercenary_base",
+        "char_wizard_base",
+      ]);
     });
 
     it("loops idle and walk, and plays attack and death once", () => {
@@ -1260,10 +1267,10 @@ describe("the baked manifest (public/art/manifest.json)", () => {
   });
 
   describe("the Mercenary (FS-MAMHR §H)", () => {
-    it("is its own sheet in the characters group, authored as the mercenary model", () => {
+    it("is its own sheet in its own group, authored as the mercenary model (FS-3V7GC)", () => {
       const sheet = baked.sheets.char_mercenary_base;
       expect(sheet).toBeDefined();
-      expect(sheet.atlas).toMatch(/^characters-\d+$/);
+      expect(sheet.atlas).toMatch(/^mercenary-\d+$/);
       expect(sheet.source).toBe(
         "authored: tools/bake/page/characters/cast.js#mercenary",
       );

@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { ARCHER_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { CLASS_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
 import {
   arms,
   bareFeet,
@@ -509,12 +509,13 @@ export function troll() {
  * no existing atlas reflows.
  */
 export const CAST = [
-  { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
-  // FS-HF0WW: baked at 2× (twice the px per screen px, drawn at half scale) with the shot
-  // layered over the walk, in its own group; each frame trimmed to its pixels (lib/trim.mjs)
-  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: ARCHER_ANIMATIONS, scale: 2, trim: true },
-  { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },
-  { sheet: "char_mercenary_base", group: "characters", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS },
+  // The four classes (FS-HF0WW, FS-3V7GC): each baked at 2× (twice the px per screen px, drawn at
+  // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
+  // trimmed to its pixels (lib/trim.mjs)
+  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },

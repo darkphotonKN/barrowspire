@@ -11,7 +11,7 @@
 // skinned rig, hand-keyed clips, baked in the 8 facings of page/facing.js, whose order the
 // manifest records as `facings`.
 //
-// A catalogue entry with `trim: true` (today only the archer, FS-HF0WW) has each frame cut
+// A catalogue entry with `trim: true` (today the four classes, FS-HF0WW, FS-3V7GC) has each frame cut
 // to the box that holds its pixels before packing (lib/trim.mjs); the manifest marks the sheet
 // `trimmed` and records each frame's cut, which the client puts back where it was.
 //
