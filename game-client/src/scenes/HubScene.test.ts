@@ -411,7 +411,7 @@ interface MenuHub {
   update(time: number, delta: number): void;
   offerConversation(): void;
   followGates(pos: { x: number; y: number }, gates: unknown[]): void;
-  onFieldGate(destination: "forest" | "meadows"): void;
+  onFieldGate(destination: "forest" | "meadows" | "dev_test_room"): void;
   renderState(state: unknown): void;
   listenForQueue(): void;
   release(end: "shutdown" | "destroy"): void;
@@ -1739,6 +1739,88 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
 
     // a fresh visit that starts inside the gate steps into it
     expect(doorIsOpen(choice)).toBe(true);
+  });
+});
+
+describe("HubScene the dev test room's gate (FS-BDRTJ §Requirements 2, 3, 5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const DEV_GATE = {
+    entity_id: "dev-gate",
+    destination: "dev_test_room" as const,
+    position: { x: 120, y: 900 },
+    range: 80,
+  };
+  const ON = [...HUB_GATES, DEV_GATE];
+
+  /** A hub whose states are rendered whole, with only the gates in them left to act on. */
+  function hubWithStates() {
+    const stage = queuedHubOnStage();
+    Object.assign(stage.hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+    });
+    stage.hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const render = (position: { x: number; y: number }, gates: unknown[] = ON) =>
+      stage.hub.renderState({
+        world_type: "hub",
+        current_player: { entity_id: "me", position },
+        other_players: [],
+        walls: [],
+        gates,
+      });
+    const label = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Dev Test Room");
+    return { ...stage, render, label };
+  }
+
+  it("should stand one plain label at the gate's server position while the gate is in the state", () => {
+    const { render, label } = hubWithStates();
+    const foot = iso.worldToScreen(DEV_GATE.position.x, DEV_GATE.position.y);
+
+    render(AWAY);
+    render(AWAY);
+    expect(label()).toHaveLength(1);
+    expect(label()[0].args.slice(0, 2)).toEqual([foot.x, foot.y]);
+
+    render(AWAY, HUB_GATES);
+    expect(label()).toHaveLength(0);
+  });
+
+  it("should send enter_field for the room on stepping in, raising no field-name sign", () => {
+    const { render, label, send } = hubWithStates();
+
+    render(AWAY);
+    render(DEV_GATE.position);
+
+    expect(send.mock.calls).toEqual([[ActionType.EnterField, { field: "dev_test_room" }]]);
+    // the label alone: the sign would stand a second name over the Forest's post
+    expect(label()).toHaveLength(1);
+  });
+
+  it("should neither label the gate nor send anything from it in a production build", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { render, label, send } = hubWithStates();
+
+    render(AWAY);
+    render(DEV_GATE.position);
+
+    expect(label()).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should drop the label on release", () => {
+    const { hub, render, label } = hubWithStates();
+
+    render(AWAY);
+    hub.release("shutdown");
+
+    expect(label()).toHaveLength(0);
   });
 });
 

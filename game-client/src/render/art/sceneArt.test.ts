@@ -25,7 +25,11 @@ describe("the scene art table (FS-C4JWH §A)", () => {
       MainMenuScene: [],
       CharacterCreationScene: [],
       HubScene: ["folk"],
-      FieldScene: { gentle_meadows: ["wildlife"], forlorn_forest: ["fodder"] },
+      FieldScene: {
+        gentle_meadows: ["wildlife"],
+        forlorn_forest: ["fodder"],
+        dev_test_room: ["creatures", "boss"],
+      },
       BarrowspireScene: ["creatures", "boss"],
     });
   });
@@ -43,6 +47,7 @@ describe("the scene art table (FS-C4JWH §A)", () => {
   it("should give each field its own groups, and an unknown field gentle_meadows' (R5)", () => {
     expect(fieldArt("gentle_meadows")).toEqual(["wildlife"]);
     expect(fieldArt("forlorn_forest")).toEqual(["fodder"]);
+    expect(fieldArt("dev_test_room")).toEqual(["creatures", "boss"]);
     expect(fieldArt("some_new_field")).toEqual(["wildlife"]);
     expect(fieldArt(undefined)).toEqual(["wildlife"]);
     expect(fieldArt("toString")).toEqual(["wildlife"]);
@@ -86,12 +91,14 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
  *
  * - gentle_meadows: boar (`internal/game/meadows_map.go:29`, FS-X2F2H §H R61)
  * - forlorn_forest: zombie and ghost (`internal/game/forest_map.go:42-43`, FS-3QHQZ §C R29)
+ * - dev_test_room: troll, elite troll and demon (`internal/game/dev_test_room.go`, FS-BDRTJ R14)
  * - the run: ghoul and troll on every floor, the demon on the top one and by chance on any
  *   other (`internal/game/monster_population.go:129,145-147`)
  */
 const MET = [
   { scene: "gentle_meadows", groups: fieldArt("gentle_meadows"), archetypes: ["boar"] },
   { scene: "forlorn_forest", groups: fieldArt("forlorn_forest"), archetypes: ["zombie", "ghost"] },
+  { scene: "dev_test_room", groups: fieldArt("dev_test_room"), archetypes: ["troll", "demon"] },
   { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "demon"] },
 ];
 
@@ -169,7 +176,7 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
     expect(using(/new MonsterRoster\(/)).toEqual(["scenes/BarrowspireScene.ts", "scenes/fieldCombat.ts"]);
     expect(using(/fieldCombatOnScene\(/)).toEqual(["scenes/FieldScene.ts", "scenes/fieldCombat.ts"]);
     expect(using(/["`](folk|creature)_/)).toEqual(["render/art/hubFolk.ts", "render/creatures/monsters.ts"]);
-    expect(MET.map((s) => s.scene)).toEqual(["gentle_meadows", "forlorn_forest", "the run"]);
+    expect(MET.map((s) => s.scene)).toEqual(["gentle_meadows", "forlorn_forest", "dev_test_room", "the run"]);
   });
 
   describe("the coverage check itself", () => {

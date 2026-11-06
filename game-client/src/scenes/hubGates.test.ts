@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { GateState } from "@/types/gameState";
-import { FIELD_IDS, FIELD_NAMES, fieldOf, gateAt, gateEdges, signpostOf } from "./hubGates";
+import {
+  FIELD_IDS,
+  FIELD_NAMES,
+  fieldOf,
+  gateAt,
+  gateEdges,
+  gatesInThisBuild,
+  signpostOf,
+} from "./hubGates";
 
 const spire: GateState = {
   entity_id: "spire-gate",
@@ -87,7 +95,11 @@ describe("fieldOf (FS-0XMCP §Requirements 21)", () => {
   });
 
   it("should name each field as the screen says it", () => {
-    expect(FIELD_NAMES).toEqual({ forest: "The Forlorn Forest", meadows: "Gentle Meadows" });
+    expect(FIELD_NAMES).toEqual({
+      forest: "The Forlorn Forest",
+      meadows: "Gentle Meadows",
+      dev_test_room: "Dev Test Room",
+    });
   });
 });
 
@@ -109,6 +121,28 @@ describe("field ids (FS-X2F2H §Requirements 2, 11)", () => {
 
   it("should name the Forest gate's field by the id the server knows it by (FS-3QHQZ)", () => {
     expect(FIELD_IDS.forest).toBe("forlorn_forest");
+  });
+});
+
+describe("the dev test room's gate (FS-BDRTJ §Requirements 2, 3)", () => {
+  const dev: GateState = {
+    entity_id: "dev-gate",
+    destination: "dev_test_room",
+    position: { x: 120, y: 900 },
+    range: 80,
+  };
+
+  it("should lead to the field the server knows as dev_test_room", () => {
+    expect(fieldOf(dev)).toBe("dev_test_room");
+    expect(FIELD_IDS.dev_test_room).toBe("dev_test_room");
+  });
+
+  it.each(["development", "test", undefined, "Production"])("should keep the gate under NODE_ENV %s", (env) => {
+    expect(gatesInThisBuild([spire, dev], env)).toEqual([spire, dev]);
+  });
+
+  it("should drop the gate, and only that gate, under production", () => {
+    expect(gatesInThisBuild([spire, dev, forest], "production")).toEqual([spire, forest]);
   });
 });
 
