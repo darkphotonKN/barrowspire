@@ -58,3 +58,7 @@ Chrome at 1280 × 845, DPR 1, `next dev` on 4014. No finding needed a new issue.
 Review fix round 1 (aa8257bc): the round trip rerun with the same figures, and a world switch while
 the run downloads its boss (held back by `page.route`) passed: the run stopped, its boss downloads
 aborted and never landed, the hub at exactly its set, no error. FS-C4JWH § Verification.
+
+Review fix round 2 (45bbb89d): a run ending mid-download, both ways out (closing the settlement
+record; Leave while it loads), passed with the hub at exactly its set and no error. FS-C4JWH
+§ Verification.

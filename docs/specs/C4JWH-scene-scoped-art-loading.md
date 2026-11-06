@@ -267,6 +267,7 @@ measured):
 - **A refresh into a world**: the world is held until the menu stands up (`bootGate.ts`), so the resident groups are loaded; the world scene loads only its own groups.
 - **A world switch while the scene is still downloading** (corrected in review fix round 1): a world scene sits LOADING for its whole download, and Phaser 4.2.1 counts only a RUNNING scene as active (`Systems.isActive`), so the switch stops every world scene that is starting or running (`bootGate`'s `inFlight`), not only the active ones; a target still loading is stopped and started again, since Phaser's `start` lets a scene START..CREATING carry on and drops the new data (`SceneManager.start`). The stop resets the scene's loader and drops its create; the bar goes with its display list. Pages that finished stay textures until the next scene's preload completes, which evicts them if it does not use them. Pages in flight are not dropped by Phaser: `LoaderPlugin.reset` clears its Sets only, and a download that lands later still adds itself (`File.onLoad` → `nextFile` → `onProcess` → `fileProcessComplete` → `addToCache`). So the scene's own preload calls its downloads off on the stop (`File.resetXHR`, the XHR aborted, no `onProcessComplete`): none lands, and a next scene that wants the same page loads it once.
 - **The world's one-shot messages while it downloads** (added in review fix round 1): what the server sends a world once, unasked, is held from `init` and handed to its listeners in arrival order at the end of `create` (`scenes/heldMessages.ts`): the hub's queue progress and handoff, ready check and party notices; the run's exit unlocking, end and settlement. The field has none (its messages answer the player's own asks, sent after create). The ready-check popup itself never depended on it: the socket writes the check to the party store, which the popup reads when it is built. The game state needs nothing: it is a full snapshot every tick.
+- **A run that ends while it still downloads** (added in review fix round 2): the run's end sends `end_game`, this player's `settlement` and the hub together. Its own settlement, held before create, raises the result hold at once, so the hub waits behind the record exactly as when the run has loaded (FS-GV8WN R23): the run finishes its download, create hands the settlement over, the record opens, and closing it lets the hub in. A Leave while it still loads lets the hub in at once, and the switch stops the loading run. Another run's settlement holds nothing.
 - **A failed folk download and the NPC bust**: the bust's figure cache keeps only a figure it read; a frame missing once is read again on the next visit.
 - **The memory peak at a transition**: eviction waits for the new scene's load, so while it downloads the GPU holds the old scene's groups and the new one's (run → hub about 400 MB while folk loads). Still under today's constant 473 MB. Accepted (ADR-0059 Consequences).
 - **Re-entering from the browser's HTTP cache**: an evicted page queued again is a download to Phaser, so the bar shows, briefly when the browser has the PNG cached.
@@ -330,6 +331,18 @@ Nick's browser check (I-C4JWH-5) remains.
   and the hub held exactly the 17 resident pages and folk-0 (223.3 MB), 18 s later still. No page
   error, no console error (no "Texture key already in use"), no `art:` warning. Script:
   `c4jwh/midload.cjs` in the session scratchpad.
+
+**After review fix round 2** (45bbb89d; same account, browser and server, port 4014), the run's
+boss held back 12 s and Fall sent while the run sat LOADING, both ways out:
+
+- **Closing the record**: the hub was held from the first moment (the result hold raised by the
+  held settlement), the run finished its download, the settlement record opened, and closing it let
+  the hub in; the run stopped, the hub at exactly the 17 resident pages and folk-0 (223.3 MB, folk
+  downloaded again with the bar, since the run's load had evicted it).
+- **Leave while it still loads**: the hub came in at once; the run, still LOADING, was stopped and
+  both boss requests aborted (`net::ERR_ABORTED`); the hub at exactly its set.
+
+Neither run logged a page error, a console error (the favicon 404 aside) or an `art:` warning.
 
 ## Out of Scope
 
