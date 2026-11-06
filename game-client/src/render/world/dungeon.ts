@@ -11,7 +11,7 @@
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Point, Rect } from "@/render/iso/projection";
 import type { FloorMap, FloorRegion, WallState } from "@/types/gameState";
-import { axisOf, type PieceRule, type WallAxis, type WallHeight } from "./walls";
+import type { PieceRule, WallAxis, WallHeight } from "./walls";
 
 /** A floor map that carries a cell grid and its regions. */
 export type DungeonMap = Pick<FloorMap, "width" | "height"> & {
@@ -132,28 +132,6 @@ export function wallRule(grid: RegionGrid): PieceRule {
     return grid.kind(cx, cy + 1) === "room" || grid.kind(cx + 1, cy) === "room";
   };
   return { height, lit };
-}
-
-/**
- * The map's walls as the pieces are cut from them: a wall one cell thick as it is, a block thicker
- * than a cell as one-cell strips along its run, so each strip is cut along its own centreline and
- * takes its own height (§H.46), rather than one run through the middle of the block. A strip keeps
- * its wall's entity id: it goes with the wall.
- *
- * Rect by rect, so it draws a wall along world y as the server's row-major rects cut it: the scene
- * cuts its pieces along {@link wallRuns} instead.
- */
-export function stripWalls(walls: readonly WallState[], cell: number): WallState[] {
-  return walls.flatMap((w) => {
-    const across = axisOf(w) === "x" ? w.height : w.width;
-    const count = Math.round(across / cell);
-    if (count <= 1) return [w];
-    return Array.from({ length: count }, (_, k) =>
-      axisOf(w) === "x"
-        ? { ...w, position: { x: w.position.x, y: w.position.y + k * cell }, height: cell }
-        : { ...w, position: { x: w.position.x + k * cell, y: w.position.y }, width: cell },
-    );
-  });
 }
 
 /**

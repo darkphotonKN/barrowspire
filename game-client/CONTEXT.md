@@ -335,10 +335,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   Spire this gives a room an inside, so "indoor" means *inside a room* there once FS-9PN7X ships,
   while the tower theme's "the whole floor is indoors" still describes the floor as a whole. A
   view rule, never a visibility rule: the server sends what it always did.
-- **Fog of war** (FS-SRA9J, ADR-0063): on a dungeon floor, how much of each **region** the player
-  is shown, by its **exploration state**: **unexplored** (never entered by a party member: black,
-  nothing in it drawn), **explored** (entered before: terrain dim, no monsters), **visible** (a
-  living party member stands in it now: drawn in full). Shared by the party, reset on reconnect and
+- **Fog of war** (FS-SRA9J, ADR-0063, ADR-0068): on a dungeon floor, how much of each **region**
+  the player is shown, by its **exploration state**: **unexplored** (never entered by a party
+  member: its ground and walls under a dense **veil**, nothing else in it drawn), **explored**
+  (entered before: terrain under a lighter veil, no monsters), **visible** (a living party member
+  stands in it now: drawn in full). Its edges are feathered and a change of state eases in. Shared by the party, reset on reconnect and
   on a floor change. Presentation only, never a visibility rule: the server sends what interest
   allows (ADR-0060). On a dungeon floor it takes the place of the indoor blackout.
 - **Minimap**: the top-right HUD map of a dungeon floor: explored regions, the party, and the

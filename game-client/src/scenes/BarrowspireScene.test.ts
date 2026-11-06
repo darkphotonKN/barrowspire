@@ -674,6 +674,13 @@ function floorState(
   };
 }
 
+/** A counter tween run to its end at once: the fog's fade (FS-SRA9J §C.13) as the state path sees it. */
+function finishAtOnce(config: { onUpdate?: (t: { getValue(): number }) => void; onComplete?: () => void }) {
+  config.onUpdate?.({ getValue: () => 1 });
+  config.onComplete?.();
+  return { stop: vi.fn() };
+}
+
 function sceneOnStage() {
   const scene = new BarrowspireScene();
   const run = scene as unknown as FloorRun;
@@ -705,8 +712,18 @@ function sceneOnStage() {
       collider: () => {},
     },
   };
-  run.tweens = { add: vi.fn(), killTweensOf: vi.fn() };
+  run.tweens = { add: vi.fn(), killTweensOf: vi.fn(), addCounter: vi.fn(finishAtOnce) };
   run.time = { delayedCall: vi.fn() };
+  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes
+  (run as unknown as { textures: unknown }).textures = {
+    createCanvas: (_key: string, w: number, h: number) => ({
+      getContext: () => ({ createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }) }),
+      putData: vi.fn(),
+      refresh: vi.fn(),
+      setFilter: vi.fn(),
+      destroy: vi.fn(),
+    }),
+  };
   // the HUD lays out in the logical view, which the viewport owns (FS-ZAJMH R2)
   viewport.set({ width: 800, height: 600, renderScale: 1 });
   run.cameras = {
@@ -6040,7 +6057,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(shownNow(run.switches.get("s1")!.sprite)).toBe(false);
     });
 
-    it("should hide the wall pieces near the view whose regions are all unexplored, and show those bordering the player's room", () => {
+    it("should draw every wall piece near the view, tinted as dense as the unexplored veil unless it borders the player's room (owner playtest 2026-11-06)", () => {
       const { stage, look } = stageIn(inRoom);
       const { x, y } = await_iso.worldToScreen(2560, 3080);
       look(x, y);
@@ -6055,10 +6072,14 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (grid.region(cx + dx, cy + dy) === ROOM) return true;
         return false;
       };
-      const shown = nearWalls.filter(shownNow);
-      expect(shown.length).toBeGreaterThan(0);
-      expect(shown.length).toBeLessThan(nearWalls.length);
-      for (const m of shown) expect(bordersRoom(m)).toBe(true);
+      expect(nearWalls.length).toBeGreaterThan(0);
+      expect(nearWalls.every(shownNow)).toBe(true);
+      // tinted now: its last tint call set the unexplored veil's, none cleared it since
+      const tinted = (m: Made) => m.calls.lastIndexOf("setTint") > m.calls.lastIndexOf("clearTint") && m.last["setTint"]?.[0] === FOG.unexplored.tint;
+      const plain = nearWalls.filter((m) => !tinted(m));
+      expect(plain.length).toBeGreaterThan(0);
+      expect(plain.length).toBeLessThan(nearWalls.length);
+      for (const m of plain) expect(bordersRoom(m)).toBe(true);
     });
 
     it("should light only the fixed lights in a visible region", () => {
@@ -6077,7 +6098,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     it("should draw the fog at the blackout's depth, redraw it only when a region's state changes, and take it down with the floor", () => {
       const { run, stage, handle } = stageIn(inRoom);
       const fog = run.dungeon!.fog!;
-      const layers = stage.made.filter((m) => m.kind === "graphics" && m.depth === FOG.depth && !m.destroyed);
+      const layers = stage.made.filter((m) => m.kind === "image" && m.depth === FOG.depth && !m.destroyed);
       expect(layers.length).toBeGreaterThan(0);
       const drawn = fog.redraws;
       for (let i = 0; i < 3; i++) handle(dungeonState(inRoom));

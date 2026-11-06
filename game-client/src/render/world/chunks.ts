@@ -107,6 +107,7 @@ export interface Toggle {
 export class ChunkVisibility {
   private readonly parts: Toggle[][];
   private near?: Set<number>;
+  private looked?: Rect;
 
   constructor(readonly grid: ChunkGrid) {
     this.parts = grid.rects.map(() => []);
@@ -125,11 +126,17 @@ export class ChunkVisibility {
     return this.near?.has(index) ?? true;
   }
 
+  /** The camera's view as last followed; none before the first {@link update}. */
+  get view(): Rect | undefined {
+    return this.looked;
+  }
+
   /**
    * Follows the camera's view: shows what stands in the chunks that came near, hides what stands in
    * those that left. True when any chunk came or left; a pan within the same chunks does nothing.
    */
   update(view: Rect): boolean {
+    this.looked = view;
     const next = new Set(this.grid.near(view));
     const before = this.near;
     if (before && before.size === next.size && [...next].every((i) => before.has(i))) return false;
@@ -146,5 +153,6 @@ export class ChunkVisibility {
   clear(): void {
     for (const parts of this.parts) parts.length = 0;
     this.near = undefined;
+    this.looked = undefined;
   }
 }
