@@ -178,7 +178,9 @@ import {
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
 import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule } from "@/render/world/dungeon";
+import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
+import { Fog } from "@/render/world/fog";
 import { planRoomDressing } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
@@ -396,15 +398,21 @@ interface LightRoom {
 
 /**
  * A dungeon floor as drawn (FS-KE075 §H.44–§H.47): its cells, what stands in each ground chunk,
- * and its fixed lights by chunk, of which only those near the camera are on the light-map.
+ * and its fixed lights by chunk, of which only those near the camera are on the light-map; and its
+ * fog of war (FS-SRA9J): what the party has explored, and the fog drawn over the rest.
  */
 interface DungeonFloor {
   floor: number;
   grid: RegionGrid;
   chunks: ChunkVisibility;
-  lights: (FixedLight<{ source: LightSource } & LightRoom> & { chunk: number })[];
+  /** Each with the region it lights (FS-SRA9J §C.12), 0 for none. */
+  lights: (FixedLight<{ source: LightSource } & LightRoom> & { chunk: number; region: number })[];
   /** The lights on the light-map now. */
   lit: Set<LightSource>;
+  /** The party's exploration of this floor, from nothing (FS-SRA9J §B.6). */
+  seen: Exploration;
+  /** The fog over it, once its walls stand. */
+  fog?: Fog;
 }
 
 /** Limited barrow palette for the wizard-player sprite (0x ints). */
@@ -3549,6 +3557,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // fixed light built this broadcast goes through the floor's budget, once (§C.6)
     if (floorMap) this.buildDressing(state);
     this.stampLights();
+    // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
+    this.explore(state);
 
     // Update projectiles from server (fireballs)
     this.updateProjectiles(state.projectiles || []);
@@ -3608,6 +3618,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.standFloor(map);
     this.buildDressing(state);
     this.stampLights();
+    this.explore(state);
     this.veilRelease?.();
   }
 
@@ -3634,12 +3645,14 @@ export class BarrowspireScene extends Phaser.Scene {
   private enterDungeon(map: FloorMap): void {
     if (!isDungeon(map) || this.dungeon?.floor === map.floor) return;
     const ground = new ChunkGrid(projectedBounds(map.width, map.height, GROUND_MARGIN), DUNGEON_CHUNK);
+    const grid = new RegionGrid(map);
     this.dungeon = {
       floor: map.floor,
-      grid: new RegionGrid(map),
+      grid,
       chunks: new ChunkVisibility(ground),
       lights: [],
       lit: new Set(),
+      seen: new Exploration(grid),
     };
   }
 
@@ -3657,8 +3670,15 @@ export class BarrowspireScene extends Phaser.Scene {
     this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
     const strips = stripWalls(walls, dungeon.grid.cell);
     const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
-    const stand = (part: { setVisible(visible: boolean): unknown }, at: Point) =>
-      dungeon.chunks.add(part, worldToScreen(at.x, at.y));
+    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
+    const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
+    const fog = new Fog(this, dungeon.grid, rule, dungeon.chunks, () => ({
+      back,
+      front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK,
+    }));
+    dungeon.fog = fog;
+    const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
+      dungeon.chunks.add(fog.gate(part, at), worldToScreen(at.x, at.y));
     if (baked) {
       this.occluders.add(baked.tall);
       for (const { sprite, at } of baked.standing) stand(sprite, at);
@@ -3684,6 +3704,32 @@ export class BarrowspireScene extends Phaser.Scene {
       const own = baked?.byWall.get(w.entity_id) ?? pieces.get(w.entity_id) ?? [];
       this.walls.set(w.entity_id, { pieces: own, entityId: w.entity_id });
     }
+    // every region unexplored until the party is placed in it, this same broadcast (§B.6)
+    fog.show((id) => dungeon.seen.state(id));
+  }
+
+  /**
+   * The party's exploration of a dungeon floor from this broadcast's living positions
+   * (FS-SRA9J §B), and, when a region's state changed, the fog and the floor's lights redrawn
+   * for it (§C.12, §C.13). Nothing before the floor's walls stand, nor on a floor of buildings.
+   */
+  private explore(state: ClientGameState): void {
+    const dungeon = this.dungeon;
+    if (!dungeon?.fog || !dungeon.seen.see(partyPositions(state))) return;
+    dungeon.fog.show((id) => dungeon.seen.state(id));
+    this.lightNearChunks();
+  }
+
+  /**
+   * Whether the fog hides a fixed object at world point `at` (FS-SRA9J §C.14): it stands in an
+   * unexplored region of a dungeon floor. Hidden, not only covered, since its markers and hover
+   * would stand over the fog.
+   */
+  private unexplored(at: Point): boolean {
+    const dungeon = this.dungeon;
+    if (!dungeon?.fog) return false;
+    const region = regionAt(dungeon.grid, at);
+    return region !== 0 && dungeon.seen.state(region) === "unexplored";
   }
 
   /**
@@ -3703,7 +3749,13 @@ export class BarrowspireScene extends Phaser.Scene {
   private lightNearChunks(): void {
     const dungeon = this.dungeon;
     if (!dungeon) return;
-    const near = nearLights(dungeon.lights, (chunk) => dungeon.chunks.shown(chunk));
+    // a light in a region that is not visible is off (FS-SRA9J §C.12); one in no region stays lit
+    const near = nearLights(
+      dungeon.lights,
+      (chunk) => dungeon.chunks.shown(chunk),
+      FIXED_LIGHT_CAP,
+      (l) => l.region === 0 || dungeon.seen.state(l.region) === "visible",
+    );
     const kept = new Set(near.map((l) => l.light.source));
     for (const source of dungeon.lit)
       if (!kept.has(source)) {
@@ -3792,6 +3844,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // with it (§H.45)
     this.builtFloor = undefined;
     this.dungeon?.chunks.clear();
+    // the fog goes with its floor; the next floor's exploration starts over (FS-SRA9J §B.6)
+    this.dungeon?.fog?.destroy();
     this.dungeon = undefined;
     this.floorWalls = [];
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
@@ -4238,7 +4292,9 @@ export class BarrowspireScene extends Phaser.Scene {
       const built = addDressing(this, this.art, [piece]);
       this.dressing.push(...built.sprites);
       // on a dungeon floor no room hides it: it is shown by its ground chunk instead (§H.45)
-      if (dungeon) for (const sprite of built.sprites) dungeon.chunks.add(sprite, worldToScreen(piece.at.x, piece.at.y));
+      if (dungeon)
+        for (const sprite of built.sprites)
+          dungeon.chunks.add(dungeon.fog?.gate(sprite, piece.at) ?? sprite, worldToScreen(piece.at.x, piece.at.y));
       else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
       this.occluders.add(built.tall);
       built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
@@ -4276,7 +4332,11 @@ export class BarrowspireScene extends Phaser.Scene {
     if (dungeon) {
       // a dungeon floor's every fixed light waits in its chunk; those near the camera are lit
       // within the cap (FS-KE075 §H.45)
-      for (const l of this.pendingLights) dungeon.lights.push({ ...l, chunk: dungeon.chunks.grid.indexAt(l.at) });
+      for (const l of this.pendingLights) {
+        // the region it lights: where it stands, or the nearest walkable cell to the wall it hangs on
+        const region = regionAt(dungeon.grid, l.light.at ?? screenToWorld(l.at.x, l.at.y));
+        dungeon.lights.push({ ...l, chunk: dungeon.chunks.grid.indexAt(l.at), region });
+      }
       this.pendingLights = [];
       this.lightNearChunks();
       return;
@@ -4502,7 +4562,8 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.stairs.placed(),
       ...this.dressingAt,
     ];
-    for (const { sprite, pos } of placed) sprite.setVisible(!hiddenAt(pos));
+    // in an unexplored region of a dungeon floor too (FS-SRA9J §C.14)
+    for (const { sprite, pos } of placed) sprite.setVisible(!hiddenAt(pos) && !this.unexplored(pos));
     for (const { bed, glow, trail } of this.trails.placed()) {
       // a trail is a line on the floor: hidden once neither end is in sight
       const shown = !hiddenAt(trail.from) || !hiddenAt(trail.to);
