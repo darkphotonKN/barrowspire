@@ -13,13 +13,15 @@ check finds something; a finding becomes a new issue or an escalation.
 
 ## Acceptance Criteria
 
-- [ ] Hub, `I` or `B`: the coin icon and your total gold sit under the bag grid, left-aligned with it, above the hint; it reads as part of the panel (vellum text, no amber).
+- [x] Hub, `I` or `B`: the coin icon and your total gold sit under the bag grid, left-aligned with it, above the hint; it reads as part of the panel (vellum text, no amber).
 - [ ] The total matches the marketplace page's wallet; hovering shows "Available X · Held in bids Y" and the numbers match what you have bid.
 - [ ] Stash chest (stash mode): the same line shows.
-- [ ] Take a letter with gold from the mailbox, then open the overlay: the new total shows at once.
+- [x] Take a letter with gold from the mailbox, then open the overlay: the new total shows at once.
 - [ ] In a run and in a field world, the line shows the same total.
 - [ ] With the gateway stopped (or wallet-service down), opening the overlay shows "—" and no toast.
 - [ ] Accept or reject the look at render scale 2 (fullscreen or Retina): the coin icon is crisp enough at its size.
+
+Checked 2026-11-06 on local main (Nick): the hub line shows, and a 1000-gold test letter (sent with the admin API) raised the total after Take. The rest is still open.
 
 ## Blocked By
 
