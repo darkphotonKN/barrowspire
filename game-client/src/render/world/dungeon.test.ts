@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { FloorRegion } from "@/types/gameState";
+import type { FloorRegion, WallState } from "@/types/gameState";
 import { FIXTURE, GOLDEN, fixtureFrom, format } from "../../../tools/fixtures/dungeon-fixture.mjs";
-import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule, type DungeonMap } from "./dungeon";
+import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule, wallRuns, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
+import { MASONRY_WALLS, planWalls, type WallAxis } from "./walls";
 
 /** The levelgen golden layout the fixture is cut from (game-server levelgen testdata). */
 interface GoldenLayout {
@@ -119,6 +120,134 @@ describe("a dungeon floor's thick walls (FS-KE075 §H.46)", () => {
       ["w", 4400, 1600, 80, 320],
       ["w", 4480, 1600, 80, 320],
     ]);
+  });
+});
+
+/**
+ * A hand-made floor's walls as the server sends them (levelgen merge.go `mergeCells`): its shell
+ * cells, each row split into runs, a run identical to one in the row above extending that rect.
+ */
+function serverWalls(grid: RegionGrid): WallState[] {
+  const shell = (cx: number, cy: number) =>
+    !grid.walkable(cx, cy) && grid.hasGround({ x: (cx + 0.5) * CELL, y: (cy + 0.5) * CELL });
+  const rects: { x: number; y: number; w: number; h: number }[] = [];
+  let open: typeof rects = [];
+  for (let cy = 0; cy <= grid.rows; cy++) {
+    const next: typeof rects = [];
+    for (let cx = 0; cy < grid.rows && cx < grid.cols; ) {
+      if (!shell(cx, cy)) {
+        cx++;
+        continue;
+      }
+      const x = cx;
+      while (cx < grid.cols && shell(cx, cy)) cx++;
+      const same = open.find((o) => o.x === x && o.w === cx - x);
+      if (same) {
+        same.h++;
+        next.push(same);
+      } else next.push({ x, y: cy, w: cx - x, h: 1 });
+    }
+    rects.push(...open.filter((o) => !next.includes(o)));
+    open = next;
+  }
+  return rects.map((r, i) => ({
+    entity_id: `w-${i}`,
+    position: { x: r.x * CELL, y: r.y * CELL },
+    width: r.w * CELL,
+    height: r.h * CELL,
+  }));
+}
+
+/** The axes of the pieces drawn over each cell, keyed `cx,cy`. */
+function drawnAxes(grid: RegionGrid, walls: readonly WallState[]): Map<string, Set<WallAxis>> {
+  const { pieces } = planWalls(wallRuns(walls, grid), 1, MASONRY_WALLS, wallRule(grid));
+  const axes = new Map<string, Set<WallAxis>>();
+  for (const p of pieces) {
+    const { cx, cy } = grid.cellOf(p.at);
+    const key = `${cx},${cy}`;
+    axes.set(key, (axes.get(key) ?? new Set()).add(p.axis));
+  }
+  return axes;
+}
+
+/** The cells of a floor's walls, `cx,cy`. */
+const wallCells = (walls: readonly WallState[]) =>
+  walls.flatMap((w) => {
+    const cells: string[] = [];
+    for (let cx = w.position.x / CELL; cx < (w.position.x + w.width) / CELL; cx++)
+      for (let cy = w.position.y / CELL; cy < (w.position.y + w.height) / CELL; cy++) cells.push(`${cx},${cy}`);
+    return cells;
+  });
+
+describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
+  it("cuts a room's side along world y as one run from corner to corner, as its side along x is", () => {
+    // a room 4×4 at (2, 2): the server merges its west and east sides into 1×4 rects that stop a
+    // cell short of the corners, which its north and south rows take whole
+    const grid = floor(10, 10, [room(1, 2, 2, 4, 4)]);
+    const { pieces, posts } = planWalls(wallRuns(serverWalls(grid), grid), 1, MASONRY_WALLS, wallRule(grid));
+    const along = (axis: WallAxis, fixed: "x" | "y", at: number, run: "x" | "y") =>
+      pieces
+        .filter((p) => p.axis === axis && p.at[fixed] === at)
+        .map((p) => p.at[run])
+        .sort((a, b) => a - b);
+    const tiles = (from: number, to: number) => Array.from({ length: (to - from) / 40 }, (_, k) => from + 20 + k * 40);
+    // the north side: cell 1 to cell 6, whole; the west and east sides the same, along y
+    expect(along("x", "y", 1.5 * CELL, "x")).toEqual(tiles(CELL, 7 * CELL));
+    expect(along("y", "x", 1.5 * CELL, "y")).toEqual(tiles(CELL, 7 * CELL));
+    expect(along("y", "x", 6.5 * CELL, "y")).toEqual(tiles(CELL, 7 * CELL));
+    // a post at each corner and nowhere along a side
+    expect(new Set(posts.map((p) => `${p.at.x / CELL - 0.5},${p.at.y / CELL - 0.5}`))).toEqual(
+      new Set(["1,1", "6,1", "1,6", "6,6"]),
+    );
+  });
+
+  describe("on the levelgen golden floor", () => {
+    const golden = new RegionGrid(fixture as DungeonMap);
+    const walls = (fixture as { walls: WallState[] }).walls;
+    const axes = drawnAxes(golden, walls);
+    const faces = (cx: number, cy: number) => ({
+      x: golden.walkable(cx, cy - 1) || golden.walkable(cx, cy + 1),
+      y: golden.walkable(cx - 1, cy) || golden.walkable(cx + 1, cy),
+    });
+
+    const cells = wallCells(walls);
+    const isWall = new Set(cells);
+
+    it.each([
+      ["west or east", "y"],
+      ["north or south", "x"],
+    ] as const)("draws every wall cell facing a region %s with a piece along %s", (_side, axis) => {
+      const missing = cells.filter((key) => {
+        const [cx, cy] = key.split(",").map(Number);
+        return faces(cx, cy)[axis] && !axes.get(key)?.has(axis);
+      });
+      expect(missing).toEqual([]);
+    });
+
+    it.each(["x", "y"] as const)(
+      "runs a piece along %s only on a cell with a wall beside it that way, or none on any side",
+      (axis) => {
+        const stray = cells.filter((key) => {
+          const [cx, cy] = key.split(",").map(Number);
+          const beside = (dx: number, dy: number) => isWall.has(`${cx + dx},${cy + dy}`);
+          const along = axis === "x" ? beside(-1, 0) || beside(1, 0) : beside(0, -1) || beside(0, 1);
+          const alone = !beside(-1, 0) && !beside(1, 0) && !beside(0, -1) && !beside(0, 1);
+          return axes.get(key)?.has(axis) && !along && !alone;
+        });
+        expect(stray).toEqual([]);
+      },
+    );
+
+    it("leaves no wall cell without a piece", () => {
+      expect(wallCells(walls).filter((key) => !axes.has(key))).toEqual([]);
+    });
+
+    it("draws the three-cell west wall of the room east of column 35 as one run along y", () => {
+      // rows 1–3 of column 35: the room's north-west corner, a lone 1×1 rect, and the end of the
+      // corridor's north wall, which the server merges into three rects
+      for (const cy of [1, 2, 3]) expect(axes.get(`35,${cy}`)?.has("y")).toBe(true);
+      expect(axes.get("35,2")?.has("x")).toBe(false);
+    });
   });
 });
 
