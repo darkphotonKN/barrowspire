@@ -61,6 +61,12 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		// FS-K2HKP R18: the spots kept for arrivals are kept clear too
 		delvers: append(inPlayPositions(roster), s.arrivalSlotPositions()...),
 	}
+	// a dungeon floor's monsters stand on walkable cells of its rooms, never
+	// the start room's (FS-KE075 §B R16; interim until §C's per-room
+	// population, I-KE075-7)
+	if s.dungeon != nil {
+		area.ground = s.dungeon.monsterGround()
+	}
 
 	for _, monster := range rollMonsters(s.spawnRand, level, floor) {
 		x, y, ok := area.place(s.spawnRand)
@@ -226,7 +232,9 @@ func inPlayPositions(roster []*ecs.Entity) []point {
 /**
 * mapKeepOut is every area of the floor a monster's body may not overlap: each
 * building's whole footprint (its walls, door and the floor they enclose), every
-* door, container, switch, escape door and the stairs.
+* door, container, switch, escape door and the stairs. A wall of no building, a
+* dungeon floor's shell, is kept out by its own rect: grouped under the nil
+* house, a dungeon's walls would cover its whole floor.
 **/
 func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 	var keepOut []PlaceArea
@@ -242,6 +250,10 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 		if wc, isWall := entity.GetComponent(ecs.ComponentTypeWall); isWall {
 			wall := wc.(*components.WallComponent)
 			area := PlaceArea{X: at.X, Y: at.Y, W: wall.Width, H: wall.Height}
+			if wall.HouseID == uuid.Nil {
+				keepOut = append(keepOut, area)
+				continue
+			}
 			if footprint, seen := buildings[wall.HouseID]; seen {
 				area = footprint.union(area)
 			}
@@ -302,15 +314,25 @@ type spawnArea struct {
 	keepOut       []PlaceArea
 	delvers       []point
 	placed        []point
+	// ground, on a dungeon floor, is the cells a monster is drawn from and
+	// must stand on; nil on a floor of buildings, drawn anywhere on the map
+	ground *cellGround
+}
+
+// candidate is a point to try: drawn from the ground's cells on a dungeon
+// floor, anywhere on the map, a body's radius in from its edge, otherwise.
+func (a *spawnArea) candidate(rng populationRand) (x, y float64) {
+	if a.ground != nil {
+		return a.ground.draw(rng)
+	}
+	r := constants.PlayerRadius
+	return r + rng.Float64()*(a.width-2*r), r + rng.Float64()*(a.height-2*r)
 }
 
 // place tries random positions until one is valid, a bounded number of times.
 func (a *spawnArea) place(rng populationRand) (x, y float64, ok bool) {
-	r := constants.PlayerRadius
-
 	for range MonsterPlacementAttempts {
-		x = r + rng.Float64()*(a.width-2*r)
-		y = r + rng.Float64()*(a.height-2*r)
+		x, y = a.candidate(rng)
 		if a.valid(x, y) {
 			return x, y, true
 		}
@@ -324,12 +346,10 @@ func (a *spawnArea) place(rng populationRand) (x, y float64, ok bool) {
 * farthest from its nearest delver among those that fit.
 **/
 func (a *spawnArea) placeFarthest(rng populationRand, fits func(x, y float64) bool) (x, y float64, ok bool) {
-	r := constants.PlayerRadius
 	best := -1.0
 
 	for range DemonPlacementSamples {
-		cx := r + rng.Float64()*(a.width-2*r)
-		cy := r + rng.Float64()*(a.height-2*r)
+		cx, cy := a.candidate(rng)
 		if !fits(cx, cy) {
 			continue
 		}
@@ -346,8 +366,12 @@ func (a *spawnArea) valid(x, y float64) bool {
 	return a.open(x, y) && a.nearestDelver(x, y) >= MonsterDelverExclusion
 }
 
-// open is ground a body may stand on: in no keep-out, on no placed monster.
+// open is ground a body may stand on: on the ground's cells on a dungeon
+// floor, in no keep-out, on no placed monster.
 func (a *spawnArea) open(x, y float64) bool {
+	if a.ground != nil && !a.ground.holds(x, y) {
+		return false
+	}
 	for _, area := range a.keepOut {
 		if area.overlapsBody(x, y, constants.PlayerRadius) {
 			return false

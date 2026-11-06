@@ -133,6 +133,7 @@ func TestSession_GameLoopAppliesMovement_Integration(t *testing.T) {
 	assert.Greater(t, end.Y, start.Y, "the delver should have moved down")
 	assert.LessOrEqual(t, end.X-start.X, maxStepX, "moved further right than the speed allows")
 	assert.LessOrEqual(t, end.Y-start.Y, maxStepY, "moved further down than the speed allows")
-	assert.LessOrEqual(t, end.X, gameconstants.MapWidth-gameconstants.PlayerRadius, "walked past the map's right edge")
-	assert.LessOrEqual(t, end.Y, gameconstants.MapHeight-gameconstants.PlayerRadius, "walked past the map's bottom edge")
+	bounds := RunBounds()
+	assert.LessOrEqual(t, end.X, bounds.Width-gameconstants.PlayerRadius, "walked past the map's right edge")
+	assert.LessOrEqual(t, end.Y, bounds.Height-gameconstants.PlayerRadius, "walked past the map's bottom edge")
 }

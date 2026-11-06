@@ -138,18 +138,21 @@ func TestSpawnedContainerKind_SackAtTheShare(t *testing.T) {
 }
 
 // runWithKindRand is a run built as the server builds one, its chest point's
-// sack-share draw taken from r.
+// sack-share draw taken from r, climbed to floor 2: a floor of buildings, whose
+// one chest point this rule is about (floor 1 is a dungeon, FS-KE075 §B R15).
 func runWithKindRand(t *testing.T, r lootRand) *Session {
 	t.Helper()
 	em := ecs.NewEntityManager()
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
 	s.containerKindRand = r
+	s.InitialSystems()
 	s.InitialMapObjects(nil)
+	require.NoError(t, s.regenerateFloor())
 	return s
 }
 
-// A run floor's one container is a sack on a share hit, else a chest, closed
-// and unopened either way. R3, D6.
+// A floor of buildings' one container is a sack on a share hit, else a chest,
+// closed and unopened either way. R3, D6.
 func TestBuildFloor_ChestPointHoldsASackAtTheShare(t *testing.T) {
 	tests := []struct {
 		name string

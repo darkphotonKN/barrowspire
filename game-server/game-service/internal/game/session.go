@@ -18,6 +18,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -33,6 +34,13 @@ type Session struct {
 	playerIDToEntitiesID     map[uuid.UUID]uuid.UUID
 	playerEntityIDToPlayerID map[uuid.UUID]uuid.UUID
 	mu                       sync.RWMutex
+	// buildMu is held by each tick of the loop and by the first floor's build,
+	// which runs on the server's goroutine while the loop already ticks: the
+	// two never overlap, and whatever the build writes without mu (the map
+	// size, the floor's cell size, every entity it places) is seen whole by
+	// the next tick. Taken before mu, never while holding it (FS-KE075 §B R11,
+	// R17).
+	buildMu sync.Mutex
 
 	stopChan  chan struct{}
 	isRunning bool
@@ -170,6 +178,15 @@ type Session struct {
 	// is left. Guarded by mu.
 	arrivalSlots []point
 
+	// dungeon is the current run floor's dungeon layout: nil on a floor of
+	// buildings and in every other world. Set by each floor build under mu and
+	// never written in place; the seat reads it under mu (FS-KE075 §B).
+	dungeon *dungeonFloor
+	// generateDungeon builds a dungeon floor's layout from its parameters and
+	// seed: levelgen.GenerateDungeon, injected so a test can make it fail
+	// (FS-KE075 §B R17).
+	generateDungeon dungeonGenerator
+
 	// players waiting to connect via handoff
 	// playerID - Player struct
 	playersPendingConnection map[uuid.UUID]*types.Player
@@ -247,18 +264,26 @@ func RunBounds() WorldBounds {
 	return WorldBounds{Type: types.WorldTypeRun, Width: width, Height: height}
 }
 
-// floorSize is a run floor's map size. Every floor is today's map until floor 1
-// is a dungeon (FS-KE075 §B Requirement 11).
+// floorSize is a run floor's map size: a dungeon floor's grid (5 760 x 3 840
+// on floor 1), today's map on a floor of buildings (FS-KE075 §B Requirement
+// 11). A dungeon floor that falls back to buildings is today's size instead
+// (§B R17); the build sets that, not this.
 func floorSize(depth int) (width, height float64) {
+	if params, isDungeon := dungeonParams(depth); isDungeon {
+		return float64(params.Cols) * params.CellSize, float64(params.Rows) * params.CellSize
+	}
 	return constants.MapWidth, constants.MapHeight
 }
 
 // setFloorSize makes the session's map the floor's. The tick hands it to the
 // MovementSystem; nothing else of the session holds a size of its own.
 //
-// An unchanged size is left alone: the first floor is built on the server's
-// goroutine while the loop already runs, and the build's own placement reads
-// the size without the lock, so a write that changes nothing is not made.
+// The first floor is built on the server's goroutine while the loop already
+// runs, and the build's own placement reads the size without the lock. That
+// is safe because the build holds buildMu, as every tick does: a fallback
+// floor's smaller size (FS-KE075 §B R17) is written, read by the build and
+// handed to the next tick without ever meeting a tick in flight. An unchanged
+// size is still left alone.
 func (s *Session) setFloorSize(width, height float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -339,6 +364,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		// the same goroutine-safe global source loot rolls with
 		spawnRand:         sharedLootRand{},
+		generateDungeon:   levelgen.GenerateDungeon,
 		chestRand:         sharedLootRand{},
 		containerKindRand: sharedLootRand{},
 
@@ -727,6 +753,10 @@ func (s *Session) manageGameLoop() {
 				return
 			}
 
+			// a run's first floor is built on the server's goroutine while this
+			// loop runs: the build and a tick hold this in turn, never together
+			s.buildMu.Lock()
+
 			// between ticks: a floor change lands before the tick reads the world
 			s.applyRequestedFloorChange()
 
@@ -736,6 +766,7 @@ func (s *Session) manageGameLoop() {
 
 			// broadcast state update to all players
 			err := s.broadcastFullState(entities)
+			s.buildMu.Unlock()
 			if err != nil {
 				slog.Error("Error broadcasting state", "error", err)
 				continue
@@ -1433,10 +1464,17 @@ func (s *Session) AddBuilding(bx, by, bw, bh, wallThickness, doorWidth float64) 
 // the whole party down together (gatherParty). A delver who joins a run whose
 // floor already stands keeps this point until the next climb regroups them
 // (a known gap). It stays inside the run's own map, not a hardcoded one, so a
-// world of any size places players inside itself.
+// world of any size places players inside itself; on a dungeon floor, mostly
+// rock, it is a walkable spot in the start room. Callers hold the world's lock.
 func (s *Session) spawnPoint() (x, y float64) {
 	if s.worldType == types.WorldTypeHub {
 		return constants.HubSpawnX, constants.HubSpawnY
+	}
+
+	// a dungeon floor is mostly rock: an arrival with no kept slot stands on
+	// the start room's walkable cells, as the party does (FS-KE075 §B R13, R16)
+	if s.dungeon != nil {
+		return s.dungeon.startSpot(sharedLootRand{})
 	}
 
 	return constants.PlayerRadius + rand.Float64()*(s.mapWidth-2*constants.PlayerRadius),
@@ -3176,15 +3214,21 @@ func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 	}
 
 	// FS-K2HKP R18: only the first floor waits on arrivals; by the next floor
-	// they are seated or their seat has lapsed
+	// they are seated or their seat has lapsed. Built here, on the server's
+	// goroutine, while the loop already runs: holding buildMu keeps every tick
+	// out until the floor stands (every later floor is built by the loop itself)
+	s.buildMu.Lock()
+	defer s.buildMu.Unlock()
 	s.buildFloor(firstFloor, expected)
 }
 
 /**
 * buildFloor is the floor build step: the one place a floor is made, for the
-* first floor and every one after it (FS-F6F88 §Requirements 8). It lays out the
-* run map, buildings, a chest, a locked escape door and the switch that unlocks
-* it, on empty ground, then populates it with monsters levelled to its depth.
+* first floor and every one after it (FS-F6F88 §Requirements 8). It chooses the
+* floor's generator by depth (FS-KE075 §B R10): floor 1 is a dungeon of rooms
+* and corridors (layDungeon), every other floor is today's map of buildings
+* (layBuildings). Either way it then sets the party down and populates the
+* floor with monsters levelled to its depth.
 *
 * depth is the floor being built. The roster must already be seated: once the
 * layout stands, the party is set down together at one spawn point, and only
@@ -3198,12 +3242,68 @@ func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	slog.Debug("Building floor", "sessionID", s.ID, "depth", depth)
 
-	// the map is the floor's own size, before anything is placed on it
-	s.setFloorSize(floorSize(depth))
-
 	// a floor is placed on empty ground: nothing from an earlier floor occupies it
 	s.objectOccupiedPlaceAreas = nil
 
+	// a dungeon floor's layout, or nil for a floor of buildings, a generation
+	// that failed included (FS-KE075 §B R17)
+	dungeon := s.generateDungeonFloor(depth)
+
+	// the map is the floor's own size, before anything is placed on it
+	s.setFloorLayout(depth, dungeon)
+
+	if dungeon != nil {
+		s.layDungeon(depth, dungeon)
+	} else {
+		s.layBuildings(depth)
+	}
+
+	// the party stands somewhere open before the monsters come, so they keep
+	// clear of it. FS-K2HKP R18: the formation also keeps a spot for each
+	// expected player still connecting
+	s.gatherParty(len(expected))
+
+	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
+	// expected included, not only who is seated now
+	s.populateMonsters(depth, depth == constants.RunFloorCount, expected)
+
+	// the floor's layout stands: its map is what anyone entering is sent
+	s.publishFloorMap(depth)
+}
+
+/**
+* setFloorLayout makes the session's floor the one about to be built: its size,
+* its dungeon layout (nil for a floor of buildings) and the run's cell size, all
+* from the same build, so the floor map's cell size and regions and the
+* snapshot's interest cut agree. The floor entity survives a floor change, so a
+* floor of buildings clears the cell size a dungeon floor set: left at 80, floor
+* 2 would be cut by distance (FS-KE075 §G R39).
+**/
+func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
+	width, height := constants.MapWidth, constants.MapHeight
+	cellSize := 0.0
+	if dungeon != nil {
+		width, height = dungeon.layout.Bounds.W, dungeon.layout.Bounds.H
+		cellSize = dungeon.layout.CellSize
+	}
+	s.setFloorSize(width, height)
+
+	s.mu.Lock()
+	s.dungeon = dungeon
+	s.mu.Unlock()
+
+	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
+		floor.CellSize = cellSize
+	}
+}
+
+/**
+* layBuildings lays out today's run floor (FS-F6F88 §5): a chest, three
+* buildings, a locked escape door and the switch that unlocks it on empty
+* ground, then stairs below the top floor. Floors 2–3 are built by it, and
+* floor 1 when its dungeon cannot be generated.
+**/
+func (s *Session) layBuildings(depth int) {
 	s.CreateContainer()
 
 	buildingConfigs := map[BuildingType]Building{
@@ -3250,18 +3350,6 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	if depth < constants.RunFloorCount {
 		s.CreateStairs()
 	}
-
-	// the party stands somewhere open before the monsters come, so they keep
-	// clear of it. FS-K2HKP R18: the formation also keeps a spot for each
-	// expected player still connecting
-	s.gatherParty(len(expected))
-
-	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
-	// expected included, not only who is seated now
-	s.populateMonsters(depth, depth == constants.RunFloorCount, expected)
-
-	// the floor's layout stands: its map is what anyone entering is sent
-	s.publishFloorMap(depth)
 }
 
 // centredArea is the area of half-width rw and half-height rh centred on (x, y).

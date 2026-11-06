@@ -99,7 +99,10 @@ func TestCreateStairs_PlacementExhausted_StillPlaces(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// floor 2: a floor of buildings, where the stairs are placed by the
+			// occupied-area scan (floor 1 is a dungeon, FS-KE075 §B R14)
 			s := newRun(t, &countingItemsClient{})
+			require.NoError(t, s.regenerateFloor())
 			for _, id := range entityIDsWith(s, ecs.ComponentTypeStairs) {
 				s.EntityManager.RemoveEntity(id)
 			}

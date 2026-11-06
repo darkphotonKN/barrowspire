@@ -13,9 +13,10 @@ import (
 /**
 * A run floor's static layout leaves the per-tick state and travels once per
 * floor as floor_map (FS-KE075 §F, ADR-0060 Decisions 1–2): its size and its
-* walls in today's WallState, house id included. A floor built on a cell grid
-* will add its cell size and regions; no floor has one yet, so neither key is
-* ever written here. Room roles never leave the server (ADR-0060 Decision 8).
+* walls. A floor of buildings sends its walls in today's WallState, house id
+* included, and no cell grid. A dungeon floor adds its cell size and regions,
+* and its walls carry no house id: they belong to no building (§F R31). Room
+* roles never leave the server (ADR-0060 Decision 8).
 **/
 
 // FloorMapMessage is the current run floor's floor_map, safe to read from any
@@ -39,10 +40,14 @@ func (s *Session) publishFloorMap(depth int) {
 		return
 	}
 	s.mu.RLock()
-	width, height := s.mapWidth, s.mapHeight
+	width, height, dungeon := s.mapWidth, s.mapHeight, s.dungeon
 	s.mu.RUnlock()
 
-	message := floorMapMessage(s.ID, depth, width, height, wallStatesOf(s.EntityManager.GetAllEntities()))
+	walls := wallStatesOf(s.EntityManager.GetAllEntities())
+	message := floorMapMessage(s.ID, depth, width, height, walls)
+	if dungeon != nil {
+		message = dungeonFloorMapMessage(s.ID, depth, dungeon, walls)
+	}
 	s.floorMap.Store(&message)
 }
 
@@ -78,6 +83,37 @@ func floorMapMessage(sessionID uuid.UUID, depth int, width, height float64, wall
 			"walls":      walls,
 		},
 	}
+}
+
+// dungeonFloorMapMessage is the floor_map for a dungeon floor: its size, cell
+// size and regions all from the one layout the floor was built from, and its
+// shell walls with no house id.
+func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, walls []*types.WallState) types.Message {
+	shell := make([]shellWall, len(walls))
+	for i, wall := range walls {
+		shell[i] = shellWall{EntityID: wall.EntityID, Position: wall.Position, Width: wall.Width, Height: wall.Height}
+	}
+	return types.Message{
+		Action: string(constants.ActionFloorMap),
+		Payload: map[string]interface{}{
+			"session_id": sessionID.String(),
+			"floor":      depth,
+			"width":      d.layout.Bounds.W,
+			"height":     d.layout.Bounds.H,
+			"cell_size":  d.layout.CellSize,
+			"regions":    d.layout.Regions,
+			"walls":      shell,
+		},
+	}
+}
+
+// shellWall is a dungeon floor's wall on the wire: WallState without the house
+// it never has, its position its top-left corner (FS-KE075 §F R31).
+type shellWall struct {
+	EntityID uuid.UUID       `json:"entity_id"`
+	Position *types.Position `json:"position"`
+	Width    float64         `json:"width"`
+	Height   float64         `json:"height"`
 }
 
 // wallStatesOf is every wall among entities as a snapshot used to carry it:

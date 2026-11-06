@@ -14,10 +14,19 @@ import (
 )
 
 // fullRun is a built floor at depth holding 2 delvers, 14 standard monsters and
-// a demon, the heaviest population a floor rolls. FS-77AB6 AC "benchmark". A
-// floor above the first is reached by the floor change itself, so its walls are
-// the ones a climb leaves standing (FS-KE075 §E: floors 2–3 move as today).
+// a demon, the heaviest population a floor of buildings rolls. FS-77AB6 AC
+// "benchmark". A floor above the first is reached by the floor change itself,
+// so its walls are the ones a climb leaves standing (FS-KE075 §E: floors 2–3
+// move as today). On floor 1, a dungeon, the monsters stand on its rooms'
+// walkable cells.
 func fullRun(b *testing.B, depth int) (*Session, []uuid.UUID, *ecs.Entity) {
+	b.Helper()
+	return populatedRun(b, depth, []string{"archer", "mage"}, MonsterCountMax, MonsterDelverExclusion)
+}
+
+// populatedRun is a built floor at depth holding a delver of each class, count
+// standard monsters at least clear of the delvers, and a demon.
+func populatedRun(b *testing.B, depth int, classes []string, count int, clear float64) (*Session, []uuid.UUID, *ecs.Entity) {
 	b.Helper()
 
 	em := ecs.NewEntityManager()
@@ -27,8 +36,9 @@ func fullRun(b *testing.B, depth int) (*Session, []uuid.UUID, *ecs.Entity) {
 	// nothing drains this in a benchmark; the delvers are kept alive anyway
 	s.endSessionCh = make(chan bool, 1)
 
-	delvers := []uuid.UUID{uuid.New(), uuid.New()}
-	for i, class := range []string{"archer", "mage"} {
+	delvers := make([]uuid.UUID, len(classes))
+	for i, class := range classes {
+		delvers[i] = uuid.New()
 		entity, _ := em.GetEntity(s.AddPlayer(delvers[i], types.CharacterInPlay{Name: "Delver", Class: class}, ""))
 		tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
 		at := tc.(*components.TransformComponent)
@@ -53,12 +63,22 @@ func fullRun(b *testing.B, depth int) (*Session, []uuid.UUID, *ecs.Entity) {
 		keepOut: mapKeepOut(entities),
 		delvers: inPlayPositions(delversOf(entities)),
 	}
-	for i := range MonsterCountMax {
+	if s.dungeon != nil {
+		area.ground = s.dungeon.monsterGround()
+	}
+	fits := func(x, y float64) bool { return area.open(x, y) && area.nearestDelver(x, y) >= clear }
+	for i := range count {
 		archetype := components.MonsterArchetypeGhoul
 		if i%3 == 0 {
 			archetype = components.MonsterArchetypeTroll
 		}
-		x, y, ok := area.place(s.spawnRand)
+		x, y, ok := 0.0, 0.0, false
+		for range MonsterPlacementAttempts {
+			if x, y = area.candidate(s.spawnRand); fits(x, y) {
+				ok = true
+				break
+			}
+		}
 		if !ok {
 			b.Fatalf("monster %d found no spawn point", i)
 		}
@@ -111,8 +131,35 @@ func BenchmarkRunTick_FullFloor2(b *testing.B) {
 	benchmarkRunTick(b, firstFloor+1)
 }
 
+// The FS-KE075 target on the generated floor 1: 4 delvers and 70 monsters, all
+// chasing (straight, until A* in I-KE075-8), with each delver's snapshot cut
+// by distance. A mean tick under 8 ms, a quarter of the 33 ms budget
+// (FS-KE075 AC "run tick bench").
+func BenchmarkRunTick_DungeonFloor1(b *testing.B) {
+	s, delvers, demon := populatedRun(b, firstFloor, []string{"archer", "mage", "warrior", "archer"}, 70, 0)
+	if s.dungeon == nil {
+		b.Fatal("floor 1 is not a dungeon")
+	}
+	hunt := func() {
+		for i, m := range monstersInWorld(s.EntityManager) {
+			monster := monsterOf(m)
+			if monster.Target == uuid.Nil {
+				monster.LastAttacker = s.playerIDToEntitiesID[delvers[i%len(delvers)]]
+			}
+		}
+	}
+	runTicks(b, s, delvers, demon, 71, hunt)
+}
+
 func benchmarkRunTick(b *testing.B, depth int) {
 	s, delvers, demon := fullRun(b, depth)
+	runTicks(b, s, delvers, demon, MonsterCountMax+1, func() {})
+}
+
+// runTicks times b.N full run ticks on s, everyone kept standing, the first two
+// delvers casting at the demon every eighth tick and each tick starting with
+// before.
+func runTicks(b *testing.B, s *Session, delvers []uuid.UUID, demon *ecs.Entity, monsters int, before func()) {
 	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
 	ctx := context.Background()
 	deltaTime := 1.0 / float64(constants.GameFrameRate)
@@ -120,8 +167,8 @@ func benchmarkRunTick(b *testing.B, depth int) {
 	dc, _ := demon.GetComponent(ecs.ComponentTypeTransform)
 	aim := dc.(*components.TransformComponent)
 
-	if got := len(monstersInWorld(s.EntityManager)); got != MonsterCountMax+1 {
-		b.Fatalf("the floor holds %d monsters, want %d", got, MonsterCountMax+1)
+	if got := len(monstersInWorld(s.EntityManager)); got != monsters {
+		b.Fatalf("the floor holds %d monsters, want %d", got, monsters)
 	}
 
 	var slowest time.Duration
@@ -131,6 +178,7 @@ func benchmarkRunTick(b *testing.B, depth int) {
 		start := time.Now()
 
 		keepStanding(s.EntityManager)
+		before()
 		if i%8 == 0 {
 			_ = s.handleCastSkill(delvers[0], "arrow", aim.X, aim.Y)
 			_ = s.handleCastSkill(delvers[1], "fireball", aim.X, aim.Y)

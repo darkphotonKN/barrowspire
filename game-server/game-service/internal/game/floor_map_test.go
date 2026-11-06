@@ -120,15 +120,14 @@ func TestFloorChange_DroppedClimbSendsNoMap(t *testing.T) {
 
 // A run floor's map is its size and its walls in today's shape, the house id
 // included; walls exactly what a snapshot used to carry. A floor with no cell
-// grid sends neither cell_size nor regions. FS-KE075 §F Requirements 31, 35.
+// grid sends neither cell_size nor regions. Floors 2–3 are floors of
+// buildings; floor 1 is a dungeon. FS-KE075 §F Requirements 31, 35.
 func TestFloorMapMessage_FloorsOfBuildingsCarrySizeAndWalls(t *testing.T) {
 	p := newParty(t, &countingItemsClient{})
 	s := p.s
 
-	for depth := 1; depth <= constants.RunFloorCount; depth++ {
-		if depth > 1 {
-			require.NoError(t, s.regenerateFloor())
-		}
+	for depth := 2; depth <= constants.RunFloorCount; depth++ {
+		require.NoError(t, s.regenerateFloor())
 		message, ok := s.FloorMapMessage()
 		require.True(t, ok, "floor %d has a map", depth)
 		assert.Equal(t, string(constants.ActionFloorMap), message.Action)
@@ -167,7 +166,7 @@ func TestFloorMapMessage_HandedOutMapOutlivesTheNextFloor(t *testing.T) {
 	s := p.s
 	first, ok := s.FloorMapMessage()
 	require.True(t, ok)
-	walls := append([]*types.WallState(nil), first.Payload["walls"].([]*types.WallState)...)
+	walls := append([]shellWall(nil), first.Payload["walls"].([]shellWall)...)
 
 	done := make(chan struct{})
 	go func() {
