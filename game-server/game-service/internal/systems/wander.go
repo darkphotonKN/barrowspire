@@ -62,7 +62,7 @@ func (s *WanderSystem) step(
 ) {
 	walk(deltaTime, &region.Wandering, residentPace, transform, velocity, func() (float64, float64) {
 		return region.X + rand.Float64()*region.W, region.Y + rand.Float64()*region.H
-	})
+	}, nil)
 }
 
 // pace is how long a walker stands on arrival and how long it may fail to close
@@ -76,6 +76,11 @@ var residentPace = pace{pause: constants.NPCPauseSeconds, stall: constants.NPCSt
 // walk steers a walker between random destinations that pick chooses: towards
 // the current one, standing a while on arrival, and abandoning one it has
 // stopped closing on. It only ever sets velocity's direction.
+//
+// via, when given, is the point to steer for on the way to the destination (a
+// monster's next point of its path on a dungeon floor, FS-KE075 §D R25):
+// closing on that point is what counts as progress. nil steers straight at the
+// destination.
 func walk(
 	deltaTime float64,
 	w *components.Wandering,
@@ -83,6 +88,7 @@ func walk(
 	transform *components.TransformComponent,
 	velocity *components.VelocityComponent,
 	pick func() (x, y float64),
+	via func(x, y float64) (float64, float64),
 ) {
 	if w.PauseRemaining > 0 {
 		w.PauseRemaining -= deltaTime
@@ -104,6 +110,17 @@ func walk(
 		w.PauseRemaining = p.pause
 		velocity.VX, velocity.VY = 0, 0
 		return
+	}
+
+	if via != nil {
+		sx, sy := via(w.DestinationX, w.DestinationY)
+		dx, dy = sx-transform.X, sy-transform.Y
+		distanceSq = dx*dx + dy*dy
+		if distanceSq == 0 {
+			// on the point it steers for: the next tick picks the one after
+			velocity.VX, velocity.VY = 0, 0
+			return
+		}
 	}
 
 	// Getting no closer means something is in the way — a wall, a building, a

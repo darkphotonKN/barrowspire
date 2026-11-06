@@ -336,7 +336,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerDamage:       playerDamage,
 		movementSystem:     movementSystem,
 		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
-		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64),
+		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64, nil),
 		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
 		skillSystem:        systems.NewSkillSystem(),
 		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
