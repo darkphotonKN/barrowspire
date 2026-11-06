@@ -1109,6 +1109,26 @@ describe("ChatWindow canvas channel picker (FS-J267Q, I-J267Q-1)", () => {
 // Phaser prevents the default on a canvas mousedown, so the browser never moves focus off the
 // text field by itself: the window lets go of it on any press outside the panel.
 
+// Leaving /game destroys the game: Phaser's GameObjectFactory (`scene.add`) has destroyed itself
+// before the scene lets its chat window go, and making a Text then throws. Closing the input as the
+// window goes redrew the picker, and with the channel list open that drew new Texts (asked 2026-11-06).
+describe("ChatWindow destroyed with its channel list open", () => {
+  it("should draw nothing more while it goes, so a game destroy's dead factory is never asked", () => {
+    const s = inputRig();
+    const picker = chatPickerRect(chatWindowFrame(X, BOTTOM));
+    const at = { x: picker.x + picker.width / 2, y: picker.y + picker.height / 2 };
+    s.input.emit("pointerdown", at);
+    s.input.emit("pointerup", at);
+    expect(s.field().focused, "the list is open, the input with it").toBe(true);
+    s.scene.add.text = () => {
+      throw new TypeError("Cannot read properties of null (reading 'add')");
+    };
+
+    expect(() => s.window.destroy()).not.toThrow();
+    expect(s.field().destroyed).toBe(true);
+  });
+});
+
 describe("ChatWindow letting go of the input on a press in the world", () => {
   it("should close the input, keep the draft and give the keyboard back on a press outside the panel", () => {
     const { press, field, keys, window, input } = inputRig();

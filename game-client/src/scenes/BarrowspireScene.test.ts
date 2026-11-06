@@ -62,6 +62,7 @@ const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeSc
 const { ProjectileFlights } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
+const { sceneSystems } = await import("./sceneEnd.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
@@ -218,6 +219,45 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     }
     expect(run.events.listenerCount("shutdown")).toBe(1);
     expect(run.events.listenerCount("destroy")).toBe(1);
+  });
+});
+
+// Leaving /game mid-run destroys the game: Phaser emits the scene's DESTROY only, after every plugin
+// has destroyed itself (sceneEnd.standin.ts). The run must still let go of what outlives the game,
+// and ask the dead plugins nothing: in the hub the same teardown threw on the input (asked 2026-11-06).
+describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should let the run go on a game destroy without asking the destroyed plugins anything", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as RunState & { tabKey?: object };
+    // the plugins boot before the scene's init runs, so they hear DESTROY first
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    run.tabKey = { keyCode: 9 };
+    run.player = {};
+    const off = vi.spyOn(socketManager, "off");
+
+    systems.destroy();
+
+    expect(systems.touched).toEqual([]);
+    expect(off).toHaveBeenCalledWith("end_game");
+    expect(run.player).toBeUndefined();
+  });
+
+  it("should still give the next run back the keyboard the run's end locked, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    systems.input.keyboard.enabled = false;
+
+    systems.shutdown();
+
+    expect(systems.input.keyboard.enabled).toBe(true);
   });
 });
 

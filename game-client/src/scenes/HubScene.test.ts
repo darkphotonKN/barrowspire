@@ -90,6 +90,7 @@ const { useAuthStore } = await import("@/stores/authStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
+const { sceneSystems } = await import("./sceneEnd.standin");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -3201,5 +3202,46 @@ describe("HubScene the town folk talk (FS-B0H2D R27–R29)", () => {
     choice("farewell")?.handlers.pointerup();
 
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// Leaving /game (the header's Trade link) destroys the game in the town: Phaser emits the scene's
+// DESTROY only, after every plugin has destroyed itself (sceneEnd.standin.ts), and release's
+// `this.input.setDefaultCursor("")` threw a TypeError on the input's nulled manager, which stopped
+// the rest of the game's destroy (asked 2026-11-06).
+describe("HubScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function hubToEnd() {
+    const queued = queuedHubOnStage();
+    const { hub } = queued;
+    const systems = sceneSystems({ add: hub.add, cameras: hub.cameras, time: hub.time, scene: hub.scene });
+    Object.assign(hub, systems.scene);
+    const release = (end: "shutdown" | "destroy") =>
+      (hub as unknown as { release(end: string): void }).release(end);
+    return { ...queued, systems, release };
+  }
+
+  it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
+    const { systems, release, off } = hubToEnd();
+    systems.destroy();
+
+    expect(() => release("destroy")).not.toThrow();
+    expect(systems.touched).toEqual([]);
+    // what lives past the game is still handed back
+    expect(off).toHaveBeenCalledWith("queue_status");
+    expect(off).toHaveBeenCalledWith("world_left");
+  });
+
+  it("should still hand the cursor back to the page on a stop", () => {
+    const { systems, release } = hubToEnd();
+    systems.input.manager!.defaultCursor = "pointer";
+    systems.shutdown();
+
+    release("shutdown");
+
+    expect(systems.input.manager?.defaultCursor).toBe("");
   });
 });

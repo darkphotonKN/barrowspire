@@ -64,6 +64,7 @@ const { AbilityHud } = await import("@/ui/AbilityHud");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
+const { sceneSystems } = await import("./sceneEnd.standin");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
@@ -920,6 +921,46 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
         "keydown-F",
       ]),
     );
+  });
+});
+
+// Leaving /game mid-field destroys the game: Phaser emits the scene's DESTROY only, after every
+// plugin has destroyed itself (sceneEnd.standin.ts). The field must still let go of what outlives
+// the game and ask the dead plugins nothing; on a stop it hands the cursor back (asked 2026-11-06).
+describe("FieldScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A field made by its create(), its scene events and input those of Phaser's stand-in. */
+  function createdField() {
+    const { field } = fieldToCreate<{ input: unknown; events: unknown }>();
+    // the plugins boot before the scene's create runs, so they hear DESTROY first
+    const systems = sceneSystems();
+    field.events = systems.scene.events;
+    field.create({ field: "gentle_meadows" });
+    field.input = systems.scene.input;
+    const off = vi.spyOn(socketManager, "off");
+    const offError = vi.spyOn(socketManager, "offError");
+    return { systems, off, offError };
+  }
+
+  it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
+    const { systems, off, offError } = createdField();
+
+    expect(() => systems.destroy()).not.toThrow();
+    expect(systems.touched).toEqual([]);
+    expect(off).toHaveBeenCalledWith(ActionType.Interact);
+    expect(offError).toHaveBeenCalledWith(ActionType.LeaveField);
+  });
+
+  it("should hand the cursor back to the page on a stop", () => {
+    const { systems } = createdField();
+    systems.input.manager!.defaultCursor = "url(hand) 0 0, default";
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.defaultCursor).toBe("");
   });
 });
 
