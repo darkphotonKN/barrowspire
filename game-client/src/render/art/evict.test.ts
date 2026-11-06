@@ -293,6 +293,24 @@ describe("downloads a stopped scene left in flight (FS-C4JWH Edge States: a worl
     expect(art.consoleErrors).toEqual([]);
   });
 
+  it("should keep a page whose download was in and still decoding from landing: its completion is taken away", () => {
+    const art = after(SCENE_ART.HubScene);
+    art.boot(
+      { preload: () => preloadArt(art.scene as unknown as Phaser.Scene, SCENE_ART.BarrowspireScene) },
+      undefined,
+      { hold: true },
+    );
+    art.decoding("art:boss-1");
+
+    art.stop();
+    const seen = enter(art, SCENE_ART.HubScene);
+    art.landStrays();
+
+    expect(art.textures.exists("art:boss-1")).toBe(false);
+    expect(seen.textures).toEqual(artKeys([...resident, ...pages("folk-0")]));
+    expect(art.consoleErrors).toEqual([]);
+  });
+
   it("should still let a finished scene's own downloads in", () => {
     const art = after(SCENE_ART.HubScene);
     const seen = enter(art, SCENE_ART.BarrowspireScene);

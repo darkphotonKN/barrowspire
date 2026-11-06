@@ -5095,3 +5095,43 @@ describe("BarrowspireScene messages while its art downloads (FS-C4JWH Edge State
     expect(endRun).toHaveBeenCalledTimes(1);
   });
 });
+
+// A run that ends while it still downloads: end_game, its settlement and the hub arrive before
+// create. The record will open once create hands the settlement over, so the hub waits behind it,
+// as it does when the run has loaded (FS-GV8WN R23; FS-C4JWH Edge States).
+describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edge States, FS-GV8WN R23)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function runBeforeCreate(sessionID: string) {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      resultHold: { hold(world: object, apply: (world: object) => void): boolean };
+    };
+    run.init({ sessionID });
+    return { run, send: (action: string, payload: unknown) => listeners.get(action)?.(payload) };
+  }
+
+  it("should hold the hub behind the record its own held settlement will open", () => {
+    const { run, send } = runBeforeCreate("run-a");
+    send("end_game", {});
+    send("settlement", { run_id: "run-a" });
+
+    expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(true);
+  });
+
+  it.each([
+    ["no settlement", []],
+    ["another run's settlement", [["settlement", { run_id: "run-b" }]]],
+  ] as const)("should let the hub in at once with %s held", (_case, more) => {
+    const { run, send } = runBeforeCreate("run-a");
+    send("end_game", {});
+    for (const [action, payload] of more) send(action, payload);
+
+    expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(false);
+  });
+});

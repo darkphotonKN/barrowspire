@@ -80,7 +80,7 @@ export function artLoaderStandin(opts: {
   type File = {
     type: "image" | "json";
     key: string;
-    xhrLoader: { aborted: boolean; abort(): void } | null;
+    xhrLoader: { aborted: boolean; done: boolean; abort(): void } | null;
     resetXHR(): void;
     onProcessComplete(): void;
     onProcessError(): void;
@@ -107,7 +107,8 @@ export function artLoaderStandin(opts: {
   };
   const add = (type: File["type"], key: string) => {
     if (exists(type, key)) return;
-    const xhr = { aborted: false, abort: () => void (xhr.aborted = true) };
+    // an XHR already done is past aborting: the image is decoding (ImageFile.onProcess)
+    const xhr = { aborted: false, done: false, abort: () => void (xhr.aborted = !xhr.done) };
     const file: File = {
       type,
       key,
@@ -200,11 +201,21 @@ export function artLoaderStandin(opts: {
     consoleErrors,
     /**
      * The downloads a stop left in flight arrive: each adds itself to its cache as Phaser's would,
-     * unless its XHR was aborted (no `onload` then) or its completion was taken away.
+     * unless its XHR was aborted in time (no `onload` then; one already done, {@link decoding}, is
+     * not) or its completion was taken away.
      */
     landStrays() {
       for (const file of strays.splice(0))
         if (!failing.has(file.key) && !file.xhrLoader?.aborted) file.onProcessComplete();
+    },
+    /**
+     * `key`'s download is in, and its image is decoding: `File.onLoad` has run (`resetXHR`, then
+     * `nextFile` → `onProcess`), so aborting its XHR changes nothing, and only its completion,
+     * `onProcessComplete`, is left to land it.
+     */
+    decoding(key: string) {
+      const file = list.find((f) => f.key === key);
+      if (file?.xhrLoader) file.xhrLoader.done = true;
     },
     /** What the scene drew, in order (`add.graphics`, `add.text`, `add.image`). */
     drawn: stage.drawn,

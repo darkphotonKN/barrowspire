@@ -30,6 +30,18 @@ describe("holdOneShots (FS-C4JWH Edge States: a world's messages while its art d
     expect(heard).toEqual(["b1", "a2", "b3"]);
   });
 
+  it("should say what it holds as it holds it, and not what it passes on after create", () => {
+    const io = socket();
+    const heldNow: unknown[] = [];
+    const held = holdOneShots({ events: new EventEmitter() }, io, ["a"], (action, payload) => heldNow.push([action, payload]));
+
+    io.send("a", 1);
+    held.replay({ a: () => undefined });
+    io.send("a", 2);
+
+    expect(heldNow).toEqual([["a", 1]]);
+  });
+
   it("should pass what comes after create straight on", () => {
     const io = socket();
     const held = holdOneShots({ events: new EventEmitter() }, io, ["a"]);
