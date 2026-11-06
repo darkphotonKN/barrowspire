@@ -19,6 +19,13 @@ export type DungeonMap = Pick<FloorMap, "width" | "height"> & {
   regions: readonly FloorRegion[];
 };
 
+/** Whether a floor map is a dungeon floor's: built on a cell grid, with its regions (§F.31). */
+export function isDungeon<M extends { cell_size?: number; regions?: readonly FloorRegion[] }>(
+  map: M,
+): map is M & DungeonMap {
+  return !!map.cell_size && (map.regions?.length ?? 0) > 0;
+}
+
 /** The floor's cells, each with the region it lies in (0: none, a shell or void cell). */
 export class RegionGrid {
   /** World px per cell side. */

@@ -65,6 +65,7 @@ import {
   TIMBER_WALLS,
   planWalls,
   trimCrop,
+  type PieceRule,
   type WallPiece,
   type WallSheets,
 } from "./walls";
@@ -370,15 +371,21 @@ export function addDressing(
 export interface BuiltWalls {
   /** Every piece and post, by the server wall it belongs to. */
   byWall: Map<string, Phaser.GameObjects.Sprite[]>;
+  /** Every piece and post with the world point it stands on (a dungeon floor's chunks, §H.45). */
+  standing: { sprite: Phaser.GameObjects.Sprite; at: Point }[];
   /** Full-height pieces: tall enough to hide a player standing behind them. */
   tall: Phaser.GameObjects.Sprite[];
-  /** Declared lights, with the wall they hang on; a back wall's stand under its house's roof. */
-  lights: { source: LightSource; wallId: string; underRoof: boolean }[];
+  /**
+   * Declared lights, with the wall they hang on and the world point of the piece that holds them;
+   * a back wall's stand under its house's roof.
+   */
+  lights: { source: LightSource; wallId: string; underRoof: boolean; at: Point }[];
 }
 
 /**
- * Server walls as baked pieces and corner posts, in timber unless other sheets are named. Null
- * without a manifest, or without those sheets: the scene draws its placeholder blocks instead.
+ * Server walls as baked pieces and corner posts, in timber unless other sheets are named, each by
+ * its house side or, given one, by a piece rule (a dungeon floor, FS-KE075 §H.46). Null without a
+ * manifest, or without those sheets: the scene draws its placeholder blocks instead.
  */
 export function addWalls(
   scene: Phaser.Scene,
@@ -386,21 +393,23 @@ export function addWalls(
   walls: readonly WallState[],
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
+  rule?: PieceRule,
 ): BuiltWalls | null {
   if (!art.available || !art.has(`${sheets.prefix}wall_back_plain_x`))
     return null;
-  const built: BuiltWalls = { byWall: new Map(), tall: [], lights: [] };
-  const keep = (wallId: string, sprite: Phaser.GameObjects.Sprite) => {
+  const built: BuiltWalls = { byWall: new Map(), standing: [], tall: [], lights: [] };
+  const keep = (wallId: string, sprite: Phaser.GameObjects.Sprite, at: Point) => {
     const list = built.byWall.get(wallId);
     if (list) list.push(sprite);
     else built.byWall.set(wallId, [sprite]);
+    built.standing.push({ sprite, at });
   };
-  const { pieces, posts } = planWalls(walls, seed, sheets);
+  const { pieces, posts } = planWalls(walls, seed, sheets, rule);
 
   for (const p of pieces) {
     const s = worldToScreen(p.at.x, p.at.y);
     const sprite = pieceSprite(scene, art, p);
-    keep(p.wallId, sprite);
+    keep(p.wallId, sprite, p.at);
     if (p.height === "back") built.tall.push(sprite);
     const light = lightOf(
       art,
@@ -413,13 +422,14 @@ export function addWalls(
         source: light,
         wallId: p.wallId,
         underRoof: p.height === "back",
+        at: p.at,
       });
   }
   for (const post of posts) {
     const s = worldToScreen(post.at.x, post.at.y);
     const sprite = artSprite(scene, art, s.x, s.y, post.sheet);
     sprite.setDepth(worldDepth(post.at.x, post.at.y, 1));
-    keep(post.wallId, sprite);
+    keep(post.wallId, sprite, post.at);
     if (post.height === "back") built.tall.push(sprite);
   }
   return built;

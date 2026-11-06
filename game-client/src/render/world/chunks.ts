@@ -22,6 +22,15 @@ import type { Point, Rect } from "@/render/iso/projection";
 /** The largest chunk side, screen px: a drawing context every WebGL GPU takes. */
 export const CHUNK_MAX = 2048;
 
+/**
+ * A dungeon floor's chunk side, screen px (FS-KE075 §H.45, derived here). What is near the camera
+ * is the view grown by one chunk, so a chunk must be small beside the floor: at 2048 a 5760 × 3840
+ * floor's ground is 4 × 2 chunks and the view's reach covers nearly all of it; at 1024 (8 × 4) it
+ * still covers half. At 512 (16 × 8) the reach of a 1280 × 720 view is 5 or 6 columns by 4 or 5
+ * rows, about a fifth of the floor. The ground's texture memory is the same however it is cut.
+ */
+export const DUNGEON_CHUNK = 512;
+
 /** A screen rect of ground cut into a grid of chunks, row by row from its top-left corner. */
 export class ChunkGrid {
   readonly cols: number;
