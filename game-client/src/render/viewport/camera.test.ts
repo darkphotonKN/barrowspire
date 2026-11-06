@@ -6,6 +6,7 @@ import {
   fitCamera,
   followWith,
   onGrid,
+  releaseStage,
   roundAtAnyZoom,
   roundsPixels,
   stagePoint,
@@ -575,5 +576,53 @@ describe("centreStage (FS-ZAJMH R11: a canvas menu, laid out 1080 wide, centred 
     centreStage(cam as ViewCamera);
     // backing px (200, 100) is logical (100, 50): 100 left of the stage's own left edge plus 100
     expect(stagePoint(cam, { x: 200, y: 100 }, v)).toEqual({ x: 0, y: 50 });
+  });
+});
+
+// A world scene shows the boot screen's torch bar on the stage while it downloads, then lets the
+// stage go before its create (FS-C4JWH §D R17): its camera must be the one it has today.
+describe("releaseStage (FS-C4JWH §D: the bar's stage does not survive into the world)", () => {
+  const WORLD = { x: -900, y: -100, width: 2400, height: 1600 };
+  const PLAYER = { x: 300, y: 260 };
+
+  /** A world's camera: fitted, bounded, following, then re-fitted to another width. */
+  function world(cam: ReturnType<typeof fakeCamera>, renderScale: number) {
+    boundCamera(cam as ViewCamera, WORLD);
+    const scrollAtCreate = [cam.scrollX, cam.scrollY];
+    followWith(cam as ViewCamera, PLAYER);
+    fitCamera(cam as ViewCamera, view(1280, renderScale));
+    cam.preRender();
+    return {
+      scrollAtCreate,
+      scroll: [cam.scrollX, cam.scrollY],
+      zoom: cam.zoomX,
+      bounds: cam.bounds,
+      follow: cam.follow,
+    };
+  }
+
+  it.each([1, 1.5, 2])("should leave the camera as a fresh one would be at render scale %s", (renderScale) => {
+    const fresh = fakeCamera();
+    fitCamera(fresh as ViewCamera, view(1152, renderScale));
+
+    const staged = fakeCamera();
+    fitCamera(staged as ViewCamera, view(1152, renderScale));
+    centreStage(staged as ViewCamera);
+    expect(staged.scrollX).toBe(-36);
+    releaseStage(staged as ViewCamera);
+
+    expect(world(staged, renderScale)).toEqual(world(fresh, renderScale));
+    expect(world(staged, renderScale).scrollAtCreate).toEqual([0, 0]);
+  });
+
+  it("should no longer centre a stage on a re-fit", () => {
+    const cam = fakeCamera();
+    fitCamera(cam as ViewCamera, view(1080, 2));
+    centreStage(cam as ViewCamera);
+    releaseStage(cam as ViewCamera);
+
+    fitCamera(cam as ViewCamera, view(1280, 2));
+
+    expect([cam.scrollX, cam.scrollY]).toEqual([0, 0]);
   });
 });

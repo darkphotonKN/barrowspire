@@ -3332,4 +3332,39 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
     expect(art.textures.removed.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
     expect(art.textures.exists(atlasTextureKey("folk-0"))).toBe(true);
   });
+
+  it("should show the torch bar while the folk download, gone before create (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+    let atCreate: boolean[] = [];
+
+    art.boot({ preload: () => hub.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
+      hold: true,
+    });
+    expect(art.drawn.filter((d) => d.kind === "text").map((d) => d.args[2])).toEqual([
+      "LIGHTING THE TORCH",
+      "THE SPIRE IS WAITING",
+    ]);
+    art.finish();
+
+    expect(atCreate.length).toBeGreaterThan(0);
+    expect(atCreate.every(Boolean)).toBe(true);
+  });
+
+  it("should show no bar when the folk are already loaded (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, "folk-0"].map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.drawn).toEqual([]);
+  });
 });

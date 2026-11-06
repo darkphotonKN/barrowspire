@@ -161,3 +161,90 @@ describe("eviction once the next scene has loaded (FS-C4JWH §C, ADR-0059)", () 
     expect(art.textures.removed).toEqual([]);
   });
 });
+
+describe("the loading bar on the same complete (FS-C4JWH §D R17)", () => {
+  /** A bar that says what happens to it, in `order`. */
+  function recordingBar(order: string[]) {
+    const progress: number[] = [];
+    let shown = 0;
+    return {
+      progress,
+      shown: () => shown,
+      bar: () => {
+        shown++;
+        order.push("bar shown");
+        return { progress: (v: number) => progress.push(v), destroy: () => order.push("bar destroyed") };
+      },
+    };
+  }
+
+  /** Enters a scene holding `groups` with a bar, recording bar, eviction and create in `order`. */
+  function enterWithBar(art: ReturnType<typeof artLoaderStandin>, groups: SceneGroups, hold = false) {
+    const order: string[] = [];
+    const bar = recordingBar(order);
+    const remove = art.textures.remove.bind(art.textures);
+    art.textures.remove = (key: string) => (order.push(`evicted ${key}`), remove(key));
+    art.boot(
+      {
+        preload: () => preloadArt(art.scene as unknown as Phaser.Scene, groups, { bar: bar.bar }),
+        create: () => order.push("create"),
+      },
+      undefined,
+      { hold },
+    );
+    return { order, bar };
+  }
+
+  it("should show the bar while the scene downloads, and take it down before eviction and create", () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+
+    const { order, bar } = enterWithBar(art, SCENE_ART.HubScene);
+
+    expect(order).toEqual([
+      "bar shown",
+      "bar destroyed",
+      "evicted art:boss-0",
+      "evicted art:boss-1",
+      "evicted art:creatures-0",
+      "evicted art:creatures-1",
+      "create",
+    ]);
+    expect(bar.progress.at(-1)).toBe(1);
+  });
+
+  it("should fill the bar from the loader's progress, file by file", () => {
+    const art = after(SCENE_ART.HubScene);
+
+    const { bar } = enterWithBar(art, SCENE_ART.BarrowspireScene);
+
+    expect(bar.progress).toEqual([0, 0.25, 0.5, 0.75, 1]);
+  });
+
+  it("should show no bar when the scene queued nothing", () => {
+    const art = after(SCENE_ART.HubScene);
+
+    const { order, bar } = enterWithBar(art, SCENE_ART.HubScene);
+
+    expect(bar.shown()).toBe(0);
+    expect(order).toEqual(["create"]);
+  });
+
+  it("should show the bar when only the manifest has to load", () => {
+    const art = artLoaderStandin({ manifest, textures: [...resident, ...pages("folk-0")] });
+
+    const { order } = enterWithBar(art, SCENE_ART.HubScene);
+
+    expect(order).toEqual(["bar shown", "bar destroyed", "create"]);
+  });
+
+  it("should leave the bar to the stopped scene's display list when the scene is stopped mid-load", () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+    const { order, bar } = enterWithBar(art, SCENE_ART.HubScene, true);
+
+    art.stop();
+    art.finish();
+
+    expect(order).toEqual(["bar shown"]);
+    expect(bar.progress).toEqual([0]);
+  });
+});

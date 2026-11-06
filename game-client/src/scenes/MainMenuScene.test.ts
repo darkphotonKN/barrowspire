@@ -252,4 +252,17 @@ describe("MainMenuScene art loading (FS-C4JWH §B R7)", () => {
 
     expect(art.queued).toEqual([]);
   });
+
+  it("should show no bar once the resident art is loaded (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const menu = Object.assign(new MainMenuScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => menu.preload() });
+
+    expect(art.drawn).toEqual([]);
+  });
 });

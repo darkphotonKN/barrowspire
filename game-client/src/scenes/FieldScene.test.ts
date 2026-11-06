@@ -1157,4 +1157,25 @@ describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
 
     expect(art.queued.sort()).toEqual(own.map(atlasTextureKey));
   });
+
+  it("should show the torch bar while its creatures download, and none once they are in (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const field = Object.assign(new FieldScene(), art.scene) as unknown as {
+      init(data?: { field?: string }): void;
+      preload(): void;
+    };
+
+    art.boot({ init: (d) => field.init(d as { field?: string }), preload: () => field.preload() }, { field: "forlorn_forest" });
+    const first = art.drawn.length;
+    expect(first).toBeGreaterThan(0);
+    expect(art.drawn.every((d) => d.destroyed)).toBe(true);
+
+    art.boot({ init: (d) => field.init(d as { field?: string }), preload: () => field.preload() }, { field: "forlorn_forest" });
+
+    expect(art.drawn.length).toBe(first);
+  });
 });

@@ -5035,4 +5035,22 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
     expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
   });
+
+  it("should show the torch bar while the creatures and the boss download, gone before create (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+    let atCreate: boolean[] = [];
+
+    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) });
+
+    expect(atCreate.length).toBeGreaterThan(0);
+    expect(atCreate.every(Boolean)).toBe(true);
+  });
 });

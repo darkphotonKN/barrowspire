@@ -130,24 +130,14 @@ export function artLoaderStandin(opts: {
     complete();
   };
 
+  const stage = drawingStage(textures);
   const scene = {
     load,
     textures,
     anims,
-    // registerArt's placeholder texture
-    add: {
-      graphics: () => {
-        const g = {
-          fillStyle: () => g,
-          fillRect: () => g,
-          lineStyle: () => g,
-          strokeRect: () => g,
-          generateTexture: (key: string) => textures.addImage(key),
-          destroy: () => undefined,
-        };
-        return g;
-      },
-    },
+    add: stage.add,
+    cameras: { main: stage.camera },
+    events: stage.events,
     cache: {
       json: {
         exists: (key: string) => json.has(key),
@@ -176,13 +166,105 @@ export function artLoaderStandin(opts: {
     },
     /** Completes a held load. */
     finish,
-    /** A scene stop mid-load (`LoaderPlugin.shutdown`). */
+    /** What the scene drew, in order (`add.graphics`, `add.text`, `add.image`). */
+    drawn: stage.drawn,
+    camera: stage.camera,
+    /**
+     * A scene stop mid-load: the loader resets and drops its listeners (`LoaderPlugin.shutdown`),
+     * the display list destroys every child (`DisplayList.shutdown`), then SHUTDOWN is heard.
+     */
     stop() {
       load.reset();
       loaderEvents.removeAllListeners();
+      for (const object of stage.drawn) object.destroy();
+      stage.events.emit("shutdown");
     },
   };
 }
+
+/** One object a scene drew, and every call made on it. */
+export interface Drawn {
+  kind: "graphics" | "text" | "image";
+  /** The arguments it was added with: its position, then its text or texture. */
+  args: unknown[];
+  calls: string[];
+  destroyed: boolean;
+  destroy(): void;
+}
+
+/**
+ * Test-only: the game-object factory, main camera and scene events of a scene, recording what is
+ * drawn. Every call on a drawn object is recorded and returns the object, as Phaser's chainable
+ * setters do; the camera does Phaser's arithmetic for size, zoom and scroll.
+ */
+export function drawingStage(textures: { addImage(key: string): void; exists(key: string): boolean }) {
+  const drawn: Drawn[] = [];
+  const make = (kind: Drawn["kind"], args: unknown[]) => {
+    const record: Drawn = {
+      kind,
+      args,
+      calls: [],
+      destroyed: false,
+      destroy: () => {
+        record.destroyed = true;
+      },
+    };
+    const object: unknown = new Proxy(record, {
+      get(target, key) {
+        if (key in target) return Reflect.get(target, key);
+        if (typeof key === "symbol" || key === "then") return undefined;
+        return (...callArgs: unknown[]) => {
+          target.calls.push(`${String(key)}(${callArgs.map(show).join(", ")})`);
+          // registerArt's placeholder becomes a texture
+          if (key === "generateTexture") textures.addImage(String(callArgs[0]));
+          return object;
+        };
+      },
+    });
+    drawn.push(record);
+    return object;
+  };
+  const camera = {
+    width: 1080,
+    height: 720,
+    zoomX: 1,
+    scrollX: 0,
+    scrollY: 0,
+    background: undefined as unknown,
+    get displayWidth() {
+      return this.width / this.zoomX;
+    },
+    get displayHeight() {
+      return this.height / this.zoomX;
+    },
+    setScroll(x: number, y: number) {
+      this.scrollX = x;
+      this.scrollY = y;
+      return this;
+    },
+    setBackgroundColor(color: unknown) {
+      this.background = color;
+      return this;
+    },
+  };
+  return {
+    drawn,
+    camera,
+    events: new EventEmitter(),
+    add: {
+      graphics: () => make("graphics", []),
+      text: (...args: unknown[]) => make("text", args),
+      image: (...args: unknown[]) => make("image", args),
+    },
+  };
+}
+
+const show = (value: unknown): string =>
+  typeof value === "number"
+    ? String(Math.round(value * 1000) / 1000)
+    : typeof value === "object" && value !== null
+      ? JSON.stringify(value)
+      : String(value);
 
 class TextureManagerStandIn {
   private readonly frames = new Map<string, Map<string, unknown>>();
@@ -198,6 +280,11 @@ class TextureManagerStandIn {
 
   addImage(key: string): void {
     this.frames.set(key, new Map());
+  }
+
+  /** The menu chrome's gradient canvases are not drawn here: no canvas, as Phaser without one. */
+  createCanvas(): null {
+    return null;
   }
 
   getTextureKeys(): string[] {
