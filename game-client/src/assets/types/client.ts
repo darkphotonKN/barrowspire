@@ -104,6 +104,8 @@ export interface ActionMap {
   start_solo: Record<string, never>;
   /** A player in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
   forfeit_run: Record<string, never>;
+  /** A run whose floor's map never came asking for it again (FS-KE075 §F.33): no payload. */
+  request_floor_map: Record<string, never>;
   /** A hub player walking into a field gate (FS-X2F2H req 9). */
   enter_field: { field: FieldId };
   /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
