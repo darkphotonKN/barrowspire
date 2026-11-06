@@ -246,6 +246,11 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   members and the floor's fixed interactables are always sent. Not anti-cheat (ADR-0060).
 - **Path** — the cell-by-cell route a monster follows on a dungeon floor (A*, ADR-0062). A
   monster's **repath** is its search for a new path.
+- **Guarded chest** — a dungeon floor's chest in a treasure room or a hall, which will not open
+  while any of its **guards** stands. Its guards are the monsters its room was populated with as
+  guards (a treasure room's elites, a hall's pack), fixed at the floor build, never the demon, a
+  corridor's monsters or a top-up. A guard **stands** while it is in the world with health above 0,
+  wherever it has chased to. Server-only: nothing marks it on the wire (FS-KE075 §J).
 
 ### Field combat (FS-X2F2H)
 
