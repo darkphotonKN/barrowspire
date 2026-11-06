@@ -23,6 +23,7 @@ import {
   cloakBones,
   coif,
   cowl,
+  faceLocks,
   hair,
   hairFall,
   hands,
@@ -195,39 +196,42 @@ export function archer() {
 export function wizard() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.92, { shoulderW: 0.87, torsoW: 0.88, torsoD: 0.92, hipW: 1.04, armR: 0.86, limbR: 0.88, headR: 0.059 });
+  const rig = createRig(1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 });
   rig.hooks = [];
   skirtBones(rig, { stiffness: 38, drag: 0.28 });
   const [, hy] = J(rig, "hips");
   const [, cy] = J(rig, "chest");
   const td = rig.p.torsoD;
-  const gown = { top: hy + 0.05, bottom: 0.016, rTop: [0.09, 0.072], rBottom: [0.155, 0.138] };
+  const gown = { top: hy - 0.005, bottom: 0.016, rTop: [0.108, 0.08], rBottom: [0.155, 0.138] };
   // the scapular's front and back panels
   const panels = [
     [Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
     [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5],
   ];
 
-  torso(rig, F.robe, { waist: 0.86 });
-  bust(rig, F.robe);
-  neck(rig, F.skin);
-  arms(rig, F.robe, { sleeve: (t) => 1 + 1.7 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
+  // her figure is drawn at the waist: the gown is cut to it and the skirt only opens from the hip
+  const waist = 0.76;
+  torso(rig, F.robe, { waist, neckW: 0.85 });
+  neck(rig, F.skin, { w: 0.85 });
+  arms(rig, F.robe, { sleeve: (t) => 1 + 1.35 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
   legs(rig, F.breeches, { under: gown });
   hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
-  head(rig, F.skin);
+  head(rig, F.skin, { jaw: 0.88 });
   hair(rig, F.raven, { long: true });
   standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
   skirt(rig, F.robe, { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
   for (const arc of panels) {
-    overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012 });
-    skirt(rig, F.scapular, { top: hy + 0.02, bottom: 0.05, rTop: [0.096, 0.08], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+    overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012, waist });
+    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
   }
+  bust(rig, F.scapular);
   hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });
+  faceLocks(rig, F.raven);
   // the scapular's clasps
   for (let i = 0; i < 3; i++)
     attach(rig, "chest", new THREE.BoxGeometry(0.018 * rig.H, 0.008 * rig.H, 0.008 * rig.H), M.brass, [0, cy + 0.07 - i * 0.045, 0.086 * td + 0.012 - i * 0.004]);
-  belt(rig, F.leatherDark, M.brass, { r: [0.094, 0.08], dy: 0.07, pouch: true });
+  belt(rig, F.leatherDark, M.brass, { r: [0.056, 0.064], dy: 0.07, pouch: true });
   const orbMat = M.arcane.clone();
   const base = orbMat.emissiveIntensity;
   inHand(rig, "R").add(sceptre(rig, M, F, orbMat));
