@@ -62,8 +62,6 @@ type Repository interface {
 	GetById(ctx context.Context, id uuid.UUID) (*models.Member, error)
 	GetMemberByEmail(ctx context.Context, email string) (*models.Member, error)
 	CreateDefaultMembers(ctx context.Context, members []CreateDefaultMember) error
-	UpdateAvatarURL(ctx context.Context, memberID uuid.UUID, avatarURL string) (*models.Member, error)
-	UpdateAvatarURLTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, avatarURL string) (*models.Member, error)
 	GetStripeCustomerID(ctx context.Context, memberID uuid.UUID) (string, error)
 	SetStripeCustomerID(ctx context.Context, memberID uuid.UUID, customerID string) error
 	UpdateSubscriptionStatus(ctx context.Context, memberID uuid.UUID, productID, status string) error
@@ -86,7 +84,7 @@ func memberToProto(m *models.Member) *pb.Member {
 		return nil
 	}
 
-	protoMember := &pb.Member{
+	return &pb.Member{
 		Id:            m.ID.String(),
 		Name:          m.Name,
 		Email:         m.Email,
@@ -97,13 +95,6 @@ func memberToProto(m *models.Member) *pb.Member {
 		Role:          m.Role,
 		EmailVerified: m.EmailVerifiedAt != nil,
 	}
-
-	// Include avatar_url if it exists
-	if m.AvatarURL != nil {
-		protoMember.AvatarUrl = *m.AvatarURL
-	}
-
-	return protoMember
 }
 
 func stringToInt(s string) int {
@@ -457,16 +448,6 @@ func (s *service) CreateDefaultMembers(members []CreateDefaultMember) error {
 	}
 
 	return s.Repo.CreateDefaultMembers(context.Background(), hashedPwMembers)
-}
-
-// UpdateAvatarURL updates the member's avatar URL
-func (s *service) UpdateAvatarURL(ctx context.Context, memberID uuid.UUID, avatarURL string) (*models.Member, error) {
-	return s.Repo.UpdateAvatarURL(ctx, memberID, avatarURL)
-}
-
-// UpdateAvatarURL updates the member's avatar URL
-func (s *service) UpdateAvatarURLTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, avatarURL string) (*models.Member, error) {
-	return s.Repo.UpdateAvatarURLTx(ctx, tx, memberID, avatarURL)
 }
 
 // SetStripeCustomerID saves a Stripe customer ID for the member

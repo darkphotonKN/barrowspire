@@ -1,16 +1,22 @@
 package config_test
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
+	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // The email migration is exercised against real Postgres, since a collision
@@ -156,4 +162,192 @@ func TestEmailVerificationMigration_CascadeAndDown(t *testing.T) {
 	require.NoError(t, tx.Get(&columns, `SELECT count(*) FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'members' AND column_name = 'email_verified_at'`))
 	assert.Zero(t, columns, "column dropped")
+}
+
+const (
+	dropAvatarUp   = "000014_drop_avatar_uploads.up.sql"
+	dropAvatarDown = "000014_drop_avatar_uploads.down.sql"
+)
+
+// replayMigrations points the session at a fresh schema and runs the real up
+// files through version, in order. public stays on the search_path for
+// uuid_generate_v4, which an already-installed extension keeps there. The
+// scratch schema comes first, so every object the files create or alter is its
+// own. The caller's transaction rolls all of it back.
+func replayMigrations(t *testing.T, exec sqlx.Execer, version int) {
+	t.Helper()
+	schema := "tvczq_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	_, err := exec.Exec(fmt.Sprintf(`CREATE SCHEMA %s; SET LOCAL search_path TO %s, public;`, schema, schema))
+	require.NoError(t, err)
+
+	files, err := filepath.Glob("../migrations/*.up.sql")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, file := range files {
+		var n int
+		_, err := fmt.Sscanf(filepath.Base(file), "%06d", &n)
+		require.NoError(t, err)
+		if n > version {
+			continue
+		}
+		_, err = exec.Exec(readMigration(t, filepath.Base(file)))
+		require.NoError(t, err, file)
+	}
+}
+
+// scratchAt is a rolled-back transaction holding the schema as it stood at version.
+func scratchAt(t *testing.T, db *sqlx.DB, version int) *sqlx.Tx {
+	t.Helper()
+	tx, err := db.Beginx()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	replayMigrations(t, tx, version)
+	return tx
+}
+
+// avatarShape lists everything 000014 removes, read from the catalog: the
+// members column and the table's columns, constraints, indexes and trigger.
+func avatarShape(t *testing.T, tx *sqlx.Tx) []string {
+	t.Helper()
+	var shape []string
+	require.NoError(t, tx.Select(&shape, `
+		SELECT 'column ' || table_name || '.' || column_name || ' ' || data_type
+		       || ' ' || coalesce(character_maximum_length::text, '-')
+		       || ' nullable=' || is_nullable || ' default=' || coalesce(column_default, '-')
+		  FROM information_schema.columns
+		 WHERE table_schema = current_schema()
+		   AND (table_name = 'avatar_uploads' OR (table_name = 'members' AND column_name = 'avatar_url'))
+		UNION ALL
+		SELECT 'constraint ' || conname || ' ' || pg_get_constraintdef(oid)
+		  FROM pg_constraint
+		 WHERE conrelid = to_regclass(current_schema() || '.avatar_uploads')
+		UNION ALL
+		SELECT 'index ' || indexdef
+		  FROM pg_indexes
+		 WHERE schemaname = current_schema() AND tablename = 'avatar_uploads'
+		UNION ALL
+		SELECT 'trigger ' || pg_get_triggerdef(oid)
+		  FROM pg_trigger
+		 WHERE tgrelid = to_regclass(current_schema() || '.avatar_uploads') AND NOT tgisinternal
+		ORDER BY 1`))
+	return shape
+}
+
+// seedSignedInMember inserts a member at 000014's shape who can sign in.
+func seedSignedInMember(t *testing.T, exec sqlx.Execer, email, password string) uuid.UUID {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	require.NoError(t, err)
+	id := uuid.New()
+	_, err = exec.Exec(`INSERT INTO members (id, name, email, password) VALUES ($1, 'Delver', $2, $3)`, id, email, string(hash))
+	require.NoError(t, err)
+	return id
+}
+
+// FS-TVCZQ §Requirements 19: the table and the column go, with their data, and
+// the member row stays.
+func TestDropAvatarMigration_Up_DropsTableAndColumn(t *testing.T) {
+	tx := scratchAt(t, migrationDB(t), 13)
+	id := uuid.New()
+	_, err := tx.Exec(`INSERT INTO members (id, name, email, password, avatar_url)
+		VALUES ($1, 'Delver', 'foo@example.com', 'hash', 'https://cdn.example.com/a.png')`, id)
+	require.NoError(t, err)
+	_, err = tx.Exec(`INSERT INTO avatar_uploads (member_id, s3_key) VALUES ($1, 'k')`, id)
+	require.NoError(t, err)
+	require.NotEmpty(t, avatarShape(t, tx))
+
+	_, err = tx.Exec(readMigration(t, dropAvatarUp))
+	require.NoError(t, err)
+
+	assert.Empty(t, avatarShape(t, tx), "no avatar column, table, index, constraint or trigger is left")
+	var email string
+	require.NoError(t, tx.Get(&email, `SELECT email FROM members WHERE id = $1`, id))
+	assert.Equal(t, "foo@example.com", email)
+}
+
+// FS-TVCZQ §Requirements 20: the down file restores the empty column and table
+// exactly as 000008 left them, and no URL comes back.
+func TestDropAvatarMigration_Down_RestoresTheShapeAfter000008(t *testing.T) {
+	tx := scratchAt(t, migrationDB(t), 13)
+	want := avatarShape(t, tx)
+	id := uuid.New()
+	_, err := tx.Exec(`INSERT INTO members (id, name, email, password, avatar_url)
+		VALUES ($1, 'Delver', 'foo@example.com', 'hash', 'https://cdn.example.com/a.png')`, id)
+	require.NoError(t, err)
+	_, err = tx.Exec(readMigration(t, dropAvatarUp))
+	require.NoError(t, err)
+
+	_, err = tx.Exec(readMigration(t, dropAvatarDown))
+	require.NoError(t, err)
+
+	assert.Equal(t, want, avatarShape(t, tx))
+	var url *string
+	require.NoError(t, tx.Get(&url, `SELECT avatar_url FROM members WHERE id = $1`, id))
+	assert.Nil(t, url, "no URL comes back")
+	var timestamptz int
+	require.NoError(t, tx.Get(&timestamptz, `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = 'avatar_uploads'
+		  AND data_type = 'timestamp with time zone'`))
+	assert.Equal(t, 3, timestamptz, "000008's TIMESTAMPTZ columns, not 000004's TIMESTAMP")
+
+	// The restored trigger still runs, and the up file applies again.
+	_, err = tx.Exec(`INSERT INTO avatar_uploads (member_id, s3_key) VALUES ($1, 'k')`, id)
+	require.NoError(t, err)
+	_, err = tx.Exec(`UPDATE avatar_uploads SET upload_status = 'failed'`)
+	require.NoError(t, err)
+	_, err = tx.Exec(readMigration(t, dropAvatarUp))
+	assert.NoError(t, err)
+}
+
+// FS-TVCZQ §Requirements 19: every SELECT * and RETURNING * scans a members row
+// that has no avatar_url.
+func TestMemberRepository_After000014_ScansTheRow(t *testing.T) {
+	db := migrationDB(t)
+	tx := scratchAt(t, db, 14)
+	id := seedSignedInMember(t, tx, "foo@example.com", "abcdefghij")
+	repo := member.NewRepository(db)
+	ctx := context.Background()
+
+	locked, err := repo.LockMemberTx(ctx, tx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "foo@example.com", locked.Email)
+
+	require.NoError(t, repo.SetAccountIDTx(ctx, tx, id, uuid.New()))
+
+	updated, err := repo.UpdateEmailTx(ctx, tx, id, "bar@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "bar@example.com", updated.Email)
+
+	verified, err := repo.MarkEmailVerifiedTx(ctx, tx, id, time.Now())
+	require.NoError(t, err)
+	assert.NotNil(t, verified.EmailVerifiedAt)
+}
+
+// FS-TVCZQ §Acceptance Criteria: member read and sign-in work after 000014.
+//
+// The service reads through *sqlx.DB rather than a transaction, so the pool is
+// held to one connection and BEGIN runs on it: nothing here ever commits, and a
+// crashed test loses the transaction with the connection.
+func TestMemberService_After000014_ReadsAndSignsIn(t *testing.T) {
+	db := migrationDB(t)
+	db.SetMaxOpenConns(1)
+	_, err := db.Exec(`BEGIN`)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = db.Exec(`ROLLBACK`) })
+	replayMigrations(t, db, 14)
+	t.Setenv("JWT_SECRET", "test-secret")
+
+	id := seedSignedInMember(t, db, "foo@example.com", "abcdefghij")
+	repo := member.NewRepository(db)
+	svc := member.NewService(db, repo, nil, nil, member.NewPasswordPolicy(""), nil, nil)
+	ctx := context.Background()
+
+	got, err := svc.GetMember(ctx, &pb.GetMemberRequest{Id: id.String()})
+	require.NoError(t, err)
+	assert.Equal(t, "foo@example.com", got.Email)
+
+	login, err := svc.LoginMember(ctx, &pb.LoginRequest{Email: "foo@example.com", Password: "abcdefghij"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, login.AccessToken)
+	assert.Equal(t, id.String(), login.MemberInfo.Id)
 }

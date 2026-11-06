@@ -13,7 +13,6 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/config"
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
-	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/upload"
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/auth"
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
@@ -70,16 +69,6 @@ func main() {
 	// --- database setup ---
 
 	db := config.InitDB()
-
-	// --- S3 setup ---
-	s3Config := config.LoadS3Config()
-	s3Client, err := config.InitS3Client(ctx, s3Config)
-	if err != nil {
-		log.Printf("Warning: S3 client initialization failed: %v", err)
-		log.Println("Avatar upload functionality will be disabled")
-		// Continue without S3 avatar uploads will not work but service runs
-		s3Client = nil
-	}
 
 	// --- grpc ---
 	// Recovery outermost so a panic below it still becomes a status rather than
@@ -177,26 +166,6 @@ func main() {
 		log.Fatalf("Failed to set up account.created consumer: %v", err)
 	}
 	accountConsumer.Listen()
-
-	// --- upload service setup ---
-	if s3Client != nil {
-		uploadRepo := upload.NewRepository(db)
-		logger := slog.Default()
-
-		uploadService := upload.NewService(
-			uploadRepo,
-			s3Client,
-			memberService,
-			s3Config.BucketName,
-			s3Config.CDNUrl,
-			logger,
-			publishCh,
-			db,
-		)
-
-		uploadHandler := upload.NewHandler(uploadService)
-		pb.RegisterUploadServiceServer(grpcServer, uploadHandler)
-	}
 
 	pb.RegisterAuthServiceServer(grpcServer, memberHandler)
 

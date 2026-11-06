@@ -177,45 +177,6 @@ func (r *repository) CreateDefaultMembers(ctx context.Context, members []CreateD
 	return nil
 }
 
-func (r *repository) UpdateAvatarURL(ctx context.Context, memberID uuid.UUID, avatarURL string) (*models.Member, error) {
-	var member models.Member
-
-	query := `UPDATE
-							members
-						SET avatar_url = $2
-						WHERE id = $1
-						RETURNING *`
-
-	err := r.DB.GetContext(ctx, &member, query, memberID, avatarURL)
-
-	if err != nil {
-		return nil, wrapDBErr("update avatar url", err)
-	}
-
-	return &member, nil
-}
-
-/**
-* Same as UpdateAvatarURL but in a transaction
-**/
-func (r *repository) UpdateAvatarURLTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID, avatarURL string) (*models.Member, error) {
-	var member models.Member
-
-	query := `UPDATE 
-							members 
-						SET avatar_url = $2 
-						WHERE id = $1
-						RETURNING *`
-
-	err := tx.GetContext(ctx, &member, query, memberID, avatarURL)
-
-	if err != nil {
-		return nil, wrapDBErr("update avatar url in tx", err)
-	}
-
-	return &member, nil
-}
-
 // SetAccountIDTx caches wallet's account id onto the member, inside a
 // transaction the CALLER owns — the same transaction that records the event as
 // processed, so a redelivery cannot write twice and a failure leaves neither.
