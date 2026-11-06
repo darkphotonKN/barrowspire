@@ -22,6 +22,18 @@ describe("ResultHold (FS-GV8WN R23; FS-QPDKN §Requirements 15–17)", () => {
     expect(apply).toHaveBeenCalledWith(hub);
   });
 
+  // a Leave that lets a held hub in has done its leaving: the switch it applies stops the run
+  it("should say whether its release let a held world in", () => {
+    const hold = new ResultHold();
+    hold.raise();
+    expect(hold.release()).toBe(false);
+
+    hold.raise();
+    hold.hold(hub, vi.fn());
+    expect(hold.release()).toBe(true);
+    expect(hold.release()).toBe(false);
+  });
+
   // R16: only the hub is held; a run (a handoff host's, say) is the caller's to apply now
   it("should not hold a run world while the record is up", () => {
     const hold = new ResultHold();

@@ -216,7 +216,10 @@ export class FieldScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadArt(this, fieldArt(this.field), { bar: () => drawTorchBar(this) });
+    preloadArt(this, fieldArt(this.field), {
+      bar: () => drawTorchBar(this),
+      fadeIn: true,
+    });
   }
 
   create(): void {

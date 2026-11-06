@@ -3484,6 +3484,49 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toHaveLength(1);
   });
 
+  // The held hub a Leave lets in is applied through switchWorld, whose stop is synchronous: the
+  // scene has stopped (resetRun) before the release returns, and the Leave must not then send
+  // leave_run from the hub or leave its pending flag on the stopped scene for the next run.
+  it("should send nothing and leave no Leave pending when the Leave's release stops the scene", () => {
+    const { run, held, sent } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.init();
+    run.showSettlement(settlement({ outcome: "died" }));
+    run.endRun();
+    held();
+    const stopped = vi.fn(() => run.events.emit("shutdown"));
+    run.resultHold.hold(hub, stopped);
+
+    // the menu's Leave, or the dead player's card
+    (run as unknown as { leaveTheBarrow(): void }).leaveTheBarrow();
+
+    expect(stopped).toHaveBeenCalledWith(hub);
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toEqual([]);
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
+  // a run still loading has not heard its end (end_game is held until create), so only the hub the
+  // release let in says the Leave is done
+  it("should send no leave_run when the Leave lets a held hub in before the run knows it ended", () => {
+    const { run, sent } = settlingOnStage();
+    run.init();
+    run.resultHold.raise();
+    run.resultHold.hold(hub, () => run.events.emit("shutdown"));
+
+    (run as unknown as { leaveTheBarrow(): void }).leaveTheBarrow();
+
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toEqual([]);
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
+  it("should start each run with no Leave pending, whatever the last one left", () => {
+    const { run } = settlingOnStage();
+    (run as unknown as { leavePending: boolean }).leavePending = true;
+
+    run.init();
+
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
   // R24: the record replaces the FS-QPDKN result card
   it("should put up no result card when the run ends", () => {
     const { run, shown, stage } = settlingOnStage();
@@ -5044,7 +5087,8 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
     expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
   });
 
-  it("should show the torch bar while the creatures and the boss download, gone before create (FS-C4JWH §D R17)", () => {
+  it("should show the torch bar over creatures and boss still downloading at 300 ms, gone before create, then fade the run in (FS-C4JWH §D R17, A1)", () => {
+    vi.useFakeTimers();
     const art = artLoaderStandin({
       manifest: shippedManifest(),
       cachedManifest: true,
@@ -5056,10 +5100,17 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
     }) as unknown as { preload(): void };
     let atCreate: boolean[] = [];
 
-    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) });
+    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
+      hold: true,
+    });
+    vi.advanceTimersByTime(300);
+    art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
 
     expect(atCreate.length).toBeGreaterThan(0);
     expect(atCreate.every(Boolean)).toBe(true);
+    expect(art.camera.fades.at(-2)).toBe("fadeIn(200, 18, 18, 18)");
   });
 });
 

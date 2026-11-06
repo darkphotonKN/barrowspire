@@ -3333,7 +3333,8 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
     expect(art.textures.exists(atlasTextureKey("folk-0"))).toBe(true);
   });
 
-  it("should show the torch bar while the folk download, gone before create (FS-C4JWH §D R17)", () => {
+  it("should show the torch bar over folk still downloading at 300 ms, gone before create, then fade the hub in (FS-C4JWH §D R17, A1)", () => {
+    vi.useFakeTimers();
     const art = artLoaderStandin({
       manifest: shippedManifest(),
       cachedManifest: true,
@@ -3345,14 +3346,45 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
     art.boot({ preload: () => hub.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
       hold: true,
     });
+    vi.advanceTimersByTime(299);
+    expect(art.drawn).toEqual([]);
+    vi.advanceTimersByTime(1);
     expect(art.drawn.filter((d) => d.kind === "text").map((d) => d.args[2])).toEqual([
       "LIGHTING THE TORCH",
       "THE SPIRE IS WAITING",
     ]);
     art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
 
     expect(atCreate.length).toBeGreaterThan(0);
     expect(atCreate.every(Boolean)).toBe(true);
+    expect(art.camera.fades.filter((f) => f.startsWith("fade"))).toEqual([
+      "fadeIn(150, 18, 18, 18)",
+      "fadeOut(150, 18, 18, 18)",
+      "fadeIn(200, 18, 18, 18)",
+    ]);
+  });
+
+  it("should show no bar over folk that come within 300 ms, and fade the hub in (FS-C4JWH A1.1, A1.4)", () => {
+    vi.useFakeTimers();
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+    const create = vi.fn();
+
+    art.boot({ preload: () => hub.preload(), create }, undefined, { hold: true });
+    vi.advanceTimersByTime(120);
+    art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
+
+    expect(art.drawn).toEqual([]);
+    expect(create).toHaveBeenCalledOnce();
+    expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
   });
 
   it("should show no bar when the folk are already loaded (FS-C4JWH §D R17)", () => {

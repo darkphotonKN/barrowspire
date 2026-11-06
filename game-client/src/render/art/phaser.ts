@@ -26,7 +26,9 @@ import {
   type ArtManifest,
 } from "./manifest";
 import { onSceneEnd } from "@/scenes/sceneEnd";
+import { palette } from "@/utils/canvasPalette";
 import { evictOutside } from "./evict";
+import { LOAD_PACE, paceLoad, type Curtain, type PaceClock } from "./loadPace";
 import { sceneAtlases, type SceneGroups } from "./sceneArt";
 
 export const MANIFEST_KEY = "art:manifest";
@@ -94,6 +96,11 @@ export interface ArtScene {
  * and the same order holds. A scene stopped mid-load drops this listener with its loader's
  * (`LoaderPlugin.shutdown`), and the next scene's load evicts instead.
  *
+ * Given a bar, a queued load is paced (FS-C4JWH A1, `loadPace.ts`): the bar shows only past the
+ * show delay and stays its minimum, and the scene manager's own `complete` listener is held back
+ * until the bar is down, so eviction still runs on the load's completion and `create` after the
+ * bar (`pacedEntry`). A world scene (`fadeIn`) fades in from black as its `create` runs.
+ *
  * The manifest may already be cached by another scene whose atlases are still in flight: a
  * refresh lands the player in the hub while the preload scene is still fetching. Phaser skips a
  * cached key without firing `filecomplete`, so the atlases are queued straight from the cache
@@ -138,39 +145,132 @@ export function preloadArt(
     queued++;
   }
 
-  // Shown only over a real download: a bar over a load that takes no time would only flash.
-  const bar = queued > 0 ? options.bar?.() : undefined;
-  const progress = (value: number) => bar?.progress(value);
-  if (bar) scene.load.on("progress", progress);
+  // Paced only over a real download: no bar unless it still runs 300 ms in, and a bar shown stays
+  // long enough to be read, `create` waiting for it (FS-C4JWH A1, `loadPace.ts`).
+  const pace =
+    queued > 0 && options.bar
+      ? pacedEntry(scene, options.bar, options.fadeIn ?? false, () =>
+          cancelEnd(),
+        )
+      : undefined;
+  if (pace) scene.load.on("progress", pace.progress);
 
   // A stop mid-load (a world switch) resets the loader, but Phaser 4.2.1 aborts nothing: each
   // download in flight still lands and adds itself to the texture manager (LoaderPlugin.reset clears
   // its Sets only; File.onLoad → nextFile → onProcess → fileProcessComplete → addToCache), after
   // the next scene has evicted, or as a second copy of a key the next scene queued. So its
-  // downloads are called off (FS-C4JWH Edge States). A game destroy frees everything instead.
+  // downloads are called off (FS-C4JWH Edge States). A game destroy frees everything instead. A
+  // stop behind the bar, after the load, cancels the pacing, and the scene's create never runs.
+  let complete = false;
   const cancelEnd =
     queued > 0
       ? onSceneEnd(scene, (end) => {
-          if (end === "shutdown") files.forEach(callOff);
+          if (end === "shutdown" && !complete) files.forEach(callOff);
+          pace?.end(end);
         })
       : () => undefined;
 
   /**
    * The eviction moment (ADR-0059 Decision 3): the scene's load has completed and its `create` has
-   * not run. In this order: the bar comes down, then the scene-scoped pages outside the scene's set
-   * go (FS-C4JWH §C R11, §D R17).
+   * not run. The scene-scoped pages outside the scene's set go now, under the bar if it is up
+   * (FS-C4JWH §C R11, A1.3); then the pacing enters the scene, at once or once the bar is down.
    */
   const loaded = () => {
+    complete = true;
     scene.load.off("addfile", collect);
-    cancelEnd();
-    if (bar) {
-      scene.load.off("progress", progress);
-      bar.destroy();
-    }
     const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
     if (result.ok) evictOutside(scene, result.manifest, groups);
+    if (pace) {
+      scene.load.off("progress", pace.progress);
+      pace.loaded();
+      return;
+    }
+    cancelEnd();
+    // nothing to pace: a world still fades in rather than cutting (A1.4)
+    if (options.fadeIn) cameraCurtain(scene).fadeIn(LOAD_PACE.worldFade);
   };
   scene.load.once("complete", loaded);
+}
+
+/** Phaser 4.2.1's `Phaser.Scenes.LOADING` (`scene/const.js`), kept here so this module stays type-only on Phaser. */
+const SCENE_LOADING = 3;
+
+/** The scene manager's own step from a completed load to `create` (Phaser 4.2.1 `SceneManager`). */
+interface SceneStarter {
+  loadComplete(loader: unknown): void;
+}
+
+/**
+ * Paces a scene's load (`loadPace.ts`) and holds its `create` until the pacing is done (FS-C4JWH
+ * A1.3). Phaser 4.2.1 `SceneManager.bootScene` calls `preload()`, then adds its own
+ * `loader.once(COMPLETE, this.loadComplete, this)`, then `loader.start()`, whose `START` is emitted
+ * before any file completes; taken off the loader on that `START`, the manager's `loadComplete`
+ * (→ `create`) runs when the pacing calls it, and the scene stays LOADING until then: a world
+ * switch stops it as any scene still loading, and its stop drops nothing of the manager's
+ * (`SceneManager.stop` takes the same listener off, a no-op now).
+ */
+function pacedEntry(
+  scene: Phaser.Scene,
+  bar: () => LoadingBar,
+  fadeIn: boolean,
+  entered: () => void,
+) {
+  const manager = scene.sys.game.scene as unknown as SceneStarter;
+  scene.load.once("start", () =>
+    scene.load.off("complete", manager.loadComplete, manager),
+  );
+  return paceLoad({
+    clock: sceneClock(scene),
+    curtain: cameraCurtain(scene),
+    bar,
+    fadeIn,
+    enter: () => {
+      entered();
+      // Only a scene still LOADING is entered: if the removal above ever misses (a Phaser upgrade
+      // attaching the listener another way), Phaser has already created it on the load's
+      // completion, and a second create would build the world twice.
+      if (scene.sys.settings.status === SCENE_LOADING)
+        manager.loadComplete(scene.load);
+    },
+  });
+}
+
+/**
+ * The scene's own clock, which steps while the scene is LOADING (`SceneManager.update` steps every
+ * scene from LOADING to RUNNING) and stops with the game loop in a hidden tab.
+ */
+function sceneClock(scene: Phaser.Scene): PaceClock {
+  return {
+    after: (ms, step) => {
+      const event = scene.time.delayedCall(ms, step);
+      return () => event.remove(false);
+    },
+  };
+}
+
+/** The canvas's soot, the game's background and the bar's ground: what a fade comes from and goes to. */
+const SOOT = palette.menu.ground;
+const SOOT_RGB = [
+  (SOOT >> 16) & 0xff,
+  (SOOT >> 8) & 0xff,
+  SOOT & 0xff,
+] as const;
+
+/**
+ * The main camera's own fade (FS-C4JWH A1.5): Phaser 4.2.1 fills the camera's rectangle over every
+ * object it drew (`renderNodes/Camera.js`, after the children), so the HUD is faded too, and
+ * neither zoom, origin nor scroll changes (ADR-0056). A finished fade-in is reset, or Phaser would
+ * keep drawing its spent fill each frame (`Fade.postRenderWebGL` returns `isComplete`).
+ */
+function cameraCurtain(scene: Phaser.Scene): Curtain {
+  return {
+    fadeIn: (ms) => {
+      const camera = scene.cameras.main;
+      camera.fadeIn(ms, ...SOOT_RGB);
+      camera.once("camerafadeincomplete", () => camera.fadeEffect.reset());
+    },
+    fadeOut: (ms) => void scene.cameras.main.fadeOut(ms, ...SOOT_RGB),
+  };
 }
 
 /** A Phaser 4.2.1 loader `File`, as far as calling its download off goes. */
@@ -203,11 +303,17 @@ export interface LoadingBar {
 
 export interface PreloadOptions {
   /**
-   * Shows a bar from `preload()` when anything was queued, filled by the loader's `progress`, and
-   * destroys it when the load completes, before eviction and `create` (FS-C4JWH §D R17). A scene
-   * stopped mid-load takes the bar down with its display list.
+   * The bar to show over a download still running {@link LOAD_PACE}`.showDelay` after `preload()`,
+   * filled by the loader's `progress`, kept at least `minVisible`, faded in and out; `create`
+   * waits until it is down (FS-C4JWH §D R17, A1). With a bar given, a queued load is paced; a
+   * scene stopped while paced takes the bar down with its display list.
    */
   bar?: () => LoadingBar;
+  /**
+   * A world scene: it fades in from black as its `create` runs, a bar shown or not (A1.4). A menu
+   * leaves it off, and fades in only after a bar.
+   */
+  fadeIn?: boolean;
   baseUrl?: string;
 }
 

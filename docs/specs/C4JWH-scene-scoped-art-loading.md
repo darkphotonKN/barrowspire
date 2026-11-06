@@ -1,6 +1,6 @@
 # FS-C4JWH: Art loaded per scene, and freed when the next scene does not use it
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Art loaded and freed per scene", "Loading bar on entering a world" → this FS · Related ADRs: [ADR-0059](../adr/0059-scene-scoped-atlas-groups-are-evicted-with-their-animations-once-the-next-scene-has-loaded.md) (resident and scene-scoped groups, eviction), [ADR-0058](../adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md) (2x sheets, the memory they cost), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art, "texture memory needs budgeting"), [ADR-0056](../adr/0056-every-scene-camera-runs-at-origin-0-with-zoom-equal-to-render-scale.md) (scene cameras) · Surface: game-client only (client art code and scenes; no bake, art, manifest or server change)
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Art loaded and freed per scene", "Loading bar on entering a world" → this FS (amended 2026-11-06, A1: the bar's show delay, minimum visible time and fades, and a world's fade-in) · Related ADRs: [ADR-0059](../adr/0059-scene-scoped-atlas-groups-are-evicted-with-their-animations-once-the-next-scene-has-loaded.md) (resident and scene-scoped groups, eviction), [ADR-0058](../adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md) (2x sheets, the memory they cost), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art, "texture memory needs budgeting"), [ADR-0056](../adr/0056-every-scene-camera-runs-at-origin-0-with-zoom-equal-to-render-scale.md) (scene cameras), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (every object rounded to the backing px; A1.5's fade leaves the camera as it is) · Surface: game-client only (client art code and scenes; no bake, art, manifest or server change)
 
 ## Summary
 
@@ -174,7 +174,11 @@ Phaser 4.2.1 source (`game-client/node_modules/phaser/src/`).
     (`centreStage`). When the load completes, the bar and everything drawn with it are destroyed,
     before eviction and before `create`. A scene that queued nothing shows no bar and goes straight
     in. (D6, charter default: the canvas is blank today while a world scene preloads, and a bar
-    over a load that takes no time would only flash.)
+    over a load that takes no time would only flash.) *(Amended 2026-11-06, A1, Nick: 「那你調整看看」.
+    The bar shows only over a load still running 300 ms in, stays at least 600 ms, fades in and out
+    over 150 ms, and is destroyed after eviction and before `create`, which waits for it; a world
+    fades in from black. Was: the bar shown from `preload()` whenever anything was queued, destroyed
+    on the load's completion before eviction, and a hard cut into the world.)*
 18. PreloadScene and the scenes draw the bar from one shared piece of code, and PreloadScene looks
     as it does today. (Derived here: "in PreloadScene's style" kept true by construction.)
 
@@ -221,6 +225,103 @@ measured):
 | forlorn_forest | ~240 MB | 240.0 MB | 473.1 MB |
 | run | ~375 MB | 376.6 MB | 473.1 MB |
 
+## Amendment 2026-11-06 (A1: the bar waits, stays, and fades; the world fades in)
+
+Asked by Nick after seeing slice 3 locally, and approved (「那你調整看看」); amends D6 and §D R17.
+Built as I-C4JWH-6.
+
+**Why.** On a world switch the torch bar showed for a few hundred ms: even locally the folk,
+wildlife and creature pages come back from the browser's HTTP cache, so an evicted page queued
+again is a download to Phaser but over almost at once. A bar that appears and is gone before it
+can be read looks like something flashing past, and the cut into the world after it is hard. The
+common answer is a show delay plus a minimum visible time:
+
+- Firefox's Acorn design system, "Loading indicators"
+  (https://acorn.firefox.com/latest/foundations/global-patterns/loading-indicators-SKyqf3Lj):
+  show an indicator only past about 200 ms, and keep it at least 400 ms once shown. (The page
+  renders client-side and could not be fetched as text on 2026-11-06; the figures are the ones
+  Nick's brief cites.)
+- Learning Equality's design system, "Loaders" (https://design-system.learningequality.org/loaders):
+  "Apply 300ms delay", because a loading state shown for a fast operation is more disruptive than
+  none, and once it appears keep it "at least 400ms", "to prevent a brief flash of loading state
+  causing a jarring visual experience" (fetched 2026-11-06).
+
+The numbers here sit at or past both: 300 ms before the bar, 600 ms at least once it shows.
+
+**A1 requirements.** They replace §D R17 where they differ; R18 stands.
+
+- **A1.1 (show delay).** A scene whose `preload()` queued anything, and that passes a bar, shows
+  the torch bar only if its load is still running 300 ms after `preload()` queued it. A load that
+  completes within 300 ms shows no bar at all. The bar, when it shows, starts filled to the
+  progress the load has made so far.
+- **A1.2 (minimum visible time).** The bar fades in over 150 ms. Once shown it stays at least
+  600 ms, counted from the start of its fade-in, and as long as the load runs; then it fades out
+  over 150 ms and is destroyed. The earliest a world comes in behind a bar is therefore 1050 ms
+  after its preload, and a load just past the delay costs about 750 ms more than its download.
+- **A1.3 (eviction stays where it is).** Eviction runs when the load completes, as §C R11 and
+  ADR-0059 Decision 3 say, under the bar if the bar is still up (it draws nothing of a
+  scene-scoped group: its textures are the menu chrome's canvases). The scene's `create` waits
+  until the bar has faded out and been destroyed; the scene stays LOADING until then, so a world
+  switch stops it as it stops any scene still loading (`switchWorld`), its one-shots stay held
+  (`holdOneShots`), and a run's held settlement keeps the hub behind the record (FS-GV8WN R23).
+  With no bar, `create` runs on the load's completion, as before. The pacing enters only a scene
+  still LOADING, so a hold that ever misses (Phaser attaching its listener another way) degrades to
+  creating on the load's completion, never twice. (Derived here: the alternative,
+  the bar outliving `create` drawn over the new world, needs an opaque layer of its own above every
+  HUD depth and a stage that ignores the world camera's bounds and follow, since the bar's soot is
+  the camera's background and its stage is a camera scroll; holding `create` keeps the bar and the
+  world camera as they are, and the world's one-shots and DOM panels appear with the world, not
+  over a bar.)
+- **A1.4 (the world fades in).** A world scene (hub, field, run) fades in from black over 200 ms
+  as its `create` runs: after the bar, or at once when no bar showed, a scene that queued nothing
+  included. A menu scene fades in only after a bar; with none it comes up at once, as today.
+  "Black" is the canvas's soot (`#121212`, the game's background and the bar's ground), so a fade
+  never dips darker than the canvas between scenes.
+- **A1.5 (the fade is the camera's own).** The fades are the main camera's fade effect
+  (`Camera.fadeIn` / `fadeOut`, Phaser 4.2.1 `cameras/2d/effects/Fade.js`), a fill of the camera's
+  rectangle drawn after every object the camera draws (`renderer/webgl/renderNodes/Camera.js`), so
+  it covers the HUD, which each scene draws on its one camera. It changes neither zoom, origin nor
+  scroll (ADR-0056, ADR-0057). A finished fade-in is reset (`fadeEffect.reset`), so no fill is
+  drawn after it. DOM panels over the canvas are not faded.
+- **A1.6 (input).** No fade blocks input. The world takes input from its `create`, while it fades
+  in; before `create`, while loading or behind the bar, there is no world to take it.
+- **A1.7 (one place).** The four durations (show delay 300, minimum visible 600, bar fade 150,
+  world fade 200) are named constants in one module, `src/render/art/loadPace.ts`.
+- **A1.8 (cancel).** A stop during the delay, the bar, either of its fades or the wait for
+  `create` cancels every pending step: nothing fires on the stopped scene, its `create` never runs,
+  and the bar goes with its display list. The pacing runs on the scene's clock, and its camera goes
+  with the scene (`CameraManager.shutdown`). On a game destroy the pacing asks the scene's plugins
+  nothing (`onSceneEnd`, "destroy").
+- **A1.9 (boot).** PreloadScene is unchanged: its bar shows from its first frame, filled by its
+  own load, and the menu comes after it as today.
+
+**A1 acceptance criteria.**
+
+- [x] A load that completes within 300 ms shows no bar; the world scene fades in over 200 ms.
+- [x] A load still running at 300 ms shows the bar, fading in over 150 ms, filled to the progress so far.
+- [x] A bar shown stays at least 600 ms, longer while the load runs, then fades out over 150 ms; create runs only after it is destroyed, then the world fades in over 200 ms.
+- [x] Eviction runs on the load's completion, before the bar's fade-out and before create.
+- [x] A world scene that queued nothing fades in; a menu that queued nothing does not.
+- [x] A stop during the delay, the bar, its fade-out or the wait for create leaves no pending step, and create never runs; a game destroy asks the plugins nothing.
+- [x] The durations are named constants in `loadPace.ts`.
+- [x] PreloadScene unchanged.
+- [x] In a headless browser: a cached switch shows no bar and fades; a download held about 1.5 s shows the bar at least 600 ms, then fades; a switch mid-delay or mid-bar leaves no error and the hub at exactly its set.
+
+**A1 edge states.**
+
+- **Re-entering from the browser's HTTP cache**: usually no bar; the world fades in.
+- **A load that ends just past 300 ms**: the bar shows and stays its 600 ms; accepted, it is the
+  flash this amendment removes.
+- **The run ends while the bar is up**: as "A run that ends while it still downloads": the record
+  opens when the run's create runs, up to about 750 ms later than before.
+- **The game state while the bar is up**: the player is in the world on the server, as during the
+  download before; the bar adds at most about 750 ms to that.
+- **A hidden tab**: Phaser's loop stops, and the pacing waits on the scene's clock with it; the
+  download goes on.
+- **A failed download**: the load still completes; the same pacing, then placeholders (§E R19).
+- **A switch while the world fades in**: the scene is RUNNING and stops as any running scene; its
+  camera and the fade go with it.
+
 ## User Stories
 
 1. As a player on a modest machine, I want the game to hold only the art the scene I am in draws, so that it loads and runs where 473 MB of textures would not fit.
@@ -249,7 +350,7 @@ measured):
 - [ ] After boot, on the main menu, the atlas textures are exactly the resident groups' pages; no scene-scoped page is a texture.
 - [ ] On entering each scene in the table, the atlas textures are exactly the resident pages plus that scene's groups' pages, once its preload has completed and before its create builds anything.
 - [ ] Each evicted page's animations are gone from the animation manager, and its texture from the texture manager.
-- [ ] Re-entering a scene whose groups are loaded queues nothing and shows no bar; entering one that queues anything shows the torch bar, gone before create.
+- [ ] Re-entering a scene whose groups are loaded queues nothing and shows no bar; entering one that queues anything shows the torch bar, gone before create. *(Amended by A1: only over a load still running at 300 ms; see the A1 acceptance criteria.)*
 - [ ] PreloadScene's boot screen looks as it does today.
 - [ ] The field reads its id before preload; gentle_meadows loads wildlife, forlorn_forest fodder, an unknown field wildlife.
 - [ ] The run loads creatures and boss at entry; a climb loads nothing.
@@ -270,7 +371,7 @@ measured):
 - **A run that ends while it still downloads** (added in review fix round 2): the run's end sends `end_game`, this player's `settlement` and the hub together. Its own settlement, held before create, raises the result hold at once, so the hub waits behind the record exactly as when the run has loaded (FS-GV8WN R23): the run finishes its download, create hands the settlement over, the record opens, and closing it lets the hub in. A Leave while it still loads lets the hub in at once, and the switch stops the loading run. Another run's settlement holds nothing.
 - **A failed folk download and the NPC bust**: the bust's figure cache keeps only a figure it read; a frame missing once is read again on the next visit.
 - **The memory peak at a transition**: eviction waits for the new scene's load, so while it downloads the GPU holds the old scene's groups and the new one's (run → hub about 400 MB while folk loads). Still under today's constant 473 MB. Accepted (ADR-0059 Consequences).
-- **Re-entering from the browser's HTTP cache**: an evicted page queued again is a download to Phaser, so the bar shows, briefly when the browser has the PNG cached.
+- **Re-entering from the browser's HTTP cache**: an evicted page queued again is a download to Phaser, so the bar shows, briefly when the browser has the PNG cached. *(Amended by A1: no bar unless the load runs past 300 ms; the world fades in.)*
 - **The bar's steps**: `progress` counts files, so the bar moves page by page (the run's four pages: quarters). Accepted: it is the boot bar's behaviour.
 - **The manifest failed at boot**: a scene queues it again (as today), so its bar shows; if it fails again, the scene draws placeholders and warns, as today.
 - **An archetype the client has no look for**: drawn as the troll (`FALLBACK_LOOK`); in a run the troll is loaded; in a field it draws the placeholder with one warning (§E R20).
@@ -343,6 +444,39 @@ boss held back 12 s and Fall sent while the run sat LOADING, both ways out:
   both boss requests aborted (`net::ERR_ABORTED`); the hub at exactly its set.
 
 Neither run logged a page error, a console error (the favicon 404 aside) or an `art:` warning.
+
+**After Amendment A1** (I-C4JWH-6, 2d017420; headless Chrome through playwright-core,
+`--disable-web-security`, 1280 × 845, device pixel ratio 1, our own `next dev` on port 4016 against
+the local stack, account `phaser4-trial@example.test`). Each entry's timeline was read from the
+page: the loader's start, the torch bar's line drawn and destroyed, each camera fade, `create`, and
+each scene's shutdown, in ms from the stop of the scene before. Script: `c4jwh-pace/pace.cjs` in
+the session scratchpad.
+
+- **A cached or local switch** (menu → hub, hub → gentle_meadows, and gentle_meadows → hub twice,
+  folk-0 again from the browser's cache): each load done 41–51 ms after it started; no bar; the
+  scene's `fadeIn(200)` in the soot (18, 18, 18) and `create` on the load's completion; the fade
+  reset about 200 ms later.
+- **A download held 1.5 s** (`page.route` on `wildlife-*.png`, hub → gentle_meadows): the bar drawn
+  312 ms after the load started (the scene's clock runs on Phaser's smoothed frame delta, so
+  280–317 ms across the runs), faded in over 150 ms; the pages in at about 1560 ms, the fade-out
+  begun at once (the bar up about 1250 ms), the bar destroyed 116–150 ms later, then `create` and
+  `fadeIn(200)` in the same moment. The wildlife drew from the first frame.
+- **A switch mid-delay**: the run's boss held 12 s, Fall sent 6 ms into the run's load, Leave the
+  moment the hub was held: the run stopped 74 ms into its load and drew no bar at all.
+- **A switch mid-bar**: the same, Fall sent 1.2 s in, with the bar up since about 300 ms: the bar
+  went with the run's display list as the run stopped.
+- After both: the run SHUTDOWN, its clock empty (no event active or pending), both boss requests
+  aborted (`net::ERR_ABORTED`) and no `art:boss` texture after they were let go; the hub queued
+  nothing (folk-0 still a texture), faded in, and held exactly the 17 resident pages and folk-0
+  (223.3 MB). No page error, no console error, no `art:` warning in any run.
+- Found on the way, and fixed in review fix round 1 (825ac405): `leaveTheBarrow` released the
+  result hold, whose held hub goes through `switchWorld` and stops the run synchronously
+  (`resetRun`: `runEnded` and `leavePending` false), then read `runEnded` and set `leavePending`
+  on the stopped scene. A player reached it: a run that ended with the record open and the hub
+  held, then Leave (the row's or the menu's), sent `leave_run` from the hub, and the next run's
+  Leave stayed dimmed until that run stopped. The first note here said no player could reach it;
+  that was wrong. Now `ResultHold.release` says whether it let a world in, a Leave that did is
+  done, and each run starts with no Leave pending.
 
 ## Out of Scope
 

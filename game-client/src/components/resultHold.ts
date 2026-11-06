@@ -36,11 +36,16 @@ export class ResultHold {
     return true;
   }
 
-  /** The record went down (closed, or Leave pressed): applies the held world, if one has arrived. */
-  release(): void {
+  /**
+   * The record went down (closed, or Leave pressed): applies the held world, if one has arrived,
+   * and says whether one did. Applying it may stop the caller's scene before this returns (the
+   * world switch stops scenes synchronously).
+   */
+  release(): boolean {
     const held = this.held;
     this.clear();
     held?.apply(held.world);
+    return held !== undefined;
   }
 
   /** The record is gone without being closed (the scene stopped): forget it all. */
