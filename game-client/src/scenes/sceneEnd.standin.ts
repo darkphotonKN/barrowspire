@@ -120,8 +120,14 @@ class InputStandIn extends EventEmitter {
     return this;
   }
 
+  /**
+   * InputPlugin.shutdown: it emits its plugins' SHUTDOWN, and KeyboardPlugin.shutdown destroys the
+   * scene's keys (`removeAllKeys(true)`, the captures kept: they are the game's) and drops its
+   * listeners, all before the scene's own SHUTDOWN handler runs.
+   */
   private shutdown(): void {
     this.state = "shut down";
+    this.keyboard.shutdown();
     this.removeAllListeners();
   }
 
@@ -133,32 +139,66 @@ class InputStandIn extends EventEmitter {
   }
 }
 
+/** A Phaser Key, as far as a scene binds and tears it down: an emitter, as Phaser's Key is. */
+export interface KeyStandIn extends EventEmitter {
+  keyCode: number;
+  destroyed: boolean;
+}
+
+/** Phaser's KeyCodes for the cursor keys `createCursorKeys` adds. */
+const CURSOR_CODES = { up: 38, down: 40, left: 37, right: 39, space: 32, shift: 16 } as const;
+
 class KeyboardStandIn extends EventEmitter {
   enabled = true;
-  keys: object[] = [];
+  keys: KeyStandIn[] = [];
 
   constructor(private manager: InputManager | null) {
     super();
   }
 
-  removeCapture(keyCode: number): this {
-    this.manager!.captures = this.manager!.captures.filter(
-      (code) => code !== keyCode,
-    );
+  /** KeyboardPlugin.addKey: `enableCapture` defaults to true, and a capture is the game's. */
+  addKey(keyCode: number, enableCapture = true): KeyStandIn {
+    const key: KeyStandIn = Object.assign(new EventEmitter(), { keyCode, destroyed: false });
+    this.keys.push(key);
+    if (enableCapture) this.addCapture(keyCode);
+    return key;
+  }
+
+  createCursorKeys(): Record<keyof typeof CURSOR_CODES, KeyStandIn> {
+    const keys = Object.entries(CURSOR_CODES).map(([name, code]) => [name, this.addKey(code)]);
+    return Object.fromEntries(keys) as Record<keyof typeof CURSOR_CODES, KeyStandIn>;
+  }
+
+  addCapture(keyCode: number): this {
+    if (!this.manager!.captures.includes(keyCode)) this.manager!.captures.push(keyCode);
     return this;
   }
 
-  removeKey(key: object, _destroy?: boolean, removeCapture?: boolean): this {
+  /** KeyboardPlugin.removeCapture: one code or several. */
+  removeCapture(keyCode: number | number[]): this {
+    const codes = [keyCode].flat();
+    this.manager!.captures = this.manager!.captures.filter((code) => !codes.includes(code));
+    return this;
+  }
+
+  removeKey(key: KeyStandIn, destroy?: boolean, removeCapture?: boolean): this {
     const at = this.keys.indexOf(key);
     if (at < 0) return this;
     this.keys.splice(at, 1);
-    if (removeCapture) this.removeCapture((key as { keyCode: number }).keyCode);
+    if (removeCapture) this.removeCapture(key.keyCode);
+    if (destroy) key.destroyed = true;
     return this;
   }
 
-  destroy(): void {
-    this.removeAllListeners();
+  /** KeyboardPlugin.shutdown: `removeAllKeys(true)` (no removeCapture), then `removeAllListeners`. */
+  shutdown(): void {
+    for (const key of this.keys) key.destroyed = true;
     this.keys = [];
+    this.removeAllListeners();
+  }
+
+  destroy(): void {
+    this.shutdown();
     this.manager = null;
   }
 }

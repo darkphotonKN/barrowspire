@@ -23,6 +23,7 @@ vi.mock("phaser", () => {
 const { MainMenuScene } = await import("./MainMenuScene");
 const { useGameStore } = await import("@/stores/gameStore");
 const { fillMaskArea, viewport } = await import("@/render/viewport");
+const { sceneSystems } = await import("./sceneEnd.standin");
 
 /** Answers any call with itself; reads as 0 where a number is wanted. */
 const any: unknown = new Proxy(function () {}, {
@@ -196,5 +197,30 @@ describe("MainMenuScene heroes sidebar clip (ADR-0057: clipped as Phaser 3.90 cl
       viewport.set({ width: 1280, height: 720, renderScale: 1.25 }),
     ).not.toThrow();
     expect(maskShapes[0].rects).toEqual(clipAt(1).rects);
+  });
+});
+
+// Leaving /game destroys the game: Phaser emits the scene's DESTROY only, never SHUTDOWN
+// (sceneEnd.standin.ts), and the menu let go of the socket's connection status on SHUTDOWN alone,
+// so the dead menu kept hearing it (review 2026-11-06).
+describe("MainMenuScene ending (game destroy on leaving /game)", () => {
+  it("should stop hearing the connection status on a game destroy, as on a stop", () => {
+    for (const end of ["destroy", "shutdown"] as const) {
+      const scene = new MainMenuScene() as unknown as {
+        events: unknown;
+        unsubscribeConnectionStatus?: () => void;
+        listenForEnd(): void;
+      };
+      const systems = sceneSystems();
+      scene.events = systems.scene.events;
+      const unsubscribe = vi.fn();
+      scene.unsubscribeConnectionStatus = unsubscribe;
+      scene.listenForEnd();
+
+      if (end === "destroy") systems.destroy();
+      else systems.shutdown();
+
+      expect(unsubscribe, end).toHaveBeenCalledTimes(1);
+    }
   });
 });

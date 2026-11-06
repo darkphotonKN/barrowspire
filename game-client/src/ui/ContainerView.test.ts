@@ -512,6 +512,19 @@ describe("ContainerView faces (FS-1D6BX §Requirements 15, 16, D8, D9)", () => {
     expect(tweens().some((t) => "scaleY" in t)).toBe(containerFace(kind) === "satchel");
   });
 
+  // A scene's end (FieldPiles.release) closes the view at once: the tween manager has let every
+  // tween go already, and one added now would play on this view in the next visit (review 2026-11-06).
+  it.each(kinds)("should close a %s at once on closeNow: hidden, emptied, no tween asked for", (kind) => {
+    const { view, calls } = opened(kind);
+    calls.length = 0;
+
+    view.closeNow();
+
+    expect(view.entityId).toBeUndefined();
+    expect(calls.filter((c) => c.name === "add" || c.name === "killTweensOf")).toEqual([]);
+    expect(calls.some((c) => c.name === "setVisible" && c.args[0] === false)).toBe(true);
+  });
+
   it.each(kinds)("should say Rummaging... until a %s's contents arrive, then (Picked clean) when empty", (kind) => {
     const { view, said } = opened(kind);
     expect(said().at(-1)).toBe("Rummaging...");

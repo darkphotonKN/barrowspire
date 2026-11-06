@@ -84,7 +84,7 @@ interface FieldUnderTest {
   time: { delayedCall: ReturnType<typeof vi.fn> };
   scene: { start: ReturnType<typeof vi.fn> };
   listen(): void;
-  release(): void;
+  release(end: "shutdown" | "destroy"): void;
   renderState(state: unknown): void;
   followEntrance(pos: { x: number; y: number }, gates: unknown[]): void;
   placePlayer(...args: unknown[]): void;
@@ -239,7 +239,7 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     standAt(ARRIVAL);
     standAt(ROAD_HOME.position);
 
-    field.release();
+    field.release("shutdown");
     field.listen();
     standAt(ROAD_HOME.position);
 
@@ -346,7 +346,7 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
     const fight = { sync: vi.fn(), update: vi.fn(), release: vi.fn() };
     Object.assign(field, { fight });
 
-    field.release();
+    field.release("shutdown");
 
     expect(fight.release).toHaveBeenCalledTimes(1);
     expect((field as unknown as { fight?: unknown }).fight).toBeUndefined();
@@ -425,7 +425,7 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
     const piles = fakePiles();
     Object.assign(field, { piles });
 
-    field.release();
+    field.release("shutdown");
 
     expect(piles.release).toHaveBeenCalledTimes(1);
     expect(socketManager.off).toHaveBeenCalledWith(ActionType.Interact);
@@ -649,7 +649,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     const { field } = fallenOnStage();
     field.renderState(stateAt(0, { x: 900, y: 420 }));
 
-    field.release();
+    field.release("shutdown");
 
     expect(field.fallenView).toBeUndefined();
   });
@@ -894,7 +894,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   it("should let the HUD go on release, so the next visit starts empty", () => {
     const { field } = hudOnStage();
 
-    field.release();
+    field.release("shutdown");
 
     expect(field.equipment).toBeUndefined();
   });
@@ -903,7 +903,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     const { field } = hudOnStage();
     const release = vi.spyOn(field.equipment!, "release");
 
-    field.release();
+    field.release("shutdown");
 
     expect(release).toHaveBeenCalledTimes(1);
   });
@@ -954,7 +954,7 @@ describe("FieldScene ending (game destroy on leaving /game)", () => {
     field.input = systems.scene.input;
     const off = vi.spyOn(socketManager, "off");
     const offError = vi.spyOn(socketManager, "offError");
-    return { systems, off, offError };
+    return { field, systems, off, offError };
   }
 
   it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
@@ -973,6 +973,18 @@ describe("FieldScene ending (game destroy on leaving /game)", () => {
     systems.shutdown();
 
     expect(systems.input.manager?.defaultCursor).toBe("");
+  });
+
+  // Phaser's stop destroys the field's keys and keeps their captures, the game's (sceneEnd.ts).
+  it("should hand back the captures its keys made on a stop", () => {
+    const { field, systems } = createdField();
+    // the rig stubs bindInput; the real one binds on the stand-in's keyboard
+    (FieldScene.prototype as unknown as { bindInput(): void }).bindInput.call(field);
+    expect(systems.input.manager?.captures.length).toBeGreaterThan(0);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
   });
 });
 

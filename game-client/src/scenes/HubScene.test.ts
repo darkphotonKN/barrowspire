@@ -414,7 +414,7 @@ interface MenuHub {
   onFieldGate(destination: "forest" | "meadows"): void;
   renderState(state: unknown): void;
   listenForQueue(): void;
-  release(): void;
+  release(end: "shutdown" | "destroy"): void;
 }
 
 type Listener = (payload: unknown) => void;
@@ -547,7 +547,7 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     reply("queue_status", { current: 1, total: 2 });
     const first = button() as Made;
 
-    hub.release();
+    hub.release("shutdown");
     expect(hub.queued).toBe(false);
     expect(hub.leaveButton).toBeUndefined();
 
@@ -670,7 +670,7 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
   it("should hand the leave_queue replies back on release, with the queue's other listeners", () => {
     const { hub, off, offError } = queuedHubOnStage();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(off).toHaveBeenCalledWith("leave_queue");
     expect(offError).toHaveBeenCalledWith("leave_queue");
@@ -1067,7 +1067,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     choice("enter")?.handlers.pointerup();
     choice("queue")?.handlers.pointerup();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(hub.enterPending).toBe(false);
     expect(hub.queuePending).toBe(false);
@@ -1350,7 +1350,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
   it("should hand the find_game refusals back on release", () => {
     const { hub, offError } = queuedHubOnStage();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(offError).toHaveBeenCalledWith("find_game");
   });
@@ -1360,7 +1360,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     atTheDoor();
     choice("solo")?.handlers.pointerup();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(offError).toHaveBeenCalledWith("start_solo");
     expect(hub.soloPending).toBe(false);
@@ -1477,7 +1477,7 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
 
     press(keys.esc);
     const first = hub.menu;
-    hub.release();
+    hub.release("shutdown");
 
     expect(first?.destroyed).toBe(true);
     expect(hub.menu).toBeUndefined();
@@ -1564,7 +1564,7 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
     option("change")?.handlers.pointerup();
     expect(hub.leavingHub).toBe(true);
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(off).toHaveBeenCalledWith("world_left");
     expect(offError).toHaveBeenCalledWith("leave_hub");
@@ -1734,7 +1734,7 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
     const { hub, choice, atTheDoor } = hubOnStage();
     atTheDoor();
 
-    hub.release();
+    hub.release("shutdown");
     hub.followGates(SPIRE_GATE.position, HUB_GATES);
 
     // a fresh visit that starts inside the gate steps into it
@@ -1810,7 +1810,7 @@ describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
     standAt(AWAY);
     standAt(FOREST_GATE.position);
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(marker(stage)).toHaveLength(0);
   });
@@ -1882,7 +1882,7 @@ describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 5
     standAt(AWAY);
     standAt(MEADOWS_GATE.position);
 
-    hub.release();
+    hub.release("shutdown");
     hub.listenForQueue();
     standAt(MEADOWS_GATE.position);
 
@@ -2082,7 +2082,7 @@ describe("camera on the player across visits (reported 2026-10-29)", () => {
     hub.keepCameraOn(first);
     expect(hub.cameras.main.startFollow).toHaveBeenCalledTimes(1);
 
-    hub.release();
+    hub.release("shutdown");
     const rebuilt = { id: "sprite-2" };
     hub.keepCameraOn(rebuilt);
 
@@ -2093,7 +2093,7 @@ describe("camera on the player across visits (reported 2026-10-29)", () => {
   it("should forget whose body it followed on release", () => {
     const { hub } = hubOnStage();
     hub.selfEntityID = "me";
-    hub.release();
+    hub.release("shutdown");
     expect(hub.selfEntityID).toBeNull();
   });
 });
@@ -2222,7 +2222,7 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
 
   it("should forget the overlay on release, so the next visit composes a fresh one", () => {
     const { hub } = hubOnStage();
-    hub.release();
+    hub.release("shutdown");
     expect(hub.gear).toBeUndefined();
   });
 });
@@ -2245,14 +2245,14 @@ describe("HubScene reads the purse after a gold Take (FS-7TGZ3 R9)", () => {
     expect(refreshPurse).toHaveBeenCalledTimes(1);
     useMailboxStore.setState({ pulses: useMailboxStore.getState().pulses + 1 });
     expect(refreshPurse).toHaveBeenCalledTimes(1);
-    hub.release();
+    hub.release("shutdown");
   });
 
   it("should stop listening on release, and a second visit's one Take reads exactly once", () => {
     const { hub } = hubOnStage();
     withPurse(hub);
     (hub.watchGoldTakes as () => void)();
-    hub.release();
+    hub.release("shutdown");
 
     // a later visit's overlay, before that visit listens: the first visit's watch must be gone
     const second = withPurse(hub);
@@ -2262,7 +2262,7 @@ describe("HubScene reads the purse after a gold Take (FS-7TGZ3 R9)", () => {
     (hub.watchGoldTakes as () => void)();
     goldTake();
     expect(second).toHaveBeenCalledTimes(1);
-    hub.release();
+    hub.release("shutdown");
   });
 });
 
@@ -2855,7 +2855,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
     it("should let the blackout go with the visit", () => {
       const { hub } = town(BAKED);
-      (hub as unknown as { release(): void }).release();
+      (hub as unknown as { release(end: "shutdown"): void }).release("shutdown");
       expect((hub as unknown as { view?: unknown }).view).toBeUndefined();
     });
   });
@@ -3254,22 +3254,24 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
     vi.restoreAllMocks();
   });
 
+  /**
+   * A queued hub on Phaser's stand-in, its end wired by `listenForEnd`, the call create() makes:
+   * the plugins booted first, so they hear each end before the hub does.
+   */
   function hubToEnd() {
     const queued = queuedHubOnStage();
     const { hub } = queued;
     const { add, cameras, time, scene } = hub as unknown as Record<string, object>;
     const systems = sceneSystems({ add, cameras, time, scene });
     Object.assign(hub, systems.scene);
-    const release = (end: "shutdown" | "destroy") =>
-      (hub as unknown as { release(end: string): void }).release(end);
-    return { ...queued, systems, release };
+    (hub as unknown as { listenForEnd(): void }).listenForEnd();
+    return { ...queued, systems };
   }
 
   it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
-    const { systems, release, off } = hubToEnd();
-    systems.destroy();
+    const { systems, off } = hubToEnd();
 
-    expect(() => release("destroy")).not.toThrow();
+    expect(() => systems.destroy()).not.toThrow();
     expect(systems.touched).toEqual([]);
     // what lives past the game is still handed back
     expect(off).toHaveBeenCalledWith("queue_status");
@@ -3277,12 +3279,24 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
   });
 
   it("should still hand the cursor back to the page on a stop", () => {
-    const { systems, release } = hubToEnd();
+    const { systems } = hubToEnd();
     systems.input.manager!.defaultCursor = "pointer";
-    systems.shutdown();
 
-    release("shutdown");
+    systems.shutdown();
 
     expect(systems.input.manager?.defaultCursor).toBe("");
   });
+
+  // Phaser's stop destroys the hub's keys and keeps their captures, the game's: E, I, B, 3 and the
+  // rest would have their default prevented on the page through the next world (sceneEnd.ts).
+  it("should hand back the captures its keys made on a stop", () => {
+    const { hub, systems } = hubToEnd();
+    (hub as unknown as { bindInput(): void }).bindInput();
+    expect(systems.input.manager?.captures.length).toBeGreaterThan(0);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
+  });
+
 });

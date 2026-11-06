@@ -60,7 +60,7 @@ function piles() {
     };
   };
   let openFor: string | undefined;
-  const satchel: PileSatchel & { items: readonly ItemState[]; kind?: ContainerKind } = {
+  const satchel: PileSatchel & { items: readonly ItemState[]; kind?: ContainerKind; closes: string[] } = {
     items: [],
     get entityId() {
       return openFor;
@@ -69,7 +69,15 @@ function piles() {
       openFor = id;
       this.kind = kind;
     },
-    close: () => void (openFor = undefined),
+    closes: [] as string[],
+    close() {
+      openFor = undefined;
+      this.closes.push("animated");
+    },
+    closeNow() {
+      openFor = undefined;
+      this.closes.push("at once");
+    },
     setItems(items) {
       this.items = items;
     },
@@ -197,6 +205,19 @@ describe("FieldPiles pickup (FS-X2F2H §Requirements 33, 59, 60)", () => {
     expect(live()).toHaveLength(0);
     expect(satchel.entityId).toBeUndefined();
     expect(fp.interact({ x: 0, y: 0 })).toBe(false);
+  });
+
+  // release runs as the field's scene ends: its tween manager has let every tween go already, and
+  // one added now would play on this visit's view in the next (review 2026-11-06)
+  it("should close an open satchel at once on release, nothing animated", () => {
+    const { fp, satchel } = piles();
+    fp.sync([pile("p", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    expect(satchel.entityId).toBe("p");
+
+    fp.release();
+
+    expect(satchel.closes).toEqual(["at once"]);
   });
 });
 

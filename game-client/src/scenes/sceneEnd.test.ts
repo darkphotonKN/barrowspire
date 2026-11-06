@@ -8,7 +8,7 @@ vi.mock("phaser", () => {
   return { ...phaser, default: phaser };
 });
 
-const { onSceneEnd } = await import("./sceneEnd");
+const { onSceneEnd, releaseCaptures } = await import("./sceneEnd");
 const { sceneSystems } = await import("./sceneEnd.standin");
 
 // Leaving /game destroys the Phaser game. Game.runDestroy → SceneManager.destroy → Systems.destroy
@@ -71,7 +71,62 @@ describe("onSceneEnd", () => {
   });
 });
 
+describe("onSceneEnd cancelled", () => {
+  it("should run the release at neither end once cancelled, and leave the scene no listener", () => {
+    const systems = sceneSystems();
+    const release = vi.fn();
+    const cancel = onSceneEnd(systems.scene, release);
+
+    cancel();
+    systems.shutdown();
+    systems.destroy();
+
+    expect(release).not.toHaveBeenCalled();
+    expect(systems.scene.events.listenerCount("shutdown")).toBe(0);
+    expect(systems.scene.events.listenerCount("destroy")).toBe(0);
+  });
+});
+
+// Phaser's stop destroys a scene's keys (KeyboardPlugin.shutdown → removeAllKeys(true)) and keeps
+// their captures, which are the game's KeyboardManager's: a captured code then has its default
+// prevented on the whole page until the game dies. The run's Tab, kept from a stopped run, stopped
+// focus moving in the hub and its DOM overlays (review 2026-11-06).
+describe("releaseCaptures", () => {
+  it("should hand back the captures the scene's keys made, which its stop kept", () => {
+    const systems = sceneSystems();
+    const keyboard = systems.input.keyboard;
+    const cursors = keyboard.createCursorKeys();
+    const tab = keyboard.addKey(9);
+    const quiet = keyboard.addKey(65, false);
+    keyboard.addCapture(70);
+    systems.shutdown();
+    expect(keyboard.keys, "the stop destroyed the keys").toEqual([]);
+
+    releaseCaptures(systems.scene.input.keyboard, [...Object.values(cursors), tab, quiet, undefined]);
+
+    // a capture no key of this scene made is not this scene's to hand back
+    expect(systems.input.manager?.captures).toEqual([70]);
+  });
+
+  it("should ask nothing of a scene with no keyboard", () => {
+    expect(() => releaseCaptures(null, [{ keyCode: 9 }])).not.toThrow();
+  });
+});
+
 describe("the Phaser stand-in", () => {
+  it("should destroy the scene's keys on a stop and keep their captures, as KeyboardPlugin.shutdown does", () => {
+    const systems = sceneSystems();
+    const key = systems.input.keyboard.addKey(9);
+    systems.input.keyboard.on("keydown-T", () => {});
+
+    systems.shutdown();
+
+    expect(key.destroyed).toBe(true);
+    expect(systems.input.keyboard.keys).toEqual([]);
+    expect(systems.input.keyboard.listenerCount("keydown-T")).toBe(0);
+    expect(systems.input.manager?.captures).toEqual([9]);
+  });
+
   it("should throw, as InputPlugin does, when the input is used after a game destroy", () => {
     const systems = sceneSystems();
     let thrown: unknown;
