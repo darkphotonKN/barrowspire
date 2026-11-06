@@ -1066,3 +1066,95 @@ describe("the hide rule (FS-9PN7X §C.2)", () => {
     expect(sprites[0].visible).toBe(false);
   });
 });
+
+describe("the frame marker mode (FS-48CTQ §B.3: no overhead plates on a frame floor)", () => {
+  const elite = monster({
+    entity_id: "e",
+    archetype: "ghoul",
+    name: "Hollow Ghoul",
+    elite: true,
+  });
+  const boss = monster({ entity_id: "b", archetype: "demon", name: "Demon", boss: true });
+
+  it("should draw no name, level or bar over any monster, normal, elite or boss", () => {
+    const { stage, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([monster({ entity_id: "n" }), elite, boss]);
+    roster.update(FRAME);
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.every((t) => !t.visible)).toBe(true);
+    expect(bars.every((b) => !b.visible && b.fills.length === 0)).toBe(true);
+  });
+
+  it("should keep the elite's hostile wash, which is the sprite and not a plate", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([elite]);
+    roster.update(FRAME);
+    expect(sprites[0].tint).toBe(palette.eliteTint);
+  });
+
+  it("should keep the plate off when the hide rule shows the body", () => {
+    const { stage, sprites, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    roster.hideWhere(() => false);
+    expect(sprites[0].visible).toBe(true);
+    expect(texts[0].visible).toBe(false);
+  });
+
+  it("should draw plates as today on overhead, the default, and again when the mode goes back", () => {
+    const { stage, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    expect(texts[0].visible).toBe(true);
+    expect(bars[0].visible).toBe(true);
+
+    roster.setMarkerMode("frame");
+    roster.update(FRAME);
+    expect(texts[0].visible).toBe(false);
+
+    roster.setMarkerMode("overhead");
+    roster.update(FRAME);
+    expect(texts[0].visible).toBe(true);
+    expect(bars[0].fills.length).toBeGreaterThan(0);
+  });
+});
+
+describe("what the target frame may name (FS-48CTQ §C.5, §C.7)", () => {
+  it("should list the living monsters whose sprites are shown, as the latest broadcast has them", () => {
+    const { stage } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([
+      monster({ entity_id: "live", position: { x: 300, y: 300 } }),
+      monster({ entity_id: "corpse", action: "dead", current_health: 0 }),
+      monster({ entity_id: "hidden", position: { x: 50, y: 50 } }),
+    ]);
+    roster.update(FRAME);
+    roster.hideWhere((at) => at.x <= 100 && at.y <= 100);
+    expect(roster.targetable().map((m) => m.entity_id)).toEqual(["live"]);
+
+    roster.sync([monster({ entity_id: "live", current_health: 7, position: { x: 300, y: 300 } })]);
+    expect(roster.targetable()[0].current_health).toBe(7);
+  });
+
+  it("should say which living monster is under the pointer, and none once it leaves or falls", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ entity_id: "m7" })]);
+    expect(roster.hoveredId).toBeUndefined();
+    sprites[0].emit("pointerover");
+    expect(roster.hoveredId).toBe("m7");
+    sprites[0].emit("pointerout");
+    expect(roster.hoveredId).toBeUndefined();
+
+    sprites[0].emit("pointerover");
+    roster.sync([monster({ entity_id: "m7", action: "dead", current_health: 0 })]);
+    expect(roster.hoveredId).toBeUndefined();
+  });
+});

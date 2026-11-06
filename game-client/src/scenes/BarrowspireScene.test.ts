@@ -79,6 +79,7 @@ const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
+const await_targetFrame = await import("@/ui/targetFrame");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -5031,6 +5032,179 @@ describe("the run's top-right HUD and the fullscreen button", () => {
 
   it("should keep its right-hand offset from the corner", () => {
     expect(anchorAt(TOP_RIGHT_HUD, { width: 1280, height: 720 }).x).toBe(1270);
+  });
+});
+
+describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-48CTQ-1)", () => {
+  const { TARGET_FRAME, TARGET_FRAME_TOP, targetFrameRect } = await_targetFrame;
+
+  interface FrameRun {
+    time: { now: number; delayedCall: ReturnType<typeof vi.fn> };
+    createUI(): void;
+    updateTargetFrame(deltaMs: number): void;
+    relayoutHud(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
+    targetFrame?: { texts(): Made[] };
+    spectateHud?: unknown;
+    floorVeil: unknown[];
+    events: Emitter;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The run on `floor` with its HUD up, at scene time 0. */
+  function framed(floor = 1) {
+    const stage = onStage();
+    const run = stage.run as unknown as FrameRun & FloorRun;
+    run.time.now = 0;
+    run.createUI();
+    const state = (fields: Partial<ReturnType<typeof monster>> = {}) =>
+      ({
+        ...floorState(floor),
+        current_player: player("me", "Aldric", 130),
+        other_players: [player("ally", "Wenna", 160)],
+        monsters: [{ ...monster("m1", floor === 1 ? 100 : 600), ...fields }],
+      }) as GameState;
+    run.handleGameStateUpdate(state());
+    /** What the frame names now, or null while it is hidden. */
+    const named = () => {
+      const lines = run.targetFrame!.texts().filter((t) => t.shown && t.args[2] !== "");
+      return lines.length ? lines.map((t) => t.args[2]).join(" ") : null;
+    };
+    const tick = (ms: number) => {
+      run.time.now += ms;
+      run.updateTargetFrame(ms);
+    };
+    /** The roster's own plate texts: the 11px plate in the hostile ink. */
+    const plates = () =>
+      stage.stage.made.filter((m) => {
+        const style = m.args[3] as { fontSize?: string; color?: string } | undefined;
+        return m.kind === "text" && style?.fontSize === "11px" && style.color === toCss(palette.markerHostile);
+      });
+    return { ...stage, run, state, named, tick, plates };
+  }
+
+  it("should draw no overhead plate over floor 1's monsters, and plates as today on floor 2", () => {
+    const one = framed(1);
+    (one.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(one.plates().length).toBeGreaterThan(0);
+    expect(one.plates().every((p) => p.shown === false)).toBe(true);
+
+    const two = framed(2);
+    (two.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(two.plates().some((p) => p.shown === true)).toBe(true);
+  });
+
+  it("should name the hovered monster at the top centre, and let go when the pointer leaves", () => {
+    const { monsters, named, tick } = framed();
+    tick(16);
+    expect(named()).toBeNull();
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    expect(named()).toBe("Ghoul · Lv 1");
+    monsters()[0].handlers.pointerout();
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should show no frame on floor 2, where the plates are", () => {
+    const { monsters, named, tick } = framed(2);
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
+  it("should name the monster the player strikes, then let go 3 s after the last own hit", () => {
+    const { run, monsters, named, tick, state, sent } = framed();
+    monsters()[0].handlers.pointerdown();
+    expect(sent).toHaveBeenCalledWith(ActionType.Attack, { enemy_entity_id: "m1" });
+    tick(120);
+    expect(named()).toBe("Ghoul · Lv 1");
+
+    // the hit lands 400 ms after the intent: the 3 s run from it
+    run.time.now += 280;
+    run.handleGameStateUpdate(state({ current_health: 6 }));
+    tick(2900);
+    expect(named()).toBe("Ghoul · Lv 1");
+    tick(100);
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should not hold on a teammate's hit, more than 1 s after the player's intent", () => {
+    const { run, monsters, named, tick, state } = framed();
+    monsters()[0].handlers.pointerdown();
+    run.time.now += 1500;
+    run.handleGameStateUpdate(state({ current_health: 6 }));
+    tick(1500);
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should let go when the monster it names dies", () => {
+    const { run, monsters, named, tick, state } = framed();
+    monsters()[0].handlers.pointerdown();
+    tick(120);
+    run.handleGameStateUpdate(state({ action: "dead", current_health: 0 }));
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should never name a party member the pointer is over", () => {
+    const { players, named, tick } = framed();
+    players()[1].handlers.pointerover?.();
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
+  it.each([
+    ["the spectate HUD", (run: FrameRun) => (run.spectateHud = {})],
+    ["the floor-change veil", (run: FrameRun) => (run.floorVeil = [{}])],
+  ])("should hide while %s holds the top centre", (_, cover) => {
+    const { run, monsters, named, tick } = framed();
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    cover(run);
+    tick(16);
+    expect(named()).toBeNull();
+  });
+
+  it("should re-anchor at the new centre on a resize", () => {
+    const { run, monsters, tick } = framed();
+    Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    const line = () => run.targetFrame!.texts().find((t) => t.shown)!;
+    expect(line().last.setPosition[0]).toBe(400);
+    viewport.set({ width: 1000, height: 600, renderScale: 1 });
+    run.relayoutHud();
+    expect(line().last.setPosition[0]).toBe(500);
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+  });
+
+  it("should let the frame go with the run", () => {
+    const { run } = framed();
+    expect(run.targetFrame).toBeDefined();
+    run.resetRun("shutdown");
+    expect(run.targetFrame).toBeUndefined();
+  });
+
+  // §E.14: at the view's two ends, clear of the notice band, the top-right column (the fullscreen
+  // button, the escaped count, the floor indicator and FS-SRA9J's 216 px minimap) and the top-left
+  // progress bar
+  it.each([1080, 1280])("should stand clear of the rest of the top HUD at logical width %i", (width) => {
+    const view = { width, height: 720 };
+    const r = targetFrameRect(width / 2);
+    expect(r.y).toBe(10);
+    expect(r.width).toBeLessThanOrEqual(280);
+    expect(r.height).toBeLessThanOrEqual(52);
+    expect(TARGET_FRAME.height + TARGET_FRAME_TOP).toBeLessThan(100 - 22);
+    const minimapLeft = anchorAt(TOP_RIGHT_HUD, view).x - 216;
+    expect(r.x + r.width).toBeLessThan(minimapLeft);
+    expect(r.x + r.width).toBeLessThan(width - FULLSCREEN_BUTTON.inset - 60);
+    expect(r.x).toBeGreaterThan(10 + 180 + 10);
   });
 });
 

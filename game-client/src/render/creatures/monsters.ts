@@ -1,8 +1,9 @@
 /**
  * Monsters on the canvas (FS-77AB6 req 34–39): each monster in a run's state broadcast drawn from
  * its baked creature sheet, playing what the server says it is doing, with a hostile nameplate
- * and HP bar over its head. A living monster is a target: the pointer over its footprint reports
- * it, a click strikes it, and a hit the server confirms flashes it.
+ * and HP bar over its head; on a `frame` floor it has none, and the target frame names it instead
+ * (FS-48CTQ §B.3). A living monster is a target: the pointer over its footprint reports it, a
+ * click strikes it, and a hit the server confirms flashes it.
  *
  * Nothing about a monster is client-held. The server sends where it stands, which way it faces
  * and what it is doing (`action`); the roster eases the position between ticks like a player's
@@ -29,6 +30,7 @@ import { worldToScreen, type Point } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { footprintHitArea } from "@/render/world/footprint";
+import type { MarkerMode } from "./markerMode";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
@@ -198,6 +200,16 @@ export function nameplate(
   return `${monster.name} · Lv ${monster.level}`;
 }
 
+/** How full a monster's HP bar is: its health over its maximum, clamped to 0–1 (FS-77AB6 req 37). */
+export function healthFraction(
+  monster: Pick<MonsterState, "current_health" | "max_health">,
+): number {
+  return Math.max(
+    0,
+    Math.min(1, monster.current_health / Math.max(1, monster.max_health)),
+  );
+}
+
 /** An elite's plate in two parts: the prefix, lettered in the hostile accent, and the rest. */
 export interface ElitePlate {
   prefix: string;
@@ -224,6 +236,25 @@ export function elitePlate(
   };
 }
 
+/** Screen px between an elite's prefix and the rest of its plate: a word space at 11px. */
+const PREFIX_GAP = 3;
+
+/**
+ * Where a plate's two parts stand on one line centred on `centreX`: the rest, centre-anchored, at
+ * `rest`; an elite's prefix, right-anchored, at `prefix`, `gap` px to its left. With no prefix
+ * (`prefixWidth` 0) the rest is centred alone. Shared by the overhead plate and the target frame.
+ */
+export function seatPlate(
+  centreX: number,
+  restWidth: number,
+  prefixWidth: number,
+  gap: number = PREFIX_GAP,
+): { rest: number; prefix: number } {
+  if (prefixWidth <= 0) return { rest: centreX, prefix: centreX };
+  const rest = centreX + (prefixWidth + gap) / 2;
+  return { rest, prefix: rest - restWidth / 2 - gap };
+}
+
 // ── The roster ────────────────────────────────────────────────────────────
 
 /** Eased toward the server position each frame, as players are. */
@@ -236,14 +267,14 @@ const BAR_W = 38;
 const BAR_H = 4;
 /** Screen px from the top of the HP bar to the bottom of the name. */
 const NAME_GAP = 2;
-/** Screen px between an elite's prefix and the rest of its plate: a word space at 11px. */
-const PREFIX_GAP = 3;
 /** How long a confirmed hit holds the damage flash, in ms: as long as a player's. */
 export const FLASH_MS = 200;
 /** No facing: the clip keeps the one it has. */
 const STILL = { x: 0, y: 0 };
 
 export interface MonsterSprite extends AnimatedSprite {
+  /** Whether it is drawn: the hide rule's and the fog's say (FS-48CTQ §C.7 reads it). */
+  readonly visible: boolean;
   x: number;
   y: number;
   displayOriginY: number;
@@ -359,6 +390,8 @@ export class MonsterRoster {
   private readonly views = new Map<string, MonsterView>();
   /** The living monster under the pointer, by `entity_id`. */
   private hovered?: string;
+  /** Plates over every head, or none for the target frame (FS-48CTQ §A.1, §B.3). */
+  private mode: MarkerMode = "overhead";
 
   constructor(
     private readonly stage: MonsterStage,
@@ -379,6 +412,30 @@ export class MonsterRoster {
   clear(): void {
     this.hovered = undefined;
     this.sync([]);
+  }
+
+  /**
+   * The floor's marker mode (FS-48CTQ §A.1): on `frame` no monster carries a plate or bar, from
+   * the next {@link update} on; its sprite and any elite wash are drawn as ever (§B.3).
+   */
+  setMarkerMode(mode: MarkerMode): void {
+    this.mode = mode;
+  }
+
+  /** The living monster under the pointer, by `entity_id`: the target frame's first pick (§C.5). */
+  get hoveredId(): string | undefined {
+    return this.hovered;
+  }
+
+  /**
+   * The monsters the target frame may name (FS-48CTQ §C.7): the living ones whose sprites are
+   * shown, as the latest broadcast has them. A corpse, and one the hide rule or the fog has hidden,
+   * are left out. Read it after the frame's hide rule has run.
+   */
+  targetable(): MonsterState[] {
+    return [...this.views.values()]
+      .filter((view) => view.sprite.visible && alive(view.state))
+      .map((view) => view.state);
   }
 
   /** The broadcast's monsters are the whole truth: anyone absent from it is gone. */
@@ -573,11 +630,14 @@ export class MonsterRoster {
     view.sprite.setDepth(worldDepth(view.pos.x, view.pos.y, 1));
   }
 
-  /** The plate and HP bar over a living monster's head; none over a corpse. */
+  /**
+   * The plate and HP bar over a living monster's head; none over a corpse, and none at all on a
+   * frame floor, where the target frame names the monster instead (FS-48CTQ §B.3).
+   */
   private mark(view: MonsterView): void {
     const { sprite, name, prefix, bar, state } = view;
-    const dead = state.action === "dead";
-    const base = dead ? null : markerBase(sprite, view.anim.crown, false, view.anim.artScale);
+    const plated = this.mode === "overhead" && state.action !== "dead";
+    const base = plated ? markerBase(sprite, view.anim.crown, false, view.anim.artScale) : null;
     name.setVisible(base !== null);
     prefix?.setVisible(base !== null);
     bar.setVisible(base !== null);
@@ -592,10 +652,7 @@ export class MonsterRoster {
     bar.fillRect(left - 1, barTop - 1, BAR_W + 2, BAR_H + 2);
     bar.lineStyle(1, MARKER_BAR.rim, 0.9);
     bar.strokeRect(left - 1, barTop - 1, BAR_W + 2, BAR_H + 2);
-    const ratio = Math.max(
-      0,
-      Math.min(1, state.current_health / Math.max(1, state.max_health)),
-    );
+    const ratio = healthFraction(state);
     bar.fillStyle(MARKER_BAR.hp, 1);
     bar.fillRect(left, barTop, Math.round(BAR_W * ratio), BAR_H);
   }
@@ -613,9 +670,8 @@ export class MonsterRoster {
       return;
     }
     prefix.setText(plate.prefix);
-    const lead = prefix.width + PREFIX_GAP;
-    const restCentre = sprite.x + lead / 2;
-    name.setPosition(restCentre, y);
-    prefix.setPosition(restCentre - name.width / 2 - PREFIX_GAP, y);
+    const seat = seatPlate(sprite.x, name.width, prefix.width);
+    name.setPosition(seat.rest, y);
+    prefix.setPosition(seat.prefix, y);
   }
 }
