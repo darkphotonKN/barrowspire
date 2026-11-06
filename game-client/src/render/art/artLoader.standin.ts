@@ -134,6 +134,20 @@ export function artLoaderStandin(opts: {
     load,
     textures,
     anims,
+    // registerArt's placeholder texture
+    add: {
+      graphics: () => {
+        const g = {
+          fillStyle: () => g,
+          fillRect: () => g,
+          lineStyle: () => g,
+          strokeRect: () => g,
+          generateTexture: (key: string) => textures.addImage(key),
+          destroy: () => undefined,
+        };
+        return g;
+      },
+    },
     cache: {
       json: {
         exists: (key: string) => json.has(key),

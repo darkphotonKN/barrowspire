@@ -3318,4 +3318,18 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
 
     expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
   });
+
+  it("should evict the run's creatures and boss once its load completes (FS-C4JWH §C R11)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, "creatures-0", "creatures-1", "boss-0", "boss-1"].map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.textures.removed.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
+    expect(art.textures.exists(atlasTextureKey("folk-0"))).toBe(true);
+  });
 });
