@@ -17,6 +17,7 @@ import {
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import { fieldArt } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { LightMap } from "@/render/lighting";
@@ -215,7 +216,7 @@ export class FieldScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadArt(this, fieldArt(this.field));
+    preloadArt(this, fieldArt(this.field), { bar: () => drawTorchBar(this) });
   }
 
   create(): void {

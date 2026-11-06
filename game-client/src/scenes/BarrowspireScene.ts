@@ -95,6 +95,7 @@ import {
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -1332,7 +1333,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders. The
     // creatures and the boss load with the run, for every floor: a climb loads nothing, and the
     // demon is never drawn before its art is in (FS-C4JWH §B R9)
-    preloadArt(this, SCENE_ART.BarrowspireScene);
+    preloadArt(this, SCENE_ART.BarrowspireScene, {
+      bar: () => drawTorchBar(this),
+    });
   }
 
   private createSoldierTextures(prefix: string, pal: WizardPalette): void {

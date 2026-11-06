@@ -384,7 +384,8 @@ describe("BarrowspireScene Mercenary placeholder (FS-MAMHR §G.31)", () => {
     Object.assign(scene, {
       make: { graphics },
       textures: { exists: () => false },
-      cache: { json: { exists: () => false } },
+      // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
+      cache: { json: { exists: () => true, get: () => undefined } },
       load: { once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
@@ -2221,7 +2222,8 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
     Object.assign(scene, {
       make: { graphics },
       textures: { exists: () => false },
-      cache: { json: { exists: () => false } },
+      // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
+      cache: { json: { exists: () => true, get: () => undefined } },
       load: { once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();

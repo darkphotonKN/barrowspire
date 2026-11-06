@@ -59,7 +59,9 @@ function animationsOn(manifest: ArtManifest, atlas: string): string[] {
   return Object.entries(manifest.sheets).flatMap(([name, sheet]) =>
     Object.entries(sheet.animations).flatMap(([clip, anim]) =>
       animationAtlas(sheet, anim) === atlas
-        ? anim.frames.map((_, direction) => animationName(name, clip, direction))
+        ? anim.frames.map((_, direction) =>
+            animationName(name, clip, direction),
+          )
         : [],
     ),
   );

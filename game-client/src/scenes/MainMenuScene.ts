@@ -9,6 +9,7 @@ import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { MenuFigure } from "@/render/art/menuFigure";
 import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import {
   buttonTextColor,
   drawBackdrop,
@@ -114,7 +115,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   preload(): void {
     // the class figures: resident art only (FS-C4JWH §A R4)
-    preloadArt(this, SCENE_ART.MainMenuScene);
+    preloadArt(this, SCENE_ART.MainMenuScene, { bar: () => drawTorchBar(this) });
   }
 
   create(): void {

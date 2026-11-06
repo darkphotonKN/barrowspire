@@ -160,17 +160,22 @@ export function drawButton(
 const VIGNETTE_TEXTURE = "menu:vignette";
 const VIGNETTE_SIZE = 256;
 
+/** The backdrop {@link drawBackdrop} lays down: the dust, the vignette over it, and their teardown. */
+export interface Backdrop {
+  dust: Phaser.GameObjects.Graphics;
+  vignette: Phaser.GameObjects.Image;
+  /** Destroys both and stops sizing the vignette to the view, for a backdrop that goes before its scene does. */
+  destroy(): void;
+}
+
 /**
  * The menu backdrop: the soot ground with drifting dust and a few bone glints, drawn as soft
  * motes rather than square pixels, under a vignette that darkens the edges as the site's does.
  * Drawn for a menu laid out on the centred stage (`centreStage`): the motes reach the edges of
  * the widest view, and the vignette is stretched to the view's edges again whenever it changes
- * (FS-ZAJMH R11). Returns the mote graphics so a scene can layer it.
+ * (FS-ZAJMH R11). Returns its parts, so a scene can layer the motes or take it down.
  */
-export function drawBackdrop(
-  scene: Phaser.Scene,
-  motes = 110,
-): Phaser.GameObjects.Graphics {
+export function drawBackdrop(scene: Phaser.Scene, motes = 110): Backdrop {
   const height = LOGICAL_HEIGHT;
   const reach = (LOGICAL_MAX_WIDTH - STAGE_WIDTH) / 2;
   scene.cameras.main.setBackgroundColor(ui.ground);
@@ -206,8 +211,18 @@ export function drawBackdrop(
   const vignette = scene.add
     .image(STAGE_WIDTH / 2, height / 2, VIGNETTE_TEXTURE)
     .setDisplaySize(viewport.width, height);
-  relayoutOn(scene, () => vignette.setDisplaySize(viewport.width, height));
-  return g;
+  const unbind = relayoutOn(scene, () =>
+    vignette.setDisplaySize(viewport.width, height),
+  );
+  return {
+    dust: g,
+    vignette,
+    destroy: () => {
+      unbind();
+      g.destroy();
+      vignette.destroy();
+    },
+  };
 }
 
 const TORCH_POOL_TEXTURE = "menu:torch-pool";

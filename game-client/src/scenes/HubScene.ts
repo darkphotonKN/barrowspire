@@ -62,6 +62,7 @@ import {
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
@@ -752,7 +753,7 @@ export class HubScene extends Phaser.Scene {
 
   preload(): void {
     // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
-    preloadArt(this, SCENE_ART.HubScene);
+    preloadArt(this, SCENE_ART.HubScene, { bar: () => drawTorchBar(this) });
   }
 
   create(): void {

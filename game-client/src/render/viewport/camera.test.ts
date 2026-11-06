@@ -611,8 +611,9 @@ describe("releaseStage (FS-C4JWH §D: the bar's stage does not survive into the 
     expect(staged.scrollX).toBe(-36);
     releaseStage(staged as ViewCamera);
 
-    expect(world(staged, renderScale)).toEqual(world(fresh, renderScale));
-    expect(world(staged, renderScale).scrollAtCreate).toEqual([0, 0]);
+    const after = world(staged, renderScale);
+    expect(after).toEqual(world(fresh, renderScale));
+    expect(after.scrollAtCreate).toEqual([0, 0]);
   });
 
   it("should no longer centre a stage on a re-fit", () => {

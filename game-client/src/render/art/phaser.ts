@@ -101,31 +101,67 @@ export interface ArtScene {
 export function preloadArt(
   scene: Phaser.Scene,
   groups: SceneGroups,
-  baseUrl = DEFAULT_ART_URL,
+  options: PreloadOptions = {},
 ): void {
+  const baseUrl = options.baseUrl ?? DEFAULT_ART_URL;
+  let queued = 0;
   const queueAtlases = (data: unknown) => {
     const result = validateManifest(data);
     if (!result.ok) return; // registerArt reports it with the scene's logger
     const { atlases } = result.manifest;
     for (const key of sceneAtlases(result.manifest, groups))
-      if (!scene.textures.exists(atlasTextureKey(key)))
-        scene.load.image(atlasTextureKey(key), `${baseUrl}${atlases[key].image}`);
+      if (!scene.textures.exists(atlasTextureKey(key))) {
+        scene.load.image(
+          atlasTextureKey(key),
+          `${baseUrl}${atlases[key].image}`,
+        );
+        queued++;
+      }
   };
-
-  scene.load.once("complete", () => {
-    const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
-    if (result.ok) evictOutside(scene, result.manifest, groups);
-  });
 
   if (scene.cache.json.exists(MANIFEST_KEY)) {
     queueAtlases(scene.cache.json.get(MANIFEST_KEY));
-    return;
+  } else {
+    scene.load.once(
+      `filecomplete-json-${MANIFEST_KEY}`,
+      (_key: string, _type: string, data: unknown) => queueAtlases(data),
+    );
+    scene.load.json(MANIFEST_KEY, `${baseUrl}manifest.json`);
+    queued++;
   }
-  scene.load.once(
-    `filecomplete-json-${MANIFEST_KEY}`,
-    (_key: string, _type: string, data: unknown) => queueAtlases(data),
-  );
-  scene.load.json(MANIFEST_KEY, `${baseUrl}manifest.json`);
+
+  // Shown only over a real download: a bar over a load that takes no time would only flash.
+  const bar = queued > 0 ? options.bar?.() : undefined;
+  const progress = (value: number) => bar?.progress(value);
+  if (bar) scene.load.on("progress", progress);
+
+  // In this order, before create: the bar, then eviction (FS-C4JWH §C R11, §D R17).
+  scene.load.once("complete", () => {
+    if (bar) {
+      scene.load.off("progress", progress);
+      bar.destroy();
+    }
+    const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
+    if (result.ok) evictOutside(scene, result.manifest, groups);
+  });
+}
+
+/** A loading bar shown while a scene's art downloads: the torch bar (`ui/torchBar.ts`) in the game. */
+export interface LoadingBar {
+  /** The loader's `progress`, files done over files queued, 0 to 1. */
+  progress(value: number): void;
+  /** Takes down everything it drew. */
+  destroy(): void;
+}
+
+export interface PreloadOptions {
+  /**
+   * Shows a bar from `preload()` when anything was queued, filled by the loader's `progress`, and
+   * destroys it when the load completes, before eviction and `create` (FS-C4JWH §D R17). A scene
+   * stopped mid-load takes the bar down with its display list.
+   */
+  bar?: () => LoadingBar;
+  baseUrl?: string;
 }
 
 /**
