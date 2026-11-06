@@ -76,14 +76,16 @@ type ClientGameState struct {
 	OtherPlayers  []OtherPlayerState  `json:"other_players"`  // All other players
 	Items         []uuid.UUID         `json:"items"`          // TODO: update with item entity converted into struct format
 	Doors         []*DoorState        `json:"doors"`
-	Walls         []*WallState        `json:"walls"`
-	Containers    []*ContainerState   `json:"containers"`
-	EscapeDoor    []*EscapeDoorState  `json:"escape_doors"`
-	Equipment     *EquipmentState     `json:"equipment"`
-	Switch        []*SwitchState      `json:"switches"`
-	NPCs          []*NPCState         `json:"npcs"`
-	Projectiles   []*ProjectileState  `json:"projectiles"`
-	EscapedCount  int                 `json:"escaped_count"`
+	// Walls are the hub's and a field's, every tick; a run's travel in its
+	// floor map and the key is absent, hence the pointer. FS-KE075 §F R34.
+	Walls        *[]*WallState      `json:"walls,omitempty"`
+	Containers   []*ContainerState  `json:"containers"`
+	EscapeDoor   []*EscapeDoorState `json:"escape_doors"`
+	Equipment    *EquipmentState    `json:"equipment"`
+	Switch       []*SwitchState     `json:"switches"`
+	NPCs         []*NPCState        `json:"npcs"`
+	Projectiles  []*ProjectileState `json:"projectiles"`
+	EscapedCount int                `json:"escaped_count"`
 	// Floor and FloorCount are a run's; the hub has no floors and omits both.
 	// FS-F6F88 §Requirements 26.
 	Floor      int `json:"floor,omitempty"`

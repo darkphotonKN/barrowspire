@@ -113,6 +113,16 @@ const (
 	// client has a single place to switch scenes. FS-29KSH §Requirements 15.
 	ActionWorldEntered Action = "world_entered"
 
+	// ActionFloorMap is a run floor's static layout, sent once per floor: its
+	// size and walls, and on a floor built on a cell grid its cell size and
+	// regions. Sent after every world_entered for the run, on every floor change
+	// and in answer to ActionRequestFloorMap. FS-KE075 §F Requirements 31–32.
+	ActionFloorMap Action = "floor_map"
+	// ActionRequestFloorMap is a client in a run asking again for its floor's
+	// map, with no payload; answered at most once a second per connection and
+	// ignored outside a run. FS-KE075 §F Requirement 33.
+	ActionRequestFloorMap Action = "request_floor_map"
+
 	// ActionWorldHandoff tells a client its run is hosted on another pod, and
 	// where to reconnect to enter it. FS-K2HKP §Requirements 21.
 	ActionWorldHandoff Action = "world_handoff"

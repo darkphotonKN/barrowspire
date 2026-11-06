@@ -92,6 +92,11 @@ type Session struct {
 	// started.
 	startedAt time.Time
 
+	// the current run floor's floor_map, published whole as each floor is
+	// built and never written after; nil before a run's first floor and in
+	// every other world (FS-KE075 §F, ADR-0060 Decision 1)
+	floorMap atomic.Pointer[types.Message]
+
 	// frames a member's writer could not take, counted rather than logged:
 	// one slow client would otherwise log thirty lines a second (FS-QG1HR D2)
 	droppedFrames atomic.Uint64
@@ -3252,6 +3257,9 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
 	// expected included, not only who is seated now
 	s.populateMonsters(depth, depth == constants.RunFloorCount, expected)
+
+	// the floor's layout stands: its map is what anyone entering is sent
+	s.publishFloorMap(depth)
 }
 
 // centredArea is the area of half-width rw and half-height rh centred on (x, y).
@@ -3294,7 +3302,10 @@ func (s *Session) applyRequestedFloorChange() {
 
 		if err := s.regenerateFloor(); err != nil {
 			slog.Error("Floor change refused", "sessionID", s.ID, "error", err)
+			return
 		}
+		// on the loop, before the new floor's first broadcast (FS-KE075 §F R32)
+		s.sendFloorMap()
 		return
 	}
 }
