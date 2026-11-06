@@ -1158,3 +1158,82 @@ describe("what the target frame may name (FS-48CTQ §C.5, §C.7)", () => {
     expect(roster.hoveredId).toBeUndefined();
   });
 });
+
+// On a dungeon floor a monster leaves the broadcast when the party walks off and comes back when
+// it returns (FS-KE075 §H.48): it goes with nothing replayed, and comes back as it now is
+describe("a monster that leaves the broadcast and comes back (FS-KE075 §H.48)", () => {
+  const live = (sprites: ReturnType<typeof fakeStage>["sprites"]) => sprites.filter((s) => !s.destroyed);
+  const deaths = (sprite: ReturnType<typeof fakeStage>["sprites"][number]) =>
+    sprite.plays.filter((p) => p.key.includes("/death/"));
+
+  it("should come back alive and hurt with no damage flash and no death clip", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([]);
+    expect(roster.size).toBe(0);
+    roster.sync([monster({ current_health: 40 })]);
+    roster.update(FRAME);
+
+    expect(roster.size).toBe(1);
+    const [back] = live(sprites);
+    expect(back).not.toBe(sprites[0]);
+    expect(back.tint).toBeNull();
+    expect(deaths(back)).toEqual([]);
+  });
+
+  it.each([
+    ["mid-fall", 3],
+    ["long dead", 30],
+  ])("should lay a corpse that left %s on its last death frame, never playing the fall again", (_, frames) => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    for (let i = 0; i < frames; i++) {
+      roster.sync([monster({ action: "dead", current_health: 0 })]);
+      roster.update(FRAME);
+    }
+    roster.sync([]);
+    for (let i = 0; i < 30; i++) {
+      roster.sync([monster({ action: "dead", current_health: 0 })]);
+      roster.update(FRAME);
+    }
+
+    const [back] = live(sprites);
+    // the fixture's death clip has 7 frames
+    expect(deaths(back)).toEqual([{ key: "creature_troll_base/death/4", startFrame: 6 }]);
+  });
+
+  it("should not spawn twice when it leaves and comes back again and again", () => {
+    const { stage, sprites, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    for (let i = 0; i < 5; i++) {
+      roster.sync([monster()]);
+      roster.update(FRAME);
+      roster.sync([]);
+    }
+    roster.sync([monster()]);
+    expect(roster.size).toBe(1);
+    expect(live(sprites)).toHaveLength(1);
+    expect(texts.filter((t) => !t.destroyed)).toHaveLength(1);
+    expect(bars.filter((b) => !b.destroyed)).toHaveLength(1);
+  });
+
+  it("should let go of the hover and the target frame's pick when the hovered one leaves", () => {
+    const { stage, sprites } = fakeStage();
+    const targeting = { strike: vi.fn(), hover: vi.fn() };
+    const roster = new MonsterRoster(stage, fixtureArt(), targeting);
+    roster.sync([monster({ entity_id: "m7" })]);
+    sprites[0].emit("pointerover");
+    roster.sync([]);
+    expect(targeting.hover).toHaveBeenLastCalledWith(null);
+    expect(roster.hoveredId).toBeUndefined();
+    expect(roster.targetable()).toEqual([]);
+
+    // back again under a still pointer: not hovered until the pointer comes onto it anew
+    roster.sync([monster({ entity_id: "m7" })]);
+    expect(roster.hoveredId).toBeUndefined();
+  });
+});
