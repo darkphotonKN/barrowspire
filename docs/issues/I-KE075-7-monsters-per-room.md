@@ -22,11 +22,28 @@ Floor 1's population by room and role: none in the start room or within 350 px o
 
 ## Acceptance Criteria
 
-- [ ] Across 1,000 floor-1 builds: 45–70 monsters besides a demon; none in the start room or within 350 px of a delver; none on a doorway; ≥ 60 px apart
-- [ ] Every treasure guard is elite; every eligible hall holds 1 troll and 2–4 ghouls
-- [ ] Corridors hold 4–8, at most one per segment
-- [ ] Floors 2–3 populations unchanged (their tests pass as they are)
+- [x] Across 1,000 floor-1 builds: 45–70 monsters besides a demon; none in the start room or within 350 px of a delver; none on a doorway; ≥ 60 px apart
+- [x] Every treasure guard is elite; every eligible hall holds 1 troll and 2–4 ghouls
+- [x] Corridors hold 4–8, at most one per segment
+- [x] Floors 2–3 populations unchanged (their tests pass as they are)
 - [ ] `go test ./...` and `golangci-lint run` pass
+
+## Verified (2026-11-06, review fix round 1, branch floor1/fix-KE075-server)
+
+- `TestDungeonPopulation_TotalAndStartRoom`, `_EveryHallHoldsATrollPack`, `_TreasureGuardsAreElite`,
+  `_CorridorsHoldFourToEightOnePerSegment`, `_OffDoorwaysClearAndApart`,
+  `_EliteChanceAndTrollShareUnchanged` (1,000 builds each), `TestPlaceDungeonDemon_TheFarthestRoom`;
+  floors 2–3 by the unchanged `monster_population_test.go`.
+- After the room-size fix (I-KE075-1), over 5,000 floor-1 builds: mean 52.4 monsters (was 49.2),
+  exactly 45 in 29.2% (was 45.2%), 46–49 15.7%, 50–54 19.2%, 55–59 16.7%, 60–64 11.1%,
+  65–69 5.6%, exactly 70 2.5% (was 0.2%), none outside 45–70; 5.72 halls per build, 4.50
+  eligible. The pile at 45 is the top-up floor: a floor whose rolls come in under 45 is topped up
+  to exactly 45.
+- game-service `go test ./...`, `go vet ./...` and `-race` on game pass.
+- **Not ticked: `golangci-lint run`.** Run over the whole module it fails on 7 errcheck findings
+  in `cmd/server/main.go` (5) and `auth/middleware.go` (2), files untouched by FS-KE075 and
+  unchanged since 48ece46c, where the same 7 are reported. `golangci-lint run` on `./internal/...`
+  packages this slice touches is clean. The status stays open until the module-wide run passes.
 
 ## Blocked By
 
