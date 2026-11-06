@@ -29,6 +29,15 @@ const FIXTURES: MinimapFixture[] = [
   { kind: "stairs", at: at(1000, 1200) },
 ];
 
+/** A region with no fixture in it, apart from room 1 and its group: somewhere to walk to. */
+const ELSEWHERE = (() => {
+  const taken = new Set([ROOM, ...FIXTURES.map((f) => regionAt(grid, f.at))]);
+  const seen = new Exploration(grid);
+  seen.see([IN_ROOM]);
+  const r = grid.regions.find((g) => !taken.has(g.id) && seen.state(g.id) === "unexplored")!;
+  return cellAt(r.cells[0].x, r.cells[0].y);
+})();
+
 /** A stand-in for `this.add.graphics()`: records each call, in order, as it was made. */
 function fakeGraphics() {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -194,10 +203,9 @@ describe("Minimap (§E.19–25)", () => {
 
   it("should fill each explored and visible region's cells in its own token, visible brighter, and nothing more for unexplored ones", () => {
     const { map, panel, show } = mapped();
-    // in room 1, then out to a cell of region 2: room 1 explored, region 2 visible
-    const r2 = grid.regions.find((r) => r.id === 2)!.cells[0];
+    // in room 1, then out to another region: room 1 explored, that one visible
     show([IN_ROOM]);
-    show([cellAt(r2.x, r2.y)]);
+    show([ELSEWHERE]);
     const fills = panel.drawn().filter((c) => c.name === "fillPoints");
     const visible = map.content.regions.filter((r) => r.state === "visible");
     const explored = map.content.regions.filter((r) => r.state === "explored");
@@ -239,15 +247,15 @@ describe("Minimap (§E.19–25)", () => {
     for (const dx of [0, 40, 80, 120]) show([at(IN_ROOM.x + dx, IN_ROOM.y)]);
     expect(map.redraws).toBe(once);
     // out of the room: it is left explored, another visible
-    const r2 = grid.regions.find((r) => r.id === 2)!.cells[0];
-    show([cellAt(r2.x, r2.y)]);
+    show([ELSEWHERE]);
     expect(map.redraws).toBe(once + 1);
-    // a fixture leaves the snapshot
-    show([cellAt(r2.x, r2.y)], FIXTURES.slice(1));
+    // a fixture not yet found leaves the snapshot: nothing shown changes
+    show([ELSEWHERE], FIXTURES.slice(1));
     expect(map.redraws).toBe(once + 1);
-    show([cellAt(r2.x, r2.y), FIXTURES[1].at], FIXTURES.slice(1));
+    // a member finds the escape door, which then leaves the snapshot
+    show([ELSEWHERE, FIXTURES[1].at], FIXTURES.slice(1));
     expect(map.redraws).toBe(once + 2);
-    show([cellAt(r2.x, r2.y), FIXTURES[1].at], FIXTURES.slice(2));
+    show([ELSEWHERE, FIXTURES[1].at], FIXTURES.slice(2));
     expect(map.redraws).toBe(once + 3);
   });
 
