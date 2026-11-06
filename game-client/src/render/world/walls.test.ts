@@ -306,3 +306,42 @@ describe("trimCrop", () => {
     expect(crop.x + crop.width).toBe(136);
   });
 });
+
+describe("planWalls by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47)", () => {
+  // a rule that keeps everything west of x = 200 low, and lets a light stand only north of y = 100
+  const rule = {
+    height: (at: { x: number }) => (at.x < 200 ? ("front" as const) : ("back" as const)),
+    lit: (at: { y: number }) => at.y < 100,
+  };
+
+  it("should give each piece the rule's height where it stands, so one wall can be both", () => {
+    const { pieces } = planWalls([wall(0, 0, 400, 80)], 7, MASONRY_WALLS, rule);
+    for (const p of pieces) {
+      expect(p.height).toBe(p.at.x < 200 ? "front" : "back");
+      expect(p.sheet.startsWith(`tower_wall_${p.height}_`)).toBe(true);
+    }
+    expect(new Set(pieces.map((p) => p.height))).toEqual(new Set(["front", "back"]));
+  });
+
+  it("should post each end at the rule's height there", () => {
+    const { posts } = planWalls([wall(0, 0, 400, 80)], 7, MASONRY_WALLS, rule);
+    expect(posts.map((p) => [p.at.x, p.sheet])).toEqual([
+      [40, "tower_post_front"],
+      [360, "tower_post_back"],
+    ]);
+  });
+
+  it("should draw no lit kind where the rule lets no light stand: a sconce there is plain", () => {
+    // a long back wall at y = 400: no light may stand there
+    const dark = planWalls([wall(200, 400, 4000, 80)], 7, MASONRY_WALLS, rule).pieces;
+    expect(dark.some((p) => p.sheet.includes("sconce"))).toBe(false);
+    // the same wall north of y = 100 keeps today's share of sconces
+    const lit = planWalls([wall(200, 0, 4000, 80)], 7, MASONRY_WALLS, rule).pieces;
+    expect(lit.some((p) => p.sheet.includes("sconce"))).toBe(true);
+  });
+
+  it("should name every lit kind of both materials, so none slips past the rule", () => {
+    expect(MASONRY_WALLS.lit).toEqual(["sconce"]);
+    expect(TIMBER_WALLS.lit).toEqual(["torch", "window"]);
+  });
+});

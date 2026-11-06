@@ -77,6 +77,16 @@ export function heightOf(side: HouseSide | undefined): WallHeight {
   return side === "south" || side === "east" ? "front" : "back";
 }
 
+/**
+ * How a floor of cells decides each wall piece by where it stands (a dungeon floor, FS-KE075
+ * §H.46–§H.47), in place of the side of a house: its height, and whether it may carry a light.
+ */
+export interface PieceRule {
+  height(at: Point): WallHeight;
+  /** Whether a piece here may be a kind that carries a light; when not, it is the plain kind. */
+  lit(at: Point): boolean;
+}
+
 /** Share of whole pieces of each kind, cumulative, in percent. The first kind is the plain one. */
 export type VariantTable = readonly (readonly [number, string])[];
 
@@ -95,6 +105,11 @@ export interface WallSheets {
   outward: VariantTable;
   /** The stone cap laid over the building (FS-9PN7X §F.3); absent, the building has a roof. */
   cap?: string;
+  /**
+   * The kinds whose sheets carry a light (their manifest entries declare one): where a piece rule
+   * lets no light stand, these are drawn plain (FS-KE075 §H.47).
+   */
+  lit?: readonly string[];
 }
 
 const KINDS: VariantTable = [
@@ -115,6 +130,7 @@ export const TIMBER_WALLS: WallSheets = {
     [86, "brace"],
     [100, "window"],
   ],
+  lit: ["torch", "window"],
 };
 
 /**
@@ -139,6 +155,7 @@ export const MASONRY_WALLS: WallSheets = {
     [100, "pillar"],
   ],
   cap: "tower_cap",
+  lit: ["sconce"],
 };
 
 /** Cuts one wall rect into pieces along its centreline, trimmed at the far end if it must be. */
@@ -148,7 +165,8 @@ export function cutWall(
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
 ): WallPiece[] {
-  return cut(w, height, `${sheets.prefix}wall_${height}`, sheets[height], seed);
+  const look = { height, stem: `${sheets.prefix}wall_${height}`, kinds: sheets[height] };
+  return cut(w, seed, () => look);
 }
 
 /**
@@ -161,16 +179,40 @@ export function cutExterior(
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
 ): WallPiece[] {
-  return cut(w, "back", `${sheets.prefix}wall_exterior`, sheets.outward, seed);
+  const look = { height: "back" as const, stem: `${sheets.prefix}wall_exterior`, kinds: sheets.outward };
+  return cut(w, seed, () => look);
 }
 
-function cut(
+/**
+ * One wall rect cut by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47): each piece takes the
+ * rule's height where it stands, and where the rule lets no light stand, a lit kind is the plain
+ * kind instead, so the share of every other kind is kept.
+ */
+export function cutByRule(
   w: WallState,
-  height: WallHeight,
-  stem: string,
-  kinds: VariantTable,
   seed: number,
+  sheets: WallSheets,
+  rule: PieceRule,
 ): WallPiece[] {
+  return cut(w, seed, (at) => {
+    const height = rule.height(at);
+    const kinds = sheets[height];
+    return {
+      height,
+      stem: `${sheets.prefix}wall_${height}`,
+      kinds: rule.lit(at) ? kinds : unlit(kinds, sheets.lit ?? []),
+    };
+  });
+}
+
+/** A variant table with each lit kind turned to the plain kind, its share and all. */
+const unlit = (kinds: VariantTable, lit: readonly string[]): VariantTable =>
+  kinds.map(([share, kind]) => [share, lit.includes(kind) ? kinds[0][1] : kind] as const);
+
+/** What a piece standing at a place is drawn as: its height, sheet stem and kinds. */
+type PieceLook = { height: WallHeight; stem: string; kinds: VariantTable };
+
+function cut(w: WallState, seed: number, lookAt: (at: Point) => PieceLook): WallPiece[] {
   const axis = axisOf(w);
   const { x, y } = w.position;
   const length = axis === "x" ? w.width : w.height;
@@ -187,6 +229,7 @@ function cut(
         : { x: x + w.width / 2, y: y + along };
     const depthAt = axis === "x" ? { x: x + k * T, y } : { x, y: y + k * T };
     const keep = k < whole ? 1 : rest;
+    const { height, stem, kinds } = lookAt(at);
     const h = tileHash(Math.round(at.x), Math.round(at.y), seed);
     const kind =
       keep < 1 ? kinds[0][1] : kinds.find(([cut]) => h % 100 < cut)![1];
@@ -223,23 +266,24 @@ function endsOf(w: WallState): [Point, Point] {
 
 /**
  * Every wall's pieces, and a post at every wall end: corners and door jambs, one post where
- * walls meet, as tall as the tallest wall it joins.
+ * walls meet, as tall as the tallest wall it joins. With a piece rule, each piece and post takes
+ * the rule's height where it stands instead of its house side's (a dungeon floor).
  */
 export function planWalls(
   walls: readonly WallState[],
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
+  rule?: PieceRule,
 ): { pieces: WallPiece[]; posts: WallPost[] } {
   const houses = new Map(housesFrom(walls).map((h) => [h.id, h]));
   const pieces: WallPiece[] = [];
   const posts = new Map<string, WallPost>();
 
   for (const w of walls) {
-    const height = heightOf(
-      sideOf(w, w.house_id ? houses.get(w.house_id) : undefined),
-    );
-    pieces.push(...cutWall(w, height, seed, sheets));
+    const side = heightOf(sideOf(w, w.house_id ? houses.get(w.house_id) : undefined));
+    pieces.push(...(rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets)));
     for (const at of endsOf(w)) {
+      const height = rule ? rule.height(at) : side;
       const key = `${Math.round(at.x)},${Math.round(at.y)}`;
       const existing = posts.get(key);
       if (existing?.height === "back") continue;

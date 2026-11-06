@@ -95,6 +95,7 @@ import {
   nearestScreenFacing,
   projectedBounds,
   screenToWorld,
+  splitAlongLength,
   standAt,
   WORLD_PX_PER_TILE,
   worldDepth,
@@ -175,6 +176,11 @@ import {
   type WorldThemeLook,
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
+import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
+import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule } from "@/render/world/dungeon";
+import { nearLights } from "@/render/world/floorLights";
+import { planRoomDressing } from "@/render/world/runDressing";
+import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import {
   FULLSCREEN_BUTTON_CLEARANCE,
@@ -183,6 +189,7 @@ import {
   crispen,
   followWith,
   relayoutOn,
+  viewRect,
   viewport,
   type Placement,
 } from "@/render/viewport";
@@ -385,6 +392,19 @@ interface Building {
 interface LightRoom {
   room?: string;
   at?: Point;
+}
+
+/**
+ * A dungeon floor as drawn (FS-KE075 §H.44–§H.47): its cells, what stands in each ground chunk,
+ * and its fixed lights by chunk, of which only those near the camera are on the light-map.
+ */
+interface DungeonFloor {
+  floor: number;
+  grid: RegionGrid;
+  chunks: ChunkVisibility;
+  lights: (FixedLight<{ source: LightSource } & LightRoom> & { chunk: number })[];
+  /** The lights on the light-map now. */
+  lit: Set<LightSource>;
 }
 
 /** Limited barrow palette for the wizard-player sprite (0x ints). */
@@ -621,8 +641,13 @@ export class BarrowspireScene extends Phaser.Scene {
   // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
   private mapWidth = 0;
   private mapHeight = 0;
-  /** The size the camera, physics and ground were fitted to; none before the first map. */
-  private fittedTo?: { width: number; height: number };
+  /**
+   * The size the camera, physics and ground were fitted to, and the dungeon cells the ground was
+   * painted under (none on a floor of buildings); none before the first map.
+   */
+  private fittedTo?: { width: number; height: number; cells?: RegionGrid };
+  /** The dungeon floor being drawn (FS-KE075 §H.44–§H.47); none on a floor of buildings. */
+  private dungeon?: DungeonFloor;
   /** The floor whose map is built (FS-KE075 §H.43): none until one is, and none after a teardown. */
   private builtFloor?: number;
   /** The built floor's walls, as its map gave them: what the dressing keeps clear of. */
@@ -1035,6 +1060,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.mapWidth = 0;
     this.mapHeight = 0;
     this.fittedTo = undefined;
+    this.dungeon = undefined;
     this.builtFloor = undefined;
     this.floorWalls = [];
     this.mapWait.reset();
@@ -2996,7 +3022,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
     // run always was; otherwise the map, when it comes
     const held = this.heldFloorMap();
-    if (held) this.fitFloor(held.width, held.height);
+    if (held) this.fitFloor(held);
 
     // buildings are now created from server wall data in updateWalls()
 
@@ -3587,7 +3613,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
   private standFloor(map: FloorMap): void {
-    this.fitFloor(map.width, map.height);
+    this.fitFloor(map);
     this.buildPerimeter();
     this.buildWalls(map);
   }
@@ -3597,7 +3623,99 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.builtFloor === map.floor) return;
     this.builtFloor = map.floor;
     this.floorWalls = map.walls;
-    this.updateWalls(map.walls);
+    if (this.dungeon) this.buildDungeonWalls(map.walls);
+    else this.updateWalls(map.walls);
+  }
+
+  /**
+   * A dungeon map's floor, once per floor (FS-KE075 §H.44–§H.45): its cells, and the ground's
+   * chunks that what stands on it is shown and hidden by. A floor of buildings has none.
+   */
+  private enterDungeon(map: FloorMap): void {
+    if (!isDungeon(map) || this.dungeon?.floor === map.floor) return;
+    const ground = new ChunkGrid(projectedBounds(map.width, map.height, GROUND_MARGIN), DUNGEON_CHUNK);
+    this.dungeon = {
+      floor: map.floor,
+      grid: new RegionGrid(map),
+      chunks: new ChunkVisibility(ground),
+      lights: [],
+      lit: new Set(),
+    };
+  }
+
+  /**
+   * A dungeon floor's walls (FS-KE075 §H.46–§H.47): the map's rects in masonry, a block cut into
+   * one-cell strips, each piece front where a walkable cell lies north or west of it and back
+   * otherwise, the full pieces fading over the player like any occluder; a light only on a room's
+   * back wall. No building is drawn, no blackout and no roof: every piece stands in its ground
+   * chunk, shown only near the camera (§H.45). The ground takes the floor's look and seed.
+   */
+  private buildDungeonWalls(walls: readonly WallState[]): void {
+    const dungeon = this.dungeon!;
+    const look = this.currentFloorLook();
+    const rule = wallRule(dungeon.grid);
+    this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
+    const strips = stripWalls(walls, dungeon.grid.cell);
+    const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
+    const stand = (part: { setVisible(visible: boolean): unknown }, at: Point) =>
+      dungeon.chunks.add(part, worldToScreen(at.x, at.y));
+    if (baked) {
+      this.occluders.add(baked.tall);
+      for (const { sprite, at } of baked.standing) stand(sprite, at);
+      baked.lights.forEach(({ source, at }) => this.queueLight("sconce", source, { at }));
+    }
+    const pieces = new Map<string, BuildingPart[]>();
+    for (const w of strips) {
+      const own = pieces.get(w.entity_id) ?? [];
+      pieces.set(w.entity_id, own);
+      if (baked) continue;
+      // no art: placeholder blocks, one per tile of wall, as tall as the rule makes each
+      const { x, y } = w.position;
+      for (const p of splitAlongLength(x, y, w.width, w.height, WORLD_PX_PER_TILE)) {
+        const centre = { x: p.x + p.width / 2, y: p.y + p.height / 2 };
+        const tall = rule.height(centre) === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+        for (const g of addUprightBlock(this, p.x, p.y, p.width, p.height, PLACEHOLDER_STONE, tall)) {
+          own.push(g);
+          stand(g, centre);
+        }
+      }
+    }
+    for (const w of walls) {
+      const own = baked?.byWall.get(w.entity_id) ?? pieces.get(w.entity_id) ?? [];
+      this.walls.set(w.entity_id, { pieces: own, entityId: w.entity_id });
+    }
+  }
+
+  /**
+   * Shows what stands in the ground chunks near the camera and hides the rest, and puts the fixed
+   * lights near it on the light-map (FS-KE075 §H.45): only when the camera crosses a chunk edge.
+   * Nothing on a floor of buildings.
+   */
+  private showNearChunks(): void {
+    if (this.dungeon?.chunks.update(viewRect(this.cameras.main))) this.lightNearChunks();
+  }
+
+  /**
+   * A dungeon floor's fixed lights near the camera on the light-map, the rest off it: never more
+   * than {@link FIXED_LIGHT_CAP} at once, dropped in the floor's order (FS-8RBQY §C.6). A dungeon
+   * floor has no rooms to light from inside, so each is lit wherever it is in view.
+   */
+  private lightNearChunks(): void {
+    const dungeon = this.dungeon;
+    if (!dungeon) return;
+    const near = nearLights(dungeon.lights, (chunk) => dungeon.chunks.shown(chunk));
+    const kept = new Set(near.map((l) => l.light.source));
+    for (const source of dungeon.lit)
+      if (!kept.has(source)) {
+        this.lightMap?.remove(source);
+        dungeon.lit.delete(source);
+      }
+    for (const source of kept)
+      if (!dungeon.lit.has(source)) {
+        this.lightMap?.add(source);
+        dungeon.lit.add(source);
+      }
+    this.stampedLights = dungeon.lit.size;
   }
 
   /**
@@ -3605,16 +3723,22 @@ export class BarrowspireScene extends Phaser.Scene {
    * physics world in projected space, the map a diamond clamped by its bounding box plus a margin
    * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits.
    */
-  private fitFloor(width: number, height: number): void {
-    if (this.fittedTo?.width === width && this.fittedTo.height === height) return;
-    const resized = this.fittedTo !== undefined;
-    this.fittedTo = { width, height };
+  private fitFloor(map: FloorMap): void {
+    this.enterDungeon(map);
+    const { width, height } = map;
+    const cells = this.dungeon?.grid;
+    const before = this.fittedTo;
+    if (before?.width === width && before.height === height && before.cells === cells) return;
+    this.fittedTo = { width, height, cells };
     this.mapWidth = width;
     this.mapHeight = height;
     const bounds = projectedBounds(width, height, CAMERA_MARGIN);
     this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     boundCamera(this.cameras.main, bounds);
-    if (resized) this.dropGround();
+    // a dungeon's void is the darkest ink: the camera's background, painted over by nothing
+    // (FS-KE075 §H.44)
+    if (cells || before?.cells) this.cameras.main.setBackgroundColor(cells ? palette.inkDeep : palette.mapEdge);
+    if (before) this.dropGround();
     if (!this.groundLayer && !this.groundPlane) this.createGround();
   }
 
@@ -3624,15 +3748,23 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private createGround(): void {
     const look = this.worldLook.ground;
+    const dungeon = this.dungeon;
+    // in chunks of at most 2048 px, which a floor of buildings fits in one of; a dungeon floor's
+    // smaller, and only under its walkable and shell cells (FS-KE075 §H.44)
     this.groundLayer = GroundLayer.available(this.art, "run", look)
       ? new GroundLayer(this, this.art, {
           width: this.mapWidth,
           height: this.mapHeight,
           kind: "run",
           look,
+          chunk: dungeon ? DUNGEON_CHUNK : CHUNK_MAX,
+          where: dungeon && ((at) => dungeon.grid.hasGround(at)),
         })
       : undefined;
     if (!this.groundLayer) this.createMapBackground();
+    // each chunk of the ground shown only near the camera, as what stands on it is (§H.45)
+    for (const chunk of this.groundLayer?.chunks ?? [])
+      dungeon?.chunks.add(chunk, { x: chunk.rect.x + chunk.rect.width / 2, y: chunk.rect.y + chunk.rect.height / 2 });
   }
 
   /** The ground of another size goes, for the floor's own (FS-KE075 §H.42). */
@@ -3656,8 +3788,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
-    // the next floor is built from its own map (FS-KE075 §H.43)
+    // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights
+    // with it (§H.45)
     this.builtFloor = undefined;
+    this.dungeon?.chunks.clear();
+    this.dungeon = undefined;
     this.floorWalls = [];
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
@@ -4051,7 +4186,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * without its art: a missing perimeter sheet leaves the wall out (§B.8).
    */
   private buildPerimeter(): void {
-    if (!this.worldLook.perimeter || this.perimeter) return;
+    // a dungeon floor's shell walls are its edge: no outer wall (FS-KE075 §H.47)
+    if (!this.worldLook.perimeter || this.perimeter || this.dungeon) return;
     const built = addPerimeter(this, this.art, this.mapWidth, this.mapHeight);
     this.perimeter = built?.sprites ?? [];
     built?.lights.forEach((light) => this.queueLight("slit", light));
@@ -4088,15 +4224,22 @@ export class BarrowspireScene extends Phaser.Scene {
   private buildDressing(state: ClientGameState): void {
     if (this.dressing) return;
     const look = this.currentFloorLook();
-    const plan = look.dressing
-      ? planDressing(look.dressing, look.seed, dressingStatics({ ...state, walls: this.floorWalls }, this.mapWidth, this.mapHeight))
-      : [];
+    const dungeon = this.dungeon;
+    const statics = dressingStatics({ ...state, walls: this.floorWalls }, this.mapWidth, this.mapHeight);
+    // a dungeon floor's in its rooms only, at the same density per room area (FS-KE075 §H.47)
+    const plan = !look.dressing
+      ? []
+      : dungeon
+        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid))
+        : planDressing(look.dressing, look.seed, statics);
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];
     for (const piece of plan) {
       const built = addDressing(this, this.art, [piece]);
       this.dressing.push(...built.sprites);
-      this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
+      // on a dungeon floor no room hides it: it is shown by its ground chunk instead (§H.45)
+      if (dungeon) for (const sprite of built.sprites) dungeon.chunks.add(sprite, worldToScreen(piece.at.x, piece.at.y));
+      else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
       this.occluders.add(built.tall);
       built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
     }
@@ -4129,6 +4272,15 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private stampLights(): void {
     if (this.pendingLights.length === 0) return;
+    const dungeon = this.dungeon;
+    if (dungeon) {
+      // a dungeon floor's every fixed light waits in its chunk; those near the camera are lit
+      // within the cap (FS-KE075 §H.45)
+      for (const l of this.pendingLights) dungeon.lights.push({ ...l, chunk: dungeon.chunks.grid.indexAt(l.at) });
+      this.pendingLights = [];
+      this.lightNearChunks();
+      return;
+    }
     const kept = budgetLights(this.pendingLights, FIXED_LIGHT_CAP - this.stampedLights);
     for (const { light: { source, room, at } } of kept) {
       // a light standing in a building is that building's, by the same inside test (§A.2)
@@ -5132,6 +5284,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private updateLighting(time: number, delta: number): void {
     const self = this.player?.visible ? this.player : undefined;
     this.lightMap?.carry(self ? { x: self.x, y: self.y } : null);
+    this.showNearChunks();
     this.lightMap?.update(time);
     this.occluders.update(self ? { bounds: self.getBounds(), depth: self.depth } : null, delta);
   }

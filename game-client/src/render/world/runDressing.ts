@@ -195,30 +195,97 @@ export function planDressing(
   statics: DressingStatics,
 ): DressingPiece[] {
   const count = Math.min(lean.count, DRESSING_MAX);
-  const placed: DressingPiece[] = [];
-  const used = new Map<DressingSheet, number>();
+  const strewn = new Strewing(lean, statics);
   const span = (size: number, r: number, h: number) => {
     const lo = KEEP_OUT.edge + r;
     return lo + ((h & 0xffff) / 0xffff) * (size - 2 * lo);
   };
-
-  for (let k = 0; k < CANDIDATES && placed.length < count; k++) {
-    const pick = tileHash(k, 3, seed);
-    const sheet = lean.weights.find(([cut]) => pick % 100 < cut)?.[1];
-    if (!sheet || (used.get(sheet) ?? 0) >= (lean.most?.[sheet] ?? Infinity))
-      continue;
-    const r = FOOTPRINT[sheet];
-    const at = {
+  for (let k = 0; k < CANDIDATES && strewn.placed.length < count; k++)
+    strewn.try(k, seed, (r) => ({
       x: Math.round(span(statics.width, r, tileHash(k, 1, seed))),
       y: Math.round(span(statics.height, r, tileHash(k, 2, seed))),
-    };
-    if (dressingBreaches({ from: at, to: at, r }, statics).length > 0) continue;
-    const crowded = placed.some(
+    }));
+  return strewn.placed;
+}
+
+/**
+ * The floor area FS-8RBQY §C's dressing counts were tuned on, world px²: floors 2 and 3, 1440 ×
+ * 960. A dungeon room is strewn at the same density for its own area (FS-KE075 §H.47).
+ */
+export const DRESSING_AREA = 1440 * 960;
+/** How many places a dungeon room tries for each piece it wants; most fail the keep-out. */
+const TRIES_PER_PIECE = 12;
+
+/** Where a dungeon floor's dressing may stand: a room, its rect, and what it lets stand in it. */
+export interface DressingArea {
+  /** The room's region id: its own seed, so each room strews its own way. */
+  id: number;
+  /** The room's bounding rect, world px: candidates fall in it. */
+  rect: Rect;
+  /** Whether a footprint square (world px) may stand in the room (FS-KE075 §H.47). */
+  clear(square: Rect): boolean;
+}
+
+/**
+ * A dungeon floor's dressing (FS-KE075 §H.47): each room strewn at FS-8RBQY §C's density for its
+ * area (the lean's count per {@link DRESSING_AREA}), only where the room lets a piece stand (never
+ * in a corridor, never within a cell of a doorway) and clear of the keep-out. A sheet's `most` holds
+ * across the whole floor, and pieces are spaced across rooms as on any floor.
+ */
+export function planRoomDressing(
+  lean: DressingLean,
+  seed: number,
+  statics: DressingStatics,
+  rooms: readonly DressingArea[],
+): DressingPiece[] {
+  const perFloor = Math.min(lean.count, DRESSING_MAX);
+  const strewn = new Strewing(lean, statics);
+  for (const room of rooms) {
+    const quota = Math.round((perFloor * room.rect.width * room.rect.height) / DRESSING_AREA);
+    const own = tileHash(room.id, 0x524f_4f4d, seed);
+    const { x, y, width, height } = room.rect;
+    const span = (from: number, size: number, r: number, h: number) =>
+      Math.round(from + r + ((h & 0xffff) / 0xffff) * (size - 2 * r));
+    const before = strewn.placed.length;
+    for (let k = 0; k < quota * TRIES_PER_PIECE && strewn.placed.length - before < quota; k++)
+      strewn.try(
+        k,
+        own,
+        (r) => ({ x: span(x, width, r, tileHash(k, 1, own)), y: span(y, height, r, tileHash(k, 2, own)) }),
+        room.clear,
+      );
+  }
+  return strewn.placed;
+}
+
+/** The pieces strewn so far on one floor, and the rules each new one must pass. */
+class Strewing {
+  readonly placed: DressingPiece[] = [];
+  private readonly used = new Map<DressingSheet, number>();
+
+  constructor(
+    private readonly lean: DressingLean,
+    private readonly statics: DressingStatics,
+  ) {}
+
+  /**
+   * Candidate `k` of `seed`: its sheet by the lean, its place by `spot`, kept when it clears the
+   * keep-out, the area's own test and the spacing, dropped otherwise, never nudged (§C.5).
+   */
+  try(k: number, seed: number, spot: (r: number) => Point, clear?: (square: Rect) => boolean): void {
+    const pick = tileHash(k, 3, seed);
+    const sheet = this.lean.weights.find(([cut]) => pick % 100 < cut)?.[1];
+    if (!sheet || (this.used.get(sheet) ?? 0) >= (this.lean.most?.[sheet] ?? Infinity)) return;
+    const r = FOOTPRINT[sheet];
+    const at = spot(r);
+    const fp = { from: at, to: at, r };
+    if (clear && !clear(squareOf(fp))) return;
+    if (dressingBreaches(fp, this.statics).length > 0) return;
+    const crowded = this.placed.some(
       (p) => Math.hypot(p.at.x - at.x, p.at.y - at.y) <= p.r + r + GAP,
     );
-    if (crowded) continue;
-    placed.push({ sheet, index: pick >>> 8, at, r, tall: sheet === "brazier" });
-    used.set(sheet, (used.get(sheet) ?? 0) + 1);
+    if (crowded) return;
+    this.placed.push({ sheet, index: pick >>> 8, at, r, tall: sheet === "brazier" });
+    this.used.set(sheet, (this.used.get(sheet) ?? 0) + 1);
   }
-  return placed;
 }
