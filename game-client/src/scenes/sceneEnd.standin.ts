@@ -146,7 +146,14 @@ export interface KeyStandIn extends EventEmitter {
 }
 
 /** Phaser's KeyCodes for the cursor keys `createCursorKeys` adds. */
-const CURSOR_CODES = { up: 38, down: 40, left: 37, right: 39, space: 32, shift: 16 } as const;
+const CURSOR_CODES = {
+  up: 38,
+  down: 40,
+  left: 37,
+  right: 39,
+  space: 32,
+  shift: 16,
+} as const;
 
 class KeyboardStandIn extends EventEmitter {
   enabled = true;
@@ -158,26 +165,38 @@ class KeyboardStandIn extends EventEmitter {
 
   /** KeyboardPlugin.addKey: `enableCapture` defaults to true, and a capture is the game's. */
   addKey(keyCode: number, enableCapture = true): KeyStandIn {
-    const key: KeyStandIn = Object.assign(new EventEmitter(), { keyCode, destroyed: false });
+    const key: KeyStandIn = Object.assign(new EventEmitter(), {
+      keyCode,
+      destroyed: false,
+    });
     this.keys.push(key);
     if (enableCapture) this.addCapture(keyCode);
     return key;
   }
 
   createCursorKeys(): Record<keyof typeof CURSOR_CODES, KeyStandIn> {
-    const keys = Object.entries(CURSOR_CODES).map(([name, code]) => [name, this.addKey(code)]);
-    return Object.fromEntries(keys) as Record<keyof typeof CURSOR_CODES, KeyStandIn>;
+    const keys = Object.entries(CURSOR_CODES).map(([name, code]) => [
+      name,
+      this.addKey(code),
+    ]);
+    return Object.fromEntries(keys) as Record<
+      keyof typeof CURSOR_CODES,
+      KeyStandIn
+    >;
   }
 
   addCapture(keyCode: number): this {
-    if (!this.manager!.captures.includes(keyCode)) this.manager!.captures.push(keyCode);
+    if (!this.manager!.captures.includes(keyCode))
+      this.manager!.captures.push(keyCode);
     return this;
   }
 
   /** KeyboardPlugin.removeCapture: one code or several. */
   removeCapture(keyCode: number | number[]): this {
     const codes = [keyCode].flat();
-    this.manager!.captures = this.manager!.captures.filter((code) => !codes.includes(code));
+    this.manager!.captures = this.manager!.captures.filter(
+      (code) => !codes.includes(code),
+    );
     return this;
   }
 

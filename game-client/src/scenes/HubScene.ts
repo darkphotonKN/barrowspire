@@ -139,7 +139,7 @@ import {
   stashPlate,
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
-import { onSceneEnd, type SceneEnd } from "./sceneEnd";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { trimCrop } from "@/render/world/walls";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 
@@ -834,7 +834,11 @@ export class HubScene extends Phaser.Scene {
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
-    // a stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN
+    this.listenForEnd();
+  }
+
+  /** A stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN. */
+  private listenForEnd(): void {
     onSceneEnd(this, (end) => this.release(end));
   }
 
@@ -989,7 +993,7 @@ export class HubScene extends Phaser.Scene {
    * (commit 0a35e36): forget it, and make it again only while it is `.active`. On the game's
    * destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
    */
-  private release(end: SceneEnd = "shutdown"): void {
+  private release(end: SceneEnd): void {
     this.unsubscribeState?.();
     this.unsubscribeQueue?.();
     this.views.clear();
@@ -1052,9 +1056,23 @@ export class HubScene extends Phaser.Scene {
     this.stashMarks = [];
     this.interiors = [];
     this.stashChest = undefined;
-    // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's.
-    // A destroyed game took its input manager, and the cursor with it.
-    if (end === "shutdown") this.input.setDefaultCursor("");
+    // a destroyed game took its input manager, the cursor and the captures with it
+    if (end === "shutdown") this.handBackInput();
+  }
+
+  /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
+  private handBackInput(): void {
+    // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's
+    this.input.setDefaultCursor("");
+    releaseCaptures(this.input.keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+      this.interactKey,
+      this.confirmKey,
+      this.dismissKey,
+      ...this.gearKeys,
+      ...this.choiceKeys,
+    ]);
   }
 
   update(time: number, delta: number): void {

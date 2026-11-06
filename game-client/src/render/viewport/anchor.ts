@@ -8,6 +8,7 @@
  * the bottom ones are anchors all the same, so a widget says where it belongs.
  */
 
+import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import { viewport, type View, type Viewport } from "./viewport";
 
 /** The edge or corner a widget keeps to. */
@@ -58,26 +59,13 @@ export function anchorAt(
 }
 
 /** What of a scene a re-layout listens to. A `Phaser.Scene` is one. */
-export interface RelayoutScene {
-  events: {
-    once(event: SceneEnd, fn: () => void): unknown;
-    off(event: SceneEnd, fn: () => void): unknown;
-  };
-}
-
-/**
- * How a scene ends. A stop emits SHUTDOWN; `game.destroy(true)` (leaving /game) emits only
- * DESTROY and then drops every listener, so a re-layout listens for both.
- */
-type SceneEnd = "shutdown" | "destroy";
-
-const SCENE_ENDS: readonly SceneEnd[] = ["shutdown", "destroy"];
+export type RelayoutScene = EndingScene;
 
 /**
  * Runs `layout` each time the logical view's size changes while `scene` runs, until it shuts
- * down or is destroyed: the scene's anchored widgets go back to their anchors, open panels
- * included (R13). A render-scale change alone moves nothing in logical units, so it does not run
- * it. Returns the stop.
+ * down or is destroyed (`game.destroy(true)`, leaving /game, emits only DESTROY): the scene's
+ * anchored widgets go back to their anchors, open panels included (R13). A render-scale change
+ * alone moves nothing in logical units, so it does not run it. Returns the stop.
  */
 export function relayoutOn(
   scene: RelayoutScene,
@@ -90,10 +78,9 @@ export function relayoutOn(
     size = { width: view.width, height: view.height };
     layout();
   });
-  const stop = () => {
+  const cancelEnd = onSceneEnd(scene, unsubscribe);
+  return () => {
+    cancelEnd();
     unsubscribe();
-    for (const end of SCENE_ENDS) scene.events.off(end, stop);
   };
-  for (const end of SCENE_ENDS) scene.events.once(end, stop);
-  return stop;
 }

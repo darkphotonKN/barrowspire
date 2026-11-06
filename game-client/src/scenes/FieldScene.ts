@@ -57,7 +57,7 @@ import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
-import { onSceneEnd, type SceneEnd } from "./sceneEnd";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -440,7 +440,7 @@ export class FieldScene extends Phaser.Scene {
    * Everything one visit made is let go: Phaser reuses the scene instance for the next. On the
    * game's destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
    */
-  private release(end: SceneEnd = "shutdown"): void {
+  private release(end: SceneEnd): void {
     this.unsubscribeState?.();
     socketManager.offError(ActionType.LeaveField);
     socketManager.off(ActionType.Interact);
@@ -477,9 +477,18 @@ export class FieldScene extends Phaser.Scene {
     this.fight = undefined;
     this.lightMap = undefined;
     this.lastSent = { vx: 0, vy: 0 };
-    // the fight's hand or strike-mark is the field's: the next world sets its own. A destroyed
-    // game took its input manager, and the cursor with it.
-    if (end === "shutdown") this.input.setDefaultCursor("");
+    // a destroyed game took its input manager, the cursor and the captures with it
+    if (end === "shutdown") this.handBackInput();
+  }
+
+  /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
+  private handBackInput(): void {
+    // the fight's hand or strike-mark is the field's: the next world sets its own
+    this.input.setDefaultCursor("");
+    releaseCaptures(this.input.keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+    ]);
   }
 
   update(time: number, delta: number): void {

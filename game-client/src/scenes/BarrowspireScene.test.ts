@@ -4462,7 +4462,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
     ["the window losing focus", (s) => s.game.events.emit("blur")],
     ["the tab going hidden", (s) => s.game.events.emit("hidden")],
-    ["the scene tearing down", (s) => s.run.resetRun()],
+    ["the scene tearing down", (s) => s.run.resetRun("shutdown")],
   ];
 
   it.each(cancels)("should end a hold on %s with nothing sent and no line left", (_, cancel) => {

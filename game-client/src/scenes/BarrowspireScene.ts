@@ -55,7 +55,7 @@ import { PotionHud } from "@/ui/PotionHud";
 import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
-import { onSceneEnd, type SceneEnd } from "./sceneEnd";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -831,7 +831,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * or touch sprites that no longer exist. On the game's destroy the scene's plugins are already
    * gone and are asked nothing (`SceneEnd`).
    */
-  private resetRun(end: SceneEnd = "shutdown"): void {
+  private resetRun(end: SceneEnd): void {
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.connectionStatusUnsubscribe?.();
@@ -934,11 +934,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.menuFor = undefined;
     this.fallPending = false;
     this.striding = false;
+    // on a stop the keyboard is handed back, by the keys still held here; either way the next
+    // run's create binds its keys afresh
+    if (end === "shutdown") this.handBackKeyboard();
     this.dismissKey = undefined;
     this.confirmKey = undefined;
     this.choiceKeys = [];
-    // on a stop the keyboard is handed back; either way the next run binds Tab afresh
-    if (end === "shutdown") this.handBackKeyboard();
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
@@ -984,8 +985,42 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!keyboard) return;
     // the run's end locks the keyboard, so the next run would start unable to move
     keyboard.enabled = true;
-    // Phaser destroys the run's keys on shutdown but keeps their captures
-    if (this.tabKey) keyboard.removeKey(this.tabKey, true, true);
+    // Phaser's stop destroyed the run's keys already and kept their captures: Tab's would stop
+    // focus moving in the hub and its DOM overlays
+    releaseCaptures(keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+      this.tabKey,
+      this.dismissKey,
+      this.confirmKey,
+      ...this.choiceKeys,
+    ]);
+  }
+
+  /** The run's keys, polled each frame or answered on press. Each captures its key (`SceneEnd`). */
+  private bindKeys(): void {
+    // 輸入控制
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasd = {
+      up: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      down: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      left: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
+
+    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
+    // focus off the canvas; nothing happens unless this player is spectating.
+    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
+    this.tabKey.on("down", () => this.cycleWatched());
+
+    // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
+    // the first. Polled each frame in update, as the hub's are. Nothing here leaves the run: the
+    // server keeps the body in the world whoever is looking at it (FS-QPDKN req 13).
+    this.dismissKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.confirmKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.choiceKeys = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO].map(
+      (code) => this.input.keyboard!.addKey(code),
+    );
   }
 
   private toggleControlsPanel(): void {
@@ -2896,28 +2931,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 寶箱由後端同步，不在這裡創建
 
-    // 輸入控制
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.wasd = {
-      up: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      down: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      left: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-    };
-
-    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
-    // focus off the canvas; nothing happens unless this player is spectating.
-    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
-    this.tabKey.on("down", () => this.cycleWatched());
-
-    // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
-    // the first. Polled each frame in update, as the hub's are. Nothing here leaves the run: the
-    // server keeps the body in the world whoever is looking at it (FS-QPDKN req 13).
-    this.dismissKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.confirmKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
-    this.choiceKeys = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO].map(
-      (code) => this.input.keyboard!.addKey(code),
-    );
+    this.bindKeys();
 
     this.bindRunInput();
 

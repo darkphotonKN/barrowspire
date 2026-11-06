@@ -102,7 +102,12 @@ describe("releaseCaptures", () => {
     systems.shutdown();
     expect(keyboard.keys, "the stop destroyed the keys").toEqual([]);
 
-    releaseCaptures(systems.scene.input.keyboard, [...Object.values(cursors), tab, quiet, undefined]);
+    releaseCaptures(systems.scene.input.keyboard, [
+      ...Object.values(cursors),
+      tab,
+      quiet,
+      undefined,
+    ]);
 
     // a capture no key of this scene made is not this scene's to hand back
     expect(systems.input.manager?.captures).toEqual([70]);
