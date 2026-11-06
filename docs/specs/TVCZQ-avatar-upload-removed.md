@@ -1,6 +1,6 @@
 # FS-TVCZQ: Avatar upload removed
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Account" → "Upload and confirm an avatar" (struck, removed by this FS); `game-server/auth-service/SPECIFICATION.md` "### Avatars" → "Request a presigned avatar upload", "Confirm an avatar upload and publish `profile.updated`", "Authorize confirmation against the requesting member" (struck, removed by this FS) · Related ADRs: [ADR-0001](../adr/0001-contract-layer.md) (the generated contract; removing operations and fields is a deliberate break, allowlisted) · Precedent: [FS-RG1B4](RG1B4-subscriptions-removed.md)
+> Status: shipped · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Account" → "Upload and confirm an avatar" (struck, removed by this FS); `game-server/auth-service/SPECIFICATION.md` "### Avatars" → "Request a presigned avatar upload", "Confirm an avatar upload and publish `profile.updated`", "Authorize confirmation against the requesting member" (struck, removed by this FS) · Related ADRs: [ADR-0001](../adr/0001-contract-layer.md) (the generated contract; removing operations and fields is a deliberate break, allowlisted) · Precedent: [FS-RG1B4](RG1B4-subscriptions-removed.md)
 
 ## Summary
 
