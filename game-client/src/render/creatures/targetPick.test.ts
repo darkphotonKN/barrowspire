@@ -501,6 +501,16 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
     ).toBe("b");
   });
 
+  it("should name an engaged boss that is shown over one that is hidden, both latched", () => {
+    const latch = new BossEngagement();
+    const hidden = demon({ entity_id: "hidden", current_health: 900 });
+    const shown = demon({ entity_id: "shown", current_health: 900 });
+    expect(latch.observe([hidden, shown], [], [shown])).toBe("shown");
+    // the hidden one keeps its latch, and is named once it is shown alone
+    expect(latch.observe([hidden, shown], [], [hidden])).toBe("hidden");
+    expect(latch.observe([hidden], [], [])).toBeUndefined();
+  });
+
   it("should never latch a common or elite monster, however close or hurt", () => {
     const latch = new BossEngagement();
     expect(
