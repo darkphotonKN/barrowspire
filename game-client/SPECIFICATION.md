@@ -54,6 +54,7 @@ server state and sends intents. ✅
 - [x] Render authoritative server state each tick
 - [x] Reconnect into an in-progress run
 - [ ] Monsters with level and elite nameplates → FS-77AB6
+- [ ] Monster target frame → FS-48CTQ
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [x] Floor transitions → FS-F6F88
 - [ ] Floor layout from the floor map → FS-KE075

@@ -340,6 +340,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Minimap**: the top-right HUD map of a dungeon floor: explored regions, the party, and the
   switch, escape door and stairs once their region is explored. Toggled with M. Not on floors
   without regions.
+- **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
+  level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
+  the monster the local player last hit. A **marker mode** per world and floor says whether
+  monsters carry overhead plates (`overhead`, everywhere today but floor 1) or use the frame.
+  Not a **marker**: it is HUD, not drawn in the world.
 - **Silhouette**: the player's outline drawn through a building exterior that stands between them
   and the camera. It replaces the occluder fade for buildings; trees and tall props still fade.
 - ~~**Dark opening**: an entrance seen from outside: a town building's door gap or an open Spire
