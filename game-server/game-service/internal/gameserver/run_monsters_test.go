@@ -35,7 +35,8 @@ func TestCreateGameSession_PopulatesTheRunAndNeverTheHub(t *testing.T) {
 	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{wren, kaelen}})
 
 	assert.Positive(t, monsterCount(run), "the run was built before its roster stood on it")
-	assert.LessOrEqual(t, monsterCount(run), game.MonsterCountMax+1, "the standard count, plus at most one demon")
+	// a run starts on floor 1, a dungeon floor (FS-KE075 §C R18)
+	assert.LessOrEqual(t, monsterCount(run), game.DungeonMonstersMax+1, "floor 1's total, plus at most one demon")
 	assert.Zero(t, monsterCount(hub), "the hub during the run")
 
 	server.ReturnPlayersToHub(run.ID)
