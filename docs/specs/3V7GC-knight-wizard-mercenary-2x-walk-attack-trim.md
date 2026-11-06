@@ -87,6 +87,14 @@ Nick approved all four classes at 2x with legs moving while attacking and frames
 - **The archer**: re-baked by the shared `UNDER_CLEAR`; its frames differ from FS-HF0WW's bake at the thighs and the shadow they cast, and in nothing else.
 - **An atlas page missing**: the sheet falls back to its placeholder as any sheet does (FS-2325V).
 
+## Verification (2026-11-06, Phaser 4.2.1, branch `feat/client-classes-2x` from local main c2fc6f84)
+
+- **Bake.** `npm run bake -- --check` on the committed tree: `bake: no changes`. Manifest: knight 320×292, wizard 286×268, mercenary 322×292 (each exactly twice its 1x frame), the 1x anchors and crowns (83, 75, 93), `scale: 2`, `trimmed: true`, five clips (the mercenary six), each class on one page of its own group; no `characters-*` page.
+- **Leg guard at 2x** (worst, 1x px, limit 0.5; rest / in motion): knight 0 / 0; archer 0 / 0.067 (`walk_attack`); wizard 0 / 0.308 (`walk_attack`); mercenary 0 / 0. Before, with `UNDER_CLEAR` 0.012 and `walk_attack`: knight 0 / 0.25, archer 0 / 0.47, wizard 0 / 0.85, mercenary 0 / 0.45.
+- **What `UNDER_CLEAR` 0.04 does to the pixels**, against the same 2x bake at 0.012, per sheet: at rest about 11–16 px per frame change by more than 24/255 on the archer and knight, 2 on the mercenary and none worth naming on the wizard. These are edge px at the thighs just under the hem and at the waist under the belt, plus the shadows the thighs cast. In walk and walk-attack frames it is at most 121 px per frame (the archer's slightly slimmer thigh just under the tunic's hem). Side by side at 5x zoom, the knight's and mercenary's idle look the same; the archer's thigh under the hem is a touch slimmer, and the dark wedge at the left of his belt is smaller.
+- **Texture memory** (decoded, width × height × 4, measured from the manifest): knight-0 3396×3532 47.98 MB; wizard-0 2480×3708 36.78 MB; mercenary-0 3460×3424 47.39 MB; the three 132.15 MB, against 65.25 MB on the three `characters-*` pages they replace (knight 21.94 → 47.98, wizard 17.75 → 36.78, mercenary 25.56 → 47.39). archer-0 stays 2924×3844, 44.96 MB. All atlases: 406.2 MB → 473.1 MB (387.4 → 451.2 MiB).
+- **`walk_attack` frames** (one facing, at 1x): each class's attack keys over a walking stride, the knight's and mercenary's swings and the wizard's raised sceptre, legs under the robe throughout.
+
 ## Out of Scope
 
 - Baking or trimming any sheet other than the four classes (creatures, folk, props): each is its own work (ADR-0058).

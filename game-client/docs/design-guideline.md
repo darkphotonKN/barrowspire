@@ -52,7 +52,7 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   fall screen-right). They look lit *before* any overlay is applied.
 - **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. A sheet may
   instead be baked at 2x from a 4x render and drawn at half scale, so it stays sharp at render
-  scale 2; today only the archer is
+  scale 2; today the four classes are (knight, archer, wizard, mercenary; FS-HF0WW, FS-3V7GC)
   ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md)).
   It stands exactly as large as at 1x, and every size around it (head height, markers, footprint)
   stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
@@ -299,7 +299,8 @@ lit) while the player stands inside.
   the legs are built under it: `legs(rig, mat, { under })` with the garment's own `skirt`
   options, which draws the thighs in where the garment covers them (a thigh is wider at the hip
   than a fitted tunic's top: without it they showed as dark wedges at both sides of the waist on
-  all four classes, through the mage's robe too). At rest and in every clip except the death, no
+  all four classes, through the mage's robe too). One clearance serves every class
+  (`UNDER_CLEAR`, FS-3V7GC): never give one class its own. At rest and in every clip except the death, no
   leg may lie more than one baked px outside the cloth over it, from the garment's waistband to
   its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, half a px at 2x (1x
   px measured in model space, an upper bound on the screen). The bake checks every pose and
