@@ -8,6 +8,7 @@ import { persist } from "zustand/middleware";
 // generated types during the FS-NTPW2 client cutover.
 type MemberInfo = components["schemas"]["Member"];
 type LoginResult = components["schemas"]["LoginResult"];
+type RefreshResult = components["schemas"]["RefreshResult"];
 
 interface AuthState {
   accessToken: string | null;
@@ -26,6 +27,12 @@ interface AuthState {
    * session untouched and answers false.
    */
   applyLoginResult: (result: LoginResult) => boolean;
+  /**
+   * Swaps in the access token a renewal hands back, and the member as it was minted from
+   * (FS-ZPX58 R17). The refresh token is kept: renewal does not rotate it (ADR-0066). A result
+   * without an access token leaves the session untouched and answers false.
+   */
+  applyRefreshResult: (result: RefreshResult) => boolean;
   updateMemberInfo: (memberInfo: Partial<MemberInfo>) => void;
   logout: () => void;
 }
@@ -53,6 +60,16 @@ export const useAuthStore = create<AuthState>()(
           memberInfo: member_info,
           isAuthenticated: true,
         });
+        return true;
+      },
+      applyRefreshResult: (result) => {
+        const { access_token, member_info } = result;
+        if (!access_token) return false;
+        set((state) => ({
+          accessToken: access_token,
+          memberInfo: member_info ?? state.memberInfo,
+          isAuthenticated: true,
+        }));
         return true;
       },
       updateMemberInfo: (updates) =>

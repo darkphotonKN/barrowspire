@@ -1,5 +1,6 @@
 import { socketManager } from "@/utils/class/SocketManager";
 import { routePartyErrors } from "@/ui/partyCommands";
+import { currentAccessToken, renewSession } from "@/utils/api";
 import * as Phaser from "phaser";
 
 export class BootScene extends Phaser.Scene {
@@ -38,7 +39,13 @@ export class BootScene extends Phaser.Scene {
       return;
     }
 
-    // Handle auth errors (close code 4001 from server)
+    // Every socket opens with the access token current at that moment, and a handshake refused
+    // with 4001 renews the session once and reconnects before it counts as an auth error
+    // (FS-ZPX58 R20, R21).
+    socketManager.setTokenSource(currentAccessToken);
+    socketManager.setRenewSession(async () => (await renewSession()) === "renewed");
+
+    // Handle auth errors (close code 4001 from server, after renewal could not help)
     socketManager.setOnAuthError(() => {
       localStorage.removeItem("auth-storage");
       window.location.href = "/login";

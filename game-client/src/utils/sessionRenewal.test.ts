@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   RENEW_AHEAD_MS,
   accessTokenExpiry,
@@ -72,7 +72,7 @@ describe("scheduleRenewals (FS-ZPX58 R18)", () => {
   const NOW = 1_800_000_000_000;
   let token: string | null;
   let listeners: Set<() => void>;
-  let renew: ReturnType<typeof vi.fn>;
+  let renew: Mock<[], Promise<RenewOutcome>>;
 
   const store = {
     current: () => token,

@@ -93,8 +93,15 @@ export class SocketManager {
   // every handoff, so a reconnect returns to the host the player moved to rather
   // than the server they started on. FS-K2HKP §Requirements 29.
   private serverAddr: string = DEFAULT_SERVER_ADDR;
+  // The token from the first connect. Every socket opens with currentToken() instead, which asks
+  // the token source when one is set: the access token is renewed under a long session, and a
+  // URL built from this copy would carry an expired one (FS-ZPX58 R20).
   private token = "";
+  private tokenSource: (() => string | null) | null = null;
   private name = "";
+  // Renews the session when a handshake is refused with 4001, once until a socket opens (R21).
+  private renewSession: (() => Promise<boolean>) | null = null;
+  private authRenewalSpent = false;
   // The socket to a run's host while the move is being decided, and the run it
   // is for. The run id stays after the move, so a repeated handoff is ignored.
   private pending: SocketLike | null = null;
@@ -126,7 +133,24 @@ export class SocketManager {
   }
 
   private gameUrl(): string {
-    return `${this.serverAddr}?token=${this.token}&name=${this.name}`;
+    return `${this.serverAddr}?token=${this.currentToken()}&name=${this.name}`;
+  }
+
+  /** Where the access token to open a socket with comes from; read at every open (FS-ZPX58 R20). */
+  setTokenSource(source: () => string | null): void {
+    this.tokenSource = source;
+  }
+
+  /**
+   * How to renew the session when the game socket is refused with 4001 (FS-ZPX58 R21). Answers
+   * whether a new access token is now stored. Without it a 4001 goes straight to the auth error.
+   */
+  setRenewSession(renew: () => Promise<boolean>): void {
+    this.renewSession = renew;
+  }
+
+  private currentToken(): string {
+    return this.tokenSource?.() || this.token;
   }
 
   getConnectionStatus(): ConnectionStatus {
@@ -202,6 +226,7 @@ export class SocketManager {
     let opened = socket.readyState === SOCKET_OPEN;
     socket.onopen = () => {
       opened = true;
+      this.authRenewalSpent = false;
       console.log("WebSocket connected");
       this.setConnectionStatus("connected");
       this.updateStatus("WebSocket Connected", toCss(palette.safe));
@@ -236,12 +261,20 @@ export class SocketManager {
         return;
       }
 
-      // Close code 4001 = auth error (token invalid/expired)
+      // Close code 4001 = auth error (token invalid/expired). Renew once and connect again with
+      // the new token; only a renewal that fails, or a second 4001 before any socket opened, is
+      // an auth error (FS-ZPX58 R21).
       if (event.code === 4001) {
-        console.log("Auth error detected, redirecting to login...");
-        if (this.onAuthError) {
-          this.onAuthError();
+        if (current && this.renewSession && !this.authRenewalSpent) {
+          this.authRenewalSpent = true;
+          this.setConnectionStatus("connecting");
+          void this.renewSession().then(
+            (renewed) => (renewed ? this.reconnectIfGone() : this.authFailed()),
+            () => this.authFailed(),
+          );
+          return;
         }
+        this.authFailed();
         return;
       }
 
@@ -403,7 +436,7 @@ export class SocketManager {
     this.handoffSessionId = sessionId;
 
     const next = this.createSocket(
-      `${payload.addr}?token=${this.token}&session_id=${sessionId}`,
+      `${payload.addr}?token=${this.currentToken()}&session_id=${sessionId}`,
     );
     this.pending = next;
 
@@ -446,7 +479,7 @@ export class SocketManager {
     // flagged redirected: the leader's pod seats a traveller where they land rather than send
     // them back to the old pod that may still name itself as holding them. FS-MCYWK C19.
     const next = this.createSocket(
-      `${payload.addr}?token=${this.token}&name=${this.name}&redirected=1`,
+      `${payload.addr}?token=${this.currentToken()}&name=${this.name}&redirected=1`,
     );
     this.redirected.add(next);
     this.pending = next;
@@ -500,6 +533,11 @@ export class SocketManager {
       this.dispatch(data);
       held.forEach((message) => this.dispatch(message));
     };
+  }
+
+  private authFailed() {
+    console.log("Auth error detected, redirecting to login...");
+    this.onAuthError?.();
   }
 
   /** Still on the old socket: stay. If it is gone too, go back to the server we were on. */
