@@ -29,7 +29,7 @@ func NewValidator(secret []byte) func(string) (Identity, error) {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return secret, nil
-		})
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()})) // HS256 only, as auth-service mints (FS-ZPX58 round 2)
 		if err != nil {
 			// also covers an account_id present but not a uuid: Claims.AccountID
 			// is a *uuid.UUID, so decoding it fails the parse.
