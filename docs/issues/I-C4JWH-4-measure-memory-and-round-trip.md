@@ -1,6 +1,6 @@
 ---
 id: I-C4JWH-4
-status: open
+status: done
 implements: FS-C4JWH
 blocked_by: [I-C4JWH-1, I-C4JWH-2, I-C4JWH-3]
 labels: []
@@ -31,10 +31,10 @@ Record the figures, the round trip's result, the account, commit and render scal
 
 ## Acceptance Criteria
 
-- [ ] Per scene, the atlas pages present are exactly the resident pages plus that scene's groups' pages.
-- [ ] Per scene, the measured decoded atlas memory is recorded next to FS-C4JWH §F's estimates, with main's 473.1 MB alongside.
-- [ ] The round trip throws nothing, logs no console error and no placeholder warning for a sheet that drew art on main; the bar showed on the entries that downloaded and not on the others.
-- [ ] A finding becomes a new issue or an escalation, not a silent fix here.
+- [x] Per scene, the atlas pages present are exactly the resident pages plus that scene's groups' pages.
+- [x] Per scene, the measured decoded atlas memory is recorded next to FS-C4JWH §F's estimates, with main's 473.1 MB alongside.
+- [x] The round trip throws nothing, logs no console error and no placeholder warning for a sheet that drew art on main; the bar showed on the entries that downloaded and not on the others.
+- [x] A finding becomes a new issue or an escalation, not a silent fix here.
 
 ## Blocked By
 
@@ -43,3 +43,14 @@ I-C4JWH-1, I-C4JWH-2, I-C4JWH-3
 ## Spec Reference
 
 FS-C4JWH §F R22–R23; user story 19.
+
+
+## Result
+
+Recorded in FS-C4JWH § Verification. On the branch (b6ed390b) the measured atlas memory is 200.3 MB
+on the menus, 223.3 in the hub, 234.4 in gentle_meadows, 239.9 in forlorn_forest and 376.5 in a run,
+against 473.1 MB in every scene on main 6812be5a. Each scene holds exactly the resident pages plus
+its own; the round trip menu → hub → meadows → hub → forest → hub → run → hub → menu ran with no page
+error, no console error (bar the dev server's favicon 404, on main too) and no `art:` warning; the bar
+showed on every entry that downloaded and on no other. Account `phaser4-trial@example.test`, headless
+Chrome at 1280 × 845, DPR 1, `next dev` on 4014. No finding needed a new issue.

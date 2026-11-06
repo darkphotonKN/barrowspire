@@ -281,8 +281,39 @@ measured):
 
 ## Verification
 
-To be filled by the verification slice: decoded texture memory per scene, measured, against the
-estimates of §F; the round trip's result; the run, account and commit it was taken on.
+Taken 2026-11-06 by the verification slice (I-C4JWH-4). Headless Chrome (the installed Google
+Chrome, through playwright-core, `--disable-web-security`), 1280 × 845 viewport, device pixel ratio
+1, on our own `next dev` (port 4014) against the local stack (gateway 7114, game-service 5668),
+account `phaser4-trial@example.test`. The branch figures are on `feat/client-scene-art-loading` at
+b6ed390b (the code of I-C4JWH-1..3); main's on local main 6812be5a, the same script on the same
+server. Decoded memory is width × height × 4 of each texture source, summed over the texture
+manager: "atlas" over the `art:<atlas>` pages, "all" over every texture (the light map, the mist,
+render textures and the menu chrome's canvases too). Each figure was read 3 s after the scene
+became active. The script is kept in the session scratchpad (`c4jwh/roundtrip.cjs`).
+
+| Scene | Charter estimate | From the manifest | Measured atlas | Pages beyond the 17 resident | Measured all | Main atlas | Main all |
+|---|---|---|---|---|---|---|---|
+| menus | | 200.4 MB | 200.3 MB | none | 205.0–216.5 MB | 473.1 MB | 477.7–489.3 MB |
+| hub | ~220 MB | 223.3 MB | 223.3 MB | folk-0 | 245.1–248.7 MB | 473.1 MB | 494.9–498.6 MB |
+| gentle_meadows | ~235 MB | 234.5 MB | 234.4 MB | wildlife-0, wildlife-1 | 257.6 MB | 473.1 MB | 496.3 MB |
+| forlorn_forest | ~240 MB | 240.0 MB | 239.9 MB | fodder-0, fodder-1 | 287.4 MB | 473.1 MB | 520.6 MB |
+| run | ~375 MB | 376.6 MB | 376.5 MB | creatures-0, creatures-1, boss-0, boss-1 | 401.3 MB | 473.1 MB | 494.2 MB |
+
+The 0.1 MB gaps against the manifest's column are its per-group rounding. Animations registered on
+the branch: 248 on the menus, 344 in the hub (96 folk, no creature), 312 in either field (64
+creature, no folk), 344 in the run (96 creature, no folk); on main 568 in every scene.
+
+**The round trip** menu → hub → gentle_meadows → hub → forlorn_forest → hub → run → hub → menu
+passed. After every entry the atlas pages were exactly the 17 resident ones plus that scene's own
+(the table above), so every evicted group was gone before the next scene drew. The torch bar showed
+on each entry that downloaded (the hub four times, folk-0; each field, its two pages; the run, its
+four) and on none that queued nothing (both menu entries: 0 files). No `pageerror`; no console error
+but the dev server's own `/favicon.ico` 404, on main as on the branch; no `art:` warning at all, on
+either, so no sheet drew as a placeholder. The forest gate was reached by walking under the town's
+south walls (the straight way west is walled by the Quartermaster's); a live run refuses
+`leave_run`, so the run was left by Fall (`forfeit_run`) and then Leave. Not measured: how long the
+bar shows (the local server serves the pages in well under a second), and the transition peak.
+Nick's browser check (I-C4JWH-5) remains.
 
 ## Out of Scope
 
