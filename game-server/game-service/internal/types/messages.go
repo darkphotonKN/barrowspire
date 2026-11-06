@@ -162,6 +162,13 @@ type BackendGameState struct {
 	Monsters     []*MonsterState
 	Trails       []*TrailState
 	Gates        []*GateState
+	// CellSize is the edge of the cell grid the floor is built on, from its
+	// FloorComponent: above 0 on a dungeon floor, whose monsters and
+	// containers are cut per recipient by distance. FS-KE075 §G R36.
+	CellSize float64
+	// InPlay is where each living, in-play delver's body stands: the interest
+	// centres a dungeon floor's cut is measured from. FS-KE075 §G R37.
+	InPlay map[uuid.UUID]Position
 }
 
 // ErrInvalidPayload marks a client payload that cannot be parsed. The payload

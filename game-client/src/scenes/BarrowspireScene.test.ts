@@ -3418,6 +3418,46 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
     ]);
     expect(pools(lights)).toHaveLength(2);
   });
+
+  // FS-KE075 §H.48: on a dungeon floor a container leaves the snapshot when the party walks off
+  // and comes back when it returns; it is the same chest, not a new one
+  describe("a container that leaves the snapshot and comes back (FS-KE075 §H.48)", () => {
+    const opened = (state: GameState): GameState => ({
+      ...state,
+      containers: state.containers.map((c) => ({ ...c, is_open: true })),
+    });
+    const without = (state: GameState): GameState => ({ ...state, containers: [] });
+
+    it("should stand it in one pool, not one more each time it comes back", () => {
+      const { run, lights } = banded("tower");
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(without(floorState(1)));
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(without(floorState(1)));
+      run.handleGameStateUpdate(floorState(1));
+      // the chest's and the switch's
+      expect(pools(lights)).toHaveLength(2);
+    });
+
+    it("should draw an opened chest coming back open, one chest", () => {
+      const { run, stage } = banded("tower", false);
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(without(floorState(1)));
+      run.handleGameStateUpdate(opened(floorState(1)));
+      const chests = stage.made.filter((m) => m.kind === "sprite" && String(m.args[2]).startsWith("chest_"));
+      const live = chests.filter((m) => !m.destroyed);
+      expect(live).toHaveLength(1);
+      expect(live[0].texture).toBe("chest_open");
+    });
+
+    it("should still pool the next floor's chest, though it has the old floor's entity id", () => {
+      const { run, lights } = banded("tower");
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(floorState(2));
+      const chest = worldToScreen(650, 150);
+      expect(pools(lights).map((l) => (l as { x: number }).x)).toContain(chest.x);
+    });
+  });
 });
 
 describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
@@ -5289,6 +5329,30 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
   it("should show no frame on floor 2, where the plates are", () => {
     const { monsters, named, tick } = framed(2);
     monsters()[0].handlers.pointerover();
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
+  // FS-48CTQ §D.10, I-48CTQ-2: the run's players, the local one among them, are who it may be
+  // fighting
+  it.each([
+    ["hurt", { boss: true, current_health: 4 }, "Ghoul · Lv 1"],
+    ["moving near the party at full health", { boss: true, action: "move" }, "Ghoul · Lv 1"],
+    ["idle at full health", { boss: true }, null],
+    ["hurt but not a boss", { current_health: 4 }, null],
+  ] as const)("should hold the frame on an engaged boss with nothing hovered or hit: %s", (_, fields, want) => {
+    const { run, named, tick, state } = framed();
+    run.handleGameStateUpdate(state(fields as Partial<ReturnType<typeof monster>>));
+    tick(120);
+    expect(named()).toBe(want);
+  });
+
+  it("should not take a boss moving at full health for engaged when every player is out of play", () => {
+    const { run, named, tick, state } = framed();
+    const out = { ...state({ boss: true, action: "move" } as unknown as Partial<ReturnType<typeof monster>>) } as GameState;
+    out.current_player = player("me", "Aldric", 130, { current_health: 0 }) as GameState["current_player"];
+    out.other_players = [player("ally", "Wenna", 160, { escape: true })] as GameState["other_players"];
+    run.handleGameStateUpdate(out);
     tick(120);
     expect(named()).toBeNull();
   });

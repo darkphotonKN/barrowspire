@@ -126,7 +126,7 @@ import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
 import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
-import { LastHitTracker, pickTarget } from "@/render/creatures/targetPick";
+import { LastHitTracker, engagedBoss, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
@@ -792,6 +792,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private pendingLights: FixedLight<{ source: LightSource } & LightRoom>[] = [];
   /** How many fixed lights this floor has stamped so far. */
   private stampedLights = 0;
+  /**
+   * The containers whose pool this floor has queued, by entity id: on a dungeon floor a container
+   * leaves the snapshot and comes back (FS-KE075 §H.48), and keeps the one pool it has.
+   */
+  private pooledContainers = new Set<string>();
   /** FS-2325V §C.7: replaces the overlay torch pool. */
   private lightMap?: LightMap;
   /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
@@ -959,6 +964,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dressingAt = [];
     this.pendingLights = [];
     this.stampedLights = 0;
+    this.pooledContainers = new Set();
     this.lightMap = undefined;
     this.monsters = undefined;
     this.wallTop = WALL_HEIGHT;
@@ -2356,7 +2362,12 @@ export class BarrowspireScene extends Phaser.Scene {
             : this.add.sprite(0, 0, (kind === "sack" ? SACK : CHEST).placeholder.closed);
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
-        if (kind !== "drop_pile") this.poolInteractable(pos);
+        // one coming back into the snapshot is drawn as it now is, open or shut, in the pool it
+        // already has (FS-KE075 §H.48)
+        if (kind !== "drop_pile" && !this.pooledContainers.has(container.entity_id)) {
+          this.pooledContainers.add(container.entity_id);
+          this.poolInteractable(pos);
+        }
       } else {
         chest.pos = pos;
       }
@@ -3664,6 +3675,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorLook = undefined;
     this.pendingLights = [];
     this.stampedLights = 0;
+    this.pooledContainers = new Set();
 
     this.buildings.forEach((building) => {
       building.roof.forEach((part) => part.destroy());
@@ -4400,21 +4412,26 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else the last-hit one, of
+   * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else an engaged boss
+   * (§D.10, read against the run's players, this client's among them), else the last-hit one, of
    * those shown and living; nothing on an `overhead` floor. Hidden while the spectate HUD or the
    * floor veil holds the top centre (§E.15–16). Run after the frame's hide rule, which says what
    * is shown.
    */
   private updateTargetFrame(deltaMs: number): void {
     if (!this.targetFrame) return;
-    const target =
-      this.markers === "frame" && this.monsters
-        ? pickTarget({
-            shown: this.monsters.targetable(),
-            hovered: this.monsters.hoveredId,
-            lastHit: this.lastHit.current(this.time.now),
-          })
-        : null;
+    let target = null;
+    if (this.markers === "frame" && this.monsters) {
+      const shown = this.monsters.targetable();
+      const { current_player, other_players = [] } = this.lastGameState ?? {};
+      const members = current_player ? [current_player, ...other_players] : other_players;
+      target = pickTarget({
+        shown,
+        hovered: this.monsters.hoveredId,
+        engagedBoss: engagedBoss(shown, members),
+        lastHit: this.lastHit.current(this.time.now),
+      });
+    }
     const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
     this.targetFrame.update(deltaMs, target, covered);
   }

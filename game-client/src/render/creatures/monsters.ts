@@ -438,7 +438,12 @@ export class MonsterRoster {
       .map((view) => view.state);
   }
 
-  /** The broadcast's monsters are the whole truth: anyone absent from it is gone. */
+  /**
+   * The broadcast's monsters are the whole truth: anyone absent from it is gone, slain away or,
+   * on a dungeon floor, out of the recipient's interest (FS-KE075 §H.48). It goes with nothing
+   * replayed, and one that comes back is drawn as it now is: no flash for health lost meanwhile, a
+   * corpse already fallen.
+   */
   sync(monsters: readonly MonsterState[]): void {
     const present = new Set(monsters.map((m) => m.entity_id));
     for (const [id, view] of this.views)
@@ -612,8 +617,9 @@ export class MonsterRoster {
   }
 
   /**
-   * A monster first seen dead (a reconnect, or a corpse coming into a late state) already lies
-   * where it fell: its death clip starts on the last frame, so the fall is not replayed.
+   * A monster first seen dead (a reconnect, a corpse coming into a late state, or one coming back
+   * into interest, FS-KE075 §H.48) already lies where it fell: its death clip starts on the last
+   * frame, so the fall is not replayed.
    */
   private layCorpse(view: MonsterView, sheet: string): void {
     const direction = directionIndex(view.facing);

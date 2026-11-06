@@ -2,8 +2,10 @@ package serializer
 
 import (
 	"context"
-	"github.com/darkphotonKN/barrowspire-server/common/progression"
+	"math"
 	"sync"
+
+	"github.com/darkphotonKN/barrowspire-server/common/progression"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -41,6 +43,7 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 				Escaped:    make(map[uuid.UUID]*types.PlayerState),
 				Resources:  make(map[uuid.UUID]*types.ResourceState),
 				Parries:    make(map[uuid.UUID]*types.ParryState),
+				InPlay:     make(map[uuid.UUID]types.Position),
 				Items:      make([]uuid.UUID, 0),
 				Doors:      make([]*types.DoorState, 0),
 				Walls:      make([]*types.WallState, 0),
@@ -70,6 +73,7 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			floor := fc.(*components.FloorComponent)
 			backendState.Floor = floor.Depth
 			backendState.FloorCount = floor.Count
+			backendState.CellSize = floor.CellSize
 		}
 
 		// --- Player ---
@@ -197,6 +201,11 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 			if next, ok := progression.NextLevelAt(int32(level)); ok {
 				playerState.NextLevelAt = &next
+			}
+
+			// a body in play is a centre of interest (FS-KE075 §G R37)
+			if systems.InPlay(entity) {
+				backendState.InPlay[player.MemberID] = types.Position{X: transform.X, Y: transform.Y}
 			}
 
 			switch {
@@ -543,6 +552,15 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Gates:         backendState.Gates,
 	}
 
+	// on a dungeon floor each recipient is sent only what lies near it
+	// (FS-KE075 §G, ADR-0060 Decisions 4 and 6)
+	if backendState.WorldType == types.WorldTypeRun && backendState.CellSize > 0 {
+		if centres := interestCentres(backendState, playerID); len(centres) > 0 {
+			state.Monsters = nearAny(backendState.Monsters, centres, monsterAt)
+			state.Containers = nearAny(backendState.Containers, centres, containerAt)
+		}
+	}
+
 	// the hub and a field say where their walls are, an empty list when none;
 	// a run leaves the key out. The slice header is copied, as the stairs' is.
 	if backendState.WorldType != types.WorldTypeRun {
@@ -550,8 +568,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		state.Walls = &walls
 	}
 
-	// a run always says where its stairs are, even when there are none; the
-	// slice header is copied, so the pooled backend state's reset cannot reach it
+	// a run always says where its stairs are, even when there are none
 	if backendState.WorldType == types.WorldTypeRun {
 		stairs := backendState.Stairs
 		if stairs == nil {
@@ -581,23 +598,78 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	}
 	// the published snapshot is shared, so it is let go, never cleared
 	state.PartyOf = nil
-	state.Items = state.Items[:0]
-	state.Doors = state.Doors[:0]
-	state.Walls = state.Walls[:0]
-	state.Containers = state.Containers[:0]
-	state.EscapeDoor = state.EscapeDoor[:0]
-	state.Switch = state.Switch[:0]
-	state.NPCs = state.NPCs[:0]
-	state.Projectiles = state.Projectiles[:0]
+	for k := range state.InPlay {
+		delete(state.InPlay, k)
+	}
+	// the lists are what a sent frame holds until its writer encodes it, so
+	// each is let go and started afresh, never refilled in place (FS-QG1HR D2
+	// race B, FS-KE075 §G R38)
+	state.Items = fresh(state.Items)
+	state.Doors = fresh(state.Doors)
+	state.Walls = fresh(state.Walls)
+	state.Containers = fresh(state.Containers)
+	state.EscapeDoor = fresh(state.EscapeDoor)
+	state.Switch = fresh(state.Switch)
+	state.NPCs = fresh(state.NPCs)
+	state.Projectiles = fresh(state.Projectiles)
 	state.SessionID = uuid.Nil
 	state.EscapedCount = 0
 	state.Floor = 0
 	state.FloorCount = 0
-	state.Stairs = state.Stairs[:0]
-	state.Monsters = state.Monsters[:0]
-	state.Trails = state.Trails[:0]
-	state.Gates = state.Gates[:0]
+	state.CellSize = 0
+	state.Stairs = fresh(state.Stairs)
+	state.Monsters = fresh(state.Monsters)
+	state.Trails = fresh(state.Trails)
+	state.Gates = fresh(state.Gates)
 }
+
+// fresh is an empty list on new memory as large as the old, or nil if it was
+// nil, so an empty list encodes as it did before the reset.
+func fresh[T any](list []T) []T {
+	if list == nil {
+		return nil
+	}
+	return make([]T, 0, cap(list))
+}
+
+// interestRadius is how far from an interest centre, in world px, a dungeon
+// floor's monsters and containers are still sent. FS-KE075 §G R36.
+const interestRadius = 1600.0
+
+// interestCentres are where a recipient's interest is measured from: its own
+// body while in play, else every body in play, so a spectator is sent what the
+// teammates are. None when no one is in play: then nothing is cut.
+// FS-KE075 §G R37.
+func interestCentres(backendState *types.BackendGameState, playerID uuid.UUID) []types.Position {
+	if own, inPlay := backendState.InPlay[playerID]; inPlay {
+		return []types.Position{own}
+	}
+	centres := make([]types.Position, 0, len(backendState.InPlay))
+	for _, at := range backendState.InPlay {
+		centres = append(centres, at)
+	}
+	return centres
+}
+
+// nearAny is a new list of those in list standing within the interest radius
+// of any centre, in their order. It never shares memory with list.
+func nearAny[T any](list []T, centres []types.Position, at func(T) types.Position) []T {
+	kept := make([]T, 0, len(list))
+	for _, entity := range list {
+		p := at(entity)
+		for _, c := range centres {
+			if math.Hypot(p.X-c.X, p.Y-c.Y) <= interestRadius {
+				kept = append(kept, entity)
+				break
+			}
+		}
+	}
+	return kept
+}
+
+func monsterAt(m *types.MonsterState) types.Position { return m.Position }
+
+func containerAt(c *types.ContainerState) types.Position { return *c.Position }
 
 // resourceState is a delver's class resource as its owner is told it, its
 // ability priced in that pool; nil when the delver carries none.
