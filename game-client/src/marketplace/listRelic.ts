@@ -23,6 +23,9 @@ export const END_TIME_PASSED = "That end time has already passed — check your 
 export const LIST_FAILED = "That relic could not be listed — try again.";
 /** FS-HBXZN R17: items-service refused a relic the member is wearing. */
 export const WORN_CANNOT_LIST = "Take it off first — worn relics can't be listed.";
+/** FS-3R77D R15: items-service refused a relic that is not in the stash (ADR-0060). */
+export const NOT_IN_STASH_CANNOT_LIST =
+  "Only relics in your stash can be listed. Move it into your stash in town.";
 /** FS-49Z37 req 2: the form's own check and the server's refusal read the same. */
 export const BUYOUT_NOT_ABOVE_START = "The buyout price must be above the starting bid.";
 /** FS-XEDFF Req 12: marketplace refused an end less than 1 hour or more than 7 days away. */
@@ -224,12 +227,13 @@ export function canSubmitListing(form: {
 /**
  * A create-listing refusal named by its code, read before the status so the price reading never
  * mistakes it: the email-verified gate (FS-V6SFK R38), and items-service refusing the relic itself,
- * worn or already held (FS-HBXZN R17).
+ * worn or already held (FS-HBXZN R17), or not in the stash (FS-3R77D R15).
  */
 const REFUSAL_COPY: Record<string, string> = {
   [EMAIL_UNVERIFIED]: VERIFY_TO_LIST,
   ITEM_WORN: WORN_CANNOT_LIST,
   ITEM_NOT_AVAILABLE: CANNOT_LIST,
+  ITEM_NOT_IN_STASH: NOT_IN_STASH_CANNOT_LIST,
   LISTING_DURATION_OUT_OF_RANGE: LISTING_DURATION_OUT_OF_RANGE_COPY,
   LISTING_LIMIT_REACHED: LISTING_LIMIT_REACHED_COPY,
 };
