@@ -840,3 +840,133 @@ describe("SocketManager mailbox (FS-1GZGD R34, R43, A4: mail_arrived goes to the
     expect(old.sent.some((m) => JSON.parse(m).action === "mail_arrived")).toBe(false);
   });
 });
+
+describe("SocketManager and the current access token (FS-ZPX58 §D)", () => {
+  function signedIn() {
+    const sockets: FakeSocket[] = [];
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    });
+    let token = "jwt-1";
+    manager.setTokenSource(() => token);
+    const authError = vi.fn();
+    manager.setOnAuthError(authError);
+    manager.connectToGame("jwt-1", "Ash");
+    return {
+      manager,
+      sockets,
+      authError,
+      renewTo: (next: string) => {
+        token = next;
+      },
+    };
+  }
+
+  // a renewal that has finished by the time the test looks
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it("should open every socket with the token current at that moment (R20)", () => {
+    const env = signedIn();
+    env.sockets[0].open();
+
+    env.renewTo("jwt-2");
+    env.sockets[0].receive(handoff("run-1"));
+    expect(env.sockets[1].url).toBe(`${HOST}?token=jwt-2&session_id=run-1`);
+
+    env.sockets[1].serverClose(4002);
+    env.renewTo("jwt-3");
+    env.sockets[0].serverClose(1006);
+    env.manager.reconnect();
+    expect(env.sockets.at(-1)!.url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-3&name=Ash`);
+  });
+
+  it("should open a hub handoff with the current token (R20)", () => {
+    const sockets: FakeSocket[] = [];
+    const manager = new SocketManager(
+      (url) => {
+        const socket = new FakeSocket(url);
+        sockets.push(socket);
+        return socket;
+      },
+      { enterHub: () => ({ characterId: "c-1", class: "warrior", className: "warrior", characterName: "Marl", username: "Marl" }), refused: vi.fn() },
+    );
+    let token = "jwt-1";
+    manager.setTokenSource(() => token);
+    manager.connectToGame("jwt-1", "Ash");
+    sockets[0].open();
+
+    token = "jwt-2";
+    sockets[0].receive({ action: "world_handoff", payload: { addr: HOST, hub: true } });
+
+    expect(sockets.at(-1)!.url).toContain("token=jwt-2&name=Ash&redirected=1");
+  });
+
+  it("should renew and reconnect with the new token when the game socket closes 4001 (R21)", async () => {
+    const env = signedIn();
+    const renew = vi.fn(async () => {
+      env.renewTo("jwt-2");
+      return true;
+    });
+    env.manager.setRenewSession(renew);
+
+    env.sockets[0].serverClose(4001);
+    await settle();
+
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(env.authError).not.toHaveBeenCalled();
+    expect(env.sockets).toHaveLength(2);
+    expect(env.sockets[1].url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-2&name=Ash`);
+  });
+
+  it("should sign out when renewal does not succeed (R21)", async () => {
+    const env = signedIn();
+    env.manager.setRenewSession(async () => false);
+
+    env.sockets[0].serverClose(4001);
+    await settle();
+
+    expect(env.authError).toHaveBeenCalledTimes(1);
+    expect(env.sockets).toHaveLength(1);
+  });
+
+  it("should sign out when the reconnect is refused 4001 again before it opens (R21)", async () => {
+    const env = signedIn();
+    const renew = vi.fn(async () => true);
+    env.manager.setRenewSession(renew);
+
+    env.sockets[0].serverClose(4001);
+    await settle();
+    env.sockets[1].serverClose(4001);
+    await settle();
+
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(env.authError).toHaveBeenCalledTimes(1);
+    expect(env.sockets).toHaveLength(2);
+  });
+
+  it("should allow one more renewal once a socket has opened (R21)", async () => {
+    const env = signedIn();
+    const renew = vi.fn(async () => true);
+    env.manager.setRenewSession(renew);
+
+    env.sockets[0].serverClose(4001);
+    await settle();
+    env.sockets[1].open();
+    env.sockets[1].serverClose(4001);
+    await settle();
+
+    expect(renew).toHaveBeenCalledTimes(2);
+    expect(env.authError).not.toHaveBeenCalled();
+    expect(env.sockets).toHaveLength(3);
+  });
+
+  it("should sign out on 4001 as before when no renewal is wired", () => {
+    const env = signedIn();
+
+    env.sockets[0].serverClose(4001);
+
+    expect(env.authError).toHaveBeenCalledTimes(1);
+  });
+});
