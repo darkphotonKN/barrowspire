@@ -500,6 +500,20 @@ describe("PartyFrames: skeleton rows (FS-NCC9J R26)", () => {
     expect(liveTweens()).toEqual([]);
   });
 
+  // destroy runs only as its scene ends (the scenes' release), whose tween manager has let every
+  // tween go already; on a game destroy (leaving /game) it has destroyed itself (scenes/sceneEnd.ts)
+  it("asks the tweens nothing once destroyed, the pulse's frames let go all the same", () => {
+    const { store, frames, scene, live } = setup();
+    store.getState().apply(withReserved([member(ME, "Me")], ["Kaelen"]));
+    const tweens = scene.tweens as unknown as { killTweensOf: () => void };
+    tweens.killTweensOf = () => {
+      throw new TypeError("the scene's tween manager is gone");
+    };
+
+    expect(() => frames.destroy()).not.toThrow();
+    expect(live()).toEqual([]);
+  });
+
   it("writes the leader's expiry line on the frames' own tick once expires_at passes", () => {
     const clock = { now: Date.parse(EXPIRES) - 1 };
     const { store, frame, said } = setup("field", clock);
