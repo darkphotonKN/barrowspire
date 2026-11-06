@@ -123,7 +123,21 @@ export class SocketManager {
     private createSocket: (url: string) => SocketLike = (url) =>
       new WebSocket(url),
     private arrival: HubArrival = travelArrival,
-  ) {}
+  ) {
+    // A refused renew_token keeps the server's old token and the connection; it is never a session
+    // problem for the global handler, which signs the player out (FS-ZPX58 R30).
+    this.errorListeners.set("renew_token", (info) => console.warn("renew_token refused:", info.message ?? info.error));
+  }
+
+  /**
+   * Hands the server the renewed access token on the open game socket, so the token it reads the
+   * player's gear with is renewed too (FS-ZPX58 R27). A socket that is not open gets nothing: the
+   * next one opens with the current token anyway (R20).
+   */
+  renewToken(token: string): void {
+    if (this.socket?.readyState !== SOCKET_OPEN) return;
+    this.socket.send(this.encode("renew_token", { token }));
+  }
 
   getServerAddress(): string {
     return this.serverAddr;
