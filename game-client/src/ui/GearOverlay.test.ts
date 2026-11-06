@@ -112,7 +112,12 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
    * Every filled triangle, in the fill colour it was drawn in, and the creation order (`seq`) of
    * its graphics, which is its place in the draw order beside the sprites.
    */
-  const triangles: { color: number; points: number[]; seq: number }[] = [];
+  const triangles: {
+    color: number;
+    points: number[];
+    seq: number;
+    destroyed: boolean;
+  }[] = [];
   let seq = 0;
   const depths = new Set<number>();
   const keys = recordingKeyboard();
@@ -139,13 +144,17 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
   const graphics = () => {
     const at = seq++;
     let fill = -1;
+    const own: (typeof triangles)[number][] = [];
     const g: Record<string, unknown> = chain({
       fillStyle: (c: number) => (fills.add(c), (fill = c), g),
       lineStyle: (_w: number, c: number) => (strokes.add(c), g),
-      fillTriangle: (...points: number[]) => (
-        triangles.push({ color: fill, points, seq: at }),
-        g
-      ),
+      fillTriangle: (...points: number[]) => {
+        const t = { color: fill, points, seq: at, destroyed: false };
+        triangles.push(t);
+        own.push(t);
+        return g;
+      },
+      destroy: () => own.forEach((t) => (t.destroyed = true)),
     });
     return g;
   };
@@ -1449,7 +1458,7 @@ describe("GearOverlay listed and settling items (FS-GTNP8)", () => {
     /** The listed marks drawn, as their corner points. */
     const marks = () =>
       s.triangles
-        .filter((t) => t.color === palette.listed)
+        .filter((t) => !t.destroyed && t.color === palette.listed)
         .map((t) => t.points);
     /** The colour the live text `words` is drawn in. */
     const colorOf = (words: string) =>
