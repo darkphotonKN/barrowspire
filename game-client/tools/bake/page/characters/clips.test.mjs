@@ -111,7 +111,8 @@ describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
     expect(frames[0].b.thighR).toEqual(walk[0].b.thighR);
   });
 
-  // the melee classes and the caster, as cast.js styles them (their attacks, the mercenary's free arm)
+  // the melee classes and the caster, simplified from cast.js's styles: their own attacks and
+  // walk settings and the mercenary's free arm, a hold of one bone
   const knight = { attack: "slash", hold: pose({ upperArmR: [-0.12, 0, -0.04] }), walk: { arms: [0.2, 0.55], lean: 0.05 } };
   const mercenary = {
     attack: "slash",
