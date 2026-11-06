@@ -5607,6 +5607,8 @@ const { RegionGrid } = await import("@/render/world/dungeon");
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
 const { GROUND_DEPTH, GROUND_MARGIN } = await import("@/render/world/scene");
+const await_fog = await import("@/render/world/fog");
+const await_exploration = await import("@/render/world/exploration");
 
 describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () => {
   const manifest = JSON.parse(readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"));
@@ -5623,8 +5625,11 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
 
   /** The golden's floor as floor 1's map, and floor 1's snapshot with no walls, its chest in room 1. */
   const dungeonMap = { session_id: "run", floor: 1, ...(fixture as Dungeon & { walls: GameState["walls"] }) };
-  const dungeonState = (): GameState => ({
+  /** Who stands on the floor: this client's player and the rest of the party (none by default). */
+  type Party = Pick<GameState, "current_player" | "other_players">;
+  const dungeonState = (party: Partial<Party> = {}): GameState => ({
     ...bare(floorState(1)),
+    ...party,
     doors: [],
     containers: [{ container_id: "c", entity_id: "c1", kind: "chest", position: at(2400, 3000), is_open: false, items: [] }],
     escape_doors: [{ entity_id: "e1", position: at(4000, 1200), is_open: false, is_locked: true }],
@@ -5632,7 +5637,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     stairs: [{ entity_id: "st1", position: at(1000, 1200) }],
   });
 
-  function dungeonStage() {
+  function dungeonStage(party: Partial<Party> = {}) {
     const scene = sceneOnStage();
     const { stage } = scene;
     const run = scene.run as unknown as DungeonRun;
@@ -5660,7 +5665,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       },
     });
     useGameStore.getState().receiveFloorMap(dungeonMap as never);
-    handle(dungeonState());
+    handle(dungeonState(party));
     /** Looks at a screen point: the camera's view centred on it, and what stands near it shown. */
     const look = (x: number, y: number) => {
       Object.assign(camera.main, { scrollX: x - 640, scrollY: y - 360 });
@@ -5735,8 +5740,16 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
   });
 
+  /** A party member in every region, so the fog of war (FS-SRA9J) hides nothing. */
+  const everyRegion = (): Partial<Party> => ({
+    other_players: grid.regions.map(({ id, cells: [{ x, y }] }) => ({
+      ...player(`m${id}`, `M${id}`, 0),
+      position: at((x + 0.5) * 80, (y + 0.5) * 80),
+    })) as GameState["other_players"],
+  });
+
   it("should show wall pieces, dressing and wall lights only within one chunk of the view, as the camera pans", () => {
-    const { run, stage, lights, look } = dungeonStage();
+    const { run, stage, lights, look } = dungeonStage(everyRegion());
     const walls = drawn(stage.made, "tower_wall_");
     const dressing = (run.dressing ?? []) as unknown as Made[];
     expect(dressing.length).toBeGreaterThan(16);
@@ -5754,5 +5767,120 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     // some of the floor's wall lights were lit along the way, never all of them at once
     expect(lit).toBeGreaterThan(0);
     expect(walls.filter(shownNow).length).toBeLessThan(walls.length);
+  });
+
+  describe("the fog of war (FS-SRA9J §B, §C)", () => {
+    const { Fog: FogClass, FOG } = await_fog;
+    const { regionAt } = await_exploration;
+    type Seen = { state(region: number): string };
+    interface FoggedRun extends DungeonRun {
+      dungeon?: {
+        seen: Seen;
+        fog?: InstanceType<typeof FogClass>;
+        lit: Set<unknown>;
+        lights: { light: { source: unknown }; region: number }[];
+      };
+      chests: Map<string, { sprite: Made }>;
+      escapeDoors: Map<string, { sprite: Made }>;
+      switches: Map<string, { sprite: Made }>;
+      stairs: { placed(): Iterable<{ sprite: Made }> };
+      checkBuildingStatus(): void;
+    }
+    // room 1 (cells 28–35 × 35–41), the chest's: this client's player stands in it
+    const ROOM = 1;
+    const inRoom = { current_player: { ...player("me", "Aldric", 0), position: at(2560, 3080) } } as Partial<Party>;
+    const stageIn = (party: Partial<Party>) => {
+      const staged = dungeonStage(party);
+      return { ...staged, run: staged.run as unknown as FoggedRun };
+    };
+    /** The fixed objects' regions in the fixture: none in room 1 but the chest. */
+    const placedAt = { chest: at(2400, 3000), door: at(4000, 1200), lever: at(3000, 900), stairs: at(1000, 1200) };
+
+    it("should place the fixture's fixed objects so that only the chest is in room 1", () => {
+      expect(regionAt(grid, placedAt.chest)).toBe(ROOM);
+      for (const p of [placedAt.door, placedAt.lever, placedAt.stairs]) expect([0, ROOM]).not.toContain(regionAt(grid, p));
+    });
+
+    it("should hide the escape door, switch and stairs in unexplored regions and show the chest in the region the player stands in", () => {
+      const { run } = stageIn(inRoom);
+      run.checkBuildingStatus();
+      expect(run.dungeon!.seen.state(ROOM)).toBe("visible");
+      expect(shownNow(run.chests.get("c1")!.sprite)).toBe(true);
+      expect(shownNow(run.escapeDoors.get("e1")!.sprite)).toBe(false);
+      expect(shownNow(run.switches.get("s1")!.sprite)).toBe(false);
+      expect([...run.stairs.placed()].map((s) => shownNow(s.sprite))).toEqual([false]);
+    });
+
+    it("should show them once a party member has uncovered their regions, the local player elsewhere", () => {
+      const { run, handle } = stageIn(inRoom);
+      const ally = (id: string, p: { x: number; y: number }) => ({ ...player(id, id, 0), position: p });
+      handle(dungeonState({ ...inRoom, other_players: [ally("a", placedAt.door), ally("b", placedAt.stairs)] as GameState["other_players"] }));
+      run.checkBuildingStatus();
+      expect(shownNow(run.escapeDoors.get("e1")!.sprite)).toBe(true);
+      expect([...run.stairs.placed()].map((s) => shownNow(s.sprite))).toEqual([true]);
+      expect(shownNow(run.switches.get("s1")!.sprite)).toBe(false);
+    });
+
+    it("should hide the wall pieces near the view whose regions are all unexplored, and show those bordering the player's room", () => {
+      const { stage, look } = stageIn(inRoom);
+      const { x, y } = await_iso.worldToScreen(2560, 3080);
+      look(x, y);
+      const walls = drawn(stage.made, "tower_wall_");
+      const near = new Set(chunks.near({ x: x - 640, y: y - 360, width: 1280, height: 720 }));
+      const nearWalls = walls.filter((m) => near.has(chunkOf(m)));
+      // a piece's cell, from where it stands on screen; whether a region around it is room 1
+      const bordersRoom = (m: Made) => {
+        const w = await_iso.screenToWorld(m.args[0] as number, m.args[1] as number);
+        const cx = Math.floor(w.x / 80);
+        const cy = Math.floor(w.y / 80);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (grid.region(cx + dx, cy + dy) === ROOM) return true;
+        return false;
+      };
+      const shown = nearWalls.filter(shownNow);
+      expect(shown.length).toBeGreaterThan(0);
+      expect(shown.length).toBeLessThan(nearWalls.length);
+      for (const m of shown) expect(bordersRoom(m)).toBe(true);
+    });
+
+    it("should light only the fixed lights in a visible region", () => {
+      const { run, look } = stageIn(inRoom);
+      const { x, y } = await_iso.worldToScreen(2560, 3080);
+      look(x, y);
+      const dungeon = run.dungeon!;
+      const lit = dungeon.lights.filter((l) => dungeon.lit.has(l.light.source));
+      for (const l of lit) expect(l.region === 0 || dungeon.seen.state(l.region) === "visible").toBe(true);
+      // the same view with every region visible lights more
+      const all = stageIn({ ...inRoom, ...everyRegion() });
+      all.look(x, y);
+      expect(all.run.dungeon!.lit.size).toBeGreaterThan(dungeon.lit.size);
+    });
+
+    it("should draw the fog at the blackout's depth, redraw it only when a region's state changes, and take it down with the floor", () => {
+      const { run, stage, handle } = stageIn(inRoom);
+      const fog = run.dungeon!.fog!;
+      const layers = stage.made.filter((m) => m.kind === "graphics" && m.depth === FOG.depth && !m.destroyed);
+      expect(layers.length).toBeGreaterThan(0);
+      const drawn = fog.redraws;
+      for (let i = 0; i < 3; i++) handle(dungeonState(inRoom));
+      expect(fog.redraws).toBe(drawn);
+      // the climb to floor 2, a floor of buildings: no fog there
+      useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+      handle(bare(floorState(2)));
+      expect(layers.every((m) => m.destroyed)).toBe(true);
+      expect(run.dungeon).toBeUndefined();
+    });
+
+    it("should start a new dungeon floor unexplored, the party's regions visible at once", () => {
+      const { run, handle } = stageIn(inRoom);
+      const stairsRoom = regionAt(grid, placedAt.stairs);
+      // the player walks to the stairs' region on floor 1, room 1 left explored
+      handle(dungeonState({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] }));
+      expect(run.dungeon!.seen.state(ROOM)).toBe("explored");
+      // floor 2 laid out as floor 1 was, the player arriving in room 1
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+      handle({ ...dungeonState(inRoom), floor: 2 });
+      expect(run.dungeon!.seen.state(stairsRoom)).toBe("unexplored");
+      expect(run.dungeon!.seen.state(ROOM)).toBe("visible");
+    });
   });
 });
