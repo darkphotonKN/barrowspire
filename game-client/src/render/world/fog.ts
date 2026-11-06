@@ -290,9 +290,9 @@ export interface FogPart {
 }
 
 /**
- * A wall piece's two keys (§C.8, §C.9, FS-KE075 §H.45): shown only while its ground chunk is near
- * the camera *and* some region it borders is not unexplored; tinted dim while the brightest of them
- * is explored. The chunk turns its key through {@link Toggle}; the fog turns the other.
+ * A standing piece's two keys (§C.8, §C.9, FS-KE075 §H.45): shown only while its ground chunk is
+ * near the camera *and* the fog does not hide it; tinted dim while the fog says so. The chunk turns
+ * its key through {@link Toggle}; the fog turns the other.
  */
 class FogGate implements Toggle {
   private near = true;
@@ -345,8 +345,8 @@ export class Fog {
   }
 
   /**
-   * A wall piece standing at world point `at` under the fog: what its ground chunk toggles in its
-   * stead (FS-KE075 §H.45). It takes the fog's shade at once.
+   * A wall piece or run dressing standing at world point `at` under the fog: what its ground chunk
+   * toggles in its stead (FS-KE075 §H.45). It takes the fog's shade at once.
    */
   gate(part: FogPart, at: Point): Toggle {
     const gate = new FogGate(part, this.grid.cellOf(at));
@@ -376,9 +376,19 @@ export class Fog {
     this.state = undefined;
   }
 
+  /**
+   * A wall piece takes the brightest region it borders; a piece on a region's floor (run dressing)
+   * that region's state, hidden while unexplored and never tinted, since the fog over its floor
+   * dims it already. A piece bordering no region keeps the floor's plain look.
+   */
   private shadeGate(gate: FogGate, state: (region: number) => ExplorationState): void {
-    const s = bordering(this.grid, gate.cell.cx, gate.cell.cy, state);
-    // a piece bordering no region keeps the floor's plain look
+    const { cx, cy } = gate.cell;
+    const own = this.grid.region(cx, cy);
+    if (own) {
+      gate.shadeAs(state(own) === "unexplored" ? "dark" : "none");
+      return;
+    }
+    const s = bordering(this.grid, cx, cy, state);
     gate.shadeAs(s ? SHADE[s] : "none");
   }
 
