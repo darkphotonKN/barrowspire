@@ -1,32 +1,33 @@
 /**
- * The fog of war's layer (FS-SRA9J §C, ADR-0063; CONTEXT.md "Fog of war"): on a dungeon floor, the
- * canvas's darkest ink over every unexplored region, a dim share of it over every explored one,
- * nothing over a visible one. Presentation only, like the light-map and the indoor blackout: it
- * never changes what anyone can see or hit.
+ * The fog of war's layer (FS-SRA9J §C, ADR-0063, ADR-0068; CONTEXT.md "Fog of war"): on a dungeon
+ * floor, a dense veil of the canvas's darkest ink over every unexplored region, a lighter one over
+ * every explored one, nothing over a visible one. The floor and walls under a veil are drawn, so the
+ * layout reads faintly through it (owner playtest 2026-11-06). Presentation only, like the
+ * light-map and the indoor blackout: it never changes what anyone can see or hit.
  *
- * **Geometric, under both renderers** (§C.13), as the blackout's canvas fallback is: no mask, no
- * render texture, only filled polygons at {@link FOG}`.depth`, redrawn when a region's state changes
- * and never per frame.
+ * **One partition, never overlapping.** The fog is cut so each screen px belongs to one cell's
+ * column, as a painter would draw them: every cell an upright column on its diamond, the one
+ * nearest the viewer winning a px. A drawn wall and a visible region's floor stand up as columns of
+ * their own with no fog over them, so nothing in front of the fog's edge is ever covered, and a
+ * translucent veil never lies over a px twice; an unexplored or explored floor lies flat. See
+ * {@link fogShapes}.
  *
- * **One partition, never overlapping.** Phaser 4.2.1 multiplies a Graphics' alpha into each fill
- * on its own (`gameobjects/graphics/GraphicsWebGLRenderer.js:196`), so two dim fills over one px
- * would draw it darker. The fog is therefore cut so each screen px belongs to one cell's column,
- * as a painter would draw them: every cell an upright column on its diamond, the one nearest the
- * viewer winning a px. A drawn wall and a visible region's floor stand up as columns of their own
- * with no fog over them, so nothing in front of the fog's edge is ever covered; an unexplored or
- * explored floor lies flat. See {@link fogShapes}.
+ * **Feathered, on a lattice** (`fogField.ts`): the partition is laid on a lattice of
+ * {@link FEATHER}`.texel` px and feathered inward from every lighter edge, so no edge cuts hard and
+ * nothing the partition keeps clear is covered. Each ground chunk (FS-KE075 §H.45) paints its part
+ * into a canvas texture, drawn smooth between texels, under both renderers; only a chunk near the
+ * camera is painted, and only when its part changed. Nothing is rebuilt per frame.
  *
- * **Few polygons, chunked.** Phaser earcuts every fill path each frame it renders
- * (`renderer/webgl/renderNodes/FillPath.js`, run from the Graphics renderer per frame), so the fog
- * merges each strip's like columns into one polygon, and cuts them into the floor's ground chunks
- * (FS-KE075 §H.45): a chunk's Graphics is drawn only while its chunk is near the camera.
+ * **Faded, never popped** (owner playtest 2026-11-06): a region's change of state is eased over
+ * {@link FOG}`.fade` ms on the scene's clock. Fog that comes eases in over the world; fog that
+ * lifts eases out at {@link FOG}`.floorDepth`, under everything that stands, so a member stepping
+ * into a veiled region is never veiled. A wall's tint eases with it.
  *
- * **What it does not cover, it hides or dims** (§C.8, §C.9, §C.11): a wall piece stands up out of
- * its diamond, so it is gated, not covered: hidden while every region it borders is unexplored,
- * tinted dim while the brightest is explored.
+ * **What it does not cover, it tints or hides** (§C.8, §C.9, §C.11): a wall piece stands up out of
+ * its diamond, so it is tinted, not covered, as dark as the veil of the brightest region it borders;
+ * run dressing on a region's floor is hidden while its region is unexplored.
  */
 
-import type Phaser from "phaser";
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import { worldToScreen, type Point, type Rect } from "@/render/iso/projection";
 import { mix, palette } from "@/utils/canvasPalette";
@@ -36,12 +37,16 @@ import type { ChunkVisibility, Toggle } from "./chunks";
 import type { WallState } from "@/types/gameState";
 import type { RegionGrid } from "./dungeon";
 import type { ExplorationState } from "./exploration";
+import { FEATHER, fieldWindow, fogField, type FieldShape, type FieldWindow } from "./fogField";
 import { axisOf, type PieceRule, type WallAxis } from "./walls";
 
-/** How much fog a screen px has: none, the explored dim, or the unexplored dark. */
-export type FogShade = "none" | "dim" | "dark";
+/** A veil: the share of `palette.inkDeep` laid over a region's ground, and its walls' multiply tint. */
+export interface Veil {
+  alpha: number;
+  tint: number;
+}
 
-const DIM_SHARE = 0.55;
+const veil = (alpha: number): Veil => ({ alpha, tint: mix(TINT_IDENTITY, palette.inkDeep, alpha) });
 
 export const FOG = {
   /**
@@ -49,10 +54,23 @@ export const FOG = {
    * effects (≥ 140); under the dust (902), the vignette (905), markers (950, 951) and the HUD.
    */
   depth: BLACKOUT.depth,
-  /** The share of `palette.inkDeep` laid over an explored region (§C.9). */
-  dim: DIM_SHARE,
-  /** An explored wall piece's multiply tint: the same share of `palette.inkDeep` as its floor's. */
-  dimTint: mix(TINT_IDENTITY, palette.inkDeep, DIM_SHARE),
+  /**
+   * Where a lifting veil fades out (owner playtest 2026-11-06): over the ground (−1), the mist
+   * (−0.5) and the trails' beds (0), under every standing thing (`WORLD_DEPTH`, 100), so it never
+   * lies over a member.
+   */
+  floorDepth: 1,
+  /**
+   * An unexplored region's veil (§C.8): dense, darker than the explored one but not opaque, so its
+   * ground and walls read faintly through it. Tune here.
+   */
+  unexplored: veil(0.8),
+  /** An explored region's veil (§C.9): the lighter dim. Tune here. */
+  explored: veil(0.55),
+  /** The void and off the floor: the darkest ink, opaque, as the canvas round the floor is. */
+  void: 1,
+  /** Milliseconds a region's change of state eases over, fog and wall tint alike. Tune here. */
+  fade: 320,
   /**
    * Screen px a visible region's floor stands clear above its diamond: a delver's head (the
    * tallest baked crown is 93 px, plus the markers' 3 px gap), so a member by the region behind
@@ -88,14 +106,14 @@ export interface FogHeights {
   front: number;
 }
 
-/** One polygon of fog, in screen px. */
-export interface FogShape {
-  shade: Exclude<FogShade, "none">;
-  points: Point[];
-}
+/**
+ * One polygon of the fog's partition, in screen px: its veil's alpha (0 where it is clear) and the
+ * alpha it feathers as, a drawn wall's being its tint's (`fogField.ts`).
+ */
+export type FogShape = FieldShape;
 
-/** A region's state as a shade: the fog over its floor, the look of its wall. */
-const SHADE: Record<ExplorationState, FogShade> = { visible: "none", explored: "dim", unexplored: "dark" };
+/** A region's state as the veil over its floor, and the tint of the walls it is the brightest of. */
+const VEIL: Record<ExplorationState, number> = { visible: 0, explored: FOG.explored.alpha, unexplored: FOG.unexplored.alpha };
 const RANK: Record<ExplorationState, number> = { unexplored: 0, explored: 1, visible: 2 };
 
 /**
@@ -192,7 +210,8 @@ function feetOn(grid: RegionGrid, cx: number, cy: number): Point[] {
 }
 
 /**
- * The fog over a dungeon floor, as polygons in screen px that never overlap (§C.13).
+ * The fog's partition of a dungeon floor, as polygons in screen px that never overlap (§C.13): the
+ * veiled ones and the drawn walls' clear columns, which the feather reads (`fogField.ts`).
  *
  * The floor's diamonds cut the screen into vertical strips half a diamond wide; in a strip, each
  * cell has one half (a triangle), and the halves are stacked in the order a painter draws them,
@@ -200,7 +219,7 @@ function feetOn(grid: RegionGrid, cx: number, cy: number): Point[] {
  * top, `min(a + m·t, b − m·t)` over the strip (`t` from its left side), the lower of one line in
  * each family of the floor's two slopes. A screen px goes to the frontmost half claiming it. In the
  * strip, the halves from index `s` on then own exactly the px below the lower envelope of every
- * top from `s` on, two numbers per index, found back to front. A run of halves of one shade owns
+ * top from `s` on, two numbers per index, found back to front. A run of halves of one veil owns
  * the px between its first index's envelope and the next run's, one polygon of at most six corners.
  *
  * What stands up is cut to what is there, so the fog leaves clear only what stands in front of it:
@@ -290,9 +309,9 @@ export function fogShapes(
       const at = (i: number): [number, number] => [upA[i] + m * t0, upB[i] - m * t0];
       for (let i = 0; i < n; ) {
         let j = i;
-        while (j + 1 < n && cells[j + 1].shade === cells[i].shade) j++;
-        const own = cells[i].shade;
-        if (own !== "none") for (const band of between(x0 + t0, t1 - t0, m, at(i), at(j + 1))) bands.push({ shade: own, ...band });
+        while (j + 1 < n && same(cells[j + 1], cells[i])) j++;
+        const { alpha, equiv } = cells[i];
+        if (alpha > 0 || equiv > 0) for (const band of between(x0 + t0, t1 - t0, m, at(i), at(j + 1))) bands.push({ alpha, equiv, ...band });
         i = j + 1;
       }
       // a band carried on from the part before, where its two corners meet this one's, is one
@@ -304,9 +323,13 @@ export function fogShapes(
   return shapes;
 }
 
-/** A band of fog across one or more parts of a strip: its top and bottom, left to right. */
+/** Whether two halves lie under one veil and feather alike, so one polygon may hold both. */
+const same = (p: { alpha: number; equiv: number }, q: { alpha: number; equiv: number }) => p.alpha === q.alpha && p.equiv === q.equiv;
+
+/** A band of the partition across one or more parts of a strip: its top and bottom, left to right. */
 interface Band {
-  shade: Exclude<FogShade, "none">;
+  alpha: number;
+  equiv: number;
   top: Point[];
   bottom: Point[];
 }
@@ -319,7 +342,7 @@ function carry(open: Band[], next: readonly Band[], shapes: FogShape[]): Band[] 
   const left = new Set(open);
   for (const band of next) {
     const on = [...left].find(
-      (o) => o.shade === band.shade && meets(o.top[o.top.length - 1], band.top[0]) && meets(o.bottom[o.bottom.length - 1], band.bottom[0]),
+      (o) => same(o, band) && meets(o.top[o.top.length - 1], band.top[0]) && meets(o.bottom[o.bottom.length - 1], band.bottom[0]),
     );
     if (on) {
       left.delete(on);
@@ -345,7 +368,7 @@ function emit(band: Band, shapes: FogShape[]): void {
     if (Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) < 1e-6) points.splice(i, 1);
     else i++;
   }
-  if (points.length >= 3 && area(points) > 0.01) shapes.push({ shade: band.shade, points });
+  if (points.length >= 3 && area(points) > 0.01) shapes.push({ alpha: band.alpha, equiv: band.equiv, points });
 }
 
 /**
@@ -365,7 +388,9 @@ function peaks(points: readonly Point[]): number[] {
 
 /** A half of one cell as the fog sees it, in its strip. */
 interface Half {
-  shade: FogShade;
+  /** The veil over it (0 clear), and the veil it feathers as: a drawn wall's tint share. */
+  alpha: number;
+  equiv: number;
   /** The right half of its cell (its centre at the strip's left side), or the left. */
   right: boolean;
   /** The y of its top corner, on its strip's left (right half) or right side (left half). */
@@ -380,9 +405,9 @@ interface Half {
 
 /**
  * Cell (cx, cy)'s half (§C.8–§C.11): a visible region's floor clear, where a member may stand; an
- * explored floor dim; an unexplored floor, the void and off the floor dark. A wall cell clear while
- * its piece is drawn (explored: its piece dims itself), standing as its slab and post; dark and
- * flat while its piece is hidden (unexplored).
+ * explored or unexplored floor under its veil; the void and off the floor opaque. A wall cell
+ * bordering any region is drawn, so it stands clear as its slab and post, its piece tinted to the
+ * veil of the brightest region it borders, which it feathers as.
  */
 function halfOf(
   grid: RegionGrid,
@@ -396,18 +421,19 @@ function halfOf(
   y: number,
 ): Half {
   const inside = cx >= 0 && cy >= 0 && cx < grid.cols && cy < grid.rows;
-  if (!inside) return { shade: "dark", right, y };
+  if (!inside) return { alpha: FOG.void, equiv: FOG.void, right, y };
   const id = grid.region(cx, cy);
   if (id) {
     const s = state(id);
-    return s === "visible" ? { shade: "none", right, y, stand: { cx, cy } } : { shade: SHADE[s], right, y };
+    return s === "visible" ? { alpha: 0, equiv: 0, right, y, stand: { cx, cy } } : { alpha: VEIL[s], equiv: VEIL[s], right, y };
   }
   const s = bordering(grid, cx, cy, state);
-  if (!s || s === "unexplored") return { shade: "dark", right, y };
+  if (!s) return { alpha: FOG.void, equiv: FOG.void, right, y };
   const wall = rule.height({ x: (cx + 0.5) * grid.cell, y: (cy + 0.5) * grid.cell }) === "back" ? heights.back : heights.front;
   const axis = walls.axis(cx, cy);
   return {
-    shade: "none",
+    alpha: 0,
+    equiv: VEIL[s],
     right,
     y,
     slab: axis ? { axis, rise: wall + FOG.headroom } : undefined,
@@ -508,12 +534,12 @@ function standOver(feet: readonly Point[], t0: number, t1: number, f: Frame): { 
  * The px of a strip from `x0`, `w` wide, between two envelopes `min(a + m·t, b − m·t)`, the upper
  * (smaller y) first: one band, or more where they pinch together. None where they meet.
  */
-function between(x0: number, w: number, m: number, upper: [number, number], lower: [number, number]): Omit<Band, "shade">[] {
+function between(x0: number, w: number, m: number, upper: [number, number], lower: [number, number]): Omit<Band, "alpha" | "equiv">[] {
   const f = (t: number) => Math.min(upper[0] + m * t, upper[1] - m * t);
   const g = (t: number) => Math.min(lower[0] + m * t, lower[1] - m * t);
   const kinks = [upper, lower].map(([a, b]) => (b - a) / (2 * m)).filter((t) => t > 0 && t < w);
   const ts = [0, ...kinks, w].sort((p, q) => p - q).filter((t, i, all) => i === 0 || t - all[i - 1] > 1e-9);
-  const out: Omit<Band, "shade">[] = [];
+  const out: Omit<Band, "alpha" | "equiv">[] = [];
   let run: number[] = [];
   const flush = () => {
     if (run.length >= 2) {
@@ -570,12 +596,53 @@ function clip(points: readonly Point[], win: { x0: number; y0: number; x1: numbe
   return out;
 }
 
-/** What the fog needs of a scene: somewhere to make its Graphics. A Phaser scene is one. */
-export interface FogStage {
-  add: { graphics(): Phaser.GameObjects.Graphics };
+/** Pixels to paint into a canvas texture: an `ImageData`. */
+export interface FogPixels {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
 }
 
-/** A wall piece, as its gate shows, hides and dims it: a sprite, or a placeholder block. */
+/** A canvas texture as the fog paints it: a Phaser `CanvasTexture`. */
+export interface FogCanvas {
+  getContext(): { createImageData(width: number, height: number): FogPixels };
+  putData(pixels: FogPixels, x: number, y: number): unknown;
+  refresh(): unknown;
+  setFilter(mode: number): unknown;
+  destroy(): void;
+}
+
+/** An image as the fog shows its texture: a Phaser `Image`. */
+export interface FogImage {
+  setOrigin(x: number, y?: number): unknown;
+  setScale(scale: number): unknown;
+  setDepth(depth: number): unknown;
+  setVisible(visible: boolean): unknown;
+  setAlpha(alpha: number): unknown;
+  destroy(): void;
+}
+
+/** A counter tween as the fade runs on it: from 0 to 1 on the scene's clock. */
+export interface FogTweenConfig {
+  from: number;
+  to: number;
+  duration: number;
+  ease: string;
+  onUpdate: (tween: { getValue(): number | null }) => void;
+  onComplete: () => void;
+}
+
+/** What the fog needs of a scene: images of canvas textures, and its tweens. A Phaser scene is one. */
+export interface FogStage {
+  add: { image(x: number, y: number, key: string): FogImage };
+  textures: { createCanvas(key: string, width: number, height: number): FogCanvas | null };
+  tweens: { addCounter(config: FogTweenConfig): { stop(): unknown } };
+}
+
+/** Phaser's `FilterMode.LINEAR` (`textures/const.js`): the field drawn smooth between its texels. */
+const LINEAR = 0;
+
+/** A wall piece, as its gate shows, hides and tints it: a sprite, or a placeholder block. */
 export interface FogPart {
   setVisible(visible: boolean): unknown;
   setTint?(tint: number): unknown;
@@ -584,13 +651,18 @@ export interface FogPart {
 
 /**
  * A standing piece's two keys (§C.8, §C.9, FS-KE075 §H.45): shown only while its ground chunk is
- * near the camera *and* the fog does not hide it; tinted dim while the fog says so. The chunk turns
- * its key through {@link nearCamera} (behind the {@link Toggle} that {@link Fog.gate} hands it);
- * the fog turns the other through {@link shadeAs}.
+ * near the camera *and* the fog does not hide it; tinted to its veil's share of `palette.inkDeep`,
+ * easing from one share to the next while the fog fades. The chunk turns its key through
+ * {@link nearCamera} (behind the {@link Toggle} that {@link Fog.gate} hands it); the fog turns the
+ * other through {@link look} and {@link ease}.
  */
 class FogGate {
   private near = true;
-  private shade: FogShade = "none";
+  private hidden = false;
+  /** The share tinted now, and the shares a fade runs between. */
+  private share = 0;
+  private from = 0;
+  private to = 0;
 
   constructor(
     private readonly part: FogPart,
@@ -600,137 +672,355 @@ class FogGate {
   /** Its ground chunk's key: whether the chunk is near the camera. */
   nearCamera(near: boolean): void {
     this.near = near;
-    this.part.setVisible(near && this.shade !== "dark");
+    this.part.setVisible(near && !this.hidden);
   }
 
-  shadeAs(shade: FogShade): void {
-    if (shade === this.shade) return;
-    const was = this.shade;
-    this.shade = shade;
-    this.part.setVisible(this.near && shade !== "dark");
-    if (shade === "dim") this.part.setTint?.(FOG.dimTint);
-    else if (was === "dim") this.part.clearTint?.();
+  /**
+   * Hidden or shown, and the share it is tinted to: at once, or eased from the share it has now
+   * when `fade`. True when it now eases.
+   */
+  look(hidden: boolean, share: number, fade: boolean): boolean {
+    if (hidden !== this.hidden) {
+      this.hidden = hidden;
+      this.part.setVisible(this.near && !hidden);
+    }
+    this.from = this.share;
+    this.to = share;
+    if (!fade || hidden || this.from === share) {
+      this.tint(share);
+      return false;
+    }
+    return true;
+  }
+
+  /** `p` of the way from the share it eased from to the one it eases to. */
+  ease(p: number): void {
+    this.tint(this.from + (this.to - this.from) * p);
+  }
+
+  private tint(share: number): void {
+    if (share === this.share) return;
+    this.share = share;
+    if (share > 0) this.part.setTint?.(mix(TINT_IDENTITY, palette.inkDeep, share));
+    else this.part.clearTint?.();
   }
 }
 
+/** A canvas texture of one chunk's field and the image showing it. */
+interface Layer {
+  canvas: FogCanvas;
+  image: FogImage;
+  pixels: FogPixels;
+}
+
+/** A fade under way in one chunk: what the three layers hold (see {@link Fog.paint}). */
+interface Fading {
+  base: Float32Array;
+  up: Float32Array;
+  down: Float32Array;
+}
+
+/** One ground chunk's part of the fog. */
+interface Chunk {
+  index: number;
+  /** Its screen rect, and its window of the lattice. */
+  rect: Rect;
+  win: FieldWindow;
+  near: boolean;
+  /** The shapes reaching into its field, and their print: unchanged print, unchanged field. */
+  shapes: FogShape[];
+  print?: string;
+  /** Its field for the shapes it holds, once worked out. */
+  target?: Float32Array;
+  /** What its base layer shows while no fade is under way; none until it is painted. */
+  shown?: Float32Array;
+  fading?: Fading;
+  /** The fog over the world; the fog that comes, easing in; the fog that lifts, easing out. */
+  base?: Layer;
+  up?: Layer;
+  down?: Layer;
+}
+
+let made = 0;
+
 /**
- * A dungeon floor's fog (§C.13): one Graphics per ground chunk it covers, at {@link FOG}`.depth`,
- * shown and hidden with its chunk; and the gates on the floor's wall pieces. {@link show} redraws
- * only when some region's state differs from the last drawn.
+ * A dungeon floor's fog (§C.13): each ground chunk's field painted into a canvas texture at
+ * {@link FOG}`.depth`, shown and hidden with its chunk, painted only while near the camera; and
+ * the gates on the floor's wall pieces and dressing. {@link show} works the fog out again only when
+ * some region's state differs from the last shown, and eases to it over {@link FOG}`.fade` ms.
  */
 export class Fog {
-  private readonly layers = new Map<number, Phaser.GameObjects.Graphics>();
+  private readonly id = ++made;
+  private readonly chunkList: Chunk[];
   private readonly gates: FogGate[] = [];
+  private easing: FogGate[] = [];
   private drawn?: string;
   private state?: (region: number) => ExplorationState;
   private count = 0;
+  private tween?: { stop(): unknown };
+  /** The fade under way's own mark: a callback of a fade since stopped finds another. */
+  private fadeMark?: object;
+  /** How far the fade under way has run, 0 to 1. */
+  private progress = 1;
 
   constructor(
     private readonly stage: FogStage,
     private readonly grid: RegionGrid,
     private readonly rule: PieceRule,
-    private readonly chunks: ChunkVisibility,
+    chunks: ChunkVisibility,
     private readonly heights: () => FogHeights,
     private readonly walls: WallLayout,
-  ) {}
+  ) {
+    this.chunkList = chunks.grid.rects.map((rect, index) => ({ index, rect, win: fieldWindow(rect), near: true, shapes: [] }));
+    // a chunk shows and hides its layers, and paints them when it comes near changed
+    for (const chunk of this.chunkList)
+      chunks.add({ setVisible: (near: boolean) => this.nearCamera(chunk, near) }, { x: chunk.rect.x + chunk.rect.width / 2, y: chunk.rect.y + chunk.rect.height / 2 });
+  }
 
-  /** How many times the fog has been drawn. */
+  /** How many times the fog has been worked out. */
   get redraws(): number {
     return this.count;
   }
 
   /**
    * A wall piece or run dressing standing at world point `at` under the fog: what its ground chunk
-   * toggles in its stead (FS-KE075 §H.45). It takes the fog's shade at once.
+   * toggles in its stead (FS-KE075 §H.45). It takes the fog's look at once.
    */
   gate(part: FogPart, at: Point): Toggle {
     const gate = new FogGate(part, this.grid.cellOf(at));
     this.gates.push(gate);
-    if (this.state) this.shadeGate(gate, this.state);
+    if (this.state) this.look(gate, this.state, false);
     // a chunk shows and hides what stands in it; for a gated piece, that is "near the camera"
     return { setVisible: (near: boolean) => gate.nearCamera(near) };
   }
 
-  /** Draws the fog for these region states, unless they are the ones drawn. True when it drew. */
+  /**
+   * Works the fog out for these region states, unless they are the ones shown, and eases to it
+   * from what is on screen; the first time, shows it at once. True when it worked it out.
+   */
   show(state: (region: number) => ExplorationState): boolean {
     const key = this.grid.regions.map((r) => state(r.id)[0]).join("");
     this.state = state;
     if (key === this.drawn) return false;
+    const fade = this.drawn !== undefined;
     this.drawn = key;
     this.count++;
-    for (const gate of this.gates) this.shadeGate(gate, state);
-    this.draw(fogShapes(this.grid, this.rule, state, this.heights(), this.walls));
+    // a fade under way stops where it is: what it shows now is where the next one starts
+    this.stopFade();
+    for (const gate of this.easing) gate.ease(this.progress);
+    this.easing = this.gates.filter((gate) => this.look(gate, state, fade));
+    this.assign(fogShapes(this.grid, this.rule, state, this.heights(), this.walls));
+    let fades = this.easing.length > 0;
+    for (const chunk of this.chunkList) if (chunk.near && (chunk.target === undefined || chunk.fading)) fades = this.paint(chunk, fade) || fades;
+    this.progress = 0;
+    if (fades) this.startFade();
+    else this.progress = 1;
     return true;
   }
 
-  /** Gone with its floor: its Graphics destroyed, its gates let go. */
+  /** Gone with its floor: its fade stopped, its layers destroyed, its gates let go. */
   destroy(): void {
-    for (const layer of this.layers.values()) layer.destroy();
-    this.layers.clear();
+    this.stopFade();
+    for (const chunk of this.chunkList)
+      for (const layer of [chunk.base, chunk.up, chunk.down]) {
+        layer?.image.destroy();
+        layer?.canvas.destroy();
+      }
+    this.chunkList.length = 0;
     this.gates.length = 0;
+    this.easing = [];
     this.drawn = undefined;
     this.state = undefined;
   }
 
   /**
-   * A wall piece takes the brightest region it borders; a piece on a region's floor (run dressing)
-   * that region's state, hidden while unexplored and never tinted, since the fog over its floor
-   * dims it already. A piece bordering no region keeps the floor's plain look.
+   * A wall piece takes the veil of the brightest region it borders; a piece on a region's floor
+   * (run dressing) is hidden while that region is unexplored and never tinted, since the veil over
+   * its floor lies over it already. A piece bordering no region keeps the floor's plain look.
    */
-  private shadeGate(gate: FogGate, state: (region: number) => ExplorationState): void {
+  private look(gate: FogGate, state: (region: number) => ExplorationState, fade: boolean): boolean {
     const { cx, cy } = gate.cell;
     const own = this.grid.region(cx, cy);
-    if (own) {
-      gate.shadeAs(state(own) === "unexplored" ? "dark" : "none");
-      return;
-    }
+    if (own) return gate.look(state(own) === "unexplored", 0, fade);
     const s = bordering(this.grid, cx, cy, state);
-    gate.shadeAs(s ? SHADE[s] : "none");
+    return gate.look(false, s ? VEIL[s] : 0, fade);
   }
 
-  /** Each shape cut into the ground chunks it crosses, each chunk's Graphics drawn afresh. */
-  private draw(shapes: readonly FogShape[]): void {
-    const grid = this.chunks.grid;
-    const byChunk = new Map<number, FogShape[]>();
-    grid.rects.forEach((r, i) => {
-      // the outer chunks reach on past the ground, so nothing at its edge goes undrawn
-      const col = i % grid.cols;
-      const row = Math.floor(i / grid.cols);
-      const win = {
-        x0: col === 0 ? -Infinity : r.x,
-        x1: col === grid.cols - 1 ? Infinity : r.x + r.width,
-        y0: row === 0 ? -Infinity : r.y,
-        y1: row === grid.rows - 1 ? Infinity : r.y + r.height,
-      };
+  /** Each chunk the shapes reaching into its field; a chunk whose shapes changed, its field to work out again. */
+  private assign(shapes: readonly FogShape[]): void {
+    const pad = FEATHER.reach * FEATHER.texel;
+    const prints = shapes.map(print);
+    for (const chunk of this.chunkList) {
+      const { x, y, width, height } = chunk.rect;
+      const win = { x0: x - pad, x1: x + width + pad, y0: y - pad, y1: y + height + pad };
       const mine: FogShape[] = [];
-      for (const shape of shapes) {
-        if (!overlaps(shape.points, win)) continue;
-        const points = clip(shape.points, win);
-        if (points.length >= 3 && area(points) > 0.01) mine.push({ shade: shape.shade, points });
-      }
-      if (mine.length > 0) byChunk.set(i, mine);
-    });
-    for (const [i, layer] of this.layers) if (!byChunk.has(i)) layer.clear();
-    for (const [i, mine] of byChunk) {
-      const layer = this.layer(i);
-      layer.clear();
-      for (const shade of ["dim", "dark"] as const) {
-        layer.fillStyle(palette.inkDeep, shade === "dark" ? 1 : FOG.dim);
-        for (const s of mine) if (s.shade === shade) layer.fillPoints(s.points as Phaser.Math.Vector2[], true);
-      }
+      const marks: string[] = [];
+      shapes.forEach((shape, i) => {
+        if (!overlaps(shape.points, win)) return;
+        mine.push(shape);
+        marks.push(prints[i]);
+      });
+      const next = marks.join(";");
+      if (next === chunk.print) continue;
+      chunk.print = next;
+      chunk.shapes = mine;
+      chunk.target = undefined;
     }
   }
 
-  /** Chunk `i`'s Graphics, made the first time it has fog to draw and shown with its chunk. */
-  private layer(i: number): Phaser.GameObjects.Graphics {
-    const made = this.layers.get(i);
-    if (made) return made;
-    const layer = this.stage.add.graphics().setDepth(FOG.depth);
-    const r: Rect = this.chunks.grid.rects[i];
-    this.chunks.add(layer, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
-    this.layers.set(i, layer);
+  /** Chunk `chunk` came near the camera or left it: its layers shown or hidden, painted if it changed. */
+  private nearCamera(chunk: Chunk, near: boolean): void {
+    chunk.near = near;
+    if (near && this.drawn !== undefined && (chunk.target === undefined || chunk.fading)) this.paint(chunk, false);
+    // a chunk far off finishes its fade at once
+    if (!near && chunk.fading) this.settle(chunk);
+    chunk.base?.image.setVisible(near);
+    chunk.up?.image.setVisible(near && !!chunk.fading);
+    chunk.down?.image.setVisible(near && !!chunk.fading);
+  }
+
+  /**
+   * Paints chunk `chunk`'s field, at once or, when `fade`, as a fade from what it shows now. True
+   * when it fades.
+   *
+   * A fade holds three fields, all from `from` (on screen now) and `to`: the base, the less of the
+   * two at each texel, over the world; the fog that comes, `up`, eased in over the world; and the
+   * fog that lifts, `down`, eased out at {@link FOG}`.floorDepth`, under what stands. Each is the
+   * alpha that, laid over the base, makes `to` or `from`: `1 − (1 − v)/(1 − base)`. No member is
+   * ever under `down`, and `up` is nothing where `to` is clear, so where a member may stand.
+   */
+  private paint(chunk: Chunk, fade: boolean): boolean {
+    chunk.target ??= fogField(chunk.shapes, chunk.rect).alpha;
+    const to = chunk.target;
+    const from = chunk.fading ? onScreen(chunk.fading, this.progress) : chunk.shown;
+    if (!fade || !from || same32(from, to)) {
+      this.write(chunk, "base", to, FOG.depth);
+      chunk.shown = to;
+      chunk.fading = undefined;
+      chunk.up?.image.setVisible(false);
+      chunk.down?.image.setVisible(false);
+      return false;
+    }
+    const base = new Float32Array(to.length);
+    const up = new Float32Array(to.length);
+    const down = new Float32Array(to.length);
+    for (let i = 0; i < to.length; i++) {
+      const b = Math.min(from[i], to[i]);
+      base[i] = b;
+      if (b < 1) {
+        up[i] = 1 - (1 - to[i]) / (1 - b);
+        down[i] = 1 - (1 - from[i]) / (1 - b);
+      }
+    }
+    chunk.fading = { base, up, down };
+    chunk.shown = undefined;
+    this.write(chunk, "base", base, FOG.depth);
+    this.write(chunk, "up", up, FOG.depth)?.image.setAlpha(0);
+    this.write(chunk, "down", down, FOG.floorDepth)?.image.setAlpha(1);
+    chunk.up?.image.setVisible(chunk.near);
+    chunk.down?.image.setVisible(chunk.near);
+    return true;
+  }
+
+  /** A chunk's fade done: its base the field it eased to, its easing layers hidden. */
+  private settle(chunk: Chunk): void {
+    if (!chunk.fading || !chunk.target) return;
+    chunk.fading = undefined;
+    this.write(chunk, "base", chunk.target, FOG.depth);
+    chunk.shown = chunk.target;
+    chunk.up?.image.setVisible(false);
+    chunk.down?.image.setVisible(false);
+  }
+
+  /** The fade from 0 to 1 over {@link FOG}`.fade` ms, on the scene's clock; only alphas and tints change on the way. */
+  private startFade(): void {
+    const mark = {};
+    this.fadeMark = mark;
+    const tween = this.stage.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: FOG.fade,
+      ease: "Sine.easeInOut",
+      onUpdate: (t) => {
+        if (mark !== this.fadeMark) return;
+        this.progress = t.getValue() ?? 1;
+        for (const chunk of this.chunkList) {
+          if (!chunk.fading) continue;
+          chunk.up?.image.setAlpha(this.progress);
+          chunk.down?.image.setAlpha(1 - this.progress);
+        }
+        for (const gate of this.easing) gate.ease(this.progress);
+      },
+      onComplete: () => {
+        if (mark !== this.fadeMark) return;
+        this.fadeMark = undefined;
+        this.progress = 1;
+        for (const chunk of this.chunkList) this.settle(chunk);
+        for (const gate of this.easing) gate.ease(1);
+        this.easing = [];
+      },
+    });
+    if (mark === this.fadeMark) this.tween = tween;
+  }
+
+  /** The fade under way, if any, stopped where it is. */
+  private stopFade(): void {
+    this.fadeMark = undefined;
+    this.tween?.stop();
+    this.tween = undefined;
+  }
+
+  /**
+   * A field into one of a chunk's layers, the layer made the first time it has fog to show: its
+   * canvas texture the field's size, its image laid over the chunk's window a texel to a texel.
+   */
+  private write(chunk: Chunk, which: "base" | "up" | "down", field: Float32Array, depth: number): Layer | undefined {
+    let layer = chunk[which];
+    if (!layer) {
+      if (!field.some((v) => v > 0)) return undefined;
+      const { win } = chunk;
+      const key = `fog:${this.id}:${chunk.index}:${which}`;
+      const canvas = this.stage.textures.createCanvas(key, win.cols, win.rows);
+      if (!canvas) return undefined;
+      canvas.setFilter(LINEAR);
+      const pixels = canvas.getContext().createImageData(win.cols, win.rows);
+      const ink = palette.inkDeep;
+      for (let i = 0; i < win.cols * win.rows; i++) {
+        pixels.data[i * 4] = (ink >> 16) & 255;
+        pixels.data[i * 4 + 1] = (ink >> 8) & 255;
+        pixels.data[i * 4 + 2] = ink & 255;
+      }
+      const image = this.stage.add.image(win.x, win.y, key);
+      image.setOrigin(0, 0);
+      image.setScale(FEATHER.texel);
+      image.setDepth(depth);
+      image.setVisible(chunk.near);
+      layer = chunk[which] = { canvas, image, pixels };
+    }
+    for (let i = 0; i < field.length; i++) layer.pixels.data[i * 4 + 3] = Math.round(Math.min(1, Math.max(0, field[i])) * 255);
+    layer.canvas.putData(layer.pixels, 0, 0);
+    layer.canvas.refresh();
     return layer;
   }
+}
+
+/** What a fade shows `p` of the way: the base, with the fog that comes eased in and the fog that lifts eased out. */
+function onScreen(f: Fading, p: number): Float32Array {
+  const out = new Float32Array(f.base.length);
+  for (let i = 0; i < out.length; i++) out[i] = 1 - (1 - f.base[i]) * (1 - f.up[i] * p) * (1 - f.down[i] * (1 - p));
+  return out;
+}
+
+/** Whether two fields are the same, texel for texel. */
+function same32(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-4) return false;
+  return true;
+}
+
+/** A shape's print: its veils and corners to a hundredth of a px. */
+function print(shape: FogShape): string {
+  return `${shape.alpha},${shape.equiv}:${shape.points.map((p) => `${Math.round(p.x * 100)},${Math.round(p.y * 100)}`).join(" ")}`;
 }
 
 /** Whether a polygon's bounding box meets a window. */
