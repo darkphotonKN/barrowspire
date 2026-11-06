@@ -75,8 +75,8 @@ export class CharacterMotion {
   private readonly walkAttack: boolean;
 
   /**
-   * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the Archer's, FS-HF0WW), so an
-   * attack drawn while moving keeps the legs walking.
+   * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the four classes', FS-HF0WW,
+   * FS-3V7GC), so an attack drawn while moving keeps the legs walking.
    */
   constructor(
     public facing: Facing8 = "se",

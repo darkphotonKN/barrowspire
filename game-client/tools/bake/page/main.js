@@ -172,7 +172,7 @@ function characterPoses(sheet) {
   for (const [anim, spec] of Object.entries(specs)) {
     const frames = clips[anim];
     if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
-    // walk_attack (the Archer's shot on the move) walks its cloth like the walk and calms the
+    // walk_attack (a class's attack on the move) walks its cloth like the walk and calms the
     // shot's fling like the attack
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,
@@ -192,7 +192,7 @@ function characterPoses(sheet) {
         poses.push({
           anim: name,
           i,
-          // a clip `boxed` into the frame the others set (the archer's walk_attack) never widens it
+          // a clip `boxed` into the frame the others set (a class's walk_attack) never widens it
           sizing: !spec.boxed,
           apply: () => {
             variant.dress();
