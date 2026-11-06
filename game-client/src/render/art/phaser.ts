@@ -149,7 +149,9 @@ export function preloadArt(
   // long enough to be read, `create` waiting for it (FS-C4JWH A1, `loadPace.ts`).
   const pace =
     queued > 0 && options.bar
-      ? pacedEntry(scene, options.bar, options.fadeIn ?? false, () => cancelEnd())
+      ? pacedEntry(scene, options.bar, options.fadeIn ?? false, () =>
+          cancelEnd(),
+        )
       : undefined;
   if (pace) scene.load.on("progress", pace.progress);
 
@@ -190,6 +192,9 @@ export function preloadArt(
   scene.load.once("complete", loaded);
 }
 
+/** Phaser 4.2.1's `Phaser.Scenes.LOADING` (`scene/const.js`), kept here so this module stays type-only on Phaser. */
+const SCENE_LOADING = 3;
+
 /** The scene manager's own step from a completed load to `create` (Phaser 4.2.1 `SceneManager`). */
 interface SceneStarter {
   loadComplete(loader: unknown): void;
@@ -221,7 +226,11 @@ function pacedEntry(
     fadeIn,
     enter: () => {
       entered();
-      manager.loadComplete(scene.load);
+      // Only a scene still LOADING is entered: if the removal above ever misses (a Phaser upgrade
+      // attaching the listener another way), Phaser has already created it on the load's
+      // completion, and a second create would build the world twice.
+      if (scene.sys.settings.status === SCENE_LOADING)
+        manager.loadComplete(scene.load);
     },
   });
 }
@@ -241,7 +250,11 @@ function sceneClock(scene: Phaser.Scene): PaceClock {
 
 /** The canvas's soot, the game's background and the bar's ground: what a fade comes from and goes to. */
 const SOOT = palette.menu.ground;
-const SOOT_RGB = [(SOOT >> 16) & 0xff, (SOOT >> 8) & 0xff, SOOT & 0xff] as const;
+const SOOT_RGB = [
+  (SOOT >> 16) & 0xff,
+  (SOOT >> 8) & 0xff,
+  SOOT & 0xff,
+] as const;
 
 /**
  * The main camera's own fade (FS-C4JWH A1.5): Phaser 4.2.1 fills the camera's rectangle over every
