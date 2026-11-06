@@ -704,6 +704,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/member/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew the access token
+         * @description Takes the refresh token from sign-in or verification and returns a new access token, minted from the member as they are now, with that member. No refresh token is returned: keep the one you hold; it stays valid until its own expiry. An expired, invalid or wrong-type token, or one naming no member, answers 401 UNAUTHENTICATED, one code for every cause.
+         */
+        post: operations["refresh-access-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/member/signin": {
         parameters: {
             query?: never;
@@ -2009,6 +2029,21 @@ export interface components {
             memberId?: string;
             /** @description A member list: one letter per distinct member, 1-1000 distinct ids (notification-service decides). */
             memberIds?: string[];
+        };
+        RefreshBody: {
+            /** @description The refresh token from sign-in or verification */
+            refresh_token: string;
+        };
+        RefreshResult: {
+            /**
+             * Format: int32
+             * @description Access token lifetime in seconds
+             */
+            access_expires_in: number;
+            /** @description Bearer token for the Authorization header */
+            access_token: string;
+            /** @description The member, as the new access token was minted from */
+            member_info: components["schemas"]["Member"];
         };
         RequestAvatarUploadBody: {
             /** @description Name of the file to upload */
@@ -4853,6 +4888,66 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "refresh-access-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResult"];
                 };
             };
             /** @description Unauthorized */

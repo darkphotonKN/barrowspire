@@ -8,6 +8,7 @@ import {
 } from "@/assets/types/client";
 import { ClientGameState, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
+import type { RenewOutcome } from "@/utils/sessionRenewal";
 import { travelArrival } from "@/ui/travelArrival";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -57,6 +58,10 @@ export interface HubArrival {
   refused(text: string): void;
 }
 
+/** The backoff between refused handshakes of the game socket (FS-ZPX58 H1). */
+export const AUTH_RETRY_BASE_MS = 1000;
+export const AUTH_RETRY_MAX_MS = 30_000;
+
 /** Said when a travel's move cannot be made: the leader's server unreachable, or no character. */
 export const TRAVEL_UNREACHABLE = "Your party's village could not be reached.";
 
@@ -93,8 +98,24 @@ export class SocketManager {
   // every handoff, so a reconnect returns to the host the player moved to rather
   // than the server they started on. FS-K2HKP §Requirements 29.
   private serverAddr: string = DEFAULT_SERVER_ADDR;
+  // The token from the first connect. Every socket opens with currentToken() instead, which asks
+  // the token source when one is set: the access token is renewed under a long session, and a
+  // URL built from this copy would carry an expired one (FS-ZPX58 R20).
   private token = "";
+  private tokenSource: (() => string | null) | null = null;
   private name = "";
+  // Renews the session when a handshake is refused with 4001 (FS-ZPX58 R21).
+  private renewSession: (() => Promise<RenewOutcome>) | null = null;
+  // Refused handshakes in a row. game-service upgrades a socket BEFORE it checks the token, so a
+  // refused socket opens, says auth_error and closes 4001: opening proves nothing. Only a message
+  // that is not auth_error (or a promoted handoff) means the token was taken, and resets this.
+  private authAttempts = 0;
+  private authRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  // The token each socket's URL carried, or the server last took over it: a socket that opens, or a
+  // handoff that is promoted, after a renewal it missed is handed the current one (FS-ZPX58 L-a).
+  private openedWith = new WeakMap<SocketLike, string>();
+  // Bumped by disconnect(): a renewal that resolves after it acts on nothing (FS-ZPX58 L-b).
+  private generation = 0;
   // The socket to a run's host while the move is being decided, and the run it
   // is for. The run id stays after the move, so a repeated handoff is ignored.
   private pending: SocketLike | null = null;
@@ -107,7 +128,30 @@ export class SocketManager {
     private createSocket: (url: string) => SocketLike = (url) =>
       new WebSocket(url),
     private arrival: HubArrival = travelArrival,
-  ) {}
+  ) {
+    // A refused renew_token keeps the server's old token and the connection; it is never a session
+    // problem for the global handler, which signs the player out (FS-ZPX58 R30).
+    this.errorListeners.set("renew_token", (info) => console.warn("renew_token refused:", info.message ?? info.error));
+  }
+
+  /**
+   * Hands the server the renewed access token on the open game socket, so the token it reads the
+   * player's gear with is renewed too (FS-ZPX58 R27). A socket that is not open gets nothing: the
+   * next one opens with the current token anyway (R20).
+   */
+  renewToken(token: string): void {
+    if (this.socket?.readyState !== SOCKET_OPEN) return;
+    this.socket.send(this.encode("renew_token", { token }));
+    this.openedWith.set(this.socket, token);
+  }
+
+  /** An open socket whose server holds an older token than the current one is handed it (L-a). */
+  private handOverIfStale(socket: SocketLike): void {
+    const token = this.currentToken();
+    if (!token || socket.readyState !== SOCKET_OPEN || this.openedWith.get(socket) === token) return;
+    socket.send(this.encode("renew_token", { token }));
+    this.openedWith.set(socket, token);
+  }
 
   getServerAddress(): string {
     return this.serverAddr;
@@ -126,7 +170,24 @@ export class SocketManager {
   }
 
   private gameUrl(): string {
-    return `${this.serverAddr}?token=${this.token}&name=${this.name}`;
+    return `${this.serverAddr}?token=${this.currentToken()}&name=${this.name}`;
+  }
+
+  /** Where the access token to open a socket with comes from; read at every open (FS-ZPX58 R20). */
+  setTokenSource(source: () => string | null): void {
+    this.tokenSource = source;
+  }
+
+  /**
+   * How to renew the session when a socket is refused with 4001 (FS-ZPX58 R21). Only a refused
+   * renewal is an auth error; without it wired a 4001 goes straight to the auth error.
+   */
+  setRenewSession(renew: () => Promise<RenewOutcome>): void {
+    this.renewSession = renew;
+  }
+
+  private currentToken(): string {
+    return this.tokenSource?.() || this.token;
   }
 
   getConnectionStatus(): ConnectionStatus {
@@ -176,6 +237,9 @@ export class SocketManager {
   }
 
   disconnect() {
+    this.generation++;
+    clearTimeout(this.authRetryTimer);
+    this.authRetryTimer = undefined;
     this.dropPending();
     if (this.socket) {
       this.socket.close(1000, "client_disconnect");
@@ -188,7 +252,10 @@ export class SocketManager {
     if (this.socket) return; // 避免重複連接
 
     this.setConnectionStatus("connecting");
+    // the URL was just built from the current token
+    const token = this.currentToken();
     this.socket = this.createSocket(url);
+    this.openedWith.set(this.socket, token);
     this.attach(this.socket, closedUnopened);
   }
 
@@ -202,6 +269,7 @@ export class SocketManager {
     let opened = socket.readyState === SOCKET_OPEN;
     socket.onopen = () => {
       opened = true;
+      this.handOverIfStale(socket);
       console.log("WebSocket connected");
       this.setConnectionStatus("connected");
       this.updateStatus("WebSocket Connected", toCss(palette.safe));
@@ -236,12 +304,15 @@ export class SocketManager {
         return;
       }
 
-      // Close code 4001 = auth error (token invalid/expired)
+      // Close code 4001 = auth error (token invalid/expired, or auth-service unable to tell).
+      // Renew and connect again, backing off while it keeps being refused; only a refused
+      // renewal is an auth error (FS-ZPX58 R21).
       if (event.code === 4001) {
-        console.log("Auth error detected, redirecting to login...");
-        if (this.onAuthError) {
-          this.onAuthError();
+        if (current && this.renewSession) {
+          this.recoverAuth(this.redirected.has(socket));
+          return;
         }
+        this.authFailed();
         return;
       }
 
@@ -251,7 +322,10 @@ export class SocketManager {
 
     socket.onmessage = (event) => {
       try {
-        this.dispatch(JSON.parse(event.data));
+        const data = JSON.parse(event.data);
+        // anything but the refusal means the handshake was taken (FS-ZPX58 H1)
+        if (data?.action !== "auth_error") this.authAttempts = 0;
+        this.dispatch(data);
       } catch (e) {
         console.error("Failed to parse message:", e);
         GameStateLogger.logError("Failed to parse WebSocket message", e);
@@ -401,15 +475,23 @@ export class SocketManager {
 
     this.dropPending();
     this.handoffSessionId = sessionId;
+    this.openRunHandoff(payload.addr, sessionId, false);
+  }
 
-    const next = this.createSocket(
-      `${payload.addr}?token=${this.token}&session_id=${sessionId}`,
-    );
+  /**
+   * Opens the socket to a run's host. A host that refuses the token (4001) gets one more socket
+   * after a renewal (FS-ZPX58 L4); `renewed` marks that one, whose refusal is the handoff's
+   * failure like any other.
+   */
+  private openRunHandoff(addr: string, sessionId: string, renewed: boolean) {
+    const token = this.currentToken();
+    const next = this.createSocket(`${addr}?token=${token}&session_id=${sessionId}`);
+    this.openedWith.set(next, token);
     this.pending = next;
 
     // The host upgrades before it decides and refuses by closing with 4002, so
     // the socket opening proves nothing. Its world_entered is the acceptance.
-    this.holdUntilEntered(next, payload.addr);
+    this.holdUntilEntered(next, addr);
 
     next.onerror = (error) => {
       // the close that follows decides what happens
@@ -418,6 +500,15 @@ export class SocketManager {
 
     next.onclose = (event) => {
       if (this.pending !== next) return;
+      if (event.code === 4001 && !renewed && this.renewSession) {
+        this.pending = null;
+        this.renewThen(() => {
+          // a later handoff took over meanwhile
+          if (this.handoffSessionId !== sessionId || this.pending) return;
+          this.openRunHandoff(addr, sessionId, true);
+        });
+        return;
+      }
       this.handoffFailed(sessionId, event.code);
     };
   }
@@ -443,16 +534,24 @@ export class SocketManager {
       return;
     }
 
+    this.openHubHandoff(payload.addr, enter, false);
+  }
+
+  /**
+   * Opens the socket to the leader's hub. A pod that refuses the token (4001) gets one more socket
+   * after a renewal, flagged redirected like the first (FS-ZPX58 L4); `renewed` marks that one.
+   */
+  private openHubHandoff(addr: string, enter: EnterHubPayload, renewed: boolean) {
     // flagged redirected: the leader's pod seats a traveller where they land rather than send
     // them back to the old pod that may still name itself as holding them. FS-MCYWK C19.
-    const next = this.createSocket(
-      `${payload.addr}?token=${this.token}&name=${this.name}&redirected=1`,
-    );
+    const token = this.currentToken();
+    const next = this.createSocket(`${addr}?token=${token}&name=${this.name}&redirected=1`);
+    this.openedWith.set(next, token);
     this.redirected.add(next);
     this.pending = next;
     next.onopen = () => next.send(this.encode("enter_hub", enter));
 
-    this.holdUntilEntered(next, payload.addr, (data) => {
+    this.holdUntilEntered(next, addr, (data) => {
       if (data.action !== "enter_hub" || !data.error) return false;
       this.dropPending();
       this.arrival.refused(String(data.payload?.message ?? data.error));
@@ -465,6 +564,14 @@ export class SocketManager {
     };
     next.onclose = (event) => {
       if (this.pending !== next) return;
+      if (event.code === 4001 && !renewed && this.renewSession) {
+        this.pending = null;
+        this.renewThen(() => {
+          if (this.pending) return; // another move started meanwhile
+          this.openHubHandoff(addr, enter, true);
+        });
+        return;
+      }
       console.warn("Hub handoff refused or failed, code:", event.code);
       this.pending = null;
       this.arrival.refused(TRAVEL_UNREACHABLE);
@@ -502,6 +609,52 @@ export class SocketManager {
     };
   }
 
+  /**
+   * The game socket's handshake was refused (FS-ZPX58 R21, H1): renew, then connect again as the
+   * same player, `redirected=1` kept when the refused socket was a redirect target (FS-MCYWK C17).
+   * The first try is at once; each further refusal in a row waits twice as long, from 1 s up to
+   * 30 s, so a token that keeps being refused, or an auth outage, never spins. Meanwhile the player
+   * is shown as reconnecting, and the session is kept: only a refused renewal signs them out.
+   */
+  private recoverAuth(redirected: boolean) {
+    const attempt = this.authAttempts++;
+    const delay = attempt === 0 ? 0 : Math.min(AUTH_RETRY_BASE_MS * 2 ** (attempt - 1), AUTH_RETRY_MAX_MS);
+
+    this.setConnectionStatus("connecting");
+    this.updateStatus("Disconnected, retrying…", toCss(palette.hudLabel));
+
+    clearTimeout(this.authRetryTimer);
+    this.authRetryTimer = setTimeout(() => {
+      this.authRetryTimer = undefined;
+      this.renewThen(() => {
+        if (this.socket) return; // connected again some other way meanwhile
+        if (redirected) this.connectRedirected();
+        else this.reconnect();
+      });
+    }, delay);
+  }
+
+  /** Renews the session; a refused renewal is the auth error, anything else goes on to `next`. */
+  private renewThen(next: () => void) {
+    if (!this.renewSession) return this.authFailed();
+    const generation = this.generation;
+    void this.renewSession().then(
+      (outcome) => {
+        if (generation !== this.generation) return; // disconnected meanwhile (L-b)
+        if (outcome === "refused") this.authFailed();
+        else next();
+      },
+      () => {
+        if (generation === this.generation) next();
+      },
+    );
+  }
+
+  private authFailed() {
+    console.log("Auth error detected, redirecting to login...");
+    this.onAuthError?.();
+  }
+
   /** Still on the old socket: stay. If it is gone too, go back to the server we were on. */
   private reconnectIfGone() {
     const old = this.socket;
@@ -519,6 +672,7 @@ export class SocketManager {
   private promote(next: SocketLike, addr: string) {
     const old = this.socket;
     this.pending = null;
+    this.authAttempts = 0;
 
     if (old) {
       // detached first, so its close reads as neither a disconnect nor an auth failure
@@ -530,6 +684,8 @@ export class SocketManager {
     this.serverAddr = addr;
     this.attach(next);
     this.setConnectionStatus("connected");
+    // renewed while the handoff was pending: the host holds the URL's token (L-a)
+    this.handOverIfStale(next);
   }
 
   private handoffFailed(sessionId: string, code: number) {

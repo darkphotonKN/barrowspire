@@ -4,6 +4,7 @@ import './globals.css';
 import Header from '@/components/Header';
 import AuthGuard from '@/components/AuthGuard';
 import VerifyEmailBanner from '@/components/VerifyEmailBanner';
+import SessionRenewal from '@/components/SessionRenewal';
 
 // Display face. Blackletter, bound to --font-heading and used only at >=28px
 // on the logo, the hero, and the page h1 — see docs/design-guideline.md.
@@ -39,6 +40,7 @@ export default function RootLayout({
     <html lang="en" className={`${pirataOne.variable} ${ebGaramond.variable}`}>
       <body>
         <AuthGuard>
+          <SessionRenewal />
           <Header />
           <VerifyEmailBanner />
           {children}

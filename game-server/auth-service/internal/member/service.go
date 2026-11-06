@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/auth"
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/models"
@@ -246,8 +245,8 @@ func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.Lo
 // the member. The claims are read off member, so it must be the row as it is
 // now: verify passes the member it just verified (FS-V6SFK §Requirements 21).
 func tokenPair(member *models.Member) (*pb.LoginResponse, error) {
-	accessExpiryTime := time.Minute * 60
-	refreshExpiryTime := time.Hour * 24 * 7
+	accessExpiryTime := auth.AccessTokenTTL
+	refreshExpiryTime := auth.RefreshTokenTTL
 
 	accessToken, err := auth.GenerateJWT(*member, commonconstants.Access, accessExpiryTime)
 	if err != nil {
@@ -265,6 +264,44 @@ func tokenPair(member *models.Member) (*pb.LoginResponse, error) {
 		AccessExpiresIn:  int32(accessExpiryTime.Seconds()),
 		RefreshExpiresIn: int32(refreshExpiryTime.Seconds()),
 		MemberInfo:       memberToProto(member),
+	}, nil
+}
+
+// RefreshAccessToken mints a new access token from a refresh token (FS-ZPX58
+// §A). The member is re-read by the token's subject and the access token is
+// minted from that row, never from the presented token, so a role, account or
+// verification change since sign-in takes effect now (R4). No refresh token is
+// minted: renewal cannot extend a session, and v1 does not rotate (ADR-0066).
+func (s *service) RefreshAccessToken(ctx context.Context, req *pb.RefreshAccessTokenRequest) (*pb.RefreshAccessTokenResponse, error) {
+	memberID, err := auth.ParseRefreshToken(req.RefreshToken)
+	if err != nil {
+		// One refusal for every cause (R3): which check failed is logged, never
+		// returned, so the route is no oracle for forging tokens. The token is
+		// not logged.
+		slog.InfoContext(ctx, "refresh token refused", "error", err)
+		return nil, commonconstants.ErrUnauthorized
+	}
+
+	member, err := s.Repo.GetById(ctx, memberID)
+	if errors.Is(err, commonconstants.ErrNotFound) {
+		// A deleted member is refused like a forged token, not answered 404.
+		slog.InfoContext(ctx, "refresh token names no member", "member_id", memberID)
+		return nil, commonconstants.ErrUnauthorized
+	}
+	if err != nil {
+		// Not a refusal (R7): a database blip must not sign the player out.
+		return nil, fmt.Errorf("read member for refresh: %w", err)
+	}
+
+	accessToken, err := auth.GenerateJWT(*member, commonconstants.Access, auth.AccessTokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("error generating access token: %w", err)
+	}
+
+	return &pb.RefreshAccessTokenResponse{
+		AccessToken:     accessToken,
+		AccessExpiresIn: int32(auth.AccessTokenTTL.Seconds()),
+		MemberInfo:      memberToProto(member),
 	}, nil
 }
 

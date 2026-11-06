@@ -38,6 +38,15 @@ type stubAuthClient struct {
 	verifyReq *pb.VerifyEmailRequest
 	resendReq *pb.ResendVerificationRequest
 	changeReq *pb.ChangeUnverifiedEmailRequest
+
+	// FS-ZPX58: what renewal answers, and the request it was sent
+	refresh    *pb.RefreshAccessTokenResponse
+	refreshReq *pb.RefreshAccessTokenRequest
+}
+
+func (s *stubAuthClient) RefreshAccessToken(_ context.Context, req *pb.RefreshAccessTokenRequest) (*pb.RefreshAccessTokenResponse, error) {
+	s.refreshReq = req
+	return s.refresh, s.err
 }
 
 func (s *stubAuthClient) VerifyEmail(_ context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error) {

@@ -315,6 +315,11 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Connection** — one client's WebSocket to one pod, held across any number of world switches on
   that pod and replaced only by a handoff. Never assume connection and world are the same
   lifetime, nor that a player keeps one connection from queue to run.
+- **Held token** — the member's own access token the pod keeps on their record, to read their gear
+  from items-service as them when a world seats them. Set at the handshake, replaced by a reconnect
+  or by a **renewal** (`renew_token`) carrying a validated access token for the connection's own
+  member (FS-ZPX58 §G, ADR-0067). Never logged. A stand-in until a service credential exists
+  (I-GV8WN-11).
 
 ### Pods (FS-K2HKP)
 

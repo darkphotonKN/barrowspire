@@ -40,7 +40,8 @@ server state and sends intents. ✅
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
 - [x] Upload and confirm an avatar
-- [ ] Refresh an expired access token
+- [ ] Refresh an expired access token → FS-ZPX58
+- [ ] Game socket connects with the current access token → FS-ZPX58
 - [ ] Password policy at registration → FS-V6SFK
 - [ ] Verify email from the client → FS-V6SFK
 - [ ] Change an unverified email → FS-V6SFK
@@ -260,12 +261,14 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **`authStore`** — `{accessToken, refreshToken, memberInfo, isAuthenticated}`; **persisted** to
   `localStorage["auth-storage"]`. `memberInfo = {id,name,email,status,average_rating,avatar_url?,…}`.
 - **`gameStore`** — `{sessionId}`, in-memory; set by SocketManager on `game_found`.
-> REVIEW: `refreshToken` is stored but **never used** — no refresh flow; 401/`4001` force re-login.
+  The refresh token renews the access token (FS-ZPX58): before `exp` and on a 401 / `4001`;
+  only a refused renewal forces re-login.
 
 ## Reference — REST contract (client side)
 
 - **Base:** `NEXT_PUBLIC_API_URL` (default `http://localhost:7114` = **api-gateway**). Auth:
-  `Authorization: Bearer <accessToken>` from localStorage; `401` → logout + `/login`.
+  `Authorization: Bearer <accessToken>` from localStorage; `401` → renew once and resend
+  (`POST /api/member/refresh`), a refused renewal → logout + `/login` (FS-ZPX58).
 - Endpoints called: `POST /api/member/{signin,signup}`, `GET /api/member`,
   `POST /api/member/avatar/{upload-request,confirm}`,
   `GET /api/stats/leaderboard`, `GET /api/notification/` + `PATCH /:id/read` + `/read-all`,
@@ -277,7 +280,8 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 ## Reference — WebSocket contract (client side)
 
 - **Transport:** native `WebSocket`; URL **hardcoded** `ws://localhost:5668/game/ws`; auth via
-  query `?token=<jwt>&name=<name>`; server close `4001` → clear auth + `/login`.
+  query `?token=<jwt>&name=<name>` (the token current at each open); server close `4001` →
+  renew once and reconnect, else clear auth + `/login` (FS-ZPX58).
 - **Envelope (send):** `{action, payload, seq}`; SocketManager auto-injects `session_id`
   (gameStore) and `player_id` (authStore) into every payload.
 - **SENDS:** `find_game`, `move {vx,vy}`, `attack {enemy_entity_id}`, `interact {entity_id}`

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -9,13 +10,17 @@ import (
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 /**
 * Generates and signs a JWT token with claims of either the "access" or "refresh" types.
 **/
 func GenerateJWT(user models.Member, tokenType commonconstants.TokenType, expiration time.Duration) (string, error) {
-	JWTSecret := []byte(os.Getenv("JWT_SECRET"))
+	JWTSecret, err := jwtSecret()
+	if err != nil {
+		return "", err
+	}
 
 	now := time.Now()
 
@@ -53,47 +58,76 @@ func GenerateJWT(user models.Member, tokenType commonconstants.TokenType, expira
 	return token.SignedString(JWTSecret)
 }
 
-/**
-* RefreshToken validates a refresh token and generates a new access token if
-* valid.
-**/
-func RefreshToken(refreshToken string, user models.Member) (string, int, error) {
-	// Parse the refresh token
-	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
+// errNoSecret: JWT_SECRET is unset or blank. Nothing is minted or accepted
+// then, rather than every token being signed and checked with the empty key
+// (FS-ZPX58 L7).
+var errNoSecret = errors.New("JWT_SECRET is not set")
 
-	if err != nil || !token.Valid {
-		return "", 0, errors.New("invalid refresh token")
+func jwtSecret() ([]byte, error) {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return nil, errNoSecret
 	}
-
-	// Check if the token type is "refresh"
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || claims["tokenType"] != string(commonconstants.Refresh) {
-		return "", 0, errors.New("invalid token type")
-	}
-
-	// Generate a new access token with a 15-minute expiration
-	newAccessToken, err := GenerateJWT(user, commonconstants.Access, 15*time.Minute)
-	if err != nil {
-		return "", 0, errors.New("could not generate new access token")
-	}
-
-	// Return the new access token and expiration time (in seconds)
-	return newAccessToken, int(15 * 60), nil
+	return []byte(secret), nil
 }
 
-// ValidateJWT validates a JWT token and returns the claims
-func ValidateJWT(tokenString string) (jwt.RegisteredClaims, error) {
-	JWTSecret := []byte(os.Getenv("JWT_SECRET"))
+// AccessTokenTTL and RefreshTokenTTL are the platform's two token lifetimes
+// (ADR-0066 §1). Sign-in, verification and renewal all mint from these; there
+// is no third lifetime.
+const (
+	AccessTokenTTL  = 60 * time.Minute
+	RefreshTokenTTL = 7 * 24 * time.Hour
+)
 
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+// ParseRefreshToken answers the member a refresh token names, or an error when
+// it is not redeemable (FS-ZPX58 §Requirements 2): it must be HS256 with the
+// platform secret, carry an expiry that has not passed, be typed refresh, and
+// name the member by UUID. The error says which check failed, for the log only;
+// the caller turns every one of them into the same refusal.
+func ParseRefreshToken(tokenString string) (uuid.UUID, error) {
+	secret, err := jwtSecret()
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	var claims commonauth.Claims
+	_, err = jwt.ParseWithClaims(tokenString, &claims, func(*jwt.Token) (any, error) {
+		return secret, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("parse refresh token: %w", err)
+	}
+
+	if claims.TokenType != string(commonconstants.Refresh) {
+		return uuid.Nil, fmt.Errorf("token type %q is not refresh", claims.TokenType)
+	}
+
+	memberID, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("parse refresh token sub: %w", err)
+	}
+
+	return memberID, nil
+}
+
+// ValidateJWT validates an ACCESS token and returns its subject as the
+// claims' ID. A refresh token, or a token with no type, is refused: the
+// ValidateToken RPC behind it is how game-service admits a socket, and a 7-day
+// refresh token must not open one (FS-ZPX58 L1). Every token auth-service mints
+// is typed, so this refuses nothing it ever handed out as access.
+func ValidateJWT(tokenString string) (jwt.RegisteredClaims, error) {
+	JWTSecret, err := jwtSecret()
+	if err != nil {
+		return jwt.RegisteredClaims{}, err
+	}
+
+	var claims commonauth.Claims
+	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
 		return JWTSecret, nil
 	})
-
 	if err != nil {
 		return jwt.RegisteredClaims{}, err
 	}
@@ -102,15 +136,11 @@ func ValidateJWT(tokenString string) (jwt.RegisteredClaims, error) {
 		return jwt.RegisteredClaims{}, errors.New("invalid token")
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return jwt.RegisteredClaims{}, errors.New("invalid claims")
+	if claims.TokenType != string(commonconstants.Access) {
+		return jwt.RegisteredClaims{}, fmt.Errorf("token type %q is not access", claims.TokenType)
 	}
 
-	// Extract sub (user ID) from MapClaims
-	sub, _ := claims["sub"].(string)
-
 	return jwt.RegisteredClaims{
-		ID: sub,
+		ID: claims.Subject,
 	}, nil
 }
