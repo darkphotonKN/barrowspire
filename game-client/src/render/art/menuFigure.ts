@@ -22,7 +22,6 @@ import type { AnimationChoice } from "./animationSelect";
 import { CharacterAnimator } from "./character";
 import type { ArtLibrary } from "./library";
 import { directionIndex, sheetScale } from "./manifest";
-import { MANIFEST_KEY, preloadArt } from "./phaser";
 
 /**
  * In screen px: a menu never draws a figure smaller than the game does (1 screen px per 1x px),
@@ -38,15 +37,6 @@ export const MENU_FACING: Facing8 = "se";
 const PORTRAIT_HEADROOM = 4;
 /** Plinth width per 1x of figure scale: a little wider than a player's stance. */
 const PLINTH_WIDTH = 104;
-
-/**
- * Queues the art on a menu scene's loader unless an earlier scene already loaded it. Call from
- * `preload()` of any scene that may be the first to show a figure; then `registerArt` in
- * `create()`. Guarded so re-entering a scene queues nothing and leaves no stale listener.
- */
-export function preloadMenuArt(scene: Phaser.Scene): void {
-  if (!scene.cache.json.exists(MANIFEST_KEY)) preloadArt(scene);
-}
 
 export interface MenuFigureOptions {
   /** Of the baked frame, clamped to {@link MIN_MENU_SCALE}..{@link MAX_MENU_SCALE}. Default 1. */

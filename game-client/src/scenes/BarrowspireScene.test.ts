@@ -214,12 +214,15 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
 
   it("should not pile up teardown listeners across restarts", () => {
     const { scene, run } = startedRun();
+    // one per thing that lets go at the end (the run's teardown, its held one-shots): the same
+    // number after every restart
+    const ends = [run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")];
     for (let i = 0; i < 3; i++) {
       run.events.emit("shutdown");
       scene.init();
     }
-    expect(run.events.listenerCount("shutdown")).toBe(1);
-    expect(run.events.listenerCount("destroy")).toBe(1);
+    expect([run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")]).toEqual(ends);
+    expect(ends).toEqual([2, 2]);
   });
 });
 
@@ -346,12 +349,15 @@ describe("BarrowspireScene effect teardown (FS-KYPQ9 §B.9, §C.4)", () => {
 
   it("should not pile up teardown listeners when restarted with effects", () => {
     const { scene, run } = runWithEffects();
+    // one per thing that lets go at the end (the run's teardown, its held one-shots): the same
+    // number after every restart
+    const ends = [run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")];
     for (let i = 0; i < 3; i++) {
       run.events.emit("shutdown");
       scene.init();
     }
-    expect(run.events.listenerCount("shutdown")).toBe(1);
-    expect(run.events.listenerCount("destroy")).toBe(1);
+    expect([run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")]).toEqual(ends);
+    expect(ends).toEqual([2, 2]);
   });
 });
 
@@ -384,8 +390,9 @@ describe("BarrowspireScene Mercenary placeholder (FS-MAMHR §G.31)", () => {
     Object.assign(scene, {
       make: { graphics },
       textures: { exists: () => false },
-      cache: { json: { exists: () => false } },
-      load: { once: () => {}, json: () => {} },
+      // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
+      cache: { json: { exists: () => true, get: () => undefined } },
+      load: { on: () => {}, once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
     for (const prefix of ["player_mercenary", "other_mercenary"])
@@ -2221,8 +2228,9 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
     Object.assign(scene, {
       make: { graphics },
       textures: { exists: () => false },
-      cache: { json: { exists: () => false } },
-      load: { once: () => {}, json: () => {} },
+      // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
+      cache: { json: { exists: () => true, get: () => undefined } },
+      load: { on: () => {}, once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
     expect(made).toEqual(expect.arrayContaining(["chest_closed", "chest_open", "sack_closed", "sack_open"]));
@@ -5012,5 +5020,118 @@ describe("keepBodySize (FS-HF0WW)", () => {
     const sprite = spriteAt(1);
     keepBodySize(sprite, 1);
     expect(sprite.body.sourceWidth).toBe(60);
+  });
+});
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+// The run loads its creatures and the boss at entry, for every floor (FS-C4JWH §B R9).
+describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
+  it("should queue the creatures and the boss and nothing else, the resident art being loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+
+    run.preload();
+
+    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
+  });
+
+  it("should show the torch bar while the creatures and the boss download, gone before create (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+    let atCreate: boolean[] = [];
+
+    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) });
+
+    expect(atCreate.length).toBeGreaterThan(0);
+    expect(atCreate.every(Boolean)).toBe(true);
+  });
+});
+
+// A refresh into a run: the menu evicted its creatures, so the run downloads them again, and an
+// end_game or a settlement sent meanwhile must still reach it (FS-C4JWH Edge States).
+describe("BarrowspireScene messages while its art downloads (FS-C4JWH Edge States)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should end the run on an end_game that arrived before create, once create is done", () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      openHeldMessages(): void;
+      endRun(): void;
+    };
+    const endRun = vi.spyOn(run, "endRun").mockImplementation(() => {});
+
+    run.init({ sessionID: "run-a" });
+    listeners.get("end_game")?.({});
+    expect(endRun).not.toHaveBeenCalled();
+    run.connectToServer();
+    run.openHeldMessages();
+
+    expect(endRun).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A run that ends while it still downloads: end_game, its settlement and the hub arrive before
+// create. The record will open once create hands the settlement over, so the hub waits behind it,
+// as it does when the run has loaded (FS-GV8WN R23; FS-C4JWH Edge States).
+describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edge States, FS-GV8WN R23)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function runBeforeCreate(sessionID: string) {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      resultHold: { hold(world: object, apply: (world: object) => void): boolean };
+    };
+    run.init({ sessionID });
+    return { run, send: (action: string, payload: unknown) => listeners.get(action)?.(payload) };
+  }
+
+  it("should hold the hub behind the record its own held settlement will open", () => {
+    const { run, send } = runBeforeCreate("run-a");
+    send("end_game", {});
+    send("settlement", { run_id: "run-a" });
+
+    expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(true);
+  });
+
+  it.each([
+    ["no settlement", []],
+    ["another run's settlement", [["settlement", { run_id: "run-b" }]]],
+  ] as const)("should let the hub in at once with %s held", (_case, more) => {
+    const { run, send } = runBeforeCreate("run-a");
+    send("end_game", {});
+    for (const [action, payload] of more) send(action, payload);
+
+    expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(false);
   });
 });

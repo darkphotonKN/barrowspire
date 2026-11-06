@@ -3,9 +3,11 @@ import { palette, toCss, CANVAS_FONT } from "@/utils/canvasPalette";
 import { CLASS_LORE, ClassKey, type ClassStats } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";
 import { creationRefusal } from "@/characters/entry";
-import { registerArt } from "@/render/art/phaser";
+import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
-import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
+import { MenuFigure } from "@/render/art/menuFigure";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import {
   buttonTextColor,
   drawBackdrop,
@@ -78,14 +80,17 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadMenuArt(this);
+    // the class figures: resident art only (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.CharacterCreationScene, {
+      bar: () => drawTorchBar(this),
+    });
   }
 
   create(): void {
     // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
     centreStage(this.cameras.main);
     sharpenText(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.CharacterCreationScene);
     const width = STAGE_WIDTH;
 
     // Soot with drifting dust and bone glints, under a vignette (Bone & Soot menu chrome).

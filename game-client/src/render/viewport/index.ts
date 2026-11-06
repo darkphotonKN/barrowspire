@@ -23,6 +23,7 @@ export {
   STAGE_WIDTH,
   boundCamera,
   centreStage,
+  releaseStage,
   followWith,
   roundAtAnyZoom,
   roundsPixels,

@@ -61,6 +61,8 @@ import {
   type Point,
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
@@ -140,6 +142,14 @@ import {
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+
+/**
+ * What the server sends the hub once, unasked: the queue's progress and handoff, the ready check
+ * and the party's notices (game-service party.go, party_entry.go). Replies to the hub's own asks
+ * cannot come before create, which sends them.
+ */
+const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"];
 import { trimCrop } from "@/render/world/walls";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 
@@ -745,13 +755,25 @@ export class HubScene extends Phaser.Scene {
   private unsubscribeState?: () => void;
   private lastSent = { vx: 0, vy: 0 };
 
+  /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
+  private held?: HeldMessages;
+  private oneShots?: OneShotHandlers;
+
   constructor() {
     super({ key: "HubScene" });
   }
 
+  /**
+   * The server's one-shots are held from here: the folk may download before create subscribes to
+   * them (FS-C4JWH Edge States). Handed over at the end of create ({@link openHeldMessages}).
+   */
+  init(): void {
+    this.held = holdOneShots(this, socketManager, HUB_ONE_SHOTS);
+  }
+
   preload(): void {
-    // baked world and prop art (FS-2325V §B.6)
-    preloadArt(this);
+    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.HubScene, { bar: () => drawTorchBar(this) });
   }
 
   create(): void {
@@ -762,7 +784,7 @@ export class HubScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.HubScene);
     this.occluders = new Occluders();
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
     // `default` without its sheet. Nothing hostile here, so no strike-mark.
@@ -835,6 +857,12 @@ export class HubScene extends Phaser.Scene {
     relayoutOn(this, () => this.relayoutHud());
 
     this.listenForEnd();
+    this.openHeldMessages();
+  }
+
+  /** What the server sent while the hub loaded, to the listeners create has made, in order. */
+  private openHeldMessages(): void {
+    this.held?.replay(this.oneShots ?? {});
   }
 
   /** A stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN. */
@@ -871,9 +899,9 @@ export class HubScene extends Phaser.Scene {
     // Queue progress follows the player rather than pinning them to a popup:
     // they keep walking while they wait, so the panel has to be visible from
     // anywhere. FS-29KSH §Requirements 25, 27.
-    socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
-      this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
-    );
+    const queueStatus = (payload: { current?: number; total?: number }) =>
+      this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0);
+    socketManager.on("queue_status", queueStatus);
     // The reply to joinQueue's find_game: a refusal goes to its own error listener below, so
     // hearing it here at all means the server took the entry (FS-G4VMQ §Requirements 11). The door
     // waited for it with its panel up; the queue's own panel takes over (FS-BJNYC R21).
@@ -885,16 +913,18 @@ export class HubScene extends Phaser.Scene {
     // A match on another server: the move happens behind this panel, and the
     // host's world_entered switches the scene. A refused move leaves the player
     // here, so say so. FS-K2HKP §Requirements 29, 31.
-    socketManager.on("world_handoff", () => {
+    const handoff = () => {
       this.showQueueProgressText("Joining the delve…");
       // too late to leave: the player is being moved (FS-G4VMQ §Requirements 16)
       this.leaveButton?.setVisible(false);
-    });
-    socketManager.on("world_handoff_failed", () => {
+    };
+    socketManager.on("world_handoff", handoff);
+    const handoffFailed = () => {
       // the seat is released and the entry is gone (FS-K2HKP §Requirements 25)
       this.leftQueue();
       this.showQueueProgressText("The delve could not be joined.");
-    });
+    };
+    socketManager.on("world_handoff_failed", handoffFailed);
     // The reply is the truth: the server answers only once the entry is removed (FS-K2HKP
     // §Requirements 7), so the panel comes down on its word and never on the press. A refusal
     // keeps everything and says why, so the player can ask again. FS-G4VMQ §Requirements 13, 14, 17.
@@ -956,13 +986,23 @@ export class HubScene extends Phaser.Scene {
     // world_entered switching the scene, or by a refusal: the choice comes back on any of them.
     // A refusal is also said by the open door in its own words (FS-BJNYC R21, R22); the chat's line
     // for it is the party store's, as for every party notice, and is not this listener's.
-    socketManager.on("party_ready_check", () => this.enterAnswered());
-    socketManager.on("party_notice", (notice: PartyNoticePayload) => {
+    const readyCheck = () => this.enterAnswered();
+    socketManager.on("party_ready_check", readyCheck);
+    const partyNotice = (notice: PartyNoticePayload) => {
       if (!this.enterPending || !PARTY_ENTER_REFUSALS.has(notice?.code)) return;
       this.enterAnswered();
       const words = partyEnterDoorText(notice);
       if (words !== null && this.doorOpen) this.openDoor(words);
-    });
+    };
+    socketManager.on("party_notice", partyNotice);
+    // the server's one-shots, held while the hub loaded (FS-C4JWH Edge States)
+    this.oneShots = {
+      queue_status: queueStatus,
+      world_handoff: handoff,
+      world_handoff_failed: handoffFailed,
+      party_ready_check: readyCheck,
+      party_notice: partyNotice,
+    };
     // The door is drawn for the player's place in the party; a place changed while it stands open
     // (handed the lead, the lead handed on, out of the party) draws it again in the new order, on
     // its opening line: a refusal said for the old place no longer holds (FS-BJNYC R20).
@@ -996,6 +1036,8 @@ export class HubScene extends Phaser.Scene {
   private release(end: SceneEnd): void {
     this.unsubscribeState?.();
     this.unsubscribeQueue?.();
+    this.held = undefined;
+    this.oneShots = undefined;
     this.views.clear();
     this.npcs.clear();
     this.closeDialogue();

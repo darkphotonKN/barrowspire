@@ -113,13 +113,14 @@ export class ArtLibrary {
 
   resolve(name: string, query: FrameQuery = {}): ResolvedFrame {
     const sheet = this.sheet(name);
-    if (!sheet)
-      return this.placeholder(name, "no such sheet, or its atlas did not load");
+    if (!sheet) return this.placeholder(name, this.missing(name));
 
     const animation = query.animation ?? Object.keys(sheet.animations)[0];
     const anim = sheet.animations[animation];
     if (!anim)
-      return this.placeholder(`${name}/${animation}`, "no such animation");
+      return this.placeholder(`${name}/${animation}`, {
+        reason: "no such animation",
+      });
 
     const direction = wrap(query.direction ?? 0, sheet.directions);
     const index = wrap(query.index ?? 0, anim.frames[direction].length);
@@ -143,10 +144,27 @@ export class ArtLibrary {
     return animationName(name, animation, wrap(direction, sheet.directions));
   }
 
-  private placeholder(what: string, reason: string): ResolvedFrame {
+  /**
+   * Why a sheet is not drawn: not in the manifest, or a page it sits on is not loaded in this
+   * scene (it failed, or its group is not in the scene's set, FS-C4JWH §E R19–R20).
+   */
+  private missing(name: string): { reason: string; atlases?: string[] } {
+    const sheet = this.manifest?.sheets[name];
+    if (!sheet) return { reason: "no such sheet" };
+    const loaded = this.loadedAtlases;
+    return {
+      reason: "an atlas it sits on is not loaded in this scene",
+      atlases: sheetAtlases(sheet).filter((a) => !loaded?.has(a)),
+    };
+  }
+
+  private placeholder(
+    what: string,
+    why: { reason: string; atlases?: string[] },
+  ): ResolvedFrame {
     if (!this.warned.has(what)) {
       this.warned.add(what);
-      this.logger.warn(`art: "${what}" drawn as placeholder`, { reason });
+      this.logger.warn(`art: "${what}" drawn as placeholder`, why);
     }
     return {
       placeholder: true,

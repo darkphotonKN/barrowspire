@@ -224,3 +224,45 @@ describe("MainMenuScene ending (game destroy on leaving /game)", () => {
     }
   });
 });
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+// The menus draw only the class sheets: resident art, nothing scene-scoped (FS-C4JWH §A R4).
+describe("MainMenuScene art loading (FS-C4JWH §B R7)", () => {
+  it("should queue the manifest and the resident art only, when the menu is the first to load", () => {
+    const art = artLoaderStandin({ manifest: shippedManifest() });
+    const menu = Object.assign(new MainMenuScene(), art.scene) as unknown as { preload(): void };
+
+    menu.preload();
+    art.scene.load.start();
+
+    expect(art.queued.sort()).toEqual(RESIDENT_ART_PAGES.map(atlasTextureKey));
+  });
+
+  it("should queue nothing once the resident art is loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const menu = Object.assign(new MainMenuScene(), art.scene) as unknown as { preload(): void };
+
+    menu.preload();
+
+    expect(art.queued).toEqual([]);
+  });
+
+  it("should show no bar once the resident art is loaded (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const menu = Object.assign(new MainMenuScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => menu.preload() });
+
+    expect(art.drawn).toEqual([]);
+  });
+});

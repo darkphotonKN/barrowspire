@@ -3300,3 +3300,111 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
   });
 
 });
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+describe("HubScene art loading (FS-C4JWH §B R7)", () => {
+
+  it("should queue the folk and nothing else, the resident art being loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
+  });
+
+  it("should evict the run's creatures and boss once its load completes (FS-C4JWH §C R11)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, "creatures-0", "creatures-1", "boss-0", "boss-1"].map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.textures.removed.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
+    expect(art.textures.exists(atlasTextureKey("folk-0"))).toBe(true);
+  });
+
+  it("should show the torch bar while the folk download, gone before create (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+    let atCreate: boolean[] = [];
+
+    art.boot({ preload: () => hub.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
+      hold: true,
+    });
+    expect(art.drawn.filter((d) => d.kind === "text").map((d) => d.args[2])).toEqual([
+      "LIGHTING THE TORCH",
+      "THE SPIRE IS WAITING",
+    ]);
+    art.finish();
+
+    expect(atCreate.length).toBeGreaterThan(0);
+    expect(atCreate.every(Boolean)).toBe(true);
+  });
+
+  it("should show no bar when the folk are already loaded (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, "folk-0"].map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.drawn).toEqual([]);
+  });
+});
+
+// The hub's server-sent one-shots can arrive while its folk download, before create has subscribed
+// to them: they are held from init and handed over once create is done (FS-C4JWH Edge States).
+describe("HubScene messages while its art downloads (FS-C4JWH Edge States)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should show a queue_status that arrived before create, once create is done", () => {
+    const stage = hubOnStage();
+    const listeners = new Map<string, Listener>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const hub = stage.hub as unknown as { queued: boolean; listenForQueue(): void; init(): void; openHeldMessages(): void };
+
+    hub.init();
+    listeners.get("queue_status")?.({ current: 2, total: 5 });
+    expect(hub.queued).toBe(false);
+    hub.listenForQueue();
+    hub.openHeldMessages();
+
+    expect(hub.queued).toBe(true);
+  });
+
+  it("should let go of the held messages when the hub stops before create", () => {
+    const stage = hubOnStage();
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const off = vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    const hub = stage.hub as unknown as { init(): void; events: Emitter };
+
+    hub.init();
+    hub.events.emit("shutdown");
+
+    expect(off.mock.calls.map(([action]) => action)).toEqual(
+      expect.arrayContaining(["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"]),
+    );
+  });
+});

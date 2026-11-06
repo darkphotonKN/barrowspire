@@ -2,8 +2,8 @@
  * Phaser side of the art pipeline (FS-2325V §B.6): load the manifest and its atlases, register
  * every frame and animation once, and build sprites by manifest name.
  *
- *   preload() { preloadArt(this); }
- *   create()  { const art = registerArt(this, logger); artSprite(this, art, x, y, "door_x", { animation: "open" }); }
+ *   preload() { preloadArt(this, SCENE_ART.HubScene); }
+ *   create()  { const art = registerArt(this, SCENE_ART.HubScene); artSprite(this, art, x, y, "door_x", { animation: "open" }); }
  *
  * Frame geometry never leaves this module and `library.ts`: scenes speak manifest names only.
  */
@@ -25,6 +25,9 @@ import {
   validateManifest,
   type ArtManifest,
 } from "./manifest";
+import { onSceneEnd } from "@/scenes/sceneEnd";
+import { evictOutside } from "./evict";
+import { sceneAtlases, type SceneGroups } from "./sceneArt";
 
 export const MANIFEST_KEY = "art:manifest";
 export const DEFAULT_ART_URL = "/art/";
@@ -78,9 +81,18 @@ export interface ArtScene {
 }
 
 /**
- * Queues the manifest, then every atlas it names that is not already a texture, on the scene's
- * loader. Call from `preload()`. A missing manifest only fails its own file; {@link registerArt}
- * then falls back.
+ * Queues, on the scene's loader, the manifest if it is not cached, then every atlas page of the
+ * scene's set (every resident page, and the pages of its own scene-scoped `groups`, `sceneArt.ts`)
+ * that is not already a texture, and nothing else (FS-C4JWH §B R6–R7). Call from `preload()`, with
+ * the scene's {@link SCENE_ART} entry; then {@link registerArt} in `create()` with the same one.
+ * A missing manifest only fails its own file; {@link registerArt} then falls back.
+ *
+ * Once the load completes, and before `create`, the scene-scoped pages outside the scene's set
+ * are evicted with their animations (`evict.ts`, FS-C4JWH §C). A `complete` listener added here
+ * runs before the scene manager's own, which calls `create`: Phaser 4.2.1 `SceneManager.bootScene`
+ * adds that one after `preload()` returns; with nothing queued, `start` completes synchronously
+ * and the same order holds. A scene stopped mid-load drops this listener with its loader's
+ * (`LoaderPlugin.shutdown`), and the next scene's load evicts instead.
  *
  * The manifest may already be cached by another scene whose atlases are still in flight: a
  * refresh lands the player in the hub while the preload scene is still fetching. Phaser skips a
@@ -89,33 +101,127 @@ export interface ArtScene {
  */
 export function preloadArt(
   scene: Phaser.Scene,
-  baseUrl = DEFAULT_ART_URL,
+  groups: SceneGroups,
+  options: PreloadOptions = {},
 ): void {
+  const baseUrl = options.baseUrl ?? DEFAULT_ART_URL;
+  let queued = 0;
+  // what this load queues, so a stop mid-load can call its downloads off (below)
+  const files: LoaderFile[] = [];
+  const collect = (key: string, _t: string, _l: unknown, file: LoaderFile) => {
+    if (key === MANIFEST_KEY || key.startsWith("art:")) files.push(file);
+  };
+  scene.load.on("addfile", collect);
+
   const queueAtlases = (data: unknown) => {
     const result = validateManifest(data);
     if (!result.ok) return; // registerArt reports it with the scene's logger
-    for (const [key, atlas] of Object.entries(result.manifest.atlases))
-      if (!scene.textures.exists(atlasTextureKey(key)))
-        scene.load.image(atlasTextureKey(key), `${baseUrl}${atlas.image}`);
+    const { atlases } = result.manifest;
+    for (const key of sceneAtlases(result.manifest, groups))
+      if (!scene.textures.exists(atlasTextureKey(key))) {
+        scene.load.image(
+          atlasTextureKey(key),
+          `${baseUrl}${atlases[key].image}`,
+        );
+        queued++;
+      }
   };
 
   if (scene.cache.json.exists(MANIFEST_KEY)) {
     queueAtlases(scene.cache.json.get(MANIFEST_KEY));
-    return;
+  } else {
+    scene.load.once(
+      `filecomplete-json-${MANIFEST_KEY}`,
+      (_key: string, _type: string, data: unknown) => queueAtlases(data),
+    );
+    scene.load.json(MANIFEST_KEY, `${baseUrl}manifest.json`);
+    queued++;
   }
-  scene.load.once(
-    `filecomplete-json-${MANIFEST_KEY}`,
-    (_key: string, _type: string, data: unknown) => queueAtlases(data),
-  );
-  scene.load.json(MANIFEST_KEY, `${baseUrl}manifest.json`);
+
+  // Shown only over a real download: a bar over a load that takes no time would only flash.
+  const bar = queued > 0 ? options.bar?.() : undefined;
+  const progress = (value: number) => bar?.progress(value);
+  if (bar) scene.load.on("progress", progress);
+
+  // A stop mid-load (a world switch) resets the loader, but Phaser 4.2.1 aborts nothing: each
+  // download in flight still lands and adds itself to the texture manager (LoaderPlugin.reset clears
+  // its Sets only; File.onLoad → nextFile → onProcess → fileProcessComplete → addToCache), after
+  // the next scene has evicted, or as a second copy of a key the next scene queued. So its
+  // downloads are called off (FS-C4JWH Edge States). A game destroy frees everything instead.
+  const cancelEnd =
+    queued > 0
+      ? onSceneEnd(scene, (end) => {
+          if (end === "shutdown") files.forEach(callOff);
+        })
+      : () => undefined;
+
+  /**
+   * The eviction moment (ADR-0059 Decision 3): the scene's load has completed and its `create` has
+   * not run. In this order: the bar comes down, then the scene-scoped pages outside the scene's set
+   * go (FS-C4JWH §C R11, §D R17).
+   */
+  const loaded = () => {
+    scene.load.off("addfile", collect);
+    cancelEnd();
+    if (bar) {
+      scene.load.off("progress", progress);
+      bar.destroy();
+    }
+    const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
+    if (result.ok) evictOutside(scene, result.manifest, groups);
+  };
+  scene.load.once("complete", loaded);
+}
+
+/** A Phaser 4.2.1 loader `File`, as far as calling its download off goes. */
+interface LoaderFile {
+  xhrLoader?: { abort(): void } | null;
+  resetXHR?(): void;
+  onProcessComplete(): void;
+  onProcessError(): void;
 }
 
 /**
- * Registers the loaded art with the scene and returns the library scenes draw from. Idempotent:
- * a second scene registering the same manifest reuses the frames and animations already there.
+ * Calls a queued file's download off: its XHR loses its handlers (`File.resetXHR`) and is aborted,
+ * so `onLoad` never runs, and a file already decoding (`ImageFile.onProcess`) no longer completes,
+ * so it never reaches `addToCache`. A file that has landed already is untouched by either.
+ */
+function callOff(file: LoaderFile): void {
+  file.resetXHR?.();
+  file.xhrLoader?.abort();
+  file.onProcessComplete = () => undefined;
+  file.onProcessError = () => undefined;
+}
+
+/** A loading bar shown while a scene's art downloads: the torch bar (`ui/torchBar.ts`) in the game. */
+export interface LoadingBar {
+  /** The loader's `progress`, files done over files queued, 0 to 1. */
+  progress(value: number): void;
+  /** Takes down everything it drew. */
+  destroy(): void;
+}
+
+export interface PreloadOptions {
+  /**
+   * Shows a bar from `preload()` when anything was queued, filled by the loader's `progress`, and
+   * destroys it when the load completes, before eviction and `create` (FS-C4JWH §D R17). A scene
+   * stopped mid-load takes the bar down with its display list.
+   */
+  bar?: () => LoadingBar;
+  baseUrl?: string;
+}
+
+/**
+ * Registers the scene's loaded art and returns the library it draws from: the atlas pages of its
+ * set (`groups`, as given to {@link preloadArt}) that are textures. One that is not warns once
+ * and its sheets draw as placeholders (FS-C4JWH §B R10, §E R19); a page outside the set is not
+ * the scene's, is never warned about, and its sheets draw as the placeholder even while it is
+ * still a texture (§E R20). Idempotent: a second scene registering the same manifest reuses the
+ * frames and animations already there.
  */
 export function registerArt(
   scene: ArtScene,
+  groups: SceneGroups,
   logger: ArtLogger = console,
 ): ArtLibrary {
   ensurePlaceholder(scene);
@@ -136,7 +242,7 @@ export function registerArt(
   }
 
   const loaded = new Set<string>();
-  for (const key of Object.keys(result.manifest.atlases)) {
+  for (const key of sceneAtlases(result.manifest, groups)) {
     if (scene.textures.exists(atlasTextureKey(key))) loaded.add(key);
     else
       logger.warn(

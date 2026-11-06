@@ -56,6 +56,14 @@ import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+
+/**
+ * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
+ * settlement. The replies to the run's own asks (interact, equip, leave, fall) cannot come before
+ * create, which sends them.
+ */
+const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -94,6 +102,8 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -539,6 +549,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
   private leavePending = false;
+  /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
+  private held?: HeldMessages;
+  private oneShots?: OneShotHandlers;
   /** The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6). It owns the keyboard and pointer. */
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc. */
@@ -822,6 +835,14 @@ export class BarrowspireScene extends Phaser.Scene {
     this.sessionID = data?.sessionID;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
     onSceneEnd(this, (end) => this.resetRun(end));
+    // the run's creatures may download before create subscribes: a refresh into a run whose art the
+    // menu evicted (FS-C4JWH Edge States); handed over at the end of create
+    this.held = holdOneShots(this, socketManager, RUN_ONE_SHOTS, (action, payload) => {
+      // A run that ends while it still downloads: its own settlement will open the record once
+      // create hands it over, so the hub that comes with the end waits behind it, as it does once
+      // the run has loaded (FS-GV8WN R23). Another run's settlement opens nothing, and holds nothing.
+      if (action === "settlement" && this.ownSettlement(payload as SettlementPayload)) this.resultHold.raise();
+    });
   }
 
   /**
@@ -1128,13 +1149,17 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private showSettlement(payload: SettlementPayload): void {
     // a late confirmation of an earlier run, landing in this one, is not its record (R20)
-    if (payload.run_id !== undefined && this.sessionID !== undefined && payload.run_id !== this.sessionID)
-      return;
+    if (!this.ownSettlement(payload)) return;
     const first = !this.settlementRecord;
     this.settlementRecord ??= new SettlementRecord(this, this.recordAnchor(), () => this.closeRecord());
     this.settlementRecord.set(settlementRecord(payload));
     if (first) this.openRecord();
     this.syncRow();
+  }
+
+  /** Whether a settlement is this run's record: one for another run is a late confirmation (R20). */
+  private ownSettlement(payload: SettlementPayload): boolean {
+    return payload?.run_id === undefined || this.sessionID === undefined || payload.run_id === this.sessionID;
   }
 
   /** The record up, and the return to the town held behind it unless a Leave is on its way (R23). */
@@ -1328,8 +1353,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createStairsTexture();
     this.createDropPileTexture();
 
-    // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders
-    preloadArt(this);
+    // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders. The
+    // creatures and the boss load with the run, for every floor: a climb loads nothing, and the
+    // demon is never drawn before its art is in (FS-C4JWH §B R9)
+    preloadArt(this, SCENE_ART.BarrowspireScene, {
+      bar: () => drawTorchBar(this),
+    });
   }
 
   private createSoldierTextures(prefix: string, pal: WizardPalette): void {
@@ -2896,7 +2925,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.BarrowspireScene);
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
@@ -2945,6 +2974,13 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
+
+    this.openHeldMessages();
+  }
+
+  /** What the server sent while the run loaded, to the listeners create has made, in order. */
+  private openHeldMessages(): void {
+    this.held?.replay(this.oneShots ?? {});
   }
 
   /**
@@ -3285,10 +3321,11 @@ export class BarrowspireScene extends Phaser.Scene {
     );
 
     // Listen for exit door unlocked message
-    socketManager.on("exit_door_unlocked", (payload: { message: string }) => {
+    const doorUnlocked = (payload: { message: string }) => {
       console.log("Exit door unlocked!", payload);
       this.showNotification(payload.message, toCss(palette.safe));
-    });
+    };
+    socketManager.on("exit_door_unlocked", doorUnlocked);
 
     // Listen for interact responses (success/error messages)
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
@@ -3306,10 +3343,14 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
-    socketManager.on("end_game", () => this.endRun());
+    const endGame = () => this.endRun();
+    socketManager.on("end_game", endGame);
 
     // settlement: this player settled (FS-GV8WN R19, R20); the record shows it
-    socketManager.on("settlement", (payload: SettlementPayload) => this.showSettlement(payload));
+    const settlement = (payload: SettlementPayload) => this.showSettlement(payload);
+    socketManager.on("settlement", settlement);
+    // the server's one-shots, held while the run loaded (FS-C4JWH Edge States)
+    this.oneShots = { exit_door_unlocked: doorUnlocked, end_game: endGame, settlement };
 
     // A refused leave_run (FS-QPDKN req 14, edge state "Leaving"): the button can be pressed
     // again. The server's refusals come in two shapes; both land here.

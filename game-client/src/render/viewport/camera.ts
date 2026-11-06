@@ -142,6 +142,16 @@ export function centreStage(cam: ViewCamera, width = STAGE_WIDTH): void {
   applyStage(cam, width);
 }
 
+/**
+ * Lets a stage go ({@link centreStage}): a re-fit no longer centres it, and the scroll is back at
+ * 0, 0, where a fresh camera's is. For a world scene that showed the boot screen's torch bar on the
+ * stage while it loaded (FS-C4JWH §D), so its create finds the camera it always has.
+ */
+export function releaseStage(cam: ViewCamera): void {
+  delete stateOf(cam).stage;
+  cam.setScroll(0, 0);
+}
+
 function applyStage(cam: ViewCamera, width: number): void {
   cam.setScroll((width - cam.displayWidth) / 2, 0);
 }
