@@ -22,7 +22,10 @@ function paced(opts: { fadeIn?: boolean } = {}) {
     },
     bar: () => {
       at("bar shown");
-      return { progress: (v) => progress.push(v), destroy: () => at("bar destroyed") };
+      return {
+        progress: (v) => progress.push(v),
+        destroy: () => at("bar destroyed"),
+      };
     },
     enter: () => at("create"),
     fadeIn: opts.fadeIn ?? true,
@@ -40,7 +43,12 @@ afterEach(() => {
 
 describe("LOAD_PACE (FS-C4JWH A1.7: the durations in one place)", () => {
   it("should name the show delay, the minimum visible time, the bar's fade and the world's fade", () => {
-    expect(LOAD_PACE).toEqual({ showDelay: 300, minVisible: 600, barFade: 150, worldFade: 200 });
+    expect(LOAD_PACE).toEqual({
+      showDelay: 300,
+      minVisible: 600,
+      barFade: 150,
+      worldFade: 200,
+    });
   });
 });
 
@@ -120,7 +128,11 @@ describe("paceLoad: a load still running at the show delay (FS-C4JWH A1.1–A1.4
     pace.loaded();
     vi.runAllTimers();
 
-    expect(log.slice(-3)).toEqual(["1150 bar destroyed", "1150 fade in 200", "1150 create"]);
+    expect(log.slice(-3)).toEqual([
+      "1150 bar destroyed",
+      "1150 fade in 200",
+      "1150 create",
+    ]);
   });
 
   it("should enter once, however often the load says it is done", () => {
@@ -141,22 +153,25 @@ describe("paceLoad: a stop cancels every step (FS-C4JWH A1.8)", () => {
     ["while the bar is up and the load runs", 500, false],
     ["while the bar waits out its 600 ms", 500, true],
     ["during the bar's fade-out", 950, true],
-  ])("should leave nothing pending and never enter when the scene stops %s", (_when, stopAt, loadedFirst) => {
-    const { pace, log } = paced();
-    if (loadedFirst) {
-      vi.advanceTimersByTime(400);
+  ])(
+    "should leave nothing pending and never enter when the scene stops %s",
+    (_when, stopAt, loadedFirst) => {
+      const { pace, log } = paced();
+      if (loadedFirst) {
+        vi.advanceTimersByTime(400);
+        pace.loaded();
+      }
+      vi.advanceTimersByTime(stopAt - Date.now());
+      const before = [...log];
+
+      pace.end("shutdown");
       pace.loaded();
-    }
-    vi.advanceTimersByTime(stopAt - Date.now());
-    const before = [...log];
+      vi.runAllTimers();
 
-    pace.end("shutdown");
-    pace.loaded();
-    vi.runAllTimers();
-
-    expect(log).toEqual(before);
-    expect(vi.getTimerCount()).toBe(0);
-  });
+      expect(log).toEqual(before);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it("should ask the clock nothing on a game destroy, and never enter", () => {
     const cancels: string[] = [];

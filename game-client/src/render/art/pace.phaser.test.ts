@@ -1,6 +1,18 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type Phaser from "phaser";
-import { RESIDENT_ART_PAGES, artLoaderStandin, shippedManifest } from "./artLoader.standin";
+import {
+  RESIDENT_ART_PAGES,
+  artLoaderStandin,
+  shippedManifest,
+} from "./artLoader.standin";
 import { atlasTextureKey } from "./library";
 import { preloadArt } from "./phaser";
 import { SCENE_ART } from "./sceneArt";
@@ -22,7 +34,10 @@ type Manager = {
 };
 let SceneManagerProto: Manager & { stop(key: unknown): void };
 let SystemsShutdown: (this: unknown, data?: unknown) => void;
-let ClockClass: new (scene: unknown) => { _active: unknown[]; _pendingInsertion: unknown[] };
+let ClockClass: new (scene: unknown) => {
+  _active: unknown[];
+  _pendingInsertion: unknown[];
+};
 let LOADING: number;
 let RUNNING: number;
 let SHUTDOWN: number;
@@ -30,7 +45,11 @@ let SHUTDOWN: number;
 const anything = (): unknown =>
   new Proxy(function () {}, {
     get: (_target, key) =>
-      key === Symbol.toPrimitive ? () => 0 : key === "then" ? undefined : anything(),
+      key === Symbol.toPrimitive
+        ? () => 0
+        : key === "then"
+          ? undefined
+          : anything(),
     apply: () => anything(),
     construct: () => anything() as object,
     set: () => true,
@@ -47,8 +66,16 @@ beforeAll(async () => {
   vi.stubGlobal("screen", anything());
   const Phaser = await import("phaser");
   expect(Phaser.VERSION).toBe("4.2.1");
-  SceneManagerProto = (Phaser.Scenes.SceneManager as unknown as { prototype: typeof SceneManagerProto }).prototype;
-  SystemsShutdown = (Phaser.Scenes.Systems as unknown as { prototype: { shutdown: typeof SystemsShutdown } }).prototype.shutdown;
+  SceneManagerProto = (
+    Phaser.Scenes.SceneManager as unknown as {
+      prototype: typeof SceneManagerProto;
+    }
+  ).prototype;
+  SystemsShutdown = (
+    Phaser.Scenes.Systems as unknown as {
+      prototype: { shutdown: typeof SystemsShutdown };
+    }
+  ).prototype.shutdown;
   ClockClass = Phaser.Time.Clock as unknown as typeof ClockClass;
   LOADING = Phaser.Scenes.LOADING;
   RUNNING = Phaser.Scenes.RUNNING;
@@ -84,7 +111,13 @@ function hubBootedByPhaser() {
     },
     preload() {
       preloadArt(scene as unknown as Phaser.Scene, SCENE_ART.HubScene, {
-        bar: () => (order.push(`${Date.now()} bar shown`), { progress: () => undefined, destroy: () => order.push(`${Date.now()} bar destroyed`) }),
+        bar: () => (
+          order.push(`${Date.now()} bar shown`),
+          {
+            progress: () => undefined,
+            destroy: () => order.push(`${Date.now()} bar destroyed`),
+          }
+        ),
         fadeIn: true,
       });
     },
@@ -109,7 +142,11 @@ describe("the paced create on Phaser 4.2.1's own scene manager (FS-C4JWH A1.3)",
     vi.runAllTimers();
 
     expect(atCompletion).toBe(LOADING);
-    expect(order).toEqual(["300 bar shown", "1050 bar destroyed", "1050 create"]);
+    expect(order).toEqual([
+      "300 bar shown",
+      "1050 bar destroyed",
+      "1050 create",
+    ]);
     expect(scene.sys.settings.status).toBe(RUNNING);
   });
 
@@ -138,12 +175,21 @@ function hubOnPhasersClock(opts: { removalFails?: boolean } = {}) {
     textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
     hold: true,
   });
-  const manager = Object.assign(Object.create(SceneManagerProto) as typeof SceneManagerProto, { scenes: [] as unknown[] });
+  const manager = Object.assign(
+    Object.create(SceneManagerProto) as typeof SceneManagerProto,
+    { scenes: [] as unknown[] },
+  );
   const events = art.scene.events;
   const order: string[] = [];
   let now = 0;
   const sys = {
-    settings: { status: 0, data: undefined, isTransition: false, active: true, visible: true },
+    settings: {
+      status: 0,
+      data: undefined,
+      isTransition: false,
+      active: true,
+      visible: true,
+    },
     load: art.scene.load,
     events,
     game: { scene: manager, loop: { time: 0 } },
@@ -157,7 +203,13 @@ function hubOnPhasersClock(opts: { removalFails?: boolean } = {}) {
     sys,
     preload() {
       preloadArt(scene as unknown as Phaser.Scene, SCENE_ART.HubScene, {
-        bar: () => (order.push(`${now} bar shown`), { progress: () => undefined, destroy: () => order.push(`${now} bar destroyed`) }),
+        bar: () => (
+          order.push(`${now} bar shown`),
+          {
+            progress: () => undefined,
+            destroy: () => order.push(`${now} bar destroyed`),
+          }
+        ),
         fadeIn: true,
       });
     },
@@ -177,7 +229,9 @@ function hubOnPhasersClock(opts: { removalFails?: boolean } = {}) {
     // as if a Phaser upgrade attached the manager's listener some other way: the removal misses it
     const off = art.scene.load.off.bind(art.scene.load);
     art.scene.load.off = ((event: string, ...rest: unknown[]) =>
-      event === "complete" ? art.scene.load : off(event, ...(rest as []))) as typeof art.scene.load.off;
+      event === "complete"
+        ? art.scene.load
+        : off(event, ...(rest as []))) as typeof art.scene.load.off;
   }
   // Systems.start: the clock boots and starts before the scene manager boots the scene
   events.emit("boot");
@@ -202,32 +256,42 @@ describe("the paced create on Phaser 4.2.1's own Clock, stopped by its own Scene
     art.finish();
     frames(1000);
 
-    expect(order).toEqual(["300 bar shown", "1050 bar destroyed", "1050 create"]);
+    expect(order).toEqual([
+      "300 bar shown",
+      "1050 bar destroyed",
+      "1050 create",
+    ]);
     expect(sys.settings.status).toBe(RUNNING);
   });
 
   it.each([
     ["while it still downloads", false],
     ["while the bar waits out its 600 ms after the load", true],
-  ])("should never create, and leave no timer on the clock, when stopped %s", (_when, loadedFirst) => {
-    const { art, manager, scene, sys, order, frames, pending } = hubOnPhasersClock();
+  ])(
+    "should never create, and leave no timer on the clock, when stopped %s",
+    (_when, loadedFirst) => {
+      const { art, manager, scene, sys, order, frames, pending } =
+        hubOnPhasersClock();
 
-    manager.bootScene(scene);
-    frames(400);
-    if (loadedFirst) art.finish();
-    frames(100);
-    manager.stop(scene);
-    art.finish();
-    frames(2000);
+      manager.bootScene(scene);
+      frames(400);
+      if (loadedFirst) art.finish();
+      frames(100);
+      manager.stop(scene);
+      art.finish();
+      frames(2000);
 
-    expect(order).toEqual(["300 bar shown"]);
-    expect(sys.settings.status).toBe(SHUTDOWN);
-    expect(pending()).toBe(0);
-  });
+      expect(order).toEqual(["300 bar shown"]);
+      expect(sys.settings.status).toBe(SHUTDOWN);
+      expect(pending()).toBe(0);
+    },
+  );
 
   // S1: a removal that misses degrades to creating on the load's completion, never twice
   it("should create once, on the load's completion, when taking the manager's listener off misses", () => {
-    const { art, manager, scene, sys, order, frames } = hubOnPhasersClock({ removalFails: true });
+    const { art, manager, scene, sys, order, frames } = hubOnPhasersClock({
+      removalFails: true,
+    });
 
     manager.bootScene(scene);
     frames(400);
