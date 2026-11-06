@@ -30,6 +30,16 @@ an intent, so ranged classes hold the frame (S1); §D.10 latches engagement and 
 within the demon's aggro radius (S2). Both honour the owner's references above. The Facts lines
 the amendment touched cite floor1/fix-48CTQ at 26387087.
 
+Amended 2026-11-06 after the owner's floor-1 playtest: the hit area covers the drawn body
+("怪物的hover的觸發範圍感覺有點小 滑鼠移動到上半身會沒觸發看血量 一定要接近腳的位置才會觸發
+有辦法擴及全身嗎", relayed by the coordinator). §C.5.1 now defines the one hit test the hover, the
+strike-mark and the click share: a living, shown monster's footprint or its body column. This
+departs, for living monsters only, from shipped FS-2325V §C.6 ("hit-testing for any clickable
+world object uses its footprint, not its sprite bounds"), which is recorded here and not edited;
+every other world object keeps its footprint. The roster is shared, so the change reaches every
+run floor and the field worlds, plates or frame alike. The Facts line this amendment added cites
+floor1/monster-hover-body at 4b3ed5d4.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/`.
@@ -52,6 +62,14 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
   (`internal/systems/monster_ai.go:113-115`, `:233-236`), and it reports `idle` between wander
   legs (`:233-235`) and between melee swings (`:124-128`).
 - Hovering a living monster already shows the strike-mark cursor (FS-77AB6 §39).
+- **The hit test before the playtest amendment** (verified at 4b3ed5d4): a monster was hit only on
+  a ground circle around its feet, 20 world px times its tier's aim (`footprintHitArea`,
+  `render/world/footprint.ts`; `footprintRadius`, `render/creatures/monsters.ts`), per FS-2325V
+  §C.6, so the upper body hit nothing; a corpse kept that circle and only ignored its events.
+  Phaser 4.2.1 input is top-only by default: of the objects hit, the last drawn takes the pointer
+  (`InputPlugin.topOnly`, `sortGameObjects` by `camera.renderList`), and no hidden object is
+  hit-tested (`InputManager.inputCandidate`). Chests, sacks, doors and stairs answer `E`, never the
+  pointer (`scenes/BarrowspireScene.ts`, `keydown-E`).
 - **The top centre today**: while the local player is resolved, the spectate HUD at y 10
   ("Watching …" and "Tab: next player", to about y 62, `SPECTATE_HUD_Y`,
   `scenes/BarrowspireScene.ts:225`, `:4835-4852`); notices centred at y 100 (`showNotification`,
@@ -85,7 +103,15 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
    `MARKER_BAR`'s colours, updated every snapshot. **(charter default, owner revision, C2)**
 5. **Which monster** (highest first): **(charter default, owner revision, C2, C3)**
    1. the **hovered** monster: a living, shown monster under the pointer, by the same hit test as
-      the strike-mark cursor;
+      the strike-mark cursor and the click. The pointer is on a monster when it is on its
+      footprint (as before) or in its **body column**: the screen-space column from its feet up to
+      its crown, 0.4 of its crown either side of its feet, or half its body length for a
+      quadruped, at the monster's drawn size. A corpse and a hidden monster are hit nowhere, so
+      where bodies overlap the living, shown monster drawn in front takes the pointer, and a
+      corpse never takes it from one behind. A sheet with no crown (no baked art) keeps the
+      footprint alone. **(owner, playtest 2026-11-06: the hit area covers the drawn body; the
+      column, not a pixel alpha test, derived here: a column holds steady across a walk cycle's
+      frames and reads no texture per pointer move)**
    2. else an **engaged boss** (§D);
    3. else the **last-hit** monster (§C.6), while it lives and for 3 s after the player's last hit
       on it;
@@ -165,6 +191,8 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 12. As a delver, I want the frame never to show a monster I cannot see in the fog, so that the frame does not give it away.
 13. As a delver watching my party after dying, I want the spectate line not to be covered, so that I know whom I am watching.
 14. As a developer, I want the mode to be one table entry per floor, so that a later floor can adopt the frame without code changes.
+15. As a delver, I want to point at any part of a monster I can see, its head as well as its feet, so that checking its health or striking it takes no careful aim at the floor.
+16. As a delver in a crowd, I want the monster in front to be the one I point at, so that a tall one behind does not take my hover.
 
 ## Acceptance Criteria
 
@@ -174,6 +202,7 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - [ ] After an intent at a monster (an `attack`, or a cast sent while it is hovered) and with nothing hovered, the frame shows it; a drop in its health within 1 s of an intent restarts 3 s; with no further own hit it hides 3 s after the last one. An archer's or mage's cast at a hovered monster 250 px away, hit within 1 s, holds it 3 s after the pointer leaves; a cast with nothing hovered holds nothing.
 - [ ] A teammate's hit on the last-hit monster does not restart its 3 s; a teammate's target is never shown unless hovered.
 - [ ] Hover wins over an engaged boss, which wins over the last-hit monster (selection tests over every pair).
+- [ ] Pointing at a living monster's head or upper body hovers it and a click there strikes it; its feet still do; empty space beside or over its body does not; where bodies overlap the monster drawn in front takes the pointer; a corpse or a hidden monster takes none.
 - [ ] A boss becomes engaged when damaged, moving within 320 px or attacking within 700 px of a living member; it stays engaged through wander, pause and swing-idle cycles until it is at full health beyond 700 px of every living member, dies or leaves; its frame bar is 1.5 × wider and twice as tall.
 - [ ] Dead, fog-hidden, departed monsters and party members are never named; the frame moves on or hides when its monster dies or leaves.
 - [ ] The frame fades in over 120 ms and out over 200 ms, switches content without a fade, and is hidden while the spectate HUD or the floor-change veil is up.
@@ -184,7 +213,10 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 
 ## Edge States
 
-- **Pointer over a corpse:** not a candidate; the frame falls through to the boss or last-hit monster.
+- **Pointer over a corpse:** not a candidate; the frame falls through to the boss or last-hit monster. A corpse is hit nowhere, so a living monster behind it takes the pointer.
+- **Bodies overlap:** the monster drawn in front takes the pointer. A tall one behind takes what of its column stands clear of the front one's, which can be empty floor beside the front monster's head or shoulders: the column is a box, not the drawn pixels.
+- **A monster's body over a party member, or a party member over a monster:** whichever is drawn in front takes the pointer. A party member's footprint answers nothing (FS-77AB6 §40), so a monster standing behind an ally is not hovered or struck over the ally's feet.
+- **A HUD panel over a monster's body:** a monster's own press checks only the menu (`BarrowspireScene.strike`), not the satchel, chat window or party panel the scene's press handler checks, so a press on one of those panels over a monster may strike it. Not new, but the taller column covers more of the screen. Left as found.
 - **Pointer over a party member:** no frame (allies are never named).
 - **Last-hit monster leaves interest (beyond 1600 px):** gone from the snapshot, so the frame hides or moves on.
 - **Last-hit monster walks into fog:** its sprite is hidden, so the frame hides or moves on; hovering it is impossible.
@@ -202,4 +234,4 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 The frame on floors 2–3, the field worlds or the hub; hiding party members' plates; a server field
 for hit attribution or aggro target; counting a cast with nothing hovered; a target frame for
 players; a target lock key or click-to-select; damage numbers; new art; changing the elite tint or
-the strike-mark cursor.
+the strike-mark cursor; a pixel-exact (alpha) hit test on monsters.

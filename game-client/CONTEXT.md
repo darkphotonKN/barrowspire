@@ -191,7 +191,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   "tile" is a drawing unit, never a game unit.
 - **Footprint**: the patch of ground an object occupies in world space. Draw order sorts by
   footprint (`x + y`) and clicks hit-test against it. A sprite's pixel bounds are taller than its
-  footprint and are used for neither.
+  footprint and are used for neither. A living monster is also hit over its **body column**.
+- **Body column**: the screen-space column a living monster's body is drawn in, from its feet up
+  to its crown and 0.4 of a crown either side (half its length for a quadruped). The pointer hovers
+  and strikes a monster on its footprint or its body column (FS-48CTQ §C.5). It is a box, not the
+  sprite's pixels.
 - **Bake**: the build-time step that renders 3D models through the isometric camera into 2D sprite
   sheets. "Bake" always means build time, never in-browser at load.
 - **Sprite manifest**: `public/art/manifest.json`, the bake's index. It records, per sheet: frame

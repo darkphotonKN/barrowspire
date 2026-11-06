@@ -53,6 +53,7 @@ const (
 
 	ComponentTypeEscapeDoor ComponentType = "EscapeDoor"
 	ComponentTypeLockable   ComponentType = "Lockable"
+	ComponentTypeGuarded    ComponentType = "Guarded"
 	ComponentTypeSwitch     ComponentType = "Switch"
 	ComponentTypeStairs     ComponentType = "Stairs"
 	ComponentTypeGate       ComponentType = "Gate"

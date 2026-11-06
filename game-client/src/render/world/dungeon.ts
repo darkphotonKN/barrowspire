@@ -11,7 +11,7 @@
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Point, Rect } from "@/render/iso/projection";
 import type { FloorMap, FloorRegion, WallState } from "@/types/gameState";
-import { axisOf, type PieceRule, type WallHeight } from "./walls";
+import { axisOf, type PieceRule, type WallAxis, type WallHeight } from "./walls";
 
 /** A floor map that carries a cell grid and its regions. */
 export type DungeonMap = Pick<FloorMap, "width" | "height"> & {
@@ -139,6 +139,9 @@ export function wallRule(grid: RegionGrid): PieceRule {
  * than a cell as one-cell strips along its run, so each strip is cut along its own centreline and
  * takes its own height (§H.46), rather than one run through the middle of the block. A strip keeps
  * its wall's entity id: it goes with the wall.
+ *
+ * Rect by rect, so it draws a wall along world y as the server's row-major rects cut it: the scene
+ * cuts its pieces along {@link wallRuns} instead.
  */
 export function stripWalls(walls: readonly WallState[], cell: number): WallState[] {
   return walls.flatMap((w) => {
@@ -151,6 +154,81 @@ export function stripWalls(walls: readonly WallState[], cell: number): WallState
         : { ...w, position: { x: w.position.x + k * cell, y: w.position.y }, width: cell },
     );
   });
+}
+
+/**
+ * The map's walls as the runs their pieces are cut along (§H.46), from the wall cells and the faces
+ * they show, never from how the server merged them. The server merges row by row (levelgen
+ * `mergeCells`), so its rects are the floor's rows: a wall along world y comes as rects that stop a
+ * cell short of every corner, a cell of it lone between two corners as a 1×1 rect (cut along x),
+ * and rows of a thick wall along y as rungs across it. Cut rect by rect, such a wall is a row of
+ * slabs standing across it with gaps between (the walls running top right to bottom left on
+ * screen).
+ *
+ * A wall cell faces a region along x when a walkable cell lies directly north or south of it, and
+ * along y when one lies directly west or east. A run is a line of cells facing the same way, one
+ * after another, reaching on one cell at each end into the wall it meets: so a corner's cell is in
+ * both its runs, cut whole along each, as a row's corner always was, and its post stands at that
+ * cell's centre. Only runs of two cells or more are kept; a wall cell no run reaches is a one-cell
+ * wall of its own. The y runs come first, so where runs cross, the cell's axis is x (`wallLayout`),
+ * as the rows made it. A run keeps the entity id of the wall its first facing cell is in.
+ */
+export function wallRuns(walls: readonly WallState[], grid: RegionGrid): WallState[] {
+  const c = grid.cell;
+  const at = (cx: number, cy: number) =>
+    cx >= 0 && cy >= 0 && cx < grid.cols && cy < grid.rows ? cy * grid.cols + cx : -1;
+  const owner = new Map<number, string>();
+  for (const w of walls)
+    for (let cx = Math.round(w.position.x / c); cx < Math.round((w.position.x + w.width) / c); cx++)
+      for (let cy = Math.round(w.position.y / c); cy < Math.round((w.position.y + w.height) / c); cy++)
+        if (at(cx, cy) >= 0) owner.set(at(cx, cy), w.entity_id);
+  const wall = (cx: number, cy: number) => owner.has(at(cx, cy));
+  const faces = (axis: WallAxis, cx: number, cy: number) =>
+    wall(cx, cy) &&
+    (axis === "x"
+      ? grid.walkable(cx, cy - 1) || grid.walkable(cx, cy + 1)
+      : grid.walkable(cx - 1, cy) || grid.walkable(cx + 1, cy));
+
+  const runs: WallState[] = [];
+  const covered = new Set<number>();
+  for (const axis of ["y", "x"] as const) {
+    // a lane is a column for a run along y, a row for one along x; `cell` maps (lane, step) to (cx, cy)
+    const lanes = axis === "x" ? grid.rows : grid.cols;
+    const steps = axis === "x" ? grid.cols : grid.rows;
+    const cell = (lane: number, step: number): [number, number] => (axis === "x" ? [step, lane] : [lane, step]);
+    for (let lane = 0; lane < lanes; lane++)
+      for (let step = 0; step < steps; ) {
+        if (!faces(axis, ...cell(lane, step))) {
+          step++;
+          continue;
+        }
+        const id = owner.get(at(...cell(lane, step)))!;
+        let from = step;
+        while (step < steps && faces(axis, ...cell(lane, step))) step++;
+        let to = step - 1;
+        if (wall(...cell(lane, from - 1))) from--;
+        if (wall(...cell(lane, to + 1))) to++;
+        if (to === from) continue;
+        for (let s = from; s <= to; s++) covered.add(at(...cell(lane, s)));
+        const [cx, cy] = cell(lane, from);
+        const length = (to - from + 1) * c;
+        runs.push({
+          entity_id: id,
+          position: { x: cx * c, y: cy * c },
+          width: axis === "x" ? length : c,
+          height: axis === "x" ? c : length,
+        });
+      }
+  }
+  for (const [i, id] of owner)
+    if (!covered.has(i))
+      runs.push({
+        entity_id: id,
+        position: { x: (i % grid.cols) * c, y: Math.floor(i / grid.cols) * c },
+        width: c,
+        height: c,
+      });
+  return runs;
 }
 
 /** A room of a dungeon floor, as its dressing sees it (§H.47). */

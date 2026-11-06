@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { worldToScreen } from "@/render/iso";
-import { footprintHitArea } from "./footprint";
+import { bodyHitArea, footprintHitArea } from "./footprint";
 
 describe("footprintHitArea", () => {
   // a 60×60 player sprite standing on world (300, 200), origin at its centre, as `standAt` places it
@@ -80,5 +80,58 @@ describe("footprintHitArea on a baked character", () => {
     const centred = { ...sprite, displayOriginX: 80, displayOriginY: 73 };
     const feet = [80, 73] as const; // frame-local: the origin itself
     expect(hit({}, ...feet, centred)).toBe(true);
+  });
+});
+
+describe("bodyHitArea", () => {
+  // a figure 120 px tall and 40 px either side of its feet, stood on world (300, 200) by an anchor
+  // low in a 200×180 frame, drawn at 1.5x: the column is in screen px, whatever the sprite's scale
+  const pos = { x: 300, y: 200 };
+  const at = worldToScreen(pos.x, pos.y);
+  const sprite = {
+    x: at.x,
+    y: at.y,
+    displayOriginX: 80,
+    displayOriginY: 137,
+    scaleX: 1.5,
+    scaleY: 1.5,
+  };
+  const hit = bodyHitArea(() => pos, { halfWidth: 40, height: 120 });
+  /** The frame-local point Phaser hands the callback for the screen point (sx, sy) over `on`. */
+  const local = (sx: number, sy: number, on: typeof sprite = sprite) =>
+    [
+      (sx - on.x) / on.scaleX + on.displayOriginX,
+      (sy - on.y) / on.scaleY + on.displayOriginY,
+    ] as const;
+
+  it.each([
+    ["the head", 0, -118],
+    ["the chest", 0, -70],
+    ["a shoulder", 38, -95],
+    ["the knees", -38, -10],
+    ["the feet", 0, 0],
+  ])("should hit %s", (_, dx, dy) => {
+    expect(hit({}, ...local(at.x + dx, at.y + dy), sprite)).toBe(true);
+  });
+
+  it.each([
+    ["over the head", 0, -124],
+    ["beside the chest", 44, -70],
+    ["beside the other side", -44, -70],
+    ["below the feet, where the footprint answers instead", 0, 6],
+  ])("should miss %s", (_, dx, dy) => {
+    expect(hit({}, ...local(at.x + dx, at.y + dy), sprite)).toBe(false);
+  });
+
+  it("should stand on the feet as they move", () => {
+    let where = { x: 300, y: 200 };
+    const moving = bodyHitArea(() => where, { halfWidth: 40, height: 120 });
+    // 100 world px east: 80 screen px right, more than the column is wide
+    where = { x: 400, y: 200 };
+    const s = worldToScreen(400, 200);
+    const moved = { ...sprite, x: s.x, y: s.y };
+    expect(moving({}, ...local(s.x, s.y - 100, moved), moved)).toBe(true);
+    // where its head was, now empty
+    expect(moving({}, ...local(at.x, at.y - 100, moved), moved)).toBe(false);
   });
 });
