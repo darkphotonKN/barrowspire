@@ -451,7 +451,7 @@ export interface paths {
         put?: never;
         /**
          * List an item for auction
-         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404.
+         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), ITEM_NOT_IN_STASH (the item is in the bag; only stash items can be listed), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404.
          */
         post: operations["create-listing"];
         delete?: never;
@@ -698,6 +698,26 @@ export interface paths {
          * @description Verifies the signed-in member's email with the code mailed to them, and returns a fresh token pair whose access token carries the email-verified claim. An already-verified member gets a fresh pair too, whatever code is sent. Refusals: VERIFICATION_CODE_INVALID (wrong code; the 5th wrong try burns it), VERIFICATION_CODE_EXPIRED (no live code: never issued, expired, or burned).
          */
         post: operations["verify-email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/member/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew the access token
+         * @description Takes the refresh token from sign-in or verification and returns a new access token, minted from the member as they are now, with that member. No refresh token is returned: keep the one you hold; it stays valid until its own expiry. An expired, invalid or wrong-type token, or one naming no member, answers 401 UNAUTHENTICATED, one code for every cause.
+         */
+        post: operations["refresh-access-token"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2009,6 +2029,21 @@ export interface components {
             memberId?: string;
             /** @description A member list: one letter per distinct member, 1-1000 distinct ids (notification-service decides). */
             memberIds?: string[];
+        };
+        RefreshBody: {
+            /** @description The refresh token from sign-in or verification */
+            refresh_token: string;
+        };
+        RefreshResult: {
+            /**
+             * Format: int32
+             * @description Access token lifetime in seconds
+             */
+            access_expires_in: number;
+            /** @description Bearer token for the Authorization header */
+            access_token: string;
+            /** @description The member, as the new access token was minted from */
+            member_info: components["schemas"]["Member"];
         };
         RequestAvatarUploadBody: {
             /** @description Name of the file to upload */
@@ -4853,6 +4888,66 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "refresh-access-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResult"];
                 };
             };
             /** @description Unauthorized */

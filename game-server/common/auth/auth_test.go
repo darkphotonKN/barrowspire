@@ -37,13 +37,17 @@ func TestNewValidator(t *testing.T) {
 	accountID := uuid.New()
 	validate := commonauth.NewValidator([]byte(testSecret))
 
+	// Every access token auth-service mints is typed access (FS-ZPX58 L1), so
+	// the success cases carry the type and the refusals below show it matters.
 	full := commonauth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},
+		TokenType:        "access",
 		Role:             string(commonauth.RolePlayer),
 		AccountID:        &accountID,
 	}
 	noAccount := commonauth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},
+		TokenType:        "access",
 		Role:             string(commonauth.RoleAdmin),
 	}
 
@@ -68,7 +72,7 @@ func TestNewValidator(t *testing.T) {
 			// FS-V6SFK §Requirements 22: the claim is read, never a refusal.
 			name: "email_verified true is carried",
 			token: sign(t, jwt.MapClaims{
-				"sub": memberID.String(), "role": "player", "email_verified": true,
+				"sub": memberID.String(), "tokenType": "access", "role": "player", "email_verified": true,
 			}, testSecret),
 			want: commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: true},
 		},
@@ -76,14 +80,43 @@ func TestNewValidator(t *testing.T) {
 			// Absent is unverified, and still authenticated (fails closed, ADR-0014).
 			name: "email_verified absent reads as unverified",
 			token: sign(t, jwt.MapClaims{
-				"sub": memberID.String(), "role": "player",
+				"sub": memberID.String(), "tokenType": "access", "role": "player",
 			}, testSecret),
 			want: commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: false},
+		},
+		{
+			// FS-ZPX58 L1: a refresh token is never an access credential, even
+			// one that somehow carries a role.
+			name: "a refresh token is refused even with a role",
+			token: sign(t, jwt.MapClaims{
+				"sub": memberID.String(), "tokenType": "refresh", "role": "player",
+			}, testSecret),
+			wantErr: true,
+		},
+		{
+			// FS-ZPX58 round 2: HS256 only, as auth-service mints.
+			name: "HS512 is refused",
+			token: func() string {
+				tok, err := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+					"sub": memberID.String(), "tokenType": "access", "role": "player",
+				}).SignedString([]byte(testSecret))
+				require.NoError(t, err)
+				return tok
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "no token type is refused",
+			token: sign(t, jwt.MapClaims{
+				"sub": memberID.String(), "role": "player",
+			}, testSecret),
+			wantErr: true,
 		},
 		{
 			name: "no role is refused",
 			token: sign(t, commonauth.Claims{
 				RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},
+				TokenType:        "access",
 			}, testSecret),
 			wantErr: true,
 		},
@@ -95,14 +128,14 @@ func TestNewValidator(t *testing.T) {
 		{
 			name: "sub not a uuid is refused",
 			token: sign(t, jwt.MapClaims{
-				"sub": "not-a-uuid", "role": "player",
+				"sub": "not-a-uuid", "tokenType": "access", "role": "player",
 			}, testSecret),
 			wantErr: true,
 		},
 		{
 			name: "account_id present but not a uuid is refused",
 			token: sign(t, jwt.MapClaims{
-				"sub": memberID.String(), "role": "player", "account_id": "not-a-uuid",
+				"sub": memberID.String(), "tokenType": "access", "role": "player", "account_id": "not-a-uuid",
 			}, testSecret),
 			wantErr: true,
 		},
@@ -119,6 +152,17 @@ func TestNewValidator(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// FS-ZPX58 L7: a validator built with no secret refuses everything, rather
+// than accepting a token signed with the empty key.
+func TestNewValidator_EmptySecret_RefusesEverything(t *testing.T) {
+	validate := commonauth.NewValidator(nil)
+	token := sign(t, jwt.MapClaims{"sub": uuid.New().String(), "tokenType": "access", "role": "player"}, "")
+
+	_, err := validate(token)
+
+	assert.Error(t, err)
 }
 
 func runInterceptor(t *testing.T, validate func(string) (commonauth.Identity, error)) (context.Context, error) {

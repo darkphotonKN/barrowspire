@@ -19,7 +19,9 @@
  * It is told the world it is drawn in, for the item's standing (FS-18Z5F §H): in a run an unsafe
  * find wears an oxblood inner edge and its tip a warning; in the hub an item still in a delve is
  * dimmed, its tip says so, and an equip or unequip of it is asked about (`mayEquip`,
- * `mayUnequip`) before anything is drawn, as a move is.
+ * `mayUnequip`) before anything is drawn, as a move is. An item on the Bazaar, listed or its sale
+ * settling, is dimmed and asked about too; its tip says so in red and its well carries the
+ * listed mark, a red corner triangle over its icon (FS-GTNP8).
  *
  * Under the bag sits the purse line (FS-7TGZ3): the coins icon and the account's total gold, its
  * split in a tip on hover. It is a {@link PurseShelf}: the world's `PurseReader` hands it what the
@@ -67,6 +69,7 @@ import {
   gearPanelLayout,
   inRect,
   itemTipRow,
+  listedMark,
   overlayLayout,
   overPanel,
   rowWindow,
@@ -410,7 +413,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
       const item = this.equipped[slot];
       const rect = g.slots[slot];
       children.push(this.well(rect, item));
-      if (item) children.push(this.icon(rect, item));
+      if (item) children.push(...this.held(rect, item));
       else children.push(this.slotLabel(rect, label));
     }
 
@@ -576,6 +579,25 @@ export class GearOverlay implements HudPanel, PurseShelf {
       g.fillStyle(edge, 0.9);
       g.fillRect(r.x + 1, r.y + 5, EDGE_W, r.h - 10);
     }
+    return g;
+  }
+
+  /**
+   * What a held item draws over its well: its icon and, for an item on the Bazaar, the listed
+   * mark over it, so the faint icon never hides the mark (FS-GTNP8 R5).
+   */
+  private held(r: Rect, item: ItemState): Phaser.GameObjects.GameObject[] {
+    const out: Phaser.GameObjects.GameObject[] = [this.icon(r, item)];
+    const kind = this.view(item).standing?.kind;
+    if (kind === "listed" || kind === "settling") out.push(this.listedMark(r));
+    return out;
+  }
+
+  /** The listed mark: a red triangle in the well's top-right corner (FS-GTNP8 R5–R7). */
+  private listedMark(r: Rect): Phaser.GameObjects.Graphics {
+    const g = this.scene.add.graphics();
+    g.fillStyle(palette.listed, 1);
+    g.fillTriangle(...listedMark(r));
     return g;
   }
 
@@ -767,7 +789,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     for (const cell of g.cells) {
       const item = items[cell.index];
       out.push(this.well(cell.rect, item, cell.over));
-      if (item) out.push(this.icon(cell.rect, item));
+      if (item) out.push(...this.held(cell.rect, item));
     }
     if (g.visibleRows < g.rows)
       out.push(

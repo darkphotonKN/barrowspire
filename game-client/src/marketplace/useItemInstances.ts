@@ -15,10 +15,11 @@ export type InstancesState =
 const NONE_WORN: ReadonlySet<string> = new Set();
 
 /**
- * The player's relics with their status, and which are worn, for the List-a-relic picker
- * (FS-8EGFA req 25, FS-HBXZN R14). Loads when `enabled` turns on, so every opening of the drawer
- * re-reads both; `reload` re-reads, keeping the cards shown until the new ones land. The reads
- * are {@link loadPickerRelics}: a failed loadout read marks nothing worn and is not a failure.
+ * The player's relics with their status and location, and which are worn, for the List-a-relic
+ * picker (FS-8EGFA req 25, FS-HBXZN R14, FS-3R77D R16). Loads when `enabled` turns on, so every
+ * opening of the drawer re-reads both; `reload` re-reads, keeping the cards shown until the new
+ * ones land. The reads are {@link loadPickerRelics}: a failed loadout read marks nothing worn and
+ * is not a failure.
  */
 export function useItemInstances(enabled: boolean): {
   state: InstancesState;

@@ -26,6 +26,12 @@ const (
 	ActionLeaveHub Action = "leave_hub"
 	// ActionWorldLeft answers an accepted leave_hub: the member is in no world.
 	ActionWorldLeft Action = "world_left"
+	// ActionRenewToken hands the server the member's renewed access token, to
+	// hold in place of the one they connected with; payload {token}. Handled on
+	// the connection, in any world. FS-ZPX58 R27.
+	ActionRenewToken Action = "renew_token"
+	// ActionTokenRenewed answers an accepted renew_token. FS-ZPX58 R30.
+	ActionTokenRenewed Action = "token_renewed"
 
 	// ActionEnterField is a hub member at a field gate asking to walk into
 	// this pod's channel of that field; payload { "field": "<id>" }.

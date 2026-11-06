@@ -40,6 +40,8 @@ func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
 		errcode.BidTooLow, errcode.BidAtOrAboveBuyout,
 		// FS-72KT8 §Requirements 11
 		errcode.AlreadyLeading,
+		// FS-3R77D §Requirements A1
+		errcode.ItemNotInStash,
 	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {

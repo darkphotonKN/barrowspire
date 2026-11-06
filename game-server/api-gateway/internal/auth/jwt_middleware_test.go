@@ -62,12 +62,12 @@ func TestAuthMiddleware_RejectionPaths_Return401ProblemJSON(t *testing.T) {
 	wrongSecret := signedToken(t, jwt.MapClaims{"sub": uuid.NewString()}, "not-the-secret")
 	noSub := signedToken(t, jwt.MapClaims{"foo": "bar"}, testSecret)
 	badUUID := signedToken(t, jwt.MapClaims{"sub": "not-a-uuid"}, testSecret)
-	noRole := signedToken(t, jwt.MapClaims{"sub": uuid.NewString()}, testSecret)
+	noRole := signedToken(t, jwt.MapClaims{"sub": uuid.NewString(), "tokenType": "access"}, testSecret)
 	badAccountID := signedToken(t, jwt.MapClaims{
-		"sub": uuid.NewString(), "role": "player", "account_id": "not-a-uuid",
+		"sub": uuid.NewString(), "tokenType": "access", "role": "player", "account_id": "not-a-uuid",
 	}, testSecret)
 	numericAccountID := signedToken(t, jwt.MapClaims{
-		"sub": uuid.NewString(), "role": "player", "account_id": 12345,
+		"sub": uuid.NewString(), "tokenType": "access", "role": "player", "account_id": 12345,
 	}, testSecret)
 
 	tests := []struct {
@@ -156,6 +156,7 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 	accountID := uuid.New()
 	token := signedToken(t, jwt.MapClaims{
 		"sub":        id.String(),
+		"tokenType":  "access",
 		"role":       "player",
 		"account_id": accountID.String(),
 	}, testSecret)
@@ -189,7 +190,7 @@ func TestAuthMiddleware_ValidToken_PassesAndSetsIdentity(t *testing.T) {
 // middleware must not reject; it embeds nil so the operation that needs an
 // account is the one that fails closed.
 func TestAuthMiddleware_TokenWithoutAccountID_PassesWithNilAccount(t *testing.T) {
-	token := signedToken(t, jwt.MapClaims{"sub": uuid.NewString(), "role": "player"}, testSecret)
+	token := signedToken(t, jwt.MapClaims{"sub": uuid.NewString(), "tokenType": "access", "role": "player"}, testSecret)
 
 	var gotIdentity commonauth.Identity
 	handlerRan := false
@@ -222,4 +223,47 @@ func TestAuthMiddleware_NonStringSubClaim_Returns401AndDoesNotPanic(t *testing.T
 		testsupport.AssertProblem(t, w, http.StatusUnauthorized, string(errcode.Unauthenticated))
 	})
 	assert.False(t, handlerRan)
+}
+
+// FS-ZPX58 round 2 (M-B): the REST bearer middleware takes the same three checks
+// every service's validator does. Only HS256, so a token that names another
+// algorithm (none, HS512) is refused before its signature is weighed; only an
+// access token, so a 7-day refresh token is not a REST credential; and no
+// secret means no token, since HMAC verification accepts the empty key and
+// anyone could otherwise sign themselves an admin.
+func TestAuthMiddleware_AcceptsOnlyHS256AccessTokensWithASecret(t *testing.T) {
+	access := jwt.MapClaims{"sub": uuid.NewString(), "tokenType": "access", "role": "admin"}
+
+	none, err := jwt.NewWithClaims(jwt.SigningMethodNone, access).SignedString(jwt.UnsafeAllowNoneSignatureType)
+	require.NoError(t, err)
+	hs512, err := jwt.NewWithClaims(jwt.SigningMethodHS512, access).SignedString([]byte(testSecret))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		token  string
+		secret string
+	}{
+		{name: "alg none", token: none, secret: testSecret},
+		{name: "HS512", token: hs512, secret: testSecret},
+		{name: "a refresh token, even with a role", token: signedToken(t, jwt.MapClaims{
+			"sub": uuid.NewString(), "tokenType": "refresh", "role": "admin",
+		}, testSecret), secret: testSecret},
+		{name: "no token type", token: signedToken(t, jwt.MapClaims{
+			"sub": uuid.NewString(), "role": "admin",
+		}, testSecret), secret: testSecret},
+		{name: "empty secret: a token signed with the empty key", token: signedToken(t, access, ""), secret: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", tt.secret)
+			handlerRan := false
+
+			w := testsupport.DoWithHeaders(protectedRouter(&handlerRan), http.MethodGet, "/protected", "", bearer(tt.token))
+
+			testsupport.AssertProblem(t, w, http.StatusUnauthorized, string(errcode.Unauthenticated))
+			assert.False(t, handlerRan, "a refused token never reaches the handler")
+		})
+	}
 }

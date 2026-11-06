@@ -31,6 +31,7 @@ func RegisterOperations(api huma.API, h *Handler,
 
 	registerSignup(api, h)
 	registerSignin(api, h)
+	registerRefresh(api, h)
 	registerGetMember(api, h, protect)
 	registerUpdatePassword(api, h, protect)
 	registerUpdateInfo(api, h, protect)
@@ -155,6 +156,47 @@ func registerSignin(api huma.API, h *Handler) {
 			StatusCode: http.StatusOK,
 			Message:    "Successfully logged in",
 			Result:     loginResultFromProto(res),
+		}}, nil
+	}))
+}
+
+// registerRefresh declares access-token renewal (FS-ZPX58 §B). PUBLIC: no
+// protect and no Security, because the access token it replaces is typically
+// expired, and the refresh token is a credential for this one route only. It
+// travels in the body, never the URL, so the request log never records it.
+func registerRefresh(api huma.API, h *Handler) {
+	type input struct {
+		Body RefreshBody
+	}
+	type output struct{ Body RefreshResult }
+
+	huma.Register(api, huma.Operation{
+		OperationID: "refresh-access-token",
+		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Method:  http.MethodPost,
+		Path:    "/api/member/refresh",
+		Summary: "Renew the access token",
+		Description: "Takes the refresh token from sign-in or verification and returns a new access token, " +
+			"minted from the member as they are now, with that member. No refresh token is returned: keep " +
+			"the one you hold; it stays valid until its own expiry. An expired, invalid or wrong-type " +
+			"token, or one naming no member, answers 401 UNAUTHENTICATED, one code for every cause.",
+		Tags: []string{"member"},
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
+		res, err := h.client.RefreshAccessToken(ctx, &pb.RefreshAccessTokenRequest{
+			RefreshToken: in.Body.RefreshToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil {
+			return nil, fmt.Errorf("auth-service returned no refresh result")
+		}
+
+		return &output{Body: RefreshResult{
+			AccessToken:     res.AccessToken,
+			AccessExpiresIn: res.AccessExpiresIn,
+			MemberInfo:      memberFromProto(res.MemberInfo),
 		}}, nil
 	}))
 }

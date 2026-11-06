@@ -8,6 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/api-gateway/internal/httperr"
 	"github.com/darkphotonKN/barrowspire-server/common/apperr"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -40,10 +41,23 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// parse the token and validate its authenticity
+		// No secret, no token: HMAC verification accepts the empty key, so a
+		// gateway started without JWT_SECRET would take a token anyone signed
+		// with it, admin role included (FS-ZPX58 round 2, M-B).
+		secret := os.Getenv("JWT_SECRET")
+		if secret == "" {
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(
+				fmt.Errorf("%w: JWT_SECRET is not set", apperr.ErrUnauthenticated),
+				"Invalid or expired token"))
+			return
+		}
+
+		// parse the token and validate its authenticity. HS256 only, the one
+		// algorithm auth-service mints with: a token naming any other (none,
+		// HS512) is refused before its signature is weighed.
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return []byte(os.Getenv("JWT_SECRET")), nil
-		})
+			return []byte(secret), nil
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 
 		if err != nil || !token.Valid {
 			// err is wrapped, not discarded: it names the actual parse failure
@@ -79,6 +93,14 @@ func AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
 				"Member ID was not correctly parsed as a uuid."))
+			return
+		}
+
+		// Only an access token is a REST credential: a 7-day refresh token is
+		// refused even if it carried a role (FS-ZPX58 R25, round 2 M-B).
+		if tokenType, _ := claims["tokenType"].(string); tokenType != string(commonconstants.Access) {
+			httperr.Write(c, opAuthMiddleware, apperr.WithDetail(apperr.ErrUnauthenticated,
+				"Invalid token claims"))
 			return
 		}
 

@@ -10,7 +10,7 @@
  */
 
 import type Phaser from "phaser";
-import type { ItemView } from "@/items/itemView";
+import type { ItemStanding, ItemView } from "@/items/itemView";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
 export interface ItemTip {
@@ -30,6 +30,17 @@ const LINE_GAP = 2;
  * smaller lines one step down, badges and stat labels as captions.
  */
 const SIZE = { name: 18, body: 15, small: 13, caption: 12 } as const;
+
+/**
+ * The tone of each standing's note: the danger channel for an unsafe find (FS-18Z5F R36) and for
+ * an item on the Bazaar (FS-GTNP8 R4); the label tone for an item still in a delve (R38).
+ */
+const STANDING_TONE: Readonly<Record<ItemStanding["kind"], number>> = {
+  unsafeFind: palette.unsafeFind,
+  listed: palette.listed,
+  settling: palette.listed,
+  inRun: palette.hudLabel,
+};
 
 export interface ItemTipOptions {
   width?: number;
@@ -102,16 +113,10 @@ export function buildItemTip(
   );
   y += badgeH + SECTION_GAP;
 
-  // where the item stands (FS-18Z5F §H): an unsafe find's warning in the danger channel, an
-  // in-run item's note in the label tone
+  // where the item stands (FS-18Z5F §H): an unsafe find's warning and a Bazaar item's note in the
+  // danger channel (FS-GTNP8 R4), an in-run item's note in the label tone
   if (view.standing) {
-    line(
-      view.standing.note,
-      SIZE.small,
-      view.standing.kind === "unsafeFind"
-        ? palette.unsafeFind
-        : palette.hudLabel,
-    );
+    line(view.standing.note, SIZE.small, STANDING_TONE[view.standing.kind]);
     y += SECTION_GAP;
   }
 

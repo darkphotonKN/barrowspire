@@ -50,6 +50,9 @@ type messageHub struct {
 	// mail arrivals off Redis, passed on to HUB-world players on this loop; nil on a hub built
 	// without one, which then waits on no arrivals (FS-1GZGD R42, R43)
 	mail mailArrivalRelayer
+
+	// renewals limits renew_token per connection; read on the loop only.
+	renewals *renewLimiter
 }
 
 // mailArrivalRelayer is what the hub needs from the mail-arrival relay: the arrivals off the bus,
@@ -143,6 +146,7 @@ type SessionManager interface {
 	CheckLoadout(ctx context.Context, player *types.Player) error
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
+	RenewToken(ctx context.Context, conn *websocket.Conn, token string) error
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -420,6 +424,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		presence:       presence,
 		jobs:           jobs,
 		mail:           mail,
+		renewals:       newRenewLimiter(renewTokenInterval),
 	}
 }
 
@@ -439,6 +444,9 @@ func (h *messageHub) Run(ctx context.Context) {
 			if constants.Action(clientPackage.Message.Action) == constants.ActionChat {
 				// a chat line's text is never logged (FS-WJGFJ R14, ADR-0033)
 				slog.Debug("incoming chat line")
+			} else if constants.Action(clientPackage.Message.Action) == constants.ActionRenewToken {
+				// the token is a credential and is never logged (FS-ZPX58 R32)
+				slog.Debug("incoming renew_token")
 			} else {
 				slog.Info("incoming message.", "message", clientPackage.Message)
 			}
@@ -756,6 +764,17 @@ func (h *messageHub) Run(ctx context.Context) {
 				}); err != nil {
 					slog.Warn("Could not tell a member they left the hub", "player_id", player.ID, "error", err)
 				}
+
+			// A renewed access token for the connection's own member: held in
+			// place of the one they connected with, in whatever world they are.
+			// At most one per second per connection reaches auth-service; the
+			// check runs off the loop. FS-ZPX58 R27-R31.
+			case constants.ActionRenewToken:
+				if !h.renewals.allow(clientPackage.Conn, time.Now()) {
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, renewTokenTooSoon)
+					continue
+				}
+				go h.renewToken(clientPackage)
 
 			// A chat line: stamped and relayed on the loop to everyone seated on
 			// this pod; never forwarded to a world. FS-WJGFJ §Requirements B9–B11.

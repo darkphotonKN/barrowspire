@@ -90,6 +90,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] gRPC fan-out to env-configured downstreams
 - [x] Synchronous signup → FS-83TJK
 - [ ] Member email verification routes → FS-V6SFK
+- [ ] Access-token renewal route → FS-ZPX58
 
 ## Purpose
 
@@ -162,7 +163,7 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 **member → `auth`** (public + private)
 
 - Public: `POST /api/member/signup` _(gRPC, synchronous → 201 with the member)_,
-  `POST /api/member/signin`
+  `POST /api/member/signin`, `POST /api/member/refresh` _(renewal, FS-ZPX58)_
 - Private (JWT): `GET /api/member`, `PATCH /api/member/update-password`,
   `PATCH /api/member/update-info`, `POST /api/member/avatar/upload-request`,
   `POST /api/member/avatar/confirm`

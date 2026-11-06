@@ -20,6 +20,14 @@ Everything else is **planned / not started**. The **server is otherwise unchange
 original pure-extraction game — no hub, no persistence, no matchmaking broker, no DDD
 services, no sagas yet.
 
+### Before production (GKE)
+
+Must-dos that block the production (GKE) launch and have no other home. A feature's own
+pre-GKE list stays in its FS (e.g. [FS-1GZGD § Before GKE](specs/1GZGD-in-game-mailbox.md#before-gke)).
+
+- [ ] **WebSocket game-state compression** → [FS-5QC03](specs/5QC03-websocket-state-compression.md)
+  (draft; design not chosen; owner, 2026-11-06)
+
 ---
 
 ## The Plan — Target Architecture
