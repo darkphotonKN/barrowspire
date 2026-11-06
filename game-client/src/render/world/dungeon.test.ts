@@ -214,14 +214,26 @@ describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
     const isWall = new Set(cells);
 
     it.each([
-      ["west or east", "y"],
-      ["north or south", "x"],
-    ] as const)("draws every wall cell facing a region %s with a piece along %s", (_side, axis) => {
+      ["west or east", "y", "x"],
+      ["north or south", "x", "y"],
+    ] as const)("draws every wall cell facing a region only %s with a piece along %s", (_side, axis, other) => {
       const missing = cells.filter((key) => {
         const [cx, cy] = key.split(",").map(Number);
-        return faces(cx, cy)[axis] && !axes.get(key)?.has(axis);
+        const f = faces(cx, cy);
+        return f[axis] && !f[other] && !axes.get(key)?.has(axis);
       });
       expect(missing).toEqual([]);
+    });
+
+    it("draws a wall cell facing regions both ways along one of them at least", () => {
+      // a stub with regions on three sides, or a wall's end at a corridor's mouth: drawn along the
+      // run it is in, never as a one-cell slab across it
+      const bare = cells.filter((key) => {
+        const [cx, cy] = key.split(",").map(Number);
+        const f = faces(cx, cy);
+        return f.x && f.y && !axes.get(key)?.has("x") && !axes.get(key)?.has("y");
+      });
+      expect(bare).toEqual([]);
     });
 
     it.each(["x", "y"] as const)(
