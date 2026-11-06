@@ -5959,7 +5959,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       stairs: { placed(): Iterable<{ sprite: Made }> };
       checkBuildingStatus(): void;
     }
-    // room 1 (cells 28–35 × 35–41), the chest's: this client's player stands in it
+    // room 1 (cells 28–37 × 34–41), the chest's: this client's player stands in it
     const ROOM = 1;
     const inRoom = { current_player: { ...player("me", "Aldric", 0), position: at(2560, 3080) } } as Partial<Party>;
     const stageIn = (party: Partial<Party>) => {
