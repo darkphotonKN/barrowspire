@@ -41,7 +41,7 @@ message PlayerRankingStats {
   string username = 3;
   int32 wins = 4;
   int32 top_threes = 5;
-  string avatar_url = 6;
+  reserved 6;
   int32 rating = 7;
   optional int32 rank_position = 8;
   google.protobuf.Timestamp last_calculated_at = 9;

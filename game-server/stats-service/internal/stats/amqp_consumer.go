@@ -238,7 +238,6 @@ func intHeader(msg amqp.Delivery, name string) int {
 // ConsumerService defines what the consumer needs from the service
 type ConsumerService interface {
 	ProcessMatchCompleted(ctx context.Context, eventID uuid.UUID, eventType string, req *pb.MatchEndedEvent) error
-	UpdatePlayerRankings(ctx context.Context, updateData *pb.MemberProfileUpdatedEvent) error
 }
 
 type Consumer struct {
@@ -265,76 +264,22 @@ func NewConsumer(service ConsumerService, channel *amqp.Channel, broker republis
 	}
 }
 
-// Listen sets the channel's prefetch, then starts consuming the configured
-// queues. Both consumers share one channel and a basic.qos applies to the
-// consumers started after it, so it is set once here, before either starts,
-// rather than raced from inside the consumer goroutines.
+// Listen sets the channel's prefetch, then starts consuming match.ended. A
+// basic.qos applies to the consumers started after it, so it is set here, before
+// the consumer goroutine starts.
 func (c *Consumer) Listen() error {
 	if err := c.channel.Qos(matchEndedPrefetch, 0, false); err != nil {
 		return fmt.Errorf("set prefetch %d: %w", matchEndedPrefetch, err)
 	}
 
 	go c.consumeMatchEnded(context.Background())
-	go c.consumeProfileUpdated()
 
 	slog.Info("Stats consumer listening for events...")
 	return nil
 }
 
-func (c *Consumer) consumeProfileUpdated() {
-	msgs, err := c.channel.Consume(
-		commonconstants.StatsAuthProfileUpdatedQueue,
-		"",
-		false,
-		false,
-		false,
-		false,
-		nil,
-	)
-
-	if err != nil {
-		slog.Error("Failed to register consumer", "error", err)
-		return
-	}
-
-	for msg := range msgs {
-		var memberUpdated pb.MemberProfileUpdatedEvent
-
-		if err := proto.Unmarshal(msg.Body, &memberUpdated); err != nil {
-			slog.Error("Failed to parse member profile updated event", "error", err)
-			msg.Nack(false, false)
-			continue
-		}
-
-		slog.Info("after member profile updated data unmarshal",
-			"member_updated", &memberUpdated)
-
-		err := c.service.UpdatePlayerRankings(context.Background(), &memberUpdated)
-
-		if err != nil {
-			if errors.Is(err, commonconstants.ErrTransient) {
-				slog.Warn("Transient error, retrying", "error", err, "member_id", memberUpdated.MemberId)
-				msg.Nack(false, true)
-				continue
-			}
-
-			slog.Error("Failed to update member profile data after consuming memberProfileUpdatedEvent event", "error", err)
-			msg.Nack(false, false)
-			continue
-		}
-
-		msg.Ack(false)
-
-		slog.Info("PlayerRankings updated successfully following member profile update",
-			"member_id", memberUpdated.MemberId,
-			"success", true,
-			"message", "PlayerRankings updated successfully following member profile update",
-		)
-	}
-}
-
-// matchEndedPrefetch bounds how many unsettled messages the broker hands each
-// consumer on the channel at once; Listen sets it before starting them.
+// matchEndedPrefetch bounds how many unsettled messages the broker hands the
+// consumer at once; Listen sets it before starting it.
 const matchEndedPrefetch = 10
 
 func (c *Consumer) consumeMatchEnded(ctx context.Context) {
@@ -433,53 +378,10 @@ func declareMatchEndedTopology(ch topologyDeclarer) error {
 	return nil
 }
 
-// SetupAMQPInfrastructure declares the topology both consumers rely on.
-func SetupAMQPInfrastructure(channel *amqp.Channel) error {
+// SetupAMQPInfrastructure declares the topology the consumer relies on.
+func SetupAMQPInfrastructure(channel topologyDeclarer) error {
 	if err := declareMatchEndedTopology(channel); err != nil {
 		return fmt.Errorf("declare match ended topology: %w", err)
 	}
-
-	// --- Member Profile Update ---
-
-	err := channel.ExchangeDeclare(
-		commonconstants.AuthEventsExchange, // exchange name
-		"topic",                            // exchange type
-		true,                               // durable
-		false,                              // auto-deleted
-		false,                              // internal
-		false,                              // no-wait
-		nil,                                // arguments
-	)
-	if err != nil {
-		return err
-	}
-
-	// Declare the queue
-	_, err = channel.QueueDeclare(
-		commonconstants.StatsAuthProfileUpdatedQueue, // queue name
-		true,  // durable
-		false, // delete when unused
-		false, // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-
-	if err != nil {
-		slog.Error("Failed to declare queue", "error", err)
-		return err
-	}
-
-	// Bind the queue to the exchange
-	err = channel.QueueBind(
-		commonconstants.StatsAuthProfileUpdatedQueue, // queue name
-		commonconstants.MemberProfileUpdated,         // routing key
-		commonconstants.AuthEventsExchange,           // exchange
-		false,                                        // no-wait
-		nil,                                          // args
-	)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }

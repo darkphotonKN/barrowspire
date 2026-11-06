@@ -28,7 +28,6 @@ type Repository interface {
 	GetPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx, memberID uuid.UUID) (*PlayerRankingStats, error)
 
 	// non transaction methods
-	UpsertPlayerRankingStats(ctx context.Context, params *UpdatePlayerRankingsParams) (*PlayerRankingStats, error)
 	GetPlayerRankings(ctx context.Context, params *GetPlayerRankings) ([]*PlayerRankingStats, error)
 }
 
@@ -317,28 +316,6 @@ func (s *service) updateDenormalizedLeaderboard(ctx context.Context, tx *sqlx.Tx
 }
 
 /**
-* Updates the player rankings leaderboard stats
-**/
-func (s *service) UpdatePlayerRankings(ctx context.Context, updateData *pb.MemberProfileUpdatedEvent) error {
-	memberIdUUID, err := uuid.Parse(updateData.MemberId)
-	if err != nil {
-		slog.Error("error when parsing updateData.MemberId as uuid", "memberID", updateData.MemberId, "error", err)
-	}
-	_, err = s.repo.UpsertPlayerRankingStats(ctx, &UpdatePlayerRankingsParams{
-		Username:  updateData.Username,
-		MemberID:  memberIdUUID,
-		AvatarUrl: updateData.AvatarUrl,
-	})
-
-	if err != nil {
-		slog.Error("error when updating player rankings", "memberID", updateData.MemberId, "error", err)
-		return err
-	}
-
-	return nil
-}
-
-/**
 * Grabs leaderboard related data from the player rankings table.
 **/
 
@@ -409,7 +386,6 @@ func (s *service) GetLeaderboard(ctx context.Context, req *pbstats.GetLeaderboar
 			Wins:      int32(playerRanking.Wins),
 			Username:  playerRanking.Username,
 			TopThrees: int32(playerRanking.TopThrees),
-			AvatarUrl: playerRanking.AvatarUrl,
 			Rating:    int32(playerRanking.Rating),
 		}
 		playerRankingsProto[index] = playerRankingProto

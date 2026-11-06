@@ -116,6 +116,35 @@ func TestDeclareMatchEndedTopology(t *testing.T) {
 	}
 }
 
+// FS-TVCZQ §Requirements 23: match.ended is the only thing stats consumes, so
+// its topology is all the service declares, on no exchange but game.events.
+func TestSetupAMQPInfrastructure_DeclaresOnlyMatchEnded(t *testing.T) {
+	topo := newFakeTopology()
+
+	if err := SetupAMQPInfrastructure(topo); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if len(topo.exchanges) != 1 || topo.exchanges[0] != commonconstants.GameEventsExchange {
+		t.Fatalf("declared exchanges %v, want only %q", topo.exchanges, commonconstants.GameEventsExchange)
+	}
+	want := map[string]bool{matchEndedQueue: true, matchEndedDLQ: true}
+	for step := range retryDelays {
+		want[retryQueueName(step)] = true
+	}
+	if len(topo.queues) != len(want) {
+		t.Fatalf("declared queues %v, want %v", topo.queues, want)
+	}
+	for name := range topo.queues {
+		if !want[name] {
+			t.Fatalf("declared queue %q, want only %v", name, want)
+		}
+	}
+	if len(topo.bindings) != 1 {
+		t.Fatalf("bindings %v, want only the work queue's", topo.bindings)
+	}
+}
+
 // fakeMatchService stands in for the stats service behind the consumer.
 type fakeMatchService struct {
 	err       error
@@ -128,10 +157,6 @@ func (f *fakeMatchService) ProcessMatchCompleted(ctx context.Context, eventID uu
 	f.calls++
 	f.eventID, f.eventType = eventID, eventType
 	return f.err
-}
-
-func (f *fakeMatchService) UpdatePlayerRankings(ctx context.Context, updateData *pb.MemberProfileUpdatedEvent) error {
-	return nil
 }
 
 func matchEndedBody(t *testing.T) []byte {

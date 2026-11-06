@@ -13,7 +13,6 @@ gen:
 		api/proto/notification/notification.proto \
 		api/proto/character/character.proto \
 		api/proto/events/game.proto \
-		api/proto/events/auth.proto \
 		api/proto/events/item.proto \
 		api/proto/events/marketplace.proto \
 		api/proto/events/mailbox.proto \

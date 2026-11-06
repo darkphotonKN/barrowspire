@@ -50,8 +50,6 @@ const (
 	// a verification code was issued and needs mailing (FS-V6SFK R16, ADR-0043)
 	MemberVerificationRequestedEvent = "member.verification_requested"
 
-	MemberProfileUpdated = "profile.updated"
-
 	// Game Events
 	GameMatchEnded = "match.ended"     // match ended
 	ItemsExtracted = "items.extracted" // items extracted after match end
@@ -100,7 +98,6 @@ const (
 **/
 const (
 	StatsGameMatchEndedQueue        = "stats.game.match.ended"
-	StatsAuthProfileUpdatedQueue    = "stats.auth.profile.updated"
 	ItemsGameItemsExtractedQueue    = "items.game.items.extracted"
 	NotificationMemberSignedUpQueue = "notification.auth.member.signedup"
 	NotificationItemCreatedQueue    = "notification.item.created"

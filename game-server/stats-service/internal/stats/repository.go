@@ -132,63 +132,6 @@ func (r *repository) GetPlayerMatchStats(ctx context.Context, memberID uuid.UUID
 	return &playerMatchStats, nil
 }
 
-func (r *repository) UpsertPlayerRankingStats(ctx context.Context, stats *UpdatePlayerRankingsParams) (*PlayerRankingStats, error) {
-
-	query := `
-		INSERT INTO player_ranking_stats (
-			member_id, username, wins, top_threes, avatar_url,
-			rating, rank_position
-		) VALUES (
-			:member_id, 
-			:username,
-			:wins,
-			:top_threes,
-			:avatar_url,
-			:rating,
-			:rank_position
-		)
-		ON CONFLICT (member_id)
-		DO UPDATE SET
-				username = EXCLUDED.username,
-				wins = EXCLUDED.wins,
-				top_threes = EXCLUDED.top_threes,
-				avatar_url = EXCLUDED.avatar_url,
-				rating = EXCLUDED.rating,
-				rank_position = EXCLUDED.rank_position,
-				last_calculated_at = CURRENT_TIMESTAMP,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING *;
-	`
-
-	rows, err := r.DB.NamedQueryContext(ctx, query, stats)
-	if err != nil {
-		slog.Error("Could not run upsert to PlayerRankings successfully.",
-			"member_id", stats.MemberID,
-			"error", err,
-		)
-		return nil, wrapDBErr("upsert player ranking stats", err)
-	}
-
-	defer rows.Close()
-
-	var updated PlayerRankingStats
-
-	if rows.Next() {
-		err = rows.StructScan(&updated)
-
-		if err != nil {
-			slog.Error("Could not scan to row.",
-				"member_id", stats.MemberID,
-				"error", err,
-			)
-			return nil, wrapDBErr("upsert player ranking stats: scan", err)
-		}
-
-	}
-
-	return &updated, nil
-}
-
 func (r *repository) GetPlayerRankings(ctx context.Context, params *GetPlayerRankings) ([]*PlayerRankingStats, error) {
 	query := `
 		SELECT
@@ -197,7 +140,6 @@ func (r *repository) GetPlayerRankings(ctx context.Context, params *GetPlayerRan
 			username,
 			wins,
 			top_threes,
-			avatar_url,
 			rating,
 			rank_position,
 			last_calculated_at,
@@ -375,17 +317,16 @@ func (r *repository) GetPlayerMatchStatsTx(ctx context.Context, tx *sqlx.Tx, mem
 func (r *repository) UpsertPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx, stats *UpdatePlayerRankingsParams) (*PlayerRankingStats, error) {
 	query := `
 		INSERT INTO player_ranking_stats (
-			member_id, username, wins, top_threes, avatar_url,
+			member_id, username, wins, top_threes,
 			rating, rank_position
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7
+			$1, $2, $3, $4, $5, $6
 		)
 		ON CONFLICT (member_id)
 		DO UPDATE SET
 				username = EXCLUDED.username,
 				wins = EXCLUDED.wins,
 				top_threes = EXCLUDED.top_threes,
-				avatar_url = EXCLUDED.avatar_url,
 				rating = EXCLUDED.rating,
 				rank_position = EXCLUDED.rank_position,
 				last_calculated_at = CURRENT_TIMESTAMP,
@@ -399,7 +340,6 @@ func (r *repository) UpsertPlayerRankingStatsTx(ctx context.Context, tx *sqlx.Tx
 		stats.Username,
 		stats.Wins,
 		stats.TopThrees,
-		stats.AvatarUrl,
 		stats.Rating,
 		stats.RankPosition,
 	)
