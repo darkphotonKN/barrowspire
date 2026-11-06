@@ -1237,3 +1237,94 @@ describe("a monster that leaves the broadcast and comes back (FS-KE075 §H.48)",
     expect(roster.hoveredId).toBeUndefined();
   });
 });
+
+describe("a hidden monster (FS-SRA9J §D.15, §D.17; FS-9PN7X §C.2)", () => {
+  const hideAll = () => true;
+  function hiddenOne(fields: Partial<MonsterState> = {}) {
+    const { stage, sprites, texts, bars } = fakeStage();
+    const targeting = { strike: vi.fn(), hover: vi.fn() };
+    const roster = new MonsterRoster(stage, fixtureArt(), targeting);
+    roster.sync([monster(fields)]);
+    roster.update(FRAME);
+    return { roster, sprites, texts, bars, targeting };
+  }
+
+  it("should hide an elite's body, prefix, plate and bar, the elite wash going with the body", () => {
+    const { roster, sprites, texts, bars } = hiddenOne({ elite: true, name: "Brutal Troll" });
+    roster.hideWhere(hideAll);
+    expect(sprites[0].visible).toBe(false);
+    expect(texts.map((t) => t.visible)).toEqual([false, false]);
+    expect(bars[0].visible).toBe(false);
+  });
+
+  it("should let go of the hover, the strike-mark with it, when the monster under the still pointer is hidden", () => {
+    const { roster, sprites, targeting } = hiddenOne({ entity_id: "m7" });
+    sprites[0].emit("pointerover");
+    targeting.hover.mockClear();
+    roster.hideWhere(hideAll);
+    expect(targeting.hover).toHaveBeenCalledTimes(1);
+    expect(targeting.hover).toHaveBeenCalledWith(null);
+    expect(roster.hoveredId).toBeUndefined();
+    // hidden again next frame: nothing more to let go of
+    roster.hideWhere(hideAll);
+    expect(targeting.hover).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep the hover on a monster the rule leaves shown", () => {
+    const { roster, sprites, targeting } = hiddenOne({ entity_id: "m7" });
+    sprites[0].emit("pointerover");
+    roster.hideWhere(() => false);
+    expect(roster.hoveredId).toBe("m7");
+    expect(targeting.hover).toHaveBeenCalledTimes(1);
+  });
+
+  it("should neither strike nor report a hover for a hidden monster", () => {
+    const { roster, sprites, targeting } = hiddenOne();
+    roster.hideWhere(hideAll);
+    sprites[0].emit("pointerover");
+    sprites[0].emit("pointerdown");
+    expect(targeting.strike).not.toHaveBeenCalled();
+    expect(targeting.hover).not.toHaveBeenCalled();
+    expect(roster.hoveredId).toBeUndefined();
+    expect(roster.targetable()).toEqual([]);
+  });
+
+  it("should not flash a hit taken while hidden, so it does not flash when it reappears", () => {
+    const { roster, sprites } = hiddenOne({ current_health: 120 });
+    roster.hideWhere(hideAll);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.update(FRAME);
+    roster.hideWhere(() => false);
+    expect(sprites[0].tint).toBeNull();
+  });
+
+  it("should end a flash the moment its monster is hidden", () => {
+    const { roster, sprites } = hiddenOne({ current_health: 120 });
+    roster.sync([monster({ current_health: 90 })]);
+    expect(sprites[0].tint).toBe(palette.damage);
+    roster.hideWhere(hideAll);
+    roster.hideWhere(() => false);
+    expect(sprites[0].tint).toBeNull();
+  });
+
+  it("should lay a monster that dies while hidden where it fell, so it reappears a corpse, never mid-fall", () => {
+    const { roster, sprites } = hiddenOne({ action: "attack" });
+    roster.hideWhere(hideAll);
+    roster.sync([monster({ action: "dead", current_health: 0 })]);
+    roster.update(FRAME);
+    roster.hideWhere(() => false);
+    for (let i = 0; i < 5; i++) roster.update(FRAME);
+    // the fixture's death clip has 7 frames: only its last is ever played
+    const deaths = sprites[0].plays.filter((p) => p.key.includes("/death/"));
+    expect(deaths).toEqual([{ key: "creature_troll_base/death/4", startFrame: 6 }]);
+  });
+
+  it("should still play the fall of a monster that dies in sight", () => {
+    const { roster, sprites } = hiddenOne({ action: "attack" });
+    roster.hideWhere(() => false);
+    roster.sync([monster({ action: "dead", current_health: 0 })]);
+    roster.update(FRAME);
+    const deaths = sprites[0].plays.filter((p) => p.key.includes("/death/"));
+    expect(deaths).toEqual([{ key: "creature_troll_base/death/4", startFrame: 0 }]);
+  });
+});
