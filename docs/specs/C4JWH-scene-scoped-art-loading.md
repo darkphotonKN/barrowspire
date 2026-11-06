@@ -265,7 +265,9 @@ measured):
 ## Edge States
 
 - **A refresh into a world**: the world is held until the menu stands up (`bootGate.ts`), so the resident groups are loaded; the world scene loads only its own groups.
-- **A world switch while the scene is still downloading**: Phaser resets the stopped scene's loader and its create never runs; the bar goes with its display list. Pages that finished stay textures until the next scene's preload completes, which evicts them if it does not use them; pages in flight are dropped.
+- **A world switch while the scene is still downloading** (corrected in review fix round 1): a world scene sits LOADING for its whole download, and Phaser 4.2.1 counts only a RUNNING scene as active (`Systems.isActive`), so the switch stops every world scene that is starting or running (`bootGate`'s `inFlight`), not only the active ones; a target still loading is stopped and started again, since Phaser's `start` lets a scene START..CREATING carry on and drops the new data (`SceneManager.start`). The stop resets the scene's loader and drops its create; the bar goes with its display list. Pages that finished stay textures until the next scene's preload completes, which evicts them if it does not use them. Pages in flight are not dropped by Phaser: `LoaderPlugin.reset` clears its Sets only, and a download that lands later still adds itself (`File.onLoad` → `nextFile` → `onProcess` → `fileProcessComplete` → `addToCache`). So the scene's own preload calls its downloads off on the stop (`File.resetXHR`, the XHR aborted, no `onProcessComplete`): none lands, and a next scene that wants the same page loads it once.
+- **The world's one-shot messages while it downloads** (added in review fix round 1): what the server sends a world once, unasked, is held from `init` and handed to its listeners in arrival order at the end of `create` (`scenes/heldMessages.ts`): the hub's queue progress and handoff, ready check and party notices; the run's exit unlocking, end and settlement. The field has none (its messages answer the player's own asks, sent after create). The ready-check popup itself never depended on it: the socket writes the check to the party store, which the popup reads when it is built. The game state needs nothing: it is a full snapshot every tick.
+- **A failed folk download and the NPC bust**: the bust's figure cache keeps only a figure it read; a frame missing once is read again on the next visit.
 - **The memory peak at a transition**: eviction waits for the new scene's load, so while it downloads the GPU holds the old scene's groups and the new one's (run → hub about 400 MB while folk loads). Still under today's constant 473 MB. Accepted (ADR-0059 Consequences).
 - **Re-entering from the browser's HTTP cache**: an evicted page queued again is a download to Phaser, so the bar shows, briefly when the browser has the PNG cached.
 - **The bar's steps**: `progress` counts files, so the bar moves page by page (the run's four pages: quarters). Accepted: it is the boot bar's behaviour.
@@ -314,6 +316,20 @@ south walls (the straight way west is walled by the Quartermaster's); a live run
 `leave_run`, so the run was left by Fall (`forfeit_run`) and then Leave. Not measured: how long the
 bar shows (the local server serves the pages in well under a second), and the transition peak.
 Nick's browser check (I-C4JWH-5) remains.
+
+**After review fix round 1** (aa8257bc; the same account, browser and server, port 4014):
+
+- The round trip again passed with the same figures to the 0.1 MB (menus 200.3, hub 223.3,
+  gentle_meadows 234.4, forlorn_forest 239.9, run 376.5), each scene's pages exactly its set, the
+  bar on every download and on nothing else, no page error, no console error but the favicon 404,
+  no `art:` warning.
+- **A world switch mid-download.** The run's boss pages were held back 12 s (`page.route`); the
+  run was started from the hub and, while it sat LOADING (creatures-0 and creatures-1 in, the boss
+  in flight), Fall was sent, so the server ended the run and sent the hub. The run scene was
+  stopped (status SHUTDOWN), both boss requests were aborted (`net::ERR_ABORTED`) and never landed,
+  and the hub held exactly the 17 resident pages and folk-0 (223.3 MB), 18 s later still. No page
+  error, no console error (no "Texture key already in use"), no `art:` warning. Script:
+  `c4jwh/midload.cjs` in the session scratchpad.
 
 ## Out of Scope
 

@@ -54,3 +54,7 @@ its own; the round trip menu → hub → meadows → hub → forest → hub → 
 error, no console error (bar the dev server's favicon 404, on main too) and no `art:` warning; the bar
 showed on every entry that downloaded and on no other. Account `phaser4-trial@example.test`, headless
 Chrome at 1280 × 845, DPR 1, `next dev` on 4014. No finding needed a new issue.
+
+Review fix round 1 (aa8257bc): the round trip rerun with the same figures, and a world switch while
+the run downloads its boss (held back by `page.route`) passed: the run stopped, its boss downloads
+aborted and never landed, the hub at exactly its set, no error. FS-C4JWH § Verification.
