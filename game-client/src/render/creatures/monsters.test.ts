@@ -14,6 +14,8 @@ import {
   PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
+  BODY_HALF_WIDTH,
+  bodyColumn,
   monsterLook,
   elitePlate,
   monsterScale,
@@ -122,6 +124,7 @@ function fakeSprite() {
     depth: 0,
     scaleX: 1,
     scaleY: 1,
+    displayOriginX: 0,
     displayOriginY: 0,
     texture: "",
     tint: null as number | null,
@@ -139,7 +142,9 @@ function fakeSprite() {
       sprite.frame = frame;
       return sprite;
     },
-    setOrigin(_x: number, y: number) {
+    setOrigin(x: number, y: number) {
+      // the fixture's creature frame is 200 x 180
+      sprite.displayOriginX = x * 200;
       sprite.displayOriginY = y * 180;
       return sprite;
     },
@@ -953,6 +958,145 @@ describe("targeting monsters (req 39)", () => {
     );
     expect(ghoul).toBe(false);
     expect(troll).toBe(true);
+  });
+});
+
+describe("the drawn body is a target (FS-48CTQ §C.5, owner playtest 2026-11-06)", () => {
+  type Sprite = ReturnType<typeof fakeSprite>;
+  const TROLL = { entity_id: "t", archetype: "troll" as const, position: { x: 400, y: 300 } };
+  // straight in front of the troll on screen: 16 px lower, so drawn over it
+  const GHOUL = { entity_id: "g", archetype: "ghoul" as const, position: { x: 420, y: 320 } };
+
+  function onFloor(...monsters: MonsterState[]) {
+    const { stage, sprites } = fakeStage();
+    const targeting = { strike: vi.fn(), hover: vi.fn() };
+    const roster = new MonsterRoster(stage, fixtureArt(), targeting);
+    roster.sync(monsters);
+    roster.update(FRAME);
+    return { roster, sprites, targeting };
+  }
+
+  /** Whether the sprite's hit area takes screen point (sx, sy), handed over frame-local as Phaser does. */
+  const hits = (s: Sprite, sx: number, sy: number) =>
+    s.interactive!.hitAreaCallback(
+      {},
+      (sx - s.x) / s.scaleX + s.displayOriginX,
+      (sy - s.y) / s.scaleY + s.displayOriginY,
+      s,
+    );
+
+  /**
+   * The sprite Phaser's top-only input gives (sx, sy) to: of the shown ones whose hit area takes
+   * it, the one drawn last, which is the deepest (`InputPlugin.sortGameObjects` by render order).
+   */
+  const picked = (all: Sprite[], sx: number, sy: number) =>
+    all
+      .filter((s) => s.visible && hits(s, sx, sy))
+      .sort((a, b) => b.depth - a.depth)[0];
+
+  /** Drawn height in screen px: the fixture's crown (troll 96, ghoul 72) at the sprite's scale. */
+  const height = (s: Sprite, crown: number) => crown * s.scaleY;
+
+  it.each([
+    ["the head", 0, -0.97],
+    ["the chest", 0, -0.6],
+    ["a shoulder", 0.35, -0.8],
+    ["the other flank", -0.35, -0.4],
+  ])("should take the pointer on %s, for the hover and the click alike", (_, across, up) => {
+    const { sprites, targeting } = onFloor(monster(TROLL));
+    const [troll] = sprites;
+    const h = height(troll, 96);
+    expect(hits(troll, troll.x + across * h, troll.y + up * h)).toBe(true);
+    // the hit area is the only gate Phaser has; the events it raises are answered as ever
+    troll.emit("pointerover");
+    troll.emit("pointerdown");
+    expect(targeting.hover).toHaveBeenLastCalledWith(expect.objectContaining({ entity_id: "t" }));
+    expect(targeting.strike).toHaveBeenCalledWith(expect.objectContaining({ entity_id: "t" }));
+  });
+
+  it("should still take the feet, and the footprint's ground beyond the body's width", () => {
+    const { sprites } = onFloor(monster(TROLL));
+    const [troll] = sprites;
+    expect(hits(troll, troll.x, troll.y)).toBe(true);
+    // 26 world px east: on the troll's 28 px footprint, below and beside the drawn body
+    const ground = worldToScreen(426, 300);
+    expect(hits(troll, ground.x, ground.y)).toBe(true);
+  });
+
+  it.each([
+    ["beside the chest", 0.55, -0.5],
+    ["beside the other side", -0.55, -0.5],
+    ["over the head", 0, -1.06],
+    ["far up and over", 0.3, -1.4],
+  ])("should miss the empty space %s", (_, across, up) => {
+    const { sprites } = onFloor(monster(TROLL));
+    const [troll] = sprites;
+    const h = height(troll, 96);
+    expect(hits(troll, troll.x + across * h, troll.y + up * h)).toBe(false);
+  });
+
+  it("should give an overlap to the monster drawn in front, and a tall one behind only what shows of it", () => {
+    const { sprites } = onFloor(monster(TROLL), monster(GHOUL));
+    const [troll, ghoul] = sprites;
+    expect(ghoul.depth).toBeGreaterThan(troll.depth);
+    expect(ghoul.x).toBeCloseTo(troll.x);
+
+    // the ghoul's chest stands over the troll's body: both take it, the ghoul in front wins
+    const chest = { x: ghoul.x, y: ghoul.y - 0.6 * height(ghoul, 72) };
+    expect(hits(troll, chest.x, chest.y)).toBe(true);
+    expect(picked(sprites, chest.x, chest.y)).toBe(ghoul);
+    expect(picked(sprites, ghoul.x, ghoul.y)).toBe(ghoul);
+
+    // over the ghoul's head the troll's body shows, and is the troll's
+    const above = { x: ghoul.x, y: ghoul.y - height(ghoul, 72) - 8 };
+    expect(picked(sprites, above.x, above.y)).toBe(troll);
+  });
+
+  it("should never let a corpse in front take the pointer from the living monster behind it", () => {
+    const { sprites } = onFloor(
+      monster(TROLL),
+      monster({ ...GHOUL, action: "dead", current_health: 0 }),
+    );
+    const [troll, corpse] = sprites;
+    const chest = { x: corpse.x, y: corpse.y - 0.6 * height(corpse, 72) };
+    expect(hits(corpse, chest.x, chest.y)).toBe(false);
+    expect(hits(corpse, corpse.x, corpse.y)).toBe(false);
+    expect(picked(sprites, chest.x, chest.y)).toBe(troll);
+  });
+
+  it("should never hit a hidden monster, by its body or its feet, and pass the overlap to the one shown", () => {
+    const { roster, sprites } = onFloor(monster(TROLL), monster(GHOUL));
+    const [troll, ghoul] = sprites;
+    // the fog over the ghoul's ground only (FS-SRA9J §D.15)
+    roster.hideWhere((at) => at.x === GHOUL.position.x);
+    const chest = { x: ghoul.x, y: ghoul.y - 0.6 * height(ghoul, 72) };
+    expect(hits(ghoul, chest.x, chest.y)).toBe(false);
+    expect(hits(ghoul, ghoul.x, ghoul.y)).toBe(false);
+    expect(picked(sprites, chest.x, chest.y)).toBe(troll);
+
+    roster.hideWhere(() => true);
+    expect(hits(troll, troll.x, troll.y - 0.6 * height(troll, 96))).toBe(false);
+    expect(hits(troll, troll.x, troll.y)).toBe(false);
+  });
+});
+
+describe("bodyColumn", () => {
+  it("should stand a standing figure's column from its feet to its crown, at its drawn size", () => {
+    const ghoul = baked.sheet("creature_ghoul_base")!;
+    expect(bodyColumn(ghoul, 2)).toEqual({
+      halfWidth: BODY_HALF_WIDTH * ghoul.crown! * 2,
+      height: ghoul.crown! * 2,
+    });
+  });
+
+  it("should widen a quadruped's column to half its body length", () => {
+    const boar = baked.sheet("creature_boar_base")!;
+    expect(bodyColumn(boar, 1)).toEqual({ halfWidth: boar.length! / 2, height: boar.crown! });
+  });
+
+  it("should have no column for a sheet that records no crown: the footprint alone answers", () => {
+    expect(bodyColumn(undefined, 1)).toBeUndefined();
+    expect(bodyColumn({ length: 80 }, 1)).toBeUndefined();
   });
 });
 
