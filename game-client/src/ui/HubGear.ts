@@ -13,7 +13,9 @@
  * hovered bag or stash item moves to the other side as one `moveItemInstance`, pre-checked against
  * both caps and the item's status, under the same one-at-a-time rule and refusal path (R38–42).
  * An item still in a delve (`IN_RUN`, FS-18Z5F R38), worn or carried, takes no change: no equip,
- * unequip, swap or move of it is sent, and the notice says why.
+ * unequip, swap or move of it is sent, and the notice says why. Every open, the stash chest's
+ * too, reads the purse line's gold, and the hub asks again after a Take that carries gold
+ * (FS-7TGZ3 R8–9).
  * Phaser-free: the hub hands it the overlay, the REST calls and its notice.
  */
 
@@ -38,7 +40,7 @@ import {
   stashFull,
   type ItemLocation,
 } from "./stash";
-import { nothingWorn, type HudPanel } from "./EquipmentHud";
+import { nothingWorn, type HudPanel, type PurseRefresh } from "./EquipmentHud";
 import type { CharacterSource } from "./characterSheet";
 
 type Loadout = components["schemas"]["GetLoadoutResponse"];
@@ -208,6 +210,7 @@ export class HubGear {
     private readonly panel: HubGearPanel,
     private readonly api: HubGearApi,
     private readonly port: HubGearPort,
+    private readonly purse?: PurseRefresh,
   ) {
     // the overlay equips from the bag; what it swaps out goes to the bag, so a swap is net zero
     // and never pre-checked (FS-VPD8Y R29)
@@ -246,10 +249,22 @@ export class HubGear {
     return this.panel.isVisible() && this.panel.covers(x, y);
   }
 
-  /** Opens or closes the overlay; every open loads from REST (R41). */
+  /** Opens or closes the overlay; every open loads from REST (R41) and reads the purse (FS-7TGZ3 R8). */
   toggle(): void {
     this.panel.toggle();
-    if (this.panel.isVisible()) void this.load();
+    if (!this.panel.isVisible()) return;
+    void this.load();
+    this.refreshPurse();
+  }
+
+  /** Its visit is over: a purse read still in flight answers nobody (FS-7TGZ3). */
+  release(): void {
+    this.purse?.forget();
+  }
+
+  /** Reads the purse again, open or closed: after a Take that carried gold (FS-7TGZ3 R9). */
+  refreshPurse(): void {
+    void this.purse?.refresh();
   }
 
   /**
@@ -260,6 +275,7 @@ export class HubGear {
     if (this.panel.isVisible()) return false;
     this.panel.openStash();
     void this.load();
+    this.refreshPurse();
     return true;
   }
 

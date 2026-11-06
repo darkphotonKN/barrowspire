@@ -120,6 +120,10 @@ const TITLE_H = 26;
 const SECTION_GAP = 12;
 const BAG_HEAD_H = 24;
 export const HINT_H = 40;
+/** The purse line under the bag grid (FS-7TGZ3 R1): its gap below the grid, and its row. */
+const PURSE_GAP = 6;
+const PURSE_ROW = 18;
+const PURSE_H = PURSE_GAP + PURSE_ROW;
 /** A bag cell's side: as large as the panel allows, within these. */
 const MIN_CELL = 26;
 const MAX_CELL = 72;
@@ -169,6 +173,8 @@ export interface GearPanelLayout extends ItemGrid {
   bagHeaderY: number;
   /** Where the hint line sits (its top). */
   hintY: number;
+  /** The purse line: under the grid's last shown row, as wide as the grid (FS-7TGZ3 R1). */
+  purse: Rect;
   /** The panel's inner left edge and width. */
   innerX: number;
   innerW: number;
@@ -177,7 +183,7 @@ export interface GearPanelLayout extends ItemGrid {
 
 /**
  * The gear and bag panel's insides, for a bag of `count` items scrolled `scroll` rows down
- * (clamped). Cells are as large as the panel allows, so the 30 base cells never shrink for an
+ * (clamped), the purse line under the grid (FS-7TGZ3 R1). Cells are as large as the panel allows, so the 30 base cells never shrink for an
  * over-capacity bag; rows that do not fit scroll (R23, edge state "Small window").
  */
 export function gearPanelLayout(
@@ -187,7 +193,8 @@ export function gearPanelLayout(
 ): GearPanelLayout {
   const innerX = panel.x + PANEL_PAD;
   const innerW = panel.w - 2 * PANEL_PAD;
-  const fixed = 2 * PANEL_PAD + TITLE_H + SECTION_GAP + BAG_HEAD_H + HINT_H;
+  const fixed =
+    2 * PANEL_PAD + TITLE_H + SECTION_GAP + BAG_HEAD_H + PURSE_H + HINT_H;
   const perCell =
     DOLL_ROWS * SLOT_SCALE +
     (DOLL_ROWS - 1) * SLOT_GAP_SCALE +
@@ -224,7 +231,8 @@ export function gearPanelLayout(
     innerX,
     innerW,
     top: gridTop,
-    bottom: hintY,
+    // the purse row is reserved above the hint, so it never sits on a cell
+    bottom: hintY - PURSE_H,
     cell,
     gap,
     columns: BAG_COLUMNS,
@@ -233,12 +241,20 @@ export function gearPanelLayout(
     scroll,
   });
 
+  const purse = {
+    x: grid.grid.x,
+    y: grid.grid.y + grid.grid.h + PURSE_GAP,
+    w: grid.grid.w,
+    h: PURSE_ROW,
+  };
+
   return {
     cell,
     slot,
     titleY,
     bagHeaderY,
     hintY,
+    purse,
     innerX,
     innerW,
     slots,

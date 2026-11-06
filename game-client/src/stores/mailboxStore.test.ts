@@ -896,3 +896,55 @@ describe("mailbox store: last seen when storage reads but will not write (R35)",
     expect(store.getState().pulses).toBe(1);
   });
 });
+
+describe("mailbox store: a Take that carries gold (FS-7TGZ3 §C R9)", () => {
+  const goldLetter = letter({
+    id: "gift",
+    claimState: "unclaimed",
+    enclosures: [{ kind: "gold", gold: 100 }],
+  });
+  const itemsOnly = letter({
+    id: "kit",
+    claimState: "unclaimed",
+    enclosures: [{ kind: "item", quantity: 1, item: snapshot("t", "Blade") }],
+  });
+  const refusal = (code: string) =>
+    new ApiError({ code, status: 400, detail: code, errors: [] });
+
+  async function opened(letters: Letter[]) {
+    const ctx = setup({ letters });
+    await ctx.store.getState().openPanel();
+    return ctx;
+  }
+
+  it("should start at none", () => {
+    expect(setup().store.getState().goldTaken).toBe(0);
+  });
+
+  it("should count a taken letter with a gold enclosure", async () => {
+    const { store } = await opened([goldLetter]);
+    await store.getState().take("gift");
+    expect(store.getState().goldTaken).toBe(1);
+  });
+
+  it("should not count a taken letter without gold", async () => {
+    const { store } = await opened([itemsOnly]);
+    await store.getState().take("kit");
+    expect(store.getState().goldTaken).toBe(0);
+  });
+
+  it("should count a gold letter another tab already took: its gold is in the wallet too", async () => {
+    const { store, api } = await opened([goldLetter]);
+    api.claim.mockRejectedValueOnce(refusal("LETTER_ALREADY_CLAIMED"));
+    await store.getState().take("gift");
+    expect(store.getState().goldTaken).toBe(1);
+  });
+
+  it("should not count a refused Take", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { store, api } = await opened([goldLetter]);
+    api.claim.mockRejectedValueOnce(refusal("STASH_FULL"));
+    await store.getState().take("gift");
+    expect(store.getState().goldTaken).toBe(0);
+  });
+});

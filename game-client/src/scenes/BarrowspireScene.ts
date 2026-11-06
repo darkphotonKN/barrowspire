@@ -25,6 +25,8 @@ import {
 import { ABILITY_COPY } from "@/ui/abilityCopy";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
+import { PurseReader } from "@/ui/purse";
+import { apiClient } from "@/utils/api";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
@@ -963,6 +965,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
     this.game?.events.off(Phaser.Core.Events.HIDDEN, this.cancelAim, this);
     this.characterLevel = undefined;
+    this.equipment?.release();
     this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
@@ -2970,13 +2973,19 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The gear and bag overlay over the live run (FS-HRH2J), its equip / unequip sends applied at
    * once, and its full-bag refusals in the run's refused notice (R22). A run marks unsafe finds
-   * (FS-18Z5F R36).
+   * (FS-18Z5F R36). Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Run), {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-      notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
-    });
+    const overlay = new GearOverlay(this, this.art, WorldType.Run);
+    return new EquipmentHud(
+      overlay,
+      {
+        send: (action, payload) => socketManager.sendMessage(action, payload),
+        notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
+      },
+      Date.now,
+      new PurseReader(apiClient, overlay),
+    );
   }
 
   /** Whether the bag can take one more pickup (FS-HRH2J R21); when it cannot, the notice says so. */
