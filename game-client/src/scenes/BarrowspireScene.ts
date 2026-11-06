@@ -181,7 +181,7 @@ import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/w
 import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule } from "@/render/world/dungeon";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
-import { Fog } from "@/render/world/fog";
+import { Fog, wallLayout } from "@/render/world/fog";
 import { planRoomDressing } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
@@ -3698,10 +3698,14 @@ export class BarrowspireScene extends Phaser.Scene {
     const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
-    const fog = new Fog(this, dungeon.grid, rule, dungeon.chunks, () => ({
-      back,
-      front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK,
-    }));
+    const fog = new Fog(
+      this,
+      dungeon.grid,
+      rule,
+      dungeon.chunks,
+      () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
+      wallLayout(dungeon.grid, strips),
+    );
     dungeon.fog = fog;
     const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
       dungeon.chunks.add(fog.gate(part, at), worldToScreen(at.x, at.y));

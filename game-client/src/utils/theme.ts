@@ -90,6 +90,12 @@ export const BARROW = {
   menuTextFaint: "#5e5b55", //    --color-text-placeholder
 } as const;
 
+/**
+ * Phaser's untinted multiply (`setTint`'s identity): white leaves a sprite as it is. Not a palette
+ * colour, so it is not in `BARROW_HEX`; it is defined here so no other file writes the literal.
+ */
+export const TINT_IDENTITY = 0xffffff;
+
 /** Phaser 0x integer forms of the same palette. */
 export const BARROW_HEX = {
   charcoal: 0x1c1613,
