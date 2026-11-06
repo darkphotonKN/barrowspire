@@ -79,7 +79,6 @@ export class BootScene extends Phaser.Scene {
     // party refusals are the party's own business, claimed once for the session (FS-R82NV)
     routePartyErrors(socketManager);
 
-    console.log("token: ", token);
     console.log("name: ", name);
     socketManager.connectToGame(token, name);
     this.scene.start("PreloadScene");

@@ -15,6 +15,12 @@ export const RENEW_AHEAD_MS = 2 * 60 * 1000;
  */
 export const RENEW_FLOOR_MS = 60 * 1000;
 
+/**
+ * A token that arrives this soon after a proactive renewal fired is the one it minted, so it lives
+ * its whole lifetime (`exp − iat`) from its arrival, whatever the client clock says (FS-ZPX58 L-c).
+ */
+export const FRESH_WINDOW_MS = 30 * 1000;
+
 /** The cooldown after an unavailable renewal, doubling while it stays unavailable (FS-ZPX58 M2). */
 export const COOLDOWN_BASE_MS = 5 * 1000;
 export const COOLDOWN_MAX_MS = 60 * 1000;
@@ -107,7 +113,9 @@ export function withCooldown(renew: () => Promise<RenewOutcome>): () => Promise<
  * The client clock may be off (FS-ZPX58 L2). The wait is never longer than the token's own
  * lifetime (`exp - iat`, both server times), so a slow clock cannot schedule past the token's
  * real expiry, and never shorter than RENEW_FLOOR_MS after the previous proactive renewal, so a
- * fast clock cannot make each renewal schedule the next at once.
+ * fast clock cannot make each renewal schedule the next at once. A token that arrives within
+ * FRESH_WINDOW_MS of a proactive renewal is anchored on its arrival: it renews a lifetime later,
+ * so a fast clock costs one renewal, not one a minute.
  *
  * Whatever the renewal answers, nothing more happens here: a renewed token reschedules through
  * the store, and a refused or unavailable one is left to the next call's 401.
@@ -134,9 +142,11 @@ export function scheduleRenewals(deps: {
     if (exp === null) return;
 
     const now = Date.now();
-    let delay = exp - RENEW_AHEAD_MS - now;
     const iat = timeClaim(token, "iat");
-    if (iat !== null && exp > iat) delay = Math.min(delay, exp - iat - RENEW_AHEAD_MS);
+    const lifetime = iat !== null && exp > iat ? exp - iat : null;
+    const fresh = lifetime !== null && lastFiredAt !== null && now - lastFiredAt < FRESH_WINDOW_MS;
+    let delay = fresh ? lifetime - RENEW_AHEAD_MS : exp - RENEW_AHEAD_MS - now;
+    if (lifetime !== null) delay = Math.min(delay, lifetime - RENEW_AHEAD_MS);
     if (lastFiredAt !== null) delay = Math.max(delay, lastFiredAt + RENEW_FLOOR_MS - now);
 
     timer = setTimeout(

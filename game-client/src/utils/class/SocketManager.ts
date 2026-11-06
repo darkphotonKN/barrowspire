@@ -111,6 +111,11 @@ export class SocketManager {
   // that is not auth_error (or a promoted handoff) means the token was taken, and resets this.
   private authAttempts = 0;
   private authRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  // The token each socket's URL carried, or the server last took over it: a socket that opens, or a
+  // handoff that is promoted, after a renewal it missed is handed the current one (FS-ZPX58 L-a).
+  private openedWith = new WeakMap<SocketLike, string>();
+  // Bumped by disconnect(): a renewal that resolves after it acts on nothing (FS-ZPX58 L-b).
+  private generation = 0;
   // The socket to a run's host while the move is being decided, and the run it
   // is for. The run id stays after the move, so a repeated handoff is ignored.
   private pending: SocketLike | null = null;
@@ -137,6 +142,15 @@ export class SocketManager {
   renewToken(token: string): void {
     if (this.socket?.readyState !== SOCKET_OPEN) return;
     this.socket.send(this.encode("renew_token", { token }));
+    this.openedWith.set(this.socket, token);
+  }
+
+  /** An open socket whose server holds an older token than the current one is handed it (L-a). */
+  private handOverIfStale(socket: SocketLike): void {
+    const token = this.currentToken();
+    if (!token || socket.readyState !== SOCKET_OPEN || this.openedWith.get(socket) === token) return;
+    socket.send(this.encode("renew_token", { token }));
+    this.openedWith.set(socket, token);
   }
 
   getServerAddress(): string {
@@ -223,6 +237,7 @@ export class SocketManager {
   }
 
   disconnect() {
+    this.generation++;
     clearTimeout(this.authRetryTimer);
     this.authRetryTimer = undefined;
     this.dropPending();
@@ -237,7 +252,10 @@ export class SocketManager {
     if (this.socket) return; // 避免重複連接
 
     this.setConnectionStatus("connecting");
+    // the URL was just built from the current token
+    const token = this.currentToken();
     this.socket = this.createSocket(url);
+    this.openedWith.set(this.socket, token);
     this.attach(this.socket, closedUnopened);
   }
 
@@ -251,6 +269,7 @@ export class SocketManager {
     let opened = socket.readyState === SOCKET_OPEN;
     socket.onopen = () => {
       opened = true;
+      this.handOverIfStale(socket);
       console.log("WebSocket connected");
       this.setConnectionStatus("connected");
       this.updateStatus("WebSocket Connected", toCss(palette.safe));
@@ -465,9 +484,9 @@ export class SocketManager {
    * failure like any other.
    */
   private openRunHandoff(addr: string, sessionId: string, renewed: boolean) {
-    const next = this.createSocket(
-      `${addr}?token=${this.currentToken()}&session_id=${sessionId}`,
-    );
+    const token = this.currentToken();
+    const next = this.createSocket(`${addr}?token=${token}&session_id=${sessionId}`);
+    this.openedWith.set(next, token);
     this.pending = next;
 
     // The host upgrades before it decides and refuses by closing with 4002, so
@@ -525,9 +544,9 @@ export class SocketManager {
   private openHubHandoff(addr: string, enter: EnterHubPayload, renewed: boolean) {
     // flagged redirected: the leader's pod seats a traveller where they land rather than send
     // them back to the old pod that may still name itself as holding them. FS-MCYWK C19.
-    const next = this.createSocket(
-      `${addr}?token=${this.currentToken()}&name=${this.name}&redirected=1`,
-    );
+    const token = this.currentToken();
+    const next = this.createSocket(`${addr}?token=${token}&name=${this.name}&redirected=1`);
+    this.openedWith.set(next, token);
     this.redirected.add(next);
     this.pending = next;
     next.onopen = () => next.send(this.encode("enter_hub", enter));
@@ -618,9 +637,16 @@ export class SocketManager {
   /** Renews the session; a refused renewal is the auth error, anything else goes on to `next`. */
   private renewThen(next: () => void) {
     if (!this.renewSession) return this.authFailed();
+    const generation = this.generation;
     void this.renewSession().then(
-      (outcome) => (outcome === "refused" ? this.authFailed() : next()),
-      () => next(),
+      (outcome) => {
+        if (generation !== this.generation) return; // disconnected meanwhile (L-b)
+        if (outcome === "refused") this.authFailed();
+        else next();
+      },
+      () => {
+        if (generation === this.generation) next();
+      },
     );
   }
 
@@ -658,6 +684,8 @@ export class SocketManager {
     this.serverAddr = addr;
     this.attach(next);
     this.setConnectionStatus("connected");
+    // renewed while the handoff was pending: the host holds the URL's token (L-a)
+    this.handOverIfStale(next);
   }
 
   private handoffFailed(sessionId: string, code: number) {
