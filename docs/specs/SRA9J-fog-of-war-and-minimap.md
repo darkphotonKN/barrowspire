@@ -170,7 +170,7 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - [ ] Other members' positions uncover regions for this client (party-shared); dead and escaped members uncover nothing.
 - [ ] Unexplored regions draw as `palette.inkDeep` with nothing in them shown; explored regions draw dim with no monster or drop pile; visible regions draw in full.
 - [ ] A wall between a visible and an unexplored region draws in full.
-- [x] With one region visible on the fixture floor, every other region's cell middle is fogged, behind a drawn wall's slab, or where a member's head could be (`fog.test.ts`, every region in turn; on the fixture as of c95306be, 0 left clear, against 144 before review round 1).
+- [x] With one region visible on the fixture floor, every other region's cell middle is fogged, behind a drawn wall's slab, or where a member's head could be (`fog.test.ts`, every region in turn; on the fixture refreshed from the levelgen golden in round 1, 0 left clear, against 190 before review round 1).
 - [ ] A monster is shown in a visible region, or within 400 px of a living member in an explored or unexplored region, and hidden otherwise, markers included (unit tests over the rule; a scene test over the markers).
 - [ ] A hidden monster gets no strike cursor, no click and no target frame.
 - [ ] Lights in non-visible regions are off.

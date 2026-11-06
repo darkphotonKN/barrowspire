@@ -1,9 +1,9 @@
 ---
 id: I-SRA9J-3
-status: open
+status: done
 implements: FS-SRA9J
-blocked_by: [I-SRA9J-1]
-labels: [blocked]
+blocked_by: []
+labels: [ready-for-agent]
 title: "FS-SRA9J slice 3: the top-right iso minimap with explored regions, party dots and found interactables, toggled with M (game-client)"
 ---
 Implements FS-SRA9J §E (Requirements 19–25)
@@ -21,11 +21,26 @@ A minimap HUD widget on fogged floors: the floor's iso projection fitted to 216 
 
 ## Acceptance Criteria
 
-- [ ] Shown on a fogged floor by default; M hides and shows it; M does nothing while typing in chat
-- [ ] Placement test at 1080 and 1280: under the floor indicator, right-aligned, within 216 × 108, no overlap with the fullscreen button, escaped count, floor indicator, a 600 px top-centre notice or the target frame's box
-- [ ] Content test: explored/visible regions, living member dots (self distinct), switch/door/stairs only once their region is explored; no monsters or containers
-- [ ] Rebuilt on a floor change; absent on floors 2–3 and fields
-- [ ] Typecheck and vitest pass
+- [x] Shown on a fogged floor by default; M hides and shows it; M does nothing while typing in chat
+- [x] Placement test at 1080 and 1280: under the floor indicator, right-aligned, within 216 × 108, no overlap with the fullscreen button, escaped count, floor indicator, a 600 px top-centre notice or the target frame's box
+- [x] Content test: explored/visible regions, living member dots (self distinct), switch/door/stairs only once their region is explored; no monsters or containers
+- [x] Rebuilt on a floor change; absent on floors 2–3 and fields
+- [x] Typecheck and vitest pass
+
+## Evidence (2026-11-06, review fix round 1, branch floor1/fix-client)
+
+- Default and M: scene "the minimap (FS-SRA9J §E, I-SRA9J-3)": shown by default, M hides and
+  shows it (not in the menu, chat or on repeat), bound as an event, kept across a floor change.
+- Placement: `minimap.test.ts` "minimapRect (§E.20, §E.21)" and the scene's placement case;
+  `targetFrame.test.ts` "the frame's layout at 1080 and 1280" (clear of the minimap box, the
+  column, the fullscreen button and a 600 px notice).
+- Content: `minimap.test.ts` "minimapContent (§E.22)", "Minimap (§E.19–25)"; scene "should show
+  explored and visible regions and the party's living dots, nothing for monsters or containers",
+  "should mark the switch, escape door and stairs once a member has uncovered their regions".
+- Floor change: "should rebuild it on a floor change, the new floor unexplored, and take the old
+  one down"; none on floors 2–3 (it is built with the fog, only on a dungeon floor).
+- Headless spot check: the minimap shows at render scale 1, 1.5 and 2 with the player's dot.
+- Typecheck and vitest pass.
 
 ## Blocked By
 

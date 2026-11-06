@@ -39,6 +39,18 @@ request window that refused every other client retry. R3, R14, R17, R18 and R33 
 code does, each settled point marked **derived here**. No requirement's intent changed; the
 16 KB per-tick AC waits on Nick and is not touched here.
 
+**Amended 2026-11-06 (review fix round 1, client).** The client review found floor 1's dressing
+planned from a snapshot interest had already cut, so far chests were missing from its keep-out and
+members strewed differently; a map arriving after the first snapshot leaving the containers' light
+pools outside the chunk cap and the fog; a reconnect mid-climb building floor 2 through the store's
+floor-1 dungeon; half the ground's render textures over void; the ground painted three times for
+one; and the store taking any session's map. R40, R41, R43, R44 and R47 now say what the code
+does, each settled point marked **derived here**. The 16 KB per-tick AC is settled too: Nick,
+"這是網頁遊戲 符合標準就行了" (it is a web game, meeting the standard is enough), so it is measured on
+the real-population bench, where it holds, and compression is a follow-up (Verification). The
+client fixture is refreshed from the levelgen golden (rooms placed largest first). No
+requirement's intent changed.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c. Paths under `game-server/game-service/` unless they
@@ -371,22 +383,34 @@ the contract between the two halves.
 
 40. **Floor map intake.** The client accepts `floor_map` and keeps the latest one per session
     outside the scene (the game-session store), so a map that arrives before the run scene's
-    `create` is not lost. A map for a lower floor than one already held is ignored. (A9)
+    `create` is not lost. A map for a lower floor than one already held is ignored, and so is a
+    map for another session than the world entered. (A9; the session check **derived here,
+    review round 1**)
 41. **Waiting for the map.** A run snapshot whose `floor` has no map yet is applied for its
     dynamic entities, but the floor is not built until its map arrives. While a run snapshot's
     floor has had no map for 1 s, the client sends `request_floor_map`, then again every second.
     A snapshot for a floor lower than the held map's is dropped (a late frame from before the
     climb). On a floor change the transition's veil (FS-F6F88 §32) stays up until the new floor's
-    map is built. **(derived here, from §F.33)**
+    map is built. **(derived here, from §F.33)** A fixed light queued from a snapshot that came
+    before its floor's map (a container's pool) waits until the floor is built from the map, so
+    it joins the floor's chunks, light cap and fog like every other. **(derived here, review round
+    1)**
 42. **Map size from the map.** The scene's map size comes from `width` and `height`; nothing in
     the run scene hard-codes 1440×960: camera bounds, ground, perimeter, dressing, blackout and
     the light-map read it. (A12)
 43. **Walls from the map.** In a run, walls come only from the floor map, built once per floor;
-    the per-floor rebuild (FS-F6F88 §33) runs when a new floor's map is built. (A9)
+    the per-floor rebuild (FS-F6F88 §33) runs when a new floor's map is built. (A9) A dungeon held for another floor (the run scene sized by
+    an older map the store still held, as on a reconnect mid-climb) is dropped when a map that is
+    not it comes, so a floor of buildings is never built through it. **(derived here, review round
+    1)**
 44. **Chunked ground.** The ground is drawn in render-texture chunks of at most 2048 px a side,
     because a larger drawing context is clamped to the GPU's limit (Facts). On a dungeon floor
     ground is painted only under walkable and shell cells; void is the canvas's darkest ink
-    (`palette.inkDeep`). (A12)
+    (`palette.inkDeep`). (A12) A chunk no walkable or shell cell falls in has no render
+    texture (floor 1's fixture: 71 of 128 chunks, 64.8 MiB of RGBA against 116.8); the ground is
+    painted once as the floor is built, and leaving a floor does not repaint it; without the
+    ground's art the placeholder stone lies under ground cells only. **(derived here, review round
+    1)**
 45. **Drawn near the camera only.** On a dungeon floor, wall pieces, run dressing and wall light
     sources are grouped by ground chunk, and only the chunks that intersect the camera's view
     grown by one chunk are visible; the rest are hidden (`setVisible(false)`, which the renderer
@@ -403,7 +427,12 @@ the contract between the two halves.
 47. **A dungeon floor has no buildings.** No building exterior, roof or stone cap, no silhouette,
     no indoor blackout and no client perimeter wall: the shell walls are the floor's edge. Run
     dressing stands inside rooms only, never in a corridor or within one cell of a doorway, at
-    FS-8RBQY §C's density per room area. Wall light sources stand on back walls of rooms at
+    FS-8RBQY §C's density per room area, planned from the floor map and the fixtures every
+    snapshot carries (stairs, switch, escape door), never the containers interest cuts, so every
+    member strews the same; a piece a container turns out to stand by (FS-8RBQY §C.5's keep-out)
+    gives way, flame and all, when that container is first seen, for the rest of the floor.
+    **(derived here, review round 1: the server stands a container anywhere in its room, so no
+    map-only plan can keep clear of it)** Wall light sources stand on back walls of rooms at
     today's spacing. The floor band (floor 1: lower) and the tower sheets are FS-8RBQY's; no new
     art. (A12, Out: new art)
 48. **Entities come and go.** With interest, a monster, drop pile or container can leave a
@@ -522,7 +551,7 @@ only what an `other_players` entry carries.
 - [ ] On floor 1, a recipient's snapshot holds exactly the monsters, drop piles and containers within 1600 px of its interest centres, and always every player, door, switch, escape door and stairs; a spectator's centres are the living members.
 - [ ] Floors 2–3 snapshots are not cut.
 - [ ] A race test (`-race`) shows a recipient's cut lists are not touched by the next tick's pool reset.
-- [ ] The bench records bytes per recipient per tick on floor 1 and floor 2, and the floor-1 `floor_map` size; floor 1's per-tick size is at most 16 KB and its map at most 128 KB.
+- [x] The bench records bytes per recipient per tick on floor 1 and floor 2, and the floor-1 `floor_map` size; floor 1's per-tick size is at most 16 KiB on the real-population bench (`BenchmarkFloor1Snapshot_BytesPerRecipient`, floor 1's real population over 50 floors), and its map at most 128 KB. **(charter default (owner decision): Nick, "這是網頁遊戲 符合標準就行了"; the synthetic uniform-70 fixture, 18.0 KB mid-floor, is informational only)** Measured 2026-11-06 (I-KE075-4): start room mean 10.6 KB, max 14.9 KB; most crowded room mean 13.8 KB, max 16.1 KB (16,100 B); no floor over 16 KiB. Map: 200 builds, mean 18.2 KB, largest 22.9 KB.
 
 **Other players (§I)**
 
@@ -534,15 +563,15 @@ only what an `other_players` entry carries.
 
 **Client (§H)**
 
-- [ ] A `floor_map` arriving before the scene's `create`, after it, or after the floor's first snapshot all end with the floor built once.
-- [ ] With the map withheld, the client sends `request_floor_map` after 1 s and every second after, and builds the floor when it arrives; a late old-floor snapshot after a climb is dropped.
-- [ ] No 1440 or 960 remains as a map size in the run scene; camera bounds, ground, dressing and the light-map follow the map's size.
-- [ ] Floor 1's ground is drawn in chunks no larger than 2048 px; void is `palette.inkDeep`; no perimeter wall, roof, stone cap or blackout on floor 1.
-- [ ] On floor 1 only chunks within one chunk of the camera's view have visible wall pieces, dressing and wall lights (counted in a test that pans the camera).
-- [ ] The wall-height rule picks front for walls with walkable cells north or west and back otherwise, front winning, in unit tests over corridor and room fixtures.
-- [ ] A monster leaving and re-entering interest, alive or dead, replays no death clip or flash; a container re-entering open shows open with no open presentation.
-- [ ] **Floors 2–3 are pixel-identical to today**: headless-browser screenshots of a floor-2 and a floor-3 fixture state match the pre-change captures (same seed and positions), and their run-scene snapshot tests (`scenes/__snapshots__`) are unchanged.
-- [ ] Typecheck, the full vitest suite, `go test ./...` and `golangci-lint run` in game-service pass.
+- [x] A `floor_map` arriving before the scene's `create`, after it, or after the floor's first snapshot all end with the floor built once.
+- [x] With the map withheld, the client sends `request_floor_map` after 1 s and every second after, and builds the floor when it arrives; a late old-floor snapshot after a climb is dropped.
+- [x] No 1440 or 960 remains as a map size in the run scene; camera bounds, ground, dressing and the light-map follow the map's size.
+- [x] Floor 1's ground is drawn in chunks no larger than 2048 px; void is `palette.inkDeep`; no perimeter wall, roof, stone cap or blackout on floor 1.
+- [x] On floor 1 only chunks within one chunk of the camera's view have visible wall pieces, dressing and wall lights (counted in a test that pans the camera).
+- [x] The wall-height rule picks front for walls with walkable cells north or west and back otherwise, front winning, in unit tests over corridor and room fixtures.
+- [x] A monster leaving and re-entering interest, alive or dead, replays no death clip or flash; a container re-entering open shows open with no open presentation.
+- [x] **Floors 2–3 are pixel-identical to today**: headless-browser screenshots of a floor-2 and a floor-3 fixture state match the pre-change captures (same seed and positions), and their run-scene snapshot tests (`scenes/__snapshots__`) are unchanged.
+- [ ] Typecheck, the full vitest suite, `go test ./...` and `golangci-lint run` in game-service pass. (2026-11-06, review round 1: typecheck, vitest (5,858), `go test ./...` and `go vet ./...` pass; the module-wide `golangci-lint run` fails on 7 errcheck findings in untouched `cmd/server/main.go` and `auth/middleware.go`, as at 48ece46c, so this box stays open.)
 - [ ] Nick's browser check (I-KE075-9) passes.
 
 ## Edge States
@@ -571,7 +600,14 @@ only what an `other_players` entry carries.
 
 Each slice records its measured figures (tick time, bytes per tick, map size) in its PR or issue.
 Floors 2–3 identity is checked by headless-browser screenshots against captures taken before the
-first client slice, kept as test fixtures.
+first client slice, kept as test fixtures. The client's dungeon fixture
+(`render/world/dungeon.fixture.json`) is the levelgen golden's floor map (size, cell size,
+regions, walls; never roles), written by `node tools/fixtures/dungeon-fixture.mjs`;
+`dungeon.test.ts` fails when the golden changes until it is run again.
+
+**Follow-up (review M6, owner decision):** enable WebSocket permessage-deflate on the game
+connection later, then re-measure bytes per recipient per tick on the real-population bench and
+on the wire.
 
 ## Out of Scope
 
