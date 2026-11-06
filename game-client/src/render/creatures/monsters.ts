@@ -200,6 +200,16 @@ export function nameplate(
   return `${monster.name} · Lv ${monster.level}`;
 }
 
+/** How full a monster's HP bar is: its health over its maximum, clamped to 0–1 (FS-77AB6 req 37). */
+export function healthFraction(
+  monster: Pick<MonsterState, "current_health" | "max_health">,
+): number {
+  return Math.max(
+    0,
+    Math.min(1, monster.current_health / Math.max(1, monster.max_health)),
+  );
+}
+
 /** An elite's plate in two parts: the prefix, lettered in the hostile accent, and the rest. */
 export interface ElitePlate {
   prefix: string;
@@ -642,10 +652,7 @@ export class MonsterRoster {
     bar.fillRect(left - 1, barTop - 1, BAR_W + 2, BAR_H + 2);
     bar.lineStyle(1, MARKER_BAR.rim, 0.9);
     bar.strokeRect(left - 1, barTop - 1, BAR_W + 2, BAR_H + 2);
-    const ratio = Math.max(
-      0,
-      Math.min(1, state.current_health / Math.max(1, state.max_health)),
-    );
+    const ratio = healthFraction(state);
     bar.fillStyle(MARKER_BAR.hp, 1);
     bar.fillRect(left, barTop, Math.round(BAR_W * ratio), BAR_H);
   }

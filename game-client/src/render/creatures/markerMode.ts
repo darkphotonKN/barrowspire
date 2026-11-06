@@ -12,7 +12,9 @@ export type MarkerMode = "overhead" | "frame";
 export type MarkerWorld = "hub" | "run" | "field";
 
 /** Each world's floors that differ from `overhead`. */
-export type MarkerModes = Readonly<Partial<Record<MarkerWorld, Readonly<Record<number, MarkerMode>>>>>;
+export type MarkerModes = Readonly<
+  Partial<Record<MarkerWorld, Readonly<Record<number, MarkerMode>>>>
+>;
 
 /** The table: run floor 1 alone uses the frame (owner, 2026-11-06: floor 1 only). */
 export const MARKER_MODES: MarkerModes = { run: { 1: "frame" } };

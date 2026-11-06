@@ -14,7 +14,12 @@
  */
 
 import { MARKER_BAR } from "@/render/markers";
-import { elitePlate, nameplate, seatPlate } from "@/render/creatures/monsters";
+import {
+  elitePlate,
+  healthFraction,
+  nameplate,
+  seatPlate,
+} from "@/render/creatures/monsters";
 import type { MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { Rect } from "./partyPanelLayout";
@@ -39,7 +44,10 @@ const BAR_INSET_BOTTOM = 8;
 const BAR_H = 8;
 
 /** Where the frame stands: its top at y 10, centred on `centreX` (§E.14). */
-export function targetFrameRect(centreX: number, size: { width: number; height: number } = TARGET_FRAME): Rect {
+export function targetFrameRect(
+  centreX: number,
+  size: { width: number; height: number } = TARGET_FRAME,
+): Rect {
   return {
     x: centreX - size.width / 2,
     y: TARGET_FRAME_TOP,
@@ -49,7 +57,11 @@ export function targetFrameRect(centreX: number, size: { width: number; height: 
 }
 
 /** One frame of the fade (§C.8): toward 1 over 120 ms while showing, toward 0 over 200 ms. */
-export function fadeStep(alpha: number, deltaMs: number, showing: boolean): number {
+export function fadeStep(
+  alpha: number,
+  deltaMs: number,
+  showing: boolean,
+): number {
   return showing
     ? Math.min(1, alpha + deltaMs / TARGET_FADE_IN_MS)
     : Math.max(0, alpha - deltaMs / TARGET_FADE_OUT_MS);
@@ -104,7 +116,16 @@ const lettering = (ink: number): FrameTextStyle => ({
 
 /** What a drawn frame shows: redrawn only when one of these changes. */
 const drawnKey = (m: MonsterState, centreX: number) =>
-  [m.entity_id, m.name, m.level, m.elite, m.archetype, m.current_health, m.max_health, centreX].join("|");
+  [
+    m.entity_id,
+    m.name,
+    m.level,
+    m.elite,
+    m.archetype,
+    m.current_health,
+    m.max_health,
+    centreX,
+  ].join("|");
 
 export class TargetFrame {
   private readonly panel: FrameGraphics;
@@ -113,6 +134,8 @@ export class TargetFrame {
   private alpha = 0;
   /** The monster last drawn: kept while the frame fades out. */
   private shown?: MonsterState;
+  /** Whether the monster drawn is an elite with a prefix to letter apart. */
+  private prefixed = false;
   private drawn?: string;
 
   /** `centreX` reads the logical view's centre now (`viewport.centerX`). */
@@ -168,10 +191,9 @@ export class TargetFrame {
 
   private apply(): void {
     const on = this.alpha > 0 && this.shown !== undefined;
-    const plate = this.shown && elitePlate(this.shown);
     for (const part of this.parts()) {
       part.setAlpha(this.alpha);
-      part.setVisible(on && (part !== this.prefix || Boolean(plate)));
+      part.setVisible(on && (part !== this.prefix || this.prefixed));
     }
   }
 
@@ -200,17 +222,23 @@ export class TargetFrame {
     g.fillRect(bar.x, bar.y, bar.width, bar.height);
     g.lineStyle(1, MARKER_BAR.rim, 0.9);
     g.strokeRect(bar.x, bar.y, bar.width, bar.height);
-    const ratio = Math.max(0, Math.min(1, monster.current_health / Math.max(1, monster.max_health)));
+    const ratio = healthFraction(monster);
     if (ratio > 0) {
       g.fillStyle(MARKER_BAR.hp, 1);
       g.fillRect(bar.x, bar.y, bar.width * ratio, bar.height);
     }
 
     const plate = elitePlate(monster);
+    this.prefixed = plate !== null;
     const y = r.y + NAME_TOP;
     this.name.setText(plate?.rest ?? nameplate(monster));
     this.prefix.setText(plate?.prefix ?? "");
-    const seat = seatPlate(centreX, this.name.width, plate ? this.prefix.width : 0, PREFIX_GAP);
+    const seat = seatPlate(
+      centreX,
+      this.name.width,
+      plate ? this.prefix.width : 0,
+      PREFIX_GAP,
+    );
     this.name.setPosition(seat.rest, y);
     this.prefix.setPosition(seat.prefix, y);
   }
