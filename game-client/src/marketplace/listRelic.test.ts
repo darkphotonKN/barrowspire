@@ -91,7 +91,14 @@ describe("pickerCards", () => {
   // FS-3R77D R10–R12: only stash relics that can be listed right now get a card.
   const cards = pickerCards(
     [
-      { id: "sword", name: "Longsword", status: "AVAILABLE", location: "stash", attack_power: 12, critical_rate: 0.05 },
+      {
+        id: "sword",
+        name: "Longsword",
+        status: "AVAILABLE",
+        location: "stash",
+        attack_power: 12,
+        critical_rate: 0.05,
+      },
       { id: "axe", name: "Axe", status: "AVAILABLE", location: "bag" },
       { id: "helm", name: "Iron Helm", status: "LISTED", location: "stash", defense_rating: 4 },
       { id: "ring", name: "Ring", status: "IN_ESCROW", location: "stash" },

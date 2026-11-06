@@ -1,6 +1,7 @@
 /**
- * What the List-a-relic picker reads (FS-8EGFA req 25, FS-HBXZN R14): the member's relics with
- * their status, and which of them are worn, from the loadout read beside them. The instances API
+ * What the List-a-relic picker reads (FS-8EGFA req 25, FS-HBXZN R14, FS-3R77D R10): the member's
+ * relics with their status and location, and which of them are worn, from the loadout read beside
+ * them. The instances API
  * carries no worn flag; the loadout is where "worn" lives. Pure, so the hook only wires it to state.
  */
 
@@ -41,7 +42,8 @@ export interface PickerRelics {
 
 /**
  * Both reads, side by side. A failed relics read fails the load, as before. A failed loadout read
- * marks nothing worn and the picker stays usable (FS-HBXZN R16): the server refuses a worn relic.
+ * marks nothing worn and the picker stays usable (FS-HBXZN R16, FS-3R77D R13): the server refuses
+ * a worn relic.
  */
 export async function loadPickerRelics(api: PickerRelicsApi): Promise<PickerRelics> {
   const [instances, loadout] = await Promise.all([
