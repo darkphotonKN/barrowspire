@@ -26,5 +26,6 @@ func Dial(addr string) (*grpc.ClientConn, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
+		grpc.WithIdleTimeout(0), // never go idle: a quiet spell would cost the next RPC a DNS lookup and reconnect
 	)
 }
