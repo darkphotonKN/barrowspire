@@ -62,7 +62,8 @@ type dungeonPopulation struct {
 * creates them. Halls and treasure rooms come first, so their packs find room
 * before the rolled monsters crowd the floor; the total is then held to its
 * bounds, and only then is anything created. area.placed ends holding exactly
-* the monsters created, so the demon after keeps clear of them.
+* the monsters created, so the demon after keeps clear of them. A chest in a
+* room of guards then waits on them (FS-KE075 §J).
 **/
 func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, level, depth int) {
 	p := &dungeonPopulation{session: s.ID, floor: d, area: area, rng: s.spawnRand, level: level, depth: depth}
@@ -90,10 +91,16 @@ func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, level, depth
 	p.holdTotal(ordinary)
 
 	area.placed = area.placed[:0]
+	// each room's guards, by entity id, for the chests that wait on them (§J)
+	guards := map[int][]uuid.UUID{}
 	for _, spawn := range p.spawns {
-		CreateMonsterEntity(s.EntityManager, spawn.monster)
+		monster := CreateMonsterEntity(s.EntityManager, spawn.monster)
 		area.placed = append(area.placed, point{spawn.monster.X, spawn.monster.Y})
+		if spawn.role.guardsRoom() {
+			guards[spawn.room] = append(guards[spawn.room], monster.ID)
+		}
 	}
+	s.guardChests(d, guards)
 	slog.Debug("Dungeon floor populated", "sessionID", s.ID, "floor", depth, "monsters", len(p.spawns))
 }
 

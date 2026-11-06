@@ -429,6 +429,18 @@ func (d *dungeonFloor) regionAt(x, y float64) int {
 	return d.region[cy*d.layout.Cols+cx]
 }
 
+// roomAt is the room whose region holds (x, y), -1 in a corridor, on rock or
+// off the grid.
+func (d *dungeonFloor) roomAt(x, y float64) int {
+	region := d.regionAt(x, y)
+	for i, room := range d.layout.Rooms {
+		if room.Region == region {
+			return i
+		}
+	}
+	return -1
+}
+
 // startSpot is where one body stands in the start room: on its walkable cells,
 // inset from its walls by a body's radius, with nothing else checked. The
 // seat's fallback for an arrival with no kept slot (spawnPoint).

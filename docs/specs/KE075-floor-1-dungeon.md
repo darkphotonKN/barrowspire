@@ -1,6 +1,6 @@
 # FS-KE075: Floor 1 as a room-and-corridor dungeon
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Delve layout" → "Room-and-corridor dungeon on floor 1", "Floor map sent once per floor", "Per-player interest in run snapshots"; "### Enemies" → "Monsters path around walls"; `game-client/SPECIFICATION.md` "### Escape run" → "Floor layout from the floor map"; "### Presentation" → "Room-and-corridor floor look"; `game-server/game-service/SPECIFICATION.md` "### Transport" → "Other players sent without their bag or worn gear" (§I) → this FS · Related ADRs: [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map on the wire, interest), [ADR-0064](../adr/0064-other-players-state-never-carries-their-bag-or-worn-gear.md) (other players' bag and worn gear, §I), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) (layout conventions), [ADR-0062](../adr/0062-monsters-path-on-the-floor-cell-grid-with-a-star.md) (navigation), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art only), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) · Supersedes: [FS-F6F88](F6F88-multi-floor-delves.md) §Requirements 5 **for floor 1 only** (FS-F6F88 is shipped and stays as written; its §5 still governs floors 2–3) · Amends the scope of: [FS-77AB6](77AB6-monsters-and-combat.md) §Out of Scope "Pathfinding" (brought in here, floor 1 only) · Look: [FS-8RBQY](8RBQY-tower-interior-run-look.md) governs the tower look; this FS adds only the dungeon-floor rules (§H) · Known defects nearby: [FS-QG1HR](QG1HR-simulation-and-lifecycle-defects.md) D2 race B, D4 · Followed by: [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (fog, minimap), [FS-48CTQ](48CTQ-monster-target-frame.md) (target frame) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Dungeon floors and the floor map"; [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Floor map**, **Region**, **Void**, **Room**
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Delve layout" → "Room-and-corridor dungeon on floor 1", "Floor map sent once per floor", "Per-player interest in run snapshots"; "### Enemies" → "Monsters path around walls"; `game-client/SPECIFICATION.md` "### Escape run" → "Floor layout from the floor map"; "### Presentation" → "Room-and-corridor floor look"; `game-server/game-service/SPECIFICATION.md` "### Transport" → "Other players sent without their bag or worn gear" (§I); `game-server/game-service/SPECIFICATION.md` "### Delve layout" → "Guarded chests on floor 1" (§J); `game-client/SPECIFICATION.md` "### Escape run" → "Told when a guarded chest will not open" (§J) → this FS · Related ADRs: [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map on the wire, interest), [ADR-0064](../adr/0064-other-players-state-never-carries-their-bag-or-worn-gear.md) (other players' bag and worn gear, §I), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) (layout conventions), [ADR-0062](../adr/0062-monsters-path-on-the-floor-cell-grid-with-a-star.md) (navigation), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art only), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) · Supersedes: [FS-F6F88](F6F88-multi-floor-delves.md) §Requirements 5 **for floor 1 only** (FS-F6F88 is shipped and stays as written; its §5 still governs floors 2–3) · Amends the scope of: [FS-77AB6](77AB6-monsters-and-combat.md) §Out of Scope "Pathfinding" (brought in here, floor 1 only) · Look: [FS-8RBQY](8RBQY-tower-interior-run-look.md) governs the tower look; this FS adds only the dungeon-floor rules (§H) · Known defects nearby: [FS-QG1HR](QG1HR-simulation-and-lifecycle-defects.md) D2 race B, D4 · Followed by: [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (fog, minimap), [FS-48CTQ](48CTQ-monster-target-frame.md) (target frame) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Dungeon floors and the floor map"; [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Floor map**, **Region**, **Void**, **Room**
 
 ## Summary
 
@@ -50,6 +50,15 @@ does, each settled point marked **derived here**. The 16 KB per-tick AC is settl
 the real-population bench, where it holds, and compression is a follow-up (Verification). The
 client fixture is refreshed from the levelgen golden (rooms placed largest first). No
 requirement's intent changed.
+
+**Amended 2026-11-06 (§J, guarded chests).** Playtesting floor 1, Nick asked whether a hall's
+chest could open only once its monsters were killed ("大廳的寶箱有辦法打完怪才能開啟嗎"), then set
+the presentation: an open just says it cannot open, and the monsters around it make the reason
+plain ("就開的時候顯示無法開啟 周圍有怪物都會知道要先清除怪物吧"). A chest in a treasure room or a
+hall now stays shut while any monster its room spawned as guards stands; the server refuses the
+open and the client says "It will not open." No lock is drawn and nothing new is sent. The
+defaults below are marked **owner, playtest 2026-11-06**; where this section settles what they
+left open, it says **derived here**. Recorded without adversarial review.
 
 ## Facts this spec rests on
 
@@ -474,6 +483,44 @@ only what an `other_players` entry carries.
     (`HubOccupancyCap`, 40 players, each with a bag and worn gear) and reports the other players'
     share; the slice records before and after for floor 1 (cut), floor 2 and the hub.
 
+### §J. Guarded chests on floor 1 (amendment 2026-11-06)
+
+This section applies on dungeon floors only (floor 1 today). It gates a chest's open and nothing
+else: the chest's roll, its placement (R15) and the population (R18–R20) are unchanged.
+
+57. **Which chests are guarded.** On a dungeon floor, each **chest** standing in a treasure room
+    or in a hall that holds a hall pack is **guarded**. A sack is never guarded, nor is a
+    container in any other room. Floors 2–3, and a floor 1 built of buildings after a failed
+    generation (R17), have no guarded chest. **(owner, playtest 2026-11-06: chests in rooms that
+    spawn with guards; floor 1 only)** **(derived here: a sack that a guarded hall draws, at the
+    sack share, is not guarded, since the owner named chests)**
+58. **A chest's guards.** A guarded chest's guards are the monsters its room was populated with
+    as guards, fixed at the floor build by entity: a treasure room's elites, or a hall's troll and
+    ghouls. They are never the demon, even standing in that room, never a corridor's monsters, and
+    never a rolled single or a top-up. The top-up draws only from ordinary rooms, so it never
+    places a monster in a hall or a treasure room (R18), and a hall's guards are exactly its pack.
+    A member that found no spot is not a guard. A room with no guard placed has no guarded chest.
+    **(owner, playtest 2026-11-06)**
+59. **It opens once every guard is dead.** A guard **stands** while it is in the world with
+    health above 0, wherever it has chased to. A guard that left the room still counts until it
+    dies. Who killed it does not matter, any member's kill counts. The open asks this when a
+    delver reaches for the chest, on the tick (client actions are applied by the tick,
+    I-77AB6-11). No event, flag or count tracks the guards. **(owner, playtest 2026-11-06; derived
+    here: the lazy check on the tick, so a kill and an open are never out of step and a reconnect
+    has nothing to restore)**
+60. **Refused by the server.** Reaching for a guarded chest while a guard stands is refused by the
+    server before anything opens. The chest stays shut and nothing is rolled. It is not held, so
+    the next reach is answered afresh. Range is checked first, so a chest out of reach is refused
+    for the distance. The delver is sent an `interact` refusal with reason `container_guarded`. The
+    client closes the coffer the E key opened and shows the refused notice **"It will not open."**,
+    in the client's words, naming no reason. The server logs the refusal at debug, as play, not a
+    fault. **(owner, playtest 2026-11-06: "就開的時候顯示無法開啟"; derived here: the copy, in the
+    guideline's terse voice)**
+61. **Nothing is drawn or sent.** A guarded chest looks like any chest. No lock is drawn, no flag
+    is sent and no effect plays when the last guard falls. The refusal is the whole signal.
+    **(owner, playtest 2026-11-06: no lock icon, no visual change; derived here: no wire flag, since
+    the refusal alone suffices)**
+
 ## User Stories
 
 1. As a delver, I want floor 1 to be a dungeon of rooms and corridors, so that the first floor feels like the Spire's depths rather than a yard.
@@ -508,6 +555,12 @@ only what an `other_players` entry carries.
 30. As a delver in a party, I want my teammates' health, level and class resource as before, so that the party frames do not change.
 31. As a developer, I want the client's type for another player to lack bag and worn gear, so that a new read of them fails the typecheck instead of shipping as `undefined`.
 32. As a developer adding a loot-a-teammate feature later, I want the rule written down, so that I fetch the body's items when it is looted rather than stream every bag.
+33. As a delver, I want a treasure room's or a hall's chest to stay shut until its guards are dead, so that the loot is earned by the fight and not snatched past it.
+34. As a delver, I want a guard that chased me out of the room still to count, so that luring guards away is not a way around them.
+35. As a delver in a party, I want a teammate's kill to count, so that whoever lands the blow, the chest opens for all of us.
+36. As a delver, I want a short "It will not open." when I try too early, so that I know the chest refused me without the screen spelling out what the monsters already show.
+37. As a delver, I want the chest to open on my very next try once the last guard falls, so that I never wait on a hidden timer.
+38. As a delver on floors 2 and 3, I want chests to open as they always have, so that only floor 1's guarded rooms change.
 
 ## Acceptance Criteria
 
@@ -561,6 +614,15 @@ only what an `other_players` entry carries.
 - [ ] The client's `other_players` entry type has no `inventory` or `equipment`; a type test that reads either fails the typecheck.
 - [ ] The bench records bytes per recipient per tick before and after for floor 1 (cut), floor 2 and the hub at its cap, in the slice's issue.
 
+**Guarded chests (§J)**
+
+- [ ] Across floor-1 builds, every chest in a treasure room or a hall with guards placed waits on exactly the non-demon monsters standing in that room at the build; sacks, other rooms' containers and floors 2–3 wait on nobody.
+- [ ] A guarded chest is refused (`container_guarded`) while a guard stands beside it, after it chased far out of the room, or while one of two guards still lives; it stays shut and rolls nothing.
+- [ ] It opens and rolls as any chest once every guard lies dead or its corpse is gone; a chest that waits on nobody opens with a monster beside it.
+- [ ] After a refusal, the next reach once the last guard falls opens it at once; out of reach, it is refused for the distance.
+- [ ] The client closes the coffer and shows "It will not open." on that refusal, and on no other reply.
+- [ ] `go test -race` on the game package passes with the guarded open in place.
+
 **Client (§H)**
 
 - [x] A `floor_map` arriving before the scene's `create`, after it, or after the floor's first snapshot all end with the floor built once.
@@ -594,6 +656,14 @@ only what an `other_players` entry carries.
 - **Canvas renderer fallback:** chunked ground and visibility toggles work the same; no mask is involved.
 - **A teammate dies holding the run's best find (§I):** nobody else sees what they carried; their items go home or are lost by the existing settlement rules. Looting them is not a feature; if it becomes one, it fetches on demand (R55).
 - **Spectating a teammate (§I):** the spectator sees the teammate's body, health and resource as before, never their bag; the spectate view draws no bag today.
+- **A guard leashes away (§J):** it still stands, so the chest stays shut until it is killed wherever it went; walking home, it comes back to the room still counted (R59).
+- **A guard dies while a delver reaches (§J):** the kill and the reach are both applied on the tick, in order. A reach applied before the killing blow is refused, the next one after it opens. There is no window where both hold (R59).
+- **A reconnect or a handoff mid-floor (§J):** nothing to restore. The guards live in the world, and the open asks them when the reconnected delver next reaches (R59).
+- **Two members reach at once (§J):** each reach is refused or opens on its own. The first to open after the last kill opens it for everyone, as any chest (R60).
+- **A guard is dead but its corpse still lies (§J):** a guard at 0 health does not stand, and the chest opens (R59).
+- **A treasure guard or pack member found no spot (§J):** it is not a guard. A room whose guards all failed has no guarded chest (R58).
+- **The demon stands in a guarded room (§J):** it is never a guard, so the chest opens once the room's own guards are dead, the demon alive or not (R58).
+- **A hall draws a sack (§J):** the sack opens freely; only chests are guarded (R57).
 - **A player's own state when they have none in play (§I):** a dead delver left behind or an escaped one still gets their own `inventory` and `equipment` in `current_player` (R52).
 
 ## Verification
@@ -611,7 +681,7 @@ on the wire.
 
 ## Out of Scope
 
-Run gold; new monster types; locked rooms and keys; traps and ambushes; line of sight; floors 2–3
+Run gold; new monster types; locked rooms and keys (§J guards a chest by its room's monsters, with no key or lock); a lock look, an unlock effect or a wire flag for a guarded chest; guarded sacks; traps and ambushes; line of sight; floors 2–3
 as dungeons; anti-cheat and server-side fog; fog of war and the minimap (FS-SRA9J); the monster
 target frame (FS-48CTQ); DB, migrations, other services and the HTTP contract; new art; walls in
 the hub and field worlds' snapshots; interest filtering on floors 2–3 or outside runs (§I trims other players' bag and worn gear everywhere, but cuts nothing by distance outside a dungeon floor); an on-demand fetch of another player's items (none is built; R55 only sets the rule); a worn look on other players' sprites; a spatial

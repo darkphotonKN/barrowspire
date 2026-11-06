@@ -119,6 +119,7 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Room-and-corridor dungeon on floor 1 → FS-KE075
 - [ ] Floor map sent once per floor → FS-KE075
 - [ ] Per-player interest in run snapshots → FS-KE075
+- [ ] Guarded chests on floor 1 → FS-KE075
 
 ### Hub world
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { climbed, floorCard, floorLabel, interactNotice } from "./floor";
+import {
+  CONTAINER_GUARDED,
+  climbed,
+  floorCard,
+  floorLabel,
+  interactNotice,
+  refusesContainer,
+} from "./floor";
 
 describe("floorLabel (FS-F6F88 req 29)", () => {
   it("should read 'Floor N of M' from the broadcast", () => {
@@ -70,6 +77,25 @@ describe("interactNotice (FS-F6F88 req 22, 31)", () => {
   it("should say nothing for the empty frame that follows a reply", () => {
     expect(interactNotice({ success: false, message: "" })).toBeNull();
     expect(interactNotice({ success: true, message: "" })).toBeNull();
+  });
+});
+
+describe("a guarded chest's refusal (FS-KE075 §J R60)", () => {
+  const guarded = { success: false, message: "its guards still stand", reason: CONTAINER_GUARDED };
+
+  it("should say it will not open, in the client's words, never the server's or the code", () => {
+    expect(interactNotice(guarded)).toEqual({ text: "It will not open.", tone: "refused" });
+  });
+
+  it("should give no reason why: the monsters around it say so", () => {
+    expect(interactNotice(guarded)?.text).not.toMatch(/guard|monster|lock|kill/i);
+  });
+
+  it("should close the chest only on that refusal", () => {
+    expect(refusesContainer(guarded)).toBe(true);
+    expect(refusesContainer({ success: false, message: "too far away to interact" })).toBe(false);
+    expect(refusesContainer({ success: true, message: "", reason: CONTAINER_GUARDED })).toBe(false);
+    expect(refusesContainer({ success: false, message: "", reason: "party_not_gathered" })).toBe(false);
   });
 });
 
