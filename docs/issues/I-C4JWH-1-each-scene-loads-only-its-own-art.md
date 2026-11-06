@@ -1,6 +1,6 @@
 ---
 id: I-C4JWH-1
-status: open
+status: done
 implements: FS-C4JWH
 blocked_by: []
 labels: []
@@ -39,16 +39,16 @@ world scene that downloads shows its blank canvas while it does, as today.
 
 ## Acceptance Criteria
 
-- [ ] The table has exactly FS-C4JWH §A R4's rows; a group it does not name is resident; every group it names exists in the real manifest.
-- [ ] PreloadScene queues the manifest and the resident pages only (17 pages: the 4 class groups and the 13 small ones).
-- [ ] Each scene queues its own groups' pages and any resident page not yet a texture, and nothing else; a scene whose set is loaded queues nothing.
-- [ ] FieldScene queues wildlife for gentle_meadows and for an unknown field, fodder for forlorn_forest, its id read in `init`.
-- [ ] BarrowspireScene queues creatures and boss at entry.
-- [ ] `registerArt` warns once for an expected atlas that is not a texture, and never for an atlas outside the scene's set.
-- [ ] A sheet whose group is not loaded draws the placeholder with one warning naming the sheet; nothing throws.
-- [ ] The coverage test (FS-C4JWH §E R21) passes against the real manifest, `folkLook`'s sheets and `MONSTER_LOOKS`, and fails when a folk sheet or a monster look sits on a group its scene does not hold, or a `MONSTER_LOOKS` archetype is met by no scene.
-- [ ] No change under `tools/bake/`, `public/art/` or `game-server/`.
-- [ ] Typecheck, the full vitest suite, lint and lint:fence pass.
+- [x] The table has exactly FS-C4JWH §A R4's rows; a group it does not name is resident; every group it names exists in the real manifest.
+- [x] PreloadScene queues the manifest and the resident pages only (17 pages: the 4 class groups and the 13 small ones).
+- [x] Each scene queues its own groups' pages and any resident page not yet a texture, and nothing else; a scene whose set is loaded queues nothing.
+- [x] FieldScene queues wildlife for gentle_meadows and for an unknown field, fodder for forlorn_forest, its id read in `init`.
+- [x] BarrowspireScene queues creatures and boss at entry.
+- [x] `registerArt` warns once for an expected atlas that is not a texture, and never for an atlas outside the scene's set.
+- [x] A sheet whose group is not loaded draws the placeholder with one warning naming the sheet; nothing throws.
+- [x] The coverage test (FS-C4JWH §E R21) passes against the real manifest, `folkLook`'s sheets and `MONSTER_LOOKS`, and fails when a folk sheet or a monster look sits on a group its scene does not hold, or a `MONSTER_LOOKS` archetype is met by no scene.
+- [x] No change under `tools/bake/`, `public/art/` or `game-server/`.
+- [x] Typecheck, the full vitest suite, lint and lint:fence pass.
 
 ## Blocked By
 
@@ -62,3 +62,15 @@ FS-C4JWH §A R1–R5, §B R6–R10, §E R19–R21; user stories 1–7, 11, 12, 1
 
 - RED: a scene entry's queued atlas keys against a fake loader and the real manifest (the hub queues `folk-0` and no other scene-scoped page; the run `creatures-0/1`, `boss-0/1`); the coverage test.
 - GREEN: the table and `preloadArt` by scene entry; then the scenes' `preload()` calls and FieldScene's `init`.
+
+## Commits
+
+66494921 (tests), 9b092cae (client), on `feat/client-scene-art-loading`.
+
+Proof: `sceneArt.test.ts` (the table, the 17 resident pages, each scene's set against the real
+manifest, the coverage test and its own failure cases), `phaser.test.ts` ("by the scene's own
+groups": queueing, warnings, the placeholder naming sheet and atlas), and each scene's "art loading"
+block (`HubScene`, `FieldScene` with its id read in `init`, `BarrowspireScene`, `MainMenuScene`,
+`CharacterCreationScene`). PreloadScene's call is `preloadArt(this, RESIDENT_ART)`, the case the
+17-page test covers. The gallery (dev only, not in the table) loads resident art too. Full suite
+5407 passed, tsc clean, lint no errors, lint:fence verified.
