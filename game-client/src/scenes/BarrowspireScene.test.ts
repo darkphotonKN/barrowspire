@@ -214,12 +214,15 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
 
   it("should not pile up teardown listeners across restarts", () => {
     const { scene, run } = startedRun();
+    // one per thing that lets go at the end (the run's teardown, its held one-shots): the same
+    // number after every restart
+    const ends = [run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")];
     for (let i = 0; i < 3; i++) {
       run.events.emit("shutdown");
       scene.init();
     }
-    expect(run.events.listenerCount("shutdown")).toBe(1);
-    expect(run.events.listenerCount("destroy")).toBe(1);
+    expect([run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")]).toEqual(ends);
+    expect(ends).toEqual([2, 2]);
   });
 });
 
@@ -346,12 +349,15 @@ describe("BarrowspireScene effect teardown (FS-KYPQ9 §B.9, §C.4)", () => {
 
   it("should not pile up teardown listeners when restarted with effects", () => {
     const { scene, run } = runWithEffects();
+    // one per thing that lets go at the end (the run's teardown, its held one-shots): the same
+    // number after every restart
+    const ends = [run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")];
     for (let i = 0; i < 3; i++) {
       run.events.emit("shutdown");
       scene.init();
     }
-    expect(run.events.listenerCount("shutdown")).toBe(1);
-    expect(run.events.listenerCount("destroy")).toBe(1);
+    expect([run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")]).toEqual(ends);
+    expect(ends).toEqual([2, 2]);
   });
 });
 
@@ -386,7 +392,7 @@ describe("BarrowspireScene Mercenary placeholder (FS-MAMHR §G.31)", () => {
       textures: { exists: () => false },
       // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
       cache: { json: { exists: () => true, get: () => undefined } },
-      load: { once: () => {}, json: () => {} },
+      load: { on: () => {}, once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
     for (const prefix of ["player_mercenary", "other_mercenary"])
@@ -2224,7 +2230,7 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
       textures: { exists: () => false },
       // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
       cache: { json: { exists: () => true, get: () => undefined } },
-      load: { once: () => {}, json: () => {} },
+      load: { on: () => {}, once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
     expect(made).toEqual(expect.arrayContaining(["chest_closed", "chest_open", "sack_closed", "sack_open"]));

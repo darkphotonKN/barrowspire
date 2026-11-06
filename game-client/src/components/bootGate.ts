@@ -5,9 +5,13 @@ export interface SceneStatusReader {
 
 // Phaser.Scenes status constants: a scene between these is starting or running
 const INIT = 1;
-const RUNNING = 5;
+export const RUNNING = 5;
 
-function inFlight(scenes: SceneStatusReader, key: string): boolean {
+/**
+ * Whether the scene is starting or running: INIT through RUNNING, LOADING included. Not
+ * `isActive`, which is RUNNING only.
+ */
+export function inFlight(scenes: SceneStatusReader, key: string): boolean {
   const status = scenes.getScene(key)?.sys.settings.status;
   return status !== undefined && status >= INIT && status <= RUNNING;
 }

@@ -25,6 +25,7 @@ import {
   validateManifest,
   type ArtManifest,
 } from "./manifest";
+import { onSceneEnd } from "@/scenes/sceneEnd";
 import { evictOutside } from "./evict";
 import { sceneAtlases, type SceneGroups } from "./sceneArt";
 
@@ -105,6 +106,13 @@ export function preloadArt(
 ): void {
   const baseUrl = options.baseUrl ?? DEFAULT_ART_URL;
   let queued = 0;
+  // what this load queues, so a stop mid-load can call its downloads off (below)
+  const files: LoaderFile[] = [];
+  const collect = (key: string, _t: string, _l: unknown, file: LoaderFile) => {
+    if (key === MANIFEST_KEY || key.startsWith("art:")) files.push(file);
+  };
+  scene.load.on("addfile", collect);
+
   const queueAtlases = (data: unknown) => {
     const result = validateManifest(data);
     if (!result.ok) return; // registerArt reports it with the scene's logger
@@ -135,15 +143,54 @@ export function preloadArt(
   const progress = (value: number) => bar?.progress(value);
   if (bar) scene.load.on("progress", progress);
 
-  // In this order, before create: the bar, then eviction (FS-C4JWH §C R11, §D R17).
-  scene.load.once("complete", () => {
+  // A stop mid-load (a world switch) resets the loader, but Phaser 4.2.1 aborts nothing: each
+  // download in flight still lands and adds itself to the texture manager (LoaderPlugin.reset clears
+  // its Sets only; File.onLoad → nextFile → onProcess → fileProcessComplete → addToCache), after
+  // the next scene has evicted, or as a second copy of a key the next scene queued. So its
+  // downloads are called off (FS-C4JWH Edge States). A game destroy frees everything instead.
+  const cancelEnd =
+    queued > 0
+      ? onSceneEnd(scene, (end) => {
+          if (end === "shutdown") files.forEach(callOff);
+        })
+      : () => undefined;
+
+  /**
+   * The eviction moment (ADR-0059 Decision 3): the scene's load has completed and its `create` has
+   * not run. In this order: the bar comes down, then the scene-scoped pages outside the scene's set
+   * go (FS-C4JWH §C R11, §D R17).
+   */
+  const loaded = () => {
+    scene.load.off("addfile", collect);
+    cancelEnd();
     if (bar) {
       scene.load.off("progress", progress);
       bar.destroy();
     }
     const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
     if (result.ok) evictOutside(scene, result.manifest, groups);
-  });
+  };
+  scene.load.once("complete", loaded);
+}
+
+/** A Phaser 4.2.1 loader `File`, as far as calling its download off goes. */
+interface LoaderFile {
+  xhrLoader?: { abort(): void } | null;
+  resetXHR?(): void;
+  onProcessComplete(): void;
+  onProcessError(): void;
+}
+
+/**
+ * Calls a queued file's download off: its XHR loses its handlers (`File.resetXHR`) and is aborted,
+ * so `onLoad` never runs, and a file already decoding (`ImageFile.onProcess`) no longer completes,
+ * so it never reaches `addToCache`. A file that has landed already is untouched by either.
+ */
+function callOff(file: LoaderFile): void {
+  file.resetXHR?.();
+  file.xhrLoader?.abort();
+  file.onProcessComplete = () => undefined;
+  file.onProcessError = () => undefined;
 }
 
 /** A loading bar shown while a scene's art downloads: the torch bar (`ui/torchBar.ts`) in the game. */

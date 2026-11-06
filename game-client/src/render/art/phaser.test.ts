@@ -162,7 +162,10 @@ function loadingScene(opts: { cachedManifest: boolean; textures: string[]; manif
       },
     },
     textures: { exists: (key: string) => opts.textures.includes(key) },
+    events: { once: () => undefined, off: () => undefined },
     load: {
+      on: () => undefined,
+      off: () => undefined,
       once: (event: string, fn: (...args: unknown[]) => void) => listeners.set(event, fn),
       json: (key: string) => {
         if (opts.cachedManifest) return; // Phaser: cache conflict, file skipped

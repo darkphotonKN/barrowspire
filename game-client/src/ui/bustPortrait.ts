@@ -44,10 +44,13 @@ function figureOf(
 
   let figure: Figure | undefined;
   const frame = scene.textures.getFrame(texture, frameName);
-  const image = frame?.source.image as CanvasImageSource | undefined;
+  // not loaded (yet): asked again next time, not remembered as blank. A scene-scoped page may be
+  // missing once, a failed download, and there the next time it is entered (FS-C4JWH)
+  if (!frame) return undefined;
+  const image = frame.source.image as CanvasImageSource | undefined;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (frame && image && ctx) {
+  if (image && ctx) {
     // the whole frame, so the bounds are in its px: a trimmed frame's cut (FS-HF0WW) is put
     // back at its offset, which is 0, 0 on a whole frame; a crop reads the same px (`setCrop`)
     const w = (canvas.width = frame.realWidth);

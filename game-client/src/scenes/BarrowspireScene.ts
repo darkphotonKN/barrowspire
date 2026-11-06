@@ -56,6 +56,14 @@ import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+
+/**
+ * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
+ * settlement. The replies to the run's own asks (interact, equip, leave, fall) cannot come before
+ * create, which sends them.
+ */
+const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -541,6 +549,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
   private leavePending = false;
+  /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
+  private held?: HeldMessages;
+  private oneShots?: OneShotHandlers;
   /** The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6). It owns the keyboard and pointer. */
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc. */
@@ -824,6 +835,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.sessionID = data?.sessionID;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
     onSceneEnd(this, (end) => this.resetRun(end));
+    // the run's creatures may download before create subscribes: a refresh into a run whose art the
+    // menu evicted (FS-C4JWH Edge States); handed over at the end of create
+    this.held = holdOneShots(this, socketManager, RUN_ONE_SHOTS);
   }
 
   /**
@@ -2951,6 +2965,13 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
+
+    this.openHeldMessages();
+  }
+
+  /** What the server sent while the run loaded, to the listeners create has made, in order. */
+  private openHeldMessages(): void {
+    this.held?.replay(this.oneShots ?? {});
   }
 
   /**
@@ -3291,10 +3312,11 @@ export class BarrowspireScene extends Phaser.Scene {
     );
 
     // Listen for exit door unlocked message
-    socketManager.on("exit_door_unlocked", (payload: { message: string }) => {
+    const doorUnlocked = (payload: { message: string }) => {
       console.log("Exit door unlocked!", payload);
       this.showNotification(payload.message, toCss(palette.safe));
-    });
+    };
+    socketManager.on("exit_door_unlocked", doorUnlocked);
 
     // Listen for interact responses (success/error messages)
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
@@ -3312,10 +3334,14 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
-    socketManager.on("end_game", () => this.endRun());
+    const endGame = () => this.endRun();
+    socketManager.on("end_game", endGame);
 
     // settlement: this player settled (FS-GV8WN R19, R20); the record shows it
-    socketManager.on("settlement", (payload: SettlementPayload) => this.showSettlement(payload));
+    const settlement = (payload: SettlementPayload) => this.showSettlement(payload);
+    socketManager.on("settlement", settlement);
+    // the server's one-shots, held while the run loaded (FS-C4JWH Edge States)
+    this.oneShots = { exit_door_unlocked: doorUnlocked, end_game: endGame, settlement };
 
     // A refused leave_run (FS-QPDKN req 14, edge state "Leaving"): the button can be pressed
     // again. The server's refusals come in two shapes; both land here.
