@@ -221,9 +221,8 @@ func TestDungeonFloor1_ContainersPerRoom(t *testing.T) {
 
 // Every body on floor 1, delvers, monsters, containers and fixtures, stands on
 // walkable cells of one region, inset from every wall by its size; monsters
-// are in rooms other than the start room, off doorways, clear of the delvers
-// and of each other. FS-KE075 §B Requirement 16; interim population (§C is
-// I-KE075-7).
+// are in rooms other than the start room or in corridors, off doorways, clear
+// of the delvers and of each other. FS-KE075 §B Requirement 16, §C R18–20.
 func TestDungeonFloor1_EveryBodyOnWalkableCells(t *testing.T) {
 	for seed := uint64(1); seed <= 40; seed++ {
 		s, ids := dungeonRun(t, seed, 4, 0)
@@ -240,10 +239,10 @@ func TestDungeonFloor1_EveryBodyOnWalkableCells(t *testing.T) {
 		require.NotEmpty(t, monsters, "seed %d", seed)
 		for i, m := range monsters {
 			at := transformOf(t, m)
-			room := roomOf(d, at.X, at.Y)
-			require.NotEqual(t, -1, room, "seed %d: monster %d stands in a room", seed, i)
-			assert.NotEqual(t, d.layout.Roles.Start, room, "seed %d: monster %d in the start room", seed, i)
-			assert.True(t, d.stands(centredArea(at.X, at.Y, r, r), d.roomRegion(room), true),
+			region := d.regionAt(at.X, at.Y)
+			require.NotZero(t, region, "seed %d: monster %d stands on walkable cells", seed, i)
+			assert.NotEqual(t, d.roomRegion(d.layout.Roles.Start), region, "seed %d: monster %d in the start room", seed, i)
+			assert.True(t, d.stands(centredArea(at.X, at.Y, r, r), region, true),
 				"seed %d: monster %d is not wholly on walkable cells off the doorways", seed, i)
 			for _, p := range delvers {
 				assert.GreaterOrEqual(t, dist(at.X, at.Y, p.x, p.y), MonsterDelverExclusion, "seed %d", seed)

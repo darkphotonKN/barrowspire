@@ -41,6 +41,46 @@ const (
 	MonsterPlacementAttempts = 200
 )
 
+// A dungeon floor's population, by room and role (FS-KE075 §C R18–20, ADR-0061
+// Decision 7). It replaces MonsterCountMin/Max on a dungeon floor only; the
+// mix, levels, elite chance and demon above stay the floor's own.
+const (
+	// the floor's monsters besides a demon, held to [min, max] by topping up
+	// ordinary rooms and trimming ordinary rooms, then corridors
+	DungeonMonstersMin = 45
+	DungeonMonstersMax = 70
+
+	// a hall is a room at least this many cells wide and tall (width × height,
+	// as the generator draws rooms: up to 10 × 8)
+	HallMinWidth  = 8
+	HallMinHeight = 6
+	// a hall that is not the start or a treasure room holds one pack: a troll
+	// and a uniform [min, max] ghouls, each within the radius of the troll, in px
+	HallPackGhoulsMin = 2
+	HallPackGhoulsMax = 4
+	HallPackRadius    = 160.0
+	// troll spots a hall pack tries before it settles for the one that fitted
+	// the most of its ghouls
+	HallPackTrollTries = 20
+
+	// every other room but the start holds a uniform [min, max] rolled monsters;
+	// a top-up never takes a room past RoomMonstersTopUpMax
+	RoomMonstersMin      = 0
+	RoomMonstersMax      = 3
+	RoomMonstersTopUpMax = 4
+
+	// the corridors hold a uniform [min, max] rolled monsters in all, at most one
+	// per corridor segment
+	CorridorMonstersMin = 4
+	CorridorMonstersMax = 8
+
+	// a treasure room is guarded by one elite, or with this chance by a pack of
+	// a uniform [min, max] elites; every guard is elite, its archetype rolled
+	TreasureGuardPackShare = 0.5
+	TreasureGuardPackMin   = 2
+	TreasureGuardPackMax   = 3
+)
+
 // Elites: promoted standard monsters, stats-only. FS-77AB6 §Requirements 23.
 const (
 	// each standard monster is an elite with probability
