@@ -423,7 +423,17 @@ the contract between the two halves.
     corridor has a low south wall and a full north wall; a north–south corridor a low east wall
     and a full west wall. A full wall piece that covers the local player on screen fades by the
     existing occluder rule. This keeps today's look ("South and east sides face the camera and are
-    cut away", `walls.ts:75-76`). (A12)
+    cut away", `walls.ts:75-76`). (A12) The pieces are cut along wall runs drawn from the wall
+    cells and the faces they show, never rect by rect from the map's walls, which the server
+    merges row by row (§A: a wall along world y comes as rects that stop a cell short of each
+    corner, a lone cell of it as a 1×1 rect, the rows of a thick one as rungs across it; cut rect
+    by rect it stood as a row of slabs across itself with gaps, Nick's "holey" walls running top
+    right to bottom left). A wall cell faces a region along x when a walkable cell lies directly
+    north or south of it, along y when one lies directly west or east; a run is a line of cells
+    facing the same way, reaching one cell on at each end into the wall it meets, so a corner's
+    cell is in both its runs and its post stands at the corner. Runs of one cell are dropped; a
+    wall cell no run reaches stands alone as a one-cell wall. (`dungeon.ts` `wallRuns`) **(derived
+    here, floor1/y-walls diagnose 2026-11-06)**
 47. **A dungeon floor has no buildings.** No building exterior, roof or stone cap, no silhouette,
     no indoor blackout and no client perimeter wall: the shell walls are the floor's edge. Run
     dressing stands inside rooms only, never in a corridor or within one cell of a doorway, at
@@ -569,6 +579,7 @@ only what an `other_players` entry carries.
 - [x] Floor 1's ground is drawn in chunks no larger than 2048 px; void is `palette.inkDeep`; no perimeter wall, roof, stone cap or blackout on floor 1.
 - [x] On floor 1 only chunks within one chunk of the camera's view have visible wall pieces, dressing and wall lights (counted in a test that pans the camera).
 - [x] The wall-height rule picks front for walls with walkable cells north or west and back otherwise, front winning, in unit tests over corridor and room fixtures.
+- [x] A wall along world y is cut as one run from corner to corner, as a wall along x is: on a hand-made room its sides along y are pieces from corner cell to corner cell with posts only at the corners, and on the levelgen golden every wall cell facing a region only west or east carries a piece along y (only north or south: along x), no piece runs along an axis on a cell with no wall beside it that way unless it stands alone, and no wall cell is bare (`dungeon.test.ts`). (2026-11-06, floor1/y-walls: rect by rect, 146 golden cells facing west or east had no piece along y and 18 lone cells were cut across; headless captures of the column-35 room and room 1 at render scale 1 and 2, fog on and off, show the sawtooth gone; floors 2–3 identical to the parent commit's capture, no pixel over 24/255.)
 - [x] A monster leaving and re-entering interest, alive or dead, replays no death clip or flash; a container re-entering open shows open with no open presentation.
 - [x] **Floors 2–3 are pixel-identical to today**: headless-browser screenshots of a floor-2 and a floor-3 fixture state match the pre-change captures (same seed and positions), and their run-scene snapshot tests (`scenes/__snapshots__`) are unchanged.
 - [ ] Typecheck, the full vitest suite, `go test ./...` and `golangci-lint run` in game-service pass. (2026-11-06, review round 1: typecheck, vitest (5,858), `go test ./...` and `go vet ./...` pass; the module-wide `golangci-lint run` fails on 7 errcheck findings in untouched `cmd/server/main.go` and `auth/middleware.go`, as at 48ece46c, so this box stays open.)
