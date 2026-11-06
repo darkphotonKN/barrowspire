@@ -792,6 +792,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private pendingLights: FixedLight<{ source: LightSource } & LightRoom>[] = [];
   /** How many fixed lights this floor has stamped so far. */
   private stampedLights = 0;
+  /**
+   * The containers whose pool this floor has queued, by entity id: on a dungeon floor a container
+   * leaves the snapshot and comes back (FS-KE075 §H.48), and keeps the one pool it has.
+   */
+  private pooledContainers = new Set<string>();
   /** FS-2325V §C.7: replaces the overlay torch pool. */
   private lightMap?: LightMap;
   /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
@@ -959,6 +964,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dressingAt = [];
     this.pendingLights = [];
     this.stampedLights = 0;
+    this.pooledContainers = new Set();
     this.lightMap = undefined;
     this.monsters = undefined;
     this.wallTop = WALL_HEIGHT;
@@ -2356,7 +2362,12 @@ export class BarrowspireScene extends Phaser.Scene {
             : this.add.sprite(0, 0, (kind === "sack" ? SACK : CHEST).placeholder.closed);
         chest = { sprite, entityId: container.entity_id, pos };
         this.chests.set(container.entity_id, chest);
-        if (kind !== "drop_pile") this.poolInteractable(pos);
+        // one coming back into the snapshot is drawn as it now is, open or shut, in the pool it
+        // already has (FS-KE075 §H.48)
+        if (kind !== "drop_pile" && !this.pooledContainers.has(container.entity_id)) {
+          this.pooledContainers.add(container.entity_id);
+          this.poolInteractable(pos);
+        }
       } else {
         chest.pos = pos;
       }
@@ -3664,6 +3675,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorLook = undefined;
     this.pendingLights = [];
     this.stampedLights = 0;
+    this.pooledContainers = new Set();
 
     this.buildings.forEach((building) => {
       building.roof.forEach((part) => part.destroy());
