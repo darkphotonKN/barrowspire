@@ -1593,7 +1593,7 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 // (FS-HBXZN R3), the first failing check answers: not the seller's →
 // ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4); not
 // in the stash → ITEM_NOT_IN_STASH, since only stash items can be listed
-// (FS-3R77D R2, R4; ADR-0060); the seller already at the listed-item cap →
+// (FS-3R77D R2, R4; ADR-0065); the seller already at the listed-item cap →
 // LISTING_LIMIT_REACHED (FS-XEDFF R5, R8). The count runs under the same
 // lock, so two reserves cannot both pass at one under the cap, and a
 // reservation not yet a listing counts (R6). The reserve stays conditional on

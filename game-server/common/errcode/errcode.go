@@ -95,7 +95,7 @@ const (
 
 	// ItemNotInStash: the item is not in the member's stash (it is in the
 	// bag), so it cannot be listed. Only stash items can be listed
-	// (ADR-0060). Decided by items-service on reserve. Added for FS-3R77D
+	// (ADR-0065). Decided by items-service on reserve. Added for FS-3R77D
 	// (Only stash items can be listed).
 	ItemNotInStash Code = "ITEM_NOT_IN_STASH"
 

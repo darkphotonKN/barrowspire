@@ -1,4 +1,4 @@
-# ADR-0060 — Only items in the stash can be listed
+# ADR-0065 — Only items in the stash can be listed
 
 Status: accepted
 Date: 2026-11-06
@@ -62,6 +62,9 @@ reserve any other item with the registered code `ITEM_NOT_IN_STASH`.**
   listings and the gear overlay (FS-GTNP8) still show what is for sale.
 - **Grandfathered bag listings exist for a while.** They are the only listed items outside the
   stash, and they disappear as they end.
+- **The client ships with or before items-service.** A client built before the rule has no
+  copy for `ITEM_NOT_IN_STASH` and reads it as an end time that has passed, while its picker
+  still offers bag items (FS-3R77D R19).
 - **Any future way to list an item** (a canvas action, a bulk listing, an admin tool) must go
   through `ReserveItem` or apply the same rule.
 - **Any future write that changes an AVAILABLE item's location** must take the account lock, or

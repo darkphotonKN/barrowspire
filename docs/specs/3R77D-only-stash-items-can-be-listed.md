@@ -1,6 +1,6 @@
 # FS-3R77D: Only stash items can be listed
 
-> Status: work-order · SPECIFICATION.md: `game-server/items-service/SPECIFICATION.md` "## Inventory" → "Only stash items reserved for listing"; `game-client/SPECIFICATION.md` "### Marketplace" → "Only listable stash relics offered for listing" → this FS · Also touches (no thin line, documentation of an unchanged mapping): `game-server/common/errcode` (one new registered code), `game-server/api-gateway` create-listing operation description + regenerated contract; `game-server/marketplace-service` gains pinning tests only, its pass-through is unchanged (FS-HBXZN R7) · Related ADRs: [ADR-0060](../adr/0060-only-items-in-the-stash-can-be-listed.md) (the rule and why), [ADR-0001](../adr/0001-contract-layer.md) (domain refusals are 400 with a code, decided by the owning service) · Supersedes in part: [FS-8EGFA](8EGFA-marketplace-web-page.md) req 25's second bullet ("LISTED and IN_ESCROW items are shown disabled, with a tag") and [FS-HBXZN](HBXZN-worn-items-not-listable.md) R13 and R15 (a worn relic shown disabled and tagged "Worn"; a status tag wins over it); neither FS is edited · Builds on: [FS-HBXZN](HBXZN-worn-items-not-listable.md) R1–R5 (the account lock, the placement read and the check order on reserve), R7 (marketplace passes items' refusals through), R16 (a failed loadout read marks nothing worn); [FS-XEDFF](XEDFF-listing-limits.md) R5–R8 (the listed-item cap, counted after the item checks); [FS-VPD8Y](VPD8Y-town-stash.md) R7 (purchases land in the stash), R8 (an unsold or withdrawn listing leaves `location` as it was), R10–R11 (a move takes the same account lock), R19 (equipping from the stash) · Vocabulary: [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md) (*item location*, *bag*, *stash*, *worn*)
+> Status: work-order · SPECIFICATION.md: `game-server/items-service/SPECIFICATION.md` "## Inventory" → "Only stash items reserved for listing"; `game-client/SPECIFICATION.md` "### Marketplace" → "Only listable stash relics offered for listing" → this FS · Also touches (no thin line, documentation of an unchanged mapping): `game-server/common/errcode` (one new registered code), `game-server/api-gateway` create-listing operation description + regenerated contract; `game-server/marketplace-service` gains pinning tests only, its pass-through is unchanged (FS-HBXZN R7) · Related ADRs: [ADR-0065](../adr/0065-only-items-in-the-stash-can-be-listed.md) (the rule and why), [ADR-0001](../adr/0001-contract-layer.md) (domain refusals are 400 with a code, decided by the owning service) · Supersedes in part: [FS-8EGFA](8EGFA-marketplace-web-page.md) req 25's second bullet ("LISTED and IN_ESCROW items are shown disabled, with a tag") and [FS-HBXZN](HBXZN-worn-items-not-listable.md) R13 and R15 (a worn relic shown disabled and tagged "Worn"; a status tag wins over it); neither FS is edited · Builds on: [FS-HBXZN](HBXZN-worn-items-not-listable.md) R1–R5 (the account lock, the placement read and the check order on reserve), R7 (marketplace passes items' refusals through), R16 (a failed loadout read marks nothing worn); [FS-XEDFF](XEDFF-listing-limits.md) R5–R8 (the listed-item cap, counted after the item checks); [FS-VPD8Y](VPD8Y-town-stash.md) R7 (purchases land in the stash), R8 (an unsold or withdrawn listing leaves `location` as it was), R10–R11 (a move takes the same account lock), R19 (equipping from the stash) · Vocabulary: [`items-service/CONTEXT.md`](../../game-server/items-service/CONTEXT.md) (*item location*, *bag*, *stash*, *worn*)
 
 > **Decision provenance.** Nick asked (2026-11-06): "可以限制放在倉庫的才能交易嗎 或是能辨識是放在倉庫"
 > (can trading be limited to stash items, or can the stash be recognised). Offered options, he
@@ -103,8 +103,22 @@ of bag items made before this FS are left as they are.
     ```sql
     SELECT COUNT(*) FROM item_instances
     WHERE location = 'BAG'
-    AND status IN ('LISTED', 'IN_ESCROW', 'PENDING_SETTLEMENT');
+    AND status IN ('LISTED', 'PENDING_SETTLEMENT');
     ```
+
+    (`IN_ESCROW` is not counted: items migration `000021` renamed it to `PENDING_SETTLEMENT` and
+    dropped it from the status check.)
+
+### F. Deploy order
+
+19. **Deploy game-client with or before items-service.** A client built before this FS has no
+    copy for `ITEM_NOT_IN_STASH`: `createListingFailureMessage` reads any other `400` as the
+    listing's terms and shows `END_TIME_PASSED` ("That end time has already passed — check your
+    clock"), the wrong reason. The old client's picker still offers bag relics, so it would hit
+    that refusal. With the client first, a member sees the stash-only picker and, in a race,
+    the right copy; the old server never sends the code, so nothing breaks in between. The order
+    of api-gateway and marketplace-service does not matter (no behaviour change). **(agent
+    default)**
 
 ## User Stories
 
@@ -196,6 +210,10 @@ of bag items made before this FS are left as they are.
 - [ ] A failed loadout read still lists (nothing marked worn).
 - [ ] Full vitest suite, `tsc` and lint pass.
 
+### Deploy
+
+- [ ] game-client is deployed with or before items-service (R19).
+
 ### Browser check (Nick)
 
 - [ ] In the web marketplace, the List-a-relic drawer shows only the AVAILABLE, unworn relics
@@ -218,8 +236,11 @@ of bag items made before this FS are left as they are.
   existing copy.
 - **Loadout read fails:** worn stash relics are offered (R13); the server refuses them
   `ITEM_WORN`.
-- **A stash listing cannot drift to the bag:** a LISTED item cannot be moved (FS-VPD8Y R10), so
-  while listed it stays in the stash.
+- **A stash listing cannot drift to the bag:** two guards. A move of a LISTED item is refused
+  (FS-VPD8Y R10; `MoveItemInstanceTx` is conditional on AVAILABLE). The other write of location,
+  `SetLocationTx` (the item an equip displaces into the bag), is not conditional on status, but
+  it only ever touches a worn item, and a worn item is never reserved (FS-HBXZN R3, R4), nor can
+  a LISTED item be equipped (FS-18Z5F R32). So while listed it stays in the stash.
 - **A grandfathered bag listing:** unchanged (R17). Sold, the item lands in the buyer's stash
   (FS-VPD8Y R7). Unsold or withdrawn, it returns to the seller's bag (FS-VPD8Y R8), and must be
   moved to the stash before it can be listed again.

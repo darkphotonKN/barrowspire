@@ -24,7 +24,7 @@ export const END_TIME_PASSED = "That end time has already passed — check your 
 export const LIST_FAILED = "That relic could not be listed — try again.";
 /** FS-HBXZN R17: items-service refused a relic the member is wearing. */
 export const WORN_CANNOT_LIST = "Take it off first — worn relics can't be listed.";
-/** FS-3R77D R15: items-service refused a relic that is not in the stash (ADR-0060). */
+/** FS-3R77D R15: items-service refused a relic that is not in the stash (ADR-0065). */
 export const NOT_IN_STASH_CANNOT_LIST =
   "Only relics in your stash can be listed. Move it into your stash in town.";
 /** FS-49Z37 req 2: the form's own check and the server's refusal read the same. */
@@ -119,7 +119,7 @@ export interface PickerInstance {
   id?: string;
   name?: string;
   status?: string;
-  /** "bag" or "stash"; only a stash relic can be listed (FS-3R77D R10, ADR-0060). */
+  /** "bag" or "stash"; only a stash relic can be listed (FS-3R77D R10, ADR-0065). */
   location?: string;
   weapon_type?: string;
   armor_slot?: string;
