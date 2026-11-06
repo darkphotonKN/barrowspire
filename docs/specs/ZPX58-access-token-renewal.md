@@ -93,7 +93,10 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
     it. Signing out, or storing a new token, clears or reschedules the timer. The client clock may
     be off: the wait is never longer than the token's lifetime (`exp − iat`, both server times),
     and never shorter than 60 seconds after the previous proactive renewal, so a fast clock that
-    makes every fresh token look expired renews at most once a minute instead of in a burst.
+    makes every fresh token look expired renews at most once a minute instead of in a burst. A
+    token that arrives within 30 seconds of a proactive renewal is the one it minted: it is
+    anchored on its arrival and renews a lifetime later, so a fast clock costs one extra renewal,
+    not one a minute.
 19. Public reads (`publicApi`) are untouched. They never renew and never sign out (ADR-0053).
 
 ### D. game-client: the game socket
@@ -110,7 +113,8 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
     out and redirects, as today; an unavailable one (an auth outage) keeps retrying. game-service
     upgrades a socket before it checks the token, so a refused socket opens, says `auth_error` and
     then closes `4001`: an open proves nothing. The run of refusals ends only at the first message
-    that is not `auth_error`, or when a handoff socket is promoted.
+    that is not `auth_error`, or when a handoff socket is promoted. A renewal that resolves after
+    `disconnect()` acts on nothing: no reconnect, no handoff, no sign-out.
 
 ### E. game-service: what it does with the token
 
@@ -136,18 +140,21 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
     as before: `world_handoff_failed` for a run, the travel-unreachable notice for a hub.
 25. Only an access token is an access credential. auth-service `ValidateJWT` (behind the
     `ValidateToken` RPC that game-service's handshake calls) and `common/auth` `NewValidator` (every
-    service's interceptor) refuse a token whose `tokenType` is not `access`, including a refresh
-    token and an untyped one. Every token auth-service mints is typed, so nothing it handed out as
+    service's interceptor) and the gateway's REST bearer middleware refuse a token whose `tokenType`
+    is not `access`, including a refresh token and an untyped one. All three accept HS256 only. Every token auth-service mints is typed, so nothing it handed out as
     access is refused.
-26. With no `JWT_SECRET`, auth-service mints nothing and accepts nothing, and a `NewValidator` built
-    with an empty secret refuses every token, instead of signing and checking with the empty key.
+26. With no `JWT_SECRET`, auth-service mints nothing and accepts nothing, a `NewValidator` built
+    with an empty secret refuses every token, and the gateway's bearer middleware refuses every
+    token, instead of signing and checking with the empty key. HMAC verification accepts the empty
+    key, so without this a gateway started with no secret would accept a self-signed admin token.
 
 ### G. game-service: renew the held token over the socket (option A)
 
 27. After every successful renewal (the proactive timer, a `401`, a `4001`), the client sends
     `{ action: "renew_token", payload: { token } }` with the new access token on the game socket,
-    if it is open. A socket that is not open gets nothing: the next one opens with the current
-    token (R20).
+    if it is open. A socket that was not open yet (still connecting, or a run or hub handoff still
+    pending) is handed the current token when it opens or is promoted, if its URL carried an older
+    one.
 28. game-service validates the token through auth-service `ValidateToken`, which accepts only an
     access token (R25). Its subject must be the member this connection authenticated as at its
     handshake, taken from the connection's record and never from the payload. Anything else is
@@ -167,12 +174,19 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
 
 ## Deploy order
 
-**auth-service, then api-gateway, then game-client.** The gateway calls a new RPC (an older
-auth-service answers Unimplemented, which the client reads as unavailable and keeps the session),
-and the client calls a new route (an older gateway answers `404`, which the client reads as
-refused and signs out, as it does today). R25 also changes what every service accepts: deploy it
-with auth-service, since only tokens auth-service minted typed `access` pass, and every token it
-mints is typed.
+**auth-service, then api-gateway, then game-service, then game-client.**
+
+- The gateway calls a new RPC. An older auth-service answers Unimplemented, which the client reads
+  as unavailable and keeps the session.
+- The client calls a new route. An older gateway answers `404`, which the client reads as refused
+  and signs out, as it does today.
+- **game-service before the client:** the client sends `renew_token` (R27) with a live access token
+  in its payload. An older game-service logs every incoming payload at Info, so a client that ships
+  first would write a live token into the pod logs on every renewal. Only a game-service with R32
+  keeps it out.
+- R25 changes what every service accepts, the gateway's bearer middleware included. Deploy it with
+  auth-service: only tokens typed `access` pass, and every access token auth-service mints is
+  typed.
 
 ## User Stories
 
@@ -211,7 +225,7 @@ mints is typed.
 - [ ] Client: the renewal call carries no `Authorization` header.
 - [ ] Client: a token is renewed 2 minutes before its `exp`, or at once when already inside the window.
 - [ ] Client: every socket URL carries the token current when the socket opens.
-- [ ] Client: a `4001` on the game socket renews and reconnects once, and a second `4001` signs out.
+- [ ] Client: a `4001` on the game socket renews and reconnects with the R21 backoff (at once, then 1 s doubling to 30 s); only a refused renewal signs out, and a renewal that resolves after `disconnect()` does nothing.
 - [ ] Client: a refused handshake (open, `auth_error`, `4001`) retries with a 1 s to 30 s backoff, never in a loop, and signs out only on a refused renewal.
 - [ ] Client: a refused run or hub handoff renews once and opens again; a redirect target keeps `redirected=1`.
 - [ ] Client: a renewal answer never revives a signed-out session or overwrites a newer one; a `404` renewal is refused; an unavailable one cools down.
