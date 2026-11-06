@@ -318,11 +318,19 @@ describe("gameStore floor map (FS-KE075 §H.40)", () => {
     expect(s.getState().floorMap).toBe(again);
   });
 
-  it("takes another run's map whatever its floor", () => {
+  it("takes another run's map whatever its floor, once that run is the world entered", () => {
     const s = store();
     s.getState().receiveFloorMap(map("run-1", 3));
+    s.getState().setWorld("run-2", "run");
     s.getState().receiveFloorMap(map("run-2", 1));
     expect(s.getState().floorMap).toEqual(map("run-2", 1));
+  });
+
+  it("ignores a map for another session than the world entered (FS-KE075 §H.40, review L12)", () => {
+    const s = store();
+    s.getState().receiveFloorMap(map("run-1", 2));
+    s.getState().receiveFloorMap(map("run-2", 3));
+    expect(s.getState().floorMap).toEqual(map("run-1", 2));
   });
 
   it("lets the map go when the player enters another world, and keeps it on a reconnect to the same run", () => {

@@ -188,6 +188,15 @@ export function dressingBreaches(
   return out;
 }
 
+/**
+ * Whether a piece stands within the keep-out a container at `at` would have set (§C.5): on a
+ * dungeon floor the dressing is planned without the containers, which interest cuts (FS-KE075
+ * §H.47), and a piece one turns out to stand by gives way when it is first seen.
+ */
+export function dressingStandsBy(piece: Pick<DressingPiece, "at" | "r">, at: Point): boolean {
+  return reach(at, squareOf({ from: piece.at, to: piece.at, r: piece.r })) <= KEEP_OUT.use;
+}
+
 /** The floor's dressing: up to the lean's count of pieces, each clear of the keep-out. */
 export function planDressing(
   lean: DressingLean,

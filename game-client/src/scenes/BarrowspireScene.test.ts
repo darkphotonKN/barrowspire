@@ -3209,9 +3209,9 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     // one of r1's walls goes: the room is redrawn from the walls left, its sconces with it. A run's
     // walls come once per floor from its map (FS-KE075 §H.43), so the redraw is driven directly
     const state = rooms(false);
-    const redrawn = run as unknown as { updateWalls(walls: unknown[]): void; stampLights(): void };
+    const redrawn = run as unknown as { updateWalls(walls: unknown[]): void; stampLights(floor?: number): void };
     redrawn.updateWalls(state.walls!.filter((w) => w.entity_id !== "a1sl"));
-    redrawn.stampLights();
+    redrawn.stampLights(state.floor);
     const run1 = run as unknown as { roomLights: { room: string; source: unknown; hung: boolean }[]; stampedLights: number };
     expect(run1.stampedLights).toBe(lights.length);
     // every r1 wall light is on the light-map once, and none of the old ones is left behind
@@ -5640,7 +5640,7 @@ const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
 const { RegionGrid } = await import("@/render/world/dungeon");
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
-const { GROUND_DEPTH, GROUND_MARGIN } = await import("@/render/world/scene");
+const { GROUND_DEPTH, GROUND_MARGIN, GroundLayer } = await import("@/render/world/scene");
 const await_fog = await import("@/render/world/fog");
 const await_exploration = await import("@/render/world/exploration");
 
@@ -5671,7 +5671,11 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     stairs: [{ entity_id: "st1", position: at(1000, 1200) }],
   });
 
-  function dungeonStage(party: Partial<Party> = {}) {
+  /**
+   * The fixture floor on stage: its map, then its first snapshot (or, `late`, the snapshot first
+   * and the map after it), `extra` laid over the snapshot.
+   */
+  function dungeonStage(party: Partial<Party> = {}, extra: Partial<GameState> = {}, { late = false } = {}) {
     const scene = sceneOnStage();
     const { stage } = scene;
     const run = scene.run as unknown as DungeonRun;
@@ -5698,8 +5702,12 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         };
       },
     });
+    if (late) {
+      (run as unknown as { subscribeFloorMap(): void }).subscribeFloorMap();
+      handle({ ...dungeonState(party), ...extra });
+    }
     useGameStore.getState().receiveFloorMap(dungeonMap as never);
-    handle(dungeonState(party));
+    if (!late) handle({ ...dungeonState(party), ...extra });
     /** Looks at a screen point: the camera's view centred on it, and what stands near it shown. */
     const look = (x: number, y: number) => {
       Object.assign(camera.main, { scrollX: x - 640, scrollY: y - 360 });
@@ -5774,6 +5782,137 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
   });
 
+  /** A chest standing at a world point, as a snapshot carries it. */
+  const chestAt = (id: string, p: { x: number; y: number }) =>
+    ({ container_id: id, entity_id: id, kind: "chest", position: at(p.x, p.y), is_open: false, items: [] }) as GameState["containers"][number];
+  interface Dressed {
+    piece: { at: { x: number; y: number } };
+    sprites: Made[];
+    gone: boolean;
+  }
+  const dressedOf = (run: unknown) => (run as { dungeon: { dressed: Dressed[] } }).dungeon.dressed;
+  const placesOf = (run: unknown) => dressedOf(run).map(({ piece: { at: p } }) => `${p.x},${p.y}`);
+
+  it("should strew a dungeon floor's dressing from its map alone, the same whatever containers a member's snapshot holds (review M1)", () => {
+    const bare = dungeonStage({}, { containers: [] });
+    const plan = placesOf(bare.run);
+    expect(plan.length).toBeGreaterThan(16);
+    // another member's first snapshot holds chests, one of them right where a piece would stand
+    const [first, second] = dressedOf(bare.run).map((d) => d.piece.at);
+    const crowded = dungeonStage({}, { containers: [chestAt("x1", first), chestAt("x2", { x: second.x + 30, y: second.y })] });
+    expect(placesOf(crowded.run)).toEqual(plan);
+  });
+
+  it("should take a dressing piece away for good once a container is seen standing by it, its flame with it (review M1)", () => {
+    const { run, handle, look, lights } = dungeonStage(everyRegion(), { containers: [] });
+    const dressed = dressedOf(run);
+    const piece = dressed[0];
+    const others = dressed.filter((d) => d !== piece && Math.hypot(d.piece.at.x - piece.piece.at.x, d.piece.at.y - piece.piece.at.y) > 200);
+    // the container comes into interest a snapshot later, as a member walks up to it
+    handle({ ...dungeonState(everyRegion()), containers: [chestAt("x1", piece.piece.at)] });
+    expect(piece.gone).toBe(true);
+    expect(piece.sprites.every((m) => !shownNow(m))).toBe(true);
+    expect(run.dressing).not.toContain(piece.sprites[0]);
+    // the camera over it brings its chunk back, but not the piece
+    const s = await_iso.worldToScreen(piece.piece.at.x, piece.piece.at.y);
+    look(s.x, s.y);
+    expect(piece.sprites.every((m) => !shownNow(m))).toBe(true);
+    expect(others.every((d) => !d.gone)).toBe(true);
+    // a brazier's flame goes off the floor's lights with it
+    const flamed = dressed.find((d) => d.piece !== piece.piece && (d as Dressed & { lights: unknown[] }).lights.length > 0) as (Dressed & { lights: unknown[] }) | undefined;
+    if (flamed) {
+      const p = flamed.piece.at;
+      const fs = await_iso.worldToScreen(p.x, p.y);
+      look(fs.x, fs.y);
+      handle({ ...dungeonState(everyRegion()), containers: [chestAt("x1", piece.piece.at), chestAt("x2", p)] });
+      const floor = (run as unknown as { dungeon: { lights: { light: { source: unknown } }[] } }).dungeon;
+      expect(floor.lights.some((l) => flamed.lights.includes(l.light.source))).toBe(false);
+      expect(lights.some((l) => flamed.lights.includes(l))).toBe(false);
+    }
+  });
+
+  it("should light a dungeon floor's interactables in its chunks, under the fog, when its map comes after its first snapshot (review M2)", () => {
+    const { run } = dungeonStage(everyRegion(), {}, { late: true });
+    const floor = (run as unknown as { dungeon: { lights: { kind: string }[] }; hallLights: unknown[]; builtFloor?: number }).dungeon;
+    expect((run as unknown as { builtFloor?: number }).builtFloor).toBe(1);
+    // the chest's and the switch's pools wait in their chunks with the floor's other fixed lights
+    expect(floor.lights.filter((l) => l.kind === "interactable").length).toBeGreaterThanOrEqual(2);
+    // none was stamped as a light of the halls before the floor stood
+    expect((run as unknown as { hallLights: unknown[] }).hallLights).toEqual([]);
+  });
+
+  it("should build floor 2 as a floor of buildings when a reconnect's scene was sized by the store's floor-1 map (review M3)", () => {
+    // the store still holds floor 1's map: the scene's create sizes the run by it
+    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as DungeonRun & { dungeon?: unknown; create?: () => void };
+    const fit = (Object.getPrototypeOf(run) as { fitFloor(map: unknown): void }).fitFloor.bind(run);
+    run.worldLook = WORLD_THEMES.tower;
+    run.art = new ArtLibrary(manifest, { warn: () => {} });
+    run.groundLayer = undefined;
+    const camera = run.cameras as { main: Record<string, unknown> };
+    Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+    fit(dungeonMap);
+    expect(run.dungeon).toBeDefined();
+    // the party is on floor 2: its map and its snapshot
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    run.handleGameStateUpdate(floorState(2));
+    expect(run.dungeon).toBeUndefined();
+    expect(run.buildings).toHaveLength(1);
+    expect(run.view).toBeDefined();
+    expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
+  });
+
+  it("should make no ground texture for a chunk no walkable or shell cell falls in (review M4)", () => {
+    const { stage, stamped } = dungeonStage();
+    const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
+    // every texture made is painted, and the floor's empty chunks have none
+    for (const rt of rts) expect((stamped.get(rt) ?? []).length).toBeGreaterThan(0);
+    expect(rts.length).toBeLessThan(chunks.rects.length);
+    // each chunk a ground cell's diamond falls in has its texture
+    const made = new Set(rts.map((rt) => `${rt.args[0]},${rt.args[1]}`));
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) {
+        if (!grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) continue;
+        const c = await_iso.worldToScreen(cx * 80 + 40, cy * 80 + 40);
+        const r = chunks.rects[chunks.indexAt(c)];
+        expect(made.has(`${r.x},${r.y}`)).toBe(true);
+      }
+  });
+
+  it("should paint a dungeon floor's ground once as it is built, and not again as the party leaves it (review L13)", () => {
+    const draws = vi.spyOn(GroundLayer.prototype as unknown as { draw(pieces: unknown): void }, "draw");
+    try {
+      const { handle } = dungeonStage();
+      expect(draws).toHaveBeenCalledTimes(1);
+      draws.mockClear();
+      useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+      handle(bare(floorState(2)));
+      // floor 2's own ground, made and painted with its houses; nothing on floor 1's on the way
+      expect(draws).toHaveBeenCalledTimes(2);
+    } finally {
+      draws.mockRestore();
+    }
+  });
+
+  it("should lay the placeholder floor without its art under ground cells only, void left to the background (review L13)", () => {
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as DungeonRun;
+    run.worldLook = WORLD_THEMES.tower;
+    run.groundLayer = undefined;
+    const camera = run.cameras as { main: Record<string, unknown> };
+    Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.call(run, dungeonState());
+    // the flagged stone: filled and jointed (the minimap's panel is filled too, never jointed)
+    const stone = scene.stage.made.filter((m) => m.kind === "graphics" && m.calls.includes("fillRect") && m.calls.includes("lineBetween"));
+    expect(stone).toHaveLength(1);
+    let cells = 0;
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) cells++;
+    expect(stone[0].calls.filter((c) => c === "fillRect")).toHaveLength(cells);
+  });
+
   /** A party member in every region, so the fog of war (FS-SRA9J) hides nothing. */
   const everyRegion = (): Partial<Party> => ({
     other_players: grid.regions.map(({ id, cells: [{ x, y }] }) => ({
@@ -5820,7 +5959,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       stairs: { placed(): Iterable<{ sprite: Made }> };
       checkBuildingStatus(): void;
     }
-    // room 1 (cells 28–35 × 35–41), the chest's: this client's player stands in it
+    // room 1 (cells 28–37 × 34–41), the chest's: this client's player stands in it
     const ROOM = 1;
     const inRoom = { current_player: { ...player("me", "Aldric", 0), position: at(2560, 3080) } } as Partial<Party>;
     const stageIn = (party: Partial<Party>) => {

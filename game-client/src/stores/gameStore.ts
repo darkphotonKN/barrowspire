@@ -56,7 +56,10 @@ interface GameState {
 
   /** Set together: the world's id is meaningless without knowing its kind (and a field's id). */
   setWorld: (id: string, worldType: WorldType, fieldId?: FieldId) => void;
-  /** Keeps a floor map: the latest, unless it is for a lower floor of the run than the one held. */
+  /**
+   * Keeps a floor map: the latest, unless it is for another session than the world entered, or for
+   * a lower floor of the run than the one held.
+   */
   receiveFloorMap: (map: FloorMap) => void;
   /** Reads the roster from the server, importing any local-only characters first (req 40). */
   loadCharacters: () => Promise<void>;
@@ -120,6 +123,9 @@ export function createGameStore({
         }),
 
       receiveFloorMap: (map) => {
+        // a map is its run's alone: one for another session than the world entered is not ours
+        const session = get().sessionId;
+        if (session !== null && map.session_id !== session) return;
         const held = get().floorMap;
         // a late map from below the floor the party climbed to (§H.40)
         if (held && held.session_id === map.session_id && map.floor < held.floor) return;

@@ -19,6 +19,15 @@ Charter run, 2026-11-06, item B. Nick approved the locked decisions B1–B5 as c
 something the charter left open, it says **derived here** and why. Recorded without adversarial
 review: no `challenge-me` pass.
 
+**Amended 2026-11-06 (review fix round 1).** The slice review found the fog leaving unexplored
+floor clear at doorways and behind walls: a drawn wall's column claimed its whole diamond raised to
+the wall's height, and a visible floor stood 100 px clear everywhere, so on the fixture 37 of 40
+single-region-visible states left unexplored cells in sight. §C.13 now says what the fog leaves
+clear, §C.18 what that costs at an open boundary, each marked **derived here**. The review's other
+points are recorded, not changed: the B3 question below (Nick: "先按照目前做法我看看感覺再決定",
+keep today's rule and decide after a look), the shared hide rule's small change on floors 2–3, and
+explored dressing dimmed only by its floor's fog (Edge States). No requirement's intent changed.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/`.
@@ -81,10 +90,17 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
     unchanged. Lighting stays presentation-only. (B5)
 13. **One fog layer** at the blackout's depth (over the world, light-map and world effects, under
     dust, vignette, markers and the HUD), drawn geometrically from region footprints projected to
-    iso and raised over their shell walls' height, the way the blackout's canvas fallback is, under
-    both renderers. It is redrawn only when a region's state changes, never per frame. **(derived
-    here: 18–28 rooms plus their corridor segments change state a few dozen times a floor; no mask
-    is needed)**
+    iso, the way the blackout's canvas fallback is, under both renderers. It is redrawn only when a
+    region's state changes, never per frame. **(derived here: 18–28 rooms plus their corridor
+    segments change state a few dozen times a floor; no mask is needed)** Since the layer is over
+    the world, it leaves clear only what stands in front of the floor behind it, cut to its shape:
+    a drawn wall's slab (the wall on its cell's centreline, edge to edge, raised to its height and
+    a few px for its top) and its corner posts where a wall strip ends; and a visible region's
+    floor only where a member's head could be, 100 px over and 12 px either side of anywhere their
+    feet can be (the server's `PlayerRadius`, 20 px, off every cell no one can walk on). Every
+    screen px still has one shade, so the explored dim never compounds. **(derived here, review
+    round 1: a wall's whole diamond raised, or a floor raised 100 px everywhere, left the floor
+    behind it in sight)**
 14. **Objects in an unexplored region are hidden, not only covered** (`setVisible(false)`), since
     markers draw above the fog and nothing hidden may be hovered or clicked. **(derived here)**
 
@@ -97,7 +113,11 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
     is the kind of thing fog should not give away)**
 17. **A hidden monster cannot be targeted**: no strike-mark cursor on hover, no click-to-attack, no
     target frame (FS-48CTQ). **(derived here)**
-18. **Fog never hides a party member.** A living member is always in a visible region by §B.3.
+18. **Fog never hides a party member.** A living member is always in a visible region by §B.3,
+    and the fog leaves their head clear wherever they can stand (§C.13). So at an open boundary
+    (a doorway or a corridor's mouth) the floor of the region behind them on screen, up to a head's
+    height over the boundary, stays in sight while it is unexplored. **(derived here, review round
+    1: covering it would cover a member standing at the boundary)**
 
 ### §E. Minimap
 
@@ -120,7 +140,10 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
     change. (B4)
 24. **Spectating**: a resolved player watching a teammate keeps the minimap, with the same
     content. **(derived here)**
-25. Colours from tokens only (ADR-0013); the panel follows `design-guideline.md` "UI Chrome".
+25. Colours from tokens only (ADR-0013); the panel follows `design-guideline.md` "UI Chrome". The
+    explored wall tint mixes from `TINT_IDENTITY` (`utils/theme.ts`), Phaser's untinted multiply,
+    and the token fence rejects a numeric `0xRRGGBB` anywhere in `src/render` outside tests.
+    **(derived here, review round 1)**
 
 ## User Stories
 
@@ -147,6 +170,7 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - [ ] Other members' positions uncover regions for this client (party-shared); dead and escaped members uncover nothing.
 - [ ] Unexplored regions draw as `palette.inkDeep` with nothing in them shown; explored regions draw dim with no monster or drop pile; visible regions draw in full.
 - [ ] A wall between a visible and an unexplored region draws in full.
+- [x] With one region visible on the fixture floor, every other region's cell middle is fogged, behind a drawn wall's slab, or where a member's head could be (`fog.test.ts`, every region in turn; on the fixture refreshed from the levelgen golden in round 1, 0 left clear, against 190 before review round 1).
 - [ ] A monster is shown in a visible region, or within 400 px of a living member in an explored or unexplored region, and hidden otherwise, markers included (unit tests over the rule; a scene test over the markers).
 - [ ] A hidden monster gets no strike cursor, no click and no target frame.
 - [ ] Lights in non-visible regions are off.
@@ -171,6 +195,23 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - **Window resized:** the minimap re-anchors; the fog layer is in world space and needs no redraw.
 - **Canvas renderer fallback:** the fog is geometric under both renderers.
 - **Floor-1 demon (1%):** follows the monster rule like any monster.
+- **A monster within 400 px in an unexplored region (owner-pending, review round 1, B3):** today
+  it is shown (§D.15), so its plate and bar draw over the fog while its body is under it, and it
+  can be hovered and struck. The options are A, show a monster only in an explored or visible
+  region; B, draw it above the fog; C, keep today's rule. Nick: "先按照目前做法我看看感覺再決定"
+  (keep C and decide after a look). C stands until he decides; I-SRA9J-4's browser check is that
+  look.
+- **Floors 2–3 under the shared hide rule:** the blackout's hide rule and the fog's are one rule
+  (`hideWhere`), so on floors 2–3 too a monster hit while the blackout hides it does not flash when
+  shown, and one that died hidden lies fallen when shown again, with no fall replayed on blackout
+  re-entry. This is a small change from today's floors 2–3, accepted as consistent with FS-48CTQ
+  §C.7 (a hidden monster is no candidate). **(derived here, review round 1)**
+- **Explored dressing standing tall:** the fog dims explored dressing with its floor, so where its
+  top rises over a drawn wall's slab or a member's head clearance it stays undimmed, and where it
+  rises over an unexplored region's floor it is darkened. Accepted for v1: tinting the piece would
+  dim its foot twice. **(derived here, review round 1)**
+- **A post's cap at a strip's end:** the fog leaves 10 px either side of a post's centre clear;
+  a wider cap would lose its edge to the fog. Accepted.
 
 ## Out of Scope
 

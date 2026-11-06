@@ -181,8 +181,8 @@ import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/w
 import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule } from "@/render/world/dungeon";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
-import { Fog } from "@/render/world/fog";
-import { planRoomDressing } from "@/render/world/runDressing";
+import { Fog, wallLayout } from "@/render/world/fog";
+import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import {
@@ -416,6 +416,16 @@ interface DungeonFloor {
   fog?: Fog;
   /** Its minimap (FS-SRA9J §E), built with the fog and gone with the floor. */
   minimap?: Minimap;
+  /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
+  dressed: DressedPiece[];
+}
+
+/** A dressing piece on a dungeon floor: its sprites and flame, and whether it has given way. */
+interface DressedPiece {
+  piece: DressingPiece;
+  sprites: Phaser.GameObjects.Sprite[];
+  lights: LightSource[];
+  gone: boolean;
 }
 
 /** Limited barrow palette for the wizard-player sprite (0x ints). */
@@ -2418,6 +2428,8 @@ export class BarrowspireScene extends Phaser.Scene {
           this.pooledContainers.add(container.entity_id);
           this.poolInteractable(pos);
         }
+        // a dungeon floor's dressing makes room for it (FS-KE075 §H.47)
+        if (kind !== "drop_pile") this.giveWay(pos);
       } else {
         chest.pos = pos;
       }
@@ -3582,7 +3594,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
     // fixed light built this broadcast goes through the floor's budget, once (§C.6)
     if (floorMap) this.buildDressing(state);
-    this.stampLights();
+    this.stampLights(state.floor);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
 
@@ -3643,7 +3655,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!map || map.floor !== state.floor || this.builtFloor === map.floor) return;
     this.standFloor(map);
     this.buildDressing(state);
-    this.stampLights();
+    this.stampLights(state.floor);
     this.explore(state);
     this.veilRelease?.();
   }
@@ -3669,7 +3681,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * chunks that what stands on it is shown and hidden by. A floor of buildings has none.
    */
   private enterDungeon(map: FloorMap): void {
-    if (!isDungeon(map) || this.dungeon?.floor === map.floor) return;
+    if (this.dungeon?.floor === map.floor && isDungeon(map)) return;
+    // another floor's dungeon (a reconnect that sized the scene by the store's older map) goes,
+    // so a floor of buildings is never built through it
+    this.dropDungeon();
+    if (!isDungeon(map)) return;
     const ground = new ChunkGrid(projectedBounds(map.width, map.height, GROUND_MARGIN), DUNGEON_CHUNK);
     const grid = new RegionGrid(map);
     this.dungeon = {
@@ -3679,7 +3695,19 @@ export class BarrowspireScene extends Phaser.Scene {
       lights: [],
       lit: new Set(),
       seen: new Exploration(grid),
+      dressed: [],
     };
+  }
+
+  /**
+   * The dungeon the scene holds goes: its chunks, and the fog and minimap with their floor; the
+   * next floor's exploration starts over (FS-SRA9J §B.6).
+   */
+  private dropDungeon(): void {
+    this.dungeon?.chunks.clear();
+    this.dungeon?.fog?.destroy();
+    this.dungeon?.minimap?.destroy();
+    this.dungeon = undefined;
   }
 
   /**
@@ -3698,10 +3726,14 @@ export class BarrowspireScene extends Phaser.Scene {
     const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
-    const fog = new Fog(this, dungeon.grid, rule, dungeon.chunks, () => ({
-      back,
-      front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK,
-    }));
+    const fog = new Fog(
+      this,
+      dungeon.grid,
+      rule,
+      dungeon.chunks,
+      () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
+      wallLayout(dungeon.grid, strips),
+    );
     dungeon.fog = fog;
     const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
       dungeon.chunks.add(fog.gate(part, at), worldToScreen(at.x, at.y));
@@ -3881,6 +3913,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private createGround(): void {
     const look = this.worldLook.ground;
     const dungeon = this.dungeon;
+    // the floor's own look and seed, once its first broadcast named them: the ground's first paint
+    // is then the floor's, and the walls' build asks for nothing new (FS-KE075 §H.44)
+    const own = this.floorLook && this.currentFloorLook();
     // in chunks of at most 2048 px, which a floor of buildings fits in one of; a dungeon floor's
     // smaller, and only under its walkable and shell cells (FS-KE075 §H.44)
     this.groundLayer = GroundLayer.available(this.art, "run", look)
@@ -3891,6 +3926,7 @@ export class BarrowspireScene extends Phaser.Scene {
           look,
           chunk: dungeon ? DUNGEON_CHUNK : CHUNK_MAX,
           where: dungeon && ((at) => dungeon.grid.hasGround(at)),
+          floor: own ? { look: own.ground, seed: own.seed } : undefined,
         })
       : undefined;
     if (!this.groundLayer) this.createMapBackground();
@@ -3923,11 +3959,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights
     // with it (§H.45)
     this.builtFloor = undefined;
-    this.dungeon?.chunks.clear();
-    // the fog goes with its floor; the next floor's exploration starts over (FS-SRA9J §B.6)
-    this.dungeon?.fog?.destroy();
-    this.dungeon?.minimap?.destroy();
-    this.dungeon = undefined;
+    this.dropDungeon();
     this.floorWalls = [];
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
@@ -3961,7 +3993,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.roofCover = [];
     this.houseFloors.forEach((floor) => floor.destroy());
     this.houseFloors = [];
-    this.groundLayer?.paint([]);
+    // the ground keeps the old floor's paint until the next floor's build paints its own (the veil
+    // is up meanwhile, FS-F6F88 §32): painting it bare here was a third paint for nothing
     this.serverBuildingsCreated = false;
 
     this.serverDoors.forEach((door) => {
@@ -4361,7 +4394,10 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.dressing) return;
     const look = this.currentFloorLook();
     const dungeon = this.dungeon;
-    const statics = dressingStatics({ ...state, walls: this.floorWalls }, this.mapWidth, this.mapHeight);
+    // a dungeon floor's from its map and what every snapshot carries, never its containers, which
+    // interest cuts: so every member strews the same (FS-KE075 §H.47)
+    const seen = dungeon ? { ...state, containers: [] } : state;
+    const statics = dressingStatics({ ...seen, walls: this.floorWalls }, this.mapWidth, this.mapHeight);
     // a dungeon floor's in its rooms only, at the same density per room area (FS-KE075 §H.47)
     const plan = !look.dressing
       ? []
@@ -4373,13 +4409,45 @@ export class BarrowspireScene extends Phaser.Scene {
     for (const piece of plan) {
       const built = addDressing(this, this.art, [piece]);
       this.dressing.push(...built.sprites);
-      // on a dungeon floor no room hides it: it is shown by its ground chunk instead (§H.45)
-      if (dungeon)
-        for (const sprite of built.sprites)
-          dungeon.chunks.add(dungeon.fog?.gate(sprite, piece.at) ?? sprite, worldToScreen(piece.at.x, piece.at.y));
-      else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
+      // on a dungeon floor no room hides it: it is shown by its ground chunk instead (§H.45),
+      // unless it has given way to a container
+      if (dungeon) {
+        const dressed: DressedPiece = { piece, sprites: built.sprites, lights: built.lights, gone: false };
+        dungeon.dressed.push(dressed);
+        for (const sprite of built.sprites) {
+          const part = {
+            setVisible: (visible: boolean) => sprite.setVisible(visible && !dressed.gone),
+            setTint: (tint: number) => sprite.setTint(tint),
+            clearTint: () => sprite.clearTint(),
+          };
+          dungeon.chunks.add(dungeon.fog?.gate(part, piece.at) ?? part, worldToScreen(piece.at.x, piece.at.y));
+        }
+      } else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
       this.occluders.add(built.tall);
       built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
+    }
+    for (const c of state.containers ?? []) if (placedKind(c) !== "drop_pile") this.giveWay(c.position);
+  }
+
+  /**
+   * A dungeon floor's dressing gives way to a container seen standing by it (FS-KE075 §H.47): its
+   * sprites hidden for the rest of the floor, its flame taken off the floor's lights. A container
+   * never moves, so every member who sees it ends with the same dressing.
+   */
+  private giveWay(at: Point): void {
+    const dungeon = this.dungeon;
+    if (!dungeon) return;
+    for (const dressed of dungeon.dressed) {
+      if (dressed.gone || !dressingStandsBy(dressed.piece, at)) continue;
+      dressed.gone = true;
+      for (const sprite of dressed.sprites) sprite.setVisible(false);
+      this.dressing = this.dressing?.filter((sprite) => !dressed.sprites.includes(sprite));
+      const flames = new Set(dressed.lights);
+      this.pendingLights = this.pendingLights.filter((l) => !flames.has(l.light.source));
+      dungeon.lights = dungeon.lights.filter((l) => !flames.has(l.light.source));
+      for (const source of flames)
+        if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
+      this.stampedLights = dungeon.lit.size;
     }
   }
 
@@ -4407,9 +4475,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * Stamps the fixed lights waiting since the last broadcast, within the floor's budget of
    * {@link FIXED_LIGHT_CAP}: slits drop first, then braziers, then sconces, and the stairs pool
    * never (FS-8RBQY §C.6). Once per floor build in practice: the light-map is never rebuilt.
+   * Not before `floor` is built from its map: a light queued from a snapshot that came first (a
+   * container's pool) waits for the floor's chunks and fog, or its buildings (FS-KE075 §H.41).
    */
-  private stampLights(): void {
-    if (this.pendingLights.length === 0) return;
+  private stampLights(floor: number | undefined): void {
+    if (this.pendingLights.length === 0 || this.builtFloor === undefined || this.builtFloor !== floor) return;
     const dungeon = this.dungeon;
     if (dungeon) {
       // a dungeon floor's every fixed light waits in its chunk; those near the camera are lit
@@ -4476,10 +4546,26 @@ export class BarrowspireScene extends Phaser.Scene {
     // neutral dark stone, flagged on the world grid: the floor without its baked art (FS-8RBQY §B.8)
     const stone = this.add.graphics();
     stone.fillStyle(palette.fallbackStone, 1);
-    stone.fillRect(0, 0, this.mapWidth, this.mapHeight);
     stone.lineStyle(1, palette.fallbackStoneJoint, 1);
-    for (let x = 0; x <= this.mapWidth; x += WORLD_PX_PER_TILE) stone.lineBetween(x, 0, x, this.mapHeight);
-    for (let y = 0; y <= this.mapHeight; y += WORLD_PX_PER_TILE) stone.lineBetween(0, y, this.mapWidth, y);
+    const grid = this.dungeon?.grid;
+    if (grid) {
+      // a dungeon floor's under its walkable and shell cells only: void stays the background's
+      // darkest ink (FS-KE075 §H.44)
+      const c = grid.cell;
+      for (let cy = 0; cy < grid.rows; cy++)
+        for (let cx = 0; cx < grid.cols; cx++) {
+          if (!grid.hasGround({ x: (cx + 0.5) * c, y: (cy + 0.5) * c })) continue;
+          stone.fillRect(cx * c, cy * c, c, c);
+          for (let t = 0; t <= c; t += WORLD_PX_PER_TILE) {
+            stone.lineBetween(cx * c + t, cy * c, cx * c + t, (cy + 1) * c);
+            stone.lineBetween(cx * c, cy * c + t, (cx + 1) * c, cy * c + t);
+          }
+        }
+    } else {
+      stone.fillRect(0, 0, this.mapWidth, this.mapHeight);
+      for (let x = 0; x <= this.mapWidth; x += WORLD_PX_PER_TILE) stone.lineBetween(x, 0, x, this.mapHeight);
+      for (let y = 0; y <= this.mapHeight; y += WORLD_PX_PER_TILE) stone.lineBetween(0, y, this.mapWidth, y);
+    }
 
     const plane = addWorldPlane(this);
     plane.root.setDepth(-1);

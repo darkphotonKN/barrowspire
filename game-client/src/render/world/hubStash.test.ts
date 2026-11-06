@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { palette } from "@/utils/canvasPalette";
+import { TINT_IDENTITY } from "@/utils/theme";
 import { CHEST } from "./chest";
 import {
   HUB_FURNISHINGS,
@@ -90,7 +91,7 @@ describe("the stash chest's spot (FS-VPD8Y R31)", () => {
 describe("the stash chest's look (FS-VPD8Y R32)", () => {
   it("should cast the run chest in a slight tint from the palette, never amber", () => {
     expect(STASH_CHEST_TINT).toBe(palette.stashChestTint);
-    expect(STASH_CHEST_TINT).not.toBe(0xffffff);
+    expect(STASH_CHEST_TINT).not.toBe(TINT_IDENTITY);
     expect(STASH_CHEST_TINT).not.toBe(palette.interactable);
   });
 

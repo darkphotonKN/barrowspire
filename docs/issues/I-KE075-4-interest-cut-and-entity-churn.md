@@ -32,7 +32,7 @@ Client: on any run floor, a monster, drop pile or container missing from a snaps
 - [x] Floors 2–3 snapshots are not cut
 - [x] A `-race` test shows cut lists untouched by the next tick's pool reset
 - [x] The bench records bytes per recipient per tick for the fixture dungeon and floor 2
-- [ ] Client: leave and re-enter, alive or dead, replays no death clip or flash; an open container re-entering shows open with no open presentation
+- [x] Client: leave and re-enter, alive or dead, replays no death clip or flash; an open container re-entering shows open with no open presentation
 - [ ] `go test ./...`, `golangci-lint run`, typecheck and vitest pass
 
 ## Verified, server half (2026-11-06, review fix round 1, branch floor1/fix-KE075-server)
@@ -51,6 +51,22 @@ Client: on any run floor, a monster, drop pile or container missing from a snaps
   on Nick.
 - Left for the client agent: the leave-and-re-enter box, and the gates box (its server half passes
   as in I-KE075-3).
+
+## Verified, client half (2026-11-06, review fix round 1, branch floor1/fix-client)
+
+- Leave and re-enter: `monsters.test.ts` "a monster that leaves the broadcast and comes back
+  (FS-KE075 §H.48)" (alive and hurt with no flash or death clip, a corpse on its last frame, no
+  double spawn); `BarrowspireScene.test.ts` "a container that leaves the snapshot and comes back
+  (FS-KE075 §H.48)".
+- A container coming into interest after the floor's dressing is planned no longer changes the
+  plan; the piece by it gives way (review M1): "should strew a dungeon floor's dressing from its
+  map alone, the same whatever containers a member's snapshot holds", "should take a dressing
+  piece away for good once a container is seen standing by it, its flame with it".
+- The 16 KB AC (review M6) is settled by Nick ("這是網頁遊戲 符合標準就行了") on the
+  real-population bench above, and ticked in FS-KE075 with its figures; permessage-deflate is a
+  follow-up there.
+- Gates: as I-KE075-3 (typecheck and vitest pass; `golangci-lint run` module-wide still fails on
+  the 7 pre-existing errcheck findings), so the box stays open.
 
 ## Blocked By
 
