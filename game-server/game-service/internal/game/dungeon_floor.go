@@ -364,7 +364,8 @@ type cellGround struct {
 }
 
 // monsterGround is every room but the start room: no monster spawns where the
-// party does (FS-KE075 §C R18).
+// party does (FS-KE075 §C R18). A floor's population places by room and role
+// (populateDungeon); this whole-floor ground serves a caller that does not.
 func (d *dungeonFloor) monsterGround() *cellGround {
 	g := &cellGround{floor: d}
 	for i, room := range d.layout.Rooms {

@@ -31,6 +31,9 @@ type populationRand interface {
 * The demon comes on top of the standard count (§Requirements 24): always on the
 * top floor, otherwise on its rare roll.
 *
+* A dungeon floor is populated by room and role instead (populateDungeon,
+* FS-KE075 §C), its demon in the farthest room.
+*
 * The hub is never populated, and neither is a run with nobody in it.
 *
 * expected is the matched party not seated yet (FS-K2HKP R18): they count
@@ -61,11 +64,14 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		// FS-K2HKP R18: the spots kept for arrivals are kept clear too
 		delvers: append(inPlayPositions(roster), s.arrivalSlotPositions()...),
 	}
-	// a dungeon floor's monsters stand on walkable cells of its rooms, never
-	// the start room's (FS-KE075 §B R16; interim until §C's per-room
-	// population, I-KE075-7)
+	// a dungeon floor's monsters are distributed by room and role, its demon
+	// in the farthest room (FS-KE075 §C R18–20)
 	if s.dungeon != nil {
-		area.ground = s.dungeon.monsterGround()
+		s.populateDungeon(s.dungeon, &area, level, floor)
+		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
+			s.placeDungeonDemon(s.dungeon, &area, demon, floor, topFloor)
+		}
+		return
 	}
 
 	for _, monster := range rollMonsters(s.spawnRand, level, floor) {
@@ -143,32 +149,45 @@ func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (Monste
 // afterwards.
 func rollMonsters(rng populationRand, partyLevel, floor int) []MonsterConfig {
 	count := MonsterCountMin + rng.IntN(MonsterCountMax-MonsterCountMin+1)
-	troll := trollShare(floor)
-	elite := eliteChance(floor)
 
 	monsters := make([]MonsterConfig, 0, count)
 	for range count {
-		archetype := components.MonsterArchetypeGhoul
-		if rng.Float64() < troll {
-			archetype = components.MonsterArchetypeTroll
-		}
-
-		spread := rng.IntN(2*MonsterLevelSpread+1) - MonsterLevelSpread
-		monster := MonsterConfig{
-			Archetype: archetype,
-			Level:     monsterLevel(partyLevel, floor, spread),
-		}
-
-		if rng.Float64() < elite {
-			prefix := ElitePrefixes[rng.IntN(len(ElitePrefixes))]
-			monster.Elite = true
-			monster.Name = prefix + " " + monsterSheets[archetype].Name
-		}
-
-		monsters = append(monsters, monster)
+		monsters = append(monsters, rollMonster(rng, partyLevel, floor))
 	}
 
 	return monsters
+}
+
+// rollMonster is one standard monster: its archetype by the floor's troll
+// share, then its level and elite roll (rollAs).
+func rollMonster(rng populationRand, partyLevel, floor int) MonsterConfig {
+	return rollAs(rng, rollArchetype(rng, floor), partyLevel, floor, eliteChance(floor))
+}
+
+// rollArchetype is a troll at the floor's troll share, otherwise a ghoul.
+func rollArchetype(rng populationRand, floor int) components.MonsterArchetype {
+	if rng.Float64() < trollShare(floor) {
+		return components.MonsterArchetypeTroll
+	}
+	return components.MonsterArchetypeGhoul
+}
+
+// rollAs is a monster of archetype at its level's spread, promoted to an elite
+// with a drawn prefix at chance elite (1 promotes always: Float64 is below 1).
+func rollAs(rng populationRand, archetype components.MonsterArchetype, partyLevel, floor int, elite float64) MonsterConfig {
+	spread := rng.IntN(2*MonsterLevelSpread+1) - MonsterLevelSpread
+	monster := MonsterConfig{
+		Archetype: archetype,
+		Level:     monsterLevel(partyLevel, floor, spread),
+	}
+
+	if rng.Float64() < elite {
+		prefix := ElitePrefixes[rng.IntN(len(ElitePrefixes))]
+		monster.Elite = true
+		monster.Name = prefix + " " + monsterSheets[archetype].Name
+	}
+
+	return monster
 }
 
 // monsterLevel is a standard monster's level: the party's, plus the floor's
@@ -314,8 +333,11 @@ type spawnArea struct {
 	keepOut       []PlaceArea
 	delvers       []point
 	placed        []point
-	// ground, on a dungeon floor, is the cells a monster is drawn from and
-	// must stand on; nil on a floor of buildings, drawn anywhere on the map
+	// ground, when set, is the cells candidate draws from and open requires:
+	// a dungeon floor's rooms but the start, for a caller placing over the
+	// whole floor (the run tick bench). nil on a floor of buildings, drawn
+	// anywhere on the map. populateDungeon leaves it nil and places by region
+	// (placeOnRegion).
 	ground *cellGround
 }
 
