@@ -1,6 +1,6 @@
 # FS-KE075: Floor 1 as a room-and-corridor dungeon
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Delve layout" → "Room-and-corridor dungeon on floor 1", "Floor map sent once per floor", "Per-player interest in run snapshots"; "### Enemies" → "Monsters path around walls"; `game-client/SPECIFICATION.md` "### Escape run" → "Floor layout from the floor map"; "### Presentation" → "Room-and-corridor floor look" → this FS · Related ADRs: [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map on the wire, interest), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) (layout conventions), [ADR-0062](../adr/0062-monsters-path-on-the-floor-cell-grid-with-a-star.md) (navigation), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art only), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) · Supersedes: [FS-F6F88](F6F88-multi-floor-delves.md) §Requirements 5 **for floor 1 only** (FS-F6F88 is shipped and stays as written; its §5 still governs floors 2–3) · Amends the scope of: [FS-77AB6](77AB6-monsters-and-combat.md) §Out of Scope "Pathfinding" (brought in here, floor 1 only) · Look: [FS-8RBQY](8RBQY-tower-interior-run-look.md) governs the tower look; this FS adds only the dungeon-floor rules (§H) · Known defects nearby: [FS-QG1HR](QG1HR-simulation-and-lifecycle-defects.md) D2 race B, D4 · Followed by: [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (fog, minimap), [FS-48CTQ](48CTQ-monster-target-frame.md) (target frame) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Dungeon floors and the floor map"; [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Floor map**, **Region**, **Void**, **Room**
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Delve layout" → "Room-and-corridor dungeon on floor 1", "Floor map sent once per floor", "Per-player interest in run snapshots"; "### Enemies" → "Monsters path around walls"; `game-client/SPECIFICATION.md` "### Escape run" → "Floor layout from the floor map"; "### Presentation" → "Room-and-corridor floor look"; `game-server/game-service/SPECIFICATION.md` "### Transport" → "Other players sent without their bag or worn gear" (§I) → this FS · Related ADRs: [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map on the wire, interest), [ADR-0064](../adr/0064-other-players-state-never-carries-their-bag-or-worn-gear.md) (other players' bag and worn gear, §I), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) (layout conventions), [ADR-0062](../adr/0062-monsters-path-on-the-floor-cell-grid-with-a-star.md) (navigation), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art only), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) · Supersedes: [FS-F6F88](F6F88-multi-floor-delves.md) §Requirements 5 **for floor 1 only** (FS-F6F88 is shipped and stays as written; its §5 still governs floors 2–3) · Amends the scope of: [FS-77AB6](77AB6-monsters-and-combat.md) §Out of Scope "Pathfinding" (brought in here, floor 1 only) · Look: [FS-8RBQY](8RBQY-tower-interior-run-look.md) governs the tower look; this FS adds only the dungeon-floor rules (§H) · Known defects nearby: [FS-QG1HR](QG1HR-simulation-and-lifecycle-defects.md) D2 race B, D4 · Followed by: [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (fog, minimap), [FS-48CTQ](48CTQ-monster-target-frame.md) (target frame) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Dungeon floors and the floor map"; [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Floor map**, **Region**, **Void**, **Room**
 
 ## Summary
 
@@ -24,6 +24,14 @@ Charter run, 2026-11-06. Nick approved the locked decisions A1–A13 as charter 
 carries the decision it comes from. Where this spec settles something the charter left open, it
 says **derived here** and gives the reason. Recorded without adversarial review: no
 `challenge-me` pass. Nick agreed that agents write the game-service half on this branch.
+
+**Amended 2026-11-06 (§I, ADR-0064).** Other players' entries in every state stop carrying their
+bag and worn gear, in every world, run, field and hub. On the bench, a party of four's bags and worn gear
+were about 12 KB of each recipient's floor-1 frame, a large share of the 16 KB target, and anyone
+could read a matched stranger's bag from the WebSocket. Nick approved the change in game-service
+directly ("那就不用看到隊友的背包了") and set the rule for any later loot of a teammate's finds:
+fetch at the moment of looting, never stream ("就算之後要改應該也是撿的當下再撈就好了").
+Recorded without adversarial review.
 
 ## Facts this spec rests on
 
@@ -68,6 +76,23 @@ start with `game-client/`.
   pushed from one goroutine per recipient (`session.go:1680-1684`), so their order relative to
   another message on the same queue is not fixed.
 - The client destroys anything missing from a snapshot (`updateWalls` and the like).
+
+**Other players' state (verified 2026-11-06 on `floor1/teammate-kit` at aa000a67, for §I)**
+
+- `OtherPlayerState` (`internal/types/messages.go`) embeds the shared per-tick `PlayerState`
+  (`internal/types/game.go:28-41`), `inventory` and `equipment` included, and
+  `FormatStateToClientState` (`internal/serializer/state_serializer.go:494-555`) builds one for
+  every other player for every recipient. Run, field and hub all broadcast through it
+  (`internal/game/session.go:1707`). One `PlayerState` is made per player per tick
+  (`state_serializer.go:179`); the pool keeps only the maps and lists that point to it.
+- The client reads bag and worn gear only from `current_player`: the equipment HUD and gear
+  overlay (`BarrowspireScene.ts:3468-3470`, `FieldScene.ts:599-603`, `HubScene.ts:1912`), the
+  potion count (`ui/potions.ts:47`, `ui/potionDrink.ts` fed `current_player`,
+  `BarrowspireScene.ts:4759`). Its other-player readers (`HubScene`/`FieldScene` `placePlayer`,
+  `BarrowspireScene` `updateOtherPlayers` and the target frame, `fieldCombat.ts:109`, `ui/party.ts`,
+  `ui/partyFramesLayout.ts`, `utils/gameStateLogger.ts`) read id, name, class, position,
+  direction, escape, health, level and resource only. `game/MockBackend.ts` builds its own
+  `inventory` for other players but is a legacy mock with its own types, not on the wire.
 
 **Collision and bounds**
 
@@ -367,6 +392,36 @@ the contract between the two halves.
     perimeter, dressing and lights, to the pixel. **(charter default, owner: floor 1 only)**
 50. Visuals follow `game-client/docs/design-guideline.md`; colours from tokens only (ADR-0013).
 
+### §I. Other players' bag and worn gear (ADR-0064, amendment 2026-11-06)
+
+This section applies in every world (run on every floor, field, hub), unlike §F–§H. It changes
+only what an `other_players` entry carries.
+
+51. **Other players carry no bag or worn gear.** Every `other_players` entry of every state, in
+    every world, has no `inventory` key and no `equipment` key. Everything else it carries today
+    stays: `id`, `entity_id`, `username`, `class`, `position`, `direction`, `escape`,
+    `current_health`, `max_health`, `level`, `experience`, `level_floor`, `next_level_at`, and, for
+    the recipient's party members, the class resource and the parry fields (FS-CH21F R1–R4).
+    (owner: "那就不用看到隊友的背包了")
+52. **The recipient's own state is unchanged.** `current_player` carries the recipient's own
+    `inventory` and `equipment` exactly as today, in every world, and so do a dead delver left
+    behind and an escaped delver seeing themselves.
+53. **No writes, no new aliasing.** The trimmed entry is built per recipient without writing the
+    broadcast's shared player state (FS-CH21F R4) and without sharing any list with the pooled
+    backend state, so a sent frame is unchanged by the next tick's pool reset under `-race`
+    (§G R38, FS-QG1HR D2 race B).
+54. **The client's type says so.** The client's type for an `other_players` entry has no
+    `inventory` and no `equipment` field, so a read of either from another player fails the
+    typecheck. **(derived here: nothing reads them today, Facts; the type keeps it that way)**
+55. **Fetched on demand, never streamed.** No later feature puts another player's bag or worn gear
+    back into the per-tick state. One that needs them (looting a dead teammate's finds, inspecting
+    a player) fetches that one player's items at the moment of the action, by its own request, and
+    the server checks the action then. (owner: "就算之後要改應該也是撿的當下再撈就好了"; ADR-0064
+    Decision 3)
+56. **Measured.** The bytes-per-recipient bench gains a hub case at the occupancy cap
+    (`HubOccupancyCap`, 40 players, each with a bag and worn gear) and reports the other players'
+    share; the slice records before and after for floor 1 (cut), floor 2 and the hub.
+
 ## User Stories
 
 1. As a delver, I want floor 1 to be a dungeon of rooms and corridors, so that the first floor feels like the Spire's depths rather than a yard.
@@ -395,6 +450,12 @@ the contract between the two halves.
 24. As a developer, I want the dungeon generator to be pure and seeded, so that a reported layout can be reproduced from its seed.
 25. As a developer, I want collision on a large floor to test only nearby walls, so that the tick stays inside its budget.
 26. As a developer, I want later floors to follow the same layout conventions, so that floors 2 and 3 can become dungeons without new rules (ADR-0061).
+27. As a delver matched with strangers, I want my bag and worn gear kept off their wire, so that nobody can read what I carry from devtools.
+28. As a delver in a full hub, I want each tick to carry only what the scene draws of the other players, so that the hub stays smooth on a slow connection.
+29. As a delver, I want my own bag and worn gear in my state as before, so that my gear screen, potion count and equipment HUD keep working.
+30. As a delver in a party, I want my teammates' health, level and class resource as before, so that the party frames do not change.
+31. As a developer, I want the client's type for another player to lack bag and worn gear, so that a new read of them fails the typecheck instead of shipping as `undefined`.
+32. As a developer adding a loot-a-teammate feature later, I want the rule written down, so that I fetch the body's items when it is looted rather than stream every bag.
 
 ## Acceptance Criteria
 
@@ -440,6 +501,14 @@ the contract between the two halves.
 - [ ] A race test (`-race`) shows a recipient's cut lists are not touched by the next tick's pool reset.
 - [ ] The bench records bytes per recipient per tick on floor 1 and floor 2, and the floor-1 `floor_map` size; floor 1's per-tick size is at most 16 KB and its map at most 128 KB.
 
+**Other players (§I)**
+
+- [ ] In a run (floor 1 cut, floor 2), a field and the hub, no `other_players` entry has an `inventory` or `equipment` key, and each still has every other key it had, party resource and parry fields included.
+- [ ] `current_player` carries its own `inventory` and `equipment` unchanged in a run, a field and the hub, and when left behind or escaped.
+- [ ] Building frames for several recipients leaves the shared player states unwritten, and a `-race` test shows a sent frame's other players untouched by the next tick's pool reset.
+- [ ] The client's `other_players` entry type has no `inventory` or `equipment`; a type test that reads either fails the typecheck.
+- [ ] The bench records bytes per recipient per tick before and after for floor 1 (cut), floor 2 and the hub at its cap, in the slice's issue.
+
 **Client (§H)**
 
 - [ ] A `floor_map` arriving before the scene's `create`, after it, or after the floor's first snapshot all end with the floor built once.
@@ -470,6 +539,9 @@ the contract between the two halves.
 - **Spectator watching a member far from the others:** the union of centres includes that member, so what they see is sent.
 - **Old client on the new server:** not supported; client and server ship together (one branch).
 - **Canvas renderer fallback:** chunked ground and visibility toggles work the same; no mask is involved.
+- **A teammate dies holding the run's best find (§I):** nobody else sees what they carried; their items go home or are lost by the existing settlement rules. Looting them is not a feature; if it becomes one, it fetches on demand (R55).
+- **Spectating a teammate (§I):** the spectator sees the teammate's body, health and resource as before, never their bag; the spectate view draws no bag today.
+- **A player's own state when they have none in play (§I):** a dead delver left behind or an escaped one still gets their own `inventory` and `equipment` in `current_player` (R52).
 
 ## Verification
 
@@ -482,6 +554,6 @@ first client slice, kept as test fixtures.
 Run gold; new monster types; locked rooms and keys; traps and ambushes; line of sight; floors 2–3
 as dungeons; anti-cheat and server-side fog; fog of war and the minimap (FS-SRA9J); the monster
 target frame (FS-48CTQ); DB, migrations, other services and the HTTP contract; new art; walls in
-the hub and field worlds' snapshots; interest filtering on floors 2–3 or outside runs; a spatial
+the hub and field worlds' snapshots; interest filtering on floors 2–3 or outside runs (§I trims other players' bag and worn gear everywhere, but cuts nothing by distance outside a dungeon floor); an on-demand fetch of another player's items (none is built; R55 only sets the rule); a worn look on other players' sprites; a spatial
 index for the hub and fields; hysteresis on the interest radius; FS-QG1HR D2 race B and D4
 themselves (this FS only avoids adding to them).

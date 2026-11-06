@@ -174,6 +174,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] World identity in the state protocol → FS-29KSH
 - [x] Route client messages from server-held session state → FS-29KSH
 - [ ] Reconnect returns to the pod still holding the player → FS-MCYWK
+- [ ] Other players sent without their bag or worn gear → FS-KE075
 
 ### Results
 
