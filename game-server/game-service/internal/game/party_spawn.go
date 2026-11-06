@@ -119,8 +119,13 @@ func (s *Session) arrivalSlotPositions() []point {
 	return slices.Clone(s.arrivalSlots)
 }
 
-// partyArea finds the w by h area the party's formation stands in.
+// partyArea finds the w by h area the party's formation stands in: the start
+// room on a dungeon floor, open ground clear of the buildings otherwise.
 func (s *Session) partyArea(w, h float64) PlaceArea {
+	if s.dungeon != nil {
+		return s.dungeonPartyArea(s.dungeon, w, h)
+	}
+
 	for range partyPlacementAttempts {
 		area := PlaceArea{X: s.spawnRand.Float64() * (s.mapWidth - w), Y: s.spawnRand.Float64() * (s.mapHeight - h), W: w, H: h}
 		if !s.IsAreaOccupied(area) {
