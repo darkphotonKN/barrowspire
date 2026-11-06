@@ -336,7 +336,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		playerDamage:       playerDamage,
 		movementSystem:     movementSystem,
 		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
-		monsterAISystem:    systems.NewMonsterAISystem(rand.Float64, nil),
+		monsterAISystem:    newMonsterAI(nil),
 		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
 		skillSystem:        systems.NewSkillSystem(),
 		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
@@ -3292,9 +3292,22 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 	s.dungeon = dungeon
 	s.mu.Unlock()
 
+	// only the tick reads the AI, and a floor build holds buildMu as a tick does
+	s.monsterAISystem = newMonsterAI(dungeon)
+
 	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
 		floor.CellSize = cellSize
 	}
+}
+
+// newMonsterAI is the monster AI for a floor: on a dungeon floor it paths over
+// the floor's cells; on any other (nil) it steers straight, as floors 2-3 and
+// the fields always have (FS-KE075 §D R26, ADR-0062).
+func newMonsterAI(dungeon *dungeonFloor) *systems.MonsterAISystem {
+	if dungeon == nil {
+		return systems.NewMonsterAISystem(rand.Float64, nil)
+	}
+	return systems.NewMonsterAISystem(rand.Float64, dungeon.navGrid())
 }
 
 /**
