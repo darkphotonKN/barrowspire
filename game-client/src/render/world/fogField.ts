@@ -19,12 +19,16 @@ import type { Point, Rect } from "@/render/iso/projection";
 
 /** The feather's lattice and reach (owner playtest 2026-11-06: no torn edges). */
 export const FEATHER = {
-  /** Screen px a side of one texel: the lattice the fog is laid on, drawn smooth between texels. */
-  texel: 4,
+  /**
+   * Screen px a side of one texel: the lattice the fog is laid on, drawn smooth between texels.
+   * Coarse on purpose: a chunk's field is a sixty-fourth of its px, so a change of state repaints
+   * in a few ms; the feather hides the lattice.
+   */
+  texel: 8,
   /** Texels of one box blur, either side; two run, so the ramp spans twice it each side. */
-  radius: 2,
+  radius: 1,
   /** Texels from a lighter edge to the full veil: the erosion (2 · radius) and the blur's reach. */
-  reach: 8,
+  reach: 4,
 } as const;
 
 /** What the fog lays over one polygon of screen: its alpha, and the alpha it feathers as. */
@@ -101,35 +105,51 @@ export function rasterize(shapes: readonly FieldShape[], win: FieldWindow): { sh
   return { sharp, equiv };
 }
 
-/** `src` with each texel the least of those within `reach` along one axis; the edges held. */
+/**
+ * `src` with each texel the least of those within `reach` along one axis, the edges held: van
+ * Herk's running minimum, a few comparisons a texel whatever the reach.
+ */
 function minAlong(src: Float32Array, cols: number, rows: number, reach: number, across: boolean): Float32Array {
   const out = new Float32Array(src.length);
   const n = across ? rows : cols;
   const lines = across ? cols : rows;
-  const at = (line: number, i: number) => (across ? i * cols + line : line * cols + i);
-  for (let line = 0; line < lines; line++)
-    for (let i = 0; i < n; i++) {
-      let least = Infinity;
-      for (let k = Math.max(0, i - reach); k <= Math.min(n - 1, i + reach); k++) least = Math.min(least, src[at(line, k)]);
-      out[at(line, i)] = least;
+  const step = across ? cols : 1;
+  const width = 2 * reach + 1;
+  // one line, padded by `reach` held texels each end, its blocks' running minima from either side
+  const len = n + 2 * reach;
+  const line = new Float32Array(len);
+  const fwd = new Float32Array(len);
+  const back = new Float32Array(len);
+  for (let l = 0; l < lines; l++) {
+    const start = across ? l : l * cols;
+    for (let i = 0; i < len; i++) {
+      const k = Math.min(n - 1, Math.max(0, i - reach));
+      line[i] = src[start + k * step];
     }
+    for (let i = 0; i < len; i++) fwd[i] = i % width === 0 ? line[i] : Math.min(fwd[i - 1], line[i]);
+    for (let i = len - 1; i >= 0; i--) back[i] = i === len - 1 || (i + 1) % width === 0 ? line[i] : Math.min(back[i + 1], line[i]);
+    // the window [i, i + width) of the padded line is the one centred on texel i
+    for (let i = 0; i < n; i++) out[start + i * step] = Math.min(back[i], fwd[i + width - 1]);
+  }
   return out;
 }
 
-/** `src` averaged over `radius` texels either side along one axis; the edges held. */
+/** `src` averaged over `radius` texels either side along one axis, the edges held: a running sum. */
 function boxAlong(src: Float32Array, cols: number, rows: number, radius: number, across: boolean): Float32Array {
   const out = new Float32Array(src.length);
   const n = across ? rows : cols;
   const lines = across ? cols : rows;
-  const at = (line: number, i: number) => (across ? i * cols + line : line * cols + i);
+  const step = across ? cols : 1;
   const width = 2 * radius + 1;
-  for (let line = 0; line < lines; line++) {
-    const get = (i: number) => src[at(line, Math.min(n - 1, Math.max(0, i)))];
+  for (let l = 0; l < lines; l++) {
+    const start = across ? l : l * cols;
+    const last = start + (n - 1) * step;
+    const at = (i: number) => src[i < 0 ? start : i >= n ? last : start + i * step];
     let sum = 0;
-    for (let k = -radius; k <= radius; k++) sum += get(k);
+    for (let k = -radius; k <= radius; k++) sum += at(k);
     for (let i = 0; i < n; i++) {
-      out[at(line, i)] = sum / width;
-      sum += get(i + radius + 1) - get(i - radius);
+      out[start + i * step] = sum / width;
+      sum += at(i + radius + 1) - at(i - radius);
     }
   }
   return out;

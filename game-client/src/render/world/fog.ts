@@ -72,6 +72,11 @@ export const FOG = {
   /** Milliseconds a region's change of state eases over, fog and wall tint alike. Tune here. */
   fade: 320,
   /**
+   * Chunks near the camera but out of its view painted a frame while the fade's counter runs: a
+   * change is painted at once only where it is seen, the rest before the camera reaches it.
+   */
+  paints: 3,
+  /**
    * Screen px a visible region's floor stands clear above its diamond: a delver's head (the
    * tallest baked crown is 93 px, plus the markers' 3 px gap), so a member by the region behind
    * them on screen is never covered by its fog (§C.18).
@@ -729,7 +734,7 @@ interface Chunk {
   near: boolean;
   /** The shapes reaching into its field, and their print: unchanged print, unchanged field. */
   shapes: FogShape[];
-  print?: string;
+  print?: number;
   /** Its field for the shapes it holds, once worked out. */
   target?: Float32Array;
   /** What its base layer shows while no fade is under way; none until it is painted. */
@@ -762,12 +767,14 @@ export class Fog {
   private fadeMark?: object;
   /** How far the fade under way has run, 0 to 1. */
   private progress = 1;
+  /** Chunks near the camera but out of its view, to paint a few a frame while the fade's counter runs. */
+  private readonly pending = new Set<Chunk>();
 
   constructor(
     private readonly stage: FogStage,
     private readonly grid: RegionGrid,
     private readonly rule: PieceRule,
-    chunks: ChunkVisibility,
+    private readonly chunks: ChunkVisibility,
     private readonly heights: () => FogHeights,
     private readonly walls: WallLayout,
   ) {
@@ -811,11 +818,39 @@ export class Fog {
     this.easing = this.gates.filter((gate) => this.look(gate, state, fade));
     this.assign(fogShapes(this.grid, this.rule, state, this.heights(), this.walls));
     let fades = this.easing.length > 0;
-    for (const chunk of this.chunkList) if (chunk.near && (chunk.target === undefined || chunk.fading)) fades = this.paint(chunk, fade) || fades;
+    for (const chunk of this.chunkList) {
+      if (!chunk.near || (chunk.target !== undefined && !chunk.fading)) continue;
+      // out of view: a fade nobody sees ends at once, a change waits its turn
+      if (!this.inView(chunk)) {
+        if (chunk.target === undefined) this.pending.add(chunk);
+        else this.settle(chunk);
+        continue;
+      }
+      fades = this.paint(chunk, fade) || fades;
+    }
     this.progress = 0;
-    if (fades) this.startFade();
+    if (fades || this.pending.size > 0) this.startFade();
     else this.progress = 1;
     return true;
+  }
+
+  /** Whether chunk `chunk` meets the camera's view; every chunk does before the view is known. */
+  private inView(chunk: Chunk): boolean {
+    const view = this.chunks.view;
+    if (!view) return true;
+    const r = chunk.rect;
+    return r.x < view.x + view.width && r.x + r.width > view.x && r.y < view.y + view.height && r.y + r.height > view.y;
+  }
+
+  /** Up to `most` of the chunks waiting their turn painted, at once, those gone far dropped. */
+  private drain(most: number): void {
+    for (const chunk of this.pending) {
+      if (most <= 0) return;
+      this.pending.delete(chunk);
+      if (!chunk.near || chunk.target !== undefined) continue;
+      this.paint(chunk, false);
+      most--;
+    }
   }
 
   /** Gone with its floor: its fade stopped, its layers destroyed, its gates let go. */
@@ -827,6 +862,7 @@ export class Fog {
         layer?.canvas.destroy();
       }
     this.chunkList.length = 0;
+    this.pending.clear();
     this.gates.length = 0;
     this.easing = [];
     this.drawn = undefined;
@@ -846,32 +882,61 @@ export class Fog {
     return gate.look(false, s ? VEIL[s] : 0, fade);
   }
 
-  /** Each chunk the shapes reaching into its field; a chunk whose shapes changed, its field to work out again. */
+  /**
+   * Each chunk the shapes reaching into its field, each shape put only in the chunks its box meets;
+   * a chunk whose shapes changed, its field to work out again.
+   */
   private assign(shapes: readonly FogShape[]): void {
     const pad = FEATHER.reach * FEATHER.texel;
-    const prints = shapes.map(print);
-    for (const chunk of this.chunkList) {
-      const { x, y, width, height } = chunk.rect;
-      const win = { x0: x - pad, x1: x + width + pad, y0: y - pad, y1: y + height + pad };
-      const mine: FogShape[] = [];
-      const marks: string[] = [];
-      shapes.forEach((shape, i) => {
-        if (!overlaps(shape.points, win)) return;
-        mine.push(shape);
-        marks.push(prints[i]);
-      });
-      const next = marks.join(";");
-      if (next === chunk.print) continue;
-      chunk.print = next;
-      chunk.shapes = mine;
-      chunk.target = undefined;
+    const grid = this.chunks.grid;
+    const first = grid.rects[0];
+    const span = (v: number, origin: number, side: number, n: number) => Math.min(n - 1, Math.max(0, Math.floor((v - origin) / side)));
+    const mine: FogShape[][] = this.chunkList.map(() => []);
+    const marks = new Uint32Array(this.chunkList.length).fill(2166136261);
+    for (const shape of shapes) {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of shape.points) {
+        x0 = Math.min(x0, p.x);
+        y0 = Math.min(y0, p.y);
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
+      }
+      const h = print(shape);
+      const c0 = span(x0 - pad, first.x, first.width, grid.cols);
+      const c1 = span(x1 + pad, first.x, first.width, grid.cols);
+      const r0 = span(y0 - pad, first.y, first.height, grid.rows);
+      const r1 = span(y1 + pad, first.y, first.height, grid.rows);
+      for (let r = r0; r <= r1; r++)
+        for (let c = c0; c <= c1; c++) {
+          const i = r * grid.cols + c;
+          mine[i].push(shape);
+          marks[i] = Math.imul(marks[i] ^ h, 16777619) >>> 0;
+        }
     }
+    this.chunkList.forEach((chunk, i) => {
+      const next = marks[i] ^ mine[i].length;
+      if (next === chunk.print) return;
+      chunk.print = next;
+      chunk.shapes = mine[i];
+      chunk.target = undefined;
+    });
   }
 
   /** Chunk `chunk` came near the camera or left it: its layers shown or hidden, painted if it changed. */
   private nearCamera(chunk: Chunk, near: boolean): void {
     chunk.near = near;
-    if (near && this.drawn !== undefined && (chunk.target === undefined || chunk.fading)) this.paint(chunk, false);
+    this.pending.delete(chunk);
+    // come near changed: painted now if in view, else in its turn a few a frame
+    if (near && this.drawn !== undefined && chunk.target === undefined) {
+      if (this.inView(chunk)) this.paint(chunk, false);
+      else {
+        this.pending.add(chunk);
+        if (!this.fadeMark) this.startFade();
+      }
+    }
     // a chunk far off finishes its fade at once
     if (!near && chunk.fading) this.settle(chunk);
     chunk.base?.image.setVisible(near);
@@ -944,6 +1009,7 @@ export class Fog {
       onUpdate: (t) => {
         if (mark !== this.fadeMark) return;
         this.progress = t.getValue() ?? 1;
+        this.drain(FOG.paints);
         for (const chunk of this.chunkList) {
           if (!chunk.fading) continue;
           chunk.up?.image.setAlpha(this.progress);
@@ -955,6 +1021,7 @@ export class Fog {
         if (mark !== this.fadeMark) return;
         this.fadeMark = undefined;
         this.progress = 1;
+        this.drain(Infinity);
         for (const chunk of this.chunkList) this.settle(chunk);
         for (const gate of this.easing) gate.ease(1);
         this.easing = [];
@@ -1018,22 +1085,15 @@ function same32(a: Float32Array, b: Float32Array): boolean {
   return true;
 }
 
-/** A shape's print: its veils and corners to a hundredth of a px. */
-function print(shape: FogShape): string {
-  return `${shape.alpha},${shape.equiv}:${shape.points.map((p) => `${Math.round(p.x * 100)},${Math.round(p.y * 100)}`).join(" ")}`;
-}
-
-/** Whether a polygon's bounding box meets a window. */
-function overlaps(points: readonly Point[], win: { x0: number; y0: number; x1: number; y1: number }): boolean {
-  let x0 = Infinity;
-  let y0 = Infinity;
-  let x1 = -Infinity;
-  let y1 = -Infinity;
-  for (const p of points) {
-    x0 = Math.min(x0, p.x);
-    y0 = Math.min(y0, p.y);
-    x1 = Math.max(x1, p.x);
-    y1 = Math.max(y1, p.y);
+/** A shape's print: a hash of its veils and its corners to a hundredth of a px. */
+function print(shape: FogShape): number {
+  let h = 2166136261;
+  const mixIn = (v: number) => (h = Math.imul(h ^ (Math.round(v * 100) | 0), 16777619) >>> 0);
+  mixIn(shape.alpha);
+  mixIn(shape.equiv);
+  for (const p of shape.points) {
+    mixIn(p.x);
+    mixIn(p.y);
   }
-  return x1 > win.x0 && x0 < win.x1 && y1 > win.y0 && y0 < win.y1;
+  return h;
 }
