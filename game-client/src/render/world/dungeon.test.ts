@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { FloorRegion, WallState } from "@/types/gameState";
 import { FIXTURE, GOLDEN, fixtureFrom, format } from "../../../tools/fixtures/dungeon-fixture.mjs";
-import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule, wallRuns, type DungeonMap } from "./dungeon";
+import { RegionGrid, dressingRooms, isDungeon, wallRule, wallRuns, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
 import { MASONRY_WALLS, planWalls, type WallAxis } from "./walls";
 
@@ -92,34 +92,6 @@ describe("wall lights on a dungeon floor (FS-KE075 §H.47)", () => {
     ["a corridor's south wall (front)", false, mid(9, 5)],
   ] as const)("%s may carry a light: %s", (_name, lit, at) => {
     expect(wallRule(grid).lit(at)).toBe(lit);
-  });
-});
-
-describe("a dungeon floor's thick walls (FS-KE075 §H.46)", () => {
-  const rect = (x: number, y: number, width: number, height: number) => ({
-    entity_id: "w",
-    position: { x, y },
-    width,
-    height,
-  });
-  const shape = (walls: ReturnType<typeof stripWalls>) =>
-    walls.map((w) => [w.entity_id, w.position.x, w.position.y, w.width, w.height]);
-
-  it("leaves a wall one cell thick as it is", () => {
-    expect(shape(stripWalls([rect(80, 160, 640, 80)], CELL))).toEqual([["w", 80, 160, 640, 80]]);
-  });
-
-  it("cuts a block thicker than a cell into one-cell strips along its run, each the same wall", () => {
-    // runs along x (wider than tall): strips one row deep
-    expect(shape(stripWalls([rect(5120, 1920, 240, 160)], CELL))).toEqual([
-      ["w", 5120, 1920, 240, 80],
-      ["w", 5120, 2000, 240, 80],
-    ]);
-    // runs along y: strips one column wide
-    expect(shape(stripWalls([rect(4400, 1600, 160, 320)], CELL))).toEqual([
-      ["w", 4400, 1600, 80, 320],
-      ["w", 4480, 1600, 80, 320],
-    ]);
   });
 });
 

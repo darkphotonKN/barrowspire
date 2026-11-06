@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FloorRegion, WallState } from "@/types/gameState";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { ChunkGrid, ChunkVisibility } from "./chunks";
-import { RegionGrid, stripWalls, wallRule } from "./dungeon";
+import { RegionGrid, wallRule, wallRuns } from "./dungeon";
 import { Exploration, type ExplorationState } from "./exploration";
 import { FOG, Fog, fogShapes, wallLayout, type FogHeights, type FogShape, type FogTweenConfig } from "./fog";
 import { FEATHER, fogField } from "./fogField";
@@ -26,7 +26,7 @@ const corridor = region("corridor");
 
 /**
  * A floor's walls as the server lays them (levelgen `mergeWalls`): the shell's cells, each row cut
- * into runs, a run the same as the one above it carried on down; then cut into one-cell strips.
+ * into runs, a run the same as the one above it carried on down; then cut into runs as the scene cuts them.
  */
 function shellWalls(grid: RegionGrid): WallState[] {
   const shell = (cx: number, cy: number) => !grid.walkable(cx, cy) && grid.hasGround(mid(cx, cy));
@@ -57,13 +57,11 @@ function shellWalls(grid: RegionGrid): WallState[] {
     width: r.w * CELL,
     height: r.h * CELL,
   }));
-  return stripWalls(walls, CELL);
+  return wallRuns(walls, grid);
 }
 
-/** The fixture floor's walls, as the scene strips them. */
-const fixtureWalls = (): WallState[] =>
-  stripWalls(
-(fixture as { walls: WallState[] }).walls, CELL);
+/** The fixture floor's walls, as the scene cuts them into runs. */
+const fixtureWalls = (): WallState[] => wallRuns((fixture as { walls: WallState[] }).walls, new RegionGrid(fixture as never));
 
 /** The fog over a floor whose walls are its shell's, as the server lays them. */
 const fogOf = (grid: RegionGrid, state: (id: number) => ExplorationState, walls = shellWalls(grid), heights: FogHeights = HEIGHTS) =>

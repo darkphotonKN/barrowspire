@@ -146,7 +146,7 @@ export interface WallLayout {
 }
 
 /**
- * A floor's wall layout from its one-cell wall strips (`stripWalls`): every piece of a strip is a
+ * A floor's wall layout from its one-cell wall runs (`wallRuns`): every piece of a run is a
  * slab on its centreline from one end of the rect to the other, so each cell a strip covers carries
  * a slab along the strip's axis; its two posts stand at its end cells' centres (`planWalls`).
  */
