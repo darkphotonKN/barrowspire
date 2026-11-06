@@ -1,6 +1,6 @@
 # FS-ZPX58: Access-token renewal
 
-> Status: work-order · SPECIFICATION.md: `game-server/auth-service` § Tokens, `game-server/api-gateway` § Integration patterns, `game-client` § Account → this FS · Related ADRs: [ADR-0066](../adr/0066-an-access-token-is-renewed-from-the-refresh-token-without-rotation-until-a-token-store-exists.md) (lifetimes and the renewal rule), [ADR-0014](../adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md) (absent claims fail closed), [ADR-0001](../adr/0001-contract-layer.md) (generated contract)
+> Status: work-order · SPECIFICATION.md: `game-server/auth-service` § Tokens, `game-server/api-gateway` § Integration patterns, `game-server/game-service` § Transport, `game-client` § Account → this FS · Related ADRs: [ADR-0067](../adr/0067-a-connection-may-renew-its-held-member-token-with-a-validated-access-token-for-its-own-member.md) (renewing the held token over the socket), [ADR-0066](../adr/0066-an-access-token-is-renewed-from-the-refresh-token-without-rotation-until-a-token-store-exists.md) (lifetimes and the renewal rule), [ADR-0014](../adr/0014-account-id-claim-is-eventually-consistent-and-fails-closed.md) (absent claims fail closed), [ADR-0001](../adr/0001-contract-layer.md) (generated contract)
 
 ## Summary
 
@@ -75,15 +75,25 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
     `401` handling of its own, so it cannot loop.
 17. The outcome of renewal decides what happens next:
     - **Renewed.** The new access token and member are stored. The stored refresh token is kept.
-    - **Refused.** This covers a `401` or `422` from the route, no stored refresh token, and an
-      answer without an access token. The client signs out and redirects to `/login`, as it does
-      today.
+    - **Refused.** This covers a `401`, `404` or `422` from the route, no stored refresh token, and
+      an answer without an access token. A `404` means the route is not there (a client deployed
+      before its gateway), which waiting cannot fix. The client signs out and redirects to
+      `/login`, as it does today.
     - **Unavailable.** This covers a network failure and any other non-2xx. The client does not
-      sign out. The original call's error is thrown, and the next `401` tries again.
+      sign out. The original call's error is thrown. Renewal then cools down: for 5 seconds,
+      doubling while it stays unavailable up to 60 seconds, every renewal answers unavailable
+      without a call, so an outage costs one renewal call per cooldown, not one per refused call. A
+      renewed or refused answer clears the cooldown.
+    - **Superseded.** If the stored session changed while the renewal was out (the stored refresh
+      token is no longer the one sent), the answer is dropped. A sign-out stays signed out, and
+      counts as refused. A newer sign-in keeps its own tokens, and the call is retried with them.
 18. While an access token is stored, the client renews it proactively 2 minutes before the `exp`
     claim in its payload. The client decodes `exp` and does not verify it. A token already inside
     that window renews at once. A token whose `exp` cannot be read gets no timer, and R13 covers
-    it. Signing out, or storing a new token, clears or reschedules the timer.
+    it. Signing out, or storing a new token, clears or reschedules the timer. The client clock may
+    be off: the wait is never longer than the token's lifetime (`exp − iat`, both server times),
+    and never shorter than 60 seconds after the previous proactive renewal, so a fast clock that
+    makes every fresh token look expired renews at most once a minute instead of in a burst.
 19. Public reads (`publicApi`) are untouched. They never renew and never sign out (ADR-0053).
 
 ### D. game-client: the game socket
@@ -92,25 +102,77 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
     the first connect, a reconnect, a run handoff and a hub handoff. Until now each URL reused the
     token from the first connect, so a run handoff more than an hour after sign-in sent an
     expired token.
-21. When the game socket closes with `4001` (auth error), the client renews the session once and
-    reconnects with the new token. If renewal does not renew (refused or unavailable: the socket
-    has nothing valid to reconnect with), or the reconnect closes with `4001` again before it
-    opens, the client signs out and redirects as it does today. A socket that opens resets the
-    one-retry allowance.
+21. When the game socket closes with `4001` (auth error), the client renews the session and
+    reconnects as the same player, to the same server, keeping `redirected=1` when the refused
+    socket was a redirect target (FS-MCYWK C17). The first retry is immediate; each further `4001`
+    in a row waits twice as long, from 1 second up to 30 seconds. Meanwhile the player is shown as
+    disconnected and retrying, and the session is kept. Only a **refused** renewal signs the player
+    out and redirects, as today; an unavailable one (an auth outage) keeps retrying. game-service
+    upgrades a socket before it checks the token, so a refused socket opens, says `auth_error` and
+    then closes `4001`: an open proves nothing. The run of refusals ends only at the first message
+    that is not `auth_error`, or when a handoff socket is promoted.
 
-### E. game-service (no change; recorded finding)
+### E. game-service: what it does with the token
 
-22. game-service authenticates the socket only at the handshake (`auth.WSAuthMiddleware` calls
-    auth-service `ValidateToken` once). A live socket is never closed when its token expires. So
+22. game-service authenticates the socket at the handshake (`auth.WSAuthMiddleware` calls
+    auth-service `ValidateToken` once). A live socket is never closed when its token expires, so
     renewal needs no transparent reconnect of an open socket. R21 covers only a handshake refused
-    with `4001`.
+    with `4001`. After the handshake, a token is checked again only when the connection hands
+    over a renewed one (R27-R32).
 23. game-service keeps the handshake token on the player record and forwards it to items-service
     when it seats the player in a world: worn-gear reads, run and field gear checkout, and the
     pre-delve `CheckLoadout`. The record takes a new token only when the player reconnects. More
     than 60 minutes into one connection, a world change on the same pod forwards an expired token,
     and items-service refuses it. The player then sees "Your gear could not be fetched", or is
     seated with no gear. Cross-pod handoffs are fixed by R20, because the new pod receives a fresh
-    token. Same-pod world changes are not fixed here; see Follow-ups.
+    token. Same-pod world changes are fixed by R27-R32 (option A of Follow-up 3, approved by the
+    owner 2026-11-06): the client hands each renewed token to the pod over the open socket.
+
+### F. Hardening (review, fix round 1)
+
+24. A run handoff or a hub handoff whose host refuses the token with `4001` renews the session once
+    and opens that handoff again with the current token (the hub one flagged `redirected=1`, as
+    before). A refused renewal signs the player out. A second `4001` on the handoff is its failure
+    as before: `world_handoff_failed` for a run, the travel-unreachable notice for a hub.
+25. Only an access token is an access credential. auth-service `ValidateJWT` (behind the
+    `ValidateToken` RPC that game-service's handshake calls) and `common/auth` `NewValidator` (every
+    service's interceptor) refuse a token whose `tokenType` is not `access`, including a refresh
+    token and an untyped one. Every token auth-service mints is typed, so nothing it handed out as
+    access is refused.
+26. With no `JWT_SECRET`, auth-service mints nothing and accepts nothing, and a `NewValidator` built
+    with an empty secret refuses every token, instead of signing and checking with the empty key.
+
+### G. game-service: renew the held token over the socket (option A)
+
+27. After every successful renewal (the proactive timer, a `401`, a `4001`), the client sends
+    `{ action: "renew_token", payload: { token } }` with the new access token on the game socket,
+    if it is open. A socket that is not open gets nothing: the next one opens with the current
+    token (R20).
+28. game-service validates the token through auth-service `ValidateToken`, which accepts only an
+    access token (R25). Its subject must be the member this connection authenticated as at its
+    handshake, taken from the connection's record and never from the payload. Anything else is
+    refused: another member's token, a refresh token, an expired or garbage one, no token, and
+    auth-service being unreachable.
+29. An accepted token replaces the held token on every copy of the member's record (the one
+    `connectPlayer` stores and `tokenOf` reads), under the server's lock, so a seat reading it at
+    the same moment (`seatGearLocked`, `CheckLoadout`, field checkout, run start) gets the old or
+    the new token whole. The next seat reads gear with the new one.
+30. An accepted renewal answers `{ action: "token_renewed" }`. A refused one answers a refusal on
+    `renew_token`, keeps the old token, logs a warning and never disconnects. The client never
+    treats that refusal as a session problem.
+31. At most one `renew_token` per second per connection is handled; the rest are refused without
+    asking auth-service. The message is handled on the connection, wherever the player is: hub,
+    field, run, or no world.
+32. The token never reaches a log, accepted or refused, as with the handshake token.
+
+## Deploy order
+
+**auth-service, then api-gateway, then game-client.** The gateway calls a new RPC (an older
+auth-service answers Unimplemented, which the client reads as unavailable and keeps the session),
+and the client calls a new route (an older gateway answers `404`, which the client reads as
+refused and signs out, as it does today). R25 also changes what every service accepts: deploy it
+with auth-service, since only tokens auth-service minted typed `access` pass, and every token it
+mints is typed.
 
 ## User Stories
 
@@ -150,6 +212,12 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
 - [ ] Client: a token is renewed 2 minutes before its `exp`, or at once when already inside the window.
 - [ ] Client: every socket URL carries the token current when the socket opens.
 - [ ] Client: a `4001` on the game socket renews and reconnects once, and a second `4001` signs out.
+- [ ] Client: a refused handshake (open, `auth_error`, `4001`) retries with a 1 s to 30 s backoff, never in a loop, and signs out only on a refused renewal.
+- [ ] Client: a refused run or hub handoff renews once and opens again; a redirect target keeps `redirected=1`.
+- [ ] Client: a renewal answer never revives a signed-out session or overwrites a newer one; a `404` renewal is refused; an unavailable one cools down.
+- [ ] `ValidateJWT` and `NewValidator` refuse a refresh or untyped token; an empty secret accepts nothing.
+- [ ] `renew_token` replaces the held token for the connection's own member only, answers `token_renewed`, refuses everything else without disconnecting, is limited to one per second per connection, never logs the token, and passes `-race` with concurrent seating.
+- [ ] Client: every successful renewal sends `renew_token` on the open socket and nothing on a closed one.
 - [ ] Full Go suites of auth-service and api-gateway, `go vet`, full vitest and `tsc --noEmit` green.
 - [ ] Browser check by Nick (I-ZPX58-5).
 
@@ -164,8 +232,11 @@ called it, and its lifetime disagreed with sign-in's 60 minutes. This FS removes
 - **Member deleted:** renewal is refused, and the player signs out.
 - **Role demoted:** the next renewal mints `player`. The old access token keeps its role until it expires, at most 60 minutes.
 - **Malformed stored token:** `exp` cannot be decoded, so no timer is set. The first `401` renews reactively.
-- **Socket refused while auth-service is down:** game-service closes with `4001` for a validation error too. The client renews, which succeeds via the gateway if the gateway is up, and reconnects. A second `4001` signs the player out, as today.
-- **Same-pod world change more than an hour into one connection:** the gear read uses the stale handshake token (R23). This is unresolved in v1.
+- **Socket refused while auth-service is down:** game-service closes with `4001` when `ValidateToken` fails, not only for a bad token. Renewal cannot succeed either: the gateway forwards it to the same auth-service, so it answers `503` (unavailable). The client keeps the session, shows the player as reconnecting and retries with the R21 backoff until auth-service is back. Nobody is signed out by the outage.
+- **REST during an auth outage:** the first `401` asks for renewal once, then the cooldown (R17) answers unavailable without a call. The session is kept.
+- **Sign-out during an in-flight renewal:** the renewal's answer is dropped (R17 Superseded), so it cannot sign the player back in.
+- **Client clock far off:** a fast clock renews at most once a minute; a slow one never schedules past the token's lifetime (R18).
+- **Same-pod world change more than an hour into one connection:** the pod holds the token the last renewal handed it (R27-R32), so the gear read is authorized. If renew_token was refused or never arrived (the socket was closed at the time), the pod still holds the handshake token, and the next reconnect hands it a fresh one.
 
 ## API surface
 
@@ -202,14 +273,12 @@ gRPC (auth-service): `AuthService.RefreshAccessToken(RefreshAccessTokenRequest{r
 2. **Kicking a live WebSocket when an account is banned or its token is revoked.** game-service
    checks the token only at the handshake (R22). A banned or revoked member keeps an open socket
    until it disconnects. This depends on revocation (follow-up 1) existing at all.
-3. **The stale forwarded token in game-service (R23).** Same-pod world changes forward the
-   handshake token, and it expires 60 minutes into a connection. Options:
-   - a socket message that hands game-service the renewed access token, which it validates and
-     swaps onto the player record;
-   - the client reconnecting after each renewal;
-   - game-service reading gear with a service credential instead of the member's token (I-GV8WN-11).
-
-   game-service is the hand-coded lane, so this is Nick's call.
-4. **`ValidateToken` accepts a refresh token.** game-service's handshake uses it, so a refresh token
-   can open a game socket. This is the existing unchecked auth-service line "Reject a refresh token
-   presented as an access credential", and it is not changed here.
+3. **The stale forwarded token in game-service (R23).** Same-pod world changes forwarded the
+   handshake token, and it expired 60 minutes into a connection. Options were:
+   - **A.** a socket message that hands game-service the renewed access token, which it validates
+     and swaps onto the player record. **Done: R27-R32, approved by the owner 2026-11-06.**
+   - B. the client reconnecting after each renewal. Not taken.
+   - **C.** game-service reading gear with a service credential instead of the member's token
+     (I-GV8WN-11). **Still the long-term fix, and due before GKE**: it ends the pod holding member
+     credentials at all.
+4. ~~**`ValidateToken` accepts a refresh token.**~~ Closed by R25 in fix round 1.

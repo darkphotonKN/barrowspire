@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-11-06
+Amended by: [ADR-0067](0067-a-connection-may-renew-its-held-member-token-with-a-validated-access-token-for-its-own-member.md) — clause 7 (game-service also checks a renewed token handed over the socket)
 Scope: `game-server/auth-service` (minting, `RefreshAccessToken`), `game-server/api-gateway`
 (`POST /api/member/refresh`), `game-client` (authenticated client, game socket)
 Realized by: [FS-ZPX58](../specs/ZPX58-access-token-renewal.md)
