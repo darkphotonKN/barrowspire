@@ -132,11 +132,11 @@ func TestNewRun_StartsOnTheFirstOfThreeFloors(t *testing.T) {
 	assert.Equal(t, constants.RunFloorCount, floor.Count)
 	assert.Equal(t, 3, constants.RunFloorCount)
 
-	// the layout today's map generator makes
+	// floor 1 is a dungeon: its fixtures, and no buildings (FS-KE075 §B R10)
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), 1)
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeSwitch), 1)
-	assert.NotEmpty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "at least one building places on an empty map")
-	assert.LessOrEqual(t, len(entityIDsWith(s, ecs.ComponentTypeDoor)), 3)
+	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1)
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "a dungeon floor has no doors")
 }
 
 // party is a run with two delvers on it: one carrying a weapon from their
@@ -181,9 +181,10 @@ func newParty(t *testing.T, client *countingItemsClient) *party {
 		p.carriedItemIDs = append(p.carriedItemIDs, *weaponID)
 	}
 
-	// open the chest and take one item out of it, leaving the rest
+	// open a chest and take one item out of it, leaving the rest; floor 1 is
+	// a dungeon with a container in many rooms (FS-KE075 §B R15)
 	containers := entityIDsWith(s, ecs.ComponentTypeContainer)
-	require.Len(t, containers, 1, "the chest is placed first on an empty map")
+	require.NotEmpty(t, containers, "floor 1 holds containers")
 	chest, _ := s.EntityManager.GetEntity(containers[0])
 	loot, err := s.generateItems(components.ContainerKindChest)
 	require.NoError(t, err)
@@ -546,8 +547,12 @@ func TestRegenerateFloor_NextBroadcastHoldsOnlyTheNewFloor(t *testing.T) {
 		context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 
+	// a run's walls are its floor map's, never its state's (FS-KE075 §F R34)
+	assert.Empty(t, state.Walls)
+	floorMap, ok := s.FloorMapMessage()
+	require.True(t, ok)
 	shown := []uuid.UUID{}
-	for _, w := range state.Walls {
+	for _, w := range floorMap.Payload["walls"].([]*types.WallState) {
 		shown = append(shown, w.EntityID)
 	}
 	for _, d := range state.Doors {

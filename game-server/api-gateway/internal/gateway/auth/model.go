@@ -16,4 +16,5 @@ type AuthClient interface {
 	VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error)
 	ResendVerification(ctx context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error)
 	ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error)
+	RefreshAccessToken(ctx context.Context, req *pb.RefreshAccessTokenRequest) (*pb.RefreshAccessTokenResponse, error)
 }

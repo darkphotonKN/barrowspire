@@ -3,9 +3,11 @@ import { palette, toCss, CANVAS_FONT } from "@/utils/canvasPalette";
 import { CLASS_LORE, ClassKey, type ClassStats } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";
 import { creationRefusal } from "@/characters/entry";
-import { registerArt } from "@/render/art/phaser";
+import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
-import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
+import { MenuFigure } from "@/render/art/menuFigure";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import {
   buttonTextColor,
   drawBackdrop,
@@ -15,6 +17,7 @@ import {
   type ButtonState,
 } from "@/ui/menuChrome";
 import { CLASS_ORDER, classCardRects, loreStatRows } from "@/ui/classSelect";
+import { STAGE_WIDTH, centreStage } from "@/render/viewport";
 
 /** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
 const ui = palette.menu;
@@ -77,13 +80,18 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadMenuArt(this);
+    // the class figures: resident art only (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.CharacterCreationScene, {
+      bar: () => drawTorchBar(this),
+    });
   }
 
   create(): void {
+    // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
+    centreStage(this.cameras.main);
     sharpenText(this);
-    this.art = registerArt(this);
-    const width = this.cameras.main.width;
+    this.art = registerArt(this, SCENE_ART.CharacterCreationScene);
+    const width = STAGE_WIDTH;
 
     // Soot with drifting dust and bone glints, under a vignette (Bone & Soot menu chrome).
     drawBackdrop(this, 90);
@@ -367,7 +375,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   private createNameInputArea(): void {
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const y = 490;
 
     this.add
@@ -432,7 +440,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   private createActionButtons(): void {
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const y = 620;
 
     // Confirm Button: the bone CTA, the one torch in this view; it commits the hero.

@@ -4,6 +4,7 @@
  */
 
 import { itemLines, type ItemLines, type ItemLinesSource } from "@/items/itemLines";
+import { viewerOwns } from "./listing";
 
 export interface StatLine {
   label: string;
@@ -66,21 +67,23 @@ export function listingItemLines(item: ItemLinesSource | undefined): ItemLines |
  * the area. A listing that is not ACTIVE, or has ended by the server's word or the countdown,
  * offers no action. On an ended ACTIVE listing a bidder still gets the closed box ("closed"), so
  * a bid in flight when the countdown reached zero keeps its answer (FS-8EGFA Edge States); there
- * is nothing to press in it. "none" leaves only the listing's status label.
+ * is nothing to press in it. "none" leaves only the listing's status label. Whether the viewer is
+ * the seller is {@link viewerOwns} (FS-GKHYD Req 13): the read's `own`, for a signed-in viewer.
  */
 export type ActionArea = "signIn" | "own" | "bid" | "closed" | "none";
 
 export function actionArea(
-  listing: { sellerId: string; status: string; ended?: boolean; endsAt: string },
+  listing: { own: boolean; status: string; ended?: boolean; endsAt: string },
   memberId: string | undefined,
   now: number,
 ): ActionArea {
   if (listing.status.toUpperCase() !== "ACTIVE") return "none";
   const ended = listing.ended === true || Date.parse(listing.endsAt) <= now;
-  const bidder = memberId !== undefined && memberId !== listing.sellerId;
-  if (ended) return bidder ? "closed" : "none";
-  if (!memberId) return "signIn";
-  if (!bidder) return "own";
+  const signedIn = Boolean(memberId);
+  const own = viewerOwns(listing, memberId);
+  if (ended) return signedIn && !own ? "closed" : "none";
+  if (!signedIn) return "signIn";
+  if (own) return "own";
   return "bid";
 }
 

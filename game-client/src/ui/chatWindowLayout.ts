@@ -4,13 +4,9 @@
  * follows is testable without one. Vocabulary: game-client/CONTEXT.md § Chat terms.
  */
 
-import {
-  CHAT_CHANNELS,
-  type ChatChannel,
-  type ChatEntry,
-  type ChatLine,
-} from "@/stores/chatStore";
+import type { ChatChannel, ChatEntry, ChatLine } from "@/stores/chatStore";
 import { palette } from "@/utils/canvasPalette";
+import { CHAT_SHOWN_CHANNELS } from "./chatInput";
 
 /** The window's left edge and its gap from the canvas bottom, in every world (R18). */
 export const CHAT_WINDOW_X = 10;
@@ -44,6 +40,28 @@ export const CHAT_FOLD_W = 24;
 export const CHAT_TAB_PAD = 9;
 /** The channel picker's width at the input row's left (Amendment 2026-10-31). */
 export const CHAT_PICKER_W = 84;
+/** The picker's arrow, after the channel's name (FS-J267Q R2). */
+export const CHAT_PICKER_ARROW = "▾";
+/** The picker and the text field sit this far in from the input row's ends. */
+export const CHAT_ROW_INSET = 4;
+/** Room between the picker's divider and the text field. */
+export const CHAT_FIELD_GAP = 6;
+/** The picker's list (FS-J267Q R3): its width, one row's height, its inner padding. */
+export const CHAT_PICKER_LIST_W = 112;
+export const CHAT_PICKER_ROW_H = 24;
+export const CHAT_PICKER_LIST_PAD = 4;
+/** Room between the list's foot and the input row's divider. */
+export const CHAT_PICKER_LIST_GAP = 6;
+/**
+ * A picker or list row's words at the 14 px body serif: their box is this tall, drawn with this
+ * much padding above and below so no descender is cut, and lifted by the same so they sit on the
+ * row's optical centre (FS-J267Q R2, R3).
+ */
+export const CHAT_ROW_TEXT_H = 16;
+export const CHAT_ROW_TEXT_PAD = 2;
+/** The picker's divider stops this far short of the input row's top and of its foot (FS-J267Q R1). */
+export const CHAT_DIVIDER_INSET_TOP = 6;
+export const CHAT_DIVIDER_INSET_FOOT = 5;
 
 export interface Rect {
   x: number;
@@ -308,15 +326,6 @@ export interface ChatTabSegment extends Rect {
 }
 
 /**
- * The channels the window offers, as filter tabs and as picker options. Trade is hidden until it has
- * its own scoping (Nick, 2026-11-03); it stays in CHAT_CHANNELS, the protocol's closed set, so a
- * trade line is still recognised. The server relays none, so none arrives.
- */
-export const CHAT_SHOWN_CHANNELS: readonly ChatChannel[] = CHAT_CHANNELS.filter(
-  (channel) => channel !== "trade",
-);
-
-/**
  * The filter row's tab segments, one per shown channel, joined edge to edge from the row's left,
  * each as wide as its label (`measure`) plus padding (R24 as amended 2026-10-31).
  */
@@ -349,4 +358,75 @@ export function chatEntryColour(entry: ChatEntry): number {
   return entry.kind === "system"
     ? palette.chatSystem
     : CHAT_CHANNEL_COLOUR[entry.channel];
+}
+
+/** The canvas channel picker at the input row's left (FS-J267Q R1). */
+export function chatPickerRect(frame: ChatWindowFrame): Rect {
+  const input = frame.input;
+  return {
+    x: input.x + CHAT_ROW_INSET,
+    y: input.y,
+    width: CHAT_PICKER_W,
+    height: input.height,
+  };
+}
+
+/** Where a picker or list row's words are drawn from: their padded box centred on `rect`, lifted by the padding. */
+export function rowTextY(rect: Rect): number {
+  return rect.y + (rect.height - CHAT_ROW_TEXT_H) / 2 - CHAT_ROW_TEXT_PAD;
+}
+
+/**
+ * The text field's place (FS-J267Q R1): the input row right of the picker and its
+ * divider, short of the fold button while folded.
+ */
+export function chatFieldRect(frame: ChatWindowFrame, folded: boolean): Rect {
+  const input = frame.input;
+  const picker = chatPickerRect(frame);
+  const x = picker.x + picker.width + CHAT_FIELD_GAP;
+  const right =
+    input.x + input.width - CHAT_ROW_INSET - (folded ? CHAT_FOLD_W : 0);
+  return { x, y: input.y, width: right - x, height: input.height };
+}
+
+export interface ChatPickerRow extends Rect {
+  channel: ChatChannel;
+}
+
+export interface ChatPickerList {
+  box: Rect;
+  rows: ChatPickerRow[];
+}
+
+/**
+ * The picker's open list (FS-J267Q R3): the shown channels in order, top to bottom,
+ * in a box that opens upward from just above the input row, left-aligned with the picker, so it
+ * lies over the chat lines and never over the text field.
+ */
+export function chatPickerList(frame: ChatWindowFrame): ChatPickerList {
+  const picker = chatPickerRect(frame);
+  const height =
+    CHAT_SHOWN_CHANNELS.length * CHAT_PICKER_ROW_H + CHAT_PICKER_LIST_PAD * 2;
+  const box = {
+    x: picker.x,
+    y: frame.input.y - CHAT_PICKER_LIST_GAP - height,
+    width: CHAT_PICKER_LIST_W,
+    height,
+  };
+  const rows = CHAT_SHOWN_CHANNELS.map((channel, i) => ({
+    channel,
+    x: box.x + CHAT_PICKER_LIST_PAD,
+    y: box.y + CHAT_PICKER_LIST_PAD + i * CHAT_PICKER_ROW_H,
+    width: box.width - CHAT_PICKER_LIST_PAD * 2,
+    height: CHAT_PICKER_ROW_H,
+  }));
+  return { box, rows };
+}
+
+/**
+ * The text field's accessible name (FS-J267Q R7): a screen reader cannot read the
+ * canvas picker, so the field says which channel it sends to.
+ */
+export function chatFieldLabel(channel: ChatChannel): string {
+  return `Chat — ${CHAT_FILTER_LABEL[channel]}`;
 }

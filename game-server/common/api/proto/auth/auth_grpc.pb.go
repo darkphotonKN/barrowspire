@@ -34,6 +34,7 @@ const (
 	AuthService_VerifyEmail_FullMethodName              = "/auth.AuthService/VerifyEmail"
 	AuthService_ResendVerification_FullMethodName       = "/auth.AuthService/ResendVerification"
 	AuthService_ChangeUnverifiedEmail_FullMethodName    = "/auth.AuthService/ChangeUnverifiedEmail"
+	AuthService_RefreshAccessToken_FullMethodName       = "/auth.AuthService/RefreshAccessToken"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -70,6 +71,9 @@ type AuthServiceClient interface {
 	// Change an unverified member's email and issue a code to it
 	// (FS-V6SFK §Requirements 19)
 	ChangeUnverifiedEmail(ctx context.Context, in *ChangeUnverifiedEmailRequest, opts ...grpc.CallOption) (*Member, error)
+	// Mint a new access token from a refresh token, from the member row as it
+	// reads now; no refresh token is minted (FS-ZPX58 §A, ADR-0066)
+	RefreshAccessToken(ctx context.Context, in *RefreshAccessTokenRequest, opts ...grpc.CallOption) (*RefreshAccessTokenResponse, error)
 }
 
 type authServiceClient struct {
@@ -210,6 +214,16 @@ func (c *authServiceClient) ChangeUnverifiedEmail(ctx context.Context, in *Chang
 	return out, nil
 }
 
+func (c *authServiceClient) RefreshAccessToken(ctx context.Context, in *RefreshAccessTokenRequest, opts ...grpc.CallOption) (*RefreshAccessTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RefreshAccessTokenResponse)
+	err := c.cc.Invoke(ctx, AuthService_RefreshAccessToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -244,6 +258,9 @@ type AuthServiceServer interface {
 	// Change an unverified member's email and issue a code to it
 	// (FS-V6SFK §Requirements 19)
 	ChangeUnverifiedEmail(context.Context, *ChangeUnverifiedEmailRequest) (*Member, error)
+	// Mint a new access token from a refresh token, from the member row as it
+	// reads now; no refresh token is minted (FS-ZPX58 §A, ADR-0066)
+	RefreshAccessToken(context.Context, *RefreshAccessTokenRequest) (*RefreshAccessTokenResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -292,6 +309,9 @@ func (UnimplementedAuthServiceServer) ResendVerification(context.Context, *Resen
 }
 func (UnimplementedAuthServiceServer) ChangeUnverifiedEmail(context.Context, *ChangeUnverifiedEmailRequest) (*Member, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ChangeUnverifiedEmail not implemented")
+}
+func (UnimplementedAuthServiceServer) RefreshAccessToken(context.Context, *RefreshAccessTokenRequest) (*RefreshAccessTokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RefreshAccessToken not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -548,6 +568,24 @@ func _AuthService_ChangeUnverifiedEmail_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_RefreshAccessToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshAccessTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).RefreshAccessToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_RefreshAccessToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).RefreshAccessToken(ctx, req.(*RefreshAccessTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -606,6 +644,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChangeUnverifiedEmail",
 			Handler:    _AuthService_ChangeUnverifiedEmail_Handler,
+		},
+		{
+			MethodName: "RefreshAccessToken",
+			Handler:    _AuthService_RefreshAccessToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

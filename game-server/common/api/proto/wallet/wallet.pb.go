@@ -461,8 +461,11 @@ type ListStaleReservedHoldsRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ReservedBefore *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=reserved_before,json=reservedBefore,proto3" json:"reserved_before,omitempty"`
 	Limit          int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"` // batch ceiling, so one sweep cannot pull the whole table
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Opaque position to read after: the previous page's next. Empty for the first
+	// page.
+	After         string `protobuf:"bytes,3,opt,name=after,proto3" json:"after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListStaleReservedHoldsRequest) Reset() {
@@ -509,9 +512,19 @@ func (x *ListStaleReservedHoldsRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *ListStaleReservedHoldsRequest) GetAfter() string {
+	if x != nil {
+		return x.After
+	}
+	return ""
+}
+
 type ListStaleReservedHoldsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	BidIds        []string               `protobuf:"bytes,1,rep,name=bid_ids,json=bidIds,proto3" json:"bid_ids,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Oldest hold first.
+	BidIds []string `protobuf:"bytes,1,rep,name=bid_ids,json=bidIds,proto3" json:"bid_ids,omitempty"`
+	// Position of the following page; empty on the last page.
+	Next          string `protobuf:"bytes,2,opt,name=next,proto3" json:"next,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -551,6 +564,13 @@ func (x *ListStaleReservedHoldsResponse) GetBidIds() []string {
 		return x.BidIds
 	}
 	return nil
+}
+
+func (x *ListStaleReservedHoldsResponse) GetNext() string {
+	if x != nil {
+		return x.Next
+	}
+	return ""
 }
 
 // Deposit
@@ -858,12 +878,14 @@ const file_api_proto_wallet_wallet_proto_rawDesc = "" +
 	"\x11PlaceHoldResponse\"+\n" +
 	"\x12ReleaseHoldRequest\x12\x15\n" +
 	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\"\x15\n" +
-	"\x13ReleaseHoldResponse\"z\n" +
+	"\x13ReleaseHoldResponse\"\x90\x01\n" +
 	"\x1dListStaleReservedHoldsRequest\x12C\n" +
 	"\x0freserved_before\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0ereservedBefore\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\"9\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x14\n" +
+	"\x05after\x18\x03 \x01(\tR\x05after\"M\n" +
 	"\x1eListStaleReservedHoldsResponse\x12\x17\n" +
-	"\abid_ids\x18\x01 \x03(\tR\x06bidIds\"$\n" +
+	"\abid_ids\x18\x01 \x03(\tR\x06bidIds\x12\x12\n" +
+	"\x04next\x18\x02 \x01(\tR\x04next\"$\n" +
 	"\x0eDepositRequest\x12\x12\n" +
 	"\x04gold\x18\x01 \x01(\x03R\x04gold\"\x11\n" +
 	"\x0fDepositResponse\"%\n" +

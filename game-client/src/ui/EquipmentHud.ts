@@ -11,7 +11,8 @@ import type { CharacterSource } from "./characterSheet";
  * held in the inventory while its loot is pending, so it does not flicker out before the server
  * confirms it. The bag's capacity is pre-checked here (FS-HRH2J R20–21): an unequip or a pickup
  * into a full bag, pending pickups counted, is not sent and the port says why; the server's
- * refusal stays the gate. The run scene and the field scene each compose one; neither copies it.
+ * refusal stays the gate. Each open also reads the purse line's gold (FS-7TGZ3 R8), though gold
+ * cannot change inside a run. The run scene and the field scene each compose one; neither copies it.
  * Phaser-free: the scene hands it the panel and a port for sends and words.
  */
 
@@ -37,6 +38,13 @@ export interface HudPanel {
   setCharacterLevel(level: number | undefined): void;
   /** The player's own state, for the stats panel (FS-HRH2J R24); handed over open or closed. */
   updateCharacter(player: CharacterSource): void;
+}
+
+/** The purse line's reader (FS-7TGZ3): asked once per open of the overlay, let go with its world. */
+export interface PurseRefresh {
+  refresh(): void | Promise<void>;
+  /** Drops a read in flight, so its answer draws nothing on a torn-down scene. */
+  forget(): void;
 }
 
 /** Messages to the server (the run's equip and unequip), and the world's passing notice. */
@@ -75,6 +83,7 @@ export class EquipmentHud {
     private readonly panel: HudPanel,
     private readonly port: HudPort,
     private readonly now: () => number = Date.now,
+    private readonly purse?: PurseRefresh,
   ) {
     // an equip that swaps is net-zero, so it is never pre-checked (FS-HRH2J R20); what it swaps
     // out goes to the end of the bag (R16)
@@ -122,12 +131,13 @@ export class EquipmentHud {
     return false;
   }
 
-  /** Opens or closes the panel; opening fills it. */
+  /** Opens or closes the panel; opening fills it and reads the purse (FS-7TGZ3 R8). */
   toggle(): void {
     this.panel.toggle();
     if (this.panel.isVisible()) {
       this.panel.updateInventory(this.carried);
       this.panel.updateEquipment(this.worn);
+      void this.purse?.refresh();
     }
   }
 
@@ -165,6 +175,11 @@ export class EquipmentHud {
   taken(item: ItemState): void {
     this.carried.push({ ...item, lootedAt: this.now() });
     if (this.panel.isVisible()) this.panel.updateInventory(this.carried);
+  }
+
+  /** Its world is torn down: a purse read still in flight answers nobody (FS-7TGZ3). */
+  release(): void {
+    this.purse?.forget();
   }
 
   /** Everything one world drew is let go. */

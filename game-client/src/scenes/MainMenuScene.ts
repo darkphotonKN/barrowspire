@@ -5,9 +5,11 @@ import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
 import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
-import { registerArt } from "@/render/art/phaser";
+import { preloadArt, registerArt } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
-import { MenuFigure, preloadMenuArt } from "@/render/art/menuFigure";
+import { MenuFigure } from "@/render/art/menuFigure";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import {
   buttonTextColor,
   drawBackdrop,
@@ -20,6 +22,17 @@ import {
 } from "@/ui/menuChrome";
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
+import { onSceneEnd } from "./sceneEnd";
+import {
+  LOGICAL_HEIGHT,
+  LOGICAL_MAX_WIDTH,
+  STAGE_WIDTH,
+  centreStage,
+  fillMaskArea,
+  maskInView,
+  stagePoint,
+  viewport,
+} from "@/render/viewport";
 
 /** The menus wear the site's Bone & Soot (design-guideline "UI Chrome"). */
 const ui = palette.menu;
@@ -84,6 +97,13 @@ export class MainMenuScene extends Phaser.Scene {
   private sidebarContainer?: Phaser.GameObjects.Container;
   private sidebarCardsContainer?: Phaser.GameObjects.Container;
   private sidebarScrollY: number = 0;
+  /** The cards' clip: its shape, its area on the stage and the render scale it was drawn at. */
+  private sidebarMask?: {
+    shape: Phaser.GameObjects.Graphics;
+    area: { x: number; y: number; width: number; height: number };
+    scale: number;
+  };
+  private unwatchScale?: () => void;
   private sidebarScrollbarGraphics?: Phaser.GameObjects.Graphics;
   private onSidebarWheel?: (pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => void;
   private onSidebarDrag?: (pointer: Phaser.Input.Pointer) => void;
@@ -94,14 +114,17 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadMenuArt(this);
+    // the class figures: resident art only (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.MainMenuScene, { bar: () => drawTorchBar(this) });
   }
 
   create(): void {
+    // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
+    centreStage(this.cameras.main);
     sharpenText(this);
-    this.art = registerArt(this);
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    this.art = registerArt(this, SCENE_ART.MainMenuScene);
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     // The Spire: a soot silhouette rising behind the title, edged in iron (Perfectly Centered)
     const spire = this.add.graphics();
@@ -272,10 +295,15 @@ export class MainMenuScene extends Phaser.Scene {
     });
     this.loadRoster();
 
-    // Register scene shutdown listener
-    this.events.once("shutdown", () => {
-      this.shutdown();
-    });
+    this.listenForEnd();
+  }
+
+  /**
+   * A stop, or the game's destroy while in the menu (the page unmounts), which skips SHUTDOWN: the
+   * connection status is the socket's and outlives the game. What `shutdown` does asks no plugin.
+   */
+  private listenForEnd(): void {
+    onSceneEnd(this, () => this.shutdown());
   }
 
   /**
@@ -297,7 +325,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private createHeroRightSidebar(): void {
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const panelW = 200;
     const panelH = 440;
     const panelX = width - panelW - 24;
@@ -307,6 +335,9 @@ export class MainMenuScene extends Phaser.Scene {
       // Portraits live in the cards container and go with it (MenuFigure stops on destroy).
       this.sidebarContainer.destroy();
     }
+    // the old clip goes after the cards it masked, never under them
+    this.sidebarMask?.shape.destroy();
+    this.sidebarMask = undefined;
     this.sidebarContainer = this.add.container(0, 0);
 
     const characters = useGameStore.getState().characters;
@@ -341,12 +372,20 @@ export class MainMenuScene extends Phaser.Scene {
     const maskX = panelX + 8;
 
     const maskShape = this.make.graphics({});
-    maskShape.fillStyle(ui.text); // any opaque fill: a geometry mask reads shape, not colour
-    maskShape.fillRect(maskX, maskY, maskW, maskH);
-    const mask = maskShape.createGeometryMask();
+    this.sidebarMask = {
+      shape: maskShape,
+      area: { x: maskX, y: maskY, width: maskW, height: maskH },
+      scale: viewport.renderScale,
+    };
+    this.shapeSidebarMask();
+    // the clip lies on the backing px grid, so a new render scale alone redraws it
+    this.unwatchScale ??= viewport.onChange((view) => {
+      if (this.sidebarMask && view.renderScale !== this.sidebarMask.scale)
+        this.shapeSidebarMask();
+    });
 
     this.sidebarCardsContainer = this.add.container(0, 0);
-    this.sidebarCardsContainer.setMask(mask);
+    maskInView(this.sidebarCardsContainer, maskShape, this.cameras.main);
     this.sidebarContainer.add(this.sidebarCardsContainer);
 
     this.sidebarScrollbarGraphics = this.add.graphics();
@@ -422,7 +461,10 @@ export class MainMenuScene extends Phaser.Scene {
       this.heroSidebarCards.push(cardObj);
 
       hitArea.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-        const dist = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY);
+        // a click, not a drag: 8 logical units, whatever the render scale (FS-ZAJMH R15)
+        const dist =
+          Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY) /
+          viewport.renderScale;
         if (dist < 8) {
           useGameStore.getState().selectCharacter(char.id);
           this.refreshHeroSidebar();
@@ -448,17 +490,20 @@ export class MainMenuScene extends Phaser.Scene {
     let startDragY = 0;
     let startScrollY = 0;
 
+    // the sidebar is laid out on the centred stage; Phaser's pointer.x/y are backing px (FS-ZAJMH R11, R15)
     this.onSidebarPointerDown = (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x >= panelX && pointer.x <= panelX + panelW && pointer.y >= maskY && pointer.y <= maskY + maskH) {
+      const at = stagePoint(this.cameras.main, pointer);
+      if (at.x >= panelX && at.x <= panelX + panelW && at.y >= maskY && at.y <= maskY + maskH) {
         isDragging = true;
-        startDragY = pointer.y;
+        startDragY = at.y;
         startScrollY = this.sidebarScrollY;
       }
     };
     this.input.on("pointerdown", this.onSidebarPointerDown);
 
     this.onSidebarWheel = (pointer: Phaser.Input.Pointer, _gameObjects: any, _deltaX: number, deltaY: number) => {
-      if (pointer.x >= panelX && pointer.x <= panelX + panelW && pointer.y >= panelY && pointer.y <= panelY + panelH) {
+      const at = stagePoint(this.cameras.main, pointer);
+      if (at.x >= panelX && at.x <= panelX + panelW && at.y >= panelY && at.y <= panelY + panelH) {
         const currentCount = useGameStore.getState().characters.length;
         const totH = currentCount * (cardH + gap) + 8;
         const maxScr = Math.max(0, totH - maskH);
@@ -479,7 +524,7 @@ export class MainMenuScene extends Phaser.Scene {
       const maxScr = Math.max(0, totH - maskH);
       if (maxScr <= 0) return;
 
-      const dy = pointer.y - startDragY;
+      const dy = stagePoint(this.cameras.main, pointer).y - startDragY;
       this.sidebarScrollY = Phaser.Math.Clamp(startScrollY - dy, 0, maxScr);
       this.updateSidebarScrollPosition(maskY, maskH, panelX + panelW - 6, totH);
     };
@@ -559,8 +604,8 @@ export class MainMenuScene extends Phaser.Scene {
   private refreshCenterHeroShowcase(): void {
     const store = useGameStore.getState();
     const activeChar = store.getActiveCharacter();
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     const centerX = width / 2;
     const centerY = height / 2 - 95;
@@ -677,7 +722,7 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const panelW = 200;
     const panelH = 440;
     const panelX = width - panelW - 24;
@@ -821,12 +866,12 @@ export class MainMenuScene extends Phaser.Scene {
 
   private drawDelveButton(state: ButtonState): void {
     if (!this.cameras || !this.cameras.main) return;
-    const width = this.cameras.main.width;
+    const width = STAGE_WIDTH;
     const titleX = width / 2;
     const btnW = ENTER_BUTTON.width;
     const btnH = ENTER_BUTTON.height;
     const btnX = titleX - btnW / 2;
-    const btnY = this.cameras.main.height / 2 + 55;
+    const btnY = LOGICAL_HEIGHT / 2 + 55;
 
     if (this.buttonBg) drawButton(this.buttonBg, btnX, btnY, btnW, btnH, "primary", state);
     this.startButtonText?.setColor(toCss(buttonTextColor("primary", state)));
@@ -842,7 +887,8 @@ export class MainMenuScene extends Phaser.Scene {
   private showRefusal(message: string): void {
     this.refusalText?.destroy();
 
-    const { width, height } = this.cameras.main;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
     this.refusalText = this.add
       .text(width / 2, height / 2 + 150, message, {
@@ -871,13 +917,14 @@ export class MainMenuScene extends Phaser.Scene {
     }
     this.queuePopupActive = true;
 
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
 
+    // over the whole view, however much wider than the stage it is
     this.queueOverlay = this.add.rectangle(
       width / 2,
       height / 2,
-      width,
+      LOGICAL_MAX_WIDTH,
       height,
       ui.well,
       0.7
@@ -940,7 +987,25 @@ export class MainMenuScene extends Phaser.Scene {
     this.queuePopupActive = false;
   }
 
+  /**
+   * Draws the cards' clip on the backing px grid of the render scale now (`fillMaskArea`), so its
+   * edge rows and columns let the cards through as Phaser 3.90's multisampled stencil did
+   * (ADR-0057 §Masks, as the chat's clip). The clip is in stage units, drawn through the camera;
+   * the camera's scroll is kept on the same grid (`keepOnPixelGrid`), so the stage's grid is the
+   * screen's. Redrawn in place for a new render scale alone, the mask staying laid.
+   */
+  private shapeSidebarMask(): void {
+    if (!this.sidebarMask) return;
+    const { shape, area } = this.sidebarMask;
+    this.sidebarMask.scale = viewport.renderScale;
+    shape.clear();
+    // a mask's colour is never drawn, only its alpha: any opaque token
+    fillMaskArea(shape, area, ui.text, this.sidebarMask.scale);
+  }
+
   private shutdown(): void {
+    this.unwatchScale?.();
+    this.unwatchScale = undefined;
     if (this.unsubscribeConnectionStatus) {
       this.unsubscribeConnectionStatus();
       this.unsubscribeConnectionStatus = undefined;
@@ -958,6 +1023,8 @@ export class MainMenuScene extends Phaser.Scene {
       this.sidebarContainer.destroy();
       this.sidebarContainer = undefined;
     }
+    this.sidebarMask?.shape.destroy();
+    this.sidebarMask = undefined;
     this.closeQueuePopup();
   }
 }

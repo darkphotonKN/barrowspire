@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import ItemIcon from "@/components/ItemIcon";
 import RarityBadge from "@/components/RarityBadge";
-import type { Listing } from "@/marketplace/listing";
+import type { PublicListing } from "@/marketplace/listing";
 import { rarityOf } from "@/marketplace/rarity";
 
 /**
@@ -25,7 +25,7 @@ export function OpenableRow({
   onOpen,
   children,
 }: {
-  listing: Listing;
+  listing: Pick<PublicListing, "id" | "item">;
   onOpen: (id: string, row: HTMLElement) => void;
   children: (open: () => void) => React.ReactNode;
 }) {
@@ -52,7 +52,7 @@ export function OpenableRow({
 }
 
 /** Icon, name and rarity badge, on the rarity accent edge. */
-export function ItemCell({ item }: { item: Listing["item"] }) {
+export function ItemCell({ item }: { item: PublicListing["item"] }) {
   return (
     <td className={`${CELL} bazaar-row-edge`}>
       <div className="flex items-center gap-3">

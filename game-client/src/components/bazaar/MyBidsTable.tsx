@@ -27,7 +27,8 @@ const SKELETON: readonly SkeletonCell[] = [
  * The player's own bids under My bids (FS-EYQ8K req 15–17; design guideline Part II "Listing
  * table"). The listing table's row anatomy, one row per bid, newest first as the server sends
  * them: the relic, the player's bid, what the auction stands at now, its time left, and where the
- * bid stands. No amber in a row: prices are vellum, a standing bid is brass-bright.
+ * bid stands. No amber in a row: prices are vellum, a standing bid is brass-bright. A bid lost to
+ * the seller's withdrawal says so, with its gold returned, under its status (FS-V7A5S req 17).
  *
  * A leading or outbid bid on a live auction offers Withdraw (req 10), which asks first, in a row
  * under its own (req 11); only that confirm's Withdraw sends anything. Its answer is the caller's
@@ -158,6 +159,7 @@ function BidRow({
         >
           {row.status}
         </span>
+        {row.note && <span className="block text-xs text-vellum-muted">{row.note}</span>}
       </td>
       <td className={`${CELL} text-right`}>
         {offered && !confirming && (

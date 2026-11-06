@@ -16,16 +16,18 @@ export interface PlayerDirection {
   speed: number;
 }
 
-// Individual player state
-export interface PlayerState {
+/**
+ * What a player shows anyone in their world, as an `other_players` entry carries it: never their
+ * bag (`inventory`) or worn gear (`equipment`), which are not sent for anyone but the recipient
+ * (FS-KE075 §I R51, R54; ADR-0064). Mirrors Go types.PublicPlayerState.
+ */
+export interface PublicPlayerState {
   id: UUID; // Player's permanent user ID (from signup)
   entity_id: UUID; // Temporary entity ID in game session
   username: string;
   class: string;
   position: Position;
   direction: PlayerDirection;
-  inventory?: ItemState[]; // 玩家背包
-  equipment?: EquipmentState; // 玩家已裝備的 loadout
   escape: boolean;
   current_health?: number;
   max_health?: number;
@@ -56,6 +58,15 @@ export interface PlayerState {
    * and it still rises at 3 parry charges, where the charge count does not move.
    */
   parries?: number;
+}
+
+/**
+ * A player's own state, as `current_player` carries it: what they show, and their own bag and worn
+ * gear (FS-KE075 §I R52). Mirrors Go types.PlayerState.
+ */
+export interface PlayerState extends PublicPlayerState {
+  inventory?: ItemState[]; // 玩家背包
+  equipment?: EquipmentState; // 玩家已裝備的 loadout
 }
 
 /** What a class resource is (FS-8AY7S req 17): mage mana, warrior/archer stamina, mercenary parry charges. */
@@ -296,10 +307,16 @@ export interface ClientGameState {
   /** Which kind of world this state came from. Mirrors types.WorldType. */
   world_type?: "hub" | "run" | "field";
   current_player: PlayerState | null; // This client's player state
-  other_players: PlayerState[]; // Other players in session
+  /** Other players in the world: what they show, never their bag or worn gear (FS-KE075 §I). */
+  other_players: PublicPlayerState[];
   items: string[]; // TODO: Update when items are structured
   doors: DoorState[];
-  walls: WallState[];
+  /**
+   * The hub's and a field's walls, every tick. A run's state has none on any floor: its walls
+   * come once per floor in its `floor_map` (FS-KE075 §F.34, ADR-0060), so the run scene never
+   * reads this key.
+   */
+  walls?: WallState[];
   containers: ContainerState[];
   escape_doors: EscapeDoorState[]; // Escape doors with lock state
   switches: SwitchState[]; // Switches/buttons for puzzles
@@ -317,6 +334,50 @@ export interface ClientGameState {
   /** Live burning trails, a full snapshot each tick; absent when none, always absent in the hub (FS-4R9M9 R56). */
   trails?: TrailState[];
   escaped_count: number; // Number of players who have escaped
+}
+
+/** One rect of a region, in cells of the floor's `cell_size` (FS-KE075 §F.31). */
+export interface CellRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** One named part of a dungeon floor's walkable cells: a room or a corridor segment. */
+export interface FloorRegion {
+  id: number;
+  kind: "room" | "corridor";
+  cells: CellRect[];
+}
+
+/**
+ * A run floor's static layout, sent once per floor as `floor_map` (FS-KE075 §F.31, ADR-0060):
+ * after the run's `world_entered`, on every floor change and in answer to `request_floor_map`.
+ * `cell_size` and `regions` come only with a floor built on a cell grid; a floor of buildings
+ * carries its walls with their `house_id` as the snapshot used to.
+ */
+export interface FloorMap {
+  session_id: UUID;
+  floor: number;
+  width: number;
+  height: number;
+  cell_size?: number;
+  regions?: FloorRegion[];
+  walls: WallState[];
+}
+
+/** Whether a `floor_map` payload is one: a run's floor with a size and its walls. */
+export function isFloorMap(data: unknown): data is FloorMap {
+  const map = data as Partial<FloorMap> | null;
+  return (
+    !!map &&
+    typeof map.session_id === "string" &&
+    typeof map.floor === "number" &&
+    typeof map.width === "number" &&
+    typeof map.height === "number" &&
+    Array.isArray(map.walls)
+  );
 }
 
 // Type guard to check if a message is a game state update

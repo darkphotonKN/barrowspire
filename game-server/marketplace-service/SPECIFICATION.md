@@ -111,12 +111,21 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Listing buyout price → FS-9XKS6
 - [ ] Marketplace writes require a verified email → FS-V6SFK
 - [x] Item refusals passed through on listing → FS-HBXZN
+- [ ] Accept never sells below the leading bid shown → FS-F692V
+- [ ] Bid withdrawals capped per listing → FS-ZE43K
+- [ ] Only leading-bid withdrawals count toward the cap → FS-S109X
+- [ ] Distinct refusals for a bid too low or at buyout → FS-V74WE
+- [ ] No bidding against your own lead → FS-72KT8
+- [ ] Listings created only over a confirmed reservation → FS-04ZB6
+- [ ] Withdraw a listing → FS-V7A5S
+- [ ] Listing duration bounds → FS-XEDFF
 
 ### Auction lifecycle
 
 - [ ] BidPlaced saga orchestration
 - [ ] Auction settlement → FS-NXP1W
 - [ ] Auction timeouts and reconciliation
+- [ ] Reconcilers reach every stale candidate each pass → FS-9BJCP
 
 ### Surface
 
@@ -125,5 +134,6 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Withdraw a bid (gRPC) → FS-none
 - [x] Read a member's own listings → FS-0YXG6
 - [x] Browse active listings → FS-8EGFA
+- [ ] Public listing reads expose no member ids → FS-GKHYD
 - [x] Read a member's own bids → FS-EYQ8K
 - [x] Withdraw an outbid bid → FS-EYQ8K

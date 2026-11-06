@@ -23,11 +23,18 @@
 - [x] Bag and stash locations on owned instances → FS-VPD8Y
 - [x] In-run status on owned instances → FS-18Z5F
 - [x] Worn items refused for listing → FS-HBXZN
+- [ ] Per-seller listed-item cap → FS-XEDFF
+- [ ] Only stash items reserved for listing → FS-3R77D
 
 ## Grants
 
 - [x] Idempotent item grants into the stash → FS-1GZGD
 - [x] Item snapshots from templates and instances → FS-1GZGD
+
+## Marketplace reservation
+
+- [ ] Reservation confirm and release by listing → FS-04ZB6
+- [ ] Page through stale reservations → FS-9BJCP
 
 ## Marketplace settlement
 

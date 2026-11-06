@@ -164,6 +164,21 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
     expect(hits.play.mock.calls[0][0]).toBe(body);
   });
 
+  // Leaving /game mid-field destroys the game, and the scene's input plugin has destroyed itself
+  // before the field lets its fight go: setting the cursor then throws on its nulled manager. Letting
+  // the boar under the pointer go set the hand back as a hover ending would (asked 2026-11-06).
+  it("should set no cursor on release with a boar under the pointer: the scene hands the cursor back itself", () => {
+    const { combat, state, sprites, cursor } = fieldOnStage();
+    state(me(200));
+    sprites[0].handlers.pointerover();
+    cursor.mockClear();
+
+    combat.release();
+
+    expect(cursor).not.toHaveBeenCalled();
+    expect(combat.monsters.size).toBe(0);
+  });
+
   it("should let everything go on release, ready for the next visit", () => {
     const { combat, state, projectiles, hits, sprites, sendMessage } = fieldOnStage();
     state(me(990));

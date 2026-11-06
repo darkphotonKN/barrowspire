@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
-import { ACCEPT_CONFLICT, ACCEPT_GONE, ACCEPT_SOLD } from "./accept";
+import { ACCEPT_CONFLICT, ACCEPT_GONE, ACCEPT_LEADING_BID_LOWERED, ACCEPT_SOLD } from "./accept";
 import { submitAccept, type AcceptSubmitDeps } from "./acceptFlow";
 import { BROWSE_UNREACHABLE } from "./browse";
 
@@ -18,15 +18,20 @@ function deps(answer?: Error) {
     refresh: async () => {
       log.push("refresh");
     },
+    onSold: () => {
+      log.push("sold");
+    },
   };
   return { d, log };
 }
 
 describe("submitAccept", () => {
-  it("should re-read only the listing once the sale is accepted, then say it is sold", async () => {
+  // The listing's re-read is the dialog's; onSold lets Mine re-read its rows, so a sold row
+  // shows what it fetched rather than the bid it was accepting.
+  it("should re-read the listing once the sale is accepted, tell the caller, then say it is sold", async () => {
     const { d, log } = deps();
     const result = await submitAccept(d);
-    expect(log).toEqual(["accept", "refresh"]);
+    expect(log).toEqual(["accept", "refresh", "sold"]);
     expect(result).toEqual({ sold: true, note: { tone: "ok", text: ACCEPT_SOLD } });
   });
 
@@ -35,6 +40,16 @@ describe("submitAccept", () => {
     const result = await submitAccept(d);
     expect(log).toEqual(["accept", "refresh"]);
     expect(result).toEqual({ sold: false, note: { tone: "error", text: ACCEPT_GONE } });
+  });
+
+  it("should re-read the listing and say the leading bid dropped when the floor refuses", async () => {
+    const { d, log } = deps(apiError(400, "LEADING_BID_LOWERED"));
+    const result = await submitAccept(d);
+    expect(log).toEqual(["accept", "refresh"]);
+    expect(result).toEqual({
+      sold: false,
+      note: { tone: "error", text: ACCEPT_LEADING_BID_LOWERED },
+    });
   });
 
   it.each([

@@ -70,13 +70,13 @@ const dropRank = (l: FixedLight<unknown>) =>
  * The lights to stamp, in the order given: all of them while they fit under `cap`, else less the
  * slits, then braziers, then sconces needed to fit. The stairs pool always survives.
  */
-export function budgetLights<T>(
-  lights: readonly FixedLight<T>[],
+export function budgetLights<L extends FixedLight<unknown>>(
+  lights: readonly L[],
   cap: number = FIXED_LIGHT_CAP,
-): FixedLight<T>[] {
+): L[] {
   let over = lights.length - Math.max(cap, 0);
   if (over <= 0) return [...lights];
-  const dropped = new Set<FixedLight<T>>();
+  const dropped = new Set<L>();
   for (const kind of DROP_ORDER) {
     const ofKind = lights
       .filter((l) => l.kind === kind)
@@ -88,4 +88,22 @@ export function budgetLights<T>(
     }
   }
   return lights.filter((l) => !dropped.has(l));
+}
+
+/**
+ * A dungeon floor's fixed lights to stamp now (FS-KE075 §H.45): only those standing in a chunk
+ * near the camera, and of them never more than `cap` at once, dropped as {@link budgetLights}
+ * drops them. A floor sixteen times the size holds more lights than the cap; the light-map never
+ * stamps more than the cap at a time, wherever the camera is.
+ *
+ * Under the fog of war, `on` says which are lit at all: a light in a region that is not visible is
+ * off (FS-SRA9J §C.12), before the cap, so an unlit light never takes a lit one's place.
+ */
+export function nearLights<L extends FixedLight<unknown> & { chunk: number }>(
+  lights: readonly L[],
+  shown: (chunk: number) => boolean,
+  cap: number = FIXED_LIGHT_CAP,
+  on: (light: L) => boolean = () => true,
+): L[] {
+  return budgetLights(lights.filter((l) => shown(l.chunk) && on(l)), cap);
 }

@@ -43,9 +43,16 @@ type messageHub struct {
 	// work finished off the loop and handed back to it: a party call's outcome, a lookup's answer
 	jobs loopJobs
 
+	// when each connection's request_floor_map was last answered, on the loop
+	// alone (FS-KE075 §F R33)
+	floorMapAnswers floorMapAnswers
+
 	// mail arrivals off Redis, passed on to HUB-world players on this loop; nil on a hub built
 	// without one, which then waits on no arrivals (FS-1GZGD R42, R43)
 	mail mailArrivalRelayer
+
+	// renewals limits renew_token per connection; read on the loop only.
+	renewals *renewLimiter
 }
 
 // mailArrivalRelayer is what the hub needs from the mail-arrival relay: the arrivals off the bus,
@@ -139,6 +146,7 @@ type SessionManager interface {
 	CheckLoadout(ctx context.Context, player *types.Player) error
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
+	RenewToken(ctx context.Context, conn *websocket.Conn, token string) error
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -304,6 +312,29 @@ func worldEnteredMessage(session *game.Session) types.Message {
 	}
 }
 
+// worldEntryMessages is what a client is sent on entering session, in order:
+// world_entered, then, for a run, its current floor's map, so the map always
+// follows the world it belongs to on the one queue (FS-KE075 §F R32). The hub
+// and the fields send their walls per tick and have no map.
+func worldEntryMessages(session *game.Session) []types.Message {
+	messages := []types.Message{worldEnteredMessage(session)}
+	if floorMap, ok := session.FloorMapMessage(); ok {
+		messages = append(messages, floorMap)
+	}
+	return messages
+}
+
+// sendWorldEntry sends conn what entering session takes, stopping at the first
+// message the queue refuses.
+func (h *messageHub) sendWorldEntry(conn *websocket.Conn, session *game.Session) error {
+	for _, message := range worldEntryMessages(session) {
+		if err := h.sender.SendMessageToConn(conn, message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // refuseField answers a refused field action with its words and the stable
 // reason the client switches on. FS-X2F2H §Requirements 10, 14, 60.
 func (h *messageHub) refuseField(conn *websocket.Conn, action string, err error) {
@@ -393,6 +424,7 @@ func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSende
 		presence:       presence,
 		jobs:           jobs,
 		mail:           mail,
+		renewals:       newRenewLimiter(renewTokenInterval),
 	}
 }
 
@@ -412,6 +444,9 @@ func (h *messageHub) Run(ctx context.Context) {
 			if constants.Action(clientPackage.Message.Action) == constants.ActionChat {
 				// a chat line's text is never logged (FS-WJGFJ R14, ADR-0033)
 				slog.Debug("incoming chat line")
+			} else if constants.Action(clientPackage.Message.Action) == constants.ActionRenewToken {
+				// the token is a credential and is never logged (FS-ZPX58 R32)
+				slog.Debug("incoming renew_token")
 			} else {
 				slog.Info("incoming message.", "message", clientPackage.Message)
 			}
@@ -617,7 +652,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					LocalPlayers: []*types.Player{player},
 				})
 				slog.Info("Solo run started", "session_id", session.ID, "player_id", player.ID)
-				if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session)); err != nil {
+				if err := h.sendWorldEntry(clientPackage.Conn, session); err != nil {
 					slog.Warn("Could not tell the delver their solo run started", "player_id", player.ID, "error", err)
 				}
 
@@ -647,6 +682,11 @@ func (h *messageHub) Run(ctx context.Context) {
 			// FS-X2F2H §Requirements 9–13.
 			case constants.ActionEnterField:
 				go h.enterField(ctx, clientPackage)
+
+			// A client in a run whose floor's map never arrived asking again;
+			// answered at most once a second, ignored outside a run. FS-KE075 §F R33.
+			case constants.ActionRequestFloorMap:
+				h.answerFloorMap(clientPackage.Conn, time.Now())
 
 			// A player at a field's entrance walking home to the hub, beside
 			// leave_run. FS-X2F2H §Requirements 14–16.
@@ -724,6 +764,17 @@ func (h *messageHub) Run(ctx context.Context) {
 				}); err != nil {
 					slog.Warn("Could not tell a member they left the hub", "player_id", player.ID, "error", err)
 				}
+
+			// A renewed access token for the connection's own member: held in
+			// place of the one they connected with, in whatever world they are.
+			// At most one per second per connection reaches auth-service; the
+			// check runs off the loop. FS-ZPX58 R27-R31.
+			case constants.ActionRenewToken:
+				if !h.renewals.allow(clientPackage.Conn, time.Now()) {
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, renewTokenTooSoon)
+					continue
+				}
+				go h.renewToken(clientPackage)
 
 			// A chat line: stamped and relayed on the loop to everyone seated on
 			// this pod; never forwarded to a world. FS-WJGFJ §Requirements B9–B11.
@@ -1035,8 +1086,10 @@ func (h *messageHub) startMatchedRun(ctx context.Context, matched matchmaker.Mat
 	}
 	// game_found was this message under an older name, from when a run
 	// was the only world anyone could enter. FS-29KSH §Requirements 15.
-	if err := h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session)); err != nil {
-		slog.Warn("world_entered not delivered to every matched player", "session_id", session.ID, "error", err)
+	for _, message := range worldEntryMessages(session) {
+		if err := h.sender.BroadcastToPlayerList(playerIDs, message); err != nil {
+			slog.Warn("Run entry not delivered to every matched player", "session_id", session.ID, "action", message.Action, "error", err)
+		}
 	}
 
 	// only now that the run exists are the other pods told to send their
@@ -1213,7 +1266,7 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 			"player_id", player.ID,
 			"current_game_session_id", player.CurrentGameSessionId)
 
-		if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session)); err != nil {
+		if err := h.sendWorldEntry(clientPackage.Conn, session); err != nil {
 			slog.Warn("Could not tell a member which run to resume", "player_id", player.ID, "error", err)
 		}
 

@@ -34,7 +34,7 @@ func (r *fakeListingReader) Execute(ctx context.Context, listingID uuid.UUID) (*
 }
 
 func newGetListingHandler(reader *fakeListingReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, nil, nil, nil, reader, nil, nil)
+	return NewHandler(nil, nil, nil, nil, nil, nil, nil, reader, nil, nil, nil)
 }
 
 // Get-one is public: a visitor with no identity on the context is served, and
@@ -117,6 +117,36 @@ func TestGetListing_CarriesTheBuyoutPrice(t *testing.T) {
 				return
 			}
 			assert.Equal(t, int64(500), res.GetListing().GetBuyoutPrice())
+		})
+	}
+}
+
+// own on the detail read follows the same rule as browse (FS-GKHYD R5), in
+// every status: a sold listing still tells its seller it was theirs, and the
+// gRPC listing keeps its seller, buyer and sold price (R6).
+func TestGetListing_AnswersOwnPerViewer(t *testing.T) {
+	seller := uuid.New()
+	buyer := uuid.New()
+	soldPrice := 900
+	sold := dto.ListingDetails{
+		ID: uuid.New(), SellerID: seller, BuyerID: &buyer, ItemID: uuid.New(),
+		StartPrice: 300, SoldPrice: &soldPrice, Status: listing.StatusSold,
+		EndsAt: time.Now().Add(-time.Hour),
+	}
+
+	for _, tt := range ownCases(seller) {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := &fakeListingReader{listing: &sold}
+			ctx := tt.ctx(t, "/marketplace.MarketplaceService/GetListing")
+
+			res, err := newGetListingHandler(reader).GetListing(ctx, &pb.GetListingRequest{ListingId: sold.ID.String()})
+
+			require.NoError(t, err)
+			got := res.GetListing()
+			assert.Equal(t, tt.wantOwn, got.GetOwn())
+			assert.Equal(t, seller.String(), got.GetSellerId())
+			assert.Equal(t, buyer.String(), got.GetBuyerId())
+			assert.Equal(t, int64(900), got.GetSoldPrice())
 		})
 	}
 }

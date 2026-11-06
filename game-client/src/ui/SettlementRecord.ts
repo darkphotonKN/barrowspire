@@ -56,9 +56,20 @@ export class SettlementRecord {
 
   constructor(
     private readonly scene: Stage,
-    private readonly anchor: { x: number; bottom: number },
+    private anchor: { x: number; bottom: number },
     private readonly onClose: () => void,
   ) {}
+
+  /**
+   * The logical view changed: the record's place is `anchor` now, and an open record is built
+   * again there, its content and state untouched (FS-ZAJMH R13).
+   */
+  relayout(anchor: { x: number; bottom: number }): void {
+    this.anchor = anchor;
+    if (!this.panel) return;
+    this.close();
+    this.open();
+  }
 
   /** The record's content, replaced on every `settlement` (R20). Redrawn now if open. */
   set(view: RecordView): void {

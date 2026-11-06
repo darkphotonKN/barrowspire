@@ -148,7 +148,7 @@ func TestPlaceBidOnNonActiveListing(t *testing.T) {
 			name: "withdrawn listing is closed",
 			setup: func(t *testing.T) *Listing {
 				l := activeListing(t, 100)
-				require.NoError(t, l.Cancel(now))
+				require.NoError(t, l.Withdraw(l.Snapshot().SellerID, now))
 				return l
 			},
 		},
@@ -614,4 +614,95 @@ func TestPlaceBidWithID_SameKeyFromTheSameMember_IsAReplay(t *testing.T) {
 
 	assert.False(t, l.HasBid(resend))
 	assert.Len(t, l.Snapshot().Bids, 1)
+}
+
+// TestPlaceBid_SellerOnOwnListing_Refused pins that a seller cannot bid on their
+// own listing. Winning it costs them nothing (CommitHold debits and CreditSeller
+// credits the same account) and a withdrawal undoes it, so a seller's bid is a
+// free shill that raises the price real bidders must beat.
+func TestPlaceBid_SellerOnOwnListing_Refused(t *testing.T) {
+	l := activeListing(t, 100)
+	seller := l.Snapshot().SellerID
+
+	err := l.PlaceBid(seller, 500, uuid.Nil, time.Now())
+
+	assert.ErrorIs(t, err, ErrSellerCannotBid)
+	assert.Empty(t, l.Snapshot().Bids)
+}
+
+// TestCanPlaceBid pins the read-only check a caller asks before holding gold
+// for a bid: the seller is refused, and so is a listing that has ended, the
+// same rules PlaceBidWithID applies again under the lock.
+func TestCanPlaceBid(t *testing.T) {
+	l := activeListing(t, 100)
+	snap := l.Snapshot()
+
+	assert.ErrorIs(t, l.CanPlaceBid(snap.SellerID, time.Now()), ErrSellerCannotBid)
+	assert.ErrorIs(t, l.CanPlaceBid(uuid.New(), snap.EndsAt), ErrListingExpired)
+	assert.NoError(t, l.CanPlaceBid(uuid.New(), time.Now()))
+}
+
+// TestWithdrawBid_LeaderInFinalWindow_Refused is the bid-shielding repro: a high
+// leading bid withdrawn minutes before the end hands the win to a low runner-up
+// that nobody had time to outbid. 10 minutes before the end must be too late.
+func TestWithdrawBid_LeaderInFinalWindow_Refused(t *testing.T) {
+	now := time.Now() // auctionWith ends the auction at now + 1h
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 120, 0},
+		heldBid{BidStatusWinning, 5000, time.Second},
+	)
+	before := l.Snapshot()
+
+	err := l.WithdrawBid(ids[1], members[1], now.Add(50*time.Minute))
+
+	assert.ErrorIs(t, err, ErrLeadingBidLocked)
+	assert.Equal(t, before, l.Snapshot(), "a refused withdrawal changes nothing, promotes nobody")
+}
+
+// The final window is closed at its start: 30 minutes before the end the leader
+// is already locked in, and a moment earlier they may still leave (ADR-0028
+// promotion runs as before).
+func TestWithdrawBid_LeaderWindowBoundary(t *testing.T) {
+	tests := []struct {
+		name    string
+		at      time.Duration // after now; auctionWith ends the auction at now + 1h
+		wantErr error
+	}{
+		{"just before the window", 30*time.Minute - time.Nanosecond, nil},
+		{"at the window's start", 30 * time.Minute, ErrLeadingBidLocked},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			l, ids, members := auctionWith(t, now,
+				heldBid{BidStatusOutbid, 120, 0},
+				heldBid{BidStatusWinning, 150, time.Second},
+			)
+
+			err := l.WithdrawBid(ids[1], members[1], now.Add(tt.at))
+
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[1]).Status)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[0]).Status, "the runner-up is promoted")
+		})
+	}
+}
+
+// Only the leader is locked in: an OUTBID bid changes no outcome by leaving, so
+// its gold still comes back at once in the final window (ADR-0029).
+func TestWithdrawBid_OutbidInFinalWindow_Allowed(t *testing.T) {
+	now := time.Now()
+	l, ids, members := auctionWith(t, now,
+		heldBid{BidStatusOutbid, 120, 0},
+		heldBid{BidStatusWinning, 150, time.Second},
+	)
+
+	require.NoError(t, l.WithdrawBid(ids[0], members[0], now.Add(50*time.Minute)))
+
+	assert.Equal(t, BidStatusCancelled, bidByID(t, l, ids[0]).Status)
+	assert.Equal(t, BidStatusWinning, bidByID(t, l, ids[1]).Status)
 }

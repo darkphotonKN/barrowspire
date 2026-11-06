@@ -3441,7 +3441,12 @@ type ListStaleReservedRequest struct {
 	// How long a reservation must have waited for its listing. items-service
 	// measures it on its own database clock, the same clock that stamped the
 	// reservation. Must be positive.
-	OlderThan     *durationpb.Duration `protobuf:"bytes,2,opt,name=older_than,json=olderThan,proto3" json:"older_than,omitempty"`
+	OlderThan *durationpb.Duration `protobuf:"bytes,2,opt,name=older_than,json=olderThan,proto3" json:"older_than,omitempty"`
+	// Opaque position to read after: the previous page's next. Empty for the first
+	// page.
+	After string `protobuf:"bytes,3,opt,name=after,proto3" json:"after,omitempty"`
+	// At most 100; a missing or larger limit is 100.
+	Limit         int32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3481,6 +3486,20 @@ func (x *ListStaleReservedRequest) GetOlderThan() *durationpb.Duration {
 		return x.OlderThan
 	}
 	return nil
+}
+
+func (x *ListStaleReservedRequest) GetAfter() string {
+	if x != nil {
+		return x.After
+	}
+	return ""
+}
+
+func (x *ListStaleReservedRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type StaleReservation struct {
@@ -3536,8 +3555,11 @@ func (x *StaleReservation) GetListingId() string {
 }
 
 type ListStaleReservedResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reservations  []*StaleReservation    `protobuf:"bytes,2,rep,name=reservations,proto3" json:"reservations,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Oldest reservation first.
+	Reservations []*StaleReservation `protobuf:"bytes,2,rep,name=reservations,proto3" json:"reservations,omitempty"`
+	// Position of the following page; empty on the last page.
+	Next          string `protobuf:"bytes,3,opt,name=next,proto3" json:"next,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3577,6 +3599,13 @@ func (x *ListStaleReservedResponse) GetReservations() []*StaleReservation {
 		return x.Reservations
 	}
 	return nil
+}
+
+func (x *ListStaleReservedResponse) GetNext() string {
+	if x != nil {
+		return x.Next
+	}
+	return ""
 }
 
 // Both ids are required: the write acts only on the reservation for that listing.
@@ -3721,7 +3750,10 @@ func (x *ConfirmReservationRequest) GetListingId() string {
 }
 
 type ConfirmReservationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// true when the item is LISTED for this listing, now confirmed (a repeat
+	// included); false when it is not: cancelled, relisted or past LISTED.
+	Confirmed     bool `protobuf:"varint,1,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3756,6 +3788,285 @@ func (*ConfirmReservationResponse) Descriptor() ([]byte, []int) {
 	return file_api_proto_items_items_proto_rawDescGZIP(), []int{45}
 }
 
+func (x *ConfirmReservationResponse) GetConfirmed() bool {
+	if x != nil {
+		return x.Confirmed
+	}
+	return false
+}
+
+// Both ids are required: the write acts only on the confirmed reservation for
+// that listing.
+type ReleaseConfirmedReservationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ListingId     string                 `protobuf:"bytes,2,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseConfirmedReservationRequest) Reset() {
+	*x = ReleaseConfirmedReservationRequest{}
+	mi := &file_api_proto_items_items_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseConfirmedReservationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseConfirmedReservationRequest) ProtoMessage() {}
+
+func (x *ReleaseConfirmedReservationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_items_items_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseConfirmedReservationRequest.ProtoReflect.Descriptor instead.
+func (*ReleaseConfirmedReservationRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ReleaseConfirmedReservationRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ReleaseConfirmedReservationRequest) GetListingId() string {
+	if x != nil {
+		return x.ListingId
+	}
+	return ""
+}
+
+type ReleaseConfirmedReservationResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// true when the item was LISTED and confirmed for this listing and is now
+	// AVAILABLE with no listing; false when nothing matched and nothing changed.
+	Released      bool `protobuf:"varint,1,opt,name=released,proto3" json:"released,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseConfirmedReservationResponse) Reset() {
+	*x = ReleaseConfirmedReservationResponse{}
+	mi := &file_api_proto_items_items_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseConfirmedReservationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseConfirmedReservationResponse) ProtoMessage() {}
+
+func (x *ReleaseConfirmedReservationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_items_items_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseConfirmedReservationResponse.ProtoReflect.Descriptor instead.
+func (*ReleaseConfirmedReservationResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ReleaseConfirmedReservationResponse) GetReleased() bool {
+	if x != nil {
+		return x.Released
+	}
+	return false
+}
+
+type ListConfirmedReservationsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How long ago a reservation must have been confirmed. items-service measures
+	// it on its own database clock, the clock that stamped the confirmation. Must
+	// be positive.
+	OlderThan *durationpb.Duration `protobuf:"bytes,1,opt,name=older_than,json=olderThan,proto3" json:"older_than,omitempty"`
+	// Opaque position to read after: the previous page's next. Empty for the first
+	// page.
+	After string `protobuf:"bytes,2,opt,name=after,proto3" json:"after,omitempty"`
+	// At most 100; a missing or larger limit is 100.
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListConfirmedReservationsRequest) Reset() {
+	*x = ListConfirmedReservationsRequest{}
+	mi := &file_api_proto_items_items_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListConfirmedReservationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListConfirmedReservationsRequest) ProtoMessage() {}
+
+func (x *ListConfirmedReservationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_items_items_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListConfirmedReservationsRequest.ProtoReflect.Descriptor instead.
+func (*ListConfirmedReservationsRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ListConfirmedReservationsRequest) GetOlderThan() *durationpb.Duration {
+	if x != nil {
+		return x.OlderThan
+	}
+	return nil
+}
+
+func (x *ListConfirmedReservationsRequest) GetAfter() string {
+	if x != nil {
+		return x.After
+	}
+	return ""
+}
+
+func (x *ListConfirmedReservationsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ConfirmedReservation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ListingId     string                 `protobuf:"bytes,2,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmedReservation) Reset() {
+	*x = ConfirmedReservation{}
+	mi := &file_api_proto_items_items_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmedReservation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmedReservation) ProtoMessage() {}
+
+func (x *ConfirmedReservation) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_items_items_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmedReservation.ProtoReflect.Descriptor instead.
+func (*ConfirmedReservation) Descriptor() ([]byte, []int) {
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *ConfirmedReservation) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ConfirmedReservation) GetListingId() string {
+	if x != nil {
+		return x.ListingId
+	}
+	return ""
+}
+
+type ListConfirmedReservationsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Oldest confirmation first.
+	Reservations []*ConfirmedReservation `protobuf:"bytes,1,rep,name=reservations,proto3" json:"reservations,omitempty"`
+	// Position of the following page; empty on the last page.
+	Next          string `protobuf:"bytes,2,opt,name=next,proto3" json:"next,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListConfirmedReservationsResponse) Reset() {
+	*x = ListConfirmedReservationsResponse{}
+	mi := &file_api_proto_items_items_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListConfirmedReservationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListConfirmedReservationsResponse) ProtoMessage() {}
+
+func (x *ListConfirmedReservationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_items_items_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListConfirmedReservationsResponse.ProtoReflect.Descriptor instead.
+func (*ListConfirmedReservationsResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ListConfirmedReservationsResponse) GetReservations() []*ConfirmedReservation {
+	if x != nil {
+		return x.Reservations
+	}
+	return nil
+}
+
+func (x *ListConfirmedReservationsResponse) GetNext() string {
+	if x != nil {
+		return x.Next
+	}
+	return ""
+}
+
 // GetItemSummaries
 // What anyone may see of an item instance: no owner, no source, no price.
 type GetItemSummariesRequest struct {
@@ -3767,7 +4078,7 @@ type GetItemSummariesRequest struct {
 
 func (x *GetItemSummariesRequest) Reset() {
 	*x = GetItemSummariesRequest{}
-	mi := &file_api_proto_items_items_proto_msgTypes[46]
+	mi := &file_api_proto_items_items_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3779,7 +4090,7 @@ func (x *GetItemSummariesRequest) String() string {
 func (*GetItemSummariesRequest) ProtoMessage() {}
 
 func (x *GetItemSummariesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[46]
+	mi := &file_api_proto_items_items_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3792,7 +4103,7 @@ func (x *GetItemSummariesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetItemSummariesRequest.ProtoReflect.Descriptor instead.
 func (*GetItemSummariesRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{46}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *GetItemSummariesRequest) GetIds() []string {
@@ -3831,7 +4142,7 @@ type ItemSummary struct {
 
 func (x *ItemSummary) Reset() {
 	*x = ItemSummary{}
-	mi := &file_api_proto_items_items_proto_msgTypes[47]
+	mi := &file_api_proto_items_items_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3843,7 +4154,7 @@ func (x *ItemSummary) String() string {
 func (*ItemSummary) ProtoMessage() {}
 
 func (x *ItemSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[47]
+	mi := &file_api_proto_items_items_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3856,7 +4167,7 @@ func (x *ItemSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ItemSummary.ProtoReflect.Descriptor instead.
 func (*ItemSummary) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{47}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ItemSummary) GetId() string {
@@ -3994,7 +4305,7 @@ type GetItemSummariesResponse struct {
 
 func (x *GetItemSummariesResponse) Reset() {
 	*x = GetItemSummariesResponse{}
-	mi := &file_api_proto_items_items_proto_msgTypes[48]
+	mi := &file_api_proto_items_items_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4006,7 +4317,7 @@ func (x *GetItemSummariesResponse) String() string {
 func (*GetItemSummariesResponse) ProtoMessage() {}
 
 func (x *GetItemSummariesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[48]
+	mi := &file_api_proto_items_items_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4019,7 +4330,7 @@ func (x *GetItemSummariesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetItemSummariesResponse.ProtoReflect.Descriptor instead.
 func (*GetItemSummariesResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{48}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetItemSummariesResponse) GetSummaries() []*ItemSummary {
@@ -4064,7 +4375,7 @@ type ItemSnapshot struct {
 
 func (x *ItemSnapshot) Reset() {
 	*x = ItemSnapshot{}
-	mi := &file_api_proto_items_items_proto_msgTypes[49]
+	mi := &file_api_proto_items_items_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4076,7 +4387,7 @@ func (x *ItemSnapshot) String() string {
 func (*ItemSnapshot) ProtoMessage() {}
 
 func (x *ItemSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[49]
+	mi := &file_api_proto_items_items_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4089,7 +4400,7 @@ func (x *ItemSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ItemSnapshot.ProtoReflect.Descriptor instead.
 func (*ItemSnapshot) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{49}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ItemSnapshot) GetTemplateId() string {
@@ -4238,7 +4549,7 @@ type TemplateSnapshotRequest struct {
 
 func (x *TemplateSnapshotRequest) Reset() {
 	*x = TemplateSnapshotRequest{}
-	mi := &file_api_proto_items_items_proto_msgTypes[50]
+	mi := &file_api_proto_items_items_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4250,7 +4561,7 @@ func (x *TemplateSnapshotRequest) String() string {
 func (*TemplateSnapshotRequest) ProtoMessage() {}
 
 func (x *TemplateSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[50]
+	mi := &file_api_proto_items_items_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4263,7 +4574,7 @@ func (x *TemplateSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TemplateSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*TemplateSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{50}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *TemplateSnapshotRequest) GetTemplateId() string {
@@ -4292,7 +4603,7 @@ type ResolveItemSnapshotsRequest struct {
 
 func (x *ResolveItemSnapshotsRequest) Reset() {
 	*x = ResolveItemSnapshotsRequest{}
-	mi := &file_api_proto_items_items_proto_msgTypes[51]
+	mi := &file_api_proto_items_items_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4304,7 +4615,7 @@ func (x *ResolveItemSnapshotsRequest) String() string {
 func (*ResolveItemSnapshotsRequest) ProtoMessage() {}
 
 func (x *ResolveItemSnapshotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[51]
+	mi := &file_api_proto_items_items_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4317,7 +4628,7 @@ func (x *ResolveItemSnapshotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveItemSnapshotsRequest.ProtoReflect.Descriptor instead.
 func (*ResolveItemSnapshotsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{51}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ResolveItemSnapshotsRequest) GetTemplates() []*TemplateSnapshotRequest {
@@ -4346,7 +4657,7 @@ type ResolvedItemSnapshot struct {
 
 func (x *ResolvedItemSnapshot) Reset() {
 	*x = ResolvedItemSnapshot{}
-	mi := &file_api_proto_items_items_proto_msgTypes[52]
+	mi := &file_api_proto_items_items_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4358,7 +4669,7 @@ func (x *ResolvedItemSnapshot) String() string {
 func (*ResolvedItemSnapshot) ProtoMessage() {}
 
 func (x *ResolvedItemSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[52]
+	mi := &file_api_proto_items_items_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4371,7 +4682,7 @@ func (x *ResolvedItemSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvedItemSnapshot.ProtoReflect.Descriptor instead.
 func (*ResolvedItemSnapshot) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{52}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ResolvedItemSnapshot) GetId() string {
@@ -4407,7 +4718,7 @@ type ResolveItemSnapshotsResponse struct {
 
 func (x *ResolveItemSnapshotsResponse) Reset() {
 	*x = ResolveItemSnapshotsResponse{}
-	mi := &file_api_proto_items_items_proto_msgTypes[53]
+	mi := &file_api_proto_items_items_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4419,7 +4730,7 @@ func (x *ResolveItemSnapshotsResponse) String() string {
 func (*ResolveItemSnapshotsResponse) ProtoMessage() {}
 
 func (x *ResolveItemSnapshotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[53]
+	mi := &file_api_proto_items_items_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4432,7 +4743,7 @@ func (x *ResolveItemSnapshotsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveItemSnapshotsResponse.ProtoReflect.Descriptor instead.
 func (*ResolveItemSnapshotsResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{53}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ResolveItemSnapshotsResponse) GetTemplates() []*ResolvedItemSnapshot {
@@ -4480,7 +4791,7 @@ type GrantItem struct {
 
 func (x *GrantItem) Reset() {
 	*x = GrantItem{}
-	mi := &file_api_proto_items_items_proto_msgTypes[54]
+	mi := &file_api_proto_items_items_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4492,7 +4803,7 @@ func (x *GrantItem) String() string {
 func (*GrantItem) ProtoMessage() {}
 
 func (x *GrantItem) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[54]
+	mi := &file_api_proto_items_items_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4505,7 +4816,7 @@ func (x *GrantItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantItem.ProtoReflect.Descriptor instead.
 func (*GrantItem) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{54}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *GrantItem) GetSnapshot() *ItemSnapshot {
@@ -4535,7 +4846,7 @@ type GrantItemsRequest struct {
 
 func (x *GrantItemsRequest) Reset() {
 	*x = GrantItemsRequest{}
-	mi := &file_api_proto_items_items_proto_msgTypes[55]
+	mi := &file_api_proto_items_items_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4547,7 +4858,7 @@ func (x *GrantItemsRequest) String() string {
 func (*GrantItemsRequest) ProtoMessage() {}
 
 func (x *GrantItemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[55]
+	mi := &file_api_proto_items_items_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4560,7 +4871,7 @@ func (x *GrantItemsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantItemsRequest.ProtoReflect.Descriptor instead.
 func (*GrantItemsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{55}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *GrantItemsRequest) GetGrantId() string {
@@ -4590,7 +4901,7 @@ type GrantItemsResponse struct {
 
 func (x *GrantItemsResponse) Reset() {
 	*x = GrantItemsResponse{}
-	mi := &file_api_proto_items_items_proto_msgTypes[56]
+	mi := &file_api_proto_items_items_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4602,7 +4913,7 @@ func (x *GrantItemsResponse) String() string {
 func (*GrantItemsResponse) ProtoMessage() {}
 
 func (x *GrantItemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_items_items_proto_msgTypes[56]
+	mi := &file_api_proto_items_items_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4615,7 +4926,7 @@ func (x *GrantItemsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantItemsResponse.ProtoReflect.Descriptor instead.
 func (*GrantItemsResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_items_items_proto_rawDescGZIP(), []int{56}
+	return file_api_proto_items_items_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *GrantItemsResponse) GetItemIds() []string {
@@ -5014,16 +5325,19 @@ const file_api_proto_items_items_proto_rawDesc = "" +
 	"\f_mana_amountB\x10\n" +
 	"\x0e_buff_durationB\r\n" +
 	"\v_durabilityB\x0e\n" +
-	"\f_description\"j\n" +
+	"\f_description\"\x96\x01\n" +
 	"\x18ListStaleReservedRequest\x128\n" +
 	"\n" +
-	"older_than\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\tolderThanJ\x04\b\x01\x10\x02R\x0ereservedBefore\"J\n" +
+	"older_than\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\tolderThan\x12\x14\n" +
+	"\x05after\x18\x03 \x01(\tR\x05after\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02R\x0ereservedBefore\"J\n" +
 	"\x10StaleReservation\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1d\n" +
 	"\n" +
-	"listing_id\x18\x02 \x01(\tR\tlistingId\"h\n" +
+	"listing_id\x18\x02 \x01(\tR\tlistingId\"|\n" +
 	"\x19ListStaleReservedResponse\x12;\n" +
-	"\freservations\x18\x02 \x03(\v2\x17.items.StaleReservationR\freservationsJ\x04\b\x01\x10\x02R\bitem_ids\"R\n" +
+	"\freservations\x18\x02 \x03(\v2\x17.items.StaleReservationR\freservations\x12\x12\n" +
+	"\x04next\x18\x03 \x01(\tR\x04nextJ\x04\b\x01\x10\x02R\bitem_ids\"R\n" +
 	"\x18CancelReservationRequest\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1d\n" +
 	"\n" +
@@ -5032,8 +5346,27 @@ const file_api_proto_items_items_proto_rawDesc = "" +
 	"\x19ConfirmReservationRequest\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1d\n" +
 	"\n" +
-	"listing_id\x18\x02 \x01(\tR\tlistingId\"\x1c\n" +
-	"\x1aConfirmReservationResponse\"+\n" +
+	"listing_id\x18\x02 \x01(\tR\tlistingId\":\n" +
+	"\x1aConfirmReservationResponse\x12\x1c\n" +
+	"\tconfirmed\x18\x01 \x01(\bR\tconfirmed\"\\\n" +
+	"\"ReleaseConfirmedReservationRequest\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1d\n" +
+	"\n" +
+	"listing_id\x18\x02 \x01(\tR\tlistingId\"A\n" +
+	"#ReleaseConfirmedReservationResponse\x12\x1a\n" +
+	"\breleased\x18\x01 \x01(\bR\breleased\"\x88\x01\n" +
+	" ListConfirmedReservationsRequest\x128\n" +
+	"\n" +
+	"older_than\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\tolderThan\x12\x14\n" +
+	"\x05after\x18\x02 \x01(\tR\x05after\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"N\n" +
+	"\x14ConfirmedReservation\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1d\n" +
+	"\n" +
+	"listing_id\x18\x02 \x01(\tR\tlistingId\"x\n" +
+	"!ListConfirmedReservationsResponse\x12?\n" +
+	"\freservations\x18\x01 \x03(\v2\x1b.items.ConfirmedReservationR\freservations\x12\x12\n" +
+	"\x04next\x18\x02 \x01(\tR\x04next\"+\n" +
 	"\x17GetItemSummariesRequest\x12\x10\n" +
 	"\x03ids\x18\x01 \x03(\tR\x03ids\"\xe8\x06\n" +
 	"\vItemSummary\x12\x0e\n" +
@@ -5142,7 +5475,7 @@ const file_api_proto_items_items_proto_rawDesc = "" +
 	"\x05items\x18\x02 \x03(\v2\x10.items.GrantItemR\x05items\"X\n" +
 	"\x12GrantItemsResponse\x12\x19\n" +
 	"\bitem_ids\x18\x01 \x03(\tR\aitemIds\x12'\n" +
-	"\x0falready_granted\x18\x02 \x01(\bR\x0ealreadyGranted2\xbb\x10\n" +
+	"\x0falready_granted\x18\x02 \x01(\bR\x0ealreadyGranted2\xa1\x12\n" +
 	"\fItemsService\x12M\n" +
 	"\x11ListItemTemplates\x12\x16.google.protobuf.Empty\x1a .items.ListItemTemplatesResponse\x12E\n" +
 	"\rListItemTypes\x12\x16.google.protobuf.Empty\x1a\x1c.items.ListItemTypesResponse\x12K\n" +
@@ -5167,7 +5500,9 @@ const file_api_proto_items_items_proto_rawDesc = "" +
 	"\vReserveItem\x12\x19.items.ReserveItemRequest\x1a\x1a.items.ReserveItemResponse\x12V\n" +
 	"\x11ListStaleReserved\x12\x1f.items.ListStaleReservedRequest\x1a .items.ListStaleReservedResponse\x12V\n" +
 	"\x11CancelReservation\x12\x1f.items.CancelReservationRequest\x1a .items.CancelReservationResponse\x12Y\n" +
-	"\x12ConfirmReservation\x12 .items.ConfirmReservationRequest\x1a!.items.ConfirmReservationResponse\x12S\n" +
+	"\x12ConfirmReservation\x12 .items.ConfirmReservationRequest\x1a!.items.ConfirmReservationResponse\x12t\n" +
+	"\x1bReleaseConfirmedReservation\x12).items.ReleaseConfirmedReservationRequest\x1a*.items.ReleaseConfirmedReservationResponse\x12n\n" +
+	"\x19ListConfirmedReservations\x12'.items.ListConfirmedReservationsRequest\x1a(.items.ListConfirmedReservationsResponse\x12S\n" +
 	"\x10GetItemSummaries\x12\x1e.items.GetItemSummariesRequest\x1a\x1f.items.GetItemSummariesResponse\x12_\n" +
 	"\x14ResolveItemSnapshots\x12\".items.ResolveItemSnapshotsRequest\x1a#.items.ResolveItemSnapshotsResponse\x12A\n" +
 	"\n" +
@@ -5185,95 +5520,100 @@ func file_api_proto_items_items_proto_rawDescGZIP() []byte {
 	return file_api_proto_items_items_proto_rawDescData
 }
 
-var file_api_proto_items_items_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
+var file_api_proto_items_items_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_api_proto_items_items_proto_goTypes = []any{
-	(*Weapon)(nil),                          // 0: items.Weapon
-	(*WeaponDetail)(nil),                    // 1: items.WeaponDetail
-	(*ItemType)(nil),                        // 2: items.ItemType
-	(*ListItemTypesResponse)(nil),           // 3: items.ListItemTypesResponse
-	(*ItemRarity)(nil),                      // 4: items.ItemRarity
-	(*ListItemRaritiesResponse)(nil),        // 5: items.ListItemRaritiesResponse
-	(*CreateWeaponRequest)(nil),             // 6: items.CreateWeaponRequest
-	(*GetWeaponRequest)(nil),                // 7: items.GetWeaponRequest
-	(*ListWeaponsResponse)(nil),             // 8: items.ListWeaponsResponse
-	(*ArmorDetail)(nil),                     // 9: items.ArmorDetail
-	(*ListItemTemplatesResponse)(nil),       // 10: items.ListItemTemplatesResponse
-	(*ListArmorsResponse)(nil),              // 11: items.ListArmorsResponse
-	(*ConsumableDetail)(nil),                // 12: items.ConsumableDetail
-	(*ListConsumablesResponse)(nil),         // 13: items.ListConsumablesResponse
-	(*ItemTemplate)(nil),                    // 14: items.ItemTemplate
-	(*UniqueItem)(nil),                      // 15: items.UniqueItem
-	(*AffixRange)(nil),                      // 16: items.AffixRange
-	(*CreateItemTemplateRequest)(nil),       // 17: items.CreateItemTemplateRequest
-	(*CreateCompleteWeaponRequest)(nil),     // 18: items.CreateCompleteWeaponRequest
-	(*CreateCompleteArmorRequest)(nil),      // 19: items.CreateCompleteArmorRequest
-	(*CreateCompleteConsumableRequest)(nil), // 20: items.CreateCompleteConsumableRequest
-	(*GetLoadoutRequest)(nil),               // 21: items.GetLoadoutRequest
-	(*GetLoadoutResponse)(nil),              // 22: items.GetLoadoutResponse
-	(*ListItemInstancesRequest)(nil),        // 23: items.ListItemInstancesRequest
-	(*ItemInstance)(nil),                    // 24: items.ItemInstance
-	(*Affix)(nil),                           // 25: items.Affix
-	(*ListItemInstancesResponse)(nil),       // 26: items.ListItemInstancesResponse
-	(*GetLoadoutWithItemsRequest)(nil),      // 27: items.GetLoadoutWithItemsRequest
-	(*GetLoadoutWithItemsResponse)(nil),     // 28: items.GetLoadoutWithItemsResponse
-	(*CheckOutRunGearRequest)(nil),          // 29: items.CheckOutRunGearRequest
-	(*CheckOutRunGearResponse)(nil),         // 30: items.CheckOutRunGearResponse
-	(*ApplySettlementRequest)(nil),          // 31: items.ApplySettlementRequest
-	(*ApplySettlementResponse)(nil),         // 32: items.ApplySettlementResponse
-	(*UpdateLoadoutRequest)(nil),            // 33: items.UpdateLoadoutRequest
-	(*UpdateLoadoutResponse)(nil),           // 34: items.UpdateLoadoutResponse
-	(*MoveItemInstanceRequest)(nil),         // 35: items.MoveItemInstanceRequest
-	(*MoveItemInstanceResponse)(nil),        // 36: items.MoveItemInstanceResponse
-	(*ReserveItemRequest)(nil),              // 37: items.ReserveItemRequest
-	(*ReserveItemResponse)(nil),             // 38: items.ReserveItemResponse
-	(*ListStaleReservedRequest)(nil),        // 39: items.ListStaleReservedRequest
-	(*StaleReservation)(nil),                // 40: items.StaleReservation
-	(*ListStaleReservedResponse)(nil),       // 41: items.ListStaleReservedResponse
-	(*CancelReservationRequest)(nil),        // 42: items.CancelReservationRequest
-	(*CancelReservationResponse)(nil),       // 43: items.CancelReservationResponse
-	(*ConfirmReservationRequest)(nil),       // 44: items.ConfirmReservationRequest
-	(*ConfirmReservationResponse)(nil),      // 45: items.ConfirmReservationResponse
-	(*GetItemSummariesRequest)(nil),         // 46: items.GetItemSummariesRequest
-	(*ItemSummary)(nil),                     // 47: items.ItemSummary
-	(*GetItemSummariesResponse)(nil),        // 48: items.GetItemSummariesResponse
-	(*ItemSnapshot)(nil),                    // 49: items.ItemSnapshot
-	(*TemplateSnapshotRequest)(nil),         // 50: items.TemplateSnapshotRequest
-	(*ResolveItemSnapshotsRequest)(nil),     // 51: items.ResolveItemSnapshotsRequest
-	(*ResolvedItemSnapshot)(nil),            // 52: items.ResolvedItemSnapshot
-	(*ResolveItemSnapshotsResponse)(nil),    // 53: items.ResolveItemSnapshotsResponse
-	(*GrantItem)(nil),                       // 54: items.GrantItem
-	(*GrantItemsRequest)(nil),               // 55: items.GrantItemsRequest
-	(*GrantItemsResponse)(nil),              // 56: items.GrantItemsResponse
-	(*timestamppb.Timestamp)(nil),           // 57: google.protobuf.Timestamp
-	(*events.ItemsExtractedEvent)(nil),      // 58: events.ItemsExtractedEvent
-	(*durationpb.Duration)(nil),             // 59: google.protobuf.Duration
-	(*emptypb.Empty)(nil),                   // 60: google.protobuf.Empty
+	(*Weapon)(nil),                              // 0: items.Weapon
+	(*WeaponDetail)(nil),                        // 1: items.WeaponDetail
+	(*ItemType)(nil),                            // 2: items.ItemType
+	(*ListItemTypesResponse)(nil),               // 3: items.ListItemTypesResponse
+	(*ItemRarity)(nil),                          // 4: items.ItemRarity
+	(*ListItemRaritiesResponse)(nil),            // 5: items.ListItemRaritiesResponse
+	(*CreateWeaponRequest)(nil),                 // 6: items.CreateWeaponRequest
+	(*GetWeaponRequest)(nil),                    // 7: items.GetWeaponRequest
+	(*ListWeaponsResponse)(nil),                 // 8: items.ListWeaponsResponse
+	(*ArmorDetail)(nil),                         // 9: items.ArmorDetail
+	(*ListItemTemplatesResponse)(nil),           // 10: items.ListItemTemplatesResponse
+	(*ListArmorsResponse)(nil),                  // 11: items.ListArmorsResponse
+	(*ConsumableDetail)(nil),                    // 12: items.ConsumableDetail
+	(*ListConsumablesResponse)(nil),             // 13: items.ListConsumablesResponse
+	(*ItemTemplate)(nil),                        // 14: items.ItemTemplate
+	(*UniqueItem)(nil),                          // 15: items.UniqueItem
+	(*AffixRange)(nil),                          // 16: items.AffixRange
+	(*CreateItemTemplateRequest)(nil),           // 17: items.CreateItemTemplateRequest
+	(*CreateCompleteWeaponRequest)(nil),         // 18: items.CreateCompleteWeaponRequest
+	(*CreateCompleteArmorRequest)(nil),          // 19: items.CreateCompleteArmorRequest
+	(*CreateCompleteConsumableRequest)(nil),     // 20: items.CreateCompleteConsumableRequest
+	(*GetLoadoutRequest)(nil),                   // 21: items.GetLoadoutRequest
+	(*GetLoadoutResponse)(nil),                  // 22: items.GetLoadoutResponse
+	(*ListItemInstancesRequest)(nil),            // 23: items.ListItemInstancesRequest
+	(*ItemInstance)(nil),                        // 24: items.ItemInstance
+	(*Affix)(nil),                               // 25: items.Affix
+	(*ListItemInstancesResponse)(nil),           // 26: items.ListItemInstancesResponse
+	(*GetLoadoutWithItemsRequest)(nil),          // 27: items.GetLoadoutWithItemsRequest
+	(*GetLoadoutWithItemsResponse)(nil),         // 28: items.GetLoadoutWithItemsResponse
+	(*CheckOutRunGearRequest)(nil),              // 29: items.CheckOutRunGearRequest
+	(*CheckOutRunGearResponse)(nil),             // 30: items.CheckOutRunGearResponse
+	(*ApplySettlementRequest)(nil),              // 31: items.ApplySettlementRequest
+	(*ApplySettlementResponse)(nil),             // 32: items.ApplySettlementResponse
+	(*UpdateLoadoutRequest)(nil),                // 33: items.UpdateLoadoutRequest
+	(*UpdateLoadoutResponse)(nil),               // 34: items.UpdateLoadoutResponse
+	(*MoveItemInstanceRequest)(nil),             // 35: items.MoveItemInstanceRequest
+	(*MoveItemInstanceResponse)(nil),            // 36: items.MoveItemInstanceResponse
+	(*ReserveItemRequest)(nil),                  // 37: items.ReserveItemRequest
+	(*ReserveItemResponse)(nil),                 // 38: items.ReserveItemResponse
+	(*ListStaleReservedRequest)(nil),            // 39: items.ListStaleReservedRequest
+	(*StaleReservation)(nil),                    // 40: items.StaleReservation
+	(*ListStaleReservedResponse)(nil),           // 41: items.ListStaleReservedResponse
+	(*CancelReservationRequest)(nil),            // 42: items.CancelReservationRequest
+	(*CancelReservationResponse)(nil),           // 43: items.CancelReservationResponse
+	(*ConfirmReservationRequest)(nil),           // 44: items.ConfirmReservationRequest
+	(*ConfirmReservationResponse)(nil),          // 45: items.ConfirmReservationResponse
+	(*ReleaseConfirmedReservationRequest)(nil),  // 46: items.ReleaseConfirmedReservationRequest
+	(*ReleaseConfirmedReservationResponse)(nil), // 47: items.ReleaseConfirmedReservationResponse
+	(*ListConfirmedReservationsRequest)(nil),    // 48: items.ListConfirmedReservationsRequest
+	(*ConfirmedReservation)(nil),                // 49: items.ConfirmedReservation
+	(*ListConfirmedReservationsResponse)(nil),   // 50: items.ListConfirmedReservationsResponse
+	(*GetItemSummariesRequest)(nil),             // 51: items.GetItemSummariesRequest
+	(*ItemSummary)(nil),                         // 52: items.ItemSummary
+	(*GetItemSummariesResponse)(nil),            // 53: items.GetItemSummariesResponse
+	(*ItemSnapshot)(nil),                        // 54: items.ItemSnapshot
+	(*TemplateSnapshotRequest)(nil),             // 55: items.TemplateSnapshotRequest
+	(*ResolveItemSnapshotsRequest)(nil),         // 56: items.ResolveItemSnapshotsRequest
+	(*ResolvedItemSnapshot)(nil),                // 57: items.ResolvedItemSnapshot
+	(*ResolveItemSnapshotsResponse)(nil),        // 58: items.ResolveItemSnapshotsResponse
+	(*GrantItem)(nil),                           // 59: items.GrantItem
+	(*GrantItemsRequest)(nil),                   // 60: items.GrantItemsRequest
+	(*GrantItemsResponse)(nil),                  // 61: items.GrantItemsResponse
+	(*timestamppb.Timestamp)(nil),               // 62: google.protobuf.Timestamp
+	(*events.ItemsExtractedEvent)(nil),          // 63: events.ItemsExtractedEvent
+	(*durationpb.Duration)(nil),                 // 64: google.protobuf.Duration
+	(*emptypb.Empty)(nil),                       // 65: google.protobuf.Empty
 }
 var file_api_proto_items_items_proto_depIdxs = []int32{
-	57, // 0: items.Weapon.created_at:type_name -> google.protobuf.Timestamp
-	57, // 1: items.Weapon.updated_at:type_name -> google.protobuf.Timestamp
-	57, // 2: items.WeaponDetail.created_at:type_name -> google.protobuf.Timestamp
-	57, // 3: items.WeaponDetail.updated_at:type_name -> google.protobuf.Timestamp
-	57, // 4: items.ItemType.created_at:type_name -> google.protobuf.Timestamp
-	57, // 5: items.ItemType.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 0: items.Weapon.created_at:type_name -> google.protobuf.Timestamp
+	62, // 1: items.Weapon.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 2: items.WeaponDetail.created_at:type_name -> google.protobuf.Timestamp
+	62, // 3: items.WeaponDetail.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 4: items.ItemType.created_at:type_name -> google.protobuf.Timestamp
+	62, // 5: items.ItemType.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 6: items.ListItemTypesResponse.item_types:type_name -> items.ItemType
-	57, // 7: items.ItemRarity.created_at:type_name -> google.protobuf.Timestamp
-	57, // 8: items.ItemRarity.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 7: items.ItemRarity.created_at:type_name -> google.protobuf.Timestamp
+	62, // 8: items.ItemRarity.updated_at:type_name -> google.protobuf.Timestamp
 	4,  // 9: items.ListItemRaritiesResponse.item_rarities:type_name -> items.ItemRarity
 	1,  // 10: items.ListWeaponsResponse.weapons:type_name -> items.WeaponDetail
-	57, // 11: items.ArmorDetail.created_at:type_name -> google.protobuf.Timestamp
-	57, // 12: items.ArmorDetail.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 11: items.ArmorDetail.created_at:type_name -> google.protobuf.Timestamp
+	62, // 12: items.ArmorDetail.updated_at:type_name -> google.protobuf.Timestamp
 	14, // 13: items.ListItemTemplatesResponse.items:type_name -> items.ItemTemplate
 	9,  // 14: items.ListArmorsResponse.armors:type_name -> items.ArmorDetail
-	57, // 15: items.ConsumableDetail.created_at:type_name -> google.protobuf.Timestamp
-	57, // 16: items.ConsumableDetail.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 15: items.ConsumableDetail.created_at:type_name -> google.protobuf.Timestamp
+	62, // 16: items.ConsumableDetail.updated_at:type_name -> google.protobuf.Timestamp
 	12, // 17: items.ListConsumablesResponse.consumables:type_name -> items.ConsumableDetail
-	57, // 18: items.ItemTemplate.created_at:type_name -> google.protobuf.Timestamp
-	57, // 19: items.ItemTemplate.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 18: items.ItemTemplate.created_at:type_name -> google.protobuf.Timestamp
+	62, // 19: items.ItemTemplate.updated_at:type_name -> google.protobuf.Timestamp
 	15, // 20: items.ItemTemplate.unique:type_name -> items.UniqueItem
 	16, // 21: items.UniqueItem.fixed_affixes:type_name -> items.AffixRange
-	57, // 22: items.GetLoadoutResponse.created_at:type_name -> google.protobuf.Timestamp
-	57, // 23: items.GetLoadoutResponse.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 22: items.GetLoadoutResponse.created_at:type_name -> google.protobuf.Timestamp
+	62, // 23: items.GetLoadoutResponse.updated_at:type_name -> google.protobuf.Timestamp
 	25, // 24: items.ItemInstance.affixes:type_name -> items.Affix
 	24, // 25: items.ListItemInstancesResponse.items:type_name -> items.ItemInstance
 	24, // 26: items.GetLoadoutWithItemsResponse.weapon:type_name -> items.ItemInstance
@@ -5288,76 +5628,82 @@ var file_api_proto_items_items_proto_depIdxs = []int32{
 	24, // 35: items.GetLoadoutWithItemsResponse.consumable_3:type_name -> items.ItemInstance
 	28, // 36: items.CheckOutRunGearResponse.loadout:type_name -> items.GetLoadoutWithItemsResponse
 	24, // 37: items.CheckOutRunGearResponse.bag:type_name -> items.ItemInstance
-	58, // 38: items.ApplySettlementRequest.event:type_name -> events.ItemsExtractedEvent
-	57, // 39: items.ReserveItemRequest.ends_at:type_name -> google.protobuf.Timestamp
-	59, // 40: items.ListStaleReservedRequest.older_than:type_name -> google.protobuf.Duration
+	63, // 38: items.ApplySettlementRequest.event:type_name -> events.ItemsExtractedEvent
+	62, // 39: items.ReserveItemRequest.ends_at:type_name -> google.protobuf.Timestamp
+	64, // 40: items.ListStaleReservedRequest.older_than:type_name -> google.protobuf.Duration
 	40, // 41: items.ListStaleReservedResponse.reservations:type_name -> items.StaleReservation
-	25, // 42: items.ItemSummary.affixes:type_name -> items.Affix
-	47, // 43: items.GetItemSummariesResponse.summaries:type_name -> items.ItemSummary
-	25, // 44: items.ItemSnapshot.affixes:type_name -> items.Affix
-	50, // 45: items.ResolveItemSnapshotsRequest.templates:type_name -> items.TemplateSnapshotRequest
-	49, // 46: items.ResolvedItemSnapshot.snapshot:type_name -> items.ItemSnapshot
-	52, // 47: items.ResolveItemSnapshotsResponse.templates:type_name -> items.ResolvedItemSnapshot
-	52, // 48: items.ResolveItemSnapshotsResponse.instances:type_name -> items.ResolvedItemSnapshot
-	49, // 49: items.GrantItem.snapshot:type_name -> items.ItemSnapshot
-	54, // 50: items.GrantItemsRequest.items:type_name -> items.GrantItem
-	60, // 51: items.ItemsService.ListItemTemplates:input_type -> google.protobuf.Empty
-	60, // 52: items.ItemsService.ListItemTypes:input_type -> google.protobuf.Empty
-	60, // 53: items.ItemsService.ListItemRarities:input_type -> google.protobuf.Empty
-	6,  // 54: items.ItemsService.CreateWeapon:input_type -> items.CreateWeaponRequest
-	7,  // 55: items.ItemsService.GetWeaponWithTemplateByID:input_type -> items.GetWeaponRequest
-	60, // 56: items.ItemsService.ListWeaponsWithTemplate:input_type -> google.protobuf.Empty
-	60, // 57: items.ItemsService.ListArmorsWithTemplate:input_type -> google.protobuf.Empty
-	60, // 58: items.ItemsService.ListConsumablesWithTemplate:input_type -> google.protobuf.Empty
-	17, // 59: items.ItemsService.CreateItemTemplate:input_type -> items.CreateItemTemplateRequest
-	18, // 60: items.ItemsService.CreateCompleteWeapon:input_type -> items.CreateCompleteWeaponRequest
-	19, // 61: items.ItemsService.CreateCompleteArmor:input_type -> items.CreateCompleteArmorRequest
-	20, // 62: items.ItemsService.CreateCompleteConsumable:input_type -> items.CreateCompleteConsumableRequest
-	21, // 63: items.ItemsService.GetLoadout:input_type -> items.GetLoadoutRequest
-	27, // 64: items.ItemsService.GetLoadoutWithItems:input_type -> items.GetLoadoutWithItemsRequest
-	29, // 65: items.ItemsService.CheckOutRunGear:input_type -> items.CheckOutRunGearRequest
-	31, // 66: items.ItemsService.ApplySettlement:input_type -> items.ApplySettlementRequest
-	23, // 67: items.ItemsService.ListItemInstances:input_type -> items.ListItemInstancesRequest
-	33, // 68: items.ItemsService.UpdateLoadout:input_type -> items.UpdateLoadoutRequest
-	35, // 69: items.ItemsService.MoveItemInstance:input_type -> items.MoveItemInstanceRequest
-	37, // 70: items.ItemsService.ReserveItem:input_type -> items.ReserveItemRequest
-	39, // 71: items.ItemsService.ListStaleReserved:input_type -> items.ListStaleReservedRequest
-	42, // 72: items.ItemsService.CancelReservation:input_type -> items.CancelReservationRequest
-	44, // 73: items.ItemsService.ConfirmReservation:input_type -> items.ConfirmReservationRequest
-	46, // 74: items.ItemsService.GetItemSummaries:input_type -> items.GetItemSummariesRequest
-	51, // 75: items.ItemsService.ResolveItemSnapshots:input_type -> items.ResolveItemSnapshotsRequest
-	55, // 76: items.ItemsService.GrantItems:input_type -> items.GrantItemsRequest
-	10, // 77: items.ItemsService.ListItemTemplates:output_type -> items.ListItemTemplatesResponse
-	3,  // 78: items.ItemsService.ListItemTypes:output_type -> items.ListItemTypesResponse
-	5,  // 79: items.ItemsService.ListItemRarities:output_type -> items.ListItemRaritiesResponse
-	0,  // 80: items.ItemsService.CreateWeapon:output_type -> items.Weapon
-	1,  // 81: items.ItemsService.GetWeaponWithTemplateByID:output_type -> items.WeaponDetail
-	8,  // 82: items.ItemsService.ListWeaponsWithTemplate:output_type -> items.ListWeaponsResponse
-	11, // 83: items.ItemsService.ListArmorsWithTemplate:output_type -> items.ListArmorsResponse
-	13, // 84: items.ItemsService.ListConsumablesWithTemplate:output_type -> items.ListConsumablesResponse
-	14, // 85: items.ItemsService.CreateItemTemplate:output_type -> items.ItemTemplate
-	1,  // 86: items.ItemsService.CreateCompleteWeapon:output_type -> items.WeaponDetail
-	9,  // 87: items.ItemsService.CreateCompleteArmor:output_type -> items.ArmorDetail
-	12, // 88: items.ItemsService.CreateCompleteConsumable:output_type -> items.ConsumableDetail
-	22, // 89: items.ItemsService.GetLoadout:output_type -> items.GetLoadoutResponse
-	28, // 90: items.ItemsService.GetLoadoutWithItems:output_type -> items.GetLoadoutWithItemsResponse
-	30, // 91: items.ItemsService.CheckOutRunGear:output_type -> items.CheckOutRunGearResponse
-	32, // 92: items.ItemsService.ApplySettlement:output_type -> items.ApplySettlementResponse
-	26, // 93: items.ItemsService.ListItemInstances:output_type -> items.ListItemInstancesResponse
-	34, // 94: items.ItemsService.UpdateLoadout:output_type -> items.UpdateLoadoutResponse
-	36, // 95: items.ItemsService.MoveItemInstance:output_type -> items.MoveItemInstanceResponse
-	38, // 96: items.ItemsService.ReserveItem:output_type -> items.ReserveItemResponse
-	41, // 97: items.ItemsService.ListStaleReserved:output_type -> items.ListStaleReservedResponse
-	43, // 98: items.ItemsService.CancelReservation:output_type -> items.CancelReservationResponse
-	45, // 99: items.ItemsService.ConfirmReservation:output_type -> items.ConfirmReservationResponse
-	48, // 100: items.ItemsService.GetItemSummaries:output_type -> items.GetItemSummariesResponse
-	53, // 101: items.ItemsService.ResolveItemSnapshots:output_type -> items.ResolveItemSnapshotsResponse
-	56, // 102: items.ItemsService.GrantItems:output_type -> items.GrantItemsResponse
-	77, // [77:103] is the sub-list for method output_type
-	51, // [51:77] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	64, // 42: items.ListConfirmedReservationsRequest.older_than:type_name -> google.protobuf.Duration
+	49, // 43: items.ListConfirmedReservationsResponse.reservations:type_name -> items.ConfirmedReservation
+	25, // 44: items.ItemSummary.affixes:type_name -> items.Affix
+	52, // 45: items.GetItemSummariesResponse.summaries:type_name -> items.ItemSummary
+	25, // 46: items.ItemSnapshot.affixes:type_name -> items.Affix
+	55, // 47: items.ResolveItemSnapshotsRequest.templates:type_name -> items.TemplateSnapshotRequest
+	54, // 48: items.ResolvedItemSnapshot.snapshot:type_name -> items.ItemSnapshot
+	57, // 49: items.ResolveItemSnapshotsResponse.templates:type_name -> items.ResolvedItemSnapshot
+	57, // 50: items.ResolveItemSnapshotsResponse.instances:type_name -> items.ResolvedItemSnapshot
+	54, // 51: items.GrantItem.snapshot:type_name -> items.ItemSnapshot
+	59, // 52: items.GrantItemsRequest.items:type_name -> items.GrantItem
+	65, // 53: items.ItemsService.ListItemTemplates:input_type -> google.protobuf.Empty
+	65, // 54: items.ItemsService.ListItemTypes:input_type -> google.protobuf.Empty
+	65, // 55: items.ItemsService.ListItemRarities:input_type -> google.protobuf.Empty
+	6,  // 56: items.ItemsService.CreateWeapon:input_type -> items.CreateWeaponRequest
+	7,  // 57: items.ItemsService.GetWeaponWithTemplateByID:input_type -> items.GetWeaponRequest
+	65, // 58: items.ItemsService.ListWeaponsWithTemplate:input_type -> google.protobuf.Empty
+	65, // 59: items.ItemsService.ListArmorsWithTemplate:input_type -> google.protobuf.Empty
+	65, // 60: items.ItemsService.ListConsumablesWithTemplate:input_type -> google.protobuf.Empty
+	17, // 61: items.ItemsService.CreateItemTemplate:input_type -> items.CreateItemTemplateRequest
+	18, // 62: items.ItemsService.CreateCompleteWeapon:input_type -> items.CreateCompleteWeaponRequest
+	19, // 63: items.ItemsService.CreateCompleteArmor:input_type -> items.CreateCompleteArmorRequest
+	20, // 64: items.ItemsService.CreateCompleteConsumable:input_type -> items.CreateCompleteConsumableRequest
+	21, // 65: items.ItemsService.GetLoadout:input_type -> items.GetLoadoutRequest
+	27, // 66: items.ItemsService.GetLoadoutWithItems:input_type -> items.GetLoadoutWithItemsRequest
+	29, // 67: items.ItemsService.CheckOutRunGear:input_type -> items.CheckOutRunGearRequest
+	31, // 68: items.ItemsService.ApplySettlement:input_type -> items.ApplySettlementRequest
+	23, // 69: items.ItemsService.ListItemInstances:input_type -> items.ListItemInstancesRequest
+	33, // 70: items.ItemsService.UpdateLoadout:input_type -> items.UpdateLoadoutRequest
+	35, // 71: items.ItemsService.MoveItemInstance:input_type -> items.MoveItemInstanceRequest
+	37, // 72: items.ItemsService.ReserveItem:input_type -> items.ReserveItemRequest
+	39, // 73: items.ItemsService.ListStaleReserved:input_type -> items.ListStaleReservedRequest
+	42, // 74: items.ItemsService.CancelReservation:input_type -> items.CancelReservationRequest
+	44, // 75: items.ItemsService.ConfirmReservation:input_type -> items.ConfirmReservationRequest
+	46, // 76: items.ItemsService.ReleaseConfirmedReservation:input_type -> items.ReleaseConfirmedReservationRequest
+	48, // 77: items.ItemsService.ListConfirmedReservations:input_type -> items.ListConfirmedReservationsRequest
+	51, // 78: items.ItemsService.GetItemSummaries:input_type -> items.GetItemSummariesRequest
+	56, // 79: items.ItemsService.ResolveItemSnapshots:input_type -> items.ResolveItemSnapshotsRequest
+	60, // 80: items.ItemsService.GrantItems:input_type -> items.GrantItemsRequest
+	10, // 81: items.ItemsService.ListItemTemplates:output_type -> items.ListItemTemplatesResponse
+	3,  // 82: items.ItemsService.ListItemTypes:output_type -> items.ListItemTypesResponse
+	5,  // 83: items.ItemsService.ListItemRarities:output_type -> items.ListItemRaritiesResponse
+	0,  // 84: items.ItemsService.CreateWeapon:output_type -> items.Weapon
+	1,  // 85: items.ItemsService.GetWeaponWithTemplateByID:output_type -> items.WeaponDetail
+	8,  // 86: items.ItemsService.ListWeaponsWithTemplate:output_type -> items.ListWeaponsResponse
+	11, // 87: items.ItemsService.ListArmorsWithTemplate:output_type -> items.ListArmorsResponse
+	13, // 88: items.ItemsService.ListConsumablesWithTemplate:output_type -> items.ListConsumablesResponse
+	14, // 89: items.ItemsService.CreateItemTemplate:output_type -> items.ItemTemplate
+	1,  // 90: items.ItemsService.CreateCompleteWeapon:output_type -> items.WeaponDetail
+	9,  // 91: items.ItemsService.CreateCompleteArmor:output_type -> items.ArmorDetail
+	12, // 92: items.ItemsService.CreateCompleteConsumable:output_type -> items.ConsumableDetail
+	22, // 93: items.ItemsService.GetLoadout:output_type -> items.GetLoadoutResponse
+	28, // 94: items.ItemsService.GetLoadoutWithItems:output_type -> items.GetLoadoutWithItemsResponse
+	30, // 95: items.ItemsService.CheckOutRunGear:output_type -> items.CheckOutRunGearResponse
+	32, // 96: items.ItemsService.ApplySettlement:output_type -> items.ApplySettlementResponse
+	26, // 97: items.ItemsService.ListItemInstances:output_type -> items.ListItemInstancesResponse
+	34, // 98: items.ItemsService.UpdateLoadout:output_type -> items.UpdateLoadoutResponse
+	36, // 99: items.ItemsService.MoveItemInstance:output_type -> items.MoveItemInstanceResponse
+	38, // 100: items.ItemsService.ReserveItem:output_type -> items.ReserveItemResponse
+	41, // 101: items.ItemsService.ListStaleReserved:output_type -> items.ListStaleReservedResponse
+	43, // 102: items.ItemsService.CancelReservation:output_type -> items.CancelReservationResponse
+	45, // 103: items.ItemsService.ConfirmReservation:output_type -> items.ConfirmReservationResponse
+	47, // 104: items.ItemsService.ReleaseConfirmedReservation:output_type -> items.ReleaseConfirmedReservationResponse
+	50, // 105: items.ItemsService.ListConfirmedReservations:output_type -> items.ListConfirmedReservationsResponse
+	53, // 106: items.ItemsService.GetItemSummaries:output_type -> items.GetItemSummariesResponse
+	58, // 107: items.ItemsService.ResolveItemSnapshots:output_type -> items.ResolveItemSnapshotsResponse
+	61, // 108: items.ItemsService.GrantItems:output_type -> items.GrantItemsResponse
+	81, // [81:109] is the sub-list for method output_type
+	53, // [53:81] is the sub-list for method input_type
+	53, // [53:53] is the sub-list for extension type_name
+	53, // [53:53] is the sub-list for extension extendee
+	0,  // [0:53] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_items_items_proto_init() }
@@ -5372,17 +5718,17 @@ func file_api_proto_items_items_proto_init() {
 	file_api_proto_items_items_proto_msgTypes[20].OneofWrappers = []any{}
 	file_api_proto_items_items_proto_msgTypes[37].OneofWrappers = []any{}
 	file_api_proto_items_items_proto_msgTypes[38].OneofWrappers = []any{}
-	file_api_proto_items_items_proto_msgTypes[47].OneofWrappers = []any{}
-	file_api_proto_items_items_proto_msgTypes[49].OneofWrappers = []any{}
-	file_api_proto_items_items_proto_msgTypes[50].OneofWrappers = []any{}
 	file_api_proto_items_items_proto_msgTypes[52].OneofWrappers = []any{}
+	file_api_proto_items_items_proto_msgTypes[54].OneofWrappers = []any{}
+	file_api_proto_items_items_proto_msgTypes[55].OneofWrappers = []any{}
+	file_api_proto_items_items_proto_msgTypes[57].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_items_items_proto_rawDesc), len(file_api_proto_items_items_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   57,
+			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -93,6 +93,12 @@ const (
 	// or the stash to move. Added for FS-VPD8Y (Town stash).
 	ItemWorn Code = "ITEM_WORN"
 
+	// ItemNotInStash: the item is not in the member's stash (it is in the
+	// bag), so it cannot be listed. Only stash items can be listed
+	// (ADR-0065). Decided by items-service on reserve. Added for FS-3R77D
+	// (Only stash items can be listed).
+	ItemNotInStash Code = "ITEM_NOT_IN_STASH"
+
 	// PasswordTooShort: a password being set has fewer than 10 characters,
 	// counted as Unicode code points. Checked only when a password is set
 	// (signup, password change), never at login (ADR-0041). Added for
@@ -186,6 +192,51 @@ const (
 	// LetterClaimInProgress: another claim of this letter by this member holds
 	// it right now. FS-1GZGD R25, S5.
 	LetterClaimInProgress Code = "LETTER_CLAIM_IN_PROGRESS"
+
+	// --- Marketplace ------------------------------------------------------------
+
+	// LeadingBidLowered: the listing's WINNING bid is below the accept floor,
+	// the leading bid the seller was shown when they accepted, so nothing is
+	// sold. The client re-reads the listing. Decided by marketplace-service.
+	// Added for FS-F692V (Accept never sells below the leading bid shown).
+	LeadingBidLowered Code = "LEADING_BID_LOWERED"
+
+	// BidWithdrawLimitReached: the member has withdrawn a leading bid 3 or more
+	// times on this listing, so they can no longer bid on it. Withdrawing an
+	// outbid bid never counts (ADR-0055). Withdrawing and buyout are not limited
+	// (ADR-0052). Added for FS-ZE43K (Bid withdrawal cap).
+	BidWithdrawLimitReached Code = "BID_WITHDRAW_LIMIT_REACHED"
+
+	// ListingWithdrawLocked: the listing has live bids (PENDING, WINNING or
+	// OUTBID) and is in its final 30 minutes, so its seller can no longer
+	// withdraw it. Decided by marketplace-service (ADR-0051). FS-V7A5S Req 12.
+	ListingWithdrawLocked Code = "LISTING_WITHDRAW_LOCKED"
+
+	// ListingDurationOutOfRange: the requested listing ends in the future but
+	// less than 1 h − 5 min or more than 7 d + 5 min away. Decided by
+	// marketplace-service when the seller lists. FS-XEDFF Req 1.
+	ListingDurationOutOfRange Code = "LISTING_DURATION_OUT_OF_RANGE"
+
+	// ListingLimitReached: the seller already has 20 items listed or settling.
+	// Decided by items-service on reserve. FS-XEDFF Req 5.
+	ListingLimitReached Code = "LISTING_LIMIT_REACHED"
+
+	// BidTooLow: the bid is below the listing's start price with no contending
+	// bid, or not above the contending bid. The client re-reads the listing for
+	// the fresh minimum. Decided by marketplace-service. Added for FS-V74WE (A
+	// refused bid says why).
+	BidTooLow Code = "BID_TOO_LOW"
+
+	// BidAtOrAboveBuyout: the bid is at or above the listing's buyout price, so
+	// it must be a buyout instead. Decided by marketplace-service. Added for
+	// FS-V74WE (A refused bid says why).
+	BidAtOrAboveBuyout Code = "BID_AT_OR_ABOVE_BUYOUT"
+
+	// AlreadyLeading: the member's own bid is already the listing's leading
+	// bid, so another would only raise the price against themselves. No gold
+	// is held for it; buying out is still allowed (ADR-0054). Decided by
+	// marketplace-service. Added for FS-72KT8 (No bidding against your own lead).
+	AlreadyLeading Code = "ALREADY_LEADING"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -197,6 +248,9 @@ var domainCodes = map[Code]struct{}{
 	StashFull:        {},
 	ItemNotAvailable: {},
 	ItemWorn:         {},
+
+	// FS-3R77D
+	ItemNotInStash: {},
 
 	// FS-V6SFK
 	PasswordTooShort:  {},
@@ -223,4 +277,24 @@ var domainCodes = map[Code]struct{}{
 	NothingToClaim:          {},
 	LetterAlreadyClaimed:    {},
 	LetterClaimInProgress:   {},
+
+	// FS-F692V
+	LeadingBidLowered: {},
+
+	// FS-ZE43K
+	BidWithdrawLimitReached: {},
+
+	// FS-V7A5S
+	ListingWithdrawLocked: {},
+
+	// FS-XEDFF
+	ListingDurationOutOfRange: {},
+	ListingLimitReached:       {},
+
+	// FS-V74WE
+	BidTooLow:          {},
+	BidAtOrAboveBuyout: {},
+
+	// FS-72KT8
+	AlreadyLeading: {},
 }

@@ -16,6 +16,9 @@ export const ACCEPT_SOLD = "Sold — your gold arrives once the sale settles.";
 // the same whether the player was buying out or accepting.
 export const ACCEPT_CONFLICT = BUYOUT_CONFLICT;
 export const ACCEPT_GONE = BUYOUT_GONE;
+// FS-F692V Req 10: the accept floor refused the sale; the listing is still live.
+export const ACCEPT_LEADING_BID_LOWERED =
+  "The leading bid dropped since you looked — check it and accept again.";
 
 export const leadingBidLine = (currentPrice: number): string =>
   `Leading bid: ${formatGold(currentPrice)} gold`;
@@ -40,7 +43,7 @@ export type SellerBlock =
  */
 export function sellerBlock(
   listing: {
-    sellerId: string;
+    own: boolean;
     status: string;
     ended?: boolean;
     endsAt: string;
@@ -57,11 +60,14 @@ export function sellerBlock(
 
 /**
  * What a refused accept means (req 17), routed by status and the problem's `code`. `refetch`
- * asks the caller to re-read the listing, which then shows it is no longer for sale.
+ * asks the caller to re-read the listing, which then shows it is no longer for sale, or, when
+ * the accept floor refused (FS-F692V Req 10), the new leading bid.
  */
 export function acceptFailure(err: unknown): { message: string; refetch?: true } {
   if (!(err instanceof ApiError) || err.status === 503) return { message: BROWSE_UNREACHABLE };
   if (err.status === 409 && err.code === "CONFLICT") return { message: ACCEPT_CONFLICT };
+  if (err.status === 400 && err.code === "LEADING_BID_LOWERED")
+    return { message: ACCEPT_LEADING_BID_LOWERED, refetch: true };
   if (err.status === 400 && err.code === "FAILED_PRECONDITION")
     return { message: ACCEPT_GONE, refetch: true };
   return { message: err.detail };

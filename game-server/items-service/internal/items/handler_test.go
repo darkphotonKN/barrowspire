@@ -13,6 +13,7 @@ import (
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/grpc/codes"
@@ -513,6 +514,9 @@ func TestHandler_ReserveItem_Outcomes(t *testing.T) {
 			wantCode: codes.FailedPrecondition, wantReason: errcode.ItemWorn},
 		{name: "wrapped not available", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", errcode.Refuse(errcode.ItemNotAvailable))},
 			wantCode: codes.FailedPrecondition, wantReason: errcode.ItemNotAvailable},
+		// FS-XEDFF R5: the listed-item cap
+		{name: "wrapped listing limit reached", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", errcode.Refuse(errcode.ListingLimitReached))},
+			wantCode: codes.FailedPrecondition, wantReason: errcode.ListingLimitReached},
 		{name: "not the seller's", svc: &fakeReserveService{err: fmt.Errorf("reserve: %w", commonconstants.ErrNotFound)},
 			wantCode: codes.NotFound},
 		{name: "infrastructure failure", svc: &fakeReserveService{err: errors.New(secret)},
@@ -596,21 +600,52 @@ func TestHandler_UpdateLoadout_Outcomes(t *testing.T) {
 	}
 }
 
-// fakeReconcileService serves the reservation reconciler's three calls and
-// records what the handler handed it.
+// fakeReconcileService serves the reservation calls and records what the
+// handler handed it. miss makes confirm and release match nothing.
 type fakeReconcileService struct {
 	Service
 	stale []StaleReservation
+	// staleNext is the position the stale page answers as next
+	staleNext *cursor.ReservedAt
+	miss      bool
+	page      *ConfirmedReservationPage
+	listErr   error
+	// releaseErr fails ReleaseConfirmedReservation, as a database failure would
+	releaseErr error
 
 	listCalled   bool
 	gotOlderThan time.Duration
-	cancelled    []StaleReservation
-	confirmed    []StaleReservation
+	gotAfter     *cursor.UpdatedAt
+	gotLimit     int
+	// gotStaleAfter is the position ListStaleReserved was asked to read after
+	gotStaleAfter *cursor.ReservedAt
+	cancelled     []StaleReservation
+	confirmed     []StaleReservation
+	released      []StaleReservation
 }
 
-func (f *fakeReconcileService) ListStaleReserved(_ context.Context, olderThan time.Duration) ([]StaleReservation, error) {
-	f.listCalled, f.gotOlderThan = true, olderThan
-	return f.stale, nil
+func (f *fakeReconcileService) ReleaseConfirmedReservation(_ context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	if f.releaseErr != nil {
+		return false, f.releaseErr
+	}
+	f.released = append(f.released, StaleReservation{ItemID: itemID, ListingID: listingID})
+	return !f.miss, nil
+}
+
+func (f *fakeReconcileService) ListConfirmedReservations(_ context.Context, olderThan time.Duration, after *cursor.UpdatedAt, limit int) (*ConfirmedReservationPage, error) {
+	f.listCalled, f.gotOlderThan, f.gotAfter, f.gotLimit = true, olderThan, after, limit
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.page, nil
+}
+
+func (f *fakeReconcileService) ListStaleReserved(_ context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) (*StaleReservationPage, error) {
+	f.listCalled, f.gotOlderThan, f.gotStaleAfter, f.gotLimit = true, olderThan, after, limit
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return &StaleReservationPage{Reservations: f.stale, Next: f.staleNext}, nil
 }
 
 func (f *fakeReconcileService) CancelReservation(_ context.Context, itemID, listingID uuid.UUID) (bool, error) {
@@ -620,7 +655,7 @@ func (f *fakeReconcileService) CancelReservation(_ context.Context, itemID, list
 
 func (f *fakeReconcileService) ConfirmReservation(_ context.Context, itemID, listingID uuid.UUID) (bool, error) {
 	f.confirmed = append(f.confirmed, StaleReservation{ItemID: itemID, ListingID: listingID})
-	return true, nil
+	return !f.miss, nil
 }
 
 // reconcilerCtx is what marketplace's background reconciler arrives with: no
@@ -631,21 +666,25 @@ func reconcilerCtx() context.Context {
 
 // The age is measured by items-service on its database clock, so the caller only
 // says how old. A missing or non-positive age would make every reservation stale,
-// a listing created a second ago included, so it is refused rather than run.
-func TestHandler_ListStaleReserved_RefusesAnAgeThatSweepsEverything(t *testing.T) {
+// a listing created a second ago included, so it is refused rather than run; a
+// position that cannot be read is refused too, never read as "start over"
+// (FS-9BJCP Req 4).
+func TestHandler_ListStaleReserved_RefusesAnUnsafeRequest(t *testing.T) {
 	tests := []struct {
 		name      string
 		olderThan *durationpb.Duration
+		after     string
 	}{
 		{name: "missing", olderThan: nil},
 		{name: "zero", olderThan: durationpb.New(0)},
 		{name: "negative", olderThan: durationpb.New(-time.Minute)},
+		{name: "malformed position", olderThan: durationpb.New(10 * time.Minute), after: "%%not-a-cursor%%"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := &fakeReconcileService{}
 
-			_, err := NewHandler(svc, nil).ListStaleReserved(reconcilerCtx(), &pb.ListStaleReservedRequest{OlderThan: tt.olderThan})
+			_, err := NewHandler(svc, nil).ListStaleReserved(reconcilerCtx(), &pb.ListStaleReservedRequest{OlderThan: tt.olderThan, After: tt.after})
 
 			if status.Code(err) != codes.InvalidArgument {
 				t.Errorf("code = %v, want InvalidArgument", status.Code(err))
@@ -654,6 +693,59 @@ func TestHandler_ListStaleReserved_RefusesAnAgeThatSweepsEverything(t *testing.T
 				t.Error("service must not be asked with an unsafe age")
 			}
 		})
+	}
+}
+
+// The handler hands the age, the decoded position and the limit to the service,
+// and answers the next position as an opaque string, empty on the last page
+// (FS-9BJCP Req 1, 2).
+func TestHandler_ListStaleReserved_PagesThroughTheService(t *testing.T) {
+	after := cursor.ReservedAt{ID: uuid.New(), ReservedAt: time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)}
+	next := cursor.ReservedAt{ID: uuid.New(), ReservedAt: time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)}
+
+	tests := []struct {
+		name     string
+		after    string
+		next     *cursor.ReservedAt
+		wantNext string
+	}{
+		{name: "first page with more after it", next: &next, wantNext: next.Encode()},
+		{name: "last page from a position", after: after.Encode()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &fakeReconcileService{staleNext: tt.next}
+
+			res, err := NewHandler(svc, nil).ListStaleReserved(reconcilerCtx(), &pb.ListStaleReservedRequest{
+				OlderThan: durationpb.New(10 * time.Minute), After: tt.after, Limit: 25,
+			})
+
+			if err != nil {
+				t.Fatalf("ListStaleReserved: %v", err)
+			}
+			if svc.gotLimit != 25 {
+				t.Errorf("service limit = %d, want 25", svc.gotLimit)
+			}
+			if tt.after == "" && svc.gotStaleAfter != nil {
+				t.Errorf("service position = %+v, want none on the first page", svc.gotStaleAfter)
+			}
+			if tt.after != "" && (svc.gotStaleAfter == nil || svc.gotStaleAfter.ID != after.ID || !svc.gotStaleAfter.ReservedAt.Equal(after.ReservedAt)) {
+				t.Errorf("service position = %+v, want %+v", svc.gotStaleAfter, after)
+			}
+			if res.GetNext() != tt.wantNext {
+				t.Errorf("next = %q, want %q", res.GetNext(), tt.wantNext)
+			}
+		})
+	}
+}
+
+func TestHandler_ListStaleReserved_DatabaseFailureIsInternal(t *testing.T) {
+	svc := &fakeReconcileService{listErr: errors.New("connection refused")}
+
+	_, err := NewHandler(svc, nil).ListStaleReserved(reconcilerCtx(), &pb.ListStaleReservedRequest{OlderThan: durationpb.New(10 * time.Minute)})
+
+	if status.Code(err) != codes.Internal {
+		t.Errorf("code = %v, want Internal", status.Code(err))
 	}
 }
 
@@ -680,7 +772,7 @@ func TestHandler_ListStaleReserved_ReturnsItemAndListing(t *testing.T) {
 	}
 }
 
-// Cancel and confirm act on one reservation, named by item and listing. Without a
+// Cancel, confirm and release act on one reservation, named by item and listing. Without a
 // valid listing id the write would be unfenced, so it is refused before the
 // service is reached.
 func TestHandler_ReservationWrites_NeedItemAndListing(t *testing.T) {
@@ -699,6 +791,10 @@ func TestHandler_ReservationWrites_NeedItemAndListing(t *testing.T) {
 			_, err := h.ConfirmReservation(reconcilerCtx(), &pb.ConfirmReservationRequest{ItemId: item, ListingId: listing})
 			return err
 		}, got: func(f *fakeReconcileService) []StaleReservation { return f.confirmed }},
+		{name: "release", write: func(h *Handler, item, listing string) error {
+			_, err := h.ReleaseConfirmedReservation(reconcilerCtx(), &pb.ReleaseConfirmedReservationRequest{ItemId: item, ListingId: listing})
+			return err
+		}, got: func(f *fakeReconcileService) []StaleReservation { return f.released }},
 	}
 	cases := []struct {
 		name      string
@@ -734,5 +830,139 @@ func TestHandler_ReservationWrites_NeedItemAndListing(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Confirm and release tell the caller whether they matched (FS-04ZB6 Req 1, 2,
+// 4): marketplace drops an event whose confirm missed, and logs a release that
+// did.
+func TestHandler_ReservationWrites_AnswerWhetherTheyMatched(t *testing.T) {
+	itemID, listingID := uuid.New().String(), uuid.New().String()
+	for _, miss := range []bool{false, true} {
+		t.Run(fmt.Sprintf("miss=%v", miss), func(t *testing.T) {
+			h := NewHandler(&fakeReconcileService{miss: miss}, nil)
+
+			confirmed, err := h.ConfirmReservation(reconcilerCtx(), &pb.ConfirmReservationRequest{ItemId: itemID, ListingId: listingID})
+			if err != nil {
+				t.Fatalf("confirm: %v", err)
+			}
+			released, err := h.ReleaseConfirmedReservation(reconcilerCtx(), &pb.ReleaseConfirmedReservationRequest{ItemId: itemID, ListingId: listingID})
+			if err != nil {
+				t.Fatalf("release: %v", err)
+			}
+
+			if confirmed.GetConfirmed() == miss {
+				t.Errorf("confirmed = %v, want %v", confirmed.GetConfirmed(), !miss)
+			}
+			if released.GetReleased() == miss {
+				t.Errorf("released = %v, want %v", released.GetReleased(), !miss)
+			}
+		})
+	}
+}
+
+// As for stale reservations, a missing or non-positive age would list every
+// confirmed reservation, one confirmed a second ago included, and a malformed
+// position cannot be read from: both are refused before the service is asked.
+func TestHandler_ListConfirmedReservations_RefusesAnUnsafeRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		olderThan *durationpb.Duration
+		after     string
+	}{
+		{name: "missing age", olderThan: nil},
+		{name: "zero age", olderThan: durationpb.New(0)},
+		{name: "negative age", olderThan: durationpb.New(-time.Minute)},
+		{name: "malformed position", olderThan: durationpb.New(10 * time.Minute), after: "%%not-a-cursor%%"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &fakeReconcileService{page: &ConfirmedReservationPage{}}
+
+			_, err := NewHandler(svc, nil).ListConfirmedReservations(reconcilerCtx(), &pb.ListConfirmedReservationsRequest{OlderThan: tt.olderThan, After: tt.after})
+
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("code = %v, want InvalidArgument", status.Code(err))
+			}
+			if svc.listCalled {
+				t.Error("service must not be asked with an unsafe request")
+			}
+		})
+	}
+}
+
+// The handler hands the age, the decoded position and the limit to the service,
+// and answers each entry with its listing and the next position as an opaque
+// string, empty on the last page.
+func TestHandler_ListConfirmedReservations_PagesThroughTheService(t *testing.T) {
+	entry := ConfirmedReservation{ItemID: uuid.New(), ListingID: uuid.New(), UpdatedAt: time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)}
+	after := cursor.UpdatedAt{ID: uuid.New(), UpdatedAt: time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)}
+	next := cursor.UpdatedAt{ID: entry.ItemID, UpdatedAt: entry.UpdatedAt}
+
+	tests := []struct {
+		name     string
+		after    string
+		next     *cursor.UpdatedAt
+		wantNext string
+	}{
+		{name: "first page with more after it", next: &next, wantNext: next.Encode()},
+		{name: "last page from a position", after: after.Encode()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &fakeReconcileService{page: &ConfirmedReservationPage{Reservations: []ConfirmedReservation{entry}, Next: tt.next}}
+
+			res, err := NewHandler(svc, nil).ListConfirmedReservations(reconcilerCtx(), &pb.ListConfirmedReservationsRequest{
+				OlderThan: durationpb.New(10 * time.Minute), After: tt.after, Limit: 25,
+			})
+
+			if err != nil {
+				t.Fatalf("ListConfirmedReservations: %v", err)
+			}
+			if svc.gotOlderThan != 10*time.Minute || svc.gotLimit != 25 {
+				t.Errorf("service asked for %v, limit %d; want 10m, limit 25", svc.gotOlderThan, svc.gotLimit)
+			}
+			if tt.after == "" && svc.gotAfter != nil {
+				t.Errorf("service position = %+v, want none on the first page", svc.gotAfter)
+			}
+			if tt.after != "" && (svc.gotAfter == nil || svc.gotAfter.ID != after.ID || !svc.gotAfter.UpdatedAt.Equal(after.UpdatedAt)) {
+				t.Errorf("service position = %+v, want %+v", svc.gotAfter, after)
+			}
+			if len(res.GetReservations()) != 1 || res.GetReservations()[0].GetItemId() != entry.ItemID.String() || res.GetReservations()[0].GetListingId() != entry.ListingID.String() {
+				t.Errorf("reservations = %v, want item %s listing %s", res.GetReservations(), entry.ItemID, entry.ListingID)
+			}
+			if res.GetNext() != tt.wantNext {
+				t.Errorf("next = %q, want %q", res.GetNext(), tt.wantNext)
+			}
+		})
+	}
+}
+
+func TestHandler_ListConfirmedReservations_DatabaseFailureIsInternal(t *testing.T) {
+	svc := &fakeReconcileService{listErr: errors.New("connection refused")}
+
+	_, err := NewHandler(svc, nil).ListConfirmedReservations(reconcilerCtx(), &pb.ListConfirmedReservationsRequest{OlderThan: durationpb.New(10 * time.Minute)})
+
+	if status.Code(err) != codes.Internal {
+		t.Errorf("code = %v, want Internal", status.Code(err))
+	}
+}
+
+// A release whose write failed decided nothing the caller can rely on: it is
+// Internal, which marketplace reads as a transport failure and retries, never
+// as released = false (FS-04ZB6 §API surface).
+func TestHandler_ReleaseConfirmedReservation_DatabaseFailureIsInternal(t *testing.T) {
+	svc := &fakeReconcileService{releaseErr: errors.New("connection refused")}
+
+	res, err := NewHandler(svc, nil).ReleaseConfirmedReservation(reconcilerCtx(), &pb.ReleaseConfirmedReservationRequest{
+		ItemId:    uuid.NewString(),
+		ListingId: uuid.NewString(),
+	})
+
+	if status.Code(err) != codes.Internal {
+		t.Errorf("code = %v, want Internal", status.Code(err))
+	}
+	if res != nil {
+		t.Errorf("response = %v, want none", res)
 	}
 }

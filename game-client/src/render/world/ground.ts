@@ -474,6 +474,11 @@ export interface GroundLayerOptions extends GroundOptions {
   look: GroundLook;
   /** The floor's seed (FS-8RBQY §C.3); absent, the world kind's. */
   seed?: number;
+  /**
+   * Where the floor has ground, by a piece's world point: a dungeon floor's walkable and shell
+   * cells (FS-KE075 §H.44), the rest void, painted nothing. Absent, ground everywhere.
+   */
+  where?: (at: Point) => boolean;
 }
 
 /** Everything painted on the ground, in paint order: base, decals, then the floors over it. */
@@ -481,14 +486,16 @@ export function planGroundLayer({
   look,
   houses,
   seed: floorSeed,
+  where,
   ...world
 }: GroundLayerOptions): GroundPiece[] {
   const seed = floorSeed ?? worldSeed(world.kind);
-  return [
+  const pieces = [
     ...(look.hall
       ? planHalls(world.width, world.height, look.hall, seed, look.patches)
       : planGround({ ...world, trodden: look.trodden, litterShade: look.litterShade })),
     ...(look.decals ? planDecals({ ...world, houses }) : []),
     ...planFloors(houses, seed, look.floor),
   ];
+  return where ? pieces.filter((p) => where(p.at)) : pieces;
 }

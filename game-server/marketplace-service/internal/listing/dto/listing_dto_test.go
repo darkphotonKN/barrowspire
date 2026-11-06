@@ -99,7 +99,8 @@ func TestMinimumBidMatchesWhatTheAggregateAccepts(t *testing.T) {
 			},
 		},
 		{
-			// FS-0YXG6's no-promotion rule: a withdrawn leader leaves no leader
+			// a withdrawn leader promotes the OUTBID bid (ADR-0028), so the
+			// minimum follows the promoted bid, not the start price
 			name: "the leader withdrew, an outbid bid remains",
 			build: func(t *testing.T, l *listing.Listing) {
 				confirmedBid(t, l, uuid.New(), 50, now)

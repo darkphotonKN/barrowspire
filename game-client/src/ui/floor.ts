@@ -77,14 +77,26 @@ export interface Notice {
 export const PARTY_NOT_GATHERED = "party_not_gathered";
 
 /**
+ * The reason the server gives when a floor-1 chest is reached for while its guards still stand
+ * (FS-KE075 §J R60). The notice names no reason: the monsters around the chest say why.
+ */
+export const CONTAINER_GUARDED = "container_guarded";
+
+/** Whether a reply refuses the chest the E key just opened, so its coffer closes again. */
+export function refusesContainer(reply: InteractReply): boolean {
+  return !reply.success && reply.reason === CONTAINER_GUARDED;
+}
+
+/**
  * The notice an `interact` reply raises, or `null` for one with nothing to say (the empty frame
- * that follows every reply). A gather refusal is written here in the lore voice from `missing`;
- * every other reply keeps the server's words.
+ * that follows every reply). A gather refusal is written here in the lore voice from `missing`,
+ * a guarded chest's in the client's own words; every other reply keeps the server's words.
  */
 export function interactNotice(reply: InteractReply): Notice | null {
   if (!reply.success && reply.reason === PARTY_NOT_GATHERED) {
     return { text: gatherNotice(reply.missing), tone: "waiting" };
   }
+  if (refusesContainer(reply)) return { text: "It will not open.", tone: "refused" };
   if (!reply.message) return null;
   return { text: reply.message, tone: reply.success ? "done" : "refused" };
 }

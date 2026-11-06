@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
 interface Emitter {
@@ -72,6 +73,13 @@ vi.mock("@/render/iso", async (importOriginal) => {
   return { ...real, addUprightBlock: vi.fn(real.addUprightBlock) };
 });
 
+// The camera's fit, bounds and follow under the render scale are the viewport's (camera.test.ts);
+// here the stub camera only records what it was asked to follow.
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  boundCamera: () => {},
+  followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
+}));
 const { HubScene, delveChoices, hubMenuChoices, ELDER_TALE } = await import("./HubScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
@@ -79,9 +87,11 @@ const { palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
 const { usePartyStore } = await import("@/stores/partyStore");
 const { useAuthStore } = await import("@/stores/authStore");
+const { useMailboxStore } = await import("@/stores/mailboxStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
+const { sceneSystems } = await import("./sceneEnd.standin");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -210,6 +220,8 @@ interface Made {
   width: number;
   height: number;
   children: Made[];
+  /** What a text was last rasterised again at (`setResolution`); undefined while never. */
+  resolution?: number;
   /** The pointer handlers it was given, by event, as Phaser would call them. */
   handlers: Record<string, (pointer?: { x: number; y: number }) => void>;
 }
@@ -278,10 +290,37 @@ function recordingStage() {
             target.color = color;
             return proxy;
           };
+        // moved, as Phaser moves it: a re-layout reads back where it went (FS-ZAJMH R13)
+        if (prop === "setPosition")
+          return (x: number, y: number) => {
+            target.x = x;
+            target.y = y;
+            return proxy;
+          };
+        if (prop === "setX")
+          return (x: number) => {
+            target.x = x;
+            return proxy;
+          };
+        if (prop === "setResolution")
+          return (resolution: number) => {
+            target.resolution = resolution;
+            return proxy;
+          };
         if (prop === "setTint")
           return (tint: number) => {
             target.tint = tint;
             return proxy;
+          };
+        // Phaser 4's mask filter (`maskInView`): what the object is masked by
+        if (prop === "filters")
+          return {
+            external: {
+              addMask: (source: unknown) => {
+                target.maskedBy = source;
+                return { setGameObject: (next: unknown) => void (target.maskedBy = next), invert: false };
+              },
+            },
           };
         if (prop === "getByName")
           return (name: string) => target.children.find((c) => c.name === name) ?? null;
@@ -375,7 +414,7 @@ interface MenuHub {
   onFieldGate(destination: "forest" | "meadows"): void;
   renderState(state: unknown): void;
   listenForQueue(): void;
-  release(): void;
+  release(end: "shutdown" | "destroy"): void;
 }
 
 type Listener = (payload: unknown) => void;
@@ -447,6 +486,36 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     expect(hub.leaveButton).toBe(leave);
   });
 
+  it.each([1, 2])(
+    "should centre the queue panel, its Leave and the open ESC menu again when the view widens, at render scale %s (FS-ZAJMH R12, R13)",
+    (renderScale) => {
+      const { hub, keys, press, option, reply } = queuedHubOnStage();
+      const relayout = () => (hub as unknown as { relayoutHud(): void }).relayoutHud();
+      Object.assign(hub, { invitePrompt: undefined, readyCheck: undefined, mailbox: undefined });
+      viewport.set({ width: 1080, height: 720, renderScale });
+      reply("queue_status", { current: 1, total: 2 });
+      press(keys.esc);
+      const panel = hub.queuePanel as Made;
+      const leave = hub.leaveButton as Made;
+      const menu = hub.menu as Made;
+      const hit = option("leave") as Made;
+      expect([panel.x, menu.x]).toEqual([540, 540]);
+      const leaveOffset = leave.x - panel.x;
+      const hitOffset = hit.x - menu.x;
+
+      viewport.set({ width: 1280, height: 720, renderScale });
+      relayout();
+      expect(panel.x).toBe(640);
+      expect(leave.x - panel.x).toBe(leaveOffset);
+      // moved, so rasterised again at the render scale of now (R5)
+      expect(panel.resolution).toBe(renderScale);
+      expect(leave.resolution).toBe(renderScale);
+      expect(menu.x).toBe(640);
+      expect(option("leave")!.x - menu.x).toBe(hitOffset);
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    },
+  );
+
   it("should show Leave the queue in the ESC menu while queued", () => {
     const { hub, keys, press, option, reply } = queuedHubOnStage();
     reply("queue_status", { current: 1, total: 2 });
@@ -478,7 +547,7 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     reply("queue_status", { current: 1, total: 2 });
     const first = button() as Made;
 
-    hub.release();
+    hub.release("shutdown");
     expect(hub.queued).toBe(false);
     expect(hub.leaveButton).toBeUndefined();
 
@@ -601,7 +670,7 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
   it("should hand the leave_queue replies back on release, with the queue's other listeners", () => {
     const { hub, off, offError } = queuedHubOnStage();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(off).toHaveBeenCalledWith("leave_queue");
     expect(offError).toHaveBeenCalledWith("leave_queue");
@@ -998,7 +1067,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     choice("enter")?.handlers.pointerup();
     choice("queue")?.handlers.pointerup();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(hub.enterPending).toBe(false);
     expect(hub.queuePending).toBe(false);
@@ -1281,7 +1350,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
   it("should hand the find_game refusals back on release", () => {
     const { hub, offError } = queuedHubOnStage();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(offError).toHaveBeenCalledWith("find_game");
   });
@@ -1291,7 +1360,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     atTheDoor();
     choice("solo")?.handlers.pointerup();
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(offError).toHaveBeenCalledWith("start_solo");
     expect(hub.soloPending).toBe(false);
@@ -1408,7 +1477,7 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
 
     press(keys.esc);
     const first = hub.menu;
-    hub.release();
+    hub.release("shutdown");
 
     expect(first?.destroyed).toBe(true);
     expect(hub.menu).toBeUndefined();
@@ -1495,7 +1564,7 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
     option("change")?.handlers.pointerup();
     expect(hub.leavingHub).toBe(true);
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(off).toHaveBeenCalledWith("world_left");
     expect(offError).toHaveBeenCalledWith("leave_hub");
@@ -1665,7 +1734,7 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
     const { hub, choice, atTheDoor } = hubOnStage();
     atTheDoor();
 
-    hub.release();
+    hub.release("shutdown");
     hub.followGates(SPIRE_GATE.position, HUB_GATES);
 
     // a fresh visit that starts inside the gate steps into it
@@ -1741,7 +1810,7 @@ describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
     standAt(AWAY);
     standAt(FOREST_GATE.position);
 
-    hub.release();
+    hub.release("shutdown");
 
     expect(marker(stage)).toHaveLength(0);
   });
@@ -1813,7 +1882,7 @@ describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 5
     standAt(AWAY);
     standAt(MEADOWS_GATE.position);
 
-    hub.release();
+    hub.release("shutdown");
     hub.listenForQueue();
     standAt(MEADOWS_GATE.position);
 
@@ -2013,18 +2082,18 @@ describe("camera on the player across visits (reported 2026-10-29)", () => {
     hub.keepCameraOn(first);
     expect(hub.cameras.main.startFollow).toHaveBeenCalledTimes(1);
 
-    hub.release();
+    hub.release("shutdown");
     const rebuilt = { id: "sprite-2" };
     hub.keepCameraOn(rebuilt);
 
     expect(hub.cameras.main.startFollow).toHaveBeenCalledTimes(2);
-    expect(hub.cameras.main.startFollow).toHaveBeenLastCalledWith(rebuilt, true, 0.1, 0.1);
+    expect(hub.cameras.main.startFollow).toHaveBeenLastCalledWith(rebuilt);
   });
 
   it("should forget whose body it followed on release", () => {
     const { hub } = hubOnStage();
     hub.selfEntityID = "me";
-    hub.release();
+    hub.release("shutdown");
     expect(hub.selfEntityID).toBeNull();
   });
 });
@@ -2153,8 +2222,47 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
 
   it("should forget the overlay on release, so the next visit composes a fresh one", () => {
     const { hub } = hubOnStage();
-    hub.release();
+    hub.release("shutdown");
     expect(hub.gear).toBeUndefined();
+  });
+});
+
+describe("HubScene reads the purse after a gold Take (FS-7TGZ3 R9)", () => {
+  /** A gold Take, as the mailbox store records one. */
+  const goldTake = () => useMailboxStore.setState({ goldTaken: useMailboxStore.getState().goldTaken + 1 });
+  const withPurse = (hub: Record<string, unknown>) => {
+    const refreshPurse = vi.fn();
+    hub.gear = { ...fakeGear(), refreshPurse };
+    return refreshPurse;
+  };
+
+  it("should read once per gold Take, and nothing for a mailbox change that is not one", () => {
+    const { hub } = hubOnStage();
+    const refreshPurse = withPurse(hub);
+    (hub.watchGoldTakes as () => void)();
+
+    goldTake();
+    expect(refreshPurse).toHaveBeenCalledTimes(1);
+    useMailboxStore.setState({ pulses: useMailboxStore.getState().pulses + 1 });
+    expect(refreshPurse).toHaveBeenCalledTimes(1);
+    hub.release("shutdown");
+  });
+
+  it("should stop listening on release, and a second visit's one Take reads exactly once", () => {
+    const { hub } = hubOnStage();
+    withPurse(hub);
+    (hub.watchGoldTakes as () => void)();
+    hub.release("shutdown");
+
+    // a later visit's overlay, before that visit listens: the first visit's watch must be gone
+    const second = withPurse(hub);
+    goldTake();
+    expect(second).not.toHaveBeenCalled();
+
+    (hub.watchGoldTakes as () => void)();
+    goldTake();
+    expect(second).toHaveBeenCalledTimes(1);
+    hub.release("shutdown");
   });
 });
 
@@ -2747,7 +2855,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
     it("should let the blackout go with the visit", () => {
       const { hub } = town(BAKED);
-      (hub as unknown as { release(): void }).release();
+      (hub as unknown as { release(end: "shutdown"): void }).release("shutdown");
       expect((hub as unknown as { view?: unknown }).view).toBeUndefined();
     });
   });
@@ -3134,5 +3242,201 @@ describe("HubScene the town folk talk (FS-B0H2D R27–R29)", () => {
     choice("farewell")?.handlers.pointerup();
 
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// Leaving /game (the header's Trade link) destroys the game in the town: Phaser emits the scene's
+// DESTROY only, after every plugin has destroyed itself (sceneEnd.standin.ts), and release's
+// `this.input.setDefaultCursor("")` threw a TypeError on the input's nulled manager, which stopped
+// the rest of the game's destroy (asked 2026-11-06).
+describe("HubScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * A queued hub on Phaser's stand-in, its end wired by `listenForEnd`, the call create() makes:
+   * the plugins booted first, so they hear each end before the hub does.
+   */
+  function hubToEnd() {
+    const queued = queuedHubOnStage();
+    const { hub } = queued;
+    const { add, cameras, time, scene } = hub as unknown as Record<string, object>;
+    const systems = sceneSystems({ add, cameras, time, scene });
+    Object.assign(hub, systems.scene);
+    (hub as unknown as { listenForEnd(): void }).listenForEnd();
+    return { ...queued, systems };
+  }
+
+  it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
+    const { systems, off } = hubToEnd();
+
+    expect(() => systems.destroy()).not.toThrow();
+    expect(systems.touched).toEqual([]);
+    // what lives past the game is still handed back
+    expect(off).toHaveBeenCalledWith("queue_status");
+    expect(off).toHaveBeenCalledWith("world_left");
+  });
+
+  it("should still hand the cursor back to the page on a stop", () => {
+    const { systems } = hubToEnd();
+    systems.input.manager!.defaultCursor = "pointer";
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.defaultCursor).toBe("");
+  });
+
+  // Phaser's stop destroys the hub's keys and keeps their captures, the game's: E, I, B, 3 and the
+  // rest would have their default prevented on the page through the next world (sceneEnd.ts).
+  it("should hand back the captures its keys made on a stop", () => {
+    const { hub, systems } = hubToEnd();
+    (hub as unknown as { bindInput(): void }).bindInput();
+    expect(systems.input.manager?.captures.length).toBeGreaterThan(0);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
+  });
+
+});
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+describe("HubScene art loading (FS-C4JWH §B R7)", () => {
+
+  it("should queue the folk and nothing else, the resident art being loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
+  });
+
+  it("should evict the run's creatures and boss once its load completes (FS-C4JWH §C R11)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, "creatures-0", "creatures-1", "boss-0", "boss-1"].map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.textures.removed.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
+    expect(art.textures.exists(atlasTextureKey("folk-0"))).toBe(true);
+  });
+
+  it("should show the torch bar over folk still downloading at 300 ms, gone before create, then fade the hub in (FS-C4JWH §D R17, A1)", () => {
+    vi.useFakeTimers();
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+    let atCreate: boolean[] = [];
+
+    art.boot({ preload: () => hub.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
+      hold: true,
+    });
+    vi.advanceTimersByTime(299);
+    expect(art.drawn).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(art.drawn.filter((d) => d.kind === "text").map((d) => d.args[2])).toEqual([
+      "LIGHTING THE TORCH",
+      "THE SPIRE IS WAITING",
+    ]);
+    art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
+
+    expect(atCreate.length).toBeGreaterThan(0);
+    expect(atCreate.every(Boolean)).toBe(true);
+    expect(art.camera.fades.filter((f) => f.startsWith("fade"))).toEqual([
+      "fadeIn(150, 18, 18, 18)",
+      "fadeOut(150, 18, 18, 18)",
+      "fadeIn(200, 18, 18, 18)",
+    ]);
+  });
+
+  it("should show no bar over folk that come within 300 ms, and fade the hub in (FS-C4JWH A1.1, A1.4)", () => {
+    vi.useFakeTimers();
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+    const create = vi.fn();
+
+    art.boot({ preload: () => hub.preload(), create }, undefined, { hold: true });
+    vi.advanceTimersByTime(120);
+    art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
+
+    expect(art.drawn).toEqual([]);
+    expect(create).toHaveBeenCalledOnce();
+    expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
+  });
+
+  it("should show no bar when the folk are already loaded (FS-C4JWH §D R17)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, "folk-0"].map(atlasTextureKey),
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.drawn).toEqual([]);
+  });
+});
+
+// The hub's server-sent one-shots can arrive while its folk download, before create has subscribed
+// to them: they are held from init and handed over once create is done (FS-C4JWH Edge States).
+describe("HubScene messages while its art downloads (FS-C4JWH Edge States)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should show a queue_status that arrived before create, once create is done", () => {
+    const stage = hubOnStage();
+    const listeners = new Map<string, Listener>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const hub = stage.hub as unknown as { queued: boolean; listenForQueue(): void; init(): void; openHeldMessages(): void };
+
+    hub.init();
+    listeners.get("queue_status")?.({ current: 2, total: 5 });
+    expect(hub.queued).toBe(false);
+    hub.listenForQueue();
+    hub.openHeldMessages();
+
+    expect(hub.queued).toBe(true);
+  });
+
+  it("should let go of the held messages when the hub stops before create", () => {
+    const stage = hubOnStage();
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const off = vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    const hub = stage.hub as unknown as { init(): void; events: Emitter };
+
+    hub.init();
+    hub.events.emit("shutdown");
+
+    expect(off.mock.calls.map(([action]) => action)).toEqual(
+      expect.arrayContaining(["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"]),
+    );
   });
 });

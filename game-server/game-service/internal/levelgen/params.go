@@ -1,6 +1,9 @@
-// Package levelgen turns a seed and a few parameters into a level layout: a
-// branching trail carved out of a solid grid, with a clearing at every dead end
-// and the remaining mass merged into wall rects.
+// Package levelgen turns a seed and a few parameters into a level layout. It
+// has two generators: Generate carves a branching trail out of a solid grid,
+// with a clearing at every dead end and the remaining mass merged into wall
+// rects (the Forest); GenerateDungeon places rooms joined by corridors, cuts
+// the walkable cells into regions, walls them with their shell and gives the
+// rooms their roles (a dungeon floor, FS-KE075, ADR-0061).
 //
 // It is pure: no clock, no global random source, no environment, no files and no
 // game packages. The same parameters and seed always return the same layout.

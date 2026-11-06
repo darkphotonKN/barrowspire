@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { CLASS_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
 import {
   arms,
   bareFeet,
@@ -23,6 +23,7 @@ import {
   cloakBones,
   coif,
   cowl,
+  faceLocks,
   hair,
   hairFall,
   hands,
@@ -76,17 +77,18 @@ export function knight() {
   const [, ky] = J(rig, "shinL");
   // the hauberk is open across the front by `gap` radians each side of centre
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
+  const hauberk = { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112] };
 
   torso(rig, F.mail);
   neck(rig, F.mail);
   arms(rig, F.mail);
-  legs(rig, F.mailDark);
+  legs(rig, F.mailDark, { under: hauberk });
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.1 });
   head(rig, F.skin);
   coif(rig, F.mailDouble);
   nasalHelm(rig, F);
-  skirt(rig, F.mail, { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112], legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
+  skirt(rig, F.mail, { ...hauberk, legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
   belt(rig, F.leatherDark, M.brass, { r: [0.106, 0.086], dy: 0.03 });
   cloak(rig, F.cloakKnight, { length: 0.64, spread: 1.5, flare: 1.3 });
   inHand(rig, "R").add(longsword(rig, M, F));
@@ -117,18 +119,19 @@ export function archer() {
   const [, hy] = J(rig, "hips");
   const [, fy] = J(rig, "foreArmL");
   const [, wy] = J(rig, "handL");
+  const tunic = { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] };
 
   torso(rig, F.buff);
   neck(rig, F.skin);
   arms(rig, F.rangerNightDark);
-  legs(rig, F.rangerHose);
+  legs(rig, F.rangerHose, { under: tunic });
   hands(rig, F.leather);
   boots(rig, F.leather, { top: 0.21 });
   head(rig, F.skin);
   // a deep cowl over a shadowed face, its crown drawn back into a long, full point that droops
   cowl(rig, F.rangerNight, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], F.leatherDark);
-  skirt(rig, F.buff, { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094], legFollow: 0.7, panels: true, panelWeight: 0.3 });
+  skirt(rig, F.buff, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 });
   belt(rig, F.leatherDark, M.brass, { pouch: true });
   cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
   quiver(rig, M, F);
@@ -193,38 +196,42 @@ export function archer() {
 export function wizard() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.92, { shoulderW: 0.87, torsoW: 0.88, torsoD: 0.92, hipW: 1.04, armR: 0.86, limbR: 0.88, headR: 0.059 });
+  const rig = createRig(1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 });
   rig.hooks = [];
   skirtBones(rig, { stiffness: 38, drag: 0.28 });
   const [, hy] = J(rig, "hips");
   const [, cy] = J(rig, "chest");
   const td = rig.p.torsoD;
+  const gown = { top: hy - 0.005, bottom: 0.016, rTop: [0.108, 0.08], rBottom: [0.155, 0.138] };
   // the scapular's front and back panels
   const panels = [
     [Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
     [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5],
   ];
 
-  torso(rig, F.robe, { waist: 0.86 });
-  bust(rig, F.robe);
-  neck(rig, F.skin);
-  arms(rig, F.robe, { sleeve: (t) => 1 + 1.7 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
-  legs(rig, F.breeches);
+  // her figure is drawn at the waist: the gown is cut to it and the skirt only opens from the hip
+  const waist = 0.76;
+  torso(rig, F.robe, { waist, neckW: 0.85 });
+  neck(rig, F.skin, { w: 0.85 });
+  arms(rig, F.robe, { sleeve: (t) => 1 + 1.35 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
+  legs(rig, F.breeches, { under: gown });
   hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
-  head(rig, F.skin);
+  head(rig, F.skin, { jaw: 0.88 });
   hair(rig, F.raven, { long: true });
   standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
-  skirt(rig, F.robe, { top: hy + 0.05, bottom: 0.016, rTop: [0.09, 0.072], rBottom: [0.155, 0.138], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+  skirt(rig, F.robe, { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
   for (const arc of panels) {
-    overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012 });
-    skirt(rig, F.scapular, { top: hy + 0.02, bottom: 0.05, rTop: [0.096, 0.08], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+    overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012, waist });
+    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
   }
+  bust(rig, F.scapular);
   hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });
+  faceLocks(rig, F.raven);
   // the scapular's clasps
   for (let i = 0; i < 3; i++)
     attach(rig, "chest", new THREE.BoxGeometry(0.018 * rig.H, 0.008 * rig.H, 0.008 * rig.H), M.brass, [0, cy + 0.07 - i * 0.045, 0.086 * td + 0.012 - i * 0.004]);
-  belt(rig, F.leatherDark, M.brass, { r: [0.094, 0.08], dy: 0.07, pouch: true });
+  belt(rig, F.leatherDark, M.brass, { r: [0.056, 0.064], dy: 0.07, pouch: true });
   const orbMat = M.arcane.clone();
   const base = orbMat.emissiveIntensity;
   inHand(rig, "R").add(sceptre(rig, M, F, orbMat));
@@ -269,11 +276,12 @@ export function mercenary() {
   const [, wy] = J(rig, "handL");
   // the coat is open across the front by `gap` radians each side of centre
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
+  const coatSkirts = { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112] };
 
   torso(rig, F.coat);
   neck(rig, F.skin);
   arms(rig, F.coat, { r: 1.06 });
-  legs(rig, F.breeches);
+  legs(rig, F.breeches, { under: coatSkirts });
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.22 });
   head(rig, F.skin);
@@ -290,7 +298,7 @@ export function mercenary() {
   );
   attach(rig, "chest", collar, F.coat, [0, 0, 0]);
   // the coat's skirts, split at the front
-  skirt(rig, F.coat, { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112], legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
+  skirt(rig, F.coat, { ...coatSkirts, legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
   sash(rig, F.sash, { side: "R", depth: 0.045 });
   spaulder(rig, "L", F.darkSteelDouble, { lames: 3, size: 0.98 });
   limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.04, 0.038], F.darkSteel);
@@ -383,7 +391,7 @@ export function ghoul() {
   hands(rig, F.bone, { size: 0.82, claws: F.bone });
   bareFeet(rig, F.bone, { size: 0.8 });
   skull(rig, F.bone, M);
-  skirt(rig, F.rag, { top: hy + 0.012, bottom: hy - 0.2, rTop: [0.074, 0.058], rBottom: [0.098, 0.084], legFollow: 0.5, panels: true, ragged: { teeth: 11, depth: 0.07, seed: 3 } });
+  skirt(rig, F.rag, { top: hy + 0.012, bottom: hy - 0.2, rTop: [0.074, 0.058], rBottom: [0.098, 0.084], legFollow: 0.5, panels: true, ragged: { teeth: 11, depth: 0.07, seed: 3 }, mirrored: true });
   cloak(rig, F.rag, { length: 0.34, spread: 0.85, flare: 0.2, back: 0.065, ragged: { teeth: 7, depth: 0.14, seed: 5 } });
   inHand(rig, "R", { rx: 0.2 }).add(cleaver(rig, M, F));
 
@@ -464,7 +472,7 @@ export function troll() {
   hands(rig, F.troll, { size: 1.45, claws: F.bone });
   bareFeet(rig, F.troll, { size: 1.35, claws: F.bone });
   trollHead(rig, F.troll, F, M);
-  skirt(rig, F.fur, { top: hy + 0.02, bottom: hy - 0.19, rTop: [0.128, 0.104], rBottom: [0.15, 0.13], legFollow: 0.55, panels: true, ragged: { teeth: 12, depth: 0.06, seed: 8 } });
+  skirt(rig, F.fur, { top: hy + 0.02, bottom: hy - 0.19, rTop: [0.128, 0.104], rBottom: [0.15, 0.13], legFollow: 0.55, panels: true, ragged: { teeth: 12, depth: 0.06, seed: 8 }, mirrored: true });
   belt(rig, F.leatherDark, F.bone, { r: [0.13, 0.108], dy: 0.03 });
   // a necklace of bones
   const [, ny] = J(rig, "neck");
@@ -505,10 +513,13 @@ export function troll() {
  * no existing atlas reflows.
  */
 export const CAST = [
-  { sheet: "char_knight_base", group: "characters", fn: "knight", build: knight },
-  { sheet: "char_archer_base", group: "characters", fn: "archer", build: archer },
-  { sheet: "char_wizard_base", group: "characters", fn: "wizard", build: wizard },
-  { sheet: "char_mercenary_base", group: "characters", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS },
+  // The four classes (FS-HF0WW, FS-3V7GC): each baked at 2× (twice the px per screen px, drawn at
+  // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
+  // trimmed to its pixels (lib/trim.mjs)
+  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },

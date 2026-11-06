@@ -3,6 +3,7 @@ import { ApiError } from "@/utils/apiError";
 import {
   ACCEPT_CONFLICT,
   ACCEPT_GONE,
+  ACCEPT_LEADING_BID_LOWERED,
   acceptConfirmText,
   acceptFailure,
   leadingBidLine,
@@ -16,7 +17,7 @@ const apiError = (status: number, code: string) =>
 describe("sellerBlock", () => {
   const NOW = Date.parse("2026-10-01T12:00:00Z");
   const live = {
-    sellerId: "aldric",
+    own: true,
     status: "ACTIVE",
     ended: false,
     endsAt: "2026-10-02T12:00:00Z",
@@ -44,9 +45,10 @@ describe("sellerBlock", () => {
 
   it.each([
     ["another player", "brenna"],
+    ["the seller whose read says not theirs (an expired token)", "aldric"],
     ["a signed-out visitor", undefined],
-  ])("should give %s no seller block", (_label, memberId) => {
-    expect(sellerBlock(live, memberId, NOW)).toEqual({ kind: "none" });
+  ])("should give %s no seller block on a listing not theirs", (_label, memberId) => {
+    expect(sellerBlock({ ...live, own: false }, memberId, NOW)).toEqual({ kind: "none" });
   });
 });
 
@@ -70,6 +72,11 @@ describe("acceptFailure", () => {
       apiError(400, "FAILED_PRECONDITION"),
       { message: ACCEPT_GONE, refetch: true },
     ],
+    [
+      "a leading bid that dropped since the seller looked",
+      apiError(400, "LEADING_BID_LOWERED"),
+      { message: ACCEPT_LEADING_BID_LOWERED, refetch: true },
+    ],
     ["an unreachable server", apiError(503, "UNAVAILABLE"), { message: BROWSE_UNREACHABLE }],
     ["no answer at all", new TypeError("Failed to fetch"), { message: BROWSE_UNREACHABLE }],
     ["anything else", apiError(403, "PERMISSION_DENIED"), { message: "server prose" }],
@@ -80,5 +87,8 @@ describe("acceptFailure", () => {
   it("should word the refusals in the Bazaar's house style", () => {
     expect(ACCEPT_CONFLICT).toBe("Someone acted at the same moment — try again.");
     expect(ACCEPT_GONE).toBe("This relic is no longer for sale.");
+    expect(ACCEPT_LEADING_BID_LOWERED).toBe(
+      "The leading bid dropped since you looked — check it and accept again.",
+    );
   });
 });

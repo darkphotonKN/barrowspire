@@ -135,7 +135,11 @@ export function createBaker() {
     c.updateProjectionMatrix();
   }
 
-  /** Renders the current scene into a w1 × h1 frame and returns straight-alpha RGBA at 1×. */
+  /**
+   * Renders the current scene into a w1 × h1 frame and returns straight-alpha RGBA at 1×: the
+   * framebuffer is SS times the frame each way. A sheet baked at 2× asks for a frame twice the
+   * size over the same camera box, so it renders at 4× and filters to 2×.
+   */
   function capture(w1, h1) {
     const W = w1 * SS;
     const H = h1 * SS;
@@ -248,14 +252,18 @@ export function createBaker() {
    * also drawn as an opacity pass, which scales each frame's alpha; `opacity.floor` is the
    * ground shadow's.
    */
-  function bakeCharacter(root, poses, yaws, { pad = 0.06, opacity = null } = {}) {
+  function bakeCharacter(root, poses, yaws, { pad = 0.06, opacity = null, scale = 1, sizing = null } = {}) {
     prep(root);
     scene.add(root);
-    // pass 1: bounds over every pose and facing, from the skinned vertices themselves
+    // pass 1: bounds over every pose and facing, from the skinned vertices themselves. A pose
+    // whose `sizing` is false (FS-HF0WW, FS-3V7GC: a class's walk_attack) does not set the frame;
+    // it must fit the frame the others set, pad included, or the bake fails rather than clip it.
     const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    const fit = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
     let reach = 1;
     const w = new THREE.Vector3();
-    for (const apply of poses) {
+    for (const [k, apply] of poses.entries()) {
+      const into = !sizing || sizing[k] ? b : fit;
       root.rotation.y = 0;
       apply();
       root.updateMatrixWorld(true);
@@ -278,10 +286,10 @@ export function createBaker() {
           reach = Math.max(reach, Math.hypot(p[0], p[2]) * 2 + p[1] + 1);
           for (const q of [p, shadowOf(p)]) {
             const [vx, vy] = toView(q);
-            if (vx < b.minX) b.minX = vx;
-            if (vx > b.maxX) b.maxX = vx;
-            if (vy < b.minY) b.minY = vy;
-            if (vy > b.maxY) b.maxY = vy;
+            if (vx < into.minX) into.minX = vx;
+            if (vx > into.maxX) into.maxX = vx;
+            if (vy < into.minY) into.minY = vy;
+            if (vy > into.maxY) into.maxY = vy;
           }
         }
       }
@@ -290,6 +298,8 @@ export function createBaker() {
     const ay = Math.ceil((b.maxY + pad) * K1);
     const w1 = ax + Math.ceil((b.maxX + pad) * K1);
     const h1 = ay + Math.ceil((-b.minY + pad) * K1);
+    if (fit.minX * K1 < -ax || fit.maxX * K1 > w1 - ax || fit.maxY * K1 > ay || fit.minY * K1 < ay - h1)
+      throw new Error(`bake: a pose that may not size the frame falls outside it (${JSON.stringify(fit)})`);
     camera.left = -ax / K1;
     camera.right = camera.left + w1 / K1;
     camera.top = ay / K1;
@@ -298,7 +308,11 @@ export function createBaker() {
     setShadowBox(reach);
     catcher.visible = true;
 
-    // pass 2: render every pose from every facing
+    // pass 2: render every pose from every facing. At `scale` > 1 the camera frames the same
+    // world box, rendered `scale` times larger (SS × scale, box-filtered by SS to scale×), so the
+    // frame is exactly `scale` times the 1× frame and the anchor lands on the same world point.
+    const fw = w1 * scale;
+    const fh = h1 * scale;
     const frames = poses.map((apply) => {
       root.rotation.y = 0;
       apply();
@@ -307,13 +321,13 @@ export function createBaker() {
       return yaws.map((yaw) => {
         root.rotation.y = yaw;
         root.updateMatrixWorld(true);
-        const px = capture(w1, h1);
-        return opacity ? applyOpacity(px, captureOpacity(root, w1, h1), opacity) : px;
+        const px = capture(fw, fh);
+        return opacity ? applyOpacity(px, captureOpacity(root, fw, fh), opacity) : px;
       });
     });
     scene.remove(root);
     disposeGeometry(root);
-    return { frames, frameWidth: w1, frameHeight: h1, anchorPx: [ax, ay] };
+    return { frames, frameWidth: fw, frameHeight: fh, anchorPx: [ax * scale, ay * scale] };
   }
 
   function info() {

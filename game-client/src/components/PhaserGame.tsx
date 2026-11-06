@@ -10,25 +10,59 @@ import { PreloadScene } from "@/scenes/PreloadScene";
 import { BootScene } from "@/scenes/BootScene";
 import { HubScene } from "@/scenes/HubScene";
 import { FieldScene } from "@/scenes/FieldScene";
-import { WORLD_SCENES, sceneFor } from "./worldRouting";
+import { switchWorld } from "./worldRouting";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
 import { releaseGame } from "./releaseGame";
+import GameFrame from "./GameFrame";
 import { installCrispText } from "@/render/crispText";
+import {
+  backingSize,
+  fitView,
+  mountViewport,
+  roundEveryObject,
+  viewport,
+} from "@/render/viewport";
+import { VIEWPORT_FIT_PLUGIN } from "@/render/viewport/ViewportFit";
+
+// Every game object rounded to the backing px (ADR-0057), installed once as the game's module
+// loads, before any game or scene exists.
+roundEveryObject(Phaser.GameObjects);
+
+/** The game frame's CSS size: what the canvas is fitted into. */
+const frameSize = (frame: HTMLElement) => ({
+  width: frame.clientWidth,
+  height: frame.clientHeight,
+});
 
 export default function PhaserGame() {
   const gameRef = useRef<Phaser.Game | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const unbindRef = useRef<(() => void) | null>(null);
 
   const initGame = useCallback(() => {
-    if (gameRef.current || !containerRef.current) return;
+    if (gameRef.current || !containerRef.current || !frameRef.current) return;
+    const frame = frameRef.current;
+
+    // Fitted to the game frame and drawn at the screen's density (FS-ZAJMH R2, R3, R7–R9): the
+    // logical view takes the frame's shape, the canvas is shown as big as fits it, and the
+    // backing store is the logical view at the render scale; every camera is zoomed by the
+    // render scale (ViewportFit, src/render/viewport/camera.ts).
+    viewport.set(fitView(frameSize(frame), window.devicePixelRatio));
+    const backing = backingSize(viewport.current());
 
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
-      width: 1080,
-      height: 720,
       parent: containerRef.current,
+      scale: {
+        mode: Phaser.Scale.NONE,
+        width: backing.width,
+        height: backing.height,
+        zoom: viewport.cssScale / viewport.renderScale,
+      },
+      plugins: { scene: [VIEWPORT_FIT_PLUGIN] },
       // a DOM layer over the canvas, for the chat input's real text field: the only way the
       // player's input method (Chinese and the rest) reaches the game (FS-WJGFJ R26)
       dom: { createContainer: true },
@@ -36,8 +70,11 @@ export default function PhaserGame() {
       // Bone & Soot. The hub and the run set their own ground.
       backgroundColor: BARROW.menuSoot,
       // Baked art is drawn smoothed (docs/design-guideline.md "Linear filtering",
-      // FS-2325V §C): linear filtering, at 1x from a 2x render. Positions stay
-      // integer-aligned so a still frame is crisp and a moving one does not shimmer.
+      // FS-2325V §C): linear filtering, at 1x from a 2x render. Quads land on
+      // backing px, at a fractional render scale too: `roundPixels` here is every camera's
+      // wish, kept on and the scroll kept on the backing-px grid by keepOnPixelGrid, and
+      // every object rounds whenever its camera does (src/render/viewport/rounding.ts,
+      // ADR-0057), so a still frame is crisp and a moving one does not shimmer.
       pixelArt: false,
       render: {
         roundPixels: true,
@@ -62,10 +99,14 @@ export default function PhaserGame() {
       ],
     };
 
-    // every label rasterised at the device's pixel ratio, not scaled up from 1x
+    // every label rasterised at the render scale, not scaled up from 1x
     installCrispText();
     const game = new Phaser.Game(config);
     gameRef.current = game;
+
+    // the DOM layer pinned to the canvas, and a re-fit on a resize of the frame (the window, the
+    // banner, fullscreen) or a density change (another monitor), no reload (R10, R11, R16)
+    unbindRef.current = mountViewport(game, frame);
 
     // THE transition. The server says which world the player is in — on entering
     // the hub, on a match, on returning, and on reconnecting after a refresh —
@@ -73,21 +114,8 @@ export default function PhaserGame() {
     // per scene, so no scene has to know what comes after it.
     // FS-29KSH §Requirements 15, 36.
     // Everything a world transition replaces: WORLD_SCENES (worldRouting.ts).
-    const enterWorld = (payload: WorldEnteredPayload) => {
-      const target = sceneFor(payload.world_type);
-
-      // scene.start() from the manager does not stop what is already running,
-      // unlike the same call from inside a scene, so the previous world would
-      // stay live underneath.
-      for (const key of WORLD_SCENES) {
-        if (key !== target && game.scene.isActive(key)) game.scene.stop(key);
-      }
-
-      game.scene.start(target, {
-        sessionID: payload.session_id,
-        field: payload.field,
-      });
-    };
+    const enterWorld = (payload: WorldEnteredPayload) =>
+      switchWorld(game.scene, payload);
 
     socketManager.on("world_entered", (payload: WorldEnteredPayload) => {
       if (!payload?.world_type) return;
@@ -121,6 +149,8 @@ export default function PhaserGame() {
 
     return () => {
       cancelAnimationFrame(raf);
+      unbindRef.current?.();
+      unbindRef.current = null;
       if (gameRef.current) {
         // the keyboard goes back to the page now, not on the destroy's next frame (releaseGame.ts)
         releaseGame(gameRef.current, socketManager);
@@ -129,9 +159,6 @@ export default function PhaserGame() {
     };
   }, [initGame]);
 
-  return (
-    <div className="treasure-hunt-wrapper">
-      <div ref={containerRef} className="treasure-hunt-game-container" />
-    </div>
-  );
+  // the game frame (FS-ZAJMH "Terms"): the canvas, its DOM layer and the fullscreen toggle
+  return <GameFrame frame={frameRef} canvas={containerRef} />;
 }

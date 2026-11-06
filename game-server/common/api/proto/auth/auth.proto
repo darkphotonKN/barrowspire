@@ -38,6 +38,9 @@ service AuthService {
   // Change an unverified member's email and issue a code to it
   // (FS-V6SFK §Requirements 19)
   rpc ChangeUnverifiedEmail(ChangeUnverifiedEmailRequest) returns (Member) {}
+  // Mint a new access token from a refresh token, from the member row as it
+  // reads now; no refresh token is minted (FS-ZPX58 §A, ADR-0066)
+  rpc RefreshAccessToken(RefreshAccessTokenRequest) returns (RefreshAccessTokenResponse) {}
 }
 
 // Member message represents a user in the system
@@ -68,6 +71,20 @@ message LoginResponse {
   int32 access_expires_in = 3;
   int32 refresh_expires_in = 4;
   Member member_info = 5;
+}
+
+// Refresh-access-token request: the refresh token minted at sign-in or
+// verification (FS-ZPX58 R1)
+message RefreshAccessTokenRequest {
+  string refresh_token = 1;
+}
+
+// Refresh-access-token response. Carries no refresh token: v1 does not rotate
+// (ADR-0066), so the presented one stays valid until its own expiry.
+message RefreshAccessTokenResponse {
+  string access_token = 1;
+  int32 access_expires_in = 2;
+  Member member_info = 3;
 }
 
 // Get member request

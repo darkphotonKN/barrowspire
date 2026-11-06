@@ -169,16 +169,19 @@ describe("browseFailureMessage", () => {
 
 describe("rowAction", () => {
   const now = Date.parse("2026-10-01T12:00:00Z");
+  // "Is this mine" is the server's `own`, never a member-id comparison (FS-GKHYD Req 13).
   const live = {
-    sellerId: "seller",
+    own: false,
     endsAt: "2026-10-01T13:00:00Z",
     ended: false,
   };
+  const mine = { ...live, own: true };
   const signedIn = { memberId: "someone" };
   const signedOut = { memberId: undefined };
 
   it.each([
-    ["the seller's own listing", live, { memberId: "seller" }, "own"],
+    ["the seller's own listing", mine, { memberId: "seller" }, "own"],
+    ["a listing not the viewer's, whatever their id", live, { memberId: "seller" }, "bid"],
     ["a signed-out visitor", live, signedOut, "signIn"],
     ["a signed-in player on a live listing", live, signedIn, "bid"],
     [
@@ -207,9 +210,17 @@ describe("rowAction", () => {
     ],
     [
       "the seller's own ended listing",
-      { ...live, ended: true },
+      { ...mine, ended: true },
       { memberId: "seller" },
       "own",
+    ],
+    // own counts only for a signed-in viewer, the rule the detail's action area uses too.
+    ["a signed-out viewer on a listing a stale read marks own", mine, signedOut, "signIn"],
+    [
+      "a signed-out viewer on an ended listing a stale read marks own",
+      { ...mine, ended: true },
+      signedOut,
+      "ended",
     ],
   ] as const)("%s", (_, listing, viewer, action) => {
     expect(rowAction(listing, viewer, now)).toBe(action);

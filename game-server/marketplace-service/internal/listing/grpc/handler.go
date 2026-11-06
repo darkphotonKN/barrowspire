@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -40,6 +41,7 @@ type Handler struct {
 	withdrawBidUC   *usecase.WithdrawBidUC
 	acceptBid       AcceptBid
 	buyout          Buyout
+	withdrawListing WithdrawListing
 }
 
 // AcceptBid starts settlement for a listing its seller is ending early.
@@ -50,6 +52,12 @@ type AcceptBid interface {
 // Buyout records a buyout and starts settlement for it.
 type Buyout interface {
 	Handle(ctx context.Context, cmd usecase.BuyoutCommand) error
+}
+
+// WithdrawListing takes a seller's listing down and starts returning its item
+// and every hold.
+type WithdrawListing interface {
+	Handle(ctx context.Context, cmd usecase.WithdrawListingCommand) error
 }
 
 // MyListingsReader reads one page of a seller's listings, newest first. A nil
@@ -86,7 +94,8 @@ func NewHandler(
 	browseReader BrowseListingsReader,
 	listingReader ListingReader,
 	acceptBid AcceptBid,
-	buyout Buyout) *Handler {
+	buyout Buyout,
+	withdrawListing WithdrawListing) *Handler {
 	return &Handler{
 		reserveItemUC:    reserveItemUC,
 		createListingUC:  createListingUC,
@@ -98,6 +107,7 @@ func NewHandler(
 		listingReader:    listingReader,
 		acceptBid:        acceptBid,
 		buyout:           buyout,
+		withdrawListing:  withdrawListing,
 	}
 }
 
@@ -180,7 +190,43 @@ func (h *Handler) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.
 		return nil, status.Error(codes.Unauthenticated, "missing identity")
 	}
 
+	// The accept floor (FS-F692V §Req 7). The gateway already refuses a missing
+	// or non-positive one as malformed; this guards every other caller, so
+	// sending zero never skips the floor.
+	if req.GetMinAmount() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "min amount must be positive")
+	}
+
 	if err := h.acceptBid.Handle(ctx, usecase.AcceptBidCommand{
+		ListingID: listingID,
+		MemberID:  memberID,
+		MinAmount: int(req.GetMinAmount()),
+		Now:       time.Now(),
+	}); err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.AcceptBidResponse{}, nil
+}
+
+// WithdrawListing lets a seller take their own listing down (FS-V7A5S). It
+// returns once the listing is withdrawn; the item and the held gold go back on
+// their own.
+func (h *Handler) WithdrawListing(ctx context.Context, req *pb.WithdrawListingRequest) (*pb.WithdrawListingResponse, error) {
+	// the domain's seller check compares against this, so it is only ever the
+	// authenticated caller. Not email-gated: a withdrawal only exits a
+	// commitment (FS-V6SFK §Requirements 30; FS-V7A5S Req 11 as amended)
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	listingID, err := uuid.Parse(req.GetListingId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid listing id")
+	}
+
+	if err := h.withdrawListing.Handle(ctx, usecase.WithdrawListingCommand{
 		ListingID: listingID,
 		MemberID:  memberID,
 		Now:       time.Now(),
@@ -188,7 +234,7 @@ func (h *Handler) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.
 		return nil, mapError(ctx, err)
 	}
 
-	return &pb.AcceptBidResponse{}, nil
+	return &pb.WithdrawListingResponse{}, nil
 }
 
 // Buyout buys a listing outright at its buyout price and starts settlement
@@ -312,7 +358,8 @@ func (h *Handler) ListMyListings(ctx context.Context, req *pb.ListMyListingsRequ
 	now := time.Now()
 	listings := make([]*pb.Listing, 0, len(page.Listings))
 	for _, l := range page.Listings {
-		listings = append(listings, toProtoListing(l, now))
+		// every listing here is the caller's (FS-GKHYD R7)
+		listings = append(listings, toProtoListing(l, now, true))
 	}
 
 	res := &pb.ListMyListingsResponse{Listings: listings}
@@ -356,8 +403,9 @@ func (h *Handler) ListMyBids(ctx context.Context, req *pb.ListMyBidsRequest) (*p
 	return res, nil
 }
 
-// BrowseListings pages every seller's live auctions. Public (see publicMethods
-// in common/auth): it reads no caller, so the page is the same for everyone.
+// BrowseListings pages every seller's live auctions. Optional-auth (see
+// optionalAuthMethods in common/auth): every visitor is served the same
+// listings, and a signed-in one also learns which are their own (ADR-0053).
 func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequest) (*pb.BrowseListingsResponse, error) {
 	// a transport-shape failure, answered here like ListMyListings answers one
 	cursor, err := commoncursor.DecodeEndsAt(req.GetCursor())
@@ -370,10 +418,11 @@ func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequ
 		return nil, mapError(ctx, err)
 	}
 
+	owns := ownedBy(ctx)
 	now := time.Now()
 	listings := make([]*pb.Listing, 0, len(page.Listings))
 	for _, l := range page.Listings {
-		listings = append(listings, toProtoListing(l, now))
+		listings = append(listings, toProtoListing(l, now, owns(l.SellerID)))
 	}
 
 	res := &pb.BrowseListingsResponse{Listings: listings}
@@ -384,8 +433,9 @@ func (h *Handler) BrowseListings(ctx context.Context, req *pb.BrowseListingsRequ
 	return res, nil
 }
 
-// GetListing reads one listing in any status. Public (see publicMethods in
-// common/auth): it reads no caller, so every visitor sees the same listing.
+// GetListing reads one listing in any status. Optional-auth, like
+// BrowseListings: every visitor sees the same listing, and own tells a
+// signed-in seller it is theirs (ADR-0053).
 func (h *Handler) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.GetListingResponse, error) {
 	listingID, err := uuid.Parse(req.GetListingId())
 	if err != nil {
@@ -397,15 +447,27 @@ func (h *Handler) GetListing(ctx context.Context, req *pb.GetListingRequest) (*p
 		return nil, mapError(ctx, err)
 	}
 
-	return &pb.GetListingResponse{Listing: toProtoListing(*l, time.Now())}, nil
+	return &pb.GetListingResponse{Listing: toProtoListing(*l, time.Now(), ownedBy(ctx)(l.SellerID))}, nil
+}
+
+// ownedBy answers, for an optional-auth read, whether the caller sells a given
+// listing: true only for a signed-in caller who is its seller. A caller with no
+// identity (anonymous, or a token the interceptor did not accept) owns nothing
+// (FS-GKHYD R5).
+func ownedBy(ctx context.Context) func(sellerID uuid.UUID) bool {
+	viewer, signedIn := commonauth.MemberIDFromCtx(ctx)
+	return func(sellerID uuid.UUID) bool {
+		return signedIn && viewer == sellerID
+	}
 }
 
 // toProtoListing maps the read model to the wire. The optimistic-locking
-// version is internal and never leaves the service.
+// version is internal and never leaves the service. own is a fact about the
+// caller, not the listing, so the read decides it and passes it in.
 //
 // The price facts are only as complete as the read that built l: a read that
 // did not select them maps a zero bid count and the start price as the minimum.
-func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
+func toProtoListing(l dto.ListingDetails, now time.Time, own bool) *pb.Listing {
 	out := &pb.Listing{
 		Id:          l.ID.String(),
 		SellerId:    l.SellerID.String(),
@@ -419,6 +481,7 @@ func toProtoListing(l dto.ListingDetails, now time.Time) *pb.Listing {
 		MinimumBid:  int64(l.MinimumBid()),
 		BidCount:    int32(l.BidCount),
 		Ended:       l.EndedAt(now),
+		Own:         own,
 	}
 
 	if l.CurrentPrice != nil {
@@ -459,10 +522,35 @@ func toProtoMyBid(b dto.MyBid, now time.Time) *pb.MyBid {
 	}
 }
 
+// ownRefusals pairs each domain refusal this service decides with the
+// registered code it crosses the wire as. The domain stays free of errcode.
+var ownRefusals = []struct {
+	err  error
+	code errcode.Code
+}{
+	{listing.ErrLeadingBidLowered, errcode.LeadingBidLowered},                 // FS-F692V Req 5
+	{listing.ErrBidWithdrawLimitReached, errcode.BidWithdrawLimitReached},     // FS-ZE43K Req 8
+	{listing.ErrListingWithdrawLocked, errcode.ListingWithdrawLocked},         // FS-V7A5S Req 11
+	{listing.ErrListingDurationOutOfRange, errcode.ListingDurationOutOfRange}, // FS-XEDFF Req 1
+	{listing.ErrBidTooLow, errcode.BidTooLow},                                 // FS-V74WE Req 2
+	{listing.ErrBidAtOrAboveBuyout, errcode.BidAtOrAboveBuyout},               // FS-V74WE Req 2
+	{listing.ErrAlreadyLeading, errcode.AlreadyLeading},                       // FS-72KT8 Req 12, ADR-0054
+}
+
 func mapError(ctx context.Context, err error) error {
 	var code codes.Code
 	var msg string
 	logLevel := slog.LevelWarn
+
+	// This service's own refusals: the domain names the rule, the wire carries
+	// its registered code, so the client can tell them apart from a bare
+	// FAILED_PRECONDITION and they cross exactly as the refusals below do.
+	for _, r := range ownRefusals {
+		if errors.Is(err, r.err) {
+			err = fmt.Errorf("%w: %w", errcode.Refuse(r.code), err)
+			break
+		}
+	}
 
 	// A domain refusal, this service's own or one items-service answered (FS-HBXZN
 	// R7), crosses unchanged: same code, same ErrorInfo reason. Its status rather
@@ -507,8 +595,6 @@ func mapError(ctx context.Context, err error) error {
 
 	// the caller sent a structurally valid request carrying a nonsensical value
 	case errors.Is(err, listing.ErrInvalidAmount) ||
-		errors.Is(err, listing.ErrBidTooLow) ||
-		errors.Is(err, listing.ErrBidAtOrAboveBuyout) ||
 		errors.Is(err, listing.ErrBuyoutAmountMismatch):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
@@ -518,6 +604,7 @@ func mapError(ctx context.Context, err error) error {
 		errors.Is(err, listing.ErrListingExpired) ||
 		errors.Is(err, listing.ErrInvalidBidTransition) ||
 		errors.Is(err, listing.ErrNoBidToAccept) ||
+		errors.Is(err, listing.ErrLeadingBidLocked) ||
 		errors.Is(err, listing.ErrNoBuyoutPrice) ||
 		errors.Is(err, commonconstants.ErrInsufficientGold):
 		code = codes.FailedPrecondition
@@ -530,7 +617,8 @@ func mapError(ctx context.Context, err error) error {
 
 	case errors.Is(err, listing.ErrNotBidOwner) ||
 		errors.Is(err, listing.ErrNotSeller) ||
-		errors.Is(err, listing.ErrSellerCannotBuyout):
+		errors.Is(err, listing.ErrSellerCannotBuyout) ||
+		errors.Is(err, listing.ErrSellerCannotBid):
 		code = codes.PermissionDenied
 		msg = "permission denied"
 

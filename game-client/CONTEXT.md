@@ -79,6 +79,10 @@ translation belongs to the surface that renders words.
   the result card: never say "result card". (FS-GV8WN R19–R24)
 - **Gold** — the in-game currency, in copy and in code alike (wallet-service and ledger-service
   both use it). One of the few words that needs no translation.
+- **Purse line** — the player's gold as the gear and bag panel shows it, under the bag grid:
+  the coin icon and the account's total, with "Available X · Held in bids Y" on hover. Read from
+  the wallet on every open of the overlay and after a Take that carries gold; "—" when it could
+  not be read. Not an item and takes no bag cell. (FS-7TGZ3)
 
 ## Chat terms (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
 
@@ -90,8 +94,9 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   world switch; the player walks from town into the Spire and the lines stay.
 - **Fold** — the window folded down to its input row by its button, and unfolded again. It stays
   as the player left it; a folded window still sends, and new lines do not unfold it.
-- **Channel picker** — the drop-down at the input row's left: which channel the next line goes
-  to. Every channel is listed; one the server does not relay yet is listed disabled.
+- **Channel picker** — the drop-down at the input row's left, drawn on the canvas: which channel
+  the next line goes to. Only the shown channels are listed (Trade is absent); one the server does
+  not relay yet is dim and cannot be picked. Tab and Shift+Tab cycle it from the text field.
 - **Prefix** — the mark at the start of a line that names its channel: `#` World, `$` Trade,
   `%` Party, `@` Whisper (then a name), none for Area. Picking a channel writes its prefix, and
   typing a prefix picks its channel. A closed channel's prefix is just text.
@@ -187,13 +192,40 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   "tile" is a drawing unit, never a game unit.
 - **Footprint**: the patch of ground an object occupies in world space. Draw order sorts by
   footprint (`x + y`) and clicks hit-test against it. A sprite's pixel bounds are taller than its
-  footprint and are used for neither.
+  footprint and are used for neither. A living monster is also hit over its **body column**.
+- **Body column**: the screen-space column a living monster's body is drawn in, from its feet up
+  to its crown and 0.4 of a crown either side (half its length for a quadruped). The pointer hovers
+  and strikes a monster on its footprint or its body column (FS-48CTQ §C.5). It is a box, not the
+  sprite's pixels.
 - **Bake**: the build-time step that renders 3D models through the isometric camera into 2D sprite
   sheets. "Bake" always means build time, never in-browser at load.
 - **Sprite manifest**: `public/art/manifest.json`, the bake's index. It records, per sheet: frame
   size, anchor, directions, frame counts, fps, declared light source, asset source/licence, and
   two measured values: a ground sheet's mean colour and a standing sheet's head height (`crown`).
-  The client learns about art only through it.
+  A sheet may also record its **sheet scale** and be **trimmed** (both below). The client learns
+  about art only through it.
+- **Sheet scale**: how many of a sheet's px make one screen px (`scale` in the manifest; absent
+  is 1). A sheet baked at 2x holds twice the detail each way and is drawn at half size, so it
+  stands exactly as large as at 1x; its frame size and atlas positions are in its own px, while
+  `crown`, markers, the footprint and every other size stay screen px (ADR-0058, FS-HF0WW).
+- **Trimmed sheet**: a sheet whose frames were each cut, at bake time, to the box that holds their
+  pixels; the atlas stores only the cut and the manifest says where it sits in the whole frame
+  (`trim`). Drawn, anchored and sized as the whole frame (ADR-0058, FS-HF0WW).
+- **Walk-attack** (`walk_attack`): a class's attack drawn while it moves: the attack from the
+  waist up over the walk from the waist down, the legs facing the aim (for a melee swing, its
+  target). Every playable class's sheet carries it; no creature's or resident's does (FS-HF0WW,
+  FS-3V7GC).
+- **Atlas group**: the atlas pages one group of sheets is packed onto, named by the manifest's
+  atlas keys without the page number (`boss-0` and `boss-1` are the `boss` group). The unit the
+  client loads and frees art by (FS-C4JWH).
+- **Resident group**: an atlas group loaded at boot and kept for the whole game: the four class
+  groups and every small one. Always "resident group" or "resident art", never a bare "resident",
+  which is a townsperson (ADR-0059).
+- **Scene-scoped group**: an atlas group loaded only by the scenes that draw it (folk, wildlife,
+  fodder, creatures, boss) and freed when the next scene does not use it (ADR-0059, FS-C4JWH).
+- **Eviction**: removing a scene-scoped group's pages from the texture manager (and so the GPU),
+  with every animation registered on them, once the next scene's preload completes. Only ever of
+  art; "unload" is not used for it (ADR-0059).
 - **Light source**: a point that lights the light-map (torch, brazier, window, lantern, the
   player's torch pool). It is declared per prop type in the sprite manifest, or attached to the
   player. Purely visual: it has no effect on what anyone can see or hit.
@@ -264,6 +296,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Room**: in the tower theme, the space enclosed by one group of server walls sharing a
   `house_id`. The same server thing the exterior theme draws as a **house** (and game-service
   calls a building). One entity, three names by layer; the screen word follows the world theme.
+  On a **dungeon floor** (one whose floor map carries regions, FS-KE075) a room is instead a
+  **region** of kind `room` from the floor map: no `house_id`, no building exterior, no roof or
+  stone cap, no indoor blackout. Say *dungeon room* where either could be meant.
+- **Floor map**: the static layout of the current run floor, sent once by the server
+  (`floor_map`, FS-KE075, ADR-0060): size, cell size, regions and walls. The scene builds the floor
+  from it; per-tick snapshots no longer carry walls in a run.
+- **Region**: a room or a corridor segment of a dungeon floor, by id, as cell rects on the floor
+  map. Every walkable cell is in exactly one. The unit of fog and of the minimap.
+- **Void**: the rock of a dungeon floor outside every region and its shell walls. Drawn as the
+  canvas's darkest ink; nothing stands in it.
 - **Partition wall**: a server wall as the tower theme draws it: masonry, cut into wall pieces
   with the same geometry and cut-away rule as a house wall. It is a server wall, with collision.
 - **Perimeter wall**: the tower's outer wall, drawn by the client alone around the outside of the
@@ -294,6 +336,21 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   Spire this gives a room an inside, so "indoor" means *inside a room* there once FS-9PN7X ships,
   while the tower theme's "the whole floor is indoors" still describes the floor as a whole. A
   view rule, never a visibility rule: the server sends what it always did.
+- **Fog of war** (FS-SRA9J, ADR-0063, ADR-0068): on a dungeon floor, how much of each **region**
+  the player is shown, by its **exploration state**: **unexplored** (never entered by a party
+  member: its ground and walls under a dense **veil**, nothing else in it drawn), **explored**
+  (entered before: terrain under a lighter veil, no monsters), **visible** (a living party member
+  stands in it now: drawn in full). Its edges are feathered and a change of state eases in. Shared by the party, reset on reconnect and
+  on a floor change. Presentation only, never a visibility rule: the server sends what interest
+  allows (ADR-0060). On a dungeon floor it takes the place of the indoor blackout.
+- **Minimap**: the top-right HUD map of a dungeon floor: explored regions, the party, and the
+  switch, escape door and stairs once their region is explored. Toggled with M. Not on floors
+  without regions.
+- **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
+  level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
+  the monster the local player last hit. A **marker mode** per world and floor says whether
+  monsters carry overhead plates (`overhead`, everywhere today but floor 1) or use the frame.
+  Not a **marker**: it is HUD, not drawn in the world.
 - **Silhouette**: the player's outline drawn through a building exterior that stands between them
   and the camera. It replaces the occluder fade for buildings; trees and tall props still fade.
 - ~~**Dark opening**: an entrance seen from outside: a town building's door gap or an open Spire
@@ -364,6 +421,31 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Look**: a shimmer's three colours, all `BARROW` tokens: `glint` (the glint body), `centre`
   (its hot core) and `light` (the glow it casts and pools at the feet). The heal look is
   `oxbloodText` / `vellum` / `oxblood`. Not a base: the same base takes any look.
+
+- **Logical view** (FS-ZAJMH): the coordinate space cameras and the HUD work in. Always **720
+  units tall**; **1080 to 1280 units wide** depending on the shape of the space the game is given.
+  At render scale 1 one logical unit is one CSS pixel of the
+  old 1080×720 canvas. Scenes and HUD read it from the viewport module (`src/render/viewport/`),
+  never from `cameras.main.width/height`, which are backing-store px. A pointer's `x/y` are backing
+  px too: a HUD hit test maps them to logical units (`viewport.toLogical`). World aim keeps
+  `pointer.worldX/worldY`.
+- **Render scale**: backing-store pixels per logical unit. Displayed CSS size ×
+  `devicePixelRatio` ÷ logical size, capped at 2 (`RENDER_SCALE_CAP`). Fractional is valid. Every
+  scene's main camera is zoomed by it at origin 0; canvas text rasterises at it.
+- **Pixel grid**: the 1/render-scale steps a camera's scroll is kept on (`keepOnPixelGrid`), so
+  a still world keeps its px as the camera moves, at a fractional render scale too. With the
+  camera's `roundPixels` kept on and every game object rounding whenever its camera does
+  (`fullAuto`, set once in `src/render/viewport`, ADR-0057), every quad's corner lands on a whole
+  backing px. Phaser 4 rounds a scaled or zoomed quad only on request, which is why it is asked
+  for centrally rather than per object.
+- **Stage**: the 1080-unit-wide layout a canvas menu (main menu, character creation) is built in
+  (`STAGE_WIDTH`, the narrowest logical view). Its camera centres it in a wider view
+  (`centreStage`), the backdrop reaching the view's edges; a menu's own hit test reads a pointer
+  in stage units (`stagePoint`). Not the HUD: HUD widgets keep to the view's edges by anchors.
+- **Game frame**: the DOM element that holds the canvas and Phaser's DOM container. It is what
+  goes fullscreen. The fullscreen button sits over the canvas's top-right corner, never out in
+  the frame's bars.
+- **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
 
 ## Dev gallery terms (FS-1819Q)
 

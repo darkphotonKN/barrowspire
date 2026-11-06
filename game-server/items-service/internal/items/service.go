@@ -15,6 +15,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
 	commonutils "github.com/darkphotonKN/barrowspire-server/common/utils"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/darkphotonKN/barrowspire-server/items-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -133,10 +134,13 @@ type Repository interface {
 	ReleaseRunExceptTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID, settled []uuid.UUID) (int64, error)
 
 	// marketplace
+	CountListedTx(ctx context.Context, tx *sqlx.Tx, seller uuid.UUID) (int, error)
 	ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, itemID, listingID uuid.UUID, updatedAt time.Time) (*ItemInstance, error)
-	ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error)
+	ListStaleReserved(ctx context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) ([]StaleReservation, error)
 	CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
 	ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
+	ReleaseConfirmedReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error)
+	ListConfirmedReservations(ctx context.Context, olderThan time.Duration, after *cursor.UpdatedAt, limit int) ([]ConfirmedReservation, error)
 	FreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) (bool, error)
 	TransferItem(ctx context.Context, itemID, buyerID, listingID uuid.UUID) (bool, error)
 	UnfreezeItem(ctx context.Context, itemID, sellerID, listingID uuid.UUID) error
@@ -1587,9 +1591,15 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 // listing and puts ItemReserved in the outbox, in one transaction. Under the
 // seller's account lock, the lock an equip takes, so the two are ordered
 // (FS-HBXZN R3), the first failing check answers: not the seller's →
-// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4). The
-// reserve stays conditional on AVAILABLE, and a reserve that matches no row is
-// ITEM_NOT_AVAILABLE too. A refusal writes nothing.
+// ErrNotFound; not AVAILABLE → ITEM_NOT_AVAILABLE; worn → ITEM_WORN (R4); not
+// in the stash → ITEM_NOT_IN_STASH, since only stash items can be listed
+// (FS-3R77D R2, R4; ADR-0065); the seller already at the listed-item cap →
+// LISTING_LIMIT_REACHED (FS-XEDFF R5, R8). The count runs under the same
+// lock, so two reserves cannot both pass at one under the cap, and a
+// reservation not yet a listing counts (R6). The reserve stays conditional on
+// AVAILABLE only: every write that moves an AVAILABLE instance takes the same
+// account lock, so the location read cannot go stale (FS-3R77D R5). A reserve
+// that matches no row is ITEM_NOT_AVAILABLE too. A refusal writes nothing.
 //
 // buyoutPrice is marketplace's term, not items': it is forwarded onto the event
 // unread, nil when the seller set none (FS-9XKS6).
@@ -1615,6 +1625,16 @@ func (s *service) ReserveItem(ctx context.Context, sellerID, itemID uuid.UUID, s
 			return errcode.Refuse(errcode.ItemNotAvailable)
 		case placement.Worn:
 			return errcode.Refuse(errcode.ItemWorn)
+		case placement.Location != LocationStash:
+			return errcode.Refuse(errcode.ItemNotInStash)
+		}
+
+		listed, err := s.repo.CountListedTx(ctx, tx, sellerID)
+		if err != nil {
+			return fmt.Errorf("reserve item %s: %w", itemID, err)
+		}
+		if listed >= MaxListedItems {
+			return errcode.Refuse(errcode.ListingLimitReached)
 		}
 
 		result, err := s.repo.ReserveItemTx(ctx, tx, sellerID, itemID, listingID, updateAt)
@@ -1744,12 +1764,30 @@ func (s *service) formattedItemInstanceData(itemInstance *ItemInstance, sellerID
 	return data, nil
 }
 
-func (s *service) ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error) {
-	stale, err := s.repo.ListStaleReserved(ctx, olderThan)
+// maxStaleReservedPage caps one page of ListStaleReserved (FS-9BJCP Req 1).
+const maxStaleReservedPage = 100
+
+// ListStaleReserved reads one page of reservations older than olderThan still
+// waiting for their listing, after the position after (nil: from the oldest). A
+// missing, non-positive or larger limit is the cap. Next is set only while more
+// follow: one row past the page is read to know (FS-9BJCP Req 2).
+func (s *service) ListStaleReserved(ctx context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) (*StaleReservationPage, error) {
+	if limit <= 0 || limit > maxStaleReservedPage {
+		limit = maxStaleReservedPage
+	}
+
+	rows, err := s.repo.ListStaleReserved(ctx, olderThan, after, limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("list stale reserved: %w", err)
 	}
-	return stale, nil
+
+	page := &StaleReservationPage{Reservations: rows}
+	if len(rows) > limit {
+		page.Reservations = rows[:limit]
+		last := page.Reservations[limit-1]
+		page.Next = &cursor.ReservedAt{ID: last.ItemID, ReservedAt: last.ReservedAt}
+	}
+	return page, nil
 }
 
 func (s *service) CancelReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error) {
@@ -1766,6 +1804,41 @@ func (s *service) ConfirmReservation(ctx context.Context, itemID, listingID uuid
 		return false, fmt.Errorf("confirm reservation: %w", err)
 	}
 	return ok, nil
+}
+
+func (s *service) ReleaseConfirmedReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	ok, err := s.repo.ReleaseConfirmedReservation(ctx, itemID, listingID)
+	if err != nil {
+		return false, fmt.Errorf("release confirmed reservation: %w", err)
+	}
+	return ok, nil
+}
+
+// maxConfirmedReservationsPage caps one page of ListConfirmedReservations
+// (FS-04ZB6 Req 5).
+const maxConfirmedReservationsPage = 100
+
+// ListConfirmedReservations reads one page of confirmed reservations older than
+// olderThan, after the position after (nil: from the oldest). A missing,
+// non-positive or larger limit is the cap. Next is set only while more follow:
+// one row past the page is read to know.
+func (s *service) ListConfirmedReservations(ctx context.Context, olderThan time.Duration, after *cursor.UpdatedAt, limit int) (*ConfirmedReservationPage, error) {
+	if limit <= 0 || limit > maxConfirmedReservationsPage {
+		limit = maxConfirmedReservationsPage
+	}
+
+	rows, err := s.repo.ListConfirmedReservations(ctx, olderThan, after, limit+1)
+	if err != nil {
+		return nil, fmt.Errorf("list confirmed reservations: %w", err)
+	}
+
+	page := &ConfirmedReservationPage{Reservations: rows}
+	if len(rows) > limit {
+		page.Reservations = rows[:limit]
+		last := page.Reservations[limit-1]
+		page.Next = &cursor.UpdatedAt{ID: last.ItemID, UpdatedAt: last.UpdatedAt}
+	}
+	return page, nil
 }
 
 // GetItemSummaries answers the public facts of the given instances; an unknown

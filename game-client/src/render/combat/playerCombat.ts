@@ -13,6 +13,7 @@ import type { socketManager } from "@/utils/class/SocketManager";
 import type { PlayerState, ResourceState } from "@/types/gameState";
 import type { Point } from "@/render/iso";
 import { CHARGE_MS } from "@/render/effects/charge";
+import type { Swing } from "@/render/art/character";
 import { riposteArmed } from "@/render/effects/riposte";
 import { parryRefused } from "@/ui/abilityCard";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
@@ -43,6 +44,13 @@ export interface CombatPort {
   later(ms: number, fn: () => void): void;
   /** The scene's clock now, ms: the Shadow Shot hold is timed on it. */
   now(): number;
+  /**
+   * Told the moment a cast that can strike has been sent: every primary, the right-click ability
+   * that casts at once, a fired Shadow Shot. Never the archer's right-press, which sends nothing,
+   * the parry, which strikes nothing, or a strike, whose `attack` names its own monster. The scene
+   * names the hovered monster the last-hit one by it (FS-48CTQ §C.6).
+   */
+  castSent?(): void;
 }
 
 /** How an attack is seen: each effect from the player toward its target, both world positions. */
@@ -65,8 +73,11 @@ export interface CombatLook {
   aim(from: Point, ready: boolean): void;
   /** The hold ended: no line left behind, the figure let go to its idle (req 15). */
   endAim(): void;
-  /** The class attack clip, aimed; `holdMs` keeps the pose while a charge carries the player. */
-  attackClip(aim: Point, holdMs?: number): void;
+  /**
+   * The class attack clip, aimed; `swing` marks a charge, its pose held while the server carries
+   * the player (`CharacterMotion.attack`).
+   */
+  attackClip(aim: Point, swing?: Swing): void;
   /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
   lockout?(): void;
 }
@@ -147,12 +158,14 @@ export class PlayerCombat {
     const aim = { x: target.x - me.x, y: target.y - me.y };
     if (button === "primary") {
       this.primary(playerClass, me, target);
+      this.port.castSent?.();
       this.look.attackClip(aim, undefined);
       this.lockFor(PRIMARY_COOLDOWN_MS, false);
     } else {
       this.special(playerClass, me, target);
-      // a warrior's charge holds the pose for as long as the server carries them (§D.2)
-      this.look.attackClip(aim, playerClass === "warrior" ? CHARGE_MS : undefined);
+      // a warrior's charge holds the whole pose for as long as the server carries them (§D.2),
+      // never split over the walk (FS-3V7GC R6)
+      this.look.attackClip(aim, playerClass === "warrior" ? { charge: true, holdMs: CHARGE_MS } : undefined);
       this.lockFor(SPECIAL_COOLDOWN_MS, true);
     }
     return true;
@@ -181,6 +194,7 @@ export class PlayerCombat {
       target_x: target.x,
       target_y: target.y,
     });
+    this.port.castSent?.();
     this.look.shadowShot(me, target);
     this.look.attackClip({ x: target.x - me.x, y: target.y - me.y });
 
@@ -276,9 +290,11 @@ export class PlayerCombat {
     const at = { target_x: target.x, target_y: target.y };
     if (playerClass === "warrior") {
       this.port.sendMessage(ActionType.CastSkill, { skill_id: "dash", ...at });
+      this.port.castSent?.();
       this.look.dash(me, target);
     } else if (playerClass === "mage") {
       this.port.sendMessage(ActionType.CastSkill, { skill_id: "triple_fireball", ...at });
+      this.port.castSent?.();
       this.look.fireball(me, target);
     }
   }

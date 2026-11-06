@@ -74,6 +74,11 @@ export interface MailboxState {
   taking: string | null;
   /** The last refused Take's warning line, on the letter it was refused for (R39). */
   takeWarning: { letterId: string; text: string } | null;
+  /**
+   * How many letters carrying gold were taken: the hub reads the purse again as it rises
+   * (FS-7TGZ3 R9). A letter another tab already took counts too; its gold is in the wallet.
+   */
+  goldTaken: number;
 
   /** The town was entered (or entered again, from a delve or a field): fetch the summary. */
   enterTown: () => Promise<void>;
@@ -222,6 +227,7 @@ export function createMailboxStore({
       if (!letter) return;
       dropSummaryInFlight();
       const summary = get().summary;
+      const gold = letter.enclosures.some((e) => e.kind === "gold");
       set({
         letters: get().letters.map((l) =>
           l.id === letterId
@@ -229,6 +235,7 @@ export function createMailboxStore({
             : l,
         ),
         summary: summary && afterTake(summary, letter),
+        goldTaken: get().goldTaken + (gold ? 1 : 0),
       });
     };
 
@@ -282,6 +289,7 @@ export function createMailboxStore({
       notice: null,
       taking: null,
       takeWarning: null,
+      goldTaken: 0,
 
       enterTown: async () => {
         set({ inTown: true });

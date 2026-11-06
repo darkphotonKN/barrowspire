@@ -57,6 +57,8 @@ export interface PileSatchel {
   /** Opens for a container, wearing its kind's face (FS-1D6BX §Requirements 15). */
   open(entityId: string, kind: ContainerKind): void;
   close(): void;
+  /** Closed at once, nothing animated: the scene is ending. */
+  closeNow(): void;
   setItems(items: readonly ItemState[]): void;
 }
 
@@ -171,12 +173,15 @@ export class FieldPiles {
     if (!pile || distance(at, pile.position) > PILE_REACH) this.shut();
   }
 
-  /** Everything one visit drew is let go. */
+  /**
+   * Everything one visit drew is let go, as the field's scene ends: the satchel closes at once, as
+   * the scene's tweens are gone already.
+   */
   release(): void {
     for (const drawn of this.drawn.values()) drawn.sprite.destroy();
     this.drawn.clear();
     this.me = undefined;
-    this.shut();
+    this.shut({ now: true });
   }
 
   /**
@@ -247,11 +252,13 @@ export class FieldPiles {
     }
   }
 
-  /** The satchel closed, and nothing reached for or remembered. */
-  private shut(): void {
+  /** The satchel closed (`now`: at once), and nothing reached for or remembered. */
+  private shut({ now = false } = {}): void {
     this.reach = undefined;
     this.chestSeenOpen = false;
-    if (this.satchel.entityId !== undefined) this.satchel.close();
+    if (this.satchel.entityId === undefined) return;
+    if (now) this.satchel.closeNow();
+    else this.satchel.close();
   }
 
   private nearest(at: Point): ContainerState | undefined {

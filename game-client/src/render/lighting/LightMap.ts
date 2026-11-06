@@ -10,6 +10,7 @@
 
 import * as Phaser from "phaser";
 import type { Point } from "@/render/iso";
+import { viewRect } from "@/render/viewport";
 import {
   PLAYER_TORCH,
   cullInto,
@@ -88,7 +89,7 @@ function ensureFalloff(
 }
 
 export class LightMap {
-  private readonly texture: Phaser.Textures.DynamicTexture;
+  private texture: Phaser.Textures.DynamicTexture;
   private readonly image: Phaser.GameObjects.Image;
   private readonly sources: LightSource[] = [];
   private readonly visible: LightSource[] = [];
@@ -118,11 +119,10 @@ export class LightMap {
     const existing = scene.textures.exists(TEXTURE_KEY)
       ? (scene.textures.get(TEXTURE_KEY) as Phaser.Textures.DynamicTexture)
       : undefined;
+    // the backing store's px, not the logical view's: sharp at any render scale (FS-ZAJMH R6)
     this.texture =
       existing ??
       scene.textures.addDynamicTexture(TEXTURE_KEY, cam.width, cam.height)!;
-    if (this.texture.width !== cam.width || this.texture.height !== cam.height)
-      this.texture.setSize(cam.width, cam.height);
 
     this.image = scene.add
       .image(0, 0, TEXTURE_KEY)
@@ -130,13 +130,11 @@ export class LightMap {
       .setScrollFactor(0)
       .setDepth(LIGHTMAP_DEPTH)
       .setBlendMode(Phaser.BlendModes.MULTIPLY);
+    this.fit(cam);
 
-    // Window resized or the scale refit: stay full-canvas (FS-2325V "Edge States").
-    scene.scale.on(Phaser.Scale.Events.RESIZE, this.fit, this);
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      scene.scale.off(Phaser.Scale.Events.RESIZE, this.fit, this);
-      this.clearTransient();
-    });
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+      this.clearTransient(),
+    );
   }
 
   /**
@@ -220,24 +218,24 @@ export class LightMap {
   /** Refill and restamp. Call once per frame. */
   update(timeMs: number): void {
     const cam = this.scene.cameras.main;
-    const view = cam.worldView;
+    this.fit(cam);
+    // not `worldView`: Phaser computes it for origin 0.5, and the camera runs at origin 0
+    const view = viewRect(cam);
     this.carriedAlpha = this.carrying ? 1 : this.carriedAlpha * CARRY_FADE;
 
-    // The fill inherits whatever GL blend the last draw of the previous frame left
-    // bound (see forceNormalBlend), so it is forced before the fill as well as after.
-    this.forceNormalBlend();
-    // One stamp at a time, not a beginDraw/endDraw batch: a batched stamp's
-    // transparent corners overwrite the pools under it (seen as hard rectangles in
-    // the light). There are a few dozen sources at most, and only those in view.
+    // Each pool is its own ADD stamp over the ambient fill: Phaser 4 switches the blend per
+    // stamp as it plays the texture's commands back, so a stamp's transparent corners add
+    // nothing to the pools under it. There are a few dozen sources at most, and only those in
+    // view. The commands are buffered until render(), below.
     this.texture.fill(this.ambient, 1);
     const lit = cullInto(this.sources, view, this.visible);
-    for (const s of lit) this.stamp(s, view, timeMs, 1);
+    for (const s of lit) this.stamp(s, view, cam.zoomX, timeMs, 1);
     this.expire(timeMs);
     for (const s of cullInto(this.transients, view, this.visibleTransients))
-      if (!(s as Transient).hidden) this.stamp(s, view, timeMs, 1);
+      if (!(s as Transient).hidden) this.stamp(s, view, cam.zoomX, timeMs, 1);
     if (this.carriedAlpha > 0.01)
-      this.stamp(this.carried, view, timeMs, this.carriedAlpha);
-    this.forceNormalBlend();
+      this.stamp(this.carried, view, cam.zoomX, timeMs, this.carriedAlpha);
+    this.texture.render();
 
     this.placeHalos(lit, timeMs);
   }
@@ -263,33 +261,27 @@ export class LightMap {
     if (i >= 0) this.transients.splice(i, 1);
   }
 
-  /**
-   * Phaser can leave a blend bound on the GL context while its own state says NORMAL: after
-   * an ADD stamp, the camera's background fill then draws additively (seen: the map edge
-   * rendered as the game's clear colour plus pitch). Forcing NORMAL rebinds it either way.
-   */
-  private forceNormalBlend(): void {
-    const renderer = this.scene.sys.renderer;
-    if (renderer.type === Phaser.WEBGL)
-      (renderer as Phaser.Renderer.WebGL.WebGLRenderer).setBlendMode(
-        Phaser.BlendModes.NORMAL,
-        true,
-      );
-  }
-
+  /** A pool at its place in the view, in the texture's backing px: `zoom` px per world unit. */
   private stamp(
     s: LightSource,
-    view: Phaser.Geom.Rectangle,
+    view: ReturnType<typeof viewRect>,
+    zoom: number,
     timeMs: number,
     alpha: number,
   ): void {
     const f = flickerAt(timeMs, s.seed, s.flicker);
-    this.texture.stamp(FALLOFF_KEY, undefined, s.x - view.x, s.y - view.y, {
-      scale: ((s.radius * 2) / FALLOFF_SIZE) * (0.94 + 0.06 * f),
-      tint: s.color,
-      alpha: s.intensity * f * alpha,
-      blendMode: Phaser.BlendModes.ADD,
-    });
+    this.texture.stamp(
+      FALLOFF_KEY,
+      undefined,
+      (s.x - view.x) * zoom,
+      (s.y - view.y) * zoom,
+      {
+        scale: ((s.radius * 2) / FALLOFF_SIZE) * (0.94 + 0.06 * f) * zoom,
+        tint: s.color,
+        alpha: s.intensity * f * alpha,
+        blendMode: Phaser.BlendModes.ADD,
+      },
+    );
   }
 
   /** A soft glow on each flame in view, reusing a pool of images. */
@@ -317,8 +309,28 @@ export class LightMap {
       this.halos[i].setVisible(false);
   }
 
-  private fit(size: Phaser.Structs.Size): void {
-    this.texture.setSize(size.width, size.height);
-    this.image.setSize(size.width, size.height);
+  /**
+   * Full-canvas at the camera's backing size, drawn back at 1/zoom so it covers the logical view
+   * exactly (FS-2325V "Edge States", FS-ZAJMH R6). Checked each frame, so a window resize or a
+   * render-scale change is followed on the next frame whichever order the re-fit ran in.
+   */
+  private fit(cam: { width: number; height: number; zoomX: number }): void {
+    if (
+      this.texture.width !== cam.width ||
+      this.texture.height !== cam.height
+    ) {
+      // made again, not resized (ADR-0057 §Render textures): the reason is gone, Phaser 3.90's
+      // DynamicTexture.setSize left its GL target at the old size and Phaser 4.2.1's resizes it
+      // (probe: drawn right after 64 -> 200x160). Kept because it is harmless: a resize is rare
+      // and the texture is refilled every frame, so a fresh one costs nothing seen.
+      this.texture.destroy();
+      this.texture = this.scene.textures.addDynamicTexture(
+        TEXTURE_KEY,
+        cam.width,
+        cam.height,
+      )!;
+      this.image.setTexture(TEXTURE_KEY).setSize(cam.width, cam.height);
+    }
+    this.image.setScale(1 / cam.zoomX);
   }
 }

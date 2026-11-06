@@ -2,6 +2,8 @@
 
 > Status: shipped · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Chat" (area chat across the pod), `game-client/SPECIFICATION.md` "### Chat" (in-game chat window · channel filters on one chat stream) → this FS · Related ADRs: [ADR-0032](../adr/0032-area-chat-is-scoped-to-the-pod-not-the-session.md) (area scope is the pod), [ADR-0033](../adr/0033-chat-is-never-stored-a-report-carries-its-own-evidence.md) (chat is never stored), [ADR-0004](../adr/0004-game-traffic-bypasses-the-application-gateway.md) (chat rides the game WebSocket), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (one connection per pod across worlds), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) / [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (canvas chrome on the game palette, tokens only) · Followed by: [FS-5SH4G](5SH4G-cross-pod-chat-channels.md) (world chat, whisper; draft), [FS-4HEG7](4HEG7-chat-moderation.md) (mute, report; draft) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) § Chat, [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) § Chat terms · Scoped 2026-10-31, promoted 2026-10-31. Decisions marked **[user]** were the user's; **[charter default]** were proposed by Claude and approved without objection.
 
+> Superseded in part by [FS-J267Q](J267Q-canvas-chat-channel-picker.md) (2026-11-06): the canvas channel picker, in place of the R28 picker and R26 idle-row notes below.
+
 ## Summary
 
 Players in Barrowspire can talk. A chat window sits at the bottom-left of the game canvas in

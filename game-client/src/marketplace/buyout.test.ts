@@ -21,7 +21,7 @@ const apiError = (status: number, code: string, detail = "server prose") =>
 
 const NOW = Date.parse("2026-10-20T12:00:00Z");
 const listing = (over: Partial<Parameters<typeof buyoutAction>[0]["listing"]> = {}) => ({
-  sellerId: "seller",
+  own: false,
   status: "ACTIVE",
   endsAt: "2026-10-21T12:00:00Z",
   buyoutPrice: 500,
@@ -32,7 +32,7 @@ const ready = (availableGold: number) => ({ state: "ready" as const, availableGo
 describe("buyoutAction", () => {
   it.each([
     ["the viewer is signed out", { listing: listing(), memberId: undefined }],
-    ["the viewer is the seller", { listing: listing(), memberId: "seller" }],
+    ["the viewer is the seller", { listing: listing({ own: true }), memberId: "seller" }],
     ["the listing is not ACTIVE", { listing: listing({ status: "PENDING_SETTLEMENT" }), memberId: "buyer" }],
     ["the server says it ended", { listing: listing({ ended: true }), memberId: "buyer" }],
     ["the countdown reached zero", { listing: listing({ endsAt: "2026-10-20T12:00:00Z" }), memberId: "buyer" }],

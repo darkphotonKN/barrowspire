@@ -1,5 +1,6 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { fillMaskArea, viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, shade, toCss } from "@/utils/canvasPalette";
@@ -10,7 +11,10 @@ import {
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
   CHAT_VISIBLE_LINES,
+  chatFieldRect,
   chatFoldButton,
+  chatPickerList,
+  chatPickerRect,
   chatScrollThumb,
   chatScrollTrack,
   chatWindowFrame,
@@ -35,19 +39,46 @@ interface FakeText {
   onPress?: () => void;
   /** The handler a button registered for pointerup, if it acts on release. */
   onRelease?: () => void;
-  /** The geometry mask the text wears, as Phaser would render it with. */
+  /** The shape the text is masked by itself, if it is (Phaser 4's mask filter, `maskInView`). */
   mask?: FakeMask;
+  /** The holder (a Phaser Layer) the text was moved into, if any. */
+  holder?: FakeHolder;
 }
 
 interface FakeMask {
   destroyed: boolean;
   destroy(): void;
+  /** What the shape draws now: its filled rects. */
+  rects(): number[][];
+  /** The alpha each of those rects is filled at. */
+  alphas(): number[];
 }
+
+/** A Phaser Layer as the window holds its lines in it. */
+interface FakeHolder {
+  depth?: number;
+  destroyed: boolean;
+  /** The shape the holder is masked by, if it is. */
+  mask?: FakeMask;
+  /** How often it was moved to the top of the scene's display list. */
+  raised: number;
+}
+
+/** The mask a drawn text shows through: its own, or its holder's while it sits in one. */
+const maskOver = (t: FakeText): FakeMask | undefined =>
+  t.mask ?? (t.holder && !t.holder.destroyed ? t.holder.mask : undefined);
 
 /** `heightOf` sets a text's drawn height by its words, as a wrapped line's would be. */
 function fakeScene(heightOf: (content: string) => number = () => 18) {
   const texts: FakeText[] = [];
   const maskRecords: FakeMask[] = [];
+  /** Each mask shape made, by the object the window holds. */
+  const shapes = new Map<object, FakeMask>();
+  /** Each text, by the object the window holds. */
+  const textOf = new Map<object, FakeText>();
+  const holders: FakeHolder[] = [];
+  /** Every mask laid, on a text or a holder (`filters.external.addMask`). */
+  let masksLaid = 0;
   const panels: {
     depth?: number;
     scroll?: number;
@@ -70,6 +101,16 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       fills: [] as [number, number][],
     };
     if (!masks) panels.push(g);
+    // a mask shape: alive until destroyed, as the lines masked by it read it
+    const mask: FakeMask | undefined = masks
+      ? {
+          destroyed: false,
+          destroy: () => void (mask!.destroyed = true),
+          rects: () => g.rects,
+          alphas: () => g.fills.map(([, alpha]) => alpha),
+        }
+      : undefined;
+    if (mask) maskRecords.push(mask);
     const self: Record<string, unknown> = {
       setScrollFactor: (s: number) => ((g.scroll = s), self),
       setDepth: (d: number) => ((g.depth = d), self),
@@ -86,16 +127,12 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       lineBetween: () => self,
       fillTriangle: () => self,
       fillCircle: () => self,
-      createGeometryMask: () => {
-        const mask: FakeMask = {
-          destroyed: false,
-          destroy: () => void (mask.destroyed = true),
-        };
-        maskRecords.push(mask);
-        return mask;
+      destroy: () => {
+        g.destroyed = true;
+        mask?.destroy();
       },
-      destroy: () => void (g.destroyed = true),
     };
+    if (mask) shapes.set(self, mask);
     return self;
   };
   const text = (
@@ -130,12 +167,56 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       get width() {
         return t.content.length * 7;
       },
-      setMask: (mask: FakeMask) => ((t.mask = mask), self),
+      scrollFactorX: 0,
+      scrollFactorY: 0,
+      filtersFocusContext: false,
+      enableFilters: () => self,
+      filters: {
+        external: {
+          addMask: (shape: object) => (
+            masksLaid++,
+            (t.mask = shapes.get(shape)),
+            {}
+          ),
+        },
+      },
       setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
-      destroy: () => void (t.destroyed = true),
+      destroy: () => {
+        t.destroyed = true;
+        t.holder = undefined;
+      },
       get height() {
         return t.height;
       },
+    };
+    textOf.set(self, t);
+    return self;
+  };
+  // a Phaser Layer: no transform and no size, so its filters focus the camera's context
+  const layer = () => {
+    const h: FakeHolder = { destroyed: false, raised: 0 };
+    holders.push(h);
+    const self: Record<string, unknown> = {
+      setDepth: (d: number) => ((h.depth = d), self),
+      setToTop: () => (h.raised++, self),
+      add: (child: object) => {
+        const t = textOf.get(child);
+        if (t) t.holder = h;
+        return self;
+      },
+      filtersFocusContext: true,
+      filterCamera: { setOrigin: () => undefined },
+      enableFilters: () => self,
+      filters: {
+        external: {
+          addMask: (shape: object) => (
+            masksLaid++,
+            (h.mask = shapes.get(shape)),
+            {}
+          ),
+        },
+      },
+      destroy: () => void (h.destroyed = true),
     };
     return self;
   };
@@ -143,8 +224,9 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
   const events = new EventEmitter();
   const scene = {
     events,
-    add: { graphics: () => graphics(), text },
+    add: { graphics: () => graphics(), text, layer },
     make: { graphics: () => graphics(true) },
+    cameras: { main: { originX: 0, originY: 0 } },
     input,
   } as unknown as Phaser.Scene;
 
@@ -165,6 +247,8 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
     messageTexts,
     panels,
     maskRecords,
+    holders,
+    masksLaid: () => masksLaid,
     input,
     keys,
     events,
@@ -403,6 +487,25 @@ describe("ChatWindow (C21: scrolling)", () => {
     ]);
   });
 
+  describe("at a render scale (FS-ZAJMH R15: Phaser's pointer.x/y are backing px)", () => {
+    afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+    it.each([1.5, 2])(
+      "should scroll on a wheel over the messages at render scale %s, and not beside them",
+      (rs) => {
+        viewport.set({ width: 1080, height: 720, renderScale: rs });
+        const { say, wheel, contents } = rig();
+        for (let i = 1; i <= 12; i++) say(`l${i}`);
+        // backing px that read as logical units would be over the messages: above them, really
+        expect(overMessages.y / rs).toBeLessThan(frame.messages.y);
+        wheel(overMessages.x, overMessages.y, -100);
+        expect(contents().at(-1)).toBe("l12");
+        wheel(overMessages.x * rs, overMessages.y * rs, -100);
+        expect(contents().at(-1)).toBe("l11");
+      },
+    );
+  });
+
   it("should ignore the wheel away from the window", () => {
     const { say, wheel, contents } = rig();
     for (let i = 1; i <= 12; i++) say(`l${i}`);
@@ -496,6 +599,7 @@ function inputRig(
   mayOpen = () => true,
   selfId?: () => string | undefined,
   heightOf?: (content: string) => number,
+  open?: ReadonlySet<import("@/stores/chatStore").ChatChannel>,
 ) {
   const store = createChatStore();
   const s = fakeScene(heightOf);
@@ -505,6 +609,7 @@ function inputRig(
     selfId,
     input: {
       mayOpen,
+      open,
       send: (line) => sent.push(line),
       makeField: (_scene, rect, events) => {
         const f: FakeField = {
@@ -552,10 +657,10 @@ function inputRig(
 }
 
 describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
-  it("should place the field in the input row", () => {
+  it("should place the field in the input row, right of the canvas picker (FS-J267Q R1)", () => {
     const { field } = inputRig();
     const frame = chatWindowFrame(X, BOTTOM);
-    expect(field().rect).toEqual(frame.input);
+    expect(field().rect).toEqual(chatFieldRect(frame, false));
   });
 
   it("should open on Enter in the scene, send on Enter in the field and stay open, close on Enter again", () => {
@@ -783,24 +888,236 @@ describe("ChatWindow folding", () => {
   });
 });
 
-describe("ChatWindow picker wiring", () => {
-  it("should hand a picked channel to the input", () => {
-    const { field } = inputRig();
-    field().value = "hi";
-    field().events!.picked("whisper");
-    expect(field().channel).toBe("whisper");
-    expect(field().value).toBe("@hi");
+describe("ChatWindow canvas channel picker (FS-J267Q, I-J267Q-1)", () => {
+  const frame = chatWindowFrame(X, BOTTOM);
+  const picker = chatPickerRect(frame);
+  const list = chatPickerList(frame);
+  const mid = (r: { x: number; y: number; width: number; height: number }) => ({
+    x: r.x + r.width / 2,
+    y: r.y + r.height / 2,
+  });
+  const rowOf = (channel: string) =>
+    list.rows.find((r) => r.channel === channel)!;
+  const listTexts = (s: ReturnType<typeof inputRig>) =>
+    s
+      .shown()
+      .filter(
+        (t) =>
+          t.y >= list.box.y - 4 &&
+          t.y < list.box.y + list.box.height &&
+          t.x < list.box.x + list.box.width,
+      );
+  const click = (
+    s: ReturnType<typeof inputRig>,
+    at: { x: number; y: number },
+  ) => {
+    s.input.emit("pointerdown", at);
+    s.input.emit("pointerup", at);
+  };
 
-    // trade is not open yet: the picker falls back to the draft's channel and leaves it untouched
-    field().events!.picked("trade");
-    expect(field().channel).toBe("whisper");
-    expect(field().value).toBe("@hi");
+  it("should draw the current channel and a ▾ in its colour in the picker, and none without an input", () => {
+    const s = inputRig();
+    const label = s
+      .shown()
+      .find((t) => t.content === "Area" && t.y >= frame.input.y - 4);
+    const arrow = s
+      .shown()
+      .find((t) => t.content === "▾" && t.x < picker.x + picker.width);
+    expect(label, "the picker's label").toBeDefined();
+    expect(arrow, "the picker's arrow").toBeDefined();
+    expect(label!.color).toBe(toCss(palette.chatArea));
+    expect(arrow!.color).toBe(toCss(palette.chatArea));
+    expect(label!.y).toBeGreaterThanOrEqual(frame.input.y - 4);
+    expect(label!.x).toBeGreaterThanOrEqual(picker.x);
+    expect(label!.x).toBeLessThan(picker.x + picker.width);
+
+    const bare = rig();
+    expect(
+      bare.shown().some((t) => t.content === "▾" && t.y >= frame.input.y - 4),
+    ).toBe(false);
+  });
+
+  it("should open the input and the list upward on a press on the picker, every shown channel in its colour, no Trade", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+
+    expect(s.field().focused).toBe(true);
+    const rows = listTexts(s);
+    expect(rows.map((t) => t.content)).toEqual([
+      "Area",
+      "World",
+      "Party",
+      "Whisper",
+    ]);
+    expect(rows.map((t) => t.color)).toEqual([
+      toCss(palette.chatArea),
+      toCss(palette.chatWorld),
+      toCss(palette.chatParty),
+      toCss(palette.chatWhisper),
+    ]);
+    for (const t of rows) expect(t.depth).toBeGreaterThan(1000);
+  });
+
+  it("should pick the channel released on, write its prefix, shut the list and keep the field focused", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+    s.field().value = "hi";
+
+    click(s, mid(rowOf("world")));
+
+    expect(s.field().channel).toBe("world");
+    expect(s.field().value).toBe("#hi");
+    expect(s.field().focused).toBe(true);
+    expect(listTexts(s).map((t) => t.content)).not.toContain("Whisper");
+    const label = s
+      .shown()
+      .find((t) => t.content === "World" && t.y >= frame.input.y - 4);
+    expect(label, "the picker now reads World").toBeDefined();
+    expect(label!.color).toBe(toCss(palette.chatWorld));
+  });
+
+  it("should draw a closed channel dim and do nothing when it is released on", () => {
+    const s = inputRig(
+      undefined,
+      undefined,
+      undefined,
+      new Set(["area", "world"]),
+    );
+    click(s, mid(picker));
+    const party = listTexts(s).find((t) => t.content === "Party")!;
+    const world = listTexts(s).find((t) => t.content === "World")!;
+    expect(party.alpha).toBeLessThan(world.alpha);
+
+    click(s, mid(rowOf("party")));
+    expect(s.field().channel).toBe("area");
+    expect(listTexts(s).map((t) => t.content)).toContain("Party");
+  });
+
+  it("should not whisper a name drawn under the list when a row is clicked", () => {
+    const s = inputRig(undefined, () => "me");
+    for (let i = 0; i < 8; i++)
+      s.store.getState().receive(stamped(`line ${i}`, { sender_name: "Wren" }));
+    click(s, mid(picker));
+    click(s, { x: rowOf("area").x + 4, y: mid(rowOf("area")).y });
+    expect(s.field().value.startsWith("@")).toBe(false);
+  });
+
+  it("should shut the list on a press outside it and keep typing when the press is on the panel", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+    s.input.emit("pointerdown", {
+      x: frame.messages.x + frame.messages.width - 40,
+      y: frame.messages.y + 10,
+    });
+
+    expect(listTexts(s).map((t) => t.content)).not.toContain("Whisper");
+    expect(s.field().focused).toBe(true);
+  });
+
+  it("should say the picker and the open list are its own, so the scene neither moves nor attacks there", () => {
+    const s = inputRig();
+    expect(s.window.covers(mid(picker).x, mid(picker).y)).toBe(true);
+    click(s, mid(picker));
+    expect(s.window.covers(mid(list.box).x, mid(list.box).y)).toBe(true);
+  });
+
+  it("should highlight the open row under the pointer", () => {
+    const s = inputRig();
+    click(s, mid(picker));
+    const before = s.panels.map((p) => p.rects.length);
+    s.input.emit("pointermove", mid(rowOf("whisper")));
+    const highlight = s.panels
+      .flatMap((p) => p.rects)
+      .find(
+        (r) =>
+          r[1] === rowOf("whisper").y &&
+          r[0] >= list.box.x &&
+          r[0] < list.box.x + 8,
+      );
+    expect(highlight, "a highlight on the Whisper row").toBeDefined();
+    expect(before.length).toBeGreaterThan(0);
+  });
+
+  it("should redraw the picker on the channel Tab picks, and walk the open list with the arrows (I-J267Q-2)", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    s.field().events!.keyDown("Tab", false, false);
+    expect(s.field().channel).toBe("world");
+    expect(
+      s.shown().some((t) => t.content === "World" && t.y >= frame.input.y - 4),
+    ).toBe(true);
+
+    click(s, mid(picker));
+    s.field().events!.keyDown("ArrowDown", false);
+    s.field().events!.keyDown("Enter", false);
+    expect(s.field().channel).toBe("party");
+    expect(s.sent).toEqual([]);
+    expect(listTexts(s)).toHaveLength(0);
+
+    click(s, mid(picker));
+    s.field().events!.keyDown("Escape", false);
+    expect(listTexts(s)).toHaveLength(0);
+    expect(s.window.isTyping()).toBe(true);
+  });
+
+  it("should unfold a folded window and open the list over its lines when the picker is pressed", () => {
+    const s = inputRig();
+    s.store.getState().toggleFolded();
+    const shut = chatPickerRect(chatWindowFrame(X, BOTTOM, true));
+    click(s, mid(shut));
+    expect(s.store.getState().folded).toBe(false);
+    expect(listTexts(s).map((t) => t.content)).toEqual([
+      "Area",
+      "World",
+      "Party",
+      "Whisper",
+    ]);
+  });
+
+  it("should hide the picker and shut the list while an overlay owns the keys", () => {
+    let overlay = false;
+    const s = inputRig(() => !overlay);
+    click(s, mid(picker));
+
+    overlay = true;
+    s.frame();
+
+    expect(listTexts(s)).toHaveLength(0);
+    expect(
+      s.shown().some((t) => t.content === "Area" && t.y >= frame.input.y - 4),
+    ).toBe(false);
+
+    overlay = false;
+    s.frame();
+    expect(
+      s.shown().some((t) => t.content === "Area" && t.y >= frame.input.y - 4),
+    ).toBe(true);
   });
 });
 
 // ── Clicking back into the game (asked 2026-10-31) ──────────────────────────────────────────
 // Phaser prevents the default on a canvas mousedown, so the browser never moves focus off the
 // text field by itself: the window lets go of it on any press outside the panel.
+
+// Leaving /game destroys the game: Phaser's GameObjectFactory (`scene.add`) has destroyed itself
+// before the scene lets its chat window go, and making a Text then throws. Closing the input as the
+// window goes redrew the picker, and with the channel list open that drew new Texts (asked 2026-11-06).
+describe("ChatWindow destroyed with its channel list open", () => {
+  it("should draw nothing more while it goes, so a game destroy's dead factory is never asked", () => {
+    const s = inputRig();
+    const picker = chatPickerRect(chatWindowFrame(X, BOTTOM));
+    const at = { x: picker.x + picker.width / 2, y: picker.y + picker.height / 2 };
+    s.input.emit("pointerdown", at);
+    s.input.emit("pointerup", at);
+    expect(s.field().focused, "the list is open, the input with it").toBe(true);
+    s.scene.add.text = () => {
+      throw new TypeError("Cannot read properties of null (reading 'add')");
+    };
+
+    expect(() => s.window.destroy()).not.toThrow();
+    expect(s.field().destroyed).toBe(true);
+  });
+});
 
 describe("ChatWindow letting go of the input on a press in the world", () => {
   it("should close the input, keep the draft and give the keyboard back on a press outside the panel", () => {
@@ -861,10 +1178,10 @@ describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", ()
     expect(folded.y).toBeLessThan(shut.input.y + shut.input.height);
   });
 
-  it("should give the text field the whole input row while unfolded, and leave the button room while folded", () => {
+  it("should give the text field the row right of the picker while unfolded, and leave the button room while folded", () => {
     const { field, window } = inputRig();
     const open = chatWindowFrame(X, BOTTOM);
-    expect(field().rect).toEqual(open.input);
+    expect(field().rect).toEqual(chatFieldRect(open, false));
 
     (
       window as unknown as { store: { getState(): { toggleFolded(): void } } }
@@ -873,10 +1190,10 @@ describe("ChatWindow fold button in the top-right corner (asked 2026-10-31)", ()
       .toggleFolded();
 
     const shut = chatWindowFrame(X, BOTTOM, true);
-    expect(field().rect).toEqual({
-      ...shut.input,
-      width: shut.input.width - CHAT_FOLD_W,
-    });
+    expect(field().rect).toEqual(chatFieldRect(shut, true));
+    expect(field().rect.x + field().rect.width).toBeLessThanOrEqual(
+      shut.input.x + shut.input.width - CHAT_FOLD_W,
+    );
   });
 });
 
@@ -889,7 +1206,9 @@ describe("ChatWindow unfolding to type (asked 2026-10-31)", () => {
 
     expect(store.getState().folded).toBe(false);
     expect(field().focused).toBe(true);
-    expect(field().rect).toEqual(chatWindowFrame(X, BOTTOM).input);
+    expect(field().rect).toEqual(
+      chatFieldRect(chatWindowFrame(X, BOTTOM), false),
+    );
 
     field().value = "hi";
     field().events!.keyDown("Enter", false);
@@ -1110,7 +1429,10 @@ describe("ChatWindow scrollbar", () => {
 
 describe("ChatWindow mask lifetime", () => {
   const liveMasks = (s: ReturnType<typeof inputRig>) =>
-    s.messageTexts().every((t) => t.mask !== undefined && !t.mask.destroyed);
+    s.messageTexts().every((t) => {
+      const mask = maskOver(t);
+      return mask !== undefined && !mask.destroyed;
+    });
 
   it("should leave every drawn line wearing a live mask after the input gains and loses focus", () => {
     const s = inputRig();
@@ -1132,15 +1454,133 @@ describe("ChatWindow mask lifetime", () => {
     for (let i = 1; i <= 12; i++) s.say(`l${i}`);
 
     toggleOf(s, "World").onPress!();
-    expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
-      true,
-    );
+    expect(
+      s.messageTexts().every((t) => {
+        const mask = maskOver(t);
+        return mask !== undefined && !mask.destroyed;
+      }),
+    ).toBe(true);
 
     clickFold(s);
     clickFold(s);
-    expect(s.messageTexts().every((t) => t.mask && !t.mask.destroyed)).toBe(
+    expect(
+      s.messageTexts().every((t) => {
+        const mask = maskOver(t);
+        return mask !== undefined && !mask.destroyed;
+      }),
+    ).toBe(true);
+  });
+});
+
+// ── One mask for the message area (ADR-0057 §Masks, I-ADR0057-3) ───────────────────────────
+// Phaser 4 masks by a filter, a render pass per masked object: the lines share one holder that is
+// masked once, not a mask each.
+
+describe("ChatWindow lines share one mask (ADR-0057)", () => {
+  const messageRect = (bottom = BOTTOM) => {
+    const m = chatWindowFrame(X, bottom).messages;
+    return [m.x, m.y, m.width, m.height];
+  };
+
+  it("should lay one mask, shaped to the message area, over all the lines however many are drawn", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+
+    const lines = s.messageTexts();
+    expect(lines.length).toBeGreaterThan(1);
+    expect(s.masksLaid()).toBe(1);
+    expect(s.holders).toHaveLength(1);
+    const [holder] = s.holders;
+    expect(holder.depth).toBe(1000);
+    expect(lines.every((t) => t.holder === holder && t.mask === undefined)).toBe(
       true,
     );
+    expect(holder.mask?.destroyed).toBe(false);
+    expect(holder.mask?.rects()).toEqual([messageRect()]);
+  });
+
+  it("should keep that one mask, reshaped to the area as it is now, through a fold round trip and a tab switch", () => {
+    const s = rig();
+    for (let i = 1; i <= 12; i++) s.say(`l${i}`);
+
+    clickFold(s);
+    clickFold(s);
+    toggleOf(s, "World").onPress!();
+
+    expect(s.masksLaid()).toBe(1);
+    expect(s.holders).toHaveLength(1);
+    expect(s.holders[0].mask?.destroyed).toBe(false);
+    expect(s.holders[0].mask?.rects()).toEqual([messageRect()]);
+    expect(s.messageTexts().every((t) => t.holder === s.holders[0])).toBe(
+      true,
+    );
+  });
+
+  it("should raise the lines above what the scene drew at HUD depth since, as each redraw did when every line was new", () => {
+    const s = rig();
+    const before = s.holders[0].raised;
+    s.say("one");
+    expect(s.holders[0].raised).toBe(before + 1);
+  });
+
+  describe("at a fractional render scale (clipped as Phaser 3.90 clipped, I-ADR0057-3)", () => {
+    afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+    /** The area's clip as `fillMaskArea` draws it at `rs`: its rects and their alphas. */
+    const clipAt = (rs: number) => {
+      const rects: number[][] = [];
+      const alphas: number[] = [];
+      const [x, y, width, height] = messageRect();
+      fillMaskArea(
+        {
+          fillStyle: (_c: number, a = 1) => alphas.push(a),
+          fillRect: (...r: number[]) => rects.push(r),
+        },
+        { x, y, width, height },
+        0,
+        rs,
+      );
+      return { rects, alphas };
+    };
+
+    it("should clip the lines by the share of each backing px the area covers where its edges fall inside one (render scale 1.5)", () => {
+      viewport.set({ width: 1080, height: 720, renderScale: 1.5 });
+      const s = rig();
+      s.say("one");
+      const mask = s.holders[0].mask!;
+      expect({ rects: mask.rects(), alphas: mask.alphas() }).toEqual(clipAt(1.5));
+      expect(mask.alphas()).toContain(0.5);
+    });
+
+    it("should redraw the clip for a new render scale alone (fullscreen, another monitor), still one mask", () => {
+      const s = rig();
+      s.say("one");
+      viewport.set({ width: 1080, height: 720, renderScale: 1.5 });
+      const mask = s.holders[0].mask!;
+      expect({ rects: mask.rects(), alphas: mask.alphas() }).toEqual(clipAt(1.5));
+      expect(s.masksLaid()).toBe(1);
+    });
+
+    it("should stop following the render scale once the window is destroyed", () => {
+      const s = rig();
+      s.say("one");
+      s.window.destroy();
+      expect(() =>
+        viewport.set({ width: 1080, height: 720, renderScale: 1.25 }),
+      ).not.toThrow();
+      // a window still listening would lay a new holder and mask for its gone ones
+      expect(s.masksLaid()).toBe(1);
+      expect(s.holders).toHaveLength(1);
+      expect(s.holders[0].mask!.rects()).toEqual([messageRect()]);
+    });
+  });
+
+  it("should destroy the holder and its mask with the window", () => {
+    const s = rig();
+    s.say("one");
+    s.window.destroy();
+    expect(s.holders[0].destroyed).toBe(true);
+    expect(s.maskRecords.every((m) => m.destroyed)).toBe(true);
   });
 });
 

@@ -9,6 +9,7 @@ import { socketManager } from "@/utils/class/SocketManager";
 import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
+import { FloorMapWait } from "./floorMapWait";
 import {
   ClientGameState,
   PlayerState,
@@ -19,18 +20,22 @@ import {
   EscapeDoorState,
   SwitchState,
   WallState,
+  type FloorMap,
   DoorState,
   ProjectileState,
 } from "@/types/gameState";
 import { ABILITY_COPY } from "@/ui/abilityCopy";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
+import { PurseReader } from "@/ui/purse";
+import { apiClient } from "@/utils/api";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
   floorCard,
   floorLabel,
   interactNotice,
+  refusesContainer,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
@@ -53,6 +58,15 @@ import { PotionHud } from "@/ui/PotionHud";
 import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+
+/**
+ * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
+ * settlement. The replies to the run's own asks (interact, equip, leave, fall) cannot come before
+ * create, which sends them.
+ */
+const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -82,6 +96,7 @@ import {
   nearestScreenFacing,
   projectedBounds,
   screenToWorld,
+  splitAlongLength,
   standAt,
   WORLD_PX_PER_TILE,
   worldDepth,
@@ -91,6 +106,8 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -110,6 +127,10 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
+import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
+import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
+import { TargetFrame } from "@/ui/targetFrame";
+import { Minimap, minimapRect, type MinimapFixture } from "@/ui/minimap";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import {
@@ -157,7 +178,25 @@ import {
   type WorldThemeLook,
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
+import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
+import { RegionGrid, dressingRooms, isDungeon, wallRule, wallRuns } from "@/render/world/dungeon";
+import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
+import { nearLights } from "@/render/world/floorLights";
+import { Fog, wallLayout } from "@/render/world/fog";
+import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
+import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
+import {
+  FULLSCREEN_BUTTON_CLEARANCE,
+  anchorAt,
+  boundCamera,
+  crispen,
+  followWith,
+  relayoutOn,
+  viewRect,
+  viewport,
+  type Placement,
+} from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
 const ROOF_EAVE = 5;
@@ -168,6 +207,21 @@ const grown = (r: { x: number; y: number; width: number; height: number }, by: n
   width: r.width + by * 2,
   height: r.height + by * 2,
 });
+/** Px each way of the arcade body a 1x sheet's player sprite has: the 60x60 placeholder's. */
+const PLAYER_BODY_PX = 60;
+/**
+ * A sheet baked at 2x is drawn at half scale (FS-HF0WW). The arcade body is sized off the
+ * sprite's scale, so it is sized here from the fixed 1x size to keep the size a 1x sheet's body
+ * has; calling it again leaves it as it is.
+ */
+export function keepBodySize(
+  sprite: Pick<Phaser.Physics.Arcade.Sprite, "body">,
+  artScale: number,
+): void {
+  const body = sprite.body as Phaser.Physics.Arcade.Body | null | undefined;
+  if (!body || artScale === 1) return;
+  body.setSize(PLAYER_BODY_PX / artScale, PLAYER_BODY_PX / artScale, false);
+}
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = 160;
 /**
@@ -238,6 +292,15 @@ const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
  * share the corner and are never up together: the card is down whenever the button is up.
  */
 const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
+/**
+ * The escaped count and the floor under it, at the top-right corner (FS-ZAJMH R12), stepped down
+ * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05).
+ */
+export const TOP_RIGHT_HUD: Placement = {
+  anchor: "top-right",
+  dx: -10,
+  dy: 10 + FULLSCREEN_BUTTON_CLEARANCE,
+};
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label. Markers draw above the light-map and vignette (FS-2325V §C.9). The
@@ -333,6 +396,37 @@ interface Building {
 interface LightRoom {
   room?: string;
   at?: Point;
+}
+
+/**
+ * A dungeon floor as drawn (FS-KE075 §H.44–§H.47): its cells, what stands in each ground chunk,
+ * and its fixed lights by chunk, of which only those near the camera are on the light-map; and its
+ * fog of war (FS-SRA9J): what the party has explored, and the fog drawn over the rest.
+ */
+interface DungeonFloor {
+  floor: number;
+  grid: RegionGrid;
+  chunks: ChunkVisibility;
+  /** Each with the region it lights (FS-SRA9J §C.12), 0 for none. */
+  lights: (FixedLight<{ source: LightSource } & LightRoom> & { chunk: number; region: number })[];
+  /** The lights on the light-map now. */
+  lit: Set<LightSource>;
+  /** The party's exploration of this floor, from nothing (FS-SRA9J §B.6). */
+  seen: Exploration;
+  /** The fog over it, once its walls stand. */
+  fog?: Fog;
+  /** Its minimap (FS-SRA9J §E), built with the fog and gone with the floor. */
+  minimap?: Minimap;
+  /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
+  dressed: DressedPiece[];
+}
+
+/** A dressing piece on a dungeon floor: its sprites and flame, and whether it has given way. */
+interface DressedPiece {
+  piece: DressingPiece;
+  sprites: Phaser.GameObjects.Sprite[];
+  lights: LightSource[];
+  gone: boolean;
 }
 
 /** Limited barrow palette for the wizard-player sprite (0x ints). */
@@ -466,6 +560,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private settlementRecord?: SettlementRecord;
   /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
+  /** What the card shows, to build it again at the centre when the logical view changes. */
+  private resolvedCardView?: Extract<ResolvedView, { kind: "dead" }>;
   /** An escaped player with a teammate still in play, not yet watching: Watch stands in the row. */
   private canWatch = false;
   /**
@@ -500,10 +596,15 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
   private leavePending = false;
+  /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
+  private held?: HeldMessages;
+  private oneShots?: OneShotHandlers;
   /** The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6). It owns the keyboard and pointer. */
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc. */
   private menuChoices?: MenuKeys;
+  /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
+  private moveMenu?: (origin: { x: number; y: number }) => void;
   /** The state the open menu's rows were built for; a state that differs takes it down (req 6). */
   private menuFor?: MenuState;
   /** A `forfeit_run` is on its way and unanswered: Fall is dimmed until a reply or the death (req 3). */
@@ -559,9 +660,25 @@ export class BarrowspireScene extends Phaser.Scene {
   private connectionStatusUnsubscribe?: () => void;
   private targetPosition: { x: number; y: number } | null = null;
 
-  // 地圖大小
-  private mapWidth = 1440;
-  private mapHeight = 960;
+  // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
+  private mapWidth = 0;
+  private mapHeight = 0;
+  /**
+   * The size the camera, physics and ground were fitted to, and the dungeon cells the ground was
+   * painted under (none on a floor of buildings); none before the first map.
+   */
+  private fittedTo?: { width: number; height: number; cells?: RegionGrid };
+  /** The dungeon floor being drawn (FS-KE075 §H.44–§H.47); none on a floor of buildings. */
+  private dungeon?: DungeonFloor;
+  /** The floor whose map is built (FS-KE075 §H.43): none until one is, and none after a teardown. */
+  private builtFloor?: number;
+  /** The built floor's walls, as its map gave them: what the dressing keeps clear of. */
+  private floorWalls: WallState[] = [];
+  /** Asks for a floor's map while a snapshot's floor has none (FS-KE075 §H.41). */
+  private readonly mapWait = new FloorMapWait();
+  private floorMapUnsubscribe?: () => void;
+  /** Lifts a climb's veil once the new floor's map is built (FS-KE075 §H.41); none otherwise. */
+  private veilRelease?: () => void;
 
   // 建築
   private buildings: Building[] = [];
@@ -588,10 +705,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private roofCover: Cover[] = [];
 
   // 寶箱 (從後端同步) — `pos` is the world position; the sprite is drawn at its projection.
-  // Drop piles with loot left in them are held here too: they open and loot like a chest
+  // Drop piles with loot left in them are held here too: they open and loot like a chest, but the
+  // fog shows them by the monster rule (FS-SRA9J §D.16)
   private chests: Map<
     string,
-    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point }
+    { sprite: Phaser.GameObjects.Sprite; entityId: string; pos: Point; pile: boolean }
   > = new Map();
 
   // 逃脫門 (從後端同步)
@@ -670,6 +788,11 @@ export class BarrowspireScene extends Phaser.Scene {
       sendMessage: (action, payload) => socketManager.sendMessage(action, payload),
       later: (ms, fn) => this.time.delayedCall(ms, fn),
       now: () => this.time.now,
+      // a cast sent over a living, shown monster names it the last-hit one (FS-48CTQ §C.6)
+      castSent: () => {
+        const named = castTarget(this.monsters?.hoveredId, this.monsters?.targetable() ?? []);
+        if (named) this.lastHit.aimed(named, this.time.now);
+      },
     },
     {
       slash: (from, to) => this.playWarriorSlashEffect(from.x, from.y, to.x, to.y),
@@ -688,11 +811,11 @@ export class BarrowspireScene extends Phaser.Scene {
       },
       aim: (from, ready) => this.drawAim(from, ready),
       endAim: () => this.endAimDrawing(),
-      // a hold only when a charge carries the player: every other clip is the plain attack
-      attackClip: (aim, holdMs) =>
-        holdMs === undefined
+      // a charge only when one carries the player (FS-3V7GC R6): every other clip is the plain attack
+      attackClip: (aim, swing) =>
+        swing === undefined
           ? this.playerAnim?.attack(this.time.now, aim)
-          : this.playerAnim?.attack(this.time.now, aim, holdMs),
+          : this.playerAnim?.attack(this.time.now, aim, swing),
       lockout: () => this.showAbilityCard(),
     },
     () => this.lastGameState?.current_player,
@@ -722,6 +845,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private pendingLights: FixedLight<{ source: LightSource } & LightRoom>[] = [];
   /** How many fixed lights this floor has stamped so far. */
   private stampedLights = 0;
+  /**
+   * The containers whose pool this floor has queued, by entity id: on a dungeon floor a container
+   * leaves the snapshot and comes back (FS-KE075 §H.48), and keeps the one pool it has.
+   */
+  private pooledContainers = new Set<string>();
   /** FS-2325V §C.7: replaces the overlay torch pool. */
   private lightMap?: LightMap;
   /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
@@ -738,12 +866,27 @@ export class BarrowspireScene extends Phaser.Scene {
   private readonly deathDust = new DeathDust();
   /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
   private monsters?: MonsterRoster;
-  /** What a living monster under the pointer does (FS-77AB6 req 39): strike-mark, and a strike. */
+  /**
+   * What a living monster under the pointer does (FS-77AB6 req 39): strike-mark, and a strike. A
+   * strike sent names its monster the last-hit one (FS-48CTQ §C.6).
+   */
   private readonly monsterTargeting: MonsterTargeting = {
-    strike: (monster) => this.strike(monster.entity_id, monster.position),
+    strike: (monster) => {
+      if (this.strike(monster.entity_id, monster.position)) this.lastHit.aimed(monster, this.time.now);
+    },
     hover: (monster) =>
       this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
   };
+  /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
+  private markers: MarkerMode = "overhead";
+  /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
+  private targetFrame?: TargetFrame;
+  /** Whether the minimap is up (FS-SRA9J §E.19): on each time a run scene starts, M toggles it. */
+  private minimapOn = true;
+  /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
+  private readonly lastHit = new LastHitTracker();
+  /** The boss engaged with the party, latched across broadcasts (FS-48CTQ §D.10). */
+  private readonly bosses = new BossEngagement();
   private occluders = new Occluders();
   /** How far above the floor a house's walls reach on screen, for the blackout's hole. */
   private wallTop = WALL_HEIGHT;
@@ -779,22 +922,32 @@ export class BarrowspireScene extends Phaser.Scene {
   init(data?: { sessionID?: string }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
-    // DESTROY too: tearing the game down mid-run (the page unmounts) skips SHUTDOWN.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
+    // a Leave the last run left pending (one pressed while it still loaded) is not this run's
+    this.leavePending = false;
+    // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
+    onSceneEnd(this, (end) => this.resetRun(end));
+    // the run's creatures may download before create subscribes: a refresh into a run whose art the
+    // menu evicted (FS-C4JWH Edge States); handed over at the end of create
+    this.held = holdOneShots(this, socketManager, RUN_ONE_SHOTS, (action, payload) => {
+      // A run that ends while it still downloads: its own settlement will open the record once
+      // create hands it over, so the hub that comes with the end waits behind it, as it does once
+      // the run has loaded (FS-GV8WN R23). Another run's settlement opens nothing, and holds nothing.
+      if (action === "settlement" && this.ownSettlement(payload as SettlementPayload)) this.resultHold.raise();
+    });
   }
 
   /**
    * Drops every subscription and every reference to the stopped run's world. Phaser
    * has already destroyed the game objects; what is left here are the maps and flags
    * that would otherwise make the next start skip building walls, roofs and players,
-   * or touch sprites that no longer exist.
+   * or touch sprites that no longer exist. On the game's destroy the scene's plugins are already
+   * gone and are asked nothing (`SceneEnd`).
    */
-  private resetRun(): void {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.resetRun, this);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.resetRun, this);
+  private resetRun(end: SceneEnd): void {
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
+    this.floorMapUnsubscribe?.();
+    this.floorMapUnsubscribe = undefined;
     this.connectionStatusUnsubscribe?.();
     this.connectionStatusUnsubscribe = undefined;
     socketManager.off("exit_door_unlocked");
@@ -868,6 +1021,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dressingAt = [];
     this.pendingLights = [];
     this.stampedLights = 0;
+    this.pooledContainers = new Set();
     this.lightMap = undefined;
     this.monsters = undefined;
     this.wallTop = WALL_HEIGHT;
@@ -879,9 +1033,6 @@ export class BarrowspireScene extends Phaser.Scene {
     // down with the scene's.
     this.resultHold.clear();
     this.settlementRecord = undefined;
-    // the run's end locks the keyboard, and Phaser keeps the plugin
-    // across restarts, so the next run would start unable to move
-    if (this.input?.keyboard) this.input.keyboard.enabled = true;
     this.resolvedCard = undefined;
     this.canWatch = false;
     this.canLeave = false;
@@ -898,12 +1049,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.menuFor = undefined;
     this.fallPending = false;
     this.striding = false;
+    // on a stop the keyboard is handed back, by the keys still held here; either way the next
+    // run's create binds its keys afresh
+    if (end === "shutdown") this.handBackKeyboard();
     this.dismissKey = undefined;
     this.confirmKey = undefined;
     this.choiceKeys = [];
-    // Phaser destroys the run's keys on shutdown but keeps their captures; a teardown
-    // without a shutdown keeps both. Either way the next run binds Tab afresh.
-    if (this.tabKey) this.input?.keyboard?.removeKey(this.tabKey, true, true);
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
@@ -925,18 +1076,82 @@ export class BarrowspireScene extends Phaser.Scene {
     this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
     this.game?.events.off(Phaser.Core.Events.HIDDEN, this.cancelAim, this);
     this.characterLevel = undefined;
+    this.equipment?.release();
     this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
+    // the frame went down with the scene's objects; the next run's first state sets its floor's mode
+    this.targetFrame = undefined;
+    // the next run scene starts with the minimap up; it went down with the scene's objects
+    this.minimapOn = true;
+    this.lastHit.clear();
+    this.bosses.clear();
+    this.markers = "overhead";
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
     this.floorVeil = [];
+    this.veilRelease = undefined;
+    // the next run is sized and built from its own map
+    this.mapWidth = 0;
+    this.mapHeight = 0;
+    this.fittedTo = undefined;
+    this.dungeon = undefined;
+    this.builtFloor = undefined;
+    this.floorWalls = [];
+    this.mapWait.reset();
     this.combat.reset();
     this.lastGameState = undefined;
     this.sessionID = undefined;
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;
     this.escapedPlayers.clear();
+  }
+
+  /**
+   * What the run left on the scene's keyboard, which Phaser keeps across restarts. Only on a stop:
+   * a destroyed game took its keyboard, keys and captures with it (`SceneEnd`).
+   */
+  private handBackKeyboard(): void {
+    const keyboard = this.input?.keyboard;
+    if (!keyboard) return;
+    // the run's end locks the keyboard, so the next run would start unable to move
+    keyboard.enabled = true;
+    // Phaser's stop destroyed the run's keys already and kept their captures: Tab's would stop
+    // focus moving in the hub and its DOM overlays
+    releaseCaptures(keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+      this.tabKey,
+      this.dismissKey,
+      this.confirmKey,
+      ...this.choiceKeys,
+    ]);
+  }
+
+  /** The run's keys, polled each frame or answered on press. Each captures its key (`SceneEnd`). */
+  private bindKeys(): void {
+    // 輸入控制
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasd = {
+      up: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      down: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      left: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
+
+    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
+    // focus off the canvas; nothing happens unless this player is spectating.
+    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
+    this.tabKey.on("down", () => this.cycleWatched());
+
+    // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
+    // the first. Polled each frame in update, as the hub's are. Nothing here leaves the run: the
+    // server keeps the body in the world whoever is looking at it (FS-QPDKN req 13).
+    this.dismissKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.confirmKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    this.choiceKeys = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO].map(
+      (code) => this.input.keyboard!.addKey(code),
+    );
   }
 
   private toggleControlsPanel(): void {
@@ -946,11 +1161,10 @@ export class BarrowspireScene extends Phaser.Scene {
       return;
     }
 
-    const cam = this.cameras.main;
     const panelW = 260;
     const panelH = 300;
-    const x = cam.width / 2;
-    const y = cam.height / 2;
+    const x = viewport.width / 2;
+    const y = viewport.height / 2;
 
     const children: Phaser.GameObjects.GameObject[] = [];
 
@@ -1045,13 +1259,17 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private showSettlement(payload: SettlementPayload): void {
     // a late confirmation of an earlier run, landing in this one, is not its record (R20)
-    if (payload.run_id !== undefined && this.sessionID !== undefined && payload.run_id !== this.sessionID)
-      return;
+    if (!this.ownSettlement(payload)) return;
     const first = !this.settlementRecord;
     this.settlementRecord ??= new SettlementRecord(this, this.recordAnchor(), () => this.closeRecord());
     this.settlementRecord.set(settlementRecord(payload));
     if (first) this.openRecord();
     this.syncRow();
+  }
+
+  /** Whether a settlement is this run's record: one for another run is a late confirmation (R20). */
+  private ownSettlement(payload: SettlementPayload): boolean {
+    return payload?.run_id === undefined || this.sessionID === undefined || payload.run_id === this.sessionID;
   }
 
   /** The record up, and the return to the town held behind it unless a Leave is on its way (R23). */
@@ -1084,13 +1302,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** The record's place: centred across, standing just over the bottom-centre row. */
   private recordAnchor(): { x: number; bottom: number } {
-    const cam = this.cameras.main;
-    return { x: cam.centerX, bottom: this.rowY() - BUTTON_H / 2 - RECORD_ROW_GAP };
+    return { x: viewport.centerX, bottom: this.rowY() - BUTTON_H / 2 - RECORD_ROW_GAP };
   }
 
   /** The bottom-centre row's line: the buttons' centre y. */
   private rowY(): number {
-    return this.cameras.main.height - RESOLVED_ROW_MARGIN - RESOLVED_ROW_LIFT - BUTTON_H / 2;
+    return viewport.height - RESOLVED_ROW_MARGIN - RESOLVED_ROW_LIFT - BUTTON_H / 2;
   }
 
   /**
@@ -1115,12 +1332,11 @@ export class BarrowspireScene extends Phaser.Scene {
       leave: this.leaveSpec,
       settlement: this.settlementSpec,
     };
-    const cam = this.cameras.main;
     const y = this.rowY();
     const buttons = names.map((name, i) =>
       this.hudButton(
         specs[name],
-        { x: rowSlotX(i, names.length, cam.centerX, BUTTON_W, BUTTON_GAP), y },
+        { x: rowSlotX(i, names.length, viewport.centerX, BUTTON_W, BUTTON_GAP), y },
         RESOLVED_ROW_DEPTH,
       ),
     );
@@ -1247,8 +1463,13 @@ export class BarrowspireScene extends Phaser.Scene {
     this.createStairsTexture();
     this.createDropPileTexture();
 
-    // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders
-    preloadArt(this);
+    // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders. The
+    // creatures and the boss load with the run, for every floor: a climb loads nothing, and the
+    // demon is never drawn before its art is in (FS-C4JWH §B R9)
+    preloadArt(this, SCENE_ART.BarrowspireScene, {
+      bar: () => drawTorchBar(this),
+      fadeIn: true,
+    });
   }
 
   private createSoldierTextures(prefix: string, pal: WizardPalette): void {
@@ -1842,17 +2063,18 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * A targeted `attack` on the entity standing at world point `them` (FS-77AB6 req 39): only a
    * monster is ever one, players being allies (req 40). Sent only from a player still in the
-   * delve, off cooldown and within reach, as the server would refuse anything else.
+   * delve, off cooldown and within reach, as the server would refuse anything else. Whether it
+   * was sent.
    */
-  private strike(entityId: string, them: Point): void {
+  private strike(entityId: string, them: Point): boolean {
     const me = this.playerPos;
-    if (!this.player || !me || this.runEnded) return;
-    if (resolved(this.lastGameState?.current_player)) return;
+    if (!this.player || !me || this.runEnded) return false;
+    if (resolved(this.lastGameState?.current_player)) return false;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
-    if (this.menu) return;
+    if (this.menu) return false;
 
     // an archer's right button is the Shadow Shot hold, never a strike (FS-JTNPR req 8, 16)
-    this.combat.strike(me, entityId, them, this.ownClass(), this.input.activePointer?.button);
+    return this.combat.strike(me, entityId, them, this.ownClass(), this.input.activePointer?.button);
   }
 
   /**
@@ -2199,9 +2421,16 @@ export class BarrowspireScene extends Phaser.Scene {
                 .sprite(0, 0, DROP_PILE.texture)
                 .setOrigin(DROP_PILE.origin.x, DROP_PILE.origin.y)
             : this.add.sprite(0, 0, (kind === "sack" ? SACK : CHEST).placeholder.closed);
-        chest = { sprite, entityId: container.entity_id, pos };
+        chest = { sprite, entityId: container.entity_id, pos, pile: kind === "drop_pile" };
         this.chests.set(container.entity_id, chest);
-        if (kind !== "drop_pile") this.poolInteractable(pos);
+        // one coming back into the snapshot is drawn as it now is, open or shut, in the pool it
+        // already has (FS-KE075 §H.48)
+        if (kind !== "drop_pile" && !this.pooledContainers.has(container.entity_id)) {
+          this.pooledContainers.add(container.entity_id);
+          this.poolInteractable(pos);
+        }
+        // a dungeon floor's dressing makes room for it (FS-KE075 §H.47)
+        if (kind !== "drop_pile") this.giveWay(pos);
       } else {
         chest.pos = pos;
       }
@@ -2743,7 +2972,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // The class's baked sheet, stood on its footprint by the sheet's anchor
     // (FS-2325V §E.5); the placeholder texture only when the sheet is missing.
     this.playerAnim = new CharacterAnimator(this.art, effectiveClass, this.playerFacing);
-    if (this.playerAnim.baked) this.playerAnim.dress(this.player);
+    if (this.playerAnim.baked) {
+      this.playerAnim.dress(this.player);
+      keepBodySize(this.player, this.playerAnim.artScale);
+    }
     // set circular physics body to match backend collision (radius 20), offset for 60x60 texture
     else this.player.body?.setCircle(20, 10, 10);
     this.settleDustOnDeath(this.player, "self", () => this.playerPos);
@@ -2755,7 +2987,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drawLegs(this.playerLegs, at.x, at.y, this.playerFacing, 0, false, palette.hudLabel);
 
     // username label above player
-    const base = markerBase(this.player, this.playerAnim.crown, false) ?? at.y;
+    const base = markerBase(this.player, this.playerAnim.crown, false, this.playerAnim.artScale) ?? at.y;
     this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, {
       fontSize: "11px",
       fontFamily: CANVAS_FONT.body,
@@ -2774,7 +3006,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // 相機跟隨玩家
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    followWith(this.cameras.main, this.player);
   }
 
   private defaultCursorCSS = "";
@@ -2803,16 +3035,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
-    // The camera and the (vestigial, collision-free) physics world live in
-    // projected space: the map is a diamond, clamped by its bounding box plus a
-    // margin of dark. FS-2325V §A.3, §A.7.
-    const bounds = projectedBounds(this.mapWidth, this.mapHeight, CAMERA_MARGIN);
-    this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
-    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.BarrowspireScene);
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
@@ -2830,45 +3056,16 @@ export class BarrowspireScene extends Phaser.Scene {
       new ContainerContents(this.PENDING_DURATION),
     );
 
-    // the map floor, as a diamond on the projection: the world theme's baked ground when
-    // the manifest has it, the placeholder floor otherwise (FS-2325V §C.1, FS-8RBQY §B.1)
-    const look = this.worldLook.ground;
-    this.groundLayer = GroundLayer.available(this.art, "run", look)
-      ? new GroundLayer(this, this.art, {
-          width: this.mapWidth,
-          height: this.mapHeight,
-          kind: "run",
-          look,
-        })
-      : undefined;
-    if (!this.groundLayer) this.createMapBackground();
+    // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
+    // run always was; otherwise the map, when it comes
+    const held = this.heldFloorMap();
+    if (held) this.fitFloor(held);
 
     // buildings are now created from server wall data in updateWalls()
 
     // 寶箱由後端同步，不在這裡創建
 
-    // 輸入控制
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.wasd = {
-      up: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      down: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      left: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-    };
-
-    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
-    // focus off the canvas; nothing happens unless this player is spectating.
-    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
-    this.tabKey.on("down", () => this.cycleWatched());
-
-    // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
-    // the first. Polled each frame in update, as the hub's are. Nothing here leaves the run: the
-    // server keeps the body in the world whoever is looking at it (FS-QPDKN req 13).
-    this.dismissKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.confirmKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
-    this.choiceKeys = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO].map(
-      (code) => this.input.keyboard!.addKey(code),
-    );
+    this.bindKeys();
 
     this.bindRunInput();
 
@@ -2879,18 +3076,82 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // torch-lit barrow atmosphere — pure decoration, no game state
     this.createAtmosphere();
+
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
+
+    this.openHeldMessages();
+  }
+
+  /** What the server sent while the run loaded, to the listeners create has made, in order. */
+  private openHeldMessages(): void {
+    this.held?.replay(this.oneShots ?? {});
+  }
+
+  /**
+   * The logical view changed (FS-ZAJMH R13): every widget that keeps to the right or the centre
+   * goes back to its anchor, the open ones included, their state untouched. The bars, the level
+   * bar, the chat window and the party frames and panel keep to the left and the bottom, which a
+   * width change does not move; the gear overlay follows Phaser's resize itself; a passing notice
+   * is gone in moments and stays where it was said.
+   */
+  private relayoutHud(): void {
+    const corner = anchorAt(TOP_RIGHT_HUD);
+    this.escapedCountText?.setX(corner.x);
+    this.floorText?.setX(corner.x);
+    this.spectateHud?.watching.setX(viewport.centerX);
+    this.spectateHud?.hint.setX(viewport.centerX);
+    this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
+    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
+    this.abilityHud?.relayout();
+    this.invitePrompt?.relayout();
+    this.containerView?.relayout();
+    this.settlementRecord?.relayout(this.recordAnchor());
+    this.relayoutFloorVeil();
+    this.targetFrame?.relayout();
+    this.dungeon?.minimap?.place(this.minimapPlace());
+    // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
+    crispen([
+      ...(this.targetFrame?.texts() ?? []),
+      this.escapedCountText,
+      this.floorText,
+      this.spectateHud?.watching,
+      this.spectateHud?.hint,
+      this.controlsPanel,
+    ]);
+    // the bottom-centre row, built again about the new centre
+    this.row.names = "";
+    this.syncRow();
+    if (this.resolvedCard && this.resolvedCardView) {
+      const view = this.resolvedCardView;
+      this.resolvedCard.destroy();
+      this.resolvedCard = undefined;
+      this.leaveButton = undefined;
+      this.showResolvedCard(view);
+    } else if (this.leaveButton) {
+      // the dead spectator's corner button
+      this.leaveButton.destroy();
+      this.leaveButton = undefined;
+      this.placeLeaveInCorner();
+    }
   }
 
   /**
    * The gear and bag overlay over the live run (FS-HRH2J), its equip / unequip sends applied at
    * once, and its full-bag refusals in the run's refused notice (R22). A run marks unsafe finds
-   * (FS-18Z5F R36).
+   * (FS-18Z5F R36). Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Run), {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-      notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
-    });
+    const overlay = new GearOverlay(this, this.art, WorldType.Run);
+    return new EquipmentHud(
+      overlay,
+      {
+        send: (action, payload) => socketManager.sendMessage(action, payload),
+        notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
+      },
+      Date.now,
+      new PurseReader(apiClient, overlay),
+    );
   }
 
   /** Whether the bag can take one more pickup (FS-HRH2J R21); when it cannot, the notice says so. */
@@ -2969,6 +3230,15 @@ export class BarrowspireScene extends Phaser.Scene {
       this.toggleControlsPanel();
     });
 
+    // M hides and shows the minimap for the rest of the run scene (FS-SRA9J §E.19). An event, never
+    // an added key: nothing is captured, so the letter types in any field and a stop has nothing
+    // of it to hand back (`handBackKeyboard`). While chat has focus the field stops every key
+    // before Phaser's window listener and the keyboard is off; the check stands in case either moves.
+    this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
+      if (this.menu || event?.repeat || this.chatWindow?.isTyping()) return;
+      this.toggleMinimap();
+    });
+
     // 1 drinks a health potion (FS-P9G8R R27, R28). An event, never a JustDown poll: the menu polls
     // the same key each frame for its rows, and a second poll would steal its press.
     this.input.keyboard?.on(`keydown-${RUN_ACTIONS.drinkPotion.key}`, (event?: KeyboardEvent) => {
@@ -2978,7 +3248,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Scene-level pointer tracking for satchel hover (bypasses broken Phaser scrollFactor input)
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      this.containerView.pointerMove(pointer.x, pointer.y);
+      const at = viewport.toLogical(pointer);
+      this.containerView.pointerMove(at.x, at.y);
     });
 
     // Disable browser right-click menu for equipment panel context menus
@@ -2989,17 +3260,19 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menu) return;
       // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
       if (this.combat.aiming) return;
+      // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+      const at = viewport.toLogical(pointer);
       // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
       // clear middle band answers as with the overlay closed (FS-HRH2J R8)
-      if (this.equipment?.covers(pointer.x, pointer.y)) return;
+      if (this.equipment?.covers(at.x, at.y)) return;
       // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-      if (this.chatWindow?.covers(pointer.x, pointer.y)) return;
+      if (this.chatWindow?.covers(at.x, at.y)) return;
       // and one on the open party panel is the panel's (FS-R82NV R28)
-      if (this.partyPanel?.covers(pointer.x, pointer.y)) return;
+      if (this.partyPanel?.covers(at.x, at.y)) return;
       // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-      if (this.invitePrompt?.covers(pointer.x, pointer.y)) return;
+      if (this.invitePrompt?.covers(at.x, at.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
-      if (this.containerView.pointerDown(pointer.x, pointer.y, pointer.button === 0)) return;
+      if (this.containerView.pointerDown(at.x, at.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
@@ -3163,17 +3436,21 @@ export class BarrowspireScene extends Phaser.Scene {
         this.handleGameStateUpdate(state);
       },
     );
+    this.subscribeFloorMap();
 
     // Listen for exit door unlocked message
-    socketManager.on("exit_door_unlocked", (payload: { message: string }) => {
+    const doorUnlocked = (payload: { message: string }) => {
       console.log("Exit door unlocked!", payload);
       this.showNotification(payload.message, toCss(palette.safe));
-    });
+    };
+    socketManager.on("exit_door_unlocked", doorUnlocked);
 
     // Listen for interact responses (success/error messages)
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
     socketManager.on("interact", (payload: InteractReply) => {
       console.log("Interact response:", payload);
+      // a guarded chest stays shut: the coffer the E key opened closes again (FS-KE075 §J R60)
+      if (refusesContainer(payload)) this.containerView.close();
       const notice = interactNotice(payload);
       if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
     });
@@ -3186,10 +3463,14 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
-    socketManager.on("end_game", () => this.endRun());
+    const endGame = () => this.endRun();
+    socketManager.on("end_game", endGame);
 
     // settlement: this player settled (FS-GV8WN R19, R20); the record shows it
-    socketManager.on("settlement", (payload: SettlementPayload) => this.showSettlement(payload));
+    const settlement = (payload: SettlementPayload) => this.showSettlement(payload);
+    socketManager.on("settlement", settlement);
+    // the server's one-shots, held while the run loaded (FS-C4JWH Edge States)
+    this.oneShots = { exit_door_unlocked: doorUnlocked, end_game: endGame, settlement };
 
     // A refused leave_run (FS-QPDKN req 14, edge state "Leaving"): the button can be pressed
     // again. The server's refusals come in two shapes; both land here.
@@ -3223,6 +3504,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private handleGameStateUpdate(state: ClientGameState): void {
     if (!this.acceptsFrame(state)) return;
+    const held = this.heldFloorMap(state.session_id);
+    // a late frame from the floor the party has climbed from (FS-KE075 §H.41)
+    if (held && state.floor !== undefined && state.floor < held.floor) return;
     this.lastGameState = state;
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
@@ -3232,6 +3516,10 @@ export class BarrowspireScene extends Phaser.Scene {
     if (climb) this.leaveFloor();
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
     this.floorLook ??= floorLook(this.worldLook, state.floor, state.floor_count);
+    // the floor is built from its map alone; without one its entities apply and it waits, asking
+    // after a second (FS-KE075 §H.41, §H.43)
+    const floorMap = held?.floor === state.floor ? held : undefined;
+    if (this.mapWait.due(state.floor, !!floorMap, this.time.now)) socketManager.sendMessage("request_floor_map", {});
 
     // Update current player position from server
     if (state.current_player) {
@@ -3277,14 +3565,18 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update other players on screen
     this.updateOtherPlayers(state.other_players || [], state.world_type);
 
-    // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36)
+    // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36), plated or not
+    // as the floor's marker mode says (FS-48CTQ §A.1); a drop in the last-hit monster's health may
+    // be the player's own hit (§C.6)
+    this.markers = markerMode("run", state.floor);
+    this.monsters?.setMarkerMode(this.markers);
     this.monsters?.sync(state.monsters ?? []);
+    this.lastHit.observe(state.monsters ?? [], this.time.now);
 
-    // The tower's outer wall, once per floor; it stands on no server state (FS-8RBQY §B.5)
-    this.buildPerimeter();
-
-    // Update walls from server
-    this.updateWalls(state.walls || []);
+    // The floor itself, from its map, once (FS-KE075 §H.43): the tower's outer wall, which stands on
+    // no server state (FS-8RBQY §B.5), then the walls
+    const building = !!floorMap && this.builtFloor !== floorMap.floor;
+    if (floorMap) this.standFloor(floorMap);
 
     // Update doors from server
     this.updateDoors(state.doors || []);
@@ -3304,8 +3596,10 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
     // fixed light built this broadcast goes through the floor's budget, once (§C.6)
-    this.buildDressing(state);
-    this.stampLights();
+    if (floorMap) this.buildDressing(state);
+    this.stampLights(state.floor);
+    // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
+    this.explore(state);
 
     // Update projectiles from server (fireballs)
     this.updateProjectiles(state.projectiles || []);
@@ -3335,6 +3629,324 @@ export class BarrowspireScene extends Phaser.Scene {
       this.settlePlayers();
       this.playFloorTransition(state);
     }
+    if (building) this.veilRelease?.();
+  }
+
+  /** This run's floor map as the store holds it, or none: another run's is not ours to build. */
+  private heldFloorMap(sessionId = this.sessionID): FloorMap | undefined {
+    const map = useGameStore.getState().floorMap;
+    if (!map) return undefined;
+    return sessionId === undefined || map.session_id === sessionId ? map : undefined;
+  }
+
+  /** Builds the floor the moment its map comes, if its snapshot came first (FS-KE075 §H.41). */
+  private subscribeFloorMap(): void {
+    this.floorMapUnsubscribe?.();
+    this.floorMapUnsubscribe = useGameStore.subscribe((now, before) => {
+      if (now.floorMap !== before.floorMap) this.onFloorMap();
+    });
+  }
+
+  /**
+   * A map that came after its floor's snapshot: the floor is built from it with the last
+   * snapshot's entities, as a first snapshot would have built it, and a climb's veil lifts.
+   */
+  private onFloorMap(): void {
+    const state = this.lastGameState;
+    if (!state) return;
+    const map = this.heldFloorMap(state.session_id);
+    if (!map || map.floor !== state.floor || this.builtFloor === map.floor) return;
+    this.standFloor(map);
+    this.buildDressing(state);
+    this.stampLights(state.floor);
+    this.explore(state);
+    this.veilRelease?.();
+  }
+
+  /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
+  private standFloor(map: FloorMap): void {
+    this.fitFloor(map);
+    this.buildPerimeter();
+    this.buildWalls(map);
+  }
+
+  /** The floor's walls, from its map, once per floor (FS-KE075 §H.43). */
+  private buildWalls(map: FloorMap): void {
+    if (this.builtFloor === map.floor) return;
+    this.builtFloor = map.floor;
+    this.floorWalls = map.walls;
+    if (this.dungeon) this.buildDungeonWalls(map.walls);
+    else this.updateWalls(map.walls);
+  }
+
+  /**
+   * A dungeon map's floor, once per floor (FS-KE075 §H.44–§H.45): its cells, and the ground's
+   * chunks that what stands on it is shown and hidden by. A floor of buildings has none.
+   */
+  private enterDungeon(map: FloorMap): void {
+    if (this.dungeon?.floor === map.floor && isDungeon(map)) return;
+    // another floor's dungeon (a reconnect that sized the scene by the store's older map) goes,
+    // so a floor of buildings is never built through it
+    this.dropDungeon();
+    if (!isDungeon(map)) return;
+    const ground = new ChunkGrid(projectedBounds(map.width, map.height, GROUND_MARGIN), DUNGEON_CHUNK);
+    const grid = new RegionGrid(map);
+    this.dungeon = {
+      floor: map.floor,
+      grid,
+      chunks: new ChunkVisibility(ground),
+      lights: [],
+      lit: new Set(),
+      seen: new Exploration(grid),
+      dressed: [],
+    };
+  }
+
+  /**
+   * The dungeon the scene holds goes: its chunks, and the fog and minimap with their floor; the
+   * next floor's exploration starts over (FS-SRA9J §B.6).
+   */
+  private dropDungeon(): void {
+    this.dungeon?.chunks.clear();
+    this.dungeon?.fog?.destroy();
+    this.dungeon?.minimap?.destroy();
+    this.dungeon = undefined;
+  }
+
+  /**
+   * A dungeon floor's walls (FS-KE075 §H.46–§H.47): the map's wall cells in masonry, cut along
+   * one-cell runs by the faces they show (`wallRuns`), each piece front where a walkable cell lies
+   * north or west of it and back otherwise, the full pieces fading over the player like any
+   * occluder; a light only on a room's back wall. No building is drawn, no blackout and no roof:
+   * every piece stands in its ground chunk, shown only near the camera (§H.45). The ground takes the floor's look and seed.
+   */
+  private buildDungeonWalls(walls: readonly WallState[]): void {
+    const dungeon = this.dungeon!;
+    const look = this.currentFloorLook();
+    const rule = wallRule(dungeon.grid);
+    this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
+    const strips = wallRuns(walls, dungeon.grid);
+    const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
+    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
+    const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
+    const fog = new Fog(
+      this,
+      dungeon.grid,
+      rule,
+      dungeon.chunks,
+      () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
+      wallLayout(dungeon.grid, strips),
+    );
+    dungeon.fog = fog;
+    const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
+      dungeon.chunks.add(fog.gate(part, at), worldToScreen(at.x, at.y));
+    if (baked) {
+      this.occluders.add(baked.tall);
+      for (const { sprite, at } of baked.standing) stand(sprite, at);
+      baked.lights.forEach(({ source, at }) => this.queueLight("sconce", source, { at }));
+    }
+    const pieces = new Map<string, BuildingPart[]>();
+    for (const w of strips) {
+      const own = pieces.get(w.entity_id) ?? [];
+      pieces.set(w.entity_id, own);
+      if (baked) continue;
+      // no art: placeholder blocks, one per tile of wall, as tall as the rule makes each
+      const { x, y } = w.position;
+      for (const p of splitAlongLength(x, y, w.width, w.height, WORLD_PX_PER_TILE)) {
+        const centre = { x: p.x + p.width / 2, y: p.y + p.height / 2 };
+        const tall = rule.height(centre) === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+        for (const g of addUprightBlock(this, p.x, p.y, p.width, p.height, PLACEHOLDER_STONE, tall)) {
+          own.push(g);
+          stand(g, centre);
+        }
+      }
+    }
+    for (const w of walls) {
+      const own = baked?.byWall.get(w.entity_id) ?? pieces.get(w.entity_id) ?? [];
+      this.walls.set(w.entity_id, { pieces: own, entityId: w.entity_id });
+    }
+    // every region unexplored until the party is placed in it, this same broadcast (§B.6)
+    fog.show((id) => dungeon.seen.state(id));
+    // the floor's minimap, drawn from the same exploration (§E.23)
+    dungeon.minimap = new Minimap({ graphics: () => this.add.graphics() }, dungeon.grid);
+    dungeon.minimap.place(this.minimapPlace());
+    dungeon.minimap.setShown(this.minimapOn);
+  }
+
+  /**
+   * Where the minimap stands (FS-SRA9J §E.20): right-aligned on the top-right column, 6 px under the
+   * floor indicator, which stands under the escaped count.
+   */
+  private minimapPlace(): { x: number; y: number } {
+    const corner = anchorAt(TOP_RIGHT_HUD);
+    const floor = this.floorText;
+    return minimapRect(corner.x, floor ? floor.y + floor.height : corner.y);
+  }
+
+  /** M (FS-SRA9J §E.19): the minimap down or up for the rest of the run scene, this floor's and the next. */
+  private toggleMinimap(): void {
+    this.minimapOn = !this.minimapOn;
+    this.dungeon?.minimap?.setShown(this.minimapOn);
+  }
+
+  /**
+   * The minimap from this broadcast (FS-SRA9J §E.22–§E.24): the regions explored and visible, the
+   * switch, escape door and stairs in them, and the living, in-play members' dots, this client's
+   * player apart; a dead or escaped player watching keeps it, their own dot gone. Each layer
+   * redraws only on a change.
+   */
+  private showMinimap(state: ClientGameState): void {
+    const dungeon = this.dungeon;
+    const minimap = dungeon?.minimap;
+    if (!minimap) return;
+    const fixtures: MinimapFixture[] = [
+      ...[...this.switches.values()].map(({ pos }) => ({ kind: "switch" as const, at: pos })),
+      ...[...this.escapeDoors.values()].map(({ pos }) => ({ kind: "escape-door" as const, at: pos })),
+      ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
+    ];
+    minimap.show((id) => dungeon.seen.state(id), fixtures);
+    const [self] = partyPositions({ current_player: state.current_player });
+    minimap.party({ self, allies: partyPositions({ other_players: state.other_players }) });
+  }
+
+  /**
+   * The party's exploration of a dungeon floor from this broadcast's living positions
+   * (FS-SRA9J §B), and, when a region's state changed, the fog and the floor's lights redrawn
+   * for it (§C.12, §C.13); then the minimap from it (§E.23). Nothing before the floor's walls
+   * stand, nor on a floor of buildings.
+   */
+  private explore(state: ClientGameState): void {
+    const dungeon = this.dungeon;
+    if (!dungeon?.fog) return;
+    if (dungeon.seen.see(partyPositions(state))) {
+      dungeon.fog.show((id) => dungeon.seen.state(id));
+      this.lightNearChunks();
+    }
+    this.showMinimap(state);
+  }
+
+  /**
+   * Whether the fog hides a fixed object at world point `at` (FS-SRA9J §C.14): it stands in an
+   * unexplored region of a dungeon floor. Hidden, not only covered, since its markers and hover
+   * would stand over the fog.
+   */
+  private unexplored(at: Point): boolean {
+    const dungeon = this.dungeon;
+    if (!dungeon?.fog) return false;
+    const region = regionAt(dungeon.grid, at);
+    return region !== 0 && dungeon.seen.state(region) === "unexplored";
+  }
+
+  /**
+   * Whether the fog hides a monster or drop pile at world point `at` (FS-SRA9J §D.15, §D.16): on
+   * a dungeon floor, it is neither in a visible region nor within 400 px of a living, in-play
+   * member. Never before the floor's fog is up (§Edge "Floor map not yet in").
+   */
+  private fogHides(at: Point): boolean {
+    const dungeon = this.dungeon;
+    return !!dungeon?.fog && !dungeon.seen.shows(at);
+  }
+
+  /**
+   * Shows what stands in the ground chunks near the camera and hides the rest, and puts the fixed
+   * lights near it on the light-map (FS-KE075 §H.45): only when the camera crosses a chunk edge.
+   * Nothing on a floor of buildings.
+   */
+  private showNearChunks(): void {
+    if (this.dungeon?.chunks.update(viewRect(this.cameras.main))) this.lightNearChunks();
+  }
+
+  /**
+   * A dungeon floor's fixed lights near the camera on the light-map, the rest off it: never more
+   * than {@link FIXED_LIGHT_CAP} at once, dropped in the floor's order (FS-8RBQY §C.6). A dungeon
+   * floor has no rooms to light from inside, so each is lit wherever it is in view.
+   */
+  private lightNearChunks(): void {
+    const dungeon = this.dungeon;
+    if (!dungeon) return;
+    // a light in a region that is not visible is off (FS-SRA9J §C.12); one in no region stays lit
+    const near = nearLights(
+      dungeon.lights,
+      (chunk) => dungeon.chunks.shown(chunk),
+      FIXED_LIGHT_CAP,
+      (l) => l.region === 0 || dungeon.seen.state(l.region) === "visible",
+    );
+    const kept = new Set(near.map((l) => l.light.source));
+    for (const source of dungeon.lit)
+      if (!kept.has(source)) {
+        this.lightMap?.remove(source);
+        dungeon.lit.delete(source);
+      }
+    for (const source of kept)
+      if (!dungeon.lit.has(source)) {
+        this.lightMap?.add(source);
+        dungeon.lit.add(source);
+      }
+    this.stampedLights = dungeon.lit.size;
+  }
+
+  /**
+   * Sizes the run to its floor (FS-KE075 §H.42): the camera and the (vestigial, collision-free)
+   * physics world in projected space, the map a diamond clamped by its bounding box plus a margin
+   * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits.
+   */
+  private fitFloor(map: FloorMap): void {
+    this.enterDungeon(map);
+    const { width, height } = map;
+    const cells = this.dungeon?.grid;
+    const before = this.fittedTo;
+    if (before?.width === width && before.height === height && before.cells === cells) return;
+    this.fittedTo = { width, height, cells };
+    this.mapWidth = width;
+    this.mapHeight = height;
+    const bounds = projectedBounds(width, height, CAMERA_MARGIN);
+    this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(this.cameras.main, bounds);
+    // a dungeon's void is the darkest ink: the camera's background, painted over by nothing
+    // (FS-KE075 §H.44)
+    if (cells || before?.cells) this.cameras.main.setBackgroundColor(cells ? palette.inkDeep : palette.mapEdge);
+    if (before) this.dropGround();
+    if (!this.groundLayer && !this.groundPlane) this.createGround();
+  }
+
+  /**
+   * The map floor, as a diamond on the projection: the world theme's baked ground when the
+   * manifest has it, the placeholder floor otherwise (FS-2325V §C.1, FS-8RBQY §B.1).
+   */
+  private createGround(): void {
+    const look = this.worldLook.ground;
+    const dungeon = this.dungeon;
+    // the floor's own look and seed, once its first broadcast named them: the ground's first paint
+    // is then the floor's, and the walls' build asks for nothing new (FS-KE075 §H.44)
+    const own = this.floorLook && this.currentFloorLook();
+    // in chunks of at most 2048 px, which a floor of buildings fits in one of; a dungeon floor's
+    // smaller, and only under its walkable and shell cells (FS-KE075 §H.44)
+    this.groundLayer = GroundLayer.available(this.art, "run", look)
+      ? new GroundLayer(this, this.art, {
+          width: this.mapWidth,
+          height: this.mapHeight,
+          kind: "run",
+          look,
+          chunk: dungeon ? DUNGEON_CHUNK : CHUNK_MAX,
+          where: dungeon && ((at) => dungeon.grid.hasGround(at)),
+          floor: own ? { look: own.ground, seed: own.seed } : undefined,
+        })
+      : undefined;
+    if (!this.groundLayer) this.createMapBackground();
+    // each chunk of the ground shown only near the camera, as what stands on it is (§H.45)
+    for (const chunk of this.groundLayer?.chunks ?? [])
+      dungeon?.chunks.add(chunk, { x: chunk.rect.x + chunk.rect.width / 2, y: chunk.rect.y + chunk.rect.height / 2 });
+  }
+
+  /** The ground of another size goes, for the floor's own (FS-KE075 §H.42). */
+  private dropGround(): void {
+    this.groundLayer?.destroy();
+    this.groundLayer = undefined;
+    if (this.groundPlane) {
+      this.outsideObjects = this.outsideObjects.filter((obj) => !this.groundPlane!.surface.exists(obj));
+      this.groundPlane.root.destroy();
+      this.groundPlane = undefined;
+    }
   }
 
   /**
@@ -3347,6 +3959,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
+    // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights
+    // with it (§H.45)
+    this.builtFloor = undefined;
+    this.dropDungeon();
+    this.floorWalls = [];
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
     // each room in both its looks, cap and all (FS-9PN7X §B), and the blackout: the new floor
@@ -3363,6 +3980,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorLook = undefined;
     this.pendingLights = [];
     this.stampedLights = 0;
+    this.pooledContainers = new Set();
 
     this.buildings.forEach((building) => {
       building.roof.forEach((part) => part.destroy());
@@ -3378,7 +3996,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.roofCover = [];
     this.houseFloors.forEach((floor) => floor.destroy());
     this.houseFloors = [];
-    this.groundLayer?.paint([]);
+    // the ground keeps the old floor's paint until the next floor's build paints its own (the veil
+    // is up meanwhile, FS-F6F88 §32): painting it bare here was a third paint for nothing
     this.serverBuildingsCreated = false;
 
     this.serverDoors.forEach((door) => {
@@ -3395,6 +4014,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.projectiles?.clear();
     this.trails.clear();
     this.monsters?.sync([]);
+    this.lastHit.clear();
+    this.bosses.clear();
 
     this.occluders.clear();
     this.lightMap?.clear();
@@ -3421,6 +4042,15 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /** The climb's dark and its card, over the whole view and about its centre again (FS-ZAJMH R13). */
+  private relayoutFloorVeil(): void {
+    const [veil, ...card] = this.floorVeil;
+    if (!veil?.active) return;
+    (veil as Phaser.GameObjects.Rectangle).setSize(viewport.width, viewport.height);
+    for (const obj of card) (obj as Phaser.GameObjects.Text | Phaser.GameObjects.Graphics).setX(viewport.centerX);
+    crispen(card);
+  }
+
   /**
    * The climb's transition (FS-F6F88 req 32): the view drops to dark over the floor just built,
    * then comes back up with the floor card. Presentation only: state has already applied and
@@ -3431,12 +4061,11 @@ export class BarrowspireScene extends Phaser.Scene {
     if (state.floor === undefined || state.floor_count === undefined) return;
     this.floorVeil.forEach((obj) => obj.destroy());
 
-    const cam = this.cameras.main;
     const { title, line } = floorCard({ floor: state.floor, floor_count: state.floor_count });
-    const veil = this.add.rectangle(0, 0, cam.width, cam.height, palette.inkDeep, 1);
+    const veil = this.add.rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1);
     veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
 
-    const heading = this.add.text(cam.centerX, cam.centerY - 14, title, {
+    const heading = this.add.text(viewport.centerX, viewport.centerY - 14, title, {
       fontFamily: CANVAS_FONT.body,
       fontSize: "26px",
       color: toCss(palette.hudText),
@@ -3444,8 +4073,9 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     const rule = this.add.graphics();
     rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(cam.centerX - 90, cam.centerY + 8, cam.centerX + 90, cam.centerY + 8);
-    const subtitle = this.add.text(cam.centerX, cam.centerY + 26, line, {
+    rule.lineBetween(-90, viewport.centerY + 8, 90, viewport.centerY + 8);
+    rule.setX(viewport.centerX);
+    const subtitle = this.add.text(viewport.centerX, viewport.centerY + 26, line, {
       fontFamily: CANVAS_FONT.body,
       fontSize: "15px",
       fontStyle: "italic",
@@ -3463,22 +4093,32 @@ export class BarrowspireScene extends Phaser.Scene {
       duration: FLOOR_CARD_FADE_MS,
       delay: FLOOR_DARK_HOLD_MS,
     });
-    this.tweens.add({
-      targets: veil,
-      alpha: 0,
-      duration: FLOOR_VIEW_RETURN_MS,
-      delay: FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS,
-    });
-    this.tweens.add({
-      targets: card,
-      alpha: 0,
-      duration: FLOOR_CARD_FADE_MS * 2,
-      delay: FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS + FLOOR_CARD_HOLD_MS,
-      onComplete: () => {
-        this.floorVeil.forEach((obj) => obj.destroy());
-        this.floorVeil = [];
-      },
-    });
+    // the view comes back up only over a built floor: a climb whose map has not come keeps the
+    // dark until it is built, then lifts as it would have, less the time already waited (§H.41)
+    const shownAt = this.time.now;
+    const lift = () => {
+      this.veilRelease = undefined;
+      const waited = this.time.now - shownAt || 0;
+      const hold = Math.max(0, FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS - waited);
+      this.tweens.add({
+        targets: veil,
+        alpha: 0,
+        duration: FLOOR_VIEW_RETURN_MS,
+        delay: hold,
+      });
+      this.tweens.add({
+        targets: card,
+        alpha: 0,
+        duration: FLOOR_CARD_FADE_MS * 2,
+        delay: hold + FLOOR_CARD_HOLD_MS,
+        onComplete: () => {
+          this.floorVeil.forEach((obj) => obj.destroy());
+          this.floorVeil = [];
+        },
+      });
+    };
+    if (this.builtFloor === state.floor) lift();
+    else this.veilRelease = lift;
   }
 
   /** "Floor N of M" from the broadcast, redrawn only when it changes; hidden without floors. */
@@ -3563,7 +4203,12 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private ownMarkerBase(): number | null {
     if (!this.player) return null;
-    return markerBase(this.player, this.playerAnim?.crown, isDead(this.lastGameState?.current_player));
+    return markerBase(
+      this.player,
+      this.playerAnim?.crown,
+      isDead(this.lastGameState?.current_player),
+      this.playerAnim?.artScale,
+    );
   }
 
   private updateOtherPlayers(
@@ -3624,8 +4269,10 @@ export class BarrowspireScene extends Phaser.Scene {
         // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing.
         const anim = new CharacterAnimator(this.art, cls);
         this.otherPlayersAnim.set(playerData.id, anim);
-        if (anim.baked) anim.dress(sprite);
-        else if (sprite.body) {
+        if (anim.baked) {
+          anim.dress(sprite);
+          keepBodySize(sprite, anim.artScale);
+        } else if (sprite.body) {
           (sprite.body as Phaser.Physics.Arcade.Body).setCircle(20, 10, 10);
         }
         this.settleDustOnDeath(sprite, playerData.id, () => this.otherPlayersPos.get(playerData.id));
@@ -3656,7 +4303,7 @@ export class BarrowspireScene extends Phaser.Scene {
         // their name, always over their head in the ally channel (FS-77AB6 req 40, FS-CH21F R13)
         const nameText = this.add.text(
           sprite.x,
-          (markerBase(sprite, anim.crown, false) ?? sprite.y) - NAME_GAP,
+          (markerBase(sprite, anim.crown, false, anim.artScale) ?? sprite.y) - NAME_GAP,
           playerData.username || "Unknown",
           {
             fontSize: "11px",
@@ -3711,7 +4358,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * without its art: a missing perimeter sheet leaves the wall out (§B.8).
    */
   private buildPerimeter(): void {
-    if (!this.worldLook.perimeter || this.perimeter) return;
+    // a dungeon floor's shell walls are its edge: no outer wall (FS-KE075 §H.47)
+    if (!this.worldLook.perimeter || this.perimeter || this.dungeon) return;
     const built = addPerimeter(this, this.art, this.mapWidth, this.mapHeight);
     this.perimeter = built?.sprites ?? [];
     built?.lights.forEach((light) => this.queueLight("slit", light));
@@ -3748,17 +4396,61 @@ export class BarrowspireScene extends Phaser.Scene {
   private buildDressing(state: ClientGameState): void {
     if (this.dressing) return;
     const look = this.currentFloorLook();
-    const plan = look.dressing
-      ? planDressing(look.dressing, look.seed, dressingStatics(state, this.mapWidth, this.mapHeight))
-      : [];
+    const dungeon = this.dungeon;
+    // a dungeon floor's from its map and what every snapshot carries, never its containers, which
+    // interest cuts: so every member strews the same (FS-KE075 §H.47)
+    const seen = dungeon ? { ...state, containers: [] } : state;
+    const statics = dressingStatics({ ...seen, walls: this.floorWalls }, this.mapWidth, this.mapHeight);
+    // a dungeon floor's in its rooms only, at the same density per room area (FS-KE075 §H.47)
+    const plan = !look.dressing
+      ? []
+      : dungeon
+        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid))
+        : planDressing(look.dressing, look.seed, statics);
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];
     for (const piece of plan) {
       const built = addDressing(this, this.art, [piece]);
       this.dressing.push(...built.sprites);
-      this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
+      // on a dungeon floor no room hides it: it is shown by its ground chunk instead (§H.45),
+      // unless it has given way to a container
+      if (dungeon) {
+        const dressed: DressedPiece = { piece, sprites: built.sprites, lights: built.lights, gone: false };
+        dungeon.dressed.push(dressed);
+        for (const sprite of built.sprites) {
+          const part = {
+            setVisible: (visible: boolean) => sprite.setVisible(visible && !dressed.gone),
+            setTint: (tint: number) => sprite.setTint(tint),
+            clearTint: () => sprite.clearTint(),
+          };
+          dungeon.chunks.add(dungeon.fog?.gate(part, piece.at) ?? part, worldToScreen(piece.at.x, piece.at.y));
+        }
+      } else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
       this.occluders.add(built.tall);
       built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
+    }
+    for (const c of state.containers ?? []) if (placedKind(c) !== "drop_pile") this.giveWay(c.position);
+  }
+
+  /**
+   * A dungeon floor's dressing gives way to a container seen standing by it (FS-KE075 §H.47): its
+   * sprites hidden for the rest of the floor, its flame taken off the floor's lights. A container
+   * never moves, so every member who sees it ends with the same dressing.
+   */
+  private giveWay(at: Point): void {
+    const dungeon = this.dungeon;
+    if (!dungeon) return;
+    for (const dressed of dungeon.dressed) {
+      if (dressed.gone || !dressingStandsBy(dressed.piece, at)) continue;
+      dressed.gone = true;
+      for (const sprite of dressed.sprites) sprite.setVisible(false);
+      this.dressing = this.dressing?.filter((sprite) => !dressed.sprites.includes(sprite));
+      const flames = new Set(dressed.lights);
+      this.pendingLights = this.pendingLights.filter((l) => !flames.has(l.light.source));
+      dungeon.lights = dungeon.lights.filter((l) => !flames.has(l.light.source));
+      for (const source of flames)
+        if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
+      this.stampedLights = dungeon.lit.size;
     }
   }
 
@@ -3786,9 +4478,24 @@ export class BarrowspireScene extends Phaser.Scene {
    * Stamps the fixed lights waiting since the last broadcast, within the floor's budget of
    * {@link FIXED_LIGHT_CAP}: slits drop first, then braziers, then sconces, and the stairs pool
    * never (FS-8RBQY §C.6). Once per floor build in practice: the light-map is never rebuilt.
+   * Not before `floor` is built from its map: a light queued from a snapshot that came first (a
+   * container's pool) waits for the floor's chunks and fog, or its buildings (FS-KE075 §H.41).
    */
-  private stampLights(): void {
-    if (this.pendingLights.length === 0) return;
+  private stampLights(floor: number | undefined): void {
+    if (this.pendingLights.length === 0 || this.builtFloor === undefined || this.builtFloor !== floor) return;
+    const dungeon = this.dungeon;
+    if (dungeon) {
+      // a dungeon floor's every fixed light waits in its chunk; those near the camera are lit
+      // within the cap (FS-KE075 §H.45)
+      for (const l of this.pendingLights) {
+        // the region it lights: where it stands, or the nearest walkable cell to the wall it hangs on
+        const region = regionAt(dungeon.grid, l.light.at ?? screenToWorld(l.at.x, l.at.y));
+        dungeon.lights.push({ ...l, chunk: dungeon.chunks.grid.indexAt(l.at), region });
+      }
+      this.pendingLights = [];
+      this.lightNearChunks();
+      return;
+    }
     const kept = budgetLights(this.pendingLights, FIXED_LIGHT_CAP - this.stampedLights);
     for (const { light: { source, room, at } } of kept) {
       // a light standing in a building is that building's, by the same inside test (§A.2)
@@ -3842,10 +4549,26 @@ export class BarrowspireScene extends Phaser.Scene {
     // neutral dark stone, flagged on the world grid: the floor without its baked art (FS-8RBQY §B.8)
     const stone = this.add.graphics();
     stone.fillStyle(palette.fallbackStone, 1);
-    stone.fillRect(0, 0, this.mapWidth, this.mapHeight);
     stone.lineStyle(1, palette.fallbackStoneJoint, 1);
-    for (let x = 0; x <= this.mapWidth; x += WORLD_PX_PER_TILE) stone.lineBetween(x, 0, x, this.mapHeight);
-    for (let y = 0; y <= this.mapHeight; y += WORLD_PX_PER_TILE) stone.lineBetween(0, y, this.mapWidth, y);
+    const grid = this.dungeon?.grid;
+    if (grid) {
+      // a dungeon floor's under its walkable and shell cells only: void stays the background's
+      // darkest ink (FS-KE075 §H.44)
+      const c = grid.cell;
+      for (let cy = 0; cy < grid.rows; cy++)
+        for (let cx = 0; cx < grid.cols; cx++) {
+          if (!grid.hasGround({ x: (cx + 0.5) * c, y: (cy + 0.5) * c })) continue;
+          stone.fillRect(cx * c, cy * c, c, c);
+          for (let t = 0; t <= c; t += WORLD_PX_PER_TILE) {
+            stone.lineBetween(cx * c + t, cy * c, cx * c + t, (cy + 1) * c);
+            stone.lineBetween(cx * c, cy * c + t, (cx + 1) * c, cy * c + t);
+          }
+        }
+    } else {
+      stone.fillRect(0, 0, this.mapWidth, this.mapHeight);
+      for (let x = 0; x <= this.mapWidth; x += WORLD_PX_PER_TILE) stone.lineBetween(x, 0, x, this.mapHeight);
+      for (let y = 0; y <= this.mapHeight; y += WORLD_PX_PER_TILE) stone.lineBetween(0, y, this.mapWidth, y);
+    }
 
     const plane = addWorldPlane(this);
     plane.root.setDepth(-1);
@@ -3987,9 +4710,15 @@ export class BarrowspireScene extends Phaser.Scene {
    * stairs, run dressing, projectiles, burning trails and world effects. The plates and bars over
    * monsters and teammates stand over the blackout, so they are hidden here, never left to it
    * (§C.2). The player is never hidden: their building is picked by the same rule (§C.3).
+   *
+   * On a dungeon floor the fog hides too (FS-SRA9J): monsters and drop piles by its monster rule
+   * (§D.15, §D.16), a hidden monster no target (§D.17); everything else that stands in an
+   * unexplored region (§C.8, §C.14). Teammates never (§D.18).
    */
   private hideWhatIsElsewhere(): void {
     const hiddenAt = (at: Point) => this.view?.hidden(at) ?? false;
+    /** Out of sight: elsewhere by the blackout's rule, or in an unexplored region. */
+    const unseen = (at: Point) => hiddenAt(at) || this.unexplored(at);
 
     this.otherPlayers.forEach((sprite, playerId) => {
       const pos = this.otherPlayersPos.get(playerId);
@@ -4001,24 +4730,25 @@ export class BarrowspireScene extends Phaser.Scene {
       // shown, the name keeps what the hover said this frame
       if (!shown) this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
     });
-    this.monsters?.hideWhere(hiddenAt);
+    this.monsters?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
 
+    for (const { sprite, pos, pile } of this.chests.values())
+      sprite.setVisible(!hiddenAt(pos) && !(pile ? this.fogHides(pos) : this.unexplored(pos)));
     const placed = [
-      ...this.chests.values(),
       ...this.escapeDoors.values(),
       ...this.switches.values(),
       ...this.stairs.placed(),
       ...this.dressingAt,
     ];
-    for (const { sprite, pos } of placed) sprite.setVisible(!hiddenAt(pos));
+    for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
     for (const { bed, glow, trail } of this.trails.placed()) {
       // a trail is a line on the floor: hidden once neither end is in sight
-      const shown = !hiddenAt(trail.from) || !hiddenAt(trail.to);
+      const shown = !unseen(trail.from) || !unseen(trail.to);
       bed.setVisible(shown);
       glow.setVisible(shown);
     }
-    this.projectiles?.hideWhere(hiddenAt);
-    this.fx?.hideWhere(hiddenAt);
+    this.projectiles?.hideWhere(unseen);
+    this.fx?.hideWhere(unseen);
   }
 
   private createUI(): void {
@@ -4026,9 +4756,10 @@ export class BarrowspireScene extends Phaser.Scene {
     if (showsPositionReadout()) this.createPositionReadout();
 
     // Escaped players count (top-right)
+    const corner = anchorAt(TOP_RIGHT_HUD);
     this.escapedCountText = this.add.text(
-      this.cameras.main.width - 10,
-      10,
+      corner.x,
+      corner.y,
       "Escaped: 0",
       {
         fontFamily: CANVAS_FONT.body,
@@ -4044,7 +4775,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // The party's floor (FS-F6F88 req 29): neutral HUD, under the escaped count
     this.floorText = this.add.text(
-      this.cameras.main.width - 10,
+      corner.x,
       this.escapedCountText.y + this.escapedCountText.height + 6,
       "",
       {
@@ -4059,6 +4790,41 @@ export class BarrowspireScene extends Phaser.Scene {
     this.floorText.setScrollFactor(0);
     this.floorText.setDepth(1000);
     this.floorText.setVisible(false);
+
+    // The target frame (FS-48CTQ §C, §E.14): top centre, hidden until a frame floor names a monster
+    this.targetFrame = new TargetFrame(
+      {
+        text: (content, style) => this.add.text(0, 0, content, style),
+        graphics: () => this.add.graphics(),
+      },
+      () => viewport.centerX,
+      () => viewport.renderScale,
+    );
+  }
+
+  /**
+   * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else an engaged boss
+   * (§D.10, read against the run's players, this client's among them), else the last-hit one, of
+   * those shown and living; nothing on an `overhead` floor. Hidden while the spectate HUD or the
+   * floor veil holds the top centre (§E.15–16). Run after the frame's hide rule, which says what
+   * is shown.
+   */
+  private updateTargetFrame(deltaMs: number): void {
+    if (!this.targetFrame) return;
+    let target = null;
+    if (this.markers === "frame" && this.monsters) {
+      const shown = this.monsters.targetable();
+      const { current_player, other_players = [] } = this.lastGameState ?? {};
+      const members = current_player ? [current_player, ...other_players] : other_players;
+      target = pickTarget({
+        shown,
+        hovered: this.monsters.hoveredId,
+        engagedBoss: this.bosses.observe(this.lastGameState?.monsters ?? [], members, shown),
+        lastHit: this.lastHit.current(this.time.now),
+      });
+    }
+    const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
+    this.targetFrame.update(deltaMs, target, covered);
   }
 
   /** The debug position line (top-left): the player's x/y, refreshed every frame. */
@@ -4108,7 +4874,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showNotification(message: string, color: string): void {
     // Create notification text at top center of screen
     const notification = this.add.text(
-      this.cameras.main.centerX,
+      viewport.centerX,
       100,
       message,
       {
@@ -4169,12 +4935,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastGameState;
     if (!state) return;
-    const cam = this.cameras.main;
-    this.abilityHud ??= new AbilityHud(
-      this,
-      cam.width - ABILITY_CARD_MARGIN,
-      cam.height - ABILITY_CARD_MARGIN,
-    );
+    this.abilityHud ??= new AbilityHud(this, {
+      anchor: "bottom-right",
+      dx: -ABILITY_CARD_MARGIN,
+      dy: -ABILITY_CARD_MARGIN,
+    });
     this.abilityHud.show(
       abilityCard(state, {
         lockedOut: this.combat.lockedOut,
@@ -4260,7 +5025,6 @@ export class BarrowspireScene extends Phaser.Scene {
    * goes on behind it, visibly. The camera stays where it is until a button says otherwise.
    */
   private showResolvedCard(card: Extract<ResolvedView, { kind: "dead" }>): void {
-    const cam = this.cameras.main;
     const cardW = 420;
     const cardH = 200;
     const panel = this.add.graphics();
@@ -4289,11 +5053,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // one row of buttons, centred: Watch and Leave (req 2)
     const buttons: ButtonSpec[] = [this.watchSpec, this.leaveSpec];
-    const made = buttons.map((button, i) => this.cardButton(cam, button, i, buttons.length));
+    const made = buttons.map((button, i) => this.cardButton(button, i, buttons.length));
 
     this.resolvedKind = card.kind;
+    this.resolvedCardView = card;
     this.resolvedCard = this.add
-      .container(cam.centerX, cam.centerY, [panel, title, body, ...made.flatMap((b) => b.parts)])
+      .container(viewport.centerX, viewport.centerY, [panel, title, body, ...made.flatMap((b) => b.parts)])
       .setScrollFactor(0)
       .setDepth(RESOLVED_CARD_DEPTH);
     // hit areas live outside containers so pointer events work reliably; they go with the card
@@ -4309,14 +5074,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * Buttons sit in one row, `index` of `count`, under the card's copy.
    */
   private cardButton(
-    cam: Phaser.Cameras.Scene2D.Camera,
     button: ButtonSpec,
     index: number,
     count: number,
   ): WorldButton {
     const x = (index - (count - 1) / 2) * (BUTTON_W + BUTTON_GAP);
     const y = 50;
-    return this.worldButton(button, { x, y }, { x: cam.centerX, y: cam.centerY }, RESOLVED_CARD_DEPTH + 1);
+    return this.worldButton(button, { x, y }, { x: viewport.centerX, y: viewport.centerY }, RESOLVED_CARD_DEPTH + 1);
   }
 
   /**
@@ -4394,8 +5158,11 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private leaveTheBarrow(): void {
     if (this.leavePending) return;
-    this.resultHold.release();
-    if (this.runEnded) return;
+    // A held hub let in is the leave done: it goes through switchWorld, whose stop is synchronous,
+    // so this scene has stopped (resetRun, runEnded false) by the time the release returns, and
+    // nothing of it may be read or set after. Otherwise, once the run has ended there is nothing
+    // to ask the server for.
+    if (this.resultHold.release() || this.runEnded) return;
     this.leavePending = true;
     this.dimLeave();
     socketManager.sendMessage(ActionType.LeaveRun, {});
@@ -4548,19 +5315,19 @@ export class BarrowspireScene extends Phaser.Scene {
     },
   ): void {
     this.closeMenu();
-    const cam = this.cameras.main;
-    const { container, keys } = showMenuPanel(this, {
+    const { container, keys, moveTo } = showMenuPanel(this, {
       line,
       choices,
       actions: spec.actions,
       enabled: spec.enabled,
       close: () => this.closeMenu(),
-      origin: { x: cam.centerX, y: cam.centerY },
+      origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
     });
     this.menuChoices = keys;
     this.menu = container;
+    this.moveMenu = moveTo;
   }
 
   /** The menu or its confirm goes down, hit areas with it; nothing is sent (req 1, 3). */
@@ -4568,6 +5335,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.menu?.destroy();
     this.menu = undefined;
     this.menuChoices = undefined;
+    this.moveMenu = undefined;
     this.menuFor = undefined;
   }
 
@@ -4577,11 +5345,11 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private placeLeaveInCorner(): void {
     if (this.resolvedKind !== "dead" || this.leaveButton) return;
-    const cam = this.cameras.main;
-    const at = {
-      x: cam.width - LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
-      y: cam.height - LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
-    };
+    const at = anchorAt({
+      anchor: "bottom-right",
+      dx: -LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
+      dy: -LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
+    });
     this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)
@@ -4629,11 +5397,11 @@ export class BarrowspireScene extends Phaser.Scene {
     const watched = current ?? inPlay.find((w) => w.id === nextWatched(inPlay, this.watchedPlayerId));
     if (!watched) return;
     this.watchedPlayerId = watched.id;
-    // startFollow snaps the camera onto its target each time it is called, so it is called
+    // followWith snaps the camera onto its target each time it is called, so it is called
     // once per sprite: on a new watched player, or on theirs appearing after a tick without it
     const sprite = this.otherPlayers.get(watched.id);
     if (sprite && sprite !== this.followedSprite) {
-      this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+      followWith(this.cameras.main, sprite);
       this.followedSprite = sprite;
     }
     this.showSpectateHud(watched.username);
@@ -4653,7 +5421,7 @@ export class BarrowspireScene extends Phaser.Scene {
       backgroundColor: toCss(palette.hudPanel),
       padding: { x: 10, y: 5 },
     };
-    const x = this.cameras.main.centerX;
+    const x = viewport.centerX;
     const watchingText = this.add
       .text(x, SPECTATE_HUD_Y, watching, style)
       .setOrigin(0.5, 0)
@@ -4753,6 +5521,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private updateLighting(time: number, delta: number): void {
     const self = this.player?.visible ? this.player : undefined;
     this.lightMap?.carry(self ? { x: self.x, y: self.y } : null);
+    this.showNearChunks();
     this.lightMap?.update(time);
     this.occluders.update(self ? { bounds: self.getBounds(), depth: self.depth } : null, delta);
   }
@@ -4768,6 +5537,7 @@ export class BarrowspireScene extends Phaser.Scene {
       // still update other players smoothly, and keep hiding what stands in the rooms
       this.updateOtherPlayersSmooth(time, delta);
       this.checkBuildingStatus();
+      this.updateTargetFrame(delta);
       return;
     }
 
@@ -4874,6 +5644,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
+    this.updateTargetFrame(delta);
 
     // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
     if (this.containerView.isOpen) {
@@ -4950,7 +5721,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const sprite = this.otherPlayers.get(playerId);
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
-    const base = markerBase(sprite, this.otherPlayersAnim.get(playerId)?.crown, dead);
+    const anim = this.otherPlayersAnim.get(playerId);
+    const base = markerBase(sprite, anim?.crown, dead, anim?.artScale);
     // the switch alone decides, not whether a bar happens to be in the map
     const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
     const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;

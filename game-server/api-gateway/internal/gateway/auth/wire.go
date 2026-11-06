@@ -46,6 +46,16 @@ type LoginResult struct {
 	MemberInfo       *Member `json:"member_info,omitempty" doc:"The signed-in member"`
 }
 
+// RefreshResult is what renewal answers (FS-ZPX58 §API surface): a new access
+// token and the member as it reads now. New with FS-ZPX58, so it is bare and
+// its members are not omitempty. It carries no refresh token: v1 does not
+// rotate (ADR-0066), so the client keeps the one it holds.
+type RefreshResult struct {
+	AccessToken     string  `json:"access_token" doc:"Bearer token for the Authorization header"`
+	AccessExpiresIn int32   `json:"access_expires_in" doc:"Access token lifetime in seconds"`
+	MemberInfo      *Member `json:"member_info" doc:"The member, as the new access token was minted from"`
+}
+
 // ---------------------------------------------------------------------------
 // Request bodies
 //
@@ -87,6 +97,12 @@ type VerifyEmailBody struct {
 
 type ChangeEmailBody struct {
 	Email string `json:"email" required:"true" doc:"The new email address"`
+}
+
+// RefreshBody is new with FS-ZPX58, so it declares what it requires. Only the
+// shape is checked here; auth-service owns every rule about the token.
+type RefreshBody struct {
+	RefreshToken string `json:"refresh_token" required:"true" minLength:"1" doc:"The refresh token from sign-in or verification"`
 }
 
 // ---------------------------------------------------------------------------

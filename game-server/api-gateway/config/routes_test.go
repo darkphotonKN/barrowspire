@@ -11,21 +11,54 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// FS-BDA7X §Requirements 36: the legacy gin POST /api/character/ is replaced by
-// the typed character operations, and gin and Huma never both own a path.
-//
-// SetupRouter connects to nothing at construction (every client connects
-// lazily), so the real router is built here against addresses nothing listens
-// on, and no channel.
-func TestSetupRouter_CharacterRoutesAreTypedOnly(t *testing.T) {
+// buildRouter builds the real router. SetupRouter connects to nothing at
+// construction (every client connects lazily), so it is built against
+// addresses nothing listens on, and no channel.
+func buildRouter(t *testing.T, features Features) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	unused := "localhost:1"
 	r, closeDownstreams, err := SetupRouter(Downstreams{
 		Auth: unused, Stats: unused, Notification: unused, Payment: unused, Items: unused,
 		Ledger: unused, Marketplace: unused, Wallet: unused, Character: unused,
-	}, []string{"http://localhost:3938"}, nil)
+	}, []string{"http://localhost:3938"}, nil, features)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = closeDownstreams() })
+	return r
+}
+
+// POST /api/wallet/deposit mints gold with no counterparty (ADR-0006), so it is
+// a dev-seed convenience only: registered when DevEndpoints is on, absent
+// otherwise, so production answers it with the plain unrouted 404.
+func TestSetupRouter_WalletDepositOnlyWithDevEndpoints(t *testing.T) {
+	const deposit = http.MethodPost + " /api/wallet/deposit"
+
+	for _, tc := range []struct {
+		name         string
+		devEndpoints bool
+		want         int
+	}{
+		{name: "off by default", devEndpoints: false, want: 0},
+		{name: "on for dev", devEndpoints: true, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := buildRouter(t, Features{DevEndpoints: tc.devEndpoints})
+
+			owned := 0
+			for _, route := range r.Routes() {
+				if route.Method+" "+route.Path == deposit {
+					owned++
+				}
+			}
+			assert.Equal(t, tc.want, owned)
+		})
+	}
+}
+
+// FS-BDA7X §Requirements 36: the legacy gin POST /api/character/ is replaced by
+// the typed character operations, and gin and Huma never both own a path.
+func TestSetupRouter_CharacterRoutesAreTypedOnly(t *testing.T) {
+	r := buildRouter(t, Features{})
 
 	owned := map[string]int{}
 	for _, route := range r.Routes() {
@@ -53,7 +86,7 @@ func TestSetupRouter_AvatarPaths_AnswerNotFound(t *testing.T) {
 	r, closeDownstreams, err := SetupRouter(Downstreams{
 		Auth: unused, Stats: unused, Notification: unused, Payment: unused, Items: unused,
 		Ledger: unused, Marketplace: unused, Wallet: unused, Character: unused,
-	}, []string{"http://localhost:3938"}, nil)
+	}, []string{"http://localhost:3938"}, nil, Features{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = closeDownstreams() })
 

@@ -40,7 +40,7 @@ func validate(p Params, l Layout) error {
 	if err != nil {
 		return bad("border: %v", err)
 	}
-	if n := reachable(p, mouth, open); n != len(l.Open) {
+	if n := reachable(p.Cols, p.Rows, mouth, open); n != len(l.Open) {
 		return bad("%d of %d open cells are unreachable from the mouth", len(l.Open)-n, len(l.Open))
 	}
 	if !wallsReachEdge(p, open) {
@@ -64,20 +64,9 @@ func checkWalls(p Params, walls []Rect, open []bool) error {
 	if len(walls) > p.WallBudget {
 		return fmt.Errorf("%d rects exceed the budget of %d", len(walls), p.WallBudget)
 	}
-	cover := make([]int, len(open))
-	for _, r := range walls {
-		x0, ok0 := cellIndex(r.X, p.CellSize)
-		y0, ok1 := cellIndex(r.Y, p.CellSize)
-		x1, ok2 := cellIndex(r.X+r.W, p.CellSize)
-		y1, ok3 := cellIndex(r.Y+r.H, p.CellSize)
-		if !ok0 || !ok1 || !ok2 || !ok3 || x0 < 0 || y0 < 0 || x1 > p.Cols || y1 > p.Rows || x1 <= x0 || y1 <= y0 {
-			return fmt.Errorf("rect %+v is off the cell grid or outside the bounds", r)
-		}
-		for y := y0; y < y1; y++ {
-			for x := x0; x < x1; x++ {
-				cover[y*p.Cols+x]++
-			}
-		}
+	cover, err := coverCounts(p.Cols, p.Rows, p.CellSize, walls)
+	if err != nil {
+		return err
 	}
 	for c, n := range cover {
 		switch {
@@ -88,6 +77,27 @@ func checkWalls(p Params, walls []Rect, open []bool) error {
 		}
 	}
 	return nil
+}
+
+// coverCounts counts, per cell of a cols x rows grid, how many of the px rects
+// cover it. Every rect must be cell-aligned, non-empty and inside the grid.
+func coverCounts(cols, rows int, cell float64, rects []Rect) ([]int, error) {
+	cover := make([]int, cols*rows)
+	for _, r := range rects {
+		x0, ok0 := cellIndex(r.X, cell)
+		y0, ok1 := cellIndex(r.Y, cell)
+		x1, ok2 := cellIndex(r.X+r.W, cell)
+		y1, ok3 := cellIndex(r.Y+r.H, cell)
+		if !ok0 || !ok1 || !ok2 || !ok3 || x0 < 0 || y0 < 0 || x1 > cols || y1 > rows || x1 <= x0 || y1 <= y0 {
+			return nil, fmt.Errorf("rect %+v is off the cell grid or outside the bounds", r)
+		}
+		for y := y0; y < y1; y++ {
+			for x := x0; x < x1; x++ {
+				cover[y*cols+x]++
+			}
+		}
+	}
+	return cover, nil
 }
 
 // mouthCells requires the border to be solid except across the mouth, which
@@ -129,15 +139,16 @@ func mouthCells(p Params, e Entrance, open []bool) ([]int, error) {
 	return mouth, nil
 }
 
-// reachable counts the open cells 4-connected to the start cells.
-func reachable(p Params, start []int, open []bool) int {
+// reachable counts the open cells 4-connected to the start cells on a
+// cols x rows grid.
+func reachable(cols, rows int, start []int, open []bool) int {
 	seen := make([]bool, len(open))
 	queue := append([]int(nil), start...)
 	for _, c := range start {
 		seen[c] = true
 	}
 	for i := 0; i < len(queue); i++ {
-		for _, n := range neighbours4(p, queue[i]) {
+		for _, n := range neighbours4(cols, rows, queue[i]) {
 			if open[n] && !seen[n] {
 				seen[n] = true
 				queue = append(queue, n)
@@ -198,7 +209,7 @@ func checkGap(p Params, open []bool) error {
 			if dist[queue[i]] == limit {
 				continue
 			}
-			for _, n := range neighbours4(p, queue[i]) {
+			for _, n := range neighbours4(p.Cols, p.Rows, queue[i]) {
 				if open[n] && dist[n] < 0 {
 					dist[n] = dist[queue[i]] + 1
 					queue = append(queue, n)
@@ -311,17 +322,19 @@ func mainCoverage(p Params, pts []Point) float64 {
 	return best
 }
 
-func neighbours4(p Params, c int) []int {
-	x, y := c%p.Cols, c/p.Cols
+// neighbours4 lists cell c's 4-neighbours on a cols x rows grid: north, east,
+// south, west.
+func neighbours4(cols, rows, c int) []int {
+	x, y := c%cols, c/cols
 	out := make([]int, 0, 4)
 	if y > 0 {
-		out = append(out, c-p.Cols)
+		out = append(out, c-cols)
 	}
-	if x < p.Cols-1 {
+	if x < cols-1 {
 		out = append(out, c+1)
 	}
-	if y < p.Rows-1 {
-		out = append(out, c+p.Cols)
+	if y < rows-1 {
+		out = append(out, c+cols)
 	}
 	if x > 0 {
 		out = append(out, c-1)

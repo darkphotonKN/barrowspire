@@ -83,7 +83,16 @@ func main() {
 	}()
 
 	// --- router setup ---
-	router, closeDownstreams, err := config.SetupRouter(downstreams, splitOrigins(corsOrigins), ch)
+	// Dev-only routes (POST /wallet/deposit for scripts/seed-dev.sh) follow
+	// ENVIRONMENT, opt-in like debug logging: only "development" turns them on,
+	// so the "production" default, a typo or an unset value keeps them off.
+	devEndpoints := strings.EqualFold(environment, "development")
+	if devEndpoints {
+		slog.Warn("ENVIRONMENT is development: dev-only routes such as POST /api/wallet/deposit are mounted")
+	}
+
+	router, closeDownstreams, err := config.SetupRouter(downstreams, splitOrigins(corsOrigins), ch,
+		config.Features{DevEndpoints: devEndpoints})
 	if err != nil {
 		log.Fatalf("Failed to set up router: %v", err)
 	}

@@ -1,5 +1,6 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import type { WorldType } from "@/assets/types/client";
 import {
@@ -448,5 +449,21 @@ describe("PartyInvitePrompt countdown bar (FS-B3NDZ R1–R9, R11)", () => {
     env.store.getState().receiveInvite(invite("a"));
     env.frame();
     expect(env.barTracks()).toEqual([]);
+  });
+});
+
+describe("PartyInvitePrompt at another logical width (FS-ZAJMH R12, R13)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should stand a shown prompt centred across the top again once the view widens", () => {
+    const env = setup();
+    env.store.getState().receiveInvite(invite("a"));
+    const [wide] = invitePromptFrames(1, { canvasWidth: 1280, panelOpen: false });
+    expect(env.prompt.covers(wide.panel.x + wide.panel.width - 2, wide.panel.y + 5)).toBe(false);
+
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.prompt.relayout();
+    expect(env.prompt.covers(wide.panel.x + wide.panel.width - 2, wide.panel.y + 5)).toBe(true);
+    expect(env.prompt.shown()).toBe(1);
   });
 });

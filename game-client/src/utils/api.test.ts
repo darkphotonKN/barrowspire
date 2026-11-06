@@ -90,17 +90,96 @@ describe("apiClient.createListing", () => {
   });
 });
 
-describe("publicApi.getListing", () => {
-  it("should read one listing without a token", async () => {
-    answer = () =>
-      new Response(JSON.stringify({ id: "l1" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    const { publicApi } = await loadApi();
-    await expect(publicApi.getListing("l1")).resolves.toEqual({ id: "l1" });
-    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1");
+describe("apiClient.acceptBid", () => {
+  it("should send the leading bid the seller was shown as the floor (FS-F692V req 1, 9)", async () => {
+    answer = empty(202);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.acceptBid("l1", 300)).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("POST");
+    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1/accept");
+    expect(await requests[0].json()).toEqual({ minAmount: 300 });
+  });
+});
+
+describe("publicApi reads (FS-GKHYD Req 12)", () => {
+  const listing = () =>
+    new Response(JSON.stringify({ id: "l1", own: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  const page = () =>
+    new Response(JSON.stringify({ listings: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  /** A browser with this access token stored, as the auth store persists it. */
+  function signIn(accessToken: string): { location: { pathname: string; href: string } } {
+    const win = { location: { pathname: "/marketplace", href: "/marketplace" } };
+    vi.stubGlobal("window", win);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) =>
+        key === "auth-storage" ? JSON.stringify({ state: { accessToken } }) : null,
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    return win;
+  }
+
+  it.each([
+    ["getListing", listing, (api: Api) => api.publicApi.getListing("l1"), "/api/marketplace/listings/l1"],
+    ["browseListings", page, (api: Api) => api.publicApi.browseListings(), "/api/marketplace/listings"],
+  ] as const)("%s should read without a token when signed out", async (_name, body, call, path) => {
+    answer = body;
+    const api = await loadApi();
+    await call(api);
+    expect(new URL(requests[0].url).pathname).toBe(path);
     expect(requests[0].headers.get("Authorization")).toBeNull();
+  });
+
+  // Without the token `own` is always false and a seller loses Accept and Withdraw.
+  it.each([
+    ["getListing", listing, (api: Api) => api.publicApi.getListing("l1")],
+    ["browseListings", page, (api: Api) => api.publicApi.browseListings()],
+  ] as const)("%s should carry the bearer when signed in", async (_name, body, call) => {
+    signIn("tok-1");
+    answer = body;
+    const api = await loadApi();
+    await call(api);
+    expect(requests[0].headers.get("Authorization")).toBe("Bearer tok-1");
+  });
+
+  it("should answer the listing's own as the server read it", async () => {
+    signIn("tok-1");
+    answer = listing;
+    const { publicApi } = await loadApi();
+    await expect(publicApi.getListing("l1")).resolves.toEqual({ id: "l1", own: true });
+  });
+
+  // An expired token reads as anonymous server-side (ADR-0053); even a 401 must never sign the
+  // player out or send them to the login page from a public read (FS-8EGFA Req 21's property).
+  it.each([
+    ["getListing", (api: Api) => api.publicApi.getListing("l1")],
+    ["browseListings", (api: Api) => api.publicApi.browseListings()],
+  ] as const)("%s should never sign out or redirect on a 401", async (_name, call) => {
+    const win = signIn("expired");
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 401, detail: "expired", code: "UNAUTHENTICATED", errors: [] }),
+        { status: 401, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const api = await loadApi();
+    // the store instance api.ts holds: loadApi reset the registry, so this import shares it
+    const { useAuthStore } = await import("@/stores/authStore");
+    const logout = vi.fn();
+    useAuthStore.setState({ logout });
+    const { ApiError } = await import("./apiError");
+
+    const err = await call(api).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(logout).not.toHaveBeenCalled();
+    expect(win.location.href).toBe("/marketplace");
   });
 });
 
@@ -156,6 +235,29 @@ describe("apiClient.withdrawBid (FS-EYQ8K req 12)", () => {
     const err = await apiClient.withdrawBid("l1", "b1").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as InstanceType<typeof ApiError>).code).toBe("FAILED_PRECONDITION");
+  });
+});
+
+describe("apiClient.withdrawListing (FS-V7A5S req 13)", () => {
+  it("should DELETE the listing and resolve on a 204 with an empty body", async () => {
+    answer = empty(204);
+    const { apiClient } = await loadApi();
+    await expect(apiClient.withdrawListing("l1")).resolves.toBeUndefined();
+    expect(requests[0].method).toBe("DELETE");
+    expect(new URL(requests[0].url).pathname).toBe("/api/marketplace/listings/l1");
+  });
+
+  it("should throw the problem's code on a refusal", async () => {
+    answer = () =>
+      new Response(
+        JSON.stringify({ status: 400, detail: "too late", code: "LISTING_WITHDRAW_LOCKED", errors: [] }),
+        { status: 400, headers: { "Content-Type": "application/problem+json" } },
+      );
+    const { apiClient } = await loadApi();
+    const { ApiError } = await import("./apiError");
+    const err = await apiClient.withdrawListing("l1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as InstanceType<typeof ApiError>).code).toBe("LISTING_WITHDRAW_LOCKED");
   });
 });
 

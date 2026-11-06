@@ -3,6 +3,7 @@ package dto
 import (
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 )
 
@@ -17,4 +18,20 @@ type AccountDetails struct {
 	HeldGold      int       `db:"held_gold"`
 	AvailableGold int       `db:"available_gold"`
 	CreatedAt     time.Time `db:"created_at"`
+}
+
+// ExpiredHold is one hold sweep candidate: a RESERVED hold the database clock
+// says has lapsed. Its (ExpiredAt, BidID) is also the keyset position the next
+// page of candidates starts after (FS-A3CQH §Req 5).
+type ExpiredHold struct {
+	BidID     uuid.UUID `db:"bid_id"`
+	ExpiredAt time.Time `db:"expired_at"`
+}
+
+// StaleReservedHoldsPage is one page of the reservations that outlived the write
+// meant to follow them, oldest first (FS-9BJCP Req 6). Next is the position of
+// the following page, nil on the last one.
+type StaleReservedHoldsPage struct {
+	BidIDs []uuid.UUID
+	Next   *cursor.Cursor
 }

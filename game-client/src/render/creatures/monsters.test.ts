@@ -14,6 +14,8 @@ import {
   PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
+  BODY_HALF_WIDTH,
+  bodyColumn,
   monsterLook,
   elitePlate,
   monsterScale,
@@ -122,6 +124,7 @@ function fakeSprite() {
     depth: 0,
     scaleX: 1,
     scaleY: 1,
+    displayOriginX: 0,
     displayOriginY: 0,
     texture: "",
     tint: null as number | null,
@@ -139,7 +142,9 @@ function fakeSprite() {
       sprite.frame = frame;
       return sprite;
     },
-    setOrigin(_x: number, y: number) {
+    setOrigin(x: number, y: number) {
+      // the fixture's creature frame is 200 x 180
+      sprite.displayOriginX = x * 200;
       sprite.displayOriginY = y * 180;
       return sprite;
     },
@@ -956,6 +961,145 @@ describe("targeting monsters (req 39)", () => {
   });
 });
 
+describe("the drawn body is a target (FS-48CTQ §C.5, owner playtest 2026-11-06)", () => {
+  type Sprite = ReturnType<typeof fakeSprite>;
+  const TROLL = { entity_id: "t", archetype: "troll" as const, position: { x: 400, y: 300 } };
+  // straight in front of the troll on screen: 16 px lower, so drawn over it
+  const GHOUL = { entity_id: "g", archetype: "ghoul" as const, position: { x: 420, y: 320 } };
+
+  function onFloor(...monsters: MonsterState[]) {
+    const { stage, sprites } = fakeStage();
+    const targeting = { strike: vi.fn(), hover: vi.fn() };
+    const roster = new MonsterRoster(stage, fixtureArt(), targeting);
+    roster.sync(monsters);
+    roster.update(FRAME);
+    return { roster, sprites, targeting };
+  }
+
+  /** Whether the sprite's hit area takes screen point (sx, sy), handed over frame-local as Phaser does. */
+  const hits = (s: Sprite, sx: number, sy: number) =>
+    s.interactive!.hitAreaCallback(
+      {},
+      (sx - s.x) / s.scaleX + s.displayOriginX,
+      (sy - s.y) / s.scaleY + s.displayOriginY,
+      s,
+    );
+
+  /**
+   * The sprite Phaser's top-only input gives (sx, sy) to: of the shown ones whose hit area takes
+   * it, the one drawn last, which is the deepest (`InputPlugin.sortGameObjects` by render order).
+   */
+  const picked = (all: Sprite[], sx: number, sy: number) =>
+    all
+      .filter((s) => s.visible && hits(s, sx, sy))
+      .sort((a, b) => b.depth - a.depth)[0];
+
+  /** Drawn height in screen px: the fixture's crown (troll 96, ghoul 72) at the sprite's scale. */
+  const height = (s: Sprite, crown: number) => crown * s.scaleY;
+
+  it.each([
+    ["the head", 0, -0.97],
+    ["the chest", 0, -0.6],
+    ["a shoulder", 0.35, -0.8],
+    ["the other flank", -0.35, -0.4],
+  ])("should take the pointer on %s, for the hover and the click alike", (_, across, up) => {
+    const { sprites, targeting } = onFloor(monster(TROLL));
+    const [troll] = sprites;
+    const h = height(troll, 96);
+    expect(hits(troll, troll.x + across * h, troll.y + up * h)).toBe(true);
+    // the hit area is the only gate Phaser has; the events it raises are answered as ever
+    troll.emit("pointerover");
+    troll.emit("pointerdown");
+    expect(targeting.hover).toHaveBeenLastCalledWith(expect.objectContaining({ entity_id: "t" }));
+    expect(targeting.strike).toHaveBeenCalledWith(expect.objectContaining({ entity_id: "t" }));
+  });
+
+  it("should still take the feet, and the footprint's ground beyond the body's width", () => {
+    const { sprites } = onFloor(monster(TROLL));
+    const [troll] = sprites;
+    expect(hits(troll, troll.x, troll.y)).toBe(true);
+    // 26 world px east: on the troll's 28 px footprint, below and beside the drawn body
+    const ground = worldToScreen(426, 300);
+    expect(hits(troll, ground.x, ground.y)).toBe(true);
+  });
+
+  it.each([
+    ["beside the chest", 0.55, -0.5],
+    ["beside the other side", -0.55, -0.5],
+    ["over the head", 0, -1.06],
+    ["far up and over", 0.3, -1.4],
+  ])("should miss the empty space %s", (_, across, up) => {
+    const { sprites } = onFloor(monster(TROLL));
+    const [troll] = sprites;
+    const h = height(troll, 96);
+    expect(hits(troll, troll.x + across * h, troll.y + up * h)).toBe(false);
+  });
+
+  it("should give an overlap to the monster drawn in front, and a tall one behind only what shows of it", () => {
+    const { sprites } = onFloor(monster(TROLL), monster(GHOUL));
+    const [troll, ghoul] = sprites;
+    expect(ghoul.depth).toBeGreaterThan(troll.depth);
+    expect(ghoul.x).toBeCloseTo(troll.x);
+
+    // the ghoul's chest stands over the troll's body: both take it, the ghoul in front wins
+    const chest = { x: ghoul.x, y: ghoul.y - 0.6 * height(ghoul, 72) };
+    expect(hits(troll, chest.x, chest.y)).toBe(true);
+    expect(picked(sprites, chest.x, chest.y)).toBe(ghoul);
+    expect(picked(sprites, ghoul.x, ghoul.y)).toBe(ghoul);
+
+    // over the ghoul's head the troll's body shows, and is the troll's
+    const above = { x: ghoul.x, y: ghoul.y - height(ghoul, 72) - 8 };
+    expect(picked(sprites, above.x, above.y)).toBe(troll);
+  });
+
+  it("should never let a corpse in front take the pointer from the living monster behind it", () => {
+    const { sprites } = onFloor(
+      monster(TROLL),
+      monster({ ...GHOUL, action: "dead", current_health: 0 }),
+    );
+    const [troll, corpse] = sprites;
+    const chest = { x: corpse.x, y: corpse.y - 0.6 * height(corpse, 72) };
+    expect(hits(corpse, chest.x, chest.y)).toBe(false);
+    expect(hits(corpse, corpse.x, corpse.y)).toBe(false);
+    expect(picked(sprites, chest.x, chest.y)).toBe(troll);
+  });
+
+  it("should never hit a hidden monster, by its body or its feet, and pass the overlap to the one shown", () => {
+    const { roster, sprites } = onFloor(monster(TROLL), monster(GHOUL));
+    const [troll, ghoul] = sprites;
+    // the fog over the ghoul's ground only (FS-SRA9J §D.15)
+    roster.hideWhere((at) => at.x === GHOUL.position.x);
+    const chest = { x: ghoul.x, y: ghoul.y - 0.6 * height(ghoul, 72) };
+    expect(hits(ghoul, chest.x, chest.y)).toBe(false);
+    expect(hits(ghoul, ghoul.x, ghoul.y)).toBe(false);
+    expect(picked(sprites, chest.x, chest.y)).toBe(troll);
+
+    roster.hideWhere(() => true);
+    expect(hits(troll, troll.x, troll.y - 0.6 * height(troll, 96))).toBe(false);
+    expect(hits(troll, troll.x, troll.y)).toBe(false);
+  });
+});
+
+describe("bodyColumn", () => {
+  it("should stand a standing figure's column from its feet to its crown, at its drawn size", () => {
+    const ghoul = baked.sheet("creature_ghoul_base")!;
+    expect(bodyColumn(ghoul, 2)).toEqual({
+      halfWidth: BODY_HALF_WIDTH * ghoul.crown! * 2,
+      height: ghoul.crown! * 2,
+    });
+  });
+
+  it("should widen a quadruped's column to half its body length", () => {
+    const boar = baked.sheet("creature_boar_base")!;
+    expect(bodyColumn(boar, 1)).toEqual({ halfWidth: boar.length! / 2, height: boar.crown! });
+  });
+
+  it("should have no column for a sheet that records no crown: the footprint alone answers", () => {
+    expect(bodyColumn(undefined, 1)).toBeUndefined();
+    expect(bodyColumn({ length: 80 }, 1)).toBeUndefined();
+  });
+});
+
 describe("the damage flash (req 39)", () => {
   const FLASHED = 250;
 
@@ -1064,5 +1208,267 @@ describe("the hide rule (FS-9PN7X §C.2)", () => {
     roster.update(FRAME);
     roster.hideWhere(inRoom);
     expect(sprites[0].visible).toBe(false);
+  });
+});
+
+describe("the frame marker mode (FS-48CTQ §B.3: no overhead plates on a frame floor)", () => {
+  const elite = monster({
+    entity_id: "e",
+    archetype: "ghoul",
+    name: "Hollow Ghoul",
+    elite: true,
+  });
+  const boss = monster({ entity_id: "b", archetype: "demon", name: "Demon", boss: true });
+
+  it("should draw no name, level or bar over any monster, normal, elite or boss", () => {
+    const { stage, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([monster({ entity_id: "n" }), elite, boss]);
+    roster.update(FRAME);
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.every((t) => !t.visible)).toBe(true);
+    expect(bars.every((b) => !b.visible && b.fills.length === 0)).toBe(true);
+  });
+
+  it("should keep the elite's hostile wash, which is the sprite and not a plate", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([elite]);
+    roster.update(FRAME);
+    expect(sprites[0].tint).toBe(palette.eliteTint);
+  });
+
+  it("should keep the plate off when the hide rule shows the body", () => {
+    const { stage, sprites, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    roster.hideWhere(() => false);
+    expect(sprites[0].visible).toBe(true);
+    expect(texts[0].visible).toBe(false);
+  });
+
+  it("should draw plates as today on overhead, the default, and again when the mode goes back", () => {
+    const { stage, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    expect(texts[0].visible).toBe(true);
+    expect(bars[0].visible).toBe(true);
+
+    roster.setMarkerMode("frame");
+    roster.update(FRAME);
+    expect(texts[0].visible).toBe(false);
+
+    roster.setMarkerMode("overhead");
+    roster.update(FRAME);
+    expect(texts[0].visible).toBe(true);
+    expect(bars[0].fills.length).toBeGreaterThan(0);
+  });
+});
+
+describe("what the target frame may name (FS-48CTQ §C.5, §C.7)", () => {
+  it("should list the living monsters whose sprites are shown, as the latest broadcast has them", () => {
+    const { stage } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([
+      monster({ entity_id: "live", position: { x: 300, y: 300 } }),
+      monster({ entity_id: "corpse", action: "dead", current_health: 0 }),
+      monster({ entity_id: "hidden", position: { x: 50, y: 50 } }),
+    ]);
+    roster.update(FRAME);
+    roster.hideWhere((at) => at.x <= 100 && at.y <= 100);
+    expect(roster.targetable().map((m) => m.entity_id)).toEqual(["live"]);
+
+    roster.sync([monster({ entity_id: "live", current_health: 7, position: { x: 300, y: 300 } })]);
+    expect(roster.targetable()[0].current_health).toBe(7);
+  });
+
+  it("should say which living monster is under the pointer, and none once it leaves or falls", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ entity_id: "m7" })]);
+    expect(roster.hoveredId).toBeUndefined();
+    sprites[0].emit("pointerover");
+    expect(roster.hoveredId).toBe("m7");
+    sprites[0].emit("pointerout");
+    expect(roster.hoveredId).toBeUndefined();
+
+    sprites[0].emit("pointerover");
+    roster.sync([monster({ entity_id: "m7", action: "dead", current_health: 0 })]);
+    expect(roster.hoveredId).toBeUndefined();
+  });
+});
+
+// On a dungeon floor a monster leaves the broadcast when the party walks off and comes back when
+// it returns (FS-KE075 §H.48): it goes with nothing replayed, and comes back as it now is
+describe("a monster that leaves the broadcast and comes back (FS-KE075 §H.48)", () => {
+  const live = (sprites: ReturnType<typeof fakeStage>["sprites"]) => sprites.filter((s) => !s.destroyed);
+  const deaths = (sprite: ReturnType<typeof fakeStage>["sprites"][number]) =>
+    sprite.plays.filter((p) => p.key.includes("/death/"));
+
+  it("should come back alive and hurt with no damage flash and no death clip", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([]);
+    expect(roster.size).toBe(0);
+    roster.sync([monster({ current_health: 40 })]);
+    roster.update(FRAME);
+
+    expect(roster.size).toBe(1);
+    const [back] = live(sprites);
+    expect(back).not.toBe(sprites[0]);
+    expect(back.tint).toBeNull();
+    expect(deaths(back)).toEqual([]);
+  });
+
+  it.each([
+    ["mid-fall", 3],
+    ["long dead", 30],
+  ])("should lay a corpse that left %s on its last death frame, never playing the fall again", (_, frames) => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    for (let i = 0; i < frames; i++) {
+      roster.sync([monster({ action: "dead", current_health: 0 })]);
+      roster.update(FRAME);
+    }
+    roster.sync([]);
+    for (let i = 0; i < 30; i++) {
+      roster.sync([monster({ action: "dead", current_health: 0 })]);
+      roster.update(FRAME);
+    }
+
+    const [back] = live(sprites);
+    // the fixture's death clip has 7 frames
+    expect(deaths(back)).toEqual([{ key: "creature_troll_base/death/4", startFrame: 6 }]);
+  });
+
+  it("should not spawn twice when it leaves and comes back again and again", () => {
+    const { stage, sprites, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    for (let i = 0; i < 5; i++) {
+      roster.sync([monster()]);
+      roster.update(FRAME);
+      roster.sync([]);
+    }
+    roster.sync([monster()]);
+    expect(roster.size).toBe(1);
+    expect(live(sprites)).toHaveLength(1);
+    expect(texts.filter((t) => !t.destroyed)).toHaveLength(1);
+    expect(bars.filter((b) => !b.destroyed)).toHaveLength(1);
+  });
+
+  it("should let go of the hover and the target frame's pick when the hovered one leaves", () => {
+    const { stage, sprites } = fakeStage();
+    const targeting = { strike: vi.fn(), hover: vi.fn() };
+    const roster = new MonsterRoster(stage, fixtureArt(), targeting);
+    roster.sync([monster({ entity_id: "m7" })]);
+    sprites[0].emit("pointerover");
+    roster.sync([]);
+    expect(targeting.hover).toHaveBeenLastCalledWith(null);
+    expect(roster.hoveredId).toBeUndefined();
+    expect(roster.targetable()).toEqual([]);
+
+    // back again under a still pointer: not hovered until the pointer comes onto it anew
+    roster.sync([monster({ entity_id: "m7" })]);
+    expect(roster.hoveredId).toBeUndefined();
+  });
+});
+
+describe("a hidden monster (FS-SRA9J §D.15, §D.17; FS-9PN7X §C.2)", () => {
+  const hideAll = () => true;
+  function hiddenOne(fields: Partial<MonsterState> = {}) {
+    const { stage, sprites, texts, bars } = fakeStage();
+    const targeting = { strike: vi.fn(), hover: vi.fn() };
+    const roster = new MonsterRoster(stage, fixtureArt(), targeting);
+    roster.sync([monster(fields)]);
+    roster.update(FRAME);
+    return { roster, sprites, texts, bars, targeting };
+  }
+
+  it("should hide an elite's body, prefix, plate and bar, the elite wash going with the body", () => {
+    const { roster, sprites, texts, bars } = hiddenOne({ elite: true, name: "Brutal Troll" });
+    roster.hideWhere(hideAll);
+    expect(sprites[0].visible).toBe(false);
+    expect(texts.map((t) => t.visible)).toEqual([false, false]);
+    expect(bars[0].visible).toBe(false);
+  });
+
+  it("should let go of the hover, the strike-mark with it, when the monster under the still pointer is hidden", () => {
+    const { roster, sprites, targeting } = hiddenOne({ entity_id: "m7" });
+    sprites[0].emit("pointerover");
+    targeting.hover.mockClear();
+    roster.hideWhere(hideAll);
+    expect(targeting.hover).toHaveBeenCalledTimes(1);
+    expect(targeting.hover).toHaveBeenCalledWith(null);
+    expect(roster.hoveredId).toBeUndefined();
+    // hidden again next frame: nothing more to let go of
+    roster.hideWhere(hideAll);
+    expect(targeting.hover).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep the hover on a monster the rule leaves shown", () => {
+    const { roster, sprites, targeting } = hiddenOne({ entity_id: "m7" });
+    sprites[0].emit("pointerover");
+    roster.hideWhere(() => false);
+    expect(roster.hoveredId).toBe("m7");
+    expect(targeting.hover).toHaveBeenCalledTimes(1);
+  });
+
+  it("should neither strike nor report a hover for a hidden monster", () => {
+    const { roster, sprites, targeting } = hiddenOne();
+    roster.hideWhere(hideAll);
+    sprites[0].emit("pointerover");
+    sprites[0].emit("pointerdown");
+    expect(targeting.strike).not.toHaveBeenCalled();
+    expect(targeting.hover).not.toHaveBeenCalled();
+    expect(roster.hoveredId).toBeUndefined();
+    expect(roster.targetable()).toEqual([]);
+  });
+
+  it("should not flash a hit taken while hidden, so it does not flash when it reappears", () => {
+    const { roster, sprites } = hiddenOne({ current_health: 120 });
+    roster.hideWhere(hideAll);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.update(FRAME);
+    roster.hideWhere(() => false);
+    expect(sprites[0].tint).toBeNull();
+  });
+
+  it("should end a flash the moment its monster is hidden", () => {
+    const { roster, sprites } = hiddenOne({ current_health: 120 });
+    roster.sync([monster({ current_health: 90 })]);
+    expect(sprites[0].tint).toBe(palette.damage);
+    roster.hideWhere(hideAll);
+    roster.hideWhere(() => false);
+    expect(sprites[0].tint).toBeNull();
+  });
+
+  it("should lay a monster that dies while hidden where it fell, so it reappears a corpse, never mid-fall", () => {
+    const { roster, sprites } = hiddenOne({ action: "attack" });
+    roster.hideWhere(hideAll);
+    roster.sync([monster({ action: "dead", current_health: 0 })]);
+    roster.update(FRAME);
+    roster.hideWhere(() => false);
+    for (let i = 0; i < 5; i++) roster.update(FRAME);
+    // the fixture's death clip has 7 frames: only its last is ever played
+    const deaths = sprites[0].plays.filter((p) => p.key.includes("/death/"));
+    expect(deaths).toEqual([{ key: "creature_troll_base/death/4", startFrame: 6 }]);
+  });
+
+  it("should still play the fall of a monster that dies in sight", () => {
+    const { roster, sprites } = hiddenOne({ action: "attack" });
+    roster.hideWhere(() => false);
+    roster.sync([monster({ action: "dead", current_health: 0 })]);
+    roster.update(FRAME);
+    const deaths = sprites[0].plays.filter((p) => p.key.includes("/death/"));
+    expect(deaths).toEqual([{ key: "creature_troll_base/death/4", startFrame: 0 }]);
   });
 });

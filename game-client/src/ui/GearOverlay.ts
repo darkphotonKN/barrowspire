@@ -19,7 +19,13 @@
  * It is told the world it is drawn in, for the item's standing (FS-18Z5F §H): in a run an unsafe
  * find wears an oxblood inner edge and its tip a warning; in the hub an item still in a delve is
  * dimmed, its tip says so, and an equip or unequip of it is asked about (`mayEquip`,
- * `mayUnequip`) before anything is drawn, as a move is.
+ * `mayUnequip`) before anything is drawn, as a move is. An item on the Bazaar, listed or its sale
+ * settling, is dimmed and asked about too; its tip says so in red and its well carries the
+ * listed mark, a red corner triangle over its icon (FS-GTNP8).
+ *
+ * Under the bag sits the purse line (FS-7TGZ3): the coins icon and the account's total gold, its
+ * split in a tip on hover. It is a {@link PurseShelf}: the world's `PurseReader` hands it what the
+ * wallet says, and it shows "—" until then. It takes no press and no `E`.
  *
  * Game palette world panels (design-guideline "UI Chrome"): dark ink and carved stone, a 1px
  * brass border, vellum text; the rarity edge is the only rarity colour. Icons are the baked item
@@ -38,11 +44,12 @@ import {
 } from "@/types/gameState";
 import { itemView, type ItemView } from "@/items/itemView";
 import { artSprite } from "@/render/art/phaser";
+import { iconSheet } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { nothingWorn, type HudPanel } from "./EquipmentHud";
 import { satchelIcon } from "./ContainerView";
-import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
+import { buildItemTip, rarityEdge, tipGround, type ItemTip } from "./itemTip";
 import {
   characterSheet,
   type CharacterSheet,
@@ -62,6 +69,7 @@ import {
   gearPanelLayout,
   inRect,
   itemTipRow,
+  listedMark,
   overlayLayout,
   overPanel,
   rowWindow,
@@ -74,6 +82,8 @@ import {
   type RowWindow,
   type StashPanelLayout,
 } from "./gearOverlayLayout";
+import { viewport } from "@/render/viewport";
+import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
 
 /** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
 export const GEAR_OVERLAY_DEPTH = 1100;
@@ -151,7 +161,13 @@ function compareSlots(item: ItemState): EquipmentSlot[] {
   return getItemType(item) === "consumable" ? [] : getValidSlotsForItem(item);
 }
 
-export class GearOverlay implements HudPanel {
+/** The purse tip's padding and text size, as the item tip's body (FS-7TGZ3 R6). */
+const PURSE_TIP_PAD = 10;
+const PURSE_TIP_SIZE = 12;
+/** The gap between the coins icon and the amount. */
+const PURSE_ICON_GAP = 6;
+
+export class GearOverlay implements HudPanel, PurseShelf {
   onEquip?: (item: ItemState, slot: EquipmentSlot) => void;
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
   mayEquip?: (item: ItemState, slot: EquipmentSlot) => boolean;
@@ -207,6 +223,14 @@ export class GearOverlay implements HudPanel {
   private shift?: Phaser.Input.Keyboard.Key;
   /** Whether Shift was held at the last frame: the worn tips show beside a bag item's tip (R1). */
   private comparing = false;
+  /** What the purse line shows: the dash until the wallet has answered (FS-7TGZ3 R10). */
+  private purse: PurseView = { amount: PURSE_UNKNOWN };
+  /** The purse's tip, while the pointer is over the line (FS-7TGZ3 R5–6). */
+  private purseTip?: {
+    container: Phaser.GameObjects.Container;
+    width: number;
+    height: number;
+  };
 
   /** `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37). */
   constructor(
@@ -331,6 +355,14 @@ export class GearOverlay implements HudPanel {
     if (this.visible) this.redraw();
   }
 
+  /** What the wallet said, kept across closing; drawn at once while open (FS-7TGZ3 R8–13). */
+  setPurse(view: PurseView): void {
+    if (view.amount === this.purse.amount && view.tip === this.purse.tip)
+      return;
+    this.purse = { ...view };
+    if (this.visible) this.redraw();
+  }
+
   /** The player's own state, every state; drawn while open (R30). */
   updateCharacter(player: CharacterSource): void {
     this.character = player;
@@ -340,8 +372,7 @@ export class GearOverlay implements HudPanel {
   // ── Building ─────────────────────────────────────────────────────────────
 
   private build(): void {
-    const cam = this.scene.cameras.main;
-    this.layout = overlayLayout(cam.width, cam.height);
+    this.layout = overlayLayout(viewport.width, viewport.height);
     this.frame = this.scene.add.container(0, 0, [
       this.panel(this.layout.left),
       this.panel(this.layout.right),
@@ -352,7 +383,10 @@ export class GearOverlay implements HudPanel {
     this.redraw();
   }
 
-  /** The canvas changed size while open: everything is laid out again (R2). */
+  /**
+   * The canvas changed size while open: everything is laid out again (R2). Phaser's resize comes
+   * on every change of the logical view too, so this is the overlay's re-layout (FS-ZAJMH R13).
+   */
   private relayout(): void {
     if (!this.visible) return;
     this.teardown();
@@ -365,6 +399,7 @@ export class GearOverlay implements HudPanel {
     this.content?.destroy();
     this.hoverRing?.destroy();
     this.hideTip();
+    this.hidePurseTip();
     this.gear = gearPanelLayout(
       this.layout.right,
       this.inventory.length,
@@ -378,7 +413,7 @@ export class GearOverlay implements HudPanel {
       const item = this.equipped[slot];
       const rect = g.slots[slot];
       children.push(this.well(rect, item));
-      if (item) children.push(this.icon(rect, item));
+      if (item) children.push(...this.held(rect, item));
       else children.push(this.slotLabel(rect, label));
     }
 
@@ -422,6 +457,7 @@ export class GearOverlay implements HudPanel {
     );
     hint.setOrigin(0.5, 0);
     children.push(hint);
+    children.push(...this.purseLine(g.purse));
     if (this.stash) children.push(...this.stashPanel(this.stash));
 
     this.content = this.scene.add.container(0, 0, children);
@@ -436,6 +472,7 @@ export class GearOverlay implements HudPanel {
 
   private teardown(): void {
     this.hideTip();
+    this.hidePurseTip();
     this.hovered = undefined;
     this.stats?.destroy();
     this.stats = undefined;
@@ -546,6 +583,25 @@ export class GearOverlay implements HudPanel {
   }
 
   /**
+   * What a held item draws over its well: its icon and, for an item on the Bazaar, the listed
+   * mark over it, so the faint icon never hides the mark (FS-GTNP8 R5).
+   */
+  private held(r: Rect, item: ItemState): Phaser.GameObjects.GameObject[] {
+    const out: Phaser.GameObjects.GameObject[] = [this.icon(r, item)];
+    const kind = this.view(item).standing?.kind;
+    if (kind === "listed" || kind === "settling") out.push(this.listedMark(r));
+    return out;
+  }
+
+  /** The listed mark: a red triangle in the well's top-right corner (FS-GTNP8 R5–R7). */
+  private listedMark(r: Rect): Phaser.GameObjects.Graphics {
+    const g = this.scene.add.graphics();
+    g.fillStyle(palette.listed, 1);
+    g.fillTriangle(...listedMark(r));
+    return g;
+  }
+
+  /**
    * The item's baked icon, centred in its well, faint while above the character's level or not
    * free to move (FS-VPD8Y R40).
    */
@@ -626,6 +682,69 @@ export class GearOverlay implements HudPanel {
     return [band, text];
   }
 
+  // ── The purse line ───────────────────────────────────────────────────────
+
+  /** The coins icon, then the total in the bag count's tone, left-aligned with the grid (FS-7TGZ3 R1–3). */
+  private purseLine(r: Rect): Phaser.GameObjects.GameObject[] {
+    const coin = artSprite(
+      this.scene,
+      this.art,
+      r.x + r.h / 2,
+      r.y + r.h / 2,
+      iconSheet("coins"),
+    );
+    coin.setOrigin(0.5);
+    const size = Math.max(coin.frame?.width ?? 0, coin.frame?.height ?? 0) || 1;
+    coin.setScale(r.h / size);
+    const amount = this.label(
+      r.x + r.h + PURSE_ICON_GAP,
+      r.y + r.h / 2,
+      this.purse.amount,
+      palette.hudText,
+      12,
+      1,
+    );
+    amount.setOrigin(0, 0.5);
+    return [coin, amount];
+  }
+
+  /** The split beside the pointer while it is over the line and the total is known (R5–7). */
+  private updatePurseTip(): void {
+    const r = this.gear?.purse;
+    const over =
+      r !== undefined &&
+      this.purse.tip !== undefined &&
+      inRect(r, this.pointer.x, this.pointer.y);
+    if (!over) {
+      this.hidePurseTip();
+      return;
+    }
+    if (!this.purseTip) this.purseTip = this.buildPurseTip(this.purse.tip!);
+    const [at] = itemTipRow([this.purseTip], this.pointer, viewport);
+    this.purseTip.container.setPosition(at.x, at.y);
+  }
+
+  /** One line on the item tip's own ground (design-guideline "UI Chrome"). */
+  private buildPurseTip(words: string) {
+    const text = this.scene.add.text(PURSE_TIP_PAD, PURSE_TIP_PAD, words, {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: `${PURSE_TIP_SIZE}px`,
+      color: toCss(palette.hudText),
+      letterSpacing: 1,
+    });
+    const width = Math.round(text.width + PURSE_TIP_PAD * 2);
+    const height = Math.round(text.height + PURSE_TIP_PAD * 2);
+    const bg = tipGround(this.scene, width, height);
+    const container = this.scene.add.container(0, 0, [bg, text]);
+    container.setDepth(TIP_DEPTH).setScrollFactor(0);
+    return { container, width, height };
+  }
+
+  private hidePurseTip(): void {
+    this.purseTip?.container.destroy();
+    this.purseTip = undefined;
+  }
+
   // ── The stash panel ──────────────────────────────────────────────────────
 
   /**
@@ -670,7 +789,7 @@ export class GearOverlay implements HudPanel {
     for (const cell of g.cells) {
       const item = items[cell.index];
       out.push(this.well(cell.rect, item, cell.over));
-      if (item) out.push(this.icon(cell.rect, item));
+      if (item) out.push(...this.held(cell.rect, item));
     }
     if (g.visibleRows < g.rows)
       out.push(
@@ -798,8 +917,9 @@ export class GearOverlay implements HudPanel {
 
   // ── Input ────────────────────────────────────────────────────────────────
 
+  /** The pointer in logical units: Phaser's `pointer.x/y` are backing px (FS-ZAJMH R15). */
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    this.pointer = { x: pointer.x, y: pointer.y };
+    this.pointer = viewport.toLogical(pointer);
     this.updateHover();
   }
 
@@ -808,7 +928,7 @@ export class GearOverlay implements HudPanel {
    * (FS-VPD8Y R38); a left-press does nothing (R18).
    */
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    this.pointer = { x: pointer.x, y: pointer.y };
+    this.pointer = viewport.toLogical(pointer);
     this.updateHover();
     if (pointer.button === 2) this.act();
   }
@@ -824,10 +944,9 @@ export class GearOverlay implements HudPanel {
     dy: number,
   ): void {
     const step = Math.sign(dy);
+    const at = viewport.toLogical(pointer);
     const scrolls = (g: ItemGrid | undefined): g is ItemGrid =>
-      g !== undefined &&
-      g.visibleRows < g.rows &&
-      inRect(g.grid, pointer.x, pointer.y);
+      g !== undefined && g.visibleRows < g.rows && inRect(g.grid, at.x, at.y);
     /** A grid's first row a step on, kept so its last row stays in view. */
     const stepped = (g: ItemGrid, from: number) =>
       Math.min(Math.max(0, from + step), g.rows - g.visibleRows);
@@ -849,7 +968,7 @@ export class GearOverlay implements HudPanel {
     if (
       stats &&
       stats.win.count < stats.win.rows &&
-      inRect(stats.area, pointer.x, pointer.y)
+      inRect(stats.area, at.x, at.y)
     ) {
       const { first, count, rows } = stats.win;
       // the last row in view: a step further down stays put
@@ -889,6 +1008,7 @@ export class GearOverlay implements HudPanel {
 
   private updateHover(): void {
     if (!this.visible) return;
+    this.updatePurseTip();
     const now = this.hitAt(this.pointer.x, this.pointer.y);
     if (hoverKey(now) === hoverKey(this.hovered)) {
       this.moveTip();
@@ -1025,8 +1145,8 @@ export class GearOverlay implements HudPanel {
   /** The row beside the cursor, flipped or pushed in where it would leave the screen (FS-NV54P §D). */
   private moveTip(): void {
     if (!this.tips.length) return;
-    const cam = this.scene.cameras.main;
-    const at = itemTipRow(this.tips, this.pointer, cam);
+    // the pointer is in logical units, so the screen it stays on is the logical view (FS-ZAJMH R15)
+    const at = itemTipRow(this.tips, this.pointer, viewport);
     this.tips.forEach((tip, i) => tip.container.setPosition(at[i].x, at[i].y));
   }
 
@@ -1051,9 +1171,8 @@ export class GearOverlay implements HudPanel {
     bg.fillRoundedRect(0, 0, w, h, WELL_RADIUS);
     bg.lineStyle(1, palette.damageBright, 0.5);
     bg.strokeRoundedRect(0, 0, w, h, WELL_RADIUS);
-    const cam = this.scene.cameras.main;
-    const x = Math.min(this.pointer.x + 14, cam.width - w - 4);
-    const y = Math.min(this.pointer.y - 10, cam.height - h - 4);
+    const x = Math.min(this.pointer.x + 14, viewport.width - w - 4);
+    const y = Math.min(this.pointer.y - 10, viewport.height - h - 4);
     const flash = this.scene.add.container(x, y, [bg, text]);
     flash.setDepth(FLASH_DEPTH).setScrollFactor(0);
     this.scene.time.delayedCall(1500, () => flash.destroy());

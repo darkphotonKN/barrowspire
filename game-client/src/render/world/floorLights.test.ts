@@ -4,6 +4,7 @@ import {
   FIXED_LIGHT_CAP,
   budgetLights,
   interactablePool,
+  nearLights,
   type FixedLight,
   type FixedLightKind,
 } from "./floorLights";
@@ -109,5 +110,58 @@ describe("budgetLights (FS-8RBQY §C.6)", () => {
     const kept = budgetLights([...row("slit", 3, 0), ...row("stairs", 1, 200)], 2);
     expect(kept).toHaveLength(2);
     expect(count(kept, "stairs")).toBe(1);
+  });
+});
+
+describe("nearLights: a dungeon floor's fixed lights near the camera (FS-KE075 §H.45, FS-8RBQY §C.6)", () => {
+  const light = (kind: FixedLightKind, chunk: number, i: number) => ({
+    kind,
+    at: { x: chunk * 1000 + i * 7, y: i * 13 },
+    light: `${kind}${chunk}.${i}`,
+    chunk,
+  });
+  const floor = [
+    ...[0, 1, 2, 3].flatMap((chunk) => Array.from({ length: 10 }, (_, i) => light("sconce", chunk, i))),
+    light("stairs", 3, 0),
+    light("interactable", 1, 0),
+  ];
+  const near = (chunks: number[]) => (chunk: number) => chunks.includes(chunk);
+
+  it("should stamp only the lights in chunks near the camera", () => {
+    const kept = nearLights(floor, near([0]));
+    expect(kept.map((l) => l.light)).toEqual(floor.filter((l) => l.chunk === 0).map((l) => l.light));
+  });
+
+  it("should never stamp more than the cap at once, dropping by the floor's order", () => {
+    const kept = nearLights(floor, near([1, 2, 3]));
+    expect(kept).toHaveLength(FIXED_LIGHT_CAP);
+    expect(kept.some((l) => l.kind === "stairs")).toBe(true);
+    expect(kept.some((l) => l.kind === "interactable")).toBe(true);
+    // the whole floor's lights number more than the cap; panning never lights more than it
+    expect(floor.length).toBeGreaterThan(FIXED_LIGHT_CAP);
+  });
+});
+
+describe("nearLights under the fog (FS-SRA9J §C.12)", () => {
+  const light = (chunk: number, i: number, region: number) => ({
+    kind: "sconce" as const,
+    at: { x: chunk * 1000 + i * 7, y: i * 13 },
+    light: `sconce${chunk}.${i}`,
+    chunk,
+    region,
+  });
+  // thirty lights near the camera: twenty in region 1, ten in region 2
+  const floor = [...Array.from({ length: 20 }, (_, i) => light(0, i, 1)), ...Array.from({ length: 10 }, (_, i) => light(0, 20 + i, 2))];
+  const everywhere = () => true;
+
+  it("should leave off every light whose region is not visible", () => {
+    const kept = nearLights(floor, everywhere, FIXED_LIGHT_CAP, (l) => l.region === 2);
+    expect(kept.map((l) => l.light)).toEqual(floor.filter((l) => l.region === 2).map((l) => l.light));
+  });
+
+  it("should spend the cap on the lit regions' lights only, so an unlit one never takes a lit one's place", () => {
+    const kept = nearLights(floor, everywhere, 10, (l) => l.region === 2);
+    expect(kept).toHaveLength(10);
+    expect(kept.every((l) => l.region === 2)).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/worker"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/releasehold"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/settlement"
+	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/withdrawlisting"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.temporal.io/sdk/client"
@@ -37,7 +38,8 @@ func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.Item
 	listingRepo := listingrepo.NewListingRepository(db)
 	itemReserver := itemreserver.NewItemReserver(itemsClient)
 	reserveItemUC := usecase.NewReserveItemUC(itemReserver)
-	createAccUC := usecase.NewCreateListingUC(listingRepo)
+	// a listing is created only over a reservation items confirms (ADR-0050)
+	createAccUC := usecase.NewCreateListingUC(listingRepo, itemReserver)
 	// release hold saga
 	holdReleaseStarter := releasehold.NewStarter(temporalClient)
 	placeBidUC := usecase.NewPlaceBidUC(listingRepo, walletClient, holdReleaseStarter)
@@ -52,16 +54,24 @@ func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.Item
 	acceptBidUC := usecase.NewAcceptBidUsecase(listingRepo, settlementStarter)
 	buyoutUC := usecase.NewBuyoutUC(listingRepo, walletClient, settlementStarter, holdReleaseStarter)
 
-	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, listMyBidsQuery, browseListingsQuery, getListingQuery, acceptBidUC, buyoutUC)
+	// a seller's withdrawal: the item and every hold go back by workflow (ADR-0051)
+	withdrawalStarter := withdrawlisting.NewStarter(temporalClient)
+	// the repository marks each started withdrawal, so the backstop skips it
+	withdrawListingUC := usecase.NewWithdrawListingUC(listingRepo, withdrawalStarter, listingRepo)
+
+	listingHandler := listinggrpc.NewHandler(reserveItemUC, createAccUC, placeBidUC, withdrawBidUC, listMyListingsQuery, listMyBidsQuery, browseListingsQuery, getListingQuery, acceptBidUC, buyoutUC, withdrawListingUC)
 
 	hasLiveListingQuery := listingquery.NewHasLiveListingQuery(db)
 	reconcileReservationsUC := usecase.NewReconcileReservationsUC(hasLiveListingQuery, itemReserver)
+	// the confirmed-without-listing backstop (FS-04ZB6 Req 12): runs on the same
+	// tick, after the stale pass
+	reconcileConfirmedUC := usecase.NewReconcileConfirmedReservationsUC(listingquery.NewListingStatusQuery(db), itemReserver)
 
 	// NOTE: the listing domain (model/repository/service/handler + proto) is
 	// intentionally left empty for now. This service only boots the server and
 	// its amqp consumer. Wire the domain + pb.RegisterMarketplaceServiceServer
 	// here later.
-	createListingUC := usecase.NewCreateListingUC(listingRepo)
+	createListingUC := usecase.NewCreateListingUC(listingRepo, itemReserver)
 	consumer := listing.NewConsumer(ch, createListingUC)
 
 	hasBidQuery := listingquery.NewHasBidQuery(db)
@@ -76,7 +86,16 @@ func NewServices(ctx context.Context, db *sqlx.DB, itemsClient itemreserver.Item
 	startExpiredSettlementsUC := usecase.NewStartExpiredSettlementsUC(listingquery.NewExpiredListingsQuery(db), settlementStarter)
 	go worker.NewExpiryPollerWorker(startExpiredSettlementsUC).Run(ctx)
 
-	reconcileWorker := worker.NewReconcileWorker(reconcileReservationsUC)
+	// the withdraw backstop (FS-V7A5S Req 8): starts the workflow of every
+	// withdrawn listing not yet marked started, for a start that failed or never
+	// ran, and marks it
+	restartWithdrawalsUC := usecase.NewRestartListingWithdrawalsUC(listingquery.NewCancelledListingsQuery(db), withdrawalStarter, listingRepo)
+
+	reconcileWorker := worker.NewReconcileWorker(
+		worker.ReconcilePass{Name: "stale reservations", Run: reconcileReservationsUC.Handle},
+		worker.ReconcilePass{Name: "confirmed reservations backstop", Run: reconcileConfirmedUC.Handle},
+		worker.ReconcilePass{Name: "withdraw backstop", Run: restartWithdrawalsUC.Handle},
+	)
 	// Run loops on a ticker and never returns, so it has to be its own
 	// goroutine, called inline it would block NewServices forever.
 	go reconcileWorker.Run(ctx)

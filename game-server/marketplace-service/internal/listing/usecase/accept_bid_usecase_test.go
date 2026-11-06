@@ -32,20 +32,37 @@ func (f *fakeStarter) StartSettlement(ctx context.Context, listingID uuid.UUID, 
 // FS-NXP1W §Req 3: the seller accepts the current WINNING bid, and settlement
 // starts under the ACCEPT_BID trigger. Only the listing reaches the starter —
 // 0a picks the winner, the same way for every trigger.
+//
+// FS-F692V §Req 2: the floor is a floor, so a WINNING bid equal to or above the
+// one the seller was shown starts settlement the same way. listingWithLeader's
+// WINNING bid is 150.
 func TestAcceptBidUsecase_SellerWithWinningBid_StartsSettlementOnce(t *testing.T) {
-	l, _ := listingWithLeader(t)
-	starter := &fakeStarter{}
+	tests := []struct {
+		name  string
+		floor int
+	}{
+		{"winning above the floor", 100},
+		{"winning equal to the floor", 150},
+	}
 
-	err := NewAcceptBidUsecase(&fakeRepo{listing: l}, starter).Handle(context.Background(), AcceptBidCommand{
-		ListingID: l.Snapshot().ID,
-		MemberID:  l.Snapshot().SellerID,
-		Now:       time.Now(),
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l, _ := listingWithLeader(t)
+			starter := &fakeStarter{}
 
-	require.NoError(t, err)
-	require.Equal(t, 1, starter.calls)
-	assert.Equal(t, l.Snapshot().ID, starter.gotListing)
-	assert.Equal(t, TriggerAcceptBid, starter.gotTrigger)
+			err := NewAcceptBidUsecase(&fakeRepo{listing: l}, starter).Handle(context.Background(), AcceptBidCommand{
+				ListingID: l.Snapshot().ID,
+				MemberID:  l.Snapshot().SellerID,
+				MinAmount: tt.floor,
+				Now:       time.Now(),
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, 1, starter.calls)
+			assert.Equal(t, l.Snapshot().ID, starter.gotListing)
+			assert.Equal(t, TriggerAcceptBid, starter.gotTrigger)
+		})
+	}
 }
 
 // Every refusal is the domain's sentinel, intact through the use case so the
@@ -62,7 +79,7 @@ func TestAcceptBidUsecase_Refused_NeverStartsSettlement(t *testing.T) {
 			setup: func(t *testing.T) (*listing.Listing, func(*listing.Listing) AcceptBidCommand) {
 				l, _ := listingWithLeader(t)
 				return l, func(l *listing.Listing) AcceptBidCommand {
-					return AcceptBidCommand{ListingID: l.Snapshot().ID, MemberID: uuid.New(), Now: time.Now()}
+					return AcceptBidCommand{ListingID: l.Snapshot().ID, MemberID: uuid.New(), MinAmount: 1, Now: time.Now()}
 				}
 			},
 			wantErr: listing.ErrNotSeller,
@@ -90,6 +107,33 @@ func TestAcceptBidUsecase_Refused_NeverStartsSettlement(t *testing.T) {
 				return activeListing(t, 100), sellerAt(time.Now())
 			},
 			wantErr: listing.ErrNoBidToAccept,
+		},
+		{
+			// FS-F692V §Req 2: the leader withdrew after the seller's page
+			// loaded and a lower runner-up now leads
+			name: "leading bid below the floor",
+			setup: func(t *testing.T) (*listing.Listing, func(*listing.Listing) AcceptBidCommand) {
+				l, _ := listingWithLeader(t)
+				return l, func(l *listing.Listing) AcceptBidCommand {
+					cmd := sellerAt(time.Now())(l)
+					cmd.MinAmount = 1000
+					return cmd
+				}
+			},
+			wantErr: listing.ErrLeadingBidLowered,
+		},
+		{
+			// a caller that skipped the gRPC guard still cannot skip the floor
+			name: "zero floor",
+			setup: func(t *testing.T) (*listing.Listing, func(*listing.Listing) AcceptBidCommand) {
+				l, _ := listingWithLeader(t)
+				return l, func(l *listing.Listing) AcceptBidCommand {
+					cmd := sellerAt(time.Now())(l)
+					cmd.MinAmount = 0
+					return cmd
+				}
+			},
+			wantErr: listing.ErrInvalidAmount,
 		},
 		{
 			name: "listing not found",
@@ -128,6 +172,6 @@ func TestAcceptBidUsecase_StarterFailure_IsReturned(t *testing.T) {
 // sellerAt builds the command the listing's own seller would send at now.
 func sellerAt(now time.Time) func(*listing.Listing) AcceptBidCommand {
 	return func(l *listing.Listing) AcceptBidCommand {
-		return AcceptBidCommand{ListingID: l.Snapshot().ID, MemberID: l.Snapshot().SellerID, Now: now}
+		return AcceptBidCommand{ListingID: l.Snapshot().ID, MemberID: l.Snapshot().SellerID, MinAmount: 1, Now: now}
 	}
 }

@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from "zustand";
 import { ClassKey } from "@/data/classLore";
 import { WorldType, type FieldId } from "@/assets/types/client";
+import type { FloorMap } from "@/types/gameState";
 import { apiClient } from "@/utils/api";
 import { ApiError } from "@/utils/apiError";
 import {
@@ -38,6 +39,13 @@ interface GameState {
   /** Which field, while the world is a field; null otherwise (FS-X2F2H §Requirements 55). */
   fieldId: FieldId | null;
 
+  /**
+   * The run floor's map the server last sent (FS-KE075 §H.40), kept here rather than in the run
+   * scene so a map that arrives before the scene's `create` is not lost. Null before one comes,
+   * and once the player is in another world.
+   */
+  floorMap: FloorMap | null;
+
   /** The member's live characters, oldest first, from the server. */
   characters: Character[];
   /** Always one of `characters`' ids, or null when there are none. */
@@ -48,6 +56,11 @@ interface GameState {
 
   /** Set together: the world's id is meaningless without knowing its kind (and a field's id). */
   setWorld: (id: string, worldType: WorldType, fieldId?: FieldId) => void;
+  /**
+   * Keeps a floor map: the latest, unless it is for another session than the world entered, or for
+   * a lower floor of the run than the one held.
+   */
+  receiveFloorMap: (map: FloorMap) => void;
   /** Reads the roster from the server, importing any local-only characters first (req 40). */
   loadCharacters: () => Promise<void>;
   selectCharacter: (id: string) => void;
@@ -94,6 +107,7 @@ export function createGameStore({
       sessionId: null,
       worldType: null,
       fieldId: null,
+      floorMap: null,
       characters: [],
       activeCharacterId: null,
       rosterStatus: "idle",
@@ -104,7 +118,19 @@ export function createGameStore({
           sessionId: id,
           worldType,
           fieldId: worldType === "field" ? (fieldId ?? null) : null,
+          // a map is its run's alone; a reconnect to the same run keeps it
+          floorMap: id === get().sessionId ? get().floorMap : null,
         }),
+
+      receiveFloorMap: (map) => {
+        // a map is its run's alone: one for another session than the world entered is not ours
+        const session = get().sessionId;
+        if (session !== null && map.session_id !== session) return;
+        const held = get().floorMap;
+        // a late map from below the floor the party climbed to (§H.40)
+        if (held && held.session_id === map.session_id && map.floor < held.floor) return;
+        set({ floorMap: map });
+      },
 
       loadCharacters: () => {
         loading ??= load().finally(() => {

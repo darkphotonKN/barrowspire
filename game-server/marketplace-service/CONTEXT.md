@@ -18,6 +18,29 @@ this member's `SPECIFICATION.md`.
 - **Parked settlement** — a settlement that exhausted a step's retry cap, escalated, and is waiting on a `RetryStep` signal or a re-park timer to retry that same step. The workflow is the dead-letter queue; it never fails past the pivot (ADR-0018). Say "parked settlement", not "parked": elsewhere (wallet/ledger) "parked gold" means a held balance.
 - **Escalate** — record a settlement exception and publish `settlement.failed` before parking.
 - **Settlement exception** — a `settlement_exceptions` row: the durable, human-facing record that a settlement parked or rolled back. Carries the alert; the saga state stays in the workflow.
-- **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released, listing withdrawn). Holds released, bids LOST, item unfrozen to its seller. Never re-settled.
+- **SETTLEMENT_FAILED** — terminal listing status after a pre-pivot rollback for a failure that can never succeed (item moved, hold released). Holds released, bids LOST, item unfrozen to its seller. Never re-settled. A listing withdrawn before step 0a also takes the pre-pivot rollback but stays CANCELLED, not SETTLEMENT_FAILED: the rollback's status write changes only PENDING_SETTLEMENT (FS-V7A5S Req 10).
 - **Semantic impossibility** — a step failure no retry can fix. The only failure kind that triggers a rollback, and only before the pivot. Contrast *transient* (retry, cap, park) and *already applied* (treated as success) (ADR-0018).
 - **PENDING_SETTLEMENT** — listing status from step 0a until SOLD / SETTLEMENT_FAILED; a live listing for every reconciler. (items-service has its own `PENDING_SETTLEMENT` item status, set at 0b.)
+
+### Accepting a bid (FS-F692V)
+
+- **Accept floor** — the leading bid amount the seller saw when they accepted (`minAmount`). AcceptBid is refused (`LEADING_BID_LOWERED`) when the WINNING bid is now below it; at or above it, settlement starts as usual, so a higher bid landing first still wins (FS-49Z37). A floor, not a bid identity: the seller never learns which bid leads.
+
+### Bidding (FS-ZE43K, FS-72KT8, FS-S109X)
+
+- **Bid withdrawal cap** — the number of *leading withdrawals* a member may make on one listing (3, ADR-0052 as amended by ADR-0055) before they can no longer bid on it. Counts only that member's CANCELLED bids on that listing that were withdrawn while leading (`bids.withdrawn_while_leading`, FS-S109X); an *outbid withdrawal* never counts. Withdrawing itself is never refused, and buyout is not limited. A capped bid is refused with the domain sentinel `ErrBidWithdrawLimitReached`, which crosses the wire as the registered code `BID_WITHDRAW_LIMIT_REACHED` ("limit" in the code and sentinel names this cap; the constant is `bidWithdrawalCap`).
+- **Leading withdrawal** — a bidder withdrawing a bid whose status is WINNING at that moment. It promotes the runner-up (ADR-0028), so the price can fall back; this is the loop the cap bounds, and the only withdrawal it counts. Status at the moment of withdrawal decides: a bid promoted back to WINNING and then withdrawn is a leading withdrawal. Recorded on the bid as `withdrawn_while_leading` (FS-S109X); CANCELLED alone doesn't say which kind it was.
+- **Outbid withdrawal** — a bidder withdrawing a bid whose status is OUTBID at that moment, to free its gold (ADR-0029). Changes no price and promotes nobody; free under the cap (ADR-0055). Withdrawing a bid that once led but has since been outbid is an outbid withdrawal.
+- **Leading** — a member is leading a listing when the contending bid (the highest WINNING or PENDING bid, `findContendingBid`) is theirs, however they came to lead, promotion included (FS-72KT8). A leading member's new bid is refused with `ErrAlreadyLeading`, wire code `ALREADY_LEADING`; buying out is not refused.
+
+### Withdrawing a listing (FS-V7A5S)
+
+- **Withdrawal** — the seller taking their own ACTIVE, unended, not-bought-out listing down: the listing becomes CANCELLED, its live bids LOST, and a `withdraw-listing` workflow returns the item and every hold (ADR-0051). Not to be confused with a bidder *withdrawing a bid*, which leaves that bid CANCELLED.
+- **Live bid** — a bid still holding gold: PENDING, WINNING or OUTBID. A listing with live bids cannot be withdrawn in its final 30 minutes.
+- **Withdraw backstop** — the reconcile-tick pass that starts the `withdraw-listing` workflow for every CANCELLED listing whose withdrawal is not yet marked started, however old, for a start that failed and was not retried or never ran, then marks it (FS-V7A5S Req 8). A duplicate start is a no-op.
+- **Withdrawal started** — the per-listing marker (`listings.withdrawal_started_at`) set once a listing's `withdraw-listing` workflow start lands or the starter answers already-started. Records "started", never "finished": once started, the workflow's uncapped retries finish it. Unmarked CANCELLED listings are exactly the backstop's candidates.
+
+### Public listing reads (FS-GKHYD)
+
+- **Own** — on a public listing read, whether the viewer is that listing's seller; computed by marketplace from the caller's optional identity, false for an anonymous viewer (ADR-0053). A fact about the viewer, never a member id.
+- **Optional identity** — a public read that embeds the caller's identity when a valid bearer is present and serves anonymously otherwise, never refusing (ADR-0053). Distinct from a public method, which never reads a caller.

@@ -86,15 +86,16 @@ func monsterOf(e *ecs.Entity) *components.MonsterComponent {
 }
 
 // The party's strongest member sets the bar: a level-3 and a level-7 delver on
-// floor 1 face monsters of level 7 ± 1. FS-77AB6 §Requirements 21–22.
+// floor 1 face monsters of level 7 ± 1. FS-77AB6 §Requirements 21–22; floor
+// 1's count is a dungeon floor's (FS-KE075 §C R18).
 func TestNewRun_PopulatesMonstersLevelledToTheHighestDelver(t *testing.T) {
 	for seed := uint64(1); seed <= 20; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 3, x: 80, y: 80}, delverAt{level: 7, x: 140, y: 80})
 		s.InitialMapObjects(nil)
 
 		monsters := standardMonstersIn(s)
-		require.GreaterOrEqual(t, len(monsters), MonsterCountMin, "seed %d", seed)
-		require.LessOrEqual(t, len(monsters), MonsterCountMax, "seed %d", seed)
+		require.GreaterOrEqual(t, len(monsters), DungeonMonstersMin, "seed %d", seed)
+		require.LessOrEqual(t, len(monsters), DungeonMonstersMax, "seed %d", seed)
 
 		for _, m := range monsters {
 			level := monsterOf(m).Level
@@ -106,7 +107,8 @@ func TestNewRun_PopulatesMonstersLevelledToTheHighestDelver(t *testing.T) {
 
 // A monster stands on open ground: in no building, on no door, chest, switch or
 // escape door, on no other monster, and well clear of every delver.
-// FS-77AB6 §Requirements 22.
+// FS-77AB6 §Requirements 22; floor 1's count is a dungeon floor's (FS-KE075
+// §C R18).
 func TestNewRun_PlacesMonstersOnOpenGroundAwayFromDelvers(t *testing.T) {
 	r := constants.PlayerRadius
 
@@ -123,8 +125,8 @@ func TestNewRun_PlacesMonstersOnOpenGroundAwayFromDelvers(t *testing.T) {
 
 		monsters := monstersIn(s)
 		standard := len(standardMonstersIn(s))
-		require.GreaterOrEqual(t, standard, MonsterCountMin, "seed %d", seed)
-		require.LessOrEqual(t, standard, MonsterCountMax, "seed %d", seed)
+		require.GreaterOrEqual(t, standard, DungeonMonstersMin, "seed %d", seed)
+		require.LessOrEqual(t, standard, DungeonMonstersMax, "seed %d", seed)
 
 		for i, m := range monsters {
 			at := transformOf(t, m)
@@ -414,11 +416,13 @@ func TestRegenerateFloor_RepopulatesTheNewFloor(t *testing.T) {
 	}
 }
 
-// Every monster on the floor reaches every delver's broadcast.
-// FS-77AB6 §Requirements 32.
+// Every monster on a floor of buildings reaches every delver's broadcast.
+// FS-77AB6 §Requirements 32. Floor 1, a dungeon, is cut by distance instead
+// (FS-KE075 §G, interest_test.go).
 func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	s := rosterOnRun(t, 5, delverAt{level: 1, x: 100, y: 100})
 	s.InitialMapObjects(nil)
+	require.NoError(t, s.regenerateFloor())
 	require.NotEmpty(t, monstersIn(s))
 
 	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)

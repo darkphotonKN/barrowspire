@@ -141,3 +141,44 @@ describe("myBidRow", () => {
     expect(row).toMatchObject({ status: "Lost", emphasis: false });
   });
 });
+
+describe("myBidRow on a withdrawn listing (FS-V7A5S req 17)", () => {
+  it.each([
+    ["CANCELLED", "Withdrawn by seller", "Your gold is returned."],
+    ["SOLD", "Lost", undefined],
+    ["SETTLEMENT_FAILED", "Lost", undefined],
+    ["EXPIRED", "Lost", undefined],
+    ["PENDING_SETTLEMENT", "Lost", undefined],
+  ])("should read a lost bid on a %s listing as %s", (listingStatus, label, note) => {
+    const row = myBidRow(
+      { ...bid, status: "LOST", listing: { ...bid.listing, status: listingStatus } },
+      NOW,
+    );
+    expect(row).toMatchObject({ status: label, emphasis: false, live: false, timeLeft: "Ended" });
+    expect(row.note).toBe(note);
+  });
+
+  it("should read the listing status in any case", () => {
+    const row = myBidRow(
+      { ...bid, status: "lost", listing: { ...bid.listing, status: "cancelled" } },
+      NOW,
+    );
+    expect(row.status).toBe("Withdrawn by seller");
+  });
+
+  it.each([
+    ["WINNING", "Leading"],
+    ["OUTBID", "Outbid"],
+    ["PENDING", "Placing…"],
+    ["WON", "Won"],
+    ["CANCELLED", "Cancelled"],
+    ["FAILED", "Failed"],
+  ])("should keep a %s bid's own label, with no note, on any listing", (status, label) => {
+    for (const listingStatus of ["ACTIVE", "CANCELLED"]) {
+      const listing = { ...bid.listing, status: listingStatus };
+      const row = myBidRow({ ...bid, status, listing }, NOW);
+      expect(row.status).toBe(label);
+      expect(row.note).toBeUndefined();
+    }
+  });
+});

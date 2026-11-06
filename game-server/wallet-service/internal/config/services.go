@@ -29,6 +29,9 @@ type Services struct {
 	// Temporal worker in main. CommitHold is reachable only this way (FS-NXP1W
 	// §Req 7): never through gRPC.
 	Activities *accountactivity.Activities
+	// ExpireHoldsUC is one pass of the hold sweep, run on a ticker in main
+	// (FS-A3CQH). Reachable by nothing else: it takes no request.
+	ExpireHoldsUC *usecase.ExpireHoldsUC
 }
 
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
@@ -69,10 +72,13 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	creditSellerUC := usecase.NewCreditSellerUC(db, accountRepo, processedActivities)
 	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC, releaseLosingHoldsUC, creditSellerUC, releaseHoldUC)
 
+	expireHoldsUC := usecase.NewExpireHoldsUC(accountquery.NewExpiredHoldsQuery(db), accountRepo)
+
 	return &Services{
 		AccHandler:       accHandler,
 		CreateOnSignupUC: createOnSignupUC,
 		OutboxService:    outboxService,
 		Activities:       activities,
+		ExpireHoldsUC:    expireHoldsUC,
 	}
 }

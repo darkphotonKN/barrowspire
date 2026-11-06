@@ -31,6 +31,9 @@ type populationRand interface {
 * The demon comes on top of the standard count (§Requirements 24): always on the
 * top floor, otherwise on its rare roll.
 *
+* A dungeon floor is populated by room and role instead (populateDungeon,
+* FS-KE075 §C), its demon in the farthest room.
+*
 * The hub is never populated, and neither is a run with nobody in it.
 *
 * expected is the matched party not seated yet (FS-K2HKP R18): they count
@@ -60,6 +63,15 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		keepOut: mapKeepOut(entities),
 		// FS-K2HKP R18: the spots kept for arrivals are kept clear too
 		delvers: append(inPlayPositions(roster), s.arrivalSlotPositions()...),
+	}
+	// a dungeon floor's monsters are distributed by room and role, its demon
+	// in the farthest room (FS-KE075 §C R18–20)
+	if s.dungeon != nil {
+		s.populateDungeon(s.dungeon, &area, level, floor)
+		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
+			s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
+		}
+		return
 	}
 
 	for _, monster := range rollMonsters(s.spawnRand, level, floor) {
@@ -137,32 +149,45 @@ func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (Monste
 // afterwards.
 func rollMonsters(rng populationRand, partyLevel, floor int) []MonsterConfig {
 	count := MonsterCountMin + rng.IntN(MonsterCountMax-MonsterCountMin+1)
-	troll := trollShare(floor)
-	elite := eliteChance(floor)
 
 	monsters := make([]MonsterConfig, 0, count)
 	for range count {
-		archetype := components.MonsterArchetypeGhoul
-		if rng.Float64() < troll {
-			archetype = components.MonsterArchetypeTroll
-		}
-
-		spread := rng.IntN(2*MonsterLevelSpread+1) - MonsterLevelSpread
-		monster := MonsterConfig{
-			Archetype: archetype,
-			Level:     monsterLevel(partyLevel, floor, spread),
-		}
-
-		if rng.Float64() < elite {
-			prefix := ElitePrefixes[rng.IntN(len(ElitePrefixes))]
-			monster.Elite = true
-			monster.Name = prefix + " " + monsterSheets[archetype].Name
-		}
-
-		monsters = append(monsters, monster)
+		monsters = append(monsters, rollMonster(rng, partyLevel, floor))
 	}
 
 	return monsters
+}
+
+// rollMonster is one standard monster: its archetype by the floor's troll
+// share, then its level and elite roll (rollAs).
+func rollMonster(rng populationRand, partyLevel, floor int) MonsterConfig {
+	return rollAs(rng, rollArchetype(rng, floor), partyLevel, floor, eliteChance(floor))
+}
+
+// rollArchetype is a troll at the floor's troll share, otherwise a ghoul.
+func rollArchetype(rng populationRand, floor int) components.MonsterArchetype {
+	if rng.Float64() < trollShare(floor) {
+		return components.MonsterArchetypeTroll
+	}
+	return components.MonsterArchetypeGhoul
+}
+
+// rollAs is a monster of archetype at its level's spread, promoted to an elite
+// with a drawn prefix at chance elite (1 promotes always: Float64 is below 1).
+func rollAs(rng populationRand, archetype components.MonsterArchetype, partyLevel, floor int, elite float64) MonsterConfig {
+	spread := rng.IntN(2*MonsterLevelSpread+1) - MonsterLevelSpread
+	monster := MonsterConfig{
+		Archetype: archetype,
+		Level:     monsterLevel(partyLevel, floor, spread),
+	}
+
+	if rng.Float64() < elite {
+		prefix := ElitePrefixes[rng.IntN(len(ElitePrefixes))]
+		monster.Elite = true
+		monster.Name = prefix + " " + monsterSheets[archetype].Name
+	}
+
+	return monster
 }
 
 // monsterLevel is a standard monster's level: the party's, plus the floor's
@@ -226,7 +251,9 @@ func inPlayPositions(roster []*ecs.Entity) []point {
 /**
 * mapKeepOut is every area of the floor a monster's body may not overlap: each
 * building's whole footprint (its walls, door and the floor they enclose), every
-* door, container, switch, escape door and the stairs.
+* door, container, switch, escape door and the stairs. A wall of no building, a
+* dungeon floor's shell, is kept out by its own rect: grouped under the nil
+* house, a dungeon's walls would cover its whole floor.
 **/
 func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 	var keepOut []PlaceArea
@@ -242,6 +269,10 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 		if wc, isWall := entity.GetComponent(ecs.ComponentTypeWall); isWall {
 			wall := wc.(*components.WallComponent)
 			area := PlaceArea{X: at.X, Y: at.Y, W: wall.Width, H: wall.Height}
+			if wall.HouseID == uuid.Nil {
+				keepOut = append(keepOut, area)
+				continue
+			}
 			if footprint, seen := buildings[wall.HouseID]; seen {
 				area = footprint.union(area)
 			}
@@ -304,13 +335,17 @@ type spawnArea struct {
 	placed        []point
 }
 
+// candidate is a point to try anywhere on the map, a body's radius in from its
+// edge. A dungeon floor draws from a region's cells instead (placeOnRegion).
+func (a *spawnArea) candidate(rng populationRand) (x, y float64) {
+	r := constants.PlayerRadius
+	return r + rng.Float64()*(a.width-2*r), r + rng.Float64()*(a.height-2*r)
+}
+
 // place tries random positions until one is valid, a bounded number of times.
 func (a *spawnArea) place(rng populationRand) (x, y float64, ok bool) {
-	r := constants.PlayerRadius
-
 	for range MonsterPlacementAttempts {
-		x = r + rng.Float64()*(a.width-2*r)
-		y = r + rng.Float64()*(a.height-2*r)
+		x, y = a.candidate(rng)
 		if a.valid(x, y) {
 			return x, y, true
 		}
@@ -324,12 +359,10 @@ func (a *spawnArea) place(rng populationRand) (x, y float64, ok bool) {
 * farthest from its nearest delver among those that fit.
 **/
 func (a *spawnArea) placeFarthest(rng populationRand, fits func(x, y float64) bool) (x, y float64, ok bool) {
-	r := constants.PlayerRadius
 	best := -1.0
 
 	for range DemonPlacementSamples {
-		cx := r + rng.Float64()*(a.width-2*r)
-		cy := r + rng.Float64()*(a.height-2*r)
+		cx, cy := a.candidate(rng)
 		if !fits(cx, cy) {
 			continue
 		}

@@ -3,6 +3,7 @@ import { Player } from "@/utils/class/Player";
 import { ActionMap, ActionType, ClientMessage } from "@/assets/types/client";
 import * as Phaser from "phaser";
 import { socketManager } from "@/utils/class/SocketManager";
+import { maskInView, viewport } from "@/render/viewport";
 
 // {
 //   action: "move" | "attack" | "pickup" | "use" | ...,
@@ -65,8 +66,8 @@ export class GameScene extends Phaser.Scene {
     // 星空背景
     createStarfield(this);
     // 迷霧 start
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = viewport.width;
+    const height = viewport.height;
 
     // 建立視野圓圈 用於遮罩
     this.visionCircle = this.add.graphics();
@@ -79,10 +80,8 @@ export class GameScene extends Phaser.Scene {
     this.fogOfWar.fillRect(0, 0, width, height);
     this.fogOfWar.setDepth(100);
 
-    // 使用 GeometryMask，invertAlpha 讓圓圈內透明
-    const mask = new Phaser.Display.Masks.GeometryMask(this, this.visionCircle);
-    mask.invertAlpha = true;
-    this.fogOfWar.setMask(mask);
+    // 反轉遮罩，讓圓圈內透明
+    maskInView(this.fogOfWar, this.visionCircle, this.cameras.main, true);
     // 迷霧 end
 
     // Score display
@@ -107,11 +106,7 @@ export class GameScene extends Phaser.Scene {
     this.enemy.setTint(0x6e1f1f); // Make enemy red
     this.enemy.setCollideWorldBounds(true);
     // 讓敵人只在可視範圍內顯示
-    const enemyMask = new Phaser.Display.Masks.GeometryMask(
-      this,
-      this.visionCircle,
-    );
-    this.enemy.setMask(enemyMask);
+    maskInView(this.enemy, this.visionCircle, this.cameras.main);
 
     this.physics.add.collider(
       this.me,

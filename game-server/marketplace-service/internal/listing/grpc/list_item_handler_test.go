@@ -43,7 +43,7 @@ func (f *fakeItemReserver) ReserveItem(ctx context.Context, itemID uuid.UUID, st
 }
 
 func newListItemHandler(reserver *fakeItemReserver) *Handler {
-	return NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func TestListItemSendsTheSellersTermsToTheReservation(t *testing.T) {
@@ -119,6 +119,37 @@ func TestListItem_BuyoutAtOrBelowStartPriceIsInvalidArgumentAndReservesNothing(t
 	assert.Zero(t, reserver.calls)
 }
 
+// FS-XEDFF Req 1, 10: a listing that would end too soon or too late is refused
+// with its registered code, and items-service is never asked.
+func TestListItem_DurationOutOfRangeIsRefusedWithItsCode(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Duration
+	}{
+		{"too soon", 30 * time.Minute},
+		{"too long", 8 * 24 * time.Hour},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reserver := &fakeItemReserver{}
+
+			_, err := newListItemHandler(reserver).ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
+				ItemId:     uuid.New().String(),
+				StartPrice: 150,
+				EndsAt:     timestamppb.New(time.Now().Add(tt.in)),
+			})
+
+			st := status.Convert(err)
+			assert.Equal(t, codes.FailedPrecondition, st.Code())
+			reason, ok := errcode.RefusalReason(st)
+			assert.True(t, ok, "the refusal must carry its reason")
+			assert.Equal(t, errcode.ListingDurationOutOfRange, reason)
+			assert.Zero(t, reserver.calls, "items-service must not be called for an out-of-range duration")
+		})
+	}
+}
+
 // FS-HBXZN §Requirements B7–B9: items' answer to the reservation reaches the
 // caller as items gave it. Each row is what the itemreserver adapter hands
 // back for one items answer.
@@ -131,6 +162,8 @@ func TestListItem_ItemsAnswerReachesTheCaller(t *testing.T) {
 	}{
 		{"worn", errcode.Refuse(errcode.ItemWorn), codes.FailedPrecondition, errcode.ItemWorn},
 		{"not available", errcode.Refuse(errcode.ItemNotAvailable), codes.FailedPrecondition, errcode.ItemNotAvailable},
+		{"listing limit reached (FS-XEDFF)", errcode.Refuse(errcode.ListingLimitReached), codes.FailedPrecondition, errcode.ListingLimitReached},
+		{"not in the stash (FS-3R77D)", errcode.Refuse(errcode.ItemNotInStash), codes.FailedPrecondition, errcode.ItemNotInStash},
 		{"not found", fmt.Errorf("reserve item: %w", commonconstants.ErrNotFound), codes.NotFound, ""},
 		{"transient", fmt.Errorf("reserve item: %w", commonconstants.ErrTransient), codes.Unavailable, ""},
 		{"anything else", errors.New("boom"), codes.Internal, ""},

@@ -25,9 +25,26 @@ var (
 	ErrNoBuyoutPrice           = errors.New("listing has no buyout price")
 	ErrBuyoutAmountMismatch    = errors.New("amount is not the buyout price")
 	ErrSellerCannotBuyout      = errors.New("seller cannot buy out own listing")
+	ErrSellerCannotBid         = errors.New("seller cannot bid on own listing")
 	ErrNotBidOwner             = errors.New("not bid owner")
+	ErrLeadingBidLocked        = errors.New("leading bid cannot be withdrawn in the auction's final window")
 	ErrNotSeller               = errors.New("not seller")
 	ErrNoBidToAccept           = errors.New("no bid to accept")
+	ErrLeadingBidLowered       = errors.New("leading bid below the accept floor")
+	ErrBidWithdrawLimitReached = errors.New("bid withdraw limit reached")
+	// ErrAlreadyLeading: the bidding member's bid is already the listing's
+	// contending bid, so another would only raise the price against themselves
+	// (ADR-0054, FS-72KT8 Req 2).
+	ErrAlreadyLeading = errors.New("already leading")
+	// ErrListingAlreadyExists is an insert meeting a listing with the same id: a
+	// replay of the event that created it, not a collision with another listing.
+	ErrListingAlreadyExists = errors.New("listing already exists")
+	// ErrListingWithdrawLocked: the listing has live bids and is in its final
+	// ListingWithdrawLock, so its seller can no longer withdraw it (ADR-0051).
+	ErrListingWithdrawLocked = errors.New("listing withdraw locked")
+	// ErrListingDurationOutOfRange: a requested listing ends in the future but
+	// too soon or too late (see CheckDuration; FS-XEDFF Req 1).
+	ErrListingDurationOutOfRange = errors.New("listing duration out of range")
 )
 
 // IsRetriable reports whether an error is worth another attempt.

@@ -2,6 +2,7 @@ import type * as Phaser from "phaser";
 import type { ClientGameState, PlayerState, ProjectileState } from "@/types/gameState";
 import { screenToWorld, type Point } from "@/render/iso";
 import type { ArtLibrary } from "@/render/art/library";
+import type { Swing } from "@/render/art/character";
 import type { LightMap } from "@/render/lighting";
 import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
 import { PlayerCombat, type CastButton, type CombatLook, type CombatPort } from "@/render/combat/playerCombat";
@@ -17,6 +18,7 @@ import { playFireballCast } from "@/render/effects/fireball";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
+import { viewport } from "@/render/viewport";
 
 /**
  * A field's fighting (FS-X2F2H §Requirements 56), composed from the pieces the run scene draws
@@ -149,7 +151,7 @@ export class FieldCombat {
 
   /** Everything one visit drew is let go: the next visit starts ready and empty. */
   release(): void {
-    this.monsters.sync([]);
+    this.monsters.clear();
     this.parts.projectiles?.clear();
     this.parts.hits?.clearAll();
     this.parts.clearEffects?.();
@@ -179,7 +181,7 @@ export function fieldCombatOnScene(
   hooks: {
     selfAnim():
       | {
-          attack(now: number, aim?: Point, holdMs?: number): void;
+          attack(now: number, aim?: Point, swing?: Swing): void;
           holdAim(aim: Point | undefined): void;
           guard(up: boolean, now: number): void;
         }
@@ -240,7 +242,7 @@ export function fieldCombatOnScene(
         kit.endAim();
         hooks.selfAnim()?.holdAim(undefined);
       },
-      attackClip: (aim, holdMs) => hooks.selfAnim()?.attack(scene.time.now, aim, holdMs),
+      attackClip: (aim, swing) => hooks.selfAnim()?.attack(scene.time.now, aim, swing),
       lockout: () => hooks.lockout?.(),
     },
     kit,
@@ -275,7 +277,9 @@ export function fieldCombatOnScene(
     // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
     if (combat.aiming) return;
     // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
-    if (hooks.takesPointer?.(pointer.x, pointer.y, pointer.button === 0)) return;
+    // in logical units, as the HUD is laid out; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
+    if (hooks.takesPointer?.(at.x, at.y, pointer.button === 0)) return;
     const target = screenToWorld(pointer.worldX, pointer.worldY);
     if (pointer.leftButtonDown() || pointer.button === 0) combat.cast("primary", target);
     else if (pointer.rightButtonDown() || pointer.button === RIGHT_BUTTON) combat.cast("special", target);

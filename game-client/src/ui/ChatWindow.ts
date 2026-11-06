@@ -15,6 +15,7 @@
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
+import type { ChatChannel } from "@/stores/chatStore";
 import { ActionType } from "@/assets/types/client";
 import {
   useChatStore,
@@ -33,12 +34,15 @@ import {
 } from "./chatInputField";
 import {
   CHAT_CHANNEL_COLOUR,
+  CHAT_DIVIDER_INSET_FOOT,
+  CHAT_DIVIDER_INSET_TOP,
   CHAT_FILTER_LABEL,
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
-  CHAT_FOLD_W,
   CHAT_LINES_GAP,
   CHAT_PAD,
+  CHAT_PICKER_ARROW,
+  CHAT_ROW_TEXT_PAD,
   CHAT_VISIBLE_LINES,
   CHAT_WINDOW_MARGIN,
   CHAT_WINDOW_X,
@@ -46,7 +50,10 @@ import {
   CHAT_SCROLL_W,
   CHAT_TAB_PAD,
   chatEntryColour,
+  chatFieldRect,
   chatFoldButton,
+  chatPickerList,
+  chatPickerRect,
   chatNameSpan,
   chatScrollOffsetAt,
   chatScrollThumb,
@@ -54,12 +61,19 @@ import {
   chatTabSegments,
   chatWindowFrame,
   formatChatEntry,
+  rowTextY,
   scrolledOffset,
   visibleEntries,
   wrapChatText,
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
+import {
+  fillMaskArea,
+  maskInView,
+  relayoutOn,
+  viewport,
+} from "@/render/viewport";
 
 /** What a scene gives the window: what the input needs to let the player type, and who is playing. */
 export interface ChatWindowOptions {
@@ -80,8 +94,10 @@ export interface ChatWindowInput {
   /** Whether what owns the keys now was opened by a press elsewhere, so the draft is kept (`ChatInputDeps`). */
   keepsDraft?: () => boolean;
   send: (line: ChatSend) => void;
-  /** The text field and picker; the real DOM ones in a scene (`domChatInputField`), a stand-in in a test. */
+  /** The text field; the real DOM one in a scene (`domChatInputField`), a stand-in in a test. */
   makeField: ChatInputFieldFactory;
+  /** The channels that may be picked; the server's open ones unless a test says otherwise. */
+  open?: ReadonlySet<ChatChannel>;
 }
 
 /**
@@ -98,7 +114,7 @@ export function mountChatWindow(
     scene,
     useChatStore,
     CHAT_WINDOW_X,
-    scene.cameras.main.height - CHAT_WINDOW_MARGIN,
+    viewport.height - CHAT_WINDOW_MARGIN,
     {
       input: {
         mayOpen,
@@ -121,6 +137,16 @@ const FOLD_SHUT_FONT_PX = 19;
 const TAB_OFF_ALPHA = 0.4;
 /** A shown tab's underline, in its channel's colour. */
 const TAB_UNDERLINE_H = 2;
+/**
+ * The picker's list (FS-J267Q R3) draws over the chat lines, under every popup and
+ * overlay (2000): its ground and frame one step above the HUD, its words one more.
+ */
+const LIST_DEPTH = HUD_DEPTH + 1;
+/** A closed channel's row in the list, drawn faint as a hidden tab is. */
+const ROW_CLOSED_ALPHA = TAB_OFF_ALPHA;
+/** The label's inset from the picker's left edge, and the ▾'s from its divider. */
+const PICKER_LABEL_INSET = 4;
+const PICKER_ARROW_INSET = 8;
 
 /** How much of the carved panel's ground covers the world behind it. */
 /**
@@ -183,8 +209,13 @@ const lineStyle = (colour: number) => ({
 export class ChatWindow {
   private frame: ChatWindowFrame;
   private panel?: Phaser.GameObjects.Graphics;
+  /** The message area's shape, redrawn in place as the area moves; the lines' one mask. */
   private maskShape?: Phaser.GameObjects.Graphics;
-  private mask?: Phaser.Display.Masks.GeometryMask;
+  /**
+   * What the lines are drawn in: one Layer, masked once by the message area (ADR-0057 §Masks: a
+   * mask is a filter pass, so the lines share one rather than wearing one each).
+   */
+  private lineLayer?: Phaser.GameObjects.Layer;
   private lineTexts: Phaser.GameObjects.Text[] = [];
   /** Each drawn line's clickable name, where it is drawn now (FS-KCQ06 C15). */
   private nameHits: { name: string; rect: Rect }[] = [];
@@ -195,10 +226,22 @@ export class ChatWindow {
   private grabbed: number | null = null;
   private tabTexts: Phaser.GameObjects.Text[] = [];
   private foldText?: Phaser.GameObjects.Text;
+  /** The canvas picker's words (its label and ▾) and its open list (FS-J267Q). */
+  private pickerTexts: Phaser.GameObjects.Text[] = [];
+  private listPanel?: Phaser.GameObjects.Graphics;
+  /** What the picker last drew, so a keystroke that changes none of it redraws nothing. */
+  private pickerDrawn = "";
+  /** Whether the input row is shown: hidden while something else owns the keys (R26 idle row). */
+  private rowShown = false;
+  private stopRelayout?: () => void;
 
   /** Lines back from the newest; 0 is following (R21). */
   private offset = 0;
   private unsubscribe: () => void;
+  /** Stops redrawing the clip on a render-scale change. */
+  private unwatchScale: () => void;
+  /** The render scale the clip was last drawn on. */
+  private maskScale = 0;
   private field?: ChatInputFieldHandle;
   private input?: ChatInput;
   private readonly selfId: () => string | undefined;
@@ -219,6 +262,10 @@ export class ChatWindow {
     this.unsubscribe = store.subscribe((state, prev) =>
       this.onStore(state, prev),
     );
+    // the clip lies on the backing px grid, so a new render scale alone redraws it
+    this.unwatchScale = viewport.onChange((view) => {
+      if (view.renderScale !== this.maskScale) this.shapeMask();
+    });
     scene.input.on("wheel", this.onWheel, this);
     scene.input.on("pointerdown", this.onPress, this);
     scene.events.on("postupdate", this.watchKeys, this);
@@ -230,7 +277,12 @@ export class ChatWindow {
 
   /** Whether a screen point lies on the window: a scene's click there is the window's, not the world's (R31). */
   covers(x: number, y: number): boolean {
-    return within(this.frame.panel, x, y);
+    if (within(this.frame.panel, x, y)) return true;
+    // the open list is the window's too, wherever it reaches (FS-J267Q R4)
+    return (
+      (this.input?.pickerOpen() ?? false) &&
+      within(chatPickerList(this.frame).box, x, y)
+    );
   }
 
   /** Whether the player is typing in the input right now. */
@@ -249,14 +301,22 @@ export class ChatWindow {
   }
 
   destroy(): void {
+    // closing the input below draws nothing: the window is going, and on a game destroy (leaving
+    // /game) the scene's game-object factory has destroyed itself first (scenes/sceneEnd.ts)
+    this.destroyed = true;
     this.unsubscribe();
+    this.unwatchScale();
     this.scene.input?.off("wheel", this.onWheel, this);
     this.scene.input?.off("pointerdown", this.onPress, this);
     this.scene.input?.off("pointermove", this.onDrag, this);
     this.scene.input?.off("pointerup", this.onRelease, this);
     this.scene.events?.off("postupdate", this.watchKeys, this);
     this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
+    this.stopRelayout?.();
     this.input?.cancel();
+    this.clearPicker();
+    this.listPanel?.destroy();
+    this.listPanel = undefined;
     this.field?.destroy();
     this.field = this.input = undefined;
     this.clearLines();
@@ -265,17 +325,14 @@ export class ChatWindow {
     this.panel?.destroy();
     this.scrollbar?.destroy();
     this.scrollbar = undefined;
+    this.lineLayer?.destroy();
     this.maskShape?.destroy();
-    this.mask?.destroy();
-    this.foldText = this.panel = this.maskShape = this.mask = undefined;
+    this.foldText = this.panel = this.maskShape = this.lineLayer = undefined;
   }
 
-  /** The text field's place: the whole input row, short of the fold button while folded. */
+  /** The text field's place: the input row right of the picker, short of the fold button while folded. */
   private fieldRect(): Rect {
-    const input = this.frame.input;
-    return this.store.getState().folded
-      ? { ...input, width: input.width - CHAT_FOLD_W }
-      : input;
+    return chatFieldRect(this.frame, this.store.getState().folded);
   }
 
   private frameNow(): ChatWindowFrame {
@@ -287,10 +344,11 @@ export class ChatWindow {
     this.drawAll();
     this.field?.moveTo(this.fieldRect());
     this.drawInputRow();
+    this.drawPicker(true);
   }
 
   private drawAll(): void {
-    this.rebuildMask();
+    this.shapeMask();
     this.drawPanel();
     this.drawTabs();
     this.drawLines();
@@ -337,9 +395,8 @@ export class ChatWindow {
     this.field = typing.makeField(this.scene, this.fieldRect(), {
       focused: () => input?.focused(),
       blurred: () => input?.blurred(),
-      keyDown: (key, composing) => input?.keyDown(key, composing),
+      keyDown: (key, composing, shift) => input?.keyDown(key, composing, shift),
       typed: (composing) => input?.typed(composing),
-      picked: (channel) => input?.pick(channel),
     });
     input = new ChatInput({
       field: this.field,
@@ -347,6 +404,7 @@ export class ChatWindow {
       mayOpen: typing.mayOpen,
       keepsDraft: typing.keepsDraft,
       send: typing.send,
+      open: typing.open,
       changed: () => this.inputChanged(),
       recall: {
         lines: () => this.store.getState().sent,
@@ -355,6 +413,8 @@ export class ChatWindow {
     });
     this.input = input;
     keyboard()?.on("keydown-ENTER", this.onEnter, this);
+    // the list closes when the logical view changes size (FS-J267Q R6)
+    this.stopRelayout = relayoutOn(this.scene, () => input?.closePicker());
     // apply the key owner now, so a window built under an overlay never shows its row a frame
     this.watchKeys();
   }
@@ -366,6 +426,8 @@ export class ChatWindow {
 
   /** The input opened, closed or its draft changed: the panel redraws only when its opacity flips. */
   private inputChanged(): void {
+    if (this.destroyed) return;
+    this.drawPicker();
     const typing = this.isTyping();
     if (typing !== this.drawnTyping) {
       this.drawnTyping = typing;
@@ -379,6 +441,8 @@ export class ChatWindow {
     }
   }
   private drawnTyping = false;
+  /** Set as the window is let go: nothing is drawn after. */
+  private destroyed = false;
 
   /**
    * Once a frame: the DOM row is shown while the player may type and hidden while something else
@@ -392,6 +456,10 @@ export class ChatWindow {
     if (allowed === undefined || !this.field) return;
     if (allowed) this.field.show();
     else this.field.hide();
+    // the canvas picker and its divider show and hide with the browser field (FS-J267Q R8)
+    this.rowShown = allowed;
+    this.drawPanel();
+    this.drawPicker(true);
   }
 
   private onEnter(): void {
@@ -405,14 +473,17 @@ export class ChatWindow {
    */
   private onPress(pointer: { x: number; y: number }): void {
     this.pressedName = null;
+    // Phaser's pointer.x/y are backing px; the window is laid out in logical units (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
     // a press on a panel drawn over the window is that panel's: nothing here is grabbed or named
-    if (this.coveredAt(pointer.x, pointer.y)) {
+    if (this.coveredAt(at.x, at.y)) {
       if (this.input?.isOpen()) this.field?.blur();
       return;
     }
-    if (this.grabScrollbar(pointer)) return;
-    this.pressedName = this.nameAt(pointer.x, pointer.y);
-    if (!this.input?.isOpen() || this.covers(pointer.x, pointer.y)) return;
+    if (this.pressPicker(at)) return;
+    if (this.grabScrollbar(at)) return;
+    this.pressedName = this.nameAt(at.x, at.y);
+    if (!this.input?.isOpen() || this.covers(at.x, at.y)) return;
     this.field?.blur();
   }
 
@@ -433,6 +504,7 @@ export class ChatWindow {
   /**
    * A press on the scrollbar (asked 2026-10-31): on the thumb it is held where it was caught; on the
    * bare track the thumb jumps to centre on the press. Reports whether the press was the bar's.
+   * `pointer` in logical units.
    */
   private grabScrollbar(pointer: { x: number; y: number }): boolean {
     if (this.store.getState().folded) return false;
@@ -453,7 +525,10 @@ export class ChatWindow {
 
   /** While the thumb is held, the view follows the pointer up and down, wherever it wanders. */
   private onDrag(pointer: { x: number; y: number }): void {
-    if (this.grabbed !== null) this.scrollTo(pointer.y);
+    const at = viewport.toLogical(pointer);
+    if (this.grabbed !== null) this.scrollTo(at.y);
+    const row = this.listRowAt(at.x, at.y);
+    if (row) this.input?.hover(row);
   }
 
   /**
@@ -465,9 +540,44 @@ export class ChatWindow {
     this.grabbed = null;
     const pressed = this.pressedName;
     this.pressedName = null;
-    if (pressed !== null && pressed === this.nameAt(pointer.x, pointer.y)) {
+    const at = viewport.toLogical(pointer);
+    // a release on a row picks it, as a native drop-down does: a press on the picker and a drag
+    // down the list picks too (FS-J267Q R4); a closed channel's row does nothing
+    const row = this.listRowAt(at.x, at.y);
+    if (row) {
+      this.input?.pick(row);
+      return;
+    }
+    if (pressed !== null && pressed === this.nameAt(at.x, at.y)) {
       this.input?.whisperTo(pressed);
     }
+  }
+
+  /**
+   * A press on the canvas picker or its list (FS-J267Q R4), `at` in logical units. On
+   * the picker it opens the input and toggles the list; on the list it waits for the release; any
+   * other press shuts an open list and goes on as before. Reports whether the press was theirs.
+   */
+  private pressPicker(at: { x: number; y: number }): boolean {
+    const input = this.input;
+    if (!input || !this.rowShown) return false;
+    if (within(chatPickerRect(this.frame), at.x, at.y)) {
+      input.togglePicker();
+      return true;
+    }
+    if (!input.pickerOpen()) return false;
+    if (within(chatPickerList(this.frame).box, at.x, at.y)) return true;
+    input.closePicker();
+    return false;
+  }
+
+  /** The channel of the open list's row at a logical point, if the list is open and one is there. */
+  private listRowAt(x: number, y: number): ChatChannel | null {
+    if (!this.input?.pickerOpen()) return null;
+    return (
+      chatPickerList(this.frame).rows.find((r) => within(r, x, y))?.channel ??
+      null
+    );
   }
 
   private scrollTo(pointerY: number): void {
@@ -505,10 +615,11 @@ export class ChatWindow {
     _dx: number,
     dy: number,
   ): void {
+    const at = viewport.toLogical(pointer);
     if (
       this.store.getState().folded ||
-      !within(this.frame.messages, pointer.x, pointer.y) ||
-      this.coveredAt(pointer.x, pointer.y)
+      !within(this.frame.messages, at.x, at.y) ||
+      this.coveredAt(at.x, at.y)
     )
       return;
     const next = scrolledOffset(
@@ -573,29 +684,58 @@ export class ChatWindow {
     g.fillStyle(palette.chatInputGround, 0.95 * this.opacity());
     g.fillRoundedRect(input.x, input.y + 1, input.width, input.height - 1, 3);
     if (messages.height > 0) drawFlourishRule(g, input.x, input.y, input.width);
+    // the picker's divider, on the canvas so no half-pixel seam opens against the browser field at
+    // a fractional render scale (FS-J267Q R1); as faint as the window's other rules
+    if (this.rowShown) {
+      const picker = chatPickerRect(this.frame);
+      const x = Math.round(picker.x + picker.width) + 0.5;
+      g.lineStyle(1, palette.chatRule, 0.35);
+      g.lineBetween(
+        x,
+        picker.y + CHAT_DIVIDER_INSET_TOP,
+        x,
+        picker.y + picker.height - CHAT_DIVIDER_INSET_FOOT,
+      );
+    }
   }
 
   /**
    * The message area's clip: a wrapped line that overflows the top is cut, not drawn over the
-   * tabs. Built once per frame geometry, never on a mere redraw. A destroyed mask that a drawn
-   * line still wears throws inside Phaser's render and stops the whole game (the cmd-tab freeze,
-   * 2026-10-31), so the old one goes only once no line wears it: `drawLines` follows every rebuild.
+   * tabs. The lines sit in one Layer, masked once by one shape when the window is first drawn
+   * (ADR-0057 §Masks: a mask is a filter pass); a new frame geometry (a resize, a fold) redraws
+   * that shape in place, so the mask is never laid twice and its shape is never destroyed under
+   * it (a destroyed mask stopped the whole game in Phaser 3: the cmd-tab freeze, 2026-10-31).
+   *
+   * A Layer has no transform and no scroll factor of its own (Phaser gives it no ScrollFactor
+   * component): its lines keep their scroll factor 0 while its filter draws them through the
+   * camera, so the clip neither slides with the world nor lands half a view off. Probed at render
+   * scale 1, 1.5 and 2 with the camera scrolled and moving (I-ADR0057-3), its lines came out
+   * within 1/255 of Phaser 3.90's per-line masks at 1 and 2, where a Container's and per-line
+   * filters' were resampled. It is given a scroll factor of 0 here all the same: `Maskable` asks a
+   * masked object for one, and should Phaser ever fix the scroll-factor bug `maskInView`
+   * describes by applying the scroll factor to a context-focused filter, a Layer without one would
+   * be placed by `undefined`. That does not change `maskInView`'s branch today: a Layer has no
+   * size, so it gets the origin correction either way.
+   *
+   * The area is drawn by `fillMaskArea` on the backing px grid of the render scale it is drawn at,
+   * so the clip's edge rows and columns let the lines through as 3.90's did (I-ADR0057-3); a new
+   * render scale alone redraws it.
    */
-  private rebuildMask(): void {
+  private shapeMask(): void {
     const { messages } = this.frame;
-    this.clearLines();
-    this.maskShape?.destroy();
-    this.mask?.destroy();
-    this.maskShape = this.scene.make.graphics({}, false).setScrollFactor(0);
-    // a mask's colour is never drawn, only its shape; any token keeps the fence's literal ban
-    this.maskShape.fillStyle(palette.chatPanel);
-    this.maskShape.fillRect(
-      messages.x,
-      messages.y,
-      messages.width,
-      messages.height,
-    );
-    this.mask = this.maskShape.createGeometryMask();
+    if (!this.maskShape || !this.lineLayer) {
+      this.maskShape = this.scene.make.graphics({}, false).setScrollFactor(0);
+      const layer = Object.assign(this.scene.add.layer(), {
+        scrollFactorX: 0,
+        scrollFactorY: 0,
+      }).setDepth(HUD_DEPTH);
+      maskInView(layer, this.maskShape, this.scene.cameras.main);
+      this.lineLayer = layer;
+    }
+    this.maskScale = viewport.renderScale;
+    this.maskShape.clear();
+    // a mask's colour is never drawn, only its alpha; any token keeps the fence's literal ban
+    fillMaskArea(this.maskShape, messages, palette.chatPanel, this.maskScale);
   }
 
   /** A tab label's width at the window's font, measured once per label. */
@@ -659,6 +799,8 @@ export class ChatWindow {
   private drawLines(): void {
     this.clearLines();
     this.drawScrollbar();
+    // above what the scene drew at HUD depth since, as when every redraw made its lines anew
+    this.lineLayer?.setToTop();
     const m = this.frame.messages;
     if (m.height === 0) return;
     const entries = visibleEntries(
@@ -690,7 +832,7 @@ export class ChatWindow {
         .setDepth(HUD_DEPTH);
       y -= t.height;
       t.setPosition(m.x + CHAT_PAD, y);
-      if (this.mask) t.setMask(this.mask);
+      this.lineLayer?.add(t);
       this.lineTexts.unshift(t);
       // the name heads the line's first row, so its hit area is that row's, as wide as the name
       const span = chatNameSpan(
@@ -710,6 +852,107 @@ export class ChatWindow {
         });
       }
     }
+  }
+
+  /**
+   * The canvas picker (FS-J267Q R2, R3): the current channel and a ▾ in its colour at
+   * the input row's left, the same idle and typing; and, while open, the list above the row. Drawn
+   * only while the row is shown, and redrawn only when what it shows changes, unless `force`d by a
+   * move or a show. Its text is made at the render scale and crisped again with the game's
+   * (FS-ZAJMH R5), as all the window's text is.
+   */
+  private drawPicker(force = false): void {
+    const input = this.input;
+    const field = this.field;
+    const open = input?.pickerOpen() ?? false;
+    const state = `${this.rowShown}|${field?.channel}|${open}|${input?.highlighted()}`;
+    if (!force && state === this.pickerDrawn) return;
+    this.pickerDrawn = state;
+    this.clearPicker();
+    this.listPanel?.clear();
+    if (!input || !field || !this.rowShown) return;
+
+    const picker = chatPickerRect(this.frame);
+    const colour = CHAT_CHANNEL_COLOUR[field.channel];
+    const y = rowTextY(picker);
+    const label = this.scene.add
+      .text(
+        picker.x + PICKER_LABEL_INSET,
+        y,
+        CHAT_FILTER_LABEL[field.channel],
+        {
+          ...textStyle(colour),
+          padding: { x: 0, y: CHAT_ROW_TEXT_PAD },
+        },
+      )
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH)
+      // the whole picker is the hit area; the window hit-tests it itself, this only shows the hand
+      .setInteractive({ useHandCursor: true });
+    const arrowWidth = this.wordsSize(CHAT_PICKER_ARROW).width;
+    const arrow = this.scene.add
+      .text(
+        picker.x + picker.width - PICKER_ARROW_INSET - arrowWidth,
+        y,
+        CHAT_PICKER_ARROW,
+        { ...textStyle(colour), padding: { x: 0, y: CHAT_ROW_TEXT_PAD } },
+      )
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH)
+      .setInteractive({ useHandCursor: true });
+    this.pickerTexts.push(label, arrow);
+    if (open) this.drawList(input);
+  }
+
+  /** The open list: near-black ground, a fine brass frame, a row per shown channel in its colour. */
+  private drawList(input: ChatInput): void {
+    const { box, rows } = chatPickerList(this.frame);
+    const g = (this.listPanel ??= this.scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(LIST_DEPTH));
+    g.clear();
+    g.fillStyle(palette.chatInputGround, 0.97);
+    g.fillRoundedRect(box.x, box.y, box.width, box.height, 3);
+    g.lineStyle(1, palette.chatRule, 0.5);
+    g.strokeRoundedRect(
+      box.x + 0.5,
+      box.y + 0.5,
+      box.width - 1,
+      box.height - 1,
+      3,
+    );
+    const highlighted = input.highlighted();
+    for (const row of rows) {
+      const pickable = input.canPick(row.channel);
+      if (row.channel === highlighted) {
+        // the tabs' shown ground, and a bar in the channel's colour where a tab has its underline
+        g.fillStyle(palette.chatTabOn, 0.9);
+        g.fillRect(row.x, row.y, row.width, row.height);
+        g.fillStyle(CHAT_CHANNEL_COLOUR[row.channel], 0.9);
+        g.fillRect(row.x, row.y + 4, TAB_UNDERLINE_H, row.height - 8);
+      }
+      const t = this.scene.add
+        .text(
+          row.x + CHAT_TAB_PAD,
+          rowTextY(row),
+          CHAT_FILTER_LABEL[row.channel],
+          {
+            ...textStyle(CHAT_CHANNEL_COLOUR[row.channel]),
+            padding: { x: 0, y: CHAT_ROW_TEXT_PAD },
+          },
+        )
+        .setScrollFactor(0)
+        .setDepth(LIST_DEPTH + 1)
+        .setAlpha(pickable ? 1 : ROW_CLOSED_ALPHA);
+      if (pickable) t.setInteractive({ useHandCursor: true });
+      this.pickerTexts.push(t);
+    }
+  }
+
+  private clearPicker(): void {
+    this.pickerTexts.forEach((t) => t.destroy());
+    this.pickerTexts = [];
   }
 
   /** The fold button in the window's top-right corner. The hint is the DOM field's placeholder. */

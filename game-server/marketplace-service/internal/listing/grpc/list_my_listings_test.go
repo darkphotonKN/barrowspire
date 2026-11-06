@@ -44,7 +44,7 @@ func (r *fakeMyListingsReader) Execute(ctx context.Context, sellerID uuid.UUID, 
 }
 
 func newReadHandler(reader *fakeMyListingsReader) *Handler {
-	return NewHandler(nil, nil, nil, nil, reader, nil, nil, nil, nil, nil)
+	return NewHandler(nil, nil, nil, nil, reader, nil, nil, nil, nil, nil, nil)
 }
 
 func TestListMyListingsReadsTheCallersOwnListings(t *testing.T) {
@@ -144,6 +144,10 @@ func TestListMyListingsMapsEveryListingField(t *testing.T) {
 	unsold := res.GetListings()[1]
 	assert.Nil(t, unsold.BuyerId)
 	assert.Nil(t, unsold.SoldPrice)
+
+	// every listing on the caller's own list is theirs (FS-GKHYD R7)
+	assert.True(t, got.GetOwn())
+	assert.True(t, unsold.GetOwn())
 
 	assert.Equal(t, "next-page", res.GetPagination().GetNextCursor())
 }

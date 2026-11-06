@@ -38,11 +38,15 @@ type Listing struct {
 	CreatedAt  *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Price facts, derived from the bids at read time.
-	CurrentPrice  *int64 `protobuf:"varint,11,opt,name=current_price,json=currentPrice,proto3,oneof" json:"current_price,omitempty"` // the leading bid; absent when nobody leads
-	MinimumBid    int64  `protobuf:"varint,12,opt,name=minimum_bid,json=minimumBid,proto3" json:"minimum_bid,omitempty"`             // the least amount a bid would be accepted at now
-	BidCount      int32  `protobuf:"varint,13,opt,name=bid_count,json=bidCount,proto3" json:"bid_count,omitempty"`                   // bids in WINNING, PENDING or OUTBID
-	Ended         bool   `protobuf:"varint,14,opt,name=ended,proto3" json:"ended,omitempty"`                                         // ACTIVE but past ends_at, not yet settled
-	BuyoutPrice   *int64 `protobuf:"varint,15,opt,name=buyout_price,json=buyoutPrice,proto3,oneof" json:"buyout_price,omitempty"`    // absent when the seller set none (FS-9XKS6)
+	CurrentPrice *int64 `protobuf:"varint,11,opt,name=current_price,json=currentPrice,proto3,oneof" json:"current_price,omitempty"` // the leading bid; absent when nobody leads
+	MinimumBid   int64  `protobuf:"varint,12,opt,name=minimum_bid,json=minimumBid,proto3" json:"minimum_bid,omitempty"`             // the least amount a bid would be accepted at now
+	BidCount     int32  `protobuf:"varint,13,opt,name=bid_count,json=bidCount,proto3" json:"bid_count,omitempty"`                   // bids in WINNING, PENDING or OUTBID
+	Ended        bool   `protobuf:"varint,14,opt,name=ended,proto3" json:"ended,omitempty"`                                         // ACTIVE but past ends_at, not yet settled
+	BuyoutPrice  *int64 `protobuf:"varint,15,opt,name=buyout_price,json=buyoutPrice,proto3,oneof" json:"buyout_price,omitempty"`    // absent when the seller set none (FS-9XKS6)
+	// Whether the caller is this listing's seller (FS-GKHYD, ADR-0053). Set from the
+	// caller's verified identity, never from the request: false for an anonymous
+	// caller, always true on ListMyListings.
+	Own           bool `protobuf:"varint,16,opt,name=own,proto3" json:"own,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,6 +184,13 @@ func (x *Listing) GetBuyoutPrice() int64 {
 		return *x.BuyoutPrice
 	}
 	return 0
+}
+
+func (x *Listing) GetOwn() bool {
+	if x != nil {
+		return x.Own
+	}
+	return false
 }
 
 // ListItem
@@ -1180,8 +1191,12 @@ func (x *WithdrawBidResponse) GetCurrentPrice() int64 {
 // supplied by the caller. No bid ID: whichever bid is WINNING is the one
 // accepted, chosen by settlement itself.
 type AcceptBidRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ListingId string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	// The accept floor (FS-F692V): the leading bid amount the seller was shown.
+	// Refused with LEADING_BID_LOWERED when the WINNING bid is now below it;
+	// at or above it, the accept proceeds whoever leads. Must be > 0.
+	MinAmount     int64 `protobuf:"varint,2,opt,name=min_amount,json=minAmount,proto3" json:"min_amount,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1223,6 +1238,13 @@ func (x *AcceptBidRequest) GetListingId() string {
 	return ""
 }
 
+func (x *AcceptBidRequest) GetMinAmount() int64 {
+	if x != nil {
+		return x.MinAmount
+	}
+	return 0
+}
+
 type AcceptBidResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1259,6 +1281,89 @@ func (*AcceptBidResponse) Descriptor() ([]byte, []int) {
 	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{18}
 }
 
+// WithdrawListing
+// The seller is derived from the authenticated context server-side, never
+// supplied by the caller.
+type WithdrawListingRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ListingId     string                 `protobuf:"bytes,1,opt,name=listing_id,json=listingId,proto3" json:"listing_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawListingRequest) Reset() {
+	*x = WithdrawListingRequest{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawListingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawListingRequest) ProtoMessage() {}
+
+func (x *WithdrawListingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawListingRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawListingRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *WithdrawListingRequest) GetListingId() string {
+	if x != nil {
+		return x.ListingId
+	}
+	return ""
+}
+
+type WithdrawListingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawListingResponse) Reset() {
+	*x = WithdrawListingResponse{}
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawListingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawListingResponse) ProtoMessage() {}
+
+func (x *WithdrawListingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawListingResponse.ProtoReflect.Descriptor instead.
+func (*WithdrawListingResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{20}
+}
+
 // Buyout
 // The buyer is derived from the authenticated context server-side. amount is
 // the gold the buyer agreed to; it must equal the listing's buyout price, and
@@ -1277,7 +1382,7 @@ type BuyoutRequest struct {
 
 func (x *BuyoutRequest) Reset() {
 	*x = BuyoutRequest{}
-	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[19]
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1289,7 +1394,7 @@ func (x *BuyoutRequest) String() string {
 func (*BuyoutRequest) ProtoMessage() {}
 
 func (x *BuyoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[19]
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1302,7 +1407,7 @@ func (x *BuyoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuyoutRequest.ProtoReflect.Descriptor instead.
 func (*BuyoutRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{19}
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *BuyoutRequest) GetListingId() string {
@@ -1334,7 +1439,7 @@ type BuyoutResponse struct {
 
 func (x *BuyoutResponse) Reset() {
 	*x = BuyoutResponse{}
-	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[20]
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1346,7 +1451,7 @@ func (x *BuyoutResponse) String() string {
 func (*BuyoutResponse) ProtoMessage() {}
 
 func (x *BuyoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[20]
+	mi := &file_api_proto_marketplace_marketplace_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1359,14 +1464,14 @@ func (x *BuyoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuyoutResponse.ProtoReflect.Descriptor instead.
 func (*BuyoutResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{20}
+	return file_api_proto_marketplace_marketplace_proto_rawDescGZIP(), []int{22}
 }
 
 var File_api_proto_marketplace_marketplace_proto protoreflect.FileDescriptor
 
 const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\n" +
-	"'api/proto/marketplace/marketplace.proto\x12\vmarketplace\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$api/proto/shared/v1/pagination.proto\"\xdc\x04\n" +
+	"'api/proto/marketplace/marketplace.proto\x12\vmarketplace\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$api/proto/shared/v1/pagination.proto\"\xee\x04\n" +
 	"\aListing\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tseller_id\x18\x02 \x01(\tR\bsellerId\x12\x1e\n" +
@@ -1388,7 +1493,8 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"minimumBid\x12\x1b\n" +
 	"\tbid_count\x18\r \x01(\x05R\bbidCount\x12\x14\n" +
 	"\x05ended\x18\x0e \x01(\bR\x05ended\x12&\n" +
-	"\fbuyout_price\x18\x0f \x01(\x03H\x03R\vbuyoutPrice\x88\x01\x01B\v\n" +
+	"\fbuyout_price\x18\x0f \x01(\x03H\x03R\vbuyoutPrice\x88\x01\x01\x12\x10\n" +
+	"\x03own\x18\x10 \x01(\bR\x03ownB\v\n" +
 	"\t_buyer_idB\r\n" +
 	"\v_sold_priceB\x10\n" +
 	"\x0e_current_priceB\x0f\n" +
@@ -1474,17 +1580,23 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"\x13WithdrawBidResponse\x12\x15\n" +
 	"\x06bid_id\x18\x01 \x01(\tR\x05bidId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
-	"\rcurrent_price\x18\x03 \x01(\x03R\fcurrentPrice\"1\n" +
+	"\rcurrent_price\x18\x03 \x01(\x03R\fcurrentPrice\"P\n" +
 	"\x10AcceptBidRequest\x12\x1d\n" +
 	"\n" +
-	"listing_id\x18\x01 \x01(\tR\tlistingId\"\x13\n" +
-	"\x11AcceptBidResponse\"o\n" +
+	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x1d\n" +
+	"\n" +
+	"min_amount\x18\x02 \x01(\x03R\tminAmount\"\x13\n" +
+	"\x11AcceptBidResponse\"7\n" +
+	"\x16WithdrawListingRequest\x12\x1d\n" +
+	"\n" +
+	"listing_id\x18\x01 \x01(\tR\tlistingId\"\x19\n" +
+	"\x17WithdrawListingResponse\"o\n" +
 	"\rBuyoutRequest\x12\x1d\n" +
 	"\n" +
 	"listing_id\x18\x01 \x01(\tR\tlistingId\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\x10\n" +
-	"\x0eBuyoutResponse2\xed\x05\n" +
+	"\x0eBuyoutResponse2\xcd\x06\n" +
 	"\x12MarketplaceService\x12I\n" +
 	"\bListItem\x12\x1c.marketplace.ListItemRequest\x1a\x1d.marketplace.ListItemResponse\"\x00\x12[\n" +
 	"\x0eListMyListings\x12\".marketplace.ListMyListingsRequest\x1a#.marketplace.ListMyListingsResponse\"\x00\x12O\n" +
@@ -1495,7 +1607,8 @@ const file_api_proto_marketplace_marketplace_proto_rawDesc = "" +
 	"GetListing\x12\x1e.marketplace.GetListingRequest\x1a\x1f.marketplace.GetListingResponse\"\x00\x12I\n" +
 	"\bPlaceBid\x12\x1c.marketplace.PlaceBidRequest\x1a\x1d.marketplace.PlaceBidResponse\"\x00\x12R\n" +
 	"\vWithdrawBid\x12\x1f.marketplace.WithdrawBidRequest\x1a .marketplace.WithdrawBidResponse\"\x00\x12L\n" +
-	"\tAcceptBid\x12\x1d.marketplace.AcceptBidRequest\x1a\x1e.marketplace.AcceptBidResponse\"\x00\x12C\n" +
+	"\tAcceptBid\x12\x1d.marketplace.AcceptBidRequest\x1a\x1e.marketplace.AcceptBidResponse\"\x00\x12^\n" +
+	"\x0fWithdrawListing\x12#.marketplace.WithdrawListingRequest\x1a$.marketplace.WithdrawListingResponse\"\x00\x12C\n" +
 	"\x06Buyout\x12\x1a.marketplace.BuyoutRequest\x1a\x1b.marketplace.BuyoutResponse\"\x00BIZGgithub.com/darkphotonKN/barrowspire-server/common/api/proto/marketplaceb\x06proto3"
 
 var (
@@ -1510,49 +1623,51 @@ func file_api_proto_marketplace_marketplace_proto_rawDescGZIP() []byte {
 	return file_api_proto_marketplace_marketplace_proto_rawDescData
 }
 
-var file_api_proto_marketplace_marketplace_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_api_proto_marketplace_marketplace_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_api_proto_marketplace_marketplace_proto_goTypes = []any{
-	(*Listing)(nil),                // 0: marketplace.Listing
-	(*ListItemRequest)(nil),        // 1: marketplace.ListItemRequest
-	(*ListItemResponse)(nil),       // 2: marketplace.ListItemResponse
-	(*ListMyListingsRequest)(nil),  // 3: marketplace.ListMyListingsRequest
-	(*ListMyListingsResponse)(nil), // 4: marketplace.ListMyListingsResponse
-	(*ListMyBidsRequest)(nil),      // 5: marketplace.ListMyBidsRequest
-	(*ListMyBidsResponse)(nil),     // 6: marketplace.ListMyBidsResponse
-	(*MyBid)(nil),                  // 7: marketplace.MyBid
-	(*MyBidListing)(nil),           // 8: marketplace.MyBidListing
-	(*BrowseListingsRequest)(nil),  // 9: marketplace.BrowseListingsRequest
-	(*BrowseListingsResponse)(nil), // 10: marketplace.BrowseListingsResponse
-	(*GetListingRequest)(nil),      // 11: marketplace.GetListingRequest
-	(*GetListingResponse)(nil),     // 12: marketplace.GetListingResponse
-	(*PlaceBidRequest)(nil),        // 13: marketplace.PlaceBidRequest
-	(*PlaceBidResponse)(nil),       // 14: marketplace.PlaceBidResponse
-	(*WithdrawBidRequest)(nil),     // 15: marketplace.WithdrawBidRequest
-	(*WithdrawBidResponse)(nil),    // 16: marketplace.WithdrawBidResponse
-	(*AcceptBidRequest)(nil),       // 17: marketplace.AcceptBidRequest
-	(*AcceptBidResponse)(nil),      // 18: marketplace.AcceptBidResponse
-	(*BuyoutRequest)(nil),          // 19: marketplace.BuyoutRequest
-	(*BuyoutResponse)(nil),         // 20: marketplace.BuyoutResponse
-	(*timestamppb.Timestamp)(nil),  // 21: google.protobuf.Timestamp
-	(*v1.PageInfo)(nil),            // 22: shared.v1.PageInfo
+	(*Listing)(nil),                 // 0: marketplace.Listing
+	(*ListItemRequest)(nil),         // 1: marketplace.ListItemRequest
+	(*ListItemResponse)(nil),        // 2: marketplace.ListItemResponse
+	(*ListMyListingsRequest)(nil),   // 3: marketplace.ListMyListingsRequest
+	(*ListMyListingsResponse)(nil),  // 4: marketplace.ListMyListingsResponse
+	(*ListMyBidsRequest)(nil),       // 5: marketplace.ListMyBidsRequest
+	(*ListMyBidsResponse)(nil),      // 6: marketplace.ListMyBidsResponse
+	(*MyBid)(nil),                   // 7: marketplace.MyBid
+	(*MyBidListing)(nil),            // 8: marketplace.MyBidListing
+	(*BrowseListingsRequest)(nil),   // 9: marketplace.BrowseListingsRequest
+	(*BrowseListingsResponse)(nil),  // 10: marketplace.BrowseListingsResponse
+	(*GetListingRequest)(nil),       // 11: marketplace.GetListingRequest
+	(*GetListingResponse)(nil),      // 12: marketplace.GetListingResponse
+	(*PlaceBidRequest)(nil),         // 13: marketplace.PlaceBidRequest
+	(*PlaceBidResponse)(nil),        // 14: marketplace.PlaceBidResponse
+	(*WithdrawBidRequest)(nil),      // 15: marketplace.WithdrawBidRequest
+	(*WithdrawBidResponse)(nil),     // 16: marketplace.WithdrawBidResponse
+	(*AcceptBidRequest)(nil),        // 17: marketplace.AcceptBidRequest
+	(*AcceptBidResponse)(nil),       // 18: marketplace.AcceptBidResponse
+	(*WithdrawListingRequest)(nil),  // 19: marketplace.WithdrawListingRequest
+	(*WithdrawListingResponse)(nil), // 20: marketplace.WithdrawListingResponse
+	(*BuyoutRequest)(nil),           // 21: marketplace.BuyoutRequest
+	(*BuyoutResponse)(nil),          // 22: marketplace.BuyoutResponse
+	(*timestamppb.Timestamp)(nil),   // 23: google.protobuf.Timestamp
+	(*v1.PageInfo)(nil),             // 24: shared.v1.PageInfo
 }
 var file_api_proto_marketplace_marketplace_proto_depIdxs = []int32{
-	21, // 0: marketplace.Listing.ends_at:type_name -> google.protobuf.Timestamp
-	21, // 1: marketplace.Listing.created_at:type_name -> google.protobuf.Timestamp
-	21, // 2: marketplace.Listing.updated_at:type_name -> google.protobuf.Timestamp
-	21, // 3: marketplace.ListItemRequest.ends_at:type_name -> google.protobuf.Timestamp
-	21, // 4: marketplace.ListItemResponse.ends_at:type_name -> google.protobuf.Timestamp
-	21, // 5: marketplace.ListItemResponse.create_at:type_name -> google.protobuf.Timestamp
-	21, // 6: marketplace.ListItemResponse.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 0: marketplace.Listing.ends_at:type_name -> google.protobuf.Timestamp
+	23, // 1: marketplace.Listing.created_at:type_name -> google.protobuf.Timestamp
+	23, // 2: marketplace.Listing.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 3: marketplace.ListItemRequest.ends_at:type_name -> google.protobuf.Timestamp
+	23, // 4: marketplace.ListItemResponse.ends_at:type_name -> google.protobuf.Timestamp
+	23, // 5: marketplace.ListItemResponse.create_at:type_name -> google.protobuf.Timestamp
+	23, // 6: marketplace.ListItemResponse.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 7: marketplace.ListMyListingsResponse.listings:type_name -> marketplace.Listing
-	22, // 8: marketplace.ListMyListingsResponse.pagination:type_name -> shared.v1.PageInfo
+	24, // 8: marketplace.ListMyListingsResponse.pagination:type_name -> shared.v1.PageInfo
 	7,  // 9: marketplace.ListMyBidsResponse.bids:type_name -> marketplace.MyBid
-	22, // 10: marketplace.ListMyBidsResponse.pagination:type_name -> shared.v1.PageInfo
-	21, // 11: marketplace.MyBid.placed_at:type_name -> google.protobuf.Timestamp
+	24, // 10: marketplace.ListMyBidsResponse.pagination:type_name -> shared.v1.PageInfo
+	23, // 11: marketplace.MyBid.placed_at:type_name -> google.protobuf.Timestamp
 	8,  // 12: marketplace.MyBid.listing:type_name -> marketplace.MyBidListing
-	21, // 13: marketplace.MyBidListing.ends_at:type_name -> google.protobuf.Timestamp
+	23, // 13: marketplace.MyBidListing.ends_at:type_name -> google.protobuf.Timestamp
 	0,  // 14: marketplace.BrowseListingsResponse.listings:type_name -> marketplace.Listing
-	22, // 15: marketplace.BrowseListingsResponse.pagination:type_name -> shared.v1.PageInfo
+	24, // 15: marketplace.BrowseListingsResponse.pagination:type_name -> shared.v1.PageInfo
 	0,  // 16: marketplace.GetListingResponse.listing:type_name -> marketplace.Listing
 	1,  // 17: marketplace.MarketplaceService.ListItem:input_type -> marketplace.ListItemRequest
 	3,  // 18: marketplace.MarketplaceService.ListMyListings:input_type -> marketplace.ListMyListingsRequest
@@ -1562,18 +1677,20 @@ var file_api_proto_marketplace_marketplace_proto_depIdxs = []int32{
 	13, // 22: marketplace.MarketplaceService.PlaceBid:input_type -> marketplace.PlaceBidRequest
 	15, // 23: marketplace.MarketplaceService.WithdrawBid:input_type -> marketplace.WithdrawBidRequest
 	17, // 24: marketplace.MarketplaceService.AcceptBid:input_type -> marketplace.AcceptBidRequest
-	19, // 25: marketplace.MarketplaceService.Buyout:input_type -> marketplace.BuyoutRequest
-	2,  // 26: marketplace.MarketplaceService.ListItem:output_type -> marketplace.ListItemResponse
-	4,  // 27: marketplace.MarketplaceService.ListMyListings:output_type -> marketplace.ListMyListingsResponse
-	6,  // 28: marketplace.MarketplaceService.ListMyBids:output_type -> marketplace.ListMyBidsResponse
-	10, // 29: marketplace.MarketplaceService.BrowseListings:output_type -> marketplace.BrowseListingsResponse
-	12, // 30: marketplace.MarketplaceService.GetListing:output_type -> marketplace.GetListingResponse
-	14, // 31: marketplace.MarketplaceService.PlaceBid:output_type -> marketplace.PlaceBidResponse
-	16, // 32: marketplace.MarketplaceService.WithdrawBid:output_type -> marketplace.WithdrawBidResponse
-	18, // 33: marketplace.MarketplaceService.AcceptBid:output_type -> marketplace.AcceptBidResponse
-	20, // 34: marketplace.MarketplaceService.Buyout:output_type -> marketplace.BuyoutResponse
-	26, // [26:35] is the sub-list for method output_type
-	17, // [17:26] is the sub-list for method input_type
+	19, // 25: marketplace.MarketplaceService.WithdrawListing:input_type -> marketplace.WithdrawListingRequest
+	21, // 26: marketplace.MarketplaceService.Buyout:input_type -> marketplace.BuyoutRequest
+	2,  // 27: marketplace.MarketplaceService.ListItem:output_type -> marketplace.ListItemResponse
+	4,  // 28: marketplace.MarketplaceService.ListMyListings:output_type -> marketplace.ListMyListingsResponse
+	6,  // 29: marketplace.MarketplaceService.ListMyBids:output_type -> marketplace.ListMyBidsResponse
+	10, // 30: marketplace.MarketplaceService.BrowseListings:output_type -> marketplace.BrowseListingsResponse
+	12, // 31: marketplace.MarketplaceService.GetListing:output_type -> marketplace.GetListingResponse
+	14, // 32: marketplace.MarketplaceService.PlaceBid:output_type -> marketplace.PlaceBidResponse
+	16, // 33: marketplace.MarketplaceService.WithdrawBid:output_type -> marketplace.WithdrawBidResponse
+	18, // 34: marketplace.MarketplaceService.AcceptBid:output_type -> marketplace.AcceptBidResponse
+	20, // 35: marketplace.MarketplaceService.WithdrawListing:output_type -> marketplace.WithdrawListingResponse
+	22, // 36: marketplace.MarketplaceService.Buyout:output_type -> marketplace.BuyoutResponse
+	27, // [27:37] is the sub-list for method output_type
+	17, // [17:27] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
 	17, // [17:17] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -1593,7 +1710,7 @@ func file_api_proto_marketplace_marketplace_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_marketplace_marketplace_proto_rawDesc), len(file_api_proto_marketplace_marketplace_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -434,10 +434,13 @@ func (r *partyRegistry) buildRun(check *readyCheck) {
 	slog.Info("Party run started", "session_id", run.ID, "party_id", check.partyID, "members", len(roster))
 
 	r.tellCheck(check, constants.ReadyCheckStarted, "", nil)
-	entered := worldEnteredMessage(run)
+	entry := worldEntryMessages(run)
 	for _, id := range roster {
-		if err := r.sender.SendMessageToPlayer(id, entered); err != nil {
-			slog.Warn("Could not tell a party member their run started", "player_id", id, "error", err)
+		for _, message := range entry {
+			if err := r.sender.SendMessageToPlayer(id, message); err != nil {
+				slog.Warn("Could not tell a party member their run started", "player_id", id, "action", message.Action, "error", err)
+				break
+			}
 		}
 	}
 }

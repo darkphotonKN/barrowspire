@@ -10,6 +10,7 @@
  */
 
 import type Phaser from "phaser";
+import { anchorAt, crispen, type Placement } from "@/render/viewport";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { AbilityCardView } from "./abilityCard";
 
@@ -36,11 +37,10 @@ export class AbilityHud {
   /** What the card last drew, so the states that change nothing redraw nothing. */
   private shown: AbilityCardView | null = null;
 
-  /** `right` and `bottom` are the screen x and y of the card's bottom-right corner. */
+  /** `place` is where the card's bottom-right corner stands (FS-ZAJMH R12). */
   constructor(
     private readonly scene: Phaser.Scene,
-    private readonly right: number,
-    private readonly bottom: number,
+    private readonly place: Placement,
   ) {}
 
   show(view: AbilityCardView | null): void {
@@ -50,9 +50,18 @@ export class AbilityHud {
       this.takeDown();
       return;
     }
+    this.draw(view);
+  }
 
-    const left = this.right - CARD_W;
-    const top = this.bottom - CARD_H;
+  /** The logical view changed: the card goes back to its corner (FS-ZAJMH R13). */
+  relayout(): void {
+    if (this.shown) this.draw(this.shown);
+  }
+
+  private draw(view: AbilityCardView): void {
+    const corner = anchorAt(this.place);
+    const left = corner.x - CARD_W;
+    const top = corner.y - CARD_H;
     const g = (this.panel ??= this.scene.add
       .graphics()
       .setScrollFactor(0)
@@ -65,8 +74,14 @@ export class AbilityHud {
     drawRightMouse(g, left + PAD, top + PAD + 2, view.greyed);
 
     const textX = left + PAD + GLYPH_W + GLYPH_GAP;
-    const name = (this.name ??= this.text(textX, top + PAD - 2, 16));
-    const line = (this.line ??= this.text(textX, top + PAD + NAME_H, 13));
+    const nameY = top + PAD - 2;
+    const lineY = top + PAD + NAME_H;
+    const name = (this.name ??= this.text(textX, nameY, 16));
+    const line = (this.line ??= this.text(textX, lineY, 13));
+    name.setPosition(textX, nameY);
+    line.setPosition(textX, lineY);
+    // moved by a re-layout after a render-scale change: rasterised again (FS-ZAJMH R5)
+    crispen([name, line]);
     name
       .setText(view.name)
       .setColor(toCss(view.greyed ? palette.hudFaint : palette.hudText));

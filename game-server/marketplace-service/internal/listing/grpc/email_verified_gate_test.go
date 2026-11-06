@@ -86,7 +86,7 @@ func TestWithdrawBid_UnverifiedCaller_CanStillWithdraw(t *testing.T) {
 func TestAcceptBid_UnverifiedCaller_CanStillAccept(t *testing.T) {
 	uc := &stubAcceptBid{}
 
-	_, err := newAcceptBidHandler(uc).AcceptBid(unverifiedCtx(t, uuid.New()), &pb.AcceptBidRequest{ListingId: uuid.NewString()})
+	_, err := newAcceptBidHandler(uc).AcceptBid(unverifiedCtx(t, uuid.New()), &pb.AcceptBidRequest{ListingId: uuid.NewString(), MinAmount: 1})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, uc.calls)

@@ -104,12 +104,16 @@ export interface ActionMap {
   start_solo: Record<string, never>;
   /** A player in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
   forfeit_run: Record<string, never>;
+  /** A run whose floor's map never came asking for it again (FS-KE075 §F.33): no payload. */
+  request_floor_map: Record<string, never>;
   /** A hub player walking into a field gate (FS-X2F2H req 9). */
   enter_field: { field: FieldId };
   /** A field player walking into the entrance gate, home to the hub (FS-X2F2H req 14): no payload. */
   leave_field: Record<string, never>;
   /** A player in the delve drinking a health potion (FS-P9G8R R27): no payload; the server picks the slot. */
   drink_potion: Record<string, never>;
+  /** The renewed access token, for the server to hold in place of the one it connected with (FS-ZPX58 R27). */
+  renew_token: { token: string };
   /** A player in no party standing up a party of one, as its leader (FS-R82NV R4a): no payload. */
   party_create: Record<string, never>;
   /** Inviting a player to this player's party, by character name or id (FS-R82NV R12). */

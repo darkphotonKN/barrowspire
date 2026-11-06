@@ -2,7 +2,7 @@ import * as Phaser from "phaser";
 import { ActionType, WorldType, type FieldId } from "@/assets/types/client";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
-import type { ClientGameState, GateState, ItemState, PlayerState, Position, WallState } from "@/types/gameState";
+import type { ClientGameState, GateState, ItemState, PlayerState, Position, PublicPlayerState, WallState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ensureCharacterTextures, placeholderTexture } from "@/utils/characterTextures";
 import {
@@ -16,6 +16,8 @@ import {
   type Point,
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { fieldArt } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { LightMap } from "@/render/lighting";
@@ -44,6 +46,8 @@ import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { ContainerView } from "@/ui/ContainerView";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
+import { PurseReader } from "@/ui/purse";
+import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
@@ -55,6 +59,7 @@ import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -64,6 +69,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
+import { boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
@@ -200,22 +206,32 @@ export class FieldScene extends Phaser.Scene {
     super({ key: "FieldScene" });
   }
 
-  preload(): void {
-    preloadArt(this);
+  /**
+   * The field this start is for, from the start data: Phaser hands it to `init` and `create`,
+   * never to `preload`, which loads this field's own creatures (FS-C4JWH §B R8).
+   */
+  init(data?: { field?: FieldId }): void {
+    this.field = data?.field ?? "gentle_meadows";
   }
 
-  create(data?: { field?: FieldId }): void {
-    this.field = data?.field ?? "gentle_meadows";
+  preload(): void {
+    preloadArt(this, fieldArt(this.field), {
+      bar: () => drawTorchBar(this),
+      fadeIn: true,
+    });
+  }
+
+  create(): void {
     this.look = fieldLook(this.field);
     this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
     const { width, height } = this.size;
 
     const camera = this.cameras.main;
     const bounds = projectedBounds(width, height, CAMERA_MARGIN);
-    camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(camera, bounds);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, fieldArt(this.field));
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
@@ -248,9 +264,27 @@ export class FieldScene extends Phaser.Scene {
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+    // a stop, or the game's destroy mid-field (the page unmounts), which skips SHUTDOWN
+    onSceneEnd(this, (end) => this.release(end));
+  }
+
+  /**
+   * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
+   * its anchor, open panels included. The bars, the chat window and the party frames and panel
+   * keep to the left and the bottom, which a width change does not move; the gear overlay follows
+   * Phaser's resize itself.
+   */
+  private relayoutHud(): void {
+    this.abilityHud?.relayout();
+    this.satchel?.relayout();
+    this.invitePrompt?.relayout();
+    if (this.fallenView) {
+      this.showFallen();
+      this.drainFallen(this.time.now);
+    }
   }
 
   /** The field's answer to leaving: a refusal keeps the player here and says why. */
@@ -345,12 +379,19 @@ export class FieldScene extends Phaser.Scene {
   /**
    * The run's gear and bag overlay over the live field (FS-HRH2J), its sends the run's, its
    * full-bag refusals in the field's notice (R22). A field marks no unsafe finds (FS-18Z5F R37).
+   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    return new EquipmentHud(new GearOverlay(this, this.art, WorldType.Field), {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-      notice: (text) => this.notice(text),
-    });
+    const overlay = new GearOverlay(this, this.art, WorldType.Field);
+    return new EquipmentHud(
+      overlay,
+      {
+        send: (action, payload) => socketManager.sendMessage(action, payload),
+        notice: (text) => this.notice(text),
+      },
+      Date.now,
+      new PurseReader(apiClient, overlay),
+    );
   }
 
   /** Whether the bag can take one more pickup from a pile or chest (FS-HRH2J R21); the notice says when not. */
@@ -378,7 +419,11 @@ export class FieldScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-ESC", () => this.equipment?.hide());
     this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
-    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => this.satchel?.pointerMove(pointer.x, pointer.y));
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+      const at = viewport.toLogical(pointer);
+      this.satchel?.pointerMove(at.x, at.y);
+    });
   }
 
   /**
@@ -402,16 +447,18 @@ export class FieldScene extends Phaser.Scene {
     if (this.piles?.loot(item)) this.equipment?.taken(item);
   }
 
-  /** Everything one visit made is let go: Phaser reuses the scene instance for the next. */
-  private release(): void {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.release, this);
+  /**
+   * Everything one visit made is let go: Phaser reuses the scene instance for the next. On the
+   * game's destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
+   */
+  private release(end: SceneEnd): void {
     this.unsubscribeState?.();
     socketManager.offError(ActionType.LeaveField);
     socketManager.off(ActionType.Interact);
     this.piles?.release();
     this.piles = undefined;
     this.satchel = undefined;
+    this.equipment?.release();
     this.equipment = undefined;
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
@@ -441,6 +488,18 @@ export class FieldScene extends Phaser.Scene {
     this.fight = undefined;
     this.lightMap = undefined;
     this.lastSent = { vx: 0, vy: 0 };
+    // a destroyed game took its input manager, the cursor and the captures with it
+    if (end === "shutdown") this.handBackInput();
+  }
+
+  /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
+  private handBackInput(): void {
+    // the fight's hand or strike-mark is the field's: the next world sets its own
+    this.input.setDefaultCursor("");
+    releaseCaptures(this.input.keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+    ]);
   }
 
   update(time: number, delta: number): void {
@@ -564,8 +623,7 @@ export class FieldScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastState;
     if (!state) return;
-    const { width, height } = this.cameras.main;
-    this.abilityHud ??= new AbilityHud(this, width - HUD_MARGIN, height - HUD_MARGIN);
+    this.abilityHud ??= new AbilityHud(this, { anchor: "bottom-right", dx: -HUD_MARGIN, dy: -HUD_MARGIN });
     this.abilityHud.show(abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }));
   }
 
@@ -608,8 +666,7 @@ export class FieldScene extends Phaser.Scene {
    */
   private showFallen(): void {
     this.hideFallen();
-    const { width, height } = this.cameras.main;
-    const f = fallenFrame(width, height);
+    const f = fallenFrame(viewport.width, viewport.height);
     const panel = this.add.graphics().setScrollFactor(0).setDepth(FALLEN_DEPTH);
     panel.fillStyle(BARROW_HEX.charcoal, 1);
     panel.fillRect(f.panel.x, f.panel.y, f.panel.width, f.panel.height);
@@ -662,7 +719,7 @@ export class FieldScene extends Phaser.Scene {
 
   private keepCameraOn(sprite: Phaser.GameObjects.Container): void {
     if (sprite === this.followedSprite) return;
-    this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+    followWith(this.cameras.main, sprite);
     this.followedSprite = sprite;
   }
 
@@ -784,7 +841,7 @@ export class FieldScene extends Phaser.Scene {
       .setDepth(MARKER_DEPTH.name);
   }
 
-  private placePlayer(player: PlayerState, isSelf: boolean): void {
+  private placePlayer(player: PublicPlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
     const fallen = isFallen(player);
     if (existing) {
@@ -825,9 +882,8 @@ export class FieldScene extends Phaser.Scene {
 
   /** A line said in passing, in the neutral HUD register. */
   private notice(text: string): void {
-    const { width } = this.cameras.main;
     const line = this.add
-      .text(width / 2, NOTICE_Y, text, {
+      .text(viewport.centerX, NOTICE_Y, text, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(BARROW_HEX.vellum),

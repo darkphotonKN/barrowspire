@@ -52,14 +52,19 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 ### Marketplace
 
 - [x] Create a listing → FS-none
+- [ ] Withdraw a listing → FS-V7A5S
 - [x] Place a bid on a listing → FS-none
 - [x] Typed marketplace surface → FS-0YXG6
 - [x] Public listing browse and read → FS-8EGFA
+- [ ] Public listing reads expose no member ids → FS-GKHYD
 - [ ] Accept the leading bid → FS-NXP1W
 - [ ] Buy out a listing → FS-NXP1W
 - [x] Buyout price on listings → FS-9XKS6
 - [ ] Affixes and item level in item summaries → FS-4R9M9
 - [x] Read my bids → FS-EYQ8K
+- [ ] Withdrawal-cap refusal on place-bid → FS-ZE43K
+- [ ] Bid-price refusals on place-bid → FS-V74WE
+- [ ] Already-leading refusal on place-bid → FS-72KT8
 
 ### Items
 
@@ -85,6 +90,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architectu
 - [x] gRPC fan-out to env-configured downstreams
 - [x] Synchronous signup → FS-83TJK
 - [ ] Member email verification routes → FS-V6SFK
+- [ ] Access-token renewal route → FS-ZPX58
 
 ## Purpose
 
@@ -157,7 +163,7 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 **member → `auth`** (public + private)
 
 - Public: `POST /api/member/signup` _(gRPC, synchronous → 201 with the member)_,
-  `POST /api/member/signin`
+  `POST /api/member/signin`, `POST /api/member/refresh` _(renewal, FS-ZPX58)_
 - Private (JWT): `GET /api/member`, `PATCH /api/member/update-password`,
   `PATCH /api/member/update-info`, `POST /api/member/avatar/upload-request`,
   `POST /api/member/avatar/confirm`

@@ -20,15 +20,43 @@ export const ANIMATIONS = {
   death: { frames: 7, fps: 9, loop: false },
 };
 
+
 /**
- * The Mercenary's clips (FS-MAMHR §H): the four, and the parry, which raises into the guard fast
- * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
- * long as the stance is up.
+ * How many walk cycles the legs of `walk_attack` take while the upper body shoots once. The run
+ * plays the walk at about 2.7x (WALK_PACE in src/render/art/animationSelect.ts: the server's 200
+ * world px/s over the 74 px/s the 1x stride covers), so one 8-frame cycle takes about 0.3 s, and
+ * the shot lasts 7 frames at 12 fps, 0.58 s: two cycles fit it, so the feet stay nearly planted.
  */
-export const MERC_ANIMATIONS = {
+export const WALK_ATTACK_CYCLES = 2;
+
+/**
+ * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
+ * walk from the waist down, played while a class attacks on the move. It lasts exactly as long as
+ * `specs.attack` (twice its frames at twice its fps: 14 at 24 for the 7 at 12), so the client's
+ * attack window times it unchanged. The upper body steps through the attack's own keys, each held
+ * two frames, just as the attack plays them; the legs stride at the doubled rate. It is `boxed`:
+ * drawn in the frame the other clips set, never widening it, so the sheet keeps its frame box
+ * (the bake fails if it would clip).
+ */
+export function withWalkAttack(specs) {
+  return { ...specs, walk_attack: { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true } };
+}
+
+/**
+ * The playable classes' clips (FS-3V7GC): the four, and `walk_attack`. The knight, the archer
+ * and the wizard; the mercenary's are {@link MERC_ANIMATIONS}.
+ */
+export const CLASS_ANIMATIONS = withWalkAttack(ANIMATIONS);
+
+/**
+ * The Mercenary's clips (FS-MAMHR §H): a class's, and the parry, which raises into the guard fast
+ * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
+ * long as the stance is up. There is no parry on the move: the guard is whole-body (FS-3V7GC R7).
+ */
+export const MERC_ANIMATIONS = withWalkAttack({
   ...ANIMATIONS,
   parry: { frames: 4, fps: 24, loop: false },
-};
+});
 
 /**
  * Hub folk (FS-2325V §G.1) only idle and walk: they never fight or fall. Their idle is a shorter
@@ -292,6 +320,61 @@ export const ATTACKS = {
   ].map((p) => add(STANCE, p)),
 };
 
+// --- attacking on the move -----------------------------------------------------------------
+
+/**
+ * The bones the walk keeps when an attack is layered over it: the pelvis and the legs. Every
+ * other bone, and every fx (the bow's draw, the arrow), is the attack's.
+ */
+export const LOWER_BODY = new Set(["hips", "thighL", "thighR", "shinL", "shinR", "metatarsalL", "metatarsalR", "footL", "footR"]);
+
+const quatOf = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0], r[1], r[2], "XYZ"));
+
+/**
+ * `upper` from the waist up over `lower` from the waist down (a layered blend with a bone mask:
+ * the per-bone override game engines use for "run and shoot"). The legs and pelvis are the
+ * lower pose's, the rest and the fx the upper's. The spine then takes up the difference between
+ * the two pelvises, so the chest keeps the upper pose's own orientation in the model, its aim
+ * never swinging with the stride: a mesh-space rather than a local-space blend. That holds
+ * because hips and spine rest at zero on every humanoid rig (rig.js), so their offsets compose as
+ * plain rotations. The body's offsets are the lower pose's: an attack's lunge would slide the
+ * planted feet.
+ */
+export function layerPoses(upper, lower) {
+  const out = pose({}, { ...lower.body }, { ...upper.fx });
+  for (const [k, v] of Object.entries(upper.b)) if (!LOWER_BODY.has(k)) out.b[k] = [...v];
+  for (const [k, v] of Object.entries(lower.b)) if (LOWER_BODY.has(k)) out.b[k] = [...v];
+  const spine = quatOf(lower.b.hips ?? ZERO)
+    .invert()
+    .multiply(quatOf(upper.b.hips ?? ZERO))
+    .multiply(quatOf(upper.b.spine ?? ZERO));
+  const e = new THREE.Euler().setFromQuaternion(spine, "XYZ");
+  out.b.spine = [e.x, e.y, e.z];
+  return out;
+}
+
+/**
+ * The attack over the walk (`walk_attack`): `spec`'s frames span exactly the attack clip's
+ * duration (`attackSpec`). The upper body is the attack key showing at that moment, as the
+ * attack clip itself would show it (an in-between would be a pose the attack never draws, and
+ * its bow sweeps wider than the frame); the legs walk {@link WALK_ATTACK_CYCLES} cycles over the
+ * same span, sampled between the walk's keys.
+ */
+export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
+  const attack = ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
+  const walk = walkCycle(style);
+  const duration = spec.frames / spec.fps;
+  if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
+    throw new Error(`clips: walk_attack lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
+  const stride = (WALK_ATTACK_CYCLES * walk.length) / spec.frames;
+  return Array.from({ length: spec.frames }, (_, i) =>
+    layerPoses(
+      attack[Math.min(attack.length - 1, Math.floor((i * attackSpec.fps) / spec.fps + 1e-9))],
+      sample(walk, (i * stride) % walk.length, true),
+    ),
+  );
+}
+
 // --- parry ---------------------------------------------------------------------------------
 
 /** Where the raise has got to at each key frame: most of the way at once, then settling in. */
@@ -350,6 +433,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
+    walk_attack: () => walkAttackClip(style, specs.walk_attack, specs.attack),
   };
   const own = style.clips ?? {};
   return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));
@@ -372,6 +456,8 @@ export function applyPose(rig, p, springAngles) {
       const a = springAngles[s.bone];
       if (a) rig.bones[s.bone].rotation.set(a[0], a[1], a[2]);
     }
+  // a spring that may not swing in through a leg (a skirt's panels, anatomy.js pushPanels)
+  for (const s of rig.springs) if (s.push) rig.bones[s.bone].rotation.x = s.push(rig.bones[s.bone].rotation.x, p);
   if (rig.bones.jaw && p.fx.jaw !== undefined) rig.bones.jaw.rotation.x = (rig.rest.jaw?.[0] ?? 0) + p.fx.jaw * 0.6;
   rig.body.rotation.set(p.body.rx ?? 0, 0, p.body.rz ?? 0);
   rig.body.position.set((p.body.x ?? 0) * H, 0, (p.body.z ?? 0) * H);

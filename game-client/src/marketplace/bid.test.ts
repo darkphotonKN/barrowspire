@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import {
+  BID_ALREADY_LEADING,
   BID_AT_BUYOUT,
   BID_CONFLICT,
   BID_ENDED,
   BID_LAPSED,
   BID_NOT_ENOUGH_GOLD,
+  BID_WITHDRAW_LIMIT,
   PURSE_FAILED,
   PURSE_NOT_READY,
   bidAttempt,
@@ -151,8 +153,19 @@ describe("keepsBidKey", () => {
     ["a 503", apiError(503, "UNAVAILABLE"), true],
     ["no answer at all", new TypeError("fetch failed"), true],
     ["a too-low bid (VALIDATION_FAILED)", apiError(400, "VALIDATION_FAILED"), false],
+    // FS-V74WE §Requirements 14
+    ["a too-low bid (BID_TOO_LOW)", apiError(400, "BID_TOO_LOW"), false],
+    ["a bid at the buyout (BID_AT_OR_ABOVE_BUYOUT)", apiError(400, "BID_AT_OR_ABOVE_BUYOUT"), false],
     ["an ended auction or short purse", apiError(400, "FAILED_PRECONDITION"), false],
     ["a spent key (409 · ALREADY_EXISTS)", apiError(409, "ALREADY_EXISTS"), false],
+    // FS-ZE43K §Requirements 12
+    [
+      "a member past the withdrawal cap (BID_WITHDRAW_LIMIT_REACHED)",
+      apiError(400, "BID_WITHDRAW_LIMIT_REACHED"),
+      false,
+    ],
+    // FS-72KT8 §Requirements 17
+    ["a member already leading (ALREADY_LEADING)", apiError(400, "ALREADY_LEADING"), false],
     ["any other answer", apiError(400, "SOMETHING_NEW"), false],
   ])("should decide the key after %s", (_label, err, want) => {
     expect(keepsBidKey(err)).toBe(want);
@@ -160,9 +173,23 @@ describe("keepsBidKey", () => {
 });
 
 describe("bidFailure", () => {
-  it("should refetch before saying someone bid higher", () => {
+  // FS-V74WE §Requirements 13: an older server's refusal, read by the re-read.
+  it("should refetch and infer the cause of a VALIDATION_FAILED bid", () => {
     expect(bidFailure(apiError(400, "VALIDATION_FAILED"), { amount: 50, availableGold: 100 }))
-      .toEqual({ refetch: true });
+      .toEqual({ refetch: "infer" });
+  });
+
+  // FS-V74WE §Requirements 11
+  it("should refetch before saying someone bid higher on BID_TOO_LOW", () => {
+    expect(bidFailure(apiError(400, "BID_TOO_LOW"), { amount: 50, availableGold: 100 }))
+      .toEqual({ refetch: "outbid" });
+  });
+
+  // FS-V74WE §Requirements 12
+  it("should point a bid at or above the buyout at Buy out without a refetch", () => {
+    expect(
+      bidFailure(apiError(400, "BID_AT_OR_ABOVE_BUYOUT"), { amount: 50, availableGold: 100 }),
+    ).toEqual({ message: BID_AT_BUYOUT });
   });
 
   it("should blame gold when the amount is more than is available", () => {
@@ -200,6 +227,30 @@ describe("bidFailure", () => {
     expect(
       bidFailure(apiError(400, "EMAIL_UNVERIFIED"), { amount: 50, availableGold: 100 }),
     ).toEqual({ message: VERIFY_TO_BID });
+  });
+
+  // FS-ZE43K §Requirements 12
+  it("should tell a member past the withdrawal cap they can't bid on this auction again", () => {
+    expect(
+      bidFailure(apiError(400, "BID_WITHDRAW_LIMIT_REACHED"), { amount: 50, availableGold: 100 }),
+    ).toEqual({ message: BID_WITHDRAW_LIMIT });
+    expect(BID_WITHDRAW_LIMIT).toBe(
+      "You've withdrawn too many bids on this auction to bid on it again.",
+    );
+  });
+
+  it("should name the withdrawal cap even when the purse is short", () => {
+    expect(
+      bidFailure(apiError(400, "BID_WITHDRAW_LIMIT_REACHED"), { amount: 150, availableGold: 100 }),
+    ).toEqual({ message: BID_WITHDRAW_LIMIT });
+  });
+
+  // FS-72KT8 §Requirements 16
+  it("should tell a leading member they already lead, without a refetch", () => {
+    expect(bidFailure(apiError(400, "ALREADY_LEADING"), { amount: 150 })).toEqual({
+      message: BID_ALREADY_LEADING,
+    });
+    expect(BID_ALREADY_LEADING).toBe("You're already the highest bidder.");
   });
 
   it("should fall back to the server's own words for any other code", () => {

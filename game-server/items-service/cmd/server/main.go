@@ -101,8 +101,9 @@ func main() {
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxServ := commonoutbox.NewService(outboxRepo)
 	publisher := commonbroker.NewAmqpPublisher(ch)
-	// TODO: update in prod
-	workcycyleTime := time.Minute * 1
+	// a player waits on these events (item.reserved creates their listing), so
+	// the outbox is polled every second rather than every minute
+	workcycyleTime := time.Second
 	workersWg := sync.WaitGroup{}
 	// add the number of workers
 	workersWg.Add(1)

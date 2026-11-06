@@ -66,6 +66,9 @@ func TestReserveItemRefusesTermsTheListingWouldRefuseBeforeReserving(t *testing.
 		{name: "end time in the past", startPrice: 150, endsAt: now.Add(-24 * time.Hour), want: listing.ErrInvalidEndTime},
 		{name: "end time is now", startPrice: 150, endsAt: now, want: listing.ErrInvalidEndTime},
 		{name: "non-positive start price", startPrice: 0, endsAt: now.Add(time.Hour), want: listing.ErrInvalidStartPrice},
+		// FS-XEDFF Req 1–2: the duration bound is checked when the seller lists.
+		{name: "ends too soon", startPrice: 150, endsAt: now.Add(30 * time.Minute), want: listing.ErrListingDurationOutOfRange},
+		{name: "ends too late", startPrice: 150, endsAt: now.Add(8 * 24 * time.Hour), want: listing.ErrListingDurationOutOfRange},
 	}
 
 	for _, tt := range tests {

@@ -1,4 +1,5 @@
 import * as Phaser from "phaser";
+import { viewport } from "@/render/viewport";
 
 export class GameOverScene extends Phaser.Scene {
   constructor() {
@@ -6,8 +7,8 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   create(data: { score: number }): void {
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
+    const width = viewport.width;
+    const height = viewport.height;
 
     // Death text — grim, lore voice
     const gameOverText = this.add.text(width / 2, height / 3, "FEW RETURN WHOLE", {

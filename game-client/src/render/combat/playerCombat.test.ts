@@ -19,6 +19,7 @@ import {
  */
 function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
   const send = vi.fn();
+  const castSent = vi.fn();
   const timers: { at: number; fn: () => void }[] = [];
   let now = 0;
   const look: { [K in keyof Required<CombatLook>]: ReturnType<typeof vi.fn> } = {
@@ -37,7 +38,7 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
   };
   const self = { me };
   const combat = new PlayerCombat(
-    { sendMessage: send, later: (ms, fn) => timers.push({ at: now + ms, fn }), now: () => now },
+    { sendMessage: send, later: (ms, fn) => timers.push({ at: now + ms, fn }), now: () => now, castSent },
     look,
     () => self.me,
   );
@@ -45,7 +46,7 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
     now += ms;
     for (const t of timers.splice(0).filter((t) => t.at <= now || !timers.push(t))) t.fn();
   };
-  return { combat, send, look, elapse, self };
+  return { combat, send, look, elapse, self, castSent };
 }
 
 const me = { x: 100, y: 100 };
@@ -113,7 +114,7 @@ describe("PlayerCombat cast (FS-2325V §E.4; FS-KYPQ9 §D)", () => {
   });
 
   it.each([
-    ["warrior", "dash", "dash", CHARGE_MS],
+    ["warrior", "dash", "dash", { charge: true, holdMs: CHARGE_MS }],
     ["mage", "triple_fireball", "fireball", undefined],
   ] as const)("should cast a %s's special, %s", (cls, skill, effect, hold) => {
     const { combat, send, look } = combatOnStage();
@@ -292,5 +293,54 @@ describe("PlayerCombat Mercenary (FS-MAMHR §G.32–§G.35)", () => {
     expect(combat.cast("special", "mercenary", me, target)).toBe(false);
     expect(send).not.toHaveBeenCalled();
     expect(look.parry).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlayerCombat castSent (FS-48CTQ §C.6: a cast that can strike names the hovered monster)", () => {
+  const target = { x: 350, y: 100 };
+  const stamina = (current: number): ResourceState => ({ kind: "stamina", current, max: 100, ability_cost: 25 });
+
+  it.each(["warrior", "archer", "mercenary", "mage"])("should tell the port once on a %s's primary, as it is sent", (cls) => {
+    const { combat, send, castSent } = combatOnStage();
+    castSent.mockImplementation(() => expect(send).toHaveBeenCalledTimes(1));
+    combat.cast("primary", cls, me, target);
+    expect(castSent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["warrior", "mage"])("should tell the port once on a %s's right-click ability", (cls) => {
+    const { combat, castSent } = combatOnStage();
+    combat.cast("special", cls, me, target);
+    expect(castSent).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not tell it on the archer's right-press, which sends nothing, but on the Shadow Shot it fires", () => {
+    const { combat, castSent, elapse } = combatOnStage({ resource: stamina(100) });
+    combat.cast("special", "archer", me, target);
+    expect(castSent).not.toHaveBeenCalled();
+    elapse(SHADOW_SHOT_MIN_HOLD_MS);
+    expect(combat.releaseAim(me, target)).toBe(true);
+    expect(castSent).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not tell it on a hold let go too soon, which fires nothing", () => {
+    const { combat, castSent } = combatOnStage({ resource: stamina(100) });
+    combat.cast("special", "archer", me, target);
+    expect(combat.releaseAim(me, target)).toBe(false);
+    expect(castSent).not.toHaveBeenCalled();
+  });
+
+  it("should not tell it on the Mercenary's parry, which strikes nothing", () => {
+    const { combat, send, castSent } = combatOnStage();
+    combat.cast("special", "mercenary", me, target);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(castSent).not.toHaveBeenCalled();
+  });
+
+  it("should not tell it on a cast the cooldown holds back, nor on a strike, which names its own monster", () => {
+    const { combat, castSent } = combatOnStage();
+    combat.cast("primary", "mage", me, target);
+    combat.cast("primary", "mage", me, target);
+    combat.strike(me, "boar-1", { x: 120, y: 100 });
+    expect(castSent).toHaveBeenCalledTimes(1);
   });
 });

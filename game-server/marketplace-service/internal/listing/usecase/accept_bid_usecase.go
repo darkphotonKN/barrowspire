@@ -32,9 +32,14 @@ func NewAcceptBidUsecase(repo listing.Repository, settlementStarter SettlementSt
 //
 // No bid ID: the seller accepts whichever bid is WINNING, and 0a selects it the
 // same way for every trigger (§Req 3, 5).
+//
+// MinAmount is the accept floor (FS-F692V): the leading bid the seller was
+// shown. It is checked here only, never carried into the workflow; the window
+// between this read and 0a's freeze is accepted (FS-F692V §Req 4).
 type AcceptBidCommand struct {
 	ListingID uuid.UUID
 	MemberID  uuid.UUID
+	MinAmount int
 	Now       time.Time
 }
 
@@ -44,7 +49,7 @@ func (uc *AcceptBidUsecase) Handle(ctx context.Context, cmd AcceptBidCommand) er
 		return fmt.Errorf("accept bid usecase findbyid listing id %v : %w", cmd.ListingID, err)
 	}
 
-	if err := l.CanAcceptBid(cmd.MemberID, cmd.Now); err != nil {
+	if err := l.CanAcceptBid(cmd.MemberID, cmd.MinAmount, cmd.Now); err != nil {
 		return fmt.Errorf("accept bid usecase listing id %v : %w", cmd.ListingID, err)
 	}
 

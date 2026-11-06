@@ -65,6 +65,31 @@ describe("selectAnimation", () => {
       { animation: "attack", facing: "sw", direction: 3 },
     ],
     [
+      "attacking while walking on a sheet with walk_attack keeps the legs walking, turned to the aim",
+      { attacking: true, walkAttack: true, velocity: { vx: 200, vy: 0 }, aim: { x: -30, y: 30 } },
+      { animation: "walk_attack", facing: "sw", direction: 3 },
+    ],
+    [
+      "attacking while walking on a sheet with walk_attack, with no aim, faces the way it walks",
+      { attacking: true, walkAttack: true, velocity: { vx: 0, vy: -200 } },
+      { animation: "walk_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while standing on a sheet with walk_attack is the whole-body attack",
+      { attacking: true, walkAttack: true, aim: { x: 0, y: -50 } },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a drift below walking speed is still the whole-body attack",
+      { attacking: true, walkAttack: true, velocity: { vx: 5, vy: 0 }, aim: { x: 50, y: 0 } },
+      { animation: "attack", facing: "e", direction: 0 },
+    ],
+    [
+      "dead wins over an attack on the move",
+      { dead: true, attacking: true, walkAttack: true, facing: "w", velocity: { vx: 200, vy: 0 } },
+      { animation: "death", facing: "w", direction: 4 },
+    ],
+    [
       "holding an aim stands idle turned to it (FS-JTNPR req 10)",
       { facing: "se", holding: { x: -50, y: 0 } },
       { animation: "idle", facing: "w", direction: 4 },
@@ -190,6 +215,56 @@ describe("the shipped character sheets", () => {
       expect(sheet.animations.death.loop).toBe(false);
     },
   );
+
+  const CLASSES = ["warrior", "mage", "archer", "mercenary"];
+  const CLASS_SHEETS = CLASSES.map(characterSheet);
+
+  it.each(CLASSES)(
+    "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
+    (cls) => {
+      const { attack, walk_attack: walkAttack } = manifest.sheets[characterSheet(cls)].animations;
+      expect(walkAttack?.loop).toBe(false);
+      expect(walkAttack?.frames).toHaveLength(8);
+      // the client times the window by the attack clip, so the two must last alike
+      expect(walkAttack.frames[0].length / walkAttack.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
+    },
+  );
+
+  it("should give walk_attack to the four classes alone, never a creature or a resident (FS-3V7GC)", () => {
+    for (const [name, sheet] of Object.entries(manifest.sheets))
+      if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
+  });
+
+  it.each(CLASSES)(
+    "should bake %s at 2x, trimmed, frames twice a 1x sheet's px each way (FS-HF0WW, FS-3V7GC)",
+    (cls) => {
+      const sheet = manifest.sheets[characterSheet(cls)];
+      expect(sheet.scale).toBe(2);
+      expect(sheet.trimmed).toBe(true);
+      expect(sheet.frameWidth % 2).toBe(0);
+      expect(sheet.frameHeight % 2).toBe(0);
+    },
+  );
+
+  it("should bake the four classes alone at 2x and trimmed (FS-3V7GC)", () => {
+    for (const [name, sheet] of Object.entries(manifest.sheets))
+      if (!CLASS_SHEETS.includes(name)) {
+        expect(sheet.scale, name).toBeUndefined();
+        expect(sheet.trimmed, name).toBeUndefined();
+      }
+  });
+
+  it("should pack each class into its own atlas pages, shared with no other sheet (FS-3V7GC)", () => {
+    const pages = (sheet: (typeof manifest.sheets)[string]) =>
+      new Set([sheet.atlas, ...Object.values(sheet.animations).map((a) => a.atlas)].filter(Boolean));
+    for (const name of CLASS_SHEETS) {
+      const own = pages(manifest.sheets[name]);
+      expect(own.size, name).toBeGreaterThan(0);
+      for (const [other, sheet] of Object.entries(manifest.sheets))
+        if (other !== name) for (const page of pages(sheet)) expect(own.has(page), `${other} on ${name}'s ${page}`).toBe(false);
+    }
+    expect(Object.keys(manifest.atlases).filter((k) => k.startsWith("characters-"))).toEqual([]);
+  });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {
     const merc = manifest.sheets[characterSheet("mercenary")];

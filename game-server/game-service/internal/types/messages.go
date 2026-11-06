@@ -76,14 +76,16 @@ type ClientGameState struct {
 	OtherPlayers  []OtherPlayerState  `json:"other_players"`  // All other players
 	Items         []uuid.UUID         `json:"items"`          // TODO: update with item entity converted into struct format
 	Doors         []*DoorState        `json:"doors"`
-	Walls         []*WallState        `json:"walls"`
-	Containers    []*ContainerState   `json:"containers"`
-	EscapeDoor    []*EscapeDoorState  `json:"escape_doors"`
-	Equipment     *EquipmentState     `json:"equipment"`
-	Switch        []*SwitchState      `json:"switches"`
-	NPCs          []*NPCState         `json:"npcs"`
-	Projectiles   []*ProjectileState  `json:"projectiles"`
-	EscapedCount  int                 `json:"escaped_count"`
+	// Walls are the hub's and a field's, every tick; a run's travel in its
+	// floor map and the key is absent, hence the pointer. FS-KE075 §F R34.
+	Walls        *[]*WallState      `json:"walls,omitempty"`
+	Containers   []*ContainerState  `json:"containers"`
+	EscapeDoor   []*EscapeDoorState `json:"escape_doors"`
+	Equipment    *EquipmentState    `json:"equipment"`
+	Switch       []*SwitchState     `json:"switches"`
+	NPCs         []*NPCState        `json:"npcs"`
+	Projectiles  []*ProjectileState `json:"projectiles"`
+	EscapedCount int                `json:"escaped_count"`
 	// Floor and FloorCount are a run's; the hub has no floors and omits both.
 	// FS-F6F88 §Requirements 26.
 	Floor      int `json:"floor,omitempty"`
@@ -115,12 +117,13 @@ type CurrentPlayerState struct {
 }
 
 // OtherPlayerState is another player as one recipient is told them: what every
-// player shows, plus, when they are in the recipient's party, their class
-// resource and a mercenary's parry fields, as their own HUD gets them. For
-// anyone else both are nil and the JSON is the bare PlayerState's.
+// player shows, never their bag or worn gear (FS-KE075 §I R51, ADR-0064),
+// plus, when they are in the recipient's party, their class resource and a
+// mercenary's parry fields, as their own HUD gets them. For anyone else both
+// are nil and the JSON is the bare PublicPlayerState's.
 // FS-CH21F §Requirements 1–4.
 type OtherPlayerState struct {
-	*PlayerState
+	*PublicPlayerState
 	Resource *ResourceState `json:"resource,omitempty"`
 	*ParryState
 }
@@ -160,6 +163,13 @@ type BackendGameState struct {
 	Monsters     []*MonsterState
 	Trails       []*TrailState
 	Gates        []*GateState
+	// CellSize is the edge of the cell grid the floor is built on, from its
+	// FloorComponent: above 0 on a dungeon floor, whose monsters and
+	// containers are cut per recipient by distance. FS-KE075 §G R36.
+	CellSize float64
+	// InPlay is where each living, in-play delver's body stands: the interest
+	// centres a dungeon floor's cut is measured from. FS-KE075 §G R37.
+	InPlay map[uuid.UUID]Position
 }
 
 // ErrInvalidPayload marks a client payload that cannot be parsed. The payload

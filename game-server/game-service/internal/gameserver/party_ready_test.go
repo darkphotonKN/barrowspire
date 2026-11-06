@@ -176,6 +176,8 @@ func awaitRunEntered(t *testing.T, server *Server, inbox *startSoloInbox, who st
 	run, exists := server.GetGameSession(id)
 	require.True(t, exists, "the run %s entered exists", who)
 	t.Cleanup(run.Shutdown)
+	// the run's floor is mapped after it is entered (FS-KE075 §F R32)
+	awaitFloorMapOf(t, inbox, run, who)
 	return run
 }
 

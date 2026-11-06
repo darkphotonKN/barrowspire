@@ -586,7 +586,7 @@ export function demon() {
   dorsalSpines(rig, F);
   tail(rig, F);
   wings(rig, F);
-  skirt(rig, G.leatherDark, { top: hy + 0.035, bottom: hy - 0.2, rTop: [0.104, 0.112], rBottom: [0.128, 0.13], legFollow: 0.5, panels: true, ragged: { teeth: 9, depth: 0.09, seed: 12 } });
+  skirt(rig, G.leatherDark, { top: hy + 0.035, bottom: hy - 0.2, rTop: [0.104, 0.112], rBottom: [0.128, 0.13], legFollow: 0.5, panels: true, ragged: { teeth: 9, depth: 0.09, seed: 12 }, mirrored: true });
 
   const style = {
     speed: 0.5,

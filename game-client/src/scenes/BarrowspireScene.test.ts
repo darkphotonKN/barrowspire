@@ -6,6 +6,14 @@ interface Emitter {
   listenerCount(event: string): number;
 }
 
+// The camera's fit, bounds and follow under the render scale are the viewport's (camera.test.ts);
+// here the stub camera only records what it was asked to follow.
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  boundCamera: () => {},
+  followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
+}));
+
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
 // on the same emitter Phaser builds them from.
 vi.mock("phaser", async () => {
@@ -30,7 +38,8 @@ vi.mock("phaser", async () => {
           key.justDown = false;
           return pressed;
         },
-        KeyCodes: {},
+        // the codes the run binds (bindKeys), as Phaser's KeyCodes has them
+        KeyCodes: { W: 87, A: 65, S: 83, D: 68, TAB: 9, ESC: 27, ENTER: 13, ONE: 49, TWO: 50 },
       },
     },
     // interact range is measured between world positions
@@ -45,14 +54,16 @@ vi.mock("phaser", async () => {
   return { ...phaser, default: phaser };
 });
 
-const { BarrowspireScene, projectileFlightOf } = await import("./BarrowspireScene");
+const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_HUD } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
+const { FULLSCREEN_BUTTON, anchorAt, viewport } = await import("@/render/viewport");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
 const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeScene");
 const { ProjectileFlights } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
+const { sceneSystems } = await import("./sceneEnd.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
@@ -61,7 +72,7 @@ const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
-const { markerBase } = await import("@/render/markers");
+const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
 const { ActionType } = await import("@/assets/types/client");
@@ -69,6 +80,8 @@ const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
+const await_targetFrame = await import("@/ui/targetFrame");
+const await_minimap = await import("@/ui/minimap");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -204,12 +217,84 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
 
   it("should not pile up teardown listeners across restarts", () => {
     const { scene, run } = startedRun();
+    // one per thing that lets go at the end (the run's teardown, its held one-shots): the same
+    // number after every restart
+    const ends = [run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")];
     for (let i = 0; i < 3; i++) {
       run.events.emit("shutdown");
       scene.init();
     }
-    expect(run.events.listenerCount("shutdown")).toBe(1);
-    expect(run.events.listenerCount("destroy")).toBe(1);
+    expect([run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")]).toEqual(ends);
+    expect(ends).toEqual([2, 2]);
+  });
+});
+
+// Leaving /game mid-run destroys the game: Phaser emits the scene's DESTROY only, after every plugin
+// has destroyed itself (sceneEnd.standin.ts). The run must still let go of what outlives the game,
+// and ask the dead plugins nothing: in the hub the same teardown threw on the input (asked 2026-11-06).
+describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should let the run go on a game destroy without asking the destroyed plugins anything", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as RunState & { tabKey?: object };
+    // the plugins boot before the scene's init runs, so they hear DESTROY first
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    run.tabKey = { keyCode: 9 };
+    run.player = {};
+    const off = vi.spyOn(socketManager, "off");
+
+    systems.destroy();
+
+    expect(systems.touched).toEqual([]);
+    expect(off).toHaveBeenCalledWith("end_game");
+    expect(run.player).toBeUndefined();
+  });
+
+  it("should still give the next run back the keyboard the run's end locked, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    systems.input.keyboard.enabled = false;
+
+    systems.shutdown();
+
+    expect(systems.input.keyboard.enabled).toBe(true);
+  });
+
+  // Phaser's stop destroys the run's keys before the run's own handler (KeyboardPlugin.shutdown →
+  // removeAllKeys(true)) and keeps their captures, the game's: removeKey then found no Tab, and
+  // Tab's default stayed prevented in the hub and its DOM overlays until the game died (review
+  // 2026-11-06).
+  it("should hand back the Tab capture on a stop, though Phaser destroyed the key first", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { tabKey?: object };
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    run.tabKey = systems.input.keyboard.addKey(9, true);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).not.toContain(9);
+  });
+
+  it("should hand back the captures every key it binds made, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    (scene as unknown as { bindKeys(): void }).bindKeys();
+    expect(systems.input.manager?.captures).toContain(9);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
   });
 });
 
@@ -267,12 +352,15 @@ describe("BarrowspireScene effect teardown (FS-KYPQ9 §B.9, §C.4)", () => {
 
   it("should not pile up teardown listeners when restarted with effects", () => {
     const { scene, run } = runWithEffects();
+    // one per thing that lets go at the end (the run's teardown, its held one-shots): the same
+    // number after every restart
+    const ends = [run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")];
     for (let i = 0; i < 3; i++) {
       run.events.emit("shutdown");
       scene.init();
     }
-    expect(run.events.listenerCount("shutdown")).toBe(1);
-    expect(run.events.listenerCount("destroy")).toBe(1);
+    expect([run.events.listenerCount("shutdown"), run.events.listenerCount("destroy")]).toEqual(ends);
+    expect(ends).toEqual([2, 2]);
   });
 });
 
@@ -305,8 +393,9 @@ describe("BarrowspireScene Mercenary placeholder (FS-MAMHR §G.31)", () => {
     Object.assign(scene, {
       make: { graphics },
       textures: { exists: () => false },
-      cache: { json: { exists: () => false } },
-      load: { once: () => {}, json: () => {} },
+      // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
+      cache: { json: { exists: () => true, get: () => undefined } },
+      load: { on: () => {}, once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
     for (const prefix of ["player_mercenary", "other_mercenary"])
@@ -455,6 +544,17 @@ function recordingStage() {
             target.last["setDepth"] = [depth];
             return proxy;
           };
+        // Phaser 4's mask filter (`maskInView`): recorded as an `addMask` call on the masked object
+        if (prop === "filters")
+          return {
+            external: {
+              addMask: (...args: unknown[]) => {
+                target.calls.push("addMask");
+                target.last["addMask"] = args;
+                return { setGameObject: () => undefined, invert: false };
+              },
+            },
+          };
         // no arcade body: the placeholder rig's collision circle is skipped
         if (prop === "body") return undefined;
         if (prop === "visible") return true;
@@ -575,6 +675,13 @@ function floorState(
   };
 }
 
+/** A counter tween run to its end at once: the fog's fade (FS-SRA9J §C.13) as the state path sees it. */
+function finishAtOnce(config: { onUpdate?: (t: { getValue(): number }) => void; onComplete?: () => void }) {
+  config.onUpdate?.({ getValue: () => 1 });
+  config.onComplete?.();
+  return { stop: vi.fn() };
+}
+
 function sceneOnStage() {
   const scene = new BarrowspireScene();
   const run = scene as unknown as FloorRun;
@@ -586,15 +693,40 @@ function sceneOnStage() {
   const painted: { id: string }[][] = [];
   const grounds: unknown[] = [];
   run.add = stage.add;
+  // no run's map is held until the server sends one (FS-KE075 §H.40)
+  useGameStore.setState({ floorMap: null });
+  // the server's part (FS-KE075 §F.32): a floor's map goes before its first state, so a fixture
+  // state's walls become that floor's map and the state itself carries none, as a run's never does
+  const apply = run.handleGameStateUpdate.bind(run);
+  run.handleGameStateUpdate = (state: GameState) => {
+    const { walls, ...frame } = state;
+    const held = useGameStore.getState().floorMap;
+    if (walls && state.floor !== undefined && (held?.floor !== state.floor || held.session_id !== state.session_id))
+      useGameStore.getState().receiveFloorMap({ session_id: state.session_id, floor: state.floor, width: 1440, height: 960, walls });
+    apply(frame as GameState);
+  };
   run.physics = {
+    world: { setBounds: vi.fn() },
     add: {
       staticGroup: () => stage.make("staticGroup"),
       sprite: (...args: unknown[]) => stage.make("sprite", args),
       collider: () => {},
     },
   };
-  run.tweens = { add: vi.fn(), killTweensOf: vi.fn() };
+  run.tweens = { add: vi.fn(), killTweensOf: vi.fn(), addCounter: vi.fn(finishAtOnce) };
   run.time = { delayedCall: vi.fn() };
+  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes
+  (run as unknown as { textures: unknown }).textures = {
+    createCanvas: (_key: string, w: number, h: number) => ({
+      getContext: () => ({ createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }) }),
+      putData: vi.fn(),
+      refresh: vi.fn(),
+      setFilter: vi.fn(),
+      destroy: vi.fn(),
+    }),
+  };
+  // the HUD lays out in the logical view, which the viewport owns (FS-ZAJMH R2)
+  viewport.set({ width: 800, height: 600, renderScale: 1 });
   run.cameras = {
     main: { width: 800, height: 600, centerX: 400, centerY: 300, startFollow: vi.fn() },
   };
@@ -723,6 +855,168 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
 
     expect(texts().some((t) => /Floor$/.test(String(t.content)))).toBe(false);
     expect(stage.made.filter((m) => !m.destroyed).length).toBe(built);
+  });
+});
+
+/** What the scene built of a floor: its walls, its perimeter and dressing once done, its size. */
+interface MapRun extends FloorRun {
+  walls: Map<string, unknown>;
+  perimeter?: unknown[];
+  dressing?: unknown[];
+  lastFloor?: number;
+  floorVeil: unknown[];
+  mapWidth: number;
+  mapHeight: number;
+  subscribeFloorMap(): void;
+  floorMapUnsubscribe?: () => void;
+}
+
+/** `state` as the server sends a run's: no walls key (FS-KE075 §F.34). */
+const bare = (state: GameState): GameState => {
+  const { walls: _walls, ...frame } = state;
+  return frame as GameState;
+};
+
+/** The floor map of `state`'s floor, its walls the fixture's. */
+const mapOf = (state: GameState, size = { width: 1440, height: 960 }) => ({
+  session_id: state.session_id,
+  floor: state.floor!,
+  ...size,
+  walls: state.walls!,
+});
+
+describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGameStore.setState({ floorMap: null });
+  });
+
+  function mapStage() {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as MapRun;
+    // the real state path, without the harness' map-first shim
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    const clock = { now: 0 };
+    run.time = { delayedCall: vi.fn(), get now() { return clock.now; } };
+    const asks = () => sent.mock.calls.filter(([action]) => action === "request_floor_map").length;
+    return { ...scene, run, handle, clock, asks };
+  }
+
+  it("builds the floor from a map held before the first snapshot, once", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+
+    handle(bare(floorState(2)));
+    const built = run.walls.size;
+    handle(bare(floorState(2)));
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    handle(bare(floorState(2)));
+
+    expect(built).toBe(4);
+    expect(run.walls.size).toBe(4);
+    expect(run.perimeter).toBeDefined();
+    expect(run.dressing).toBeDefined();
+  });
+
+  it("applies a snapshot whose floor has no map for its entities, and builds the floor when the map comes", () => {
+    const { run, handle, stage } = mapStage();
+    run.subscribeFloorMap();
+
+    handle(bare(floorState(2)));
+    expect(run.walls.size).toBe(0);
+    expect(run.perimeter).toBeUndefined();
+    expect(run.dressing).toBeUndefined();
+    // the dynamic entities stand: the chest, the doors, the monsters
+    expect(stage.made.some((m) => m.kind === "sprite")).toBe(true);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    expect(run.walls.size).toBe(4);
+    expect(run.perimeter).toBeDefined();
+    expect(run.dressing).toBeDefined();
+
+    const made = stage.made.length;
+    handle(bare(floorState(2)));
+    expect(stage.made.length).toBe(made);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("asks for a withheld map after a second, then every second, and stops once it comes", () => {
+    const { run, handle, clock, asks } = mapStage();
+    run.subscribeFloorMap();
+    for (clock.now = 0; clock.now <= 3100; clock.now += 50) handle(bare(floorState(2)));
+    expect(asks()).toBe(3);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    for (; clock.now <= 6000; clock.now += 50) handle(bare(floorState(2)));
+    expect(asks()).toBe(3);
+    expect(run.walls.size).toBe(4);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("drops a late snapshot of the floor below the map's, and never climbs back down", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    handle(bare(floorState(1)));
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+
+    handle(bare(floorState(1)));
+    expect(run.lastFloor).toBe(1);
+    expect(run.floorVeil).toHaveLength(0);
+
+    handle(bare(floorState(2)));
+    expect(run.lastFloor).toBe(2);
+    expect(run.walls.has("w3_2")).toBe(true);
+  });
+
+  it("keeps the climb's veil up until the new floor's map is built", () => {
+    const { run, handle } = mapStage();
+    run.subscribeFloorMap();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    handle(bare(floorState(1)));
+    const tweens = (run.tweens as { add: ReturnType<typeof vi.fn> }).add;
+    const veilFades = () => tweens.mock.calls.filter(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0).length;
+
+    handle(bare(floorState(2)));
+    expect(run.floorVeil.length).toBeGreaterThan(0);
+    expect(run.walls.size).toBe(0);
+    expect(veilFades()).toBe(0);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    expect(run.walls.size).toBe(4);
+    expect(veilFades()).toBe(1);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("lifts the veil on time when the new floor's map came first", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    handle(bare(floorState(1)));
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    const tweens = (run.tweens as { add: ReturnType<typeof vi.fn> }).add;
+
+    handle(bare(floorState(2)));
+
+    const fade = tweens.mock.calls.find(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0);
+    expect(fade).toBeDefined();
+  });
+
+  it("takes the map's size for the floor, not a fixed one", () => {
+    const { run, handle } = mapStage();
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2), { width: 2880, height: 1920 }));
+
+    handle(bare(floorState(2)));
+
+    expect([run.mapWidth, run.mapHeight]).toEqual([2880, 1920]);
+    const bounds = (run.physics as { world: { setBounds: ReturnType<typeof vi.fn> } }).world.setBounds;
+    const projected = await_iso.projectedBounds(2880, 1920, 0);
+    expect(bounds.mock.calls.at(-1)![2]).toBeGreaterThan(projected.width - 1);
+  });
+
+  it("never reads walls from a run snapshot", () => {
+    const { run, handle } = mapStage();
+    handle(floorState(2));
+    expect(run.walls.size).toBe(0);
   });
 });
 
@@ -999,7 +1293,7 @@ describe("BarrowspireScene teammate health bars, switched on (FS-8AY7S req 27, 2
   it("should forget every bar on a restart", () => {
     const { run, bars } = barsOnStage();
     run.handleGameStateUpdate(partyState());
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     expect(bars.size).toBe(0);
   });
 });
@@ -1014,7 +1308,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     tabKey?: unknown;
     cycleWatched(): void;
     canSendMove(): boolean;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   const dead = { current_health: 0 };
@@ -1127,9 +1421,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     it("should forget the button on a restart, and the rebuilt run raises it again, not spectating", () => {
       const { run, stage, state } = resolvedOnStage(player("me", "Aldric", 130, escaped));
       const before = watchHit(stage)!;
-      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
-      run.resetRun();
+      run.resetRun("shutdown");
       expect((run as unknown as { watchButton?: unknown }).watchButton).toBeUndefined();
       expect(run.watchedPlayerId).toBeUndefined();
       expect(run.spectateHud).toBeUndefined();
@@ -1301,14 +1595,14 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
   it("should forget the watched player, the follow, the Tab key, the card and the HUD on a restart", () => {
     const { run, pressWatch } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    const removeKey = vi.fn();
-    const tabKey = {};
-    run.tabKey = tabKey;
-    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey } };
+    const removeCapture = vi.fn();
+    run.tabKey = { keyCode: 9 };
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture } };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
-    expect(removeKey).toHaveBeenCalledWith(tabKey, true, true);
+    // Phaser's stop has destroyed the key already; the capture is handed back by its code
+    expect(removeCapture).toHaveBeenCalledWith(expect.arrayContaining([9]));
     expect(run.tabKey).toBeUndefined();
     expect(run.watchedPlayerId).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
@@ -1366,7 +1660,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     leaveButton?: unknown;
     runEnded?: boolean;
     leaveRefused(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   const dead = { current_health: 0 };
@@ -1545,8 +1839,8 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
 
     it("should forget the escape on a restart, so the next run starts with no Leave", () => {
       const { run, stage } = leavingOnStage(player("me", "Aldric", 130, escaped));
-      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
-      run.resetRun();
+      (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
+      run.resetRun("shutdown");
       // the old run's buttons went down with the scene; only what is drawn after the reset counts
       const before = stage.made.length;
       (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
@@ -1582,9 +1876,9 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     const off = vi.spyOn(socketManager, "off");
     const { run, press } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("leave-the-barrow");
-    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
     expect(run.leavePending).toBe(false);
     expect(run.leaveButton).toBeUndefined();
@@ -1692,7 +1986,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
   it("should build the bars afresh after a restart", () => {
     const { run, labels } = barsOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
     expect(labels().filter((l) => l === "Health:").length).toBeGreaterThanOrEqual(1);
   });
@@ -1713,7 +2007,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     abilityHud?: { shown: { name: string; greyed: boolean } | null };
     leaveButton?: unknown;
     bindRunInput(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   function cardOnStage() {
@@ -1767,6 +2061,31 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       expect((t.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
     }
   });
+
+  it.each([1, 2])(
+    "should put the card and the escaped count back at their right-hand corners when the view widens, at render scale %s (FS-ZAJMH R12, R13)",
+    (renderScale) => {
+      const { run, text } = cardOnStage();
+      const hud = run as unknown as { createUI(): void; relayoutHud(): void };
+      // the satchel's own re-layout is ContainerView's test
+      Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+      hud.createUI();
+      run.handleGameStateUpdate(withMe(me()));
+      const name = text("Dash") as Made & { last: Record<string, unknown[]> };
+      const escaped = text("Escaped: 0") as Made & { last: Record<string, unknown[]> };
+      const nameX = name.last.setPosition[0] as number;
+      expect(escaped.args[0]).toBe(800 - 10);
+
+      // the harness's view is 800 wide; 200 more, as from 1080 to 1280
+      viewport.set({ width: 1000, height: 600, renderScale });
+      hud.relayoutHud();
+      expect(name.last.setPosition[0]).toBe(nameX + 200);
+      expect(escaped.last.setX).toEqual([1000 - 10]);
+      // moved, so rasterised again at the render scale of now (R5)
+      expect(escaped.last.setResolution).toEqual([renderScale]);
+      viewport.set({ width: 800, height: 600, renderScale: 1 });
+    },
+  );
 
   it("should grey the card with the pool one short of the cost, and light it at the cost", () => {
     const { run, shown } = cardOnStage();
@@ -1830,7 +2149,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
   it("should build the card afresh after a restart", () => {
     const { run, carded, text } = cardOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    carded.resetRun();
+    carded.resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
     expect(text("Dash")).toBeDefined();
   });
@@ -1907,7 +2226,7 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
   it("should treat the first state after a restart as the baseline again", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me(4, 400, 390, 600)));
     expect(cues()).toHaveLength(0);
   });
@@ -2105,8 +2424,9 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
     Object.assign(scene, {
       make: { graphics },
       textures: { exists: () => false },
-      cache: { json: { exists: () => false } },
-      load: { once: () => {}, json: () => {} },
+      // the manifest cached and unreadable: nothing to download, so no torch bar (FS-C4JWH §D)
+      cache: { json: { exists: () => true, get: () => undefined } },
+      load: { on: () => {}, once: () => {}, json: () => {} },
     });
     (scene as unknown as { preload(): void }).preload();
     expect(made).toEqual(expect.arrayContaining(["chest_closed", "chest_open", "sack_closed", "sack_open"]));
@@ -2211,7 +2531,7 @@ describe("BarrowspireScene burning trails (FS-4R9M9 req 36, 56, 61)", () => {
   it("should forget the stopped run's trails, so the next start burns them fresh", () => {
     const { run, marks } = onStage();
     run.handleGameStateUpdate(withTrails([trail("t1")]));
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withTrails([trail("t1")]));
     // Phaser destroyed the stopped run's marks; the new run makes its own
     expect(marks("t1")).toHaveLength(4);
@@ -2564,7 +2884,7 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     const { run } = spire();
     run.handleGameStateUpdate(floorState(1));
     standAt(run, IN_ROOM);
-    (run as unknown as { resetRun(): void }).resetRun();
+    (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     expect(run.view).toBeUndefined();
     expect(run.currentBuilding).toBeUndefined();
   });
@@ -2839,7 +3159,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     standAt(run, BEHIND);
     const [image] = stage.made.filter((m) => m.kind === "image" && m.args[2] === "__DEFAULT");
     const [mask] = stage.made.filter((m) => m.kind === "renderTexture");
-    expect(image.calls).toContain("setMask");
+    expect(image.calls).toContain("addMask");
     expect(mask.calls).toContain("clear");
     expect(mask.calls.filter((c) => c === "draw").length).toBeGreaterThan(0);
   });
@@ -2905,10 +3225,12 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     const stamped = (run as unknown as { stampedLights: number }).stampedLights;
     expect(stamped).toBe(before.length);
 
-    // one of r1's walls goes: the room is redrawn from the walls left, its sconces with it
+    // one of r1's walls goes: the room is redrawn from the walls left, its sconces with it. A run's
+    // walls come once per floor from its map (FS-KE075 §H.43), so the redraw is driven directly
     const state = rooms(false);
-    state.walls = state.walls.filter((w) => w.entity_id !== "a1sl");
-    run.handleGameStateUpdate(state);
+    const redrawn = run as unknown as { updateWalls(walls: unknown[]): void; stampLights(floor?: number): void };
+    redrawn.updateWalls(state.walls!.filter((w) => w.entity_id !== "a1sl"));
+    redrawn.stampLights(state.floor);
     const run1 = run as unknown as { roomLights: { room: string; source: unknown; hung: boolean }[]; stampedLights: number };
     expect(run1.stampedLights).toBe(lights.length);
     // every r1 wall light is on the light-map once, and none of the old ones is left behind
@@ -3061,7 +3383,7 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
     // a long north wall of sconces: 30 pieces, more than the budget holds with the slits; the
     // room it walls stands clear of the stairs, whose pool would otherwise be the room's (FS-9PN7X §D.6)
     state.walls = [
-      ...state.walls,
+      ...state.walls!,
       { house_id: "big", entity_id: "bn", position: at(100, 750), width: 1200, height: 10 },
       { house_id: "big", entity_id: "bs", position: at(100, 900), width: 1200, height: 10 },
     ];
@@ -3115,6 +3437,46 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
       sack.y - 12,
     ]);
     expect(pools(lights)).toHaveLength(2);
+  });
+
+  // FS-KE075 §H.48: on a dungeon floor a container leaves the snapshot when the party walks off
+  // and comes back when it returns; it is the same chest, not a new one
+  describe("a container that leaves the snapshot and comes back (FS-KE075 §H.48)", () => {
+    const opened = (state: GameState): GameState => ({
+      ...state,
+      containers: state.containers.map((c) => ({ ...c, is_open: true })),
+    });
+    const without = (state: GameState): GameState => ({ ...state, containers: [] });
+
+    it("should stand it in one pool, not one more each time it comes back", () => {
+      const { run, lights } = banded("tower");
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(without(floorState(1)));
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(without(floorState(1)));
+      run.handleGameStateUpdate(floorState(1));
+      // the chest's and the switch's
+      expect(pools(lights)).toHaveLength(2);
+    });
+
+    it("should draw an opened chest coming back open, one chest", () => {
+      const { run, stage } = banded("tower", false);
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(without(floorState(1)));
+      run.handleGameStateUpdate(opened(floorState(1)));
+      const chests = stage.made.filter((m) => m.kind === "sprite" && String(m.args[2]).startsWith("chest_"));
+      const live = chests.filter((m) => !m.destroyed);
+      expect(live).toHaveLength(1);
+      expect(live[0].texture).toBe("chest_open");
+    });
+
+    it("should still pool the next floor's chest, though it has the old floor's entity id", () => {
+      const { run, lights } = banded("tower");
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(floorState(2));
+      const chest = worldToScreen(650, 150);
+      expect(pools(lights).map((l) => (l as { x: number }).x)).toContain(chest.x);
+    });
   });
 });
 
@@ -3360,6 +3722,49 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toHaveLength(1);
   });
 
+  // The held hub a Leave lets in is applied through switchWorld, whose stop is synchronous: the
+  // scene has stopped (resetRun) before the release returns, and the Leave must not then send
+  // leave_run from the hub or leave its pending flag on the stopped scene for the next run.
+  it("should send nothing and leave no Leave pending when the Leave's release stops the scene", () => {
+    const { run, held, sent } = settlingOnStage(player("me", "Aldric", 130, dead));
+    run.init();
+    run.showSettlement(settlement({ outcome: "died" }));
+    run.endRun();
+    held();
+    const stopped = vi.fn(() => run.events.emit("shutdown"));
+    run.resultHold.hold(hub, stopped);
+
+    // the menu's Leave, or the dead player's card
+    (run as unknown as { leaveTheBarrow(): void }).leaveTheBarrow();
+
+    expect(stopped).toHaveBeenCalledWith(hub);
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toEqual([]);
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
+  // a run still loading has not heard its end (end_game is held until create), so only the hub the
+  // release let in says the Leave is done
+  it("should send no leave_run when the Leave lets a held hub in before the run knows it ended", () => {
+    const { run, sent } = settlingOnStage();
+    run.init();
+    run.resultHold.raise();
+    run.resultHold.hold(hub, () => run.events.emit("shutdown"));
+
+    (run as unknown as { leaveTheBarrow(): void }).leaveTheBarrow();
+
+    expect(sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun)).toEqual([]);
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
+  it("should start each run with no Leave pending, whatever the last one left", () => {
+    const { run } = settlingOnStage();
+    (run as unknown as { leavePending: boolean }).leavePending = true;
+
+    run.init();
+
+    expect((run as unknown as { leavePending: boolean }).leavePending).toBe(false);
+  });
+
   // R24: the record replaces the FS-QPDKN result card
   it("should put up no result card when the run ends", () => {
     const { run, shown, stage } = settlingOnStage();
@@ -3414,7 +3819,7 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     sessionID?: string;
     acceptsFrame(s: { session_id: string }): boolean;
     handleGameStateUpdate(s: unknown): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   it("should accept only frames of the session the scene was started for", () => {
@@ -3433,6 +3838,19 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     expect(run.lastGameState).toBeUndefined();
   });
 
+  it("should release the equip HUD on reset, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { resetRun(end: "shutdown" | "destroy"): void; equipment?: { release(): void } };
+    scene.init();
+    const release = vi.fn();
+    run.equipment = { release };
+
+    run.resetRun("shutdown");
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(run.equipment).toBeUndefined();
+  });
+
   it("should accept everything when started without a session, and forget the session on reset", () => {
     const scene = new BarrowspireScene();
     const run = scene as unknown as Filtered;
@@ -3440,7 +3858,7 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     expect(run.acceptsFrame({ session_id: "whatever" })).toBe(true);
 
     scene.init({ sessionID: "run-a" });
-    run.resetRun();
+    run.resetRun("shutdown");
     expect(run.sessionID).toBeUndefined();
     expect(run.acceptsFrame({ session_id: "run-b" })).toBe(true);
   });
@@ -3471,7 +3889,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     toggleControlsPanel(): void;
     fallRefused(info: { message?: string }): void;
     endRun(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
   }
 
   const dead = { current_health: 0 };
@@ -3745,9 +4163,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     press(keys.esc);
     pick("fall");
     pick("fall-now");
-    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeKey: vi.fn() } };
+    (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
-    run.resetRun();
+    run.resetRun("shutdown");
 
     expect(run.menu).toBeUndefined();
     expect(run.menuChoices).toBeUndefined();
@@ -4072,7 +4490,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     equipment?: unknown;
     menu?: unknown;
     bindRunInput(): void;
-    resetRun(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
     leaveFloor(): void;
     openMenu(): void;
     endRun(): void;
@@ -4333,7 +4751,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
     ["the window losing focus", (s) => s.game.events.emit("blur")],
     ["the tab going hidden", (s) => s.game.events.emit("hidden")],
-    ["the scene tearing down", (s) => s.run.resetRun()],
+    ["the scene tearing down", (s) => s.run.resetRun("shutdown")],
   ];
 
   it.each(cancels)("should end a hold on %s with nothing sent and no line left", (_, cancel) => {
@@ -4366,7 +4784,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
   it("should stop hearing window blur once the scene tears down", () => {
     const s = aimOnStage();
-    s.run.resetRun();
+    s.run.resetRun("shutdown");
     expect(s.game.events.listenerCount("blur")).toBe(0);
     expect(s.game.events.listenerCount("hidden")).toBe(0);
   });
@@ -4471,7 +4889,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.leftClick();
       const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
       expect(live().length).toBeGreaterThan(0);
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       expect(live()).toHaveLength(0);
     });
 
@@ -4552,7 +4970,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
     it("should flash on a rise in parries, at 3 parry charges too, and not on the first state", () => {
       const s = aimOnStage("mercenary");
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       s.run.handleGameStateUpdate(partyState(merc({ parries: 7 })));
       expect(flashes(s)).toBe(0);
       s.run.handleGameStateUpdate(partyState(merc({ parries: 8, parry_open: true })));
@@ -4567,13 +4985,13 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.run.handleGameStateUpdate(partyState(merc({ parries: 2, parry_open: true })));
       const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
       expect(live().length).toBeGreaterThanOrEqual(2);
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       expect(live()).toHaveLength(0);
     });
 
     it("should take the first state after a restart (a reconnect) as the baseline", () => {
       const s = parryOnStage({ parries: 1 });
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       s.run.handleGameStateUpdate(partyState(merc({ parries: 4 })));
       expect(flashes(s)).toBe(0);
     });
@@ -4675,7 +5093,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.leftClick();
       const live = () => s.stage.made.slice(before).filter((m) => m.kind === "graphics" && !m.destroyed);
       expect(live().length).toBeGreaterThan(0);
-      s.run.resetRun();
+      s.run.resetRun("shutdown");
       expect(armed(s)).toBe(false);
       expect(live()).toHaveLength(0);
     });
@@ -4836,5 +5254,1263 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
       const source = readFileSync(join(SRC, "scenes", scene), "utf8");
       expect(source).not.toMatch(/ShimmerFx|PotionDrinkWatcher/);
     }
+  });
+});
+
+// FS-ZAJMH R18 and the top-right escalation, decided by Nick 2026-11-05: the fullscreen button
+// keeps the game frame's top-right corner in every scene, so the run's escaped count and the
+// floor under it step down clear of it, at every logical width.
+describe("the run's top-right HUD and the fullscreen button", () => {
+  it.each([1080, 1180, 1280])("should start below the button at logical width %i", (width) => {
+    const buttonBottom = FULLSCREEN_BUTTON.inset + FULLSCREEN_BUTTON.height;
+    const hudTop = anchorAt(TOP_RIGHT_HUD, { width, height: 720 }).y;
+    expect(hudTop).toBeGreaterThanOrEqual(buttonBottom + 8);
+  });
+
+  it("should keep its right-hand offset from the corner", () => {
+    expect(anchorAt(TOP_RIGHT_HUD, { width: 1280, height: 720 }).x).toBe(1270);
+  });
+});
+
+// FS-SRA9J §E.20–21 (I-SRA9J-3): the minimap hangs under the floor indicator in the same column,
+// 216 × 108, right-aligned at TOP_RIGHT_HUD's x, as FS-48CTQ's target frame test assumes.
+describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21)", () => {
+  const { MINIMAP, minimapRect } = await_minimap;
+  const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  type Box = { x: number; y: number; width: number; height: number };
+  /** A 14 px HUD line in its 5 px padding (the escaped count, the floor indicator), at its largest. */
+  const LINE = { width: 160, height: 30 };
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  it.each([1080, 1280])(
+    "should sit 6 px under the floor indicator, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
+    (width) => {
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const escaped = { x: corner.x - LINE.width, y: corner.y, ...LINE };
+      const floor = { x: corner.x - LINE.width, y: escaped.y + LINE.height + 6, ...LINE };
+      const map = minimapRect(corner.x, floor.y + floor.height);
+      expect(map).toEqual({ x: corner.x - 216, y: floor.y + floor.height + 6, width: 216, height: 108 });
+      expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
+      // the fullscreen button in the canvas's corner, however wide its icon; a top-centre notice
+      // (20 px text in 10 px padding, centred on y 100) up to 600 px wide; either target frame
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const notice = { x: width / 2 - 300, y: 100 - 22, width: 600, height: 44 };
+      for (const other of [button, escaped, floor, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
+        expect(overlaps(map, other)).toBe(false);
+      expect(map.x).toBeGreaterThan(0);
+      expect(map.y + map.height).toBeLessThan(720 / 2);
+    },
+  );
+});
+
+describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-48CTQ-1)", () => {
+  const { TARGET_FRAME, TARGET_FRAME_TOP, targetFrameRect } = await_targetFrame;
+
+  interface FrameRun {
+    time: { now: number; delayedCall: ReturnType<typeof vi.fn> };
+    createUI(): void;
+    updateTargetFrame(deltaMs: number): void;
+    relayoutHud(): void;
+    resetRun(end: "shutdown" | "destroy"): void;
+    targetFrame?: { texts(): Made[] };
+    spectateHud?: unknown;
+    floorVeil: unknown[];
+    events: Emitter;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The run on `floor` with its HUD up, at scene time 0. */
+  function framed(floor = 1) {
+    const stage = onStage();
+    const run = stage.run as unknown as FrameRun & FloorRun;
+    run.time.now = 0;
+    run.createUI();
+    const state = (fields: Partial<ReturnType<typeof monster>> = {}) =>
+      ({
+        ...floorState(floor),
+        current_player: player("me", "Aldric", 130),
+        other_players: [player("ally", "Wenna", 160)],
+        monsters: [{ ...monster("m1", floor === 1 ? 100 : 600), ...fields }],
+      }) as GameState;
+    run.handleGameStateUpdate(state());
+    /** What the frame names now, or null while it is hidden. */
+    const named = () => {
+      const lines = run.targetFrame!.texts().filter((t) => t.shown && t.args[2] !== "");
+      return lines.length ? lines.map((t) => t.args[2]).join(" ") : null;
+    };
+    const tick = (ms: number) => {
+      run.time.now += ms;
+      run.updateTargetFrame(ms);
+    };
+    /** The roster's own plate texts: the 11px plate in the hostile ink. */
+    const plates = () =>
+      stage.stage.made.filter((m) => {
+        const style = m.args[3] as { fontSize?: string; color?: string } | undefined;
+        return m.kind === "text" && style?.fontSize === "11px" && style.color === toCss(palette.markerHostile);
+      });
+    return { ...stage, run, state, named, tick, plates };
+  }
+
+  it("should draw no overhead plate over floor 1's monsters, and plates as today on floor 2", () => {
+    const one = framed(1);
+    (one.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(one.plates().length).toBeGreaterThan(0);
+    expect(one.plates().every((p) => p.shown === false)).toBe(true);
+
+    const two = framed(2);
+    (two.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(two.plates().some((p) => p.shown === true)).toBe(true);
+  });
+
+  it("should name the hovered monster at the top centre, and let go when the pointer leaves", () => {
+    const { monsters, named, tick } = framed();
+    tick(16);
+    expect(named()).toBeNull();
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    expect(named()).toBe("Ghoul · Lv 1");
+    monsters()[0].handlers.pointerout();
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should show no frame on floor 2, where the plates are", () => {
+    const { monsters, named, tick } = framed(2);
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
+  // FS-48CTQ §D.10, I-48CTQ-2: the run's players, the local one among them, are who it may be
+  // fighting
+  it.each([
+    ["hurt", { boss: true, current_health: 4 }, "Ghoul · Lv 1"],
+    ["moving near the party at full health", { boss: true, action: "move" }, "Ghoul · Lv 1"],
+    ["idle at full health", { boss: true }, null],
+    ["hurt but not a boss", { current_health: 4 }, null],
+  ] as const)("should hold the frame on an engaged boss with nothing hovered or hit: %s", (_, fields, want) => {
+    const { run, named, tick, state } = framed();
+    run.handleGameStateUpdate(state(fields as Partial<ReturnType<typeof monster>>));
+    tick(120);
+    expect(named()).toBe(want);
+  });
+
+  it("should not take a boss moving at full health for engaged when every player is out of play", () => {
+    const { run, named, tick, state } = framed();
+    const out = { ...state({ boss: true, action: "move" } as unknown as Partial<ReturnType<typeof monster>>) } as GameState;
+    out.current_player = player("me", "Aldric", 130, { current_health: 0 }) as GameState["current_player"];
+    out.other_players = [player("ally", "Wenna", 160, { escape: true })] as GameState["other_players"];
+    run.handleGameStateUpdate(out);
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
+  it("should name the monster the player strikes, then let go 3 s after the last own hit", () => {
+    const { run, monsters, named, tick, state, sent } = framed();
+    monsters()[0].handlers.pointerdown();
+    expect(sent).toHaveBeenCalledWith(ActionType.Attack, { enemy_entity_id: "m1" });
+    tick(120);
+    expect(named()).toBe("Ghoul · Lv 1");
+
+    // the hit lands 400 ms after the intent: the 3 s run from it
+    run.time.now += 280;
+    run.handleGameStateUpdate(state({ current_health: 6 }));
+    tick(2900);
+    expect(named()).toBe("Ghoul · Lv 1");
+    tick(100);
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should not hold on a teammate's hit, more than 1 s after the player's intent", () => {
+    const { run, monsters, named, tick, state } = framed();
+    monsters()[0].handlers.pointerdown();
+    run.time.now += 1500;
+    run.handleGameStateUpdate(state({ current_health: 6 }));
+    tick(1500);
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should let go when the monster it names dies", () => {
+    const { run, monsters, named, tick, state } = framed();
+    monsters()[0].handlers.pointerdown();
+    tick(120);
+    run.handleGameStateUpdate(state({ action: "dead", current_health: 0 }));
+    tick(200);
+    expect(named()).toBeNull();
+  });
+
+  it("should never name a party member the pointer is over", () => {
+    const { players, named, tick } = framed();
+    players()[1].handlers.pointerover?.();
+    tick(120);
+    expect(named()).toBeNull();
+  });
+
+  it.each([
+    ["the spectate HUD", (run: FrameRun) => (run.spectateHud = {})],
+    ["the floor-change veil", (run: FrameRun) => (run.floorVeil = [{}])],
+  ])("should hide while %s holds the top centre", (_, cover) => {
+    const { run, monsters, named, tick } = framed();
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    cover(run);
+    tick(16);
+    expect(named()).toBeNull();
+  });
+
+  it("should re-anchor at the new centre on a resize", () => {
+    const { run, monsters, tick } = framed();
+    Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    const line = () => run.targetFrame!.texts().find((t) => t.shown)!;
+    expect(line().last.setPosition[0]).toBe(400);
+    viewport.set({ width: 1000, height: 600, renderScale: 1 });
+    run.relayoutHud();
+    expect(line().last.setPosition[0]).toBe(500);
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+  });
+
+  it("should let the frame go with the run", () => {
+    const { run } = framed();
+    expect(run.targetFrame).toBeDefined();
+    run.resetRun("shutdown");
+    expect(run.targetFrame).toBeUndefined();
+  });
+
+  // §E.14: at the view's two ends, clear of the notice band, the top-right column (the fullscreen
+  // button, the escaped count, the floor indicator and FS-SRA9J's 216 px minimap) and the top-left
+  // progress bar
+  it.each([1080, 1280])("should stand clear of the rest of the top HUD at logical width %i", (width) => {
+    const view = { width, height: 720 };
+    const r = targetFrameRect(width / 2);
+    expect(r.y).toBe(10);
+    expect(r.width).toBeLessThanOrEqual(280);
+    expect(r.height).toBeLessThanOrEqual(52);
+    expect(TARGET_FRAME.height + TARGET_FRAME_TOP).toBeLessThan(100 - 22);
+    const minimapLeft = anchorAt(TOP_RIGHT_HUD, view).x - 216;
+    expect(r.x + r.width).toBeLessThan(minimapLeft);
+    expect(r.x + r.width).toBeLessThan(width - FULLSCREEN_BUTTON.inset - 60);
+    expect(r.x).toBeGreaterThan(10 + 180 + 10);
+  });
+});
+
+describe("keepBodySize (FS-HF0WW)", () => {
+  /** An arcade body's setSize: the source size, times the sprite's scale. */
+  const spriteAt = (scale: number) => {
+    const body = {
+      sourceWidth: 60,
+      sourceHeight: 60,
+      width: 60 * scale,
+      height: 60 * scale,
+      setSize(w: number, h: number) {
+        this.sourceWidth = w;
+        this.sourceHeight = h;
+        this.width = w * scale;
+        this.height = h * scale;
+      },
+    };
+    return { body } as unknown as Parameters<typeof keepBodySize>[0] & { body: typeof body };
+  };
+
+  it("should keep a 2x sheet's body at the 1x size, however often it is called", () => {
+    const sprite = spriteAt(0.5);
+    keepBodySize(sprite, 0.5);
+    keepBodySize(sprite, 0.5);
+    expect([sprite.body.width, sprite.body.height]).toEqual([60, 60]);
+  });
+
+  it("should leave a 1x sheet's body alone", () => {
+    const sprite = spriteAt(1);
+    keepBodySize(sprite, 1);
+    expect(sprite.body.sourceWidth).toBe(60);
+  });
+});
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+// The run loads its creatures and the boss at entry, for every floor (FS-C4JWH §B R9).
+describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
+  it("should queue the creatures and the boss and nothing else, the resident art being loaded", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+
+    run.preload();
+
+    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "creatures-0", "creatures-1"].map(atlasTextureKey));
+  });
+
+  it("should show the torch bar over creatures and boss still downloading at 300 ms, gone before create, then fade the run in (FS-C4JWH §D R17, A1)", () => {
+    vi.useFakeTimers();
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+    let atCreate: boolean[] = [];
+
+    art.boot({ preload: () => run.preload(), create: () => (atCreate = art.drawn.map((d) => d.destroyed)) }, undefined, {
+      hold: true,
+    });
+    vi.advanceTimersByTime(300);
+    art.finish();
+    vi.runAllTimers();
+    vi.useRealTimers();
+
+    expect(atCreate.length).toBeGreaterThan(0);
+    expect(atCreate.every(Boolean)).toBe(true);
+    expect(art.camera.fades.at(-2)).toBe("fadeIn(200, 18, 18, 18)");
+  });
+});
+
+// A floor-1 chest whose guards still stand is refused by the server: the coffer the E key opened
+// at once closes again, and the notice says only that it will not open (FS-KE075 §J R60).
+describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function connected() {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      showNotification(message: string, color: string): void;
+      containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
+    };
+    run.init({ sessionID: "run-a" });
+    run.containerView = { entityId: "chest-1", close: vi.fn() };
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    run.connectToServer();
+    return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+  }
+
+  it("should close the coffer it opened and say it will not open", () => {
+    const { run, notified, reply } = connected();
+    reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
+
+    expect(run.containerView.close).toHaveBeenCalledTimes(1);
+    expect(notified).toHaveBeenCalledTimes(1);
+    expect(notified.mock.calls[0][0]).toBe("It will not open.");
+  });
+
+  it("should leave the coffer open on any other reply", () => {
+    const { run, reply } = connected();
+    reply({ success: false, message: "too far away to interact" });
+    reply({ success: false, message: "" });
+
+    expect(run.containerView.close).not.toHaveBeenCalled();
+  });
+});
+
+// A refresh into a run: the menu evicted its creatures, so the run downloads them again, and an
+// end_game or a settlement sent meanwhile must still reach it (FS-C4JWH Edge States).
+describe("BarrowspireScene messages while its art downloads (FS-C4JWH Edge States)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should end the run on an end_game that arrived before create, once create is done", () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      openHeldMessages(): void;
+      endRun(): void;
+    };
+    const endRun = vi.spyOn(run, "endRun").mockImplementation(() => {});
+
+    run.init({ sessionID: "run-a" });
+    listeners.get("end_game")?.({});
+    expect(endRun).not.toHaveBeenCalled();
+    run.connectToServer();
+    run.openHeldMessages();
+
+    expect(endRun).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A run that ends while it still downloads: end_game, its settlement and the hub arrive before
+// create. The record will open once create hands the settlement over, so the hub waits behind it,
+// as it does when the run has loaded (FS-GV8WN R23; FS-C4JWH Edge States).
+describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edge States, FS-GV8WN R23)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function runBeforeCreate(sessionID: string) {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      resultHold: { hold(world: object, apply: (world: object) => void): boolean };
+    };
+    run.init({ sessionID });
+    return { run, send: (action: string, payload: unknown) => listeners.get(action)?.(payload) };
+  }
+
+  it("should hold the hub behind the record its own held settlement will open", () => {
+    const { run, send } = runBeforeCreate("run-a");
+    send("end_game", {});
+    send("settlement", { run_id: "run-a" });
+
+    expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(true);
+  });
+
+  it.each([
+    ["no settlement", []],
+    ["another run's settlement", [["settlement", { run_id: "run-b" }]]],
+  ] as const)("should let the hub in at once with %s held", (_case, more) => {
+    const { run, send } = runBeforeCreate("run-a");
+    send("end_game", {});
+    for (const [action, payload] of more) send(action, payload);
+
+    expect(run.resultHold.hold({ world_type: "hub" }, () => undefined)).toBe(false);
+  });
+});
+
+const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
+const { RegionGrid } = await import("@/render/world/dungeon");
+const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
+const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
+const { GROUND_DEPTH, GROUND_MARGIN, GroundLayer } = await import("@/render/world/scene");
+const await_fog = await import("@/render/world/fog");
+const await_exploration = await import("@/render/world/exploration");
+
+describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () => {
+  const manifest = JSON.parse(readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"));
+  const { projectedBounds, screenToWorld } = await_iso;
+  type Dungeon = import("@/render/world/dungeon").DungeonMap;
+  const grid = new RegionGrid(fixture as Dungeon);
+
+  interface DungeonRun extends MapRun {
+    worldLook: unknown;
+    buildings: unknown[];
+    view?: unknown;
+    showNearChunks(): void;
+  }
+
+  /** The golden's floor as floor 1's map, and floor 1's snapshot with no walls, its chest in room 1. */
+  const dungeonMap = { session_id: "run", floor: 1, ...(fixture as Dungeon & { walls: GameState["walls"] }) };
+  /** Who stands on the floor: this client's player and the rest of the party (none by default). */
+  type Party = Pick<GameState, "current_player" | "other_players">;
+  const dungeonState = (party: Partial<Party> = {}): GameState => ({
+    ...bare(floorState(1)),
+    ...party,
+    doors: [],
+    containers: [{ container_id: "c", entity_id: "c1", kind: "chest", position: at(2400, 3000), is_open: false, items: [] }],
+    escape_doors: [{ entity_id: "e1", position: at(4000, 1200), is_open: false, is_locked: true }],
+    switches: [{ entity_id: "s1", position: at(3000, 900), switch_id: 1, is_activated: false }],
+    stairs: [{ entity_id: "st1", position: at(1000, 1200) }],
+  });
+
+  /**
+   * The fixture floor on stage: its map, then its first snapshot (or, `late`, the snapshot first
+   * and the map after it), `extra` laid over the snapshot.
+   */
+  function dungeonStage(party: Partial<Party> = {}, extra: Partial<GameState> = {}, { late = false } = {}) {
+    const scene = sceneOnStage();
+    const { stage } = scene;
+    const run = scene.run as unknown as DungeonRun;
+    run.worldLook = WORLD_THEMES.tower;
+    run.art = new ArtLibrary(manifest, { warn: () => {} });
+    // the ground is the scene's own, painted in the stage's render textures
+    run.groundLayer = undefined;
+    const camera = run.cameras as { main: Record<string, unknown> };
+    Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    // every stamp into each render texture the stage makes (it keeps only the last call's args)
+    const stamped = new Map<Made, unknown[][]>();
+    const add = run.add as Record<string, (...a: unknown[]) => unknown>;
+    run.add = new Proxy(add, {
+      get: (target, kind) => {
+        if (kind !== "renderTexture") return target[kind as string];
+        return (...args: unknown[]) => {
+          const rt = target.renderTexture(...args) as Record<string, (...a: unknown[]) => unknown>;
+          const list: unknown[][] = [];
+          stamped.set(stage.made.at(-1)!, list);
+          return new Proxy(rt, {
+            get: (o, prop) => (prop === "stamp" ? (...a: unknown[]) => (list.push(a), o) : o[prop as string]),
+          });
+        };
+      },
+    });
+    if (late) {
+      (run as unknown as { subscribeFloorMap(): void }).subscribeFloorMap();
+      handle({ ...dungeonState(party), ...extra });
+    }
+    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    if (!late) handle({ ...dungeonState(party), ...extra });
+    /** Looks at a screen point: the camera's view centred on it, and what stands near it shown. */
+    const look = (x: number, y: number) => {
+      Object.assign(camera.main, { scrollX: x - 640, scrollY: y - 360 });
+      run.showNearChunks();
+    };
+    return { ...scene, run, handle, look, camera, stamped };
+  }
+
+  afterEach(() => useGameStore.setState({ floorMap: null }));
+
+  const chunks = new ChunkGrid(projectedBounds(5760, 3840, GROUND_MARGIN), DUNGEON_CHUNK);
+  /** The sprites a sheet name starts with: its frame name is `{sheet}/…`. */
+  const drawn = (made: Made[], prefix: string) =>
+    made.filter((m) => m.kind === "sprite" && !m.destroyed && String(m.args[3] ?? "").startsWith(prefix));
+  const chunkOf = (m: Made) => chunks.indexAt({ x: m.args[0] as number, y: m.args[1] as number });
+  /** Whether a recorded object is shown: as made, until setVisible says otherwise. */
+  const shownNow = (m: Made) => (m as Made & { visible?: boolean }).visible !== false;
+
+  it("should stand no building, roof, stone cap, blackout or perimeter wall on a dungeon floor", () => {
+    const { run, stage } = dungeonStage();
+    expect(run.walls.size).toBe(dungeonMap.walls!.length);
+    expect(run.buildings).toEqual([]);
+    expect(run.view).toBeUndefined();
+    expect(run.perimeter ?? []).toEqual([]);
+    for (const sheet of ["tower_cap", "tower_perimeter", "tower_wall_exterior", "roof_"])
+      expect(drawn(stage.made, sheet)).toEqual([]);
+    expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
+  });
+
+  it("should paint the ground in chunks no larger than 2048 px, nothing on a void cell", () => {
+    const { stage, stamped } = dungeonStage();
+    const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
+    expect(rts.length).toBeGreaterThan(1);
+    for (const rt of rts) expect(Math.max(rt.args[2] as number, rt.args[3] as number)).toBeLessThanOrEqual(CHUNK_MAX);
+    // each stamp back to the world tile it was laid for: the frame's top-left plus its anchor
+    const sheet = manifest.sheets.ground_flags;
+    let stamps = 0;
+    for (const rt of rts)
+      for (const [, , x, y] of stamped.get(rt) ?? []) {
+        const sx = (rt.args[0] as number) + (x as number) + sheet.anchor.x * sheet.frameWidth;
+        const sy = (rt.args[1] as number) + (y as number) + sheet.anchor.y * sheet.frameHeight;
+        expect(grid.hasGround(screenToWorld(sx, sy))).toBe(true);
+        stamps++;
+      }
+    // every ground cell's four tiles, at least once
+    let cells = 0;
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 1, y: cy * 80 + 1 })) cells++;
+    expect(stamps).toBeGreaterThanOrEqual(cells * 4);
+  });
+
+  it("should leave void to the camera's background, the darkest ink", () => {
+    const { camera } = dungeonStage();
+    expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.inkDeep);
+  });
+
+  it("should build floor 2 as a floor of buildings after a climb from the dungeon, the dungeon gone", () => {
+    const { run, stage, handle, camera } = dungeonStage();
+    const dungeonWalls = drawn(stage.made, "tower_wall_");
+    const ground = () => stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH && !m.destroyed);
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    handle(bare(floorState(2)));
+
+    expect(dungeonWalls.every((m) => m.destroyed)).toBe(true);
+    expect((run as unknown as { dungeon?: unknown }).dungeon).toBeUndefined();
+    expect(run.perimeter!.length).toBeGreaterThan(0);
+    expect(run.buildings).toHaveLength(1);
+    expect(run.view).toBeDefined();
+    // one ground texture over the whole of floor 2, as before chunks
+    const b = projectedBounds(1440, 960, GROUND_MARGIN);
+    expect(ground().map((m) => m.args)).toEqual([[b.x, b.y, Math.ceil(b.width), Math.ceil(b.height)]]);
+    expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
+  });
+
+  /** A chest standing at a world point, as a snapshot carries it. */
+  const chestAt = (id: string, p: { x: number; y: number }) =>
+    ({ container_id: id, entity_id: id, kind: "chest", position: at(p.x, p.y), is_open: false, items: [] }) as GameState["containers"][number];
+  interface Dressed {
+    piece: { at: { x: number; y: number } };
+    sprites: Made[];
+    gone: boolean;
+  }
+  const dressedOf = (run: unknown) => (run as { dungeon: { dressed: Dressed[] } }).dungeon.dressed;
+  const placesOf = (run: unknown) => dressedOf(run).map(({ piece: { at: p } }) => `${p.x},${p.y}`);
+
+  it("should strew a dungeon floor's dressing from its map alone, the same whatever containers a member's snapshot holds (review M1)", () => {
+    const bare = dungeonStage({}, { containers: [] });
+    const plan = placesOf(bare.run);
+    expect(plan.length).toBeGreaterThan(16);
+    // another member's first snapshot holds chests, one of them right where a piece would stand
+    const [first, second] = dressedOf(bare.run).map((d) => d.piece.at);
+    const crowded = dungeonStage({}, { containers: [chestAt("x1", first), chestAt("x2", { x: second.x + 30, y: second.y })] });
+    expect(placesOf(crowded.run)).toEqual(plan);
+  });
+
+  it("should take a dressing piece away for good once a container is seen standing by it, its flame with it (review M1)", () => {
+    const { run, handle, look, lights } = dungeonStage(everyRegion(), { containers: [] });
+    const dressed = dressedOf(run);
+    const piece = dressed[0];
+    const others = dressed.filter((d) => d !== piece && Math.hypot(d.piece.at.x - piece.piece.at.x, d.piece.at.y - piece.piece.at.y) > 200);
+    // the container comes into interest a snapshot later, as a member walks up to it
+    handle({ ...dungeonState(everyRegion()), containers: [chestAt("x1", piece.piece.at)] });
+    expect(piece.gone).toBe(true);
+    expect(piece.sprites.every((m) => !shownNow(m))).toBe(true);
+    expect(run.dressing).not.toContain(piece.sprites[0]);
+    // the camera over it brings its chunk back, but not the piece
+    const s = await_iso.worldToScreen(piece.piece.at.x, piece.piece.at.y);
+    look(s.x, s.y);
+    expect(piece.sprites.every((m) => !shownNow(m))).toBe(true);
+    expect(others.every((d) => !d.gone)).toBe(true);
+    // a brazier's flame goes off the floor's lights with it
+    const flamed = dressed.find((d) => d.piece !== piece.piece && (d as Dressed & { lights: unknown[] }).lights.length > 0) as (Dressed & { lights: unknown[] }) | undefined;
+    if (flamed) {
+      const p = flamed.piece.at;
+      const fs = await_iso.worldToScreen(p.x, p.y);
+      look(fs.x, fs.y);
+      handle({ ...dungeonState(everyRegion()), containers: [chestAt("x1", piece.piece.at), chestAt("x2", p)] });
+      const floor = (run as unknown as { dungeon: { lights: { light: { source: unknown } }[] } }).dungeon;
+      expect(floor.lights.some((l) => flamed.lights.includes(l.light.source))).toBe(false);
+      expect(lights.some((l) => flamed.lights.includes(l))).toBe(false);
+    }
+  });
+
+  it("should light a dungeon floor's interactables in its chunks, under the fog, when its map comes after its first snapshot (review M2)", () => {
+    const { run } = dungeonStage(everyRegion(), {}, { late: true });
+    const floor = (run as unknown as { dungeon: { lights: { kind: string }[] }; hallLights: unknown[]; builtFloor?: number }).dungeon;
+    expect((run as unknown as { builtFloor?: number }).builtFloor).toBe(1);
+    // the chest's and the switch's pools wait in their chunks with the floor's other fixed lights
+    expect(floor.lights.filter((l) => l.kind === "interactable").length).toBeGreaterThanOrEqual(2);
+    // none was stamped as a light of the halls before the floor stood
+    expect((run as unknown as { hallLights: unknown[] }).hallLights).toEqual([]);
+  });
+
+  it("should build floor 2 as a floor of buildings when a reconnect's scene was sized by the store's floor-1 map (review M3)", () => {
+    // the store still holds floor 1's map: the scene's create sizes the run by it
+    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as DungeonRun & { dungeon?: unknown; create?: () => void };
+    const fit = (Object.getPrototypeOf(run) as { fitFloor(map: unknown): void }).fitFloor.bind(run);
+    run.worldLook = WORLD_THEMES.tower;
+    run.art = new ArtLibrary(manifest, { warn: () => {} });
+    run.groundLayer = undefined;
+    const camera = run.cameras as { main: Record<string, unknown> };
+    Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+    fit(dungeonMap);
+    expect(run.dungeon).toBeDefined();
+    // the party is on floor 2: its map and its snapshot
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+    run.handleGameStateUpdate(floorState(2));
+    expect(run.dungeon).toBeUndefined();
+    expect(run.buildings).toHaveLength(1);
+    expect(run.view).toBeDefined();
+    expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
+  });
+
+  it("should make no ground texture for a chunk no walkable or shell cell falls in (review M4)", () => {
+    const { stage, stamped } = dungeonStage();
+    const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
+    // every texture made is painted, and the floor's empty chunks have none
+    for (const rt of rts) expect((stamped.get(rt) ?? []).length).toBeGreaterThan(0);
+    expect(rts.length).toBeLessThan(chunks.rects.length);
+    // each chunk a ground cell's diamond falls in has its texture
+    const made = new Set(rts.map((rt) => `${rt.args[0]},${rt.args[1]}`));
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) {
+        if (!grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) continue;
+        const c = await_iso.worldToScreen(cx * 80 + 40, cy * 80 + 40);
+        const r = chunks.rects[chunks.indexAt(c)];
+        expect(made.has(`${r.x},${r.y}`)).toBe(true);
+      }
+  });
+
+  it("should paint a dungeon floor's ground once as it is built, and not again as the party leaves it (review L13)", () => {
+    const draws = vi.spyOn(GroundLayer.prototype as unknown as { draw(pieces: unknown): void }, "draw");
+    try {
+      const { handle } = dungeonStage();
+      expect(draws).toHaveBeenCalledTimes(1);
+      draws.mockClear();
+      useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+      handle(bare(floorState(2)));
+      // floor 2's own ground, made and painted with its houses; nothing on floor 1's on the way
+      expect(draws).toHaveBeenCalledTimes(2);
+    } finally {
+      draws.mockRestore();
+    }
+  });
+
+  it("should lay the placeholder floor without its art under ground cells only, void left to the background (review L13)", () => {
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as DungeonRun;
+    run.worldLook = WORLD_THEMES.tower;
+    run.groundLayer = undefined;
+    const camera = run.cameras as { main: Record<string, unknown> };
+    Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.call(run, dungeonState());
+    // the flagged stone: filled and jointed (the minimap's panel is filled too, never jointed)
+    const stone = scene.stage.made.filter((m) => m.kind === "graphics" && m.calls.includes("fillRect") && m.calls.includes("lineBetween"));
+    expect(stone).toHaveLength(1);
+    let cells = 0;
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) cells++;
+    expect(stone[0].calls.filter((c) => c === "fillRect")).toHaveLength(cells);
+  });
+
+  /** A party member in every region, so the fog of war (FS-SRA9J) hides nothing. */
+  const everyRegion = (): Partial<Party> => ({
+    other_players: grid.regions.map(({ id, cells: [{ x, y }] }) => ({
+      ...player(`m${id}`, `M${id}`, 0),
+      position: at((x + 0.5) * 80, (y + 0.5) * 80),
+    })) as GameState["other_players"],
+  });
+
+  it("should show wall pieces, dressing and wall lights only within one chunk of the view, as the camera pans", () => {
+    const { run, stage, lights, look } = dungeonStage(everyRegion());
+    const walls = drawn(stage.made, "tower_wall_");
+    const dressing = (run.dressing ?? []) as unknown as Made[];
+    expect(dressing.length).toBeGreaterThan(16);
+    const sconces = () =>
+      (lights as { x: number; y: number; radius: number }[]).filter((l) => l.radius === manifest.sheets.tower_wall_back_sconce_x.light.radius);
+    let lit = 0;
+    for (const [x, y] of [[0, 600], [-2400, 1400], [2400, 1400], [600, 2800], [-600, 3400], [3000, 2000]]) {
+      look(x, y);
+      const near = new Set(chunks.near({ x: x - 640, y: y - 360, width: 1280, height: 720 }));
+      for (const m of [...walls, ...dressing]) expect(shownNow(m)).toBe(near.has(chunkOf(m)));
+      for (const l of sconces()) expect(near.has(chunks.indexAt(l))).toBe(true);
+      expect(lights.length).toBeLessThanOrEqual(FIXED_LIGHT_CAP);
+      lit += sconces().length;
+    }
+    // some of the floor's wall lights were lit along the way, never all of them at once
+    expect(lit).toBeGreaterThan(0);
+    expect(walls.filter(shownNow).length).toBeLessThan(walls.length);
+  });
+
+  describe("the fog of war (FS-SRA9J §B, §C)", () => {
+    const { Fog: FogClass, FOG } = await_fog;
+    const { regionAt } = await_exploration;
+    type Seen = { state(region: number): string };
+    interface FoggedRun extends DungeonRun {
+      dungeon?: {
+        seen: Seen;
+        fog?: InstanceType<typeof FogClass>;
+        lit: Set<unknown>;
+        lights: { light: { source: unknown }; region: number }[];
+      };
+      chests: Map<string, { sprite: Made }>;
+      escapeDoors: Map<string, { sprite: Made }>;
+      switches: Map<string, { sprite: Made }>;
+      stairs: { placed(): Iterable<{ sprite: Made }> };
+      checkBuildingStatus(): void;
+    }
+    // room 1 (cells 28–37 × 34–41), the chest's: this client's player stands in it
+    const ROOM = 1;
+    const inRoom = { current_player: { ...player("me", "Aldric", 0), position: at(2560, 3080) } } as Partial<Party>;
+    const stageIn = (party: Partial<Party>) => {
+      const staged = dungeonStage(party);
+      return { ...staged, run: staged.run as unknown as FoggedRun };
+    };
+    /** The fixed objects' regions in the fixture: none in room 1 but the chest. */
+    const placedAt = { chest: at(2400, 3000), door: at(4000, 1200), lever: at(3000, 900), stairs: at(1000, 1200) };
+
+    it("should place the fixture's fixed objects so that only the chest is in room 1", () => {
+      expect(regionAt(grid, placedAt.chest)).toBe(ROOM);
+      for (const p of [placedAt.door, placedAt.lever, placedAt.stairs]) expect([0, ROOM]).not.toContain(regionAt(grid, p));
+    });
+
+    it("should hide the escape door, switch and stairs in unexplored regions and show the chest in the region the player stands in", () => {
+      const { run } = stageIn(inRoom);
+      run.checkBuildingStatus();
+      expect(run.dungeon!.seen.state(ROOM)).toBe("visible");
+      expect(shownNow(run.chests.get("c1")!.sprite)).toBe(true);
+      expect(shownNow(run.escapeDoors.get("e1")!.sprite)).toBe(false);
+      expect(shownNow(run.switches.get("s1")!.sprite)).toBe(false);
+      expect([...run.stairs.placed()].map((s) => shownNow(s.sprite))).toEqual([false]);
+    });
+
+    it("should show them once a party member has uncovered their regions, the local player elsewhere", () => {
+      const { run, handle } = stageIn(inRoom);
+      const ally = (id: string, p: { x: number; y: number }) => ({ ...player(id, id, 0), position: p });
+      handle(dungeonState({ ...inRoom, other_players: [ally("a", placedAt.door), ally("b", placedAt.stairs)] as GameState["other_players"] }));
+      run.checkBuildingStatus();
+      expect(shownNow(run.escapeDoors.get("e1")!.sprite)).toBe(true);
+      expect([...run.stairs.placed()].map((s) => shownNow(s.sprite))).toEqual([true]);
+      expect(shownNow(run.switches.get("s1")!.sprite)).toBe(false);
+    });
+
+    it("should draw every wall piece near the view, tinted as dense as the unexplored veil unless it borders the player's room (owner playtest 2026-11-06)", () => {
+      const { stage, look } = stageIn(inRoom);
+      const { x, y } = await_iso.worldToScreen(2560, 3080);
+      look(x, y);
+      const walls = drawn(stage.made, "tower_wall_");
+      const near = new Set(chunks.near({ x: x - 640, y: y - 360, width: 1280, height: 720 }));
+      const nearWalls = walls.filter((m) => near.has(chunkOf(m)));
+      // a piece's cell, from where it stands on screen; whether a region around it is room 1
+      const bordersRoom = (m: Made) => {
+        const w = await_iso.screenToWorld(m.args[0] as number, m.args[1] as number);
+        const cx = Math.floor(w.x / 80);
+        const cy = Math.floor(w.y / 80);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (grid.region(cx + dx, cy + dy) === ROOM) return true;
+        return false;
+      };
+      expect(nearWalls.length).toBeGreaterThan(0);
+      expect(nearWalls.every(shownNow)).toBe(true);
+      // tinted now: its last tint call set the unexplored veil's, none cleared it since
+      const tinted = (m: Made) => m.calls.lastIndexOf("setTint") > m.calls.lastIndexOf("clearTint") && m.last["setTint"]?.[0] === FOG.unexplored.tint;
+      const plain = nearWalls.filter((m) => !tinted(m));
+      expect(plain.length).toBeGreaterThan(0);
+      expect(plain.length).toBeLessThan(nearWalls.length);
+      for (const m of plain) expect(bordersRoom(m)).toBe(true);
+    });
+
+    it("should light only the fixed lights in a visible region", () => {
+      const { run, look } = stageIn(inRoom);
+      const { x, y } = await_iso.worldToScreen(2560, 3080);
+      look(x, y);
+      const dungeon = run.dungeon!;
+      const lit = dungeon.lights.filter((l) => dungeon.lit.has(l.light.source));
+      for (const l of lit) expect(l.region === 0 || dungeon.seen.state(l.region) === "visible").toBe(true);
+      // the same view with every region visible lights more
+      const all = stageIn({ ...inRoom, ...everyRegion() });
+      all.look(x, y);
+      expect(all.run.dungeon!.lit.size).toBeGreaterThan(dungeon.lit.size);
+    });
+
+    it("should draw the fog at the blackout's depth, redraw it only when a region's state changes, and take it down with the floor", () => {
+      const { run, stage, handle } = stageIn(inRoom);
+      const fog = run.dungeon!.fog!;
+      const layers = stage.made.filter((m) => m.kind === "image" && m.depth === FOG.depth && !m.destroyed);
+      expect(layers.length).toBeGreaterThan(0);
+      const drawn = fog.redraws;
+      for (let i = 0; i < 3; i++) handle(dungeonState(inRoom));
+      expect(fog.redraws).toBe(drawn);
+      // the climb to floor 2, a floor of buildings: no fog there
+      useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+      handle(bare(floorState(2)));
+      expect(layers.every((m) => m.destroyed)).toBe(true);
+      expect(run.dungeon).toBeUndefined();
+    });
+
+    it("should start a new dungeon floor unexplored, the party's regions visible at once", () => {
+      const { run, handle } = stageIn(inRoom);
+      const stairsRoom = regionAt(grid, placedAt.stairs);
+      // the player walks to the stairs' region on floor 1, room 1 left explored
+      handle(dungeonState({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] }));
+      expect(run.dungeon!.seen.state(ROOM)).toBe("explored");
+      // floor 2 laid out as floor 1 was, the player arriving in room 1
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+      handle({ ...dungeonState(inRoom), floor: 2 });
+      expect(run.dungeon!.seen.state(stairsRoom)).toBe("unexplored");
+      expect(run.dungeon!.seen.state(ROOM)).toBe("visible");
+    });
+
+    describe("monsters and drop piles (FS-SRA9J §D)", () => {
+      const ME = at(2560, 3080);
+      const { Exploration } = await_exploration;
+      /** A cell's middle in a region the player's look leaves not visible, within 380 px of them. */
+      const near = (() => {
+        const seen = new Exploration(grid);
+        seen.see([ME]);
+        for (let cy = 0; cy < grid.rows; cy++)
+          for (let cx = 0; cx < grid.cols; cx++) {
+            const id = grid.region(cx, cy);
+            const p = at((cx + 0.5) * 80, (cy + 0.5) * 80);
+            if (id && seen.state(id) !== "visible" && Math.hypot(p.x - ME.x, p.y - ME.y) < 380) return p;
+          }
+        throw new Error("the fixture has no region beside room 1");
+      })();
+      /** Far off in an unexplored region: the escape door's. */
+      const far = placedAt.door;
+      const inRoomAt = at(2400, 3050);
+      const beast = (entity_id: string, p: { x: number; y: number }, fields: Record<string, unknown> = {}) => ({
+        ...monster(entity_id, 0),
+        position: p,
+        ...fields,
+      });
+      const elite = { elite: true, name: "Hollow Ghoul" };
+      interface MonsterRun extends FoggedRun {
+        monsters: InstanceType<typeof MonsterRoster>;
+        projectiles?: unknown;
+        fx?: unknown;
+        trails: { placed(): Iterable<{ bed: Made; glow: Made }> };
+        time: { now: number; delayedCall: unknown };
+        createUI(): void;
+        updateTargetFrame(deltaMs: number): void;
+        targetFrame?: { texts(): Made[] };
+      }
+      const stageWith = (party: Partial<Party> = inRoom) => {
+        const staged = stageIn(party);
+        const run = staged.run as unknown as MonsterRun;
+        /** One broadcast with these monsters and containers, then a frame: eased, then hidden. */
+        const frame = (fields: Partial<GameState>, who: Partial<Party> = party) => {
+          staged.handle({ ...dungeonState(who), ...fields } as GameState);
+          run.monsters.update(16);
+          run.checkBuildingStatus();
+        };
+        const shownMonsters = () => run.monsters.standing().map((m) => shownNow(m.parts[0] as unknown as Made));
+        return { ...staged, run, frame, shownMonsters };
+      };
+
+      it("should show a monster in the player's room or within 400 px of them, and hide one beyond, plate, prefix and bar with it", () => {
+        const { run, stage, handle, shownMonsters } = stageWith();
+        // floor 2 laid out as floor 1: its plates are overhead (FS-48CTQ §A.1)
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({
+          ...dungeonState(inRoom),
+          floor: 2,
+          monsters: [beast("room", inRoomAt), beast("near", near, elite), beast("far", far, elite)],
+        } as GameState);
+        run.monsters.update(16);
+        run.checkBuildingStatus();
+        expect(shownMonsters()).toEqual([true, true, false]);
+        const plates = stage.made.filter(
+          (m) => m.kind === "text" && !m.destroyed && ["Ghoul · Lv 1", "Hollow"].includes(m.args[2] as string),
+        );
+        expect(plates.map(shownNow)).toEqual([true, true, true, false, false]);
+        // each monster's bar is the first bar made after its name
+        const bars = plates
+          .filter((m) => m.args[2] !== "Hollow")
+          .map((name) => stage.made.slice(stage.made.indexOf(name)).find((m) => m.kind === "graphics" && m.depth === MARKER_DEPTH.bar)!);
+        expect(bars.map(shownNow)).toEqual([true, true, false]);
+        expect(run.monsters.targetable().map((m) => m.entity_id)).toEqual(["room", "near"]);
+      });
+
+      it("should hide a monster in an explored region once no member is within 400 px of it", () => {
+        const { frame, shownMonsters, run } = stageWith();
+        frame({ monsters: [beast("room", inRoomAt)] });
+        expect(shownMonsters()).toEqual([true]);
+        // the player walks to the stairs' region: room 1 is left explored, far behind them
+        frame({ monsters: [beast("room", inRoomAt)] }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(run.dungeon!.seen.state(ROOM)).toBe("explored");
+        expect(shownMonsters()).toEqual([false]);
+        expect(run.monsters.targetable()).toEqual([]);
+      });
+
+      it("should name no hidden monster in the target frame, not even an engaged boss, and name a shown one", () => {
+        const { run, frame } = stageWith();
+        run.time.now = 0;
+        run.createUI();
+        const named = () => {
+          const lines = run.targetFrame!.texts().filter((t) => t.shown && t.args[2] !== "");
+          return lines.length ? lines.map((t) => t.args[2]).join(" ") : null;
+        };
+        // a demon below its maximum health is engaged (FS-48CTQ §D.10), wherever it stands
+        const boss = (id: string, p: { x: number; y: number }) =>
+          beast(id, p, { archetype: "demon", name: "Demon", boss: true, current_health: 50, max_health: 100 });
+        frame({ monsters: [boss("hidden", far)] });
+        run.updateTargetFrame(200);
+        expect(named()).toBeNull();
+        frame({ monsters: [boss("hidden", far), boss("shown", inRoomAt)] });
+        run.updateTargetFrame(200);
+        expect(named()).toBe("Demon · Lv 1");
+      });
+
+      it("should give a hidden monster no strike-mark and no attack, and drop the strike-mark when the hovered one is hidden", () => {
+        const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+        const { run, frame, cursor } = stageWith();
+        frame({ monsters: [beast("room", inRoomAt), beast("far", far)] });
+        const [room, hidden] = run.monsters.standing().map((m) => m.parts[0] as unknown as Made);
+        hidden.handlers.pointerover();
+        hidden.handlers.pointerdown();
+        expect(cursor).not.toHaveBeenCalledWith("strike-mark");
+        expect(sent).not.toHaveBeenCalledWith(ActionType.Attack, expect.anything());
+        // the pointer rests on the room's monster while the player walks off and it goes dark
+        room.handlers.pointerover();
+        expect(cursor).toHaveBeenLastCalledWith("strike-mark");
+        frame({ monsters: [beast("room", inRoomAt), beast("far", far)] }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(cursor).toHaveBeenLastCalledWith("hand");
+        expect(run.monsters.hoveredId).toBeUndefined();
+        sent.mockRestore();
+      });
+
+      it("should show a drop pile by the monster rule, while a chest in an explored region stays drawn", () => {
+        const { run, frame } = stageWith();
+        const item = { item_id: "i1", entity_id: "ie1", name: "Notched Blade", quantity: 1, attack_power: 6 };
+        const heap = (entity_id: string, p: { x: number; y: number }) => ({
+          container_id: entity_id,
+          entity_id,
+          kind: "drop_pile" as const,
+          position: p,
+          is_open: true,
+          items: [item],
+        });
+        const piles = [heap("p_room", inRoomAt), heap("p_near", near), heap("p_far", far)];
+        const shownPiles = () => ["p_room", "p_near", "p_far"].map((id) => shownNow(run.chests.get(id)!.sprite));
+        const containers = (extra: unknown[]) => [...dungeonState().containers, ...extra] as GameState["containers"];
+        frame({ containers: containers(piles) });
+        expect(shownPiles()).toEqual([true, true, false]);
+        // room 1 left explored, the player far off at the stairs
+        frame({ containers: containers(piles) }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(shownPiles()).toEqual([false, false, false]);
+        expect(shownNow(run.chests.get("c1")!.sprite)).toBe(true);
+      });
+
+      it("should hide projectiles, effects and burning trails in an unexplored region, and leave them in an explored one", () => {
+        const { run, frame } = stageWith();
+        const hidden = { projectiles: vi.fn(), fx: vi.fn() };
+        run.projectiles = { sync: vi.fn(), clear: vi.fn(), standing: () => [], hideWhere: hidden.projectiles };
+        run.fx = { standing: () => [], hideWhere: hidden.fx, clearAll: vi.fn(), release: vi.fn() };
+        const trail = (entity_id: string, from: { x: number; y: number }) => ({
+          entity_id,
+          from,
+          to: at(from.x + 40, from.y),
+          half_width: 12,
+          remaining: 1,
+        });
+        // the player at the stairs, room 1 explored behind them
+        frame(
+          { trails: [trail("t_room", inRoomAt), trail("t_far", far)] },
+          { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] },
+        );
+        expect(run.dungeon!.seen.state(ROOM)).toBe("explored");
+        for (const rule of [hidden.projectiles, hidden.fx]) {
+          const hides = rule.mock.lastCall![0] as (p: { x: number; y: number }) => boolean;
+          expect([hides(far), hides(inRoomAt), hides(placedAt.stairs)]).toEqual([true, false, false]);
+        }
+        const trails = [...run.trails.placed()];
+        expect(trails.map((t) => [shownNow(t.bed), shownNow(t.glow)])).toEqual([
+          [true, true],
+          [false, false],
+        ]);
+      });
+    });
+
+    describe("the minimap (FS-SRA9J §E, I-SRA9J-3)", () => {
+      const { Minimap, minimapRect } = await_minimap;
+      type Map = InstanceType<typeof Minimap>;
+      interface MappedRun extends FoggedRun {
+        dungeon?: FoggedRun["dungeon"] & { minimap?: Map };
+        floorText?: object;
+        menu?: unknown;
+        chatWindow?: { isTyping(): boolean };
+        minimapOn: boolean;
+        createUI(): void;
+        relayoutHud(): void;
+        bindRunInput(): void;
+        resetRun(end: "shutdown" | "destroy"): void;
+      }
+      type Key = (event?: { repeat?: boolean }) => void;
+      const { Exploration } = await_exploration;
+      /** What the party sees with only this client's player in room 1: the room and any tiny segment seen with it. */
+      const roomOnly = (() => {
+        const seen = new Exploration(grid);
+        seen.see([at(2560, 3080)]);
+        return grid.regions.filter((r) => seen.state(r.id) !== "unexplored").map((r) => [r.id, seen.state(r.id)]);
+      })();
+      /** The floor indicator's box in the column: from y 71, 27 px tall, as a 14 px line is. */
+      const FLOOR_LINE = { y: 71, height: 27 };
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+        viewport.set({ width: 800, height: 600, renderScale: 1 });
+      });
+
+      /** Floor 1 with the run's HUD up and its keys bound, then a broadcast with `party`. */
+      const mapped = (party: Partial<Party> = inRoom) => {
+        const placed = vi.spyOn(Minimap.prototype, "place");
+        const dots = vi.spyOn(Minimap.prototype, "party");
+        const staged = stageIn(party);
+        const run = staged.run as unknown as MappedRun;
+        const keys: Record<string, Key> = {};
+        Object.assign(run, {
+          input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) }, on: vi.fn() },
+        });
+        Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+        run.createUI();
+        run.bindRunInput();
+        Object.assign(run.floorText!, FLOOR_LINE);
+        const view = (width: number) => {
+          viewport.set({ width, height: 720, renderScale: 1 });
+          run.relayoutHud();
+        };
+        view(1080);
+        const frame = (who: Partial<Party> = party, fields: Partial<GameState> = {}) =>
+          staged.handle({ ...dungeonState(who), ...fields } as GameState);
+        frame();
+        const map = () => run.dungeon?.minimap;
+        return { ...staged, run, keys, view, frame, map, placed, dots };
+      };
+      const ally = (id: string, p: { x: number; y: number }, fields: { escape?: boolean; current_health?: number } = {}) => ({
+        ...player(id, id, 0, fields),
+        position: p,
+      });
+
+      it("should show the minimap on floor 1 by default, 6 px under the floor indicator, right-aligned, and move it with the view", () => {
+        const { map, view, placed } = mapped();
+        expect(map()).toBeDefined();
+        expect(map()!.shown).toBe(true);
+        const under = FLOOR_LINE.y + FLOOR_LINE.height;
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, under));
+        view(1280);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, under));
+        expect(minimapRect(1270, under)).toMatchObject({ x: 1054, y: under + 6 });
+      });
+
+      it("should hide and show it on M, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats", () => {
+        const { run, keys, map } = mapped();
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(false);
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(true);
+        keys["keydown-M"]({ repeat: true });
+        expect(map()!.shown).toBe(true);
+        run.menu = {};
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(true);
+        run.menu = undefined;
+        run.chatWindow = { isTyping: () => true };
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(true);
+        run.chatWindow = undefined;
+      });
+
+      it("should bind M as a keydown event, never a captured key, so a stop has no capture of it to hand back", () => {
+        const scene = sceneOnStage();
+        const run = scene.run as unknown as MappedRun & { bindKeys(): void };
+        const added: number[] = [];
+        const heard: string[] = [];
+        const key = (code: number) => ({ keyCode: code, on: vi.fn() });
+        Object.assign(run, {
+          input: {
+            setDefaultCursor: vi.fn(),
+            on: vi.fn(),
+            keyboard: {
+              createCursorKeys: () => ({}),
+              addKey: (code: number) => (added.push(code), key(code)),
+              on: (event: string) => heard.push(event),
+            },
+          },
+        });
+        run.bindKeys();
+        run.bindRunInput();
+        expect(heard).toContain("keydown-M");
+        expect(added).not.toContain(77);
+      });
+
+      it("should keep M's choice for the run scene: across a floor change, and back on for the next run scene", () => {
+        const { run, keys, map, handle } = mapped();
+        const first = map()!;
+        keys["keydown-M"]();
+        // floor 2 laid out as floor 1 was: a new floor, a new minimap, still hidden
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(map()).toBeDefined();
+        expect(map()).not.toBe(first);
+        expect(map()!.shown).toBe(false);
+        run.resetRun("shutdown");
+        expect(run.minimapOn).toBe(true);
+      });
+
+      it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
+        const { map, handle } = mapped({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        const first = map()!;
+        const destroyed = vi.spyOn(first, "destroy");
+        const stairsRoom = regionAt(grid, placedAt.stairs);
+        expect(first.content.regions.map((r) => r.id)).toContain(stairsRoom);
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(destroyed).toHaveBeenCalled();
+        expect(map()!.content.regions.map((r) => [r.id, r.state])).toEqual(roomOnly);
+        expect(roomOnly).toContainEqual([ROOM, "visible"]);
+      });
+
+      it("should show explored and visible regions and the party's living dots, nothing for monsters or containers", () => {
+        const { map, frame, dots } = mapped();
+        const monsters = [monster("m_room", 0), monster("m_far", 0)].map((m, i) => ({ ...m, position: [at(2400, 3050), placedAt.door][i] }));
+        frame(
+          {
+            ...inRoom,
+            other_players: [
+              ally("near", at(2600, 3100)),
+              ally("dead", placedAt.lever, { current_health: 0 }),
+              ally("gone", placedAt.lever, { escape: true }),
+            ] as GameState["other_players"],
+          },
+          { monsters },
+        );
+        expect(map()!.content.regions.map((r) => [r.id, r.state])).toEqual(roomOnly);
+        // the chest in room 1 and the monsters are never on it; the lever's region the dead and the
+        // escaped stand in is not uncovered
+        expect(map()!.content.fixtures).toEqual([]);
+        expect(dots).toHaveBeenLastCalledWith({ self: at(2560, 3080), allies: [at(2600, 3100)] });
+      });
+
+      it("should mark the switch, escape door and stairs once a member has uncovered their regions", () => {
+        const { map, frame } = mapped();
+        frame({ ...inRoom, other_players: [ally("a", placedAt.door), ally("b", placedAt.stairs)] as GameState["other_players"] });
+        expect(map()!.content.fixtures).toEqual([
+          { kind: "escape-door", at: placedAt.door },
+          { kind: "stairs", at: placedAt.stairs },
+        ]);
+        // they walk on: the regions stay explored, the marks stay
+        frame(inRoom);
+        expect(map()!.content.fixtures.map((f) => f.kind)).toEqual(["escape-door", "stairs"]);
+        frame({ ...inRoom, other_players: [ally("c", placedAt.lever)] as GameState["other_players"] });
+        expect(map()!.content.fixtures.map((f) => f.kind)).toEqual(["switch", "escape-door", "stairs"]);
+      });
+
+      it("should keep it for a dead player watching the party, the living's dots only", () => {
+        const { map, frame, dots } = mapped();
+        frame({
+          current_player: { ...player("me", "Aldric", 0, { current_health: 0 }), position: at(2560, 3080) } as Party["current_player"],
+          other_players: [ally("a", placedAt.stairs)] as GameState["other_players"],
+        });
+        expect(map()).toBeDefined();
+        expect(map()!.shown).toBe(true);
+        expect(dots).toHaveBeenLastCalledWith({ self: undefined, allies: [placedAt.stairs] });
+        expect(map()!.content.regions.map((r) => r.id)).toContain(regionAt(grid, placedAt.stairs));
+      });
+
+      it("should redraw its map only when a region's state changes, as a member walks across the floor", () => {
+        const { map, frame } = mapped();
+        const once = map()!.redraws;
+        for (const dx of [0, 40, 80]) frame({ current_player: { ...player("me", "Aldric", 0), position: at(2560 + dx, 3080) } as Party["current_player"] });
+        expect(map()!.redraws).toBe(once);
+        frame({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
+        expect(map()!.redraws).toBe(once + 1);
+      });
+
+      it("should take it down on a climb to a floor of buildings, and build none on floors 2 and 3", () => {
+        const { run, map, handle } = mapped();
+        const first = map()!;
+        const destroyed = vi.spyOn(first, "destroy");
+        const shown = vi.spyOn(Minimap.prototype, "show");
+        for (const floor of [2, 3]) {
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(floor)));
+          handle(bare(floorState(floor)));
+          expect(run.dungeon).toBeUndefined();
+        }
+        expect(destroyed).toHaveBeenCalled();
+        expect(shown).not.toHaveBeenCalled();
+      });
+
+      it("should not exist in the hub or field scenes", () => {
+        for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
+          const source = readFileSync(join(__dirname, scene), "utf8");
+          expect(source).not.toMatch(/minimap/i);
+        }
+      });
+    });
   });
 });

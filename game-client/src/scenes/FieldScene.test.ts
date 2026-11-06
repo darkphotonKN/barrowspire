@@ -30,6 +30,10 @@ vi.mock("@/ui/partyInviteField", () => ({
   }),
 }));
 
+// The vignette paints into a real <canvas>: no DOM here either, and the atmosphere has its own
+// suite (utils/atmosphere.test.ts).
+vi.mock("@/utils/atmosphere", () => ({ createAtmosphere: () => undefined }));
+
 vi.mock("phaser", async () => {
   const { EventEmitter } = await import("eventemitter3");
   class Scene {
@@ -59,6 +63,8 @@ const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
+const { viewport } = await import("@/render/viewport");
+const { sceneSystems } = await import("./sceneEnd.standin");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
 
@@ -78,7 +84,7 @@ interface FieldUnderTest {
   time: { delayedCall: ReturnType<typeof vi.fn> };
   scene: { start: ReturnType<typeof vi.fn> };
   listen(): void;
-  release(): void;
+  release(end: "shutdown" | "destroy"): void;
   renderState(state: unknown): void;
   followEntrance(pos: { x: number; y: number }, gates: unknown[]): void;
   placePlayer(...args: unknown[]): void;
@@ -106,6 +112,8 @@ function fieldOnStage() {
   field.time = { delayedCall: vi.fn() };
   field.scene = { start: vi.fn() };
   Object.assign(field, {
+    // the cursor is handed back on release
+    input: { setDefaultCursor: vi.fn() },
     placePlayer: vi.fn(),
     drawGround: vi.fn(),
     drawObstacles: vi.fn(),
@@ -147,6 +155,7 @@ function fieldOnStage() {
  */
 function fieldToCreate<T>() {
   const field = new FieldScene() as unknown as T & {
+    init(data?: { field?: string }): void;
     create(data?: { field?: string }): void;
   };
   const stub: unknown = new Proxy(function () {}, {
@@ -231,7 +240,7 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     standAt(ARRIVAL);
     standAt(ROAD_HOME.position);
 
-    field.release();
+    field.release("shutdown");
     field.listen();
     standAt(ROAD_HOME.position);
 
@@ -338,7 +347,7 @@ describe("FieldScene monsters and the fight (FS-X2F2H §Requirements 56)", () =>
     const fight = { sync: vi.fn(), update: vi.fn(), release: vi.fn() };
     Object.assign(field, { fight });
 
-    field.release();
+    field.release("shutdown");
 
     expect(fight.release).toHaveBeenCalledTimes(1);
     expect((field as unknown as { fight?: unknown }).fight).toBeUndefined();
@@ -417,7 +426,7 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
     const piles = fakePiles();
     Object.assign(field, { piles });
 
-    field.release();
+    field.release("shutdown");
 
     expect(piles.release).toHaveBeenCalledTimes(1);
     expect(socketManager.off).toHaveBeenCalledWith(ActionType.Interact);
@@ -581,6 +590,24 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     expect(fill.width).toBeCloseTo(bar.width / 2);
   });
 
+  it.each([1, 2])(
+    "should stand the fallen panel and its bar at the centre of a wider view, at render scale %s (FS-ZAJMH R12, R13)",
+    (renderScale) => {
+      const { field, liveText, barFills } = fallenOnStage();
+      Object.assign(field, { satchel: undefined, invitePrompt: undefined, abilityHud: undefined });
+      viewport.set({ width: 1080, height: 720, renderScale });
+      field.time.now = 1000;
+      field.renderState(stateAt(0, { x: 900, y: 420 }));
+
+      viewport.set({ width: 1280, height: 720, renderScale });
+      (field as unknown as { relayoutHud(): void }).relayoutHud();
+      expect(barFills()).toEqual([{ colour: palette.xpFill, ...fallenFrame(1280, 720).bar }]);
+      expect(liveText("3s")).toBeDefined();
+      expect(liveText(FALLEN_LINE)).toBeDefined();
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    },
+  );
+
   it("should take the panel, the number and the bar down on rising", () => {
     const { field, liveText, barFills } = fallenOnStage();
     field.time.now = 1000;
@@ -623,7 +650,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     const { field } = fallenOnStage();
     field.renderState(stateAt(0, { x: 900, y: 420 }));
 
-    field.release();
+    field.release("shutdown");
 
     expect(field.fallenView).toBeUndefined();
   });
@@ -720,6 +747,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
       on: vi.fn(),
+      setDefaultCursor: vi.fn(),
     };
     field.bindHudKeys();
     const press = (key: string) => keys.get(`keydown-${key}`)?.();
@@ -867,9 +895,18 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   it("should let the HUD go on release, so the next visit starts empty", () => {
     const { field } = hudOnStage();
 
-    field.release();
+    field.release("shutdown");
 
     expect(field.equipment).toBeUndefined();
+  });
+
+  it("should release the HUD on release, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
+    const { field } = hudOnStage();
+    const release = vi.spyOn(field.equipment!, "release");
+
+    field.release("shutdown");
+
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("should compose the run's equip HUD and bind its keys when the field is created", () => {
@@ -884,6 +921,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       { get: (_target, key) => (key === "keyboard" ? keyboard : stub) },
     );
 
+    field.init({ field: "gentle_meadows" });
     field.create({ field: "gentle_meadows" });
 
     expect(field.equipment).toBeInstanceOf(EquipmentHud);
@@ -897,6 +935,59 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
         "keydown-F",
       ]),
     );
+  });
+});
+
+// Leaving /game mid-field destroys the game: Phaser emits the scene's DESTROY only, after every
+// plugin has destroyed itself (sceneEnd.standin.ts). The field must still let go of what outlives
+// the game and ask the dead plugins nothing; on a stop it hands the cursor back (asked 2026-11-06).
+describe("FieldScene ending (game destroy on leaving /game)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A field made by its create(), its scene events and input those of Phaser's stand-in. */
+  function createdField() {
+    const { field } = fieldToCreate<{ input: unknown; events: unknown }>();
+    // the plugins boot before the scene's create runs, so they hear DESTROY first
+    const systems = sceneSystems();
+    field.events = systems.scene.events;
+    field.init({ field: "gentle_meadows" });
+    field.create({ field: "gentle_meadows" });
+    field.input = systems.scene.input;
+    const off = vi.spyOn(socketManager, "off");
+    const offError = vi.spyOn(socketManager, "offError");
+    return { field, systems, off, offError };
+  }
+
+  it("should let the visit go on a game destroy without asking the destroyed plugins anything", () => {
+    const { systems, off, offError } = createdField();
+
+    expect(() => systems.destroy()).not.toThrow();
+    expect(systems.touched).toEqual([]);
+    expect(off).toHaveBeenCalledWith(ActionType.Interact);
+    expect(offError).toHaveBeenCalledWith(ActionType.LeaveField);
+  });
+
+  it("should hand the cursor back to the page on a stop", () => {
+    const { systems } = createdField();
+    systems.input.manager!.defaultCursor = "url(hand) 0 0, default";
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.defaultCursor).toBe("");
+  });
+
+  // Phaser's stop destroys the field's keys and keeps their captures, the game's (sceneEnd.ts).
+  it("should hand back the captures its keys made on a stop", () => {
+    const { field, systems } = createdField();
+    // the rig stubs bindInput; the real one binds on the stand-in's keyboard
+    (FieldScene.prototype as unknown as { bindInput(): void }).bindInput.call(field);
+    expect(systems.input.manager?.captures.length).toBeGreaterThan(0);
+
+    systems.shutdown();
+
+    expect(systems.input.manager?.captures).toEqual([]);
   });
 });
 
@@ -915,6 +1006,7 @@ describe("FieldScene the Forest's bounds (FS-KSD6K §Requirements 17)", () => {
       ),
     };
 
+    field.init({ field: "forlorn_forest" });
     field.create({ field: "forlorn_forest" });
 
     // constants.ForestMapWidth/Height, and the golden layout the fixture copies
@@ -1035,5 +1127,63 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     fight.aiming = false;
     field.update(32, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
+  });
+});
+
+const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
+const { atlasTextureKey } = await import("@/render/art/library");
+
+// Each field loads its own wildlife or dead from its preload, its id read in init, before preload
+// runs: Phaser hands the start data to init and create only (FS-C4JWH §B R7–R8, §A R5).
+describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
+
+  it.each([
+    ["gentle_meadows", ["wildlife-0", "wildlife-1"]],
+    ["forlorn_forest", ["fodder-0", "fodder-1"]],
+    ["a field the client does not know", ["wildlife-0", "wildlife-1"]],
+  ])("should queue %s's own group and nothing else, the resident art being loaded", (id, own) => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const field = Object.assign(new FieldScene(), art.scene) as unknown as {
+      init(data?: { field?: string }): void;
+      preload(): void;
+    };
+
+    field.init({ field: id });
+    field.preload();
+
+    expect(art.queued.sort()).toEqual(own.map(atlasTextureKey));
+  });
+
+  it("should show the torch bar over its creatures still downloading at 300 ms, and none once they are in; the field fades in each time (FS-C4JWH §D R17, A1)", () => {
+    vi.useFakeTimers();
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const field = Object.assign(new FieldScene(), art.scene) as unknown as {
+      init(data?: { field?: string }): void;
+      preload(): void;
+    };
+
+    art.boot({ init: (d) => field.init(d as { field?: string }), preload: () => field.preload() }, { field: "forlorn_forest" }, { hold: true });
+    vi.advanceTimersByTime(300);
+    art.finish();
+    vi.runAllTimers();
+    const first = art.drawn.length;
+    expect(first).toBeGreaterThan(0);
+    expect(art.drawn.every((d) => d.destroyed)).toBe(true);
+    art.camera.fades.length = 0;
+
+    art.boot({ init: (d) => field.init(d as { field?: string }), preload: () => field.preload() }, { field: "forlorn_forest" });
+    vi.runAllTimers();
+    vi.useRealTimers();
+
+    expect(art.drawn.length).toBe(first);
+    expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
   });
 });

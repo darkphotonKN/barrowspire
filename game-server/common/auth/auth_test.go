@@ -1,9 +1,12 @@
 package auth_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
+	"time"
 
 	pbitems "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	pbmarketplace "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
@@ -34,13 +37,17 @@ func TestNewValidator(t *testing.T) {
 	accountID := uuid.New()
 	validate := commonauth.NewValidator([]byte(testSecret))
 
+	// Every access token auth-service mints is typed access (FS-ZPX58 L1), so
+	// the success cases carry the type and the refusals below show it matters.
 	full := commonauth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},
+		TokenType:        "access",
 		Role:             string(commonauth.RolePlayer),
 		AccountID:        &accountID,
 	}
 	noAccount := commonauth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},
+		TokenType:        "access",
 		Role:             string(commonauth.RoleAdmin),
 	}
 
@@ -65,7 +72,7 @@ func TestNewValidator(t *testing.T) {
 			// FS-V6SFK §Requirements 22: the claim is read, never a refusal.
 			name: "email_verified true is carried",
 			token: sign(t, jwt.MapClaims{
-				"sub": memberID.String(), "role": "player", "email_verified": true,
+				"sub": memberID.String(), "tokenType": "access", "role": "player", "email_verified": true,
 			}, testSecret),
 			want: commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: true},
 		},
@@ -73,14 +80,43 @@ func TestNewValidator(t *testing.T) {
 			// Absent is unverified, and still authenticated (fails closed, ADR-0014).
 			name: "email_verified absent reads as unverified",
 			token: sign(t, jwt.MapClaims{
-				"sub": memberID.String(), "role": "player",
+				"sub": memberID.String(), "tokenType": "access", "role": "player",
 			}, testSecret),
 			want: commonauth.Identity{MemberID: memberID, Role: commonauth.RolePlayer, EmailVerified: false},
+		},
+		{
+			// FS-ZPX58 L1: a refresh token is never an access credential, even
+			// one that somehow carries a role.
+			name: "a refresh token is refused even with a role",
+			token: sign(t, jwt.MapClaims{
+				"sub": memberID.String(), "tokenType": "refresh", "role": "player",
+			}, testSecret),
+			wantErr: true,
+		},
+		{
+			// FS-ZPX58 round 2: HS256 only, as auth-service mints.
+			name: "HS512 is refused",
+			token: func() string {
+				tok, err := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+					"sub": memberID.String(), "tokenType": "access", "role": "player",
+				}).SignedString([]byte(testSecret))
+				require.NoError(t, err)
+				return tok
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "no token type is refused",
+			token: sign(t, jwt.MapClaims{
+				"sub": memberID.String(), "role": "player",
+			}, testSecret),
+			wantErr: true,
 		},
 		{
 			name: "no role is refused",
 			token: sign(t, commonauth.Claims{
 				RegisteredClaims: jwt.RegisteredClaims{Subject: memberID.String()},
+				TokenType:        "access",
 			}, testSecret),
 			wantErr: true,
 		},
@@ -92,14 +128,14 @@ func TestNewValidator(t *testing.T) {
 		{
 			name: "sub not a uuid is refused",
 			token: sign(t, jwt.MapClaims{
-				"sub": "not-a-uuid", "role": "player",
+				"sub": "not-a-uuid", "tokenType": "access", "role": "player",
 			}, testSecret),
 			wantErr: true,
 		},
 		{
 			name: "account_id present but not a uuid is refused",
 			token: sign(t, jwt.MapClaims{
-				"sub": memberID.String(), "role": "player", "account_id": "not-a-uuid",
+				"sub": memberID.String(), "tokenType": "access", "role": "player", "account_id": "not-a-uuid",
 			}, testSecret),
 			wantErr: true,
 		},
@@ -116,6 +152,17 @@ func TestNewValidator(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// FS-ZPX58 L7: a validator built with no secret refuses everything, rather
+// than accepting a token signed with the empty key.
+func TestNewValidator_EmptySecret_RefusesEverything(t *testing.T) {
+	validate := commonauth.NewValidator(nil)
+	token := sign(t, jwt.MapClaims{"sub": uuid.New().String(), "tokenType": "access", "role": "player"}, "")
+
+	_, err := validate(token)
+
+	assert.Error(t, err)
 }
 
 func runInterceptor(t *testing.T, validate func(string) (commonauth.Identity, error)) (context.Context, error) {
@@ -187,6 +234,8 @@ var serviceCalled = []string{
 	"/items.ItemsService/ListStaleReserved",
 	"/items.ItemsService/CancelReservation",
 	"/items.ItemsService/ConfirmReservation",
+	"/items.ItemsService/ReleaseConfirmedReservation",
+	"/items.ItemsService/ListConfirmedReservations",
 	"/items.ItemsService/ResolveItemSnapshots",
 }
 
@@ -272,11 +321,14 @@ func TestAuth_PublicReads_SkipTheTokenCheck(t *testing.T) {
 // needs a token. The list is read from the generated service descriptors rather
 // than typed out, so a method added later is covered without anyone remembering.
 func TestAuth_PublicReads_LeaveEveryOtherMarketplaceAndItemsMethodGuarded(t *testing.T) {
-	public := make(map[string]bool, len(publicReads)+len(serviceCalled))
+	public := make(map[string]bool, len(publicReads)+len(serviceCalled)+len(optionalAuthReads))
 	for _, m := range publicReads {
 		public[m] = true
 	}
 	for _, m := range serviceCalled {
+		public[m] = true
+	}
+	for _, m := range optionalAuthReads {
 		public[m] = true
 	}
 
@@ -322,8 +374,6 @@ func TestAuth_PublicReads_LeaveEveryOtherMarketplaceAndItemsMethodGuarded(t *tes
 }
 
 var publicReads = []string{
-	"/marketplace.MarketplaceService/BrowseListings",
-	"/marketplace.MarketplaceService/GetListing",
 	"/items.ItemsService/GetItemSummaries",
 	"/items.ItemsService/ListItemTemplates",
 	"/items.ItemsService/ListItemRarities",
@@ -331,4 +381,201 @@ var publicReads = []string{
 
 func rejectEveryToken(string) (commonauth.Identity, error) {
 	return commonauth.Identity{}, errors.New("no token should have been validated")
+}
+
+// optionalAuthReads are genuinely public, but read a caller when one is present
+// (ADR-0053): the Bazaar's browse and detail answer whether each listing is the
+// viewer's own (FS-GKHYD §Requirements 8).
+var optionalAuthReads = []string{
+	"/marketplace.MarketplaceService/BrowseListings",
+	"/marketplace.MarketplaceService/GetListing",
+}
+
+// callAs drives the interceptor for method with md as the incoming metadata (nil
+// sends none at all), and answers the context the handler ran with: nil when it
+// never ran.
+func callAs(t *testing.T, method string, md metadata.MD, validate func(string) (commonauth.Identity, error)) (context.Context, error) {
+	t.Helper()
+
+	ctx := context.Background()
+	if md != nil {
+		ctx = metadata.NewIncomingContext(ctx, md)
+	}
+
+	var reached context.Context
+	_, err := commonauth.Auth(validate)(
+		ctx,
+		nil,
+		&grpc.UnaryServerInfo{FullMethod: method},
+		func(ctx context.Context, req any) (any, error) {
+			reached = ctx
+			return nil, nil
+		},
+	)
+	return reached, err
+}
+
+func bearer(token string) metadata.MD {
+	return metadata.New(map[string]string{"authorization": "Bearer " + token})
+}
+
+// A public method is skipped outright, so a token that would validate is never
+// read and no identity reaches the handler. Moving a stopgap to optional-auth by
+// accident would break this.
+func TestAuth_PublicMethods_NeverEmbedIdentity_EvenWithAValidToken(t *testing.T) {
+	validated := commonauth.Identity{MemberID: uuid.New(), Role: commonauth.RolePlayer}
+
+	for _, method := range append(append([]string{}, publicReads...), serviceCalled...) {
+		t.Run(method, func(t *testing.T) {
+			ctx, err := callAs(t, method, bearer("valid"), func(string) (commonauth.Identity, error) {
+				return validated, nil
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, ctx, "the handler must run")
+			_, ok := commonauth.IdentityFromCtx(ctx)
+			assert.False(t, ok, "a public method reads no caller")
+		})
+	}
+}
+
+// With a valid bearer an optional-auth method embeds the whole identity, exactly
+// as a protected method does.
+func TestAuth_OptionalAuthMethods_EmbedIdentityWithAValidToken(t *testing.T) {
+	accountID := uuid.New()
+	want := commonauth.Identity{MemberID: uuid.New(), AccountID: &accountID, Role: commonauth.RolePlayer, EmailVerified: true}
+
+	for _, method := range optionalAuthReads {
+		t.Run(method, func(t *testing.T) {
+			ctx, err := callAs(t, method, bearer("valid"), func(token string) (commonauth.Identity, error) {
+				require.Equal(t, "valid", token)
+				return want, nil
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, ctx, "the handler must run")
+			got, ok := commonauth.IdentityFromCtx(ctx)
+			require.True(t, ok)
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
+// Anything short of a valid bearer is an anonymous visitor, never
+// Unauthenticated: a stale token must not break a public page (ADR-0053).
+func TestAuth_OptionalAuthMethods_ServeAnonymouslyWithoutAValidToken(t *testing.T) {
+	validate := commonauth.NewValidator([]byte(testSecret))
+	expired := sign(t, commonauth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   uuid.New().String(),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+		},
+		Role: string(commonauth.RolePlayer),
+	}, testSecret)
+
+	tests := []struct {
+		name string
+		md   metadata.MD
+	}{
+		{"no metadata", nil},
+		{"no authorization", metadata.New(map[string]string{"x-request-id": "r1"})},
+		{"empty authorization", metadata.New(map[string]string{"authorization": ""})},
+		{"not a bearer", metadata.New(map[string]string{"authorization": "Basic dXNlcjpwYXNz"})},
+		{"bearer without a space", metadata.New(map[string]string{"authorization": "Bearer"})},
+		{"garbage token", bearer("not-a-jwt")},
+		{"wrong secret", bearer(sign(t, commonauth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{Subject: uuid.New().String()},
+			Role:             string(commonauth.RolePlayer),
+		}, "not-the-secret"))},
+		{"expired token", bearer(expired)},
+	}
+
+	for _, method := range optionalAuthReads {
+		for _, tt := range tests {
+			t.Run(method+"/"+tt.name, func(t *testing.T) {
+				ctx, err := callAs(t, method, tt.md, validate)
+
+				require.NoError(t, err, "an optional-auth method never answers Unauthenticated")
+				require.NotNil(t, ctx, "the handler must run")
+				_, ok := commonauth.IdentityFromCtx(ctx)
+				assert.False(t, ok, "no identity for an anonymous caller")
+			})
+		}
+	}
+}
+
+// captureDebugLogs routes the default logger, at Debug, into a buffer for the
+// rest of the test.
+func captureDebugLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	return &buf
+}
+
+// An optional-auth method serves a bad token anonymously, so nothing else would
+// show that every signed-in viewer is being dropped (a misconfigured JWT secret,
+// say). The reason is logged at Debug, with the method and never the token.
+func TestAuth_OptionalAuthMethods_LogWhyAPresentedTokenWasDropped(t *testing.T) {
+	validate := commonauth.NewValidator([]byte(testSecret))
+	wrongSecret := sign(t, commonauth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: uuid.New().String()},
+		Role:             string(commonauth.RolePlayer),
+	}, "not-the-secret")
+
+	tests := []struct {
+		name       string
+		md         metadata.MD
+		wantReason string
+	}{
+		{"wrong secret", bearer(wrongSecret), "signature is invalid"},
+		{"not a bearer", metadata.New(map[string]string{"authorization": "Basic dXNlcjpwYXNz"}), "malformed authorization"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureDebugLogs(t)
+
+			_, err := callAs(t, optionalAuthReads[0], tt.md, validate)
+
+			require.NoError(t, err)
+			out := logs.String()
+			assert.Contains(t, out, "level=DEBUG")
+			assert.Contains(t, out, optionalAuthReads[0])
+			assert.Contains(t, out, tt.wantReason)
+			assert.NotContains(t, out, wrongSecret, "the token never reaches the log")
+			assert.NotContains(t, out, "dXNlcjpwYXNz", "the credential never reaches the log")
+		})
+	}
+}
+
+// No token at all is the ordinary signed-out visitor, not a fault: nothing is
+// logged for it, so the Debug line stays a signal.
+func TestAuth_OptionalAuthMethods_LogNothingForASignedOutVisitor(t *testing.T) {
+	logs := captureDebugLogs(t)
+
+	_, err := callAs(t, optionalAuthReads[0], metadata.New(map[string]string{"x-request-id": "r1"}), rejectEveryToken)
+
+	require.NoError(t, err)
+	assert.Empty(t, logs.String())
+}
+
+// A protected method keeps refusing a token that fails validation, so the
+// optional-auth fallthrough is per method and not a softened gate.
+func TestAuth_ProtectedMethods_StillRefuseAnInvalidToken(t *testing.T) {
+	for _, method := range []string{
+		"/marketplace.MarketplaceService/ListMyListings",
+		"/marketplace.MarketplaceService/PlaceBid",
+	} {
+		t.Run(method, func(t *testing.T) {
+			ctx, err := callAs(t, method, bearer("expired"), func(string) (commonauth.Identity, error) {
+				return commonauth.Identity{}, assert.AnError
+			})
+
+			assert.Equal(t, codes.Unauthenticated, status.Code(err))
+			assert.Nil(t, ctx, "the handler must not run")
+		})
+	}
 }

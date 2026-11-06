@@ -1,5 +1,5 @@
 import { EventEmitter } from "eventemitter3";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import {
@@ -12,10 +12,11 @@ import {
   type Letter,
 } from "@/mailbox/mailbox";
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
+import { fillMaskArea, viewport } from "@/render/viewport";
 import { ApiError } from "@/utils/apiError";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { LetterPanel } from "./LetterPanel";
-import { letterPanelFrame } from "./letterPanelLayout";
+import { envelopeFrame, letterPanelFrame } from "./letterPanelLayout";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
 
@@ -39,6 +40,8 @@ function fakeScene() {
     rect: { x: number; y: number; w: number; h: number };
   })[] = [];
   const tweens: unknown[] = [];
+  /** Where each container was last put: an item tip's place. */
+  const containers: { x: number; y: number }[] = [];
   const chain = (self: Record<string, unknown>, record?: Pressable) => {
     for (const m of [
       "setScrollFactor",
@@ -47,7 +50,7 @@ function fakeScene() {
       "setAlpha",
       "setScale",
       "setCrop",
-      "setMask",
+      "enableFilters",
       "setPosition",
       "setVisible",
       "setInteractive",
@@ -107,16 +110,32 @@ function fakeScene() {
         t.color = color;
         return self;
       };
-      self.setMask = () => {
-        t.masked = true;
-        return self;
+      // Phaser 4's mask filter (`maskInView`)
+      Object.assign(self, {
+        scrollFactorX: 0,
+        scrollFactorY: 0,
+        filtersFocusContext: false,
+      });
+      self.filters = {
+        external: {
+          addMask: () => {
+            t.masked = true;
+            masksLaid.count++;
+            return {};
+          },
+        },
       };
       return self;
     },
     zone: (x: number, y: number, w: number, h: number) => {
       const z = { rect: { x, y, w, h }, handlers: {}, destroyed: false };
       zones.push(z);
-      return chain({}, z);
+      const self = chain({}, z);
+      self.setPosition = (nx: number, ny: number) => {
+        z.rect = { ...z.rect, x: nx, y: ny };
+        return self;
+      };
+      return self;
     },
     sprite: () => chain({ frame: { width: 64, height: 64 } }),
     // as in Phaser, a container takes its children down with it
@@ -127,13 +146,44 @@ function fakeScene() {
     ) => {
       const self = chain({ add: () => undefined });
       self.destroy = () => children.forEach((c) => c.destroy());
+      const at = { x: _x, y: _y };
+      containers.push(at);
+      self.setPosition = (nx: number, ny: number) => {
+        at.x = nx;
+        at.y = ny;
+        return self;
+      };
       return self;
     },
   };
+  /** Each mask shape made (`make.graphics`): what it was last drawn as, rects and alphas. */
+  const maskShapes: {
+    rects: number[][];
+    alphas: number[];
+    destroyed: boolean;
+  }[] = [];
+  /** Every mask laid on a text (`filters.external.addMask`). */
+  const masksLaid = { count: 0 };
   const scene = {
     add,
     make: {
-      graphics: () => chain({ createGeometryMask: () => ({}) }),
+      graphics: () => {
+        const m = {
+          rects: [] as number[][],
+          alphas: [] as number[],
+          destroyed: false,
+        };
+        maskShapes.push(m);
+        const self = chain({}, { handlers: {}, destroyed: false });
+        self.clear = () => ((m.rects = []), (m.alphas = []), self);
+        self.fillStyle = (_c: number, alpha = 1) => (
+          m.alphas.push(alpha),
+          self
+        );
+        self.fillRect = (...r: number[]) => (m.rects.push(r), self);
+        self.destroy = () => void (m.destroyed = true);
+        return self;
+      },
     },
     events: new EventEmitter(),
     input: new EventEmitter(),
@@ -143,12 +193,24 @@ function fakeScene() {
         return { stop: () => undefined, remove: () => undefined };
       },
     },
-    cameras: { main: { width: 1080, height: 720 } },
+    // the mailbox lays out in the logical view (viewport), never the camera's px: only the body's
+    // mask reads the camera, for the origin it is seen through
+    cameras: { main: { originX: 0, originY: 0 } },
   } as unknown as Phaser.Scene;
   const live = () => texts.filter((t) => !t.destroyed);
   const shown = () => live().map((t) => t.content);
   const find = (content: string) => live().find((t) => t.content === content);
-  return { scene, live, shown, find, zones, tweens };
+  return {
+    scene,
+    live,
+    shown,
+    find,
+    zones,
+    tweens,
+    containers,
+    maskShapes,
+    masksLaid: () => masksLaid.count,
+  };
 }
 
 const art = {
@@ -593,5 +655,132 @@ describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
     hud.destroy();
     expect(store.getState().panelOpen).toBe(false);
     expect(live()).toHaveLength(0);
+  });
+});
+
+describe("the mailbox at another logical width or render scale (FS-ZAJMH R12, R13, R15)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("keeps the envelope in the bottom-right corner and the open panel centred as the view widens", async () => {
+    const { scene, store, zones } = setup();
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    expect(plate.rect.x).toBe(envelopeFrame({ width: 1080, height: 720 }).x);
+    await store.getState().openPanel();
+    expect(hud.covers(1000, 360)).toBe(false);
+
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    hud.relayout();
+    const wide = envelopeFrame({ width: 1280, height: 720 });
+    expect(plate.rect).toMatchObject({ x: wide.x, y: wide.y });
+    // the panel, 840 wide, now spans 220–1060
+    expect(hud.covers(1000, 360)).toBe(true);
+    expect(hud.covers(200, 360)).toBe(false);
+  });
+
+  it("puts the envelope at its logical corner at render scale 2, not at the backing store's", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const { scene, store, zones } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    expect(plate.rect.x).toBe(envelopeFrame({ width: 1080, height: 720 }).x);
+  });
+
+  /** The body's clip as `fillMaskArea` draws it at `rs`: its rects and their alphas. */
+  const bodyClipAt = (rs: number) => {
+    const rects: number[][] = [];
+    const alphas: number[] = [];
+    fillMaskArea(
+      {
+        fillStyle: (_c: number, a = 1) => alphas.push(a),
+        fillRect: (...r: number[]) => rects.push(r),
+      },
+      letterPanelFrame({ width: 1080, height: 720 }, 0).body,
+      0,
+      rs,
+    );
+    return { rects, alphas };
+  };
+  const live = <T extends { destroyed: boolean }>(shapes: T[]) =>
+    shapes.filter((m) => !m.destroyed);
+
+  it.each([1, 1.25, 1.5, 2])(
+    "clips the body as Phaser 3.90 clipped it at render scale %s, edge px by the share the body covers (ADR-0057)",
+    (rs) => {
+      viewport.set({ width: 1080, height: 720, renderScale: rs });
+      const { scene, store, maskShapes } = setup();
+      new LetterPanel(scene, { store, art, now: () => NOW });
+      open(store, [letter()], "a");
+      const [mask] = live(maskShapes);
+      expect({ rects: mask.rects, alphas: mask.alphas }).toEqual(
+        bodyClipAt(rs),
+      );
+    },
+  );
+
+  it("redraws the body's clip for a new render scale alone, on the same mask and the same body", () => {
+    const { scene, store, maskShapes, masksLaid, find } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [letter()], "a");
+    const body = find("Rest well.")!;
+    viewport.set({ width: 1080, height: 720, renderScale: 1.25 });
+    expect(maskShapes).toHaveLength(1);
+    expect(masksLaid()).toBe(1);
+    expect(body.destroyed).toBe(false);
+    const [mask] = maskShapes;
+    expect({ rects: mask.rects, alphas: mask.alphas }).toEqual(
+      bodyClipAt(1.25),
+    );
+    expect(mask.alphas.some((a) => a < 1)).toBe(true);
+  });
+
+  it("stops following the render scale once destroyed", () => {
+    // every viewport listener the panel takes, and whether it gave each back
+    const real = viewport.onChange.bind(viewport);
+    const held = new Set<object>();
+    const watch = vi
+      .spyOn(viewport, "onChange")
+      .mockImplementation((listener) => {
+        const token = {};
+        held.add(token);
+        const off = real(listener);
+        return () => (held.delete(token), off());
+      });
+    const { scene, store, maskShapes, masksLaid } = setup();
+    const panel = new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, [letter()], "a");
+    expect(held.size).toBeGreaterThan(0);
+    panel.destroy();
+    watch.mockRestore();
+    expect(held.size).toBe(0);
+    expect(() =>
+      viewport.set({ width: 1080, height: 720, renderScale: 1.25 }),
+    ).not.toThrow();
+    expect(maskShapes).toHaveLength(1);
+    expect(maskShapes[0].destroyed).toBe(true);
+    expect(masksLaid()).toBe(1);
+    expect(maskShapes[0].rects).toEqual(bodyClipAt(1).rects);
+  });
+
+  it("stands an enclosure's tip beside the pointer in logical units at render scale 2", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const { scene, store, zones, containers } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(
+      store,
+      [
+        letter({
+          claimState: "unclaimed",
+          enclosures: [{ kind: "item", quantity: 1, item: sword }],
+        }),
+      ],
+      "a",
+    );
+    const slot = zones.find((z) => !z.destroyed && z.handlers.pointerover)!;
+    const before = containers.length;
+    // backing px (800, 600) is logical (400, 300)
+    slot.handlers.pointerover({ x: 800, y: 600 });
+    const tip = containers.slice(before).at(-1)!;
+    expect(tip).toEqual({ x: 414, y: 290 });
   });
 });

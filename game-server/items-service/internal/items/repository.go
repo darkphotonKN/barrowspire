@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
+	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -1234,26 +1235,66 @@ func (r *repository) ReserveItemTx(ctx context.Context, tx *sqlx.Tx, sellerID, i
 	return &item, nil
 }
 
-// ListStaleReserved returns the LISTED reservations still waiting for their
-// listing (reserved_at set) that are older than olderThan, oldest first. The
-// age is measured on the database clock, the clock ReserveItemTx stamped with.
-func (r *repository) ListStaleReserved(ctx context.Context, olderThan time.Duration) ([]StaleReservation, error) {
+// ListStaleReserved returns up to limit LISTED reservations still waiting for
+// their listing (reserved_at set) that are older than olderThan, ordered by
+// (reserved_at, id) and starting after the position after, or from the oldest
+// when after is nil (FS-9BJCP Req 1, 3). The age is measured on the database
+// clock, the clock ReserveItemTx stamped with.
+func (r *repository) ListStaleReserved(ctx context.Context, olderThan time.Duration, after *cursor.ReservedAt, limit int) ([]StaleReservation, error) {
+	var afterAt *time.Time
+	afterID := uuid.Nil
+	if after != nil {
+		afterAt, afterID = &after.ReservedAt, after.ID
+	}
+
 	query := `
-		SELECT id, listing_id
+		SELECT id, listing_id, reserved_at
 		FROM item_instances
 		WHERE status = 'LISTED'
 		  AND listing_id IS NOT NULL
 		  AND reserved_at IS NOT NULL
 		  AND reserved_at < NOW() - make_interval(secs => $1)
-		ORDER BY reserved_at
-		LIMIT 100
+		  AND ($2::timestamptz IS NULL OR (reserved_at, id) > ($2::timestamptz, $3::uuid))
+		ORDER BY reserved_at, id
+		LIMIT $4
 	`
-	var stale []StaleReservation
-	if err := r.DB.SelectContext(ctx, &stale, query, olderThan.Seconds()); err != nil {
+	stale := []StaleReservation{}
+	if err := r.DB.SelectContext(ctx, &stale, query, olderThan.Seconds(), afterAt, afterID, limit); err != nil {
 		return nil, commonhelpers.WrapDBErr("item_instances", "ListStaleReserved", err)
 	}
 
 	return stale, nil
+}
+
+// ListConfirmedReservations returns up to limit confirmed reservations (LISTED,
+// listing set, reserved_at NULL) confirmed longer than olderThan ago, ordered by
+// (updated_at, id) and starting after the position after, or from the oldest
+// when after is nil (FS-04ZB6 Req 5). The age is measured on the database clock,
+// the clock ConfirmReservation stamped updated_at with.
+func (r *repository) ListConfirmedReservations(ctx context.Context, olderThan time.Duration, after *cursor.UpdatedAt, limit int) ([]ConfirmedReservation, error) {
+	var afterAt *time.Time
+	afterID := uuid.Nil
+	if after != nil {
+		afterAt, afterID = &after.UpdatedAt, after.ID
+	}
+
+	query := `
+		SELECT id, listing_id, updated_at
+		FROM item_instances
+		WHERE status = 'LISTED'
+		  AND listing_id IS NOT NULL
+		  AND reserved_at IS NULL
+		  AND updated_at < NOW() - make_interval(secs => $1)
+		  AND ($2::timestamptz IS NULL OR (updated_at, id) > ($2::timestamptz, $3::uuid))
+		ORDER BY updated_at, id
+		LIMIT $4
+	`
+	confirmed := []ConfirmedReservation{}
+	if err := r.DB.SelectContext(ctx, &confirmed, query, olderThan.Seconds(), afterAt, afterID, limit); err != nil {
+		return nil, commonhelpers.WrapDBErr("item_instances", "ListConfirmedReservations", err)
+	}
+
+	return confirmed, nil
 }
 
 // CancelReservation gives the item back AVAILABLE with no listing, but only the
@@ -1272,39 +1313,59 @@ func (r *repository) CancelReservation(ctx context.Context, itemID, listingID uu
 		AND reserved_at IS NOT NULL
 	`
 
-	res, err := r.DB.ExecContext(ctx, query, itemID, listingID)
-	if err != nil {
-		return false, commonhelpers.WrapDBErr("item_instances", "CancelReservation", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("cancel reservation, rows affected: %w", err)
-	}
-	return n > 0, nil
+	return r.writeReservation(ctx, "CancelReservation", query, itemID, listingID)
 }
 
 // ConfirmReservation records that the reservation for listingID has its listing,
-// so ListStaleReserved stops returning it. The item stays LISTED. false means no
-// such reservation was waiting.
+// so ListStaleReserved stops returning it and CancelReservation can no longer
+// take it. The item stays LISTED. It matches whether or not the reservation is
+// already confirmed, so a redelivered confirm succeeds again (FS-04ZB6 Req 1);
+// false means the item is not LISTED for listingID. updated_at is the
+// confirmation's age, the one ListConfirmedReservations reads.
 func (r *repository) ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error) {
 	query := `
 		UPDATE item_instances
-		SET reserved_at = NULL
+		SET reserved_at = NULL,
+			updated_at = NOW()
 		WHERE id = $1
 		AND listing_id = $2
 		AND status = 'LISTED'
-		AND reserved_at IS NOT NULL
 	`
 
+	return r.writeReservation(ctx, "ConfirmReservation", query, itemID, listingID)
+}
+
+// ReleaseConfirmedReservation gives the item back AVAILABLE with no listing, but
+// only a confirmed reservation (reserved_at NULL) for listingID on a LISTED item:
+// the compensation for a confirmed reservation whose listing will never exist
+// (FS-04ZB6 Req 4). A waiting reservation is CancelReservation's, and an item
+// past LISTED is settlement's. false means no such reservation.
+func (r *repository) ReleaseConfirmedReservation(ctx context.Context, itemID, listingID uuid.UUID) (bool, error) {
+	query := `
+		UPDATE item_instances
+		SET status = 'AVAILABLE',
+			listing_id = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+		AND listing_id = $2
+		AND status = 'LISTED'
+		AND reserved_at IS NULL
+	`
+
+	return r.writeReservation(ctx, "ReleaseConfirmedReservation", query, itemID, listingID)
+}
+
+// writeReservation runs one reservation write, fenced on itemID and listingID
+// ($1, $2), and reports whether it matched the item.
+func (r *repository) writeReservation(ctx context.Context, op, query string, itemID, listingID uuid.UUID) (bool, error) {
 	res, err := r.DB.ExecContext(ctx, query, itemID, listingID)
 	if err != nil {
-		return false, commonhelpers.WrapDBErr("item_instances", "ConfirmReservation", err)
+		return false, commonhelpers.WrapDBErr("item_instances", op, err)
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("confirm reservation, rows affected: %w", err)
+		return false, fmt.Errorf("%s, rows affected: %w", op, err)
 	}
 	return n > 0, nil
 }
@@ -1686,6 +1747,24 @@ func (r *repository) CountUnwornAtTx(ctx context.Context, tx *sqlx.Tx, member uu
 	var count int
 	if err := tx.GetContext(ctx, &count, query, member, location); err != nil {
 		return 0, wrapDBErr("count unworn items", err)
+	}
+	return count, nil
+}
+
+// CountListedTx counts seller's instances LISTED or PENDING_SETTLEMENT on tx,
+// a reservation still waiting for its listing among them: what the listed-item
+// cap counts (FS-XEDFF R5, R6).
+func (r *repository) CountListedTx(ctx context.Context, tx *sqlx.Tx, seller uuid.UUID) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM item_instances
+		WHERE owner_member_id = $1
+		AND status IN ('LISTED', 'PENDING_SETTLEMENT')
+	`
+
+	var count int
+	if err := tx.GetContext(ctx, &count, query, seller); err != nil {
+		return 0, wrapDBErr("count listed items", err)
 	}
 	return count, nil
 }

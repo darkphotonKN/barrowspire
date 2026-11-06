@@ -22,6 +22,7 @@ import {
 } from "@/stores/partyStore";
 import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { viewport } from "@/render/viewport";
 import { carvedPanel } from "./carvedPanel";
 import { partyCommands, type PartyCommands } from "./partyCommands";
 import {
@@ -203,7 +204,9 @@ export class PartyPanel {
 
   /** A press in the world while the invite field has focus lets go of it, as the chat field does. */
   private onPress(pointer: { x: number; y: number }): void {
-    if (!this.covers(pointer.x, pointer.y)) this.field?.blur();
+    // Phaser's pointer.x/y are backing px; the panel is laid out in logical units (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
+    if (!this.covers(at.x, at.y)) this.field?.blur();
   }
 
   /**

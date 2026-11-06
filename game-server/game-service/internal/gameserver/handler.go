@@ -244,7 +244,9 @@ func (s *Server) announceCurrentWorld(msgChan chan interface{}, player *types.Pl
 		"world_type", session.WorldType(),
 	)
 
-	msgChan <- worldEnteredMessage(session)
+	for _, message := range worldEntryMessages(session) {
+		msgChan <- message
+	}
 }
 
 /**
@@ -773,7 +775,9 @@ func (s *Server) enterHandedOffRun(player *types.Player, run *game.Session, msgC
 
 	s.setCurrentWorld(player, run.ID)
 
-	msgChan <- worldEnteredMessage(run)
+	for _, message := range worldEntryMessages(run) {
+		msgChan <- message
+	}
 }
 
 /**

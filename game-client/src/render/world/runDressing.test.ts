@@ -2,14 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { Point, Rect } from "@/render/iso";
 import type { ClientGameState } from "@/types/gameState";
 import {
+  dressingStandsBy,
   DRESSING_MAX,
   dressingBreaches,
   dressingStatics,
+  DRESSING_AREA,
   planDressing,
+  planRoomDressing,
   type DressingLean,
   type DressingPiece,
   type DressingStatics,
 } from "./runDressing";
+import { RegionGrid, dressingRooms, type DungeonMap } from "./dungeon";
+import fixture from "./dungeon.fixture.json";
+import { TOWER_BANDS } from "./worldTheme";
 
 const at = (x: number, y: number) => ({ x, y });
 
@@ -138,7 +144,7 @@ describe("planDressing (FS-8RBQY §C.4–§C.5)", () => {
   });
 
   it("should keep every piece clear of each keep-out rule", () => {
-    const walls = broadcast.walls.map(rectOf);
+    const walls = broadcast.walls!.map(rectOf);
     const doors = broadcast.doors.map(rectOf);
     const uses = [at(300, 700), at(1080, 700), at(1380, 120), at(60, 900)];
     for (const p of plan) {
@@ -188,5 +194,91 @@ describe("planDressing (FS-8RBQY §C.4–§C.5)", () => {
     const fires = planDressing({ count: 2, weights: [[100, "brazier"]] }, 7, statics);
     expect(fires.every((p) => p.tall)).toBe(true);
     expect(plan.filter((p) => p.sheet !== "brazier").every((p) => !p.tall)).toBe(true);
+  });
+});
+
+describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 §H.47)", () => {
+  /** The levelgen golden (dungeon_seed_20261106) as its floor map gives it. */
+  const map = fixture as DungeonMap & { walls: NonNullable<ClientGameState["walls"]> };
+  const grid = new RegionGrid(map);
+  const rooms = dressingRooms(grid);
+  const statics = dressingStatics({ walls: map.walls, doors: [], containers: [], escape_doors: [], switches: [], stairs: [] }, map.width, map.height);
+  const lean = TOWER_BANDS.lower.dressing;
+  const plan = planRoomDressing(lean, 41, statics, rooms);
+  const cellOf = (p: Point) => ({ cx: Math.floor(p.x / map.cell_size), cy: Math.floor(p.y / map.cell_size) });
+  /** The cells a footprint touches. */
+  const cellsUnder = (p: DressingPiece) => {
+    const a = cellOf({ x: p.at.x - p.r, y: p.at.y - p.r });
+    const b = cellOf({ x: p.at.x + p.r - 1e-6, y: p.at.y + p.r - 1e-6 });
+    const out: [number, number][] = [];
+    for (let cx = a.cx; cx <= b.cx; cx++) for (let cy = a.cy; cy <= b.cy; cy++) out.push([cx, cy]);
+    return out;
+  };
+  /** Doorways as the golden's rooms list them, found here by brute force: a room cell beside another region. */
+  const doorways: [number, number][] = [];
+  for (let cx = 0; cx < grid.cols; cx++)
+    for (let cy = 0; cy < grid.rows; cy++) {
+      const id = grid.region(cx, cy);
+      if (grid.kind(cx, cy) !== "room") continue;
+      const beside = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => ![0, id].includes(grid.region(cx + dx, cy + dy)));
+      if (beside) doorways.push([cx, cy]);
+    }
+
+  it("should strew dressing over the floor's rooms", () => {
+    expect(plan.length).toBeGreaterThan(DRESSING_MAX);
+  });
+
+  it("should stand every piece wholly in one room: never in a corridor or over the shell", () => {
+    for (const p of plan) {
+      const ids = new Set(cellsUnder(p).map(([cx, cy]) => grid.region(cx, cy)));
+      expect(ids.size).toBe(1);
+      expect(grid.kind(...cellsUnder(p)[0])).toBe("room");
+    }
+  });
+
+  it("should keep every piece more than one cell from a doorway", () => {
+    for (const p of plan)
+      for (const [cx, cy] of cellsUnder(p))
+        for (const [dx, dy] of doorways) expect(Math.max(Math.abs(cx - dx), Math.abs(cy - dy))).toBeGreaterThan(1);
+  });
+
+  it("should strew each room at FS-8RBQY §C's density for its area, at most", () => {
+    for (const r of rooms) {
+      const inRoom = plan.filter((p) => grid.region(cellOf(p.at).cx, cellOf(p.at).cy) === r.id);
+      const quota = Math.round((lean.count * r.rect.width * r.rect.height) / DRESSING_AREA);
+      expect(inRoom.length).toBeLessThanOrEqual(quota);
+    }
+    // the density FS-8RBQY §C tuned: its count on the 1440 × 960 floors 2 and 3
+    expect(DRESSING_AREA).toBe(1440 * 960);
+  });
+
+  it("should still keep out of every wall, door and interactable, and space its pieces", () => {
+    for (const p of plan) expect(dressingBreaches({ from: p.at, to: p.at, r: p.r }, statics)).toEqual([]);
+    for (const a of plan)
+      for (const b of plan) if (a !== b) expect(Math.hypot(a.at.x - b.at.x, a.at.y - b.at.y)).toBeGreaterThan(a.r + b.r);
+  });
+
+  it("should strew the same floor on every client, and another floor's otherwise", () => {
+    expect(planRoomDressing(lean, 41, statics, rooms)).toEqual(plan);
+    expect(planRoomDressing(lean, 42, statics, rooms)).not.toEqual(plan);
+  });
+
+  it("should hold a sheet's floor-wide most across every room", () => {
+    const braziers = planRoomDressing(TOWER_BANDS.upper.dressing, 41, statics, rooms).filter((p) => p.sheet === "brazier");
+    expect(braziers.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("a dungeon floor's dressing and a container seen later (FS-KE075 §H.47, review M1)", () => {
+  // a piece of radius 14 at (400, 400): its square spans 386–414 each way
+  const piece = { at: { x: 400, y: 400 }, r: 14 };
+
+  it.each([
+    ["on it", { x: 400, y: 400 }, true],
+    ["a use's reach from its square's side", { x: 414 + 60, y: 400 }, true],
+    ["just past a use's reach", { x: 414 + 61, y: 400 }, false],
+    ["far off", { x: 900, y: 900 }, false],
+  ] as const)("a container %s: stands by it %s", (_name, at, by) => {
+    expect(dressingStandsBy(piece, at)).toBe(by);
   });
 });

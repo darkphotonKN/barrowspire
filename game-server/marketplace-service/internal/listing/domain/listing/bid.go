@@ -49,8 +49,12 @@ type Bid struct {
 	// idempotencyKey is uuid.Nil when the caller supplied none. Bids without a
 	// key are never deduplicated against one another.
 	idempotencyKey uuid.UUID
-	createdAt      time.Time
-	updatedAt      time.Time
+	// withdrawnWhileLeading is whether this bid was WINNING when its member
+	// withdrew it, the only kind of withdrawal the bid withdrawal cap counts
+	// (ADR-0055). False on every bid not withdrawn; only WithdrawBid sets it.
+	withdrawnWhileLeading bool
+	createdAt             time.Time
+	updatedAt             time.Time
 }
 
 func newBid(id uuid.UUID, listingID uuid.UUID, memberID uuid.UUID, bidType BidType, amount int, idempotencyKey uuid.UUID, now time.Time) (*Bid, error) {
@@ -83,41 +87,56 @@ func newBid(id uuid.UUID, listingID uuid.UUID, memberID uuid.UUID, bidType BidTy
 }
 
 type BidReconstituteParams struct {
-	ID             uuid.UUID
-	ListingID      uuid.UUID
-	MemberID       uuid.UUID
-	Type           BidType
-	Amount         int
-	Status         BidStatus
-	IdempotencyKey uuid.UUID
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                    uuid.UUID
+	ListingID             uuid.UUID
+	MemberID              uuid.UUID
+	Type                  BidType
+	Amount                int
+	Status                BidStatus
+	IdempotencyKey        uuid.UUID
+	WithdrawnWhileLeading bool
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type BidSnapshot struct {
-	ID             uuid.UUID
-	ListingID      uuid.UUID
-	MemberID       uuid.UUID
-	Type           BidType
-	Amount         int
-	Status         BidStatus
-	IdempotencyKey uuid.UUID
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                    uuid.UUID
+	ListingID             uuid.UUID
+	MemberID              uuid.UUID
+	Type                  BidType
+	Amount                int
+	Status                BidStatus
+	IdempotencyKey        uuid.UUID
+	WithdrawnWhileLeading bool
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // Snapshot exposes the bid's fields with no path to write them. Every field is
 // a value type, so the copy shares nothing with the aggregate.
 func (b *Bid) Snapshot() BidSnapshot {
 	return BidSnapshot{
-		ID:             b.id,
-		ListingID:      b.listingID,
-		MemberID:       b.memberID,
-		Type:           b.bidType,
-		Amount:         b.amount,
-		Status:         b.status,
-		IdempotencyKey: b.idempotencyKey,
-		CreatedAt:      b.createdAt,
-		UpdatedAt:      b.updatedAt,
+		ID:                    b.id,
+		ListingID:             b.listingID,
+		MemberID:              b.memberID,
+		Type:                  b.bidType,
+		Amount:                b.amount,
+		Status:                b.status,
+		IdempotencyKey:        b.idempotencyKey,
+		WithdrawnWhileLeading: b.withdrawnWhileLeading,
+		CreatedAt:             b.createdAt,
+		UpdatedAt:             b.updatedAt,
+	}
+}
+
+// isLive reports whether this bid still holds gold: PENDING (its hold may be
+// landing), WINNING or OUTBID. Every other status has given its gold back, never
+// held any, or spent it.
+func (b *Bid) isLive() bool {
+	switch b.status {
+	case BidStatusPending, BidStatusWinning, BidStatusOutbid:
+		return true
+	default:
+		return false
 	}
 }

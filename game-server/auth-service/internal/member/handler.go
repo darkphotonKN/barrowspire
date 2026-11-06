@@ -26,6 +26,7 @@ type Service interface {
 	VerifyEmail(ctx context.Context, req *pb.VerifyEmailRequest) (*pb.LoginResponse, error)
 	ResendVerification(ctx context.Context, req *pb.ResendVerificationRequest) (*pb.ResendVerificationResponse, error)
 	ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error)
+	RefreshAccessToken(ctx context.Context, req *pb.RefreshAccessTokenRequest) (*pb.RefreshAccessTokenResponse, error)
 	CreateDefaultMembers(members []CreateDefaultMember) error
 }
 
@@ -90,4 +91,9 @@ func (s *Handler) ResendVerification(ctx context.Context, req *pb.ResendVerifica
 
 func (s *Handler) ChangeUnverifiedEmail(ctx context.Context, req *pb.ChangeUnverifiedEmailRequest) (*pb.Member, error) {
 	return s.service.ChangeUnverifiedEmail(ctx, req)
+}
+
+// RefreshAccessToken mints a new access token from a refresh token (FS-ZPX58).
+func (s *Handler) RefreshAccessToken(ctx context.Context, req *pb.RefreshAccessTokenRequest) (*pb.RefreshAccessTokenResponse, error) {
+	return s.service.RefreshAccessToken(ctx, req)
 }

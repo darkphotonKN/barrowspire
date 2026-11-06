@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/marketplace"
 	commonauth "github.com/darkphotonKN/barrowspire-server/common/auth"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/adapter/itemreserver"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
@@ -71,6 +73,10 @@ func (r *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uu
 	return nil
 }
 
+func (r *fakeReleaser) ReleaseHoldAndWait(ctx context.Context, listingID, bidID uuid.UUID, maxWait time.Duration) error {
+	return r.StartReleaseHold(ctx, listingID, bidID)
+}
+
 // authedCtx is a verified player's request context, the ordinary caller every
 // handler serves (FS-V6SFK §Requirements 29 gates only the unverified).
 func authedCtx(t *testing.T, memberID uuid.UUID) context.Context {
@@ -108,6 +114,57 @@ func identityCtx(t *testing.T, id commonauth.Identity) context.Context {
 	require.NoError(t, err)
 
 	return captured
+}
+
+// viewerCtx is the context an optional-auth read (BrowseListings, GetListing)
+// arrives with, by driving the real interceptor for that method. A nil viewer
+// sends a bearer that fails validation, as an expired or invalid token does, so
+// the read runs anonymously (ADR-0053).
+func viewerCtx(t *testing.T, method string, viewer *uuid.UUID) context.Context {
+	t.Helper()
+
+	var captured context.Context
+
+	interceptor := commonauth.Auth(func(token string) (commonauth.Identity, error) {
+		if viewer == nil {
+			return commonauth.Identity{}, errors.New("token is expired")
+		}
+		return commonauth.Identity{MemberID: *viewer, Role: commonauth.RolePlayer, EmailVerified: true}, nil
+	})
+
+	incoming := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.New(map[string]string{"authorization": "Bearer test-token"}),
+	)
+
+	_, err := interceptor(incoming, nil, &grpclib.UnaryServerInfo{FullMethod: method},
+		func(ctx context.Context, req any) (any, error) {
+			captured = ctx
+			return nil, nil
+		})
+	require.NoError(t, err)
+
+	return captured
+}
+
+// ownCases are the viewers an optional-auth read answers own for: only the
+// listing's seller, signed in, reads true (FS-GKHYD §Requirements 2, 5).
+func ownCases(seller uuid.UUID) []struct {
+	name    string
+	ctx     func(t *testing.T, method string) context.Context
+	wantOwn bool
+} {
+	other := uuid.New()
+	return []struct {
+		name    string
+		ctx     func(t *testing.T, method string) context.Context
+		wantOwn bool
+	}{
+		{"the seller", func(t *testing.T, m string) context.Context { return viewerCtx(t, m, &seller) }, true},
+		{"another member", func(t *testing.T, m string) context.Context { return viewerCtx(t, m, &other) }, false},
+		{"an invalid or expired token", func(t *testing.T, m string) context.Context { return viewerCtx(t, m, nil) }, false},
+		{"no identity at all", func(*testing.T, string) context.Context { return context.Background() }, false},
+	}
 }
 
 // activeListing is an ACTIVE listing, open for another hour, with the given
@@ -148,7 +205,7 @@ func newTestHandlerWithRelease(repo *fakeRepo, wallet *fakeWallet, release *fake
 		nil,
 		nil,
 		nil,
-	)
+		nil)
 }
 
 func TestPlaceBidRejectsACallerWithoutIdentity(t *testing.T) {
@@ -271,7 +328,7 @@ func TestListItem_ItemsRefusal_KeepsItsMeaning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reserver := itemreserver.NewItemReserver(&fakeItemsClient{code: tt.itemsCode})
-			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			h := NewHandler(usecase.NewReserveItemUC(reserver), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 			_, err := h.ListItem(authedCtx(t, uuid.New()), &pb.ListItemRequest{
 				ItemId:     uuid.New().String(),
@@ -311,22 +368,187 @@ func TestMapError_TransientStaysUnavailable(t *testing.T) {
 	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
 
-// A bid at the buyout price is refused like a bid too low, and the gold held
-// for it is given back (FS-9XKS6 Req 4, 10).
-func TestPlaceBid_AtBuyoutPriceIsInvalidArgumentAndReleasesTheHold(t *testing.T) {
+// FS-V74WE Req 2, 3, 5: a bid at the buyout price is refused with its own
+// registered reason, so the gateway passes it through as 400 ·
+// BID_AT_OR_ABOVE_BUYOUT (FS-9XKS6 Req 4). The unlocked read already prices it
+// out, so no gold is held for it and there is nothing to give back.
+func TestPlaceBid_AtBuyoutPrice_IsRefusedWithItsReasonAndHoldsNoGold(t *testing.T) {
 	now := time.Now()
 	buyout := 500
 	l, err := listing.NewListing(uuid.New(), uuid.New(), uuid.New(), 100, &buyout, now, now.Add(time.Hour))
 	require.NoError(t, err)
 	repo := &fakeRepo{l: l}
-	release := &fakeReleaser{}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
 
-	_, err = newTestHandlerWithRelease(repo, &fakeWallet{}, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+	_, err = newTestHandlerWithRelease(repo, wallet, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
 		ListingId: l.Snapshot().ID.String(),
 		Amount:    500,
 	})
 
-	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.BidAtOrAboveBuyout, reason)
 	assert.Empty(t, repo.l.Snapshot().Bids)
-	assert.Equal(t, 1, release.calls)
+	assert.Zero(t, wallet.calls, "no gold is held")
+	assert.Zero(t, release.calls)
+}
+
+// FS-V74WE Req 2, 3, 5: a bid not above the contending bid is refused with its
+// own registered reason, so the gateway passes it through as 400 · BID_TOO_LOW;
+// no bid is recorded, and the unlocked read already prices it out, so no gold is held.
+func TestPlaceBid_NotAboveTheLeader_IsRefusedWithItsReasonAndHoldsNoGold(t *testing.T) {
+	repo := &fakeRepo{l: activeListing(t, winningBid(uuid.New(), uuid.New()))}
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+
+	_, err := newTestHandlerWithRelease(repo, wallet, release).PlaceBid(authedCtx(t, uuid.New()), &pb.PlaceBidRequest{
+		ListingId: repo.l.Snapshot().ID.String(),
+		Amount:    150, // the leader's amount: not above it
+	})
+
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.BidTooLow, reason)
+	assert.Len(t, repo.l.Snapshot().Bids, 1, "only the leader's bid")
+	assert.Zero(t, wallet.calls, "no gold is held")
+	assert.Zero(t, release.calls)
+}
+
+// FS-V74WE Req 2, 6: the two price refusals cross as FailedPrecondition with
+// their registered reason; a non-positive amount and a buyout amount mismatch
+// stay InvalidArgument (400 · VALIDATION_FAILED at the gateway).
+func TestMapError_BidPriceRefusals(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   codes.Code
+		wantReason errcode.Code // empty: no registered reason
+	}{
+		{"too low", listing.ErrBidTooLow, codes.FailedPrecondition, errcode.BidTooLow},
+		{"at or above buyout", listing.ErrBidAtOrAboveBuyout, codes.FailedPrecondition, errcode.BidAtOrAboveBuyout},
+		{"invalid amount", listing.ErrInvalidAmount, codes.InvalidArgument, ""},
+		{"buyout amount mismatch", listing.ErrBuyoutAmountMismatch, codes.InvalidArgument, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// wrapped with context, as the use case returns it
+			st := status.Convert(mapError(context.Background(), fmt.Errorf("place bid: %w", tt.err)))
+
+			assert.Equal(t, tt.wantCode, st.Code())
+			reason, ok := errcode.RefusalReason(st)
+			if tt.wantReason == "" {
+				assert.False(t, ok, "reason %q", reason)
+				return
+			}
+			assert.True(t, ok)
+			assert.Equal(t, tt.wantReason, reason)
+		})
+	}
+}
+
+// A seller bidding on their own listing is a who-may-do-this refusal, mapped like
+// a seller's own buyout: PermissionDenied, and no gold held for it.
+func TestPlaceBid_SellerOnOwnListing_PermissionDenied(t *testing.T) {
+	l := activeListing(t)
+	wallet := &fakeWallet{}
+	h := newTestHandler(&fakeRepo{l: l}, wallet)
+
+	_, err := h.PlaceBid(authedCtx(t, l.Snapshot().SellerID), &pb.PlaceBidRequest{
+		ListingId: l.Snapshot().ID.String(),
+		Amount:    150,
+	})
+
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+	assert.Zero(t, wallet.calls)
+}
+
+// A leader locked in by the final window answers FAILED_PRECONDITION, the code
+// the client already reads as "this bid can no longer be withdrawn" (FS-0YXG6).
+func TestWithdrawBid_LeaderInFinalWindow_FailedPrecondition(t *testing.T) {
+	memberID := uuid.New()
+	bidID := uuid.New()
+	now := time.Now()
+	l, err := listing.Reconstitute(listing.ReconstituteParams{
+		ID:         uuid.New(),
+		SellerID:   uuid.New(),
+		ItemID:     uuid.New(),
+		StartPrice: 100,
+		Status:     listing.StatusActive,
+		EndsAt:     now.Add(10 * time.Minute),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Bids:       []*listing.BidReconstituteParams{winningBid(bidID, memberID)},
+	})
+	require.NoError(t, err)
+	h := newTestHandler(&fakeRepo{l: l}, &fakeWallet{})
+
+	_, err = h.WithdrawBid(authedCtx(t, memberID), &pb.WithdrawBidRequest{
+		ListingId: l.Snapshot().ID.String(),
+		BidId:     bidID.String(),
+	})
+
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
+
+// FS-ZE43K Req 8: a member who has withdrawn three leading bids on the listing
+// (ADR-0055) is refused with the registered reason, so the gateway passes it
+// through as 400 · BID_WITHDRAW_LIMIT_REACHED, and no gold is held for the bid.
+func TestPlaceBid_AtTheBidWithdrawalCap_IsRefusedWithItsReason(t *testing.T) {
+	member := uuid.New()
+	now := time.Now()
+	bids := make([]*listing.BidReconstituteParams, 3)
+	for i := range bids {
+		bids[i] = &listing.BidReconstituteParams{
+			ID: uuid.New(), MemberID: member, Type: listing.BidTypeBid, Amount: 150 + i,
+			Status: listing.BidStatusCancelled, WithdrawnWhileLeading: true, CreatedAt: now, UpdatedAt: now,
+		}
+	}
+	repo, wallet := &fakeRepo{l: activeListing(t, bids...)}, &fakeWallet{}
+
+	_, err := newTestHandler(repo, wallet).PlaceBid(authedCtx(t, member), &pb.PlaceBidRequest{
+		ListingId: repo.l.Snapshot().ID.String(),
+		Amount:    200,
+	})
+
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.BidWithdrawLimitReached, reason)
+	assert.Zero(t, wallet.calls)
+}
+
+// FS-72KT8 Req 12: a member whose bid already leads is refused with the
+// registered reason, so the gateway passes it through as 400 · ALREADY_LEADING,
+// and no gold is held for the bid.
+func TestPlaceBid_WhileLeading_IsRefusedWithItsReason(t *testing.T) {
+	member := uuid.New()
+	repo, wallet := &fakeRepo{l: activeListing(t, winningBid(uuid.New(), member))}, &fakeWallet{}
+
+	_, err := newTestHandler(repo, wallet).PlaceBid(authedCtx(t, member), &pb.PlaceBidRequest{
+		ListingId: repo.l.Snapshot().ID.String(),
+		Amount:    200,
+	})
+
+	st := status.Convert(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.AlreadyLeading, reason)
+	assert.Zero(t, wallet.calls)
+	assert.Len(t, repo.l.Snapshot().Bids, 1)
+}
+
+// FS-72KT8 Req 12: wrapped as the use case returns it, ErrAlreadyLeading maps to
+// FailedPrecondition with reason ALREADY_LEADING.
+func TestMapError_AlreadyLeading(t *testing.T) {
+	st := status.Convert(mapError(context.Background(), fmt.Errorf("place bid: %w", listing.ErrAlreadyLeading)))
+
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	reason, ok := errcode.RefusalReason(st)
+	assert.True(t, ok)
+	assert.Equal(t, errcode.AlreadyLeading, reason)
 }

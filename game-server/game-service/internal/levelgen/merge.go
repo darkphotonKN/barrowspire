@@ -8,17 +8,32 @@ type run struct {
 }
 
 // mergeWalls merges the wall cells of a row-major mask into axis-aligned rects
-// in px: each row splits into runs, and a run identical to one in the row above
-// extends that rect downward. Rects are ordered by top, then left.
+// in px, ordered by top, then left (see mergeCells).
 func mergeWalls(cols, rows int, wall []bool, cell float64) []Rect {
-	var rects []Rect
+	cells := mergeCells(cols, rows, wall)
+	if len(cells) == 0 {
+		return nil
+	}
+	rects := make([]Rect, len(cells))
+	for i, c := range cells {
+		rects[i] = Rect{
+			X: float64(c.X) * cell,
+			Y: float64(c.Y) * cell,
+			W: float64(c.W) * cell,
+			H: float64(c.H) * cell,
+		}
+	}
+	return rects
+}
+
+// mergeCells merges the set cells of a row-major mask into axis-aligned rects
+// in cells: each row splits into runs, and a run identical to one in the row
+// above extends that rect downward. The rects cover the set cells exactly once
+// and are ordered by top, then left.
+func mergeCells(cols, rows int, mask []bool) []CellRect {
+	var rects []CellRect
 	closeRun := func(r run, y int) {
-		rects = append(rects, Rect{
-			X: float64(r.x0) * cell,
-			Y: float64(r.y0) * cell,
-			W: float64(r.x1-r.x0) * cell,
-			H: float64(y-r.y0) * cell,
-		})
+		rects = append(rects, CellRect{X: r.x0, Y: r.y0, W: r.x1 - r.x0, H: y - r.y0})
 	}
 
 	var open []run
@@ -26,12 +41,12 @@ func mergeWalls(cols, rows int, wall []bool, cell float64) []Rect {
 		var next []run
 		i := 0 // open runs are sorted by x0, as are this row's runs
 		for x := 0; x < cols; {
-			if !wall[y*cols+x] {
+			if !mask[y*cols+x] {
 				x++
 				continue
 			}
 			x0 := x
-			for x < cols && wall[y*cols+x] {
+			for x < cols && mask[y*cols+x] {
 				x++
 			}
 			for i < len(open) && open[i].x0 < x0 {

@@ -2,6 +2,7 @@ package listing
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,21 @@ const (
 	// settlement can never succeed (FS-NXP1W §Req 12). Final: never re-settled.
 	StatusSettlementFailed ListingStatus = "SETTLEMENT_FAILED"
 )
+
+// LiveStatuses are the statuses in which a listing still needs its item: on sale
+// (ACTIVE) or settling (PENDING_SETTLEMENT). Every other status is one a listing
+// ends in. It is the one statement of the set: IsLive reads it, and SQL that
+// filters on liveness (the reservation reconciler's HasLiveListing) is handed it.
+// Each call answers a fresh slice, so no caller can change the set.
+func LiveStatuses() []ListingStatus {
+	return []ListingStatus{StatusActive, StatusPendingSettlement}
+}
+
+// IsLive reports whether a listing in this status still needs its item; see
+// LiveStatuses.
+func (s ListingStatus) IsLive() bool {
+	return slices.Contains(LiveStatuses(), s)
+}
 
 type Listing struct {
 	id         uuid.UUID
@@ -110,6 +126,32 @@ func NewListing(id, sellerID, itemID uuid.UUID, startPrice int, buyoutPrice *int
 	}, nil
 }
 
+// Bounds on a new listing's duration (FS-XEDFF Req 3). Tuning, not contract.
+const (
+	MinListingDuration = time.Hour
+	MaxListingDuration = 7 * 24 * time.Hour
+	// ListingDurationSlack widens the range both ways, for the client's clock
+	// and the request's latency.
+	ListingDurationSlack = 5 * time.Minute
+)
+
+// CheckDuration applies the duration bound to a seller's request to list: endsAt
+// must lie in [MinListingDuration − slack, MaxListingDuration + slack] from now,
+// inclusive (FS-XEDFF Req 1). An end at or before now is ErrInvalidEndTime.
+//
+// It is the request's rule, not the listing's: NewListing does not call it, so a
+// listing born from a late ItemReserved event is not refused (FS-XEDFF Req 2).
+func CheckDuration(now, endsAt time.Time) error {
+	if !endsAt.After(now) {
+		return ErrInvalidEndTime
+	}
+	d := endsAt.Sub(now)
+	if d < MinListingDuration-ListingDurationSlack || d > MaxListingDuration+ListingDurationSlack {
+		return ErrListingDurationOutOfRange
+	}
+	return nil
+}
+
 func (l *Listing) Snapshot() ListingSnapshot {
 	// copy field by field, not the slice — sharing the *Bid pointers would give
 	// callers a write path back into the aggregate
@@ -162,7 +204,14 @@ func copyInt(p *int) *int {
 //
 // Seller first, so a member who is not the seller learns nothing about the
 // listing's state from the refusal.
-func (l *Listing) CanAcceptBid(memberID uuid.UUID, now time.Time) error {
+//
+// minAmount is the accept floor (FS-F692V): the leading bid the seller was
+// shown. It is checked last, after the seller, open and someone-leads checks, so
+// a non-seller learns nothing about the leading bid from the refusal. It is a
+// floor, not an identity: a WINNING bid at or above it is accepted whoever leads.
+// A floor below 1 is no floor at all, so it is refused as ErrInvalidAmount rather
+// than read as "accept whatever leads", whoever the caller is.
+func (l *Listing) CanAcceptBid(memberID uuid.UUID, minAmount int, now time.Time) error {
 	if l.sellerID != memberID {
 		return ErrNotSeller
 	}
@@ -171,21 +220,64 @@ func (l *Listing) CanAcceptBid(memberID uuid.UUID, now time.Time) error {
 		return err
 	}
 
-	if l.findWinningBid() == nil {
+	winning := l.findWinningBid()
+	if winning == nil {
 		return ErrNoBidToAccept
+	}
+
+	if minAmount <= 0 {
+		return ErrInvalidAmount
+	}
+
+	if winning.amount < minAmount {
+		return ErrLeadingBidLowered
 	}
 
 	return nil
 }
 
-func (l *Listing) Cancel(now time.Time) error {
-	if l.status != StatusActive {
-		return ErrInvalidListingState
-	}
-	l.status = StatusCancelled
-	l.updatedAt = now
+// ListingWithdrawLock is how long before its end a listing with live bids can no
+// longer be withdrawn (ADR-0051). Tuning, not contract.
+const ListingWithdrawLock = 30 * time.Minute
 
-	return nil
+// Withdraw is the seller taking their own listing down (FS-V7A5S Reqs 1–5): the
+// listing becomes CANCELLED and every live bid LOST, in one change.
+//
+// Seller first, as in CanAcceptBid. Then an already-CANCELLED listing is success
+// and changes nothing, so a repeated withdrawal is harmless. Otherwise the auction
+// must still be open — the same rule a bid change meets — and, if any bid still
+// holds gold, not yet in its final ListingWithdrawLock, closed at its start.
+//
+// CANCELLED and FAILED bids are left as they are: their gold was already given
+// back or never held. LOST is reused for the live ones; CANCELLED stays a bidder's
+// own withdrawal.
+func (l *Listing) Withdraw(memberID uuid.UUID, now time.Time) error {
+	if l.sellerID != memberID {
+		return ErrNotSeller
+	}
+
+	if l.status == StatusCancelled {
+		return nil
+	}
+
+	if err := l.AcceptsBidAt(now); err != nil {
+		return err
+	}
+
+	if l.hasLiveBid() && !now.Before(l.endsAt.Add(-ListingWithdrawLock)) {
+		return ErrListingWithdrawLocked
+	}
+
+	for _, bid := range l.bids {
+		if !bid.isLive() {
+			continue
+		}
+		if err := bid.transitionTo(BidStatusLost, now); err != nil {
+			return fmt.Errorf("withdraw listing, bid %v in %v: %w", bid.id, bid.status, err)
+		}
+	}
+
+	return l.transitionTo(StatusCancelled, now)
 }
 
 func (l *Listing) MarkSold(now time.Time) error {
@@ -227,7 +319,7 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 		return nil
 	}
 
-	if err := l.AcceptsBidAt(now); err != nil {
+	if err := l.CanPlaceBid(memberID, now); err != nil {
 		return err
 	}
 
@@ -235,26 +327,26 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 	// redelivery both resend the same placement, and without this the member
 	// ends up outbidding themselves. The key is the member's own: another
 	// member's bid carrying the same key is not this one (ADR-0027).
-	if idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(memberID, idempotencyKey) != nil {
+	if l.HasBidByKey(memberID, idempotencyKey) {
 		return nil
 	}
 
-	// Compare against whoever is contending, not just the confirmed leader: a
-	// PENDING bid is not in idx_bids_single_winner, so two of them can coexist,
-	// and both would otherwise clear the bar against the same stale leader.
-	contender := l.findContendingBid()
-
-	if contender == nil && amount < l.startPrice {
-		return ErrBidTooLow
+	// After both replay checks, so a resend of a bid recorded before the member
+	// reached the cap is still answered as that bid (ADR-0052).
+	if err := l.WithinBidWithdrawalCap(memberID); err != nil {
+		return err
 	}
 
-	if contender != nil && amount <= contender.amount {
-		return ErrBidTooLow
+	// After the cap, so a capped leader keeps hearing about the cap, and before
+	// the price rules, so a leader sending any amount is told they lead (ADR-0054,
+	// FS-72KT8 Req 4).
+	if err := l.NotLeading(memberID); err != nil {
+		return err
 	}
 
-	// Paying the buyout price or more is what Buyout is for (FS-9XKS6 Req 4).
-	if l.buyoutPrice != nil && amount >= *l.buyoutPrice {
-		return ErrBidAtOrAboveBuyout
+	// Last, so every other refusal outranks a price refusal.
+	if err := l.AcceptsBidAmount(amount); err != nil {
+		return err
 	}
 
 	newBid, err := newBid(bidID, l.id, memberID, BidTypeBid, amount, idempotencyKey, now)
@@ -271,11 +363,91 @@ func (l *Listing) PlaceBidWithID(bidID uuid.UUID, memberID uuid.UUID, amount int
 	return nil
 }
 
+// bidWithdrawalCap is how many leading bids a member may withdraw on one listing
+// before they can no longer bid on it (ADR-0052, ADR-0055). Tuning, not contract.
+const bidWithdrawalCap = 3
+
+// WithinBidWithdrawalCap reports whether memberID may still bid on this listing
+// under the bid withdrawal cap: refused once they have bidWithdrawalCap or more
+// leading withdrawals here, CANCELLED bids that were WINNING when withdrawn
+// (ADR-0052 as amended by ADR-0055). Only CANCELLED counts, the status a bidder's
+// own withdrawal sets; a LOST bid was ended by someone else. An outbid withdrawal
+// promotes nobody and moves no price, so it never counts.
+//
+// Read-only: a caller about to hold gold for a bid asks it first, and
+// PlaceBidWithID applies it again under the lock. It limits only the next bid,
+// so WithdrawBid and Buyout never ask it.
+func (l *Listing) WithinBidWithdrawalCap(memberID uuid.UUID) error {
+	withdrawals := 0
+	for _, bid := range l.bids {
+		if bid.memberID == memberID && bid.status == BidStatusCancelled && bid.withdrawnWhileLeading {
+			withdrawals++
+		}
+	}
+
+	if withdrawals >= bidWithdrawalCap {
+		return ErrBidWithdrawLimitReached
+	}
+
+	return nil
+}
+
+// NotLeading reports whether memberID may bid on this listing without bidding
+// against themselves: refused once the contending bid (the highest WINNING or
+// PENDING, the one the price rules compare against) is theirs, however they came
+// to lead it, ADR-0028's promotion included (ADR-0054, FS-72KT8 Req 1-3, 9).
+//
+// Read-only: a caller about to hold gold for a bid asks it first, and
+// PlaceBidWithID applies it again under the lock. It limits only bidding, so
+// CanBuyout and Buyout never ask it.
+func (l *Listing) NotLeading(memberID uuid.UUID) error {
+	if contender := l.findContendingBid(); contender != nil && contender.memberID == memberID {
+		return ErrAlreadyLeading
+	}
+
+	return nil
+}
+
+// AcceptsBidAmount reports whether amount is a price this listing takes a bid at
+// now: above the contending bid, or at least the starting price when there is
+// none, and below the buyout price, which is what Buyout is for (FS-9XKS6 Req 4).
+//
+// Read-only: a caller about to hold gold for a bid asks it first, so a bid the
+// listing already refuses holds nothing, and PlaceBidWithID applies it again under
+// the lock, where it decides.
+func (l *Listing) AcceptsBidAmount(amount int) error {
+	// Compare against whoever is contending, not just the confirmed leader: a
+	// PENDING bid is not in idx_bids_single_winner, so two of them can coexist,
+	// and both would otherwise clear the bar against the same stale leader.
+	contender := l.findContendingBid()
+
+	if contender == nil && amount < l.startPrice {
+		return ErrBidTooLow
+	}
+
+	if contender != nil && amount <= contender.amount {
+		return ErrBidTooLow
+	}
+
+	if l.buyoutPrice != nil && amount >= *l.buyoutPrice {
+		return ErrBidAtOrAboveBuyout
+	}
+
+	return nil
+}
+
 // HasBid reports whether this listing carries the given bid. Callers that mint a
 // bid id up front use it to tell a recorded bid from one that was deduplicated
 // away as a replay.
 func (l *Listing) HasBid(bidID uuid.UUID) bool {
 	return l.findBidByID(bidID) != nil
+}
+
+// HasBidByKey reports whether memberID already has a bid on this listing under
+// idempotencyKey, which PlaceBidWithID answers as that bid's replay. No key never
+// matches: an unkeyed request is always a new bid.
+func (l *Listing) HasBidByKey(memberID, idempotencyKey uuid.UUID) bool {
+	return idempotencyKey != uuid.Nil && l.findBidByIdempotencyKey(memberID, idempotencyKey) != nil
 }
 
 // HasBuyoutBy reports whether memberID has already bought this listing out. A
@@ -453,6 +625,12 @@ func (l *Listing) LoseAllBids(now time.Time) error {
 	return nil
 }
 
+// LeaderWithdrawLock is how long before the end a WINNING bid can no longer be
+// withdrawn. Closed at its start: at exactly endsAt - LeaderWithdrawLock the
+// leader is already locked in. Tuning, not contract: the rule is ADR-0048's,
+// the number is not.
+const LeaderWithdrawLock = 30 * time.Minute
+
 func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time) error {
 	// Ended means what it means to PlaceBid. Between the end and settlement's freeze
 	// the listing is still ACTIVE, and a withdrawal there would change the outcome:
@@ -474,11 +652,23 @@ func (l *Listing) WithdrawBid(bidID uuid.UUID, memberID uuid.UUID, now time.Time
 
 	wasLeading := bid.status == BidStatusWinning
 
+	// A leader is locked in for the auction's final window. Withdrawing it then
+	// promotes the runner-up (ADR-0028) too late for anyone to outbid them, which
+	// is bid shielding: a high bid scares rivals off, then leaves a low bid to win.
+	// An OUTBID bid changes no outcome by leaving, so it stays free (ADR-0029,
+	// ADR-0048).
+	if wasLeading && !now.Before(l.endsAt.Add(-LeaderWithdrawLock)) {
+		return ErrLeadingBidLocked
+	}
+
 	// the FSM rejects anything already won, lost or cancelled; an OUTBID bid may be
 	// withdrawn (ADR-0029) and, not leading, promotes nobody
 	if err := bid.transitionTo(BidStatusCancelled, now); err != nil {
 		return err
 	}
+	// recorded in the same change as CANCELLED, so the two reach the table in one
+	// write: only a leading withdrawal counts toward the cap (ADR-0055)
+	bid.withdrawnWhileLeading = wasLeading
 
 	// A withdrawn leader is replaced by the highest bid still held (ADR-0028), so the
 	// auction keeps a leader backed by gold whenever another bid remains.
@@ -579,6 +769,22 @@ func (l *Listing) Buyout(bidID, memberID uuid.UUID, amount int, now time.Time) e
 	return nil
 }
 
+// CanPlaceBid reports whether memberID could place a bid on this listing at
+// now. Read-only: a caller about to hold gold for a bid asks it first, and
+// PlaceBidWithID applies the same rules again under the lock.
+//
+// The seller may never bid on their own listing. Winning it would cost them
+// nothing — CommitHold debits and CreditSeller credits the same account — and a
+// withdrawal undoes it, so a seller's bid is a free shill that raises the price
+// every real bidder must beat. Seller first, as in CanBuyout.
+func (l *Listing) CanPlaceBid(memberID uuid.UUID, now time.Time) error {
+	if l.sellerID == memberID {
+		return ErrSellerCannotBid
+	}
+
+	return l.AcceptsBidAt(now)
+}
+
 // AcceptsBidAt reports whether a new bid could be placed at now: the listing is
 // open and not yet past its end. PlaceBidWithID applies it under the lock; a
 // caller about to do something costly for a bid — holding its gold — asks it
@@ -623,6 +829,17 @@ func (l *Listing) acceptingBidChanges() error {
 func (l *Listing) boughtOut() bool {
 	for _, bid := range l.bids {
 		if bid.bidType == BidTypeBuyout {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasLiveBid reports whether any bid on this listing still holds gold.
+func (l *Listing) hasLiveBid() bool {
+	for _, bid := range l.bids {
+		if bid.isLive() {
 			return true
 		}
 	}
@@ -757,9 +974,10 @@ func (l *Listing) Expire(now time.Time) error {
 //
 // No leader is a legitimate ending, not corruption: every bid may have been
 // withdrawn (CANCELLED), refused by wallet (FAILED) or still waiting on its hold
-// (PENDING). Even OUTBID bids with no leader are reachable, because a WINNING
-// bidder may withdraw and nothing promotes the runner-up. Two WINNING bids is
-// the real corruption, and Reconstitute already refuses to load that listing.
+// (PENDING). A withdrawn leader promotes the highest OUTBID bid (ADR-0028), so
+// OUTBID bids with no leader are no longer reached through WithdrawBid, but
+// listings written before that rule may still hold them. Two WINNING bids is the
+// real corruption, and Reconstitute already refuses to load that listing.
 func (l *Listing) FindWinningBid() (*Bid, error) {
 	return l.findWinningBid(), nil
 }
@@ -785,15 +1003,16 @@ func Reconstitute(params ReconstituteParams) (*Listing, error) {
 
 	for _, bid := range params.Bids {
 		bids = append(bids, &Bid{
-			id:             bid.ID,
-			listingID:      bid.ListingID,
-			memberID:       bid.MemberID,
-			bidType:        bid.Type,
-			amount:         bid.Amount,
-			status:         bid.Status,
-			idempotencyKey: bid.IdempotencyKey,
-			createdAt:      bid.CreatedAt,
-			updatedAt:      bid.UpdatedAt,
+			id:                    bid.ID,
+			listingID:             bid.ListingID,
+			memberID:              bid.MemberID,
+			bidType:               bid.Type,
+			amount:                bid.Amount,
+			status:                bid.Status,
+			idempotencyKey:        bid.IdempotencyKey,
+			withdrawnWhileLeading: bid.WithdrawnWhileLeading,
+			createdAt:             bid.CreatedAt,
+			updatedAt:             bid.UpdatedAt,
 		})
 	}
 

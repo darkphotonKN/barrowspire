@@ -16,6 +16,8 @@ import {
   GEAR_LOAD_FAILED,
   HubGear,
   IN_RUN_NOTICE,
+  LISTED_NOTICE,
+  SETTLING_NOTICE,
   backendSlot,
   loadHubGear,
   type HubGearApi,
@@ -813,13 +815,14 @@ describe("HubGear moving items between bag and stash (FS-VPD8Y §F R38–42)", (
     expect(api.moveItemInstance).toHaveBeenCalledWith("s0", "bag");
   });
 
+  // FS-GTNP8 R12 amends R39's words for a listed or settling item
   it.each([
-    ["LISTED", "stash"],
-    ["PENDING_SETTLEMENT", "bag"],
-    ["IN_ESCROW", "stash"],
+    ["LISTED", "stash", LISTED_NOTICE],
+    ["PENDING_SETTLEMENT", "bag", SETTLING_NOTICE],
+    ["IN_ESCROW", "stash", NOT_FREE_NOTICE],
   ] as const)(
-    "should not send a move of a %s item from the %s, saying it is not free to move (R39)",
-    async (status, from) => {
+    "should not send a move of a %s item from the %s, saying why (R39, FS-GTNP8 R12)",
+    async (status, from, words) => {
       const { panel, api, notice } = await stashOpen([
         instance("x", { location: from, status }),
       ]);
@@ -829,7 +832,8 @@ describe("HubGear moving items between bag and stash (FS-VPD8Y §F R38–42)", (
         false,
       );
 
-      expect(notice).toHaveBeenCalledWith(NOT_FREE_NOTICE);
+      expect(notice).toHaveBeenCalledWith(words);
+      expect(notice).toHaveBeenCalledTimes(1);
       expect(api.moveItemInstance).not.toHaveBeenCalled();
     },
   );
@@ -1014,6 +1018,163 @@ describe("HubGear with items still in a delve (FS-18Z5F R38)", () => {
 
       expect(api.moveItemInstance).not.toHaveBeenCalled();
       expect(notice).toHaveBeenCalledWith(IN_RUN_NOTICE);
+    },
+  );
+});
+
+describe("HubGear purse line (FS-7TGZ3 §C R8–9)", () => {
+  function withPurse() {
+    const panel = fakePanel();
+    const api = fakeApi();
+    const purse = { refresh: vi.fn(), forget: vi.fn() };
+    const gear = new HubGear(panel, api, { notice: vi.fn() }, purse);
+    return { panel, gear, purse };
+  }
+
+  it("should read the purse on every open, and not on closing (R8)", () => {
+    const { gear, purse } = withPurse();
+    gear.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    gear.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    gear.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("should read the purse when it opens at the stash chest (R8, stash mode)", () => {
+    const { gear, purse } = withPurse();
+    expect(gear.openStash()).toBe(true);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    // an open overlay is left as it is: no second open, no second read
+    expect(gear.openStash()).toBe(false);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("should read the purse again when asked after a Take, open or closed (R9)", () => {
+    const { gear, purse } = withPurse();
+    gear.refreshPurse();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    gear.toggle();
+    gear.refreshPurse();
+    expect(purse.refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("should let a purse read in flight go on release", () => {
+    const { gear, purse } = withPurse();
+    gear.toggle();
+    gear.release();
+    expect(purse.forget).toHaveBeenCalledTimes(1);
+  });
+
+  it("should open and load as before without a purse", async () => {
+    const panel = fakePanel();
+    const gear = new HubGear(panel, fakeApi([instance("sword")]), {
+      notice: vi.fn(),
+    });
+    gear.toggle();
+    gear.refreshPurse();
+    await settle();
+    expect(panel.inventory.map((i) => i.entity_id)).toEqual(["sword"]);
+  });
+});
+
+describe("HubGear with items on the Bazaar (FS-GTNP8 §D)", () => {
+  const listed = (id: string, location: "bag" | "stash" = "bag") =>
+    instance(id, { location, status: "LISTED" });
+  const settling = (id: string, location: "bag" | "stash" = "bag") =>
+    instance(id, { location, status: "PENDING_SETTLEMENT" });
+
+  it("should word the refusals plainly (R10)", () => {
+    expect(LISTED_NOTICE).toBe("Listed on the Bazaar: withdraw it to use it.");
+    expect(SETTLING_NOTICE).toBe("That item's sale is settling.");
+    expect(IN_RUN_NOTICE).toBe("That item is still in a delve.");
+  });
+
+  it.each([
+    ["listed", listed, LISTED_NOTICE],
+    ["settling", settling, SETTLING_NOTICE],
+  ] as const)(
+    "should send no equip for a %s bag item, saying why (R10–R11)",
+    async (_kind, make, words) => {
+      const { gear, panel, api, notice } = hubGearOnStage([make("cloak")]);
+      gear.toggle();
+      await settle();
+
+      expect(equip(panel, panel.inventory[0], "body")).toBe(false);
+
+      expect(api.updateLoadout).not.toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(words);
+      expect(panel.status).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["listed", listed, LISTED_NOTICE],
+    ["settling", settling, SETTLING_NOTICE],
+  ] as const)(
+    "should send no unequip for a worn %s item (R10, edge state: a worn listed item)",
+    async (_kind, make, words) => {
+      const { gear, panel, api, notice } = hubGearOnStage([make("helm")], {
+        headId: "helm",
+      });
+      gear.toggle();
+      await settle();
+
+      expect(unequip(panel, "head")).toBe(false);
+
+      expect(api.updateLoadout).not.toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(words);
+    },
+  );
+
+  it("should send no equip that would take a worn listed item off (R10, edge state: swap)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage(
+      [listed("helm"), instance("cap", { location: "bag" })],
+      { headId: "helm" },
+    );
+    gear.toggle();
+    await settle();
+
+    expect(equip(panel, panel.inventory[0], "head")).toBe(false);
+
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith(LISTED_NOTICE);
+  });
+
+  it("should still send an equip of a free item beside a listed one", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage([
+      listed("helm"),
+      instance("cloak", { location: "bag" }),
+    ]);
+    gear.toggle();
+    await settle();
+
+    expect(equip(panel, panel.inventory[1], "body")).toBe(true);
+
+    expect(api.updateLoadout).toHaveBeenCalledWith("chest", "cloak");
+    expect(notice).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["bag", "stash", listed, LISTED_NOTICE],
+    ["stash", "bag", listed, LISTED_NOTICE],
+    ["bag", "stash", settling, SETTLING_NOTICE],
+    ["stash", "bag", settling, SETTLING_NOTICE],
+  ] as const)(
+    "should send no move of a Bazaar item from the %s to the %s, saying why (R10, R12)",
+    async (from, to, make, words) => {
+      const { gear, panel, api, notice } = hubGearOnStage([
+        make("relic", from),
+      ]);
+      gear.openStash();
+      await settle();
+      const relic = from === "bag" ? panel.inventory[0] : panel.stash[0];
+
+      expect(moveItem(panel, relic, to)).toBe(false);
+
+      expect(api.moveItemInstance).not.toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(words);
+      expect(notice).toHaveBeenCalledTimes(1);
     },
   );
 });

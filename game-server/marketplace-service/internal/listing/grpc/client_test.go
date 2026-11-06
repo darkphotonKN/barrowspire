@@ -150,7 +150,7 @@ func TestPlaceBid_WalletRefusal_KeepsItsMeaning(t *testing.T) {
 			if !tt.noWallet {
 				addr = startFakeWallet(t, tt.walletCode)
 			}
-			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, newWalletClient(t, addr), nil), nil, nil, nil, nil, nil, nil, nil)
+			h := NewHandler(nil, nil, usecase.NewPlaceBidUC(repo, newWalletClient(t, addr), nil), nil, nil, nil, nil, nil, nil, nil, nil)
 
 			_, err := h.PlaceBid(authedCtx(t, uuid.New()), &marketplacepb.PlaceBidRequest{
 				ListingId: l.Snapshot().ID.String(),
@@ -172,4 +172,46 @@ func TestPlaceHold_AlreadyExistsIsADuplicate(t *testing.T) {
 	err := newWalletClient(t, addr).PlaceHold(authedCtx(t, uuid.New()), uuid.New(), uuid.New(), 500, time.Now().Add(time.Hour))
 
 	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
+}
+
+// staleHoldsWallet answers ListStaleReservedHolds with a fixed page and records
+// the request it was sent.
+type staleHoldsWallet struct {
+	walletpb.UnimplementedWalletServiceServer
+	res *walletpb.ListStaleReservedHoldsResponse
+
+	got chan *walletpb.ListStaleReservedHoldsRequest
+}
+
+func (s *staleHoldsWallet) ListStaleReservedHolds(ctx context.Context, req *walletpb.ListStaleReservedHoldsRequest) (*walletpb.ListStaleReservedHoldsResponse, error) {
+	s.got <- req
+	return s.res, nil
+}
+
+// FS-9BJCP Req 6, 11: the client sends the position it is given and hands back
+// wallet's next as is, so the reconciler pages with opaque strings; an id wallet
+// sends that does not parse is dropped, never fatal to the page.
+func TestListStaleReservedHolds_SendsThePositionAndAnswersNext(t *testing.T) {
+	bid := uuid.New()
+	wallet := &staleHoldsWallet{
+		res: &walletpb.ListStaleReservedHoldsResponse{BidIds: []string{bid.String(), "not-a-uuid"}, Next: "page-3"},
+		got: make(chan *walletpb.ListStaleReservedHoldsRequest, 1),
+	}
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	srv := grpclib.NewServer()
+	walletpb.RegisterWalletServiceServer(srv, wallet)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	c := newWalletClient(t, lis.Addr().String())
+	before := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+
+	ids, next, err := c.ListStaleReservedHolds(context.Background(), before, "page-2")
+
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{bid}, ids)
+	assert.Equal(t, "page-3", next)
+	req := <-wallet.got
+	assert.Equal(t, "page-2", req.GetAfter())
+	assert.True(t, before.Equal(req.GetReservedBefore().AsTime()))
 }

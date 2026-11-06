@@ -217,6 +217,41 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   (`ChestRestockDelay`; 5 minutes in the Forest), so its next opening rolls afresh. What a player
   already took is theirs. Timed from the first open, not from the last item taken.
 
+### Dungeon floors and the floor map (FS-KE075, ADR-0060, ADR-0061, ADR-0062)
+
+- **Cell** — one square of a generated floor's grid, 80 px a side (`levelgen`). A cell is
+  **walkable** or not. Not the movement system's spatial-hash cell (40 px), which is unrelated.
+- **Dungeon floor** — a run floor built as rooms and corridors on a cell grid (floor 1 today).
+  The other run floors are built by the building generator and have no regions.
+- **Region** — one named part of a dungeon floor's walkable cells: a **room** or a **corridor
+  segment**. Every walkable cell belongs to exactly one region. Regions have ids, carried on the
+  floor map; the client's fog and minimap are built on them.
+- **Room** — a rectangular region carved as a chamber, from a 4×4-cell crypt to a 10×8-cell hall.
+  In game-service the word means only this; the walls of floors 2–3 make **buildings**.
+- **Corridor segment** — a region of corridor cells: corridors are cut into segments so that a
+  long corridor is not one region.
+- **Doorway** — a walkable cell of a room that touches a corridor cell. Always open: a dungeon
+  floor has no door entities (v1).
+- **Shell wall** — a dungeon floor's wall: the non-walkable cells next to a walkable one (diagonals
+  included), merged into axis-aligned rects. Rock deeper than the shell is **void**: no entity, no
+  collision, never reached.
+- **Room role** — what a room is for on its floor: **start** (the party's spawn), **switch**,
+  **escape door**, **stairs**, **treasure** (a chest and an elite guard), or none. Server-only:
+  never on the wire.
+- **Floor map** — the static description of the current floor sent to a client once (`floor_map`):
+  size, cell size, regions (dungeon floors only) and wall rects. Sent on run entry, floor change,
+  reconnect and on request. Never per tick.
+- **Interest** — the per-recipient cut of a snapshot: on a dungeon floor, monsters, drop piles and
+  containers farther than the **interest radius** (1600 px) from the recipient are left out. Party
+  members and the floor's fixed interactables are always sent. Not anti-cheat (ADR-0060).
+- **Path** — the cell-by-cell route a monster follows on a dungeon floor (A*, ADR-0062). A
+  monster's **repath** is its search for a new path.
+- **Guarded chest** — a dungeon floor's chest in a treasure room or a hall, which will not open
+  while any of its **guards** stands. Its guards are the monsters its room was populated with as
+  guards (a treasure room's elites, a hall's pack), fixed at the floor build, never the demon, a
+  corridor's monsters or a top-up. A guard **stands** while it is in the world with health above 0,
+  wherever it has chased to. Server-only: nothing marks it on the wire (FS-KE075 §J).
+
 ### Field combat (FS-X2F2H)
 
 - **Kill credit** — in a field world, the XP and the loot roll of a kill belong to the player who
@@ -315,6 +350,11 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Connection** — one client's WebSocket to one pod, held across any number of world switches on
   that pod and replaced only by a handoff. Never assume connection and world are the same
   lifetime, nor that a player keeps one connection from queue to run.
+- **Held token** — the member's own access token the pod keeps on their record, to read their gear
+  from items-service as them when a world seats them. Set at the handshake, replaced by a reconnect
+  or by a **renewal** (`renew_token`) carrying a validated access token for the connection's own
+  member (FS-ZPX58 §G, ADR-0067). Never logged. A stand-in until a service credential exists
+  (I-GV8WN-11).
 
 ### Pods (FS-K2HKP)
 

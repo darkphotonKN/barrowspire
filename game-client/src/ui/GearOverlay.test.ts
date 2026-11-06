@@ -1,10 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewport } from "@/render/viewport";
 import { EventEmitter } from "eventemitter3";
 import type { EquippedItems, ItemState } from "@/types/gameState";
 import type { WorldType } from "@/assets/types/client";
-import { IN_RUN_NOTE, UNSAFE_FIND_NOTE } from "@/items/itemView";
+import {
+  IN_RUN_NOTE,
+  LISTED_NOTE,
+  SETTLING_NOTE,
+  UNSAFE_FIND_NOTE,
+} from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
-import { palette } from "@/utils/canvasPalette";
+import { palette, toCss } from "@/utils/canvasPalette";
 import {
   GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
@@ -16,6 +22,7 @@ import { BAG_CAPACITY } from "./bag";
 import { STASH_CAPACITY } from "./stash";
 import {
   gearPanelLayout,
+  listedMark,
   overlayLayout,
   stashPanelLayout,
   statsPanelArea,
@@ -84,19 +91,34 @@ function recordingKeyboard() {
  * A scene that records what the overlay draws (text, fills, depths) and the pointer, wheel,
  * resize and frame handlers it hangs on; every other call is accepted and ignored.
  */
-function recordingScene(width = 1080, height = 720) {
+function recordingScene(width = 1080, height = 720, renderScale = 1) {
+  // the overlay lays out in the logical view, read from the viewport (FS-ZAJMH R2)
+  viewport.set({ width, height, renderScale });
   const texts: {
     content: string;
     destroyed: boolean;
     x: number;
     y: number;
     size: number;
+    /** The CSS colour it is drawn in. */
+    color: string | undefined;
   }[] = [];
   const fills = new Set<number>();
   /** Every line colour drawn (borders, edges). */
   const strokes = new Set<number>();
   /** Every icon sprite drawn, with the alpha it was given (1 unless dimmed). */
-  const sprites: { x: number; y: number; alpha: number }[] = [];
+  const sprites: { x: number; y: number; alpha: number; seq: number }[] = [];
+  /**
+   * Every filled triangle, in the fill colour it was drawn in, and the creation order (`seq`) of
+   * its graphics, which is its place in the draw order beside the sprites.
+   */
+  const triangles: {
+    color: number;
+    points: number[];
+    seq: number;
+    destroyed: boolean;
+  }[] = [];
+  let seq = 0;
   const depths = new Set<number>();
   const keys = recordingKeyboard();
   const input = Object.assign(new EventEmitter(), {
@@ -120,9 +142,19 @@ function recordingScene(width = 1080, height = 720) {
     return self;
   };
   const graphics = () => {
+    const at = seq++;
+    let fill = -1;
+    const own: (typeof triangles)[number][] = [];
     const g: Record<string, unknown> = chain({
-      fillStyle: (c: number) => (fills.add(c), g),
+      fillStyle: (c: number) => (fills.add(c), (fill = c), g),
       lineStyle: (_w: number, c: number) => (strokes.add(c), g),
+      fillTriangle: (...points: number[]) => {
+        const t = { color: fill, points, seq: at, destroyed: false };
+        triangles.push(t);
+        own.push(t);
+        return g;
+      },
+      destroy: () => own.forEach((t) => (t.destroyed = true)),
     });
     return g;
   };
@@ -130,7 +162,7 @@ function recordingScene(width = 1080, height = 720) {
     x: number,
     y: number,
     content: string,
-    style: { fontSize?: string } = {},
+    style: { fontSize?: string; color?: string } = {},
   ) => {
     const t = {
       content,
@@ -138,6 +170,7 @@ function recordingScene(width = 1080, height = 720) {
       x,
       y,
       size: parseInt(style.fontSize ?? "0", 10),
+      color: style.color,
     };
     texts.push(t);
     const self: Record<string, unknown> = chain({
@@ -164,7 +197,7 @@ function recordingScene(width = 1080, height = 720) {
       text,
       container,
       sprite: (x: number, y: number) => {
-        const s = { x, y, alpha: 1 };
+        const s = { x, y, alpha: 1, seq: seq++ };
         sprites.push(s);
         const self: Record<string, unknown> = chain({
           setAlpha: (a: number) => ((s.alpha = a), self),
@@ -187,7 +220,12 @@ function recordingScene(width = 1080, height = 720) {
   } as unknown as ArtLibrary;
 
   const shown = () => texts.filter((t) => !t.destroyed).map((t) => t.content);
-  const pointer = (x: number, y: number, button = 0) => ({ x, y, button });
+  /** A pointer at logical (x, y): Phaser's `pointer.x/y` are backing px, so × the render scale. */
+  const pointer = (x: number, y: number, button = 0) => ({
+    x: x * renderScale,
+    y: y * renderScale,
+    button,
+  });
   const move = (x: number, y: number) =>
     input.emit("pointermove", pointer(x, y));
   const press = (x: number, y: number, button: number) =>
@@ -213,6 +251,7 @@ function recordingScene(width = 1080, height = 720) {
     fills,
     strokes,
     sprites,
+    triangles,
     depths,
     move,
     press,
@@ -225,12 +264,15 @@ function recordingScene(width = 1080, height = 720) {
   };
 }
 
+afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
 function overlayOnStage(
   bag: ItemState[] = [],
   gear: EquippedItems = worn(),
   world?: WorldType,
+  renderScale = 1,
 ) {
-  const s = recordingScene();
+  const s = recordingScene(1080, 720, renderScale);
   const overlay = new GearOverlay(s.scene, s.art, world);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
@@ -317,6 +359,21 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     expect(onEquip).toHaveBeenLastCalledWith(sword, "weapon");
   });
 
+  it.each([1, 1.5, 2])(
+    "should land a right-click on the item under the cursor at render scale %s (FS-ZAJMH R15)",
+    (rs) => {
+      const { move, press, cell, onEquip } = overlayOnStage(
+        [axe, helm],
+        worn({ weapon: sword }),
+        undefined,
+        rs,
+      );
+      move(...cell(1));
+      press(...cell(1), 2);
+      expect(onEquip).toHaveBeenCalledWith(helm, "head");
+    },
+  );
+
   it("should do nothing on a left-click (R18), nor on E with nothing hovered (R10)", () => {
     const { overlay, move, press, cell, onEquip, onUnequip, camera } =
       overlayOnStage([axe]);
@@ -391,9 +448,8 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   });
 
   it("should lay itself out again when the canvas is resized while open (R2)", () => {
-    const { overlay, scale, camera } = overlayOnStage();
-    camera.width = 1600;
-    camera.height = 900;
+    const { overlay, scale } = overlayOnStage();
+    viewport.set({ width: 1600, height: 900, renderScale: 1 });
     scale.emit("resize");
     const { right } = overlayLayout(1600, 900);
     expect(overlay.covers(right.x + 2, right.y + 2)).toBe(true);
@@ -1269,5 +1325,261 @@ describe("GearOverlay compare (FS-NV54P)", () => {
       "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close",
     );
     expect(overlayOnStage().shown()).toContain(GEAR_HINT);
+  });
+});
+
+describe("GearOverlay purse line (FS-7TGZ3 §A, §B)", () => {
+  const TIP = "Available 1,300 · Held in bids 200";
+
+  /** An overlay with the art's resolve recorded, so which icon the line asks for is seen. */
+  function purseOnStage(bag: ItemState[] = []) {
+    const s = recordingScene(1080, 720);
+    const resolve = vi.spyOn(s.art, "resolve");
+    const overlay = new GearOverlay(s.scene, s.art);
+    const onEquip = vi.fn();
+    const onUnequip = vi.fn();
+    overlay.onEquip = onEquip;
+    overlay.onUnequip = onUnequip;
+    overlay.updateInventory(bag);
+    const g = gearPanelLayout(overlayLayout(1080, 720).right, bag.length);
+    const line = [g.purse.x + 30, g.purse.y + g.purse.h / 2] as const;
+    return { ...s, overlay, resolve, onEquip, onUnequip, g, line };
+  }
+
+  it("should show the dash under the bag before any purse is known (R10, R12)", () => {
+    const { overlay, shown } = purseOnStage();
+    overlay.show();
+    expect(shown()).toContain("—");
+  });
+
+  it("should draw the total beside the coins icon, under the bag grid (R1–3)", () => {
+    const { overlay, shown, resolve, texts, sprites, g } = purseOnStage();
+    overlay.setPurse({ amount: "1,500", tip: TIP });
+    overlay.show();
+    expect(shown()).toContain("1,500");
+    expect(resolve.mock.calls.map((c) => c[0])).toContain("icon_coins");
+    const amount = texts.find((t) => t.content === "1,500" && !t.destroyed)!;
+    expect(amount.y).toBeGreaterThanOrEqual(g.purse.y);
+    expect(amount.y).toBeLessThanOrEqual(g.purse.y + g.purse.h);
+    expect(amount.size).toBe(12);
+    const coin = sprites.find(
+      (sp) => sp.y >= g.purse.y && sp.y <= g.purse.y + g.purse.h,
+    );
+    expect(coin).toBeDefined();
+    expect(coin!.x).toBeLessThan(amount.x);
+  });
+
+  it("should draw a purse set while open at once, and keep it across closing", () => {
+    const { overlay, shown } = purseOnStage();
+    overlay.show();
+    overlay.setPurse({ amount: "42", tip: "Available 42 · Held in bids 0" });
+    expect(shown()).toContain("42");
+    expect(shown()).not.toContain("—");
+    overlay.hide();
+    overlay.show();
+    expect(shown()).toContain("42");
+  });
+
+  it("should show the split on hover and hide it as the pointer leaves (R5–6)", () => {
+    const { overlay, shown, move, line } = purseOnStage();
+    overlay.setPurse({ amount: "1,500", tip: TIP });
+    overlay.show();
+    move(...line);
+    expect(shown()).toContain(TIP);
+    move(540, 360);
+    expect(shown()).not.toContain(TIP);
+  });
+
+  it("should show no tip over the dash (R7)", () => {
+    const { overlay, shown, move, line, texts } = purseOnStage();
+    overlay.show();
+    const before = texts.length;
+    move(...line);
+    expect(texts.length).toBe(before);
+    expect(shown()).toContain("—");
+  });
+
+  it("should take no right-click and no E over the line (R6)", () => {
+    const { overlay, move, press, line, onEquip, onUnequip } = purseOnStage([
+      sword,
+    ]);
+    overlay.setPurse({ amount: "1,500", tip: TIP });
+    overlay.show();
+    move(...line);
+    press(...line, 2);
+    overlay.handleEquipKey();
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(onUnequip).not.toHaveBeenCalled();
+  });
+
+  it("should show the line in stash mode too (R4)", () => {
+    const { overlay, shown } = purseOnStage();
+    overlay.setPurse({ amount: "7", tip: "Available 7 · Held in bids 0" });
+    overlay.openStash();
+    expect(shown()).toEqual(expect.arrayContaining(["STASH", "7"]));
+  });
+});
+
+describe("GearOverlay listed and settling items (FS-GTNP8)", () => {
+  const listedHelm = item("listed-helm", {
+    armor_slot: "head",
+    status: "LISTED",
+  });
+  const listedRing = item("listed-ring", { rarity: "rare", status: "LISTED" });
+  const settlingAxe = item("settling-axe", {
+    weapon_type: "sword",
+    status: "PENDING_SETTLEMENT",
+  });
+
+  /** The overlay in the hub at the stash chest: `stash` on the left, `bag` and `gear` on the right. */
+  function hubOnStage(
+    bag: ItemState[] = [],
+    gear: EquippedItems = worn(),
+    stash?: ItemState[],
+    renderScale = 1,
+  ) {
+    const s = recordingScene(1080, 720, renderScale);
+    const overlay = new GearOverlay(s.scene, s.art, "hub");
+    if (stash) overlay.openStash();
+    overlay.updateInventory(bag);
+    overlay.updateEquipment(gear);
+    if (stash) overlay.updateStash(stash);
+    else overlay.show();
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const gearLayout = gearPanelLayout(right, bag.length);
+    const centre = (r: { x: number; y: number; w: number; h: number }) =>
+      [r.x + r.w / 2, r.y + r.h / 2] as const;
+    const cellRect = (i: number) => gearLayout.cells[i].rect;
+    const slotRect = (name: keyof EquippedItems) => gearLayout.slots[name];
+    const stashRect = (i: number) =>
+      stashPanelLayout(left, stash?.length ?? 0, 0).cells.find(
+        (c) => c.index === i,
+      )!.rect;
+    /** The listed marks drawn, as their corner points. */
+    const marks = () =>
+      s.triangles
+        .filter((t) => !t.destroyed && t.color === palette.listed)
+        .map((t) => t.points);
+    /** The colour the live text `words` is drawn in. */
+    const colorOf = (words: string) =>
+      s.texts.filter((t) => !t.destroyed && t.content === words).at(-1)?.color;
+    return {
+      ...s,
+      overlay,
+      cellRect,
+      slotRect,
+      stashRect,
+      cell: (i: number) => centre(cellRect(i)),
+      slot: (name: keyof EquippedItems) => centre(slotRect(name)),
+      stashCell: (i: number) => centre(stashRect(i)),
+      marks,
+      colorOf,
+    };
+  }
+
+  it("should draw the listed red from the palette's danger channel, the unsafe edge's lifted oxblood (R4)", () => {
+    expect(palette.listed).toBe(palette.unsafeFind);
+  });
+
+  it("should mark a listed bag item, a listed worn item and a settling stash item in its well's top-right corner (R5)", () => {
+    const { marks, cellRect, slotRect, stashRect } = hubOnStage(
+      [listedRing],
+      worn({ head: listedHelm }),
+      [settlingAxe],
+    );
+    expect(marks()).toEqual(
+      expect.arrayContaining([
+        [...listedMark(cellRect(0))],
+        [...listedMark(slotRect("head"))],
+        [...listedMark(stashRect(0))],
+      ]),
+    );
+    expect(marks()).toHaveLength(3);
+  });
+
+  it("should draw the mark over the faint icon, so the fading never hides it (R5, R9)", () => {
+    const { triangles, sprites, cellRect } = hubOnStage([listedRing]);
+    const r = cellRect(0);
+    const icon = sprites.find(
+      (sp) => sp.x === r.x + r.w / 2 && sp.y === r.y + r.h / 2,
+    )!;
+    const mark = triangles.find((t) => t.color === palette.listed)!;
+    expect(icon.alpha).toBe(UNAVAILABLE_ALPHA);
+    expect(mark.seq).toBeGreaterThan(icon.seq);
+  });
+
+  it("should keep the rarity edge beside the mark (R6)", () => {
+    const { fills, marks } = hubOnStage([listedRing]);
+    expect(marks()).toHaveLength(1);
+    expect(fills).toContain(palette.rarity.rare);
+  });
+
+  it("should mark the same wells at render scale 2, in logical units (R7)", () => {
+    const { marks, cellRect } = hubOnStage([listedRing], worn(), undefined, 2);
+    expect(marks()).toEqual([[...listedMark(cellRect(0))]]);
+  });
+
+  it("should mark no free, in-delve or status-less item in the hub (R8)", () => {
+    const { marks } = hubOnStage(
+      [
+        item("free", { status: "AVAILABLE" }),
+        item("old"),
+        item("away", { status: "IN_RUN" }),
+      ],
+      worn({ head: item("held", { armor_slot: "head", status: "IN_ESCROW" }) }),
+      [item("stored", { status: "AVAILABLE" })],
+    );
+    expect(marks()).toEqual([]);
+  });
+
+  it("should mark no unsafe find in a run (R8)", () => {
+    const { triangles } = overlayOnStage(
+      [item("charm", { unsafe: true })],
+      worn(),
+      "run",
+    );
+    expect(triangles.filter((t) => t.color === palette.listed)).toEqual([]);
+  });
+
+  it("should say a listed item is on the Bazaar, in red, in a bag, worn and stash tip (R4)", () => {
+    const { move, cell, slot, stashCell, shown, colorOf } = hubOnStage(
+      [listedRing],
+      worn({ head: listedHelm }),
+      [item("listed-cloak", { armor_slot: "chest", status: "LISTED" })],
+    );
+    for (const at of [cell(0), slot("head"), stashCell(0)]) {
+      move(...at);
+      expect(shown()).toContain(LISTED_NOTE);
+      expect(colorOf(LISTED_NOTE)).toBe(toCss(palette.listed));
+    }
+  });
+
+  it("should say a settling item's sale is settling, in red (R4)", () => {
+    const { move, cell, shown, colorOf } = hubOnStage([settlingAxe]);
+    move(...cell(0));
+    expect(shown()).toContain(SETTLING_NOTE);
+    expect(colorOf(SETTLING_NOTE)).toBe(toCss(palette.listed));
+  });
+
+  it("should keep the in-delve note in the label tone (R4)", () => {
+    const { move, cell, colorOf } = hubOnStage([
+      item("away", { status: "IN_RUN" }),
+    ]);
+    move(...cell(0));
+    expect(colorOf(IN_RUN_NOTE)).toBe(toCss(palette.hudLabel));
+  });
+
+  it("should carry the note on a listed worn item's Shift-compare tip (R14)", () => {
+    const listedSword = item("listed-sword", {
+      weapon_type: "sword",
+      status: "LISTED",
+    });
+    const { move, cell, shift, shown } = hubOnStage(
+      [axe],
+      worn({ weapon: listedSword }),
+    );
+    move(...cell(0));
+    shift(true);
+    expect(shown()).toContain(LISTED_NOTE);
   });
 });

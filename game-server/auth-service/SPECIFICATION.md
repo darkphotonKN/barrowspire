@@ -70,9 +70,10 @@ downstream services (notification, analytics) learn about new members. ✅ DONE
 ### Tokens
 
 - [x] Validate a token and return its subject
-- [ ] Reject a refresh token presented as an access credential
+- [ ] Reject a refresh token presented as an access credential → FS-ZPX58
 - [x] Mint account and role claims into the access token → FS-9KW9F
 - [ ] Mint an email-verified claim into the access token → FS-V6SFK
+- [ ] Renew an access token from a refresh token → FS-ZPX58
 
 ### Avatars
 
@@ -115,9 +116,10 @@ gRPC port default **7116** (`GRPC_AUTH_ADDR`); callers reach it at `AUTH_ADDR`. 
   `{Success,Message}`) — verify match + current password; hash + update.
   > REVIEW: on validation failure it returns a populated `{Success:false, Message}` **and** a
   > non-nil gRPC error; the error drops the response body, so `Message` never reaches the client.
+- **RefreshAccessToken** (`{RefreshToken}` → `{AccessToken, AccessExpiresIn, MemberInfo}`) — see
+  FS-ZPX58.
 - **ValidateToken** (`{Token}` → `{Valid,MemberId}`) — parse/verify JWT, return `sub`.
-  > REVIEW: does **not** check `tokenType`, so a 7-day **refresh** token is accepted as a valid
-  > access credential.
+  Accepts only `tokenType=access` (FS-ZPX58 L1), so a refresh token cannot open a game socket.
 - **CheckEmailExists** (`{Email}` → `{Exists}`) — true if member found.
   > **CALLERLESS since FS-83TJK.** Its only consumer was the gateway's
   > `GET /api/member/check-email`, which existed to let the register page poll for an account
@@ -176,9 +178,9 @@ result is discarded (no reply/correlation).
 
 - **Passwords**: bcrypt, `DefaultCost` (10). Compare via `bcrypt.CompareHashAndPassword`.
 - **JWT** (`JWT_SECRET`, HS256): claims `{sub, exp, iat, tokenType}`; access = 60 min, refresh =
-  7 days. `ValidateJWT` verifies signature + exp, returns `sub`, ignores `tokenType`.
-  > REVIEW: `RefreshToken` (mints a 15-min access token from a refresh token) exists but is
-  > **dead** — no RPC/caller.
+  7 days. `ValidateJWT` verifies signature + exp + `tokenType=access`, returns `sub`; no secret, no token.
+  The 15-minute `RefreshToken` helper is gone; renewal is `RefreshAccessToken` (FS-ZPX58,
+  ADR-0066), minting from the same two lifetimes as sign-in.
 
 ## Infra dependencies
 
@@ -204,7 +206,7 @@ result is discarded (no reply/correlation).
 ## Suspected issues / open questions (draft — confirm before trusting)
 
 Security-relevant, flagged for a real review:
-- Refresh tokens accepted as access tokens (`ValidateToken` ignores `tokenType`).
+- ~~Refresh tokens accepted as access tokens~~ — closed by FS-ZPX58 L1.
 - ConfirmAvatarUpload doesn't verify the requester owns the `UploadId`.
 - Login email enumeration; CheckEmailExists reports "available" on DB errors.
 - **Secrets committed to `.env`** (`JWT_SECRET`, AWS keys); migration seeds a default admin

@@ -7,7 +7,7 @@ import Link from 'next/link';
 const PhaserGame = dynamic(() => import('@/components/PhaserGame'), {
   ssr: false,
   loading: () => (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-bg-dark gap-4">
+    <div className="flex flex-1 flex-col items-center justify-center bg-bg-dark gap-4">
       <p className="text-primary text-3xl font-display font-bold tracking-[0.15em] uppercase" style={{ }}>Lighting the Torch</p>
       <p className="text-vellum-dim text-sm tracking-[0.2em] uppercase">The Spire is waiting</p>
     </div>
@@ -46,11 +46,10 @@ export default function GamePage() {
     );
   }
 
+  // windowed: the game frame fills what the header and the banner leave, no page scroll (FS-ZAJMH R17)
   return (
-    <main className="min-h-screen bg-bg-dark">
-      <div className="flex flex-col items-center justify-center min-h-screen pb-4">
-        <PhaserGame />
-      </div>
+    <main className="game-page bg-bg-dark">
+      <PhaserGame />
     </main>
   );
 }

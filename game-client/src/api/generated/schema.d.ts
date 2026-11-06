@@ -445,13 +445,13 @@ export interface paths {
         };
         /**
          * Browse live auctions
-         * @description Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. If the items lookup fails the whole request fails; a page is never returned without its items.
+         * @description Pages every seller's live auctions — active and not yet ended — soonest-ending first, each with its item embedded. Public: no token is needed. No listing carries a member id or a sold price. Sent with a bearer token, own marks the caller's own listings; without one, or with a token that is invalid or expired, the caller reads as signed out and own is false on every listing, never 401. If the items lookup fails the whole request fails; a page is never returned without its items.
          */
         get: operations["browse-listings"];
         put?: never;
         /**
          * List an item for auction
-         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), EMAIL_UNVERIFIED (email not verified). An item that is not the member's answers 404.
+         * @description Lists an item from the signed-in member's stash for auction. The listing is not created by this request: marketplace reserves the item, and the listing appears once the reservation is confirmed. The seller is taken from the token, never the request. endsAt must be between 1 hour and 7 days from now, with 5 minutes of slack either way. Refusals: ITEM_WORN (the item is worn), ITEM_NOT_AVAILABLE (listed, in escrow, pending settlement or in a delve), ITEM_NOT_IN_STASH (the item is in the bag; only stash items can be listed), EMAIL_UNVERIFIED (email not verified), LISTING_DURATION_OUT_OF_RANGE (endsAt is less than 1 hour − 5 minutes or more than 7 days + 5 minutes away), LISTING_LIMIT_REACHED (the seller already has 20 items listed or settling). An item that is not the member's answers 404.
          */
         post: operations["create-listing"];
         delete?: never;
@@ -489,12 +489,16 @@ export interface paths {
         };
         /**
          * Get a listing
-         * @description Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. If the items lookup fails the request fails.
+         * @description Reads one listing in any status, with its item embedded. An active listing past endsAt answers ended: true. Public: no token is needed. The listing carries no member id and no sold price, in any status. Sent with a bearer token, own is true when the caller is the seller; without one, or with a token that is invalid or expired, the caller reads as signed out and own is false, never 401. If the items lookup fails the request fails.
          */
         get: operations["get-listing"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Withdraw a listing
+         * @description Withdraws the signed-in seller's own listing. The listing is withdrawn (CANCELLED) when this answers; the item returns to the seller and every bidder's gold is given back asynchronously. Withdrawing a listing already withdrawn is success. A listing of another member answers 403. Refusals: LISTING_WITHDRAW_LOCKED (the listing has bids and ends within 30 minutes), FAILED_PRECONDITION (the auction has ended, was bought out, or is no longer active). 409 CONFLICT means the listing is busy and may be retried. 503 SERVICE_UNAVAILABLE can mean the listing was withdrawn but its follow-up (item return, bid refunds) has not yet started; retrying is safe and starts it.
+         */
+        delete: operations["withdraw-listing"];
         options?: never;
         head?: never;
         patch?: never;
@@ -511,7 +515,7 @@ export interface paths {
         put?: never;
         /**
          * Accept the leading bid
-         * @description Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads.
+         * @description Ends the signed-in seller's auction early at its current leading bid. There is no bid to choose: whichever bid leads is the one accepted, as long as it is at least minAmount, the leading bid the seller was shown; a higher bid landing first still wins. Answers once settlement has started; the sale completes asynchronously. Refused when the caller is not the seller, the auction is closed, or nobody leads. Refusals: LEADING_BID_LOWERED (the leading bid is now below minAmount; nothing is sold, re-read the listing). A body whose minAmount is missing, not an integer or below 1 answers 422 VALIDATION_FAILED; a request with no body at all answers 400 VALIDATION_FAILED.
          */
         post: operations["accept-bid"];
         delete?: never;
@@ -531,7 +535,7 @@ export interface paths {
         put?: never;
         /**
          * Place a bid on a listing
-         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. Resending with the same Idempotency-Key is safe and holds no further gold. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and its gold returned: bid again with a new key.
+         * @description Places a bid on an active listing as the signed-in member. The bidder is taken from the token, never the request. Resending with the same Idempotency-Key is safe and holds no further gold. 403 means the caller is the listing's own seller, who may not bid on it. 409 CONFLICT means the listing is busy and may be retried; 409 ALREADY_EXISTS means the attempt under this Idempotency-Key was refused or abandoned and its gold returned: bid again with a new key. Refusals: BID_WITHDRAW_LIMIT_REACHED (the member has made 3 or more withdrawals of a leading bid on this listing, so no gold is held and they can no longer bid on it; withdrawing an outbid bid never counts; withdrawing and buyout are not limited), BID_TOO_LOW (the amount is below the start price with no contending bid, or not above the contending bid; re-read the listing for the current minimum), BID_AT_OR_ABOVE_BUYOUT (the amount is at or above the listing's buyout price; buy it out instead), ALREADY_LEADING (the member's own bid is already the listing's leading bid, so no gold is held; buyout is still allowed). No gold stays held after either price refusal.
          */
         post: operations["place-bid"];
         delete?: never;
@@ -552,7 +556,7 @@ export interface paths {
         post?: never;
         /**
          * Withdraw a bid
-         * @description Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored.
+         * @description Withdraws a bid the signed-in member placed. A bid belonging to another member is refused, never silently ignored. A leading bid cannot be withdrawn in the auction's final 30 minutes (400 FAILED_PRECONDITION); an outbid bid can be withdrawn until the auction ends. Withdrawing a leading bid counts toward the bid withdrawal cap (after 3 on one listing, place-bid answers 400 BID_WITHDRAW_LIMIT_REACHED); withdrawing an outbid bid doesn't.
          */
         delete: operations["withdraw-bid"];
         options?: never;
@@ -654,6 +658,26 @@ export interface paths {
          * @description Verifies the signed-in member's email with the code mailed to them, and returns a fresh token pair whose access token carries the email-verified claim. An already-verified member gets a fresh pair too, whatever code is sent. Refusals: VERIFICATION_CODE_INVALID (wrong code; the 5th wrong try burns it), VERIFICATION_CODE_EXPIRED (no live code: never issued, expired, or burned).
          */
         post: operations["verify-email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/member/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew the access token
+         * @description Takes the refresh token from sign-in or verification and returns a new access token, minted from the member as they are now, with that member. No refresh token is returned: keep the one you hold; it stays valid until its own expiry. An expired, invalid or wrong-type token, or one naming no member, answers 401 UNAUTHENTICATED, one code for every cause.
+         */
+        post: operations["refresh-access-token"];
         delete?: never;
         options?: never;
         head?: never;
@@ -864,6 +888,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AcceptBidBody: {
+            /**
+             * Format: int64
+             * @description The leading bid amount the seller was shown. The accept is refused with LEADING_BID_LOWERED when the leading bid is now below it; at or above it, whichever bid leads is accepted.
+             */
+            minAmount: number;
+        };
         Affix: {
             /** @description The stat the affix raises, by its stat code. */
             stat: string;
@@ -1841,6 +1872,53 @@ export interface components {
              */
             wins?: number;
         };
+        PublicListing: {
+            /**
+             * Format: int32
+             * @description Bids that are or were in the running: winning, pending or outbid.
+             */
+            bidCount: number;
+            /**
+             * Format: int64
+             * @description Gold that buys the item outright. Absent when the seller set none.
+             */
+            buyoutPrice?: number;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description The leading bid. Absent when nobody leads.
+             */
+            currentPrice?: number;
+            /** @description True when the auction is past endsAt but not yet settled; it no longer accepts bids. */
+            ended: boolean;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: uuid */
+            id: string;
+            /** @description The listed item. Absent only when items has no such instance. */
+            item?: components["schemas"]["ItemSummary"];
+            /** Format: uuid */
+            itemId: string;
+            /**
+             * Format: int64
+             * @description The least amount a bid would be accepted at now: the start price with no leading bid, otherwise one more than the leading bid.
+             */
+            minimumBid: number;
+            /** @description True only when the caller is signed in and is this listing's seller. False for anyone else, for a signed-out caller, and for a token that is invalid or expired. */
+            own: boolean;
+            /** Format: int64 */
+            startPrice: number;
+            /** @description Listing status, e.g. ACTIVE, PENDING_SETTLEMENT, SOLD, SETTLEMENT_FAILED. */
+            status: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PublicListingPage: {
+            listings: components["schemas"]["PublicListing"][];
+            /** @description Pass back as cursor for the next page. Absent on the last page. */
+            nextCursor?: string;
+        };
         ReadEnvelope: {
             /** @description Message chosen by notification-service */
             message: string;
@@ -1862,6 +1940,21 @@ export interface components {
             memberId?: string;
             /** @description A member list: one letter per distinct member, 1-1000 distinct ids (notification-service decides). */
             memberIds?: string[];
+        };
+        RefreshBody: {
+            /** @description The refresh token from sign-in or verification */
+            refresh_token: string;
+        };
+        RefreshResult: {
+            /**
+             * Format: int32
+             * @description Access token lifetime in seconds
+             */
+            access_expires_in: number;
+            /** @description Bearer token for the Authorization header */
+            access_token: string;
+            /** @description The member, as the new access token was minted from */
+            member_info: components["schemas"]["Member"];
         };
         ResultEnvelopeArmorDetail: {
             /** @description Human-readable summary */
@@ -3653,10 +3746,12 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Cache-Control"?: string;
+                    Vary?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ListingPage"];
+                    "application/json": components["schemas"]["PublicListingPage"];
                 };
             };
             /** @description Bad Request */
@@ -3856,14 +3951,108 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Cache-Control"?: string;
+                    Vary?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Listing"];
+                    "application/json": components["schemas"]["PublicListing"];
                 };
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "withdraw-listing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3909,7 +4098,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptBidBody"];
+            };
+        };
         responses: {
             /** @description Accepted */
             202: {
@@ -4028,6 +4221,15 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4482,6 +4684,66 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "refresh-access-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResult"];
                 };
             };
             /** @description Unauthorized */

@@ -67,7 +67,7 @@ func (f *fakeRepo) Insert(ctx context.Context, l *listing.Listing) error {
 	return errors.New("Insert must not be called on a bid path")
 }
 
-// Save is the OCC path, which the withdraw use cases still take.
+// Save is the OCC path, which WithdrawBid still takes.
 func (f *fakeRepo) Save(ctx context.Context, l *listing.Listing, before listing.ListingSnapshot) error {
 	return f.saveErr
 }
@@ -134,6 +134,11 @@ type fakeReleaser struct {
 	gotListingID uuid.UUID
 	gotBidID     uuid.UUID
 	gotCtxErr    error
+
+	// waits counts the releases a caller started and then waited on, a subset of
+	// calls; gotMaxWait is how long the last one was willing to wait
+	waits      int
+	gotMaxWait time.Duration
 }
 
 func (f *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uuid.UUID) error {
@@ -142,6 +147,12 @@ func (f *fakeReleaser) StartReleaseHold(ctx context.Context, listingID, bidID uu
 	f.gotBidID = bidID
 	f.gotCtxErr = ctx.Err()
 	return f.err
+}
+
+func (f *fakeReleaser) ReleaseHoldAndWait(ctx context.Context, listingID, bidID uuid.UUID, maxWait time.Duration) error {
+	f.waits++
+	f.gotMaxWait = maxWait
+	return f.StartReleaseHold(ctx, listingID, bidID)
 }
 
 // activeListing builds a published listing ready to receive bids.
@@ -165,26 +176,31 @@ func TestPlaceBidUC(t *testing.T) {
 		updateErr error
 		wantErr   error
 		wantBids  int
+		// wantUpdates is 0 when the unlocked read already refuses the bid
+		wantUpdates int
 	}{
 		{
-			name:     "a valid bid is placed as pending",
-			amount:   150,
-			wantErr:  nil,
-			wantBids: 1,
+			name:        "a valid bid is placed as pending",
+			amount:      150,
+			wantErr:     nil,
+			wantBids:    1,
+			wantUpdates: 1,
 		},
 		{
-			// below the 100 reserve, so the domain refuses before a bid exists
-			name:     "a bid below the reserve is rejected",
-			amount:   50,
-			wantErr:  listing.ErrBidTooLow,
-			wantBids: 0,
+			// below the 100 reserve: refused on the read, before any hold or write
+			name:        "a bid below the reserve is rejected",
+			amount:      50,
+			wantErr:     listing.ErrBidTooLow,
+			wantBids:    0,
+			wantUpdates: 0,
 		},
 		{
-			name:      "a repository failure surfaces to the caller",
-			amount:    150,
-			updateErr: commonconstants.ErrNotFound,
-			wantErr:   commonconstants.ErrNotFound,
-			wantBids:  0,
+			name:        "a repository failure surfaces to the caller",
+			amount:      150,
+			updateErr:   commonconstants.ErrNotFound,
+			wantErr:     commonconstants.ErrNotFound,
+			wantBids:    0,
+			wantUpdates: 1,
 		},
 	}
 
@@ -207,7 +223,7 @@ func TestPlaceBidUC(t *testing.T) {
 				assert.ErrorIs(t, err, tt.wantErr)
 			}
 
-			assert.Equal(t, 1, repo.updateCall, "the write must go through Update")
+			assert.Equal(t, tt.wantUpdates, repo.updateCall, "a bid the read allows is written through Update")
 			assert.Len(t, l.Snapshot().Bids, tt.wantBids)
 		})
 	}
@@ -580,6 +596,10 @@ func TestPlaceBidUC_WriteOutcome(t *testing.T) {
 			seeded := len(l.Snapshot().Bids)
 
 			repo := &fakeRepo{listing: l, updateScript: tt.script(t)}
+			if tt.seed > 0 {
+				// the seeded bid landed after the unlocked read, so only the lock sees it
+				repo.found = activeListing(t, 100)
+			}
 			wallet, release := &fakeWallet{}, &fakeReleaser{}
 
 			err := NewPlaceBidUC(repo, wallet, release).Handle(context.Background(), PlaceBidCommand{
@@ -705,11 +725,13 @@ func TestPlaceBid_ResendOfABidRecordedUnderARandomID_IsRecognisedByItsKey(t *tes
 // a new bid needs a new key (ADR-0027). Before IDs were derived, this re-judged
 // the bid and answered too-low again.
 func TestPlaceBid_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
+	// outbid between the unlocked read and the lock, so the hold is placed first
 	l := activeListing(t, 100)
+	leadWith(t, l, uuid.New(), 200, time.Now())
 	wallet, release := &fakeWallet{released: map[uuid.UUID]bool{}}, &fakeReleaser{}
-	uc := NewPlaceBidUC(&fakeRepo{listing: l}, wallet, release)
+	uc := NewPlaceBidUC(&fakeRepo{found: activeListing(t, 100), listing: l}, wallet, release)
 	cmd := PlaceBidCommand{
-		ListingID: l.Snapshot().ID, MemberID: uuid.New(), Amount: 50, IdempotencyKey: uuid.New(), Now: time.Now(),
+		ListingID: l.Snapshot().ID, MemberID: uuid.New(), Amount: 150, IdempotencyKey: uuid.New(), Now: time.Now(),
 	}
 
 	require.ErrorIs(t, uc.Handle(context.Background(), cmd), listing.ErrBidTooLow)
@@ -719,7 +741,7 @@ func TestPlaceBid_ReusingAKeyWhoseHoldWasReleased_IsRefused(t *testing.T) {
 	err := uc.Handle(context.Background(), cmd)
 
 	assert.ErrorIs(t, err, commonconstants.ErrDuplicateResource)
-	assert.Empty(t, l.Snapshot().Bids)
+	assert.Len(t, l.Snapshot().Bids, 1, "only the leader's bid")
 }
 
 // A resend with the same key derives the same bid ID, finds its bid already on
@@ -744,4 +766,75 @@ func TestPlaceBid_ResendWithTheSameKeyAfterTheBidLanded_HoldsNoGold(t *testing.T
 	assert.Equal(t, 1, wallet.calls, "only the first attempt holds gold")
 	assert.Zero(t, release.calls)
 	assert.Len(t, l.Snapshot().Bids, 1)
+}
+
+// A seller can never bid on their own listing, so no gold may be held for the
+// attempt: the refusal comes from the read before the hold, and the listing is
+// never written. Without the read-side check the seller's gold would be frozen
+// and then handed back on every attempt.
+func TestPlaceBidUC_SellerOnOwnListing_HoldsNoGold(t *testing.T) {
+	l := activeListing(t, 100)
+	repo := &fakeRepo{listing: l}
+	wallet := &fakeWallet{}
+
+	err := NewPlaceBidUC(repo, wallet, &fakeReleaser{}).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID,
+		MemberID:  l.Snapshot().SellerID,
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrSellerCannotBid)
+	assert.Zero(t, wallet.calls, "no gold may be held for a bid that cannot land")
+	assert.Zero(t, repo.updateCall, "the listing must not be written")
+}
+
+// A seller's bid refused under the lock is a definitive refusal, not an unknown
+// outcome: retrying it cannot change who the seller is, and reporting it as
+// transient would answer the seller with a 503.
+func TestBidRejected_SellerCannotBid(t *testing.T) {
+	assert.True(t, bidRejected(fmt.Errorf("wrapped: %w", listing.ErrSellerCannotBid)))
+}
+
+// A refused bid answers only once its hold is back, so the bidder can never resend
+// the same key onto a hold that a release is about to take away: that resend would
+// be recorded, and the release landing after it would leave a leading bid with no
+// gold behind it (ADR-0049). The wait is bounded by releaseWait.
+func TestPlaceBid_Refused_WaitsForTheReleaseBeforeAnswering(t *testing.T) {
+	// outbid between the unlocked read and the lock, so the refusal comes after the hold
+	l := activeListing(t, 100)
+	leadWith(t, l, uuid.New(), 200, time.Now())
+	wallet, release := &fakeWallet{}, &fakeReleaser{}
+
+	err := NewPlaceBidUC(&fakeRepo{found: activeListing(t, 100), listing: l}, wallet, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID:      l.Snapshot().ID,
+		MemberID:       uuid.New(),
+		Amount:         150, // not above the leader the lock sees
+		IdempotencyKey: uuid.New(),
+		Now:            time.Now(),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrBidTooLow)
+	assert.Equal(t, 1, release.waits, "the refusal waits on the release")
+	assert.Equal(t, releaseWait, release.gotMaxWait)
+	assert.Equal(t, wallet.gotBidID, release.gotBidID)
+}
+
+// A release still running when the wait runs out carries on in the background; the
+// bidder still hears why their bid failed, not how the cleanup is going.
+func TestPlaceBid_ReleaseStillPending_StillReportsTheRefusal(t *testing.T) {
+	l := activeListing(t, 100)
+	leadWith(t, l, uuid.New(), 200, time.Now())
+	release := &fakeReleaser{err: fmt.Errorf("await release: %w", ErrHoldReleasePending)}
+
+	err := NewPlaceBidUC(&fakeRepo{found: activeListing(t, 100), listing: l}, &fakeWallet{}, release).Handle(context.Background(), PlaceBidCommand{
+		ListingID: l.Snapshot().ID,
+		MemberID:  uuid.New(),
+		Amount:    150,
+		Now:       time.Now(),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrBidTooLow)
+	assert.NotErrorIs(t, err, ErrHoldReleasePending)
+	assert.Equal(t, 1, release.waits)
 }

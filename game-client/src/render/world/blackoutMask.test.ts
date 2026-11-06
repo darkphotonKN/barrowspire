@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { viewport } from "@/render/viewport";
 import { WORLD_DEPTH, projectRect } from "@/render/iso/shapes";
 import { palette } from "@/utils/canvasPalette";
 import {
@@ -42,11 +43,14 @@ const sprite = (x: number, y: number, frame = "idle", parentContainer: Stamp | n
 });
 const container = (x: number, y: number, visible = true): Stamp => ({ x, y, visible, parentContainer: null });
 
+/** The logical view and render scale the mask draws at: 1080×720 at `renderScale`. */
+const viewAt = (renderScale: number, width = 1080, height = 720) => viewport.set({ width, height, renderScale });
+afterEach(() => viewAt(1));
+
 /** The scene as the mask draws on it: what each object was made with and asked to do. */
-function onStage(camera = { width: 1080, height: 720, roundPixels: true }) {
+function onStage(camera = { roundPixels: true, originX: 0, originY: 0 }) {
   const log: string[] = [];
   const drawn: { entry: unknown; x?: number; y?: number }[] = [];
-  const bitmap = { invertAlpha: false, destroy: () => {} };
   const rt = {
     made: [] as number[][],
     origin: [] as number[],
@@ -54,18 +58,41 @@ function onStage(camera = { width: 1080, height: 720, roundPixels: true }) {
     destroys: 0,
     visible: true,
     destroyed: false,
-    camera: { scroll: { x: 0, y: 0 }, roundPixels: false, setScroll: (x: number, y: number) => ((rt.camera.scroll = { x, y }), rt.camera) },
+    scale: 1,
+    camera: {
+      scroll: { x: 0, y: 0 },
+      roundPixels: false,
+      renderRoundPixels: false,
+      zoomX: 1,
+      scrollX: 0,
+      scrollY: 0,
+      useBounds: false,
+      origin: [0.5, 0.5],
+      setScroll: (x: number, y: number) => (
+        (rt.camera.scroll = { x, y }), (rt.camera.scrollX = x), (rt.camera.scrollY = y), rt.camera
+      ),
+      setZoom: (z: number) => ((rt.camera.zoomX = z), rt.camera),
+      setOrigin: (x: number, y: number) => ((rt.camera.origin = [x, y]), rt.camera),
+      clampX: (x: number) => x,
+      clampY: (y: number) => y,
+      // Phaser 4.2.1's (`cameras/2d/Camera.js`): the scroll left as it is, rounding or not
+      // (3.90 floored a rounding camera's scroll to whole units), and the canvas renderer's flag
+      // set at a whole zoom only
+      preRender: () => {
+        rt.camera.renderRoundPixels = rt.camera.roundPixels && Number.isInteger(rt.camera.zoomX);
+      },
+    },
   };
   const texture: Record<string, unknown> = {
     camera: rt.camera,
     setOrigin: (x: number, y: number) => ((rt.origin = [x, y]), texture),
     setPosition: (x: number, y: number) => ((rt.at = { x, y }), texture),
+    setScale: (k: number) => ((rt.scale = k), texture),
     setVisible: (v: boolean) => ((rt.visible = v), texture),
     clear: () => (log.push("clear"), texture),
-    beginDraw: () => (log.push("begin"), texture),
-    batchDraw: (entry: unknown, x?: number, y?: number) => (drawn.push({ entry, x, y }), texture),
-    endDraw: () => (log.push("end"), texture),
-    createBitmapMask: () => bitmap,
+    // Phaser 4: drawn offset from where it stands, buffered until render
+    draw: (entry: unknown, x?: number, y?: number) => (drawn.push({ entry, x, y }), texture),
+    render: () => (log.push("render"), texture),
     destroy: () => void ((rt.destroyed = true), rt.destroys++),
   };
   /** A full-view rect as the mask makes them: the dark over the world first, the ground's second. */
@@ -75,7 +102,10 @@ function onStage(camera = { width: 1080, height: 720, roundPixels: true }) {
     scrollFactor: -1,
     depth: 0,
     visible: true,
-    mask: undefined as unknown,
+    /** Its mask filter (`maskInView`): what it is masked by, inverted or not, seen through which camera. */
+    mask: undefined as { source: unknown; invert?: boolean; camera?: unknown } | undefined,
+    /** Phaser 4 focuses a Shape's filters on the camera's whole view until told otherwise. */
+    focusContext: true,
     width: 0,
     height: 0,
     destroyed: false,
@@ -96,22 +126,47 @@ function onStage(camera = { width: 1080, height: 720, roundPixels: true }) {
         return state.height;
       },
       setOrigin: (x: number, y: number) => ((state.origin = [x, y]), rect),
+      get scrollFactorX() {
+        return state.scrollFactor;
+      },
+      get scrollFactorY() {
+        return state.scrollFactor;
+      },
+      get filtersFocusContext() {
+        return state.focusContext;
+      },
+      set filtersFocusContext(v: boolean) {
+        state.focusContext = v;
+      },
+      filterCamera: { setOrigin: () => undefined },
+      enableFilters: () => rect,
+      filters: {
+        external: {
+          addMask: (source: unknown, invert?: boolean, camera?: unknown) => {
+            const m = {
+              source,
+              invert,
+              camera,
+              setGameObject: (next: unknown) => void (m.source = next),
+            };
+            state.mask = m;
+            return m;
+          },
+        },
+      },
       setScrollFactor: (f: number) => ((state.scrollFactor = f), rect),
       setDepth: (d: number) => ((state.depth = d), rect),
       setVisible: (v: boolean) => ((state.visible = v), rect),
-      setMask: (m: unknown) => ((state.mask = m), rect),
       setSize: (w: number, h: number) => ((state.width = w), (state.height = h), rect),
       destroy: () => void (state.destroyed = true),
     };
     return rect;
   };
-  const cut = { invertAlpha: false };
   const floor = { fills: [] as { color: number; points: { x: number; y: number }[] }[], color: -1, destroyed: false, added: true };
   const shape: Record<string, unknown> = {
     clear: () => ((floor.fills = []), shape),
     fillStyle: (color: number) => ((floor.color = color), shape),
     fillPoints: (points: { x: number; y: number }[]) => (floor.fills.push({ color: floor.color, points }), shape),
-    createGeometryMask: () => cut,
     destroy: () => void (floor.destroyed = true),
   };
   const s = {
@@ -122,7 +177,7 @@ function onStage(camera = { width: 1080, height: 720, roundPixels: true }) {
     make: { graphics: (_config: object, add?: boolean) => ((floor.added = add !== false), shape) },
     cameras: { main: camera },
   };
-  return { stage: s as unknown as BlackoutMaskStage, rt, dark, under, cut, floor, bitmap, drawn, log, shape, camera };
+  return { stage: s as unknown as BlackoutMaskStage, rt, dark, under, floor, drawn, log, shape, camera, texture };
 }
 
 const look = (stamps: Stamp[] = [], house = INN): MaskLook => ({ house, wall: WALL, wallTop: WALL_TOP, stamps });
@@ -218,10 +273,11 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
   });
 
   it("should leave the dark only where the mask holds nothing: an inverted mask of a texture never on screen", () => {
-    const { stage, dark, rt, bitmap, floor } = onStage();
+    const { stage, dark, rt, floor, texture, camera } = onStage();
     new BlackoutMask(stage, DEPTH).show(look());
-    expect(dark.mask).toBe(bitmap);
-    expect(bitmap.invertAlpha).toBe(true);
+    expect(dark.mask).toMatchObject({ source: texture, invert: true, camera });
+    // a camera-fixed rect: its filters focused on itself, where its scroll factor holds
+    expect(dark.focusContext).toBe(false);
     expect(rt.visible).toBe(false);
     // the floor's shape is drawn into the mask only, never added to the display list
     expect(floor.added).toBe(false);
@@ -235,7 +291,9 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
     expect(rt.at).toEqual({ x: b.x, y: b.y });
     expect(rt.origin).toEqual([0, 0]);
     expect(rt.camera.scroll).toEqual({ x: b.x, y: b.y });
-    expect(rt.camera.roundPixels).toBe(true);
+    rt.camera.preRender();
+    // the flag a `fullAuto` stamp reads (ADR-0057), and the canvas renderer's
+    expect([rt.camera.roundPixels, rt.camera.renderRoundPixels]).toEqual([true, true]);
   });
 
   it("should draw the floor inside the walls first, then every stamp shown, where it stands", () => {
@@ -247,12 +305,13 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
     new BlackoutMask(stage, DEPTH).show(look([wall, hidden, body, inHidden]));
     expect(dark.visible).toBe(true);
     expect(floor.fills).toEqual([{ color: palette.inkDeep, points: maskFloor(INN, WALL) }]);
+    // offset from where each stands (Phaser 4's draw): a body by its container's offset
     expect(drawn).toEqual([
-      { entry: shape, x: 0, y: 0 },
-      { entry: wall, x: 600, y: 200 },
-      { entry: body, x: 700, y: 296 },
+      { entry: shape, x: undefined, y: undefined },
+      { entry: wall, x: 0, y: 0 },
+      { entry: body, x: 700, y: 300 },
     ]);
-    expect(log).toEqual(["clear", "begin", "end"]);
+    expect(log).toEqual(["clear", "render"]);
   });
 
   it("should not redraw while nothing of the building changed, and redraw the frame something did", () => {
@@ -273,7 +332,7 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
     // someone walked in: one more stamp
     mask.show(look([...stamps, sprite(720, 320)]));
     expect(log.filter((l) => l === "clear")).toHaveLength(4);
-    expect(drawn.at(-1)?.x).toBe(720);
+    expect(drawn.at(-1)?.entry).toMatchObject({ x: 720 });
   });
 
   it("should move to the next building the frame the player does, on a texture of its size, refloored", () => {
@@ -289,7 +348,7 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
   });
 
   it("should black out the ground outside the floor under every world object, so B's soft px lie over the dark", () => {
-    const { stage, under, cut, floor } = onStage();
+    const { stage, under, floor, shape, camera } = onStage();
     const mask = new BlackoutMask(stage, DEPTH);
     expect(under.args).toEqual([0, 0, 1080, 720, palette.inkDeep, 1]);
     expect([under.origin, under.scrollFactor]).toEqual([[0, 0], 0]);
@@ -298,8 +357,7 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
     expect(MASK_UNDER_DEPTH).toBeLessThan(WORLD_DEPTH);
     expect(under.depth).toBe(MASK_UNDER_DEPTH);
     // cut by the floor's own shape: everywhere but the floor
-    expect(under.mask).toBe(cut);
-    expect(cut.invertAlpha).toBe(true);
+    expect(under.mask).toMatchObject({ source: shape, invert: true, camera });
     expect(under.visible).toBe(false);
     mask.show(look());
     expect(under.visible).toBe(true);
@@ -319,11 +377,9 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
   });
 
   it("should stay the size of the view when the view is resized", () => {
-    const camera = { width: 1080, height: 720, roundPixels: true };
-    const { stage, dark, under } = onStage(camera);
+    const { stage, dark, under } = onStage();
     const mask = new BlackoutMask(stage, DEPTH);
-    camera.width = 1280;
-    camera.height = 800;
+    viewAt(1, 1280, 800);
     mask.show(look());
     expect([dark.width, dark.height, under.width, under.height]).toEqual([1280, 800, 1280, 800]);
   });
@@ -334,5 +390,68 @@ describe("BlackoutMask (FS-9PN7X §D: everything outside the building's own px i
     mask.show(look());
     mask.destroy();
     expect([dark.destroyed, under.destroyed, rt.destroyed, floor.destroyed]).toEqual([true, true, true, true]);
+  });
+});
+
+describe("BlackoutMask at a render scale (FS-ZAJMH R6: sharp and aligned with the world)", () => {
+  it("should cover the logical view, not the backing store's px", () => {
+    viewAt(2);
+    const { stage, dark, under } = onStage();
+    new BlackoutMask(stage, DEPTH).show(look());
+    expect([dark.args.slice(0, 4), dark.width, dark.height]).toEqual([[0, 0, 1080, 720], 1080, 720]);
+    expect([under.width, under.height]).toEqual([1080, 720]);
+  });
+
+  it.each([1.5, 2])("should draw the mask at backing px at render scale %s, drawn back over the building's world rect", (rs) => {
+    viewAt(rs);
+    const { stage, rt } = onStage();
+    new BlackoutMask(stage, DEPTH).show(look());
+    const b = maskBounds(INN, WALL_TOP);
+    const [made] = rt.made;
+    // the corner on a backing px, at or before the building's: the screen's px are the mask's
+    expect(rt.at.x * rs).toBeCloseTo(Math.round(rt.at.x * rs));
+    expect(rt.at.y * rs).toBeCloseTo(Math.round(rt.at.y * rs));
+    expect(rt.at.x).toBeLessThanOrEqual(b.x);
+    expect(rt.at.y).toBeLessThanOrEqual(b.y);
+    // backing px enough to reach past the far corner
+    expect(rt.at.x + made[2] / rs).toBeGreaterThanOrEqual(b.x + b.width);
+    expect(rt.at.y + made[3] / rs).toBeGreaterThanOrEqual(b.y + b.height);
+    expect(rt.scale).toBe(1 / rs);
+    expect(rt.camera.zoomX).toBe(rs);
+    expect(rt.camera.origin).toEqual([0, 0]);
+    expect(rt.camera.scroll).toEqual(rt.at);
+  });
+
+  it.each([1, 1.5, 2])(
+    "should round its stamps to backing px as the main camera rounds the world at render scale %s, its corner unmoved (R4)",
+    (rs) => {
+      viewAt(rs);
+      // a building whose mask corner falls between whole world units at 1.5
+      const odd: House = { ...INN, x: INN.x + 1 };
+      const { stage, rt } = onStage();
+      new BlackoutMask(stage, DEPTH).show(look([], odd));
+      rt.camera.preRender();
+      // the flag a `fullAuto` stamp reads (ADR-0057), and the canvas renderer's
+      expect([rt.camera.roundPixels, rt.camera.renderRoundPixels]).toEqual([true, true]);
+      expect({ x: rt.camera.scrollX, y: rt.camera.scrollY }).toEqual(rt.at);
+    },
+  );
+
+  it("should leave its stamps unrounded when the main camera does not round", () => {
+    const { stage, rt } = onStage({ roundPixels: false, originX: 0, originY: 0 });
+    new BlackoutMask(stage, DEPTH).show(look());
+    rt.camera.preRender();
+    expect([rt.camera.roundPixels, rt.camera.renderRoundPixels]).toEqual([false, false]);
+  });
+
+  it("should redraw on a texture of the new size when the render scale changes, the building unchanged", () => {
+    const { stage, rt, log } = onStage();
+    const mask = new BlackoutMask(stage, DEPTH);
+    mask.show(look());
+    viewAt(2);
+    mask.show(look());
+    const b = maskBounds(INN, WALL_TOP);
+    expect(rt.made.at(-1)).toEqual([0, 0, b.width * 2, b.height * 2]);
+    expect(log.filter((l) => l === "clear")).toHaveLength(2);
   });
 });

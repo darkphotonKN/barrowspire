@@ -273,7 +273,10 @@ function packWeights(rig, map) {
  * Options: `segs` around, `steps` rings between control points, `front` reference [x,y,z] for
  * the ring frame (default +z), `arc` [a0, a1] for an open sheet (cloaks, tabards), `caps`,
  * `uv` texels per H along and around, `weight(t, a, pos, base)` to override a vertex's weights
- * (garments that follow the legs), `shape(t, a) → scale` to cut a ragged hem or a face opening.
+ * (garments that follow the legs), `shape(t, a) → scale` to cut a ragged hem or a face opening,
+ * `place(p)` to move a vertex (a Vector3, model units, bind pose) once it is laid: the tube's
+ * frames, UVs and weights stay the unmoved tube's, so every vertex it leaves alone stays exactly
+ * where it was (thighs drawn in under a garment, anatomy.js `legs`).
  */
 export function skinTube(rig, cps, material, o = {}) {
   rig.finalize();
@@ -432,6 +435,7 @@ function tubeGeometry(H, cps, o, pack) {
         .addScaledVector(g.side, cx * g.r[0] * k)
         .addScaledVector(g.F, sz * g.r[1] * k);
       if (o.drop) p.y -= o.drop(g.t, a) * H;
+      if (o.place) o.place(p);
       pos.push(p.x, p.y, p.z);
       uv.push(((j / segs) * circ * (closed ? 1 : (a1 - a0) / (Math.PI * 2)) * uvScale) / H, (along * uvScale) / H);
       if (pack) {
@@ -454,6 +458,7 @@ function tubeGeometry(H, cps, o, pack) {
     const g = rings[ring];
     const c = pos.length / 3;
     const cp = g.pos.clone().addScaledVector(g.T, (start ? -1 : 1) * Math.min(g.r[0], g.r[1]) * 0.35);
+    if (o.place) o.place(cp);
     pos.push(cp.x, cp.y, cp.z);
     uv.push(0, 0);
     if (pack) {
@@ -482,6 +487,9 @@ function tubeGeometry(H, cps, o, pack) {
   geo.setIndex(index);
   geo.computeVertexNormals();
   if (closed) weldSeam(geo, R, cols);
+  // the ring layout (R rows of `cols` vertices, top to bottom, then any caps) and each ring's
+  // centre in bind, which the leg-clearance guard reads (clearance.js); render ignores it
+  geo.userData.tube = { rows: R, cols, closed, centres: rings.map((g) => g.pos.toArray()) };
   return geo;
 }
 

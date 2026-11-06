@@ -29,8 +29,8 @@ describe("wornIds", () => {
 
 describe("loadPickerRelics", () => {
   const items = [
-    { id: "sword", status: "AVAILABLE" },
-    { id: "potion", status: "AVAILABLE" },
+    { id: "sword", status: "AVAILABLE", location: "stash" },
+    { id: "potion", status: "AVAILABLE", location: "stash" },
   ];
   const api = (loadout: () => Promise<unknown>) => ({
     getItemInstances: vi.fn(async () => ({ result: { items } })),
@@ -50,7 +50,7 @@ describe("loadPickerRelics", () => {
       api(() => Promise.reject(new ApiError({ code: "X", status: 500, detail: "", errors: [] }))),
     );
     expect(got.worn.size).toBe(0);
-    expect(pickerCards(got.items, got.worn).every((c) => c.selectable)).toBe(true);
+    expect(pickerCards(got.items, got.worn).map((c) => c.id)).toEqual(["sword", "potion"]);
   });
 
   it("should fail when the relics cannot be read", async () => {
@@ -61,13 +61,13 @@ describe("loadPickerRelics", () => {
     await expect(loadPickerRelics(failing)).rejects.toThrow("Failed to fetch");
   });
 
-  it("should read the loadout afresh on every load, so a relic taken off is choosable again", async () => {
+  it("should read the loadout afresh on every load, so a relic taken off is offered again", async () => {
     const loadouts = [{ weaponId: "sword" }, {}];
     const reader = api(async () => ({ result: loadouts.shift() }));
     const first = await loadPickerRelics(reader);
     const second = await loadPickerRelics(reader);
     expect(reader.getLoadout).toHaveBeenCalledTimes(2);
-    expect(pickerCards(first.items, first.worn)[0]).toMatchObject({ selectable: false, tag: "Worn" });
-    expect(pickerCards(second.items, second.worn)[0]).toMatchObject({ selectable: true });
+    expect(pickerCards(first.items, first.worn).map((c) => c.id)).toEqual(["potion"]);
+    expect(pickerCards(second.items, second.worn).map((c) => c.id)).toEqual(["sword", "potion"]);
   });
 });

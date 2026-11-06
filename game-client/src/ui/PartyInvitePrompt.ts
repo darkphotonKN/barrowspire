@@ -39,6 +39,7 @@ import {
   type InvitePromptFrame,
 } from "./partyInvitePromptLayout";
 import type { Rect } from "./partyPanelLayout";
+import { viewport } from "@/render/viewport";
 
 export interface PartyInvitePromptDeps {
   store: StoreApi<PartyState>;
@@ -105,6 +106,11 @@ export class PartyInvitePrompt {
         this.render(true);
     });
     scene.events.on("postupdate", this.tick, this);
+    this.render(true);
+  }
+
+  /** The logical view changed: what is shown is drawn again, centred across its top (FS-ZAJMH R13). */
+  relayout(): void {
     this.render(true);
   }
 
@@ -224,7 +230,7 @@ export class PartyInvitePrompt {
     const frames = hidden
       ? []
       : invitePromptFrames(invites.length, {
-          canvasWidth: this.scene.cameras.main.width,
+          canvasWidth: viewport.width,
           panelOpen,
           note: accept.note !== undefined,
           floor: this.deps.floor(),

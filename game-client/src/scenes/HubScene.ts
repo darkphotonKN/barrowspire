@@ -10,7 +10,7 @@ import {
   ClientGameState,
   GateState,
   NPCState,
-  PlayerState,
+  PublicPlayerState,
   Position,
   WallState,
 } from "@/types/gameState";
@@ -35,6 +35,8 @@ import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { HubGear } from "@/ui/HubGear";
+import { PurseReader } from "@/ui/purse";
+import { useMailboxStore } from "@/stores/mailboxStore";
 import { apiClient } from "@/utils/api";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
@@ -59,6 +61,8 @@ import {
   type Point,
 } from "@/render/iso";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART } from "@/render/art/sceneArt";
+import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
@@ -137,7 +141,17 @@ import {
   stashPlate,
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
+import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+
+/**
+ * What the server sends the hub once, unasked: the queue's progress and handoff, the ready check
+ * and the party's notices (game-service party.go, party_entry.go). Replies to the hub's own asks
+ * cannot come before create, which sends them.
+ */
+const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"];
 import { trimCrop } from "@/render/world/walls";
+import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -602,6 +616,8 @@ export class HubScene extends Phaser.Scene {
     /** The n-th actionable choice, as the number keys count them. */
     pick: (index: number) => void;
     retone: () => void;
+    /** The card back to its corner: the logical view changed (FS-ZAJMH R13). */
+    relayout: () => void;
   };
   /** The open dialogue is the Spire door's panel, which walking out of the gate closes. */
   private doorOpen = false;
@@ -633,6 +649,8 @@ export class HubScene extends Phaser.Scene {
   private menu?: Phaser.GameObjects.Container;
   /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
   private menuChoices?: MenuKeys;
+  /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
+  private moveMenu?: (origin: { x: number; y: number }) => void;
   /** Shown while queued, wherever the player walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
@@ -677,6 +695,8 @@ export class HubScene extends Phaser.Scene {
    * has one. While the panel is open it owns the keys, as the ESC menu does.
    */
   private mailbox?: MailboxHud;
+  /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
+  private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
   private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
@@ -735,24 +755,39 @@ export class HubScene extends Phaser.Scene {
   private unsubscribeState?: () => void;
   private lastSent = { vx: 0, vy: 0 };
 
+  /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
+  private held?: HeldMessages;
+  private oneShots?: OneShotHandlers;
+
   constructor() {
     super({ key: "HubScene" });
   }
 
+  /**
+   * The server's one-shots are held from here: the folk may download before create subscribes to
+   * them (FS-C4JWH Edge States). Handed over at the end of create ({@link openHeldMessages}).
+   */
+  init(): void {
+    this.held = holdOneShots(this, socketManager, HUB_ONE_SHOTS);
+  }
+
   preload(): void {
-    // baked world and prop art (FS-2325V §B.6)
-    preloadArt(this);
+    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
+    preloadArt(this, SCENE_ART.HubScene, {
+      bar: () => drawTorchBar(this),
+      fadeIn: true,
+    });
   }
 
   create(): void {
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
-    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(this.cameras.main, bounds);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this);
+    this.art = registerArt(this, SCENE_ART.HubScene);
     this.occluders = new Occluders();
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
     // `default` without its sheet. Nothing hostile here, so no strike-mark.
@@ -819,10 +854,43 @@ export class HubScene extends Phaser.Scene {
       () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen(),
       () => this.characterLevel,
     );
+    this.watchGoldTakes();
 
-    // DESTROY too: tearing the game down while in the hub (the page unmounts) skips SHUTDOWN.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.release, this);
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
+
+    this.listenForEnd();
+    this.openHeldMessages();
+  }
+
+  /** What the server sent while the hub loaded, to the listeners create has made, in order. */
+  private openHeldMessages(): void {
+    this.held?.replay(this.oneShots ?? {});
+  }
+
+  /** A stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN. */
+  private listenForEnd(): void {
+    onSceneEnd(this, (end) => this.release(end));
+  }
+
+  /**
+   * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
+   * its anchor, open panels included, their state untouched. The level bar, the chat window and
+   * the party frames and panel keep to the left, which a width change does not move; the gear
+   * overlay follows Phaser's resize itself.
+   */
+  private relayoutHud(): void {
+    this.invitePrompt?.relayout();
+    this.readyCheck?.relayout();
+    this.mailbox?.relayout();
+    this.dialogueChoices?.relayout();
+    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
+    if (this.queuePanel?.active) {
+      this.queuePanel.setX(viewport.centerX);
+      if (this.leaveButton?.visible) this.showLeaveButton();
+      // moved, not made again: rasterised at the render scale of now (FS-ZAJMH R5)
+      crispen([this.queuePanel, this.leaveButton]);
+    }
   }
 
   /**
@@ -834,9 +902,9 @@ export class HubScene extends Phaser.Scene {
     // Queue progress follows the player rather than pinning them to a popup:
     // they keep walking while they wait, so the panel has to be visible from
     // anywhere. FS-29KSH §Requirements 25, 27.
-    socketManager.on("queue_status", (payload: { current?: number; total?: number }) =>
-      this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0),
-    );
+    const queueStatus = (payload: { current?: number; total?: number }) =>
+      this.showQueueProgress(payload?.current ?? 0, payload?.total ?? 0);
+    socketManager.on("queue_status", queueStatus);
     // The reply to joinQueue's find_game: a refusal goes to its own error listener below, so
     // hearing it here at all means the server took the entry (FS-G4VMQ §Requirements 11). The door
     // waited for it with its panel up; the queue's own panel takes over (FS-BJNYC R21).
@@ -848,16 +916,18 @@ export class HubScene extends Phaser.Scene {
     // A match on another server: the move happens behind this panel, and the
     // host's world_entered switches the scene. A refused move leaves the player
     // here, so say so. FS-K2HKP §Requirements 29, 31.
-    socketManager.on("world_handoff", () => {
+    const handoff = () => {
       this.showQueueProgressText("Joining the delve…");
       // too late to leave: the player is being moved (FS-G4VMQ §Requirements 16)
       this.leaveButton?.setVisible(false);
-    });
-    socketManager.on("world_handoff_failed", () => {
+    };
+    socketManager.on("world_handoff", handoff);
+    const handoffFailed = () => {
       // the seat is released and the entry is gone (FS-K2HKP §Requirements 25)
       this.leftQueue();
       this.showQueueProgressText("The delve could not be joined.");
-    });
+    };
+    socketManager.on("world_handoff_failed", handoffFailed);
     // The reply is the truth: the server answers only once the entry is removed (FS-K2HKP
     // §Requirements 7), so the panel comes down on its word and never on the press. A refusal
     // keeps everything and says why, so the player can ask again. FS-G4VMQ §Requirements 13, 14, 17.
@@ -919,13 +989,23 @@ export class HubScene extends Phaser.Scene {
     // world_entered switching the scene, or by a refusal: the choice comes back on any of them.
     // A refusal is also said by the open door in its own words (FS-BJNYC R21, R22); the chat's line
     // for it is the party store's, as for every party notice, and is not this listener's.
-    socketManager.on("party_ready_check", () => this.enterAnswered());
-    socketManager.on("party_notice", (notice: PartyNoticePayload) => {
+    const readyCheck = () => this.enterAnswered();
+    socketManager.on("party_ready_check", readyCheck);
+    const partyNotice = (notice: PartyNoticePayload) => {
       if (!this.enterPending || !PARTY_ENTER_REFUSALS.has(notice?.code)) return;
       this.enterAnswered();
       const words = partyEnterDoorText(notice);
       if (words !== null && this.doorOpen) this.openDoor(words);
-    });
+    };
+    socketManager.on("party_notice", partyNotice);
+    // the server's one-shots, held while the hub loaded (FS-C4JWH Edge States)
+    this.oneShots = {
+      queue_status: queueStatus,
+      world_handoff: handoff,
+      world_handoff_failed: handoffFailed,
+      party_ready_check: readyCheck,
+      party_notice: partyNotice,
+    };
     // The door is drawn for the player's place in the party; a place changed while it stands open
     // (handed the lead, the lead handed on, out of the party) draws it again in the new order, on
     // its opening line: a refusal said for the old place no longer holds (FS-BJNYC R20).
@@ -953,13 +1033,14 @@ export class HubScene extends Phaser.Scene {
   /**
    * Everything one visit made is let go here. Phaser reuses the scene instance for the next
    * visit, and a reference to something the last visit's display list destroyed draws nothing
-   * (commit 0a35e36): forget it, and make it again only while it is `.active`.
+   * (commit 0a35e36): forget it, and make it again only while it is `.active`. On the game's
+   * destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
    */
-  private release(): void {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.release, this);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.release, this);
+  private release(end: SceneEnd): void {
     this.unsubscribeState?.();
     this.unsubscribeQueue?.();
+    this.held = undefined;
+    this.oneShots = undefined;
     this.views.clear();
     this.npcs.clear();
     this.closeDialogue();
@@ -990,6 +1071,8 @@ export class HubScene extends Phaser.Scene {
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
+    this.unsubscribeGoldTaken?.();
+    this.unsubscribeGoldTaken = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
@@ -1018,8 +1101,23 @@ export class HubScene extends Phaser.Scene {
     this.stashMarks = [];
     this.interiors = [];
     this.stashChest = undefined;
+    // a destroyed game took its input manager, the cursor and the captures with it
+    if (end === "shutdown") this.handBackInput();
+  }
+
+  /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
+  private handBackInput(): void {
     // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's
     this.input.setDefaultCursor("");
+    releaseCaptures(this.input.keyboard, [
+      ...Object.values(this.cursors ?? {}),
+      ...Object.values(this.wasd ?? {}),
+      this.interactKey,
+      this.confirmKey,
+      this.dismissKey,
+      ...this.gearKeys,
+      ...this.choiceKeys,
+    ]);
   }
 
   update(time: number, delta: number): void {
@@ -1240,7 +1338,7 @@ export class HubScene extends Phaser.Scene {
       // folk idle and walk on their own legs, read off the position just drawn
       const body = npc.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
       if (npc.anim.baked && body) npc.anim.show(body, npc.anim.step(npc.pos, time, delta, false));
-      this.placeMarker(npc.sprite, npc.name, npc.anim.crown, npc.sigil);
+      this.placeMarker(npc.sprite, npc.name, npc.anim, npc.sigil);
     }
 
     for (const view of this.views.values()) {
@@ -1951,7 +2049,7 @@ export class HubScene extends Phaser.Scene {
    * The character textures have no walk frames — one static image per class per
    * facing — so the stride is animated by drawing legs, the same as in a run.
    */
-  private updateAppearance(view: PlayerView, player: PlayerState): void {
+  private updateAppearance(view: PlayerView, player: PublicPlayerState): void {
     // a baked sheet is turned and strided each frame instead (easeTowardServerPositions)
     if (view.anim.baked) return;
     const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
@@ -2024,7 +2122,9 @@ export class HubScene extends Phaser.Scene {
    * takes it. The run and the field world apply the same rule to their presses.
    */
   private overGear(pointer: Phaser.Input.Pointer): boolean {
-    return this.gear?.covers(pointer.x, pointer.y) ?? false;
+    // the overlay is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+    const at = viewport.toLogical(pointer);
+    return this.gear?.covers(at.x, at.y) ?? false;
   }
 
   /** The queue is behind the player: no entry, nothing pending, no way out to offer. */
@@ -2061,9 +2161,8 @@ export class HubScene extends Phaser.Scene {
    * and it goes on its own.
    */
   private notice(text: string): void {
-    const { width } = this.cameras.main;
     const line = this.add
-      .text(width / 2, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
+      .text(viewport.centerX, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(1000);
@@ -2080,7 +2179,7 @@ export class HubScene extends Phaser.Scene {
     // vellum, not amber: the player cannot act on it (FS-KYPQ9 §I). Top centre, clear of the chat
     // window at the bottom left (FS-WJGFJ), and on no ground of its own.
     this.queuePanel = this.add
-      .text(this.cameras.main.width / 2, QUEUE_Y, text, queueLine(BARROW_HEX.vellum))
+      .text(viewport.centerX, QUEUE_Y, text, queueLine(BARROW_HEX.vellum))
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(1000);
@@ -2426,7 +2525,7 @@ export class HubScene extends Phaser.Scene {
       const pos = { x: npc.position.x, y: npc.position.y };
       const sprite = this.add.container(0, 0, [body]);
       standAt(sprite, pos, 1);
-      this.placeMarker(sprite, name, anim.crown, sigil);
+      this.placeMarker(sprite, name, anim, sigil);
 
       this.npcs.set(npc.entity_id, {
         state: npc,
@@ -2544,7 +2643,7 @@ export class HubScene extends Phaser.Scene {
       tones: MENU_TONES,
     });
 
-    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone };
+    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone, relayout: card.relayout };
     this.dialogue = card.container;
   }
 
@@ -2597,16 +2696,32 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
+   * A Take that carried gold: the purse line reads the wallet again, open or closed (FS-7TGZ3 R9).
+   * Let go of on release, so a later visit hears each Take once.
+   */
+  private watchGoldTakes(): void {
+    this.unsubscribeGoldTaken = useMailboxStore.subscribe((state, prev) => {
+      if (state.goldTaken !== prev.goldTaken) this.gear?.refreshPurse();
+    });
+  }
+
+  /**
    * The run's gear and bag overlay, fed from the REST loadout (FS-HRH2J §E R41–43); a refused
    * change in the hub's passing notice. A change answered after this visit ended says nothing.
+   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeGear(): HubGear {
     const overlay = new GearOverlay(this, this.art, WorldType.Hub);
-    const gear: HubGear = new HubGear(overlay, apiClient, {
-      notice: (text) => {
-        if (this.gear === gear) this.notice(text);
+    const gear: HubGear = new HubGear(
+      overlay,
+      apiClient,
+      {
+        notice: (text) => {
+          if (this.gear === gear) this.notice(text);
+        },
       },
-    });
+      new PurseReader(apiClient, overlay),
+    );
     return gear;
   }
 
@@ -2616,34 +2731,34 @@ export class HubScene extends Phaser.Scene {
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
    */
   private openMenu(): void {
-    const { width, height } = this.cameras.main;
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.leaveQueue(),
       back: () => this.closeMenu(),
     };
-    const { container, keys } = showMenuPanel(this, {
+    const { container, keys, moveTo } = showMenuPanel(this, {
       choices: hubMenuChoices({ queued: this.queued }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
       close: () => this.closeMenu(),
-      origin: { x: width / 2, y: height / 2 },
+      origin: { x: viewport.centerX, y: viewport.centerY },
       hit: CHOICE_HIT,
       tones: MENU_TONES,
     });
     this.menuChoices = keys;
     this.menu = container;
+    this.moveMenu = moveTo;
   }
 
   /**
    * The camera on the player's own body. Latched by sprite, not by entity id: a scene restart
    * (back from a run, re-entering the hub) rebuilds every sprite under the same id, and
-   * startFollow snaps the camera each time it is called, so it is called once per sprite.
+   * followWith snaps the camera each time it is called, so it is called once per sprite.
    */
   private keepCameraOn(sprite: Phaser.GameObjects.Container): void {
     if (sprite === this.followedSprite) return;
-    this.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+    followWith(this.cameras.main, sprite);
     this.followedSprite = sprite;
   }
 
@@ -2651,6 +2766,7 @@ export class HubScene extends Phaser.Scene {
     this.menu?.destroy();
     this.menu = undefined;
     this.menuChoices = undefined;
+    this.moveMenu = undefined;
   }
 
   /**
@@ -2712,7 +2828,7 @@ export class HubScene extends Phaser.Scene {
 
   /** A player's name plate over their head ({@link markerBase}); the hub has no corpses. */
   private placeName(view: PlayerView): void {
-    this.placeMarker(view.sprite, view.name, view.anim.crown);
+    this.placeMarker(view.sprite, view.name, view.anim);
   }
 
   /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
@@ -2725,16 +2841,16 @@ export class HubScene extends Phaser.Scene {
     return this.add
       .graphics()
       .fillStyle(palette.markerFunction, 1)
-      .fillPoints(points, true)
+      .fillPoints(points as Phaser.Math.Vector2[], true)
       .lineStyle(1.5, palette.markerStroke, 1)
-      .strokePoints(points, true)
+      .strokePoints(points as Phaser.Math.Vector2[], true)
       .setDepth(MARKER_DEPTH.name);
   }
 
   private placeMarker(
     sprite: Phaser.GameObjects.Container,
     name: Phaser.GameObjects.Text,
-    crown: number | undefined,
+    figure: Pick<CharacterAnimator, "crown" | "artScale">,
     sigil?: Phaser.GameObjects.Graphics,
   ): void {
     const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
@@ -2745,15 +2861,16 @@ export class HubScene extends Phaser.Scene {
         displayOriginY: body.displayOriginY,
         scaleY: body.scaleY,
       },
-      crown,
+      figure.crown,
       false,
+      figure.artScale,
     );
     name.setPosition(sprite.x + body.x, (base ?? sprite.y) - NAME_GAP);
     // over the name, not the crown, so a placeholder with no measured head is marked the same
     sigil?.setPosition(name.x, name.y - name.height / 2 - SIGIL_GAP);
   }
 
-  private placePlayer(player: PlayerState, isSelf: boolean): void {
+  private placePlayer(player: PublicPlayerState, isSelf: boolean): void {
     const existing = this.views.get(player.entity_id);
 
     // Existing players ease toward the target in update(); only a player seen

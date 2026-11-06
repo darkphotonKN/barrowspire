@@ -104,6 +104,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Monster levels scaled to the party → FS-77AB6
 - [x] Elite monsters → FS-77AB6
 - [x] Demon boss → FS-77AB6
+- [ ] Monsters path around walls → FS-KE075
 - [x] Loot drops from slain monsters → FS-4R9M9
 
 ### Progression
@@ -115,6 +116,10 @@ matchmaking); this service is the engine they feed. ✅
 ### Delve layout
 
 - [x] Multi-floor delves → FS-F6F88
+- [ ] Room-and-corridor dungeon on floor 1 → FS-KE075
+- [ ] Floor map sent once per floor → FS-KE075
+- [ ] Per-player interest in run snapshots → FS-KE075
+- [ ] Guarded chests on floor 1 → FS-KE075
 
 ### Hub world
 
@@ -170,6 +175,9 @@ matchmaking); this service is the engine they feed. ✅
 - [x] World identity in the state protocol → FS-29KSH
 - [x] Route client messages from server-held session state → FS-29KSH
 - [ ] Reconnect returns to the pod still holding the player → FS-MCYWK
+- [ ] Other players sent without their bag or worn gear → FS-KE075
+- [ ] Renew the held member token over the socket → FS-ZPX58
+- [ ] Compressed game-state broadcast → FS-5QC03
 
 ### Results
 

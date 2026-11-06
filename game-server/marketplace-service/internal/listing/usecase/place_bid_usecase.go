@@ -13,7 +13,7 @@ import (
 )
 
 // WalletService is what the bid use cases ask of wallet directly. Giving a hold back
-// is not here: it goes through HoldReleaseStarter, so it survives the request.
+// is not here: it goes through HoldReleaseAwaiter, so it survives the request.
 type WalletService interface {
 	PlaceHold(ctx context.Context, memberID, bidID uuid.UUID, gold int, expiresAt time.Time) error
 }
@@ -23,6 +23,15 @@ type WalletService interface {
 // milliseconds, and a start that cannot happen in this long is better left to the
 // reconciler than spent holding the reply.
 const compensationTimeout = 5 * time.Second
+
+// releaseWait bounds how long a refused bid waits for its hold to be back before
+// answering (ADR-0049). A healthy release is tens of milliseconds, so this only
+// runs out while wallet is struggling, and then the release carries on alone.
+// It must stay well under every timeout between the bidder and here: a reply that
+// times out upstream is retried by the client under the same key, the very resend
+// this wait exists to fence off. Inside compensationTimeout, which bounds the start
+// and the wait together. Tuning, not contract.
+const releaseWait = 3 * time.Second
 
 // settlementGrace is how long a hold outlives its listing. It must comfortably
 // exceed settlement's retry cap (FS-NXP1W §Req 11: 30m), or the hold sweeper can
@@ -47,10 +56,10 @@ func PlaceBidID(memberID, listingID, idempotencyKey uuid.UUID) uuid.UUID {
 type PlaceBidUC struct {
 	repo        listing.Repository
 	wallet      WalletService
-	holdRelease HoldReleaseStarter
+	holdRelease HoldReleaseAwaiter
 }
 
-func NewPlaceBidUC(repo listing.Repository, wallet WalletService, holdRelease HoldReleaseStarter) *PlaceBidUC {
+func NewPlaceBidUC(repo listing.Repository, wallet WalletService, holdRelease HoldReleaseAwaiter) *PlaceBidUC {
 	return &PlaceBidUC{
 		repo:        repo,
 		wallet:      wallet,
@@ -75,7 +84,7 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 	if err != nil {
 		return fmt.Errorf("place bid usecase handle reading listing %v : %w", cmd.ListingID, err)
 	}
-	if err := current.AcceptsBidAt(cmd.Now); err != nil {
+	if err := current.CanPlaceBid(cmd.MemberID, cmd.Now); err != nil {
 		return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
 	}
 	expiresAt := current.Snapshot().EndsAt.Add(settlementGrace)
@@ -92,6 +101,34 @@ func (uc *PlaceBidUC) Handle(ctx context.Context, cmd PlaceBidCommand) error {
 	// the bid under the lock.
 	if current.HasBid(bidID) {
 		return nil
+	}
+
+	// After the replay shortcut, so a resend of a bid recorded before the member
+	// reached the cap is still its replay. Advisory too: PlaceBidWithID applies the
+	// cap again under the lock (ADR-0052).
+	if err := current.WithinBidWithdrawalCap(cmd.MemberID); err != nil {
+		return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+	}
+
+	// After the replay shortcut and the cap, as PlaceBidWithID orders them, so a
+	// leader's bid holds no gold. Advisory too: PlaceBidWithID decides it again
+	// under the lock (ADR-0054, FS-72KT8 Req 6). Not asked of a resend whose key
+	// is already on the listing under another ID (a bid recorded before IDs were
+	// derived, ADR-0027): under the lock its key replay answers before the leading
+	// check, so refusing it here would turn a replay into a refusal.
+	//
+	// The price rules last, as PlaceBidWithID orders them, under the same guard: a
+	// legacy resend of a bid outbid since is still its replay. So a bid the read
+	// already prices out holds no gold, writes no hold row and starts no release.
+	// Advisory like the rest: a bid that lands between this read and the lock is
+	// caught there, and the hold goes back (ADR-0049).
+	if !current.HasBidByKey(cmd.MemberID, cmd.IdempotencyKey) {
+		if err := current.NotLeading(cmd.MemberID); err != nil {
+			return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+		}
+		if err := current.AcceptsBidAmount(cmd.Amount); err != nil {
+			return fmt.Errorf("place bid usecase handle listing %v : %w", cmd.ListingID, err)
+		}
 	}
 
 	if err := uc.wallet.PlaceHold(ctx, cmd.MemberID, bidID, cmd.Amount, expiresAt); err != nil {
@@ -198,12 +235,15 @@ func bidRejected(err error) bool {
 	for _, rejection := range []error{
 		listing.ErrBidTooLow,
 		listing.ErrBidAtOrAboveBuyout,
+		listing.ErrSellerCannotBid,
 		listing.ErrListingExpired,
 		listing.ErrListingNotAcceptingBids,
 		listing.ErrInvalidAmount,
 		listing.ErrInvalidUUID,
 		listing.ErrBidNotFound,
 		listing.ErrInvalidBidTransition,
+		listing.ErrBidWithdrawLimitReached,
+		listing.ErrAlreadyLeading, // FS-72KT8 Req 5
 		commonconstants.ErrConstraintViolation,
 		commonconstants.ErrDuplicateResource,
 	} {
@@ -240,23 +280,33 @@ func releasableBeforeRead(err error, keyed bool) bool {
 // releaseHold is the TCC cancel: it gives back gold reserved for a bid that is proven
 // not to exist.
 //
-// It only starts the release. The run retries the release itself until it lands, so
-// nothing here waits on wallet or retries it; the bidder hears about their bid, not
-// about the cleanup. Asked once — the Temporal client already retries its own
-// transient failures — and a start that still fails is left to the reconciler, which
-// compares wallet's stale reservations against the bids actually recorded.
+// It starts the release and waits up to releaseWait for the gold to be back before
+// the bidder hears anything (ADR-0049). Answering first would let a resend under the
+// same key find the hold still RESERVED, take it as its own, and be recorded, and the
+// release landing after it would leave a leading bid with no gold behind it. The
+// run retries the release itself until it lands, so nothing here retries it, and a
+// wait that runs out leaves the run going. Asked once — the Temporal client already
+// retries its own transient failures — and a start that still fails is left to the
+// reconciler, which compares wallet's stale reservations against the bids actually
+// recorded.
 //
-// The start outlives the request that triggered it. A cancelled context is one of the
-// likeliest reasons the write failed, and starting on that same context would send
-// the start already dead.
+// The release outlives the request that triggered it. A cancelled context is one of
+// the likeliest reasons the write failed, and starting on that same context would
+// send the start already dead.
 func (uc *PlaceBidUC) releaseHold(ctx context.Context, bidID, listingID uuid.UUID, cause error) {
-	startCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
 	defer cancel()
 
-	if err := uc.holdRelease.StartReleaseHold(startCtx, listingID, bidID); err != nil {
-		// deliberately not returned: the bidder needs to hear why their bid failed,
-		// not why the cleanup did
-		slog.ErrorContext(ctx, "bid not recorded and starting its hold release failed, hold is stranded until reconciled",
+	// deliberately not returned: the bidder needs to hear why their bid failed, not
+	// how the cleanup went
+	err := uc.holdRelease.ReleaseHoldAndWait(releaseCtx, listingID, bidID, releaseWait)
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrHoldReleasePending):
+		slog.WarnContext(ctx, "bid not recorded and its hold release outlasted the wait, answering while it continues",
+			"bid_id", bidID, "listing_id", listingID, "release_err", err, "err", cause)
+	default:
+		slog.ErrorContext(ctx, "bid not recorded and its hold release did not start or failed, hold is stranded until reconciled",
 			"bid_id", bidID, "listing_id", listingID, "release_err", err, "err", cause)
 	}
 }

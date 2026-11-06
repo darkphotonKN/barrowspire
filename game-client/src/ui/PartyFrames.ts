@@ -157,10 +157,14 @@ export class PartyFrames {
     return this.rows.findIndex((r) => r.kind === "member" && r.leader);
   }
 
+  /**
+   * Let go as its scene ends (the scenes' release, alone): the scene's tween manager has let the
+   * pulse's tween go already, and on a game destroy has destroyed itself (scenes/sceneEnd.ts).
+   */
   destroy(): void {
     this.unsubscribe();
     this.scene.events?.off("postupdate", this.tick, this);
-    this.takeDown();
+    this.dropDrawn();
   }
 
   /** Once a frame: a lapsed invite's line, on the leader's client (FS-NCC9J R27). */
@@ -401,6 +405,11 @@ export class PartyFrames {
 
   private takeDown(): void {
     if (this.pulse) this.scene.tweens.killTweensOf(this.pulse);
+    this.dropDrawn();
+  }
+
+  /** Every frame drawn destroyed and forgotten, the pulse's tween already gone. */
+  private dropDrawn(): void {
     for (const g of [this.chrome, this.rings, this.pulse, this.bars])
       g?.destroy();
     this.chrome = this.rings = this.pulse = this.bars = undefined;

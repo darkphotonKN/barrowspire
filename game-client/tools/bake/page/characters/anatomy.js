@@ -40,7 +40,7 @@ export function bust(rig, mat, k = 1) {
   const [, cy] = J(rig, "chest");
   const td = rig.p.torsoD;
   for (const [, sx] of sides)
-    attach(rig, "chest", ellipsoid(0.038 * k * H, 0.034 * k * H, 0.03 * k * H, 12), mat, [sx * 0.037, cy + 0.028, 0.062 * td], { rz: sx * 0.15 });
+    attach(rig, "chest", ellipsoid(0.03 * k * H, 0.03 * k * H, 0.028 * k * H, 12), mat, [sx * 0.028, cy + 0.03, 0.062 * td], { rz: sx * 0.15 });
 }
 
 /**
@@ -120,10 +120,17 @@ export function arms(rig, mat, o = {}) {
   return out;
 }
 
-/** Both legs, hip to ankle, each one continuous tube. */
+/**
+ * Both legs, hip to ankle, each one continuous tube. `o.under` is the garment the thighs are worn
+ * under (the options its `skirt` takes, the four classes): every part of a thigh that would show
+ * outside it is drawn in to UNDER_CLEAR inside its wall (`underGarment`), so the thighs no longer
+ * show as dark wedges at the sides of the waist. Without it (folk, creatures) the legs are as they
+ * always were.
+ */
 export function legs(rig, mat, o = {}) {
   const lr = rig.p.limbR * (o.r ?? 1);
   const out = [];
+  const place = o.under && underGarment(rig, o.under);
   for (const [s, sx] of sides) {
     const [x, ty] = J(rig, `thigh${s}`);
     const [, ky] = J(rig, `shin${s}`);
@@ -138,9 +145,80 @@ export function legs(rig, mat, o = {}) {
       { p: [x, ay + 0.07, 0], r: [0.029 * lr, 0.031 * lr], w: { [`shin${s}`]: 1 } },
       { p: [x, ay + 0.008, 0.002], r: [0.026 * lr, 0.029 * lr], w: { [`shin${s}`]: 0.6, [`foot${s}`]: 0.4 } },
     ];
-    out.push(skinTube(rig, cps, mat, { segs: 16, steps: 4, uv: 5 }));
+    const leg = skinTube(rig, cps, mat, { segs: 16, steps: 4, uv: 5, place });
+    // what the leg-clearance guard keeps inside any garment (clearance.js)
+    leg.userData.leg = s;
+    out.push(leg);
   }
   return out;
+}
+
+/**
+ * How far inside a garment's wall `legs({ under })` keeps a thigh (H; about 3.5–3.6 1x px on the
+ * classes, H 1.92–2.0): one value for the four classes, the least (in 0.0025 steps) that keeps
+ * every class's legs inside its garment in every clip, to the leg-clearance guard's one baked px (clearance.js). The 2x
+ * wizard's walk and walk_attack set it (FS-3V7GC §C): her leading thigh and knee swing out
+ * through the robe, which follows a thigh by only a fifth of its swing; at 0.0375 she shows 0.52
+ * 1x px, past the half px a 2x sheet allows. Under the cloth, so no garment changes for it. (It
+ * was 0.012, set by the 2x archer's walk, before the other classes were baked at 2x.)
+ */
+export const UNDER_CLEAR = 0.04;
+
+/**
+ * Draws a thigh in under the garment `g` (its `skirt` options), as rig.js `place` moves a vertex
+ * in the bind pose: a vertex the garment covers that lies further from its axis than its wall less
+ * UNDER_CLEAR is pulled in toward the axis to that line, and one inside it stays where it is, so
+ * only the outer flank of the thigh's root moves and the front a split coat shows does not. Above
+ * the garment's top, under the belt, the top's wall holds. A vertex under the hem stays where it
+ * was: the leg narrows back to itself between its last ring over the hem and its first under it.
+ */
+function underGarment(rig, g) {
+  const H = rig.H;
+  const rings = skirtRings(g);
+  // the garment's ellipse at height y (H): radii and centre's z, or null under its hem
+  const wallAt = (y) => {
+    if (y >= rings[0].y) return rings[0];
+    for (let i = 0; i + 1 < rings.length; i++) {
+      const [a, b] = [rings[i], rings[i + 1]];
+      if (y < b.y) continue;
+      const t = (a.y - y) / (a.y - b.y);
+      return { r: [a.r[0] + (b.r[0] - a.r[0]) * t, a.r[1] + (b.r[1] - a.r[1]) * t], z: a.z + (b.z - a.z) * t };
+    }
+    return null;
+  };
+  return (p) => {
+    const y = p.y / H;
+    const e = wallAt(y);
+    if (!e) return;
+    const x = p.x / H;
+    const z = p.z / H - e.z;
+    const rho = Math.hypot(x, z);
+    if (rho < 1e-9) return;
+    const wall = 1 / Math.hypot(x / rho / (e.r[0] - UNDER_CLEAR), z / rho / (e.r[1] - UNDER_CLEAR));
+    if (rho <= wall) return;
+    const k = wall / rho;
+    p.x *= k;
+    p.z = (e.z + z * k) * H;
+  };
+}
+
+/**
+ * The rings a garment made by `skirt` with options `o` is laid through, top to hem: each one's
+ * height `y`, radii `r` [lateral, depth] and centre's `z` (H).
+ */
+function skirtRings(o) {
+  const top = o.top;
+  const bottom = o.bottom;
+  const rt = o.rTop;
+  const rb = o.rBottom;
+  const mid = [(rt[0] + rb[0]) / 2 + (o.belly ?? 0), (rt[1] + rb[1]) / 2 + (o.belly ?? 0)];
+  const z = o.z ?? 0;
+  return [
+    { y: top, r: rt, z },
+    { y: top - (top - bottom) * 0.3, r: [rt[0] * 0.55 + rb[0] * 0.45, rt[1] * 0.55 + rb[1] * 0.45], z },
+    { y: (top + bottom) / 2, r: mid, z },
+    { y: bottom, r: rb, z: z - (o.trail ?? 0) },
+  ];
 }
 
 /**
@@ -200,7 +278,8 @@ export function head(rig, mat, o = {}) {
   const r = rig.p.headR;
   const H = rig.H;
   attach(rig, "head", ellipsoid(r * 0.92 * H, r * 1.02 * H, r * 1.0 * H, 20), mat, [0, hy + 0.058, hz - 0.002]);
-  attach(rig, "head", ellipsoid(r * 0.72 * H, r * 0.72 * H, r * 0.78 * H, 16), mat, [0, hy + 0.028, hz + 0.016]);
+  const jaw = o.jaw ?? 1;
+  attach(rig, "head", ellipsoid(r * 0.72 * jaw * H, r * 0.72 * H, r * 0.78 * H, 16), mat, [0, hy + 0.028, hz + 0.016]);
   if (o.nose !== false) {
     const nose = new THREE.ConeGeometry(0.009 * H, 0.024 * H, 6);
     attach(rig, "head", nose, mat, [0, hy + 0.046, hz + 0.066], { rx: 1.35 });
@@ -299,39 +378,86 @@ export function skirtBones(rig, o = {}) {
 }
 
 /**
+ * Keeps a skirt's swaying panels (skirtBones) out of the legs: cloth can sway away from a leg but
+ * not through it. The front panel swings at least as far forward as any leg reaches, the back
+ * panel at least as far back, and each side panel at least as far as the leg on its side, the way
+ * that leg goes: a one-sided limit on the spring's angle (applyPose, clips.js), the collision a
+ * cloth simulation would do, for the one shape a skirt has. How far a leg reaches is taken down
+ * to the deepest hem on the rig: the knee (the thigh's own angle) and, for a hem below the knee
+ * (a robe), the point on the shin at the hem, which the calf carries back as the knee folds.
+ * Bone angles are pose offsets about the hips, +x swinging back.
+ */
+function pushPanels(rig, bottom) {
+  const [, ty] = J(rig, "thighL");
+  const [, ky] = J(rig, "shinL");
+  const [, ay] = J(rig, "footL");
+  const thigh = ty - ky;
+  const shin = ky - ay;
+  rig.hemDepth = Math.max(rig.hemDepth ?? 0, ty - bottom);
+  // [furthest forward, furthest back] a leg reaches above the hem, as angles about the hips
+  const swing = (p, s) => {
+    const t = p.b[`thigh${s}`]?.[0] ?? 0;
+    if (rig.hemDepth <= thigh) return [t, t];
+    const k = t + (p.b[`shin${s}`]?.[0] ?? 0);
+    const d = Math.min(rig.hemDepth - thigh, shin);
+    const a = Math.atan2(thigh * Math.sin(t) + d * Math.sin(k), thigh * Math.cos(t) + d * Math.cos(k));
+    return [Math.min(t, a), Math.max(t, a)];
+  };
+  const side = (x, [fwd, back]) => (fwd < 0 && -fwd > back ? Math.min(x, fwd) : Math.max(x, back));
+  const push = {
+    skirtF: (x, p) => Math.min(x, swing(p, "L")[0], swing(p, "R")[0]),
+    skirtB: (x, p) => Math.max(x, swing(p, "L")[1], swing(p, "R")[1]),
+    skirtL: (x, p) => side(x, swing(p, "L")),
+    skirtR: (x, p) => side(x, swing(p, "R")),
+  };
+  for (const s of rig.springs) if (push[s.bone]) s.push = push[s.bone];
+}
+
+/**
  * A skirt, robe or tabard hem hanging from the waist. `top`/`bottom` are heights (H); `rTop`,
  * `rBottom` radii [lateral, depth]. The hem follows the thighs by `legFollow` and, with
  * `panels`, lags on the skirt spring bones. `arc` makes an open panel; `ragged` tears the hem.
+ *
+ * The legs stay inside it, at rest and while they move (the leg-clearance guard, clearance.js,
+ * fails a bake where they do not), by four things:
+ *  - the thighs are built under it (`legs(rig, mat, { under })`, the same options): a thigh is
+ *    wider at the hip than a fitted tunic's top, so without it the thighs showed as dark wedges
+ *    at both sides of the waist, through a robe too;
+ *  - each half of the hem follows the thigh on ITS side. The tube is wound top to bottom, so its
+ *    side axis (tangent × front, rig.js tubeGeometry) is -x and angle 0 is the character's
+ *    right; the weights once read it as the left, so each half followed the OPPOSITE thigh;
+ *  - the follow builds from just under the waistband, full by mid-skirt, where a fitted skirt
+ *    already touches the thigh (it once built slowly toward the hem, lagging the thigh above it);
+ *  - with `panels`, the swaying panels cannot swing in through a leg: each is pushed out by how
+ *    far the legs reach above the hem (`pushPanels`); below the knee a robe hangs on the panels
+ *    alone, since the thigh does not carry the shin that kicks it.
+ * `mirrored: true` keeps the old weighting and none of the rest, for the sheets baked with it and
+ * not yet re-baked, so their pixels do not move; never use it on new work.
  */
 export function skirt(rig, mat, o = {}) {
   const top = o.top;
   const bottom = o.bottom;
-  const rt = o.rTop;
-  const rb = o.rBottom;
-  const mid = [(rt[0] + rb[0]) / 2 + (o.belly ?? 0), (rt[1] + rb[1]) / 2 + (o.belly ?? 0)];
-  const z = o.z ?? 0;
-  const cps = [
-    { p: [0, top, z], r: rt, w: { hips: 1 } },
-    { p: [0, top - (top - bottom) * 0.3, z], r: [rt[0] * 0.55 + rb[0] * 0.45, rt[1] * 0.55 + rb[1] * 0.45], w: { hips: 1 } },
-    { p: [0, (top + bottom) / 2, z], r: mid, w: { hips: 1 } },
-    { p: [0, bottom, z - (o.trail ?? 0)], r: rb, w: { hips: 1 } },
-  ];
+  const cps = skirtRings(o).map((c) => ({ p: [0, c.y, c.z], r: c.r, w: { hips: 1 } }));
   const follow = o.legFollow ?? 0.5;
+  const [, kneeY] = J(rig, "shinL");
   const panel = o.panels ? (o.panelWeight ?? 0.5) : 0;
   const weight = (t, a) => {
-    const down = Math.max(0, (t - 0.12) / 0.88) ** 1.3;
-    const lat = Math.cos(a); // +1 left, -1 right
+    const down = o.mirrored ? Math.max(0, (t - 0.12) / 0.88) ** 1.3 : THREE.MathUtils.smoothstep(t, 0.05, 0.55);
+    const lat = (o.mirrored ? 1 : -1) * Math.cos(a); // +1 left (+x), -1 right
     const fr = Math.sin(a); // +1 front, -1 back
     const L = THREE.MathUtils.smoothstep(lat, -0.35, 0.35);
     const w = { hips: 1 };
-    const legs = follow * down * (0.35 + 0.65 * Math.abs(fr) ** 0.5);
+    const reach = follow * down * (0.35 + 0.65 * Math.abs(fr) ** 0.5);
+    // under the knee the thigh's share passes to the pushed panels
+    const below = o.mirrored || !panel ? 0 : THREE.MathUtils.smoothstep(kneeY - (top - (top - bottom) * t), 0, 0.1);
+    const legs = reach * (1 - below);
     if (legs > 0) {
       w.hips -= legs;
       w.thighL = legs * L;
       w.thighR = legs * (1 - L);
     }
     if (panel > 0) {
-      const pw = panel * down;
+      const pw = panel * down + reach * below;
       w.hips -= pw;
       const f = Math.max(0, fr);
       const b = Math.max(0, -fr);
@@ -353,7 +479,13 @@ export function skirt(rig, mat, o = {}) {
         return ((t - 0.7) / 0.3) * o.ragged.depth * (0.2 + hash2(j, 3, o.ragged.seed ?? 1));
       }
     : undefined;
-  return skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false });
+  if (panel > 0 && !o.mirrored) pushPanels(rig, bottom);
+  const mesh = skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false });
+  // a garment the legs must stay inside while they move (clearance.js)
+  mesh.userData.garment = true;
+  // the bake fails a sheet off MIRRORED_LEGACY that still asks for the old weighting (clearance.js)
+  if (o.mirrored) mesh.userData.mirrored = true;
+  return mesh;
 }
 
 /**
@@ -576,7 +708,8 @@ export function sash(rig, mat, { side = "L", depth = 0.05, pad = 0.006 } = {}) {
     ],
     { segs: 24, steps: 3, caps: false },
   );
-  attach(rig, "hips", band, mat, [0, 0, 0]);
+  // the band covers the root of the thighs under it (the leg-clearance guard, clearance.js)
+  attach(rig, "hips", band, mat, [0, 0, 0]).userData.cover = true;
   attach(rig, "hips", ellipsoid(0.022 * H, 0.02 * H, 0.016 * H, 10), mat, [sx * 0.07, hy + 0.012, 0.07]);
   const tail = mount(rig, "hips", [sx * 0.078, hy, 0.066], { rz: sx * 0.12, rx: 0.08 });
   const cloth = new THREE.BoxGeometry(0.036 * H, 0.15 * H, 0.008 * H);
@@ -601,7 +734,10 @@ export function belt(rig, mat, buckleMat, o = {}) {
   const rz = (o.r?.[1] ?? 0.076) * rig.p.torsoD;
   const band = new THREE.CylinderGeometry(1, 1, 0.024 * H, 28, 1, true);
   band.scale(rx * H, 1, rz * H);
-  attach(rig, "hips", band, mat, [0, y, 0]);
+  // the band covers the root of the thighs under it (the leg-clearance guard, clearance.js): its
+  // two rings of 29 vertices, top then bottom, as a tube lays them out (rig.js)
+  band.userData.tube = { rows: 2, cols: 29, closed: true, centres: [[0, 0.012 * H, 0], [0, -0.012 * H, 0]] };
+  attach(rig, "hips", band, mat, [0, y, 0]).userData.cover = true;
   attach(rig, "hips", new THREE.BoxGeometry(0.032 * H, 0.03 * H, 0.012 * H), buckleMat, [0, y, rz + 0.002]);
   if (o.pouch) attach(rig, "hips", new THREE.BoxGeometry(0.04 * H, 0.05 * H, 0.03 * H), mat, [rx * 0.8, y - 0.035, rz * 0.45], { ry: 0.9 });
 }
@@ -651,6 +787,29 @@ export function hairFall(rig, mat, { length = 0.22, width = 0.075, depth = 0.09,
     { segs: 20, steps: 4, caps: false, arc: [-Math.PI / 2 - arc, -Math.PI / 2 + arc] },
   );
   return attach(rig, "chest", geo, mat, [0, 0, 0]);
+}
+
+/**
+ * Two long locks from the parting down either side of the face, resting on the front of the
+ * shoulders. Skinned from head to chest, so a turn of the head bends them instead of parting them.
+ */
+export function faceLocks(rig, mat, { width = 0.017, depth = 0.012 } = {}) {
+  const [, ny] = J(rig, "neck");
+  const [, hy, hz] = J(rig, "head");
+  for (const [, sx] of sides)
+    skinTube(
+      rig,
+      [
+        { p: [sx * 0.022, hy + 0.114, hz + 0.028], r: [width * 0.7, depth], w: { head: 1 } },
+        { p: [sx * 0.05, hy + 0.088, hz + 0.04], r: [width * 0.95, depth], w: { head: 1 } },
+        { p: [sx * 0.06, hy + 0.05, hz + 0.036], r: [width, depth], w: { head: 1 } },
+        { p: [sx * 0.06, hy + 0.01, hz + 0.03], r: [width, depth], w: { head: 0.6, chest: 0.4 } },
+        { p: [sx * 0.062, ny - 0.005, 0.042], r: [width * 0.95, depth * 0.9], w: { head: 0.15, chest: 0.85 } },
+        { p: [sx * 0.066, ny - 0.052, 0.062], r: [width * 0.45, depth * 0.45], w: { chest: 1 } },
+      ],
+      mat,
+      { segs: 10, steps: 4, ground: false, uv: 4 },
+    );
 }
 
 /** A soft felt cap with a short brim, worn over the crown. */

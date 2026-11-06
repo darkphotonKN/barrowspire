@@ -50,9 +50,13 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Realistic light, soft shadow, texture grit.** Sprites carry their shading from the bake
   (tone-mapped, environment-lit, a warm key light from screen-left, baked contact shadows that
   fall screen-right). They look lit *before* any overlay is applied.
-- **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. The pixel-art
-  rules (nearest-neighbour, dithering, hand-placed clusters, pixel-grid outlines,
-  `image-rendering: pixelated`) no longer apply to the canvas.
+- **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. A sheet may
+  instead be baked at 2x from a 4x render and drawn at half scale, so it stays sharp at render
+  scale 2; today the four classes are (knight, archer, wizard, mercenary; FS-HF0WW, FS-3V7GC)
+  ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md)).
+  It stands exactly as large as at 1x, and every size around it (head height, markers, footprint)
+  stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
+  pixel-grid outlines, `image-rendering: pixelated`) no longer apply to the canvas.
 - **Readable silhouettes over detail.** At game scale a player is roughly one tile wide and a face
   is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
 - **Bake colours come from `BARROW`** (`src/utils/theme.ts`), so baked art and the in-game HUD
@@ -265,13 +269,15 @@ lit) while the player stands inside.
   ragged cloak hangs over the buff leather, with a quiver on the back. *(Amended at the owner's
   pick, 2026-11-04.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
-  never a pointed hat. She is narrower in the shoulder than the men, her waist drawn in by a
-  belt. Her black hair is drawn back from a centre parting and falls straight down her back over
-  a low standing collar, with a cold sheen so it parts from the gown behind it. She wears a black
+  never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
+  waist and opening from the hip, so she reads as a woman from the front. Her black hair falls
+  from a centre parting in two long locks down either side of her face to the shoulders, and
+  straight down her back over a low standing collar, with a cold sheen so it parts from the gown
+  behind it. She wears a black
   gown with long trailing sleeves under a scapular in necrotic teal, clasped in brass down the
   chest. A short iron sceptre holds the glowing stone in its prongs, and a black tome hangs from
   her other hand. No hood, no hat, no staff: her long hair and collar keep her apart from the
-  archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04.)*
+  archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
 - **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
   open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
   mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall
@@ -290,6 +296,22 @@ lit) while the player stands inside.
   player picks in a menu is exactly what walks in the world.
 - **The owner approves a contact sheet** (every class and creature x 8 directions x each
   animation, at game scale) before scenes switch to character sheets.
+- **Legs stay inside the garment.** A tunic's skirts, a hauberk, a coat's skirts or a robe is
+  built with `skirt` over legs built with `legs` (`tools/bake/page/characters/anatomy.js`), and
+  the legs are built under it: `legs(rig, mat, { under })` with the garment's own `skirt`
+  options, which draws the thighs in where the garment covers them (a thigh is wider at the hip
+  than a fitted tunic's top: without it they showed as dark wedges at both sides of the waist on
+  all four classes, through the mage's robe too). One clearance serves every class
+  (`UNDER_CLEAR`, FS-3V7GC): never give one class its own. At rest and in every clip except the death, no
+  leg may lie more than one baked px outside the cloth over it, from the garment's waistband to
+  its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, half a px at 2x (1x
+  px measured in model space, an upper bound on the screen). The bake checks every pose and
+  fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
+  give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt
+  to the opposite thigh, kept only for the legacy sheets on the guard's `MIRRORED_LEGACY` list
+  (the bake fails any other). All four classes walked through their tunics and robes at 1x
+  without anyone seeing it until the archer was baked at 2x, so review the walk frames, not
+  only the idle.
 
 
 ### Enemy design language
@@ -505,13 +527,18 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   pop in. Every face keeps the satchel's footprint and item slots. Item icons are baked, with a
   generic fallback.
 - **Item marks in the gear and bag overlay.** A held item's rarity shows only as its **rarity
-  edge**, a thin bar down the left side of its bag cell or worn slot. Two more marks sit beside
+  edge**, a thin bar down the left side of its bag cell or worn slot. The other marks sit beside
   it and never take a rarity colour. In a run, an **unsafe find** (picked up this run, lost if
   the player dies before escaping) gets a lifted-oxblood **inner edge** inside its well, clear of
   the rarity edge, and its tip adds "Found this run: lost if you die before you escape." in the
   same tone (`palette.unsafeFind`, the danger channel). Field worlds and the hub show no unsafe
   mark. In the hub, an item **still in a delve** is drawn faint, as a listed item is, and its tip
-  says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)*
+  says "Still in a delve." *(Added by FS-18Z5F §H, 2026-10-31.)* An item **on the Bazaar** (listed, or
+  its sale settling) is drawn faint too, and carries the **listed mark**: a small filled
+  triangle in its well's top-right corner, drawn in code over the faint icon, in the danger
+  channel (`palette.listed`, the same lifted oxblood as the unsafe edge). Its tip adds "Listed on
+  the Bazaar." or "Sale settling…" in that tone. *(Added by
+  [FS-GTNP8](../../docs/specs/GTNP8-listed-items-marked-in-the-gear-overlay.md), 2026-11-06.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right

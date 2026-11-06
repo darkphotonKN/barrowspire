@@ -6,8 +6,11 @@
  * 2. send the bid;
  * 3. landed: forget the attempt (the next bid is a new bid with a new key), let the box follow
  *    the minimum again, and re-read the listing and purse before saying it leads;
- *    outbid: let the box follow the minimum again and re-read before naming the new minimum, or
- *    the buyout cap when the re-read shows the amount was at or above it (FS-49Z37 req 21);
+ *    too low (`BID_TOO_LOW`): let the box follow the minimum again and re-read before naming
+ *    the new minimum (FS-V74WE req 11); at or above the buyout (`BID_AT_OR_ABOVE_BUYOUT`): say
+ *    so at once, with no re-read (req 12); `VALIDATION_FAILED`, from an older server: re-read
+ *    as for too low, then name the new minimum, or the buyout cap when the re-read shows the
+ *    amount was at or above it (FS-49Z37 req 21, FS-V74WE req 13);
  *    either failure: keep the attempt only where {@link keepsBidKey} says a same-key retry is
  *    right (FS-49Z37 req 22–23), so a retry of a busy listing lands at most once and a spent
  *    key is never sent again.
@@ -18,6 +21,7 @@ import {
   bidFailure,
   bidLeads,
   keepsBidKey,
+  outbidMessage,
   validationRefusal,
   type BidAttempt,
   type BidNote,
@@ -49,13 +53,12 @@ export async function submitBid(
       return { attempt: kept, note: { tone: "error", text: failure.message, ...gateFlag(err) } };
     deps.resetTouched();
     const fresh = await deps.refresh();
-    return {
-      attempt: kept,
-      note: {
-        tone: "error",
-        text: fresh ? validationRefusal(attempt.amount, fresh) : BROWSE_UNREACHABLE,
-      },
-    };
+    const text = !fresh
+      ? BROWSE_UNREACHABLE
+      : failure.refetch === "outbid"
+        ? outbidMessage(fresh.minimumBid)
+        : validationRefusal(attempt.amount, fresh);
+    return { attempt: kept, note: { tone: "error", text } };
   }
   deps.resetTouched();
   await Promise.all([deps.refresh(), deps.reloadPurse()]);

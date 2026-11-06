@@ -7,7 +7,7 @@ import { NOTE_TONE } from "@/components/bazaar/noteTone";
 import { purseFailure, type BidNote, type Purse } from "@/marketplace/bid";
 import { buyoutAction, buyoutLabel, buyoutQuestion } from "@/marketplace/buyout";
 import { buyoutConfirm, submitBuyout, type BuyoutConfirm } from "@/marketplace/buyoutFlow";
-import type { Listing } from "@/marketplace/listing";
+import type { PublicListing } from "@/marketplace/listing";
 import { apiClient } from "@/utils/api";
 
 const CLOSED: BuyoutConfirm = { open: false, key: undefined };
@@ -25,10 +25,10 @@ export default function BuyoutAction({
   now,
   refresh,
 }: {
-  listing: Listing;
+  listing: PublicListing;
   memberId: string | undefined;
   now: number;
-  refresh: () => Promise<Listing | undefined>;
+  refresh: () => Promise<PublicListing | undefined>;
 }) {
   const [purse, setPurse] = useState<Purse>({ state: "loading" });
   const [confirm, setConfirm] = useState<BuyoutConfirm>(CLOSED);

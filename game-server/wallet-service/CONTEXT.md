@@ -43,6 +43,16 @@ Sources: [FS-9KW9F](../../docs/specs/9KW9F-account-and-role-token-claims.md),
   notification-service when a member claims a letter's gold. Gold entering the economy with no
   counterparty, so it writes no ledger entry (ADR-0006).
 
+- **Expired hold** (FS-A3CQH) — a `RESERVED` hold whose `expired_at` has passed. **A fact read off
+  the timestamp, never a status**: the hold FSM has no EXPIRED. From that moment the hold can no
+  longer be committed (`CommitHold` answers `ErrHoldExpired`), yet it still fences gold until the
+  hold sweep releases it.
+- **Hold sweep** (FS-A3CQH) — wallet's own timeout Cancel in the hold's TCC: a background pass
+  that moves expired holds `RESERVED → RELEASED` through `Account.ExpireHold`. Wallet decides it
+  alone, from its own clock and its own rows. Contrast marketplace's **hold reconciler**, which
+  releases holds no recorded bid claims; that judgment needs marketplace's records, so it lives
+  there.
+
 ## Boundaries
 
 **Wallet owns the account; auth holds a copy.** `accounts.id` is the fact. auth-service's

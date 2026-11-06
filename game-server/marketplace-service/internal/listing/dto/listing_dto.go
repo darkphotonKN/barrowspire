@@ -47,9 +47,10 @@ type PriceFacts struct {
 // It restates the threshold in listing.PlaceBidWithID, which the aggregate
 // applies against findContendingBid (the highest WINNING or PENDING bid): with
 // no contender a bid must reach the start price, otherwise it must exceed the
-// contender. Withdrawal promotes nobody (WithdrawBid only cancels), so a
-// withdrawn leader sends the minimum back to the start price even when an OUTBID
-// bid remains. listing_dto_test pins this to the aggregate.
+// contender. A withdrawn leader promotes the highest OUTBID bid (ADR-0028), so
+// the minimum becomes that bid's amount plus one, and falls back to the start
+// price only when no OUTBID bid remains. listing_dto_test pins this to the
+// aggregate.
 func (l ListingDetails) MinimumBid() int {
 	if l.CurrentPrice == nil {
 		return l.StartPrice
@@ -100,4 +101,15 @@ type FreezeWinner struct {
 type ExpiredListing struct {
 	ID     uuid.UUID
 	EndsAt time.Time
+}
+
+// CancelledListing is one withdrawn listing not yet marked started, as the
+// withdraw backstop pages them (FS-V7A5S Req 8): what the withdraw workflow's
+// start needs, and its update time as the paging cursor. BidIDs is every bid on
+// the listing, statuses unfiltered, as the use case passes them.
+type CancelledListing struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	BidIDs    []uuid.UUID
+	UpdatedAt time.Time
 }

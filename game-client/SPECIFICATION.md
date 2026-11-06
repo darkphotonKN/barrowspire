@@ -14,7 +14,7 @@ Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT 
 
 ## Assumptions (verify first)
 
-- The client is a **Next.js 15 (App Router) + React 19 + Phaser 3.80** app; platform/account UI
+- The client is a **Next.js 15 (App Router) + React 19 + Phaser 4** app; platform/account UI
   is React, the actual escape-run is Phaser. State is **Zustand**; networking is **native
   WebSocket + a REST `apiClient`**.
 - It implements the **current escape-run + platform** surface only. The MMO-refactor HUB world
@@ -40,7 +40,8 @@ server state and sends intents. ✅
 - [x] Log in and persist the session
 - [x] Guard routes behind auth
 - [ ] ~Upload and confirm an avatar~ → removed FS-TVCZQ
-- [ ] Refresh an expired access token
+- [ ] Refresh an expired access token → FS-ZPX58
+- [ ] Game socket connects with the current access token → FS-ZPX58
 - [ ] Password policy at registration → FS-V6SFK
 - [ ] Verify email from the client → FS-V6SFK
 - [ ] Change an unverified email → FS-V6SFK
@@ -54,8 +55,13 @@ server state and sends intents. ✅
 - [x] Render authoritative server state each tick
 - [x] Reconnect into an in-progress run
 - [ ] Monsters with level and elite nameplates → FS-77AB6
+- [ ] Monster target frame → FS-48CTQ
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [x] Floor transitions → FS-F6F88
+- [ ] Floor layout from the floor map → FS-KE075
+- [ ] Told when a guarded chest will not open → FS-KE075
+- [ ] Fog of war → FS-SRA9J
+- [ ] Minimap → FS-SRA9J
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
@@ -78,6 +84,8 @@ server state and sends intents. ✅
 - [x] Gear and bag overlay → FS-HRH2J
 - [x] Character stats overlay → FS-HRH2J
 - [x] Compare a bag item with worn gear → FS-NV54P
+- [x] Gold in the gear overlay → FS-7TGZ3
+- [ ] Listed items marked in the gear overlay → FS-GTNP8
 - [ ] A character name is one word → FS-KCQ06
 
 ### Presentation
@@ -89,6 +97,12 @@ server state and sends intents. ✅
 - [x] Isometric projection of the game world → FS-2325V
 - [x] Pre-rendered world and prop art → FS-2325V
 - [x] Pre-rendered character and creature art → FS-2325V
+- [ ] High-detail character art → FS-HF0WW
+- [ ] Walk-and-attack animation → FS-HF0WW
+- [ ] Legs stay inside garments → FS-HF0WW
+- [ ] Baked frames trimmed to their pixels → FS-HF0WW
+- [ ] Art loaded and freed per scene → FS-C4JWH
+- [ ] Loading bar on entering a world → FS-C4JWH
 - [x] Light-map lighting with placed light sources → FS-2325V
 - [x] Container-open presentation → FS-2325V
 - [x] Distinct look per container kind → FS-1D6BX
@@ -104,8 +118,12 @@ server state and sends intents. ✅
 - [x] Indoor blackout → FS-9PN7X
 - [x] Per-floor variation of the run look → FS-8RBQY
 - [x] Pre-rendered stairs → FS-8RBQY
+- [ ] Room-and-corridor floor look → FS-KE075
 - [ ] One countdown style across the canvas → FS-B3NDZ
 - [ ] Shimmers: granted and invoked spell-landed glitter → FS-KZC92
+- [ ] High-density canvas rendering → FS-ZAJMH
+- [ ] Canvas that resizes with the window → FS-ZAJMH
+- [ ] Fullscreen and windowed play → FS-ZAJMH
 
 ### Hub
 
@@ -154,6 +172,7 @@ server state and sends intents. ✅
 
 - [x] In-game chat window → FS-WJGFJ
 - [x] Channel filters on one chat stream → FS-WJGFJ
+- [ ] Canvas chat channel picker → FS-J267Q
 - [x] Send to the world channel from the chat window → FS-5SH4G
 - [ ] Send to the party channel from the chat window → FS-XGW7H
 - [ ] Whisper a player from the chat window → FS-KCQ06
@@ -167,19 +186,32 @@ server state and sends intents. ✅
 - [x] List an owned item for auction → FS-8EGFA
 - [x] Bid on a listing → FS-8EGFA
 - [x] Filter to my own listings → FS-8EGFA
+- [ ] Own-listing check without the seller's id → FS-GKHYD
 - [ ] Affixes and item level in listing detail → FS-4R9M9
 - [ ] Buy out a listing → FS-49Z37
 - [ ] Accept the leading bid on my listing → FS-49Z37
+- [ ] Accept never sells below the leading bid shown → FS-F692V
+- [ ] Withdraw my listing → FS-V7A5S
+- [ ] Listing limit refusals → FS-XEDFF
 - [x] Set a buyout price when listing → FS-49Z37
 - [x] Bids stay below a listing's buyout price → FS-49Z37
 - [x] A refused bid retries under a fresh key → FS-49Z37
 - [x] View and withdraw my bids → FS-EYQ8K
 - [x] Worn relics not listable → FS-HBXZN
 - [ ] Verify-email prompt on gated marketplace actions → FS-V6SFK
+- [ ] Explain the bid withdrawal cap → FS-ZE43K
+- [ ] Withdraw confirm says whether it counts → FS-S109X
+- [ ] Explain a bid refused for its price → FS-V74WE
+- [ ] Explain a bid refused because you already lead → FS-72KT8
+- [ ] Only listable stash relics offered for listing → FS-3R77D
 
 ### Dev tooling
 
 - [ ] Dev gallery of reusable visual pieces → FS-1819Q
+
+### Transport
+
+- [ ] Read the compressed game-state broadcast → FS-5QC03
 
 ### Deployment
 
@@ -223,7 +255,10 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 
 ## Reference — Phaser integration
 
-- **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` (1080×720, pixelArt, arcade zero-gravity).
+- **Bridge:** `PhaserGame.tsx` creates `Phaser.Game` (Phaser 4, ADR-0057) drawn at the screen's
+  density: a backing store of the logical view × render scale, shown fitted to the game frame,
+  every camera zoomed by the render scale (`src/render/viewport/`, FS-ZAJMH); linear filtering,
+  arcade zero-gravity.
   Registered scenes: **Boot, Preload, MainMenu, Loadout, Barrowspire**. Phaser reads auth from
   `localStorage`/Zustand directly (no React→Phaser event bus).
 - **BootScene** — token gate (redirect `/login` if absent); opens the shared `SocketManager` WS
@@ -236,12 +271,14 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **`authStore`** — `{accessToken, refreshToken, memberInfo, isAuthenticated}`; **persisted** to
   `localStorage["auth-storage"]`. `memberInfo = {id,name,email,status,average_rating,avatar_url?,…}`.
 - **`gameStore`** — `{sessionId}`, in-memory; set by SocketManager on `game_found`.
-> REVIEW: `refreshToken` is stored but **never used** — no refresh flow; 401/`4001` force re-login.
+  The refresh token renews the access token (FS-ZPX58): before `exp` and on a 401 / `4001`;
+  only a refused renewal forces re-login.
 
 ## Reference — REST contract (client side)
 
 - **Base:** `NEXT_PUBLIC_API_URL` (default `http://localhost:7114` = **api-gateway**). Auth:
-  `Authorization: Bearer <accessToken>` from localStorage; `401` → logout + `/login`.
+  `Authorization: Bearer <accessToken>` from localStorage; `401` → renew once and resend
+  (`POST /api/member/refresh`), a refused renewal → logout + `/login` (FS-ZPX58).
 - Endpoints called: `POST /api/member/{signin,signup}`, `GET /api/member`,
   `POST /api/member/avatar/{upload-request,confirm}`,
   `GET /api/stats/leaderboard`, `GET /api/notification/` + `PATCH /:id/read` + `/read-all`,
@@ -253,7 +290,8 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 ## Reference — WebSocket contract (client side)
 
 - **Transport:** native `WebSocket`; URL **hardcoded** `ws://localhost:5668/game/ws`; auth via
-  query `?token=<jwt>&name=<name>`; server close `4001` → clear auth + `/login`.
+  query `?token=<jwt>&name=<name>` (the token current at each open); server close `4001` →
+  renew once and reconnect, else clear auth + `/login` (FS-ZPX58).
 - **Envelope (send):** `{action, payload, seq}`; SocketManager auto-injects `session_id`
   (gameStore) and `player_id` (authStore) into every payload.
 - **SENDS:** `find_game`, `move {vx,vy}`, `attack {enemy_entity_id}`, `interact {entity_id}`

@@ -134,6 +134,12 @@ export const palette = {
    * well; an inner edge, so it never reads as the rarity edge down the left side.
    */
   unsafeFind: BARROW_HEX.oxbloodText,
+  /**
+   * An item on the Bazaar, listed or its sale settling (FS-GTNP8 R4–R5): its tip note and the
+   * listed mark in its well's corner. The danger channel, the same lifted oxblood as an unsafe
+   * find's, since raw oxblood vanishes on a dark well.
+   */
+  listed: BARROW_HEX.oxbloodText,
   hostile: BARROW_HEX.necrotic,
   /**
    * A burning trail (FS-4R9M9 req 36, 61): fire that harms monsters, so the damage family: a
@@ -158,6 +164,13 @@ export const palette = {
    */
   xpFill: BARROW_HEX.brassBright,
   xpTrack: BARROW_HEX.charcoal,
+  /**
+   * The minimap's ground (FS-SRA9J §E.22): an explored region in the walls' lit stone, a visible
+   * one lifted toward vellum, so the party's own regions stand out. Stone, not amber or the ally
+   * green: the minimap's marks and dots keep those channels.
+   */
+  minimapExplored: BARROW_HEX.slateLight,
+  minimapVisible: tint(BARROW_HEX.slateLight, 0.4),
   levelUp: BARROW_HEX.brassBright,
   /**
    * The resource bars (FS-8AY7S req 23), on a dark track in a brass rim. Health is the oxblood

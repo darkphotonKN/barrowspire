@@ -49,8 +49,10 @@ type BidRow struct {
 	// nullable: bids written before the saga migration have no key, and callers
 	// are not required to supply one
 	IdempotencyKey *uuid.UUID `db:"idempotency_key"`
-	CreatedAt      time.Time  `db:"created_at"`
-	UpdatedAt      time.Time  `db:"updated_at"`
+	// a leading withdrawal, the only kind the bid withdrawal cap counts (ADR-0055)
+	WithdrawnWhileLeading bool      `db:"withdrawn_while_leading"`
+	CreatedAt             time.Time `db:"created_at"`
+	UpdatedAt             time.Time `db:"updated_at"`
 }
 
 func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listing.Listing, error) {
@@ -94,6 +96,7 @@ func (r *ListingRepository) FindByID(ctx context.Context, id uuid.UUID) (*listin
 			amount,
 			status,
 			idempotency_key,
+			withdrawn_while_leading,
 			created_at,
 			updated_at
 		FROM bids
@@ -128,15 +131,16 @@ func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, er
 		}
 
 		reconstitutedBids = append(reconstitutedBids, &listing.BidReconstituteParams{
-			ID:             bid.ID,
-			ListingID:      bid.ListingID,
-			MemberID:       bid.MemberID,
-			Type:           listing.BidType(bid.Type),
-			Amount:         bid.Amount,
-			Status:         listing.BidStatus(bid.Status),
-			IdempotencyKey: idempotencyKey,
-			CreatedAt:      bid.CreatedAt,
-			UpdatedAt:      bid.UpdatedAt,
+			ID:                    bid.ID,
+			ListingID:             bid.ListingID,
+			MemberID:              bid.MemberID,
+			Type:                  listing.BidType(bid.Type),
+			Amount:                bid.Amount,
+			Status:                listing.BidStatus(bid.Status),
+			IdempotencyKey:        idempotencyKey,
+			WithdrawnWhileLeading: bid.WithdrawnWhileLeading,
+			CreatedAt:             bid.CreatedAt,
+			UpdatedAt:             bid.UpdatedAt,
 		})
 	}
 
@@ -162,15 +166,16 @@ func reconstitute(listingRow ListingRow, bidRows []BidRow) (*listing.Listing, er
 	return reconstitutedListing, nil
 }
 
-func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing) error {
-	snapshot := listing.Snapshot()
+func (r *ListingRepository) Insert(ctx context.Context, l *listing.Listing) error {
+	snapshot := l.Snapshot()
 
 	query := `
 	INSERT INTO listings (id, seller_id, buyer_id, item_id, start_price, buyout_price, sold_price, status, version, ends_at, created_at, updated_at)
 	VALUES(:id, :seller_id, :buyer_id, :item_id, :start_price, :buyout_price, :sold_price, :status, :version, :ends_at, :created_at, :updated_at)
+	ON CONFLICT (id) DO NOTHING
 	`
 
-	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
+	result, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
 		"id":           snapshot.ID,
 		"seller_id":    snapshot.SellerID,
 		"buyer_id":     snapshot.BuyerID,
@@ -185,8 +190,20 @@ func (r *ListingRepository) Insert(ctx context.Context, listing *listing.Listing
 		"updated_at":   snapshot.UpdatedAt,
 	})
 	if err != nil {
-		// propogate context and sentinel errors if they match with helper
+		// any unique violation left is a different listing colliding (e.g.
+		// idx_one_active_listing_per_item), and stays a duplicate (ADR-0050 rule 3)
 		return commonhelpers.WrapDBErr("listing", "insert", err)
+	}
+
+	// only the primary key says this very listing is already there. ON CONFLICT
+	// (id) decides that by the id alone, not by the constraint name postgres
+	// reports, which is only the first unique index broken in OID order (FS-04ZB6 A13)
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("listing insert %s rows affected: %w", snapshot.ID, err)
+	}
+	if inserted == 0 {
+		return fmt.Errorf("listing insert %s: %w", snapshot.ID, listing.ErrListingAlreadyExists)
 	}
 
 	return nil
@@ -289,8 +306,8 @@ func (r *ListingRepository) writeChanges(ctx context.Context, tx *sqlx.Tx, after
 	// -- insert new bids --
 	if len(changes.newBids) != 0 {
 		newBidsQuery := `
-			INSERT INTO bids (id, listing_id, member_id, type, amount, status, idempotency_key, created_at, updated_at)
-			VALUES (:id, :listing_id, :member_id, :type, :amount, :status, :idempotency_key, :created_at, :updated_at)
+			INSERT INTO bids (id, listing_id, member_id, type, amount, status, idempotency_key, withdrawn_while_leading, created_at, updated_at)
+			VALUES (:id, :listing_id, :member_id, :type, :amount, :status, :idempotency_key, :withdrawn_while_leading, :created_at, :updated_at)
 			`
 
 		if _, err := tx.NamedExecContext(ctx, newBidsQuery, changes.newBids); err != nil {
@@ -319,7 +336,8 @@ func (c *ListingChanges) IsEmpty() bool {
 		len(c.newBids) == 0
 }
 
-// updateBids writes one group of bid status changes in a single statement.
+// updateBids writes one group of bid status changes in a single statement,
+// each with its withdrawn_while_leading, which only a withdrawal sets.
 func (r *ListingRepository) updateBids(ctx context.Context, tx *sqlx.Tx, bids []*bidChanges) error {
 	if len(bids) == 0 {
 		return nil
@@ -328,33 +346,39 @@ func (r *ListingRepository) updateBids(ctx context.Context, tx *sqlx.Tx, bids []
 	// create unnest required vertical slices
 	ids := make([]string, 0, len(bids))
 	statuses := make([]string, 0, len(bids))
+	withdrawnWhileLeading := make([]bool, 0, len(bids))
 	updatedAts := make([]time.Time, 0, len(bids))
 
 	for _, bid := range bids {
 		ids = append(ids, bid.id.String())
 		statuses = append(statuses, string(*bid.status))
+		withdrawnWhileLeading = append(withdrawnWhileLeading, bid.withdrawnWhileLeading)
 		updatedAts = append(updatedAts, bid.updatedAt)
 	}
 
 	changedBidsQuery := `
 		UPDATE bids b
 		SET status = v.status,
+			withdrawn_while_leading = v.withdrawn_while_leading,
 			updated_at = v.updated_at
-		FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
-		AS v(id, status, updated_at)
+		FROM unnest($1::uuid[], $2::text[], $3::boolean[], $4::timestamptz[])
+		AS v(id, status, withdrawn_while_leading, updated_at)
 		WHERE v.id = b.id
 		`
 
-	if _, err := tx.ExecContext(ctx, changedBidsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(updatedAts)); err != nil {
+	if _, err := tx.ExecContext(ctx, changedBidsQuery, pq.Array(ids), pq.Array(statuses), pq.Array(withdrawnWhileLeading), pq.Array(updatedAts)); err != nil {
 		return commonhelpers.WrapDBErr("listing", "save", err)
 	}
 	return nil
 }
 
 type bidChanges struct {
-	id        uuid.UUID // id to track which bids changed
-	status    *listing.BidStatus
-	updatedAt time.Time
+	id     uuid.UUID // id to track which bids changed
+	status *listing.BidStatus
+	// written with the status: a withdrawal always changes the status, so the
+	// flag it sets reaches the table in the same UPDATE (ADR-0055)
+	withdrawnWhileLeading bool
+	updatedAt             time.Time
 }
 
 func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) *ListingChanges {
@@ -396,15 +420,16 @@ func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) 
 			}
 
 			newBids = append(newBids, &BidRow{
-				ID:             afterBid.ID,
-				ListingID:      afterBid.ListingID,
-				MemberID:       afterBid.MemberID,
-				Type:           string(afterBid.Type),
-				Amount:         afterBid.Amount,
-				Status:         string(afterBid.Status),
-				IdempotencyKey: idempotencyKey,
-				CreatedAt:      afterBid.CreatedAt,
-				UpdatedAt:      afterBid.UpdatedAt,
+				ID:                    afterBid.ID,
+				ListingID:             afterBid.ListingID,
+				MemberID:              afterBid.MemberID,
+				Type:                  string(afterBid.Type),
+				Amount:                afterBid.Amount,
+				Status:                string(afterBid.Status),
+				IdempotencyKey:        idempotencyKey,
+				WithdrawnWhileLeading: afterBid.WithdrawnWhileLeading,
+				CreatedAt:             afterBid.CreatedAt,
+				UpdatedAt:             afterBid.UpdatedAt,
 			})
 		} else {
 			if afterBid.Status == beforeBid.Status {
@@ -412,9 +437,10 @@ func (r *ListingRepository) diffListing(before, after *listing.ListingSnapshot) 
 			}
 
 			updatedBids = append(updatedBids, &bidChanges{
-				id:        afterBid.ID,
-				status:    &afterBid.Status,
-				updatedAt: afterBid.UpdatedAt,
+				id:                    afterBid.ID,
+				status:                &afterBid.Status,
+				withdrawnWhileLeading: afterBid.WithdrawnWhileLeading,
+				updatedAt:             afterBid.UpdatedAt,
 			})
 		}
 	}
@@ -494,6 +520,7 @@ func (r *ListingRepository) Update(ctx context.Context, id uuid.UUID, updateFn f
 			amount,
 			status,
 			idempotency_key,
+			withdrawn_while_leading,
 			created_at,
 			updated_at
 		FROM bids
@@ -535,4 +562,24 @@ func (r *ListingRepository) Update(ctx context.Context, id uuid.UUID, updateFn f
 		// read and this write. The version still bumps.
 		return r.writeChanges(ctx, tx, &after, changes, false)
 	})
+}
+
+// MarkWithdrawalStarted records that a withdrawn listing's withdraw workflow has
+// started (FS-V7A5S Req 8 as amended 2026-11-05), so the withdraw backstop stops
+// selecting it. Fenced on CANCELLED and not yet marked: an ACTIVE listing, an
+// already-marked one or an unknown id is left as it is, and that is not an error.
+//
+// It is not an aggregate change, so it takes no row lock and moves neither
+// version nor updated_at, the backstop's paging cursor.
+func (r *ListingRepository) MarkWithdrawalStarted(ctx context.Context, id uuid.UUID) error {
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE listings
+		SET withdrawal_started_at = NOW()
+		WHERE id = $1
+		  AND status = 'CANCELLED'
+		  AND withdrawal_started_at IS NULL
+	`, id); err != nil {
+		return commonhelpers.WrapDBErr("listing", "MarkWithdrawalStarted", err)
+	}
+	return nil
 }

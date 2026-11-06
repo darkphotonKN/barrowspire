@@ -145,3 +145,24 @@ func TestWithdrawBidUC_OutbidWithdraws_ReleasesItsHold(t *testing.T) {
 	assert.Equal(t, listing.BidStatusCancelled, bids[0].Status)
 	assert.Equal(t, listing.BidStatusWinning, bids[1].Status)
 }
+
+// In the auction's final 30 minutes the leader is locked in: the refusal comes
+// back as the domain's, nothing is written, and no gold is released — the bid is
+// still leading and its hold still backs it.
+func TestWithdrawBidUC_LeaderInFinalWindow_RefusedAndHoldKept(t *testing.T) {
+	now := time.Now()
+	l := activeListing(t, 100) // ends an hour from now
+	leaderMember := uuid.New()
+	require.NoError(t, l.PlaceBid(leaderMember, 150, uuid.Nil, now))
+	leader := l.Snapshot().Bids[0].ID
+	require.NoError(t, l.ConfirmBid(leader, now))
+	release := &fakeReleaser{}
+
+	err := NewWithdrawBidUC(&fakeRepo{listing: l}, release).Handle(context.Background(), WithdrawBidCommand{
+		ListingID: uuid.New(), BidID: leader, MemberID: leaderMember, Now: now.Add(50 * time.Minute),
+	})
+
+	assert.ErrorIs(t, err, listing.ErrLeadingBidLocked)
+	assert.Zero(t, release.calls, "a bid still leading keeps its gold")
+	assert.Equal(t, listing.BidStatusWinning, l.Snapshot().Bids[0].Status)
+}

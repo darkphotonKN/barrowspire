@@ -35,6 +35,16 @@ else
 	exit 1
 fi
 
+echo "→ the token fence must REJECT a numeric 0xRRGGBB in the canvas render layer (ADR-0013, FS-SRA9J)"
+out=$(npx next lint --file lint-fixtures/raw-hex-num.ts 2>&1)
+if printf '%s' "${out}" | grep -q 'no-restricted-syntax'; then
+	echo "  ok: fixture rejected"
+else
+	echo "❌ the fence did NOT reject lint-fixtures/raw-hex-num.ts: render-layer 0x literals pass unchecked"
+	printf '%s\n' "${out}" | sed 's/^/    /'
+	exit 1
+fi
+
 echo "→ the token fence must REJECT a non-neutral rgba() in TS/TSX (ADR-0013, FS-8TCN2)"
 out=$(npx next lint --file lint-fixtures/raw-rgba.tsx 2>&1)
 if printf '%s' "${out}" | grep -q 'no-restricted-syntax'; then
@@ -89,6 +99,7 @@ uncovered=$(grep -rlE "0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}" \
 	src/utils/gameStateLogger.ts src/utils/class/SocketManager.ts 2>/dev/null | sort -u)
 n=$(printf '%s\n' "${uncovered}" | grep -c . || true)
 echo "  covered:   src/app, src/components, and every other .ts/.tsx — 0 violations"
+echo "  covered:   numeric 0xRRGGBB in src/render (tests aside), besides the string hex above"
 echo "  NOT yet covered: ${n} files in the Phaser canvas layer (FS-W6BP1 widens the fence)"
 printf '%s\n' "${uncovered}" | sed 's/^/    · /'
 

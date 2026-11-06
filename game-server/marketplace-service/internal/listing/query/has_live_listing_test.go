@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +15,8 @@ import (
 // FS-NXP1W §Req 6 (I-NXP1W-3): the reservation reconciler must not cancel the
 // reservation of an item whose listing is settling. A listing is live while it is
 // ACTIVE and while settlement runs (PENDING_SETTLEMENT); any status it ends in
-// leaves the item's reservation to be reconciled.
+// leaves the item's reservation to be reconciled. FS-04ZB6 Req 11: the check is
+// by listing id.
 func TestHasLiveListing_ActiveAndSettlingListingsKeepTheItemsReservation(t *testing.T) {
 	db := listingsDB(t)
 
@@ -31,14 +33,10 @@ func TestHasLiveListing_ActiveAndSettlingListingsKeepTheItemsReservation(t *test
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.status), func(t *testing.T) {
-			itemID := uuid.New()
-			_, err := db.Exec(`
-				INSERT INTO listings (id, seller_id, item_id, start_price, status, ends_at, created_at, updated_at)
-				VALUES ($1, $2, $3, 100, $4, $5, NOW(), NOW())`,
-				uuid.New(), uuid.New(), itemID, string(tt.status), time.Now().Add(-time.Minute))
-			require.NoError(t, err)
+			listingID := uuid.New()
+			insertListingWithStatus(t, db, listingID, uuid.New(), tt.status)
 
-			live, err := NewHasLiveListingQuery(db).HasLiveListing(context.Background(), itemID)
+			live, err := NewHasLiveListingQuery(db).HasLiveListing(context.Background(), listingID)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.live, live)
@@ -47,5 +45,28 @@ func TestHasLiveListing_ActiveAndSettlingListingsKeepTheItemsReservation(t *test
 
 	live, err := NewHasLiveListingQuery(db).HasLiveListing(context.Background(), uuid.New())
 	require.NoError(t, err)
-	assert.False(t, live, "an item with no listing at all has nothing keeping its reservation")
+	assert.False(t, live, "a listing id with no listing at all has nothing keeping its reservation")
+}
+
+// FS-04ZB6 Req 11: reservation L counts as matched only by listing L itself.
+// Another live listing on the same item (the relist chain's L1) does not count.
+func TestHasLiveListing_AnotherLiveListingOnTheSameItemDoesNotCount(t *testing.T) {
+	db := listingsDB(t)
+	itemID := uuid.New()
+	insertListingWithStatus(t, db, uuid.New(), itemID, listing.StatusActive)
+
+	live, err := NewHasLiveListingQuery(db).HasLiveListing(context.Background(), uuid.New())
+
+	require.NoError(t, err)
+	assert.False(t, live)
+}
+
+// insertListingWithStatus writes one listing row with the given id, item and status.
+func insertListingWithStatus(t *testing.T, db *sqlx.DB, listingID, itemID uuid.UUID, status listing.ListingStatus) {
+	t.Helper()
+	_, err := db.Exec(`
+		INSERT INTO listings (id, seller_id, item_id, start_price, status, ends_at, created_at, updated_at)
+		VALUES ($1, $2, $3, 100, $4, $5, NOW(), NOW())`,
+		listingID, uuid.New(), itemID, string(status), time.Now().Add(-time.Minute))
+	require.NoError(t, err)
 }

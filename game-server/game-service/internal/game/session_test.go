@@ -169,9 +169,9 @@ func TestAddPlayerSetsInitialPosition(t *testing.T) {
 		for range 50 {
 			x, y := spawnOf(t, s)
 			assert.GreaterOrEqual(t, x, constants.PlayerRadius)
-			assert.LessOrEqual(t, x, constants.MapWidth-constants.PlayerRadius)
+			assert.LessOrEqual(t, x, s.mapWidth-constants.PlayerRadius)
 			assert.GreaterOrEqual(t, y, constants.PlayerRadius)
-			assert.LessOrEqual(t, y, constants.MapHeight-constants.PlayerRadius)
+			assert.LessOrEqual(t, y, s.mapHeight-constants.PlayerRadius)
 		}
 	})
 

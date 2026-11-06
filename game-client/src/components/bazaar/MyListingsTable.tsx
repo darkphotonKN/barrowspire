@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import ListingDetailDialog from "@/components/bazaar/ListingDetailDialog";
 import {
   CELL,
@@ -11,9 +12,12 @@ import {
   SkeletonRow,
   type SkeletonCell,
 } from "@/components/bazaar/cells";
-import { useListingDetail } from "@/components/bazaar/useListingDetail";
+import { useListingDetail, type DetailRows } from "@/components/bazaar/useListingDetail";
 import type { Listing } from "@/marketplace/listing";
-import { mineRow } from "@/marketplace/myListings";
+import { asOwnListing, mineRow, mineWithRead } from "@/marketplace/myListings";
+
+// Mine keeps the seller's shape (FS-GKHYD Req 3); the detail reads the public one.
+const MINE_ROWS: DetailRows<Listing> = { detail: asOwnListing, merge: mineWithRead };
 
 const SKELETON_ROWS = 3;
 // Bids is the lesser column.
@@ -29,20 +33,36 @@ const SKELETON: readonly SkeletonCell[] = [
  * table"). The same row anatomy as the browse table, but a status column takes the action's
  * place: nobody bids on their own relic, and a sold or withdrawn one has nothing to act on.
  * Rows arrive newest first and are shown in that order. A row opens the listing detail (req 24)
- * as a browse row does, on a click or Enter; closing it puts focus back on the row.
+ * as a browse row does, on a click or Enter; closing it puts focus back on the row. A withdrawable
+ * row also offers Withdraw (FS-V7A5S req 14), which opens the detail on its withdraw confirm.
  */
 export default function MyListingsTable({
   rows,
   loading,
   memberId,
   now,
+  onSold,
 }: {
   rows: Listing[];
   loading: boolean;
   memberId: string | undefined;
   now: number;
+  /** A sale accepted from the dialog: the public read carries no sold price, so Mine re-reads. */
+  onSold: () => void;
 }) {
-  const detail = useListingDetail(rows);
+  const detail = useListingDetail(rows, MINE_ROWS);
+  // Whether the open detail was asked for by a row's Withdraw rather than by the row itself.
+  const [withdrawing, setWithdrawing] = useState(false);
+  const { open: openDetail } = detail;
+  // The intent travels with the open itself, so the dialog's confirm never depends on the order
+  // two state updates land in.
+  const openRow = useCallback(
+    (id: string, row: HTMLElement, withdraw = false) => {
+      setWithdrawing(withdraw);
+      openDetail(id, row);
+    },
+    [openDetail],
+  );
   return (
     <div className="overflow-hidden rounded-[10px] border border-[color:var(--color-border)] bg-card shadow-[var(--shadow-card)]">
       <table className="w-full border-collapse text-left text-sm">
@@ -60,7 +80,12 @@ export default function MyListingsTable({
           {loading
             ? Array.from({ length: SKELETON_ROWS }, (_, i) => <SkeletonRow key={i} rest={SKELETON} />)
             : detail.shown.map((listing) => (
-                <MineRow key={listing.id} listing={listing} now={now} onOpen={detail.open} />
+                <MineRow
+                  key={listing.id}
+                  listing={listing}
+                  now={now}
+                  onOpen={openRow}
+                />
               ))}
         </tbody>
       </table>
@@ -70,8 +95,10 @@ export default function MyListingsTable({
           listing={detail.openListing}
           memberId={memberId}
           onListing={detail.onListing}
+          onSold={onSold}
           onClose={detail.close}
           returnFocus={detail.opener}
+          startWithdraw={withdrawing}
         />
       )}
     </div>
@@ -85,7 +112,8 @@ function MineRow({
 }: {
   listing: Listing;
   now: number;
-  onOpen: (id: string, row: HTMLElement) => void;
+  /** Opens the detail; `withdraw` opens it on the withdraw confirm. */
+  onOpen: (id: string, row: HTMLElement, withdraw?: boolean) => void;
 }) {
   const row = mineRow(listing, now);
   return (
@@ -99,13 +127,27 @@ function MineRow({
             {row.timeLeft}
           </td>
           <td className={`${CELL} text-right`}>
-            <span
-              className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${
-                row.live ? "text-brass-bright" : "text-vellum-dim"
-              }`}
-            >
-              {row.status}
-            </span>
+            <div className="flex items-center justify-end gap-3">
+              <span
+                className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${
+                  row.live ? "text-brass-bright" : "text-vellum-dim"
+                }`}
+              >
+                {row.status}
+              </span>
+              {row.withdraw && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const tr = e.currentTarget.closest("tr");
+                    if (tr) onOpen(listing.id, tr, true);
+                  }}
+                  className="btn-secondary min-h-[40px]"
+                >
+                  Withdraw
+                </button>
+              )}
+            </div>
           </td>
         </>
       )}

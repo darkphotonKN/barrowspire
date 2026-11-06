@@ -66,6 +66,12 @@ function recordingStage() {
         if (prop === "setName") return setter("name");
         if (prop === "setScrollFactor") return setter("scrollFactor");
         if (prop === "setColor") return setter("color");
+        if (prop === "setPosition")
+          return (x: number, y: number) => {
+            target.x = x;
+            target.y = y;
+            return proxy;
+          };
         if (prop === "on" || prop === "once")
           return (event: string, fn: () => void) => {
             target.handlers[event] = fn;
@@ -192,6 +198,21 @@ describe("showMenuPanel", () => {
     const labels = () => stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
     return { ...stage, ...panel, container: panel.container as unknown as Made, fall, leave, back, close, labels };
   }
+
+  it("should move the box and every row's hit to a new origin when the view changes (FS-ZAJMH R13)", () => {
+    const { moveTo, container, find } = shown();
+    const before = choices.map((c) => {
+      const hit = find(`menu-${c.id}`) as Made & { x: number; y: number };
+      return { x: hit.x - ORIGIN.x, y: hit.y - ORIGIN.y };
+    });
+    moveTo({ x: ORIGIN.x + 100, y: ORIGIN.y });
+    const moved = container as Made & { x: number; y: number };
+    expect([moved.x, moved.y]).toEqual([ORIGIN.x + 100, ORIGIN.y]);
+    choices.forEach((c, i) => {
+      const hit = find(`menu-${c.id}`) as Made & { x: number; y: number };
+      expect([hit.x, hit.y]).toEqual([ORIGIN.x + 100 + before[i].x, ORIGIN.y + before[i].y]);
+    });
+  });
 
   it("should build a camera-fixed box in the popup band at the origin, one named hit per row", () => {
     const { container, find, labels } = shown();

@@ -69,20 +69,22 @@ function stage() {
   };
   const image = { visible: false, made: 0 };
   const img: Record<string, unknown> = {};
-  for (const m of ["setTexture", "setPosition", "setOrigin", "setScale", "setFlipX", "setDepth", "setAlpha", "setTintFill", "setMask", "destroy"])
+  for (const m of ["setTexture", "setPosition", "setOrigin", "setScale", "setFlipX", "setDepth", "setAlpha", "setTint", "setTintMode", "enableFilters", "destroy"])
     img[m] = () => img;
+  // Phaser 4's mask filter (`maskInView`), unwatched here
+  img.filters = { external: { addMask: () => ({}) } };
   img.setVisible = (v: boolean) => ((image.visible = v), img);
   const masked: unknown[] = [];
   const rt: Record<string, unknown> = {};
-  for (const m of ["setOrigin", "setPosition", "setVisible", "clear", "destroy"]) rt[m] = () => rt;
+  for (const m of ["setOrigin", "setPosition", "setVisible", "clear", "render", "destroy"]) rt[m] = () => rt;
   rt.draw = (piece: unknown) => (masked.push(piece), rt);
-  rt.createBitmapMask = () => ({});
   const add = {
     graphics: () => g,
     image: () => (image.made++, img),
     renderTexture: () => rt,
   };
-  return { stage: { add } as unknown as BuildingViewStage, dark, image, masked };
+  const cameras = { main: { originX: 0, originY: 0 } };
+  return { stage: { add, cameras } as unknown as BuildingViewStage, dark, image, masked };
 }
 
 const INN: House = { id: "inn", x: 100, y: 100, width: 200, height: 100 };
@@ -308,7 +310,7 @@ describe("BuildingView: the blackout's mask under WebGL (FS-9PN7X §D, the owner
     const show = vi.spyOn(BlackoutMask.prototype, "show").mockImplementation(() => {});
     const s = stage();
     const any = (): unknown => {
-      const p: unknown = new Proxy({}, { get: (_, k) => (k === "then" ? undefined : () => p) });
+      const p: unknown = new Proxy(() => p, { get: (_, k) => (k === "then" ? undefined : p) });
       return p;
     };
     const scene = s.stage as unknown as Record<string, unknown>;

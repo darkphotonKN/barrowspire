@@ -13,6 +13,13 @@
 
 import type Phaser from "phaser";
 import { mix, palette, rgba } from "@/utils/canvasPalette";
+import {
+  LOGICAL_HEIGHT,
+  LOGICAL_MAX_WIDTH,
+  STAGE_WIDTH,
+  relayoutOn,
+  viewport,
+} from "@/render/viewport";
 
 const PANEL_RADIUS = 6;
 
@@ -153,20 +160,28 @@ export function drawButton(
 const VIGNETTE_TEXTURE = "menu:vignette";
 const VIGNETTE_SIZE = 256;
 
+/** The backdrop {@link drawBackdrop} lays down: the dust, the vignette over it, and their teardown. */
+export interface Backdrop {
+  dust: Phaser.GameObjects.Graphics;
+  vignette: Phaser.GameObjects.Image;
+  /** Destroys both and stops sizing the vignette to the view, for a backdrop that goes before its scene does. */
+  destroy(): void;
+}
+
 /**
  * The menu backdrop: the soot ground with drifting dust and a few bone glints, drawn as soft
  * motes rather than square pixels, under a vignette that darkens the edges as the site's does.
- * Returns the mote graphics so a scene can layer it.
+ * Drawn for a menu laid out on the centred stage (`centreStage`): the motes reach the edges of
+ * the widest view, and the vignette is stretched to the view's edges again whenever it changes
+ * (FS-ZAJMH R11). Returns its parts, so a scene can layer the motes or take it down.
  */
-export function drawBackdrop(
-  scene: Phaser.Scene,
-  motes = 110,
-): Phaser.GameObjects.Graphics {
-  const { width, height } = scene.cameras.main;
+export function drawBackdrop(scene: Phaser.Scene, motes = 110): Backdrop {
+  const height = LOGICAL_HEIGHT;
+  const reach = (LOGICAL_MAX_WIDTH - STAGE_WIDTH) / 2;
   scene.cameras.main.setBackgroundColor(ui.ground);
   const g = scene.add.graphics();
   for (let i = 0; i < motes; i++) {
-    const x = between(0, width);
+    const x = between(-reach, STAGE_WIDTH + reach);
     const y = between(0, height);
     const glint = Math.random() < 0.1;
     g.fillStyle(
@@ -193,10 +208,21 @@ export function drawBackdrop(
       texture.refresh();
     }
   }
-  scene.add
-    .image(width / 2, height / 2, VIGNETTE_TEXTURE)
-    .setDisplaySize(width, height);
-  return g;
+  const vignette = scene.add
+    .image(STAGE_WIDTH / 2, height / 2, VIGNETTE_TEXTURE)
+    .setDisplaySize(viewport.width, height);
+  const unbind = relayoutOn(scene, () =>
+    vignette.setDisplaySize(viewport.width, height),
+  );
+  return {
+    dust: g,
+    vignette,
+    destroy: () => {
+      unbind();
+      g.destroy();
+      vignette.destroy();
+    },
+  };
 }
 
 const TORCH_POOL_TEXTURE = "menu:torch-pool";
@@ -244,9 +270,9 @@ export function addTorchPool(
 const sharpened = new WeakSet<object>();
 
 /**
- * Rasterises every text object the scene creates at the display's pixel ratio. The canvas is
- * 1080x720 but a Retina screen draws it at 2x, and text rasterised at 1x is then upscaled by the
- * linear filter into a blur. Call once at the top of `create()`.
+ * Rasterises every text object the scene creates at the render scale (FS-ZAJMH R5): the canvas is
+ * drawn at backing px per logical unit, and text rasterised at 1x is then upscaled by the linear
+ * filter into a blur. Call once at the top of `create()`.
  */
 export function sharpenText(scene: Phaser.Scene): void {
   const add = scene.add;
@@ -261,6 +287,6 @@ export function sharpenText(scene: Phaser.Scene): void {
     style?: Phaser.Types.GameObjects.Text.TextStyle,
   ) =>
     original(x, y, text, style).setResolution(
-      window.devicePixelRatio || 1,
+      viewport.renderScale,
     )) as typeof add.text;
 }

@@ -6,6 +6,7 @@
 
 import type Phaser from "phaser";
 import { palette } from "@/utils/canvasPalette";
+import { maskInView } from "@/render/viewport/mask";
 import { bustCrop, bustSize, type Bounds } from "./bust";
 
 /** The frame to cut a bust from. */
@@ -16,7 +17,7 @@ export interface Portrait {
 
 /** The scene slice a bust draws with; without textures there is nothing to cut. */
 export type BustStage = Pick<Phaser.Scene, "add"> &
-  Partial<Pick<Phaser.Scene, "make" | "textures">>;
+  Partial<Pick<Phaser.Scene, "make" | "textures" | "cameras">>;
 
 export interface MaskedBust {
   image: Phaser.GameObjects.Image;
@@ -43,13 +44,29 @@ function figureOf(
 
   let figure: Figure | undefined;
   const frame = scene.textures.getFrame(texture, frameName);
-  const image = frame?.source.image as CanvasImageSource | undefined;
+  // not loaded (yet): asked again next time, not remembered as blank. A scene-scoped page may be
+  // missing once, a failed download, and there the next time it is entered (FS-C4JWH)
+  if (!frame) return undefined;
+  const image = frame.source.image as CanvasImageSource | undefined;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (frame && image && ctx) {
-    const w = (canvas.width = frame.cutWidth);
-    const h = (canvas.height = frame.cutHeight);
-    ctx.drawImage(image, frame.cutX, frame.cutY, w, h, 0, 0, w, h);
+  if (image && ctx) {
+    // the whole frame, so the bounds are in its px: a trimmed frame's cut (FS-HF0WW) is put
+    // back at its offset, which is 0, 0 on a whole frame; a crop reads the same px (`setCrop`)
+    const w = (canvas.width = frame.realWidth);
+    const h = (canvas.height = frame.realHeight);
+    const [cw, ch] = [frame.cutWidth, frame.cutHeight];
+    ctx.drawImage(
+      image,
+      frame.cutX,
+      frame.cutY,
+      cw,
+      ch,
+      frame.x,
+      frame.y,
+      cw,
+      ch,
+    );
     const { data } = ctx.getImageData(0, 0, w, h);
     const solid = (x: number, y: number) => data[(y * w + x) * 4 + 3] > 40;
 
@@ -99,7 +116,7 @@ function bustImage(
     portrait.frame,
   );
   if (!frame || !figure) return undefined;
-  const crop = bustCrop(figure.bounds, figure.centreX, frame.cutWidth);
+  const crop = bustCrop(figure.bounds, figure.centreX, frame.realWidth);
   const scale = (r * 2) / crop.size;
   // Placed by the figure's centre, not the crop's edge: a figure near its frame's edge has
   // its crop clamped, and would otherwise sit off-centre in the ring.
@@ -128,11 +145,13 @@ export function maskedBust(
 ): MaskedBust | undefined {
   const image = bustImage(scene, portrait, mx, my, r);
   if (!image) return undefined;
-  if (!scene.make) return { image };
+  if (!scene.make || !scene.cameras) return { image };
   const mask = scene.make.graphics({}, false).setScrollFactor(0);
-  // a geometry mask reads only the shape: its fill is never drawn, so any token will do
+  // a mask reads only the shape's alpha: its fill is never drawn, so any token will do. Phaser 4's
+  // mask filter draws the disc unmultisampled, so its edge is hard where 3.90's was smoothed
+  // (I-ADR0057-2 Answer, review fix round 2: left for Nick in I-ADR0057-5)
   mask.fillStyle(palette.hudText);
   mask.fillCircle(mx, my, r - 1);
-  image.setMask(mask.createGeometryMask());
+  maskInView(image, mask, scene.cameras.main);
   return { image, mask };
 }

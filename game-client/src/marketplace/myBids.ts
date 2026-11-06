@@ -27,6 +27,13 @@ const LABELS: Record<string, string> = {
   LOST: "Lost",
 };
 
+/**
+ * A bid lost because the seller withdrew the listing (FS-V7A5S req 17): it was never outbid, and
+ * its gold is back in the purse, so it must not read as a plain loss.
+ */
+const WITHDRAWN_BY_SELLER = "Withdrawn by seller";
+export const GOLD_RETURNED = "Your gold is returned.";
+
 /** Req 16. A status the page has no copy for is shown as its words, never hidden. */
 export function bidStatusLabel(status: string): string {
   const key = status.toUpperCase();
@@ -45,6 +52,8 @@ export function bidPage(page: MyBidPage): BrowsePage<MyBidEntry> {
 
 export interface MyBidRow {
   status: string;
+  /** A line under the status, when it needs one: a withdrawn listing's gold returned. */
+  note?: string;
   /** Leading or won: the bid that stands. Brass-bright, never amber. */
   emphasis: boolean;
   /** The player's own bid. */
@@ -72,8 +81,10 @@ export function myBidRow(bid: Omit<MyBid, "item">, now: number): MyBidRow {
   const { listing } = bid;
   const live = listingLive(listing, now);
   const status = bid.status.toUpperCase();
+  const withdrawn = status === "LOST" && listing.status.toUpperCase() === "CANCELLED";
   return {
-    status: bidStatusLabel(bid.status),
+    status: withdrawn ? WITHDRAWN_BY_SELLER : bidStatusLabel(bid.status),
+    note: withdrawn ? GOLD_RETURNED : undefined,
     emphasis: status === "WINNING" || status === "WON",
     amount: { gold: formatGold(bid.amount), opening: false },
     price:

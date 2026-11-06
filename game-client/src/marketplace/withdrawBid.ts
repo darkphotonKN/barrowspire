@@ -8,7 +8,7 @@ import { ApiError } from "@/utils/apiError";
 import { BID_CONFLICT } from "./bid";
 import { BROWSE_UNREACHABLE } from "./browse";
 import { formatGold } from "./gold";
-import { listingLive, type MyBid } from "./myBids";
+import { GOLD_RETURNED, listingLive, type MyBid } from "./myBids";
 
 export const WITHDRAW_GONE = "This bid can no longer be withdrawn.";
 /** Said once a withdraw lands, as the bid leaves the list and its gold returns to the purse. */
@@ -30,14 +30,25 @@ export function withdrawOffered(bid: WithdrawableBid, now: number): boolean {
 }
 
 /**
+ * FS-ZE43K req 13, FS-S109X req 11: said on a leading bid's confirm, since the client never knows
+ * the member's count and only a leading withdrawal counts toward the cap (ADR-0055).
+ */
+const WITHDRAW_CAP_WARNING =
+  "After three withdrawals on one auction, you can't bid on it again.";
+
+/** FS-S109X req 10: an outbid withdrawal never counts toward the cap (ADR-0055). */
+const OUTBID_WITHDRAW_FREE = "Withdrawing an outbid bid doesn't count toward the limit.";
+
+/**
  * Req 11: the confirm's question, by the bid's status. A leading bid hands the lead to the next
- * highest (ADR-0028); an outbid one only frees its gold (ADR-0029).
+ * highest (ADR-0028) and its withdrawal counts toward the cap (FS-ZE43K req 13, ADR-0052); an
+ * outbid one only frees its gold (ADR-0029) and never counts (FS-S109X req 10, ADR-0055).
  */
 export function withdrawConfirmText(bid: Pick<MyBid, "amount" | "status">): string {
   const question = `Withdraw your bid of ${formatGold(bid.amount)} gold?`;
-  return bid.status.toUpperCase() === "WINNING"
-    ? `${question} The next highest bid takes the lead.`
-    : `${question} Your gold is returned.`;
+  if (bid.status.toUpperCase() === "WINNING")
+    return `${question} The next highest bid takes the lead. ${WITHDRAW_CAP_WARNING}`;
+  return `${question} ${GOLD_RETURNED} ${OUTBID_WITHDRAW_FREE}`;
 }
 
 /**

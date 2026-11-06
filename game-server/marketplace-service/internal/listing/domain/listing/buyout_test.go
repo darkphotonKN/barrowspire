@@ -237,7 +237,7 @@ func TestBuyout_SellerCannotAcceptABidAfterwards(t *testing.T) {
 	l := listingWithBuyout(t, 100, 500)
 	require.NoError(t, l.Buyout(uuid.New(), uuid.New(), 500, now))
 
-	assert.ErrorIs(t, l.CanAcceptBid(l.Snapshot().SellerID, now), ErrListingNotAcceptingBids)
+	assert.ErrorIs(t, l.CanAcceptBid(l.Snapshot().SellerID, 1, now), ErrListingNotAcceptingBids)
 }
 
 // After settlement has frozen the listing, a late confirmation is refused like on

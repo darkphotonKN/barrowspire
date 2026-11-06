@@ -21,10 +21,12 @@ import type { Facing8 } from "@/render/iso/facing";
 import type { AnimationChoice } from "./animationSelect";
 import { CharacterAnimator } from "./character";
 import type { ArtLibrary } from "./library";
-import { directionIndex } from "./manifest";
-import { MANIFEST_KEY, preloadArt } from "./phaser";
+import { directionIndex, sheetScale } from "./manifest";
 
-/** A menu never shows a baked frame smaller than it was baked, or upscaled past 1.5x (§F.3). */
+/**
+ * In screen px: a menu never draws a figure smaller than the game does (1 screen px per 1x px),
+ * nor past 1.5x that (§F.3). A 2x sheet's frame at 1 is drawn at half its baked px (FS-HF0WW).
+ */
 export const MIN_MENU_SCALE = 1;
 export const MAX_MENU_SCALE = 1.5;
 
@@ -35,15 +37,6 @@ export const MENU_FACING: Facing8 = "se";
 const PORTRAIT_HEADROOM = 4;
 /** Plinth width per 1x of figure scale: a little wider than a player's stance. */
 const PLINTH_WIDTH = 104;
-
-/**
- * Queues the art on a menu scene's loader unless an earlier scene already loaded it. Call from
- * `preload()` of any scene that may be the first to show a figure; then `registerArt` in
- * `create()`. Guarded so re-entering a scene queues nothing and leaves no stale listener.
- */
-export function preloadMenuArt(scene: Phaser.Scene): void {
-  if (!scene.cache.json.exists(MANIFEST_KEY)) preloadArt(scene);
-}
 
 export interface MenuFigureOptions {
   /** Of the baked frame, clamped to {@link MIN_MENU_SCALE}..{@link MAX_MENU_SCALE}. Default 1. */
@@ -64,6 +57,13 @@ export class MenuFigure {
   private attackEnds = -Infinity;
   private animator: CharacterAnimator;
   private destroyed = false;
+  /**
+   * A trimmed sheet's portrait window, set again after every frame change. Phaser (3.90 and
+   * 4.2.1 alike) crops a trimmed frame by overwriting the crop with its overlap with that frame's
+   * cut (`Frame.setCropUVs`), and crops the next frame of the animation from that overlap
+   * (`TextureCrop.setFrame` → `updateCropUVs`), so the window would shrink as the clip plays.
+   */
+  private trimmedCrop?: [x: number, y: number, width: number, height: number];
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -135,6 +135,8 @@ export class MenuFigure {
   private readonly tick = (): void => {
     if (this.destroyed || !this.animator.baked) return;
     this.animator.show(this.sprite, this.pose(this.scene.time.now));
+    // after the clip has stepped this frame (the scene's sprites update first), before drawing
+    if (this.trimmedCrop) this.sprite.setCrop(...this.trimmedCrop);
   };
 
   private pose(now: number): AnimationChoice {
@@ -146,9 +148,13 @@ export class MenuFigure {
     };
   }
 
-  /** Puts the current sheet on the sprite, cropped to a portrait if this is one. */
+  /**
+   * Puts the current sheet on the sprite at the figure's scale (a 2x sheet drawn at half that,
+   * `CharacterAnimator.dress`), cropped to a portrait if this is one.
+   */
   private dress(): void {
-    this.animator.dress(this.sprite);
+    this.animator.dress(this.sprite, this.scale);
+    this.trimmedCrop = undefined;
     const portrait = this.options.portrait;
     if (!portrait) return;
 
@@ -161,18 +167,23 @@ export class MenuFigure {
       this.sprite.setPosition(0, portrait.height);
       return;
     }
-    const anchorX = Math.round(sheet.anchor.x * sheet.frameWidth);
-    const anchorY = Math.round(sheet.anchor.y * sheet.frameHeight);
+    // The window and the head are screen px; the crop is in the frame's own px, `k` of them to
+    // a screen px on a 2x sheet (FS-HF0WW).
+    const k = sheetScale(sheet);
+    const anchorX = Math.round((sheet.anchor.x * sheet.frameWidth) / k);
+    const anchorY = Math.round((sheet.anchor.y * sheet.frameHeight) / k);
     const above = Math.min(
       anchorY,
       (sheet.crown ?? anchorY) + PORTRAIT_HEADROOM,
     );
-    this.sprite.setCrop(
-      anchorX - Math.round(portrait.width / 2),
-      anchorY - above,
-      portrait.width,
-      portrait.height,
-    );
+    const crop: [number, number, number, number] = [
+      (anchorX - Math.round(portrait.width / 2)) * k,
+      (anchorY - above) * k,
+      portrait.width * k,
+      portrait.height * k,
+    ];
+    this.sprite.setCrop(...crop);
+    if (sheet.trimmed) this.trimmedCrop = crop;
     this.sprite.setPosition(0, above);
   }
 

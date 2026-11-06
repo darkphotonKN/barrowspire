@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
+	itemspb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/domain/listing"
 	"github.com/darkphotonKN/barrowspire-server/marketplace-service/internal/listing/usecase"
@@ -181,7 +182,8 @@ func deliver(t *testing.T, creator listingCreator, body []byte) outcome {
 // is dead-lettered instead of redelivered forever. Driven through the real
 // usecase so the refusal is the domain's own.
 func TestItemReservedConsumer_RefusedTermsAreDeadLettered(t *testing.T) {
-	uc := usecase.NewCreateListingUC(refusingRepo{})
+	items := &fakeItems{}
+	uc := usecase.NewCreateListingUC(refusingRepo{}, items)
 
 	tests := []struct {
 		name       string
@@ -199,6 +201,9 @@ func TestItemReservedConsumer_RefusedTermsAreDeadLettered(t *testing.T) {
 			if got != want {
 				t.Fatalf("got %+v, want %+v", got, want)
 			}
+			if items.confirms != 0 {
+				t.Fatal("refused terms must be dead-lettered without confirming")
+			}
 		})
 	}
 }
@@ -212,9 +217,11 @@ func TestItemReservedConsumer_ClassifiesUsecaseFailures(t *testing.T) {
 		want outcome
 	}{
 		{
-			name: "duplicate is acked",
-			err:  fmt.Errorf("create listing usecase already exists for item: %w", commonconstants.ErrDuplicateResource),
-			want: outcome{acked: true},
+			// only the use case decides a replay (listings_pkey) and answers nil;
+			// a duplicate reaching the consumer is another listing on the item
+			name: "unique violation other than the replay is dead-lettered",
+			err:  fmt.Errorf("create listing usecase inserting listing refused: %w", commonconstants.ErrDuplicateResource),
+			want: outcome{nacked: true, requeue: false},
 		},
 		{
 			name: "transient failure is requeued",
@@ -310,9 +317,177 @@ func TestItemReservedConsumer_RefusedBuyoutIsDeadLettered(t *testing.T) {
 	buyout := int64(100)
 	event.BuyoutPrice = &buyout
 
-	got := deliver(t, usecase.NewCreateListingUC(refusingRepo{}), marshalEvent(t, event))
+	got := deliver(t, usecase.NewCreateListingUC(refusingRepo{}, &fakeItems{}), marshalEvent(t, event))
 
 	if want := (outcome{nacked: true, requeue: false}); got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
+}
+
+// fakeItems answers confirm and release the way items-service would, and counts
+// the calls.
+type fakeItems struct {
+	confirmed  bool
+	confirmErr error
+	released   bool
+	releaseErr error
+
+	confirms int
+	releases int
+}
+
+func (f *fakeItems) ConfirmReservation(ctx context.Context, itemID, listingID uuid.UUID) (*itemspb.ConfirmReservationResponse, error) {
+	f.confirms++
+	if f.confirmErr != nil {
+		return nil, f.confirmErr
+	}
+	return &itemspb.ConfirmReservationResponse{Confirmed: f.confirmed}, nil
+}
+
+func (f *fakeItems) ReleaseConfirmedReservation(ctx context.Context, itemID, listingID uuid.UUID) (*itemspb.ReleaseConfirmedReservationResponse, error) {
+	f.releases++
+	if f.releaseErr != nil {
+		return nil, f.releaseErr
+	}
+	return &itemspb.ReleaseConfirmedReservationResponse{Released: f.released}, nil
+}
+
+// listingStore is a listings table in memory: it answers an insert the way the
+// repository does, and keeps what landed.
+type listingStore struct {
+	listing.Repository
+	rows map[uuid.UUID]*listing.Listing
+	// insertErr, when set, is what every insert answers instead.
+	insertErr error
+}
+
+func newListingStore() *listingStore {
+	return &listingStore{rows: map[uuid.UUID]*listing.Listing{}}
+}
+
+func (s *listingStore) Insert(ctx context.Context, l *listing.Listing) error {
+	if s.insertErr != nil {
+		return s.insertErr
+	}
+	id := l.Snapshot().ID
+	if _, ok := s.rows[id]; ok {
+		return fmt.Errorf("listing insert %s: %w", id, listing.ErrListingAlreadyExists)
+	}
+	s.rows[id] = l
+	return nil
+}
+
+// FS-04ZB6 §Acceptance Criteria (marketplace-service): the broker answer and
+// the calls to items for each way an item.reserved event can go, through the
+// real create-listing use case.
+func TestItemReservedConsumer_CreatesListingOnlyOverConfirmedReservation(t *testing.T) {
+	unavailable := errors.New("rpc error: code = Unavailable desc = connection refused")
+	deadLetter := outcome{nacked: true, requeue: false}
+	requeue := outcome{nacked: true, requeue: true}
+
+	tests := []struct {
+		name         string
+		items        *fakeItems
+		insertErr    error
+		want         outcome
+		wantListings int
+		wantReleases int
+	}{
+		{"confirm succeeds: an ACTIVE listing is inserted", &fakeItems{confirmed: true}, nil, outcome{acked: true}, 1, 0},
+		{"confirmed = false: acked, nothing inserted", &fakeItems{confirmed: false}, nil, outcome{acked: true}, 0, 0},
+		{"confirm transport failure: requeued", &fakeItems{confirmErr: unavailable}, nil, requeue, 0, 0},
+		{
+			"idx_one_active_listing_per_item: released and dead-lettered, never acked",
+			&fakeItems{confirmed: true, released: true},
+			commonconstants.ErrDuplicateResource, deadLetter, 0, 1,
+		},
+		{
+			"release matches nothing: dead-lettered anyway",
+			&fakeItems{confirmed: true, released: false},
+			commonconstants.ErrDuplicateResource, deadLetter, 0, 1,
+		},
+		{
+			"release transport failure: requeued",
+			&fakeItems{confirmed: true, releaseErr: unavailable},
+			commonconstants.ErrDuplicateResource, requeue, 0, 1,
+		},
+		{
+			"unknown insert outcome: requeued, never released",
+			&fakeItems{confirmed: true, released: true},
+			fmt.Errorf("listing insert: %w", commonconstants.ErrTransient), requeue, 0, 0,
+		},
+		{
+			"ambiguous COMMIT: requeued, never released",
+			&fakeItems{confirmed: true, released: true},
+			errors.New("driver: bad connection"), requeue, 0, 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newListingStore()
+			store.insertErr = tt.insertErr
+			event := validItemReservedEvent(time.Now().Add(time.Hour), 100)
+
+			got := deliver(t, usecase.NewCreateListingUC(store, tt.items), marshalEvent(t, event))
+
+			if got != tt.want {
+				t.Fatalf("got %+v, want %+v", got, tt.want)
+			}
+			if len(store.rows) != tt.wantListings {
+				t.Fatalf("listings = %d, want %d", len(store.rows), tt.wantListings)
+			}
+			if tt.items.releases != tt.wantReleases {
+				t.Fatalf("releases = %d, want %d", tt.items.releases, tt.wantReleases)
+			}
+			for _, l := range store.rows {
+				if l.Snapshot().Status != listing.StatusActive {
+					t.Fatalf("status = %s, want ACTIVE", l.Snapshot().Status)
+				}
+			}
+		})
+	}
+}
+
+// Redelivered events, through the same use case and store: after the listing
+// landed the retry confirms again and meets it as a replay; after a confirm whose
+// insert never ran, the retry confirms again and inserts.
+func TestItemReservedConsumer_RedeliveryAfterConfirm(t *testing.T) {
+	t.Run("after insert: acked as a replay, still one listing", func(t *testing.T) {
+		store := newListingStore()
+		items := &fakeItems{confirmed: true, released: true}
+		body := marshalEvent(t, validItemReservedEvent(time.Now().Add(time.Hour), 100))
+		uc := usecase.NewCreateListingUC(store, items)
+
+		first := deliver(t, uc, body)
+		second := deliver(t, uc, body)
+
+		if first != (outcome{acked: true}) || second != (outcome{acked: true}) {
+			t.Fatalf("got %+v then %+v, want both acked", first, second)
+		}
+		if len(store.rows) != 1 {
+			t.Fatalf("listings = %d, want 1", len(store.rows))
+		}
+		if items.confirms != 2 || items.releases != 0 {
+			t.Fatalf("confirms = %d, releases = %d; want 2 and 0", items.confirms, items.releases)
+		}
+	})
+
+	t.Run("before insert: the listing is inserted", func(t *testing.T) {
+		store := newListingStore()
+		store.insertErr = fmt.Errorf("listing insert: %w", commonconstants.ErrTransient)
+		items := &fakeItems{confirmed: true, released: true}
+		body := marshalEvent(t, validItemReservedEvent(time.Now().Add(time.Hour), 100))
+		uc := usecase.NewCreateListingUC(store, items)
+
+		first := deliver(t, uc, body)
+		store.insertErr = nil
+		second := deliver(t, uc, body)
+
+		if first != (outcome{nacked: true, requeue: true}) || second != (outcome{acked: true}) {
+			t.Fatalf("got %+v then %+v, want requeued then acked", first, second)
+		}
+		if len(store.rows) != 1 || items.releases != 0 {
+			t.Fatalf("listings = %d, releases = %d; want 1 and 0", len(store.rows), items.releases)
+		}
+	})
 }
