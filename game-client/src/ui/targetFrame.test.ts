@@ -4,6 +4,7 @@ import type { MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import {
   TARGET_FADE_IN_MS,
+  TARGET_BOSS_FRAME,
   TARGET_FADE_OUT_MS,
   TARGET_FRAME,
   TARGET_FRAME_DEPTH,
@@ -14,6 +15,7 @@ import {
 } from "./targetFrame";
 
 // FS-48CTQ §C.4, §C.8, §E.14–17 (I-48CTQ-1): the target frame at the top centre.
+// §D.12, §E.14 (I-48CTQ-2): the boss's wider frame.
 
 const monster = (fields: Partial<MonsterState> = {}): MonsterState => ({
   entity_id: "m1",
@@ -372,4 +374,121 @@ describe("TargetFrame fades and covers (FS-48CTQ §C.8, §E.15–16)", () => {
       true,
     );
   });
+});
+
+/** The bar's backing and the panel as drawn, the latest draw only. */
+const drawnBar = (parts: ReturnType<typeof fakeStage>) => {
+  const fills = parts.graphics.flatMap((g) => g.fills);
+  return {
+    panel: fills[0],
+    backing: fills.find((f) => f.colour === MARKER_BAR.backing)!,
+    hp: fills.find((f) => f.colour === MARKER_BAR.hp),
+  };
+};
+
+const demon = (fields: Partial<MonsterState> = {}) =>
+  monster({
+    entity_id: "boss",
+    archetype: "demon",
+    name: "Demon",
+    level: 12,
+    boss: true,
+    current_health: 600,
+    max_health: 1200,
+    ...fields,
+  });
+
+describe("the boss frame (FS-48CTQ §D.12: a bar 1.5 × as wide and twice as tall)", () => {
+  it("should fit within 420 × 60", () => {
+    expect(TARGET_BOSS_FRAME.width).toBeLessThanOrEqual(420);
+    expect(TARGET_BOSS_FRAME.height).toBeLessThanOrEqual(60);
+  });
+
+  it("should draw a boss's bar 1.5 × the normal bar's width and twice its height", () => {
+    const normal = drawnBar(shownFrame(monster()));
+    const boss = drawnBar(shownFrame(demon()));
+    expect(boss.backing.w).toBeCloseTo(normal.backing.w * 1.5, 5);
+    expect(boss.backing.h).toBeCloseTo(normal.backing.h * 2, 5);
+  });
+
+  it("should back a boss with the wider panel, top at y 10, centred, the bar inside it", () => {
+    const { panel, backing, hp } = drawnBar(shownFrame(demon(), 540));
+    const r = targetFrameRect(540, TARGET_BOSS_FRAME);
+    expect(panel).toMatchObject({
+      colour: palette.hudPanel,
+      x: r.x,
+      y: 10,
+      w: r.width,
+      h: r.height,
+    });
+    expect(backing.x).toBeGreaterThan(r.x);
+    expect(backing.x + backing.w).toBeLessThan(r.x + r.width);
+    expect(backing.y).toBeGreaterThan(r.y);
+    expect(backing.y + backing.h).toBeLessThan(r.y + r.height);
+    expect(hp!.w).toBeCloseTo(backing.w / 2, 0);
+  });
+
+  it("should name a boss by its plate, centred, in the hostile channel", () => {
+    const { live } = shownFrame(demon(), 540);
+    expect(live().map((t) => t.content)).toEqual(["Demon · Lv 12"]);
+    expect(live()[0].style.color).toBe(toCss(palette.markerHostile));
+    expect(live()[0].x).toBe(540);
+  });
+
+  it.each([
+    ["from the boss to a common monster", demon(), monster(), TARGET_FRAME],
+    [
+      "from a common monster to the boss",
+      monster(),
+      demon(),
+      TARGET_BOSS_FRAME,
+    ],
+  ])("should resize at once %s", (_, from, to, size) => {
+    const parts = fakeStage();
+    const frame = new TargetFrame(parts.stage, () => 540);
+    frame.update(TARGET_FADE_IN_MS, from, false);
+    frame.update(16, to, false);
+    expect(drawnBar(parts).panel.w).toBe(size.width);
+    expect(drawnBar(parts).panel.h).toBe(size.height);
+  });
+
+  it("should keep the boss's size when it re-anchors on a resize", () => {
+    let centre = 540;
+    const parts = fakeStage();
+    const frame = new TargetFrame(parts.stage, () => centre);
+    frame.update(TARGET_FADE_IN_MS, demon(), false);
+    centre = 640;
+    frame.relayout();
+    expect(drawnBar(parts).panel).toMatchObject({
+      x: targetFrameRect(640, TARGET_BOSS_FRAME).x,
+      w: TARGET_BOSS_FRAME.width,
+    });
+  });
+});
+
+describe("the frame's layout at 1080 and 1280 (FS-48CTQ §E.14)", () => {
+  /**
+   * What the frame must clear, from FS-48CTQ "Facts" and §E.14: the notices from y ≈ 78, and the
+   * fullscreen button, the top-right column and the minimap from x ≥ 854 at the 1080 minimum,
+   * that is 226 px in from the right edge at any width (all right-anchored, TOP_RIGHT_HUD).
+   */
+  const NOTICE_TOP = 78;
+  const RIGHT_COLUMN_INSET = 1080 - 854;
+
+  it.each([
+    ["normal", 1080, TARGET_FRAME],
+    ["normal", 1280, TARGET_FRAME],
+    ["boss", 1080, TARGET_BOSS_FRAME],
+    ["boss", 1280, TARGET_BOSS_FRAME],
+  ])(
+    "a %s frame at %i wide should hang from y 10, centred, clear of the notices and the right column",
+    (_, width, size) => {
+      const r = targetFrameRect(width / 2, size);
+      expect(r.y).toBe(10);
+      expect(r.x + r.width / 2).toBe(width / 2);
+      expect(r.y + r.height).toBeLessThan(NOTICE_TOP);
+      expect(r.x).toBeGreaterThan(0);
+      expect(r.x + r.width).toBeLessThan(width - RIGHT_COLUMN_INSET);
+    },
+  );
 });

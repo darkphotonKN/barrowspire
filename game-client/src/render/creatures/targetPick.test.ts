@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { MonsterState } from "@/types/gameState";
 import {
+  BOSS_LEASH_PX,
   HIT_WINDOW_MS,
   LAST_HIT_HOLD_MS,
   LastHitTracker,
+  engaged,
+  engagedBoss,
   pickTarget,
+  type PartyMember,
 } from "./targetPick";
 
 // FS-48CTQ §C.5–7 (I-48CTQ-1): which monster the target frame names, and how long the last-hit
-// monster holds it.
+// monster holds it. §D.10–11 (I-48CTQ-2): when the boss is engaged and holds it.
 
 const monster = (
   entity_id: string,
@@ -183,5 +187,148 @@ describe("LastHitTracker (FS-48CTQ §C.6: the local player's own aimed hits hold
     t.aimed(monster("a"), 0);
     t.clear();
     expect(t.current(0)).toBeUndefined();
+  });
+});
+
+/** A run's player at `x` px east of the boss at (100, 100). */
+const member = (x: number, fields: Partial<PartyMember> = {}): PartyMember => ({
+  position: { x: 100 + x, y: 100 },
+  escape: false,
+  current_health: 50,
+  ...fields,
+});
+
+const demon = (fields: Partial<MonsterState> = {}) =>
+  monster("boss", {
+    archetype: "demon",
+    name: "Demon",
+    boss: true,
+    current_health: 1200,
+    max_health: 1200,
+    action: "move",
+    ...fields,
+  });
+
+describe("engaged (FS-48CTQ §D.10: damaged, or within its 700 px leash of a living member while moving or attacking)", () => {
+  it("should read the demon's leash, 700 px (monster_tuning.go)", () => {
+    expect(BOSS_LEASH_PX).toBe(700);
+  });
+
+  it.each([
+    [699, true],
+    [700, true],
+    [701, false],
+  ])(
+    "a full-health boss moving with a member %i px away: engaged %s",
+    (x, want) => {
+      expect(engaged(demon(), [member(x)])).toBe(want);
+    },
+  );
+
+  it("should measure the distance on both axes", () => {
+    // 3-4-5: 420 east and 560 south is 700 px
+    const at = (dy: number) =>
+      member(420, { position: { x: 520, y: 100 + dy } });
+    expect(engaged(demon(), [at(560)])).toBe(true);
+    expect(engaged(demon(), [at(561)])).toBe(false);
+  });
+
+  it.each([
+    ["moving", "move", true],
+    ["attacking", "attack", true],
+    ["idle", "idle", false],
+  ] as const)(
+    "a full-health boss %s beside a member: engaged %s",
+    (_, action, want) => {
+      expect(engaged(demon({ action }), [member(100)])).toBe(want);
+    },
+  );
+
+  it.each([
+    ["dead", { current_health: 0 }],
+    ["escaped", { escape: true }],
+  ])("should not count a %s member", (_, fields) => {
+    expect(engaged(demon(), [member(100, fields)])).toBe(false);
+  });
+
+  it("should count a member with no health sent as living", () => {
+    expect(engaged(demon(), [member(100, { current_health: undefined })])).toBe(
+      true,
+    );
+  });
+
+  it("should be engaged by any one living member in range", () => {
+    expect(
+      engaged(demon(), [member(100, { current_health: 0 }), member(650)]),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["idle, with no one near", "idle", []],
+    ["idle, far from everyone", "idle", [member(5000)]],
+    ["moving, far from everyone", "move", [member(5000)]],
+  ] as const)(
+    "a damaged boss %s: still engaged until it dies",
+    (_, action, members) => {
+      expect(engaged(demon({ action, current_health: 1199 }), members)).toBe(
+        true,
+      );
+    },
+  );
+
+  it("a full-health boss beyond 700 px of the party (it ran past): not engaged", () => {
+    expect(engaged(demon(), [member(701), member(-900)])).toBe(false);
+  });
+
+  it.each([
+    ["above its maximum", { current_health: 1300 }],
+    ["with no maximum", { max_health: 0 }],
+  ])("should not read a boss %s as damaged", (_, fields) => {
+    expect(engaged(demon({ action: "idle", ...fields }), [])).toBe(false);
+  });
+
+  it("should never engage a dead boss", () => {
+    expect(
+      engaged(demon({ action: "dead", current_health: 0 }), [member(10)]),
+    ).toBe(false);
+  });
+});
+
+describe("engagedBoss (FS-48CTQ §D.9–11: the engaged boss among the shown)", () => {
+  it("should name an engaged boss among the shown", () => {
+    expect(engagedBoss([monster("a"), demon()], [member(100)])).toBe("boss");
+  });
+
+  it("should name nothing when the boss is not engaged", () => {
+    expect(engagedBoss([demon()], [member(701)])).toBeUndefined();
+  });
+
+  it("should never name a common or elite monster, however close or hurt", () => {
+    const close = [member(10)];
+    expect(
+      engagedBoss(
+        [
+          monster("a", { action: "attack", current_health: 1 }),
+          monster("e", { elite: true, action: "move", current_health: 1 }),
+        ],
+        close,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("should name nothing when the boss is not shown (fog, the dark, gone)", () => {
+    expect(engagedBoss([monster("a")], [member(10)])).toBeUndefined();
+  });
+
+  it("should hold the frame ahead of the last-hit monster, a hovered one still winning", () => {
+    const shown = [monster("a"), monster("b"), demon({ current_health: 900 })];
+    const boss = engagedBoss(shown, []);
+    expect(
+      pickTarget({ shown, engagedBoss: boss, lastHit: "b" })?.entity_id,
+    ).toBe("boss");
+    expect(
+      pickTarget({ shown, hovered: "a", engagedBoss: boss, lastHit: "b" })
+        ?.entity_id,
+    ).toBe("a");
   });
 });
