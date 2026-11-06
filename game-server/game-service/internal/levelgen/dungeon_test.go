@@ -410,7 +410,7 @@ func TestGenerateDungeon_FirstAttemptFails_RetriesDeterministically(t *testing.T
 	p.PlaceTries = 40
 	p.RetryLimit = 200
 	for seed := uint64(0); seed < 100; seed++ {
-		if _, err := buildDungeon(p, attemptSeed(seed, 0)); err == nil {
+		if _, err := buildDungeon(p, roomCount(p, seed), attemptSeed(seed, 0)); err == nil {
 			continue
 		}
 

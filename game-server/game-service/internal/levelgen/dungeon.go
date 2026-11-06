@@ -226,18 +226,20 @@ func (l DungeonLayout) Grid() []int {
 	return grid
 }
 
-// GenerateDungeon returns the dungeon layout for p and seed. It tries the seed
-// itself first, then seeds derived from it (attempt 1..p.RetryLimit), as
-// Generate does, and returns the first layout that passes validation, so the
-// same seed always yields the same layout. Exhausting the retries returns an
-// error wrapping ErrNoLayout.
+// GenerateDungeon returns the dungeon layout for p and seed. It draws the room
+// count once from the seed, then tries the seed itself first, then seeds
+// derived from it (attempt 1..p.RetryLimit), as Generate does, each with that
+// count, and returns the first layout that passes validation, so the same seed
+// always yields the same layout. Exhausting the retries returns an error
+// wrapping ErrNoLayout.
 func GenerateDungeon(p DungeonParams, seed uint64) (DungeonLayout, error) {
 	if err := p.Validate(); err != nil {
 		return DungeonLayout{}, fmt.Errorf("generate dungeon: %w", err)
 	}
+	rooms := roomCount(p, seed)
 	var lastErr error
 	for attempt := 0; attempt <= p.RetryLimit; attempt++ {
-		l, err := buildDungeon(p, attemptSeed(seed, attempt))
+		l, err := buildDungeon(p, rooms, attemptSeed(seed, attempt))
 		if err == nil {
 			err = validateDungeon(p, l)
 		}
@@ -251,11 +253,22 @@ func GenerateDungeon(p DungeonParams, seed uint64) (DungeonLayout, error) {
 		seed, p.RetryLimit+1, ErrNoLayout, lastErr)
 }
 
-// buildDungeon runs one attempt: place rooms, connect them, carve corridors,
-// cut regions, derive doorways and shell walls, assign roles.
-func buildDungeon(p DungeonParams, seed uint64) (DungeonLayout, error) {
+/**
+* roomCount is how many rooms seed's floor has, drawn uniformly from p.Rooms on
+* a stream of its own, so every attempt keeps it. Redrawn per attempt, a count
+* whose rooms fail to fit more often would be retried away, and the counts
+* that survive would skew small (FS-KE075 §A.3).
+**/
+func roomCount(p DungeonParams, seed uint64) int {
+	return pickIn(rand.New(rand.NewPCG(seed, splitmix64(seed))), p.Rooms)
+}
+
+// buildDungeon runs one attempt for a floor of rooms rooms: place them, connect
+// them, carve corridors, cut regions, derive doorways and shell walls, assign
+// roles.
+func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error) {
 	rng := rand.New(rand.NewPCG(seed, splitmix64(seed)))
-	rects, err := placeRooms(p, rng)
+	rects, err := placeRooms(p, rooms, rng)
 	if err != nil {
 		return DungeonLayout{}, err
 	}
@@ -307,21 +320,32 @@ func buildDungeon(p DungeonParams, seed uint64) (DungeonLayout, error) {
 // pickIn draws a seeded value from r.
 func pickIn(rng *rand.Rand, r IntRange) int { return r.Min + rng.IntN(r.Max-r.Min+1) }
 
-// placeRooms draws the room count, then places each room by rejection
-// sampling: a drawn size at a drawn position inside the edge margin, kept when
-// it is at least RoomGap cells from every room already placed.
-func placeRooms(p DungeonParams, rng *rand.Rand) ([]CellRect, error) {
-	n := pickIn(rng, p.Rooms)
+/**
+* placeRooms places n rooms. Every room's size is drawn first, once; then the
+* rooms are placed largest first, each by rejection sampling: positions inside
+* the edge margin are drawn until one is at least RoomGap cells from every room
+* already placed. Only the position is retried: redrawing the size on each try
+* would turn a large room away more often than a small one, and sizes would
+* skew small (FS-KE075 §A.3). Largest first, a large room is not left to find
+* a gap among the small ones, so a floor's full set of sizes fits more often;
+* the order changes where rooms stand, never which sizes are drawn.
+**/
+func placeRooms(p DungeonParams, n int, rng *rand.Rand) ([]CellRect, error) {
+	sizes := make([]CellRect, n)
+	for i := range sizes {
+		sizes[i] = CellRect{W: pickIn(rng, p.RoomWidth), H: pickIn(rng, p.RoomHeight)}
+	}
+	sort.SliceStable(sizes, func(a, b int) bool { return sizes[a].W*sizes[a].H > sizes[b].W*sizes[b].H })
+
 	rooms := make([]CellRect, 0, n)
-	for len(rooms) < n {
+	for _, size := range sizes {
 		placed := false
 		for range p.PlaceTries {
-			w, h := pickIn(rng, p.RoomWidth), pickIn(rng, p.RoomHeight)
 			r := CellRect{
-				X: p.EdgeMargin + rng.IntN(p.Cols-2*p.EdgeMargin-w+1),
-				Y: p.EdgeMargin + rng.IntN(p.Rows-2*p.EdgeMargin-h+1),
-				W: w,
-				H: h,
+				X: p.EdgeMargin + rng.IntN(p.Cols-2*p.EdgeMargin-size.W+1),
+				Y: p.EdgeMargin + rng.IntN(p.Rows-2*p.EdgeMargin-size.H+1),
+				W: size.W,
+				H: size.H,
 			}
 			if apartFromAll(r, rooms, p.RoomGap) {
 				rooms = append(rooms, r)
