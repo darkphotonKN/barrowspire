@@ -1,51 +1,180 @@
 # FS-SRA9J: Fog of war and minimap on dungeon floors
 
-> Status: draft · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" → "Fog of war", "Minimap" → this FS
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" → "Fog of war", "Minimap" → this FS · Related ADRs: [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog is client presentation, region-based, party-shared), [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (floor map, interest), [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) Decision 12 (per-floor opt-ins), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only) · Builds on: [FS-KE075](KE075-floor-1-dungeon.md) (regions on the floor map, the dungeon-floor look, chunk grid, interest), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (the indoor blackout, which a dungeon floor does without), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (fullscreen button, resizable view) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Fog of war**, **Minimap**, **Region**, **Light source**
 
-## Scoping notes (raw)
+## Summary
 
-Charter run, 2026-11-06, item B. Nick approved the charter ("核准"); its locked block is the
-residue. Recorded without adversarial review: no `challenge-me` pass. Client only.
+On floor 1, the dungeon is no longer laid bare. A room or corridor the party has never entered is
+black. One the party has walked through stays drawn, dim, with no monsters shown. The regions
+where a party member stands now are drawn in full, along with any monster within 400 px of a
+party member. What one member uncovers, the whole party sees. A minimap at the top right shows
+the explored floor, the party and, once found, the switch, escape door and stairs; M hides and
+shows it.
 
-### Locked decisions (charter)
+This is presentation. The server still sends what it sends (FS-KE075's interest rule), and the
+fog is no defence against a client that ignores it (ADR-0063).
 
-- B1. Regions (rooms and corridor segments): unexplored is black, explored is dim with terrain
-  and no monsters, a region a party member is in is fully visible.
-- B2. Shared by the party. Reconnect resets exploration (v1).
-- B3. Monsters are shown in regions a party member is in, plus within 400 px of any party member.
-- B4. Minimap at the top right, always on. Explored regions, party dots, and the switch, escape
-  door and stairs once seen. M toggles it. Mind the fullscreen button and the existing top-right
-  HUD.
-- B5. Lighting stays presentation-only (CONTEXT.md "Light source"). ADR for fog: client
-  presentation only, region-based, party-shared, not anti-cheat; server-side fog is a later step
-  tied to interest management.
+Charter run, 2026-11-06, item B. Nick approved the locked decisions B1–B5 as charter defaults
+("核准"), then limited the feature to floor 1 (owner constraint). Where this spec settles
+something the charter left open, it says **derived here** and why. Recorded without adversarial
+review: no `challenge-me` pass.
 
-### Owner constraint (coordinator relay): floor 1 only
+## Facts this spec rests on
 
-Fog and minimap exist only on a floor whose `floor_map` carries regions (floor 1 today). Floors
-2–3 and the field worlds have neither; floors 2–3 keep the indoor blackout.
+Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/`.
 
-### Depends on
+- Regions arrive on the floor map (FS-KE075 §F.31): ids, kind (`room` / `corridor`), cell rects,
+  and `cell_size`. Floors 2–3 carry none.
+- Party members are always in the snapshot (FS-KE075 §G.36); monsters, drop piles and containers
+  beyond 1600 px of the recipient are not.
+- The indoor blackout (`render/world/blackout.ts`) is the existing "hide what is outside" layer:
+  geometric under the canvas renderer, masked under WebGL, at depth 500 (`BLACKOUT.depth`), above
+  the light-map (135) and world effects (≥ 140), below dust (902), vignette (905), markers (950,
+  951) and the HUD (≥ 1000). **Markers draw above it**, so a hidden monster's plate and bar must be
+  hidden explicitly. On a dungeon floor the blackout is off (FS-KE075 §H.47).
+- Top-right HUD: the escaped count, then the floor indicator, right-aligned at `TOP_RIGHT_HUD`
+  (`scenes/BarrowspireScene.ts:283-287`), stepped down by `FULLSCREEN_BUTTON_CLEARANCE` (inset 6 +
+  height 20 + 8, `render/viewport/fullscreenButton.ts`); `relayoutHud` (`BarrowspireScene.ts:2996`)
+  re-anchors it on resize. Notices draw at the top centre, y 100 (`showNotification`, `:4289`).
+  The logical view is 1080–1280 × 720 (`render/viewport/viewport.ts:22-24`).
+- M is not bound in the run scene (its keys: WASD, Tab, Esc, Enter, E, I, B, F, Q, H, the potion
+  key; `BarrowspireScene.ts:1028-1045, 3063-3130`).
+- A light source "has no effect on what anyone can see or hit" (`CONTEXT.md` "Light source").
 
-FS-KE075: the floor map and its regions (§F.31), the dungeon-floor drawing and chunk grid (§H),
-interest (§G: monsters beyond 1600 px are not even sent; party members always are).
+## Requirements
 
-### Facts
+### §A. Where fog applies
 
-- Indoor blackout: `render/world/blackout.ts` (geometric under canvas, mask under WebGL), depth 500
-  (`BLACKOUT.depth`): above light-map (135) and world effects (≥ 140), below dust (902), vignette
-  (905), markers (950, 951) and the HUD (≥ 1000). Markers sit above it, so hidden monsters' plates
-  must be hidden explicitly.
-- Top-right HUD: escaped count then floor indicator, right-aligned at `TOP_RIGHT_HUD`
-  (`BarrowspireScene.ts:283-287`), stepped down by `FULLSCREEN_BUTTON_CLEARANCE`
-  (`render/viewport/fullscreenButton.ts`); `relayoutHud` re-anchors it on resize. Notices at the
-  top centre, y 100 (`showNotification`). Logical view 1080–1280 × 720 (`viewport.ts:22-24`).
-- M is not bound in the run scene.
+1. **Only on a floor whose floor map carries regions** (floor 1 today). Floors 2–3, the hub and the
+   field worlds have no fog and no minimap; floors 2–3 keep the indoor blackout exactly as today.
+   **(charter default, owner: floor 1 only)**
 
-### Derived while scoping
+### §B. Exploration (party-shared)
 
-- Walls take the brightest state of the regions they border.
-- Drop piles follow the monster rule; containers and interactables follow the region rule.
-- Minimap drawn in the world's iso projection, so directions match the screen.
-- Minimap ≤ 220 px wide, so at 1080 it clears a 600 px top-centre notice.
-- Lights in regions that are not visible are off.
+2. **Three states per region**: unexplored, explored, visible. Every region starts unexplored.
+   (B1)
+3. **Visible** while at least one living, in-play party member's position lies in the region. The
+   local player counts while alive. Dead and escaped members count for nothing. (B1)
+4. **Explored** once a region has been visible; it stays explored for the rest of the floor. (B1)
+5. **Party-shared**: every party member's position in the snapshot uncovers regions for this
+   client, so all members see the same map. In a run every other delver is a party member. (B2)
+6. **Resets**: a floor change (a new floor map) and a fresh run scene (reconnect, re-entry) start
+   every region unexplored, then mark the regions the party stands in visible at once. Nothing is
+   stored. (B2, v1)
+7. **A position's region** is the region of the cell it lies in. A position on no walkable cell
+   (a body pressed against a wall's edge) takes the region of the nearest walkable cell.
+   **(derived here)**
+
+### §C. What each state shows
+
+8. **Unexplored**: drawn as `palette.inkDeep`, the void's ink. Its ground, its walls and
+   everything in it (containers, the switch, escape door, stairs, drop piles, monsters, effects)
+   are not seen. (B1)
+9. **Explored**: its ground and walls drawn, dimmed by a fixed share of `palette.inkDeep` over
+   them; containers and the switch, escape door and stairs drawn dim; no monster and no drop pile
+   shown (§D). (B1)
+10. **Visible**: drawn in full, as FS-KE075 draws it. (B1)
+11. **A wall shows the brightest state of the regions it borders** (visible over explored over
+    unexplored), so a visible room's walls are whole even where the far side is unexplored.
+    **(derived here)**
+12. **Light sources** in a region that is not visible are off; the player's own torch pool is
+    unchanged. Lighting stays presentation-only. (B5)
+13. **One fog layer** at the blackout's depth (over the world, light-map and world effects, under
+    dust, vignette, markers and the HUD), drawn geometrically from region footprints projected to
+    iso and raised over their shell walls' height, the way the blackout's canvas fallback is, under
+    both renderers. It is redrawn only when a region's state changes, never per frame. **(derived
+    here: 18–28 rooms plus their corridor segments change state a few dozen times a floor; no mask
+    is needed)**
+14. **Objects in an unexplored region are hidden, not only covered** (`setVisible(false)`), since
+    markers draw above the fog and nothing hidden may be hovered or clicked. **(derived here)**
+
+### §D. Monsters and drop piles
+
+15. **A monster is shown** when it stands in a visible region, or within 400 px of any living,
+    in-play party member's position, whatever its region's state. Otherwise it and its markers
+    (plate, bar, elite marker, eyes) are hidden. (B3)
+16. **A drop pile follows the monster rule.** **(derived here: it appears where a monster died and
+    is the kind of thing fog should not give away)**
+17. **A hidden monster cannot be targeted**: no strike-mark cursor on hover, no click-to-attack, no
+    target frame (FS-48CTQ). **(derived here)**
+18. **Fog never hides a party member.** A living member is always in a visible region by §B.3.
+
+### §E. Minimap
+
+19. **Shown on dungeon floors, on by default** each time a run scene starts; **M** toggles it for
+    the rest of that run scene. M is ignored while the chat input has focus. (B4)
+20. **Place**: the top-right HUD column, right-aligned at `TOP_RIGHT_HUD`'s x, its top 6 px under
+    the floor indicator; it moves with `relayoutHud`. It never covers the fullscreen button
+    (which the column already steps down from), the escaped count or the floor indicator. (B4)
+21. **Size**: the floor drawn in the world's iso projection, scaled to fit 216 × 108 logical px
+    (floor 1's 72 × 48 cells), on a `palette.hudPanel` backing with the HUD's rim. **(derived
+    here: iso keeps the minimap's directions the screen's; at 216 px its left edge is at x ≥ 854
+    at the 1080 minimum, clear of a top-centre notice up to 600 px wide and of FS-48CTQ's target
+    frame)**
+22. **Content**: explored and visible regions as filled cell footprints (visible brighter); nothing
+    for unexplored regions; a dot per living party member, the local player distinct from the
+    rest, in the ally channel; the switch, escape door and stairs as small marks in the amber
+    interactable channel once their region is explored. No monsters, containers or drop piles.
+    (B4)
+23. **It updates** when a region changes state and when a party dot moves; it is rebuilt on a floor
+    change. (B4)
+24. **Spectating**: a resolved player watching a teammate keeps the minimap, with the same
+    content. **(derived here)**
+25. Colours from tokens only (ADR-0013); the panel follows `design-guideline.md` "UI Chrome".
+
+## User Stories
+
+1. As a delver, I want rooms I have not entered to be dark, so that exploring floor 1 means discovering it.
+2. As a delver, I want rooms I have been through to stay drawn, so that I can find my way back.
+3. As a delver, I want explored rooms to show no monsters, so that I have to look again before I trust a room.
+4. As a delver, I want the room I stand in to be fully visible, so that I can fight what is in it.
+5. As a delver, I want to see a monster just outside the room, near the doorway, so that I am not ambushed through an opening.
+6. As a party, we want what one of us uncovers to be uncovered for all, so that splitting up to explore helps.
+7. As a delver, I want to see where my party is on a minimap, so that I can regroup.
+8. As a delver, I want the minimap to show the switch, the escape door and the stairs once found, so that I can head for them.
+9. As a delver, I want the minimap drawn the way the floor is seen, so that up on the minimap is up on screen.
+10. As a delver, I want to hide the minimap with M, so that I can clear the corner when I want.
+11. As a delver, I want the minimap to keep clear of the fullscreen button and the floor indicator, so that the top-right corner stays readable.
+12. As a delver, I want a hidden monster not to be clickable, so that the fog does not give it away.
+13. As a delver on floors 2 and 3, I want the floor to look as it always did, so that the fog stays a floor-1 feature.
+14. As a delver climbing to a new floor, I want the fog to start fresh, so that a new floor is new ground.
+15. As a dead delver watching my party, I want the fog and minimap to follow what the living uncover, so that spectating still shows the floor.
+16. As a delver whose connection dropped, I want the game to come back working, even if the explored map is lost, so that a reconnect never breaks the run.
+
+## Acceptance Criteria
+
+- [ ] On a fixture dungeon floor: every region starts unexplored; a member stepping in makes it visible; stepping out leaves it explored.
+- [ ] Other members' positions uncover regions for this client (party-shared); dead and escaped members uncover nothing.
+- [ ] Unexplored regions draw as `palette.inkDeep` with nothing in them shown; explored regions draw dim with no monster or drop pile; visible regions draw in full.
+- [ ] A wall between a visible and an unexplored region draws in full.
+- [ ] A monster is shown in a visible region, or within 400 px of a living member in an explored or unexplored region, and hidden otherwise, markers included (unit tests over the rule; a scene test over the markers).
+- [ ] A hidden monster gets no strike cursor, no click and no target frame.
+- [ ] Lights in non-visible regions are off.
+- [ ] The fog layer redraws only on a state change (counted in a test that walks a member across regions).
+- [ ] A floor change and a fresh scene reset exploration.
+- [ ] The minimap shows on floor 1 by default, toggles with M (not while typing in chat), sits under the floor indicator right-aligned, fits 216 × 108, and overlaps neither the fullscreen button, escaped count, floor indicator, a 600 px top-centre notice nor the target frame, at 1080 and 1280 logical widths.
+- [ ] Minimap content: explored and visible regions, living member dots (self distinct), switch/door/stairs only once their region is explored; no monsters or containers.
+- [ ] Floors 2–3 and the fields show no fog and no minimap; floors 2–3 screenshots still match FS-KE075's captures.
+- [ ] Typecheck and the full vitest suite pass.
+- [ ] Nick's browser check (I-SRA9J-4) passes.
+
+## Edge States
+
+- **Floor map not yet in:** no fog and no minimap until the floor is built (FS-KE075 §H.41).
+- **Member standing in a doorway cell:** a doorway is a room cell, so the room is visible.
+- **Member in a corridor next to a room:** the room keeps its state; a monster in it within 400 px shows.
+- **Monster beyond 1600 px:** not sent (interest); fog has nothing to decide.
+- **Last living member dies:** nothing is visible any more; explored regions stay dim until the run ends.
+- **Local player dead, spectating:** they see what the living uncover (§B.3, §E.24).
+- **Reconnect:** exploration starts over (v1); the regions the party stands in are visible at once.
+- **Two members in different regions:** both regions visible.
+- **Window resized:** the minimap re-anchors; the fog layer is in world space and needs no redraw.
+- **Canvas renderer fallback:** the fog is geometric under both renderers.
+- **Floor-1 demon (1%):** follows the monster rule like any monster.
+
+## Out of Scope
+
+Fog or a minimap on floors 2–3, the hub or the field worlds; server-side fog or any cut of what
+the server sends by what a player may see (ADR-0063, ADR-0060 Decision 7); anti-cheat; line of
+sight inside a region; exploration that survives a reconnect; marking treasure rooms or monsters
+on the minimap; a full-screen map; minimap zoom, rotation or click-to-ping; new art.
