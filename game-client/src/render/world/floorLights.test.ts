@@ -141,3 +141,27 @@ describe("nearLights: a dungeon floor's fixed lights near the camera (FS-KE075 ย
     expect(floor.length).toBeGreaterThan(FIXED_LIGHT_CAP);
   });
 });
+
+describe("nearLights under the fog (FS-SRA9J ยงC.12)", () => {
+  const light = (chunk: number, i: number, region: number) => ({
+    kind: "sconce" as const,
+    at: { x: chunk * 1000 + i * 7, y: i * 13 },
+    light: `sconce${chunk}.${i}`,
+    chunk,
+    region,
+  });
+  // thirty lights near the camera: twenty in region 1, ten in region 2
+  const floor = [...Array.from({ length: 20 }, (_, i) => light(0, i, 1)), ...Array.from({ length: 10 }, (_, i) => light(0, 20 + i, 2))];
+  const everywhere = () => true;
+
+  it("should leave off every light whose region is not visible", () => {
+    const kept = nearLights(floor, everywhere, FIXED_LIGHT_CAP, (l) => l.region === 2);
+    expect(kept.map((l) => l.light)).toEqual(floor.filter((l) => l.region === 2).map((l) => l.light));
+  });
+
+  it("should spend the cap on the lit regions' lights only, so an unlit one never takes a lit one's place", () => {
+    const kept = nearLights(floor, everywhere, 10, (l) => l.region === 2);
+    expect(kept).toHaveLength(10);
+    expect(kept.every((l) => l.region === 2)).toBe(true);
+  });
+});
