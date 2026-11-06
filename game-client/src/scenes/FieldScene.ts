@@ -99,6 +99,7 @@ const FIELD_SIZE: Record<FieldId, { width: number; height: number }> = {
   gentle_meadows: { width: 2000, height: 1000 },
   // 39 x 25 cells of 80 px, constants.ForestMapWidth/Height (FS-KSD6K §Requirements 1, 17)
   forlorn_forest: { width: 3120, height: 2000 },
+  dev_test_room: { width: 900, height: 600 },
 };
 
 const CAMERA_MARGIN = 120;

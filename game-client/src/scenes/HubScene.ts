@@ -21,6 +21,7 @@ import {
   fieldOf,
   gateAt,
   gateEdges,
+  gatesInThisBuild,
   signpostOf,
   type FieldDestination,
 } from "./hubGates";
@@ -628,6 +629,7 @@ export class HubScene extends Phaser.Scene {
   private atGate?: GateState;
   /** The name of the field gate the player stands in, over its signpost (FS-0XMCP §Requirements 21). */
   private fieldSign?: Phaser.GameObjects.Text;
+  private devGateLabel?: Phaser.GameObjects.Text;
   /**
    * The field-gate seam (FS-0XMCP §Requirements 21): called once each time the player steps into
    * a field gate, with the field it leads to; never while lingering, never for the Spire's gate.
@@ -1083,6 +1085,7 @@ export class HubScene extends Phaser.Scene {
     // the next visit steps into whatever gate it starts in
     this.atGate = undefined;
     this.dropFieldSign();
+    this.dropDevGateLabel();
     this.leavePending = false;
     this.soloPending = false;
     this.enterPending = false;
@@ -1902,6 +1905,7 @@ export class HubScene extends Phaser.Scene {
   private renderState(state: ClientGameState): void {
     if (state.world_type && state.world_type !== "hub") return;
 
+    const gates = gatesInThisBuild(state.gates ?? [], process.env.NODE_ENV);
     const present = new Set<string>();
 
     if (state.current_player) {
@@ -1927,8 +1931,9 @@ export class HubScene extends Phaser.Scene {
       const self = this.views.get(this.selfEntityID);
       if (self) this.keepCameraOn(self.sprite);
 
-      this.followGates(state.current_player.position, state.gates ?? []);
+      this.followGates(state.current_player.position, gates);
     }
+    this.labelDevGate(gates);
 
     this.renderStructures(state.walls ?? []);
     // Scenery waits for the buildings so it can refuse to stand inside one.
@@ -1975,9 +1980,38 @@ export class HubScene extends Phaser.Scene {
     if (entered?.destination === "spire" && !this.menu && !this.dialogue) this.openDoor();
     const field = fieldOf(entered);
     if (entered && field) {
-      this.showFieldSign(entered, field);
+      // the dev test room's gate has its own label, and signpostOf would pick the Forest's post
+      if (field !== "dev_test_room") this.showFieldSign(entered, field);
       this.onFieldGate(field);
     }
+  }
+
+  /** The dev test room's plain label, at its gate for as long as the state has one (FS-BDRTJ R5). */
+  private labelDevGate(gates: readonly GateState[]): void {
+    const gate = gates.find((g) => g.destination === "dev_test_room");
+    if (!gate) {
+      this.dropDevGateLabel();
+      return;
+    }
+    if (this.devGateLabel) return;
+    const foot = worldToScreen(gate.position.x, gate.position.y);
+    this.devGateLabel = this.gateName(foot.x, foot.y, FIELD_NAMES.dev_test_room);
+  }
+
+  private dropDevGateLabel(): void {
+    this.devGateLabel?.destroy();
+    this.devGateLabel = undefined;
+  }
+
+  private gateName(x: number, y: number, words: string): Phaser.GameObjects.Text {
+    return this.add
+      .text(x, y, words, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "14px",
+        color: toCss(palette.markerGate),
+      })
+      .setOrigin(0.5)
+      .setDepth(MARKER_DEPTH.name);
   }
 
   /**
@@ -1991,14 +2025,7 @@ export class HubScene extends Phaser.Scene {
     const foot = worldToScreen(at.x, at.y);
     const sheet = this.art?.sheet("signpost");
     const rise = sheet ? sheet.frameHeight * sheet.anchor.y : 0;
-    this.fieldSign = this.add
-      .text(foot.x, foot.y - rise - NAME_GAP, FIELD_NAMES[field], {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
-        color: toCss(palette.markerGate),
-      })
-      .setOrigin(0.5)
-      .setDepth(MARKER_DEPTH.name);
+    this.fieldSign = this.gateName(foot.x, foot.y - rise - NAME_GAP, FIELD_NAMES[field]);
   }
 
   private dropFieldSign(): void {

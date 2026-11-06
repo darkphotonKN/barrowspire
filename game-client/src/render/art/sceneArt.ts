@@ -34,6 +34,7 @@ export const SCENE_ART = {
   FieldScene: {
     gentle_meadows: ["wildlife"],
     forlorn_forest: ["fodder"],
+    dev_test_room: ["creatures", "boss"],
   },
   BarrowspireScene: ["creatures", "boss"],
 } as const satisfies {

@@ -46,6 +46,7 @@ export type FieldDestination = Exclude<GateState["destination"], "spire" | "hub"
 export const FIELD_NAMES: Record<FieldDestination, string> = {
   forest: "The Forlorn Forest",
   meadows: "Gentle Meadows",
+  dev_test_room: "Dev Test Room",
 };
 
 /**
@@ -55,7 +56,20 @@ export const FIELD_NAMES: Record<FieldDestination, string> = {
 export const FIELD_IDS: Partial<Record<FieldDestination, FieldId>> = {
   forest: "forlorn_forest",
   meadows: "gentle_meadows",
+  dev_test_room: "dev_test_room",
 };
+
+/**
+ * The gates this build acts on, given its `NODE_ENV`: all of them, but a production build ignores
+ * the dev test room's (FS-BDRTJ §Requirements 2, 3), since it can meet a server with the room on.
+ */
+export function gatesInThisBuild(
+  gates: readonly GateState[],
+  nodeEnv: string | undefined,
+): readonly GateState[] {
+  if (nodeEnv !== "production") return gates;
+  return gates.filter((gate) => gate.destination !== "dev_test_room");
+}
 
 /** The field a gate leads to, or undefined for the Spire's gate, a road home, and no gate at all. */
 export function fieldOf(gate: GateState | undefined): FieldDestination | undefined {
