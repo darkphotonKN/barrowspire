@@ -178,7 +178,7 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
-import { RegionGrid, dressingRooms, isDungeon, stripWalls, wallRule } from "@/render/world/dungeon";
+import { RegionGrid, dressingRooms, isDungeon, wallRule, wallRuns } from "@/render/world/dungeon";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
@@ -3711,18 +3711,18 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A dungeon floor's walls (FS-KE075 §H.46–§H.47): the map's rects in masonry, a block cut into
-   * one-cell strips, each piece front where a walkable cell lies north or west of it and back
-   * otherwise, the full pieces fading over the player like any occluder; a light only on a room's
-   * back wall. No building is drawn, no blackout and no roof: every piece stands in its ground
-   * chunk, shown only near the camera (§H.45). The ground takes the floor's look and seed.
+   * A dungeon floor's walls (FS-KE075 §H.46–§H.47): the map's wall cells in masonry, cut along
+   * one-cell runs by the faces they show (`wallRuns`), each piece front where a walkable cell lies
+   * north or west of it and back otherwise, the full pieces fading over the player like any
+   * occluder; a light only on a room's back wall. No building is drawn, no blackout and no roof:
+   * every piece stands in its ground chunk, shown only near the camera (§H.45). The ground takes the floor's look and seed.
    */
   private buildDungeonWalls(walls: readonly WallState[]): void {
     const dungeon = this.dungeon!;
     const look = this.currentFloorLook();
     const rule = wallRule(dungeon.grid);
     this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
-    const strips = stripWalls(walls, dungeon.grid.cell);
+    const strips = wallRuns(walls, dungeon.grid);
     const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
