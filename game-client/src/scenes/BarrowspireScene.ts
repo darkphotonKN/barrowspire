@@ -9,6 +9,7 @@ import { socketManager } from "@/utils/class/SocketManager";
 import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
+import { FloorMapWait } from "./floorMapWait";
 import {
   ClientGameState,
   PlayerState,
@@ -19,6 +20,7 @@ import {
   EscapeDoorState,
   SwitchState,
   WallState,
+  type FloorMap,
   DoorState,
   ProjectileState,
 } from "@/types/gameState";
@@ -616,9 +618,20 @@ export class BarrowspireScene extends Phaser.Scene {
   private connectionStatusUnsubscribe?: () => void;
   private targetPosition: { x: number; y: number } | null = null;
 
-  // 地圖大小
-  private mapWidth = 1440;
-  private mapHeight = 960;
+  // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
+  private mapWidth = 0;
+  private mapHeight = 0;
+  /** The size the camera, physics and ground were fitted to; none before the first map. */
+  private fittedTo?: { width: number; height: number };
+  /** The floor whose map is built (FS-KE075 §H.43): none until one is, and none after a teardown. */
+  private builtFloor?: number;
+  /** The built floor's walls, as its map gave them: what the dressing keeps clear of. */
+  private floorWalls: WallState[] = [];
+  /** Asks for a floor's map while a snapshot's floor has none (FS-KE075 §H.41). */
+  private readonly mapWait = new FloorMapWait();
+  private floorMapUnsubscribe?: () => void;
+  /** Lifts a climb's veil once the new floor's map is built (FS-KE075 §H.41); none otherwise. */
+  private veilRelease?: () => void;
 
   // 建築
   private buildings: Building[] = [];
@@ -871,6 +884,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private resetRun(end: SceneEnd): void {
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
+    this.floorMapUnsubscribe?.();
+    this.floorMapUnsubscribe = undefined;
     this.connectionStatusUnsubscribe?.();
     this.connectionStatusUnsubscribe = undefined;
     socketManager.off("exit_door_unlocked");
@@ -1009,6 +1024,14 @@ export class BarrowspireScene extends Phaser.Scene {
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
     this.floorVeil = [];
+    this.veilRelease = undefined;
+    // the next run is sized and built from its own map
+    this.mapWidth = 0;
+    this.mapHeight = 0;
+    this.fittedTo = undefined;
+    this.builtFloor = undefined;
+    this.floorWalls = [];
+    this.mapWait.reset();
     this.combat.reset();
     this.lastGameState = undefined;
     this.sessionID = undefined;
@@ -2938,12 +2961,6 @@ export class BarrowspireScene extends Phaser.Scene {
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
-    // The camera and the (vestigial, collision-free) physics world live in
-    // projected space: the map is a diamond, clamped by its bounding box plus a
-    // margin of dark. FS-2325V §A.3, §A.7.
-    const bounds = projectedBounds(this.mapWidth, this.mapHeight, CAMERA_MARGIN);
-    this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
-    boundCamera(this.cameras.main, bounds);
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
@@ -2965,18 +2982,10 @@ export class BarrowspireScene extends Phaser.Scene {
       new ContainerContents(this.PENDING_DURATION),
     );
 
-    // the map floor, as a diamond on the projection: the world theme's baked ground when
-    // the manifest has it, the placeholder floor otherwise (FS-2325V §C.1, FS-8RBQY §B.1)
-    const look = this.worldLook.ground;
-    this.groundLayer = GroundLayer.available(this.art, "run", look)
-      ? new GroundLayer(this, this.art, {
-          width: this.mapWidth,
-          height: this.mapHeight,
-          kind: "run",
-          look,
-        })
-      : undefined;
-    if (!this.groundLayer) this.createMapBackground();
+    // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
+    // run always was; otherwise the map, when it comes
+    const held = this.heldFloorMap();
+    if (held) this.fitFloor(held.width, held.height);
 
     // buildings are now created from server wall data in updateWalls()
 
@@ -3343,6 +3352,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.handleGameStateUpdate(state);
       },
     );
+    this.subscribeFloorMap();
 
     // Listen for exit door unlocked message
     const doorUnlocked = (payload: { message: string }) => {
@@ -3408,6 +3418,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private handleGameStateUpdate(state: ClientGameState): void {
     if (!this.acceptsFrame(state)) return;
+    const held = this.heldFloorMap(state.session_id);
+    // a late frame from the floor the party has climbed from (FS-KE075 §H.41)
+    if (held && state.floor !== undefined && state.floor < held.floor) return;
     this.lastGameState = state;
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
@@ -3417,6 +3430,10 @@ export class BarrowspireScene extends Phaser.Scene {
     if (climb) this.leaveFloor();
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
     this.floorLook ??= floorLook(this.worldLook, state.floor, state.floor_count);
+    // the floor is built from its map alone; without one its entities apply and it waits, asking
+    // after a second (FS-KE075 §H.41, §H.43)
+    const floorMap = held?.floor === state.floor ? held : undefined;
+    if (this.mapWait.due(state.floor, !!floorMap, this.time.now)) socketManager.sendMessage("request_floor_map", {});
 
     // Update current player position from server
     if (state.current_player) {
@@ -3470,11 +3487,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.monsters?.sync(state.monsters ?? []);
     this.lastHit.observe(state.monsters ?? [], this.time.now);
 
-    // The tower's outer wall, once per floor; it stands on no server state (FS-8RBQY §B.5)
-    this.buildPerimeter();
-
-    // Update walls from server
-    this.updateWalls(state.walls || []);
+    // The floor itself, from its map, once (FS-KE075 §H.43): the tower's outer wall, which stands on
+    // no server state (FS-8RBQY §B.5), then the walls
+    const building = !!floorMap && this.builtFloor !== floorMap.floor;
+    if (floorMap) this.standFloor(floorMap);
 
     // Update doors from server
     this.updateDoors(state.doors || []);
@@ -3494,7 +3510,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
     // fixed light built this broadcast goes through the floor's budget, once (§C.6)
-    this.buildDressing(state);
+    if (floorMap) this.buildDressing(state);
     this.stampLights();
 
     // Update projectiles from server (fireballs)
@@ -3525,6 +3541,98 @@ export class BarrowspireScene extends Phaser.Scene {
       this.settlePlayers();
       this.playFloorTransition(state);
     }
+    if (building) this.veilRelease?.();
+  }
+
+  /** This run's floor map as the store holds it, or none: another run's is not ours to build. */
+  private heldFloorMap(sessionId = this.sessionID): FloorMap | undefined {
+    const map = useGameStore.getState().floorMap;
+    if (!map) return undefined;
+    return sessionId === undefined || map.session_id === sessionId ? map : undefined;
+  }
+
+  /** Builds the floor the moment its map comes, if its snapshot came first (FS-KE075 §H.41). */
+  private subscribeFloorMap(): void {
+    this.floorMapUnsubscribe?.();
+    this.floorMapUnsubscribe = useGameStore.subscribe((now, before) => {
+      if (now.floorMap !== before.floorMap) this.onFloorMap();
+    });
+  }
+
+  /**
+   * A map that came after its floor's snapshot: the floor is built from it with the last
+   * snapshot's entities, as a first snapshot would have built it, and a climb's veil lifts.
+   */
+  private onFloorMap(): void {
+    const state = this.lastGameState;
+    if (!state) return;
+    const map = this.heldFloorMap(state.session_id);
+    if (!map || map.floor !== state.floor || this.builtFloor === map.floor) return;
+    this.standFloor(map);
+    this.buildDressing(state);
+    this.stampLights();
+    this.veilRelease?.();
+  }
+
+  /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
+  private standFloor(map: FloorMap): void {
+    this.fitFloor(map.width, map.height);
+    this.buildPerimeter();
+    this.buildWalls(map);
+  }
+
+  /** The floor's walls, from its map, once per floor (FS-KE075 §H.43). */
+  private buildWalls(map: FloorMap): void {
+    if (this.builtFloor === map.floor) return;
+    this.builtFloor = map.floor;
+    this.floorWalls = map.walls;
+    this.updateWalls(map.walls);
+  }
+
+  /**
+   * Sizes the run to its floor (FS-KE075 §H.42): the camera and the (vestigial, collision-free)
+   * physics world in projected space, the map a diamond clamped by its bounding box plus a margin
+   * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits.
+   */
+  private fitFloor(width: number, height: number): void {
+    if (this.fittedTo?.width === width && this.fittedTo.height === height) return;
+    const resized = this.fittedTo !== undefined;
+    this.fittedTo = { width, height };
+    this.mapWidth = width;
+    this.mapHeight = height;
+    const bounds = projectedBounds(width, height, CAMERA_MARGIN);
+    this.physics.world.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    boundCamera(this.cameras.main, bounds);
+    if (resized) this.dropGround();
+    if (!this.groundLayer && !this.groundPlane) this.createGround();
+  }
+
+  /**
+   * The map floor, as a diamond on the projection: the world theme's baked ground when the
+   * manifest has it, the placeholder floor otherwise (FS-2325V §C.1, FS-8RBQY §B.1).
+   */
+  private createGround(): void {
+    const look = this.worldLook.ground;
+    this.groundLayer = GroundLayer.available(this.art, "run", look)
+      ? new GroundLayer(this, this.art, {
+          width: this.mapWidth,
+          height: this.mapHeight,
+          kind: "run",
+          look,
+        })
+      : undefined;
+    if (!this.groundLayer) this.createMapBackground();
+  }
+
+  /** The ground of another size goes, for the floor's own (FS-KE075 §H.42). */
+  private dropGround(): void {
+    this.groundLayer?.destroy();
+    this.groundLayer = undefined;
+    if (this.groundPlane) {
+      this.outsideObjects = this.outsideObjects.filter((obj) => !this.groundPlane!.surface.exists(obj));
+      this.groundPlane.root.destroy();
+      this.groundPlane = undefined;
+    }
   }
 
   /**
@@ -3537,6 +3645,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
+    // the next floor is built from its own map (FS-KE075 §H.43)
+    this.builtFloor = undefined;
+    this.floorWalls = [];
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
     // each room in both its looks, cap and all (FS-9PN7X §B), and the blackout: the new floor
@@ -3663,22 +3774,32 @@ export class BarrowspireScene extends Phaser.Scene {
       duration: FLOOR_CARD_FADE_MS,
       delay: FLOOR_DARK_HOLD_MS,
     });
-    this.tweens.add({
-      targets: veil,
-      alpha: 0,
-      duration: FLOOR_VIEW_RETURN_MS,
-      delay: FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS,
-    });
-    this.tweens.add({
-      targets: card,
-      alpha: 0,
-      duration: FLOOR_CARD_FADE_MS * 2,
-      delay: FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS + FLOOR_CARD_HOLD_MS,
-      onComplete: () => {
-        this.floorVeil.forEach((obj) => obj.destroy());
-        this.floorVeil = [];
-      },
-    });
+    // the view comes back up only over a built floor: a climb whose map has not come keeps the
+    // dark until it is built, then lifts as it would have, less the time already waited (§H.41)
+    const shownAt = this.time.now;
+    const lift = () => {
+      this.veilRelease = undefined;
+      const waited = this.time.now - shownAt || 0;
+      const hold = Math.max(0, FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS - waited);
+      this.tweens.add({
+        targets: veil,
+        alpha: 0,
+        duration: FLOOR_VIEW_RETURN_MS,
+        delay: hold,
+      });
+      this.tweens.add({
+        targets: card,
+        alpha: 0,
+        duration: FLOOR_CARD_FADE_MS * 2,
+        delay: hold + FLOOR_CARD_HOLD_MS,
+        onComplete: () => {
+          this.floorVeil.forEach((obj) => obj.destroy());
+          this.floorVeil = [];
+        },
+      });
+    };
+    if (this.builtFloor === state.floor) lift();
+    else this.veilRelease = lift;
   }
 
   /** "Floor N of M" from the broadcast, redrawn only when it changes; hidden without floors. */
@@ -3956,7 +4077,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.dressing) return;
     const look = this.currentFloorLook();
     const plan = look.dressing
-      ? planDressing(look.dressing, look.seed, dressingStatics(state, this.mapWidth, this.mapHeight))
+      ? planDressing(look.dressing, look.seed, dressingStatics({ ...state, walls: this.floorWalls }, this.mapWidth, this.mapHeight))
       : [];
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];

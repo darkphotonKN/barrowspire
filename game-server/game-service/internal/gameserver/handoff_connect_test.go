@@ -209,10 +209,14 @@ func TestEnterHandedOffRun_RecordsTheRunAndAnnouncesItFirst(t *testing.T) {
 	assert.Equal(t, run.ID, recordOf(t, server, authClient.memberID).CurrentGameSessionId, "and so does the stored record")
 	assert.Equal(t, constants.Connected, connStateOf(t, server, authClient.memberID))
 
-	require.Len(t, msgChan, 1)
+	require.Len(t, msgChan, 2)
 	first := (<-msgChan).(types.Message)
 	assert.Equal(t, worldEnteredMessage(run), first, "world_entered (run) is the first message")
 	assert.Equal(t, string(types.WorldTypeRun), first.Payload["world_type"])
+	// then the run's floor, on the same queue (FS-KE075 §F R32)
+	floorMap, ok := run.FloorMapMessage()
+	require.True(t, ok)
+	assert.Equal(t, floorMap, (<-msgChan).(types.Message), "the floor map is the second")
 }
 
 // An expected arrival is seated and served like any connection: the connection

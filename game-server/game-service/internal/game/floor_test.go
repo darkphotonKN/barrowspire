@@ -546,8 +546,12 @@ func TestRegenerateFloor_NextBroadcastHoldsOnlyTheNewFloor(t *testing.T) {
 		context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
 	require.NoError(t, err)
 
+	// a run's walls are its floor map's, never its state's (FS-KE075 §F R34)
+	assert.Empty(t, state.Walls)
+	floorMap, ok := s.FloorMapMessage()
+	require.True(t, ok)
 	shown := []uuid.UUID{}
-	for _, w := range state.Walls {
+	for _, w := range floorMap.Payload["walls"].([]*types.WallState) {
 		shown = append(shown, w.EntityID)
 	}
 	for _, d := range state.Doors {

@@ -6,7 +6,7 @@ import {
   WorldEnteredPayload,
   WorldHandoffPayload,
 } from "@/assets/types/client";
-import { ClientGameState, isGameState } from "@/types/gameState";
+import { ClientGameState, isFloorMap, isGameState } from "@/types/gameState";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import { travelArrival } from "@/ui/travelArrival";
 import { useGameStore } from "@/stores/gameStore";
@@ -331,6 +331,12 @@ export class SocketManager {
       // door's Enter as a party back. FS-BJNYC R21, R23.
       if (!isPartyReadyCheck(data.payload)) return;
       usePartyStore.getState().receiveReadyCheck(data.payload);
+      this.listeners.get(data.action)?.(data.payload);
+    } else if (data.action === "floor_map") {
+      // A run floor's layout, once per floor: the store keeps it for whichever run scene is up or
+      // still loading (FS-KE075 §H.40, ADR-0060 Decision 3).
+      if (!isFloorMap(data.payload)) return;
+      useGameStore.getState().receiveFloorMap(data.payload);
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action === "mail_arrived") {
       // A letter was just sent to this player: a hint to look, carrying no letter. The mailbox

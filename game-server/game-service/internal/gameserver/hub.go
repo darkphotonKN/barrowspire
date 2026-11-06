@@ -43,6 +43,10 @@ type messageHub struct {
 	// work finished off the loop and handed back to it: a party call's outcome, a lookup's answer
 	jobs loopJobs
 
+	// when each connection's request_floor_map was last answered, on the loop
+	// alone (FS-KE075 §F R33)
+	floorMapAnswers floorMapAnswers
+
 	// mail arrivals off Redis, passed on to HUB-world players on this loop; nil on a hub built
 	// without one, which then waits on no arrivals (FS-1GZGD R42, R43)
 	mail mailArrivalRelayer
@@ -302,6 +306,29 @@ func worldEnteredMessage(session *game.Session) types.Message {
 		Action:  string(constants.ActionWorldEntered),
 		Payload: payload,
 	}
+}
+
+// worldEntryMessages is what a client is sent on entering session, in order:
+// world_entered, then, for a run, its current floor's map, so the map always
+// follows the world it belongs to on the one queue (FS-KE075 §F R32). The hub
+// and the fields send their walls per tick and have no map.
+func worldEntryMessages(session *game.Session) []types.Message {
+	messages := []types.Message{worldEnteredMessage(session)}
+	if floorMap, ok := session.FloorMapMessage(); ok {
+		messages = append(messages, floorMap)
+	}
+	return messages
+}
+
+// sendWorldEntry sends conn what entering session takes, stopping at the first
+// message the queue refuses.
+func (h *messageHub) sendWorldEntry(conn *websocket.Conn, session *game.Session) error {
+	for _, message := range worldEntryMessages(session) {
+		if err := h.sender.SendMessageToConn(conn, message); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refuseField answers a refused field action with its words and the stable
@@ -617,7 +644,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					LocalPlayers: []*types.Player{player},
 				})
 				slog.Info("Solo run started", "session_id", session.ID, "player_id", player.ID)
-				if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session)); err != nil {
+				if err := h.sendWorldEntry(clientPackage.Conn, session); err != nil {
 					slog.Warn("Could not tell the delver their solo run started", "player_id", player.ID, "error", err)
 				}
 
@@ -647,6 +674,11 @@ func (h *messageHub) Run(ctx context.Context) {
 			// FS-X2F2H §Requirements 9–13.
 			case constants.ActionEnterField:
 				go h.enterField(ctx, clientPackage)
+
+			// A client in a run whose floor's map never arrived asking again;
+			// answered at most once a second, ignored outside a run. FS-KE075 §F R33.
+			case constants.ActionRequestFloorMap:
+				h.answerFloorMap(clientPackage.Conn, time.Now())
 
 			// A player at a field's entrance walking home to the hub, beside
 			// leave_run. FS-X2F2H §Requirements 14–16.
@@ -1035,8 +1067,10 @@ func (h *messageHub) startMatchedRun(ctx context.Context, matched matchmaker.Mat
 	}
 	// game_found was this message under an older name, from when a run
 	// was the only world anyone could enter. FS-29KSH §Requirements 15.
-	if err := h.sender.BroadcastToPlayerList(playerIDs, worldEnteredMessage(session)); err != nil {
-		slog.Warn("world_entered not delivered to every matched player", "session_id", session.ID, "error", err)
+	for _, message := range worldEntryMessages(session) {
+		if err := h.sender.BroadcastToPlayerList(playerIDs, message); err != nil {
+			slog.Warn("Run entry not delivered to every matched player", "session_id", session.ID, "action", message.Action, "error", err)
+		}
 	}
 
 	// only now that the run exists are the other pods told to send their
@@ -1213,7 +1247,7 @@ func (h *messageHub) handlePlayerExistingGame(player *types.Player, clientPackag
 			"player_id", player.ID,
 			"current_game_session_id", player.CurrentGameSessionId)
 
-		if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(session)); err != nil {
+		if err := h.sendWorldEntry(clientPackage.Conn, session); err != nil {
 			slog.Warn("Could not tell a member which run to resume", "player_id", player.ID, "error", err)
 		}
 

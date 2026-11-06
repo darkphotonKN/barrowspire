@@ -449,8 +449,9 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		}
 
 		// --- Walls ---
+		// a run's walls are its floor map's, never its state's (FS-KE075 §F R34)
 		wallComp, isWall := entity.GetComponent(ecs.ComponentTypeWall)
-		if isWall {
+		if isWall && worldType != types.WorldTypeRun {
 			wall := wallComp.(*components.WallComponent)
 			tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
 			if hasTransform {
@@ -526,7 +527,6 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		WorldType:     backendState.WorldType,
 		Items:         backendState.Items,
 		Doors:         backendState.Doors,
-		Walls:         backendState.Walls,
 		Containers:    backendState.Containers,
 		CurrentPlayer: currentPlayer,
 		OtherPlayers:  otherPlayers,
@@ -541,6 +541,13 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Monsters:      backendState.Monsters,
 		Trails:        backendState.Trails,
 		Gates:         backendState.Gates,
+	}
+
+	// the hub and a field say where their walls are, an empty list when none;
+	// a run leaves the key out. The slice header is copied, as the stairs' is.
+	if backendState.WorldType != types.WorldTypeRun {
+		walls := backendState.Walls
+		state.Walls = &walls
 	}
 
 	// a run always says where its stairs are, even when there are none; the

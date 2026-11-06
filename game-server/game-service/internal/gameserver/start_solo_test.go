@@ -280,6 +280,9 @@ func startSoloAwaitRun(t *testing.T, server *Server, inbox *startSoloInbox) *gam
 	// a run the test leaves unended stops with the test; Shutdown is idempotent
 	t.Cleanup(run.Shutdown)
 
+	// the run's floor is mapped after it is entered (FS-KE075 §F R32)
+	awaitFloorMapOf(t, inbox, run, "the solo delver")
+
 	return run
 }
 

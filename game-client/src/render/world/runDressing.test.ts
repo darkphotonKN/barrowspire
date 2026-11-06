@@ -138,7 +138,7 @@ describe("planDressing (FS-8RBQY §C.4–§C.5)", () => {
   });
 
   it("should keep every piece clear of each keep-out rule", () => {
-    const walls = broadcast.walls.map(rectOf);
+    const walls = broadcast.walls!.map(rectOf);
     const doors = broadcast.doors.map(rectOf);
     const uses = [at(300, 700), at(1080, 700), at(1380, 120), at(60, 900)];
     for (const p of plan) {

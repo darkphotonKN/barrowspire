@@ -145,6 +145,12 @@ export class GroundLayer {
     this.paint([]);
   }
 
+  /** The ground goes, its lift with it: a floor of another size paints its own (FS-KE075 §H.42). */
+  destroy(): void {
+    this.lifted?.destroy();
+    this.rt.destroy();
+  }
+
   /** Whether the ground has art; when not, the scene keeps its placeholder floor. */
   static available(
     art: ArtLibrary,
