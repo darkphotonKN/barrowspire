@@ -3,6 +3,7 @@ package gameserver
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -258,4 +259,35 @@ func TestRenewLimiter_OnePerSecondPerConnection(t *testing.T) {
 	assert.False(t, limiter.allow(a, t0.Add(999*time.Millisecond)))
 	assert.True(t, limiter.allow(b, t0.Add(999*time.Millisecond)), "per connection")
 	assert.True(t, limiter.allow(a, t0.Add(time.Second)))
+}
+
+// R32: the token is a credential and never reaches the log, at any level, on
+// success or refusal. The loop's "incoming message" line logs every frame's
+// payload, so renew_token must be kept off it the way a chat line is.
+func TestRenewToken_LogsCarryNoToken(t *testing.T) {
+	sink := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	server := newTestServer(t, context.Background(), &tokenAuth{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Wren", Token: "old-token"}
+	registerTestConn(server, conn, player)
+	inbox := startSoloListen(t, server, conn)
+
+	good := "access:" + player.ID.String()
+	bad := "access:" + uuid.New().String()
+	for _, token := range []string{good, bad} {
+		server.serverChan <- types.ClientPackage{Conn: conn, Message: types.Message{
+			Action:  renewTokenAction,
+			Payload: map[string]interface{}{"token": token},
+		}}
+		_, answered := inbox.await(tokenRenewedAction, renewTokenAction)
+		require.True(t, answered)
+		time.Sleep(1100 * time.Millisecond) // past the rate limit
+	}
+
+	assert.NotContains(t, sink.String(), good)
+	assert.NotContains(t, sink.String(), bad)
 }
