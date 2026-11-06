@@ -105,6 +105,25 @@ describe("PurseReader (FS-7TGZ3 §C R10–11, §D R12–13)", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it("should log a 404 that is not NOT_FOUND (a missed route), still showing the dash", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { purse, last } = reader({
+      getWalletAccount: async () => {
+        throw new ApiError({
+          code: "UNKNOWN_ERROR",
+          status: 404,
+          detail: "",
+          errors: [],
+        });
+      },
+    });
+
+    await purse.refresh();
+
+    expect(last()).toEqual({ amount: PURSE_UNKNOWN });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it("should show the dash on any other failure, with one warning and no notice", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { purse, shown } = reader({
@@ -182,5 +201,40 @@ describe("PurseReader (FS-7TGZ3 §C R10–11, §D R12–13)", () => {
 
     expect(shown.map((v) => v.amount)).toEqual(["5"]);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("PurseReader.forget (FS-7TGZ3: an answer outliving its world)", () => {
+  it("should drop an answer that lands after forget, the shelf untouched", async () => {
+    const answer = deferred<ReturnType<typeof account>>();
+    const { purse, shown } = reader({ getWalletAccount: () => answer.promise });
+
+    const read = purse.refresh();
+    purse.forget();
+    answer.resolve(account(300));
+    await read;
+
+    expect(shown).toEqual([]);
+  });
+
+  it("should drop a failure that lands after forget, logging nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const answer = deferred<ReturnType<typeof account>>();
+    const { purse, shown } = reader({ getWalletAccount: () => answer.promise });
+
+    const read = purse.refresh();
+    purse.forget();
+    answer.reject(new Error("gone"));
+    await read;
+
+    expect(shown).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("should still read after forget, when asked again", async () => {
+    const { purse, last } = reader({ getWalletAccount: async () => account(4) });
+    purse.forget();
+    await purse.refresh();
+    expect(last().amount).toBe("4");
   });
 });

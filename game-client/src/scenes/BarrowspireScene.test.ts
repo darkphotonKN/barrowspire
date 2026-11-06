@@ -3478,6 +3478,19 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     expect(run.lastGameState).toBeUndefined();
   });
 
+  it("should release the equip HUD on reset, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { resetRun(): void; equipment?: { release(): void } };
+    scene.init();
+    const release = vi.fn();
+    run.equipment = { release };
+
+    run.resetRun();
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(run.equipment).toBeUndefined();
+  });
+
   it("should accept everything when started without a session, and forget the session on reset", () => {
     const scene = new BarrowspireScene();
     const run = scene as unknown as Filtered;

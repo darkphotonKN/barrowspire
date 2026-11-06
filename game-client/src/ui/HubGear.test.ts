@@ -1022,7 +1022,7 @@ describe("HubGear purse line (FS-7TGZ3 §C R8–9)", () => {
   function withPurse() {
     const panel = fakePanel();
     const api = fakeApi();
-    const purse = { refresh: vi.fn() };
+    const purse = { refresh: vi.fn(), forget: vi.fn() };
     const gear = new HubGear(panel, api, { notice: vi.fn() }, purse);
     return { panel, gear, purse };
   }
@@ -1053,6 +1053,13 @@ describe("HubGear purse line (FS-7TGZ3 §C R8–9)", () => {
     gear.toggle();
     gear.refreshPurse();
     expect(purse.refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("should let a purse read in flight go on release", () => {
+    const { gear, purse } = withPurse();
+    gear.toggle();
+    gear.release();
+    expect(purse.forget).toHaveBeenCalledTimes(1);
   });
 
   it("should open and load as before without a purse", async () => {
