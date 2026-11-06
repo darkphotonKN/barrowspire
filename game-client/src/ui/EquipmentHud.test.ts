@@ -219,3 +219,19 @@ describe("EquipmentHud full bag (FS-HRH2J R20–22; edge states: Bag exactly ful
     expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
   });
 });
+
+describe("EquipmentHud purse line (FS-7TGZ3 §C R8: every open reads the purse, in a run and a field)", () => {
+  it("should read the purse each time the overlay opens, and not on closing", () => {
+    const p = panel();
+    const purse = { refresh: vi.fn() };
+    const equipment = new EquipmentHud(p, { send: vi.fn(), notice: vi.fn() }, () => 0, purse);
+
+    equipment.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    equipment.toggle();
+    expect(equipment.hide()).toBe(false);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    equipment.toggle();
+    expect(purse.refresh).toHaveBeenCalledTimes(2);
+  });
+});

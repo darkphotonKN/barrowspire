@@ -1296,3 +1296,95 @@ describe("GearOverlay compare (FS-NV54P)", () => {
     expect(overlayOnStage().shown()).toContain(GEAR_HINT);
   });
 });
+
+describe("GearOverlay purse line (FS-7TGZ3 §A, §B)", () => {
+  const TIP = "Available 1,300 · Held in bids 200";
+
+  /** An overlay with the art's resolve recorded, so which icon the line asks for is seen. */
+  function purseOnStage(bag: ItemState[] = []) {
+    const s = recordingScene(1080, 720);
+    const resolve = vi.spyOn(s.art, "resolve");
+    const overlay = new GearOverlay(s.scene, s.art);
+    const onEquip = vi.fn();
+    const onUnequip = vi.fn();
+    overlay.onEquip = onEquip;
+    overlay.onUnequip = onUnequip;
+    overlay.updateInventory(bag);
+    const g = gearPanelLayout(overlayLayout(1080, 720).right, bag.length);
+    const line = [g.purse.x + 30, g.purse.y + g.purse.h / 2] as const;
+    return { ...s, overlay, resolve, onEquip, onUnequip, g, line };
+  }
+
+  it("should show the dash under the bag before any purse is known (R10, R12)", () => {
+    const { overlay, shown } = purseOnStage();
+    overlay.show();
+    expect(shown()).toContain("—");
+  });
+
+  it("should draw the total beside the coins icon, under the bag grid (R1–3)", () => {
+    const { overlay, shown, resolve, texts, sprites, g } = purseOnStage();
+    overlay.setPurse({ amount: "1,500", tip: TIP });
+    overlay.show();
+    expect(shown()).toContain("1,500");
+    expect(resolve.mock.calls.map((c) => c[0])).toContain("icon_coins");
+    const amount = texts.find((t) => t.content === "1,500" && !t.destroyed)!;
+    expect(amount.y).toBeGreaterThanOrEqual(g.purse.y);
+    expect(amount.y).toBeLessThanOrEqual(g.purse.y + g.purse.h);
+    expect(amount.size).toBe(12);
+    const coin = sprites.find(
+      (sp) => sp.y >= g.purse.y && sp.y <= g.purse.y + g.purse.h,
+    );
+    expect(coin).toBeDefined();
+    expect(coin!.x).toBeLessThan(amount.x);
+  });
+
+  it("should draw a purse set while open at once, and keep it across closing", () => {
+    const { overlay, shown } = purseOnStage();
+    overlay.show();
+    overlay.setPurse({ amount: "42", tip: "Available 42 · Held in bids 0" });
+    expect(shown()).toContain("42");
+    expect(shown()).not.toContain("—");
+    overlay.hide();
+    overlay.show();
+    expect(shown()).toContain("42");
+  });
+
+  it("should show the split on hover and hide it as the pointer leaves (R5–6)", () => {
+    const { overlay, shown, move, line } = purseOnStage();
+    overlay.setPurse({ amount: "1,500", tip: TIP });
+    overlay.show();
+    move(...line);
+    expect(shown()).toContain(TIP);
+    move(540, 360);
+    expect(shown()).not.toContain(TIP);
+  });
+
+  it("should show no tip over the dash (R7)", () => {
+    const { overlay, shown, move, line, texts } = purseOnStage();
+    overlay.show();
+    const before = texts.length;
+    move(...line);
+    expect(texts.length).toBe(before);
+    expect(shown()).toContain("—");
+  });
+
+  it("should take no right-click and no E over the line (R6)", () => {
+    const { overlay, move, press, line, onEquip, onUnequip } = purseOnStage([
+      sword,
+    ]);
+    overlay.setPurse({ amount: "1,500", tip: TIP });
+    overlay.show();
+    move(...line);
+    press(...line, 2);
+    overlay.handleEquipKey();
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(onUnequip).not.toHaveBeenCalled();
+  });
+
+  it("should show the line in stash mode too (R4)", () => {
+    const { overlay, shown } = purseOnStage();
+    overlay.setPurse({ amount: "7", tip: "Available 7 · Held in bids 0" });
+    overlay.openStash();
+    expect(shown()).toEqual(expect.arrayContaining(["STASH", "7"]));
+  });
+});

@@ -167,6 +167,44 @@ describe("the hint line (FS-NV54P R25: the longer hint stays inside the right pa
   );
 });
 
+describe("the purse line (FS-7TGZ3 §A R1: under the bag grid, above the hint)", () => {
+  const cases = SIZES.flatMap(([w, h]) =>
+    [0, BAG_CAPACITY, 60].map((count) => [w, h, count] as const),
+  );
+
+  it.each(cases)(
+    "should sit under every bag cell shown and above the hint, inside the panel, at %ix%i with %i items",
+    (w, h, count) => {
+      const { right } = overlayLayout(w, h);
+      const g = gearPanelLayout(right, count);
+      const gridBottom = Math.max(...g.cells.map((c) => c.rect.y + c.rect.h));
+      expect(g.purse.y).toBeGreaterThan(gridBottom);
+      expect(g.purse.y + g.purse.h).toBeLessThanOrEqual(g.hintY);
+      expect(g.purse.x).toBeGreaterThanOrEqual(right.x + PANEL_PAD);
+      expect(g.purse.x + g.purse.w).toBeLessThanOrEqual(
+        right.x + right.w - PANEL_PAD,
+      );
+    },
+  );
+
+  it("should line up with the bag grid's edges, tall enough for the coin and a 12px amount", () => {
+    const g = gearPanelLayout(overlayLayout(1080, 720).right, 7);
+    expect(g.purse.x).toBe(g.grid.x);
+    expect(g.purse.w).toBe(g.grid.w);
+    expect(g.purse.h).toBeGreaterThanOrEqual(16);
+  });
+
+  it("should stay under the grid as an over-capacity bag scrolls", () => {
+    const small = overlayLayout(640, 400).right;
+    const first = gearPanelLayout(small, 60);
+    const last = gearPanelLayout(small, 60, first.rows);
+    for (const g of [first, last]) {
+      expect(g.purse.y).toBeGreaterThan(g.grid.y + g.grid.h);
+      expect(g.purse.y + g.purse.h).toBeLessThanOrEqual(g.hintY);
+    }
+  });
+});
+
 describe("statsPanelArea (FS-HRH2J §C: the stats panel's insides)", () => {
   it.each(SIZES)(
     "should sit inside the left panel, below its title, at %ix%i",
