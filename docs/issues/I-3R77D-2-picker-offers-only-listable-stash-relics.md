@@ -1,6 +1,6 @@
 ---
 id: I-3R77D-2
-status: open
+status: done
 implements: FS-3R77D
 blocked_by: []
 labels: [ready-for-agent]
