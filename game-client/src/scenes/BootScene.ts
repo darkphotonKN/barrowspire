@@ -43,9 +43,11 @@ export class BootScene extends Phaser.Scene {
     // with 4001 renews the session once and reconnects before it counts as an auth error
     // (FS-ZPX58 R20, R21).
     socketManager.setTokenSource(currentAccessToken);
-    socketManager.setRenewSession(async () => (await renewSession()) === "renewed");
+    // The outcome as it is: an unavailable renewal (an auth outage) keeps the session and the
+    // socket retries with a backoff; only a refused one reaches the auth error below (M3).
+    socketManager.setRenewSession(renewSession);
 
-    // Handle auth errors (close code 4001 from server, after renewal could not help)
+    // Handle auth errors (close code 4001 from server, once renewal was refused)
     socketManager.setOnAuthError(() => {
       localStorage.removeItem("auth-storage");
       window.location.href = "/login";

@@ -2,7 +2,12 @@ import createClient, { type Middleware } from "openapi-fetch";
 import type { paths } from "@/api/generated/schema";
 import { useAuthStore } from "@/stores/authStore";
 import { ApiError, fromProblem } from "@/utils/apiError";
-import { scheduleRenewals, singleFlight, type RenewOutcome } from "@/utils/sessionRenewal";
+import {
+  scheduleRenewals,
+  singleFlight,
+  withCooldown,
+  type RenewOutcome,
+} from "@/utils/sessionRenewal";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7114";
 
@@ -49,19 +54,29 @@ export const currentAccessToken = getAuthToken;
  * outcome; it never signs the player out itself.
  */
 async function renewOnce(): Promise<RenewOutcome> {
-  const refreshToken = storedSession().refreshToken;
-  if (!refreshToken) return "refused";
+  const sent = storedSession().refreshToken;
+  if (!sent) return "refused";
 
   const { data, response } = await publicClient.POST("/api/member/refresh", {
-    body: { refresh_token: refreshToken },
+    body: { refresh_token: sent },
   });
-  if (response.status === 401 || response.status === 422) return "refused";
+
+  // The session changed while the renewal was out (FS-ZPX58 M1): a sign-out stays signed out,
+  // and a newer sign-in keeps its own tokens. The answer belongs to a session that is gone.
+  const now = storedSession();
+  if (now.refreshToken !== sent) return now.accessToken ? "renewed" : "refused";
+
+  // 404: the route is not there (a client deployed before its gateway); waiting cannot help (M2).
+  if (response.status === 401 || response.status === 404 || response.status === 422) return "refused";
   if (!response.ok || !data) return "unavailable";
   return useAuthStore.getState().applyRefreshResult(data) ? "renewed" : "refused";
 }
 
-/** Renews the stored session, single-flight (FS-ZPX58 R14): every caller shares one call. */
-export const renewSession = singleFlight(renewOnce);
+/**
+ * Renews the stored session, single-flight (FS-ZPX58 R14): every caller shares one call. After an
+ * unavailable renewal it cools down before asking again (M2).
+ */
+export const renewSession = singleFlight(withCooldown(renewOnce));
 
 /**
  * Starts the proactive renewal timer for this page (FS-ZPX58 R18) and returns its stop. The
