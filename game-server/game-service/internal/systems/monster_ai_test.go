@@ -50,7 +50,7 @@ func velocityOf(t *testing.T, e *ecs.Entity) *components.VelocityComponent {
 func firstRoll() float64 { return 0.25 }
 
 func think(em *ecs.EntityManager) {
-	NewMonsterAISystem(firstRoll).Update(tickSeconds, em.GetAllEntities())
+	NewMonsterAISystem(firstRoll, nil).Update(tickSeconds, em.GetAllEntities())
 }
 
 // A delver inside the aggro radius is acquired and chased, straight at them.
@@ -126,7 +126,7 @@ func TestMonsterAISystem_KeepsItsTarget(t *testing.T) {
 
 // hunt ticks monster AI and movement together, the way a run does, for n ticks.
 func hunt(em *ecs.EntityManager, n int) {
-	ai := NewMonsterAISystem(firstRoll)
+	ai := NewMonsterAISystem(firstRoll, nil)
 	move := NewMovementSystem()
 	for range n {
 		entities := em.GetAllEntities()
@@ -285,7 +285,7 @@ func TestMonsterAISystem_KitingArcherBeyondLeash_IsChasedUntilClosed(t *testing.
 
 // brawl ticks monster AI and combat together, the way a run does, for n ticks.
 func brawl(em *ecs.EntityManager, n int) {
-	ai := NewMonsterAISystem(firstRoll)
+	ai := NewMonsterAISystem(firstRoll, nil)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
 	for range n {
 		entities := em.GetAllEntities()
@@ -410,7 +410,7 @@ func TestMonsterAISystem_WedgedOnAWall_AbandonsTheDestination(t *testing.T) {
 			rolls = rolls[1:]
 		}
 		return r
-	})
+	}, nil)
 	move := NewMovementSystem()
 	for range ticks(3) {
 		entities := em.GetAllEntities()
