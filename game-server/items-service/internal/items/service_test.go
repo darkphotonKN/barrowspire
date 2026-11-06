@@ -800,13 +800,17 @@ func (o *recordingOutbox) CreateOutboxTx(_ context.Context, _ *sqlx.Tx, params c
 
 // FS-HBXZN R1-R4: under the seller's account lock the placement is read, and
 // the first failing check answers: not the seller's → ErrNotFound; not
-// AVAILABLE → ITEM_NOT_AVAILABLE, worn or not; worn → ITEM_WORN. Then the
+// AVAILABLE → ITEM_NOT_AVAILABLE, worn or not; worn → ITEM_WORN; not in the
+// stash → ITEM_NOT_IN_STASH (FS-3R77D R2, R4). Then the
 // seller's listed items are counted, and at the cap the reserve is refused
 // LISTING_LIMIT_REACHED (FS-XEDFF R5, R6, R8). Only then is the conditional
 // reserve run, and a reserve that matches no row is ITEM_NOT_AVAILABLE. A
 // refused reservation writes no outbox row.
 func TestServiceReserveItem_Rules(t *testing.T) {
 	available := func(worn bool) *ItemPlacement {
+		return &ItemPlacement{Status: itemStatusAvailable, Location: LocationStash, Worn: worn}
+	}
+	inBag := func(worn bool) *ItemPlacement {
 		return &ItemPlacement{Status: itemStatusAvailable, Location: LocationBag, Worn: worn}
 	}
 	dbDown := errors.New("connection refused")
@@ -828,6 +832,12 @@ func TestServiceReserveItem_Rules(t *testing.T) {
 			repo: &reserveRepo{placement: &ItemPlacement{Status: "PENDING_SETTLEMENT", Location: LocationBag}}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
 		{name: "worn and in a run is not available, not worn",
 			repo: &reserveRepo{placement: &ItemPlacement{Status: itemStatusInRun, Location: LocationBag, Worn: true}}, wantRefusal: errcode.ItemNotAvailable, wantCalls: []string{"lock", "read"}},
+		{name: "a bag item is not in the stash (FS-3R77D)",
+			repo: &reserveRepo{placement: inBag(false)}, wantRefusal: errcode.ItemNotInStash, wantCalls: []string{"lock", "read"}},
+		{name: "worn in the bag is still worn (FS-3R77D R4)",
+			repo: &reserveRepo{placement: inBag(true)}, wantRefusal: errcode.ItemWorn, wantCalls: []string{"lock", "read"}},
+		{name: "a bag item at the cap is not in the stash (FS-3R77D R4)",
+			repo: &reserveRepo{placement: inBag(false), listed: MaxListedItems}, wantRefusal: errcode.ItemNotInStash, wantCalls: []string{"lock", "read"}},
 		{name: "unworn and available is reserved",
 			repo: &reserveRepo{placement: available(false)}, wantCalls: []string{"lock", "read", "count", "reserve"}},
 		{name: "one under the cap is reserved",
@@ -919,7 +929,8 @@ func wearIn(t *testing.T, ctx context.Context, db *sqlx.DB, owner, id uuid.UUID,
 
 // Opt-in and committed. The reservation's checks against a real schema: a
 // worn instance (a weapon slot and a consumable slot) is refused ITEM_WORN and
-// left untouched; an unworn one is reserved as before; a listed one, and one
+// left untouched; an unworn bag one is refused ITEM_NOT_IN_STASH and left
+// untouched (FS-3R77D R2); an unworn stash one is reserved as before; a listed one, and one
 // worn in a run, are not available; a missing and a foreign one read the same,
 // not found (FS-HBXZN R1-R4). The outbox is recorded rather than written, so
 // no ItemReserved for a test item can reach a live outbox worker.
@@ -949,9 +960,24 @@ func TestServiceReserveItem_AgainstTheSchema(t *testing.T) {
 		})
 	}
 
-	t.Run("unworn and available is reserved", func(t *testing.T) {
+	t.Run("a bag item is refused and untouched (FS-3R77D R2)", func(t *testing.T) {
 		owner := uuid.New()
 		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+
+		outbox, err := reserve(owner, item)
+
+		refusedWith(t, err, errcode.ItemNotInStash)
+		if r := reservationOf(t, ctx, db, item); r.Status != itemStatusAvailable || r.ListingID != nil || r.ReservedAt != nil {
+			t.Errorf("item = %+v, want AVAILABLE with no listing", r)
+		}
+		if len(outbox.rows) != 0 {
+			t.Errorf("outbox rows = %d, want none", len(outbox.rows))
+		}
+	})
+
+	t.Run("unworn and available in the stash is reserved", func(t *testing.T) {
+		owner := uuid.New()
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
 
 		outbox, err := reserve(owner, item)
 
@@ -1038,8 +1064,8 @@ func TestServiceReserveItem_ListedItemCap(t *testing.T) {
 	t.Run("the 20th is reserved and the 21st refused, writing nothing", func(t *testing.T) {
 		owner := uuid.New()
 		seedListed(t, ctx, db, owner, MaxListedItems-1)
-		twentieth := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
-		twentyFirst := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+		twentieth := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
+		twentyFirst := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
 
 		if _, err := reserve(owner, twentieth); err != nil {
 			t.Fatalf("20th reserve: %v", err)
@@ -1061,7 +1087,7 @@ func TestServiceReserveItem_ListedItemCap(t *testing.T) {
 			seedInRun(t, ctx, db, owner, LocationBag, uuid.New())
 		}
 		seedListed(t, ctx, db, uuid.New(), MaxListedItems)
-		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
 
 		if _, err := reserve(owner, item); err != nil {
 			t.Fatalf("reserve at 19: %v", err)
@@ -1094,8 +1120,8 @@ func TestServiceReserveItem_ConcurrentReservesAt19(t *testing.T) {
 		owner := uuid.New()
 		seedListed(t, ctx, db, owner, MaxListedItems-1)
 		items := []uuid.UUID{
-			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag),
-			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag),
+			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash),
+			seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash),
 		}
 
 		errs := make(chan error, len(items))
@@ -1235,7 +1261,9 @@ func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
 
 	for i := range 25 {
 		owner := uuid.New()
-		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
+		// in the stash, so a reserve that wins is a reservation (FS-3R77D R2);
+		// equipping from the stash is allowed (FS-VPD8Y R19)
+		item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationStash)
 		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
 
 		start := make(chan struct{})
