@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -315,6 +316,47 @@ func BenchmarkSerializeBackendState_WithPool(b *testing.B) {
 	}
 }
 
+// kit gives a player a bag of eight items and five worn, made by item.
+func kit(player *ecs.Entity, item func(int) uuid.UUID) {
+	bag := make([]uuid.UUID, 0, 8)
+	for j := range 8 {
+		bag = append(bag, item(j))
+	}
+	player.AddComponent(components.NewItemIDListComponent(bag))
+	weapon, head, chest, legs, gloves := item(0), item(1), item(2), item(3), item(4)
+	player.AddComponent(&components.EquipmentComponent{
+		WeaponSlot: &weapon, HeadSlot: &head, ChestSlot: &chest, LegsSlot: &legs, GlovesSlot: &gloves,
+	})
+}
+
+// newItemMaker is a maker of items in em, each a new entity; it returns the
+// item's id.
+func newItemMaker(em *ecs.EntityManager) func(int) uuid.UUID {
+	return func(i int) uuid.UUID {
+		e := em.CreateEntity()
+		e.AddComponent(&components.ItemComponent{
+			TemplateID: uuid.New(), ItemType: types.ItemTypeWeapon, Name: fmt.Sprintf("Notched Blade %d", i),
+			AttackPower: 12, CriticalRate: 0.1, WeaponType: "melee", Description: "An old blade.", RequiredLevel: 3,
+		})
+		return e.ID
+	}
+}
+
+// aFullHub is a hub at its occupancy cap: players strewn over it by a fixed
+// seed, each with a bag of eight items and five worn.
+func aFullHub(players int) (*ecs.EntityManager, []uuid.UUID) {
+	em := ecs.NewEntityManager()
+	rng := rand.New(rand.NewPCG(3, 4))
+	item := newItemMaker(em)
+	ids := make([]uuid.UUID, 0, players)
+	for range players {
+		id := uuid.New()
+		kit(addDelver(em, id, rng.Float64()*2400, rng.Float64()*1600, 100), item)
+		ids = append(ids, id)
+	}
+	return em, ids
+}
+
 // aDelveFloor is a synthetic run floor of w×h px for the interest bench: a
 // party of four standing together at (partyX, partyY), each with a bag of
 // eight items and five worn, and monsters and containers (three items each)
@@ -324,28 +366,12 @@ func aDelveFloor(cellSize, w, h, partyX, partyY float64, monsters, containers in
 	em := ecs.NewEntityManager()
 	onFloor(em, 1, cellSize)
 	rng := rand.New(rand.NewPCG(1, 2))
-	item := func(i int) uuid.UUID {
-		e := em.CreateEntity()
-		e.AddComponent(&components.ItemComponent{
-			TemplateID: uuid.New(), ItemType: types.ItemTypeWeapon, Name: fmt.Sprintf("Notched Blade %d", i),
-			AttackPower: 12, CriticalRate: 0.1, WeaponType: "melee", Description: "An old blade.", RequiredLevel: 3,
-		})
-		return e.ID
-	}
+	item := newItemMaker(em)
 
 	party := make([]uuid.UUID, 0, 4)
 	for i := range 4 {
 		id := uuid.New()
-		delver := addDelver(em, id, partyX+float64(i*40), partyY, 100)
-		bag := make([]uuid.UUID, 0, 8)
-		for j := range 8 {
-			bag = append(bag, item(j))
-		}
-		delver.AddComponent(components.NewItemIDListComponent(bag))
-		weapon, head, chest, legs, gloves := item(0), item(1), item(2), item(3), item(4)
-		delver.AddComponent(&components.EquipmentComponent{
-			WeaponSlot: &weapon, HeadSlot: &head, ChestSlot: &chest, LegsSlot: &legs, GlovesSlot: &gloves,
-		})
+		kit(addDelver(em, id, partyX+float64(i*40), partyY, 100), item)
 		party = append(party, id)
 	}
 	for range monsters {
@@ -362,32 +388,39 @@ func aDelveFloor(cellSize, w, h, partyX, partyY float64, monsters, containers in
 // BenchmarkFormatStateToClientState_BytesPerRecipient records what one
 // recipient is sent per tick, in JSON bytes as the writer encodes it: on a
 // 5760×3840 dungeon floor with 70 monsters, cut and as it would be uncut, the
-// party in its middle (the worst case) and in a corner; and on today's floor 2.
-// FS-KE075 Verification; Acceptance Criteria: floor 1 at most 16 KB.
+// party in its middle (the worst case) and in a corner; on today's floor 2;
+// and in a hub at its occupancy cap. FS-KE075 Verification; Acceptance
+// Criteria: floor 1 at most 16 KB; §I (other players carry no kit).
 func BenchmarkFormatStateToClientState_BytesPerRecipient(b *testing.B) {
+	delveFloor := func(cellSize, w, h, partyX, partyY float64, monsters, containers int) func() (*ecs.EntityManager, []uuid.UUID) {
+		return func() (*ecs.EntityManager, []uuid.UUID) {
+			return aDelveFloor(cellSize, w, h, partyX, partyY, monsters, containers)
+		}
+	}
 	cases := []struct {
-		name                           string
-		cellSize, w, h, partyX, partyY float64
-		monsters, containers           int
+		name      string
+		worldType types.WorldType
+		build     func() (*ecs.EntityManager, []uuid.UUID)
 	}{
-		{"floor1_dungeon_cut_party_mid", 80, 5760, 3840, 2880, 1920, 70, 14},
-		{"floor1_dungeon_cut_party_corner", 80, 5760, 3840, 400, 400, 70, 14},
-		{"floor1_dungeon_uncut_party_mid", 0, 5760, 3840, 2880, 1920, 70, 14},
-		{"floor2_buildings", 0, 1440, 960, 720, 480, 14, 5},
+		{"floor1_dungeon_cut_party_mid", types.WorldTypeRun, delveFloor(80, 5760, 3840, 2880, 1920, 70, 14)},
+		{"floor1_dungeon_cut_party_corner", types.WorldTypeRun, delveFloor(80, 5760, 3840, 400, 400, 70, 14)},
+		{"floor1_dungeon_uncut_party_mid", types.WorldTypeRun, delveFloor(0, 5760, 3840, 2880, 1920, 70, 14)},
+		{"floor2_buildings", types.WorldTypeRun, delveFloor(0, 1440, 960, 720, 480, 14, 5)},
+		{"hub_at_cap", types.WorldTypeHub, func() (*ecs.EntityManager, []uuid.UUID) { return aFullHub(constants.HubOccupancyCap) }},
 	}
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
-			em, party := aDelveFloor(c.cellSize, c.w, c.h, c.partyX, c.partyY, c.monsters, c.containers)
+			em, recipients := c.build()
 			s := NewStateSerializer(em, nil)
 			ctx, sessionID := context.Background(), uuid.New()
-			var bytes, cut, frames int
+			var bytes, cut, others, frames int
 			b.ResetTimer()
 			for range b.N {
-				backendState, err := s.SerializeBackendState(ctx, sessionID, types.WorldTypeRun, em.GetAllEntities())
+				backendState, err := s.SerializeBackendState(ctx, sessionID, c.worldType, em.GetAllEntities())
 				if err != nil {
 					b.Fatal(err)
 				}
-				for _, id := range party {
+				for _, id := range recipients {
 					state := s.FormatStateToClientState(backendState, id)
 					raw, err := json.Marshal(state)
 					if err != nil {
@@ -396,14 +429,17 @@ func BenchmarkFormatStateToClientState_BytesPerRecipient(b *testing.B) {
 					// the part the cut acts on: monsters and containers
 					monsters, _ := json.Marshal(state.Monsters)
 					containers, _ := json.Marshal(state.Containers)
+					otherPlayers, _ := json.Marshal(state.OtherPlayers)
 					bytes += len(raw)
 					cut += len(monsters) + len(containers)
+					others += len(otherPlayers)
 					frames++
 				}
 				s.PutBackendState(backendState)
 			}
 			b.ReportMetric(float64(bytes)/float64(frames), "B/recipient/tick")
 			b.ReportMetric(float64(cut)/float64(frames), "B_monsters+containers/recipient/tick")
+			b.ReportMetric(float64(others)/float64(frames), "B_other_players/recipient/tick")
 		})
 	}
 }
