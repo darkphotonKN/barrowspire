@@ -57,6 +57,8 @@ server state and sends intents. ✅
 - [ ] Affixes and item level in item views → FS-4R9M9
 - [x] Floor transitions → FS-F6F88
 - [ ] Floor layout from the floor map → FS-KE075
+- [ ] Fog of war → FS-SRA9J
+- [ ] Minimap → FS-SRA9J
 - [x] Spectate living teammates after resolving → FS-QPDKN
 - [x] Leave a run early after dying → FS-QPDKN
 - [x] Hold the run result until the player returns → FS-QPDKN
