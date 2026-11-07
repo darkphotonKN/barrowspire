@@ -7,7 +7,6 @@ import (
 	"time"
 
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
-	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -26,13 +25,30 @@ type OutboxWorker struct {
 	// wake asks Run to drain now rather than at the next tick; one ring waits
 	// while a drain is under way, and any more are folded into it
 	wake chan struct{}
+	// commitMargin is the time a batch keeps back for marking and committing
+	commitMargin time.Duration
 }
 
 type OutboxRetriever interface {
-	GetPendingOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error)
-	UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error
+	RelayPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error)
 	GetBacklog(ctx context.Context) (Backlog, error)
 }
+
+// batchTimeout bounds one batch. The batch's transaction is begun under it, so
+// a stalled broker holds one pooled connection (most services run 2) and the
+// batch's row locks for about this long at most (ADR-0069 §Decision 4).
+const batchTimeout = 5 * time.Second
+
+// commitMargin is the part of a batch's deadline kept back for marking and
+// committing: a batch never starts a publish with less than this left. On a
+// slow broker the batch then commits what it sent instead of overrunning the
+// deadline, rolling back and resending the same rows every tick (ADR-0069
+// §Decision 4). A single publish that hangs is still not bounded by it.
+const commitMargin = time.Second
+
+// backlogTimeout bounds the backlog read after each batch, under a context of
+// its own so a batch that used up its deadline does not leave the gauges stale.
+const backlogTimeout = 2 * time.Second
 
 func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever OutboxRetriever, publishCh commonbroker.Publisher, wg *sync.WaitGroup) *OutboxWorker {
 	return &OutboxWorker{
@@ -42,6 +58,7 @@ func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever Ou
 		publishCh:       publishCh,
 		wg:              wg,
 		wake:            make(chan struct{}, 1),
+		commitMargin:    commitMargin,
 	}
 }
 
@@ -84,27 +101,49 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second*30)
-		_ = w.PublishOutboxEvents(publishCtx) // errors are logged inside; the next tick retries
-		w.recordBacklog(publishCtx)
-		cancel()
+		batchCtx, cancelBatch := context.WithTimeout(context.WithoutCancel(ctx), batchTimeout)
+		_ = w.PublishOutboxEvents(batchCtx) // errors are logged inside; the next tick retries
+		cancelBatch()
+
+		backlogCtx, cancelBacklog := context.WithTimeout(context.WithoutCancel(ctx), backlogTimeout)
+		w.recordBacklog(backlogCtx)
+		cancelBacklog()
 	}
 }
 
 /**
-* Publishes a single event from an outbox item pulled from the outbox table.
+* Publishes one batch of pending outbox rows. The batch is locked with SKIP
+* LOCKED and marked in one transaction, so another replica draining the same
+* outbox never takes these rows (ADR-0069). A publish failure ends the batch at
+* that row; the rows already sent are still marked, the rest go back for the
+* next tick. Errors are logged here and returned.
 **/
 func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
-	outboxEvts, err := w.outboxRetriever.GetPendingOutboxItems(ctx, w.batchCount)
-
-	if err != nil {
-		slog.Error("Error when attempting to retrieve latest outbox event.",
+	if _, err := w.outboxRetriever.RelayPendingBatch(ctx, w.batchCount, w.publishBatch); err != nil {
+		slog.Error("Error when attempting to publish a batch of outbox events.",
 			"err", err)
 		return err
 	}
+	return nil
+}
 
-	for _, evt := range outboxEvts {
-		err = w.publishCh.PublishWithContext(
+/**
+* publishBatch publishes events in order and returns the ids it sent, stopping
+* at the first failure so the rows after it stay pending (ADR-0069 §Decision 3),
+* and before any publish that would leave less than the commit margin to mark
+* and commit what was sent (§Decision 4).
+**/
+func (w *OutboxWorker) publishBatch(ctx context.Context, events []*OutboxEvent) []uuid.UUID {
+	sent := make([]uuid.UUID, 0, len(events))
+	for _, evt := range events {
+		if w.outOfTime(ctx) {
+			slog.Warn("Outbox batch is out of time, committing what it sent.",
+				"sent", len(sent),
+				"left_pending", len(events)-len(sent))
+			return sent
+		}
+
+		err := w.publishCh.PublishWithContext(
 			ctx,
 			evt.Exchange,
 			evt.RoutingKey,
@@ -117,19 +156,10 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 			})
 
 		if err != nil {
-			slog.Error("Error occured when attempting to publish event from outbox item.",
+			slog.Error("Error occured when attempting to publish event from outbox item, ending the batch here.",
 				"outbox_id", evt.ID,
 				"err", err)
-			continue
-		}
-
-		// no error, rabbitmq acknowledged, recieved, mark published now while ctx is still live.
-		// a failed mark only means a republish next cycle, consumers dedupe on MessageId.
-		if err := w.markPublished(ctx, evt.ID); err != nil {
-			slog.Error("Error when attempting to update outbox to published.",
-				"outbox_id", evt.ID,
-				"err", err)
-			continue
+			return sent
 		}
 
 		slog.Debug("successfully published outbox event",
@@ -137,9 +167,19 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 			"event", evt.RoutingKey,
 			"event_exchange", evt.Exchange,
 		)
+		sent = append(sent, evt.ID)
 	}
+	return sent
+}
 
-	return nil
+// outOfTime reports whether the batch must stop publishing: ctx is done, or
+// less than the commit margin is left before its deadline.
+func (w *OutboxWorker) outOfTime(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	deadline, ok := ctx.Deadline()
+	return ok && time.Until(deadline) < w.commitMargin
 }
 
 /**
@@ -156,44 +196,4 @@ func (w *OutboxWorker) recordBacklog(ctx context.Context) {
 
 	unpublishedRows.Set(float64(backlog.Rows))
 	oldestUnpublishedAge.Set(backlog.OldestAgeSeconds)
-}
-
-/**
-* Marks a single outbox row published, retrying transient errors with a
-* short backoff that never outlives ctx.
-**/
-func (w *OutboxWorker) markPublished(ctx context.Context, id uuid.UUID) error {
-	const maxRetries = 3
-	backoff := 200 * time.Millisecond
-
-	for attempt := 0; ; attempt++ {
-		err := w.outboxRetriever.UpdateOutboxToPublished(ctx, id)
-		if err == nil {
-			return nil
-		}
-
-		// ctx is done or the error is permanent, retrying cannot help
-		if ctx.Err() != nil || !commonhelpers.IsTransientError(err) || attempt >= maxRetries {
-			return err
-		}
-
-		// don't sleep past the deadline
-		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < backoff {
-			return err
-		}
-
-		slog.Warn("Transient error when attempting to update outbox to published, retrying.",
-			"outbox_id", id,
-			"attempt", attempt+1,
-			"err", err)
-
-		select {
-		case <-ctx.Done():
-			return err
-		case <-time.After(backoff):
-		}
-
-		// exponential backoff
-		backoff *= 2
-	}
 }

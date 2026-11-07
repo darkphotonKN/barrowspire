@@ -3,12 +3,14 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"log/slog"
 
-	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type repo struct {
@@ -26,6 +28,18 @@ func NewRepo(db *sqlx.DB) *repo {
 // and wraps anything else with the repo name + operation for context.
 func wrapDBErr(op string, err error) error {
 	return commonhelpers.WrapDBErr("outbox repo", op, err)
+}
+
+// wrapBatchErr wraps a failed step of a relay batch. The shared helper reduces
+// some errors to a bare sentinel (a deadline becomes ErrTransient); the step
+// and the original error are kept around it, so the log says which step of
+// the batch failed and errors.Is still finds both.
+func wrapBatchErr(step string, err error) error {
+	wrapped := wrapDBErr("relay pending batch: "+step, err)
+	if errors.Is(wrapped, err) {
+		return wrapped
+	}
+	return fmt.Errorf("outbox repo: relay pending batch: %s: %w: %w", step, wrapped, err)
 }
 
 const createOutboxQuery = `
@@ -94,40 +108,12 @@ func (r *repo) CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params OutboxPar
 	return nil
 }
 
-func (r *repo) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error {
-	query := `
-		UPDATE 
-			outbox
-		SET published_at = NOW()
-		WHERE id = $1
-	`
-	results, err := r.db.ExecContext(ctx, query, id)
-
-	if err != nil {
-		slog.Error("Error occured when attempting to update published on outbox item",
-			"err", err)
-		return wrapDBErr("update outbox to published", err)
-	}
-
-	rows, _ := results.RowsAffected()
-	if rows == 0 {
-		return commonconstants.ErrOutboxItemNotFound
-	}
-
-	return nil
-}
-
-func (r *repo) GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error) {
-
-	defaultLimit := 20
-	if limit == nil {
-		limit = &defaultLimit
-	}
-
-	var outboxItem []*OutboxEvent
-
-	query := `
-	SELECT 
+// lockPendingBatchQuery locks up to $1 pending rows, oldest first. SKIP LOCKED
+// skips rows another relay holds instead of waiting on them, and under READ
+// COMMITTED a row another relay has meanwhile marked published is re-checked
+// against the WHERE and dropped (ADR-0069 §Context).
+const lockPendingBatchQuery = `
+	SELECT
 		id,
 		routing_key,
 		exchange,
@@ -137,17 +123,68 @@ func (r *repo) GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*Ou
 	WHERE published_at IS NULL
 	ORDER BY created_at ASC
 	LIMIT $1
-	`
+	FOR UPDATE SKIP LOCKED
+`
 
-	err := r.db.SelectContext(ctx, &outboxItem, query, *limit)
+const markPublishedQuery = `
+	UPDATE outbox
+	SET published_at = NOW()
+	WHERE id = ANY($1::uuid[])
+`
 
-	if err != nil {
-		slog.Error("Error occured when attempting to retrive from outbox table",
-			"err", err)
-		return nil, wrapDBErr("get unpublished outbox items", err)
+/**
+* RelayPendingBatch runs one relay batch in one transaction (ADR-0069): it locks
+* up to limit pending rows (20 when nil), hands them to handle, marks the ids
+* handle reports as sent as published, and commits. Every other exit rolls
+* back, and the transaction is begun under ctx, so database/sql also rolls it
+* back the moment ctx is done, even while handle is still blocked in a
+* publish: the connection and the row locks are never held past ctx.
+* Returns how many rows were marked.
+**/
+func (r *repo) RelayPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error) {
+	batchSize := 20
+	if limit != nil {
+		batchSize = *limit
 	}
 
-	return outboxItem, nil
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, wrapBatchErr("begin", err)
+	}
+	// ends the transaction on every exit but a commit, after which it is a no-op
+	defer func() { _ = tx.Rollback() }()
+
+	var events []*OutboxEvent
+	if err := tx.SelectContext(ctx, &events, lockPendingBatchQuery, batchSize); err != nil {
+		slog.Error("Error occured when attempting to lock a batch of the outbox table",
+			"err", err)
+		return 0, wrapBatchErr("lock", err)
+	}
+	if len(events) == 0 {
+		return 0, nil
+	}
+
+	sent := handle(ctx, events)
+	if len(sent) == 0 {
+		return 0, nil
+	}
+
+	ids := make(pq.StringArray, 0, len(sent))
+	for _, id := range sent {
+		ids = append(ids, id.String())
+	}
+	if _, err := tx.ExecContext(ctx, markPublishedQuery, ids); err != nil {
+		slog.Error("Error occured when attempting to mark an outbox batch published",
+			"err", err)
+		return 0, wrapBatchErr("mark published", err)
+	}
+	if err := tx.Commit(); err != nil {
+		slog.Error("Error occured when attempting to commit an outbox batch",
+			"err", err)
+		return 0, wrapBatchErr("commit", err)
+	}
+
+	return len(sent), nil
 }
 
 func (r *repo) GetUnpublishedBacklog(ctx context.Context) (Backlog, error) {

@@ -33,6 +33,7 @@ Microservices stay structurally identical for now.
 - Whole-project refactor plan/status → [`docs/refactor_plan.md`](docs/refactor_plan.md)
 - Game (ECS / escape-run) feature scope → [`game-server/game-service/SPECIFICATION.md`](game-server/game-service/SPECIFICATION.md) and [`game-server/game-service/CLAUDE.md`](game-server/game-service/CLAUDE.md)
 - Any appearance work → [`docs/theming_plan.md`](docs/theming_plan.md) (plan/status) and the authoritative art spec [`game-client/docs/design-guideline.md`](game-client/docs/design-guideline.md)
+- Running the opt-in database tests (`*_TEST_DB_DSN` / `*_TEST_DSN`, `make test-db` in `game-server/common`) → [`docs/db-tests-guide.md`](docs/db-tests-guide.md)
 
 ## Technology Stack
 
