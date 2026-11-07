@@ -1,0 +1,103 @@
+# Alloy, one replica, tailing pod logs into Loki (loki.values.yaml).
+#
+#   helm repo add grafana https://grafana.github.io/helm-charts && helm repo update
+#   helm upgrade --install alloy grafana/alloy --version 1.15.0 \
+#     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev \
+#     -n monitoring -f deploy/observability/alloy.values.yaml
+#
+# Reads logs through the Kubernetes API (loki.source.kubernetes, the same call
+# as kubectl logs) instead of the node's /var/log, so it needs no hostPath and
+# no DaemonSet: one small Deployment covers the whole cluster. The cost is that
+# a log line written while Alloy is down for longer than the kubelet keeps it
+# is gone; fine for 3 days of debugging.
+#
+# Scope: every container in namespaces barrowspire and monitoring. Labels on
+# each stream: namespace, pod, container, app, service_name (see below).
+
+controller:
+  type: deployment
+  replicas: 1
+
+alloy:
+  enableReporting: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  configMap:
+    content: |
+      discovery.kubernetes "pods" {
+        role = "pod"
+        namespaces {
+          names = ["barrowspire", "monitoring"]
+        }
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        // app: the pod's own app label (every barrowspire service sets one).
+        // Chart-installed pods in monitoring carry app.kubernetes.io/name
+        // instead, so that fills app when there is no plain app label.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+        // service_name: the OTel service.name the same pod reports to Tempo,
+        // so Grafana can jump from a span to its logs. It equals app for every
+        // service except the gateway, whose pods are app=gateway but whose
+        // tracer is named api-gateway (api-gateway/cmd/server/main.go).
+        rule {
+          source_labels = ["app"]
+          target_label  = "service_name"
+        }
+        rule {
+          source_labels = ["app"]
+          regex         = "gateway"
+          replacement   = "api-gateway"
+          target_label  = "service_name"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring:3100/loki/api/v1/push"
+        }
+      }
+
+configReloader:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+# No ServiceMonitor CRDs from this chart; kube-prometheus-stack owns those.
+crds:
+  create: false

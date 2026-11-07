@@ -21,11 +21,11 @@ import (
 	commoninbox "github.com/darkphotonKN/barrowspire-server/common/inbox"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -113,7 +113,7 @@ func main() {
 
 	// setup endpoint for metrics collection
 	go func() {
-		http.Handle("/metrics", promhttp.Handler())
+		http.Handle("/metrics", commontelemetry.MetricsHandler()) // OpenMetrics, so exemplars survive the scrape
 		log.Println("Metrics server started on :8194")
 		http.ListenAndServe(":8194", nil)
 	}()

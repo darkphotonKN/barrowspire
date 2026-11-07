@@ -18,12 +18,33 @@ tempo:
       protocols:
         grpc:
           endpoint: 0.0.0.0:4317
+  # The chart default is a 1024MB ballast: a fake allocation that makes the Go
+  # GC treat the heap as 1GiB bigger and so collect far less often. In a 384Mi
+  # container that lets the real heap run into the limit while a block is
+  # written out, the pod stalls, misses its liveness probe and is killed every
+  # ~30m. GOMEMLIMIT is the modern replacement: GC harder as the limit nears.
+  memBallastSizeMbs: 0
+  extraEnv:
+    - { name: GOMEMLIMIT, value: "440MiB" }
+  # Derives metrics from spans and remote-writes them to Prometheus:
+  # service-graphs (who calls whom, for Explore's Service Graph tab) and
+  # span-metrics (RED per span name). Needs Prometheus's remote-write receiver.
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/write
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+          - service-graphs
+          - span-metrics
+  # 512Mi, up from 384Mi: the generator holds its series in memory
   resources:
     requests:
       cpu: 100m
-      memory: 384Mi
+      memory: 512Mi
     limits:
-      memory: 384Mi
+      memory: 512Mi
 
 persistence:
   enabled: false

@@ -70,6 +70,11 @@ prometheus:
     ruleSelectorNilUsesHelmValues: false
     probeSelectorNilUsesHelmValues: false
     retention: 7d
+    # keep the trace_id exemplars services attach to latency histograms
+    enableFeatures:
+      - exemplar-storage
+    # Tempo's metrics-generator pushes service-graph and span metrics here
+    enableRemoteWriteReceiver: true
     resources:
       requests:
         cpu: 200m
@@ -112,6 +117,12 @@ grafana:
       requests:
         cpu: 50m
         memory: 64Mi
+    datasources:
+      # exemplar dots on Prometheus panels link to the trace in Tempo
+      exemplarTraceIdDestinations:
+        datasourceUid: tempo
+        traceIdLabelName: trace_id
+        urlDisplayLabel: View trace
   # Tempo is its own release (tempo.values.yaml). After changing this, re-run:
   #   helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   #     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev \
@@ -122,3 +133,34 @@ grafana:
       uid: tempo
       url: http://tempo.monitoring:3200
       access: proxy
+      jsonData:
+        # Explore's Service Graph tab reads the metrics Tempo remote-writes
+        serviceMap:
+          datasourceUid: prometheus
+        # "Logs for this span": that service's lines within 5s either side.
+        # service_name is set by Alloy (gateway -> api-gateway) to match the
+        # tracer's service.name; the plain app label cannot, for the gateway.
+        # filterByTraceID stays off while most log calls are not *Context ones.
+        tracesToLogsV2:
+          datasourceUid: loki
+          spanStartTimeShift: "-5s"
+          spanEndTimeShift: "5s"
+          tags:
+            - { key: service.name, value: service_name }
+          filterByTraceID: false
+          filterBySpanID: false
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.monitoring:3100
+      access: proxy
+      jsonData:
+        # trace_id=<hex> (slog text) or "trace_id":"<hex>" (wallet's JSON) on a
+        # line becomes a "View trace" link. $$ keeps ${...} literal: Grafana
+        # provisioning expands $VAR.
+        derivedFields:
+          - name: TraceID
+            datasourceUid: tempo
+            matcherRegex: 'trace_id"?[=:]"?(\w{32})'
+            url: "$${__value.raw}"
+            urlDisplayLabel: View trace

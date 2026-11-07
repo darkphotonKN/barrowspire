@@ -134,8 +134,9 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 		return nil, err
 	}
 
-	// span just for password
-	ctx, hashSpan := serviceTracer.Start(ctx, "service.HashPassword")
+	// span just for password. Its ctx is discarded: the queries below belong
+	// under CreateMember, not under a hash span that has already ended.
+	_, hashSpan := serviceTracer.Start(ctx, "bcrypt.hash")
 	// hash the password
 	hashedPw, err := s.HashPassword(req.Password)
 	hashSpan.End()
@@ -225,7 +226,12 @@ func (s *service) LoginMember(ctx context.Context, req *pb.LoginRequest) (*pb.Lo
 		return nil, commonconstants.ErrUnauthorized
 	}
 
-	if err = bcrypt.CompareHashAndPassword([]byte(member.Password), []byte(req.Password)); err != nil {
+	// bcrypt is deliberately slow and is most of a login's latency; its own span
+	// keeps it from hiding inside the handler's self time
+	_, compareSpan := serviceTracer.Start(ctx, "bcrypt.compare")
+	err = bcrypt.CompareHashAndPassword([]byte(member.Password), []byte(req.Password))
+	compareSpan.End()
+	if err != nil {
 		return nil, commonconstants.ErrUnauthorized
 	}
 
