@@ -3,12 +3,15 @@ package outbox
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type publishedMessage struct {
@@ -44,41 +47,59 @@ func (p *fakePublisher) messageIds() []string {
 	return ids
 }
 
-// fakeRetriever always returns the same pending rows and never marks them published,
-// so successive ticks see the same rows (as during a slow mark-published retry).
-// marks are recorded, and a mark on a done ctx fails like a real db call would.
+// fakeRetriever hands the same pending rows to every batch and records the ids
+// the batch reports as sent as marked, so successive ticks see the same rows
+// (as when a commit failed). A mark on a done ctx fails like a real db call
+// would. Each batch's time left before its deadline is recorded.
 type fakeRetriever struct {
 	rows []*OutboxEvent
 
-	mu     sync.Mutex
-	marked map[uuid.UUID]bool
+	mu       sync.Mutex
+	marked   map[uuid.UUID]bool
+	timeLeft []time.Duration
 }
 
-func (r *fakeRetriever) GetPendingOutboxItems(_ context.Context, _ *int) ([]*OutboxEvent, error) {
-	return r.rows, nil
-}
+func (r *fakeRetriever) LockPendingBatch(ctx context.Context, _ *int, handle BatchHandler) (int, error) {
+	r.mu.Lock()
+	if deadline, ok := ctx.Deadline(); ok {
+		r.timeLeft = append(r.timeLeft, time.Until(deadline))
+	} else {
+		r.timeLeft = append(r.timeLeft, 0)
+	}
+	r.mu.Unlock()
 
-func (r *fakeRetriever) GetBacklog(_ context.Context) (Backlog, error) {
-	return Backlog{Rows: len(r.rows)}, nil
-}
-
-func (r *fakeRetriever) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error {
+	if len(r.rows) == 0 {
+		return 0, nil
+	}
+	sent := handle(ctx, r.rows)
 	if err := ctx.Err(); err != nil {
-		return err
+		return 0, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.marked == nil {
 		r.marked = map[uuid.UUID]bool{}
 	}
-	r.marked[id] = true
-	return nil
+	for _, id := range sent {
+		r.marked[id] = true
+	}
+	return len(sent), nil
+}
+
+func (r *fakeRetriever) GetBacklog(_ context.Context) (Backlog, error) {
+	return Backlog{Rows: len(r.rows)}, nil
 }
 
 func (r *fakeRetriever) isMarked(id uuid.UUID) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.marked[id]
+}
+
+func (r *fakeRetriever) batchTimeLeft() []time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]time.Duration(nil), r.timeLeft...)
 }
 
 func newRow(key string) *OutboxEvent {
@@ -91,18 +112,23 @@ func newRow(key string) *OutboxEvent {
 	}
 }
 
+// Every row is published under its own id as MessageId. A failed publish ends
+// the batch at that row: the rows after it are not attempted (ADR-0069
+// §Decision 3).
 func TestPublishOutboxEvents_StampsMessageIdWithRowId(t *testing.T) {
 	tests := []struct {
-		name     string
-		rows     []*OutboxEvent
-		failRows []int // indexes of rows whose publish fails
+		name         string
+		rows         []*OutboxEvent
+		failRows     []int // indexes of rows whose publish fails
+		wantAttempts int
 	}{
-		{name: "one row", rows: []*OutboxEvent{newRow("items.extracted")}},
-		{name: "several rows", rows: []*OutboxEvent{newRow("items.extracted"), newRow("game.match.ended"), newRow("other")}},
+		{name: "one row", rows: []*OutboxEvent{newRow("items.extracted")}, wantAttempts: 1},
+		{name: "several rows", rows: []*OutboxEvent{newRow("items.extracted"), newRow("game.match.ended"), newRow("other")}, wantAttempts: 3},
 		{
-			name:     "publish error on one row leaves others' ids intact",
-			rows:     []*OutboxEvent{newRow("items.extracted"), newRow("game.match.ended"), newRow("other")},
-			failRows: []int{1},
+			name:         "publish error on one row stops the batch there, earlier ids intact",
+			rows:         []*OutboxEvent{newRow("items.extracted"), newRow("game.match.ended"), newRow("other")},
+			failRows:     []int{1},
+			wantAttempts: 2,
 		},
 	}
 
@@ -118,10 +144,10 @@ func TestPublishOutboxEvents_StampsMessageIdWithRowId(t *testing.T) {
 				t.Fatalf("PublishOutboxEvents() error = %v", err)
 			}
 
-			if len(pub.attempts) != len(tt.rows) {
-				t.Fatalf("publish attempts = %d, want %d", len(pub.attempts), len(tt.rows))
+			if len(pub.attempts) != tt.wantAttempts {
+				t.Fatalf("publish attempts = %d, want %d", len(pub.attempts), tt.wantAttempts)
 			}
-			for i, row := range tt.rows {
+			for i, row := range tt.rows[:tt.wantAttempts] {
 				got := pub.attempts[i]
 				if got.msg.MessageId != row.ID.String() {
 					t.Errorf("row %d MessageId = %q, want %q", i, got.msg.MessageId, row.ID.String())
@@ -164,7 +190,7 @@ func TestPublishOutboxEvents_MarksPublishedBeforeCallerCancels(t *testing.T) {
 		{name: "one row", rows: []*OutboxEvent{newRow("account.created")}},
 		{name: "several rows", rows: []*OutboxEvent{newRow("account.created"), newRow("items.extracted"), newRow("other")}},
 		{
-			name:     "failed publish is not marked",
+			name:     "a failed publish and the rows after it are not marked",
 			rows:     []*OutboxEvent{newRow("account.created"), newRow("items.extracted"), newRow("other")},
 			failRows: []int{1},
 		},
@@ -175,14 +201,16 @@ func TestPublishOutboxEvents_MarksPublishedBeforeCallerCancels(t *testing.T) {
 			failed := map[int]bool{}
 			pub := &fakePublisher{failFor: map[string]bool{}}
 			for _, i := range tt.failRows {
-				failed[i] = true
 				pub.failFor[tt.rows[i].ID.String()] = true
+				for j := i; j < len(tt.rows); j++ {
+					failed[j] = true
+				}
 			}
 			ret := &fakeRetriever{rows: tt.rows}
 			w := NewOutboxWorker(time.Second, 20, ret, pub, &sync.WaitGroup{})
 
 			// mirror Run: a per-cycle ctx that is cancelled as soon as the cycle returns
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), batchTimeout)
 			if err := w.PublishOutboxEvents(ctx); err != nil {
 				cancel()
 				t.Fatalf("PublishOutboxEvents() error = %v", err)
@@ -227,6 +255,37 @@ func TestRun_Wake_PublishesWithoutWaitingForTheTick(t *testing.T) {
 	}
 }
 
+// Run gives every batch a 5 s deadline, so a stalled broker holds a pooled
+// connection and the batch's row locks for about 5 s at most. ADR-0069
+// §Decision 4, I-ADR0069-1.
+func TestRun_EachBatch_HasAFiveSecondDeadline(t *testing.T) {
+	ret := &fakeRetriever{rows: []*OutboxEvent{newRow("items.extracted")}}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	w := NewOutboxWorker(time.Hour, 20, ret, &fakePublisher{failFor: map[string]bool{}}, wg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go w.Run(ctx)
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+	})
+	w.Wake()
+
+	deadline := time.After(2 * time.Second)
+	for len(ret.batchTimeLeft()) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("no batch ran within 2s of a wake")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	left := ret.batchTimeLeft()[0]
+	if left <= 4*time.Second || left > 5*time.Second {
+		t.Errorf("batch deadline = %s from the start of the batch, want 5s", left)
+	}
+}
+
 // Wake never blocks its caller, whether the worker is running or not: rings
 // past the first one waiting are folded into it.
 func TestWake_NeverBlocks(t *testing.T) {
@@ -244,5 +303,117 @@ func TestWake_NeverBlocks(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("Wake blocked with no worker running")
+	}
+}
+
+// countingPublisher counts every publish of a row id across all the workers
+// that share it, and which worker sent it. Each publish yields so the two
+// workers' batches interleave the way two replicas' do.
+type countingPublisher struct {
+	mu       sync.Mutex
+	sends    map[string]int
+	byWorker map[int]int
+}
+
+func newCountingPublisher() *countingPublisher {
+	return &countingPublisher{sends: map[string]int{}, byWorker: map[int]int{}}
+}
+
+func (p *countingPublisher) forWorker(worker int) commonbroker.Publisher {
+	return workerPublisher{p: p, worker: worker}
+}
+
+type workerPublisher struct {
+	p      *countingPublisher
+	worker int
+}
+
+func (w workerPublisher) PublishWithContext(_ context.Context, _, _ string, msg commonbroker.Message) error {
+	w.p.mu.Lock()
+	w.p.sends[msg.MessageId]++
+	w.p.byWorker[w.worker]++
+	w.p.mu.Unlock()
+	runtime.Gosched()
+	return nil
+}
+
+// Two relays on one outbox, each with its own 2-connection pool (two replicas
+// of a service, as postgres sees them), drain the same rows at the same time
+// over many rounds. No row is published twice, every row is marked, and both
+// relays took rows, so the race was run rather than avoided. ADR-0069
+// §Decision 2, I-ADR0069-2.
+func TestPublishOutboxEvents_TwoWorkersOneOutbox_NeverPublishTheSameRow(t *testing.T) {
+	const (
+		workers      = 2
+		rounds       = 50
+		rowsPerRound = 200
+		batchSize    = 20 // what the services run with
+	)
+	dsn := outboxDSN(t)
+	seeder := openPool(t, dsn, 1)
+
+	pub := newCountingPublisher()
+	relays := make([]*OutboxWorker, workers)
+	for i := range relays {
+		relays[i] = NewOutboxWorker(time.Second, batchSize, NewService(NewRepo(openPool(t, dsn, 2))), pub.forWorker(i), &sync.WaitGroup{})
+	}
+
+	var seeded []uuid.UUID
+	sharedRounds := 0
+	start := time.Now()
+	for round := 0; round < rounds; round++ {
+		seeded = append(seeded, seedRows(t, seeder, rowsPerRound)...)
+		before := map[int]int{}
+		pub.mu.Lock()
+		for k, v := range pub.byWorker {
+			before[k] = v
+		}
+		pub.mu.Unlock()
+
+		var wg sync.WaitGroup
+		go_ := make(chan struct{})
+		for _, relay := range relays {
+			wg.Add(1)
+			go func(relay *OutboxWorker) {
+				defer wg.Done()
+				<-go_
+				// no require here: FailNow must run on the test goroutine
+				for {
+					var pending int
+					if err := seeder.Get(&pending, `SELECT count(*) FROM outbox WHERE published_at IS NULL`); err != nil || pending == 0 {
+						return
+					}
+					_ = relay.PublishOutboxEvents(context.Background())
+				}
+			}(relay)
+		}
+		close(go_)
+		wg.Wait()
+
+		pub.mu.Lock()
+		if pub.byWorker[0] > before[0] && pub.byWorker[1] > before[1] {
+			sharedRounds++
+		}
+		pub.mu.Unlock()
+	}
+	elapsed := time.Since(start)
+
+	duplicates, dupSends := 0, 0
+	for _, n := range pub.sends {
+		if n > 1 {
+			duplicates++
+			dupSends += n - 1
+		}
+	}
+	t.Logf("%d rounds x %d rows = %d rows, %d relays, batch %d: sends per relay %v, rows sent more than once %d (extra sends %d), rounds both relays took rows %d/%d, %s",
+		rounds, rowsPerRound, len(seeded), workers, batchSize, pub.byWorker, duplicates, dupSends, sharedRounds, rounds, elapsed.Round(time.Millisecond))
+
+	require.Len(t, pub.sends, len(seeded), "every row is published")
+	for _, id := range seeded {
+		require.Equal(t, 1, pub.sends[id.String()], "row %s published once", id)
+	}
+	assert.Empty(t, pendingRows(t, seeder), "every row is marked published")
+	for i := 0; i < workers; i++ {
+		assert.Positive(t, pub.byWorker[i], "relay %d took rows", i)
 	}
 }
