@@ -10,7 +10,7 @@ spec:
     spec:
       containers:
         - name: notification
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/notification:0b03f46
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/notification:c52c7216
           ports:
             - { containerPort: 7190, name: grpc }
           envFrom:
