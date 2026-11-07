@@ -1,6 +1,6 @@
 # FS-48CTQ: Monster target frame on floor 1
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" → "Monster target frame" → this FS (brownfield pair: "Monsters with level and elite nameplates → FS-77AB6", which stays the rule everywhere the frame is off) · Related ADRs: [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) Decision 12 (the target frame as a per-floor opt-in), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (a monster hidden by fog is not shown anywhere) · Builds on: [FS-77AB6](77AB6-monsters-and-combat.md) §Requirements 37–39 (plates, elite marker, hover and click targeting), [FS-KE075](KE075-floor-1-dungeon.md) (floor 1's dungeon), [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (fog), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (fullscreen button, view widths) · Revives: the idea parked 2026-11-01 ("monster health bar": bars hidden except on damage or hover, elites always, boss top bar), as revised by the owner · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Target frame**, **Marker**
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Escape run" → "Monster target frame" → this FS (brownfield pair: "Monsters with level and elite nameplates → FS-77AB6", which stays the rule everywhere the frame is off) · Related ADRs: [ADR-0061](../adr/0061-floor-layout-conventions-later-floors-follow.md) Decision 12 (the target frame as a per-floor opt-in), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (a monster hidden by fog is not shown anywhere), [ADR-0056](../adr/0056-every-scene-camera-runs-at-origin-0-with-zoom-equal-to-render-scale.md) and [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (render scale; what Phaser rounds, §F.21) · Builds on: [FS-77AB6](77AB6-monsters-and-combat.md) §Requirements 37–39 (plates, elite marker, hover and click targeting), [FS-KE075](KE075-floor-1-dungeon.md) (floor 1's dungeon), [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (fog), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (fullscreen button, view widths) · Revives: the idea parked 2026-11-01 ("monster health bar": bars hidden except on damage or hover, elites always, boss top bar), as revised by the owner · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Target frame**, **Marker**
 
 ## Summary
 
@@ -40,6 +40,20 @@ every other world object keeps its footprint. The roster is shared, so the chang
 run floor and the field worlds, plates or frame alike. The Facts line this amendment added cites
 floor1/monster-hover-body at 4b3ed5d4.
 
+Amended 2026-11-07 after the owner's second floor-1 playtest ("被攻擊的怪物同時也要顯示怪物頭上的血條
+血條的樣式有質感一點之前的不太好", relayed by the coordinator): a monster being fought on floor 1 also
+carries its health bar over its head, beside the target frame, and every monster bar gets a
+better-finished look. New §F (requirements 18–23) holds both; §A.2, §B.3 and §C.4 are restated to
+point at it. Its requirements cite **owner, playtest 2026-11-07** with the derivation beside each;
+the coordinator's defaults were taken as written, without a `challenge-me` pass. The Facts lines
+it added cite floor1/monster-bars at 2304a802.
+
+Amended again 2026-11-07 on the owner's look at that bar ("調整成沒有筐 底色有比較深的紅色當背景",
+relayed by the coordinator): the bar loses its brass rim, and its trough, the health missing, turns
+from near-black to a deep red (`markerHpTrough`), so a hurt bar reads as dark red. §F.21.1, §F.21.4
+and the §F acceptance line are restated; the rest of §F stands. `markerBarFrame` is gone;
+`markerBarBacking` stays for the party bars, which keep their look.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/`.
@@ -77,6 +91,18 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
   centre. The floor indicator and escaped count sit at the top right under the fullscreen button
   (`TOP_RIGHT_HUD`, `:283-287`), and FS-SRA9J's minimap under them, from x ≥ 854 at the 1080
   minimum. Logical view 1080–1280 × 720 (`render/viewport/viewport.ts:22-24`).
+- **The bars before the 2026-11-07 amendment** (verified at 2304a802): the overhead bar was a
+  38 × 4 fill on a `markerBarBacking` trough at 0.9 alpha with a 1px `strokeRect` rim in
+  `markerBarRim`, cleared and redrawn in absolute coordinates for every monster every frame
+  (`MonsterRoster.mark`); the frame's bar was the same three parts at 236 × 8 (boss 354 × 16), its
+  fill rounded to whole backing px (`ui/targetFrame.ts`). Party members' bars use `MARKER_BAR` too
+  (`scenes/BarrowspireScene.ts`, FS-CH21F).
+- **What Phaser 4.2.1 rounds.** Only quads: images, sprites and text go through transformers that
+  ask `willRoundVertices` (`renderer/webgl/renderNodes/transformer/`); a Graphics fill goes through
+  `FillRect`, which never rounds. The world camera's scroll is snapped to the 1/rs grid
+  (`keepOnPixelGrid`, `render/viewport/camera.ts`, ADR-0057), so a Graphics edge lands on a backing
+  px only when its position and its own coordinates are multiples of 1/rs. A 1px stroke is centred
+  on its edge, so on a whole-px edge it straddles two px and blends.
 
 ## Requirements
 
@@ -86,21 +112,24 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
    or `frame` (this FS). The table names run floor 1 as `frame`; every other run floor, the field
    worlds and anything not named are `overhead`. A later floor opts in by a table entry, with no
    other change. **(charter default, owner: floor 1 only)**
-2. **On `overhead` floors nothing changes**: plates, bars, the elite marker and the boss's plate
-   stay exactly as today, and no frame is shown. **(owner: floor 1 only)**
+2. **On `overhead` floors nothing changes** in what is shown or when: plates, bars, the elite marker
+   and the boss's plate stay as today, and no frame is shown. Their bar takes the one bar look
+   (§F.21). **(owner: floor 1 only; the look, owner, playtest 2026-11-07)**
 
 ### §B. No overhead plates on a frame floor
 
-3. **No overhead name, level or health bar over any monster** on a `frame` floor: normal, elite and
-   boss alike. The elite's sprite tint or aura (FS-77AB6 §38) stays, since it is the sprite, not a
-   plate. Party members' overhead names and bars (FS-CH21F) are untouched. **(charter default,
-   owner revision, C1)**
+3. **No overhead name or level over any monster** on a `frame` floor: normal, elite and boss alike;
+   and no health bar over one at full health. A damaged monster carries its bar alone (§F.18). The
+   elite's sprite tint or aura (FS-77AB6 §38) stays, since it is the sprite, not a plate. Party
+   members' overhead names and bars (FS-CH21F) are untouched. **(charter default, owner revision,
+   C1; the damaged bar, owner, playtest 2026-11-07)**
 
 ### §C. The target frame
 
 4. **One frame at the top centre** shows one monster: its name with its level (`nameplate`), an
-   elite's prefix lettered in the hostile accent (`elitePlate`), and its health bar in
-   `MARKER_BAR`'s colours, updated every snapshot. **(charter default, owner revision, C2)**
+   elite's prefix lettered in the hostile accent (`elitePlate`), and its health bar in the one bar
+   look with its damage chip (§F.21–22), updated every snapshot. **(charter default, owner
+   revision, C2; the look, owner, playtest 2026-11-07)**
 5. **Which monster** (highest first): **(charter default, owner revision, C2, C3)**
    1. the **hovered** monster: a living, shown monster under the pointer, by the same hit test as
       the strike-mark cursor and the click. The pointer is on a monster when it is on its
@@ -175,6 +204,59 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
     `design-guideline.md` "UI Chrome" and "Gameplay accent"; colours from tokens only (ADR-0013).
     Diablo II is a behaviour reference, not a look. **(owner reference point)**
 
+### §F. The overhead bar on a frame floor, and the bar's look
+
+18. **A damaged monster carries its bar on a `frame` floor**: a living monster whose health is below
+    its maximum shows its health bar over its head, where an `overhead` floor seats it, from the
+    first snapshot that has it below maximum. It stays while the monster lives and is below
+    maximum, and hides when it dies or is back at full. Normal, elite and boss alike. The target
+    frame is shown as ever (§C), so a monster being fought shows both. **(owner, playtest
+    2026-11-07: "被攻擊的怪物同時也要顯示怪物頭上的血條"; "being fought" read as "damaged", derived
+    here: the wire names no attacker (Facts), so a monster a teammate hurt shows its bar too, as
+    the old parked idea had it: "bars hidden except on damage")**
+19. **The bar alone**: no name, no level and no elite prefix over the head; the name is the target
+    frame's. The elite keeps its wash (§B.3). A monster the hide rule or the fog hides shows no bar
+    (§C.7, ADR-0063). The bar is part of the `frame` mode: floor 1 stays `frame` in the table
+    (§A.1), and no floor switches back to `overhead` for it. **(owner, playtest 2026-11-07,
+    coordinator's defaults)**
+20. **Floors 2–3 and the fields keep their plates**: every living monster carries its plate and bar,
+    at any health, as before (§A.2). Only the bar's look changes, so every monster bar looks the
+    same. **(owner, playtest 2026-11-07, coordinator's default)**
+21. **One bar look**, for the overhead bar on every floor and the target frame's bar (normal and
+    boss), drawn in code from palette tokens (ADR-0013), in the HUD's chrome (`design-guideline.md`
+    "UI Chrome": brass framing, the game palette):
+    1. **no rim**, and a deep-red **trough** (`markerHpTrough`) the bar's full length, so the
+       health missing reads as dark red: the HP channel's oxblood taken 35% toward pitch
+       (`shade(oxblood, 0.35)`, #4d1818), the fill at 3.9:1 over it, the cap's shade at 2.1:1, the
+       chip far brighter; nothing of the bar draws outside the trough. **(owner, playtest
+       2026-11-07, second look: "調整成沒有筐 底色有比較深的紅色當背景"; was a brass rim around a
+       near-black trough)**
+    2. the **fill** in the HP channel (`markerHp`), shaded: a **highlight line** one logical px
+       thick along its top (`markerHpLight`), a darker **foot** a fifth of its height
+       (`markerHpShade`), and, where it ends short of full, a darker **cap** one logical px wide
+       at its end, so the end is a crisp edge;
+    3. the **damage chip** (§F.22), in the fill lifted toward vellum (`markerHpChip`);
+    4. **crisp at render scales 1, 1.25, 1.5 and 2**: every edge computed in whole backing px and
+       the overhead bar's position on the 1/rs grid, lines filled, never stroked (Facts);
+    5. the overhead trough is 40 × 5 logical px (was 38 × 4); the frame's keeps its size (§D.12).
+    **(owner, playtest 2026-11-07: "血條的樣式有質感一點"; the parts derived here from the
+    coordinator's list (a dark trough with a 1px rim, a shaded fill, a recent-damage chip, a thin
+    highlight line, crisp ends) and the target frame's chrome)**
+22. **The damage chip**: when a bar's health drops, the health it lost stays drawn as the chip, from
+    the fill's new end to where it stood; it holds 300 ms, then drains to the fill over 450 ms
+    (eased in and out) and is gone. A drop while the chip shows keeps the chip where it is and
+    holds again, so a flurry reads as one chunk. Health rising past the chip ends it; rising short
+    of it, the chip drains on. A drop taken while the monster is hidden shows no chip (as no
+    flash, FS-SRA9J §D.15). The frame's chip follows the monster it names and starts empty on a
+    switch. At most **4 overhead chips** drain at once; a drop past that shows its new health with
+    no chip. **(owner, playtest 2026-11-07, coordinator's "recent damage" idea; the timings and the
+    cap derived here: an ARPG chip's hold and drain, kept under a second; the cap keeps an area
+    blow across a crowd to a handful of animated bars)**
+23. **Redrawn only on a change**: a bar is redrawn only when what it shows changes in backing px
+    (its fill's span, its chip's span, its size or the render scale); a monster that moves carries
+    its bar by position, with no redraw; an idle bar is never redrawn per frame. **(coordinator's
+    default, performance: a floor can hold many damaged monsters in view)**
+
 ## User Stories
 
 1. As a delver on floor 1, I want no plates over every monster's head, so that the dungeon reads as a dark place, not a spreadsheet.
@@ -193,6 +275,11 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 14. As a developer, I want the mode to be one table entry per floor, so that a later floor can adopt the frame without code changes.
 15. As a delver, I want to point at any part of a monster I can see, its head as well as its feet, so that checking its health or striking it takes no careful aim at the floor.
 16. As a delver in a crowd, I want the monster in front to be the one I point at, so that a tall one behind does not take my hover.
+17. As a delver on floor 1, I want the monsters I am fighting to show their health over their heads, so that I can read a melee at a glance without looking up at the frame.
+18. As a delver on floor 1, I want untouched monsters to stay bare, so that the dungeon still reads as a dark place.
+19. As a delver, I want a bar to show the chunk a hit just took, so that I feel how hard I hit and can tell a big hit from a small one.
+20. As a delver, I want every monster bar to look like part of the game's HUD, so that the screen looks finished rather than placeholder.
+21. As a delver on any screen, I want bars that stay sharp at any display scale, so that they never look smeared.
 
 ## Acceptance Criteria
 
@@ -208,6 +295,12 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - [ ] The frame fades in over 120 ms and out over 200 ms, switches content without a fade, and is hidden while the spectate HUD or the floor-change veil is up.
 - [ ] Layout test at 1080 and 1280: top at y 10, centred; normal ≤ 280 × 52, boss ≤ 420 × 60; no overlap with the notice band, the top-right column, the fullscreen button or the minimap.
 - [ ] Floors 2–3 screenshots still match FS-KE075's captures (plates as today).
+- [ ] On floor 1 a living monster below its maximum health carries its bar alone over its head (no name, level or prefix), from the first damaged snapshot; it hides at full health, on death and while the hide rule or the fog hides the monster; normal, elite and boss alike; the elite's wash stays; the target frame shows as ever.
+- [ ] On floors 2–3 and fields every living monster keeps its plate and bar at any health, its bar drawn exactly as a floor-1 bar is.
+- [ ] Every monster bar and the frame's bar wear §F.21's look: no rim, a deep-red trough (`markerHpTrough`), fill with a highlight line, foot and end cap, all from palette tokens, nothing drawn outside the trough; every edge lands on a whole backing px at render scales 1, 1.5 and 2.
+- [ ] A drop shows the chip from the new health to the old; it holds 300 ms, drains over 450 ms and stops; a second drop mid-drain holds it again; at most 4 overhead chips drain at once; the frame's chip resets on a switch.
+- [ ] An idle bar is drawn once over many frames; a moving one is moved, not redrawn; a change smaller than a backing px redraws nothing; a render-scale change redraws.
+- [ ] Headless captures at render scales 1 and 2: damaged ghoul, troll and elite on floor 1, a mid-chip frame, floor 2's plates.
 - [ ] Typecheck and the full vitest suite pass.
 - [ ] Nick's browser check (I-48CTQ-3) passes.
 
@@ -228,10 +321,19 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - **Local player dies mid-fight:** the spectate HUD takes the top centre and the frame hides.
 - **Window resized:** the frame re-anchors at the new centre.
 - **Monster health above max or missing max:** the bar clamps to 0–1 as `mark` does today.
+- **A monster a teammate hurts on floor 1:** it carries its bar (damaged), though the frame does not name it unless hovered (§C.6).
+- **A monster that regenerates to full on floor 1:** its bar hides; the next hit shows it again, with a chip from full.
+- **The killing blow:** the monster is dead, so its bar hides at once; no chip is drawn over a corpse.
+- **An area blow across a crowd:** four bars chip; the rest drop to their new health with no chip.
+- **A heal mid-chip:** short of the chip, the chip drains on toward the new health; past it, the chip ends.
+- **A hit taken in the fog:** no chip, no flash; shown again, the bar shows the health as it now is.
+- **Render scale changes (the window moves to a 150 % display):** each shown bar is redrawn once at the new scale.
 
 ## Out of Scope
 
 The frame on floors 2–3, the field worlds or the hub; hiding party members' plates; a server field
 for hit attribution or aggro target; counting a cast with nothing hovered; a target frame for
 players; a target lock key or click-to-select; damage numbers; new art; changing the elite tint or
-the strike-mark cursor; a pixel-exact (alpha) hit test on monsters.
+the strike-mark cursor; a pixel-exact (alpha) hit test on monsters; party members' bars (FS-CH21F),
+which keep their look; the target frame panel's own rim; floating damage numbers; a bar for a monster
+hovered at full health on floor 1 (the frame names it).

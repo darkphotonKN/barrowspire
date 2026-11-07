@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MARKER_BAR } from "@/render/markers";
+import { CHIP_DRAIN_MS, CHIP_HOLD_MS } from "@/render/markers/healthBar";
 import type { MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import {
@@ -122,6 +123,8 @@ function fakeGraphics() {
       h: number;
     }[],
     lineColour: 0,
+    /** How many times it has been drawn: each draw starts with a clear. */
+    draws: 0,
     alpha: 1,
     visible: true,
     depth: 0,
@@ -130,6 +133,7 @@ function fakeGraphics() {
     clear() {
       g.fills = [];
       g.strokes = [];
+      g.draws += 1;
       return g;
     },
     fillStyle(c: number) {
@@ -267,7 +271,7 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     expect(
       strokes.some((s) => s.colour === palette.frame && s.w === r.width),
     ).toBe(true);
-    const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const backing = fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const hp = fills.find((f) => f.colour === MARKER_BAR.hp)!;
     expect(hp.w).toBeCloseTo(backing.w / 4, 0);
     // the bar sits inside the frame
@@ -284,7 +288,7 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
       monster({ current_health: hp, max_health: max }),
     );
     const fills = graphics.flatMap((g) => g.fills);
-    const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const backing = fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const fill = fills.filter((f) => f.colour === MARKER_BAR.hp);
     expect(fill.reduce((w, f) => w + f.w, 0)).toBeCloseTo(backing.w * ratio, 0);
   });
@@ -318,7 +322,7 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     frame.update(16, monster({ current_health: 120 }), false);
     frame.update(16, monster({ current_health: 60 }), false);
     const fills = parts.graphics.flatMap((g) => g.fills);
-    const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const backing = fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const hp = fills.find((f) => f.colour === MARKER_BAR.hp)!;
     expect(hp.w).toBeCloseTo(backing.w / 2, 0);
   });
@@ -404,7 +408,7 @@ const drawnBar = (parts: ReturnType<typeof fakeStage>) => {
   const fills = parts.graphics.flatMap((g) => g.fills);
   return {
     panel: fills[0],
-    backing: fills.find((f) => f.colour === MARKER_BAR.backing)!,
+    backing: fills.find((f) => f.colour === MARKER_BAR.trough)!,
     hp: fills.find((f) => f.colour === MARKER_BAR.hp),
   };
 };
@@ -514,4 +518,72 @@ describe("the frame's layout at 1080 and 1280 (FS-48CTQ §E.14)", () => {
       expect(r.x + r.width).toBeLessThan(width - RIGHT_COLUMN_INSET);
     },
   );
+});
+
+describe("the frame's bar wears the overhead bar's look (FS-48CTQ §F.21)", () => {
+  it("should lay the bar on a deep-red trough with no rim, and shade the fill with a highlight line", () => {
+    const { graphics } = shownFrame(monster({ current_health: 60, max_health: 120 }));
+    const fills = graphics.flatMap((g) => g.fills);
+    const trough = fills.find((f) => f.colour === MARKER_BAR.trough)!;
+    expect(trough.colour).toBe(palette.markerHpTrough);
+    // nothing of the bar's own draws outside its trough: no rim
+    const barTones: number[] = [MARKER_BAR.trough, MARKER_BAR.hp, MARKER_BAR.light, MARKER_BAR.shade, MARKER_BAR.chip];
+    for (const f of fills.filter((f) => barTones.includes(f.colour))) {
+      expect(f.x).toBeGreaterThanOrEqual(trough.x);
+      expect(f.y).toBeGreaterThanOrEqual(trough.y);
+      expect(f.x + f.w).toBeLessThanOrEqual(trough.x + trough.w);
+      expect(f.y + f.h).toBeLessThanOrEqual(trough.y + trough.h);
+    }
+    expect(fills.some((f) => f.colour === MARKER_BAR.light && f.y === trough.y && f.h === 1)).toBe(true);
+    expect(fills.some((f) => f.colour === MARKER_BAR.shade)).toBe(true);
+  });
+
+  it.each([1, 1.5, 2])("should put every edge of the bar on a whole backing px at render scale %s", (scale) => {
+    const parts = fakeStage();
+    // an odd view width puts the centre on a half unit
+    const frame = new TargetFrame(parts.stage, () => 540.5, () => scale);
+    frame.update(TARGET_FADE_IN_MS, monster({ current_health: 37, max_health: 120 }), false);
+    const bar = parts.graphics
+      .flatMap((g) => g.fills)
+      .filter((f) => f.colour !== palette.hudPanel);
+    for (const f of bar)
+      for (const v of [f.x, f.y, f.x + f.w, f.y + f.h])
+        expect(Math.abs(v * scale - Math.round(v * scale))).toBeLessThan(1e-9);
+  });
+});
+
+describe("the frame's damage chip (FS-48CTQ §F.22)", () => {
+  const chipOf = (parts: ReturnType<typeof fakeStage>) =>
+    parts.graphics.flatMap((g) => g.fills).find((f) => f.colour === MARKER_BAR.chip);
+
+  it("should chip a hit on the monster it names, drain it and stop", () => {
+    const parts = fakeStage();
+    const frame = new TargetFrame(parts.stage, () => 540);
+    frame.update(TARGET_FADE_IN_MS, monster({ current_health: 120 }), false);
+    frame.update(16, monster({ current_health: 60 }), false);
+    const trough = drawnBar(parts).backing;
+    expect(chipOf(parts)!.w).toBeCloseTo(trough.w / 2, 0);
+    for (let t = 0; t < CHIP_HOLD_MS + CHIP_DRAIN_MS + 32; t += 16)
+      frame.update(16, monster({ current_health: 60 }), false);
+    expect(chipOf(parts)).toBeUndefined();
+    const settled = parts.graphics[0].draws;
+    for (let i = 0; i < 20; i++) frame.update(16, monster({ current_health: 60 }), false);
+    expect(parts.graphics[0].draws).toBe(settled);
+  });
+
+  it("should carry no chip from one monster to the next", () => {
+    const parts = fakeStage();
+    const frame = new TargetFrame(parts.stage, () => 540);
+    frame.update(TARGET_FADE_IN_MS, monster({ current_health: 120 }), false);
+    frame.update(16, monster({ current_health: 60 }), false);
+    frame.update(16, monster({ entity_id: "m2", current_health: 30 }), false);
+    expect(chipOf(parts)).toBeUndefined();
+  });
+
+  it("should draw the frame once while nothing it shows changes", () => {
+    const parts = fakeStage();
+    const frame = new TargetFrame(parts.stage, () => 540);
+    for (let i = 0; i < 30; i++) frame.update(16, monster(), false);
+    expect(parts.graphics[0].draws).toBe(1);
+  });
 });

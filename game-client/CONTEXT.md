@@ -351,8 +351,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether
-  monsters carry overhead plates (`overhead`, everywhere today but floor 1) or use the frame.
-  Not a **marker**: it is HUD, not drawn in the world.
+  monsters carry overhead plates (`overhead`, everywhere today but floor 1) or use the frame; on a
+  `frame` floor a damaged monster still carries its HP bar over its head, alone, with no plate
+  (§F). Not a **marker**: it is HUD, not drawn in the world.
+- **Damage chip** (FS-48CTQ §F.22): the run of an HP bar, overhead or in the target frame, that
+  still shows the health a hit just took, lighter than the fill; it holds a moment, then drains to
+  the fill. A view-only echo of the drop: it is not health and not a damage number.
 - **Silhouette**: the player's outline drawn through a building exterior that stands between them
   and the camera. It replaces the occluder fade for buildings; trees and tall props still fade.
 - ~~**Dark opening**: an entrance seen from outside: a town building's door gap or an open Spire

@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ArtLibrary } from "@/render/art/library";
 import type { ArtAnimation, ArtManifest } from "@/render/art/manifest";
-import { MARKER_DEPTH } from "@/render/markers";
+import { MARKER_BAR, MARKER_DEPTH } from "@/render/markers";
+import { CHIP_DRAIN_MS, CHIP_HOLD_MS } from "@/render/markers/healthBar";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { worldDepth } from "@/render/iso/shapes";
 import { worldToScreen } from "@/render/iso/projection";
@@ -15,6 +16,8 @@ import {
   MonsterRoster,
   SIZE_TIERS,
   BODY_HALF_WIDTH,
+  CHIP_BUDGET,
+  OVERHEAD_BAR,
   bodyColumn,
   monsterLook,
   elitePlate,
@@ -86,11 +89,12 @@ const baked = new ArtLibrary(
 );
 
 /** A stand-in for the scene: records every object it hands out. */
-function fakeStage() {
+function fakeStage(backing = { scale: 1 }) {
   const sprites: ReturnType<typeof fakeSprite>[] = [];
   const texts: ReturnType<typeof fakeText>[] = [];
   const bars: ReturnType<typeof fakeBar>[] = [];
   const stage: MonsterStage = {
+    renderScale: () => backing.scale,
     sprite: () => {
       const s = fakeSprite();
       sprites.push(s);
@@ -107,7 +111,7 @@ function fakeStage() {
       return g;
     },
   };
-  return { stage, sprites, texts, bars };
+  return { stage, sprites, texts, bars, backing };
 }
 
 /** The hit area a monster's sprite is given: Phaser calls the callback with frame-local points. */
@@ -247,24 +251,34 @@ function fakeBar() {
     depth: 0,
     visible: true,
     destroyed: false,
-    fills: [] as { color: number; w: number }[],
+    x: 0,
+    y: 0,
+    /** How many times it has been drawn: each draw starts with a clear. */
+    draws: 0,
+    fills: [] as { color: number; x: number; y: number; w: number; h: number }[],
     pendingColor: 0,
     clear() {
       bar.fills = [];
+      bar.draws += 1;
       return bar;
     },
     fillStyle(color: number) {
       bar.pendingColor = color;
       return bar;
     },
-    fillRect(_x: number, _y: number, w: number) {
-      bar.fills.push({ color: bar.pendingColor, w });
+    fillRect(x: number, y: number, w: number, h: number) {
+      bar.fills.push({ color: bar.pendingColor, x, y, w, h });
       return bar;
     },
     lineStyle() {
       return bar;
     },
     strokeRect() {
+      return bar;
+    },
+    setPosition(x: number, y: number) {
+      bar.x = x;
+      bar.y = y;
       return bar;
     },
     setVisible(v: boolean) {
@@ -652,9 +666,27 @@ describe("MonsterRoster markers (req 37)", () => {
     roster.update(FRAME);
     expect(texts[0].depth).toBe(MARKER_DEPTH.name);
     expect(bars[0].depth).toBe(MARKER_DEPTH.bar);
-    // backing, then the HP fill at a quarter of the bar
-    const fill = bars[0].fills.at(-1)!;
-    expect(fill.w).toBe(Math.round(38 / 4));
+    // the trough, then the HP fill at a quarter of the bar
+    const trough = bars[0].fills.find((f) => f.color === MARKER_BAR.trough)!;
+    const fill = bars[0].fills.find((f) => f.color === MARKER_BAR.hp)!;
+    expect(trough.w).toBe(OVERHEAD_BAR.width);
+    expect(fill.w).toBe(Math.round(OVERHEAD_BAR.width / 4));
+  });
+
+  it("should lay the overhead bar on a deep-red trough with no rim (FS-48CTQ §F.21, owner playtest 2026-11-07)", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 30, max_health: 120 })]);
+    roster.update(FRAME);
+    const fills = bars[0].fills;
+    const trough = fills[0];
+    expect(trough.color).toBe(palette.markerHpTrough);
+    for (const f of fills) {
+      expect(f.x).toBeGreaterThanOrEqual(trough.x);
+      expect(f.y).toBeGreaterThanOrEqual(trough.y);
+      expect(f.x + f.w).toBeLessThanOrEqual(trough.x + trough.w);
+      expect(f.y + f.h).toBeLessThanOrEqual(trough.y + trough.h);
+    }
   });
 
   it("should seat the plate over the head, and follow the level the server sends", () => {
@@ -1220,7 +1252,7 @@ describe("the frame marker mode (FS-48CTQ §B.3: no overhead plates on a frame f
   });
   const boss = monster({ entity_id: "b", archetype: "demon", name: "Demon", boss: true });
 
-  it("should draw no name, level or bar over any monster, normal, elite or boss", () => {
+  it("should draw no name, level or bar over any monster at full health, normal, elite or boss", () => {
     const { stage, texts, bars } = fakeStage();
     const roster = new MonsterRoster(stage, fixtureArt());
     roster.setMarkerMode("frame");
@@ -1470,5 +1502,258 @@ describe("a hidden monster (FS-SRA9J §D.15, §D.17; FS-9PN7X §C.2)", () => {
     roster.update(FRAME);
     const deaths = sprites[0].plays.filter((p) => p.key.includes("/death/"));
     expect(deaths).toEqual([{ key: "creature_troll_base/death/4", startFrame: 0 }]);
+  });
+});
+
+describe("the overhead bar on a frame floor (FS-48CTQ §F.18–20, owner playtest 2026-11-07)", () => {
+  const damaged = (fields: Partial<MonsterState> = {}) =>
+    monster({ current_health: 60, max_health: 120, ...fields });
+  const elite = (fields: Partial<MonsterState> = {}) =>
+    damaged({ entity_id: "e", archetype: "ghoul", name: "Hollow Ghoul", elite: true, ...fields });
+
+  function onFrame() {
+    const parts = fakeStage();
+    const roster = new MonsterRoster(parts.stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    return { ...parts, roster };
+  }
+
+  it("should show the bar alone over a damaged monster: no name, no level", () => {
+    const { roster, texts, bars } = onFrame();
+    roster.sync([damaged()]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(true);
+    expect(bars[0].fills.find((f) => f.color === MARKER_BAR.hp)!.w).toBe(OVERHEAD_BAR.width / 2);
+    expect(texts.every((t) => !t.visible)).toBe(true);
+  });
+
+  it("should show it the frame a full-health monster first takes damage", () => {
+    const { roster, bars } = onFrame();
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(false);
+    roster.sync([damaged()]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(true);
+  });
+
+  it("should hide it when the monster heals back to full", () => {
+    const { roster, bars } = onFrame();
+    roster.sync([damaged()]);
+    roster.update(FRAME);
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(false);
+  });
+
+  it("should hide it on death", () => {
+    const { roster, bars } = onFrame();
+    roster.sync([damaged()]);
+    roster.update(FRAME);
+    roster.sync([damaged({ action: "dead", current_health: 0 })]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(false);
+  });
+
+  it("should never show it over a monster the hide rule or the fog hides", () => {
+    const { roster, bars } = onFrame();
+    roster.sync([damaged()]);
+    roster.update(FRAME);
+    roster.hideWhere(() => true);
+    expect(bars[0].visible).toBe(false);
+    roster.update(FRAME);
+    roster.hideWhere(() => true);
+    expect(bars[0].visible).toBe(false);
+  });
+
+  it("should give an elite the bar alone, its prefix hidden and its hostile wash kept", () => {
+    const { roster, sprites, texts, bars } = onFrame();
+    roster.sync([elite()]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(true);
+    expect(texts).toHaveLength(2);
+    expect(texts.every((t) => !t.visible)).toBe(true);
+    expect(sprites[0].tint).toBe(palette.eliteTint);
+  });
+
+  it("should give a damaged boss its bar too", () => {
+    const { roster, bars } = onFrame();
+    roster.sync([damaged({ entity_id: "b", archetype: "demon", name: "Demon", boss: true })]);
+    roster.update(FRAME);
+    expect(bars[0].visible).toBe(true);
+  });
+
+  it("should seat the bar where an overhead floor seats it, over the head", () => {
+    const frame = onFrame();
+    frame.roster.sync([damaged()]);
+    frame.roster.update(FRAME);
+    const overhead = fakeStage();
+    const plated = new MonsterRoster(overhead.stage, fixtureArt());
+    plated.sync([damaged()]);
+    plated.update(FRAME);
+    expect([frame.bars[0].x, frame.bars[0].y]).toEqual([overhead.bars[0].x, overhead.bars[0].y]);
+    expect(frame.bars[0].y).toBeLessThan(frame.sprites[0].y);
+  });
+});
+
+describe("floors 2–3 and fields keep their plates (FS-48CTQ §A.2, §F.20)", () => {
+  it("should plate and bar every living monster at full health, as before", () => {
+    const { stage, texts, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster(), monster({ entity_id: "m2", current_health: 30 })]);
+    roster.update(FRAME);
+    expect(texts.map((t) => t.visible)).toEqual([true, true]);
+    expect(bars.map((b) => b.visible)).toEqual([true, true]);
+  });
+
+  it("should draw their bars in the same look as the frame floor's", () => {
+    const overhead = fakeStage();
+    const plated = new MonsterRoster(overhead.stage, fixtureArt());
+    plated.sync([monster({ current_health: 60 })]);
+    plated.update(FRAME);
+    const frame = fakeStage();
+    const barOnly = new MonsterRoster(frame.stage, fixtureArt());
+    barOnly.setMarkerMode("frame");
+    barOnly.sync([monster({ current_health: 60 })]);
+    barOnly.update(FRAME);
+    expect(overhead.bars[0].fills).toEqual(frame.bars[0].fills);
+  });
+});
+
+describe("the overhead bar redraws only on a change (FS-48CTQ §F.23)", () => {
+  it("should draw an idle bar once, however many frames pass", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 60 })]);
+    for (let i = 0; i < 30; i++) roster.update(FRAME);
+    expect(bars[0].draws).toBe(1);
+  });
+
+  it("should move a walking monster's bar without drawing it again", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 60 })]);
+    roster.update(FRAME);
+    const at = bars[0].x;
+    roster.sync([monster({ current_health: 60, action: "move", position: { x: 500, y: 300 } })]);
+    for (let i = 0; i < 10; i++) roster.update(FRAME);
+    expect(bars[0].x).not.toBe(at);
+    expect(bars[0].draws).toBe(1);
+  });
+
+  it("should draw it again when its health moves a backing px, and not for less", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 60, max_health: 1200 })]);
+    roster.update(FRAME);
+    // 1/1200 of a 40 px bar is no backing px: a heal that small draws nothing
+    roster.sync([monster({ current_health: 61, max_health: 1200 })]);
+    roster.update(FRAME);
+    expect(bars[0].draws).toBe(1);
+    roster.sync([monster({ current_health: 600, max_health: 1200 })]);
+    roster.update(FRAME);
+    expect(bars[0].draws).toBe(2);
+  });
+
+  it("should draw it again when the render scale changes", () => {
+    const { stage, bars, backing } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 60 })]);
+    roster.update(FRAME);
+    backing.scale = 2;
+    roster.update(FRAME);
+    roster.update(FRAME);
+    expect(bars[0].draws).toBe(2);
+  });
+
+  it("should not draw a hidden bar's frames at all on a frame floor at full health", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([monster(), monster({ entity_id: "m2" })]);
+    for (let i = 0; i < 10; i++) roster.update(FRAME);
+    expect(bars.map((b) => b.draws)).toEqual([0, 0]);
+  });
+
+  it.each([1, 1.5, 2])("should seat the bar on a whole backing px at render scale %s", (scale) => {
+    const { stage, bars } = fakeStage({ scale });
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 60, position: { x: 401.37, y: 299.21 } })]);
+    roster.update(FRAME);
+    for (const v of [bars[0].x, bars[0].y])
+      expect(Math.abs(v * scale - Math.round(v * scale))).toBeLessThan(1e-9);
+  });
+});
+
+describe("the overhead bar's damage chip (FS-48CTQ §F.22)", () => {
+  const chipOf = (bar: ReturnType<typeof fakeBar>) => bar.fills.find((f) => f.color === MARKER_BAR.chip);
+
+  it("should show the health a hit took as a chip, drain it, and stop drawing once it is gone", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([monster({ current_health: 60 })]);
+    roster.update(FRAME);
+    expect(chipOf(bars[0])).toMatchObject({ x: OVERHEAD_BAR.width / 2, w: OVERHEAD_BAR.width / 2 });
+
+    const frames = Math.ceil((CHIP_HOLD_MS + CHIP_DRAIN_MS) / FRAME) + 2;
+    for (let i = 0; i < frames; i++) roster.update(FRAME);
+    expect(chipOf(bars[0])).toBeUndefined();
+    const settled = bars[0].draws;
+    for (let i = 0; i < 30; i++) roster.update(FRAME);
+    expect(bars[0].draws).toBe(settled);
+  });
+
+  it("should chip the first hit on a frame floor, the bar appearing with it", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.setMarkerMode("frame");
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.update(FRAME);
+    expect(chipOf(bars[0])).toMatchObject({ w: OVERHEAD_BAR.width / 4 });
+  });
+
+  it("should give no chip to a hit taken unseen", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster()]);
+    roster.update(FRAME);
+    roster.hideWhere(() => true);
+    roster.sync([monster({ current_health: 60 })]);
+    roster.update(FRAME);
+    expect(chipOf(bars[0])).toBeUndefined();
+  });
+
+  it(`should drain at most ${CHIP_BUDGET} chips at once; a hit past that snaps`, () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    const herd = (hp: number) =>
+      Array.from({ length: CHIP_BUDGET + 3 }, (_, i) =>
+        monster({ entity_id: `m${i}`, current_health: hp, position: { x: 300 + i * 40, y: 300 } }),
+      );
+    roster.sync(herd(120));
+    roster.update(FRAME);
+    roster.sync(herd(60));
+    roster.update(FRAME);
+    expect(bars.filter((b) => chipOf(b) !== undefined)).toHaveLength(CHIP_BUDGET);
+  });
+
+  it("should let a new chip start once an earlier one has drained", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    const herd = (hp: number, last = hp) =>
+      Array.from({ length: CHIP_BUDGET + 1 }, (_, i) =>
+        monster({ entity_id: `m${i}`, current_health: i === CHIP_BUDGET ? last : hp }),
+      );
+    roster.sync(herd(120));
+    roster.sync(herd(60, 120));
+    roster.update(FRAME);
+    for (let i = 0; i < Math.ceil((CHIP_HOLD_MS + CHIP_DRAIN_MS) / FRAME) + 2; i++) roster.update(FRAME);
+    roster.sync(herd(60, 60));
+    roster.update(FRAME);
+    expect(chipOf(bars[CHIP_BUDGET])).toBeDefined();
   });
 });

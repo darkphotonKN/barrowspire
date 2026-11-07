@@ -1,8 +1,8 @@
 /**
  * Monsters on the canvas (FS-77AB6 req 34–39): each monster in a run's state broadcast drawn from
  * its baked creature sheet, playing what the server says it is doing, with a hostile nameplate
- * and HP bar over its head; on a `frame` floor it has none, and the target frame names it instead
- * (FS-48CTQ §B.3). A living monster is a target: the pointer over its footprint or its drawn body
+ * and HP bar over its head; on a `frame` floor it has no plate, the target frame names it instead
+ * (FS-48CTQ §B.3), and only a damaged one carries its bar (§F.18). A living monster is a target: the pointer over its footprint or its drawn body
  * reports it, a click strikes it, and a hit the server confirms flashes it.
  *
  * Nothing about a monster is client-held. The server sends where it stands, which way it faces
@@ -28,7 +28,14 @@ import { directionIndex } from "@/render/art/manifest";
 import { facingFrom, type Facing8 } from "@/render/iso/facing";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
-import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
+import {
+  DamageChip,
+  MARKER_DEPTH,
+  healthBarKey,
+  markerBase,
+  onBackingGrid,
+  paintHealthBar,
+} from "@/render/markers";
 import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/footprint";
 import type { MarkerMode } from "./markerMode";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
@@ -285,10 +292,15 @@ export function seatPlate(
 const LERP = 0.3;
 /** How quickly the measured speed follows the drawn motion, in ms (as `CharacterMotion`). */
 const SPEED_SMOOTHING_MS = 100;
-/** Screen px from the marker base to the bottom of the HP bar, and the bar's size. */
+/** Screen px from the marker base to the bottom of the HP bar. */
 const BAR_GAP = 2;
-const BAR_W = 38;
-const BAR_H = 4;
+/** The overhead HP bar's trough, in screen px; its brass rim stands 1px outside (FS-48CTQ §F.21). */
+export const OVERHEAD_BAR = { width: 40, height: 5 } as const;
+/**
+ * At most this many overhead damage chips drain at once (§F.23): a hit past that shows its new
+ * health with no chip, so an area blow across a crowd redraws a handful of bars a frame, not all.
+ */
+export const CHIP_BUDGET = 4;
 /** Screen px from the top of the HP bar to the bottom of the name. */
 const NAME_GAP = 2;
 /** How long a confirmed hit holds the damage flash, in ms: as long as a player's. */
@@ -344,6 +356,7 @@ export interface MonsterText {
 
 export interface MonsterBar {
   clear(): unknown;
+  setPosition(x: number, y: number): unknown;
   fillStyle(color: number, alpha?: number): unknown;
   fillRect(x: number, y: number, w: number, h: number): unknown;
   lineStyle(width: number, color: number, alpha?: number): unknown;
@@ -367,6 +380,8 @@ export interface MonsterStage {
   sprite(): MonsterSprite;
   text(content: string, style: NameplateStyle): MonsterText;
   graphics(): MonsterBar;
+  /** Backing px per logical unit (`viewport.renderScale`), so a bar's edges fall on whole px; 1 if absent. */
+  renderScale?(): number;
 }
 
 /**
@@ -390,6 +405,10 @@ interface MonsterView {
   /** An elite's prefix, lettered apart in the hostile accent; none on a common monster. */
   prefix: MonsterText | null;
   bar: MonsterBar;
+  /** The bar's health and damage chip (FS-48CTQ §F.22). */
+  chip: DamageChip;
+  /** What the bar last drew (`healthBarKey`): it is redrawn only when this changes (§F.23). */
+  drawn?: string;
   anim: CharacterAnimator;
   scale: number;
   /** World position as drawn, eased toward `state.position`. */
@@ -486,8 +505,10 @@ export class MonsterRoster {
         this.views.set(monster.entity_id, this.create(monster));
         continue;
       }
-      if (monster.current_health < view.state.current_health && view.sprite.visible) this.flash(view);
+      const hit = monster.current_health < view.state.current_health && view.sprite.visible;
+      if (hit) this.flash(view);
       view.state = monster;
+      view.chip.set(healthFraction(monster), hit && alive(monster) && this.chipRoom(view));
     }
 
     // a monster that falls or goes from under the pointer is no longer a target there
@@ -528,6 +549,7 @@ export class MonsterRoster {
         view.flashMs -= deltaMs;
         if (view.flashMs <= 0) this.wear(view);
       }
+      view.chip.step(deltaMs);
 
       this.mark(view);
     }
@@ -554,6 +576,7 @@ export class MonsterRoster {
         view.flashMs = 0;
         this.wear(view);
       }
+      view.chip.clear();
     }
   }
 
@@ -594,6 +617,7 @@ export class MonsterRoster {
       name,
       prefix,
       bar,
+      chip: new DamageChip(healthFraction(state)),
       anim,
       scale,
       pos: { x: state.position.x, y: state.position.y },
@@ -681,31 +705,51 @@ export class MonsterRoster {
     view.sprite.setDepth(worldDepth(view.pos.x, view.pos.y, 1));
   }
 
+  /** Room for one more draining chip (§F.23): `view`'s own, or one under {@link CHIP_BUDGET}. */
+  private chipRoom(view: MonsterView): boolean {
+    if (view.chip.draining) return true;
+    let draining = 0;
+    for (const other of this.views.values()) if (other.chip.draining) draining += 1;
+    return draining < CHIP_BUDGET;
+  }
+
+  private renderScale(): number {
+    return this.stage.renderScale?.() || 1;
+  }
+
   /**
-   * The plate and HP bar over a living monster's head; none over a corpse, and none at all on a
-   * frame floor, where the target frame names the monster instead (FS-48CTQ §B.3).
+   * The plate and HP bar over a living monster's head; none over a corpse. On a frame floor the
+   * target frame names the monster, so it has no plate, and its bar shows only while it is damaged
+   * (FS-48CTQ §B.3, §F.18–19). The bar is drawn at its own origin and moved with the monster; it is
+   * redrawn only when what it shows changes, in backing px (§F.23).
    */
   private mark(view: MonsterView): void {
-    const { sprite, name, prefix, bar, state } = view;
-    const plated = this.mode === "overhead" && state.action !== "dead";
-    const base = plated ? markerBase(sprite, view.anim.crown, false, view.anim.artScale) : null;
-    name.setVisible(base !== null);
-    prefix?.setVisible(base !== null);
+    const { sprite, name, prefix, bar, chip, state } = view;
+    const living = state.action !== "dead";
+    const plated = this.mode === "overhead" && living;
+    const barred = plated || (living && state.current_health < state.max_health);
+    const base = barred ? markerBase(sprite, view.anim.crown, false, view.anim.artScale) : null;
+    name.setVisible(plated && base !== null);
+    prefix?.setVisible(plated && base !== null);
     bar.setVisible(base !== null);
+    if (base === null) {
+      chip.clear();
+      return;
+    }
+
+    const scale = this.renderScale();
+    const top = base - BAR_GAP - OVERHEAD_BAR.height;
+    bar.setPosition(
+      onBackingGrid(sprite.x - OVERHEAD_BAR.width / 2, scale),
+      onBackingGrid(top, scale),
+    );
+    if (plated) this.letter(view, Math.round(top) - 1 - NAME_GAP);
+
+    const key = healthBarKey(OVERHEAD_BAR, chip.fill, chip.chip, scale);
+    if (key === view.drawn) return;
+    view.drawn = key;
     bar.clear();
-    if (base === null) return;
-
-    const barTop = Math.round(base - BAR_GAP - BAR_H);
-    const left = Math.round(sprite.x - BAR_W / 2);
-    this.letter(view, barTop - 1 - NAME_GAP);
-
-    bar.fillStyle(MARKER_BAR.backing, 0.9);
-    bar.fillRect(left - 1, barTop - 1, BAR_W + 2, BAR_H + 2);
-    bar.lineStyle(1, MARKER_BAR.rim, 0.9);
-    bar.strokeRect(left - 1, barTop - 1, BAR_W + 2, BAR_H + 2);
-    const ratio = healthFraction(state);
-    bar.fillStyle(MARKER_BAR.hp, 1);
-    bar.fillRect(left, barTop, Math.round(BAR_W * ratio), BAR_H);
+    paintHealthBar(bar, { x: 0, y: 0, ...OVERHEAD_BAR }, chip.fill, chip.chip, scale);
   }
 
   /**
