@@ -5,6 +5,7 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,10 +58,20 @@ type fakeRetriever struct {
 	mu       sync.Mutex
 	marked   map[uuid.UUID]bool
 	timeLeft []time.Duration
+	batchCtx context.Context
+	backlogs []backlogRead
 }
 
-func (r *fakeRetriever) LockPendingBatch(ctx context.Context, _ *int, handle BatchHandler) (int, error) {
+// backlogRead is what a backlog read saw: whether its own ctx was live, and
+// whether the batch before it had already ended.
+type backlogRead struct {
+	ownCtxLive   bool
+	batchCtxDone bool
+}
+
+func (r *fakeRetriever) RelayPendingBatch(ctx context.Context, _ *int, handle BatchHandler) (int, error) {
 	r.mu.Lock()
+	r.batchCtx = ctx
 	if deadline, ok := ctx.Deadline(); ok {
 		r.timeLeft = append(r.timeLeft, time.Until(deadline))
 	} else {
@@ -86,8 +97,21 @@ func (r *fakeRetriever) LockPendingBatch(ctx context.Context, _ *int, handle Bat
 	return len(sent), nil
 }
 
-func (r *fakeRetriever) GetBacklog(_ context.Context) (Backlog, error) {
+func (r *fakeRetriever) GetBacklog(ctx context.Context) (Backlog, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	read := backlogRead{ownCtxLive: ctx.Err() == nil}
+	if r.batchCtx != nil {
+		read.batchCtxDone = r.batchCtx.Err() != nil
+	}
+	r.backlogs = append(r.backlogs, read)
 	return Backlog{Rows: len(r.rows)}, nil
+}
+
+func (r *fakeRetriever) backlogReads() []backlogRead {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]backlogRead(nil), r.backlogs...)
 }
 
 func (r *fakeRetriever) isMarked(id uuid.UUID) bool {
@@ -286,6 +310,133 @@ func TestRun_EachBatch_HasAFiveSecondDeadline(t *testing.T) {
 	}
 }
 
+// The backlog is read under a context of its own once the batch has ended, so
+// a batch that used up its deadline does not leave the gauges stale.
+func TestRun_Backlog_ReadUnderItsOwnContextAfterTheBatch(t *testing.T) {
+	ret := &fakeRetriever{rows: []*OutboxEvent{newRow("items.extracted")}}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	w := NewOutboxWorker(time.Hour, 20, ret, &fakePublisher{failFor: map[string]bool{}}, wg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go w.Run(ctx)
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+	})
+	w.Wake()
+
+	deadline := time.After(2 * time.Second)
+	for len(ret.backlogReads()) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("no backlog read within 2s of a wake")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	read := ret.backlogReads()[0]
+	if !read.ownCtxLive || !read.batchCtxDone {
+		t.Errorf("backlog read = %+v, want its own live ctx after the batch ctx ended", read)
+	}
+}
+
+// A batch never starts a publish once its time is nearly up: with less than
+// the commit margin left, or the context already done, it stops and keeps
+// what it sent. The default margin is 1 s of the 5 s batch. ADR-0069
+// §Decision 4.
+func TestPublishOutboxEvents_TooLittleTimeLeft_PublishesNothingMore(t *testing.T) {
+	if got := NewOutboxWorker(time.Second, 20, &fakeRetriever{}, &fakePublisher{}, &sync.WaitGroup{}).commitMargin; got != time.Second {
+		t.Fatalf("default commit margin = %s, want 1s", got)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	nearlyUp, cancelNearlyUp := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancelNearlyUp()
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{"context already done", cancelled},
+		{"less than the margin left", nearlyUp},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := []*OutboxEvent{newRow("a"), newRow("b")}
+			pub := &fakePublisher{failFor: map[string]bool{}}
+			w := NewOutboxWorker(time.Second, 20, &fakeRetriever{rows: rows}, pub, &sync.WaitGroup{})
+
+			_ = w.PublishOutboxEvents(tt.ctx)
+
+			if n := len(pub.messageIds()); n != 0 {
+				t.Errorf("publishes = %d, want 0", n)
+			}
+		})
+	}
+}
+
+// slowPublisher is a broker that is slow, not stalled: every publish returns,
+// after d. Sends are counted per row id.
+type slowPublisher struct {
+	d     time.Duration
+	mu    sync.Mutex
+	sends map[string]int
+}
+
+func (p *slowPublisher) PublishWithContext(_ context.Context, _, _ string, msg commonbroker.Message) error {
+	time.Sleep(p.d)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sends[msg.MessageId]++
+	return nil
+}
+
+// A slow broker still drains the outbox: each batch stops publishing with
+// the commit margin left and commits what it sent, so every tick makes
+// progress and no committed row is sent again. Scaled 1:5 from production
+// (5 s batch, 1 s margin, 300 ms a publish). Before the margin, every batch
+// overran its deadline, rolled back and resent the same rows forever.
+// ADR-0069 §Decision 4, fix round 1 HIGH-1.
+func TestPublishOutboxEvents_SlowBroker_EveryBatchCommitsAndTheOutboxDrains(t *testing.T) {
+	const (
+		batchDeadline = time.Second
+		margin        = 200 * time.Millisecond
+		perPublish    = 60 * time.Millisecond
+		rows          = 40
+		batchSize     = 20
+		maxTicks      = 10
+	)
+	db := outboxDB(t)
+	ids := seedRows(t, db, rows)
+	pub := &slowPublisher{d: perPublish, sends: map[string]int{}}
+	w := NewOutboxWorker(time.Second, batchSize, NewService(NewRepo(db)), pub, &sync.WaitGroup{})
+	w.commitMargin = margin
+
+	pending := rows
+	for tick := 1; pending > 0; tick++ {
+		require.LessOrEqual(t, tick, maxTicks, "the outbox did not drain in %d ticks", maxTicks)
+		ctx, cancel := context.WithTimeout(context.Background(), batchDeadline)
+		start := time.Now()
+		err := w.PublishOutboxEvents(ctx)
+		took := time.Since(start)
+		cancel()
+		require.NoError(t, err, "tick %d", tick)
+
+		now := len(pendingRows(t, db))
+		t.Logf("tick %d: took %s, committed %d, pending %d", tick, took.Round(time.Millisecond), pending-now, now)
+		require.Less(t, now, pending, "tick %d commits rows", tick)
+		require.Less(t, took, batchDeadline, "tick %d ends before its deadline", tick)
+		pending = now
+	}
+
+	total := 0
+	for _, id := range ids {
+		require.Equal(t, 1, pub.sends[id.String()], "row %s sent once", id)
+		total += pub.sends[id.String()]
+	}
+	t.Logf("%d rows drained with %d sends", rows, total)
+}
+
 // Wake never blocks its caller, whether the worker is running or not: rings
 // past the first one waiting are folded into it.
 func TestWake_NeverBlocks(t *testing.T) {
@@ -358,6 +509,11 @@ func TestPublishOutboxEvents_TwoWorkersOneOutbox_NeverPublishTheSameRow(t *testi
 		relays[i] = NewOutboxWorker(time.Second, batchSize, NewService(NewRepo(openPool(t, dsn, 2))), pub.forWorker(i), &sync.WaitGroup{})
 	}
 
+	// a relay that makes no progress must fail the test, not spin it forever:
+	// draining a round takes about rowsPerRound/batchSize batches between them
+	const maxBatchesPerRound = 10 * rowsPerRound / batchSize
+	var stuck atomic.Int32
+
 	var seeded []uuid.UUID
 	sharedRounds := 0
 	start := time.Now()
@@ -378,7 +534,11 @@ func TestPublishOutboxEvents_TwoWorkersOneOutbox_NeverPublishTheSameRow(t *testi
 				defer wg.Done()
 				<-go_
 				// no require here: FailNow must run on the test goroutine
-				for {
+				for batches := 0; ; batches++ {
+					if batches == maxBatchesPerRound {
+						stuck.Add(1)
+						return
+					}
 					var pending int
 					if err := seeder.Get(&pending, `SELECT count(*) FROM outbox WHERE published_at IS NULL`); err != nil || pending == 0 {
 						return
@@ -389,6 +549,7 @@ func TestPublishOutboxEvents_TwoWorkersOneOutbox_NeverPublishTheSameRow(t *testi
 		}
 		close(go_)
 		wg.Wait()
+		require.Zero(t, stuck.Load(), "round %d: a relay ran %d batches without draining the outbox", round, maxBatchesPerRound)
 
 		pub.mu.Lock()
 		if pub.byWorker[0] > before[0] && pub.byWorker[1] > before[1] {

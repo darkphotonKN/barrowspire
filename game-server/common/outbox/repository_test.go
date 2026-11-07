@@ -73,7 +73,7 @@ func uuidArray(ids ...uuid.UUID) pq.StringArray {
 // The batch is locked with SKIP LOCKED inside a transaction and binds the
 // batch size, 20 when none is given. An empty batch never reaches the handler
 // and the transaction is still ended. ADR-0069 §Decision 2, I-ADR0069-1.
-func TestLockPendingBatch_Limit_BindsBatchSizeInATransaction(t *testing.T) {
+func TestRelayPendingBatch_Limit_BindsBatchSizeInATransaction(t *testing.T) {
 	tests := []struct {
 		name      string
 		limit     *int
@@ -90,7 +90,7 @@ func TestLockPendingBatch_Limit_BindsBatchSizeInATransaction(t *testing.T) {
 			mock.ExpectRollback()
 			spy := &handlerSpy{send: sendAll}
 
-			marked, err := r.LockPendingBatch(context.Background(), tt.limit, spy.handle)
+			marked, err := r.RelayPendingBatch(context.Background(), tt.limit, spy.handle)
 
 			require.NoError(t, err)
 			assert.Zero(t, marked)
@@ -103,7 +103,7 @@ func TestLockPendingBatch_Limit_BindsBatchSizeInATransaction(t *testing.T) {
 // The locked rows are handed over oldest first, and exactly the ids the
 // handler reports as sent are marked published in the same transaction,
 // which then commits. ADR-0069 §Decision 2–3, I-ADR0069-1.
-func TestLockPendingBatch_Rows_HandedOverAndSentOnesMarkedThenCommitted(t *testing.T) {
+func TestRelayPendingBatch_Rows_HandedOverAndSentOnesMarkedThenCommitted(t *testing.T) {
 	r, mock := newMockRepo(t)
 	older, newer := uuid.New(), uuid.New()
 	t0 := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
@@ -116,7 +116,7 @@ func TestLockPendingBatch_Rows_HandedOverAndSentOnesMarkedThenCommitted(t *testi
 	mock.ExpectCommit()
 	spy := &handlerSpy{send: func(events []*OutboxEvent) []uuid.UUID { return []uuid.UUID{events[0].ID} }}
 
-	marked, err := r.LockPendingBatch(context.Background(), intPtr(2), spy.handle)
+	marked, err := r.RelayPendingBatch(context.Background(), intPtr(2), spy.handle)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, marked)
@@ -129,7 +129,7 @@ func TestLockPendingBatch_Rows_HandedOverAndSentOnesMarkedThenCommitted(t *testi
 
 // A batch where nothing was sent writes nothing, and its transaction is ended,
 // which releases the locks for the next batch. ADR-0069 §Decision 3.
-func TestLockPendingBatch_NothingSent_WritesNothingAndEndsTheTransaction(t *testing.T) {
+func TestRelayPendingBatch_NothingSent_WritesNothingAndEndsTheTransaction(t *testing.T) {
 	r, mock := newMockRepo(t)
 	mock.ExpectBegin()
 	mock.ExpectQuery(lockPendingBatchPattern).WithArgs(20).
@@ -137,7 +137,7 @@ func TestLockPendingBatch_NothingSent_WritesNothingAndEndsTheTransaction(t *test
 	mock.ExpectRollback()
 	spy := &handlerSpy{}
 
-	marked, err := r.LockPendingBatch(context.Background(), nil, spy.handle)
+	marked, err := r.RelayPendingBatch(context.Background(), nil, spy.handle)
 
 	require.NoError(t, err)
 	assert.Zero(t, marked)
@@ -148,7 +148,7 @@ func TestLockPendingBatch_NothingSent_WritesNothingAndEndsTheTransaction(t *test
 // Every failing step is wrapped with the repo and the operation, nothing is
 // reported marked, and the transaction is ended whatever step failed.
 // ADR-0069 §Decision 4.
-func TestLockPendingBatch_DBError_WrappedAndTheTransactionEnded(t *testing.T) {
+func TestRelayPendingBatch_DBError_WrappedAndTheTransactionEnded(t *testing.T) {
 	dbErr := errors.New("connection reset")
 	row := func() *sqlmock.Rows {
 		return sqlmock.NewRows(batchColumns).AddRow(uuid.NewString(), "match.ended", "game", []byte(`{}`), time.Now())
@@ -197,11 +197,11 @@ func TestLockPendingBatch_DBError_WrappedAndTheTransactionEnded(t *testing.T) {
 			tt.expect(mock)
 			spy := &handlerSpy{send: sendAll}
 
-			marked, err := r.LockPendingBatch(context.Background(), nil, spy.handle)
+			marked, err := r.RelayPendingBatch(context.Background(), nil, spy.handle)
 
 			require.ErrorIs(t, err, dbErr)
 			assert.Contains(t, err.Error(), "outbox repo")
-			assert.Contains(t, err.Error(), "lock pending batch")
+			assert.Contains(t, err.Error(), "relay pending batch")
 			assert.Zero(t, marked)
 			assert.Equal(t, tt.wantHandled, spy.calls == 1)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -337,7 +337,9 @@ func TestCreateOutbox_DBError_WrappedWithContext(t *testing.T) {
 // opt-in, as common/inbox does it, and every test works in a throwaway schema.
 const outboxDSNEnv = "OUTBOX_TEST_DB_DSN"
 
-const outboxTestSchema = "outbox_repository_test"
+// outboxTestSchemaPrefix names each test's throwaway schema; a random suffix
+// keeps two runs on one database (or a schema a crashed run left behind) apart.
+const outboxTestSchemaPrefix = "outbox_relay_test_"
 
 // The shape every service ships as its own outbox migration (auth, game,
 // items, marketplace, stats, wallet), restated here because the package under
@@ -373,12 +375,11 @@ func outboxDSN(t *testing.T) string {
 	}
 	defer func() { _ = admin.Close() }()
 
-	_, err = admin.Exec(`DROP SCHEMA IF EXISTS ` + outboxTestSchema + ` CASCADE`)
-	require.NoError(t, err)
-	_, err = admin.Exec(`CREATE SCHEMA ` + outboxTestSchema)
+	schema := outboxTestSchemaPrefix + strings.ReplaceAll(uuid.NewString()[:13], "-", "")
+	_, err = admin.Exec(`CREATE SCHEMA ` + schema)
 	require.NoError(t, err)
 
-	scoped := withSearchPath(dsn, outboxTestSchema)
+	scoped := withSearchPath(dsn, schema)
 	db := openPool(t, scoped, 1)
 	_, err = db.Exec(outboxDDL)
 	require.NoError(t, err)
@@ -389,7 +390,7 @@ func outboxDSN(t *testing.T) string {
 			return
 		}
 		defer func() { _ = cleanup.Close() }()
-		_, _ = cleanup.Exec(`DROP SCHEMA IF EXISTS ` + outboxTestSchema + ` CASCADE`)
+		_, _ = cleanup.Exec(`DROP SCHEMA IF EXISTS ` + schema + ` CASCADE`)
 	})
 
 	return scoped
@@ -492,6 +493,50 @@ func TestCreateOutboxTx_NoIDTwice_TwoRows(t *testing.T) {
 	assert.NotContains(t, ids, uuid.Nil)
 }
 
+// A step that fails on the batch deadline keeps its name in the error, along
+// with the deadline itself, rather than collapsing to a bare transient error,
+// so the log says where the batch ran out of time.
+func TestRelayPendingBatch_DeadlineError_KeepsItsStep(t *testing.T) {
+	row := func() *sqlmock.Rows {
+		return sqlmock.NewRows(batchColumns).AddRow(uuid.NewString(), "match.ended", "game", []byte(`{}`), time.Now())
+	}
+	tests := []struct {
+		step   string
+		expect func(mock sqlmock.Sqlmock)
+	}{
+		{"begin", func(mock sqlmock.Sqlmock) { mock.ExpectBegin().WillReturnError(context.DeadlineExceeded) }},
+		{"lock", func(mock sqlmock.Sqlmock) {
+			mock.ExpectBegin()
+			mock.ExpectQuery(lockPendingBatchPattern).WillReturnError(context.DeadlineExceeded)
+			mock.ExpectRollback()
+		}},
+		{"mark published", func(mock sqlmock.Sqlmock) {
+			mock.ExpectBegin()
+			mock.ExpectQuery(lockPendingBatchPattern).WillReturnRows(row())
+			mock.ExpectExec(markPublishedPattern).WillReturnError(context.DeadlineExceeded)
+			mock.ExpectRollback()
+		}},
+		{"commit", func(mock sqlmock.Sqlmock) {
+			mock.ExpectBegin()
+			mock.ExpectQuery(lockPendingBatchPattern).WillReturnRows(row())
+			mock.ExpectExec(markPublishedPattern).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectCommit().WillReturnError(context.DeadlineExceeded)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.step, func(t *testing.T) {
+			r, mock := newMockRepo(t)
+			tt.expect(mock)
+
+			_, err := r.RelayPendingBatch(context.Background(), nil, (&handlerSpy{send: sendAll}).handle)
+
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			assert.Contains(t, err.Error(), "relay pending batch: "+tt.step+":")
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 // A publish that fails mid-batch stops the batch there: the rows sent before
 // it are marked and committed, the failed row and the ones after it stay
 // pending, and their locks are released, so the next batch takes them.
@@ -520,7 +565,7 @@ func TestPublishOutboxEvents_PublishFailsMidBatch_SentRowsMarkedRestReleased(t *
 // While one batch holds rows, a second batch from another pool takes the
 // others, and a third finds none; neither waits on the first. ADR-0069
 // §Decision 2 (SKIP LOCKED), I-ADR0069-1.
-func TestLockPendingBatch_SecondBatchWhileFirstHolds_GetsTheOthersWithoutWaiting(t *testing.T) {
+func TestRelayPendingBatch_SecondBatchWhileFirstHolds_GetsTheOthersWithoutWaiting(t *testing.T) {
 	dsn := outboxDSN(t)
 	first, second, third := NewRepo(openPool(t, dsn, 2)), NewRepo(openPool(t, dsn, 2)), NewRepo(openPool(t, dsn, 2))
 	ids := seedRows(t, first.db, 4)
@@ -529,17 +574,17 @@ func TestLockPendingBatch_SecondBatchWhileFirstHolds_GetsTheOthersWithoutWaiting
 	var held, others, rest []uuid.UUID
 	var secondTook, thirdTook time.Duration
 	var secondErr, thirdErr error
-	_, err := first.LockPendingBatch(context.Background(), two, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
+	_, err := first.RelayPendingBatch(context.Background(), two, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
 		held = sendAll(events)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		start := time.Now()
-		_, secondErr = second.LockPendingBatch(ctx, two, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
+		_, secondErr = second.RelayPendingBatch(ctx, two, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
 			others = sendAll(events)
 
 			start := time.Now()
-			_, thirdErr = third.LockPendingBatch(ctx, two, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
+			_, thirdErr = third.RelayPendingBatch(ctx, two, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
 				rest = sendAll(events)
 				return nil
 			})
@@ -565,7 +610,7 @@ func TestLockPendingBatch_SecondBatchWhileFirstHolds_GetsTheOthersWithoutWaiting
 // publisher ignores its context), the transaction is rolled back anyway: the
 // rows can be locked by another batch before the publish returns, and nothing
 // from the timed-out batch is marked. ADR-0069 §Decision 4, I-ADR0069-1.
-func TestLockPendingBatch_DeadlinePassesMidPublish_TransactionEndsAndRowsRelease(t *testing.T) {
+func TestRelayPendingBatch_DeadlinePassesMidPublish_TransactionEndsAndRowsRelease(t *testing.T) {
 	dsn := outboxDSN(t)
 	stuck, other := NewRepo(openPool(t, dsn, 2)), NewRepo(openPool(t, dsn, 2))
 	ids := seedRows(t, stuck.db, 3)
@@ -575,10 +620,13 @@ func TestLockPendingBatch_DeadlinePassesMidPublish_TransactionEndsAndRowsRelease
 		err    error
 	}
 	entered, unblock, done := make(chan struct{}), make(chan struct{}), make(chan result, 1)
+	var unblockOnce sync.Once
+	release := func() { unblockOnce.Do(func() { close(unblock) }) }
+	t.Cleanup(release) // a failed assertion below still lets the held batch return
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	go func() {
-		marked, err := stuck.LockPendingBatch(ctx, nil, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
+		marked, err := stuck.RelayPendingBatch(ctx, nil, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
 			close(entered)
 			<-unblock // a publish call that ignores its context
 			return sendAll(events)
@@ -591,7 +639,7 @@ func TestLockPendingBatch_DeadlinePassesMidPublish_TransactionEndsAndRowsRelease
 	deadline := time.Now().Add(3 * time.Second)
 	for len(retaken) == 0 && time.Now().Before(deadline) {
 		pollCtx, pollCancel := context.WithTimeout(context.Background(), time.Second)
-		_, err := other.LockPendingBatch(pollCtx, nil, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
+		_, err := other.RelayPendingBatch(pollCtx, nil, func(_ context.Context, events []*OutboxEvent) []uuid.UUID {
 			retaken = sendAll(events)
 			return nil
 		})
@@ -608,9 +656,10 @@ func TestLockPendingBatch_DeadlinePassesMidPublish_TransactionEndsAndRowsRelease
 	}
 	assert.Equal(t, ids, retaken, "the rows are released while the publish is still blocked")
 
-	close(unblock)
+	release()
 	res := <-done
 	require.Error(t, res.err, "the timed-out batch reports its failure")
+	assert.Contains(t, res.err.Error(), "mark published", "the error names the step that ran out of time")
 	assert.Zero(t, res.marked)
 	assert.Equal(t, ids, pendingRows(t, stuck.db), "nothing from the timed-out batch is marked")
 }
