@@ -6,4 +6,14 @@ export {
   markerBase,
   type StandingSprite,
 } from "./markers";
+export {
+  CHIP_DRAIN_MS,
+  CHIP_HOLD_MS,
+  DamageChip,
+  healthBarKey,
+  onBackingGrid,
+  paintHealthBar,
+  type BarBox,
+  type BarPainter,
+} from "./healthBar";
 export { NPC_NAME_PX, isFunctionNPC, sigilPoints } from "./npc";

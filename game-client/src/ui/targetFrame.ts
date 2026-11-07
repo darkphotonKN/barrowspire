@@ -1,7 +1,7 @@
 /**
  * The target frame (FS-48CTQ §C, §E): one frame at the top centre of a `frame` floor naming a
  * single monster, its plate (`nameplate`, an elite's prefix apart in the hostile accent) over its
- * health bar in the marker bar's colours. Which monster is the scene's to say (`pickTarget`); the
+ * health bar, in the overhead bar's look with its damage chip (`paintHealthBar`, §F.21–22). Which monster is the scene's to say (`pickTarget`); the
  * frame draws it, fades in over {@link TARGET_FADE_IN_MS} and out over {@link TARGET_FADE_OUT_MS},
  * switches content at once, and hides at once while covered (the spectate HUD, the floor veil).
  * A boss's frame is wider (§D.12): its bar 1.5 × the normal bar's width and twice its height.
@@ -14,7 +14,7 @@
  * draws through {@link TargetFrameStage}, the narrow slice of Phaser it needs.
  */
 
-import { MARKER_BAR } from "@/render/markers";
+import { DamageChip, healthBarKey, paintHealthBar } from "@/render/markers";
 import {
   elitePlate,
   healthFraction,
@@ -138,20 +138,9 @@ const lettering = (ink: number): FrameTextStyle => ({
   strokeThickness: 2,
 });
 
-/** What a drawn frame shows: redrawn only when one of these changes. */
-const drawnKey = (m: MonsterState, centreX: number, scale: number) =>
-  [
-    m.entity_id,
-    m.name,
-    m.level,
-    m.elite,
-    m.archetype,
-    m.boss,
-    m.current_health,
-    m.max_health,
-    centreX,
-    scale,
-  ].join("|");
+/** What a drawn frame shows: redrawn only when one of these changes, its bar in backing px. */
+const drawnKey = (m: MonsterState, centreX: number, bar: string) =>
+  [m.entity_id, m.name, m.level, m.elite, m.archetype, m.boss, centreX, bar].join("|");
 
 export class TargetFrame {
   private readonly panel: FrameGraphics;
@@ -163,6 +152,9 @@ export class TargetFrame {
   /** Whether the monster drawn is an elite with a prefix to letter apart. */
   private prefixed = false;
   private drawn?: string;
+  /** The named monster's health and damage chip (§F.22), and whose they are. */
+  private chip?: DamageChip;
+  private chipFor?: string;
 
   /**
    * `centreX` reads the logical view's centre now (`viewport.centerX`), `renderScale` its backing
@@ -200,7 +192,10 @@ export class TargetFrame {
       this.apply();
       return;
     }
-    if (target) this.draw(target);
+    if (target) {
+      this.track(target, deltaMs);
+      this.draw(target);
+    }
     this.alpha = fadeStep(this.alpha, deltaMs, target !== null);
     this.apply();
   }
@@ -227,15 +222,36 @@ export class TargetFrame {
     }
   }
 
+  /** The chip follows the monster named; a new one starts with none (§F.22). */
+  private track(monster: MonsterState, deltaMs: number): void {
+    const fill = healthFraction(monster);
+    if (!this.chip || this.chipFor !== monster.entity_id) {
+      this.chip = new DamageChip(fill);
+      this.chipFor = monster.entity_id;
+      return;
+    }
+    this.chip.set(fill, fill < this.chip.fill);
+    this.chip.step(deltaMs);
+  }
+
   private draw(monster: MonsterState): void {
     const centreX = this.centreX();
-    const key = drawnKey(monster, centreX, this.renderScale());
+    const scale = this.renderScale() || 1;
+    const style = FRAME_STYLES[monster.boss ? "boss" : "normal"];
+    const r = targetFrameRect(centreX, style.size);
+    const bar = {
+      x: r.x + BAR_INSET_X,
+      y: r.y + r.height - BAR_INSET_BOTTOM - style.barHeight,
+      width: r.width - BAR_INSET_X * 2,
+      height: style.barHeight,
+    };
+    const fill = this.chip?.fill ?? healthFraction(monster);
+    const chip = this.chip?.chip ?? fill;
+    const key = drawnKey(monster, centreX, healthBarKey(bar, fill, chip, scale));
     this.shown = monster;
     if (key === this.drawn) return;
     this.drawn = key;
 
-    const style = FRAME_STYLES[monster.boss ? "boss" : "normal"];
-    const r = targetFrameRect(centreX, style.size);
     const g = this.panel;
     g.clear();
     g.fillStyle(palette.hudPanel, 0.85);
@@ -243,24 +259,7 @@ export class TargetFrame {
     g.lineStyle(1, palette.frame, 0.6);
     g.strokeRect(r.x, r.y, r.width, r.height);
 
-    const bar = {
-      x: r.x + BAR_INSET_X,
-      y: r.y + r.height - BAR_INSET_BOTTOM - style.barHeight,
-      width: r.width - BAR_INSET_X * 2,
-      height: style.barHeight,
-    };
-    g.fillStyle(MARKER_BAR.backing, 0.9);
-    g.fillRect(bar.x, bar.y, bar.width, bar.height);
-    g.lineStyle(1, MARKER_BAR.rim, 0.9);
-    g.strokeRect(bar.x, bar.y, bar.width, bar.height);
-    const ratio = healthFraction(monster);
-    if (ratio > 0) {
-      g.fillStyle(MARKER_BAR.hp, 1);
-      // whole backing px, as the overhead bar rounds its fill (review T1)
-      const scale = this.renderScale() || 1;
-      const fill = Math.round(bar.width * ratio * scale) / scale;
-      g.fillRect(bar.x, bar.y, fill, bar.height);
-    }
+    paintHealthBar(g, bar, fill, chip, scale);
 
     const plate = elitePlate(monster);
     this.prefixed = plate !== null;
