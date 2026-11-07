@@ -1,5 +1,6 @@
 import type * as Phaser from "phaser";
 import { PLACEHOLDER_TEXTURE } from "@/render/art/library";
+import { viewport } from "@/render/viewport/viewport";
 import type { MonsterStage } from "./monsters";
 
 /**
@@ -11,5 +12,6 @@ export function phaserMonsterStage(scene: Phaser.Scene): MonsterStage {
     sprite: () => scene.add.sprite(0, 0, PLACEHOLDER_TEXTURE),
     text: (content, style) => scene.add.text(0, 0, content, style),
     graphics: () => scene.add.graphics(),
+    renderScale: () => viewport.renderScale,
   };
 }

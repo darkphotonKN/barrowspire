@@ -31,6 +31,7 @@ export const MARKER_INKS = {
   "elite prefix": palette.markerElite,
   "gate name": palette.markerGate,
   "HP fill": palette.markerHp,
+  "HP damage chip": palette.markerHpChip,
 } as const;
 
 /**
@@ -44,11 +45,20 @@ export const FIELD_MARKER_OUTLINE = {
   thickness: 3,
 } as const;
 
-/** The HP bar's parts. Health only: nothing draws a resource overhead (FS-8AY7S req 26, 27). */
+/**
+ * The HP bar's parts. Health only: nothing draws a resource overhead (FS-8AY7S req 26, 27).
+ * `rim` is the party members' bar (FS-CH21F); a monster's bar and the target frame's are drawn by
+ * `paintHealthBar` in `frame` (the brass rim), `backing` (the trough), `hp` shaded by `light` and
+ * `shade`, and `chip` (FS-48CTQ §F.21).
+ */
 export const MARKER_BAR = {
   backing: palette.markerBarBacking,
   rim: palette.markerBarRim,
   hp: palette.markerHp,
+  frame: palette.markerBarFrame,
+  light: palette.markerHpLight,
+  shade: palette.markerHpShade,
+  chip: palette.markerHpChip,
 } as const;
 
 /** Screen px between a baked character's head and the lower edge of its marker stack. */
