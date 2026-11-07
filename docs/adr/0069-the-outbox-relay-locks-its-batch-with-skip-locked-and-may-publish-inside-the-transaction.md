@@ -62,7 +62,7 @@ Postgres semantics this relies on (PostgreSQL 17 docs):
 - *SELECT, The Locking Clause:* under Read Committed, `ORDER BY` plus a locking clause "can return
   rows out of order." The relay already promises no ordering, so this costs nothing new.
 
-Go `database/sql` semantics this relies on (Go 1.26, `database/sql/sql.go`): `BeginTx` — "The
+Go `database/sql` semantics this relies on (Go 1.24.2, the version `common/go.mod` pins; `database/sql/sql.go`, unchanged through 1.26): `BeginTx` — "The
 provided context is used until the transaction is committed or rolled back. If the context is
 canceled, the sql package will roll back the transaction." `Tx.awaitDone` waits on the context and
 rolls back as soon as it is done, whether or not the caller is still busy elsewhere.
@@ -81,13 +81,24 @@ rolls back as soon as it is done, whether or not the caller is still busy elsewh
    still marked published and committed; they are not rolled back. The failed row and every row
    after it stay unpublished, and committing releases their locks for the next tick or another
    replica.
-4. **A batch is bounded by a 5 s deadline** (it was 30 s). The transaction is begun under that
-   deadline, so `database/sql` rolls it back when the deadline passes, even while the publish call
-   is still blocked. The bound is on the database side: one pooled connection and the batch's row
-   locks are held for about 5 s at most. The publish call itself stays unbounded (point 3 of the
-   context above), and that is unchanged by this ADR. A deadline mid-batch rolls back the whole
-   batch, including rows already sent, so they are sent again later. This is the at-least-once
-   case in point 6, not the stop-and-commit case in point 3.
+4. **A batch is bounded by a 5 s deadline** (it was 30 s), **and keeps the last 1 s of it to
+   commit.**
+   - *Slow broker.* Before each publish the batch checks its time. With less than the commit margin
+     (1 s) left, or its context done, it publishes nothing more and commits what it sent, as in
+     point 3. A broker that answers every publish, however slowly, still drains: each batch commits
+     the rows that fit in about 4 s, and no committed row is sent again. Without the margin, a
+     broker at 250 ms or more a publish made every 20-row batch overrun its deadline, roll back,
+     and resend the same rows on every tick, forever. Meanwhile another replica could lock those
+     rows while this one was still publishing them.
+   - *Stalled broker.* The check runs between publishes, so it cannot interrupt a publish that
+     hangs. The transaction is begun under the deadline, so `database/sql` rolls it back when the
+     deadline passes, even while that publish is still blocked. That bound is on the database side
+     only: one pooled connection and the batch's row locks are held for about 5 s at most. The
+     publish call itself stays unbounded (the third force under Context), and this ADR leaves that
+     unchanged. A deadline passing mid-batch rolls back the whole batch, including rows already
+     sent, so they are sent again later. That is the at-least-once case in point 6, not the
+     stop-and-commit case in point 3. Once rolled back, the rows can be locked by another replica
+     while the hung publish is still in flight, so the row may go out twice.
 5. **Batch sizes stay as each service sets them today.** No schema change, no migration.
 6. **Delivery stays at-least-once, with no ordering guarantee.** A crash, a lost connection or a
    deadline after a publish but before the commit leaves the row unpublished, so it is sent again.
@@ -102,9 +113,13 @@ rolls back as soon as it is done, whether or not the caller is still busy elsewh
   by at most one replica at a time, and a row marked published by one replica is not returned to
   another.
 - **A connection is pinned for the length of a batch.** On a healthy broker that is the batch's
-  publish time. On a stalled broker it is about 5 s, then the transaction is rolled back and the
-  connection goes back to the pool. With a 2-connection pool, request traffic has one connection
-  during that window.
+  publish time. On a slow broker it is about 4 s, after which the batch commits what it sent, so the
+  outbox still drains, more slowly. On a stalled broker it is about 5 s, then the transaction is
+  rolled back and the connection goes back to the pool. With a 2-connection pool, request traffic
+  has one connection during that window.
+- **The 1 s commit margin is a guess, not a measurement.** It assumes marking up to 20 rows and
+  committing take well under a second on a healthy database. If the mark or commit regularly runs
+  past the margin, the batch rolls back as on a stalled broker, and the margin should grow.
 - **The batch's rows stay locked while they are published.** Nothing else updates outbox rows
   today. Writers are not blocked by these row locks: checked on the local PostgreSQL 17.10, a new
   row insert and an `INSERT … ON CONFLICT (id) DO NOTHING` on an id another transaction holds
