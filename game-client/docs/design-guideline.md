@@ -547,16 +547,17 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   drawn by the shared `src/ui/countdownBar.ts`, never by hand. *(Added by
   [FS-B3NDZ](../../docs/specs/B3NDZ-unified-countdown-bar.md), 2026-11-02.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,
-  drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand: a
-  one-px rim of dulled brass (`markerBarFrame`) around a near-black trough (`markerBarBacking`); the
-  fill in the HP channel (`markerHp`) with a one-px highlight line along its top (`markerHpLight`), a
-  darker foot (`markerHpShade`) and, short of full, a darker one-px cap at its end; and the **damage
-  chip**, the health a hit just took, in the fill lifted toward vellum (`markerHpChip`), held a
-  moment and then drained. Every edge falls on a whole backing px at any render scale and rims are
-  filled, never stroked, so a bar never smears. On a floor that uses the target frame, only a
+  drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand:
+  no rim; a deep-red trough (`markerHpTrough`, oxblood taken toward pitch), so the health missing
+  reads as dark red, never black; the fill in the HP channel (`markerHp`) with a one-px highlight
+  line along its top (`markerHpLight`), a darker foot (`markerHpShade`) and, short of full, a darker
+  one-px cap at its end; and the **damage chip**, the health a hit just took, in the fill lifted
+  toward vellum (`markerHpChip`), held a moment and then drained. Nothing is drawn outside the
+  trough. Every edge falls on a whole backing px at any render scale and lines are filled, never
+  stroked, so a bar never smears. On a floor that uses the target frame, only a
   damaged monster carries its bar, and carries it alone; elsewhere the bar sits under its plate.
   *(Added by [FS-48CTQ](../../docs/specs/48CTQ-monster-target-frame.md) §F, owner playtest
-  2026-11-07.)*
+  2026-11-07; rim dropped and trough turned deep red on the owner's second look the same day.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
