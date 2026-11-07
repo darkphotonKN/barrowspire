@@ -3,8 +3,8 @@
  * over a head on any floor, and in the target frame. Drawn in code from palette tokens (ADR-0013),
  * no art:
  *
- * - a 1px rim of dulled brass, the HUD's framing metal (guideline "UI Chrome");
- * - a dark trough, the bar's full length;
+ * - no rim (owner, playtest 2026-11-07);
+ * - a deep-red trough, the bar's full length: the health missing reads as dark red;
  * - the fill in the HP channel, shaded: a thin highlight line along its top, a darker foot, and a
  *   darker one-px cap where it ends short of full, so the end reads crisp;
  * - the **damage chip**: the health a hit just took, a lighter run from the fill's end to where it
@@ -14,15 +14,16 @@
  * text: `TransformerImage` and its siblings ask `willRoundVertices`); a Graphics fill goes through
  * `FillRect` and is never rounded, so a fractional edge blends across two backing px. Every edge
  * here is computed in whole backing px (logical × render scale) and divided back, so with the
- * camera's scroll on the 1/rs grid (`keepOnPixelGrid`, ADR-0056/0057) it lands on a pixel. Rims are
- * filled, never stroked: a 1px stroke is centred on its edge and straddles two px.
+ * camera's scroll on the 1/rs grid (`keepOnPixelGrid`, ADR-0056/0057) it lands on a pixel. Lines are
+ * filled, never stroked: a 1px stroke is centred on its edge and straddles two px. Nothing is
+ * drawn outside the box.
  *
  * Phaser-free: the painter takes the two Graphics calls it needs, and is tested without a canvas.
  */
 
 import { MARKER_BAR } from "./markers";
 
-/** A bar's box in logical units: its trough, the rim drawn one px outside it. */
+/** A bar's box in logical units: its trough, all the bar draws inside it. */
 export interface BarBox {
   x: number;
   y: number;
@@ -98,12 +99,11 @@ export function paintHealthBar(
   const y = Math.round(box.y * s);
   const w = Math.round(box.width * s);
   const h = Math.round(box.height * s);
-  /** One logical px, in whole backing px: the rim, the highlight line and the cap. */
+  /** One logical px, in whole backing px: the highlight line and the cap. */
   const line = Math.max(1, Math.round(s));
   const spans = barSpans(box.width, fill, chip, s);
 
-  rect(MARKER_BAR.frame, x - line, y - line, w + line * 2, h + line * 2);
-  rect(MARKER_BAR.backing, x, y, w, h);
+  rect(MARKER_BAR.trough, x, y, w, h);
   if (spans.chip > spans.fill)
     rect(MARKER_BAR.chip, x + spans.fill, y, spans.chip - spans.fill, h);
   if (spans.fill <= 0) return;

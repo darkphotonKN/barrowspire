@@ -55,7 +55,7 @@ export const MARKER_BAR = {
   backing: palette.markerBarBacking,
   rim: palette.markerBarRim,
   hp: palette.markerHp,
-  frame: palette.markerBarFrame,
+  trough: palette.markerHpTrough,
   light: palette.markerHpLight,
   shade: palette.markerHpShade,
   chip: palette.markerHpChip,
