@@ -667,10 +667,26 @@ describe("MonsterRoster markers (req 37)", () => {
     expect(texts[0].depth).toBe(MARKER_DEPTH.name);
     expect(bars[0].depth).toBe(MARKER_DEPTH.bar);
     // the trough, then the HP fill at a quarter of the bar
-    const trough = bars[0].fills.find((f) => f.color === MARKER_BAR.backing)!;
+    const trough = bars[0].fills.find((f) => f.color === MARKER_BAR.trough)!;
     const fill = bars[0].fills.find((f) => f.color === MARKER_BAR.hp)!;
     expect(trough.w).toBe(OVERHEAD_BAR.width);
     expect(fill.w).toBe(Math.round(OVERHEAD_BAR.width / 4));
+  });
+
+  it("should lay the overhead bar on a deep-red trough with no rim (FS-48CTQ §F.21, owner playtest 2026-11-07)", () => {
+    const { stage, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ current_health: 30, max_health: 120 })]);
+    roster.update(FRAME);
+    const fills = bars[0].fills;
+    const trough = fills[0];
+    expect(trough.color).toBe(palette.markerHpTrough);
+    for (const f of fills) {
+      expect(f.x).toBeGreaterThanOrEqual(trough.x);
+      expect(f.y).toBeGreaterThanOrEqual(trough.y);
+      expect(f.x + f.w).toBeLessThanOrEqual(trough.x + trough.w);
+      expect(f.y + f.h).toBeLessThanOrEqual(trough.y + trough.h);
+    }
   });
 
   it("should seat the plate over the head, and follow the level the server sends", () => {
