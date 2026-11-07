@@ -13,8 +13,9 @@ import {
 import { MARKER_BAR } from "./markers";
 
 // FS-48CTQ §F (owner, playtest 2026-11-07): one HP bar look for every monster bar, overhead and
-// in the target frame: a brass rim, a dark trough, a shaded fill with a highlight line, and the
-// damage chip. Crisp at render scales 1, 1.5 and 2 (ADR-0056/0057).
+// in the target frame: no rim, a deep-red trough, a shaded fill with a highlight line, and the
+// damage chip (owner, playtest 2026-11-07: "沒有筐 底色有比較深的紅色"). Crisp at render scales 1,
+// 1.5 and 2 (ADR-0056/0057).
 
 interface Fill {
   colour: number;
@@ -55,17 +56,37 @@ describe("paintHealthBar (FS-48CTQ §F.21)", () => {
     },
   );
 
-  it("should draw the rim around the trough, the trough the whole box, then the fill over it", () => {
+  it("should draw the deep-red trough first, the whole box, then the fill over it", () => {
     const g = painter();
     paintHealthBar(g, { x: 0, y: 0, width: 40, height: 5 }, 0.5, 0.5, 1);
-    const rim = g.fills.find((f) => f.colour === MARKER_BAR.frame)!;
-    const trough = g.fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const trough = g.fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const hp = g.fills.find((f) => f.colour === MARKER_BAR.hp)!;
-    expect(rim).toMatchObject({ x: -1, y: -1, w: 42, h: 7 });
+    expect(g.fills[0]).toBe(trough);
     expect(trough).toMatchObject({ x: 0, y: 0, w: 40, h: 5 });
     expect(hp).toMatchObject({ x: 0, y: 0, w: 20, h: 5 });
-    expect(g.fills.indexOf(rim)).toBeLessThan(g.fills.indexOf(trough));
     expect(g.fills.indexOf(trough)).toBeLessThan(g.fills.indexOf(hp));
+  });
+
+  it.each([1, 1.5, 2])("should draw no rim: nothing outside the box at render scale %s", (scale) => {
+    const g = painter();
+    paintHealthBar(g, box, 0.37, 0.61, scale);
+    // the box in whole backing px, as the painter measures it
+    const x = onBackingGrid(box.x, scale);
+    const y = onBackingGrid(box.y, scale);
+    const w = Math.round(box.width * scale) / scale;
+    const h = Math.round(box.height * scale) / scale;
+    const trough = g.fills[0];
+    expect(trough).toMatchObject({ colour: MARKER_BAR.trough });
+    expect([trough.x, trough.y, trough.w, trough.h].map((v) => v * scale)).toEqual(
+      [x, y, w, h].map((v) => expect.closeTo(v * scale, 9)),
+    );
+    const eps = 1e-9;
+    for (const f of g.fills) {
+      expect(f.x).toBeGreaterThanOrEqual(x - eps);
+      expect(f.y).toBeGreaterThanOrEqual(y - eps);
+      expect(f.x + f.w).toBeLessThanOrEqual(x + w + eps);
+      expect(f.y + f.h).toBeLessThanOrEqual(y + h + eps);
+    }
   });
 
   it("should shade the fill: a thin highlight line along its top and a darker band along its foot", () => {
@@ -101,10 +122,10 @@ describe("paintHealthBar (FS-48CTQ §F.21)", () => {
     expect(chip).toMatchObject({ x: 10, y: 0, w: 20, h: 5 });
   });
 
-  it("should draw no fill and no chip on an empty bar, only the rim and trough", () => {
+  it("should draw no fill and no chip on an empty bar, only the trough", () => {
     const g = painter();
     paintHealthBar(g, { x: 0, y: 0, width: 40, height: 5 }, 0, 0, 1);
-    expect(g.fills.map((f) => f.colour)).toEqual([MARKER_BAR.frame, MARKER_BAR.backing]);
+    expect(g.fills.map((f) => f.colour)).toEqual([MARKER_BAR.trough]);
   });
 });
 
@@ -209,7 +230,7 @@ describe("DamageChip (FS-48CTQ §F.22)", () => {
 describe("the bar's tones (FS-48CTQ §F.21, ADR-0013)", () => {
   it("should be palette tokens", () => {
     expect(MARKER_BAR).toMatchObject({
-      frame: palette.markerBarFrame,
+      trough: palette.markerHpTrough,
       light: palette.markerHpLight,
       shade: palette.markerHpShade,
       chip: palette.markerHpChip,
@@ -217,13 +238,26 @@ describe("the bar's tones (FS-48CTQ §F.21, ADR-0013)", () => {
   });
 
   it("should set the chip apart from the fill and the trough", () => {
-    expect(contrastRatio(MARKER_BAR.chip, MARKER_BAR.backing)).toBeGreaterThan(
-      contrastRatio(MARKER_BAR.hp, MARKER_BAR.backing),
+    expect(contrastRatio(MARKER_BAR.chip, MARKER_BAR.trough)).toBeGreaterThan(
+      contrastRatio(MARKER_BAR.hp, MARKER_BAR.trough),
     );
     expect(contrastRatio(MARKER_BAR.chip, MARKER_BAR.hp)).toBeGreaterThanOrEqual(1.5);
   });
 
-  it("should rim the bar in a brass that stands off the trough", () => {
-    expect(contrastRatio(MARKER_BAR.frame, MARKER_BAR.backing)).toBeGreaterThanOrEqual(2);
+  it("should have no rim tone", () => {
+    expect(MARKER_BAR).not.toHaveProperty("frame");
+    expect(palette).not.toHaveProperty("markerBarFrame");
+  });
+
+  it("should lay the trough in a deep red, not near-black, the fill at 3:1 over it", () => {
+    const t = MARKER_BAR.trough;
+    const [r, g, b] = [(t >> 16) & 0xff, (t >> 8) & 0xff, t & 0xff];
+    expect(r).toBeGreaterThan(2 * Math.max(g, b));
+    expect(contrastRatio(t, palette.markerBarBacking)).toBeGreaterThanOrEqual(1.3);
+    expect(contrastRatio(MARKER_BAR.hp, t)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("should keep the fill's end cap reading against the trough with no rim", () => {
+    expect(contrastRatio(MARKER_BAR.shade, MARKER_BAR.trough)).toBeGreaterThanOrEqual(1.5);
   });
 });

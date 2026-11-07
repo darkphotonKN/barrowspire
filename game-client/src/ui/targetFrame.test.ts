@@ -271,7 +271,7 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     expect(
       strokes.some((s) => s.colour === palette.frame && s.w === r.width),
     ).toBe(true);
-    const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const backing = fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const hp = fills.find((f) => f.colour === MARKER_BAR.hp)!;
     expect(hp.w).toBeCloseTo(backing.w / 4, 0);
     // the bar sits inside the frame
@@ -288,7 +288,7 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
       monster({ current_health: hp, max_health: max }),
     );
     const fills = graphics.flatMap((g) => g.fills);
-    const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const backing = fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const fill = fills.filter((f) => f.colour === MARKER_BAR.hp);
     expect(fill.reduce((w, f) => w + f.w, 0)).toBeCloseTo(backing.w * ratio, 0);
   });
@@ -322,7 +322,7 @@ describe("TargetFrame (FS-48CTQ §C.4, §E.17)", () => {
     frame.update(16, monster({ current_health: 120 }), false);
     frame.update(16, monster({ current_health: 60 }), false);
     const fills = parts.graphics.flatMap((g) => g.fills);
-    const backing = fills.find((f) => f.colour === MARKER_BAR.backing)!;
+    const backing = fills.find((f) => f.colour === MARKER_BAR.trough)!;
     const hp = fills.find((f) => f.colour === MARKER_BAR.hp)!;
     expect(hp.w).toBeCloseTo(backing.w / 2, 0);
   });
@@ -408,7 +408,7 @@ const drawnBar = (parts: ReturnType<typeof fakeStage>) => {
   const fills = parts.graphics.flatMap((g) => g.fills);
   return {
     panel: fills[0],
-    backing: fills.find((f) => f.colour === MARKER_BAR.backing)!,
+    backing: fills.find((f) => f.colour === MARKER_BAR.trough)!,
     hp: fills.find((f) => f.colour === MARKER_BAR.hp),
   };
 };
@@ -521,12 +521,19 @@ describe("the frame's layout at 1080 and 1280 (FS-48CTQ §E.14)", () => {
 });
 
 describe("the frame's bar wears the overhead bar's look (FS-48CTQ §F.21)", () => {
-  it("should rim the bar in brass around its trough, and shade the fill with a highlight line", () => {
+  it("should lay the bar on a deep-red trough with no rim, and shade the fill with a highlight line", () => {
     const { graphics } = shownFrame(monster({ current_health: 60, max_health: 120 }));
     const fills = graphics.flatMap((g) => g.fills);
-    const trough = fills.find((f) => f.colour === MARKER_BAR.backing)!;
-    const rim = fills.find((f) => f.colour === MARKER_BAR.frame)!;
-    expect(rim).toMatchObject({ x: trough.x - 1, y: trough.y - 1, w: trough.w + 2, h: trough.h + 2 });
+    const trough = fills.find((f) => f.colour === MARKER_BAR.trough)!;
+    expect(trough.colour).toBe(palette.markerHpTrough);
+    // nothing of the bar's own draws outside its trough: no rim
+    const barTones: number[] = [MARKER_BAR.trough, MARKER_BAR.hp, MARKER_BAR.light, MARKER_BAR.shade, MARKER_BAR.chip];
+    for (const f of fills.filter((f) => barTones.includes(f.colour))) {
+      expect(f.x).toBeGreaterThanOrEqual(trough.x);
+      expect(f.y).toBeGreaterThanOrEqual(trough.y);
+      expect(f.x + f.w).toBeLessThanOrEqual(trough.x + trough.w);
+      expect(f.y + f.h).toBeLessThanOrEqual(trough.y + trough.h);
+    }
     expect(fills.some((f) => f.colour === MARKER_BAR.light && f.y === trough.y && f.h === 1)).toBe(true);
     expect(fills.some((f) => f.colour === MARKER_BAR.shade)).toBe(true);
   });

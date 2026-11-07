@@ -274,12 +274,13 @@ export const palette = {
   markerBarRim: BARROW_HEX.barrowDeep,
   markerHp: BARROW_HEX.oxbloodText,
   /**
-   * The HP bar's finish (FS-48CTQ §F.21, owner playtest 2026-11-07): a 1px rim of dulled brass,
-   * the HUD's framing metal ("UI Chrome"), and the fill shaded in its own channel: a lighter
-   * highlight line along the top, a darker foot and cap. The damage chip, the health a hit just
-   * took, is the fill lifted toward vellum: the same channel, plainly brighter, never amber.
+   * The HP bar's finish (FS-48CTQ §F.21, owner playtest 2026-11-07): no rim; the trough, the
+   * health missing, a deep red, the HP channel's own oxblood taken toward pitch, so a hurt bar
+   * reads as dark red and not black; the fill shaded in its own channel: a lighter highlight line
+   * along the top, a darker foot and cap. The damage chip, the health a hit just took, is the fill
+   * lifted toward vellum: the same channel, plainly brighter, never amber.
    */
-  markerBarFrame: mix(BARROW_HEX.brass, BARROW_HEX.pitch, 0.4),
+  markerHpTrough: shade(BARROW_HEX.oxblood, 0.35),
   markerHpLight: tint(BARROW_HEX.oxbloodText, 0.35),
   markerHpShade: shade(BARROW_HEX.oxbloodText, 0.35),
   markerHpChip: tint(BARROW_HEX.oxbloodText, 0.6),

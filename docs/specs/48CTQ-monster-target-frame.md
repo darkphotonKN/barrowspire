@@ -48,6 +48,12 @@ point at it. Its requirements cite **owner, playtest 2026-11-07** with the deriv
 the coordinator's defaults were taken as written, without a `challenge-me` pass. The Facts lines
 it added cite floor1/monster-bars at 2304a802.
 
+Amended again 2026-11-07 on the owner's look at that bar ("調整成沒有筐 底色有比較深的紅色當背景",
+relayed by the coordinator): the bar loses its brass rim, and its trough, the health missing, turns
+from near-black to a deep red (`markerHpTrough`), so a hurt bar reads as dark red. §F.21.1, §F.21.4
+and the §F acceptance line are restated; the rest of §F stands. `markerBarFrame` is gone;
+`markerBarBacking` stays for the party bars, which keep their look.
+
 ## Facts this spec rests on
 
 Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/`.
@@ -219,15 +225,19 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 21. **One bar look**, for the overhead bar on every floor and the target frame's bar (normal and
     boss), drawn in code from palette tokens (ADR-0013), in the HUD's chrome (`design-guideline.md`
     "UI Chrome": brass framing, the game palette):
-    1. a **rim** one logical px wide of dulled brass (`markerBarFrame`) around a dark **trough**
-       (`markerBarBacking`) the bar's full length;
+    1. **no rim**, and a deep-red **trough** (`markerHpTrough`) the bar's full length, so the
+       health missing reads as dark red: the HP channel's oxblood taken 35% toward pitch
+       (`shade(oxblood, 0.35)`, #4d1818), the fill at 3.9:1 over it, the cap's shade at 2.1:1, the
+       chip far brighter; nothing of the bar draws outside the trough. **(owner, playtest
+       2026-11-07, second look: "調整成沒有筐 底色有比較深的紅色當背景"; was a brass rim around a
+       near-black trough)**
     2. the **fill** in the HP channel (`markerHp`), shaded: a **highlight line** one logical px
        thick along its top (`markerHpLight`), a darker **foot** a fifth of its height
        (`markerHpShade`), and, where it ends short of full, a darker **cap** one logical px wide
        at its end, so the end is a crisp edge;
     3. the **damage chip** (§F.22), in the fill lifted toward vellum (`markerHpChip`);
     4. **crisp at render scales 1, 1.25, 1.5 and 2**: every edge computed in whole backing px and
-       the overhead bar's position on the 1/rs grid, rims filled, never stroked (Facts);
+       the overhead bar's position on the 1/rs grid, lines filled, never stroked (Facts);
     5. the overhead trough is 40 × 5 logical px (was 38 × 4); the frame's keeps its size (§D.12).
     **(owner, playtest 2026-11-07: "血條的樣式有質感一點"; the parts derived here from the
     coordinator's list (a dark trough with a 1px rim, a shaded fill, a recent-damage chip, a thin
@@ -287,7 +297,7 @@ Verified 2026-11-06 on local main 48ece46c; client paths under `game-client/src/
 - [ ] Floors 2–3 screenshots still match FS-KE075's captures (plates as today).
 - [ ] On floor 1 a living monster below its maximum health carries its bar alone over its head (no name, level or prefix), from the first damaged snapshot; it hides at full health, on death and while the hide rule or the fog hides the monster; normal, elite and boss alike; the elite's wash stays; the target frame shows as ever.
 - [ ] On floors 2–3 and fields every living monster keeps its plate and bar at any health, its bar drawn exactly as a floor-1 bar is.
-- [ ] Every monster bar and the frame's bar wear §F.21's look: brass rim, dark trough, fill with a highlight line, foot and end cap, all from palette tokens; every edge lands on a whole backing px at render scales 1, 1.5 and 2.
+- [ ] Every monster bar and the frame's bar wear §F.21's look: no rim, a deep-red trough (`markerHpTrough`), fill with a highlight line, foot and end cap, all from palette tokens, nothing drawn outside the trough; every edge lands on a whole backing px at render scales 1, 1.5 and 2.
 - [ ] A drop shows the chip from the new health to the old; it holds 300 ms, drains over 450 ms and stops; a second drop mid-drain holds it again; at most 4 overhead chips drain at once; the frame's chip resets on a switch.
 - [ ] An idle bar is drawn once over many frames; a moving one is moved, not redrawn; a change smaller than a backing px redraws nothing; a render-scale change redraws.
 - [ ] Headless captures at render scales 1 and 2: damaged ghoul, troll and elite on floor 1, a mid-chip frame, floor 2's plates.
