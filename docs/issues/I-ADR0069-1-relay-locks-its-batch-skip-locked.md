@@ -1,6 +1,6 @@
 ---
 id: I-ADR0069-1
-status: open
+status: done
 implements: ADR-0069
 blocked_by: []
 labels: []
@@ -39,31 +39,52 @@ retried inside one. No schema change.
 
 ## Acceptance Criteria
 
-- [ ] The batch query carries `FOR UPDATE SKIP LOCKED`, binds the batch size (nil → 20), and runs
+- [x] The batch query carries `FOR UPDATE SKIP LOCKED`, binds the batch size (nil → 20), and runs
       inside a transaction that is committed after the mark, or rolled back on every other exit
       (sqlmock tests on the repository).
-- [ ] Only the ids the worker reports as sent are marked; an empty batch or a batch where nothing
+- [x] Only the ids the worker reports as sent are marked; an empty batch or a batch where nothing
       was sent writes nothing.
-- [ ] A publish failure mid-batch: the rows before it are published and committed, the failed row
+- [x] A publish failure mid-batch: the rows before it are published and committed, the failed row
       and the rows after it are unpublished and can be locked by the next batch (real Postgres).
-- [ ] While one batch holds rows, a second batch gets the other rows or none and returns at once,
+- [x] While one batch holds rows, a second batch gets the other rows or none and returns at once,
       without waiting on the first (real Postgres).
-- [ ] When the deadline passes mid-publish, the transaction ends and the rows can be locked by
+- [x] When the deadline passes mid-publish, the transaction ends and the rows can be locked by
       another batch while the first publish call is still blocked; nothing from the timed-out
       batch is marked (real Postgres).
-- [ ] `Run` gives each batch a 5 s deadline.
-- [ ] Existing worker tests adapted: `MessageId` is the row id, the same row on two ticks carries
+- [x] `Run` gives each batch a 5 s deadline.
+- [x] Existing worker tests adapted: `MessageId` is the row id, the same row on two ticks carries
       the same `MessageId`, the mark happens before the batch context is cancelled, wake and
       non-blocking `Wake` unchanged.
-- [ ] Real-Postgres tests take their DSN from the opt-in `OUTBOX_TEST_DB_DSN` and work in a
+- [x] Real-Postgres tests take their DSN from the opt-in `OUTBOX_TEST_DB_DSN` and work in a
       throwaway schema, as `common/inbox` does with `INBOX_TEST_DB_DSN`; they never default to a
       service's dev database.
-- [ ] `go test ./...`, `go vet ./...` and `go test -race ./outbox/...` pass in `common`; the six
+- [x] `go test ./...`, `go vet ./...` and `go test -race ./outbox/...` pass in `common`; the six
       services (auth, game, items, marketplace, stats, wallet) build, vet and test.
 
 ## Blocked By
 
 None
+
+## Done (2026-11-07, charter run, branch `fix/outbox-for-update`, not merged)
+
+Every criterion has a test. `LockPendingBatch` (repository, forwarded by the service) owns the
+batch's transaction; the worker's `publishBatch` stops at the first failed publish. Constructor
+signatures and the `OutboxRetriever` name are unchanged, so no service wiring changed.
+
+- sqlmock: `TestLockPendingBatch_Limit_BindsBatchSizeInATransaction`,
+  `…_Rows_HandedOverAndSentOnesMarkedThenCommitted`, `…_NothingSent_WritesNothingAndEndsTheTransaction`,
+  `…_DBError_WrappedAndTheTransactionEnded` (begin, lock, mark, commit).
+- Real Postgres (`OUTBOX_TEST_DB_DSN`, throwaway schema `outbox_repository_test`):
+  `TestPublishOutboxEvents_PublishFailsMidBatch_SentRowsMarkedRestReleased`,
+  `TestLockPendingBatch_SecondBatchWhileFirstHolds_GetsTheOthersWithoutWaiting` (second batch
+  ~ms, third gets none), `TestLockPendingBatch_DeadlinePassesMidPublish_TransactionEndsAndRowsRelease`
+  (300 ms deadline; rows retaken by another pool while the publish is still blocked).
+- `TestRun_EachBatch_HasAFiveSecondDeadline`; the existing worker tests adapted.
+- Mutation checks: dropping `SKIP LOCKED` fails the second-batch test (waits 2 s); dropping the
+  lock fails the PG lock tests and I-ADR0069-2's test (9640 duplicates); beginning the transaction
+  without ctx fails the deadline test.
+- The old `ErrOutboxItemNotFound` in `common/constants` is now unused; left in place (outside
+  `common/outbox`).
 
 ## Spec Reference
 

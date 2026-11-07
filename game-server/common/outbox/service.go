@@ -3,7 +3,6 @@ package outbox
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -20,8 +19,7 @@ func NewService(repo Repository) *service {
 type Repository interface {
 	CreateOutbox(ctx context.Context, params OutboxParams) error
 	CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params OutboxParams) error
-	GetUnpublishedOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error)
-	UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error
+	LockPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error)
 	GetUnpublishedBacklog(ctx context.Context) (Backlog, error)
 }
 
@@ -33,12 +31,8 @@ func (s *service) CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params Outbox
 	return s.repo.CreateOutboxTx(ctx, tx, params)
 }
 
-func (s *service) UpdateOutboxToPublished(ctx context.Context, id uuid.UUID) error {
-	return s.repo.UpdateOutboxToPublished(ctx, id)
-}
-
-func (s *service) GetPendingOutboxItems(ctx context.Context, limit *int) ([]*OutboxEvent, error) {
-	return s.repo.GetUnpublishedOutboxItems(ctx, limit)
+func (s *service) LockPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error) {
+	return s.repo.LockPendingBatch(ctx, limit, handle)
 }
 
 func (s *service) GetBacklog(ctx context.Context) (Backlog, error) {

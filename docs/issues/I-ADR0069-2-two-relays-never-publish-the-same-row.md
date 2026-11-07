@@ -1,6 +1,6 @@
 ---
 id: I-ADR0069-2
-status: open
+status: done
 implements: ADR-0069
 blocked_by: [I-ADR0069-1]
 labels: []
@@ -21,10 +21,10 @@ other outbox DB tests.
 
 ## Acceptance Criteria
 
-- [ ] Over many rounds, no row id is published twice and every row ends with `published_at` set.
-- [ ] Both workers published rows across the run (the race was exercised).
-- [ ] Passes under `-race`.
-- [ ] The manual check below is written for Nick.
+- [x] Over many rounds, no row id is published twice and every row ends with `published_at` set.
+- [x] Both workers published rows across the run (the race was exercised).
+- [x] Passes under `-race`.
+- [x] The manual check below is written for Nick.
 
 ## Manual check for Nick (two replicas, local)
 
@@ -54,6 +54,18 @@ when both copies tick at the same moment. If they don't overlap on a run, repeat
 ## Blocked By
 
 - I-ADR0069-1 (the locked batch it exercises)
+
+## Done (2026-11-07, charter run, branch `fix/outbox-for-update`, not merged)
+
+`TestPublishOutboxEvents_TwoWorkersOneOutbox_NeverPublishTheSameRow`: 2 relays, each with its own
+2-connection pool, batch 20, 50 rounds x 200 rows = 10000 rows.
+
+- On the code before the fix (same test, run before I-ADR0069-1 landed): 9996 of 10000 rows
+  published twice (relay sends 9997 / 9999).
+- After: 0 rows published more than once, sends per relay 5000 / 5000, both relays took rows in
+  50/50 rounds, ~0.5 s; also passes under `-race`.
+
+The manual two-replica check above has not been run; it is for Nick after the merge.
 
 ## Spec Reference
 

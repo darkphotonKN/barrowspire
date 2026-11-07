@@ -34,6 +34,12 @@ type Backlog struct {
 	OldestAgeSeconds float64 `db:"oldest_age_seconds"`
 }
 
+// BatchHandler publishes a locked batch, oldest row first, and returns the ids
+// it sent. Those ids are marked published in the batch's own transaction, so
+// it returns only ids taken from events, and stops at the first row it could
+// not send (ADR-0069 §Decision 3).
+type BatchHandler func(ctx context.Context, events []*OutboxEvent) (sent []uuid.UUID)
+
 // isp interface for all services
 type OutboxPublisher interface {
 	CreateOutbox(ctx context.Context, params OutboxParams) error
