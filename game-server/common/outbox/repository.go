@@ -3,6 +3,8 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
@@ -26,6 +28,18 @@ func NewRepo(db *sqlx.DB) *repo {
 // and wraps anything else with the repo name + operation for context.
 func wrapDBErr(op string, err error) error {
 	return commonhelpers.WrapDBErr("outbox repo", op, err)
+}
+
+// wrapBatchErr wraps a failed step of a relay batch. The shared helper reduces
+// some errors to a bare sentinel (a deadline becomes ErrTransient); the step
+// and the original error are kept around it, so the log says which step of
+// the batch failed and errors.Is still finds both.
+func wrapBatchErr(step string, err error) error {
+	wrapped := wrapDBErr("relay pending batch: "+step, err)
+	if errors.Is(wrapped, err) {
+		return wrapped
+	}
+	return fmt.Errorf("outbox repo: relay pending batch: %s: %w: %w", step, wrapped, err)
 }
 
 const createOutboxQuery = `
@@ -119,7 +133,7 @@ const markPublishedQuery = `
 `
 
 /**
-* LockPendingBatch runs one relay batch in one transaction (ADR-0069): it locks
+* RelayPendingBatch runs one relay batch in one transaction (ADR-0069): it locks
 * up to limit pending rows (20 when nil), hands them to handle, marks the ids
 * handle reports as sent as published, and commits. Every other exit rolls
 * back, and the transaction is begun under ctx, so database/sql also rolls it
@@ -127,7 +141,7 @@ const markPublishedQuery = `
 * publish: the connection and the row locks are never held past ctx.
 * Returns how many rows were marked.
 **/
-func (r *repo) LockPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error) {
+func (r *repo) RelayPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error) {
 	batchSize := 20
 	if limit != nil {
 		batchSize = *limit
@@ -135,7 +149,7 @@ func (r *repo) LockPendingBatch(ctx context.Context, limit *int, handle BatchHan
 
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return 0, wrapDBErr("lock pending batch: begin", err)
+		return 0, wrapBatchErr("begin", err)
 	}
 	// ends the transaction on every exit but a commit, after which it is a no-op
 	defer func() { _ = tx.Rollback() }()
@@ -144,7 +158,7 @@ func (r *repo) LockPendingBatch(ctx context.Context, limit *int, handle BatchHan
 	if err := tx.SelectContext(ctx, &events, lockPendingBatchQuery, batchSize); err != nil {
 		slog.Error("Error occured when attempting to lock a batch of the outbox table",
 			"err", err)
-		return 0, wrapDBErr("lock pending batch", err)
+		return 0, wrapBatchErr("lock", err)
 	}
 	if len(events) == 0 {
 		return 0, nil
@@ -162,12 +176,12 @@ func (r *repo) LockPendingBatch(ctx context.Context, limit *int, handle BatchHan
 	if _, err := tx.ExecContext(ctx, markPublishedQuery, ids); err != nil {
 		slog.Error("Error occured when attempting to mark an outbox batch published",
 			"err", err)
-		return 0, wrapDBErr("lock pending batch: mark published", err)
+		return 0, wrapBatchErr("mark published", err)
 	}
 	if err := tx.Commit(); err != nil {
 		slog.Error("Error occured when attempting to commit an outbox batch",
 			"err", err)
-		return 0, wrapDBErr("lock pending batch: commit", err)
+		return 0, wrapBatchErr("commit", err)
 	}
 
 	return len(sent), nil

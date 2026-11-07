@@ -19,7 +19,7 @@ func NewService(repo Repository) *service {
 type Repository interface {
 	CreateOutbox(ctx context.Context, params OutboxParams) error
 	CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params OutboxParams) error
-	LockPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error)
+	RelayPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error)
 	GetUnpublishedBacklog(ctx context.Context) (Backlog, error)
 }
 
@@ -31,8 +31,8 @@ func (s *service) CreateOutboxTx(ctx context.Context, tx *sqlx.Tx, params Outbox
 	return s.repo.CreateOutboxTx(ctx, tx, params)
 }
 
-func (s *service) LockPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error) {
-	return s.repo.LockPendingBatch(ctx, limit, handle)
+func (s *service) RelayPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error) {
+	return s.repo.RelayPendingBatch(ctx, limit, handle)
 }
 
 func (s *service) GetBacklog(ctx context.Context) (Backlog, error) {

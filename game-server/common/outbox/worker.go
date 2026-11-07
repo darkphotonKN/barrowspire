@@ -25,10 +25,12 @@ type OutboxWorker struct {
 	// wake asks Run to drain now rather than at the next tick; one ring waits
 	// while a drain is under way, and any more are folded into it
 	wake chan struct{}
+	// commitMargin is the time a batch keeps back for marking and committing
+	commitMargin time.Duration
 }
 
 type OutboxRetriever interface {
-	LockPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error)
+	RelayPendingBatch(ctx context.Context, limit *int, handle BatchHandler) (int, error)
 	GetBacklog(ctx context.Context) (Backlog, error)
 }
 
@@ -36,6 +38,17 @@ type OutboxRetriever interface {
 // a stalled broker holds one pooled connection (most services run 2) and the
 // batch's row locks for about this long at most (ADR-0069 §Decision 4).
 const batchTimeout = 5 * time.Second
+
+// commitMargin is the part of a batch's deadline kept back for marking and
+// committing: a batch never starts a publish with less than this left. On a
+// slow broker the batch then commits what it sent instead of overrunning the
+// deadline, rolling back and resending the same rows every tick (ADR-0069
+// §Decision 4). A single publish that hangs is still not bounded by it.
+const commitMargin = time.Second
+
+// backlogTimeout bounds the backlog read after each batch, under a context of
+// its own so a batch that used up its deadline does not leave the gauges stale.
+const backlogTimeout = 2 * time.Second
 
 func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever OutboxRetriever, publishCh commonbroker.Publisher, wg *sync.WaitGroup) *OutboxWorker {
 	return &OutboxWorker{
@@ -45,6 +58,7 @@ func NewOutboxWorker(workCycle time.Duration, batchCount int, outboxRetriever Ou
 		publishCh:       publishCh,
 		wg:              wg,
 		wake:            make(chan struct{}, 1),
+		commitMargin:    commitMargin,
 	}
 }
 
@@ -87,10 +101,13 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), batchTimeout)
-		_ = w.PublishOutboxEvents(publishCtx) // errors are logged inside; the next tick retries
-		w.recordBacklog(publishCtx)
-		cancel()
+		batchCtx, cancelBatch := context.WithTimeout(context.WithoutCancel(ctx), batchTimeout)
+		_ = w.PublishOutboxEvents(batchCtx) // errors are logged inside; the next tick retries
+		cancelBatch()
+
+		backlogCtx, cancelBacklog := context.WithTimeout(context.WithoutCancel(ctx), backlogTimeout)
+		w.recordBacklog(backlogCtx)
+		cancelBacklog()
 	}
 }
 
@@ -102,7 +119,7 @@ func (w *OutboxWorker) Run(ctx context.Context) {
 * next tick. Errors are logged here and returned.
 **/
 func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
-	if _, err := w.outboxRetriever.LockPendingBatch(ctx, w.batchCount, w.publishBatch); err != nil {
+	if _, err := w.outboxRetriever.RelayPendingBatch(ctx, w.batchCount, w.publishBatch); err != nil {
 		slog.Error("Error when attempting to publish a batch of outbox events.",
 			"err", err)
 		return err
@@ -112,11 +129,20 @@ func (w *OutboxWorker) PublishOutboxEvents(ctx context.Context) error {
 
 /**
 * publishBatch publishes events in order and returns the ids it sent, stopping
-* at the first failure so the rows after it stay pending (ADR-0069 §Decision 3).
+* at the first failure so the rows after it stay pending (ADR-0069 §Decision 3),
+* and before any publish that would leave less than the commit margin to mark
+* and commit what was sent (§Decision 4).
 **/
 func (w *OutboxWorker) publishBatch(ctx context.Context, events []*OutboxEvent) []uuid.UUID {
 	sent := make([]uuid.UUID, 0, len(events))
 	for _, evt := range events {
+		if w.outOfTime(ctx) {
+			slog.Warn("Outbox batch is out of time, committing what it sent.",
+				"sent", len(sent),
+				"left_pending", len(events)-len(sent))
+			return sent
+		}
+
 		err := w.publishCh.PublishWithContext(
 			ctx,
 			evt.Exchange,
@@ -144,6 +170,16 @@ func (w *OutboxWorker) publishBatch(ctx context.Context, events []*OutboxEvent) 
 		sent = append(sent, evt.ID)
 	}
 	return sent
+}
+
+// outOfTime reports whether the batch must stop publishing: ctx is done, or
+// less than the commit margin is left before its deadline.
+func (w *OutboxWorker) outOfTime(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	deadline, ok := ctx.Deadline()
+	return ok && time.Until(deadline) < w.commitMargin
 }
 
 /**
