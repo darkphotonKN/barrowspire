@@ -21,6 +21,7 @@ import {
   boots,
   cloak,
   cloakBones,
+  face,
   coif,
   cowl,
   faceLocks,
@@ -86,6 +87,7 @@ export function knight() {
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.1 });
   head(rig, F.skin);
+  face(rig, F.face, F.browDark);
   coif(rig, F.mailDouble);
   nasalHelm(rig, F);
   skirt(rig, F.mail, { ...hauberk, legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
@@ -128,6 +130,7 @@ export function archer() {
   hands(rig, F.leather);
   boots(rig, F.leather, { top: 0.21 });
   head(rig, F.skin);
+  face(rig, F.face, F.browDark);
   // a deep cowl over a shadowed face, its crown drawn back into a long, full point that droops
   cowl(rig, F.rangerNight, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], F.leatherDark);
@@ -218,6 +221,7 @@ export function wizard() {
   hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
   head(rig, F.skin, { jaw: 0.88 });
+  face(rig, F.face, F.browRaven);
   hair(rig, F.raven, { long: true });
   standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
   skirt(rig, F.robe, { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
@@ -285,6 +289,7 @@ export function mercenary() {
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.22 });
   head(rig, F.skin);
+  face(rig, F.face, F.browDark);
   hair(rig, F.hairDark, { tail: true });
   shortBeard(rig, F.hairDark, { full: 0.8 });
   // the coat's standing collar
