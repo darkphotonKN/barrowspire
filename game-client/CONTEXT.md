@@ -439,6 +439,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Look**: a shimmer's three colours, all `BARROW` tokens: `glint` (the glint body), `centre`
   (its hot core) and `light` (the glow it casts and pools at the feet). The heal look is
   `oxbloodText` / `vellum` / `oxblood`. Not a base: the same base takes any look.
+- **Still glow** (FS-QE2QW): the soft, unmoving light behind a Runed or Fabled item's icon, in its
+  rarity colour. It marks the tier for as long as the icon is shown.
+- **Item glitter** (FS-QE2QW): the quiet loop of small glints on a Fabled item's icon while that
+  icon is shown. Not a **shimmer**: a shimmer is one-shot, on a body, and marks a moment; item
+  glitter loops, on an icon, and marks what the item is. It shares only the shimmer's glint.
 
 - **Logical view** (FS-ZAJMH): the coordinate space cameras and the HUD work in. Always **720
   units tall**; **1080 to 1280 units wide** depending on the shape of the space the game is given.

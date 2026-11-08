@@ -497,6 +497,20 @@ and the light it casts). *(Added at the owner's approval of FS-KZC92, 2026-11-03
 - **The granted base never tints the body.** The hit's flash tints the figure oxblood; a heal
   that tinted it too would read as damage. The glitter is drawn around the figure, never on it.
 
+**Item glitter** is not a shimmer. It is the quiet loop of small glints on a **Fabled** item's icon
+while that icon is shown, and Fabled only: Runed has the still glow and no glints. It shares the
+shimmer's glint and nothing else. *(FS-QE2QW, 2026-11-08.)*
+
+- **A loop on an icon, not a one-shot on a body.** A shimmer marks a moment; item glitter marks
+  what the item is. The 1200 ms cap governs Shimmers and not this loop.
+- **Quiet by construction.** A small glint every 600-900 ms, at most 2 live on an icon, sized to
+  the icon and confined to its square, each icon on its own random phase so a bag never pulses
+  together. No light, no feet glow, no scatter over a body.
+- **`rarityFabled` glints, `vellum` centres.** The pink-purple is Fabled's rarity colour, carried as
+  rarity data as it is on the badge.
+- **It gives way.** A faint icon has no glints, none wink while an icon fades in or out, and
+  `prefers-reduced-motion` drops the glints and keeps the still glow.
+
 ---
 
 ## Typography — push fully medieval
@@ -560,9 +574,14 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   **bone heap**, the items lying on top. Only the satchel animates; the coffer and the bone heap
   pop in. Every face keeps the satchel's footprint and item slots. Item icons are baked, with a
   generic fallback.
-- **Item marks in the gear and bag overlay.** A held item's rarity shows only as its **rarity
-  edge**, a thin bar down the left side of its bag cell or worn slot. The other marks sit beside
-  it and never take a rarity colour. In a run, an **unsafe find** (picked up this run, lost if
+- **Item marks in the gear and bag overlay.** A held item's rarity shows as its **rarity edge**,
+  a thin bar down the left side of its bag cell or worn slot. A Runed or Fabled item adds the
+  **still glow**, a soft additive `fx_glow` in its rarity colour behind the icon (Fabled stronger,
+  faint with a faint icon), and the **well outline**, a full rarity-colour stroke in place of the
+  well's hairline, the edge still over it. The glow is every view's, the coffer, sack and bone heap
+  and a letter's enclosures too; the outline is only where an icon sits in a well, and a letter's
+  fades with its slot. *(Added by [FS-QE2QW](../../docs/specs/QE2QW-item-rarity-emphasis.md).)* The
+  other marks sit beside these and never take a rarity colour. In a run, an **unsafe find** (picked up this run, lost if
   the player dies before escaping) gets a lifted-oxblood **inner edge** inside its well, clear of
   the rarity edge, and its tip adds "Found this run: lost if you die before you escape." in the
   same tone (`palette.unsafeFind`, the danger channel). Field worlds and the hub show no unsafe
@@ -573,6 +592,14 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   channel (`palette.listed`, the same lifted oxblood as the unsafe edge). Its tip adds "Listed on
   the Bazaar." or "Sale settling…" in that tone. *(Added by
   [FS-GTNP8](../../docs/specs/GTNP8-listed-items-marked-in-the-gear-overlay.md), 2026-11-06.)*
+- **The canvas item tip.** An item's name may take its **rarity colour at every tier**, always
+  with the rarity badge, so colour is never alone; an item with no rarity keeps the HUD's text
+  colour. Normal, Uncommon and Rare tips keep the calm frame: the faint brass hairline and a
+  3 px rarity edge down the left. The **top two tiers**, Runed and Fabled, take a full border in
+  the rarity colour in place of the hairline, a wider left edge and a faint outer halo, Fabled
+  heavier than Runed. The halo falls outside the tip and never changes its size or layout. A
+  rarity colour is **never a fill**. *(Added by
+  [FS-QE2QW](../../docs/specs/QE2QW-item-rarity-emphasis.md), 2026-11-08.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right
@@ -825,8 +852,8 @@ calm). **Always pair color with the text label** (colorblind safety).
 | Common | Normal | `--rarity-common` | `#a2946d` | vellum-dark, lifted to clear 4.5:1 at badge size |
 | Uncommon | Uncommon | `--rarity-uncommon` | `#6f8f4a` | arcane green |
 | Rare | Rare | `--rarity-rare` | `#688b8f` | necrotic teal, lifted to clear 4.5:1 at badge size |
-| Epic | Runed | `--rarity-epic` | `#a58243` | brass, lifted within its hue to clear 4.5:1 at badge size on soot |
-| Legendary | Fabled | `--rarity-legendary` | `#f2b866` | amber-bright |
+| Epic | Runed | `--rarity-epic` | `#c07a3a` | none: a burnt orange-brown of its own (`rarityRuned`), lifted within its hue to clear 4.5:1 at badge size |
+| Legendary | Fabled | `--rarity-legendary` | `#d678c8` | none: a pink-purple of its own (`rarityFabled`) |
 
 The server names its five tiers (items-service `CONTEXT.md` "Rarity tier"); the badge shows the
 **server tier as its label** in the token's colour, matched by name in one place
@@ -850,19 +877,19 @@ is the badge as the landing page renders it: the colour on soot plus the badge's
 | Common | `#a2946d` | 6.24:1 | 5.81:1 | 5.30:1 |
 | Uncommon | `#6f8f4a` | 5.09:1 | 4.78:1 | 4.37:1 |
 | Rare | `#688b8f` | 5.07:1 | 4.76:1 | 4.35:1 |
-| Epic (Runed) | `#a58243` | 5.24:1 | 4.92:1 | 4.50:1 |
-| Legendary (Fabled) | `#f2b866` | 10.55:1 | 9.55:1 | 8.67:1 |
+| Epic (Runed) | `#c07a3a` | 5.43:1 | 5.10:1 | 4.66:1 |
+| Legendary (Fabled) | `#d678c8` | 6.58:1 | 6.13:1 | 5.59:1 |
 
-Runed was `#9c7b3f`. It cleared soot itself (4.74:1) but its rendered badge measured 4.48:1, so it
-was lifted three lightness points within the brass hue. The client value now differs from the
-game ramp's brass and from the server's `item_rarities.color_hex`, as Common and Rare already did.
-Uncommon and Rare clear the floor on soot but sit at about 4.35:1 on a card surface. That is
+Runed and Fabled were recoloured at the owner's request (FS-QE2QW): Runed from brass to a burnt
+orange-brown, Fabled from amber to a pink-purple. Their figures are computed with the same
+compositing, not measured in the browser. Neither value now matches the server's
+`item_rarities.color_hex`, as Common and Rare already did not. Uncommon and Rare clear the floor on soot but sit at about 4.35:1 on a card surface. That is
 recorded here, not fixed: the slice measured against `--color-bg-dark`, and lifting either is a
 data-colour decision for the owner.
 
 ### The rarity ramp is exempt from one-torch-per-view
 
-`--rarity-legendary` is a warm amber-bright, one of the most saturated colours on a soot page, so
+`--rarity-legendary` is a pink-purple, one of the most saturated colours on a soot page, so
 a grid of legendary relics repeats a bright hue across a view, which the one-torch rule otherwise
 forbids. Without this clause the two rules contradict each
 other and whoever implements the grid picks one at random. The exemption, and its reasoning:
@@ -872,14 +899,19 @@ attention to one thing, so it is not competing for the torch — it is a differe
 happens to share a hue. Repetition across a grid is correct behaviour for data, and would be
 wrong behaviour for emphasis.
 
-**The exemption is scoped, not general.** Rarity colours may appear only on:
+**The exemption is scoped, not general.** In the DOM, rarity colours may appear only on:
 - the **rarity badge**
 - the **accent edge**: a card's top or left border, or a listing row's left edge
 - a **faint hover glow** on that card or row
 
 They may **never** be used as a CTA, nav, heading, or link colour, and a rarity colour never
-becomes a card fill. Outside those three places a rarity colour does not appear at all: it is
-never a stand-in for the torch or for iron.
+becomes a card fill. Outside those three places a rarity colour does not appear at all in the DOM:
+it is never a stand-in for the torch or for iron.
+
+The game canvas has its own places: the **canvas item tip** and the **item marks** on an item's
+icon, each with its rule under "UI Chrome". They do not widen the DOM's three, and on the canvas
+too a rarity colour is never a fill. *(Added by
+[FS-QE2QW](../../docs/specs/QE2QW-item-rarity-emphasis.md), 2026-11-08.)*
 
 ---
 

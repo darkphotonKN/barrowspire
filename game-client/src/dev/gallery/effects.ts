@@ -8,7 +8,10 @@
  */
 
 import type Phaser from "phaser";
-import type { Point } from "@/render/iso/projection";
+import { itemView } from "@/items/itemView";
+import type { ArtLibrary } from "@/render/art/library";
+import { artSprite } from "@/render/art/phaser";
+import { worldToScreen, type Point } from "@/render/iso/projection";
 import { AimLine } from "@/render/effects/aimLine";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
@@ -25,7 +28,6 @@ import { RiposteFx } from "@/render/effects/riposte";
 import type {
   EffectLights,
   EffectsRuntime,
-  FxArt,
   OwnerKey,
 } from "@/render/effects/runtime";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
@@ -33,6 +35,9 @@ import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
+import type { ItemState } from "@/types/gameState";
+import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
+import { itemShine } from "@/ui/itemShine";
 
 /** What a demo plays on: the gallery's one figure, on its floor, under the run's light. */
 export interface Stage {
@@ -48,7 +53,7 @@ export interface Stage {
   /** The figure's head height (its sheet's `crown`), for an effect drawn over its body. */
   crown: number | undefined;
   /** The art and the light-map the runtime plays over, for an effect that draws its own. */
-  art: FxArt;
+  art: ArtLibrary;
   lights: EffectLights;
   /** The scene clock, as the game's `now`. */
   now(): number;
@@ -68,6 +73,19 @@ const HOLD_MS = 2400;
 
 /** Screen px from the figure's feet to where its smoke rises: over its head, as from a chimney pot. */
 const CHIMNEY_LIFT = 80;
+
+/** The Fabled item the glitter card draws, at a bag icon's side, up and to the figure's right. */
+const FABLED_SAMPLE: ItemState = {
+  item_id: "gallery-fabled",
+  entity_id: "gallery-fabled",
+  quantity: 1,
+  name: "Lichbane, the Last Oath",
+  rarity: "fabled",
+  item_type: "weapon",
+  weapon_type: "sword",
+};
+const FABLED_ICON_SIDE = 64;
+const FABLED_ICON_OFFSET = { x: 90, y: -60 };
 
 export const EFFECT_CARDS: EffectCard[] = [
   {
@@ -134,6 +152,29 @@ export const EFFECT_CARDS: EffectCard[] = [
     demo: (s) => {
       playFireballCast(s.fx, s.owner, s.at, s.aim);
       s.fly("fireball");
+    },
+  },
+  {
+    module: "glitter",
+    name: "Fabled item glitter",
+    // the game's own treatment on a real icon; destroying the icon ends it (FS-QE2QW R24, R33)
+    demo: (s) => {
+      const feet = worldToScreen(s.at.x, s.at.y);
+      const x = feet.x + FABLED_ICON_OFFSET.x;
+      const y = feet.y + FABLED_ICON_OFFSET.y;
+      const side = FABLED_ICON_SIDE;
+      const shine = itemShine(s.scene, s.art, itemView(FABLED_SAMPLE), {
+        x,
+        y,
+        side,
+      });
+      shine?.glow.setDepth(CONTAINER_VIEW_DEPTH);
+      const icon = artSprite(s.scene, s.art, x, y, satchelIcon(FABLED_SAMPLE))
+        .setOrigin(0.5)
+        .setDepth(CONTAINER_VIEW_DEPTH);
+      icon.setScale(side / Math.max(icon.frame.width, icon.frame.height));
+      shine?.bind(icon)?.setDepth(CONTAINER_VIEW_DEPTH);
+      s.later(HOLD_MS, () => icon.destroy());
     },
   },
   {

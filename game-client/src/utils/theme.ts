@@ -68,9 +68,11 @@ export const BARROW = {
   brass: "#9c7b3f",
   brassBright: "#c9a14e",
 
-  // Rarity: the one tier colour no other role owns (the rest of the ramp is arcane, necrotic,
-  // brass and amber-bright). Must match globals.css --rarity-common.
+  // Rarity: the tier colours no other role owns (Uncommon and Rare are arcane and necrotic). Must
+  // match globals.css --rarity-common, --rarity-epic and --rarity-legendary.
   rarityCommon: "#a2946d",
+  rarityRuned: "#c07a3a",
+  rarityFabled: "#d678c8",
 
   // Menu chrome: Bone & Soot, mirroring globals.css :root token for token (see the header).
   // Read only by the canvas menus, through `palette.menu` in canvasPalette.ts.
@@ -123,6 +125,8 @@ export const BARROW_HEX = {
   brass: 0x9c7b3f,
   brassBright: 0xc9a14e,
   rarityCommon: 0xa2946d,
+  rarityRuned: 0xc07a3a,
+  rarityFabled: 0xd678c8,
   menuBone: 0xe9dfc9,
   menuBoneBright: 0xf6efdf,
   menuAsh: 0x8c8c84,

@@ -28,8 +28,9 @@
  * wallet says, and it shows "—" until then. It takes no press and no `E`.
  *
  * Game palette world panels (design-guideline "UI Chrome"): dark ink and carved stone, a 1px
- * brass border, vellum text; the rarity edge is the only rarity colour. Icons are the baked item
- * icons with their generic fallback.
+ * brass border, vellum text; rarity colour is the rarity edge and, on Runed and Fabled, the still
+ * glow and the well's outline (FS-QE2QW §B). Icons are the baked item icons with their generic
+ * fallback.
  */
 
 import type Phaser from "phaser";
@@ -49,7 +50,14 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { nothingWorn, type HudPanel } from "./EquipmentHud";
 import { satchelIcon } from "./ContainerView";
-import { buildItemTip, rarityEdge, tipGround, type ItemTip } from "./itemTip";
+import { itemShine, strokeWellOutline } from "./itemShine";
+import {
+  buildItemTip,
+  rarityEdge,
+  tipGround,
+  topTier,
+  type ItemTip,
+} from "./itemTip";
 import {
   characterSheet,
   type CharacterSheet,
@@ -546,7 +554,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   /**
    * A slot's or cell's well; a held item adds its rarity edge, and an unsafe find in a run an
-   * oxblood inner edge clear of it (FS-18Z5F R36); a cell past 30 is tinted over (R23).
+   * oxblood inner edge clear of it (FS-18Z5F R36); a cell past 30 is tinted over (R23). A Runed
+   * or Fabled item's outline stands in for the hairline, under the rarity edge (FS-QE2QW R9).
    */
   private well(
     r: Rect,
@@ -556,13 +565,17 @@ export class GearOverlay implements HudPanel, PurseShelf {
     const g = this.scene.add.graphics();
     g.fillStyle(over ? palette.damage : palette.inkDeep, over ? 0.35 : 0.6);
     g.fillRoundedRect(r.x, r.y, r.w, r.h, WELL_RADIUS);
-    g.lineStyle(
-      1,
-      over ? palette.damageBright : palette.frame,
-      over ? 0.4 : 0.22,
-    );
-    g.strokeRoundedRect(r.x, r.y, r.w, r.h, WELL_RADIUS);
     const view = item ? this.view(item) : undefined;
+    const top = view && topTier(view);
+    if (top) strokeWellOutline(g, r, WELL_RADIUS, top);
+    else {
+      g.lineStyle(
+        1,
+        over ? palette.damageBright : palette.frame,
+        over ? 0.4 : 0.22,
+      );
+      g.strokeRoundedRect(r.x, r.y, r.w, r.h, WELL_RADIUS);
+    }
     if (view?.standing?.kind === "unsafeFind") {
       const left = r.x + EDGE_W + UNSAFE_INSET;
       g.lineStyle(UNSAFE_EDGE_W, palette.unsafeFind, 0.9);
@@ -583,12 +596,26 @@ export class GearOverlay implements HudPanel, PurseShelf {
   }
 
   /**
-   * What a held item draws over its well: its icon and, for an item on the Bazaar, the listed
-   * mark over it, so the faint icon never hides the mark (FS-GTNP8 R5).
+   * What a held item draws over its well, in order: a Runed or Fabled item's glow (FS-QE2QW R11),
+   * its icon, a Fabled icon's glints and, for an item on the Bazaar, the listed mark over them, so
+   * the faint icon never hides the mark (FS-GTNP8 R5). The glow and glints go with their icon, so
+   * with `content`.
    */
   private held(r: Rect, item: ItemState): Phaser.GameObjects.GameObject[] {
-    const out: Phaser.GameObjects.GameObject[] = [this.icon(r, item)];
-    const kind = this.view(item).standing?.kind;
+    const view = this.view(item);
+    const shine = itemShine(this.scene, this.art, view, {
+      x: r.x + r.w / 2,
+      y: r.y + r.h / 2,
+      side: Math.min(r.w, r.h) * ICON_FILL,
+    });
+    const icon = this.icon(r, item);
+    const glints = shine?.bind(icon);
+    const out: Phaser.GameObjects.GameObject[] = [
+      ...(shine ? [shine.glow] : []),
+      icon,
+      ...(glints ? [glints] : []),
+    ];
+    const kind = view.standing?.kind;
     if (kind === "listed" || kind === "settling") out.push(this.listedMark(r));
     return out;
   }

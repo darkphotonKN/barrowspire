@@ -6,6 +6,7 @@ import { BARROW } from "@/utils/theme";
 import { roundEveryObject } from "@/render/viewport";
 import { EFFECT_CARDS } from "./effects";
 import { GalleryScene } from "./GalleryScene";
+import RaritySheetPanel from "./RaritySheetPanel";
 
 // Rounded as the game is (ADR-0057), whichever page loaded Phaser first.
 roundEveryObject(Phaser.GameObjects);
@@ -75,6 +76,7 @@ export default function EffectsPanel() {
           </li>
         ))}
       </ul>
+      <RaritySheetPanel />
     </div>
   );
 }

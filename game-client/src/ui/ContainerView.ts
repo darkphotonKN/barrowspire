@@ -27,6 +27,7 @@ import { itemView } from "@/items/itemView";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { BONE_HEAP_KEY, ensureBoneHeapTexture } from "./boneHeap";
 import { COFFER_KEY, ensureCofferTexture } from "./coffer";
+import { itemShine } from "./itemShine";
 import { buildItemTip, type ItemTip } from "./itemTip";
 import {
   BODY_H,
@@ -287,6 +288,8 @@ function scatter(key: string): [number, number] {
  */
 export const CONTAINER_VIEW_DEPTH = 1000;
 
+/** Where a new icon goes in the root: over the body and the glow layer, under the glints and flap. */
+const ICON_INDEX = 2;
 /** The composite (lifted flap to hint) is taller above the body's centre than below it. */
 const CENTRE_DROP = 16;
 /** The view stands at the screen's centre, a little low (FS-ZAJMH R12). */
@@ -325,6 +328,10 @@ interface Icon {
 export class ContainerView {
   private readonly root: Phaser.GameObjects.Container;
   private readonly body: Phaser.GameObjects.Image;
+  /** Under every icon, so a glow's soft tail never lies over a neighbour (FS-QE2QW R11). */
+  private readonly glows: Phaser.GameObjects.Container;
+  /** Over every icon and under the flap: where a Fabled icon's glints go (FS-QE2QW R11). */
+  private readonly glints: Phaser.GameObjects.Container;
   private readonly flap: Phaser.GameObjects.Image;
   private readonly status: Phaser.GameObjects.Text;
   /** The hovered item's tip, built for that item and destroyed when the hover ends. */
@@ -350,6 +357,8 @@ export class ContainerView {
     ensureBoneHeapTexture(scene);
 
     this.body = scene.add.image(0, 0, SATCHEL_BODY_KEY);
+    this.glows = scene.add.container(0, 0);
+    this.glints = scene.add.container(0, 0);
     this.flap = scene.add
       .image(0, FLAP_HINGE_Y, SATCHEL_FLAP_KEY)
       .setOrigin(0.5, 0);
@@ -372,6 +381,8 @@ export class ContainerView {
 
     this.root = scene.add.container(0, 0, [
       this.body,
+      this.glows,
+      this.glints,
       this.flap,
       this.status,
       hint,
@@ -570,7 +581,18 @@ export class ContainerView {
       sprite.setOrigin(0.5);
       const base = this.baseScale(sprite, layout.icon);
       sprite.setScale(base);
-      this.root.addAt(sprite, 1); // above the body, under the flap
+      this.root.addAt(sprite, ICON_INDEX);
+      const shine = itemShine(
+        this.scene,
+        this.art,
+        itemView(item, this.options.characterLevel?.()),
+        { x: slot.x, y: slot.y, side: layout.icon },
+      );
+      if (shine) {
+        this.glows.add(shine.glow);
+        const glints = shine.bind(sprite);
+        if (glints) this.glints.add(glints);
+      }
       this.icons.set(item.entity_id, { sprite, base });
       if (!this.lifts) return; // nothing opened: the plunder is just there
       sprite.setAlpha(0).setY(slot.y - 16);
