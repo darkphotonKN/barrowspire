@@ -3,7 +3,7 @@ id: I-VHGE7-6
 status: done
 implements: FS-VHGE7
 blocked_by: [I-VHGE7-5, I-VHGE7-3]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-VHGE7 slice 6: bake the blood demon sheet and the claw clip on both demons; the client draws the baked sheet (game-client art, contact-sheet gate)"
 ---
 Implements FS-VHGE7 §E (Requirements 36–41)

@@ -107,8 +107,8 @@ server state and sends intents. ✅
 - [x] Container-open presentation → FS-2325V
 - [x] Distinct look per container kind → FS-1D6BX
 - [ ] Expanded baked enemy roster → FS-Q14EV
-- [ ] Blood demon boss look → FS-VHGE7
-- [ ] Demon fire claw look → FS-VHGE7
+- [x] Blood demon boss look → FS-VHGE7
+- [x] Demon fire claw look → FS-VHGE7
 - [x] Hub town props and dressing → FS-KYPQ9
 - [x] Skill and combat effects → FS-none
 - [x] Skill and combat effects in the world's art direction → FS-KYPQ9

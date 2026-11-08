@@ -3,7 +3,7 @@ id: I-VHGE7-2
 status: done
 implements: FS-VHGE7
 blocked_by: [I-VHGE7-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-VHGE7 slice 2: both demons slam (doubled, on a cooldown) and fire-claw, with claw on the wire (game-service)"
 ---
 Implements FS-VHGE7 §B (Requirements 15–25)
