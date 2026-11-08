@@ -66,7 +66,7 @@ func TestHub_HoldsItsThreeGates(t *testing.T) {
 
 	assert.Equal(t, map[components.GateDestination]gateAt{
 		components.GateDestinationSpire:   {X: 1000, Y: 50, Range: constants.GateRange},
-		components.GateDestinationForest:  {X: 40, Y: 400, Range: constants.GateRange, Arrival: &components.GateArrival{X: 180, Y: 400}},
+		components.GateDestinationForest:  {X: 40, Y: 580, Range: constants.GateRange, Arrival: &components.GateArrival{X: 180, Y: 580}},
 		components.GateDestinationMeadows: {X: 1960, Y: 360, Range: constants.GateRange, Arrival: &components.GateArrival{X: 1820, Y: 360}},
 	}, gates)
 

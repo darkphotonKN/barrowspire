@@ -12,10 +12,11 @@
  * tile long, its origin is the centre of its footprint, and `_x` pieces run along world x.
  */
 
-import { TILE_WIDTH, WORLD_PX_PER_TILE, type Point } from "@/render/iso";
+// by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
+import { TILE_WIDTH, WORLD_PX_PER_TILE, type Point } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 import { tileHash } from "./ground";
-import { housesFrom, type House } from "./houses";
+import { axisOf, housesFrom, type House } from "./houses";
 
 export type WallHeight = "back" | "front";
 export type WallAxis = "x" | "y";
@@ -54,8 +55,7 @@ const T = WORLD_PX_PER_TILE;
 /** A wall shorter than this remainder of a tile is treated as ending on a tile. */
 const EPSILON = 1e-6;
 
-/** A wall runs along its longer side. */
-export const axisOf = (w: { width: number; height: number }): WallAxis => (w.width >= w.height ? "x" : "y");
+export { axisOf, onOutline } from "./houses";
 
 /** Which side of its house a wall stands on; undefined for a wall with no house. */
 export function sideOf(
@@ -208,6 +208,26 @@ export function cutByRule(
 /** A variant table with each lit kind turned to the plain kind, its share and all. */
 const unlit = (kinds: VariantTable, lit: readonly string[]): VariantTable =>
   kinds.map(([share, kind]) => [share, lit.includes(kind) ? kinds[0][1] : kind] as const);
+
+/**
+ * A material's sheets with no lit kind inside: every torch or lit window a back or cut-away piece
+ * could be is its plain kind instead, the other kinds' shares kept. The outward face is never lit,
+ * so it stays. The Inn's walls (hubInteriors `townHouseLook`).
+ */
+export function unlitSheets(sheets: WallSheets): WallSheets {
+  const lit = sheets.lit ?? [];
+  return { ...sheets, back: unlit(sheets.back, lit), front: unlit(sheets.front, lit), lit: [] };
+}
+
+/**
+ * A partition across a town building (the Inn's, between its great hall and taproom), drawn with
+ * MASONRY_WALLS: low everywhere, so the camera sees over it into whichever hall lies behind, and
+ * carrying no light. It is interior masonry, never one of the building's cut-away outer walls.
+ */
+export const INTERIOR_PARTITION: PieceRule = {
+  height: () => "front",
+  lit: () => false,
+};
 
 /** What a piece standing at a place is drawn as: its height, sheet stem and kinds. */
 type PieceLook = { height: WallHeight; stem: string; kinds: VariantTable };

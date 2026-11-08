@@ -85,6 +85,7 @@ import {
   BuildingView,
   GroundLayer,
   Occluders,
+  PLACEHOLDER_STONE,
   addBuildings,
   addGables,
   addProp,
@@ -128,10 +129,13 @@ import {
 import {
   HUB_INDOOR_DRESSING,
   furnishingOf,
+  partitionInside,
   placeholderWarning,
   residentFacing,
   splitFurnishings,
+  townHouseLook,
 } from "@/render/world/hubInteriors";
+import { OUTDOOR_GROUND, type GroundLook } from "@/render/world/ground";
 import { planChimney } from "@/render/world/roofs";
 import { CHEST, chestFrame, paintChest, type ChestFrame } from "@/render/world/chest";
 import {
@@ -151,7 +155,7 @@ import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMes
  * cannot come before create, which sends them.
  */
 const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"];
-import { trimCrop } from "@/render/world/walls";
+import { INTERIOR_PARTITION, MASONRY_WALLS, trimCrop, type WallSheets } from "@/render/world/walls";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 
 /** Moves a world position a step toward its target. */
@@ -177,10 +181,20 @@ const SIGIL_GAP = 3;
  * chest's lid (FS-VPD8Y R33).
  */
 const STASH_NAME_LIFT = 58;
-/** The stash chest's plate sits on the floor: over the ground and its trails, under the world band. */
-const STASH_PLATE_DEPTH = 1;
+/**
+ * What lies flat on a floor (a rug, the stash chest's plate): over the ground and its trails, under
+ * the world band, so nothing standing on it is drawn under it.
+ */
+const FLOOR_DECAL_DEPTH = 1;
+/** The stash chest's plate sits on the floor. */
+const STASH_PLATE_DEPTH = FLOOR_DECAL_DEPTH;
 /** World px tall: a furnishing's placeholder block, low enough to read as furniture, not a wall. */
 const FURNISHING_PLACEHOLDER_HEIGHT = 8;
+/**
+ * World px tall: the Inn's partition's placeholder block without art, low like the baked masonry
+ * it stands for, so the camera sees over it into either hall; taller than furniture.
+ */
+const PARTITION_PLACEHOLDER_HEIGHT = 12;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
 /** Stride advance per server tick, matching the run scene. */
@@ -806,6 +820,7 @@ export class HubScene extends Phaser.Scene {
           kind: "hub",
           paths: PATHS.map(([x, y, width, height]) => ({ x, y, width, height })),
           aprons: HUB_APRONS,
+          look: this.townGround(),
         })
       : undefined;
     if (!this.groundLayer) this.drawGround();
@@ -2213,12 +2228,27 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
+   * The town's ground: the outdoor look, each house on the floor its look names (the Inn's planks),
+   * flagstone under it until that sheet is baked, never bare grass.
+   */
+  private townGround(): GroundLook {
+    const art = this.art;
+    const floorFor = (house: House) => {
+      const { floor } = townHouseLook(house);
+      return floor && art.has(floor) ? floor : undefined;
+    };
+    return { ...OUTDOOR_GROUND, floorFor };
+  }
+
+  /**
    * Draws the hub's buildings.
    *
    * They are server entities, so the collision a player feels and the shape they
    * see come from one source — an invisible wall is worse than no wall. Fixed,
    * so this runs once rather than every tick. A furnishing is a wall too, but it
-   * is drawn as furniture, never as wall pieces (FS-B0H2D R19).
+   * is drawn as furniture, never as wall pieces (FS-B0H2D R19); the Inn's partition is a
+   * wall of its own, drawn as low interior masonry inside the building, never as one of its
+   * cut-away outer walls.
    *
    * Each house is drawn in both its looks and shows its exterior (ADR-0036, FS-9PN7X §B): four
    * full-height timber walls, a drawn door in its door gap, shut from outside and open from inside
@@ -2230,14 +2260,19 @@ export class HubScene extends Phaser.Scene {
     if (this.structuresDrawn || all.length === 0) return;
 
     const houses = housesFrom(all);
-    const { building: walls, furnishings } = splitFurnishings(all);
+    const { building: walls, partitions, furnishings } = splitFurnishings(all);
     const seed = worldSeed("hub");
     this.drawLooseWalls(walls.filter((w) => !w.house_id), seed);
 
-    const buildings = addBuildings(this, this.art, walls, seed, {
-      doors: doorGaps,
-      style: TIMBER_PLACEHOLDER,
-    });
+    // each house's walls in the sheets its look names (the Inn's carry no light of their own)
+    const bySheets = new Map<WallSheets, WallState[]>();
+    for (const house of houses) {
+      const { sheets } = townHouseLook(house);
+      bySheets.set(sheets, [...(bySheets.get(sheets) ?? []), ...walls.filter((w) => w.house_id === house.id)]);
+    }
+    const buildings = [...bySheets].flatMap(([sheets, own]) =>
+      addBuildings(this, this.art, own, seed, { doors: doorGaps, style: TIMBER_PLACEHOLDER, sheets }),
+    );
     for (const { house, lights } of buildings)
       for (const { source } of lights) {
         // a house's wall flames are its own: lit, halo and all, only from inside (§D.6)
@@ -2267,7 +2302,9 @@ export class HubScene extends Phaser.Scene {
       this.roofCover.push(slabCover(slab, eave, WALL_HEIGHT));
       this.roofs.push({ house, baked: false, parts: [slab, ...gables] });
     }
-    this.furnish(houses, furnishings);
+    const interiors = new Map<House, Interior>(houses.map((house) => [house, { house, parts: [], lights: [] }]));
+    this.partition(houses, partitions, seed, interiors);
+    this.furnish(houses, furnishings, interiors);
     // the dark outside whichever house the player stands in, as tall as the walls drawn (FS-9PN7X §D.2)
     const baked = this.art.available && this.art.has("wall_back_plain_x");
     const wallTop = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
@@ -2314,20 +2351,22 @@ export class HubScene extends Phaser.Scene {
    * The rooms under the roofs (FS-B0H2D R19–R22): each furnishing as its baked prop on its rect,
    * or a low placeholder block on that rect when the mirror has no entry for it or its sheet is
    * missing (never invisible), then the indoor dressing, skipped where its sheet is missing. Each
-   * piece joins its house's interior, which shows only while that roof is lifted; a hearth's or
-   * forge's light joins it too. Decoration only: collision is the server's.
+   * piece joins its house's interior (a partition's already stands in it), which shows only while
+   * that roof is lifted; a hearth's, candelabra's, lantern's or forge's light joins it too.
+   * Decoration only: collision is the server's.
    */
-  private furnish(houses: House[], furnishings: WallState[]): void {
-    const interiors = new Map<House, Interior>(houses.map((house) => [house, { house, parts: [], lights: [] }]));
+  private furnish(houses: House[], furnishings: WallState[], interiors: Map<House, Interior>): void {
     const prop = (
       house: House,
-      spot: { sheet: string; at: Point; index?: number; animation?: string; tall?: boolean },
+      spot: { sheet: string; at: Point; index?: number; animation?: string; tall?: boolean; flat?: boolean },
     ) => {
       const room = interiors.get(house)!;
       const { sprite, light } = addProp(this, this.art, spot.sheet, spot.at, {
         index: spot.index,
         animation: spot.animation,
       });
+      // a rug lies on the boards, under everyone and everything standing on it
+      if (spot.flat) sprite.setDepth(FLOOR_DECAL_DEPTH);
       room.parts.push(sprite);
       if (spot.tall) this.occluders.add([sprite]);
       if (light) {
@@ -2384,6 +2423,30 @@ export class HubScene extends Phaser.Scene {
 
     this.interiors = [...interiors.values()];
     this.showInteriors();
+  }
+
+  /**
+   * A house's partition (the Inn's, between its great hall and taproom) as interior masonry: each
+   * segment trimmed to inside the walls, cut in the tower's low masonry pieces with posts at both
+   * jambs of its door gap and no light, or without that art a low stone placeholder block. Never a
+   * building wall: it has no exterior look, and joins its house's interior, hidden under the roof.
+   */
+  private partition(houses: House[], partitions: WallState[], seed: number, interiors: Map<House, Interior>): void {
+    const inside = partitions.flatMap((wall) => {
+      const house = houses.find((h) => h.id === wall.house_id);
+      return house ? [{ house, wall: partitionInside(wall, house) }] : [];
+    });
+    if (inside.length === 0) return;
+    const baked = addWalls(this, this.art, inside.map((p) => p.wall), seed, MASONRY_WALLS, INTERIOR_PARTITION);
+    for (const { house, wall } of inside) {
+      const interior = interiors.get(house)!;
+      if (baked) {
+        interior.parts.push(...(baked.byWall.get(wall.entity_id) ?? []));
+        continue;
+      }
+      const { x, y } = wall.position;
+      interior.parts.push(...addUprightBlock(this, x, y, wall.width, wall.height, PLACEHOLDER_STONE, PARTITION_PLACEHOLDER_HEIGHT));
+    }
   }
 
   /**

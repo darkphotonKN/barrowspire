@@ -72,7 +72,7 @@ async function launch() {
  * What the review contact sheets show: the cast, then the tower interior (FS-8RBQY §D.7), then the
  * Spire's facade (FS-0XMCP §R15), then the Forlorn Forest's trees and dressing (FS-3QHQZ §C R30),
  * then the town buildings' furniture and fittings (FS-B0H2D §G R30), then the building exteriors
- * (FS-9PN7X §F.1).
+ * (FS-9PN7X §F.1), then the enlarged Inn's great hall and taproom.
  */
 const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.directions === 8),
@@ -81,6 +81,7 @@ const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.group === "forest"),
   ...sheets.filter((x) => x.group === "interior"),
   ...sheets.filter((x) => x.group === "building"),
+  ...sheets.filter((x) => x.group === "hall"),
 ];
 
 async function bakeAll() {

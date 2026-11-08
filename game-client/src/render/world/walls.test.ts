@@ -3,6 +3,7 @@ import { TILE_WIDTH, WORLD_PX_PER_TILE } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
 import { housesFrom } from "./houses";
 import {
+  INTERIOR_PARTITION,
   MASONRY_WALLS,
   TIMBER_WALLS,
   cutExterior,
@@ -11,6 +12,7 @@ import {
   planWalls,
   sideOf,
   trimCrop,
+  unlitSheets,
 } from "./walls";
 
 const T = WORLD_PX_PER_TILE;
@@ -343,5 +345,55 @@ describe("planWalls by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47)"
   it("should name every lit kind of both materials, so none slips past the rule", () => {
     expect(MASONRY_WALLS.lit).toEqual(["sconce"]);
     expect(TIMBER_WALLS.lit).toEqual(["torch", "window"]);
+  });
+});
+
+describe("unlitSheets (the Inn's walls: lit only by its hearth, candelabra and lanterns)", () => {
+  const unlit = unlitSheets(TIMBER_WALLS);
+
+  it("should turn every lit kind to the plain kind, keeping each other kind's share", () => {
+    expect(unlit.back).toEqual([
+      [55, "plain"],
+      [78, "brace"],
+      [90, "plain"],
+      [100, "plain"],
+    ]);
+    expect(unlit.front).toEqual(unlit.back);
+    expect(unlit.lit).toEqual([]);
+  });
+
+  it("should leave the outward face and the prefix as they were: the exterior is the same building", () => {
+    expect(unlit.outward).toEqual(TIMBER_WALLS.outward);
+    expect(unlit.prefix).toBe(TIMBER_WALLS.prefix);
+  });
+
+  it("should plan a house with no torch and no window piece", () => {
+    const sheets = planWalls(runHouse(0, 0), 7, unlit).pieces.map((p) => p.sheet);
+    expect(sheets.length).toBeGreaterThan(0);
+    expect(sheets.filter((s) => /torch|window/.test(s))).toEqual([]);
+    // the same house in timber has some, so the swap is what took them
+    expect(planWalls(runHouse(0, 0), 7).pieces.some((p) => /torch|window/.test(p.sheet))).toBe(true);
+  });
+});
+
+describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", () => {
+  // the Inn's partition inside the room, either side of its door gap
+  const partition = [wall(505, 70, 20, 175, "inn"), wall(505, 295, 20, 175, "inn")];
+
+  it("should cut it low, in masonry, with no sconce: the camera sees over it into both rooms", () => {
+    const { pieces, posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
+    expect(pieces.length).toBeGreaterThan(0);
+    for (const p of pieces) {
+      expect(p.sheet).toMatch(/^tower_wall_front_(plain|pillar)_y$/);
+      expect(p.height).toBe("front");
+    }
+    expect(posts.map((p) => p.sheet)).toEqual(Array(4).fill("tower_post_front"));
+  });
+
+  it("should post both jambs of its door gap", () => {
+    const { posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
+    const ys = posts.map((p) => p.at.y).sort((a, b) => a - b);
+    // each segment's ends, inset by half its thickness: the gap's jambs at 235 and 305
+    expect(ys).toEqual([80, 235, 305, 460]);
   });
 });

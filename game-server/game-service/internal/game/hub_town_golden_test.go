@@ -29,12 +29,22 @@ type townGolden struct {
 }
 
 type townGoldenBuilding struct {
-	Name        string                 `json:"name"`
-	X           float64                `json:"x"`
-	Y           float64                `json:"y"`
-	W           float64                `json:"w"`
-	H           float64                `json:"h"`
+	Name string  `json:"name"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	W    float64 `json:"w"`
+	H    float64 `json:"h"`
+	// The wall dividing its rooms, as walled: its segments either side of the
+	// door gap. Empty for a one-room building.
+	Partitions  []townGoldenRect       `json:"partitions"`
 	Furnishings []townGoldenFurnishing `json:"furnishings"`
+}
+
+type townGoldenRect struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
 }
 
 type townGoldenFurnishing struct {
@@ -51,13 +61,15 @@ type townGoldenResident struct {
 	Y    float64 `json:"y"`
 }
 
-// townFromHubMap is the golden's shape filled from hub_map.go, in its order: the
-// client reads meaning into that order (a fixed resident faces a furnishing by
-// its index).
+// townFromHubMap is the golden's shape filled from hub_map.go, in its order:
+// the client's mirrors are held to the golden in that order.
 func townFromHubMap() townGolden {
 	town := townGolden{Buildings: []townGoldenBuilding{}, FixedResidents: []townGoldenResident{}}
 	for _, b := range hubBuildings {
-		building := townGoldenBuilding{Name: b.Name, X: b.X, Y: b.Y, W: b.W, H: b.H, Furnishings: []townGoldenFurnishing{}}
+		building := townGoldenBuilding{Name: b.Name, X: b.X, Y: b.Y, W: b.W, H: b.H, Partitions: []townGoldenRect{}, Furnishings: []townGoldenFurnishing{}}
+		for _, w := range partitionWalls(b) {
+			building.Partitions = append(building.Partitions, townGoldenRect{X: w.X, Y: w.Y, W: w.Width, H: w.Height})
+		}
 		for _, f := range b.Furnishings {
 			building.Furnishings = append(building.Furnishings, townGoldenFurnishing(f))
 		}
@@ -91,8 +103,9 @@ func TestHubTown_MatchesTheGolden(t *testing.T) {
 
 // The golden is taken from hub_map.go's data, so it is only worth holding the
 // client to if the built hub stands exactly that: each building's walls enclose
-// its footprint, its furnishings are its walls clear of every edge, and each
-// fixed resident stands where the golden says.
+// its footprint, its partition is its walls reaching the edge off the outline,
+// its furnishings are its walls clear of every edge, and each fixed resident
+// stands where the golden says.
 func TestHubTown_BuiltHubStandsTheGoldenTown(t *testing.T) {
 	town := townFromHubMap()
 	houses := hubWalls(t)
@@ -101,6 +114,12 @@ func TestHubTown_BuiltHubStandsTheGoldenTown(t *testing.T) {
 	for _, b := range town.Buildings {
 		house := houseOf(t, houses, b.Name)
 		assert.Equal(t, box{X: b.X, Y: b.Y, W: b.W, H: b.H}, footprintOf(house), "the %s's footprint", b.Name)
+
+		partitions := []box{}
+		for _, p := range b.Partitions {
+			partitions = append(partitions, box{X: p.X, Y: p.Y, W: p.W, H: p.H})
+		}
+		assert.ElementsMatch(t, partitions, partitionsOf(house), "the %s's partition", b.Name)
 
 		want := []box{}
 		for _, f := range b.Furnishings {

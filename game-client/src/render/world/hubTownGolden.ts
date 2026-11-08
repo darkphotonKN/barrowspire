@@ -1,6 +1,7 @@
 /**
  * The town as game-server/game-service/internal/game/hub_map.go lays it out (FS-B0H2D R19, R23),
- * typed: its buildings with their furnishings, and the fixed residents, in hub_map.go's order.
+ * typed: its buildings with their partitions and furnishings, and the fixed residents, in
+ * hub_map.go's order.
  *
  * `hubTown.golden.json` is written by the Go test that holds hub_map.go to it
  * (internal/game/hub_town_golden_test.go, `-update` to rewrite) and is never hand-edited. The
@@ -22,6 +23,11 @@ export interface TownRect {
 
 export interface TownBuilding extends TownRect {
   name: string;
+  /**
+   * The wall dividing its rooms as walled: its segments either side of the door gap, each
+   * reaching the footprint's edge end on. Empty for a one-room building.
+   */
+  partitions: TownRect[];
   furnishings: (TownRect & { kind: string })[];
 }
 

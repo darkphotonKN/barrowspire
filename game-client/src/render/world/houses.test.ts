@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WallState } from "@/types/gameState";
-import { housesFrom, insideHouse } from "./houses";
+import { housesFrom, insideHouse, axisOf, onOutline } from "./houses";
 
 const wall = (
   x: number,
@@ -56,5 +56,42 @@ describe("insideHouse", () => {
   it("should put anything past an edge outside", () => {
     expect(insideHouse({ x: 99.9, y: 160 }, house)).toBe(false);
     expect(insideHouse({ x: 250, y: 260.1 }, house)).toBe(false);
+  });
+});
+
+describe("onOutline, the one outline test (doorGaps, isPartition)", () => {
+  // a 300 × 240 house, walls 20 thick, a partition across it at x 140
+  const house = { id: "h", x: 0, y: 0, width: 300, height: 240 };
+  const w = (x: number, y: number, width: number, height: number) => ({
+    entity_id: `${x},${y}`,
+    house_id: "h",
+    position: { x, y },
+    width,
+    height,
+  });
+
+  it.each([
+    ["the north wall", w(0, 0, 300, 20)],
+    ["the west wall", w(0, 0, 20, 240)],
+    ["the east wall", w(280, 0, 20, 240)],
+    ["a south segment beside the door gap", w(175, 220, 125, 20)],
+  ])("should put %s on the outline", (_name, wall) => {
+    expect(onOutline(wall, house)).toBe(true);
+  });
+
+  it.each([
+    ["a partition segment reaching the north edge end on", w(140, 0, 20, 95)],
+    ["a partition segment reaching the south edge end on", w(140, 145, 20, 95)],
+    ["a furnishing clear of every edge", w(100, 100, 40, 30)],
+  ])("should keep %s off the outline", (_name, wall) => {
+    expect(onOutline(wall, house)).toBe(false);
+  });
+
+  it("should allow for float noise on the edge", () => {
+    expect(onOutline(w(0, 1e-9, 300, 20), house)).toBe(true);
+  });
+
+  it("should run a wall along its longer side, a square one along x", () => {
+    expect([axisOf({ width: 300, height: 20 }), axisOf({ width: 20, height: 240 }), axisOf({ width: 20, height: 20 })]).toEqual(["x", "y", "x"]);
   });
 });

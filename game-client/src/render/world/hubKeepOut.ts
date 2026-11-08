@@ -39,17 +39,16 @@ export type GateDestination = "spire" | "forest" | "meadows";
  *
  * Laid round the town's three buildings (FS-B0H2D R24), none of them across a room's floor:
  * - north lane `[950, 0, 100, 500]` runs between the Inn and the store to the Spire's steps;
- * - west trail runs in under the smithy, then steps south of the Inn's eave and on along the
- *   Inn's front to the spawn's lane: no house stands in its way now, so it no longer turns south
- *   to the hearth's west arm;
- * - east road runs in past the store's east side, steps along the store's front, and drops to
- *   the hearth's east arm down `[1340, 390, 60, 300]`, as before.
+ * - west trail runs in from the Forest gate (y 580: the great hall filled the old trail's lane)
+ *   along the Inn's front, south of its eave, then steps down to the hearth's west arm;
+ * - east road runs in under the smithy, past the store's east side, steps along the store's
+ *   front, and drops to the hearth's east arm down `[1340, 390, 60, 300]`, as before.
  */
 export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
   spire: [[950, 0, 100, 500]],
   forest: [
-    [-200, 390, 650, 60],
-    [430, 450, 520, 50],
+    [-200, 555, 780, 50],
+    [560, 600, 160, 60],
   ],
   meadows: [
     [1440, 340, 760, 50],
@@ -64,9 +63,9 @@ export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
  * entered. In hub_map.go's order: the Inn, the Quartermaster's store, the smithy.
  */
 export const HUB_DOOR_SPURS: PathRect[] = [
-  [645, 410, 50, 40],
+  [525, 490, 50, 65],
   [1255, 390, 50, 30],
-  [235, 290, 50, 100],
+  [1605, 290, 50, 50],
 ];
 
 /**
@@ -117,7 +116,7 @@ export const HUB_KEEP_OUT = {
   gates: {
     at: [
       { destination: "spire", x: 1000, y: 50 },
-      { destination: "forest", x: 40, y: 400 },
+      { destination: "forest", x: 40, y: 580 },
       { destination: "meadows", x: 1960, y: 360 },
     ],
     range: 80,
@@ -146,7 +145,7 @@ export interface FenceRun {
 }
 
 /**
- * The well (§A.4), on the open ground between the Inn's road and the hearth's west arm, its
+ * The well (§A.4), on the open ground between the Forest trail and the hearth's west arm, its
  * trough beside it. Tall: its hoist and roof stand over a player behind it.
  */
 export const HUB_WELL: PropSpot = { sheet: "well", at: { x: 850, y: 580 }, r: 22, tall: true };
@@ -158,16 +157,16 @@ export const HUB_WELL: PropSpot = { sheet: "well", at: { x: 850, y: 580 }, r: 22
  */
 export const HUB_STALLS: PropSpot[] = [
   { sheet: "market_stall", at: { x: 1190, y: 500 }, r: 40, index: 0, tall: true },
-  { sheet: "market_stall", at: { x: 470, y: 550 }, r: 40, index: 1, tall: true },
+  { sheet: "market_stall", at: { x: 470, y: 690 }, r: 40, index: 1, tall: true },
   { sheet: "market_stall", at: { x: 630, y: 950 }, r: 40, index: 2, tall: true },
 ];
 
 /**
- * Carts (§A.4): the first stands before the smithy, east of its door; the second is the hay cart
- * in the fenced south-west yard.
+ * Carts (§A.4): the first stands in the west yard south of the Forest trail, by the yard's fence;
+ * the second is the hay cart in the fenced south-west yard.
  */
 export const HUB_CARTS: PropSpot[] = [
-  { sheet: "cart", at: { x: 350, y: 330 }, r: 26 },
+  { sheet: "cart", at: { x: 160, y: 770 }, r: 26 },
   { sheet: "hay_cart", at: { x: 400, y: 880 }, r: 26 },
 ];
 
@@ -184,12 +183,13 @@ export const HUB_CRATES: PropSpot[] = [
 ];
 
 /**
- * Fence runs (§A.4): the second stands beside the east road, cut short of the Meadows gate's range
- * (FS-0XMCP K8); the first and third fence the south-west yard.
+ * Fence runs (§A.4): the second stands along the east road's south side, the smithy standing on
+ * its north side now, cut short of the Meadows gate's range (FS-0XMCP K8); the first and third
+ * fence the south-west yard.
  */
 export const HUB_FENCES: FenceRun[] = [
   { at: { x: 300, y: 760 }, length: 220, axis: "x", r: 20 },
-  { at: { x: 1740, y: 300 }, length: 130, axis: "x", r: 20 },
+  { at: { x: 1700, y: 450 }, length: 130, axis: "x", r: 20 },
   { at: { x: 240, y: 950 }, length: 240, axis: "x", r: 20 },
 ];
 
@@ -201,27 +201,28 @@ const GOODS = 1;
  * New dressing (§A.5). Lit props (lamp posts, braziers) light the ground through their manifest
  * light. Wall-hugging rows (flower boxes) stand just outside eave clearance, laid along the wall they
  * stand against, and only on faces the camera sees (south and east): two on the Inn's front
- * either side of its door, one on the store's front, one on the store's east side. Nothing stands
- * west or north of a house, where its roof would hide it, nor on a door's threshold.
+ * either side of its door, one on the store's front, one on the store's east side, in the alley
+ * between the store and the smithy. Nothing stands west or north of a house, where its roof
+ * would hide it, nor on a door's threshold.
  */
 export const HUB_DRESSING: PropSpot[] = [
   { sheet: "lamp_post", at: { x: 925, y: 760 }, r: 12, tall: true },
   { sheet: "lamp_post", at: { x: 1085, y: 760 }, r: 12, tall: true },
   { sheet: "brazier", at: { x: 1080, y: 440 }, r: 16, tall: true },
-  { sheet: "brazier", at: { x: 530, y: 600 }, r: 16, tall: true },
+  { sheet: "brazier", at: { x: 300, y: 528 }, r: 16, tall: true },
   { sheet: "water_trough", at: { x: 790, y: 580 }, r: 20 },
   { sheet: "water_trough", at: { x: 310, y: 840 }, r: 20 },
   { sheet: "woodpile", at: { x: 660, y: 880 }, r: 24 },
-  { sheet: "sacks", at: { x: 535, y: 540 }, r: 12, index: GRAIN },
+  { sheet: "sacks", at: { x: 610, y: 530 }, r: 12, index: GRAIN },
   { sheet: "sacks", at: { x: 1125, y: 455 }, r: 12, index: GRAIN },
   { sheet: "sacks", at: { x: 600, y: 840 }, r: 12, index: GOODS },
   { sheet: "signpost", at: { x: 1085, y: 520 }, r: 10, tall: true },
   { sheet: "signpost", at: { x: 1050, y: 880 }, r: 10, tall: true },
-  { sheet: "flower_box", at: { x: 560, y: 432 }, r: 10, animation: "x" },
-  { sheet: "flower_box", at: { x: 790, y: 432 }, r: 10, animation: "x" },
+  { sheet: "flower_box", at: { x: 440, y: 512 }, r: 10, animation: "x" },
+  { sheet: "flower_box", at: { x: 660, y: 512 }, r: 10, animation: "x" },
   { sheet: "flower_box", at: { x: 1190, y: 412 }, r: 10, animation: "x" },
   { sheet: "flower_box", at: { x: 1452, y: 270 }, r: 10, animation: "y" },
-  { sheet: "barrel", at: { x: 400, y: 345 }, r: 12 },
+  { sheet: "barrel", at: { x: 200, y: 800 }, r: 12 },
   { sheet: "barrel", at: { x: 610, y: 810 }, r: 12 },
   { sheet: "barrel", at: { x: 340, y: 800 }, r: 12 },
 ];
@@ -233,10 +234,10 @@ export const HUB_DRESSING: PropSpot[] = [
  */
 export const HUB_WASHING_LINE: { posts: [PropSpot, PropSpot]; line: PropSpot } = {
   posts: [
-    { sheet: "washing_post", at: { x: 200, y: 600 }, r: 8, tall: true },
-    { sheet: "washing_post", at: { x: 280, y: 600 }, r: 8, tall: true },
+    { sheet: "washing_post", at: { x: 240, y: 690 }, r: 8, tall: true },
+    { sheet: "washing_post", at: { x: 320, y: 690 }, r: 8, tall: true },
   ],
-  line: { sheet: "washing_line", at: { x: 240, y: 600 }, r: 0, tall: true },
+  line: { sheet: "washing_line", at: { x: 280, y: 690 }, r: 0, tall: true },
 };
 
 /** A tree's trunk, for the keep-out rule: the crown overhangs, the trunk stands. */
@@ -255,11 +256,11 @@ const tree = (sheet: "tree_pine" | "tree_oak", x: number, y: number, index: numb
  * their trunk's foot; `index` is the sheet's variant.
  */
 export const HUB_GATE_DRESSING: PropSpot[] = [
-  { sheet: "signpost", at: { x: 140, y: 470 }, r: 10, tall: true },
+  { sheet: "signpost", at: { x: 140, y: 650 }, r: 10, tall: true },
   { sheet: "signpost", at: { x: 1860, y: 420 }, r: 10, tall: true },
   tree("tree_pine", 60, 300, 0),
-  tree("tree_pine", 70, 530, 1),
-  tree("tree_oak", 90, 640, 1),
+  tree("tree_pine", 90, 470, 1),
+  tree("tree_oak", 60, 700, 1),
 ];
 
 /**
@@ -268,6 +269,11 @@ export const HUB_GATE_DRESSING: PropSpot[] = [
  * trail running on past the edge (K8); none needs collision.
  */
 export const HUB_BEYOND_EDGE: PropSpot[] = [
+  // south of the trail as it leaves (y 580)
+  tree("tree_oak", -70, 680, 1),
+  tree("tree_pine", -140, 650, 0),
+  tree("tree_pine", -210, 700, 1),
+  // north of it, where the trail ran before the Inn grew
   tree("tree_pine", -40, 330, 1),
   tree("tree_oak", -60, 480, 0),
   tree("tree_pine", -100, 350, 0),
@@ -296,7 +302,7 @@ export const HUB_BEYOND_EDGE_FENCES: FenceRun[] = [
  * under the Spire's steps. The ground plan carries HUB_PATHS through them.
  */
 export const HUB_APRONS = [
-  { x: -280, y: 150, width: 280, height: 530, from: { x: 0, y: 415 }, fade: 270 },
+  { x: -280, y: 330, width: 280, height: 530, from: { x: 0, y: 580 }, fade: 270 },
   { x: 2000, y: -40, width: 400, height: 810, from: { x: 2000, y: 365 }, fade: 400 },
   { x: 700, y: -300, width: 600, height: 300, from: { x: 1000, y: 0 }, fade: 300 },
 ] as const;

@@ -74,7 +74,7 @@ const BOTTLE = mix("arcaneDeep", "charcoal", 0.35);
 let INTERIOR = null;
 
 /** The interiors' own materials, built once per bake (seeded, so deterministic). */
-function interiorMaterials() {
+export function interiorMaterials() {
   if (INTERIOR) return INTERIOR;
   const D = THREE.DoubleSide;
   const cloth = (c, s) =>
@@ -129,7 +129,7 @@ const box = (w, h, d, material, o = {}) => part(new THREE.BoxGeometry(w, h, d), 
  * Rubble masonry filling a w × h face of depth d centred on (x, ·, z), bottom at y0: courses of
  * single stones, each a hair off true, so it reads as laid stone rather than one textured block.
  */
-function masonry(g, { x = 0, z = 0, y0 = 0, w, h, d }, material, R) {
+export function masonry(g, { x = 0, z = 0, y0 = 0, w, h, d }, material, R) {
   let y = y0;
   let course = 0;
   while (y < y0 + h - 0.01) {
@@ -160,7 +160,7 @@ function masonry(g, { x = 0, z = 0, y0 = 0, w, h, d }, material, R) {
 }
 
 /** A pewter tankard: a tapered drum with a handle. */
-function tankard(g, x, y, z, ry, T) {
+export function tankard(g, x, y, z, ry, T) {
   const t = new THREE.Group();
   t.position.set(x, y, z);
   t.rotation.y = ry;
@@ -170,7 +170,7 @@ function tankard(g, x, y, z, ry, T) {
 }
 
 /** A clay jug or crock: a lathe of height h and belly radius r. */
-function crock(g, x, y, z, r, h, material, { neck = 0.45, lid = null } = {}) {
+export function crock(g, x, y, z, r, h, material, { neck = 0.45, lid = null } = {}) {
   const prof = [
     [0.01, 0],
     [0.75, 0.02],

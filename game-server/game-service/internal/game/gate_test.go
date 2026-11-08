@@ -128,7 +128,7 @@ func TestGateArrival(t *testing.T) {
 		wantY       float64
 		wantOK      bool
 	}{
-		{"the Forest gate", components.GateDestinationForest, 180, 400, true},
+		{"the Forest gate", components.GateDestinationForest, 180, 580, true},
 		{"the Meadows gate", components.GateDestinationMeadows, 1820, 360, true},
 		{"the Spire gate, which nobody comes back through", components.GateDestinationSpire, 0, 0, false},
 		{"a gate the hub does not have", components.GateDestination("nowhere"), 0, 0, false},

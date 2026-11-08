@@ -19,7 +19,7 @@ const spire: GateState = {
 const forest: GateState = {
   entity_id: "forest-gate",
   destination: "forest",
-  position: { x: 40, y: 400 },
+  position: { x: 40, y: 580 },
   range: 80,
 };
 const gates = [spire, forest];
@@ -30,7 +30,7 @@ describe("gateAt (FS-0XMCP §Requirements 7, 10, 22)", () => {
     { where: "at exactly its range", pos: { x: 1000, y: 130 }, want: "spire" },
     { where: "at its range on a diagonal", pos: { x: 1000 + 48, y: 50 + 64 }, want: "spire" },
     { where: "just beyond its range", pos: { x: 1000, y: 130.01 }, want: undefined },
-    { where: "at another gate", pos: { x: 100, y: 400 }, want: "forest" },
+    { where: "at another gate", pos: { x: 100, y: 580 }, want: "forest" },
     { where: "far from every gate", pos: { x: 1000, y: 500 }, want: undefined },
   ])("should answer $want $where", ({ pos, want }) => {
     expect(gateAt(pos, gates)?.destination).toBe(want);
@@ -148,13 +148,13 @@ describe("the dev test room's gate (FS-BDRTJ §Requirements 2, 3)", () => {
 
 describe("signpostOf (FS-0XMCP §Requirements 18, 21)", () => {
   const dressing = [
-    { sheet: "signpost", at: { x: 140, y: 470 } },
-    { sheet: "tree_pine", at: { x: 45, y: 405 } },
+    { sheet: "signpost", at: { x: 140, y: 650 } },
+    { sheet: "tree_pine", at: { x: 45, y: 585 } },
     { sheet: "signpost", at: { x: 1860, y: 420 } },
   ];
 
   it("should find the signpost standing beside the gate, not another prop nearer it", () => {
-    expect(signpostOf(forest, dressing)).toEqual({ x: 140, y: 470 });
+    expect(signpostOf(forest, dressing)).toEqual({ x: 140, y: 650 });
     expect(signpostOf(meadows, dressing)).toEqual({ x: 1860, y: 420 });
   });
 
