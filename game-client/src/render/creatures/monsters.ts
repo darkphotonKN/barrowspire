@@ -38,6 +38,7 @@ import {
 } from "@/render/markers";
 import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/footprint";
 import type { MarkerMode } from "./markerMode";
+import { onDemandFor } from "@/render/art/sceneArt";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
@@ -81,6 +82,11 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   troll: { sheet: "creature_troll_base", tier: "brute" },
   /** The winged demon boss (req 41, FS-KYPQ9): its own baked sheet, drawn as baked, at boss size. */
   demon: { sheet: "creature_demon_base", tier: "boss" },
+  /**
+   * The rarer blood demon boss (FS-VHGE7 §C R26, §E R41): its own baked sheet, the demon rig in a
+   * blood hide with heavier horns and larger wings, drawn as baked, at boss size.
+   */
+  blood_demon: { sheet: "creature_blood_demon_base", tier: "boss" },
   /** The Forlorn Forest's dead (FS-3QHQZ §C R29): the shambling zombie, and the rarer ghost. */
   zombie: { sheet: "creature_zombie_base", tier: "fodder" },
   /** Its translucence is baked into the sheet (body alpha ≈ 0.6, eyes opaque): no tint here. */
@@ -108,6 +114,21 @@ export function monsterLook(archetype: string): MonsterLook {
   return Object.hasOwn(MONSTER_LOOKS, archetype)
     ? MONSTER_LOOKS[archetype]
     : FALLBACK_LOOK;
+}
+
+/**
+ * The look a monster is drawn in now: its own, or, while the art of an on-demand group is not in
+ * (ADR-0071 Decision 3), its stand-in: the named sheet, under its tint, at its own tier.
+ */
+export function drawnLook(
+  archetype: string,
+  art: Pick<ArtLibrary, "has">,
+): MonsterLook {
+  const look = monsterLook(archetype);
+  const standIn = onDemandFor(archetype)?.standIn;
+  return standIn && !art.has(look.sheet)
+    ? { ...monsterLook(standIn.archetype), tier: look.tier, tint: standIn.tint }
+    : look;
 }
 
 /** The sheet a monster is drawn from: its look's elite sheet for an elite, when it has one. */
@@ -196,26 +217,38 @@ export function bodyColumn(
 
 // ── Clips and nameplate ───────────────────────────────────────────────────
 
-/** The clip each server action plays (req 34). */
+/** The clip each server action plays (req 34; a demon's fire claw, FS-VHGE7 §D R31). */
 export const ACTION_CLIPS: Record<MonsterAction, CharacterAnimation> = {
   idle: "idle",
   move: "walk",
   attack: "attack",
+  claw: "claw",
   dead: "death",
+};
+
+/**
+ * What a clip not every sheet carries plays on a sheet without it (FS-VHGE7 §D R31): the claw is
+ * the attack until the demons' sheets are baked with it, so it shows and never freezes.
+ */
+const CLIP_FALLBACKS: Partial<Record<CharacterAnimation, CharacterAnimation>> = {
+  claw: "attack",
 };
 
 /**
  * The clip a monster plays: its action's clip, in the 8-way facing the server sent. A zero
  * facing keeps `current`. The walk follows the pace the body is drawn covering (`speed`, world
- * px/s), scaled up with the sprite, whose stride is longer.
+ * px/s), scaled up with the sprite, whose stride is longer. `has` says whether the monster's sheet
+ * carries a clip; one it lacks plays its fallback ({@link CLIP_FALLBACKS}).
  */
 export function monsterClip(
   monster: Pick<MonsterState, "action" | "facing">,
   current: Facing8,
   speed = 0,
   scale = 1,
+  has: (clip: CharacterAnimation) => boolean = () => true,
 ): AnimationChoice {
-  const animation = ACTION_CLIPS[monster.action] ?? "idle";
+  const named = ACTION_CLIPS[monster.action] ?? "idle";
+  const animation = has(named) ? named : (CLIP_FALLBACKS[named] ?? named);
   const facing = facingFrom(monster.facing.x, monster.facing.y, current);
   const timeScale =
     animation === "walk" && speed >= MOVING_SPEED
@@ -333,6 +366,15 @@ export interface MonsterSprite extends AnimatedSprite {
 type MonsterPointerEvent = "pointerdown" | "pointerover" | "pointerout";
 
 /**
+ * The world effects a monster's actions play (FS-VHGE7 §D R32–33). The roster only says which
+ * monster turned to what, and where it is drawn; the effect itself is the scene's.
+ */
+export interface MonsterEffects {
+  /** A shown monster turned to `claw`: once per turn, at its drawn world position. */
+  claw(monster: MonsterState, at: Point): void;
+}
+
+/**
  * What the scene does with a living monster under the pointer (req 39). The roster only says
  * which monster; the attack, its range and its cooldown are the scene's.
  */
@@ -341,6 +383,14 @@ export interface MonsterTargeting {
   strike(monster: MonsterState): void;
   /** The pointer came onto a living monster, or left the one it was on (`null`). */
   hover(monster: MonsterState | null): void;
+}
+
+/**
+ * Brings in the art of an on-demand group while the scene runs (`onDemandArt`, FS-VHGE7 §F):
+ * idempotent, once a scene. `landed` runs only when the group's art is in the library.
+ */
+export interface MonsterArtFetch {
+  fetch(group: string, landed: () => void): void;
 }
 
 export interface MonsterText {
@@ -410,6 +460,8 @@ interface MonsterView {
   /** What the bar last drew (`healthBarKey`): it is redrawn only when this changes (§F.23). */
   drawn?: string;
   anim: CharacterAnimator;
+  /** What it is drawn in now: its own look, or an on-demand group's stand-in until that is in. */
+  look: MonsterLook;
   scale: number;
   /** World position as drawn, eased toward `state.position`. */
   pos: Point;
@@ -420,6 +472,8 @@ interface MonsterView {
   fallen: boolean;
   /** What is left of the damage flash, in ms; 0 when the sprite wears its own look. */
   flashMs: number;
+  /** Whether its sheet carries each clip, for the clips one may lack (FS-VHGE7 §D R31). */
+  has: (clip: CharacterAnimation) => boolean;
   state: MonsterState;
 }
 
@@ -440,6 +494,8 @@ export class MonsterRoster {
     private readonly stage: MonsterStage,
     private readonly art: ArtLibrary,
     private readonly targeting?: MonsterTargeting,
+    private readonly effects?: MonsterEffects,
+    private readonly artFetch?: MonsterArtFetch,
   ) {}
 
   /** How many monsters (corpses included) are on the canvas. */
@@ -486,7 +542,9 @@ export class MonsterRoster {
    * on a dungeon floor, out of the recipient's interest (FS-KE075 §H.48). It goes with nothing
    * replayed, and one that comes back is drawn as it now is: no flash for health lost meanwhile, a
    * corpse already fallen. So too one hidden by the hide rule or the fog (FS-SRA9J §D.15): a hit
-   * taken unseen does not flash.
+   * taken unseen does not flash. A shown monster that turns to `claw` plays its claw effect, once
+   * per turn (FS-VHGE7 §D R33); one first seen mid-claw, a reconnect's, plays none. Being listed, shown
+   * or hidden, is what fetches an on-demand group's art (§F R44).
    */
   sync(monsters: readonly MonsterState[]): void {
     const present = new Set(monsters.map((m) => m.entity_id));
@@ -499,14 +557,19 @@ export class MonsterRoster {
         this.views.delete(id);
       }
 
+    for (const { archetype } of monsters) this.fetchArtOf(archetype);
+
     for (const monster of monsters) {
       const view = this.views.get(monster.entity_id);
       if (!view) {
         this.views.set(monster.entity_id, this.create(monster));
         continue;
       }
-      const hit = monster.current_health < view.state.current_health && view.sprite.visible;
+      const shown = view.sprite.visible;
+      const hit = monster.current_health < view.state.current_health && shown;
       if (hit) this.flash(view);
+      if (shown && monster.action === "claw" && view.state.action !== "claw")
+        this.effects?.claw(monster, view.pos);
       view.state = monster;
       view.chip.set(healthFraction(monster), hit && alive(monster) && this.chipRoom(view));
     }
@@ -531,19 +594,12 @@ export class MonsterRoster {
       }
       this.stand(view);
 
-      // a corpse lies the way it fell: a later facing never rolls it over to replay the fall
-      const facing = view.fallen ? STILL : state.facing;
-      const choice = monsterClip(
-        { action: state.action, facing },
-        view.facing,
-        view.speed,
-        view.scale,
-      );
+      const choice = this.clip(view);
       view.facing = choice.facing;
       // one that dies unseen lies where it fell, and is never seen mid-fall when it is shown again
       const fellUnseen = state.action === "dead" && !view.fallen && !view.sprite.visible;
       view.fallen = state.action === "dead";
-      if (fellUnseen) this.layCorpse(view, monsterSheet(monsterLook(state.archetype), state));
+      if (fellUnseen) this.layCorpse(view, view.anim.sheet);
       else if (view.anim.baked) view.anim.show(view.sprite, choice);
       if (view.flashMs > 0) {
         view.flashMs -= deltaMs;
@@ -588,8 +644,57 @@ export class MonsterRoster {
     return [...this.views.values()].map((view) => ({ parts: [view.sprite], at: view.pos }));
   }
 
+  /** The clip a monster should be playing, this frame. */
+  private clip(view: MonsterView): AnimationChoice {
+    const { state } = view;
+    // a corpse lies the way it fell: a later facing never rolls it over to replay the fall
+    const facing = view.fallen ? STILL : state.facing;
+    return monsterClip(
+      { action: state.action, facing },
+      view.facing,
+      view.speed,
+      view.scale,
+      view.has,
+    );
+  }
+
+  /** Whether a sheet carries a clip. */
+  private clipsOf(sheet: string): MonsterView["has"] {
+    return (clip) => this.art.animationKey(sheet, clip) !== undefined;
+  }
+
+  /** Asks for the art of `archetype`'s on-demand group, if it has one and it is not in yet (§F R44). */
+  private fetchArtOf(archetype: string): void {
+    const onDemand = onDemandFor(archetype);
+    if (onDemand && !this.art.has(monsterLook(archetype).sheet))
+      this.artFetch?.fetch(onDemand.group, () => this.redress(archetype));
+  }
+
+  /** The group's art is in: every monster of `archetype` drawn as its stand-in changes (§F R48). */
+  private redress(archetype: string): void {
+    for (const view of this.views.values())
+      if (view.state.archetype === archetype) this.wearOwnLook(view);
+  }
+
+  /**
+   * On its own sprite, between one frame and the next: a new animator for the new sheet, its size,
+   * and the clip it was playing, carried at its place. The sprite has a texture throughout; the
+   * hit column stands, a tier's height either way (crown × scale).
+   */
+  private wearOwnLook(view: MonsterView): void {
+    const look = monsterLook(view.state.archetype);
+    const sheet = monsterSheet(look, view.state);
+    view.look = look;
+    view.scale = monsterScale(look, this.art);
+    view.anim = new CharacterAnimator(this.art, { sheet }, view.facing);
+    view.has = this.clipsOf(sheet);
+    view.anim.dress(view.sprite, view.scale);
+    view.anim.show(view.sprite, this.clip(view));
+    if (view.flashMs <= 0) this.wear(view);
+  }
+
   private create(state: MonsterState): MonsterView {
-    const look = monsterLook(state.archetype);
+    const look = drawnLook(state.archetype, this.art);
     const sheet = monsterSheet(look, state);
     const facing = facingFrom(state.facing.x, state.facing.y, "se");
     const anim = new CharacterAnimator(this.art, { sheet }, facing);
@@ -619,12 +724,14 @@ export class MonsterRoster {
       bar,
       chip: new DamageChip(healthFraction(state)),
       anim,
+      look,
       scale,
       pos: { x: state.position.x, y: state.position.y },
       speed: 0,
       facing,
       fallen: false,
       flashMs: 0,
+      has: this.clipsOf(sheet),
       state,
     };
     this.wear(view);
@@ -678,9 +785,9 @@ export class MonsterRoster {
     view.flashMs = FLASH_MS;
   }
 
-  /** The sprite's own look: its hostile wash (req 38, 41), or as baked. */
+  /** The sprite's own look: its hostile wash (req 38, 41), its stand-in's tint, or as baked. */
   private wear(view: MonsterView): void {
-    const tint = monsterTint(monsterLook(view.state.archetype), view.state);
+    const tint = monsterTint(view.look, view.state);
     if (tint !== undefined) view.sprite.setTint(tint);
     else view.sprite.clearTint();
   }

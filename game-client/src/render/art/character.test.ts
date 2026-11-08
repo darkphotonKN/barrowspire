@@ -339,6 +339,33 @@ describe("CharacterAnimator", () => {
     expect(sprite.plays[1]).toEqual({ key: "char_knight_base/walk/1", startFrame: 5 });
   });
 
+  it("should restart a one-shot clip that turns, on the same sheet", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
+    sprite.at(3);
+    anim.show(sprite, { animation: "attack", facing: "se", direction: 1, timeScale: 1 });
+    expect(sprite.plays[1]).toEqual({ key: "char_knight_base/attack/1", startFrame: 0 });
+  });
+
+  it("should carry a clip's place onto a new sheet, a one-shot too (FS-VHGE7 §F R48)", () => {
+    const sprite = fakeSprite();
+    new CharacterAnimator(art(), "warrior").show(sprite, {
+      animation: "attack",
+      facing: "e",
+      direction: 0,
+      timeScale: 1,
+    });
+    sprite.at(3);
+    new CharacterAnimator(art(), "mercenary").show(sprite, {
+      animation: "attack",
+      facing: "e",
+      direction: 0,
+      timeScale: 1,
+    });
+    expect(sprite.plays[1]).toEqual({ key: "char_mercenary_base/attack/0", startFrame: 3 });
+  });
+
   it("should start an attack from its first frame, even mid-stride", () => {
     const sprite = fakeSprite();
     const anim = new CharacterAnimator(art(), "warrior");

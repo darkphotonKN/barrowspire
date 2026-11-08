@@ -1310,11 +1310,18 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     // sheet → its §A.3 atlas group and §A.6 crown ratio band (to the player mean)
     const ROSTER: [string, string, number, number][] = [
       ["creature_demon_base", "boss", 1.8, Infinity],
+      // the blood demon (FS-VHGE7 §E R36, §F R42): the second boss, on the demon rig, in its own group
+      ["creature_blood_demon_base", "blood_demon", 1.8, Infinity],
       // the Forlorn Forest's dead (FS-3QHQZ §C R29): fodder, in their own group
       ["creature_zombie_base", "fodder", 0.85, 1.05],
       ["creature_ghost_base", "fodder", 0.85, 1.05],
     ];
     const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    // the demons' fire claw (FS-VHGE7 §E R38): a fifth clip, after the four every roster sheet has
+    const CLAWED = new Set([
+      "creature_demon_base",
+      "creature_blood_demon_base",
+    ]);
 
     it.each(ROSTER)(
       "%s packs into the %s group, never an existing one",
@@ -1333,6 +1340,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         "walk",
         "attack",
         "death",
+        ...(CLAWED.has(name) ? ["claw"] : []),
       ]);
       for (const a of Object.values(sheet.animations)) {
         expect(a.frames).toHaveLength(8);
@@ -1386,6 +1394,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(atlasGroup(a.atlas)).toBe(atlasGroup(sheet.atlas));
         }
     });
+
+    it.each([...CLAWED])(
+      "gives %s a one-shot 5-frame claw at 12 fps, inside the server's 0.4 s show plus a tick (FS-VHGE7 §E R38)",
+      (name) => {
+        const claw = (baked.sheets[name] as RosterSheet).animations.claw;
+        expect(claw.loop).toBe(false);
+        expect(claw.fps).toBe(12);
+        for (const facing of claw.frames) expect(facing).toHaveLength(5);
+      },
+    );
 
     it("gives the demon's attack its own timing, long enough for a 0.4 s roar first (§B.6)", () => {
       const attack = (baked.sheets.creature_demon_base as RosterSheet)

@@ -153,6 +153,7 @@ export function artLoaderStandin(opts: {
       loading = false;
     },
     start: () => {
+      if (loading) return; // LoaderPlugin.start: `isReady` is false while a load runs
       loaderEvents.emit("start", load);
       total = list.length;
       done = 0;

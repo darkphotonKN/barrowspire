@@ -329,7 +329,7 @@ const demon = (fields: Partial<MonsterState> = {}) =>
   });
 
 describe("engages (FS-48CTQ §D.10: what first engages a boss)", () => {
-  it("should read the demon's aggro and leash radii, 320 and 700 px (monster_tuning.go)", () => {
+  it("should read the bosses' shared aggro and leash radii, 320 and 700 px (monster_tuning.go)", () => {
     expect(BOSS_AGGRO_PX).toBe(320);
     expect(BOSS_LEASH_PX).toBe(700);
   });
@@ -356,6 +356,32 @@ describe("engages (FS-48CTQ §D.10: what first engages a boss)", () => {
       expect(engages(demon({ action: "attack" }), [member(x)])).toBe(want);
     },
   );
+
+  // FS-VHGE7 §D R34 (I-VHGE7-4): a demon's fire claw engages it as its slam (`attack`) does
+  it.each([
+    [699, true],
+    [700, true],
+    [701, false],
+  ])(
+    "a full-health boss clawing with a member %i px away (its leash 700): engages %s",
+    (x, want) => {
+      expect(engages(demon({ action: "claw" }), [member(x)])).toBe(want);
+      expect(
+        engages(demon({ archetype: "blood_demon", action: "claw" }), [
+          member(x),
+        ]),
+      ).toBe(want);
+    },
+  );
+
+  it("a boss clawing only a fallen or escaped member: does not engage", () => {
+    expect(
+      engages(demon({ action: "claw" }), [
+        member(40, { current_health: 0 }),
+        member(40, { escape: true }),
+      ]),
+    ).toBe(false);
+  });
 
   it("should measure the distance on both axes", () => {
     // 3-4-5: 192 east and 256 south is 320 px
@@ -566,4 +592,54 @@ describe("BossEngagement (FS-48CTQ §D.10–11: engaged once, held until at full
         ?.entity_id,
     ).toBe("a");
   });
+});
+
+// FS-VHGE7 §C R28–29 (I-VHGE7-3): the blood demon is a boss by `boss: true`, no archetype check,
+// and with both demons engaged the existing rule picks: the hovered one, else the first engaged.
+describe("two bosses at once: the green demon and the blood demon (FS-VHGE7 §C R28–29)", () => {
+  const green = demon({ entity_id: "green", current_health: 900 });
+  const blood = demon({
+    entity_id: "blood",
+    archetype: "blood_demon",
+    name: "Blood Demon",
+    current_health: 1500,
+    max_health: 1800,
+  });
+
+  it("should engage a blood demon as it does the green one: by `boss`, not its archetype", () => {
+    expect(
+      new BossEngagement().observe(
+        [
+          demon({
+            entity_id: "blood",
+            archetype: "blood_demon",
+            action: "attack",
+          }),
+        ],
+        [member(40)],
+      ),
+    ).toBe("blood");
+  });
+
+  it.each([
+    ["the green demon first", [green, blood], "green"],
+    ["the blood demon first", [blood, green], "blood"],
+  ])(
+    "with both engaged and none hovered, should name the first engaged: %s",
+    (_, shown, want) => {
+      const engagedBoss = new BossEngagement().observe(shown, []);
+      expect(pickTarget({ shown, engagedBoss })?.entity_id).toBe(want);
+    },
+  );
+
+  it.each(["green", "blood"])(
+    "should name the hovered one of the two: %s",
+    (hovered) => {
+      const shown = [green, blood];
+      const engagedBoss = new BossEngagement().observe(shown, []);
+      expect(pickTarget({ shown, hovered, engagedBoss })?.entity_id).toBe(
+        hovered,
+      );
+    },
+  );
 });

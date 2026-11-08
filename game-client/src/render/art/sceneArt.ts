@@ -6,13 +6,17 @@
  * and kept for the game, or **scene-scoped**, loaded by the scenes that draw it and evicted once
  * the next scene has loaded without it. The table below is the one place that says which
  * scene-scoped groups each scene holds; every group it does not name is resident, so a group the
- * bake adds later costs memory, never draws as a placeholder by omission (§A R3).
+ * bake adds later costs memory, never draws as a placeholder by omission (§A R3). A scene-scoped
+ * group may instead be **on demand** ({@link ON_DEMAND_ART}): in no scene's set, fetched while a
+ * scene runs (FS-VHGE7 §F, ADR-0071).
  *
  * Pure, so it is tested against the real manifest without a canvas. The loading itself is
  * `preloadArt` / `registerArt` (`phaser.ts`).
  */
 
 import type { FieldId } from "@/assets/types/client";
+import type { MonsterArchetype } from "@/types/gameState";
+import { palette } from "@/utils/canvasPalette";
 import type { ArtManifest } from "./manifest";
 
 /** The scene-scoped groups a scene holds beyond the resident ones. */
@@ -45,16 +49,46 @@ export const SCENE_ART = {
   BarrowspireScene: SceneGroups;
 };
 
-/** Every group the table names: the scene-scoped groups (§A R2). */
-export const SCENE_SCOPED_GROUPS: ReadonlySet<string> = new Set(
-  [
+/** A scene-scoped group no scene preloads: it is fetched while a scene runs (FS-VHGE7 §F). */
+export interface OnDemandGroup {
+  group: string;
+  /** The monster archetype whose first listing in a snapshot fetches the group. */
+  archetype: MonsterArchetype;
+  /**
+   * What that archetype draws until the group is in: another archetype's sheet, on a group its
+   * scenes hold, under a multiply `tint`.
+   */
+  standIn: { archetype: MonsterArchetype; tint: number };
+}
+
+/**
+ * ADR-0071 Decision 2: the groups fetched on demand. A group here is scene-scoped, so boot skips
+ * it and eviction frees it, and in no row of {@link SCENE_ART}; the coverage test
+ * (`sceneArt.test.ts`) holds each to a stand-in its scenes hold.
+ */
+export const ON_DEMAND_ART: readonly OnDemandGroup[] = [
+  {
+    group: "blood_demon",
+    archetype: "blood_demon",
+    standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
+  },
+];
+
+/** The on-demand group an archetype's art is on, if any. */
+export const onDemandFor = (archetype: string): OnDemandGroup | undefined =>
+  ON_DEMAND_ART.find((entry) => entry.archetype === archetype);
+
+/** Every group the tables name: the scene-scoped groups (§A R2). */
+export const SCENE_SCOPED_GROUPS: ReadonlySet<string> = new Set([
+  ...[
     SCENE_ART.MainMenuScene,
     SCENE_ART.CharacterCreationScene,
     SCENE_ART.HubScene,
     ...Object.values(SCENE_ART.FieldScene),
     SCENE_ART.BarrowspireScene,
   ].flat(),
-);
+  ...ON_DEMAND_ART.map((entry) => entry.group),
+]);
 
 /** The group an atlas page belongs to: its key without the page number (§A R1). */
 export const atlasGroup = (atlas: string): string => atlas.replace(/-\d+$/, "");

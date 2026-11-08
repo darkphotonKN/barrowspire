@@ -29,7 +29,7 @@ import { onSceneEnd } from "@/scenes/sceneEnd";
 import { palette } from "@/utils/canvasPalette";
 import { evictOutside } from "./evict";
 import { LOAD_PACE, paceLoad, type Curtain, type PaceClock } from "./loadPace";
-import { sceneAtlases, type SceneGroups } from "./sceneArt";
+import { atlasGroup, sceneAtlases, type SceneGroups } from "./sceneArt";
 
 export const MANIFEST_KEY = "art:manifest";
 export const DEFAULT_ART_URL = "/art/";
@@ -322,8 +322,9 @@ export interface PreloadOptions {
  * set (`groups`, as given to {@link preloadArt}) that are textures. One that is not warns once
  * and its sheets draw as placeholders (FS-C4JWH §B R10, §E R19); a page outside the set is not
  * the scene's, is never warned about, and its sheets draw as the placeholder even while it is
- * still a texture (§E R20). Idempotent: a second scene registering the same manifest reuses the
- * frames and animations already there.
+ * still a texture (§E R20), except an on-demand group's once {@link onDemandArt} has fetched it
+ * and told the library (`ArtLibrary.admit`). Idempotent: a second scene registering the same
+ * manifest reuses the frames and animations already there.
  */
 export function registerArt(
   scene: ArtScene,
@@ -358,6 +359,70 @@ export function registerArt(
   }
   registerFrames(scene, result.manifest, loaded);
   return new ArtLibrary(result.manifest, logger, loaded);
+}
+
+/**
+ * Fetches a running scene's on-demand groups (FS-VHGE7 §F, ADR-0071), one per scene start. The
+ * first `fetch` of a group queues its pages not yet textures, once, on the scene's loader; no bar,
+ * no fade, nothing held back. Only when the load is done and every page is a texture are its frames
+ * and animations registered, `art` told, and then `landed` called (§F R47); a page that failed
+ * leaves the group out with one warning, and it is not asked for again in this scene (R50).
+ *
+ * A stop while it downloads calls the pages off as a stop does a preload's (`callOff`): the loader
+ * drops its listeners on the stop, and without this each page would still land in the next scene.
+ */
+export function onDemandArt(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  logger: ArtLogger = console,
+  baseUrl = DEFAULT_ART_URL,
+): { fetch(group: string, landed: () => void): void } {
+  const asked = new Set<string>();
+
+  return {
+    fetch(group, landed) {
+      if (asked.has(group)) return;
+      asked.add(group);
+      const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
+      if (!result.ok) return; // registerArt reported it with the scene's logger
+      const { manifest } = result;
+      const pages = Object.keys(manifest.atlases).filter((atlas) => atlasGroup(atlas) === group);
+      const absent = () => pages.filter((atlas) => !scene.textures.exists(atlasTextureKey(atlas)));
+
+      const settle = () => {
+        const missing = absent();
+        if (pages.length === 0 || missing.length > 0) {
+          logger.warn(`art: on-demand group ${group} did not load; its stand-in stays`, {
+            group,
+            missing,
+          });
+          return;
+        }
+        registerFrames(scene, manifest, new Set(pages));
+        art.admit(pages);
+        landed();
+      };
+
+      const toFetch = absent();
+      if (toFetch.length === 0) return settle();
+
+      const files: LoaderFile[] = [];
+      const collect = (_k: string, _t: string, _l: unknown, file: LoaderFile) => void files.push(file);
+      scene.load.on("addfile", collect);
+      for (const atlas of toFetch)
+        scene.load.image(atlasTextureKey(atlas), `${baseUrl}${manifest.atlases[atlas].image}`);
+      scene.load.off("addfile", collect);
+
+      const cancelEnd = onSceneEnd(scene, (end) => {
+        if (end === "shutdown") files.forEach(callOff);
+      });
+      scene.load.once("complete", () => {
+        cancelEnd();
+        settle();
+      });
+      scene.load.start();
+    },
+  };
 }
 
 function registerFrames(

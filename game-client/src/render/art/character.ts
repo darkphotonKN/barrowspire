@@ -262,7 +262,8 @@ export class CharacterAnimator {
    * Plays the chosen clip. The same clip carries on (a finished attack, guard or death holds its
    * last frame rather than replaying) unless a new attack or guard was started; a looping clip turning to a new facing keeps its place in the
    * cycle, so a stride does not restart at every turn, and a swing that starts or stops moving
-   * swaps between `attack` and `walk_attack` at the same point of the shot.
+   * swaps between `attack` and `walk_attack` at the same point of the shot. A clip continuing from
+   * another sheet (a re-dress, FS-VHGE7 §F R48) keeps its place too, a one-shot included.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
     const clip = this.clip(choice.animation);
@@ -280,7 +281,8 @@ export class CharacterAnimator {
       const from = current ? animationOf(current.key) : undefined;
       const at = current ? Math.max(0, current.frames.indexOf(anims.currentFrame)) : 0;
       let startFrame = 0;
-      if (current && this.loops(clip) && from === clip) startFrame = at;
+      if (current && from === clip && (this.loops(clip) || sheetOf(current.key) !== this.sheet))
+        startFrame = Math.min(at, this.frameCount(clip) - 1);
       // starting or stopping mid-swing (FS-HF0WW): the other swing clip carries on from
       // as far through as this one got, rather than drawing the shot again from the start
       else if (current && from !== clip && from && this.swingClips.has(from) && this.swingClips.has(clip))
@@ -314,6 +316,8 @@ export class CharacterAnimator {
 
 /** `sheet/animation/direction` (library.ts `animationName`) → `animation`. */
 const animationOf = (key: string) => key.split("/")[1];
+/** `sheet/animation/direction` (library.ts `animationName`) → `sheet`. */
+const sheetOf = (key: string) => key.split("/")[0];
 
 /** The clips an attack plays: standing, or on the move where the sheet carries it. */
 const SWINGS: ReadonlySet<CharacterAnimation> = new Set(["attack", "walk_attack"]);

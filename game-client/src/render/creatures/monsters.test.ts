@@ -19,10 +19,14 @@ import {
   CHIP_BUDGET,
   OVERHEAD_BAR,
   bodyColumn,
+  drawnLook,
   monsterLook,
   elitePlate,
+  monsterClip,
   monsterScale,
   nameplate,
+  type MonsterArtFetch,
+  type MonsterEffects,
   type MonsterStage,
 } from "./monsters";
 
@@ -54,7 +58,8 @@ const creatureSheet = (atlas: string, crown: number) => ({
   licence: "Barrowspire-original",
 });
 
-function fixtureArt(): ArtLibrary {
+/** `clawed`: the demon's sheet carries the `claw` clip, as it will once baked (FS-VHGE7 §E). */
+function fixtureArt({ clawed = false } = {}): ArtLibrary {
   const atlas = (image: string) => ({
     image,
     width: 1024,
@@ -74,7 +79,15 @@ function fixtureArt(): ArtLibrary {
       char_knight_base: creatureSheet("characters-1", 80),
       creature_ghoul_base: creatureSheet("creatures-1", 72),
       creature_troll_base: creatureSheet("creatures-0", 96),
-      creature_demon_base: creatureSheet("creatures-1", 110),
+      creature_demon_base: clawed
+        ? (() => {
+            const sheet = creatureSheet("creatures-1", 110);
+            return {
+              ...sheet,
+              animations: { ...sheet.animations, claw: clip(12, false, 4) },
+            };
+          })()
+        : creatureSheet("creatures-1", 110),
     },
   };
   return new ArtLibrary(manifest, quiet);
@@ -158,6 +171,10 @@ function fakeSprite() {
       sprite.anims.currentAnim = { key: c.key, frames };
       sprite.anims.currentFrame = frames[c.startFrame ?? 0];
       return sprite;
+    },
+    /** The clip's progress, as the animation advancing would have it. */
+    at(index: number) {
+      sprite.anims.currentFrame = frames[index];
     },
     setPosition(x: number, y: number) {
       sprite.x = x;
@@ -461,6 +478,7 @@ describe("size reads as threat tier (req 35)", () => {
     ["ghost", SIZE_TIERS.fodder],
     ["troll", SIZE_TIERS.brute],
     ["demon", SIZE_TIERS.boss],
+    ["blood_demon", SIZE_TIERS.boss],
   ])("should stand a %s inside its tier's band", (archetype, tier) => {
     const ratio = heightOverPlayer(archetype);
     expect(ratio).toBeGreaterThanOrEqual(tier.min);
@@ -836,6 +854,333 @@ describe("the demon (req 41)", () => {
     expect(sprites[0].tint).toBeNull();
     expect(SIZE_TIERS.boss.min).toBeGreaterThanOrEqual(1.8);
     expect(texts.map((t) => t.content)).toEqual(["Demon · Lv 7"]);
+  });
+});
+
+// FS-VHGE7 §C R26–28, §E R41: the blood demon, drawn from its own baked sheet (I-VHGE7-6), which
+// replaced I-VHGE7-3's placeholder (the green demon's sheet under an oxblood wash).
+describe("the blood demon (FS-VHGE7 §C, §E R41)", () => {
+  const bloodDemon = (fields: Partial<MonsterState> = {}) =>
+    monster({
+      entity_id: "blood",
+      archetype: "blood_demon",
+      name: "Blood Demon",
+      boss: true,
+      level: 9,
+      ...fields,
+    });
+
+  it("should be a boss on its own baked sheet, untinted, not the troll fallback", () => {
+    expect(monsterLook("blood_demon")).toEqual({
+      sheet: "creature_blood_demon_base",
+      tier: "boss",
+    });
+    expect(monsterLook("blood_demon")).not.toBe(FALLBACK_LOOK);
+    expect(baked.has("creature_blood_demon_base")).toBe(true);
+  });
+
+  it("should draw it beside a green demon, each from its own sheet, both as baked and boss size", () => {
+    const { stage, sprites, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([
+      monster({
+        entity_id: "green",
+        archetype: "demon",
+        name: "Demon",
+        boss: true,
+        level: 9,
+      }),
+      bloodDemon(),
+    ]);
+    roster.update(FRAME);
+
+    const [green, blood] = sprites;
+    expect(green.anims.currentAnim?.key).toMatch(/^creature_demon_base\//);
+    expect(blood.anims.currentAnim?.key).toMatch(
+      /^creature_blood_demon_base\//,
+    );
+    expect(blood.scaleX).toBe(monsterScale(monsterLook("blood_demon"), baked));
+    for (const s of [green, blood]) expect(s.tint).toBeNull();
+    expect(texts.map((t) => t.content)).toEqual([
+      "Demon · Lv 9",
+      "Blood Demon · Lv 9",
+    ]);
+  });
+
+  it("should return to its baked colours after a hit's flash", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([bloodDemon()]);
+    roster.sync([bloodDemon({ current_health: 10 })]);
+    expect(sprites[0].tint).toBe(palette.damage);
+    roster.update(1000);
+    expect(sprites[0].tint).toBeNull();
+  });
+});
+
+// FS-VHGE7 §F (I-VHGE7-7): the blood demon's art on its own group, fetched when one first appears.
+describe("the blood demon's art on demand (FS-VHGE7 §F)", () => {
+  const PAGE = "blood_demon-0";
+  const clawed = (atlas: string, crown: number) => {
+    const sheet = creatureSheet(atlas, crown);
+    return {
+      ...sheet,
+      animations: { ...sheet.animations, claw: clip(12, false, 5) },
+    };
+  };
+  const fixture = (logger = quiet) => {
+    const atlas = (image: string) => ({
+      image,
+      width: 1024,
+      height: 1024,
+      sha256: "a".repeat(64),
+    });
+    const manifest: ArtManifest = {
+      version: 1,
+      tile: { width: 64, height: 32 },
+      facings: ["e", "se", "s", "sw", "w", "nw", "n", "ne"],
+      atlases: {
+        "characters-1": atlas("characters-1.png"),
+        "boss-0": atlas("boss-0.png"),
+        [PAGE]: atlas("blood_demon-0.png"),
+      },
+      sheets: {
+        char_knight_base: creatureSheet("characters-1", 80),
+        creature_demon_base: clawed("boss-0", 110),
+        creature_blood_demon_base: clawed(PAGE, 140),
+      },
+    };
+    return new ArtLibrary(manifest, logger, new Set(["characters-1", "boss-0"]));
+  };
+  const fetcher = () => {
+    const asked: string[] = [];
+    let landed = () => {};
+    const fetch: MonsterArtFetch["fetch"] = (group, onLanded) => {
+      asked.push(group);
+      landed = onLanded;
+    };
+    return { fetch, asked, land: () => landed() };
+  };
+  const bloodDemon = (fields: Partial<MonsterState> = {}) =>
+    monster({
+      entity_id: "blood",
+      archetype: "blood_demon",
+      name: "Blood Demon",
+      boss: true,
+      level: 9,
+      ...fields,
+    });
+  /** A roster with one blood demon on stand-in; `land()` brings its art in. */
+  const met = (fields: Partial<MonsterState> = {}, logger = quiet) => {
+    const art = fixture(logger);
+    const { stage, sprites, texts } = fakeStage();
+    const source = fetcher();
+    const roster = new MonsterRoster(stage, art, undefined, undefined, source);
+    roster.sync([bloodDemon(fields)]);
+    roster.update(FRAME);
+    return {
+      art,
+      roster,
+      sprites,
+      texts,
+      asked: source.asked,
+      land: () => {
+        art.admit([PAGE]);
+        source.land();
+      },
+    };
+  };
+
+  it("should draw the stand-in look until the group is resident, and its own after (R46)", () => {
+    const art = fixture();
+    expect(drawnLook("blood_demon", art)).toEqual({
+      sheet: "creature_demon_base",
+      tier: "boss",
+      tint: palette.bloodDemonStandIn,
+    });
+    art.admit([PAGE]);
+    expect(drawnLook("blood_demon", art)).toEqual(monsterLook("blood_demon"));
+    expect(drawnLook("demon", art)).toEqual(monsterLook("demon"));
+  });
+
+  it("should keep the stand-in's tint in the oxblood family (R46)", () => {
+    expect(hue(palette.bloodDemonStandIn)).toBeLessThanOrEqual(hue(palette.ember));
+    expect(hue(palette.bloodDemonStandIn)).toBeLessThan(hue(palette.interactable));
+    expect(hue(palette.bloodDemonStandIn)).toBeLessThan(hue(palette.safe));
+  });
+
+  it("should draw the stand-in from the first frame it is listed: no placeholder, no warning (R46)", () => {
+    const warn = vi.fn();
+    const { art, sprites, texts } = met({}, { warn });
+
+    expect(sprites[0].texture).not.toBe("art:placeholder");
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_demon_base\/idle\//);
+    expect(sprites[0].tint).toBe(palette.bloodDemonStandIn);
+    expect(sprites[0].scaleX).toBe(monsterScale(drawnLook("blood_demon", art), art));
+    expect(texts[0].content).toBe("Blood Demon · Lv 9");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("should play the green sheet's claw as the stand-in (R46)", () => {
+    const { roster, sprites } = met();
+    roster.sync([bloodDemon({ action: "claw" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_demon_base\/claw\//);
+  });
+
+  it("should ask for the group when a snapshot lists one, and not when none is listed (R44)", () => {
+    const art = fixture();
+    const { stage } = fakeStage();
+    const { fetch, asked } = fetcher();
+    const roster = new MonsterRoster(stage, art, undefined, undefined, { fetch });
+    roster.sync([monster({ archetype: "demon" })]);
+    expect(asked).toEqual([]);
+    roster.sync([bloodDemon()]);
+    expect(asked).toEqual(["blood_demon"]);
+  });
+
+  it("should ask for the group on a monster hidden by the dark: being listed is the trigger (R44)", () => {
+    const { roster, sprites, asked } = met();
+    roster.hideWhere(() => true);
+    expect(sprites[0].visible).toBe(false);
+    const before = asked.length;
+    roster.sync([bloodDemon()]);
+    expect(asked.length).toBe(before + 1);
+  });
+
+  it("should stop asking once the art is in (R44)", () => {
+    const { roster, asked, land } = met();
+    const before = asked.length;
+    land();
+    roster.sync([bloodDemon()]);
+    expect(asked.length).toBe(before);
+  });
+
+  it("should re-dress each drawn blood demon on its own sprite when the group lands (R48)", () => {
+    const { art, roster, sprites, land } = met({ action: "move" });
+    const [sprite] = sprites;
+    const texturesBefore = sprite.texture;
+
+    land();
+
+    expect(sprites).toEqual([sprite]);
+    expect(sprite.destroyed).toBe(false);
+    expect(sprite.visible).toBe(true);
+    expect(sprite.texture).not.toBe(texturesBefore);
+    expect(sprite.texture).toBe(`art:${PAGE}`);
+    expect(sprite.tint).toBeNull();
+    expect(sprite.anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\/walk\//);
+    const size = monsterScale(monsterLook("blood_demon"), art);
+    expect(sprite.scaleX).toBe(size);
+    expect(size).not.toBe(monsterScale(drawnLook("demon", art), art));
+
+    roster.update(FRAME);
+    expect(sprite.anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\/walk\//);
+  });
+
+  it("should carry a running slam across the swap, at the frame it had reached (R48)", () => {
+    const { roster, sprites, land } = met({ action: "attack" });
+    const [sprite] = sprites;
+    expect(sprite.plays.at(-1)?.key).toMatch(/^creature_demon_base\/attack\//);
+    sprite.at(3);
+
+    land();
+
+    expect(sprite.plays.at(-1)).toEqual({
+      key: expect.stringMatching(/^creature_blood_demon_base\/attack\//),
+      startFrame: 3,
+    });
+    roster.update(FRAME);
+    expect(sprite.plays.at(-1)?.startFrame).toBe(3);
+  });
+
+  it("should read the plate height from the new sheet's crown (R48)", () => {
+    const { roster, sprites, texts, land } = met();
+    const [sprite] = sprites;
+    land();
+    roster.update(FRAME);
+    const scale = sprite.scaleY;
+    expect(texts[0].visible).toBe(true);
+    expect(texts[0].y).toBeLessThan(sprite.y - 140 * scale + 1);
+  });
+
+  it("should not replay a corpse's fall across the swap", () => {
+    const { roster, sprites, land } = met({ action: "dead" });
+    const [sprite] = sprites;
+    const last = 6;
+    sprite.at(last);
+    land();
+    roster.update(FRAME);
+    expect(sprite.plays.at(-1)).toEqual({
+      key: expect.stringMatching(/^creature_blood_demon_base\/death\//),
+      startFrame: last,
+    });
+  });
+
+  it("should lay a stand-in that dies unseen on the green sheet's last frame", () => {
+    const { roster, sprites } = met();
+    const [sprite] = sprites;
+    roster.hideWhere(() => true);
+    roster.sync([bloodDemon({ action: "dead" })]);
+    roster.update(FRAME);
+    expect(sprite.plays.at(-1)).toEqual({
+      key: expect.stringMatching(/^creature_demon_base\/death\//),
+      startFrame: 6,
+    });
+  });
+
+  it("should let a damage flash finish, then wear its own colours, across the swap", () => {
+    const { roster, sprites, land } = met();
+    const [sprite] = sprites;
+    roster.sync([bloodDemon({ current_health: 1 })]);
+    expect(sprite.tint).toBe(palette.damage);
+    land();
+    expect(sprite.tint).toBe(palette.damage);
+    roster.update(1000);
+    expect(sprite.tint).toBeNull();
+  });
+
+  it("should leave a green demon on the floor alone at the swap, and keep the two distinct", () => {
+    const art = fixture();
+    const { stage, sprites } = fakeStage();
+    const { fetch, land } = fetcher();
+    const roster = new MonsterRoster(stage, art, undefined, undefined, { fetch });
+    roster.sync([monster({ entity_id: "green", archetype: "demon" }), bloodDemon()]);
+    roster.update(FRAME);
+    const [green, blood] = sprites;
+    expect(green.tint).toBeNull();
+    expect(blood.tint).toBe(palette.bloodDemonStandIn);
+
+    art.admit([PAGE]);
+    land();
+
+    expect(green.anims.currentAnim?.key).toMatch(/^creature_demon_base\//);
+    expect(blood.anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
+  });
+
+  it("should draw a blood demon first listed after the group landed from its own sheet directly (R48)", () => {
+    const { roster, sprites, land, art } = met();
+    land();
+    roster.sync([bloodDemon(), bloodDemon({ entity_id: "second" })]);
+    roster.update(FRAME);
+    expect(sprites[1].anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
+    expect(sprites[1].tint).toBeNull();
+    expect(art.has("creature_blood_demon_base")).toBe(true);
+  });
+
+  it("should keep the art through a climb: the next floor's blood demon draws its own sheet, with no new ask (R49)", () => {
+    const { roster, sprites, asked, land } = met();
+    land();
+    const before = asked.length;
+
+    roster.sync([]);
+    roster.sync([bloodDemon({ entity_id: "next_floor" })]);
+    roster.update(FRAME);
+
+    expect(sprites).toHaveLength(2);
+    expect(sprites[1].anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
+    expect(sprites[1].tint).toBeNull();
+    expect(asked.length).toBe(before);
   });
 });
 
@@ -1755,5 +2100,154 @@ describe("the overhead bar's damage chip (FS-48CTQ §F.22)", () => {
     roster.sync(herd(60, 60));
     roster.update(FRAME);
     expect(chipOf(bars[CHIP_BUDGET])).toBeDefined();
+  });
+});
+
+// FS-VHGE7 §D R31–33 (I-VHGE7-4): a demon's fire claw. The clip plays `claw` where the sheet has
+// one and `attack` until it is baked (I-VHGE7-6); the flame plays once per turn into `claw`, only
+// for a shown demon, and never on first sight (a reconnect, a demon coming back into interest).
+describe("the fire claw (FS-VHGE7 §D)", () => {
+  const demon = (fields: Partial<MonsterState> = {}) =>
+    monster({
+      entity_id: "boss",
+      archetype: "demon",
+      name: "Demon",
+      boss: true,
+      level: 7,
+      ...fields,
+    });
+
+  /** A roster whose claw effects are recorded: the monster and the drawn point each played at. */
+  function clawStage(art = fixtureArt()) {
+    const { stage, sprites } = fakeStage();
+    const played: { id: string; at: { x: number; y: number } }[] = [];
+    const effects: MonsterEffects = {
+      claw: (m, at) => played.push({ id: m.entity_id, at: { ...at } }),
+    };
+    const roster = new MonsterRoster(stage, art, undefined, effects);
+    return { roster, sprites, played };
+  }
+
+  it("should map the claw action to the claw clip, and to the attack clip on a sheet without one", () => {
+    const facing = { x: -1, y: 0 };
+    expect(monsterClip({ action: "claw", facing }, "se").animation).toBe("claw");
+    expect(
+      monsterClip({ action: "claw", facing }, "se", 0, 1, (c) => c !== "claw")
+        .animation,
+    ).toBe("attack");
+    // the fallback is the claw's alone: no other clip is swapped for a missing one
+    expect(
+      monsterClip({ action: "attack", facing }, "se", 0, 1, () => false)
+        .animation,
+    ).toBe("attack");
+  });
+
+  it("should play the attack clip for a claw on a demon sheet baked without a claw clip", () => {
+    const { roster, sprites } = clawStage();
+    roster.sync([demon({ action: "claw" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toBe(
+      "creature_demon_base/attack/4",
+    );
+  });
+
+  it("should play the claw clip, from its first frame, once the sheet carries one", () => {
+    const { roster, sprites } = clawStage(fixtureArt({ clawed: true }));
+    roster.sync([demon()]);
+    roster.update(FRAME);
+    roster.sync([demon({ action: "claw" })]);
+    roster.update(FRAME);
+    expect(sprites[0].plays.at(-1)).toEqual({
+      key: "creature_demon_base/claw/4",
+      startFrame: 0,
+    });
+  });
+
+  it.each([
+    ["demon", "Demon", "creature_demon_base"],
+    ["blood_demon", "Blood Demon", "creature_blood_demon_base"],
+  ] as const)(
+    "should play the %s's own baked claw clip, not the attack (FS-VHGE7 §E R38)",
+    (archetype, name, sheet) => {
+      const { roster, sprites } = clawStage(baked);
+      roster.sync([demon({ archetype, name })]);
+      roster.update(FRAME);
+      roster.sync([demon({ archetype, name, action: "claw" })]);
+      roster.update(FRAME);
+      expect(sprites[0].plays.at(-1)?.key).toMatch(
+        new RegExp(`^${sheet}/claw/\\d$`),
+      );
+    },
+  );
+
+  it("should play the flame once on the turn into claw, not on every claw snapshot", () => {
+    const { roster, played } = clawStage();
+    roster.sync([demon()]);
+    roster.update(FRAME);
+    roster.sync([demon({ action: "claw" })]);
+    roster.sync([demon({ action: "claw" })]);
+    roster.update(FRAME);
+    roster.sync([demon({ action: "claw" })]);
+    expect(played).toEqual([{ id: "boss", at: { x: 400, y: 300 } }]);
+  });
+
+  it("should play it again for the next claw, after the demon has stood between swings", () => {
+    const { roster, played } = clawStage();
+    for (const action of ["move", "claw", "idle", "claw"] as const) {
+      roster.sync([demon({ action })]);
+      roster.update(FRAME);
+    }
+    expect(played).toHaveLength(2);
+  });
+
+  it("should play it at the demon's drawn position, eased toward the server's", () => {
+    const { roster, played } = clawStage();
+    roster.sync([demon({ position: { x: 400, y: 300 } })]);
+    roster.update(FRAME);
+    roster.sync([demon({ action: "claw", position: { x: 500, y: 300 } })]);
+    expect(played[0].at).toEqual({ x: 400, y: 300 });
+  });
+
+  it("should play nothing for a demon the dark or the fog hides", () => {
+    const { roster, played } = clawStage();
+    roster.sync([demon()]);
+    roster.update(FRAME);
+    roster.hideWhere(() => true);
+    roster.sync([demon({ action: "claw" })]);
+    expect(played).toEqual([]);
+  });
+
+  it("should play nothing for a demon first seen mid-claw: a reconnect replays no stale flame", () => {
+    const { roster, sprites, played } = clawStage(fixtureArt({ clawed: true }));
+    roster.sync([demon({ action: "claw" })]);
+    roster.update(FRAME);
+    // the clip is shown from its start all the same
+    expect(sprites[0].plays.at(-1)).toEqual({
+      key: "creature_demon_base/claw/4",
+      startFrame: 0,
+    });
+    // a reconnect: the roster is torn down and rebuilt from the next snapshot, still mid-claw
+    roster.clear();
+    roster.sync([demon({ action: "claw" })]);
+    roster.update(FRAME);
+    expect(played).toEqual([]);
+  });
+
+  it("should play nothing for a demon that falls, nor for a slam", () => {
+    const { roster, played } = clawStage();
+    for (const action of ["idle", "attack", "idle", "dead"] as const)
+      roster.sync([demon({ action })]);
+    expect(played).toEqual([]);
+  });
+
+  it("should draw without any effects handed in", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([demon()]);
+    roster.sync([demon({ action: "claw" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toBe(
+      "creature_demon_base/attack/4",
+    );
   });
 });

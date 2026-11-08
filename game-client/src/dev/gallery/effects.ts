@@ -13,6 +13,7 @@ import { AimLine } from "@/render/effects/aimLine";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
+import { playDemonClaw } from "@/render/effects/demonClaw";
 import { playDeathDust } from "@/render/effects/death";
 import { EntranceMarker } from "@/render/effects/entrance";
 import { playEscape } from "@/render/effects/escape";
@@ -98,6 +99,16 @@ export const EFFECT_CARDS: EffectCard[] = [
     module: "cut",
     name: "Mercenary cut",
     demo: (s) => new CutFx(s.scene).play(s.at, s.aim),
+  },
+  {
+    module: "demonClaw",
+    name: "Demon fire claw",
+    // as the monster roster plays it: from the feet, swiping along the facing (FS-VHGE7 §D R32)
+    demo: (s) =>
+      playDemonClaw(s.fx, s.owner, s.at, {
+        x: s.aim.x - s.at.x,
+        y: s.aim.y - s.at.y,
+      }),
   },
   {
     module: "death",

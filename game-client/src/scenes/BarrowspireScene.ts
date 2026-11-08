@@ -105,7 +105,7 @@ import {
   type Point,
   type WorldPlane,
 } from "@/render/iso";
-import { artSprite, preloadArt, registerArt } from "@/render/art/phaser";
+import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
@@ -125,8 +125,14 @@ import { projectileFlightOf } from "@/render/effects/flights";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
+import { playDemonClaw } from "@/render/effects/demonClaw";
 import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
-import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
+import {
+  MonsterRoster,
+  phaserMonsterStage,
+  type MonsterEffects,
+  type MonsterTargeting,
+} from "@/render/creatures";
 import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
@@ -876,6 +882,12 @@ export class BarrowspireScene extends Phaser.Scene {
     },
     hover: (monster) =>
       this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
+  };
+  /** What a monster's actions play on the world (FS-VHGE7 §D R32–33): a demon's fire claw. */
+  private readonly monsterEffects: MonsterEffects = {
+    claw: (monster, at) => {
+      if (this.fx) playDemonClaw(this.fx, monster.entity_id, at, monster.facing);
+    },
   };
   /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
   private markers: MarkerMode = "overhead";
@@ -3042,7 +3054,13 @@ export class BarrowspireScene extends Phaser.Scene {
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
-    this.monsters = new MonsterRoster(phaserMonsterStage(this), this.art, this.monsterTargeting);
+    this.monsters = new MonsterRoster(
+      phaserMonsterStage(this),
+      this.art,
+      this.monsterTargeting,
+      this.monsterEffects,
+      onDemandArt(this, this.art),
+    );
     // the party frames cut their busts from the class sheets just registered (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
     this.containerView = new ContainerView(

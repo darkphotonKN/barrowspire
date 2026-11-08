@@ -17,12 +17,14 @@ export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const
  * Those, the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
  * raised into and then held on its last frame; and a class's attack on the move
  * (FS-HF0WW, FS-3V7GC): `walk_attack`, the attack from the waist up over the walk from the
- * waist down, lasting exactly as long as the attack, which the four classes' sheets carry.
+ * waist down, lasting exactly as long as the attack, which the four classes' sheets carry; and
+ * a demon's fire claw (FS-VHGE7 §D R31), which only the demons' sheets carry once baked.
  */
 export type CharacterAnimation =
   | (typeof CHARACTER_ANIMATIONS)[number]
   | "parry"
-  | "walk_attack";
+  | "walk_attack"
+  | "claw";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at

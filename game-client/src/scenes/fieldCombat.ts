@@ -2,9 +2,10 @@ import type * as Phaser from "phaser";
 import type { ClientGameState, PlayerState, ProjectileState } from "@/types/gameState";
 import { screenToWorld, type Point } from "@/render/iso";
 import type { ArtLibrary } from "@/render/art/library";
+import { onDemandArt } from "@/render/art/phaser";
 import type { Swing } from "@/render/art/character";
 import type { LightMap } from "@/render/lighting";
-import { MonsterRoster, phaserMonsterStage, type MonsterTargeting } from "@/render/creatures";
+import { MonsterRoster, phaserMonsterStage, type MonsterEffects, type MonsterTargeting } from "@/render/creatures";
 import { PlayerCombat, type CastButton, type CombatLook, type CombatPort } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import { EffectsRuntime } from "@/render/effects/runtime";
@@ -16,6 +17,7 @@ import { playSlash } from "@/render/effects/slash";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
+import { playDemonClaw } from "@/render/effects/demonClaw";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
 import { viewport } from "@/render/viewport";
@@ -209,8 +211,15 @@ export function fieldCombatOnScene(
 
   let charge: Charge | undefined;
 
+  // what a monster's actions play on the field, as on a run floor (FS-VHGE7 §D R32–33): a
+  // demon's fire claw, so one in a field (dev_test_room's) claws with its flame
+  const monsterEffects: MonsterEffects = {
+    claw: (monster, at) => playDemonClaw(fx, monster.entity_id, at, monster.facing),
+  };
+
   const combat = new FieldCombat({
-    roster: (targeting) => new MonsterRoster(phaserMonsterStage(scene), art, targeting),
+    roster: (targeting) =>
+      new MonsterRoster(phaserMonsterStage(scene), art, targeting, monsterEffects, onDemandArt(scene, art)),
     port: {
       sendMessage: (action, payload) => socketManager.sendMessage(action, payload),
       later: (ms, fn) => scene.time.delayedCall(ms, fn),

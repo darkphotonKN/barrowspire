@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { RESIDENT_ART_PAGES, artLoaderStandin, shippedManifest } from "./artLoader.standin";
 import { atlasTextureKey } from "./library";
-import { preloadArt, registerArt, type ArtScene } from "./phaser";
+import { onDemandArt, preloadArt, registerArt, type ArtScene } from "./phaser";
 import { RESIDENT_ART, SCENE_ART, fieldArt, type SceneGroups } from "./sceneArt";
 
 const manifest = shippedManifest();
@@ -63,7 +63,7 @@ describe("eviction once the next scene has loaded (FS-C4JWH §C, ADR-0059)", () 
   it("should take every animation on an evicted page with it, and keep those on the pages kept", () => {
     const art = after(SCENE_ART.BarrowspireScene);
     const knight = sheetAnims("char_knight_base");
-    const run = [...sheetAnims("creature_ghoul_base"), ...sheetAnims("creature_troll_base"), ...sheetAnims("creature_demon_base")];
+    const run = ["creature_ghoul_base", "creature_troll_base", "creature_demon_base"].flatMap(sheetAnims);
     expect(run.length).toBeGreaterThan(0);
 
     const seen = enter(art, SCENE_ART.HubScene);
@@ -88,7 +88,7 @@ describe("eviction once the next scene has loaded (FS-C4JWH §C, ADR-0059)", () 
     ["the main menu", SCENE_ART.MainMenuScene],
     ["character creation", SCENE_ART.CharacterCreationScene],
   ])("should evict every scene-scoped group on entering %s", (_menu, groups) => {
-    const art = after(SCENE_ART.HubScene, pages("creatures-0", "creatures-1", "boss-0", "boss-1"));
+    const art = after(SCENE_ART.HubScene, pages("creatures-0", "creatures-1", "boss-0", "boss-1", "boss-2"));
 
     const seen = enter(art, groups);
 
@@ -221,6 +221,7 @@ describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
     expect(order).toEqual([
       "250 evicted art:boss-0",
       "250 evicted art:boss-1",
+      "250 evicted art:boss-2",
       "250 evicted art:creatures-0",
       "250 evicted art:creatures-1",
       "250 create",
@@ -239,6 +240,7 @@ describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
       "300 bar shown",
       "400 evicted art:boss-0",
       "400 evicted art:boss-1",
+      "400 evicted art:boss-2",
       "400 evicted art:creatures-0",
       "400 evicted art:creatures-1",
       "1050 bar destroyed",
@@ -267,7 +269,8 @@ describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
     vi.advanceTimersByTime(300);
     art.finish();
 
-    expect(bar.progress).toEqual([0, 0.25, 0.5, 0.75, 1]);
+    // five pages: the creatures' two and the boss's three
+    expect(bar.progress.map((p) => Math.round(p * 100) / 100)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1]);
   });
 
   it("should show no bar when the scene queued nothing", () => {
@@ -443,7 +446,7 @@ describe("downloads a stopped scene left in flight (FS-C4JWH Edge States: a worl
     art.finish();
 
     expect(artKeys(art.textures.getTextureKeys())).toEqual(
-      artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1")]),
+      artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1", "boss-2")]),
     );
     expect(art.consoleErrors).toEqual([]);
   });
@@ -472,7 +475,43 @@ describe("downloads a stopped scene left in flight (FS-C4JWH Edge States: a worl
 
     art.landStrays();
 
-    expect(seen.textures).toEqual(artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1")]));
+    expect(seen.textures).toEqual(artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1", "boss-2")]));
     expect(art.consoleErrors).toEqual([]);
+  });
+});
+
+// FS-VHGE7 §F R49: no new rule for the on-demand group, only the proof it is covered.
+describe("the on-demand group is evicted as any scene-scoped one (FS-VHGE7 §F R49)", () => {
+  /** A run that has met a blood demon: the group fetched and registered on its loader. */
+  const runWithBlood = () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+    const library = registerArt(art.scene as unknown as ArtScene, SCENE_ART.BarrowspireScene, { warn: vi.fn() });
+    onDemandArt(art.scene as unknown as Phaser.Scene, library).fetch("blood_demon", vi.fn());
+    return art;
+  };
+  const blood = pages(...groupPages("blood_demon"));
+
+  it("should have the group's pages and animations while the run holds them", () => {
+    const art = runWithBlood();
+    expect(blood.length).toBeGreaterThan(0);
+    for (const key of blood) expect(art.textures.exists(key)).toBe(true);
+    expect(art.anims.list.has("creature_blood_demon_base/idle/0")).toBe(true);
+  });
+
+  it("should free the group and its animations with the next scene's completed preload", () => {
+    const art = runWithBlood();
+
+    const seen = enter(art, SCENE_ART.HubScene);
+
+    expect(seen.textures).toEqual(artKeys([...resident, ...pages("folk-0")]));
+    for (const key of blood) expect(art.textures.exists(key)).toBe(false);
+    for (const key of sheetAnims("creature_blood_demon_base")) expect(art.anims.list.has(key)).toBe(false);
+  });
+
+  it("should load the run's own set afresh, without the group, on a later run", () => {
+    const art = runWithBlood();
+    enter(art, SCENE_ART.HubScene);
+    enter(art, SCENE_ART.BarrowspireScene);
+    for (const key of blood) expect(art.textures.exists(key)).toBe(false);
   });
 });

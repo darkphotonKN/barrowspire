@@ -468,6 +468,37 @@ export const EFFECTS = {
     light: { color: "umbraLight", radius: 120, intensity: { from: 0.75, to: 0 } },
   },
 
+  // ── Monsters: a demon's fire claw (FS-VHGE7 §D R32) ────────────────────
+  /**
+   * A flame swept through the swipe along the demon's facing and embers flung forward off it, with
+   * one brief ember flash. A hostile's attack effect, so from the torch-warmth ember family only:
+   * every channel tinted `ember` (FS-VHGE7 §D R32). Never amber, which means *interactable*.
+   * Quick, as the claw has no wind-up: it is read by this as it lands. *Starting values.*
+   */
+  demonClaw: {
+    timing: { kind: "oneShot", durationMs: 220 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_fire_core",
+      tint: ["ember"],
+      scale: still,
+      alpha: { from: 0.95, to: 0 },
+      sweep: 1.4,
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["ember"],
+      count: 8,
+      scale: still,
+      alpha: { from: 1, to: 0 },
+      speed: { from: 40, to: 110 },
+      // relative to the reverse of the facing: a forward fan, 50° either side of it
+      angle: { from: 130, to: 230 },
+      accel: { x: 0, y: -20 },
+    },
+    light: { color: "ember", radius: 120, intensity: { from: 0.8, to: 0 } },
+  },
+
   // ── Hit, death, escape (§G) ─────────────────────────────────────────────
   /** Part of the way toward oxblood, easing back to untinted. Applied by the hit module. */
   hit: {
