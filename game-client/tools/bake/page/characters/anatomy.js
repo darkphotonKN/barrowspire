@@ -272,18 +272,121 @@ export function boneLimbs(rig, mat) {
   }
 }
 
-/** A plain human head: cranium, face and jaw mass, nose. */
+// The human head (FS-67QQY §A): a distance field, meshed by pushing a sphere out to its surface,
+// and a second, slightly larger, as the shell the face is painted on (face.js).
+
+/** Polynomial smooth min of two distances, softness `k` (Quílez). */
+const smin = (a, b, k) => {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - (h * h * k) / 4;
+};
+const smax = (a, b, k) => -smin(-a, -b, k);
+
+/** Signed distance to an ellipsoid at `c` with radii `r` (Quílez's bound, close near the surface). */
+function ellipsoidSd(x, y, z, c, r) {
+  const [px, py, pz] = [x - c[0], y - c[1], z - c[2]];
+  const k0 = Math.hypot(px / r[0], py / r[1], pz / r[2]);
+  const k1 = Math.hypot(px / (r[0] * r[0]), py / (r[1] * r[1]), pz / (r[2] * r[2]));
+  return k1 > 0 ? (k0 * (k0 - 1)) / k1 : -Math.min(...r);
+}
+
+/**
+ * The head as a distance field (R1, R3): the smooth union of cranium and jaw, its upper face
+ * pressed by a smooth max to the face plane, which passes through the front of the mouth, leans
+ * back toward the brow and curves round the cheeks.
+ */
+function headSd(hy, hz, r, jaw) {
+  const cranium = { c: [0, hy + 0.058, hz - 0.002], r: [0.92 * r, 1.02 * r, 1.0 * r] };
+  const chin = { c: [0, hy + 0.028, hz + 0.016], r: [0.72 * jaw * r, 0.72 * r, 0.78 * r] };
+  return (x, y, z) => {
+    const skull = smin(ellipsoidSd(x, y, z, cranium.c, cranium.r), ellipsoidSd(x, y, z, chin.c, chin.r), 0.014);
+    const plane = z - (hz + 0.058 - 0.17 * (y - (hy + 0.054)) - (0.5 * x * x) / r);
+    return smax(skull, plane, 0.012);
+  };
+}
+
+/**
+ * A sphere pushed out along its rays from `c` to where `sd` crosses `off` (bisection), in model
+ * units: one closed mesh, no seam across the face (R2).
+ */
+function surface(sd, c, off, H, wide, high) {
+  const g = new THREE.SphereGeometry(1, wide, high);
+  const p = g.attributes.position;
+  const d = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    d.fromBufferAttribute(p, i).normalize();
+    let lo = 0;
+    let hi = 0.2;
+    for (let k = 0; k < 40; k++) {
+      const t = (lo + hi) / 2;
+      if (sd(c[0] + d.x * t, c[1] + d.y * t, c[2] + d.z * t) - off < 0) lo = t;
+      else hi = t;
+    }
+    const t = (lo + hi) / 2;
+    p.setXYZ(i, (c[0] + d.x * t) * H, (c[1] + d.y * t) * H, (c[2] + d.z * t) * H);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * The frame the face is painted in (face.js), in head coordinates (H, y from the head joint): the
+ * canvas covers x -0.06…0.06 and y -0.02…0.10 (R6).
+ */
+export const FACE_CANVAS = { left: -0.06, below: -0.02, span: 0.12 };
+
+/**
+ * The head and its paint shell for a rig (`jaw` scales the jaw's width). Both are in model units
+ * at absolute head coordinates, so they attach to the head bone at the origin. The shell sits
+ * 0.0006 H off the head, its UVs projected straight from the front; a vertex facing away maps to
+ * the canvas's transparent corner, so nothing smears round the back (R6).
+ */
+function headSurface(rig, jaw = 1) {
+  const [, hy, hz] = J(rig, "head");
+  const sd = headSd(hy, hz, rig.p.headR, jaw);
+  const c = [0, hy + 0.048, hz + 0.004];
+  const head = surface(sd, c, 0, rig.H, 48, 36);
+  const shell = surface(sd, c, 0.0006, rig.H, 64, 48);
+  const { left, below, span } = FACE_CANVAS;
+  const p = shell.attributes.position;
+  const n = shell.attributes.normal;
+  const uv = shell.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    if (n.getZ(i) < 0.2) uv.setXY(i, 0, 0);
+    else uv.setXY(i, (p.getX(i) / rig.H - left) / span, (p.getY(i) / rig.H - hy - below) / span);
+  }
+  return { head, shell };
+}
+
+/**
+ * A plain human head (FS-67QQY): cranium and jaw as one seamless surface, the upper face pressed
+ * flat, and a nose. `o.jaw` scales the jaw's width; `o.nose: false` drops the nose. The painted
+ * face and the brows go over it with `face`.
+ */
 export function head(rig, mat, o = {}) {
   const [, hy, hz] = J(rig, "head");
-  const r = rig.p.headR;
   const H = rig.H;
-  attach(rig, "head", ellipsoid(r * 0.92 * H, r * 1.02 * H, r * 1.0 * H, 20), mat, [0, hy + 0.058, hz - 0.002]);
-  const jaw = o.jaw ?? 1;
-  attach(rig, "head", ellipsoid(r * 0.72 * jaw * H, r * 0.72 * H, r * 0.78 * H, 16), mat, [0, hy + 0.028, hz + 0.016]);
+  const { head: skull, shell } = headSurface(rig, o.jaw ?? 1);
+  attach(rig, "head", skull, mat, [0, 0, 0]);
+  rig.faceShell = shell;
   if (o.nose !== false) {
+    // today's cone, 0.004 H lower, riding the face plane (R5)
     const nose = new THREE.ConeGeometry(0.009 * H, 0.024 * H, 6);
-    attach(rig, "head", nose, mat, [0, hy + 0.046, hz + 0.066], { rx: 1.35 });
+    attach(rig, "head", nose, mat, [0, hy + 0.042, hz + 0.058 + 0.006 + 0.17 * 0.004], { rx: 1.35 });
   }
+}
+
+/**
+ * The face over a `head`: the shared painted face in `paint` (face.js `faceMaterial`), then the
+ * brows over it in `brow` (face.js `browMaterial`, from the character's hair tone, R10), each on
+ * the head's shell. Neither casts a shadow. Returns the brows, so a palette can recolour them.
+ */
+export function face(rig, paint, brow) {
+  if (!rig.faceShell) throw new Error("anatomy: face before head");
+  attach(rig, "head", rig.faceShell, paint, [0, 0, 0], { noShadow: true }).renderOrder = 1;
+  const m = attach(rig, "head", rig.faceShell.clone(), brow, [0, 0, 0], { noShadow: true });
+  m.renderOrder = 2;
+  return m;
 }
 
 /** Hands: a closed grip (or claws) on each hand bone. */

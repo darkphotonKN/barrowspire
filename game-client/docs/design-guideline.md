@@ -286,6 +286,19 @@ lit) while the player stands inside.
   one-handed with no shield. He is broad in the shoulder and heavy in the arm: never the
   knight's long mail, helm and shield, never the archer's hood and cloak. *(Amended at the
   owner's pick, FS-MAMHR §H, 2026-10-31.)*
+- **Faces:** every human wears one shared face: the same eyes, nose and mouth on the knight,
+  archer, wizard, mercenary and every hub resident and NPC, men and women alike. A character is
+  told by hair, beard, jaw, figure and gear, never by a face of its own. The head is one smooth
+  surface with the upper face pressed flat like the lower, so no brow mass puffs out over the
+  eyes. The features are painted on a shell over the face, never sculpted: almond eyes with
+  whites and a dark iris, deep-set under a shaded brow, two soft nostrils, the mouth a lip tint
+  with a dark parting; the nose is the one modelled feature. The brows are painted on their own
+  layer in the character's hair tone darkened, so a flax-haired resident never wears raven
+  brows (a character with no hair showing takes the dark hair tone). A human's eyes are never
+  emissive: they take the scene's light like the rest of the face, and glowing eyes stay the
+  hostile channel. A new human character is built on `head()` and given `face()`
+  (`tools/bake/page/characters/anatomy.js`, `face.js`). *(Amended at the owner's pick,
+  2026-11-08.)*
 - **Enemies:** barrow/undead themes — skeletons, wraiths, revenants — for fodder and brutes;
   a boss may also be an infernal demon the Spire summons. In field worlds only, fodder and
   brutes may also be living animals (the boar first). Dark palette; **glowing eyes as the
