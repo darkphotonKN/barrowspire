@@ -199,6 +199,49 @@ Object.assign(MATERIALS, {
   },
 });
 
+// ── The Inn's plank floor (the great hall and taproom) ────────────────────────────────
+//
+// Wide oak boards, four to a tile along world x, kept: waxed and swept, darker and warmer than
+// the tower's old planks, pegged rather than nailed at the butt joints, with the dark of old
+// spills only here and there. The layout is fixed, as the tower's is.
+
+const IP_A = mix("barrowDeep", "barrowBrown", 0.45);
+const IP_B = mix("barrowBrown", "brass", 0.14);
+const IP_GAP = mix("pitch", "barrowDeep", 0.25);
+const IP_PEG = mix("barrowDeep", "charcoal", 0.5);
+const IP_SPILL = mix("charcoal", "barrowDeep", 0.4);
+const INN_PLANK_ROWS = [0, 1, 2, 3].map((b) => {
+  const cut = 0.15 + 0.7 * hash2(b, 0, 4460);
+  return { h: 0.25, shift: hash2(b, 1, 4461), w: [cut, 1 - cut] };
+});
+
+Object.assign(MATERIALS, {
+  plank_floor(u, v, s) {
+    const b = coursed(u, v, INN_PLANK_ROWS);
+    const board = b.r;
+    // grain along world x, with the long figure of quartered oak
+    const grain = fbm(u * 3, v * 32, 4470 + board, 3, 3);
+    const figure = vnoise(u * 8, v * 64, 4471 + board, 8);
+    const streak = vnoise(u * 2, v * 96, s + 61, 2);
+    const tone = 0.8 + 0.26 * hash2(board, b.i, 4472) + 0.08 * (hash2(board, b.i, s + 62) - 0.5);
+    let c = shade(mix(IP_A, IP_B, smoothstep(0.2, 0.85, grain)), tone * (0.86 + 0.2 * streak) * (figure > 0.8 ? 1.06 : 1));
+    // waxed sheen down the middle of a board, a little grime toward its edges
+    c = shade(c, 0.94 + 0.08 * smoothstep(0.02, 0.07, b.dv));
+    // an old spill here and there
+    c = mix(c, IP_SPILL, 0.4 * smoothstep(0.66, 0.82, fbm(u * 3, v * 3, s + 63, 3, 3)));
+    const gap = 1 - smoothstep(0.005, 0.014, b.dv);
+    const butt = 1 - smoothstep(0.003, 0.008, b.du);
+    c = mix(c, IP_GAP, Math.max(gap, butt * 0.85));
+    // two oak pegs by each butt joint
+    for (const dvv of [0.3, 0.7]) {
+      const d = Math.hypot(b.du - 0.03, (b.fv - dvv) * 0.25);
+      if (d < 0.009) c = mix(c, IP_PEG, 0.7 * (1 - d / 0.009));
+    }
+    const cup = smoothstep(0, 0.05, b.dv) * 0.5;
+    return { c, h: cup + grain * 0.16 + streak * 0.04 - gap * 0.4 };
+  },
+});
+
 const BASE_SEED = 1000;
 /** Key light, (world x, world y, up), toward the light: screen-left and high. */
 const L = (() => {

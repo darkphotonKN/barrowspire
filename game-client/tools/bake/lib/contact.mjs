@@ -10,6 +10,7 @@
 //   contact-forest-2x.png      the Forlorn Forest's trees and dressing at ×2 (FS-3QHQZ §C R30)
 //   contact-interior-2x.png    the town buildings' furniture and fittings at ×2 (FS-B0H2D §G R30)
 //   contact-building-2x.png    the building exteriors and stone cap at ×2 (FS-9PN7X §F)
+//   contact-hall-2x.png        the enlarged Inn's great hall and taproom at ×2
 //   index.html                 the same from the baked atlases themselves, labelled from the
 //                              manifest's `facings`, with each clip playing at its fps
 // The HTML reads the committed atlases, so it also proves the manifest's frame order.
@@ -253,7 +254,7 @@ export function writeReview({ sheets, facings, labels, manifest, theme }) {
     writeFileSync(join(REVIEW_DIR, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push("contact-tower-2x.png");
   }
-  for (const group of ["spire", "forest", "interior", "building"]) {
+  for (const group of ["spire", "forest", "interior", "building", "hall"]) {
     const set = sheets.filter((s) => s.group === group);
     if (!set.length) continue;
     const two = composeContact(set, facings, labels, theme, 2);

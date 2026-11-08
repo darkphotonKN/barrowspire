@@ -99,6 +99,12 @@
       "height": 72,
       "sha256": "4ea5e5353d1aad01287e5c737125248f53ac7baa89fdd2a781f6a2858ebed335"
     },
+    "hall-0": {
+      "image": "hall-0.png",
+      "width": 1992,
+      "height": 524,
+      "sha256": "f407da3438783a745b7680c94099abc438435b19a49322357dd17299d29a2144"
+    },
     "icons-0": {
       "image": "icons-0.png",
       "width": 1128,
@@ -348,6 +354,41 @@
         }
       },
       "source": "procedural: tools/bake/page/models/nature.js#bush",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "candelabra": {
+      "atlas": "hall-0",
+      "frameWidth": 100,
+      "frameHeight": 122,
+      "anchor": {
+        "x": 0.25,
+        "y": 0.8770491803278688
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1888,
+                "y": 230
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 0,
+          "y": -92
+        },
+        "radius": 200,
+        "color": "amber",
+        "flicker": 0.35
+      },
+      "source": "authored: tools/bake/page/models/hall.js#candelabra",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "cart": {
@@ -26215,6 +26256,49 @@
       "source": "procedural: tools/bake/page/ground.js#transitionTile(grass, dirt)",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "ground_plank_floor": {
+      "atlas": "hall-0",
+      "frameWidth": 64,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1392,
+                "y": 403
+              },
+              {
+                "x": 1458,
+                "y": 403
+              },
+              {
+                "x": 1524,
+                "y": 403
+              },
+              {
+                "x": 1590,
+                "y": 403
+              }
+            ]
+          ]
+        }
+      },
+      "mean": {
+        "r": 68,
+        "g": 54,
+        "b": 40
+      },
+      "source": "authored: tools/bake/page/ground.js#plank_floor",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "ground_planks": {
       "atlas": "tower-0",
       "frameWidth": 64,
@@ -26256,6 +26340,149 @@
         "b": 42
       },
       "source": "authored: tools/bake/page/ground.js#planks",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "hall_chair": {
+      "atlas": "hall-0",
+      "frameWidth": 99,
+      "frameHeight": 104,
+      "anchor": {
+        "x": 0.30303030303030304,
+        "y": 0.8269230769230769
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 200,
+                "y": 403
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 301,
+                "y": 403
+              }
+            ]
+          ]
+        },
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 402,
+                "y": 403
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 503,
+                "y": 403
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#hallChair",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "hall_chest": {
+      "atlas": "hall-0",
+      "frameWidth": 103,
+      "frameHeight": 80,
+      "anchor": {
+        "x": 0.4077669902912621,
+        "y": 0.7
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 972,
+                "y": 403
+              },
+              {
+                "x": 1077,
+                "y": 403
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1182,
+                "y": 403
+              },
+              {
+                "x": 1287,
+                "y": 403
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#hallChest",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "hall_hearth": {
+      "atlas": "hall-0",
+      "frameWidth": 244,
+      "frameHeight": 226,
+      "anchor": {
+        "x": 0.35655737704918034,
+        "y": 0.7964601769911505
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 2,
+          "y": -27
+        },
+        "radius": 340,
+        "color": "amber",
+        "flicker": 0.6
+      },
+      "source": "authored: tools/bake/page/models/hall.js#hallHearth",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "hay_cart": {
@@ -26799,6 +27026,52 @@
       "source": "authored: tools/bake/page/models/interior.js#innTable",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "keg": {
+      "atlas": "hall-0",
+      "frameWidth": 90,
+      "frameHeight": 86,
+      "anchor": {
+        "x": 0.4222222222222222,
+        "y": 0.7441860465116279
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 604,
+                "y": 403
+              },
+              {
+                "x": 696,
+                "y": 403
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 788,
+                "y": 403
+              },
+              {
+                "x": 880,
+                "y": 403
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#keg",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "lamp_post": {
       "atlas": "props-0",
       "frameWidth": 105,
@@ -26834,6 +27107,103 @@
       "source": "procedural: tools/bake/page/models/props.js#lampPost",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "lantern": {
+      "atlas": "hall-0",
+      "frameWidth": 36,
+      "frameHeight": 146,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9178082191780822
+      },
+      "directions": 1,
+      "animations": {
+        "wall_s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1354,
+                "y": 230
+              }
+            ]
+          ]
+        },
+        "wall_e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1392,
+                "y": 230
+              }
+            ]
+          ]
+        },
+        "post": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1430,
+                "y": 230
+              }
+            ]
+          ]
+        }
+      },
+      "light": {
+        "offset": {
+          "x": 0,
+          "y": -100
+        },
+        "radius": 180,
+        "color": "amberBright",
+        "flicker": 0.2
+      },
+      "source": "authored: tools/bake/page/models/hall.js#lantern",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "long_table": {
+      "atlas": "hall-0",
+      "frameWidth": 270,
+      "frameHeight": 173,
+      "anchor": {
+        "x": 0.45185185185185184,
+        "y": 0.630057803468208
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 248,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 520,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#longTable",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "market_stall": {
       "atlas": "town-0",
       "frameWidth": 158,
@@ -26866,6 +27236,60 @@
         }
       },
       "source": "authored: tools/bake/page/models/town.js#marketStall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "painting": {
+      "atlas": "hall-0",
+      "frameWidth": 68,
+      "frameHeight": 139,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9568345323741008
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1468,
+                "y": 230
+              },
+              {
+                "x": 1538,
+                "y": 230
+              },
+              {
+                "x": 1608,
+                "y": 230
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1678,
+                "y": 230
+              },
+              {
+                "x": 1748,
+                "y": 230
+              },
+              {
+                "x": 1818,
+                "y": 230
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#painting",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "post_back": {
@@ -26918,6 +27342,36 @@
         }
       },
       "source": "procedural: tools/bake/page/models/architecture.js#post",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "potted_plant": {
+      "atlas": "hall-0",
+      "frameWidth": 97,
+      "frameHeight": 115,
+      "anchor": {
+        "x": 0.28865979381443296,
+        "y": 0.8347826086956521
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 403
+              },
+              {
+                "x": 101,
+                "y": 403
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#pottedPlant",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "rock": {
@@ -27188,6 +27642,52 @@
         }
       },
       "source": "authored: tools/bake/page/models/tower.js#rubble",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "rug": {
+      "atlas": "hall-0",
+      "frameWidth": 336,
+      "frameHeight": 171,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5029239766081871
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 230
+              },
+              {
+                "x": 340,
+                "y": 230
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 678,
+                "y": 230
+              },
+              {
+                "x": 1016,
+                "y": 230
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/hall.js#rug",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "sack": {

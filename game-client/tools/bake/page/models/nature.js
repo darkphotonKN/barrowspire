@@ -24,7 +24,7 @@ export const LEAF = {
   pineGloom: mix(mix("arcaneDeep", "necrotic", 0.22), "charcoal", 0.38),
 };
 
-function cardCloud(cards) {
+export function cardCloud(cards) {
   const pos = [];
   const nor = [];
   const uv = [];
@@ -60,7 +60,7 @@ function cardCloud(cards) {
   return g;
 }
 
-const cardMaterial = (leaf, needle) =>
+export const cardMaterial = (leaf, needle) =>
   new THREE.MeshStandardMaterial({
     map: leafTexture(needle, rng),
     alphaTest: 0.45,
@@ -70,10 +70,10 @@ const cardMaterial = (leaf, needle) =>
     roughness: 0.9,
   });
 
-const coreMaterial = (leaf, v = 0.55) =>
+export const coreMaterial = (leaf, v = 0.55) =>
   new THREE.MeshStandardMaterial({ color: color(shade(leaf, v)), roughness: 1 });
 
-function randDir(R, upBias = 0.25) {
+export function randDir(R, upBias = 0.25) {
   const v = new THREE.Vector3(R() * 2 - 1, R() * 2 - 1, R() * 2 - 1);
   if (v.lengthSq() < 1e-4) v.set(0, 1, 0);
   v.normalize();

@@ -79,6 +79,22 @@ import {
 import { spireFacade, DOOR_LIGHT } from "./models/spire.js";
 import { counter, innTable, stool, innHearth, shelf, forge, anvil, HEARTH_FLAME, FORGE_COALS } from "./models/interior.js";
 import { timberExterior, masonryExterior, towerCap, timberGable, doorHead } from "./models/building.js";
+import {
+  PAINTINGS,
+  CANDELABRA_FLAMES,
+  HALL_HEARTH_FLAME,
+  LANTERN_GLASS,
+  candelabra,
+  hallChair,
+  hallChest,
+  hallHearth,
+  keg,
+  lantern,
+  longTable,
+  painting,
+  pottedPlant,
+  rug,
+} from "./models/hall.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -558,6 +574,58 @@ function interiorSheets() {
 }
 
 /**
+ * The enlarged Inn's great hall and taproom (thin line "Town building interiors", FS-B0H2D §G's
+ * rule carried over), authored in code (ADR-0020, ADR-0021) and packed on their own atlas,
+ * `hall`, so every existing atlas keeps its bytes (the `interior` group is held closed by
+ * manifest.test.ts). Reused, not re-baked: table, stool, counter, barrel, crate. `chair` and `chest`
+ * already name sheets (the props chair, the run's container chest), so the hall's are
+ * `hall_chair` and `hall_chest`, as its hearth is `hall_hearth` beside `inn_hearth`. Faced props
+ * name their animations by facing.js facing (s/e/n/w); a wall-backed prop has `s` (on a north
+ * wall) and `e` (on a west wall). Variants are frames, picked by index (models/hall.js lists
+ * them). The floor is a ground tile like every floor (the scene's GroundLook `floor`).
+ */
+function hallSheets() {
+  const sheet = (name, fn, animations, opts = {}) => ({
+    name,
+    group: "hall",
+    kind: "prop",
+    animations,
+    source: `authored: tools/bake/page/models/hall.js#${fn}`,
+    ...opts,
+  });
+  const facings = (list, build) => Object.fromEntries(list.map((f) => [f, still(() => build(f))]));
+  const faced = (list, build, variants) => Object.fromEntries(list.map((f) => [f, still(...variants.map((v) => () => build(f, v)))]));
+  return [
+    {
+      name: "ground_plank_floor",
+      group: "hall",
+      kind: "tile",
+      animations: { variants: still(...[0, 1, 2, 3].map((v) => () => groundTile("plank_floor", v))) },
+      source: "authored: tools/bake/page/ground.js#plank_floor",
+    },
+    sheet("long_table", "longTable", { x: still(() => longTable("x")), y: still(() => longTable("y")) }),
+    sheet("hall_chair", "hallChair", facings(["s", "e", "n", "w"], hallChair)),
+    sheet("hall_hearth", "hallHearth", { default: still(hallHearth) }, {
+      light: { at: HALL_HEARTH_FLAME, radius: 340, color: "amber", flicker: 0.6 },
+    }),
+    sheet("candelabra", "candelabra", { default: still(candelabra) }, {
+      light: { at: CANDELABRA_FLAMES, radius: 200, color: "amber", flicker: 0.35 },
+    }),
+    // wall-hung, so no ground shadow: it would fall on the floor a body's length from the wall
+    sheet("lantern", "lantern", facings(["wall_s", "wall_e", "post"], lantern), {
+      shadow: false,
+      light: { at: LANTERN_GLASS, radius: 180, color: "amberBright", flicker: 0.2 },
+    }),
+    sheet("painting", "painting", faced(["s", "e"], painting, PAINTINGS), { shadow: false }),
+    sheet("potted_plant", "pottedPlant", { variants: still(...[0, 1].map((v) => () => pottedPlant(v))) }),
+    sheet("hall_chest", "hallChest", faced(["s", "e"], hallChest, [0, 1])),
+    sheet("keg", "keg", faced(["s", "e"], keg, [0, 1])),
+    // laid flat on the boards: no ground shadow, and a hair of pad
+    sheet("rug", "rug", faced(["x", "y"], rug, [0, 1]), { shadow: false, pad: 0.04 }),
+  ];
+}
+
+/**
  * Building exteriors (FS-9PN7X §F, ADR-0036), authored in code (ADR-0020, ADR-0021) and packed on
  * their own atlas, `building` (never "exterior", which names the run theme), so every existing
  * atlas keeps its bytes. One exterior per building type, named by its WallSheets prefix: timber
@@ -623,5 +691,6 @@ export const CATALOGUE = [
   ...spireSheets(),
   ...forestSheets(),
   ...interiorSheets(),
+  ...hallSheets(),
   ...buildingSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));
