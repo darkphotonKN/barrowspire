@@ -331,32 +331,82 @@ func demonOddsOf(topFloor bool) demonOdds {
 * placeDungeonDemon stands a dungeon floor's demon in the room farthest from
 * the start, by walking distance, that has a valid spot, never the start room
 * (FS-KE075 §C R19). A guaranteed demon finding none tries again with the
-* delver exclusion relaxed, as placeDemon does.
+* delver exclusion relaxed, as placeDemon does. It reports the room it used,
+* -1 and false when skipped, so the blood demon can keep out of it
+* (FS-VHGE7 §A R10).
 **/
-func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon MonsterConfig, floor int, odds demonOdds) {
-	var rooms []int
-	for room := range d.layout.Rooms {
-		if room != d.layout.Roles.Start {
-			rooms = append(rooms, room)
-		}
-	}
-	slices.SortStableFunc(rooms, func(a, b int) int { return d.layout.Rooms[b].Distance - d.layout.Rooms[a].Distance })
+func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon MonsterConfig, floor int, odds demonOdds) (int, bool) {
+	rooms := slices.DeleteFunc(d.roomsFarthestFirst(), func(room int) bool { return room == d.layout.Roles.Start })
 
 	fits := []func(x, y float64) bool{area.valid}
 	if odds == demonGuaranteed {
 		fits = append(fits, area.open)
 	}
 	for _, fit := range fits {
-		for _, room := range rooms {
-			if x, y, ok := area.placeOnRegion(s.spawnRand, d, d.roomRegion(room), fit); ok {
-				demon.X, demon.Y = x, y
-				CreateMonsterEntity(s.EntityManager, demon)
-				area.placed = append(area.placed, point{x, y})
-				return
-			}
+		if room, ok := s.placeInRooms(d, area, demon, rooms, fit); ok {
+			return room, true
 		}
 	}
 	slog.Warn("Demon skipped: no valid spawn point on the dungeon floor", "sessionID", s.ID, "floor", floor)
+	return -1, false
+}
+
+/**
+* placeDungeonBloodDemon stands a dungeon floor's blood demon in the first room
+* of its search (bloodDemonRooms) with a valid spot. It is never guaranteed, so
+* there is no relaxed pass: with no room it is skipped with a warning.
+* demonRoom is the room the demon stands in, -1 with none. FS-VHGE7 §A R10.
+**/
+func (s *Session) placeDungeonBloodDemon(d *dungeonFloor, area *spawnArea, blood MonsterConfig, floor, demonRoom int) {
+	if _, ok := s.placeInRooms(d, area, blood, d.bloodDemonRooms(demonRoom), area.valid); !ok {
+		slog.Warn("Blood demon skipped: no valid spawn point on the dungeon floor",
+			"sessionID", s.ID, "floor", floor, "archetype", blood.Archetype)
+	}
+}
+
+// placeInRooms creates monster in the first of rooms with a spot fit accepts,
+// and reports which room that was.
+func (s *Session) placeInRooms(d *dungeonFloor, area *spawnArea, monster MonsterConfig, rooms []int, fit func(x, y float64) bool) (int, bool) {
+	for _, room := range rooms {
+		if x, y, ok := area.placeOnRegion(s.spawnRand, d, d.roomRegion(room), fit); ok {
+			monster.X, monster.Y = x, y
+			CreateMonsterEntity(s.EntityManager, monster)
+			area.placed = append(area.placed, point{x, y})
+			return room, true
+		}
+	}
+	return -1, false
+}
+
+// roomsFarthestFirst is every room of the floor, the start included, farthest
+// from the start first by walking distance; ties keep their room order.
+func (d *dungeonFloor) roomsFarthestFirst() []int {
+	rooms := make([]int, len(d.layout.Rooms))
+	for room := range rooms {
+		rooms[room] = room
+	}
+	slices.SortStableFunc(rooms, func(a, b int) int { return d.layout.Rooms[b].Distance - d.layout.Rooms[a].Distance })
+	return rooms
+}
+
+/**
+* bloodDemonRooms is where a blood demon searches, in order: from the
+* second-farthest room on down, never the start room or demonRoom (-1 for no
+* demon). It starts at the second-farthest whether or not the demon took the
+* farthest, so a floor of two rooms has nowhere for it. FS-VHGE7 §A R10.
+**/
+func (d *dungeonFloor) bloodDemonRooms(demonRoom int) []int {
+	ordered := d.roomsFarthestFirst()
+	if len(ordered) < 2 {
+		return nil
+	}
+	var rooms []int
+	for _, room := range ordered[1:] {
+		if room != d.layout.Roles.Start && room != demonRoom {
+			rooms = append(rooms, room)
+		}
+	}
+	return rooms
 }
 
 // placeOnRegion draws points from region's cells until one holds a body wholly

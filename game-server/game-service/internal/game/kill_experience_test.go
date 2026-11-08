@@ -28,6 +28,9 @@ func TestKillExperience_Formula(t *testing.T) {
 		{"level-1 elite ghoul", systems.KillRecord{Archetype: components.MonsterArchetypeGhoul, Level: 1, Elite: true}, 30},
 		{"level-1 demon", systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Level: 1, Boss: true}, 250},
 		{"level-5 demon", systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Level: 5, Boss: true}, 400},
+		// FS-VHGE7 §A R13: base 35 under the same boss multiplier
+		{"level-1 blood demon", systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Level: 1, Boss: true}, 350},
+		{"level-5 blood demon", systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Level: 5, Boss: true}, 560},
 		{"level 0 counts as level 1", systems.KillRecord{Archetype: components.MonsterArchetypeGhoul, Level: 0}, 10},
 		{"unknown archetype is worth nothing", systems.KillRecord{Archetype: "wisp", Level: 4}, 0},
 	}

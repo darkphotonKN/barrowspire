@@ -764,6 +764,64 @@ func TestCombatSystem_MonsterStillDamagesDelvers(t *testing.T) {
 	assert.Less(t, health(target), 150)
 }
 
+// An intent's Coefficient bends only a monster strike (a demon's slam). On any
+// other kind it is ignored: a delver's attack resolves at its row's coefficient
+// whatever the intent carries. FS-VHGE7 §B R16.
+func TestCombatSystem_IntentCoefficient_IsIgnoredButOnAMonsterStrike(t *testing.T) {
+	tests := []struct {
+		name   string
+		intent components.AttackIntent
+	}{
+		{"targeted attack", components.AttackIntent{Kind: components.AttackTargeted}},
+		{"slash", components.AttackIntent{Kind: components.AttackSlash, TargetX: 200, TargetY: 100}},
+		{"cut", components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100}},
+		{"fireball", components.AttackIntent{Kind: components.AttackFireball, TargetX: 300, TargetY: 100}},
+	}
+
+	// outcome resolves the intent with the coefficient given: the target's
+	// health and the coefficients of any shots fired
+	outcome := func(intent components.AttackIntent, coefficient float64) (int, []float64) {
+		em := ecs.NewEntityManager()
+		attacker := delver(em, 100, 100)
+		target := dummy(em, 150, 100)
+		intent.TargetEntityID = target.ID
+		intent.Coefficient = coefficient
+		intend(attacker, intent)
+		NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+		var shots []float64
+		for _, p := range projectiles(em) {
+			shots = append(shots, p.Attack.Coefficient)
+		}
+		return health(target), shots
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wantHealth, wantShots := outcome(tt.intent, 0)
+			require.True(t, wantHealth < 1000 || len(wantShots) > 0, "the attack resolved")
+			gotHealth, gotShots := outcome(tt.intent, 50)
+
+			assert.Equal(t, wantHealth, gotHealth)
+			assert.Equal(t, wantShots, gotShots)
+		})
+	}
+
+	t.Run("monster strike", func(t *testing.T) {
+		strike := func(coefficient float64) int {
+			em := ecs.NewEntityManager()
+			striker := ghoul(em, 100, 100, 100)
+			striker.AddComponent(components.NewAttackIntentComponent())
+			target := delver(em, 140, 100)
+			intend(striker, components.AttackIntent{Kind: components.AttackMonsterStrike, TargetEntityID: target.ID, Coefficient: coefficient})
+			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+			return 150 - health(target)
+		}
+
+		assert.Greater(t, strike(2), strike(0), "a slam lands at its multiple")
+	})
+}
+
 // The projectile's owner may be long gone; the snapshot still names them.
 func TestCombatSystem_KillCreditGoesToAGoneProjectileOwner(t *testing.T) {
 	em := ecs.NewEntityManager()

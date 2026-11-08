@@ -248,7 +248,7 @@ func TestPlaceDungeonDemon_TheFarthestRoom(t *testing.T) {
 
 		var demon *floor1Monster
 		for _, m := range floor1Monsters(t, s) {
-			if m.monster.Boss {
+			if m.monster.Archetype == components.MonsterArchetypeDemon { // the green one: a floor may hold a blood demon too (FS-VHGE7)
 				demon = &m
 			}
 		}
@@ -262,5 +262,149 @@ func TestPlaceDungeonDemon_TheFarthestRoom(t *testing.T) {
 			}
 		}
 		assert.Equal(t, farthest, d.layout.Rooms[demon.room].Distance, "seed %d: the demon is in the farthest room", seed)
+	}
+}
+
+// roomsAt is a floor of rooms at these walking distances, room 0 the start.
+func roomsAt(distances ...int) *dungeonFloor {
+	layout := levelgen.DungeonLayout{Roles: levelgen.Roles{Start: 0}}
+	for i, distance := range distances {
+		layout.Rooms = append(layout.Rooms, levelgen.Room{Region: i + 1, Distance: distance})
+	}
+	return &dungeonFloor{layout: layout}
+}
+
+// The blood demon searches from the second-farthest room on down, never the
+// start room or the demon's: literally the second-farthest, whether or not
+// the demon took the farthest. FS-VHGE7 §A R10; §Edge States "Green demon
+// skipped", "Dungeon with only two rooms".
+func TestBloodDemonRooms_FromTheSecondFarthestSkippingStartAndDemon(t *testing.T) {
+	tests := []struct {
+		name      string
+		floor     *dungeonFloor
+		demonRoom int
+		want      []int
+	}{
+		{"the demon in the farthest", roomsAt(0, 10, 7, 4), 1, []int{2, 3}},
+		{"the demon fell back to the second-farthest", roomsAt(0, 10, 7, 4), 2, []int{3}},
+		{"no demon still starts at the second-farthest", roomsAt(0, 10, 7, 4), -1, []int{2, 3}},
+		{"farthest first by distance, not by index", roomsAt(0, 4, 10, 7), 2, []int{3, 1}},
+		{"only two rooms leaves the start, which is excluded", roomsAt(0, 6), 1, nil},
+		{"only two rooms and no demon", roomsAt(0, 6), -1, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.floor.bloodDemonRooms(tt.demonRoom))
+		})
+	}
+}
+
+// populationArea is the spawn area of a built floor as population leaves it:
+// its keep-outs, its delvers, and every monster already placed.
+func populationArea(t *testing.T, s *Session) spawnArea {
+	t.Helper()
+	entities := s.EntityManager.GetAllEntities()
+	area := spawnArea{
+		width: s.mapWidth, height: s.mapHeight,
+		keepOut: mapKeepOut(entities),
+		delvers: inPlayPositions(delversOf(entities)),
+	}
+	for _, m := range monstersIn(s) {
+		at := transformOf(t, m)
+		area.placed = append(area.placed, point{at.X, at.Y})
+	}
+	return area
+}
+
+// On a dungeon floor the blood demon never shares the demon's room or the
+// start room, and takes the first room of its search with a valid spot.
+// FS-VHGE7 §A R10; §Edge States "Both demons on one floor".
+func TestPlaceDungeonBloodDemon_NeverSharesTheDemonsRoom(t *testing.T) {
+	forceBloodDemon(t, 0) // the built floor brings none of its own
+	for seed := uint64(1); seed <= 100; seed++ {
+		s, ids := dungeonRun(t, seed, 4, 0)
+		d := s.dungeon
+		area := populationArea(t, s)
+
+		demonRoom, placed := s.placeDungeonDemon(d, &area, MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 3, Boss: true}, firstFloor, demonRolled)
+		require.True(t, placed, "seed %d", seed)
+		s.placeDungeonBloodDemon(d, &area, MonsterConfig{Archetype: components.MonsterArchetypeBloodDemon, Level: 4, Boss: true}, firstFloor, demonRoom)
+
+		var green, blood []floor1Monster
+		for _, m := range floor1Monsters(t, s) {
+			switch m.monster.Archetype {
+			case components.MonsterArchetypeDemon:
+				green = append(green, m)
+			case components.MonsterArchetypeBloodDemon:
+				blood = append(blood, m)
+			}
+		}
+		require.NotEmpty(t, green, "seed %d", seed)
+		require.Len(t, blood, 1, "seed %d: the blood demon was placed", seed)
+		greenRooms := []int{}
+		for _, g := range green {
+			greenRooms = append(greenRooms, g.room)
+		}
+		assert.Contains(t, greenRooms, demonRoom, "seed %d: placeDungeonDemon reports the room it used", seed)
+
+		at := blood[0]
+		assert.NotEqual(t, d.layout.Roles.Start, at.room, "seed %d", seed)
+		assert.NotEqual(t, demonRoom, at.room, "seed %d", seed)
+		assert.Equal(t, d.bloodDemonRooms(demonRoom)[0], at.room, "seed %d: the first room of its search", seed)
+		for _, p := range delverPoints(t, s, ids) {
+			assert.GreaterOrEqual(t, dist(at.at.x, at.at.y, p.x, p.y), MonsterDelverExclusion, "seed %d", seed)
+		}
+	}
+}
+
+// A blood demon with no room to stand in is absent and a warning is logged,
+// never an error. FS-VHGE7 §A R10; §Edge States "No spot for the blood demon".
+func TestPlaceDungeonBloodDemon_NoValidRoomIsSkippedWithAWarning(t *testing.T) {
+	forceBloodDemon(t, 0)
+	s, _ := dungeonRun(t, 3, 4, 0)
+	area := populationArea(t, s)
+	// nowhere on the floor is open ground
+	area.keepOut = append(area.keepOut, PlaceArea{X: 0, Y: 0, W: s.mapWidth, H: s.mapHeight})
+	logs := capturedLog(t)
+
+	s.placeDungeonBloodDemon(s.dungeon, &area, MonsterConfig{Archetype: components.MonsterArchetypeBloodDemon, Level: 4, Boss: true}, firstFloor, -1)
+
+	for _, m := range monstersIn(s) {
+		assert.NotEqual(t, components.MonsterArchetypeBloodDemon, monsterOf(m).Archetype)
+	}
+	assert.Contains(t, logs.String(), `"level":"WARN"`)
+	assert.Contains(t, logs.String(), "blood_demon")
+	assert.NotContains(t, logs.String(), `"level":"ERROR"`)
+}
+
+// A dungeon floor that rolls its blood demon stands it outside the start room
+// and the demon's room, clear of every delver and of the spots kept for those
+// still connecting. FS-VHGE7 §A R8, R10; §Edge States "Party still connecting".
+func TestPopulateMonsters_DungeonFloorPlacesARolledBloodDemon(t *testing.T) {
+	forceBloodDemon(t, 1)
+	for seed := uint64(1); seed <= 30; seed++ {
+		s, _ := dungeonRun(t, seed, 2, 2)
+		d := s.dungeon
+		keptClear := s.arrivalSlotPositions()
+
+		var blood []floor1Monster
+		demonRooms := map[int]bool{}
+		for _, m := range floor1Monsters(t, s) {
+			switch m.monster.Archetype {
+			case components.MonsterArchetypeBloodDemon:
+				blood = append(blood, m)
+			case components.MonsterArchetypeDemon:
+				demonRooms[m.room] = true
+			}
+		}
+		require.Len(t, blood, 1, "seed %d", seed)
+		at := blood[0]
+		assert.True(t, at.monster.Boss)
+		assert.False(t, at.monster.Elite)
+		assert.NotEqual(t, d.layout.Roles.Start, at.room, "seed %d", seed)
+		assert.False(t, demonRooms[at.room], "seed %d: the blood demon shares the demon's room", seed)
+		for _, p := range keptClear {
+			assert.GreaterOrEqual(t, dist(at.at.x, at.at.y, p.x, p.y), MonsterDelverExclusion, "seed %d", seed)
+		}
 	}
 }

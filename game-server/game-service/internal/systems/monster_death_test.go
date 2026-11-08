@@ -87,3 +87,21 @@ func TestMonsterDeathSystem_IgnoresWhatIsNotAMonster(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, d.HasComponent(ecs.ComponentTypeVelocity))
 }
+
+// A demon killed mid-claw lies dead from that tick: its claw show is cleared
+// as a wind-up is, and the AI never shows `claw` on it again. FS-VHGE7 §B R25.
+func TestMonsterDeathSystem_DemonKilledMidClawLiesDead(t *testing.T) {
+	em := ecs.NewEntityManager()
+	d := demon(t, em, 500, 500)
+	monster(d).SlamCooldownRemaining = 6 // its first swing is a claw
+	delver(em, 560, 500)
+	brawl(em, 1)
+	require.Equal(t, components.MonsterActionClaw, monster(d).Action)
+
+	kill(d)
+	NewMonsterDeathSystem(em, corpseLifetime).Update(tickSeconds, em.GetAllEntities())
+	brawl(em, 1)
+
+	assert.Equal(t, components.MonsterActionDead, monster(d).Action)
+	assert.Zero(t, monster(d).ClawShowRemaining)
+}

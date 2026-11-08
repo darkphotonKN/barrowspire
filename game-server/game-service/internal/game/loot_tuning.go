@@ -233,9 +233,10 @@ var (
 // scaled by the place's drop factor (fieldDrops). Retuning a row here retunes
 // the fields with it; no field keeps a table of its own. FS-X2F2H §Requirements 31.
 var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
-	components.MonsterArchetypeGhoul: {Chance: 0.08, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
-	components.MonsterArchetypeTroll: {Chance: 0.15, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
-	components.MonsterArchetypeDemon: BossMonsterDrop,
+	components.MonsterArchetypeGhoul:      {Chance: 0.08, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
+	components.MonsterArchetypeTroll:      {Chance: 0.15, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
+	components.MonsterArchetypeDemon:      BossMonsterDrop,
+	components.MonsterArchetypeBloodDemon: BossMonsterDrop, // FS-VHGE7 §A R12: the boss row, no row of its own
 }
 
 // EliteMonsterDrop is any elite's row, whatever its archetype.
