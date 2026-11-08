@@ -36,6 +36,7 @@ import {
 } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
 import { BARROW_HEX } from "@/utils/theme";
+import { drawGlint, fxImage, GLINT, type GlintDraw } from "./glitter";
 import type { EffectLights, EffectsScene, FxArt } from "./runtime";
 import type { Token } from "./table";
 
@@ -64,20 +65,6 @@ export const SHIMMER_INVOKED_MS = 1200;
 
 /** The figure's head height when its sheet records no `crown` (R6). */
 export const SHIMMER_CROWN_FALLBACK = 76;
-
-/**
- * One glint's own numbers (R7, R9), shared by both bases: the granted base's scatter and the
- * invoked base's head glints both wink this way. From the approved prototype `sparkle`.
- */
-const GLINT = {
-  rise: { from: 4, to: 10 },
-  turn: 0.5,
-  size: { from: 0.45, to: 0.85 },
-  /** A glint grows from this share of its size to its size, and never shrinks (R9). */
-  growFrom: 0.6,
-  /** The core mote's scale against its glint's: a small hot point, not a second disc. */
-  core: 0.55,
-} as const;
 
 /** The granted base's numbers (R5–R11), from the approved prototype `sparkle`. */
 const GRANTED = {
@@ -153,17 +140,6 @@ const INVOKED_SHEETS = ["fx_glint", "fx_mote", "fx_ring"] as const;
 interface Range {
   from: number;
   to: number;
-}
-
-/** One glint's draw: where over the feet, when, and how it winks (R7, R9). */
-interface GlintDraw {
-  x: number;
-  h: number;
-  start: number;
-  life: number;
-  rise: number;
-  turn: number;
-  size: number;
 }
 
 /** What a shimmer made: destroyed when it ends. */
@@ -453,50 +429,16 @@ export class ShimmerFx {
     return { image, root };
   }
 
-  /**
-   * One glint in a layer (R7, R9, R22): a baked glint tinted the look's `glint`, its `centre`
-   * mote as a hot core, both burning additively. It winks: alpha up over the first half of its
-   * life and back over the second, a sharp peak so it reads as a twinkle and not a fade. Its
-   * scale only grows, never yoyos.
-   */
+  /** One glint in a layer, its objects and tweens tracked until the shimmer ends. */
   private glint(
     live: Live,
     layer: { add(child: unknown): unknown },
     look: Look,
     d: GlintDraw,
   ): void {
-    const g = GLINT;
-    const body = this.image("fx_glint", look.glint).setBlendMode("ADD");
-    const core = this.image("fx_mote", look.centre)
-      .setBlendMode("ADD")
-      .setScale(g.core);
-    const glint = this.scene.add
-      .container(0, 0)
-      .setPosition(d.x, -d.h)
-      .setAlpha(0)
-      .setScale(g.growFrom * d.size);
-    glint.add([body, core]);
-    layer.add(glint);
-    live.parts.push(body, core, glint);
-    live.tweens.push(
-      this.scene.tweens.add({
-        targets: glint,
-        alpha: { from: 0, to: 1 },
-        delay: d.start,
-        duration: d.life / 2,
-        yoyo: true,
-        ease: "Quad.easeIn",
-      }),
-      this.scene.tweens.add({
-        targets: glint,
-        y: { from: -d.h, to: -d.h - d.rise },
-        rotation: { from: 0, to: d.turn },
-        scale: { from: g.growFrom * d.size, to: d.size },
-        delay: d.start,
-        duration: d.life,
-        ease: "Linear",
-      }),
-    );
+    const { parts, tweens } = drawGlint(this.scene, this.art, layer, look, d);
+    live.parts.push(...parts);
+    live.tweens.push(...tweens);
   }
 
   /**
@@ -559,11 +501,7 @@ export class ShimmerFx {
 
   /** A baked fx frame, centred on its anchor and tinted one look token. */
   private image(sheet: string, tint: Token) {
-    const r = this.art.resolve(sheet);
-    const img = r.placeholder
-      ? this.scene.add.image(0, 0, r.texture)
-      : this.scene.add.image(0, 0, r.texture, r.frame);
-    return img.setOrigin(r.anchor.x, r.anchor.y).setTint(BARROW_HEX[tint]);
+    return fxImage(this.scene, this.art, sheet, tint);
   }
 
   /** Whether every sheet is there; otherwise logs once, naming what is missing (R27). */

@@ -212,14 +212,15 @@ export const palette = {
   chatRule: BARROW_HEX.brass,
 
   // -- Rarity (FS-4R9M9 R59): data, not emphasis. The DOM's --rarity-* ramp, matched by token
-  //    name (src/marketplace/rarity.ts). Per the guideline's rarity ramp it colours only an item
-  //    tip's rarity badge and its accent edge, never a name, heading or fill.
+  //    name (src/marketplace/rarity.ts). Per the guideline's canvas item tip rule (FS-QE2QW) it
+  //    colours an item tip's name, badge and accent edge and a Runed or Fabled tip's border and
+  //    halo, and an icon's rarity marks; never a heading or a fill.
   rarity: {
     common: BARROW_HEX.rarityCommon,
     uncommon: BARROW_HEX.arcane,
     rare: BARROW_HEX.necrotic,
-    epic: BARROW_HEX.brass,
-    legendary: BARROW_HEX.amberBright,
+    epic: BARROW_HEX.rarityRuned,
+    legendary: BARROW_HEX.rarityFabled,
   },
 
   // -- Light. The only warmth in the barrow.

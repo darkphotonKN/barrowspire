@@ -37,7 +37,8 @@ import type { MailboxState } from "@/stores/mailboxStore";
 import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { itemTipRow } from "./gearOverlayLayout";
-import { buildItemTip, rarityEdge, type ItemTip } from "./itemTip";
+import { itemShine, strokeWellOutline } from "./itemShine";
+import { buildItemTip, rarityEdge, topTier, type ItemTip } from "./itemTip";
 import { drawWaxSeal } from "./MailboxEnvelope";
 import { fillMaskArea, maskInView, viewport } from "@/render/viewport";
 import {
@@ -651,14 +652,35 @@ export class LetterPanel {
   ): void {
     g.fillStyle(palette.inkDeep, 0.6);
     g.fillRoundedRect(r.x, r.y, r.width, r.height, WELL_RADIUS);
-    g.lineStyle(1, palette.frame, 0.22);
-    g.strokeRoundedRect(r.x, r.y, r.width, r.height, WELL_RADIUS);
     const view = slot.kind === "item" ? this.view(slot.item) : undefined;
+    const top = view && topTier(view);
+    if (top)
+      strokeWellOutline(
+        g,
+        { x: r.x, y: r.y, w: r.width, h: r.height },
+        WELL_RADIUS,
+        top,
+        alpha,
+      );
+    else {
+      g.lineStyle(1, palette.frame, 0.22);
+      g.strokeRoundedRect(r.x, r.y, r.width, r.height, WELL_RADIUS);
+    }
     const edge = view ? rarityEdge(view) : undefined;
     if (edge !== undefined) {
       g.fillStyle(edge, 0.9 * alpha);
       g.fillRect(r.x + 1, r.y + 5, EDGE_W, r.height - 10);
     }
+
+    // every slot object stands alone at one depth, so the glow must be made before its icon
+    const shine =
+      view &&
+      itemShine(this.scene, this.deps.art, view, {
+        x: r.x + r.width / 2,
+        y: r.y + r.height / 2,
+        side: Math.min(r.width, r.height) * ICON_FILL,
+      });
+    shine?.glow.setScrollFactor(0).setDepth(PANEL_DEPTH);
 
     const icon = this.keep(
       artSprite(
@@ -673,6 +695,8 @@ export class LetterPanel {
     const size = Math.max(icon.frame?.width ?? 0, icon.frame?.height ?? 0) || 1;
     icon.setScale((Math.min(r.width, r.height) * ICON_FILL) / size);
     if (alpha < 1) icon.setAlpha(alpha);
+    // made after its icon at that one depth, so it lies over it; it goes when the icon does
+    shine?.bind(icon)?.setScrollFactor(0).setDepth(PANEL_DEPTH);
 
     if (slot.kind === "gold") {
       this.text(

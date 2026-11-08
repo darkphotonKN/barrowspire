@@ -79,8 +79,8 @@
   --rarity-common: #a2946d;
   --rarity-uncommon: #6f8f4a;
   --rarity-rare: #688b8f;
-  --rarity-epic: #a58243; /* brass, lifted within its hue to clear 4.5:1 on soot (FS-8TCN2) */
-  --rarity-legendary: #f2b866;
+  --rarity-epic: #c07a3a; /* burnt orange, lifted within its hue to clear 4.5:1 at badge size */
+  --rarity-legendary: #d678c8;
 
   --header-height: 64px;
 
