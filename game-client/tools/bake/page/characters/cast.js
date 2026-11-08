@@ -57,7 +57,7 @@ import {
   spikedClub,
   tome,
 } from "./gear.js";
-import { DEMON_ANIMATIONS, demon } from "./demon.js";
+import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { ghost, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 
@@ -528,6 +528,8 @@ export const CAST = [
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },
+  // the blood demon (FS-VHGE7 §E R36, §F R42): the second boss, a variant on the demon rig, in a group of its own so most runs never load it
+  { sheet: "creature_blood_demon_base", group: "blood_demon", fn: "bloodDemon", module: "demon", build: bloodDemon, animations: DEMON_ANIMATIONS },
   // the Forlorn Forest's dead (FS-3QHQZ §C R29), packed in their own group so no atlas reflows
   { sheet: "creature_zombie_base", group: "fodder", fn: "zombie", module: "forlorn", build: zombie },
   { sheet: "creature_ghost_base", group: "fodder", fn: "ghost", module: "forlorn", build: ghost },

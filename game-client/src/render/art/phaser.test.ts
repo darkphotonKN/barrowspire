@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import type Phaser from "phaser";
-import { registerArt, preloadArt, MANIFEST_KEY, type ArtScene } from "./phaser";
+import { onDemandArt, registerArt, preloadArt, MANIFEST_KEY, type ArtScene } from "./phaser";
+import { artLoaderStandin } from "./artLoader.standin";
 import { PLACEHOLDER_TEXTURE, atlasTextureKey } from "./library";
 import { RESIDENT_ART, SCENE_ART } from "./sceneArt";
 
@@ -620,5 +621,148 @@ describe("a trimmed sheet's frames (FS-HF0WW)", () => {
     expect(crop.x).toBe(cuts[0].x);
     const fresh = second.setCropUVs({} as Crop, window.x, window.y, window.w, window.h, false, false);
     expect(fresh.x).toBe(cuts[1].x);
+  });
+});
+
+// FS-VHGE7 §F R44–47, R50: the on-demand group, fetched on the running scene's loader.
+describe("onDemandArt (FS-VHGE7 §F)", () => {
+  const withBlood = {
+    ...scoped,
+    atlases: {
+      ...scoped.atlases,
+      "blood_demon-0": page("blood_demon-0.png"),
+      "blood_demon-1": page("blood_demon-1.png"),
+    },
+    sheets: {
+      ...scoped.sheets,
+      creature_blood_demon_base: looping("blood_demon-0", {
+        attack: { fps: 8, loop: false, atlas: "blood_demon-1", frames: [[{ x: 0, y: 0 }, { x: 40, y: 0 }]] },
+      }),
+    },
+  };
+  const held = ["props-0", "props-1", "creatures-0", "creatures-1", "boss-0", "boss-1"].map(atlasTextureKey);
+  const bloodPages = [atlasTextureKey("blood_demon-0"), atlasTextureKey("blood_demon-1")];
+
+  /** A running scene: its art registered and its loader idle, the on-demand load held open. */
+  function running(opts: { textures?: string[]; failing?: string[]; manifest?: unknown } = {}) {
+    const warn = vi.fn();
+    const art = artLoaderStandin({
+      manifest: opts.manifest ?? withBlood,
+      cachedManifest: true,
+      textures: [...held, ...(opts.textures ?? [])],
+      failing: opts.failing,
+      hold: true,
+    });
+    const library = registerArt(art.scene as unknown as ArtScene, SCENE_ART.BarrowspireScene, { warn });
+    warn.mockClear();
+    const demand = onDemandArt(art.scene as unknown as Phaser.Scene, library, { warn });
+    return { art, library, demand, warn };
+  }
+
+  it("should queue the group's pages once, and only theirs, on the scene's loader (R44)", () => {
+    const { art, demand } = running();
+    demand.fetch("blood_demon", vi.fn());
+    expect(art.queued).toEqual(bloodPages);
+    demand.fetch("blood_demon", vi.fn());
+    art.finish();
+    demand.fetch("blood_demon", vi.fn());
+    expect(art.queued).toEqual(bloodPages);
+  });
+
+  it("should queue only the pages not yet textures, and fetch from the art's folder (R44)", () => {
+    const { art, demand } = running({ textures: [bloodPages[0]] });
+    const image = vi.spyOn(art.scene.load, "image");
+    demand.fetch("blood_demon", vi.fn());
+    expect(art.queued).toEqual([bloodPages[1]]);
+    expect(image).toHaveBeenCalledWith(bloodPages[1], "/art/blood_demon-1.png");
+  });
+
+  it("should register frames and animations, then tell the library, then call landed (R47)", () => {
+    const { art, library, demand, warn } = running();
+    const order: string[] = [];
+    demand.fetch("blood_demon", () => {
+      order.push("landed");
+      expect(library.has("creature_blood_demon_base")).toBe(true);
+      expect(art.anims.exists("creature_blood_demon_base/attack/0")).toBe(true);
+    });
+    expect(library.has("creature_blood_demon_base")).toBe(false);
+    expect(art.textures.get(bloodPages[0]).getFrameNames()).toEqual([]);
+
+    art.finish();
+
+    expect(order).toEqual(["landed"]);
+    expect(art.textures.get(bloodPages[1]).getFrameNames()).toEqual([
+      "creature_blood_demon_base/attack/0/0",
+      "creature_blood_demon_base/attack/0/1",
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("should land at once when every page is already a texture", () => {
+    const { art, library, demand } = running({ textures: bloodPages });
+    const landed = vi.fn();
+    demand.fetch("blood_demon", landed);
+    expect(art.queued).toEqual([]);
+    expect(landed).toHaveBeenCalledOnce();
+    expect(library.has("creature_blood_demon_base")).toBe(true);
+  });
+
+  it("should show no bar and no fade (R45)", () => {
+    const { art, demand } = running();
+    const before = art.drawn.length; // registerArt's placeholder
+    demand.fetch("blood_demon", vi.fn());
+    art.finish();
+    expect(art.camera.fades).toEqual([]);
+    expect(art.drawn.length).toBe(before);
+  });
+
+  it("should not land a group with a failed page, warn once, and not retry in this scene (R50)", () => {
+    const { art, library, demand, warn } = running({ failing: [bloodPages[1]] });
+    const landed = vi.fn();
+    demand.fetch("blood_demon", landed);
+    art.finish();
+
+    expect(landed).not.toHaveBeenCalled();
+    expect(library.has("creature_blood_demon_base")).toBe(false);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.calls[0][0])).toContain("blood_demon");
+
+    demand.fetch("blood_demon", landed);
+    expect(art.queued).toEqual(bloodPages);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("should warn once when the manifest has no such group", () => {
+    const { demand, warn } = running({ manifest: scoped });
+    const landed = vi.fn();
+    demand.fetch("blood_demon", landed);
+    expect(landed).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("should call its downloads off if the scene stops mid-load (R50)", () => {
+    const { art, demand } = running();
+    const landed = vi.fn();
+    demand.fetch("blood_demon", landed);
+    art.decoding(bloodPages[0]); // past aborting: its image is decoding
+
+    art.stop();
+    art.landStrays();
+
+    expect(art.textures.exists(bloodPages[0])).toBe(false);
+    expect(art.textures.exists(bloodPages[1])).toBe(false);
+    expect(art.consoleErrors).toEqual([]);
+    expect(landed).not.toHaveBeenCalled();
+  });
+
+  it("should fetch afresh on a later scene start, its own record of what it asked (R50)", () => {
+    const { art, library, demand } = running();
+    demand.fetch("blood_demon", vi.fn());
+    art.finish();
+    for (const key of bloodPages) art.textures.remove(key);
+
+    onDemandArt(art.scene as unknown as Phaser.Scene, library).fetch("blood_demon", vi.fn());
+
+    expect(art.queued).toEqual([...bloodPages, ...bloodPages]);
   });
 });

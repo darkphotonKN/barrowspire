@@ -356,3 +356,31 @@ func TestRegenerateFloor_ClearsDropPilesAndTheirItems(t *testing.T) {
 	_, kept := s.EntityManager.GetEntity(carried)
 	assert.True(t, kept, "an item a delver carries climbs with them")
 }
+
+// The blood demon drops as the demon does: its MonsterDrops row is the boss
+// row, and a kill lays one pile of 2 or 3 items, never a consumable, at its
+// level. FS-VHGE7 §A R12.
+func TestMonsterDrops_BloodDemon_DropsTheBossRow(t *testing.T) {
+	assert.Equal(t, BossMonsterDrop, MonsterDrops[components.MonsterArchetypeBloodDemon])
+
+	r := seeded()
+	counts := map[int]bool{}
+	for range 200 {
+		s := dropSession()
+		newMonsterDrops(s, r).ConsumeKill(systems.KillRecord{
+			MonsterEntityID: uuid.New(), Archetype: components.MonsterArchetypeBloodDemon,
+			Level: 11, Boss: true, KillerMemberID: uuid.New(), X: 640, Y: 360, Floor: 3,
+		})
+
+		piles := dropPiles(s)
+		require.Len(t, piles, 1)
+		ids := pileItemIDs(t, piles[0])
+		counts[len(ids)] = true
+		require.Contains(t, []int{2, 3}, len(ids))
+		for _, item := range itemsByID(s, ids) {
+			assert.NotEqual(t, types.ItemTypeConsumable, item.ItemType)
+			assert.Equal(t, 11, item.ItemLevel)
+		}
+	}
+	assert.Equal(t, map[int]bool{2: true, 3: true}, counts, "both counts occur")
+}

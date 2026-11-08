@@ -276,14 +276,20 @@ export type MonsterArchetype =
   | "ghoul"
   | "troll"
   | "demon"
+  // the rarer second boss (FS-VHGE7 §C R26): sent only on run floors
+  | "blood_demon"
   // the Forlorn Forest's dead (FS-3QHQZ R18): sent only in the Forest field
   | "zombie"
   | "ghost"
   // Gentle Meadows' one creature (FS-X2F2H R53): sent only in the Meadows field
   | "boar";
 
-/** What a monster is doing this tick. `attack` is the wind-up and the strike. */
-export type MonsterAction = "idle" | "move" | "attack" | "dead";
+/**
+ * What a monster is doing this tick. `attack` is the wind-up and the strike (a demon's slam).
+ * `claw` is a demon's fire claw (FS-VHGE7 §B R24): no wind-up, reported for 0.4 s from the tick
+ * it lands while the demon stands still.
+ */
+export type MonsterAction = "idle" | "move" | "attack" | "claw" | "dead";
 
 /** One monster in a run's state broadcast (FS-77AB6 req 32). Absent or empty in the hub. */
 export interface MonsterState {

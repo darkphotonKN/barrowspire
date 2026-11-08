@@ -15,7 +15,7 @@ const entries = Object.entries(EFFECTS) as [string, EffectEntry][];
 const oneShots = entries.filter(([, e]) => e.timing.kind === "oneShot");
 
 describe("effects table (FS-KYPQ9 §B.2)", () => {
-  it("should carry one entry per effect named in §B.2 and FS-JTNPR req 22", () => {
+  it("should carry one entry per effect named in §B.2, FS-JTNPR req 22 and FS-VHGE7 §D R32", () => {
     expect(Object.keys(EFFECTS).sort()).toEqual(
       [
         "slash",
@@ -35,6 +35,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "shadowShotRelease",
         "shadowShotTrail",
         "shadowShotImpact",
+        // FS-VHGE7 §D R32: a demon's fire claw
+        "demonClaw",
         "hit",
         "deathDust",
         "escape",
@@ -59,6 +61,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
       // FS-JTNPR req 21: heavier than the arrow's 140 / 300
       shadowShotRelease: 260,
       shadowShotImpact: 640,
+      // FS-VHGE7 §D R32: at most 250 ms, as quick as the claw
+      demonClaw: 220,
       hit: 220,
       deathDust: 600,
       escape: 1000,

@@ -179,7 +179,8 @@ var attackTable = map[components.AttackKind]attackSpec{
 	// a monster's strike is its damage at level, as is: no coefficient, no stat
 	// (§Requirements 5). The MonsterAISystem paces it and measures its reach
 	// (range × 1.25) as the wind-up ends, so it has no cooldown or reach here.
-	// Every monster's strike is parriable, elites' and the boss's included.
+	// Every monster's strike is parriable, elites' and the boss's included, and
+	// a demon's slam and fire claw alike (FS-VHGE7 §B R22).
 	components.AttackMonsterStrike: {
 		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
 		coefficient: 1, reach: math.Inf(1), parriable: true,
@@ -344,6 +345,10 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	spec, ok := attackTable[intent.Kind]
 	if !ok {
 		return
+	}
+	if intent.Kind == components.AttackMonsterStrike && intent.Coefficient > 0 {
+		// a demon's slam: its multiple of its level damage (FS-VHGE7 §B R16)
+		spec.coefficient = intent.Coefficient
 	}
 
 	tc, ok := attacker.GetComponent(ecs.ComponentTypeTransform)

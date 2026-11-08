@@ -12,8 +12,10 @@ type MonsterArchetype string
 const (
 	MonsterArchetypeGhoul MonsterArchetype = "ghoul"
 	MonsterArchetypeTroll MonsterArchetype = "troll"
-	// the boss: never an elite, at most one a floor
-	MonsterArchetypeDemon MonsterArchetype = "demon"
+	// the bosses: never an elite, at most one of each a floor. The demon is
+	// the green one; the blood demon the rarer red one (FS-VHGE7 §A R1)
+	MonsterArchetypeDemon      MonsterArchetype = "demon"
+	MonsterArchetypeBloodDemon MonsterArchetype = "blood_demon"
 	// field wildlife: the Gentle Meadows' creature, never rolled in the Spire
 	// (FS-X2F2H §Requirements 37)
 	MonsterArchetypeBoar MonsterArchetype = "boar"
@@ -24,13 +26,16 @@ const (
 )
 
 // MonsterAction is what a monster is doing, as the state broadcast names it.
-// `attack` covers the wind-up and the strike. FS-77AB6 §Requirements 32.
+// `attack` covers the wind-up and the strike, a demon's slam included.
+// FS-77AB6 §Requirements 32. `claw` is a demon's fire claw, from the tick it
+// lands for its show window. FS-VHGE7 §B R24.
 type MonsterAction string
 
 const (
 	MonsterActionIdle   MonsterAction = "idle"
 	MonsterActionMove   MonsterAction = "move"
 	MonsterActionAttack MonsterAction = "attack"
+	MonsterActionClaw   MonsterAction = "claw"
 	MonsterActionDead   MonsterAction = "dead"
 )
 
@@ -86,9 +91,19 @@ type MonsterComponent struct {
 	AggroRadius    float64 // px
 	LeashRadius    float64 // px
 
+	// The second move, copied from its sheet at spawn (FS-VHGE7 §B R15). With
+	// Claw its wind-up strike is the slam, rationed by SlamCooldown, and it
+	// claws on the swings between. Without it, none of these apply.
+	Claw           bool
+	SlamCooldown   float64 // seconds between slams
+	SlamMultiplier float64 // the slam's damage over its level damage; 0 is 1
+	ClawShowFor    float64 // seconds it reports `claw`, standing, from a claw landing
+
 	// Timers, counting down in seconds.
-	AttackCooldown  float64
-	WindUpRemaining float64
+	AttackCooldown        float64
+	WindUpRemaining       float64
+	SlamCooldownRemaining float64
+	ClawShowRemaining     float64
 	// CorpseRemaining is how long a dead monster still lies before it is removed.
 	CorpseRemaining float64
 }

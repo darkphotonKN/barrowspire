@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { ActionType } from "@/assets/types/client";
-import { ArtLibrary } from "@/render/art/library";
+import { shippedManifest } from "@/render/art/artLoader.standin";
+import { ArtLibrary, atlasTextureKey } from "@/render/art/library";
 import { MonsterRoster } from "@/render/creatures";
 import { STRIKE_RANGE } from "@/render/combat/playerCombat";
 import { SHADOW_SHOT_MIN_HOLD_MS } from "./shadowShotAim";
-import { FieldCombat } from "./fieldCombat";
+import { EffectsRuntime } from "@/render/effects/runtime";
+import { FieldCombat, fieldCombatOnScene } from "./fieldCombat";
+
+// the claw's drawing has its own suite (render/effects/demonClaw.test.ts): here, only who plays it
+const { playDemonClaw } = vi.hoisted(() => ({ playDemonClaw: vi.fn() }));
+vi.mock("@/render/effects/demonClaw", () => ({ playDemonClaw }));
 
 /** A drawn object that takes any call, remembering the handlers hung on it. */
 function drawn() {
@@ -248,5 +254,85 @@ describe("FieldCombat class kits, the run's own (FS-X2F2H §Requirements 56; FS-
     expect(kit.sync).toHaveBeenCalledWith(player, 0);
     combat.release();
     expect(kit.forget).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A stand-in that answers anything: every property is another stand-in, every call returns one.
+ * Enough of a Phaser scene for {@link fieldCombatOnScene} to wire its parts on.
+ */
+function anything(): never {
+  const target = () => {};
+  const proxy: unknown = new Proxy(target, {
+    get: (_t, prop) => (prop === "then" ? undefined : prop === Symbol.toPrimitive ? () => 0 : anything()),
+    apply: () => anything(),
+  });
+  return proxy as never;
+}
+
+describe("fieldCombatOnScene: a demon's fire claw in a field (FS-VHGE7 §D R32–33)", () => {
+  /** A blood demon, as a field's state (dev_test_room's) lists it. */
+  const demon = (action: "idle" | "claw") => ({
+    ...boar("d1", 1000),
+    archetype: "blood_demon",
+    name: "Blood Demon",
+    boss: true,
+    facing: { x: 1, y: 0 },
+    action,
+  });
+
+  it("should play the claw on the field's effects runtime when a shown demon turns to claw, once per turn", () => {
+    playDemonClaw.mockClear();
+    const fight = fieldCombatOnScene(anything(), ArtLibrary.empty({ warn: () => {} }), anything(), {
+      selfAnim: () => undefined,
+      selfAt: () => undefined,
+      bodyOf: () => undefined,
+    });
+    const state = (action: "idle" | "claw") =>
+      fight.sync({ current_player: null, other_players: [], monsters: [demon(action)] as never, projectiles: [] });
+
+    state("idle");
+    state("claw");
+    state("claw");
+
+    expect(playDemonClaw).toHaveBeenCalledTimes(1);
+    const [fx, owner, at, facing] = playDemonClaw.mock.calls[0];
+    expect(fx).toBeInstanceOf(EffectsRuntime);
+    expect(owner).toBe("d1");
+    expect(at).toEqual({ x: 1000, y: 500 });
+    expect(facing).toEqual({ x: 1, y: 0 });
+  });
+
+  it("should fetch the blood demon's art group when one is listed (FS-VHGE7 §F R44, R51)", () => {
+    const manifest = shippedManifest();
+    const images: string[] = [];
+    const overrides: Record<string | symbol, unknown> = {
+      cache: { json: { get: () => manifest } },
+      textures: { exists: () => false },
+      load: {
+        on: () => undefined,
+        off: () => undefined,
+        once: () => undefined,
+        start: () => undefined,
+        image: (key: string) => images.push(key),
+      },
+    };
+    const scene = new Proxy(anything() as object, {
+      get: (target, prop) => (prop in overrides ? overrides[prop] : Reflect.get(target, prop)),
+    }) as never;
+    const fight = fieldCombatOnScene(scene, ArtLibrary.empty({ warn: () => {} }), anything(), {
+      selfAnim: () => undefined,
+      selfAt: () => undefined,
+      bodyOf: () => undefined,
+    });
+
+    fight.sync({ current_player: null, other_players: [], monsters: [demon("idle")] as never, projectiles: [] });
+
+    expect(images).toEqual(
+      Object.keys(manifest.atlases)
+        .filter((atlas) => atlas.startsWith("blood_demon-"))
+        .map(atlasTextureKey),
+    );
+    expect(images.length).toBeGreaterThan(0);
   });
 });

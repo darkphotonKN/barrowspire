@@ -11,9 +11,10 @@ import (
 //
 // A monster the CombatSystem took to 0 lies dead from that same tick: it stops
 // moving and colliding (its Velocity goes, and MovementSystem only moves and
-// collides what has one), drops its target and any strike it was winding up,
-// and is broadcast as dead. Its corpse lies for the lifetime given, so every
-// client can play the death, then the entity is removed.
+// collides what has one), drops its target, any strike it was winding up and
+// any claw it was showing (FS-VHGE7 §B R25), and is broadcast as dead. Its
+// corpse lies for the lifetime given, so every client can play the death, then
+// the entity is removed.
 //
 // The kill record is not made here: the CombatSystem makes it at the killing
 // blow, where the killer is known.
@@ -58,6 +59,7 @@ func (s *MonsterDeathSystem) layDown(entity *ecs.Entity, monster *components.Mon
 	monster.Action = components.MonsterActionDead
 	monster.Target = uuid.Nil
 	monster.WindUpRemaining = 0
+	monster.ClawShowRemaining = 0
 	monster.CorpseRemaining = s.corpseLifetime
 
 	entity.RemoveComponent(ecs.ComponentTypeVelocity)

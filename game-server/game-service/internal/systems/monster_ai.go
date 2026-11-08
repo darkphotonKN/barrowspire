@@ -12,7 +12,9 @@ import (
 
 /*
 MonsterAISystem decides what each living monster does this tick: wander,
-chase, wind up or strike. FS-77AB6 §Requirements 26.
+chase, wind up or strike. FS-77AB6 §Requirements 26. A demon, with the claw
+on its sheet, picks between its two moves: the slam when it has cooled, the
+fire claw otherwise (FS-VHGE7 §B R18).
 
 It only sets a monster's velocity, facing and AI state. MovementSystem moves
 and collides it, exactly as it does a delver, and a strike is an attack intent
@@ -91,7 +93,7 @@ func (s *MonsterAISystem) Update(deltaTime float64, entities []*ecs.Entity) {
 }
 
 // think runs one monster's tick: keep, drop or acquire a target, then wind up,
-// strike, chase or wander.
+// strike, show a claw out, chase or wander.
 func (s *MonsterAISystem) think(
 	deltaTime float64,
 	entity *ecs.Entity,
@@ -101,6 +103,8 @@ func (s *MonsterAISystem) think(
 	delvers []quarry,
 ) {
 	monster.AttackCooldown = max(monster.AttackCooldown-deltaTime, 0)
+	// the slam cools whatever it does: wandering, chasing, leashing home
+	monster.SlamCooldownRemaining = max(monster.SlamCooldownRemaining-deltaTime, 0)
 	monster.Route.SearchIn = max(monster.Route.SearchIn-deltaTime, 0)
 
 	target, hunting := s.target(monster, at, delvers)
@@ -108,6 +112,20 @@ func (s *MonsterAISystem) think(
 	if monster.WindUpRemaining > 0 {
 		s.windUp(deltaTime, entity, monster, at, velocity, target, hunting)
 		return
+	}
+	if monster.ClawShowRemaining > 0 {
+		monster.ClawShowRemaining -= deltaTime
+		if monster.ClawShowRemaining > 0 {
+			// the claw already landed: it stands its show out, whoever left,
+			// facing its target while it has one (FS-VHGE7 §B R24)
+			velocity.VX, velocity.VY = 0, 0
+			if hunting {
+				face(monster, at, target.at)
+			}
+			monster.Action = components.MonsterActionClaw
+			return
+		}
+		monster.ClawShowRemaining = 0
 	}
 
 	if !hunting {
@@ -124,13 +142,37 @@ func (s *MonsterAISystem) think(
 	velocity.VX, velocity.VY = 0, 0
 	face(monster, at, target.at)
 	if monster.AttackCooldown > 0 {
-		// any action but attack between swings, so each one reads as new
+		// any action but a strike's between swings, so each one reads as new
 		monster.Action = components.MonsterActionIdle
 		return
 	}
-	monster.WindUpRemaining = monster.WindUp
 	monster.AttackCooldown = monster.AttackInterval
+	if monster.Claw && monster.SlamCooldownRemaining > 0 {
+		claw(entity, monster, target)
+		return
+	}
+	monster.WindUpRemaining = monster.WindUp
+	monster.SlamCooldownRemaining = monster.SlamCooldown
 	monster.Action = components.MonsterActionAttack
+}
+
+// claw lands a demon's fire claw on its target in range this same tick, at 1 ×
+// its level damage, and shows it as `claw` for its show window. FS-VHGE7 §B
+// R17, R24.
+func claw(entity *ecs.Entity, monster *components.MonsterComponent, target quarry) {
+	monster.ClawShowRemaining = monster.ClawShowFor
+	monster.Action = components.MonsterActionClaw
+	strike(entity, components.AttackIntent{Kind: components.AttackMonsterStrike, TargetEntityID: target.id})
+}
+
+// strike hands a monster's landing strike to the CombatSystem.
+func strike(entity *ecs.Entity, intent components.AttackIntent) {
+	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
+	if !ok {
+		return
+	}
+	intents := ic.(*components.AttackIntentComponent)
+	intents.Pending = append(intents.Pending, intent)
 }
 
 // target settles who the monster is after this tick. The current target is kept
@@ -179,7 +221,8 @@ func (s *MonsterAISystem) target(monster *components.MonsterComponent, at *compo
 }
 
 // windUp holds a monster still through its wind-up and, when it ends, strikes if
-// the target is still within range × 1.25; otherwise the swing whiffs.
+// the target is still within range × 1.25; otherwise the swing whiffs. A
+// demon's wind-up strike is its slam (FS-VHGE7 §B R16).
 func (s *MonsterAISystem) windUp(
 	deltaTime float64,
 	entity *ecs.Entity,
@@ -201,14 +244,11 @@ func (s *MonsterAISystem) windUp(
 	if !hunting || distance(at, target.at) > monster.AttackRange*strikeReach {
 		return
 	}
-	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
-	if !ok {
-		return
-	}
-	intents := ic.(*components.AttackIntentComponent)
-	intents.Pending = append(intents.Pending, components.AttackIntent{
+	// a demon's slam hits at its multiple; every other strike at the row's 1
+	strike(entity, components.AttackIntent{
 		Kind:           components.AttackMonsterStrike,
 		TargetEntityID: target.id,
+		Coefficient:    monster.SlamMultiplier,
 	})
 }
 

@@ -216,3 +216,18 @@ describe("ArtLibrary lookups", () => {
     expect(lib.animationKey("dragon", "walk")).toBeUndefined();
   });
 });
+
+describe("ArtLibrary.admit (FS-VHGE7 §F R47)", () => {
+  it("should serve a sheet quietly once its atlas is admitted, and warn about nothing before", () => {
+    const warn = vi.fn();
+    const art = new ArtLibrary(manifest(), { warn }, new Set(["props-0"]));
+    expect(art.has("brazier")).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+
+    art.admit(["props-1"]);
+
+    expect(art.has("brazier")).toBe(true);
+    expect(art.resolve("brazier").placeholder).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

@@ -338,7 +338,7 @@ type NPCState struct {
 // are removed. FS-77AB6 §Requirements 32.
 type MonsterState struct {
 	EntityID uuid.UUID `json:"entity_id"`
-	// ghoul | troll | demon
+	// ghoul | troll | demon | blood_demon
 	Archetype string `json:"archetype"`
 	// server-authored, elite prefix included, level excluded: the client
 	// composes the nameplate
@@ -349,7 +349,9 @@ type MonsterState struct {
 	Position Position `json:"position"`
 	// the direction it faces; never zero
 	Facing Position `json:"facing"`
-	// idle | move | attack | dead
+	// idle | move | attack | claw | dead: attack is the wind-up and strike, a
+	// demon's slam included; claw a demon's fire claw, from the tick it lands
+	// for its show window (FS-VHGE7 §B R24)
 	Action        string `json:"action"`
 	CurrentHealth int    `json:"current_health"`
 	MaxHealth     int    `json:"max_health"`

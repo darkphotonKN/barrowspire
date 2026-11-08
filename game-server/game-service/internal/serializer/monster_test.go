@@ -94,6 +94,35 @@ func TestSerializeBackendState_MonsterAtNoHealthIsDead(t *testing.T) {
 	assert.Equal(t, string(components.MonsterActionDead), backendState.Monsters[0].Action)
 }
 
+// A demon's fire claw goes out as the `claw` action, the only wire change for
+// it; a demon at no health mid-claw lies dead. FS-VHGE7 §B R24–25.
+func TestSerializeBackendState_DemonClawIsTheClawActionUntilDead(t *testing.T) {
+	tests := []struct {
+		name   string
+		health int
+		want   components.MonsterAction
+	}{
+		{"alive mid-claw", 900, components.MonsterActionClaw},
+		{"killed mid-claw", 0, components.MonsterActionDead},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			e := addMonster(em, "Demon", 300, 200, tt.health, 1200)
+			mc, _ := e.GetComponent(ecs.ComponentTypeEnemy)
+			mc.(*components.MonsterComponent).Action = components.MonsterActionClaw
+			s := NewStateSerializer(em, nil)
+
+			backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
+			require.NoError(t, err)
+
+			require.Len(t, backendState.Monsters, 1)
+			assert.Equal(t, string(tt.want), backendState.Monsters[0].Action)
+		})
+	}
+}
+
 // The hub never holds a monster, and its broadcast does not mention them.
 // FS-77AB6 §Requirements 32.
 func TestFormatStateToClientState_HubCarriesNoMonsters(t *testing.T) {

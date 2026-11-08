@@ -493,6 +493,39 @@ describe("the boss frame (FS-48CTQ §D.12: a bar 1.5 × as wide and twice as tal
   });
 });
 
+// FS-VHGE7 §C R28 (I-VHGE7-3): the blood demon takes the boss frame by `boss: true`, and is named
+// by the server's plate, as the green demon is.
+describe("the blood demon's frame (FS-VHGE7 §C R28)", () => {
+  const bloodDemon = demon({
+    entity_id: "blood",
+    archetype: "blood_demon",
+    name: "Blood Demon",
+    level: 9,
+  });
+
+  it("should name it by its plate, `Blood Demon · Lv N`, in the hostile channel", () => {
+    const { live } = shownFrame(bloodDemon, 540);
+    expect(live().map((t) => t.content)).toEqual(["Blood Demon · Lv 9"]);
+    expect(live()[0].style.color).toBe(toCss(palette.markerHostile));
+  });
+
+  it("should draw it in the boss frame, as the green demon is", () => {
+    const { panel } = drawnBar(shownFrame(bloodDemon, 540));
+    expect(panel.w).toBe(TARGET_BOSS_FRAME.width);
+    expect(panel.h).toBe(TARGET_BOSS_FRAME.height);
+  });
+
+  it("should switch at once between the two bosses, naming each by its own plate", () => {
+    const parts = fakeStage();
+    const frame = new TargetFrame(parts.stage, () => 540);
+    frame.update(TARGET_FADE_IN_MS, demon(), false);
+    frame.update(16, bloodDemon, false);
+    const live = parts.texts.filter((t) => t.visible && t.content !== "");
+    expect(live.map((t) => t.content)).toEqual(["Blood Demon · Lv 9"]);
+    expect(drawnBar(parts).panel.w).toBe(TARGET_BOSS_FRAME.width);
+  });
+});
+
 describe("the frame's layout at 1080 and 1280 (FS-48CTQ §E.14)", () => {
   /**
    * What the frame must clear, from FS-48CTQ "Facts" and §E.14: the notices from y ≈ 78, and the

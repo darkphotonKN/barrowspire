@@ -4,6 +4,11 @@
 // from the wings. The hide is a dark, desaturated bog green (demonTone.js); the eyes are the
 // hostile ember red and the only emissive part.
 //
+// The blood demon (FS-VHGE7 §E R36-R39) is the same build at the same size, varied the way the
+// elite boar varies the boar: a dark blood hide (demonTone.js DEMON_BLOOD_HIDE, the guideline's
+// blood-hide clause), heavier horns and larger wings. Its loincloth is skinned to its own thighs
+// (R37): only the green demon keeps skirt({ mirrored: true }), on clearance.js MIRRORED_LEGACY.
+//
 // Units and conventions are rig.js's: lengths are fractions of H, the model faces +z, its left
 // is +x. Wing and tail rest poses are aimed (aimRest) rather than typed as Euler angles: a
 // direction per bone is far easier to read and tune than a compound rotation.
@@ -16,17 +21,20 @@ import { attach, createRig, ellipsoid, jointAt as J, rigidTube, skinMembrane, sk
 import { arms, neck, skirt, skirtBones, torso } from "./anatomy.js";
 import { add, mirror, pose } from "./clips.js";
 import { fabrics, mat, paint, pf, pn } from "./fabrics.js";
-import { hideTone } from "./demonTone.js";
+import { DEMON_BLOOD_HIDE, DEMON_HIDE, hideTone } from "./demonTone.js";
 
 /**
- * The demon's clips (FS-Q14EV §B.6). Its attack is its own length and rate, not the 7-frame
- * default: a roar held for half a second, then the strike and recovery.
+ * The demons' clips (FS-Q14EV §B.6). Its attack is its own length and rate, not the 7-frame
+ * default: a roar held for half a second, then the strike and recovery (the slam). The fire claw
+ * (FS-VHGE7 §E R38) is a fast swipe with no wind-up, about 0.42 s, inside the server's 0.4 s
+ * `claw` show plus a tick; it comes last so the clips before it bake as they always have.
  */
 export const DEMON_ANIMATIONS = {
   idle: { frames: 4, fps: 4, loop: true },
   walk: { frames: 8, fps: 8, loop: true },
   attack: { frames: 10, fps: 10, loop: false },
   death: { frames: 6, fps: 7, loop: false },
+  claw: { frames: 5, fps: 12, loop: false },
 };
 
 const sides = [
@@ -90,12 +98,13 @@ function horn(tone, seed) {
   );
 }
 
-let SET = null;
+const SETS = {};
 
-/** The demon's material set, painted once per bake. No colour here is emissive. */
-function demonFabrics() {
-  if (SET) return SET;
-  const hide = hideTone(mix, shade);
+/** A demon's material set (`blood`: the blood demon's), painted once per bake. No colour here is emissive. */
+function demonFabrics(blood) {
+  const key = blood ? "blood" : "green";
+  if (SETS[key]) return SETS[key];
+  const hide = hideTone(mix, shade, blood ? DEMON_BLOOD_HIDE : DEMON_HIDE);
   const D = THREE.DoubleSide;
   const tone = {
     hide,
@@ -105,7 +114,7 @@ function demonFabrics() {
     tooth: mix("vellum", "barrowBrown", 0.4),
     maw: mix("pitch", "oxblood", 0.4),
   };
-  SET = {
+  SETS[key] = {
     hide: mat(scaledHide(tone.hide, 61), { rough: 0.62, normal: 1.1 }),
     membrane: mat(membrane(tone.membrane, 65), { rough: 0.58, side: D }),
     horn: mat(horn(tone.horn, 67), { rough: 0.45 }),
@@ -113,7 +122,7 @@ function demonFabrics() {
     tooth: mat(horn(tone.tooth, 71), { rough: 0.5 }),
     maw: mat(scaledHide(tone.maw, 73), { rough: 0.5 }),
   };
-  return SET;
+  return SETS[key];
 }
 
 // --- geometry helpers ----------------------------------------------------------------------
@@ -304,8 +313,11 @@ function clawHands(rig, F) {
   }
 }
 
-/** The head: a long horned skull with a heavy brow, a muzzle, a hinged jaw full of teeth. */
-function demonHead(rig, F, eyeMat) {
+/**
+ * The head: a long horned skull with a heavy brow, a muzzle, a hinged jaw full of teeth. `horns`
+ * scales the horns from their root at the temple: `size` their sweep, `girth` their thickness.
+ */
+function demonHead(rig, F, eyeMat, horns = { size: 1, girth: 1 }) {
   const H = rig.H;
   const M = materials();
   const r = rig.p.headR;
@@ -334,11 +346,12 @@ function demonHead(rig, F, eyeMat) {
     ])
       spike(rig, "head", [at(sx * fx, -0.5, 1.6), at(sx * fx, -0.5 - len * 0.6, 1.66), at(sx * fx * 0.9, -0.5 - len, 1.62)], [0.07 * r, 0.004 * r], F.tooth, { segs: 6 });
     // the horns: out from the temples, up and back, the tips curling forward
+    const hornAt = (dx, dy, dz) => at(sx * (0.5 + (dx - 0.5) * horns.size), 0.55 + (dy - 0.55) * horns.size, 0.3 + (dz - 0.3) * horns.size);
     spike(
       rig,
       "head",
-      [at(sx * 0.5, 0.55, 0.3), at(sx * 1.25, 0.9, -0.05), at(sx * 1.85, 1.55, -0.55), at(sx * 1.95, 2.45, -0.75), at(sx * 1.6, 3.15, -0.35)],
-      [0.36 * r, 0.02 * r],
+      [hornAt(0.5, 0.55, 0.3), hornAt(1.25, 0.9, -0.05), hornAt(1.85, 1.55, -0.55), hornAt(1.95, 2.45, -0.75), hornAt(1.6, 3.15, -0.35)],
+      [0.36 * r * horns.girth, 0.02 * r],
       F.horn,
       { segs: 12, steps: 4, ridges: 9, taper: 1.3 },
     );
@@ -490,8 +503,23 @@ function wings(rig, F) {
 
 // --- the build -----------------------------------------------------------------------------
 
-export function demon() {
-  const F = demonFabrics();
+/** The blood demon's wings: the green demon's, every bone a quarter longer (R36). */
+const BLOOD_WING = {
+  ...WING,
+  arm: WING.arm.map((v) => v * 1.25),
+  fore: WING.fore.map((v) => v * 1.25),
+  fingers: WING.fingers.map((f) => f.map((v) => v * 1.25)),
+};
+
+/** The green demon (FS-Q14EV §B), the first boss. */
+export const demon = () => build();
+
+/** The blood demon (FS-VHGE7 §E), the rarer second boss: same body, blood hide, heavier horns, larger wings. */
+export const bloodDemon = () => build({ blood: true });
+
+function build({ blood = false } = {}) {
+  const wing = blood ? BLOOD_WING : WING;
+  const F = demonFabrics(blood);
   const G = fabrics();
   const M = materials();
   const rig = createRig(4.3, {
@@ -512,7 +540,7 @@ export function demon() {
     upperArm: 0.175,
     foreArm: 0.165,
     headR: 0.058,
-    wings: WING,
+    wings: wing,
     tail: { root: [-0.03, -0.075], segments: 5, length: 0.42 },
   });
   rig.hooks = [];
@@ -555,7 +583,7 @@ export function demon() {
 
   // springs (besides the loincloth's): the trailing half of every wing finger, the tail past its root
   for (const [s] of sides)
-    WING.fingers.forEach((_, i) =>
+    wing.fingers.forEach((_, i) =>
       spring(rig, `wingTip${s}${i}`, {
         stiffness: 40 - i * 4,
         damping: 6,
@@ -582,11 +610,11 @@ export function demon() {
   arms(rig, F.hide, { bulk: 1.18 });
   clawHands(rig, F);
   legs(rig, F);
-  demonHead(rig, F, eyeMat);
+  demonHead(rig, F, eyeMat, blood ? { size: 1.25, girth: 1.45 } : undefined);
   dorsalSpines(rig, F);
   tail(rig, F);
   wings(rig, F);
-  skirt(rig, G.leatherDark, { top: hy + 0.035, bottom: hy - 0.2, rTop: [0.104, 0.112], rBottom: [0.128, 0.13], legFollow: 0.5, panels: true, ragged: { teeth: 9, depth: 0.09, seed: 12 }, mirrored: true });
+  skirt(rig, G.leatherDark, { top: hy + 0.035, bottom: hy - 0.2, rTop: [0.104, 0.112], rBottom: [0.128, 0.13], legFollow: 0.5, panels: true, ragged: { teeth: 9, depth: 0.09, seed: 12 }, mirrored: !blood });
 
   const style = {
     speed: 0.5,
@@ -595,6 +623,7 @@ export function demon() {
       walk: () => walk(),
       attack: () => attack(flare),
       death: () => death(spent),
+      claw: () => claw(flare),
     },
   };
   return { rig, style };
@@ -786,6 +815,88 @@ function attack(flare) {
     P({ spine: [0.06, 0.08, 0], hunch: [0.06, 0.08, 0], upperArmR: [-0.25, 0.12, 0.08], foreArmR: [-0.3, 0, 0], thighL: [-0.1, 0, 0], thighR: [0.06, 0, 0] }, { z: 0.015 }, { jaw: 0.2 }),
   ];
   return frames;
+}
+
+/**
+ * The fire claw (FS-VHGE7 §E R38): no roar and no wind-up, one arm raking across the body. The
+ * right arm is already flung out to the side at shoulder height on the first frame, the body
+ * twisted onto it; it whips round in a flat arc in front of the chest and rakes through to the
+ * left, the demon stepping into it; then it gathers back toward the stance. The wings barely
+ * stir: flaring them is the slam's tell, so the claw keeps them furled. Five frames at 12 fps.
+ */
+function claw(flare) {
+  const k = flare;
+  const twist = (t) => ({ spine: [0.04 * Math.abs(t), 0.16 * t, 0], hunch: [0.08 * Math.abs(t), 0.22 * t, 0], chest: [0.04 * Math.abs(t), 0.28 * t, 0], neck: [0, -0.2 * t, 0] });
+  return [
+    // flung out: twisted onto the right, the claw out to the side at shoulder height, a snarl
+    P(
+      {
+        ...twist(-1),
+        upperArmR: [-1.2, 0, -1.15],
+        foreArmR: [-0.12, 0, 0],
+        handR: [0.4, 0, 0],
+        upperArmL: [-0.45, 0, 0.3],
+        foreArmL: [-0.55, 0, 0],
+        thighL: [-0.12, 0, 0.04],
+        thighR: [0.1, 0, -0.04],
+        ...k(0.08),
+      },
+      { z: -0.01 },
+      { jaw: 0.45 },
+    ),
+    // the sweep: unwinding, the claw coming round in front at full reach
+    P(
+      {
+        ...twist(0),
+        upperArmR: [-1.3, 0, -0.35],
+        foreArmR: [-0.08, 0, 0],
+        handR: [0.1, 0, 0],
+        upperArmL: [-0.3, 0, 0.35],
+        foreArmL: [-0.5, 0, 0],
+        thighL: [-0.3, 0, 0.05],
+        shinL: [0.1, 0, 0],
+        thighR: [0.2, 0, -0.05],
+        ...k(0.12),
+      },
+      { z: 0.04 },
+      { jaw: 0.6 },
+    ),
+    // the rake: through and across to the left, onto the front foot
+    P(
+      {
+        ...twist(1),
+        upperArmR: [-1.2, 0, 0.6],
+        foreArmR: [-0.2, 0, 0],
+        handR: [-0.3, 0, 0],
+        upperArmL: [0.2, 0, 0.4],
+        foreArmL: [-0.5, 0, 0],
+        thighL: [-0.4, 0, 0.06],
+        shinL: [0.15, 0, 0],
+        thighR: [0.28, 0, -0.06],
+        ...k(0.1),
+      },
+      { z: 0.06 },
+      { jaw: 0.55 },
+    ),
+    // follow-through: the claw dropping low across the body
+    P(
+      {
+        ...twist(1.1),
+        upperArmR: [-0.7, 0, 0.75],
+        foreArmR: [-0.4, 0, 0],
+        handR: [-0.4, 0, 0],
+        upperArmL: [0.3, 0, 0.32],
+        thighL: [-0.38, 0, 0.06],
+        shinL: [0.15, 0, 0],
+        thighR: [0.26, 0, -0.06],
+        ...k(0.06),
+      },
+      { z: 0.055 },
+      { jaw: 0.35 },
+    ),
+    // gathering back toward the stance
+    P({ ...twist(0.35), upperArmR: [-0.3, 0, 0.15], foreArmR: [-0.3, 0, 0], thighL: [-0.12, 0, 0], thighR: [0.08, 0, 0] }, { z: 0.015 }, { jaw: 0.2 }),
+  ];
 }
 
 function scalePose(p, k) {

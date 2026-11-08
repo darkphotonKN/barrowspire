@@ -80,7 +80,7 @@ export class ArtLibrary {
   constructor(
     private readonly manifest: ArtManifest | null,
     private readonly logger: ArtLogger,
-    private readonly loadedAtlases?: ReadonlySet<string>,
+    private loadedAtlases?: ReadonlySet<string>,
   ) {}
 
   /** A library with no manifest: everything is the placeholder. */
@@ -105,6 +105,15 @@ export class ArtLibrary {
     if (loaded && !sheetAtlases(sheet).every((a) => loaded.has(a)))
       return undefined;
     return sheet;
+  }
+
+  /**
+   * Atlases that became textures after this library was made: an on-demand group, its frames and
+   * animations registered (FS-VHGE7 §F R47, `onDemandArt`).
+   */
+  admit(atlases: Iterable<string>): void {
+    if (this.loadedAtlases)
+      this.loadedAtlases = new Set([...this.loadedAtlases, ...atlases]);
   }
 
   light(name: string): ArtLight | undefined {

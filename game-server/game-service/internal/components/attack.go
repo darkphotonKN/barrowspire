@@ -66,6 +66,10 @@ type AttackIntent struct {
 	TargetEntityID uuid.UUID // the targeted attack's target
 	TargetX        float64   // where an aimed skill points
 	TargetY        float64
+	// Coefficient overrides a monster strike's row coefficient: a demon's slam
+	// lands at its SlamMultiplier (FS-VHGE7 §B R16). Only the MonsterAISystem
+	// sets it; 0, as on every other intent, keeps the row's own.
+	Coefficient float64
 }
 
 // AttackIntentComponent holds an entity's unresolved attack requests, oldest first.

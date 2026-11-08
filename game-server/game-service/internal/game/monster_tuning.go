@@ -194,6 +194,18 @@ const (
 	DemonPlacementSamples = 200
 )
 
+// The blood demon boss: rarer, tougher, never guaranteed. FS-VHGE7 §A R4, R6.
+const (
+	// blood demon level = party level + floor offset + bonus, with no spread
+	BloodDemonLevelBonus = 3
+)
+
+// BloodDemonChanceByFloor is the chance of a blood demon on each run floor,
+// floor 1 first. A floor past its end uses the last row, so raising
+// RunFloorCount never quietly removes it. Its roll is independent of the
+// demon's.
+var BloodDemonChanceByFloor = []float64{0.02, 0.05, 0.10}
+
 // MonsterCorpseLifetime is how long, in seconds, a dead monster lies broadcast as
 // dead, so every client can play its death, before it is removed. FS-77AB6
 // §Requirements 30.
@@ -220,6 +232,38 @@ type monsterSheet struct {
 	MagicResistance int
 	AggroRadius     float64 // px
 	LeashRadius     float64 // px
+	// Moves is its second move; zero for an archetype with its one strike.
+	Moves monsterMoves
+}
+
+// The demons' two moves: the slam, their wind-up strike doubled and rationed,
+// and the fire claw on the swings between. FS-VHGE7 §B R16–18, R24. Starting
+// values.
+const (
+	// seconds from choosing a slam before the next slam can be chosen
+	DemonSlamCooldown = 6.0
+	// the slam's damage over the demon's level damage
+	SlamDamageMultiplier = 2.0
+	// seconds a claw is reported as `claw`, standing still, from the tick it
+	// lands
+	ClawShowFor = 0.4
+)
+
+// monsterMoves is an archetype's second move: with Claw, the fire claw beside
+// its strike, which then becomes the slam. Which archetypes claw is this data,
+// never a check on the archetype (FS-VHGE7 §B R15).
+type monsterMoves struct {
+	Claw           bool
+	SlamCooldown   float64 // s
+	SlamMultiplier float64
+	ClawShowFor    float64 // s
+}
+
+var demonMoves = monsterMoves{
+	Claw:           true,
+	SlamCooldown:   DemonSlamCooldown,
+	SlamMultiplier: SlamDamageMultiplier,
+	ClawShowFor:    ClawShowFor,
 }
 
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
@@ -240,6 +284,17 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
+
+		Moves: demonMoves,
+	},
+	// the red boss: the demon's sheet, harder and longer (FS-VHGE7 §A R3)
+	components.MonsterArchetypeBloodDemon: {
+		Name: "Blood Demon", HP: 1600, Damage: 34,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		Defense: 15, MagicResistance: 15,
+		AggroRadius: 320, LeashRadius: 700,
+
+		Moves: demonMoves,
 	},
 	// field wildlife: a lowered-head charge (FS-X2F2H §Requirements 37)
 	components.MonsterArchetypeBoar: {
@@ -268,12 +323,13 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 // before its level and its multiplier. A new archetype adds a row; one without
 // a row is worth nothing. FS-BDA7X §Requirements 11.
 var killExperienceBase = map[components.MonsterArchetype]int{
-	components.MonsterArchetypeGhoul:  10,
-	components.MonsterArchetypeTroll:  25,
-	components.MonsterArchetypeDemon:  25,
-	components.MonsterArchetypeBoar:   8,
-	components.MonsterArchetypeZombie: 15,
-	components.MonsterArchetypeGhost:  20,
+	components.MonsterArchetypeGhoul:      10,
+	components.MonsterArchetypeTroll:      25,
+	components.MonsterArchetypeDemon:      25,
+	components.MonsterArchetypeBloodDemon: 35, // FS-VHGE7 §A R13
+	components.MonsterArchetypeBoar:       8,
+	components.MonsterArchetypeZombie:     15,
+	components.MonsterArchetypeGhost:      20,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.
@@ -340,4 +396,17 @@ func trollShare(floor int) float64 {
 // its bonus. It has no spread.
 func demonLevel(partyLevel, floor int) int {
 	return max(partyLevel+MonsterLevelPerFloor*(floor-1)+DemonLevelBonus, 1)
+}
+
+// bloodDemonLevel is the blood demon's level, as demonLevel is the demon's but
+// with its own bonus. It has no spread.
+func bloodDemonLevel(partyLevel, floor int) int {
+	return max(partyLevel+MonsterLevelPerFloor*(floor-1)+BloodDemonLevelBonus, 1)
+}
+
+// bloodDemonChance is the chance of a blood demon on this floor: its row of
+// BloodDemonChanceByFloor, the last row past the table's end.
+func bloodDemonChance(floor int) float64 {
+	rows := BloodDemonChanceByFloor
+	return rows[min(max(floor, 1), len(rows))-1]
 }

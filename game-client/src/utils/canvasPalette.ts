@@ -299,6 +299,12 @@ export const palette = {
   //    never amber, green or glowing. They sit under the light-map like the
   //    sprite they wash, so readability stays with the markers.
   eliteTint: tint(BARROW_HEX.oxbloodText, 0.5),
+  /**
+   * FS-VHGE7 §F R46: the blood demon's stand-in, the green demon's sheet under a multiply wash
+   * until its own art lands. Heavier than an elite's: it has a green hide to turn, and must read
+   * as a different boss at a glance.
+   */
+  bloodDemonStandIn: mix(BARROW_HEX.oxblood, BARROW_HEX.oxbloodText, 0.7),
 
   // -- The satchel (container view, FS-2325V §D). Tanned leather sits between
   //    barrow brown and brass; the flap is the darker, oilier hide; vellum

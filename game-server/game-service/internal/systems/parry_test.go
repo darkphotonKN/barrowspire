@@ -1,6 +1,7 @@
 package systems
 
 import (
+	"math"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -356,4 +357,42 @@ func TestCombatSystem_Parry_OutOfPlayCastsNothing(t *testing.T) {
 	w.tick()
 
 	assert.False(t, parryOf(merc).Open)
+}
+
+// Both demon moves are monster strikes, and an open stance negates either for
+// a parry charge: the slam as its wind-up ends, and the claw, which has no
+// tell, only when the stance is already open as it lands. FS-VHGE7 §B R22,
+// §Edge States "Parry on a claw".
+func TestCombatSystem_Parry_DemonSlamAndClawAreParried(t *testing.T) {
+	tests := []struct {
+		name        string
+		slamCooling bool
+		// lead is how long the demon swings before the stance opens; then
+		// the stance and the move resolve over the next 0.2 s
+		lead float64
+	}{
+		{"the slam, in the last of its wind-up", false, 0.7},
+		{"the claw, the tick it lands", true, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			merc := parryMerc(em, 100, 100)
+			d := demon(t, em, 160, 100)
+			if tt.slamCooling {
+				monster(d).SlamCooldownRemaining = 6
+			}
+			for range int(math.Round(tt.lead / tickSeconds)) {
+				brawl(em, 1)
+			}
+			require.Equal(t, 150, health(merc), "struck before the stance opened")
+
+			castParry(merc)
+			brawl(em, ticks(0.2))
+
+			assert.Equal(t, 150, health(merc), "negated")
+			assert.Equal(t, 1, pool(merc), "one parry charge")
+		})
+	}
 }

@@ -1,3 +1,8 @@
 /** Monsters on the canvas (FS-77AB6 req 34–39). Scenes import from here. */
-export { MonsterRoster, type MonsterStage, type MonsterTargeting } from "./monsters";
+export {
+  MonsterRoster,
+  type MonsterEffects,
+  type MonsterStage,
+  type MonsterTargeting,
+} from "./monsters";
 export { phaserMonsterStage } from "./phaserStage";

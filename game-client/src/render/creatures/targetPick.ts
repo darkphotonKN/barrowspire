@@ -27,17 +27,19 @@ export const LAST_HIT_HOLD_MS = 3000;
 export const HIT_WINDOW_MS = 1000;
 
 /**
- * The demon's aggro radius, in px: how near a delver must come before it hunts
- * (`game-service/internal/game/monster_tuning.go:238-242`, `MonsterArchetypeDemon.AggroRadius`).
- * Unaggroed it wanders and still reports `move` (`internal/systems/monster_ai.go:113-115`,
- * `:233-236`), so only a `move` this near a living member engages it (§D.10).
+ * A boss's aggro radius, in px: how near a delver must come before it hunts. Both bosses share it,
+ * the demon and the blood demon (`game-service/internal/game/monster_tuning.go`,
+ * `MonsterArchetypeDemon.AggroRadius`; FS-VHGE7 §A). Unaggroed a boss wanders and still reports
+ * `move` (`internal/systems/monster_ai.go:113-115`, `:233-236`), so only a `move` this near a
+ * living member engages it (§D.10).
  */
 export const BOSS_AGGRO_PX = 320;
 
 /**
- * The demon's leash radius, in px: how far it follows before giving up
- * (`monster_tuning.go:238-242`, `MonsterArchetypeDemon.LeashRadius`). An `attack` within it of a
- * living member engages it; at full health beyond it of every living member it lets go (§D.10).
+ * A boss's leash radius, in px: how far it follows before giving up. Both bosses share it, as they
+ * do the aggro radius (`monster_tuning.go`, `MonsterArchetypeDemon.LeashRadius`; FS-VHGE7 §A). A
+ * strike within it of a living member, an `attack` or a demon's `claw` (FS-VHGE7 §D R34), engages
+ * it; at full health beyond it of every living member it lets go (§D.10).
  */
 export const BOSS_LEASH_PX = 700;
 
@@ -69,9 +71,10 @@ const damaged = (boss: MonsterState) => boss.current_health < boss.max_health;
 
 /**
  * Whether this broadcast engages `boss` (FS-48CTQ §D.10): alive, and either below its maximum
- * health, or moving within {@link BOSS_AGGRO_PX} of a living member, or attacking within
- * {@link BOSS_LEASH_PX} of one. `members` are the run's players, the local one among them. Idle
- * engages nothing: the server reports it between wander legs and between swings alike
+ * health, or moving within {@link BOSS_AGGRO_PX} of a living member, or striking (`attack`, or a
+ * demon's `claw`, FS-VHGE7 §D R34) within {@link BOSS_LEASH_PX} of one. `members` are the run's
+ * players, the local one among them. Idle engages nothing: the server reports it between wander
+ * legs and between swings alike
  * (`monster_ai.go:124-128`, `:233-235`).
  */
 export function engages(
@@ -81,7 +84,7 @@ export function engages(
   if (!alive(boss)) return false;
   if (damaged(boss)) return true;
   if (boss.action === "move") return memberWithin(boss, members, BOSS_AGGRO_PX);
-  if (boss.action === "attack")
+  if (boss.action === "attack" || boss.action === "claw")
     return memberWithin(boss, members, BOSS_LEASH_PX);
   return false;
 }

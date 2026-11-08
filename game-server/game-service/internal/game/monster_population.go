@@ -31,6 +31,9 @@ type populationRand interface {
 * The demon comes on top of the standard count (§Requirements 24): always on the
 * top floor, otherwise on its rare roll.
 *
+* The blood demon comes after the demon, on its own roll at the floor's odds,
+* never guaranteed, never in the demon's dungeon room (FS-VHGE7 §A R5–10).
+*
 * A dungeon floor is populated by room and role instead (populateDungeon,
 * FS-KE075 §C), its demon in the farthest room.
 *
@@ -68,8 +71,13 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	// in the farthest room (FS-KE075 §C R18–20)
 	if s.dungeon != nil {
 		s.populateDungeon(s.dungeon, &area, level, floor)
+		demonRoom := -1
 		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
-			s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
+			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
+		}
+		// FS-VHGE7 §A R8, R10: after the demon, never in its room
+		if blood, rolled := rollBloodDemon(s.spawnRand, level, floor); rolled {
+			s.placeDungeonBloodDemon(s.dungeon, &area, blood, floor, demonRoom)
 		}
 		return
 	}
@@ -94,14 +102,20 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
 		s.placeDemon(&area, demon, floor, topFloor)
 	}
+	// FS-VHGE7 §A R8–9: after the demon, so its draws come first; never
+	// guaranteed, so no relaxed retry
+	if blood, rolled := rollBloodDemon(s.spawnRand, level, floor); rolled {
+		s.placeDemon(&area, blood, floor, false)
+	}
 }
 
 /**
-* placeDemon stands the demon at the valid spot farthest from the delvers among
-* a bounded sample. A guaranteed demon (the top floor) that finds no spot clear
-* of the delvers gets one more sample with the delver exclusion relaxed; if even
-* that fails it is skipped loudly, never silently. FS-77AB6 §Edge States
-* "Placement exhausted".
+* placeDemon stands a boss, the demon or the blood demon, at the valid spot
+* farthest from the delvers among a bounded sample. A guaranteed demon (the top
+* floor) that finds no spot clear of the delvers gets one more sample with the
+* delver exclusion relaxed; if even that fails it is skipped loudly, never
+* silently. A boss that is not guaranteed is skipped with a warning.
+* FS-77AB6 §Edge States "Placement exhausted"; FS-VHGE7 §A R9.
 **/
 func (s *Session) placeDemon(area *spawnArea, demon MonsterConfig, floor int, guaranteed bool) {
 	x, y, ok := area.placeFarthest(s.spawnRand, area.valid)
@@ -109,6 +123,7 @@ func (s *Session) placeDemon(area *spawnArea, demon MonsterConfig, floor int, gu
 		slog.Warn("Demon placement relaxed: no spot clear of the delvers",
 			"sessionID", s.ID,
 			"floor", floor,
+			"archetype", demon.Archetype,
 			"samples", DemonPlacementSamples,
 		)
 		x, y, ok = area.placeFarthest(s.spawnRand, area.open)
@@ -117,10 +132,10 @@ func (s *Session) placeDemon(area *spawnArea, demon MonsterConfig, floor int, gu
 	if !ok {
 		if guaranteed {
 			slog.Error("Guaranteed demon skipped: no valid spawn point even relaxed",
-				"sessionID", s.ID, "floor", floor, "samples", DemonPlacementSamples)
+				"sessionID", s.ID, "floor", floor, "archetype", demon.Archetype, "samples", DemonPlacementSamples)
 		} else {
 			slog.Warn("Demon skipped: no valid spawn point",
-				"sessionID", s.ID, "floor", floor, "samples", DemonPlacementSamples)
+				"sessionID", s.ID, "floor", floor, "archetype", demon.Archetype, "samples", DemonPlacementSamples)
 		}
 		return
 	}
@@ -140,6 +155,21 @@ func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (Monste
 	return MonsterConfig{
 		Archetype: components.MonsterArchetypeDemon,
 		Level:     demonLevel(partyLevel, floor),
+		Boss:      true,
+	}, true
+}
+
+// rollBloodDemon decides whether this floor has a blood demon: its own draw
+// against the floor's chance, never guaranteed, never more than one
+// (FS-VHGE7 §A R4–6).
+func rollBloodDemon(rng populationRand, partyLevel, floor int) (MonsterConfig, bool) {
+	if rng.Float64() >= bloodDemonChance(floor) {
+		return MonsterConfig{}, false
+	}
+
+	return MonsterConfig{
+		Archetype: components.MonsterArchetypeBloodDemon,
+		Level:     bloodDemonLevel(partyLevel, floor),
 		Boss:      true,
 	}, true
 }

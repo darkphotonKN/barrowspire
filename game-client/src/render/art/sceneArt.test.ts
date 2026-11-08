@@ -2,17 +2,21 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MONSTER_LOOKS, PLAYER_REFERENCE_SHEET, monsterLook } from "@/render/creatures/monsters";
+import { palette } from "@/utils/canvasPalette";
 import { characterSheet } from "./animationSelect";
 import { DEFAULT_RESIDENT_SHEET, FUNCTION_NPC_SHEETS, folkLook } from "./hubFolk";
 import { RESIDENT_ART_PAGES, shippedManifest } from "./artLoader.standin";
 import { sheetAtlases, type ArtManifest } from "./manifest";
 import {
+  ON_DEMAND_ART,
   RESIDENT_ART,
   SCENE_ART,
   SCENE_SCOPED_GROUPS,
   atlasGroup,
   fieldArt,
+  onDemandFor,
   sceneAtlases,
+  type OnDemandGroup,
 } from "./sceneArt";
 
 const manifest = shippedManifest();
@@ -35,7 +39,7 @@ describe("the scene art table (FS-C4JWH §A)", () => {
   });
 
   it("should take the scene-scoped groups from the table, and only those (R2)", () => {
-    expect(sorted(SCENE_SCOPED_GROUPS)).toEqual(["boss", "creatures", "fodder", "folk", "wildlife"]);
+    expect(sorted(SCENE_SCOPED_GROUPS)).toEqual(["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife"]);
   });
 
   it("should name each atlas page's group by its key without the page number (R1)", () => {
@@ -68,7 +72,7 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
     ["the hub", SCENE_ART.HubScene, ["folk-0"]],
     ["gentle_meadows", fieldArt("gentle_meadows"), ["wildlife-0", "wildlife-1"]],
     ["forlorn_forest", fieldArt("forlorn_forest"), ["fodder-0", "fodder-1"]],
-    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "creatures-0", "creatures-1"]],
+    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1"]],
     ["the main menu", SCENE_ART.MainMenuScene, []],
     ["character creation", SCENE_ART.CharacterCreationScene, []],
   ])("should hold the resident pages plus %s's own", (_scene, groups, own) => {
@@ -83,6 +87,61 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
   });
 });
 
+describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
+  /** Every group a scene's preload may queue. */
+  const preloaded = [
+    SCENE_ART.MainMenuScene,
+    SCENE_ART.CharacterCreationScene,
+    SCENE_ART.HubScene,
+    ...Object.values(SCENE_ART.FieldScene),
+    SCENE_ART.BarrowspireScene,
+  ].flat() as string[];
+
+  it("should name the blood demon's group, what fetches it and what it draws meanwhile (R43, R46)", () => {
+    expect(ON_DEMAND_ART).toEqual([
+      {
+        group: "blood_demon",
+        archetype: "blood_demon",
+        standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
+      },
+    ]);
+    expect(onDemandFor("blood_demon")?.group).toBe("blood_demon");
+    expect(onDemandFor("demon")).toBeUndefined();
+  });
+
+  it("should count each among the scene-scoped groups, and in no scene's preload set (R43, R52)", () => {
+    for (const { group } of ON_DEMAND_ART) {
+      expect(SCENE_SCOPED_GROUPS).toContain(group);
+      expect(preloaded).not.toContain(group);
+    }
+  });
+
+  it("should leave dev_test_room's preload list as it was (R51)", () => {
+    expect(fieldArt("dev_test_room")).toEqual(["creatures", "boss"]);
+  });
+
+  it("should leave boot and the run without the group's pages (R43)", () => {
+    const blood = Object.keys(manifest.atlases).filter((a) => atlasGroup(a) === "blood_demon");
+    expect(blood.length).toBeGreaterThan(0);
+    for (const groups of [RESIDENT_ART, SCENE_ART.BarrowspireScene])
+      for (const page of blood) expect(sceneAtlases(manifest, groups)).not.toContain(page);
+  });
+
+  it("should find the sheet on the group's pages, and only the green demon on boss's (R42)", () => {
+    expect(sheetAtlases(manifest.sheets.creature_blood_demon_base).map(atlasGroup)).toEqual(
+      expect.arrayContaining(["blood_demon"]),
+    );
+    expect(new Set(sheetAtlases(manifest.sheets.creature_blood_demon_base).map(atlasGroup))).toEqual(
+      new Set(["blood_demon"]),
+    );
+    const onBoss = Object.entries(manifest.sheets)
+      .filter(([, sheet]) => sheetAtlases(sheet).some((a) => atlasGroup(a) === "boss"))
+      .map(([name]) => name);
+    expect(onBoss).toEqual(["creature_demon_base"]);
+    expect(manifest.sheets.creature_demon_base.animations.claw).toBeDefined();
+  });
+});
+
 // ── Coverage (FS-C4JWH §E R21) ──────────────────────────────────────────────
 
 /**
@@ -93,13 +152,14 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
  * - forlorn_forest: zombie and ghost (`internal/game/forest_map.go:42-43`, FS-3QHQZ §C R29)
  * - dev_test_room: troll, elite troll and demon (`internal/game/dev_test_room.go`, FS-BDRTJ R14)
  * - the run: ghoul and troll on every floor, the demon on the top one and by chance on any
- *   other (`internal/game/monster_population.go:129,145-147`)
+ *   other (`internal/game/monster_population.go:129,145-147`), and the blood demon by chance on
+ *   any floor (FS-VHGE7 §A, §C R30)
  */
 const MET = [
   { scene: "gentle_meadows", groups: fieldArt("gentle_meadows"), archetypes: ["boar"] },
   { scene: "forlorn_forest", groups: fieldArt("forlorn_forest"), archetypes: ["zombie", "ghost"] },
   { scene: "dev_test_room", groups: fieldArt("dev_test_room"), archetypes: ["troll", "demon"] },
-  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "demon"] },
+  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "demon", "blood_demon"] },
 ];
 
 /** The sheets of `sheets` the scene holding `groups` would draw as a placeholder. */
@@ -131,6 +191,25 @@ const monsterSheets = (archetypes: readonly string[]) =>
     return look.elite ? [look.sheet, look.elite] : [look.sheet];
   });
 
+/**
+ * What each archetype draws before its art can be there (FS-VHGE7 §F R52): a sheet on an on-demand
+ * group is answered by its archetype's stand-in, and stays itself, to be reported, without one.
+ */
+const entrySheets = (
+  m: ArtManifest,
+  archetypes: readonly string[],
+  table: readonly OnDemandGroup[] = ON_DEMAND_ART,
+) =>
+  archetypes.flatMap((archetype) =>
+    monsterSheets([archetype]).map((sheet) => {
+      const onDemand = sheetAtlases(m.sheets[sheet]).some((a) =>
+        table.some((entry) => entry.group === atlasGroup(a)),
+      );
+      const standIn = table.find((entry) => entry.archetype === archetype)?.standIn;
+      return onDemand && standIn ? monsterLook(standIn.archetype).sheet : sheet;
+    }),
+  );
+
 /** The archetypes with a look that no scene in {@link MET} meets. */
 const unmet = (looks: Record<string, unknown>) =>
   Object.keys(looks).filter((archetype) => !MET.some((s) => s.archetypes.includes(archetype)));
@@ -144,7 +223,7 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
   });
 
   it.each(MET)("should hold every archetype $scene meets, its elite sheet included", ({ groups, archetypes }) => {
-    expect(outsideScene(manifest, groups, monsterSheets(archetypes))).toEqual([]);
+    expect(outsideScene(manifest, groups, entrySheets(manifest, archetypes))).toEqual([]);
   });
 
   it("should have every MONSTER_LOOKS archetype met by some scene", () => {
@@ -198,6 +277,19 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
       expect(outsideScene(m, fieldArt("gentle_meadows"), monsterSheets(["boar"]))).toEqual([
         "creature_boar_elite",
       ]);
+    });
+
+    it("should report a look on an on-demand group with no stand-in (FS-VHGE7 §F R52)", () => {
+      const noStandIn = [{ ...ON_DEMAND_ART[0], archetype: "ghoul" as const }];
+      expect(
+        outsideScene(manifest, SCENE_ART.BarrowspireScene, entrySheets(manifest, ["blood_demon"], noStandIn)),
+      ).toEqual(["creature_blood_demon_base"]);
+    });
+
+    it("should report a stand-in on a group its scene does not hold (FS-VHGE7 §F R52)", () => {
+      expect(
+        outsideScene(manifest, fieldArt("forlorn_forest"), entrySheets(manifest, ["blood_demon"])),
+      ).toEqual(["creature_demon_base"]);
     });
 
     it("should report an archetype with a look that no scene meets", () => {

@@ -437,7 +437,7 @@ func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	got := map[uuid.UUID]bool{}
 	for _, m := range state.Monsters {
 		got[m.EntityID] = true
-		assert.Contains(t, []string{"ghoul", "troll", "demon"}, m.Archetype)
+		assert.Contains(t, []string{"ghoul", "troll", "demon", "blood_demon"}, m.Archetype) // any floor may roll a blood demon (FS-VHGE7 §A R6)
 		assert.Equal(t, "idle", m.Action)
 		assert.Positive(t, m.MaxHealth)
 		assert.Equal(t, m.MaxHealth, m.CurrentHealth)
@@ -458,7 +458,10 @@ func TestPopulateMonsters_TopFloorHasExactlyOneDemon(t *testing.T) {
 		for _, m := range monstersIn(s) {
 			monster := monsterOf(m)
 			if monster.Boss {
-				demons = append(demons, monster)
+				// the green one: the top floor may hold a blood demon too (FS-VHGE7 §A R7)
+				if monster.Archetype == components.MonsterArchetypeDemon {
+					demons = append(demons, monster)
+				}
 				continue
 			}
 			standard++
@@ -650,10 +653,187 @@ func TestBuildFloor_TheTopFloorBringsItsDemon(t *testing.T) {
 
 		bosses := 0
 		for _, m := range monstersIn(s) {
-			if monsterOf(m).Boss {
+			if monsterOf(m).Archetype == components.MonsterArchetypeDemon { // the green one: the top floor may hold a blood demon too (FS-VHGE7 §A R7)
 				bosses++
 			}
 		}
 		assert.Equal(t, 1, bosses, "seed %d", seed)
+	}
+}
+
+// The blood demon comes on its own roll against the floor's chance: a draw
+// just under spawns it, a draw at the chance does not, the top floor included.
+// A floor past the table's end uses its last row. FS-VHGE7 §A R4–6.
+func TestRollBloodDemon_RollsTheFloorsChance(t *testing.T) {
+	const under = 1e-9
+	tests := []struct {
+		name  string
+		floor int
+		draw  float64
+		want  bool
+	}{
+		{"floor 1 just under", 1, 0.02 - under, true},
+		{"floor 1 at the chance", 1, 0.02, false},
+		{"floor 2 just under", 2, 0.05 - under, true},
+		{"floor 2 at the chance", 2, 0.05, false},
+		{"top floor just under", 3, 0.10 - under, true},
+		{"top floor at the chance", 3, 0.10, false},
+		{"top floor over the chance", 3, 0.5, false},
+		{"past the end uses the last row, under", 7, 0.10 - under, true},
+		{"past the end uses the last row, at", 7, 0.10, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			blood, rolled := rollBloodDemon(&drawQueue{floats: []float64{tt.draw}}, 4, tt.floor)
+
+			require.Equal(t, tt.want, rolled)
+			if !rolled {
+				return
+			}
+			assert.Equal(t, components.MonsterArchetypeBloodDemon, blood.Archetype)
+			assert.Equal(t, 4+MonsterLevelPerFloor*(tt.floor-1)+BloodDemonLevelBonus, blood.Level)
+			assert.True(t, blood.Boss)
+			assert.False(t, blood.Elite, "the blood demon is never an elite")
+		})
+	}
+}
+
+// The blood demon's roll is its own draw, after the green demon's: whichever
+// way the green one goes, the next draw alone decides the blood one.
+// FS-VHGE7 §A R6–8.
+func TestRollBloodDemon_IndependentOfTheGreenDemon(t *testing.T) {
+	tests := []struct {
+		name             string
+		green, blood     float64
+		wantGreen, wantB bool
+	}{
+		{"both", DemonChance / 2, 0.01, true, true},
+		{"green only", DemonChance / 2, 0.5, true, false},
+		{"blood only", 0.5, 0.01, false, true},
+		{"neither", 0.5, 0.5, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rng := &drawQueue{floats: []float64{tt.green, tt.blood}}
+			_, green := rollDemon(rng, 1, 1, false)
+			_, blood := rollBloodDemon(rng, 1, 1)
+			assert.Equal(t, tt.wantGreen, green)
+			assert.Equal(t, tt.wantB, blood)
+		})
+	}
+}
+
+// forceBloodDemon sets every floor's blood demon chance for one test.
+func forceBloodDemon(t *testing.T, chance float64) {
+	t.Helper()
+	was := BloodDemonChanceByFloor
+	BloodDemonChanceByFloor = []float64{chance}
+	t.Cleanup(func() { BloodDemonChanceByFloor = was })
+}
+
+// bossesIn is every boss in the world by archetype.
+func bossesIn(s *Session) map[components.MonsterArchetype][]*ecs.Entity {
+	out := map[components.MonsterArchetype][]*ecs.Entity{}
+	for _, m := range monstersIn(s) {
+		if monster := monsterOf(m); monster.Boss {
+			out[monster.Archetype] = append(out[monster.Archetype], m)
+		}
+	}
+	return out
+}
+
+// On an open top floor both demons stand: the blood demon at its level, named,
+// a boss and never an elite, clear of the delvers and of the green demon, and
+// the green demon exactly where it stands without it. FS-VHGE7 §A R4–9;
+// §Edge States "Both demons on one floor".
+func TestPopulateMonsters_OpenFloorPlacesTheBloodDemonAfterTheDemon(t *testing.T) {
+	top := constants.RunFloorCount
+	for seed := uint64(1); seed <= 20; seed++ {
+		forceBloodDemon(t, 0)
+		without := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+		without.populateMonsters(top, true, nil)
+		require.Empty(t, bossesIn(without)[components.MonsterArchetypeBloodDemon])
+
+		forceBloodDemon(t, 1)
+		s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+		s.populateMonsters(top, true, nil)
+
+		bosses := bossesIn(s)
+		require.Len(t, bosses[components.MonsterArchetypeDemon], 1, "seed %d", seed)
+		require.Len(t, bosses[components.MonsterArchetypeBloodDemon], 1, "seed %d", seed)
+		green := transformOf(t, bosses[components.MonsterArchetypeDemon][0])
+		greenWithout := transformOf(t, bossesIn(without)[components.MonsterArchetypeDemon][0])
+		assert.Equal(t, *greenWithout, *green, "seed %d: the green demon's placement is unchanged", seed)
+
+		bloodEntity := bosses[components.MonsterArchetypeBloodDemon][0]
+		blood := monsterOf(bloodEntity)
+		assert.Equal(t, 2+MonsterLevelPerFloor*(top-1)+BloodDemonLevelBonus, blood.Level)
+		assert.Equal(t, "Blood Demon", blood.Name)
+		assert.False(t, blood.Elite)
+
+		at := transformOf(t, bloodEntity)
+		assert.GreaterOrEqual(t, math.Hypot(at.X-100, at.Y-100), MonsterDelverExclusion, "seed %d", seed)
+		assert.GreaterOrEqual(t, math.Hypot(at.X-green.X, at.Y-green.Y), MonsterSpacing, "seed %d", seed)
+	}
+}
+
+// With no valid spot the blood demon is absent, never forced onto the
+// delvers; it gets no relaxed retry. FS-VHGE7 §A R9; §Edge States "No spot
+// for the blood demon".
+func TestPopulateMonsters_BloodDemonWithNoSpotIsSkipped(t *testing.T) {
+	forceBloodDemon(t, 1)
+	em := ecs.NewEntityManager()
+	// a 500 px square: nowhere on it is 350 px from a delver at its centre
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, nil,
+		WorldBounds{Type: types.WorldTypeRun, Width: 500, Height: 500})
+	s.spawnRand = seededSpawns(2)
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "delver", Class: "warrior"}, "")
+	for _, e := range em.GetAllEntities() {
+		if e.HasComponent(ecs.ComponentTypePlayer) {
+			at := transformOf(t, e)
+			at.X, at.Y = 250, 250
+		}
+	}
+
+	logs := capturedLog(t)
+
+	s.populateMonsters(constants.RunFloorCount, true, nil)
+
+	bosses := bossesIn(s)
+	assert.Empty(t, bosses[components.MonsterArchetypeBloodDemon])
+	assert.Len(t, bosses[components.MonsterArchetypeDemon], 1, "the guaranteed demon still relaxes")
+	assert.Contains(t, logs.String(), `"level":"WARN"`)
+	assert.Contains(t, logs.String(), "blood_demon")
+	assert.NotContains(t, logs.String(), `"level":"ERROR"`)
+}
+
+// The blood demon's sheet is the demon's, harder and longer: HP 1600, damage
+// 34, every other field the same. FS-VHGE7 §A R2–3.
+func TestMonsterSheet_BloodDemonIsTheDemonHarder(t *testing.T) {
+	want := monsterSheets[components.MonsterArchetypeDemon]
+	want.Name, want.HP, want.Damage = "Blood Demon", 1600, 34
+
+	assert.Equal(t, want, monsterSheets[components.MonsterArchetypeBloodDemon])
+}
+
+// Field worlds and the hub never hold a blood demon, even at a certain roll:
+// only a run floor rolls it. FS-VHGE7 §A R11.
+func TestBloodDemon_NeverInAFieldOrTheHub(t *testing.T) {
+	forceBloodDemon(t, 1)
+
+	hub := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, HubBounds())
+	hub.spawnRand = seededSpawns(1)
+	hub.InitialHubMapObjects()
+	hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
+	hub.populateMonsters(constants.RunFloorCount, true, nil)
+
+	meadows := builtField(t)
+	forest, _, _ := builtForest(t, 7)
+
+	for name, s := range map[string]*Session{"hub": hub, "meadows": meadows, "forest": forest} {
+		for _, m := range monstersIn(s) {
+			assert.NotEqual(t, components.MonsterArchetypeBloodDemon, monsterOf(m).Archetype, name)
+		}
 	}
 }
