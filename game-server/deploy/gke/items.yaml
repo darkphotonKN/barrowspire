@@ -10,7 +10,7 @@ spec:
     spec:
       containers:
         - name: items
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/items:61e4da18
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/items:c52c7216
           ports:
             - { containerPort: 7126, name: grpc }
             - { containerPort: 8197, name: metrics }
