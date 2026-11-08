@@ -1,6 +1,6 @@
 # FS-67QQY: Faces on the human cast
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Faces on the human cast" → this FS · Related: [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (characters authored in code), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (pre-rendered 3D baked to sprites), [ADR-0058](../adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md) (the class sheets are 2x) · Surface: game-client only (bake tool, baked art, art guideline)
+> Status: shipped · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Presentation" → "Faces on the human cast" → this FS · Related: [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (characters authored in code), [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (pre-rendered 3D baked to sprites), [ADR-0058](../adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md) (the class sheets are 2x) · Surface: game-client only (bake tool, baked art, art guideline)
 
 ## Summary
 

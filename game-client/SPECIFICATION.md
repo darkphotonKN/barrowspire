@@ -100,7 +100,7 @@ server state and sends intents. ✅
 - [ ] Walk-and-attack animation → FS-HF0WW
 - [ ] Legs stay inside garments → FS-HF0WW
 - [ ] Baked frames trimmed to their pixels → FS-HF0WW
-- [ ] Faces on the human cast → FS-67QQY
+- [x] Faces on the human cast → FS-67QQY
 - [ ] Art loaded and freed per scene → FS-C4JWH
 - [ ] Loading bar on entering a world → FS-C4JWH
 - [x] Light-map lighting with placed light sources → FS-2325V
