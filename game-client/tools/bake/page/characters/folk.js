@@ -23,6 +23,7 @@ import {
   cap,
   cloak,
   cloakBones,
+  face,
   hair,
   hands,
   head,
@@ -86,6 +87,8 @@ export function resident(build, palettes) {
   arms(rig, F.shirt);
   hands(rig, F.skin);
   head(rig, F.skin);
+  // the brows follow each palette's hair (FS-67QQY R11)
+  use("brow", face(rig, F.face, P.brow));
   use("hair", hair(rig, P.hair, skirted ? { long: true, bun: true } : {}));
   if (skirted) {
     // no legs under the kirtle, only boots: a stride can never poke through the cloth
@@ -126,6 +129,7 @@ export function spirewarden() {
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.2 });
   head(rig, F.skin);
+  face(rig, F.face, F.browDark);
   hood(rig, F.wardWool);
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.03, [0.036, 0.034], F.leatherDark);
   // the hauberk hangs to the knee
@@ -168,6 +172,7 @@ export function quartermaster() {
   hands(rig, F.skin);
   boots(rig, F.leatherDark, { top: 0.1 });
   head(rig, F.skin);
+  face(rig, F.face, F.browGrey);
   hair(rig, F.hairGrey);
   cap(rig, F.felt);
   // the apron: pale tanned leather, a bib over the chest and a long panel to the shin; the dark

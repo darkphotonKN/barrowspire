@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { fbm, smoothstep, voronoi, hash2 } from "../noise.js";
 import { mkCanvas } from "../materials.js";
 import { mix, shade } from "../palette.js";
+import { browMaterial, faceMaterial } from "./face.js";
 
 const S = 128;
 
@@ -298,7 +299,7 @@ export const GEAR = {
   robe: mix("pitch", "charcoal", 0.6),
   scapular: mix("necrotic", "charcoal", 0.5),
   linen: mix("vellum", "vellumDark", 0.4),
-  skin: shade(mix("vellum", "oxbloodText", 0.45), 0.68),
+  skin: shade(mix("vellum", "oxbloodText", 0.45), 0.695),
   // raven hair, cooled toward slate so it parts from the black gown behind it
   raven: mix("pitch", "slate", 0.48),
   bone: mix("vellum", "vellumDark", 0.35),
@@ -347,6 +348,9 @@ export function folkFabrics(name) {
     cloth: mat(wool(tones.cloth, { seed, dirt: 0.4 }), { side: D }),
     under: mat(wool(tones.under, { seed: seed + 1, dirt: 0.45 }), { side: D }),
     hair: mat(hair(tones.hair, { seed: seed + 2 }), { rough: 0.85 }),
+    // the brows from this palette's hair (FS-67QQY R11): the hair material itself would paint
+    // them at the hair's own tone and texture
+    brow: browMaterial(tones.hair),
   });
 }
 
@@ -395,6 +399,12 @@ export function fabrics() {
     coat: mat(quilted(GEAR.coat), { rough: 0.85, normal: 1.2, side: D }),
     sash: mat(wool(GEAR.sash, { seed: 79, dirt: 0.35 }), { side: D }),
     hairDark: mat(hair(GEAR.hairDark, { seed: 67 }), { rough: 0.9 }),
+    // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
+    // character with no hair of its own takes browDark
+    face: faceMaterial(),
+    browDark: browMaterial(GEAR.hairDark),
+    browRaven: browMaterial(GEAR.raven),
+    browGrey: browMaterial(GEAR.hairGrey),
   };
   return SET;
 }
