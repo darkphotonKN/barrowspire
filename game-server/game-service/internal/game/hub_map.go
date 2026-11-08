@@ -56,9 +56,13 @@ type hubGate struct {
 // Forlorn Forest, the road east to Gentle Meadows. Each field gate's arrival
 // point lies just inside the hub, beyond the gate's range. FS-0XMCP
 // §Requirements 2, 3.
+//
+// The Forest gate stands at y 580, not 400: the Inn's great hall is too deep
+// for the old trail's lane to clear it, wherever on the north side it stands,
+// so the trail leaves the town further south, past the Inn's front.
 var hubGates = []hubGate{
 	{Destination: components.GateDestinationSpire, X: 1000, Y: 50},
-	{Destination: components.GateDestinationForest, X: 40, Y: 400, Arrival: &components.GateArrival{X: 180, Y: 400}},
+	{Destination: components.GateDestinationForest, X: 40, Y: 580, Arrival: &components.GateArrival{X: 180, Y: 580}},
 	{Destination: components.GateDestinationMeadows, X: 1960, Y: 360, Arrival: &components.GateArrival{X: 1820, Y: 360}},
 }
 
@@ -76,18 +80,32 @@ var hubGates = []hubGate{
 type hubBuilding struct {
 	Name       string
 	X, Y, W, H float64
+	// The wall dividing it into two halls; nil for an undivided building.
+	Partition *hubPartition
 	// What stands inside, in absolute world coordinates.
 	Furnishings []hubFurnishing
 }
 
+// hubPartition is a wall of a town building's own, running north to south
+// right across it from its north edge to its south edge, cut around a centred
+// door gap a run door wide, the south wall's cut turned on its side: two halls
+// (the Inn's great hall and taproom), one house id, one roof. It reaches the footprint's edges end on, which is how
+// the client tells it from the walls round the building (on the outline) and
+// from a furnishing (clear of every edge). X is its west face.
+type hubPartition struct {
+	X float64
+}
+
 // hubFurnishing is a keep-out inside a town building that a piece of furniture
-// stands on: the Inn's counter and tables, the smithy's forge.
+// stands on: the Inn's long table, hearth, counter and tables, the smithy's
+// forge.
 //
 // A wall like the building's own, carrying its house id, so a delver collides
 // with it exactly as with a wall and the client groups it with its building. It
 // touches none of the building's outer edges, which is how the client tells it
 // from one of them, and keeps 50 px clear of every wall and every other
-// furnishing so the room stays walkable round it. The kind says which prop the
+// furnishing so the room stays walkable round it; the great hall's hearth alone
+// stands flush against the north wall it is built into. The kind says which prop the
 // client draws on it; it is map data only and never goes on the wire.
 // FS-B0H2D §Requirements 10, 12.
 type hubFurnishing struct {
@@ -106,23 +124,29 @@ type hubFurnishing struct {
 // gate (tested in hub_map_test.go). Each south-wall door faces the town.
 // FS-B0H2D §Requirements 2-6.
 var hubBuildings = []hubBuilding{
-	// the largest, west of the walk to the Spire. The counter runs north-south
-	// in the east half, the Alewife behind it; the three tables sit in the west
-	// half, clear of the walk in from the door (R18)
-	{Name: "Inn", X: 470, Y: 110, W: 400, H: 300, Furnishings: []hubFurnishing{
+	// the largest, filling the north-west, west of the walk to the Spire and
+	// above the Forest trail. A partition parts the great hall (west) from the
+	// taproom (east), its door at the middle of the Inn's depth. The street door opens
+	// into the taproom: the counter runs north-south by its east wall, the
+	// Alewife behind it, its two tables between the door and the bar. Through
+	// the partition, the long table runs north-south down the great hall, five
+	// places a side, the hearth built into the north wall at its head (R18)
+	{Name: "Inn", X: 230, Y: 50, W: 640, H: 440, Partition: &hubPartition{X: 505}, Furnishings: []hubFurnishing{
+		{Kind: "long_table", X: 352, Y: 175, W: 50, H: 240},
+		{Kind: "hall_hearth", X: 300, Y: 70, W: 144, H: 48},
 		{Kind: "counter", X: 715, Y: 190, W: 25, H: 140},
-		{Kind: "table", X: 540, Y: 185, W: 30, H: 40},
-		{Kind: "table", X: 540, Y: 285, W: 30, H: 40},
-		{Kind: "table", X: 620, Y: 240, W: 45, H: 40},
+		{Kind: "table", X: 600, Y: 130, W: 30, H: 40},
+		{Kind: "table", X: 600, Y: 300, W: 45, H: 40},
 	}},
 	// east of the walk to the Spire. 240 deep, not a run house's 200, so the
 	// Quartermaster can stand out of talk range of every wall (R2, R14). No
 	// furnishing: its shelves and crates are dressing (R12)
 	{Name: "Quartermaster's store", X: 1130, Y: 150, W: 300, H: 240},
-	// the north-west corner, above the Forest trail. The forge stands against
-	// the back of the room, as near the north wall as its clearance allows
-	{Name: "Smithy", X: 110, Y: 50, W: 300, H: 240, Furnishings: []hubFurnishing{
-		{Kind: "forge", X: 225, Y: 120, W: 70, H: 35},
+	// east of the store, above the road to the Meadows: the Inn took the
+	// north-west. The forge stands against the back of the room, as near the
+	// north wall as its clearance allows
+	{Name: "Smithy", X: 1480, Y: 50, W: 300, H: 240, Furnishings: []hubFurnishing{
+		{Kind: "forge", X: 1595, Y: 120, W: 70, H: 35},
 	}},
 }
 
@@ -171,15 +195,17 @@ type hubFixedResident struct {
 // to from the door; the Alewife across her counter. FS-B0H2D §Requirements
 // 13, 14, 17, 18.
 var hubFixedResidents = []hubFixedResident{
-	// Inn: behind the counter, on its far side from the door
+	// Inn, the taproom: behind the counter, on its far side from the door
 	{Name: "Alewife", Appearance: "flax_skirt", X: 765, Y: 260},
-	// Inn: one patron at each table
-	{Name: "Drover", Appearance: "rust_trousers", X: 590, Y: 220},
-	{Name: "Gravedigger", Appearance: "slate_trousers", X: 590, Y: 300},
-	{Name: "Pilgrim", Appearance: "green_skirt", X: 643, Y: 220},
+	// Inn, the great hall: standing at the long table between its chairs, two
+	// on its east side and one on its west, each more than talk range from the
+	// partition so nobody in the taproom talks to them through it
+	{Name: "Drover", Appearance: "rust_trousers", X: 418, Y: 223},
+	{Name: "Gravedigger", Appearance: "slate_trousers", X: 418, Y: 319},
+	{Name: "Pilgrim", Appearance: "green_skirt", X: 336, Y: 271},
 	// Smithy: between the door and the forge, facing north to the forge (the
 	// client keeps the facing, FS-B0H2D §Requirements 25)
-	{Name: "Smith", Appearance: "rust_trousers", X: 260, Y: 175},
+	{Name: "Smith", Appearance: "rust_trousers", X: 1630, Y: 175},
 }
 
 /**
@@ -225,13 +251,13 @@ func (s *Session) InitialHubMapObjects() {
 }
 
 // addHubBuilding walls a town building in, leaving a door gap in its south wall,
-// and stands its furnishings inside.
+// divides it with its partition, and stands its furnishings inside.
 //
 // The same cut AddBuilding makes for a run house, a run door wide and centred,
 // but with nothing hung in it: a town building is a shop, so there is nothing to
 // open, lock or sync, and the hub keeps no Door component at all. Every wall,
-// furnishings included, carries the building's house id, so the client
-// rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12.
+// partition and furnishings included, carries the building's house id, so the
+// client rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12.
 func (s *Session) addHubBuilding(building hubBuilding) {
 	houseID := uuid.New()
 	sideOfDoor := (building.W - hubDoorWidth) / 2
@@ -249,11 +275,29 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 		{X: building.X + sideOfDoor + hubDoorWidth, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
 	}
 
+	walls = append(walls, partitionWalls(building)...)
+
 	for _, furnishing := range building.Furnishings {
 		walls = append(walls, WallConfig{X: furnishing.X, Y: furnishing.Y, Width: furnishing.W, Height: furnishing.H})
 	}
 
 	for _, wall := range walls {
 		CreateWallEntity(s.EntityManager, wall, houseID)
+	}
+}
+
+// partitionWalls is a building's partition as walled: north edge to south edge,
+// either side of a centred door gap, the cut addHubBuilding makes in the south
+// wall. None for an undivided building.
+func partitionWalls(building hubBuilding) []WallConfig {
+	if building.Partition == nil {
+		return nil
+	}
+
+	sideOfDoor := (building.H - hubDoorWidth) / 2
+	x := building.Partition.X
+	return []WallConfig{
+		{X: x, Y: building.Y, Width: hubWallThickness, Height: sideOfDoor},
+		{X: x, Y: building.Y + sideOfDoor + hubDoorWidth, Width: hubWallThickness, Height: sideOfDoor},
 	}
 }

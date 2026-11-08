@@ -136,8 +136,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     NPC" or a "static NPC" in code; **fixed resident** is the term.
   - **Innkeeper** — the fixed resident behind the Inn's counter. Talkable, the longest talk in
     town (client-side lines); sells, rents and pours nothing.
-  - **Patron** — a fixed resident at one of the Inn's tables, talkable with a short lore line.
-    Never wanders, never leaves. Two or three of them; not a crowd system.
+  - **Patron** — a fixed resident standing at the great hall's long table, talkable with a short
+    lore line. Never wanders, never leaves, never sits (no sitting pose). Three of them; not a
+    crowd system.
   - **Smith** — the fixed resident at the smithy's forge. A lore line; no repairs, no trading.
 
 ### Town buildings (FS-B0H2D)
@@ -155,14 +156,22 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   instance or load step, and no world switch. The server keeps no "inside" state; whether a player
   is inside is a client presentation test (the roof lifts). Never call it an "interior world".
 - **Furnishing** — a keep-out inside a town building that the furniture stands on: the Inn's
-  counter and tables, the smithy's forge. A server wall carrying its building's `house_id`, so it
-  collides like any wall and stays inside its building's footprint. Told from the building's own
-  walls by geometry alone: a furnishing touches none of its building's four outer edges. Smaller
-  pieces (stools, shelves, crates, the anvil, the Inn's hearth) are client dressing, with no
-  collision, and are not furnishings.
-- **The Inn** — the largest town building: a tavern room with the innkeeper behind a counter,
-  three tables with patrons, and a hearth. One room, no upstairs, no rooms to rent, nothing to
-  buy. A place with people in it.
+  long table, hall hearth, counter and tables, the smithy's forge. A server wall carrying its
+  building's `house_id`, so it collides like any wall and stays inside its building's footprint.
+  Told from the building's own walls by geometry alone: a furnishing touches none of its
+  building's four outer edges. It keeps 50 px clear of every wall and furnishing, except the hall
+  hearth, built flush into the north wall. Smaller pieces (chairs, stools, shelves, crates, kegs,
+  the anvil) are client dressing, with no collision, and are not furnishings.
+- **Partition** — a wall of a town building's own running right across it, north edge to south
+  edge, cut around a centred door gap (`hubPartition`): it makes one building two halls (the
+  Inn's **great hall** and **taproom**) under one `house_id` and one roof. Not "rooms": a Room is
+  a run floor's chamber. Told by geometry: it reaches the footprint's edges end on, so it is
+  neither on the outline (a building wall) nor clear of every edge (a furnishing). Only the Inn has
+  one. Not a second building, and not a door: nothing hangs in its gap.
+- **The Inn** — the largest town building, two halls split by its partition: the **taproom**
+  (the street door opens into it; the innkeeper behind the counter, two small tables) and the
+  **great hall** (the long table with the patrons standing at it, the hall hearth at its head).
+  No upstairs, no rooms to rent, nothing to buy. A place with people in it.
 - **The Quartermaster's store** — the town building the Quartermaster stands in. "Store" is its
   name, not a function: nothing is bought or sold there.
 - **Smithy** — the town building with the forge, where the smith stands. Nothing is repaired,

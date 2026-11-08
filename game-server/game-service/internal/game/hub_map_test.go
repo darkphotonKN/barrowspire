@@ -215,9 +215,10 @@ func TestHubLayout_EveryBuilding_HasACentredDoorGapInItsSouthWall(t *testing.T) 
 	}
 }
 
-// The town keeps three buildings, every one enterable: the Inn the largest, the
-// store and the smithy a run house's width and deep enough to talk to someone
-// inside without talking through a wall. FS-B0H2D §Requirements 1, 2.
+// The town keeps three buildings, every one enterable: the Inn the largest, a
+// great hall and a taproom of about 640x440, the store and the smithy a run
+// house's width and deep enough to talk to someone inside without talking
+// through a wall. FS-B0H2D §Requirements 1, 2 (the Inn's size as enlarged).
 func TestHubLayout_ThreeTownBuildings_SizedByWhatTheyHold(t *testing.T) {
 	assert.Len(t, hubWalls(t), 3, "the hub's buildings, as walled")
 
@@ -229,8 +230,8 @@ func TestHubLayout_ThreeTownBuildings_SizedByWhatTheyHold(t *testing.T) {
 
 	inn, ok := byName["Inn"]
 	require.True(t, ok, "the town has no Inn")
-	assert.LessOrEqual(t, inn.W, 400.0, "the Inn is wider than 400")
-	assert.LessOrEqual(t, inn.H, 300.0, "the Inn is deeper than 300")
+	assert.InDelta(t, 640.0, inn.W, 40, "the Inn's width")
+	assert.InDelta(t, 440.0, inn.H, 40, "the Inn's depth")
 
 	for _, name := range []string{"Quartermaster's store", "Smithy"} {
 		b, ok := byName[name]
@@ -278,9 +279,10 @@ func TestHubLayout_SpawnAndArrivals_StandOutdoors(t *testing.T) {
 	}
 }
 
-// outerWallsOf is a building's own walls, those on the edge of its footprint;
-// anything standing inside the room clear of every edge is furniture.
-func outerWallsOf(walls []box) []box {
+// edgeWallsOf is a building's own walls, those reaching the edge of its
+// footprint: the walls round it and a partition across it, whose segments reach
+// the edge end on. Anything standing inside clear of every edge is furniture.
+func edgeWallsOf(walls []box) []box {
 	foot := footprintOf(walls)
 	outer := []box{}
 	for _, w := range walls {
@@ -289,6 +291,37 @@ func outerWallsOf(walls []box) []box {
 		}
 	}
 	return outer
+}
+
+// outlineEpsilon is the float noise the outline test allows, the client's.
+const outlineEpsilon = 1e-6
+
+// onOutline is true when a wall stands along one of its footprint's sides, one
+// face of its thickness on that side's edge: a wall runs along its longer side
+// (a square one along x), so one along x is on the north or south side, one
+// along y the west or east. A partition reaches the edge end on, across the
+// building, so it is not. The client's onOutline (game-client
+// src/render/world/houses.ts), mirrored.
+func onOutline(w, foot box) bool {
+	near, far, lo, hi := w.X, w.X+w.W, foot.X, foot.X+foot.W
+	if w.W >= w.H {
+		near, far, lo, hi = w.Y, w.Y+w.H, foot.Y, foot.Y+foot.H
+	}
+	return math.Abs(near-lo) <= outlineEpsilon || math.Abs(far-hi) <= outlineEpsilon
+}
+
+// partitionsOf is the wall dividing a building's two halls, its segments either
+// side of a door gap: walls reaching the footprint's edge that are not on its
+// outline. The way the client tells it from the walls round the building.
+func partitionsOf(walls []box) []box {
+	foot := footprintOf(walls)
+	found := []box{}
+	for _, w := range edgeWallsOf(walls) {
+		if !onOutline(w, foot) {
+			found = append(found, w)
+		}
+	}
+	return found
 }
 
 // The Quartermaster keeps his store: he stands inside it, and is still who he
@@ -317,8 +350,10 @@ func TestHubLayout_Quartermaster_StandsInHisStore(t *testing.T) {
 
 // Talk is gated by distance alone, so placement is all that stops a delver
 // outside from talking through a wall: everyone inside a building stands more
-// than talk range from each of its walls. Furnishings do not count: the Alewife
-// is talked to across her counter. Every fixed resident stands indoors.
+// than talk range from each of its walls. The Inn's partition counts too, so
+// nobody in the great hall talks to the Alewife through it, nor anyone in the
+// taproom to a patron. Furnishings do not count: the Alewife is talked to
+// across her counter. Every fixed resident stands indoors.
 // FS-B0H2D §Requirements 14, 18.
 func TestHubLayout_NobodyIndoors_IsTalkedToThroughAWall(t *testing.T) {
 	houses := hubWalls(t)
@@ -330,7 +365,7 @@ func TestHubLayout_NobodyIndoors_IsTalkedToThroughAWall(t *testing.T) {
 				continue
 			}
 			indoors[npc.Name] = true
-			for _, wall := range outerWallsOf(house) {
+			for _, wall := range edgeWallsOf(house) {
 				got := wall.distanceTo(npc.At.X, npc.At.Y)
 				assert.Greater(t, got, constants.NPCInteractRange,
 					"the %s can be talked to through the wall at %+v (%.0f away)", npc.Name, wall, got)
@@ -435,7 +470,7 @@ const furnishingClearance = 50
 // furnishingsOf is what stands inside a building: its walls that touch none of
 // its outer edges, the way the client tells them apart.
 func furnishingsOf(walls []box) []box {
-	outer := outerWallsOf(walls)
+	outer := edgeWallsOf(walls)
 	inside := []box{}
 	for _, w := range walls {
 		isOuter := false
@@ -476,9 +511,16 @@ func houseOf(t *testing.T, houses map[uuid.UUID][]box, name string) []box {
 	return nil
 }
 
-// The Inn's counter and three tables and the smithy's forge are keep-outs: walls
-// of their building, touching none of its edges, with room to walk round each.
-// The store has none. FS-B0H2D §Requirements 10, 12.
+// wallBacked is the furnishing built into a wall: the great hall's hearth
+// stands flush against the Inn's north wall, its chimney breast in it, so the
+// room's clearance holds on its other sides only.
+const wallBacked = "hall_hearth"
+
+// The Inn's long table, hearth, counter and two tables and the smithy's forge
+// are keep-outs: walls of their building, touching none of its edges, with
+// room to walk round each. The hearth is built into the north wall and keeps
+// its room on every other side. The store has none. FS-B0H2D §Requirements 10,
+// 12 (the Inn's furnishings as enlarged).
 func TestHubFurnishings_StandInsideTheirBuilding_WithRoomAround(t *testing.T) {
 	houses := hubWalls(t)
 	walls := allWalls(houses)
@@ -489,25 +531,139 @@ func TestHubFurnishings_StandInsideTheirBuilding_WithRoomAround(t *testing.T) {
 			kinds[b.Name] = append(kinds[b.Name], f.Kind)
 		}
 	}
-	assert.ElementsMatch(t, []string{"counter", "table", "table", "table"}, kinds["Inn"], "the Inn's furnishings")
+	assert.ElementsMatch(t, []string{"long_table", "hall_hearth", "counter", "table", "table"}, kinds["Inn"], "the Inn's furnishings")
 	assert.ElementsMatch(t, []string{"forge"}, kinds["Smithy"], "the smithy's furnishings")
 	assert.Empty(t, kinds["Quartermaster's store"], "the store's furnishings")
 
 	for _, b := range hubBuildings {
 		house := houseOf(t, houses, b.Name)
-		furnishings := furnishingsOf(house)
-		require.Len(t, furnishings, len(b.Furnishings), "the %s's furnishings, as walled", b.Name)
+		require.Len(t, furnishingsOf(house), len(b.Furnishings), "the %s's furnishings, as walled", b.Name)
+		northWall := box{X: b.X, Y: b.Y, W: b.W, H: hubWallThickness}
 
-		for _, f := range furnishings {
+		for _, furnishing := range b.Furnishings {
+			f := box{X: furnishing.X, Y: furnishing.Y, W: furnishing.W, H: furnishing.H}
+			require.Contains(t, furnishingsOf(house), f, "the %s's %s, as walled", b.Name, furnishing.Kind)
+
+			if furnishing.Kind == wallBacked {
+				assert.Equal(t, northWall.Y+northWall.H, f.Y, "the %s's hearth does not stand against its north wall", b.Name)
+			}
 			for _, other := range walls {
-				if other == f {
+				if other == f || (furnishing.Kind == wallBacked && other == northWall) {
 					continue
 				}
 				got := distanceBetween(f, other)
 				assert.GreaterOrEqual(t, got, float64(furnishingClearance),
-					"the furnishing at %+v in the %s stands %.0f from %+v", f, b.Name, got, other)
+					"the %s at %+v in the %s stands %.0f from %+v", furnishing.Kind, f, b.Name, got, other)
 			}
 		}
+	}
+}
+
+// ----- The Inn's two rooms -----
+
+// innOf is the Inn as hub_map.go lays it out.
+func innOf(t *testing.T) hubBuilding {
+	t.Helper()
+
+	for _, b := range hubBuildings {
+		if b.Name == "Inn" {
+			return b
+		}
+	}
+	require.Fail(t, "the town has no Inn")
+	return hubBuilding{}
+}
+
+// The Inn is one building of two halls: a wall of its own runs north to south
+// right across it, 20 thick, cut around one centred door a run door wide,
+// parting the great hall from the taproom. The store and the smithy are
+// undivided.
+func TestHubLayout_Inn_IsSplitByOnePartition_WithACentredDoorGap(t *testing.T) {
+	houses := hubWalls(t)
+
+	for _, b := range hubBuildings {
+		if b.Name != "Inn" {
+			assert.Empty(t, partitionsOf(houseOf(t, houses, b.Name)), "the %s is divided", b.Name)
+		}
+	}
+
+	house := houseOf(t, houses, "Inn")
+	foot := footprintOf(house)
+	segments := partitionsOf(house)
+	require.Len(t, segments, 2, "the Inn's partition, either side of its door gap")
+	if segments[0].Y > segments[1].Y {
+		segments[0], segments[1] = segments[1], segments[0]
+	}
+	north, south := segments[0], segments[1]
+
+	for _, s := range segments {
+		assert.Equal(t, float64(hubWallThickness), s.W, "the partition's thickness")
+		assert.Equal(t, north.X, s.X, "the partition's two segments are not in line")
+	}
+	assert.Equal(t, foot.Y, north.Y, "the partition does not reach the north wall")
+	assert.Equal(t, foot.Y+foot.H, south.Y+south.H, "the partition does not reach the south wall")
+
+	gap := south.Y - (north.Y + north.H)
+	assert.Equal(t, float64(runDoorWidth), gap, "the partition's door gap")
+	assert.InDelta(t, foot.Y+foot.H/2, north.Y+north.H+gap/2, 0.001, "the partition's door gap is off centre")
+
+	// the street door opens wholly into one hall, the partition clear of its jambs
+	door, ok := doorGapOf(house)
+	require.True(t, ok)
+	assert.True(t, door.X >= north.X+north.W || door.X+door.W <= north.X,
+		"the partition stands in the Inn's street door at %+v", door)
+}
+
+// Each building is walled as hub_map.go lays it out and nothing more: five walls
+// round it (the south wall in two), its partition's two segments if it has one,
+// and one wall per furnishing, every one under its house id.
+func TestHubLayout_EachBuilding_IsWalledAsLaidOut(t *testing.T) {
+	houses := hubWalls(t)
+
+	for _, b := range hubBuildings {
+		want := 5 + len(partitionWalls(b)) + len(b.Furnishings)
+		assert.Len(t, houseOf(t, houses, b.Name), want, "the %s's walls", b.Name)
+	}
+	assert.Len(t, partitionWalls(innOf(t)), 2, "the Inn's partition, either side of its door gap")
+}
+
+// The partition parts a great hall from a taproom. The street door opens into
+// the taproom, the bar along its east wall with the Alewife behind it and its
+// small tables; through the partition's door, the great hall holds the long
+// table, seating five a side, and the hearth at its head, and the patrons
+// stand at the long table. FS-B0H2D §Requirements 17, 18 (as enlarged).
+func TestHubLayout_Inn_GreatHallAndTaproom_HoldWhatTheyShould(t *testing.T) {
+	inn := innOf(t)
+	require.NotNil(t, inn.Partition, "the Inn has no partition")
+	wall := inn.Partition.X
+
+	westOf := func(x float64) bool { return x < wall }
+	door, ok := doorGapOf(houseOf(t, hubWalls(t), "Inn"))
+	require.True(t, ok)
+	assert.False(t, westOf(door.X), "the street door does not open into the taproom")
+
+	byKind := map[string][]hubFurnishing{}
+	for _, f := range inn.Furnishings {
+		byKind[f.Kind] = append(byKind[f.Kind], f)
+		greatHall := f.Kind == "long_table" || f.Kind == "hall_hearth"
+		assert.Equal(t, greatHall, westOf(f.X) && westOf(f.X+f.W), "the %s stands in the wrong hall", f.Kind)
+	}
+
+	require.Len(t, byKind["long_table"], 1, "the great hall's long table")
+	table := byKind["long_table"][0]
+	assert.GreaterOrEqual(t, math.Max(table.W, table.H), 240.0, "the long table seats five a side")
+
+	at := map[string][2]float64{}
+	for _, r := range hubFixedResidents {
+		at[r.Name] = [2]float64{r.X, r.Y}
+	}
+	assert.False(t, westOf(at["Alewife"][0]), "the Alewife is not in the taproom")
+
+	tableBox := box{X: table.X, Y: table.Y, W: table.W, H: table.H}
+	for _, patron := range []string{"Drover", "Gravedigger", "Pilgrim"} {
+		p := at[patron]
+		assert.True(t, westOf(p[0]), "the %s is not in the great hall", patron)
+		assert.LessOrEqual(t, tableBox.distanceTo(p[0], p[1]), 20.0, "the %s does not stand at the long table", patron)
 	}
 }
 
