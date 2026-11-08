@@ -123,6 +123,7 @@ server state and sends intents. ✅
 - [ ] Room-and-corridor floor look → FS-KE075
 - [ ] One countdown style across the canvas → FS-B3NDZ
 - [ ] Shimmers: granted and invoked spell-landed glitter → FS-KZC92
+- [ ] Item rarity emphasis in canvas tips and icons → FS-QE2QW
 - [ ] High-density canvas rendering → FS-ZAJMH
 - [ ] Canvas that resizes with the window → FS-ZAJMH
 - [ ] Fullscreen and windowed play → FS-ZAJMH
