@@ -18,6 +18,7 @@ import { housesFrom, type House } from "./houses";
 import {
   TIMBER_WALLS,
   axisOf,
+  onOutline,
   cutExterior,
   heightOf,
   planWalls,
@@ -144,12 +145,9 @@ export function doorGaps(walls: readonly WallState[]): DoorGap[] {
     const lines = new Map<string, WallState[]>();
     for (const w of walls) {
       if (w.house_id !== house.id) continue;
+      if (!onOutline(w, house)) continue;
       const axis = axisOf(w);
-      const [near, far, lo, hi] =
-        axis === "x"
-          ? [w.position.y, w.position.y + w.height, house.y, house.y + house.height]
-          : [w.position.x, w.position.x + w.width, house.x, house.x + house.width];
-      if (Math.abs(near - lo) > EPSILON && Math.abs(far - hi) > EPSILON) continue;
+      const [near, far] = axis === "x" ? [w.position.y, w.position.y + w.height] : [w.position.x, w.position.x + w.width];
       const key = `${axis}:${near}:${far}`;
       lines.set(key, [...(lines.get(key) ?? []), w]);
     }

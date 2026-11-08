@@ -288,13 +288,20 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   sent to the server on entering. Leaving puts the roof back. "Inside" is the client's test on the
   player's world position (`insideHouse`), never server state.
 - **Furnishing**: a server wall inside a house that the client draws as furniture (the Inn's
-  counter and tables, the smithy's forge) instead of as wall pieces. It has collision, so it is
-  **not dressing**, like a tree stand. Recognised by geometry: a wall of a house that touches none
-  of the house's four edges. Stools, shelves, crates, the anvil and the Inn's hearth are **indoor
-  dressing**: dressing placed inside a house, with no collision.
-- **Inn's hearth**: the fireplace inside the Inn, a light source shown only while the Inn's roof
-  is lifted. Always qualified: bare **hearth** in the hub means the outdoor brazier at the
-  gathering ground (`HUB_HEARTH`, keep-out K5), which is a different thing.
+  long table, hall hearth, counter and tables, the smithy's forge) instead of as wall pieces. It
+  has collision, so it is **not dressing**, like a tree stand. Recognised by geometry: a wall of a
+  house that touches none of the house's four edges. Chairs, stools, shelves, crates, kegs,
+  chests, candelabra, lanterns, paintings, plants, rugs and the anvil are **indoor dressing**:
+  dressing placed inside a house, with no collision.
+- **Partition**: a server wall of a house that reaches its edges end on, across the house (the
+  Inn's, between its **great hall** and **taproom**; `isPartition`). It divides one house, one
+  **Room** in this glossary's sense (one `house_id` wall group), into two halls; never call the
+  halves rooms. Drawn as low interior masonry inside the house while the player is in it, with an
+  open doorway; never a cut-away outer wall with an exterior look, never furniture.
+- **Inn's hearth**: the great hall's hearth (`hall_hearth`), a furnishing built into the Inn's
+  north wall and a light source shown only while the Inn's roof is lifted. Always qualified: bare
+  **hearth** in the hub means the outdoor brazier at the gathering ground (`HUB_HEARTH`, keep-out
+  K5), which is a different thing.
 - **Room**: in the tower theme, the space enclosed by one group of server walls sharing a
   `house_id`. The same server thing the exterior theme draws as a **house** (and game-service
   calls a building). One entity, three names by layer; the screen word follows the world theme.

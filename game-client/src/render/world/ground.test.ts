@@ -402,6 +402,39 @@ describe("planFloors", () => {
   });
 });
 
+describe("planFloors with a house of its own floor (the Inn's planks)", () => {
+  const inn = { id: "inn", x: 230, y: 50, width: 640, height: 440 };
+  const store = { id: "store", x: 1130, y: 150, width: 300, height: 240 };
+
+  it("should lay a house's own floor where it has one, flagstone under every other", () => {
+    const tiles = planFloors([inn, store], worldSeed("hub"), "ground_flagstone", (h) =>
+      h.id === "inn" ? "ground_plank_floor" : undefined,
+    );
+    const under = (h: typeof inn) =>
+      new Set(tiles.filter((t) => t.at.x > h.x - T && t.at.x < h.x + h.width + T && t.at.y > h.y - T && t.at.y < h.y + h.height + T).map((t) => t.sheet));
+    expect(under(inn)).toEqual(new Set(["ground_plank_floor"]));
+    expect(under(store)).toEqual(new Set(["ground_flagstone"]));
+  });
+
+  it("should lay the same grid whatever the floor", () => {
+    const flag = planFloors([inn], worldSeed("hub"));
+    const planks = planFloors([inn], worldSeed("hub"), "ground_flagstone", () => "ground_plank_floor");
+    expect(planks.map((t) => [t.at, t.index])).toEqual(flag.map((t) => [t.at, t.index]));
+  });
+
+  it("should lay a look's own floors through the ground layer's plan", () => {
+    const pieces = planGroundLayer({
+      width: 2000,
+      height: 1000,
+      kind: "hub",
+      houses: [inn, store],
+      look: { ...OUTDOOR_GROUND, floorFor: (h) => (h.id === "inn" ? "ground_plank_floor" : undefined) },
+    });
+    expect(pieces.some((p) => p.sheet === "ground_plank_floor")).toBe(true);
+    expect(pieces.some((p) => p.sheet === "ground_flagstone")).toBe(true);
+  });
+});
+
 describe("planDecals", () => {
   const house = { id: "a", x: 4 * T, y: 4 * T, width: 8 * T, height: 6 * T };
 

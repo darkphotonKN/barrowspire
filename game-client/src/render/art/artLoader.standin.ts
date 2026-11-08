@@ -12,7 +12,7 @@ export const shippedManifest = (): ArtManifest =>
 
 /**
  * The shipped manifest's resident pages (FS-C4JWH §A R3), written out rather than derived, so a
- * test that compares against them checks the table: the four class groups and the 13 small ones.
+ * test that compares against them checks the table: the four class groups and the 14 small ones.
  */
 export const RESIDENT_ART_PAGES = [
   "archer-0",
@@ -22,6 +22,7 @@ export const RESIDENT_ART_PAGES = [
   "forest-0",
   "fx-0",
   "ground-0",
+  "hall-0",
   "icons-0",
   "interior-0",
   "knight-0",

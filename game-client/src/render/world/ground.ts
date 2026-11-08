@@ -6,7 +6,8 @@
  * result names sheets from the sprite manifest and world positions; drawing is `scene.ts`.
  */
 
-import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso";
+// by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
+import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
 import type { House } from "./houses";
 
 /** Which kind of world is being dressed. Mirrors `ClientGameState.world_type`. */
@@ -352,15 +353,18 @@ function planHalls(
 /**
  * A floor under each house (flagstone outdoors, planks in a tower room): a tile grid centred on
  * the house, so any part-tile overhang is split evenly and hides under the walls' footprint and
- * baked contact shadow.
+ * baked contact shadow. A house `floorFor` names a floor for (the Inn's planks) has that floor
+ * instead, on the same grid.
  */
 export function planFloors(
   houses: readonly House[],
   seed: number,
   sheet = "ground_flagstone",
+  floorFor?: (house: House) => string | undefined,
 ): GroundPiece[] {
   const tiles: GroundPiece[] = [];
   for (const h of houses) {
+    const floor = floorFor?.(h) ?? sheet;
     const cols = Math.ceil(h.width / T - 1e-6);
     const rows = Math.ceil(h.height / T - 1e-6);
     const x0 = h.x - (cols * T - h.width) / 2;
@@ -369,7 +373,7 @@ export function planFloors(
       for (let j = 0; j < rows; j++) {
         const at = { x: x0 + (i + 0.5) * T, y: y0 + (j + 0.5) * T };
         tiles.push({
-          sheet,
+          sheet: floor,
           animation: "variants",
           index: tileHash(Math.floor(at.x / T), Math.floor(at.y / T), seed + 7),
           at,
@@ -435,6 +439,8 @@ export interface GroundLook {
   hall?: string;
   /** The floor under each house or room. */
   floor: string;
+  /** A house's own floor, where it has one (the Inn's planks); absent or undefined, `floor`. */
+  floorFor?: (house: House) => string | undefined;
   /** Whether grass tufts and pebbles are scattered. */
   decals: boolean;
   /** Another material breaking up through the halls (FS-8RBQY §C.2). */
@@ -495,7 +501,7 @@ export function planGroundLayer({
       ? planHalls(world.width, world.height, look.hall, seed, look.patches)
       : planGround({ ...world, trodden: look.trodden, litterShade: look.litterShade })),
     ...(look.decals ? planDecals({ ...world, houses }) : []),
-    ...planFloors(houses, seed, look.floor),
+    ...planFloors(houses, seed, look.floor, look.floorFor),
   ];
   return where ? pieces.filter((p) => where(p.at)) : pieces;
 }

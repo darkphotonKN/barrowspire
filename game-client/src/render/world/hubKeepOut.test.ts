@@ -130,7 +130,7 @@ describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
   it("holds K8's gates as the server places them, with GateRange (FS-0XMCP R2, R4)", () => {
     expect(HUB_KEEP_OUT.gates.at).toEqual([
       { destination: "spire", x: 1000, y: 50 },
-      { destination: "forest", x: 40, y: 400 },
+      { destination: "forest", x: 40, y: 580 },
       { destination: "meadows", x: 1960, y: 360 },
     ]);
     expect(HUB_KEEP_OUT.gates.range).toBe(80);
@@ -194,13 +194,13 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
     expect(HUB_STALLS.map((s) => [s.at.x, s.at.y, s.r])).toEqual([
       // off the store's threshold, from (1220, 460)
       [1190, 500, 40],
-      // off the Inn's road, from (700, 500)
-      [470, 550, 40],
+      // south off the Forest trail, which runs past the great hall's front now, from (470, 550)
+      [470, 690, 40],
       [630, 950, 40],
     ]);
     expect(HUB_CARTS.map((s) => [s.sheet, s.at.x, s.at.y, s.r])).toEqual([
-      // out from under the Inn's eave to the smithy's front, from (540, 430)
-      ["cart", 350, 330, 26],
+      // out of the great hall (the old smithy's front), into the west yard, from (350, 330)
+      ["cart", 160, 770, 26],
       ["hay_cart", 400, 880, 26],
     ]);
     expect(HUB_CRATES.map((s) => [s.sheet, s.at.x, s.at.y, s.r])).toEqual([
@@ -214,9 +214,9 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
     ]);
     expect(HUB_FENCES).toEqual([
       { at: { x: 300, y: 760 }, length: 220, axis: "x", r: 20 },
-      // shortened from 180 to clear the Meadows gate's range (FS-0XMCP K8): the fence end
-      // beside the east road
-      { at: { x: 1740, y: 300 }, length: 130, axis: "x", r: 20 },
+      // to the east road's south side, the smithy on its north side now, from (1740, 300); still
+      // short of the Meadows gate's range (FS-0XMCP K8)
+      { at: { x: 1700, y: 450 }, length: 130, axis: "x", r: 20 },
       { at: { x: 240, y: 950 }, length: 240, axis: "x", r: 20 },
     ]);
   });
@@ -229,25 +229,27 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
       // moved off the north lane and the west trail's drop (FS-0XMCP R19, K8), from
       // (1000, 430) and (515, 600)
       ["brazier", 1080, 440, 16, true],
-      ["brazier", 530, 600, 16, true],
+      // off the moved Forest trail, to the great hall's front, from (530, 600)
+      ["brazier", 300, 528, 16, true],
       // beside the well, off the Inn's road (FS-B0H2D R24), from (750, 450)
       ["water_trough", 790, 580, 20, false],
       ["water_trough", 310, 840, 20, false],
       ["woodpile", 660, 880, 24, false],
       // off the Inn's road and out of the market stall's way, from (620, 490) and (1150, 460)
-      ["sacks", 535, 540, 12, false],
+      // off the Inn's new threshold, from (535, 540)
+      ["sacks", 610, 530, 12, false],
       ["sacks", 1125, 455, 12, false],
       ["sacks", 600, 840, 12, false],
       ["signpost", 1085, 520, 10, true],
       ["signpost", 1050, 880, 10, true],
-      // the old houses' faces are gone: the Inn's front either side of its door, the store's
-      // front west of its door, the store's east side
-      ["flower_box", 560, 432, 10, false],
-      ["flower_box", 790, 432, 10, false],
+      // the old houses' faces are gone: the Inn's front either side of its door (from y 432 to
+      // the great hall's front), the store's front west of its door, the store's east side
+      ["flower_box", 440, 512, 10, false],
+      ["flower_box", 660, 512, 10, false],
       ["flower_box", 1190, 412, 10, false],
       ["flower_box", 1452, 270, 10, false],
-      // by the cart before the smithy, from (575, 475) under the Inn's eave
-      ["barrel", 400, 345, 12, false],
+      // by the cart in the west yard, out of the great hall, from (400, 345)
+      ["barrel", 200, 800, 12, false],
       ["barrel", 610, 810, 12, false],
       ["barrel", 340, 800, 12, false],
     ]);
@@ -255,13 +257,13 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
     expect(HUB_DRESSING.filter((s) => s.sheet === "flower_box").map((s) => s.animation)).toEqual(["x", "x", "x", "y"]);
     // the sacks' variants: grain, grain, market goods
     expect(HUB_DRESSING.filter((s) => s.sheet === "sacks").map((s) => s.index)).toEqual([0, 0, 1]);
-    // the washing line's old house is gone; it hangs south of the Forest trail, from x 640–720
+    // the washing line hangs south of the Forest trail, moved off it with the gate, from y 600
     expect(HUB_WASHING_LINE.posts.map((p) => [p.sheet, p.at.x, p.at.y, p.r, p.tall])).toEqual([
-      ["washing_post", 200, 600, 8, true],
-      ["washing_post", 280, 600, 8, true],
+      ["washing_post", 240, 690, 8, true],
+      ["washing_post", 320, 690, 8, true],
     ]);
     // the line and its cloth sort by the span's midpoint
-    expect(HUB_WASHING_LINE.line).toMatchObject({ sheet: "washing_line", at: { x: 240, y: 600 } });
+    expect(HUB_WASHING_LINE.line).toMatchObject({ sheet: "washing_line", at: { x: 280, y: 690 } });
   });
 });
 
@@ -280,7 +282,7 @@ describe("the keep-out check catches a bad placement", () => {
   });
 
   it.each([
-    ["K1 inside a building's eave", { x: 700, y: 395 }, 10, "K1"],
+    ["K1 inside a building's eave", { x: 700, y: 500 }, 10, "K1"],
     ["K3 by the spawn", { x: 1000, y: 860 }, 10, "K3"],
     ["K4 in the Elder's talk range", { x: 1140, y: 760 }, 10, "K4"],
     ["K4 in the Quartermaster's talk range", { x: 1280, y: 340 }, 10, "K4"],
@@ -288,10 +290,10 @@ describe("the keep-out check catches a bad placement", () => {
     ["K6 in the Woodcutter's quarter", { x: 850, y: 900 }, 10, "K6"],
     ["K7 off the map", { x: 1990, y: 500 }, 20, "K7"],
     ["K8 in the Spire gate's range", { x: 1060, y: 110 }, 10, "K8"],
-    ["K8 in the Forest gate's range", { x: 80, y: 470 }, 10, "K8"],
+    ["K8 in the Forest gate's range", { x: 80, y: 640 }, 10, "K8"],
     ["K8 in the Meadows gate's range", { x: 1900, y: 300 }, 10, "K8"],
     ["K8 on the north lane", { x: 1000, y: 300 }, 10, "K8"],
-    ["K8 on the west trail", { x: 300, y: 415 }, 10, "K8"],
+    ["K8 on the west trail", { x: 300, y: 580 }, 10, "K8"],
     ["K8 on the east road", { x: 1600, y: 365 }, 10, "K8"],
   ] as const)("flags %s", (_, at, r, rule) => {
     expect(breaches(spotFootprint({ sheet: "crate", at, r }))).toContain(rule);
@@ -311,7 +313,7 @@ describe("the gates' approaches and dressing (FS-0XMCP R18–R20)", () => {
   /** Where each gate's trodden ground leaves the map: the edge it stands on. */
   const EXIT = {
     spire: { x: 1000, y: 0 },
-    forest: { x: 0, y: 400 },
+    forest: { x: 0, y: 580 },
     meadows: { x: HUB_SIZE.width, y: 360 },
   } as const;
 
@@ -422,9 +424,13 @@ describe("the town buildings' doors and the trodden ground (FS-B0H2D R24)", () =
     },
   );
 
-  it("runs the Forest trail straight in to the spawn's lane, no longer south round a house", () => {
-    // never below the spawn's lane's top: the old trail dropped to y 710 round the west house
-    for (const [, y, , h] of HUB_APPROACHES.forest) expect(y + h).toBeLessThanOrEqual(500);
+  it("runs the Forest trail along the Inn's front, clear of its eave, and no further south than the hearth's west arm", () => {
+    const inn = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Inn")!;
+    const westArm = HUB_PATHS[1];
+    for (const [, y, , h] of HUB_APPROACHES.forest) {
+      expect(y).toBeGreaterThan(inn.y + inn.h + EAVE);
+      expect(y + h).toBeLessThanOrEqual(westArm[1]);
+    }
   });
 });
 

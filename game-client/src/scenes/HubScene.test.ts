@@ -91,6 +91,8 @@ const { useMailboxStore } = await import("@/stores/mailboxStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
+const interiors = await import("@/render/world/hubInteriors");
+const walls_ = await import("@/render/world/walls");
 const { sceneSystems } = await import("./sceneEnd.standin");
 
 interface QueuePanelScene {
@@ -757,7 +759,7 @@ const SPIRE_GATE = {
 const FOREST_GATE = {
   entity_id: "forest-gate",
   destination: "forest" as const,
-  position: { x: 40, y: 400 },
+  position: { x: 40, y: 580 },
   range: 80,
 };
 const MEADOWS_GATE = {
@@ -2539,19 +2541,19 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   );
   const BARE = ArtLibrary.empty(quiet);
 
-  /** The town as hub_map.go walls it (FS-B0H2D R1–R3, R9, R12): the Inn, the store, the smithy. */
-  const BUILDINGS: [string, number, number, number, number][] = [
-    ["inn", 470, 110, 400, 300],
-    ["store", 1130, 150, 300, 240],
-    ["smithy", 110, 50, 300, 240],
-  ];
-  const FURNISHINGS: [string, number, number, number, number][] = [
-    ["inn", 715, 190, 25, 140],
-    ["inn", 540, 185, 30, 40],
-    ["inn", 540, 285, 30, 40],
-    ["inn", 620, 240, 45, 40],
-    ["smithy", 225, 120, 70, 35],
-  ];
+  /**
+   * The town as hub_map.go walls it (FS-B0H2D R1–R3, R9, R12), from its golden: the Inn, the
+   * store, the smithy, the Inn's partition across it and every furnishing.
+   */
+  const IDS = ["inn", "store", "smithy"];
+  type Rect5 = [string, number, number, number, number];
+  const BUILDINGS: Rect5[] = HUB_TOWN_GOLDEN.buildings.map((b, i) => [IDS[i], b.x, b.y, b.w, b.h]);
+  const PARTITIONS: Rect5[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    b.partitions.map((p): Rect5 => [IDS[i], p.x, p.y, p.w, p.h]),
+  );
+  const FURNISHINGS: Rect5[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    b.furnishings.map((f): Rect5 => [IDS[i], f.x, f.y, f.w, f.h]),
+  );
   const wall = (id: string, house: string, x: number, y: number, width: number, height: number) => ({
     entity_id: id,
     house_id: house,
@@ -2569,14 +2571,18 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       wall(`${id}-se`, id, x + side + 50, y + h - 20, side, 20),
     ];
   });
+  const PARTITION_WALLS = PARTITIONS.map(([house, x, y, w, h], i) => wall(`p${i}`, house, x, y, w, h));
   const FURNISHING_WALLS = FURNISHINGS.map(([house, x, y, w, h], i) => wall(`f${i}`, house, x, y, w, h));
-  const TOWN = [...BUILDING_WALLS, ...FURNISHING_WALLS];
+  const TOWN = [...BUILDING_WALLS, ...PARTITION_WALLS, ...FURNISHING_WALLS];
 
+  /** In the Inn's taproom, on the open floor before the bar. */
   const IN_INN = { x: 690, y: 370 };
+  /** In the Inn's great hall, through the partition's door. */
+  const IN_GREAT_HALL = { x: 460, y: 300 };
   /** In the Inn's door gap, in its south wall: inside, by the inclusive inside test (§A.2). */
-  const IN_INN_DOORWAY = { x: 670, y: 400 };
+  const IN_INN_DOORWAY = { x: 550, y: 480 };
   const IN_STORE = { x: 1280, y: 330 };
-  const IN_SMITHY = { x: 260, y: 230 };
+  const IN_SMITHY = { x: 1630, y: 230 };
   const OUTDOORS = { x: 1000, y: 800 };
   const ON_THE_STREET = { x: 900, y: 600 };
 
@@ -2620,8 +2626,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       position: at,
     });
     hub.renderNPCs([
-      npc("drover", "Drover", "", { x: 590, y: 220 }),
-      npc("smith", "Smith", "", { x: 260, y: 175 }),
+      npc("drover", "Drover", "", { x: 418, y: 223 }),
+      npc("smith", "Smith", "", { x: 1630, y: 175 }),
       npc("qm", "Quartermaster", "storekeeper", { x: 1280, y: 270 }),
       npc("cottar", "Cottar", "", { x: 600, y: 600 }),
     ]);
@@ -2657,13 +2663,79 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   const sameRect = (args: unknown[], [, x, y, w, h]: [string, number, number, number, number]) =>
     args[1] === x && args[2] === y && args[3] === w && args[4] === h;
 
-  it("should hand the buildings the building walls only, never a furnishing, with a door for each gap", () => {
+  it("should hand the buildings the building walls only, never a furnishing or the partition, with a door for each gap", () => {
     town(BAKED);
-    const [call] = vi.mocked(world.addBuildings).mock.calls;
-    const drawn = call[2] as readonly { entity_id: string }[];
-    expect(drawn.map((w) => w.entity_id)).toEqual(BUILDING_WALLS.map((w) => w.entity_id));
+    const calls = vi.mocked(world.addBuildings).mock.calls;
+    const drawn = calls.flatMap((call) => call[2] as readonly { entity_id: string }[]);
+    expect(drawn.map((w) => w.entity_id).sort()).toEqual(BUILDING_WALLS.map((w) => w.entity_id).sort());
     // the hub has no DoorState: a town door gap holds a drawn door, shut outside, open inside (§B.5)
-    expect(call[4]).toMatchObject({ doors: world.doorGaps });
+    for (const call of calls) expect(call[4]).toMatchObject({ doors: world.doorGaps });
+  });
+
+  it("should build each house's walls in the sheets its look names: the Inn's with no torch or lit window, every other house's in plain timber", () => {
+    const { hub } = town(BAKED);
+    const calls = vi.mocked(world.addBuildings).mock.calls;
+    const innCall = calls.find((call) => (call[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "inn"))!;
+    const sheets = (innCall[4] as { sheets?: { lit?: string[]; back: [number, string][] } }).sheets!;
+    expect(sheets.lit).toEqual([]);
+    expect(sheets.back.map(([, kind]) => kind)).not.toEqual(expect.arrayContaining(["torch"]));
+    expect((innCall[2] as readonly { house_id?: string }[]).every((w) => w.house_id === "inn")).toBe(true);
+    for (const call of calls.filter((c) => c !== innCall)) {
+      expect((call[4] as { sheets?: unknown }).sheets).toBe(walls_.TIMBER_WALLS);
+      expect((call[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "inn")).toBe(false);
+    }
+    const inn = (hub as unknown as { buildingLights: { house: { id: string } }[] }).buildingLights;
+    expect(inn.filter((l) => l.house.id === "inn")).toEqual([]);
+  });
+
+  it("should draw the Inn's partition as low interior masonry inside the room, hidden with it under the roof", () => {
+    const { room, standIn } = town(BAKED);
+    const [call] = vi.mocked(world.addWalls).mock.calls.filter((c) => (c[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "inn"));
+    expect(call).toBeDefined();
+    const walls = call[2] as { entity_id: string; position: { x: number; y: number }; width: number; height: number }[];
+    // each segment trimmed to the inner faces of the north and south walls, the door gap between
+    expect(walls.map((w) => [w.entity_id, w.position.x, w.position.y, w.width, w.height])).toEqual([
+      ["p0", 505, 70, 20, 175],
+      ["p1", 505, 295, 20, 175],
+    ]);
+    expect(call[4]).toBe(walls_.MASONRY_WALLS);
+    expect(call[5]).toBe(walls_.INTERIOR_PARTITION);
+    // drawn no other way: never as a furnishing's block, never as a building wall
+    const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
+    expect(blocks.filter((c) => PARTITIONS.some((p) => sameRect(c, p)))).toHaveLength(0);
+    standIn(IN_GREAT_HALL);
+    expect(room("inn").parts.every((p) => p.visible)).toBe(true);
+  });
+
+  it("should floor the Inn in planks once its sheet is baked, and every other house in flagstone", () => {
+    const floorOf = (art: InstanceType<typeof ArtLibrary>, house: { id: string; x: number; y: number; width: number; height: number }) => {
+      const { hub } = hubOnStage();
+      (hub as unknown as { art: unknown }).art = art;
+      return (hub as unknown as { townGround(): import("@/render/world/ground").GroundLook }).townGround().floorFor?.(house);
+    };
+    const [, x, y, w, h] = BUILDINGS[0];
+    const inn = { id: "inn", x, y, width: w, height: h };
+    const [, sx, sy, sw, sh] = BUILDINGS[1];
+    const store = { id: "store", x: sx, y: sy, width: sw, height: sh };
+    expect(floorOf(BAKED, inn)).toBe(BAKED.has("ground_plank_floor") ? "ground_plank_floor" : undefined);
+    expect(floorOf(BAKED, store)).toBeUndefined();
+    // without the sheet the Inn keeps the flagstone, never bare ground
+    expect(floorOf(BARE, inn)).toBeUndefined();
+  });
+
+  it("should draw the Inn's partition as a low stone placeholder without art, never a wall-high block", () => {
+    town(BARE);
+    const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
+    const inside: [string, number, number, number, number][] = [
+      ["inn", 505, 70, 20, 175],
+      ["inn", 505, 295, 20, 175],
+    ];
+    for (const r of inside) {
+      const mine = blocks.filter((c) => sameRect(c, r));
+      expect(mine, `${r}`).toHaveLength(1);
+      expect(mine[0][5]).toBe(world.PLACEHOLDER_STONE);
+      expect(mine[0][6]).toBeLessThan(WALL_HEIGHT);
+    }
   });
 
   it("should stand each furnishing's prop on the centre of its rect", () => {
@@ -2672,13 +2744,30 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     expect(props).toEqual(
       expect.arrayContaining([
         { sheet: "counter", at: { x: 727.5, y: 260 }, animation: "y" },
-        { sheet: "inn_table", at: { x: 555, y: 205 }, animation: "narrow" },
-        { sheet: "inn_table", at: { x: 555, y: 305 }, animation: "narrow" },
-        { sheet: "inn_table", at: { x: 642.5, y: 260 }, animation: "wide" },
-        { sheet: "forge", at: { x: 260, y: 137.5 }, animation: undefined },
+        { sheet: "inn_table", at: { x: 615, y: 150 }, animation: "narrow" },
+        { sheet: "inn_table", at: { x: 622.5, y: 320 }, animation: "wide" },
+        { sheet: "forge", at: { x: 1630, y: 137.5 }, animation: undefined },
       ]),
     );
-    expect(props.map((p) => p.sheet)).toEqual(expect.arrayContaining(["stool", "inn_hearth", "shelf", "anvil"]));
+    expect(props.map((p) => p.sheet)).toEqual(expect.arrayContaining(["stool", "shelf", "anvil"]));
+  });
+
+  it("should stand the great hall's long table and hearth as their props, or low placeholders until baked", () => {
+    town(BAKED);
+    const props = vi.mocked(world.addProp).mock.calls.map(([, , sheet, at, q]) => ({ sheet, at, animation: q?.animation }));
+    const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
+    const cases: [string, Rect5, { x: number; y: number }, string | undefined][] = [
+      ["long_table", ["inn", 352, 175, 50, 240], { x: 377, y: 295 }, "y"],
+      ["hall_hearth", ["inn", 300, 70, 144, 48], { x: 372, y: 94 }, undefined],
+    ];
+    for (const [sheet, rect, at, animation] of cases) {
+      if (BAKED.has(sheet)) expect(props).toContainEqual({ sheet, at, animation });
+      else {
+        const mine = blocks.filter((c) => sameRect(c, rect));
+        expect(mine, sheet).toHaveLength(1);
+        expect(mine[0][6]).toBeLessThan(WALL_HEIGHT);
+      }
+    }
   });
 
   it("should draw a low placeholder block on a furnishing the mirror does not know", () => {
@@ -2793,20 +2882,30 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     expect(rival.sprite.visible).toBe(false);
   });
 
-  it("should light the hearth and the forge only while their roof is lifted (R22)", () => {
+  it("should light the Inn's hearth, candelabra and lanterns and the forge only while their roof is lifted (R22)", () => {
     const { hub, room, standIn } = town(BAKED);
     const forge = room("smithy").lights;
-    const hearth = room("inn").lights;
+    const inn = room("inn").lights;
     expect(forge).toHaveLength(1);
-    expect(hearth).toHaveLength(1);
+    // one light for each of the Inn's lit pieces whose sheet is baked with its light
+    const lit = (sheet: string) => BAKED.has(sheet) && !!BAKED.sheet(sheet)?.light;
+    const innLit = [
+      ...interiors.HUB_INDOOR_DRESSING.filter((s) => s.at.x < 870 && s.at.y < 490).map((s) => s.sheet),
+      ...interiors.HUB_FURNISHINGS.filter((f) => f.rect.x < 870).map((f) => f.sheet),
+    ].filter(lit);
+    expect(inn).toHaveLength(innLit.length);
     expect(forge[0].source.intensity).toBe(0);
     const gate = hub.lightMap!.add.mock.calls.find(([source]) => source === forge[0].source)?.[1] as () => boolean;
     expect(gate()).toBe(false);
 
     standIn(IN_SMITHY);
     expect(forge[0].source.intensity).toBeGreaterThan(0);
-    expect(hearth[0].source.intensity).toBe(0);
+    expect(inn.every((l) => l.source.intensity === 0)).toBe(true);
     expect(gate()).toBe(true);
+
+    standIn(IN_INN);
+    expect(inn.every((l) => l.source.intensity > 0)).toBe(true);
+    expect(forge[0].source.intensity).toBe(0);
 
     standIn(OUTDOORS);
     expect(forge[0].source.intensity).toBe(0);
@@ -2851,7 +2950,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
     it("should snap on at the door gap, the threshold being inside", () => {
       const { stage, standIn } = town(BARE);
-      standIn({ x: 670, y: 410 });
+      standIn({ x: 550, y: 485 });
       expect(blackoutOf(stage).visible).toBe(true);
     });
 
@@ -3081,7 +3180,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         const [mask] = t.stage.made.filter((m) => m.kind === "renderTexture");
         return { place, image, mask };
       }
-      const BEHIND_INN = { x: 670, y: 60 };
+      const BEHIND_INN = { x: 670, y: 30 };
       // nearer the viewer than every building's footprint
       const FAR_FRONT = { x: 1950, y: 980 };
 
@@ -3171,16 +3270,21 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         const flames = t.hub.lightMap!.add.mock.calls.filter(([, when]) => typeof when === "function");
         const walls = closed(t.hub).view.drawn.flatMap((b) => [...b.shared, ...b.interior]);
         expect(walls.length).toBeGreaterThan(0);
-        const inn = (t.hub as unknown as { buildingLights: { house: { id: string }; source: { intensity: number } }[] })
-          .buildingLights.filter((l) => l.house.id === "inn");
-        expect(inn.length).toBeGreaterThan(0);
-        expect(inn.every((l) => l.source.intensity === 0)).toBe(true);
-        t.standIn(IN_INN);
-        expect(inn.every((l) => l.source.intensity > 0)).toBe(true);
-        const gate = flames.find(([source]) => source === inn[0].source)?.[1] as () => boolean;
+        // the store and the smithy keep their wall flames; the Inn's walls carry none
+        const lights = (t.hub as unknown as { buildingLights: { house: { id: string }; source: { intensity: number } }[] })
+          .buildingLights;
+        const [id, inside, other] = lights.some((l) => l.house.id === "store")
+          ? (["store", IN_STORE, IN_SMITHY] as const)
+          : (["smithy", IN_SMITHY, IN_STORE] as const);
+        const own = lights.filter((l) => l.house.id === id);
+        expect(own.length).toBeGreaterThan(0);
+        expect(own.every((l) => l.source.intensity === 0)).toBe(true);
+        t.standIn(inside);
+        expect(own.every((l) => l.source.intensity > 0)).toBe(true);
+        const gate = flames.find(([source]) => source === own[0].source)?.[1] as () => boolean;
         expect(gate()).toBe(true);
-        t.standIn(IN_STORE);
-        expect(inn.every((l) => l.source.intensity === 0)).toBe(true);
+        t.standIn(other);
+        expect(own.every((l) => l.source.intensity === 0)).toBe(true);
         expect(gate()).toBe(false);
       });
     });
