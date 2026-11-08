@@ -225,6 +225,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   which is a townsperson (ADR-0059).
 - **Scene-scoped group**: an atlas group loaded only by the scenes that draw it (folk, wildlife,
   fodder, creatures, boss) and freed when the next scene does not use it (ADR-0059, FS-C4JWH).
+- **On-demand group**: a scene-scoped group no scene preloads, fetched while a scene runs, the first
+  time a snapshot lists the archetype it draws (today only `blood_demon`). Freed by eviction like any
+  scene-scoped group (ADR-0071, FS-VHGE7).
+- **Stand-in**: what a monster on an on-demand group draws until the group is in: a sheet its scene
+  already holds, under a palette tint. A look, never the placeholder (ADR-0071).
 - **Eviction**: removing a scene-scoped group's pages from the texture manager (and so the GPU),
   with every animation registered on them, once the next scene's preload completes. Only ever of
   art; "unload" is not used for it (ADR-0059).

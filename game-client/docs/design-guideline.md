@@ -333,6 +333,16 @@ troll already baked are the reference pair.
   or more saturated than it) is allowed as a boss's body material. Emissives stay ember red.
   Green is never an emissive and never a marker colour on a hostile, because arcane green means
   *safe*. *(Amended at the owner's request, 2026-10-08.)*
+- **Blood-hide clause (bosses only).** A dark, desaturated oxblood hide (a blood or flayed red,
+  mixed from `BARROW` `oxblood` toward `charcoal` and `umber`, never the `oxblood` token as-is and
+  never brighter or more saturated than it) is allowed as a boss's body material. It is kept
+  apart from a player's heraldic red by value and hue: the knight's cloak and shield take
+  `oxblood` as-is, a cloth red beside bone, while the blood hide is always darker than that and
+  pulled toward brown-black, so the two never sit at the same value and a boss is never read as
+  a player in red. Only a boss may wear it, and a body red is never a marker colour on a
+  hostile. Emissives stay ember red and must still read against the hide: the hide is held dark
+  enough that the eyes and the claw's flame lift off it by value, not by a brighter red.
+  *(Amended at the owner's approval of FS-VHGE7, 2026-11-08.)*
 - **Field-wildlife clause (field worlds only).** In a field world, fodder and brutes may be
   living animals: the boar first. They are beasts of the country outside the Spire, never
   cartoon animals and never pets. Their materials are natural hide, bristle, tusk and horn, taken
@@ -359,6 +369,8 @@ troll already baked are the reference pair.
 - **Materials are grave materials.** Bone, grave-rot skin, bog hide, rust, rotted linen, rag,
   corroded bronze. Take colours from the cold, desaturated end of `BARROW` (charcoal, slate,
   necrotic, barrowBrown, bone). Never bright, never clean metal, never a player's heraldic red.
+  The one red a hostile may wear is a boss's hide under the blood-hide clause above, which is
+  shaded off a player's red by rule. *(Amended at the owner's approval of FS-VHGE7, 2026-11-08.)*
   Field wildlife takes its own natural materials under the field-wildlife clause above.
 - **Eyes are the accent, and they are in the hostile channel.** Glowing eyes use an ember red
   from the oxblood family (the *damage / hostile* channel above). Never amber, which means
@@ -367,9 +379,18 @@ troll already baked are the reference pair.
   dims them. This holds for field wildlife too: a boar's eyes are the same ember red, its one
   emissive, so a boar in daylight still reads hostile and never reads as livestock.
   *(Field wildlife amended at the owner's approval of FS-X2F2H, 2026-10-29.)*
+- **A hostile's attack effect is in the hostile channel too.** The demons' fire claw draws a
+  flame trail along the swipe and one brief flash of light, and both are hostile effects from the
+  ember family: `ember` and the same ember red the eyes use, from the baked ember and fire
+  textures. No new emissive colour, never amber, which means *interactable*, and never arcane
+  green. The flame is an effect of the strike, not part of the body, so the eyes stay the body's
+  one emissive part. *(Amended at the owner's approval of FS-VHGE7, 2026-11-08.)*
 - **Motion tells intent.** Fodder moves jerkily and low. Brutes move heavily and slowly. Every
   attack has a readable wind-up, a pull-back or a raised arm, held long enough to see before it
-  lands. An attack that cannot be read before it hits is unfair, not scary.
+  lands. An attack that cannot be read before it hits is unfair, not scary. The one exception is
+  a boss demon's fire claw: a quick swipe with no wind-up, read by its flame trail and flash as
+  it lands, while the demon's heavy slam keeps its roaring wind-up. *(Amended at the owner's
+  approval of FS-VHGE7, 2026-11-08.)*
 - **Deaths are final and distinct from a player's fall.** Undead collapse: bones scatter, a
   wraith unravels, a brute topples with weight. No gore and no blood spray. The barrow keeps its
   dead quietly. A living animal falls onto its side and goes still, with the same restraint.

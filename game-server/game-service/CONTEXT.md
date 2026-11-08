@@ -254,6 +254,18 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   corridor's monsters or a top-up. A guard **stands** while it is in the world with health above 0,
   wherever it has chased to. Server-only: nothing marks it on the wire (FS-KE075 §J).
 
+### Bosses (FS-77AB6, FS-VHGE7)
+
+- **Boss** — a monster spawned with `Boss: true`: never an elite, at most one of each kind a
+  floor, rolls the boss drop row and the boss experience multiplier. The Spire has two.
+- **Demon** — the green boss (archetype `demon`): guaranteed on the top floor, rare below.
+- **Blood Demon** — the red boss (archetype `blood_demon`): never guaranteed, rolled on every run
+  floor at odds that climb with the floor; tougher than the demon. "Red demon" in conversation.
+- **Slam** — a demon's wind-up move: the roar, then a heavy hit at twice its level damage, rationed
+  by a cooldown. On the wire it is the `attack` action.
+- **Fire claw** — a demon's regular move: one swipe, no wind-up, its level damage. On the wire it
+  is the `claw` action. The fire is presentation only.
+
 ### Field combat (FS-X2F2H)
 
 - **Kill credit** — in a field world, the XP and the loot roll of a kill belong to the player who
