@@ -1,12 +1,16 @@
 package game
 
 import (
+	"context"
+	"encoding/json"
 	"slices"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,38 +36,49 @@ func TestDungeonFloor1_ChestsInGuardedRoomsWaitOnTheirGuards(t *testing.T) {
 	guarded, sacksInHalls := 0, 0
 	for seed := uint64(1); seed <= 200; seed++ {
 		s, _ := dungeonRun(t, seed, 4, 0)
-		d := s.dungeon
-		require.NotNil(t, d, "seed %d: floor 1 is a dungeon floor", seed)
-
-		inRoom := map[int][]uuid.UUID{}
-		for _, m := range standardMonstersIn(s) {
-			at := transformOf(t, m)
-			if room := roomOf(d, at.X, at.Y); room != -1 {
-				inRoom[room] = append(inRoom[room], m.ID)
-			}
-		}
-
-		for _, c := range containers(s) {
-			at := transformOf(t, c)
-			room := roomOf(d, at.X, at.Y)
-			guardedRoom := slices.Contains(d.layout.Roles.Treasure, room) || eligibleHall(d, room)
-			chest := kindOf(t, c) == components.ContainerKindChest
-			guards, ok := guardsOf(c)
-
-			if guardedRoom && !chest {
-				sacksInHalls++
-			}
-			if !guardedRoom || !chest || len(inRoom[room]) == 0 {
-				assert.False(t, ok, "seed %d room %d: a %s here waits on nobody", seed, room, kindOf(t, c))
-				continue
-			}
-			guarded++
-			require.True(t, ok, "seed %d room %d: a chest in a guarded room waits on its guards", seed, room)
-			assert.ElementsMatch(t, inRoom[room], guards, "seed %d room %d: its guards are the room's spawned guards", seed, room)
-		}
+		g, sacks := assertChestsWaitOnTheirRoomsGuards(t, s, seed)
+		guarded += g
+		sacksInHalls += sacks
 	}
 	require.NotZero(t, guarded, "the builds hold guarded chests to check")
 	t.Logf("guarded chests %d, sacks in halls %d", guarded, sacksInHalls)
+}
+
+// assertChestsWaitOnTheirRoomsGuards checks every container of s's dungeon
+// floor against its room, and counts the guarded chests and the sacks in
+// guarded rooms it saw.
+func assertChestsWaitOnTheirRoomsGuards(t *testing.T, s *Session, seed uint64) (guarded, sacksInHalls int) {
+	t.Helper()
+	d := s.dungeon
+	require.NotNil(t, d, "seed %d: the floor is a dungeon", seed)
+
+	inRoom := map[int][]uuid.UUID{}
+	for _, m := range standardMonstersIn(s) {
+		at := transformOf(t, m)
+		if room := roomOf(d, at.X, at.Y); room != -1 {
+			inRoom[room] = append(inRoom[room], m.ID)
+		}
+	}
+
+	for _, c := range containers(s) {
+		at := transformOf(t, c)
+		room := roomOf(d, at.X, at.Y)
+		guardedRoom := slices.Contains(d.layout.Roles.Treasure, room) || eligibleHall(d, room)
+		chest := kindOf(t, c) == components.ContainerKindChest
+		guards, ok := guardsOf(c)
+
+		if guardedRoom && !chest {
+			sacksInHalls++
+		}
+		if !guardedRoom || !chest || len(inRoom[room]) == 0 {
+			assert.False(t, ok, "seed %d room %d: a %s here waits on nobody", seed, room, kindOf(t, c))
+			continue
+		}
+		guarded++
+		require.True(t, ok, "seed %d room %d: a chest in a guarded room waits on its guards", seed, room)
+		assert.ElementsMatch(t, inRoom[room], guards, "seed %d room %d: its guards are the room's spawned guards", seed, room)
+	}
+	return guarded, sacksInHalls
 }
 
 // guardedChest is a run with a delver beside a chest that waits on n ghouls,
@@ -86,7 +101,7 @@ func guardedChest(t *testing.T, n int) (s *Session, player uuid.UUID, chest *ecs
 		ids = append(ids, g.ID)
 	}
 	if n > 0 {
-		chest.AddComponent(components.NewGuardedComponent(ids))
+		chest.AddComponent(components.NewGuardedComponent(ids, false))
 	}
 	return s, player, chest, guards, sent
 }
@@ -200,20 +215,184 @@ func TestGuardedChest_TheNextReachAfterTheLastGuardFallsOpensIt(t *testing.T) {
 	})
 }
 
-// Floors 2 and 3 are built as before: no container on them waits on anyone,
-// and a chest there opens with a monster standing beside it. FS-KE075 §J R57.
-func TestGuardedChests_Floors2And3Unchanged(t *testing.T) {
-	s, _ := dungeonRun(t, 5, 2, 0)
-	require.NotNil(t, s.dungeon)
+// Guarded chests follow the dungeon up the Spire: on every floor of the climb a
+// chest in a guarded room waits on the guards its own room spawned, and a delver
+// beside one is refused. FS-M8CSE §C Requirement 14.
+func TestGuardedChests_EveryFloorOfTheClimb(t *testing.T) {
+	guarded := 0
+	for seed := uint64(1); seed <= 30; seed++ {
+		s, ids := dungeonRun(t, seed, 4, 0)
+		s.sender = &recordingSender{}
 
-	for depth := 2; depth <= constants.RunFloorCount; depth++ {
-		require.NoError(t, s.regenerateFloor())
-		require.Nil(t, s.dungeon, "floor %d is a floor of buildings", depth)
-		found := containers(s)
-		require.NotEmpty(t, found, "floor %d has containers", depth)
-		for _, c := range found {
-			_, ok := guardsOf(c)
-			assert.False(t, ok, "floor %d: no container waits on a guard", depth)
+		for depth := 2; depth <= testSpireHeight; depth++ {
+			require.NoError(t, s.regenerateFloor())
+			g, _ := assertChestsWaitOnTheirRoomsGuards(t, s, seed)
+			guarded += g
+
+			for _, c := range containers(s) {
+				if _, ok := guardsOf(c); !ok {
+					continue
+				}
+				*transformOf(t, delverEntity(t, s, ids[0])) = *transformOf(t, c)
+				require.ErrorIs(t, s.handleInteract(ids[0], c.ID), ErrContainerGuarded, "seed %d floor %d", seed, depth)
+				break
+			}
 		}
 	}
+	require.NotZero(t, guarded, "the climbs hold guarded chests to check")
+}
+
+// A floor of buildings left by a failed generation has no guarded rooms, so
+// nothing on it waits on anyone. FS-M8CSE §Edge States.
+func TestGuardedChests_NoneOnAFallbackFloor(t *testing.T) {
+	s, _ := dungeonRun(t, 5, 2, 0)
+	failGeneration(s)
+
+	require.NoError(t, s.regenerateFloor())
+
+	require.Nil(t, s.dungeon)
+	found := containers(s)
+	require.NotEmpty(t, found)
+	for _, c := range found {
+		_, ok := guardsOf(c)
+		assert.False(t, ok, "no container waits on a guard")
+	}
+}
+
+// Across the climb, only a chest in a treasure room whose guards were placed
+// rolls as a guarded treasure chest. A chest in a hall waits on its pack just
+// the same but rolls as a chest, and a sack and an unguarded chest roll as
+// themselves. The stored kind never changes. FS-M8CSE §G R35; FS-KE075 §J.
+func TestGuardChests_OnlyATreasureRoomChestWithGuardsRollsAsOne(t *testing.T) {
+	treasure, hall := 0, 0
+	for seed := uint64(1); seed <= 60; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+		for depth := 1; depth <= testSpireHeight; depth++ {
+			if depth > 1 {
+				require.NoError(t, s.regenerateFloor())
+			}
+			d := s.dungeon
+			require.NotNil(t, d)
+			for _, c := range containers(s) {
+				at := transformOf(t, c)
+				room := roomOf(d, at.X, at.Y)
+				_, guarded := guardsOf(c)
+				stored := kindOf(t, c)
+				require.NotEqual(t, containerKindGuardedTreasure, stored, "the stored kind is never the roll-only one")
+
+				switch {
+				case guarded && slices.Contains(d.layout.Roles.Treasure, room):
+					treasure++
+					assert.Equal(t, containerKindGuardedTreasure, containerKindOf(c), "seed %d room %d", seed, room)
+					assert.Equal(t, components.ContainerKindChest, stored)
+				case guarded:
+					hall++
+					assert.True(t, eligibleHall(d, room), "seed %d room %d", seed, room)
+					assert.Equal(t, components.ContainerKindChest, containerKindOf(c), "seed %d room %d: a hall chest rolls as a chest", seed, room)
+				default:
+					assert.Equal(t, stored, containerKindOf(c), "seed %d room %d: an unguarded container rolls as itself", seed, room)
+				}
+			}
+		}
+	}
+	require.NotZero(t, treasure, "the builds hold guarded treasure chests")
+	require.NotZero(t, hall, "the builds hold guarded hall chests")
+}
+
+// A treasure-room chest whose guards all failed to place waits on nobody and is
+// an ordinary chest. FS-M8CSE §G R35.
+func TestGuardChests_ATreasureRoomWhoseGuardsFailedIsOrdinary(t *testing.T) {
+	checked := 0
+	for seed := uint64(1); seed <= 40; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+		d := s.dungeon
+		require.NotNil(t, d)
+
+		var inTreasure []*ecs.Entity
+		for _, c := range containers(s) {
+			at := transformOf(t, c)
+			if slices.Contains(d.layout.Roles.Treasure, roomOf(d, at.X, at.Y)) && kindOf(t, c) == components.ContainerKindChest {
+				c.RemoveComponent(ecs.ComponentTypeGuarded)
+				inTreasure = append(inTreasure, c)
+			}
+		}
+
+		// some other room placed its guards; these rooms placed none
+		guards := map[int][]uuid.UUID{d.layout.Roles.Start: {uuid.New()}}
+		for _, room := range d.layout.Roles.Treasure {
+			guards[room] = nil
+		}
+		s.guardChests(d, guards)
+
+		for _, c := range inTreasure {
+			checked++
+			_, guarded := guardsOf(c)
+			assert.False(t, guarded)
+			assert.Equal(t, components.ContainerKindChest, containerKindOf(c), "seed %d", seed)
+		}
+	}
+	require.NotZero(t, checked, "the builds hold treasure-room chests")
+}
+
+// The chest's standing is where it was placed: whether its guards still stand,
+// lie dead or are gone from the world, it rolls as the same kind. FS-M8CSE §G R35.
+func TestContainerKindOf_GuardsFateDoesNotChangeIt(t *testing.T) {
+	s, _, chest, guards, _ := guardedChest(t, 2)
+	gc, ok := chest.GetComponent(ecs.ComponentTypeGuarded)
+	require.True(t, ok)
+	gc.(*components.GuardedComponent).TreasureRoom = true
+
+	assert.Equal(t, containerKindGuardedTreasure, containerKindOf(chest), "guards standing")
+
+	layDead(t, guards[0])
+	layDead(t, guards[1])
+	assert.Equal(t, containerKindGuardedTreasure, containerKindOf(chest), "guards dead")
+
+	s.EntityManager.RemoveEntity(guards[0].ID)
+	s.EntityManager.RemoveEntity(guards[1].ID)
+	assert.Equal(t, containerKindGuardedTreasure, containerKindOf(chest), "guards gone from the world")
+}
+
+// A marked chest is still "chest" on the wire: the roll-only kind reaches no
+// serialized frame, on any container of a built floor. FS-M8CSE §G R35.
+func TestGuardedTreasureChest_WireKindIsUnchanged(t *testing.T) {
+	marked := 0
+	for seed := uint64(1); seed <= 20; seed++ {
+		s, _ := dungeonRun(t, seed, 1, 0)
+		for _, c := range containers(s) {
+			if containerKindOf(c) == containerKindGuardedTreasure {
+				marked++
+			}
+		}
+
+		state, err := serializer.NewStateSerializer(s.EntityManager, nil).SerializeBackendState(context.Background(), s.ID, types.WorldTypeRun, s.EntityManager.GetAllEntities())
+		require.NoError(t, err)
+		require.NotEmpty(t, state.Containers)
+		for _, c := range state.Containers {
+			assert.Contains(t, []string{string(components.ContainerKindChest), string(components.ContainerKindSack)}, c.Kind, "seed %d", seed)
+		}
+		raw, err := json.Marshal(state.Containers)
+		require.NoError(t, err)
+		assert.NotContains(t, string(raw), string(containerKindGuardedTreasure))
+	}
+	require.NotZero(t, marked, "the builds hold marked chests")
+}
+
+// Opened for real on floor 6 with its guards down, a guarded treasure chest
+// holds a chest's count and stays a chest: its stored kind, and its guards'
+// list, are as the build left them. FS-M8CSE §G R35.
+func TestGuardedTreasureChest_OpensAsAChestOnFloorSix(t *testing.T) {
+	s, player, chest, guards, _ := guardedChest(t, 1)
+	gc, _ := chest.GetComponent(ecs.ComponentTypeGuarded)
+	gc.(*components.GuardedComponent).TreasureRoom = true
+	floor := s.EntityManager.CreateEntity()
+	floor.AddComponent(components.NewFloorComponent(6, 10))
+	layDead(t, guards[0])
+
+	require.NoError(t, s.handleInteract(player, chest.ID))
+
+	held := chestHolds(t, chest)
+	assert.GreaterOrEqual(t, len(held), ChestMinItems)
+	assert.LessOrEqual(t, len(held), ChestMaxItems)
+	assert.Equal(t, components.ContainerKindChest, kindOf(t, chest))
 }

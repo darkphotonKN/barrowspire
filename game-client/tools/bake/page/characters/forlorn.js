@@ -14,6 +14,10 @@
 // to nothing below the knee, while its eyes stay opaque (an opacity pass, page/opacity.js). It
 // hovers, reaches ahead with long arms, wails as it rakes, and dies by stretching thin and
 // dissolving.
+//
+// The Spire keeps its own dead on the same two bodies (FS-M8CSE §H R37): the Barrow Thrall is the
+// zombie in grave-ash, the Spire Wraith the ghost in bone-white. Same rigs, clips and baked
+// translucence; only the tones differ, so a re-tone never touches a pose.
 
 import * as THREE from "three";
 import { materials } from "../materials.js";
@@ -48,8 +52,30 @@ const TONE = {
   wisp: mix(mix("vellumDark", "necrotic", 0.5), "slateLight", 0.2),
 };
 
+/**
+ * The Barrow Thrall's grave-ash (FS-M8CSE §H R39, existing tokens only): skin gone the grey of
+ * cold ash, soot where the Forest's dead carry moss and earth, and a winding sheet burnt dark.
+ */
+const ASH_TONE = {
+  ...TONE,
+  rot: mix("slateLight", "vellum", 0.42),
+  bruise: mix("slate", "pitch", 0.5),
+  moss: mix("charcoal", "slate", 0.55),
+  earth: mix("pitch", "slate", 0.35),
+  shroud: mix("charcoal", "slate", 0.4),
+  hairDead: mix("pitch", "charcoal", 0.5),
+};
+
+/** The Spire Wraith's bone-white (R39): the ghost's cold mist warmed to the colour of old bone. */
+const BONE_TONE = {
+  ...TONE,
+  pale: mix("vellum", "slateLight", 0.08),
+  gown: mix("vellum", "slateLight", 0.16),
+  wisp: mix("vellumDark", "vellum", 0.45),
+};
+
 /** Grave-rot skin: mottled and bruised, with moss and caked earth in patches (`moss`, `earth`). */
-function graveSkin(tone, { moss = 0.4, earth = 0.4, seed = 61 } = {}) {
+function graveSkin(tone, { moss = 0.4, earth = 0.4, seed = 61, tones = TONE } = {}) {
   return paint(
     (x, y) => {
       const m = pf(x, y, 16, seed);
@@ -58,9 +84,9 @@ function graveSkin(tone, { moss = 0.4, earth = 0.4, seed = 61 } = {}) {
       const caked = earth * smoothstep(0.58, 0.74, pf(x, y, 32, seed + 3));
       const crack = 1 - smoothstep(0.0, 0.06, Math.abs(pf(x, y, 32, seed + 4) - 0.5));
       let c = shade(tone, 0.8 + 0.3 * m - 0.2 * crack);
-      c = mix(c, TONE.bruise, 0.45 * bruise);
-      c = mix(c, shade(TONE.moss, 0.8 + 0.4 * pn(x, y, 2, 2, seed + 5)), mossy);
-      c = mix(c, shade(TONE.earth, 0.75 + 0.35 * pn(x, y, 4, 4, seed + 6)), caked);
+      c = mix(c, tones.bruise, 0.45 * bruise);
+      c = mix(c, shade(tones.moss, 0.8 + 0.4 * pn(x, y, 2, 2, seed + 5)), mossy);
+      c = mix(c, shade(tones.earth, 0.75 + 0.35 * pn(x, y, 4, 4, seed + 6)), caked);
       return { c, h: 0.5 + 0.15 * m + 0.3 * caked + 0.2 * mossy - 0.3 * crack };
     },
     { strength: 1.6 },
@@ -68,7 +94,7 @@ function graveSkin(tone, { moss = 0.4, earth = 0.4, seed = 61 } = {}) {
 }
 
 /** Rotted linen: a coarse weave, holed and stained, darkest where it touched the earth. */
-function rottedLinen(tone, { seed = 71, holes = 0.6 } = {}) {
+function rottedLinen(tone, { seed = 71, holes = 0.6, tones = TONE } = {}) {
   return paint(
     (x, y) => {
       const weave = 0.5 + 0.25 * Math.sin((x * Math.PI) / 2) * Math.sin((y * Math.PI) / 2);
@@ -76,7 +102,7 @@ function rottedLinen(tone, { seed = 71, holes = 0.6 } = {}) {
       const stain = smoothstep(0.35, 0.8, pf(x, y, 32, seed + 1));
       const h = weave * (1 - hole) + 0.2 * pn(x, y, 1, 8, seed + 2);
       let c = shade(tone, 0.78 + 0.22 * weave - 0.6 * hole);
-      c = mix(c, TONE.earth, 0.45 * stain);
+      c = mix(c, tones.earth, 0.45 * stain);
       return { c, h };
     },
     { strength: 1.2 },
@@ -106,22 +132,23 @@ function strands(tone, { seed = 91 } = {}) {
   );
 }
 
-let SET = null;
+const SETS = new Map();
 
-/** The forest dead's materials, painted once per bake (seeded, so a re-bake paints alike). */
-function forlornFabrics() {
-  if (SET) return SET;
+/** The dead's materials in one set of tones, painted once per bake (seeded, so a re-bake paints alike). */
+function forlornFabrics(tones) {
+  if (SETS.has(tones)) return SETS.get(tones);
   const D = THREE.DoubleSide;
-  SET = {
-    rot: mat(graveSkin(TONE.rot), { rough: 0.75, normal: 1 }),
-    rotCaked: mat(graveSkin(TONE.rot, { moss: 0.55, earth: 0.75, seed: 63 }), { rough: 0.9, normal: 1.2 }),
-    shroud: mat(rottedLinen(TONE.shroud), { rough: 0.95, side: D }),
-    hairDead: mat(strands(TONE.hairDead), { rough: 0.9, side: D }),
-    pale: mat(pallor(TONE.pale), { rough: 0.55, normal: 0.5 }),
-    gown: mat(pallor(TONE.gown, { seed: 83, streak: 0.3 }), { rough: 0.7, side: D }),
-    wisp: mat(strands(TONE.wisp, { seed: 93 }), { rough: 0.8, side: D }),
+  const set = {
+    rot: mat(graveSkin(tones.rot, { tones }), { rough: 0.75, normal: 1 }),
+    rotCaked: mat(graveSkin(tones.rot, { moss: 0.55, earth: 0.75, seed: 63, tones }), { rough: 0.9, normal: 1.2 }),
+    shroud: mat(rottedLinen(tones.shroud, { tones }), { rough: 0.95, side: D }),
+    hairDead: mat(strands(tones.hairDead), { rough: 0.9, side: D }),
+    pale: mat(pallor(tones.pale), { rough: 0.55, normal: 0.5 }),
+    gown: mat(pallor(tones.gown, { seed: 83, streak: 0.3 }), { rough: 0.7, side: D }),
+    wisp: mat(strands(tones.wisp, { seed: 93 }), { rough: 0.8, side: D }),
   };
-  return SET;
+  SETS.set(tones, set);
+  return set;
 }
 
 // --- shared pieces -------------------------------------------------------------------------
@@ -247,9 +274,15 @@ function zombieHead(rig, skin, eye) {
     attach(rig, "jaw", new THREE.ConeGeometry(r * 0.07 * H, r * 0.2 * H, 5), M.bone, [(i - 1.5) * r * 0.2, jy + 0.0, jz + r * 0.62], { rx: -0.1 });
 }
 
-export function zombie() {
+/** Baked before the leg-clearance guard, so on its legacy skirt weighting (clearance.js). */
+export const zombie = () => shamblingCorpse(TONE, { legacySkirt: true });
+
+/** The Spire's Barrow Thrall (FS-M8CSE §H R37): the zombie in grave-ash, its shroud on its own thighs. */
+export const barrowThrall = () => shamblingCorpse(ASH_TONE);
+
+function shamblingCorpse(tones, { legacySkirt = false } = {}) {
   const M = materials();
-  const F = forlornFabrics();
+  const F = forlornFabrics(tones);
   const rig = createRig(1.96, {
     hunch: 1,
     jaw: true,
@@ -274,6 +307,18 @@ export function zombie() {
   skirtBones(rig, { stiffness: 42, drag: 0.3 });
   const [, hy] = J(rig, "hips");
   const eye = fadingEyes(rig);
+  const wrap = {
+    top: hy + 0.03,
+    bottom: hy - 0.22,
+    rTop: [0.104, 0.086],
+    rBottom: [0.12, 0.102],
+    legFollow: 0.6,
+    panels: true,
+    panelWeight: 0.45,
+    ragged: { teeth: 11, depth: 0.15, seed: 21 },
+    segs: 30,
+    mirrored: legacySkirt,
+  };
 
   torso(rig, F.rot, { ribs: true, waist: 0.86 });
   neck(rig, F.rot, { w: 0.85 });
@@ -282,7 +327,7 @@ export function zombie() {
   arm(rig, "R", F.rotCaked, { r: 1.18, bulk: 1.25, fore: 1.3 });
   claw(rig, "L", F.rot, { size: 0.9, nail: M.bone });
   claw(rig, "R", F.rotCaked, { size: 1.4, reach: 1.15, nail: M.bone });
-  legs(rig, F.rotCaked, { r: 0.84 });
+  legs(rig, F.rotCaked, { r: 0.84, ...(legacySkirt ? {} : { under: wrap }) });
   bareFeet(rig, F.rotCaked, { size: 0.9 });
   zombieHead(rig, F.rot, eye);
   lankHair(rig, F.hairDead);
@@ -295,18 +340,7 @@ export function zombie() {
   // the burial shroud: wound around the body, torn open down the right side, its hem in rags
   // wound over the left shoulder and round the back, open across the right of the chest
   overTorso(rig, F.shroud, { from: hy - 0.01, arc: [-Math.PI / 2 - 1.1, Math.PI / 2 - 0.15], pad: 0.014 });
-  skirt(rig, F.shroud, {
-    top: hy + 0.03,
-    bottom: hy - 0.22,
-    rTop: [0.104, 0.086],
-    rBottom: [0.12, 0.102],
-    legFollow: 0.6,
-    panels: true,
-    panelWeight: 0.45,
-    ragged: { teeth: 11, depth: 0.15, seed: 21 },
-    segs: 30,
-    mirrored: true,
-  });
+  skirt(rig, F.shroud, wrap);
 
   const hold = pose({
     // the withered arm dangling crooked, the heavy one hanging low and forward
@@ -475,8 +509,14 @@ function ghostOpacity(rig, eye) {
   rig.opacity = { floor: GHOST_SHADOW };
 }
 
-export function ghost() {
-  const F = forlornFabrics();
+/** Baked before the leg-clearance guard, so on its legacy skirt weighting (clearance.js). */
+export const ghost = () => hoveringDead(TONE, { legacySkirt: true });
+
+/** The Spire's Spire Wraith (FS-M8CSE §H R37): the ghost in bone-white, its gown on its own thighs. */
+export const spireWraith = () => hoveringDead(BONE_TONE);
+
+function hoveringDead(tones, { legacySkirt = false } = {}) {
+  const F = forlornFabrics(tones);
   const rig = createRig(1.98, {
     jaw: true,
     torsoW: 0.7,
@@ -503,18 +543,7 @@ export function ghost() {
   const [, hy] = J(rig, "hips");
   const [, ky] = J(rig, "shinL");
   const eye = fadingEyes(rig);
-
-  torso(rig, F.gown, { waist: 0.72 });
-  neck(rig, F.pale, { w: 0.75 });
-  for (const [s] of sides) arm(rig, s, F.pale, { r: 0.85, fore: 0.9 });
-  for (const [s] of sides) claw(rig, s, F.pale, { size: 0.95, reach: 1.5 });
-  // the legs, which the opacity pass fades to nothing below the knee; they cast no shadow
-  for (const m of legs(rig, F.pale, { r: 0.8 })) m.userData.noShadow = true;
-  ghostHead(rig, F.pale, eye);
-  hair(rig, F.wisp, { long: true });
-  cloak(rig, F.wisp, { length: 0.54, spread: 0.9, flare: 0.35, back: 0.05, ragged: { teeth: 11, depth: 0.12, seed: 31 } });
-  // the burial gown, its hem a wisp at the knee
-  skirt(rig, F.gown, {
+  const gown = {
     top: hy + 0.03,
     bottom: ky - 0.06,
     rTop: [0.09, 0.075],
@@ -524,8 +553,20 @@ export function ghost() {
     panelWeight: 0.55,
     ragged: { teeth: 17, depth: 0.07, seed: 33 },
     segs: 34,
-    mirrored: true,
-  });
+    mirrored: legacySkirt,
+  };
+
+  torso(rig, F.gown, { waist: 0.72 });
+  neck(rig, F.pale, { w: 0.75 });
+  for (const [s] of sides) arm(rig, s, F.pale, { r: 0.85, fore: 0.9 });
+  for (const [s] of sides) claw(rig, s, F.pale, { size: 0.95, reach: 1.5 });
+  // the legs, which the opacity pass fades to nothing below the knee; they cast no shadow
+  for (const m of legs(rig, F.pale, { r: 0.8, ...(legacySkirt ? {} : { under: gown }) })) m.userData.noShadow = true;
+  ghostHead(rig, F.pale, eye);
+  hair(rig, F.wisp, { long: true });
+  cloak(rig, F.wisp, { length: 0.54, spread: 0.9, flare: 0.35, back: 0.05, ragged: { teeth: 11, depth: 0.12, seed: 31 } });
+  // the burial gown, its hem a wisp at the knee
+  skirt(rig, F.gown, gown);
   ghostOpacity(rig, eye);
   // it hovers, bobbing (`fx.bob`), and stretches thin as it dissolves (`fx.thin`)
   rig.hooks.push((r, p) => {

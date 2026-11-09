@@ -14,6 +14,8 @@ import (
 
 	The base rarity weights are NOT here: they stay in item_rarities
 	(drop_rate_multiplier, retuned by UPDATE) and reach the roll as data.
+	Fabled's weight is the exception: the row still supplies the rarity id,
+	but its weight reaches no roll, Fabled being the flat chance below.
 	Base tiers are catalogue data too: each template carries its own
 	min_item_level and required_level (FS-4R9M9 §Requirements 1).
 */
@@ -64,7 +66,7 @@ const (
 
 // Rarity weight modifiers, applied in this order. FS-4R9M9 §Requirements 21.
 const (
-	// Rare, Runed and Fabled weights × (1 + item level / divisor)
+	// Rare and Runed weights × (1 + item level / divisor)
 	RarityItemLevelDivisor = 40.0
 	// an elite drop multiplies every weight above Normal
 	EliteRarityWeightMultiplier = 2.0
@@ -233,14 +235,53 @@ var (
 // scaled by the place's drop factor (fieldDrops). Retuning a row here retunes
 // the fields with it; no field keeps a table of its own. FS-X2F2H §Requirements 31.
 var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
-	components.MonsterArchetypeGhoul:      {Chance: 0.08, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
+	components.MonsterArchetypeGhoul:      GhoulMonsterDrop,
 	components.MonsterArchetypeTroll:      {Chance: 0.15, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
 	components.MonsterArchetypeDemon:      BossMonsterDrop,
 	components.MonsterArchetypeBloodDemon: BossMonsterDrop, // FS-VHGE7 §A R12: the boss row, no row of its own
+	components.MonsterArchetypeDaagon:     BossMonsterDrop, // FS-M8CSE §E R26
+	// FS-M8CSE §D R20: the ghoul row's values
+	components.MonsterArchetypeBarrowThrall: GhoulMonsterDrop,
+	components.MonsterArchetypeSpireWraith:  GhoulMonsterDrop,
 }
+
+// GhoulMonsterDrop is the ghoul's row, and the tower monsters' with it.
+var GhoulMonsterDrop = MonsterDrop{Chance: 0.08, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit}
 
 // EliteMonsterDrop is any elite's row, whatever its archetype.
 var EliteMonsterDrop = MonsterDrop{Chance: 0.50, MinItems: 1, MaxItems: 1, Source: lootSourceElite, TypeSplit: standardDropSplit}
 
 // BossMonsterDrop is the demon's row: always 2 or 3 items.
 var BossMonsterDrop = MonsterDrop{Chance: 1, MinItems: 2, MaxItems: 3, Source: lootSourceDemon, TypeSplit: demonDropSplit}
+
+// The floor factor's shape. FS-M8CSE §F R28.
+const (
+	// floors up to this one take no factor
+	FloorFactorFlatFloors = 5
+	// what each floor above them adds
+	FloorFactorPerFloor = 0.05
+)
+
+// The Fabled chance per item, before the floor factor. A flat roll, ahead of
+// the item type: consumables and the rarity weight multipliers cannot move it.
+// Anything without a rate here rolls no Fabled. FS-M8CSE §G R31, R32.
+const (
+	BossFabledChance   = 0.002
+	DaagonFabledChance = 0.004 // 0.5% per item on floor 10
+	EliteFabledChance  = 0.001
+	// an elite below this floor rolls no Fabled
+	EliteFabledMinFloor = 6
+	// per item, from a chest in a treasure room that had guards placed at the
+	// build; every other container has no rate
+	GuardedTreasureFabledChance = 0.001
+	// such a chest below this floor rolls no Fabled
+	GuardedTreasureFabledMinFloor = 6
+)
+
+// floorFactor is what a Spire floor multiplies its kill drop chances and Fabled
+// chances by. One rule for both, Spire-only: a field never takes it, and it is
+// applied where the roll is made so the rows above stay the fields' source.
+// FS-M8CSE §F R28, R30.
+func floorFactor(floor int) float64 {
+	return 1 + FloorFactorPerFloor*float64(max(0, floor-FloorFactorFlatFloors))
+}

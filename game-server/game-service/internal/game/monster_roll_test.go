@@ -12,7 +12,7 @@ import (
 )
 
 // The monster AI rolls from the source the session was built with on every
-// floor: floor 1's AI, which paths, and floor 2's, which steers straight, both
+// floor: floor 1's AI, which paths, and a fallback floor's, which steers straight, both
 // draw their wander picks from it, so a floor change never swaps the global
 // source back in. FS-KE075 §D R25, ADR-0062.
 func TestFloorChange_MonsterAIKeepsTheInjectedRoll(t *testing.T) {
@@ -31,6 +31,7 @@ func TestFloorChange_MonsterAIKeepsTheInjectedRoll(t *testing.T) {
 	dt := 1.0 / float64(constants.GameFrameRate)
 	for floor := firstFloor; floor <= firstFloor+1; floor++ {
 		if floor > firstFloor {
+			failGeneration(s)
 			require.NoError(t, s.regenerateFloor())
 		}
 		require.Equal(t, floor == firstFloor, s.dungeon != nil, "floor %d", floor)

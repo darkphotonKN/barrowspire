@@ -365,3 +365,5 @@ outdoor look is kept, untouched, as the exterior theme for a future outdoor plac
   beyond dropping the Indoor/Outdoor suffix in the tower theme.
 - Fog of war or room-reveal masking.
 - New `BARROW` tokens.
+
+## Change: Spire height and the climb → FS-M8CSE

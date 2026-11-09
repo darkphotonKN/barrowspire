@@ -49,10 +49,14 @@ export const SCENE_ART = {
   BarrowspireScene: SceneGroups;
 };
 
-/** A scene-scoped group no scene preloads: it is fetched while a scene runs (FS-VHGE7 §F). */
+/**
+ * A scene-scoped group no scene preloads: it is fetched while a scene runs (FS-VHGE7 §F). One row
+ * per archetype drawn from it; two rows on a group are still one fetch and one eviction, of the
+ * group (FS-M8CSE §H R41).
+ */
 export interface OnDemandGroup {
   group: string;
-  /** The monster archetype whose first listing in a snapshot fetches the group. */
+  /** A monster archetype whose first listing in a snapshot fetches the group. */
   archetype: MonsterArchetype;
   /**
    * What that archetype draws until the group is in: another archetype's sheet, on a group its
@@ -61,17 +65,21 @@ export interface OnDemandGroup {
   standIn: { archetype: MonsterArchetype; tint: number };
 }
 
+/** The blood demon's group and what its archetypes draw until it is in. */
+const BLOOD_DEMON_ART = {
+  group: "blood_demon",
+  standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
+} as const;
+
 /**
  * ADR-0071 Decision 2: the groups fetched on demand. A group here is scene-scoped, so boot skips
  * it and eviction frees it, and in no row of {@link SCENE_ART}; the coverage test
  * (`sceneArt.test.ts`) holds each to a stand-in its scenes hold.
  */
 export const ON_DEMAND_ART: readonly OnDemandGroup[] = [
-  {
-    group: "blood_demon",
-    archetype: "blood_demon",
-    standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
-  },
+  { ...BLOOD_DEMON_ART, archetype: "blood_demon" },
+  // ADR-0071 Decision 6, a table change: Daa'gon is drawn from the same sheet (FS-M8CSE §H R41)
+  { ...BLOOD_DEMON_ART, archetype: "daagon" },
 ];
 
 /** The on-demand group an archetype's art is on, if any. */

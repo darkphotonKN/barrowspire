@@ -371,10 +371,6 @@ const MonsterHomeRadius float64 = 150
 const MonsterPauseSeconds float64 = 1.6
 const MonsterStallSeconds float64 = 1.2
 
-// How many floors a run climbs. Floor 1 is where it starts; this one is the top.
-// One server constant, not per run. FS-F6F88 §Requirements 1.
-const RunFloorCount int = 3
-
 const MapWidth float64 = 1440
 const MapHeight float64 = 960
 const PlayerRadius float64 = 20

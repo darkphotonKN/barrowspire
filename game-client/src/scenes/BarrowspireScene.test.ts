@@ -167,7 +167,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     run.add = { sprite: () => sprite };
     run.stairs.sync([{ entity_id: "s1", position: { x: 100, y: 100 } }]);
     run.floorText = {};
-    run.shownFloorLabel = "Floor 2 of 3";
+    run.shownFloorLabel = "Floor 2";
     run.lastFloor = 2;
     expect(run.stairs.nearby({ x: 100, y: 100 })).toBe("s1");
 
@@ -670,7 +670,6 @@ function floorState(
     ],
     monsters: [monster("m1", x), monster(`m_dead_${floor}`, x + 50, "dead")],
     floor,
-    floor_count: 3,
     escaped_count: 0,
   };
 }
@@ -825,6 +824,19 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
     const card = texts().find((t) => t.content === "The Second Floor");
     expect(card).toBeDefined();
     expect(card?.style.fontFamily).toBe(CANVAS_FONT.body);
+  });
+
+  it("should take the card's line from the stairs, not the floor number (FS-M8CSE R9)", () => {
+    const stair = [{ entity_id: "st4", position: { x: 1000, y: 700 } }];
+    const shows = (line: string, climb: GameState) => {
+      const { run, texts } = sceneOnStage();
+      run.handleGameStateUpdate(floorState(1));
+      run.handleGameStateUpdate(climb);
+      expect(texts().some((t) => t.content === line)).toBe(true);
+    };
+
+    shows("The dead walk heavier here.", { ...floorState(4), stairs: stair });
+    shows("No stair climbs higher. Only the way out remains.", { ...floorState(2), stairs: [] });
   });
 
   it("should let the new floor's switch and escape-door notices fire again", () => {
@@ -3305,7 +3317,7 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
     const { run } = banded("tower");
     run.handleGameStateUpdate(floorState(1));
     const floorOne = run.dressing!;
-    run.handleGameStateUpdate(floorState(2));
+    run.handleGameStateUpdate(floorState(3));
     expect(floorOne.every((m) => m.destroyed)).toBe(true);
     expect(run.dressing).not.toBe(floorOne);
     expect(run.dressing!.length).toBeGreaterThan(0);
@@ -3322,17 +3334,17 @@ describe("BarrowspireScene floor bands, run dressing, light budget and stairs (F
 
   it("should paint each floor's own ground: built directly on a reconnect, rebuilt on a climb (§C.7)", () => {
     const reconnect = banded("tower");
-    reconnect.run.handleGameStateUpdate(floorState(3));
+    reconnect.run.handleGameStateUpdate(floorState(6));
     expect((reconnect.grounds.at(-1) as { look: { hall: string } }).look.hall).toBe("ground_dressed");
 
     const climb = banded("tower");
     climb.run.handleGameStateUpdate(floorState(1));
     const one = climb.grounds.at(-1) as { look: { patches?: unknown }; seed: number };
     expect(one.look.patches).toBeDefined();
-    climb.run.handleGameStateUpdate(floorState(2));
-    const two = climb.grounds.at(-1) as { look: { patches?: unknown }; seed: number };
-    expect(two.look.patches).toBeUndefined();
-    expect(two.seed).not.toBe(one.seed);
+    climb.run.handleGameStateUpdate(floorState(3));
+    const three = climb.grounds.at(-1) as { look: { patches?: unknown }; seed: number };
+    expect(three.look.patches).toBeUndefined();
+    expect(three.seed).not.toBe(one.seed);
   });
 
   it("should paint the exterior's ground as it always was, on every floor", () => {
@@ -5552,7 +5564,7 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
     run.preload();
 
-    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1"].map(atlasTextureKey));
+    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3"].map(atlasTextureKey));
   });
 
   it("should show the torch bar over creatures and boss still downloading at 300 ms, gone before create, then fade the run in (FS-C4JWH §D R17, A1)", () => {

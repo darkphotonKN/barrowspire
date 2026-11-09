@@ -150,9 +150,10 @@ func TestGatherParty_PlacementExhausted_StillPlaces(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// floor 2: a floor of buildings, where the party is placed by the
-			// occupied-area scan (floor 1 is a dungeon, FS-KE075 §B R13)
+			// a floor of buildings, where the party is placed by the
+			// occupied-area scan (a dungeon floor's is in its start room, FS-KE075 §B R13)
 			s, ids := seatedRun(t, 4)
+			failGeneration(s)
 			require.NoError(t, s.regenerateFloor())
 			s.objectOccupiedPlaceAreas = tt.occupied
 

@@ -38,12 +38,14 @@ type lootTemplate struct {
 	Unique       bool
 }
 
-// lootDrop is what is dropping: its item level, its source and whether it
-// may be a ring (a chest's may not, its Fabled pick included).
+// lootDrop is what is dropping: its item level, its source, whether it may be
+// a ring (a chest's may not, its Fabled pick included) and its Fabled chance
+// per item, 0 for a drop that rolls none. FS-M8CSE §G R31-R32.
 type lootDrop struct {
-	ItemLevel int
-	Source    lootSource
-	NoRings   bool
+	ItemLevel    int
+	Source       lootSource
+	NoRings      bool
+	FabledChance float64
 }
 
 // lootSource biases the rarity roll. FS-4R9M9 §Requirements 21.
@@ -81,23 +83,32 @@ var (
 	grandSuffixes  = []string{"of the Last King", "of Barrowspire", "of the Drowned Crown", "of the First Dark", "of the Hollow Oath", "of Old Blood"}
 )
 
-// rollDrop rolls one item from templates (all of one item type) for drop. A
-// Fabled result becomes one of uniques the item level allows, of any type, or
-// a Runed item of the drop's type when none is. ok is false when no non-unique
-// template is eligible at the item level. FS-4R9M9 §Requirements 22, 25–26.
+// rollDrop rolls one item from templates (all of one item type) for drop.
+// Fabled is tested first, flat, so nothing of the drop's type can move it
+// (FS-M8CSE §G R31): a hit becomes one of uniques the item level allows, of any
+// type, or a Runed item of the drop's type when none is (R34). ok is false when
+// the item is neither a unique nor has a non-unique template eligible at the
+// item level. FS-4R9M9 §Requirements 22, 25–26.
 func rollDrop(r lootRand, templates []lootTemplate, uniques []uniqueTemplate, rarities []lootRarity, drop lootDrop) (types.ItemConfig, bool) {
 	ilvl := max(drop.ItemLevel, 1)
+	fabled := r.Float64() < drop.FabledChance
+	if fabled {
+		if item, ok := rollFabled(r, uniques, rarities, ilvl, drop.NoRings); ok {
+			return item, true
+		}
+	}
+
 	base, ok := pickBase(r, templates, ilvl)
 	if !ok {
 		return types.ItemConfig{}, false
 	}
 
-	rarity, rolled := pickRarity(r, rarities, rarityWeights(rarities, base.Config.ItemType, drop))
-	if rolled && rarity.Code == rarityFabled {
-		if unique, ok := pickUnique(r, uniques, ilvl, drop.NoRings); ok {
-			return rollUnique(r, unique, rarity, ilvl), true
-		}
+	var rarity lootRarity
+	var rolled bool
+	if fabled {
 		rarity, rolled = rarityByCode(rarities, rarityRuned)
+	} else {
+		rarity, rolled = pickRarity(r, rarities, rarityWeights(rarities, base.Config.ItemType, drop))
 	}
 
 	item := base.Config
@@ -110,6 +121,21 @@ func rollDrop(r lootRand, templates []lootTemplate, uniques []uniqueTemplate, ra
 		item.RequiredLevel = 1
 	}
 	return item, true
+}
+
+// rollFabled is a Fabled hit made good: a unique the item level allows, rolled
+// at the Fabled rarity. ok is false when there is no unique to give or no
+// Fabled row to give it under. FS-M8CSE §G R34; §Edge States.
+func rollFabled(r lootRand, uniques []uniqueTemplate, rarities []lootRarity, ilvl int, noRings bool) (types.ItemConfig, bool) {
+	rarity, ok := rarityByCode(rarities, rarityFabled)
+	if !ok {
+		return types.ItemConfig{}, false
+	}
+	unique, ok := pickUnique(r, uniques, ilvl, noRings)
+	if !ok {
+		return types.ItemConfig{}, false
+	}
+	return rollUnique(r, unique, rarity, ilvl), true
 }
 
 // rollRarity applies rarity to item: its id, scaled stats, name and affixes.
@@ -267,20 +293,25 @@ func rollsOn(rule AffixRule, item types.ItemConfig) bool {
 }
 
 // rarityWeights is each rarity's drop weight for this drop, aligned with
-// rarities, adjusted in the FS order: item level on Rare and above, then an
-// elite or demon source, then the item type. FS-4R9M9 §Requirements 21.
+// rarities, adjusted in the FS order: item level on Rare and Runed, then an
+// elite or demon source, then the item type. Fabled always weighs 0: it is the
+// flat roll at the top of rollDrop, and its DB weight reaches no roll
+// (FS-M8CSE §G R31). FS-4R9M9 §Requirements 21.
 func rarityWeights(rarities []lootRarity, itemType types.ItemType, drop lootDrop) []float64 {
 	ilvlFactor := 1 + float64(max(drop.ItemLevel, 1))/RarityItemLevelDivisor
 	normal, uncommon := -1, -1
 	weights := make([]float64, len(rarities))
 	for i, rar := range rarities {
+		if rar.Code == rarityFabled {
+			continue
+		}
 		w := rar.DropRate
 		switch rar.Code {
 		case rarityNormal:
 			normal = i
 		case rarityUncommon:
 			uncommon = i
-		case rarityRare, rarityRuned, rarityFabled:
+		case rarityRare, rarityRuned:
 			w *= ilvlFactor
 		}
 		if rar.Code != rarityNormal {
@@ -290,9 +321,6 @@ func rarityWeights(rarities []lootRarity, itemType types.ItemType, drop lootDrop
 			case lootSourceDemon:
 				w *= DemonRarityWeightMultiplier
 			}
-		}
-		if rar.Code == rarityFabled && itemType == types.ItemTypeConsumable {
-			w = 0
 		}
 		weights[i] = w
 	}
@@ -308,7 +336,7 @@ func rarityWeights(rarities []lootRarity, itemType types.ItemType, drop lootDrop
 }
 
 // pickRarity draws one rarity by weight. ok is false when there is nothing to
-// draw. A Fabled result is left for rollDrop to resolve. FS-4R9M9 §Requirements 21.
+// draw. FS-4R9M9 §Requirements 21.
 func pickRarity(r lootRand, rarities []lootRarity, weights []float64) (lootRarity, bool) {
 	var sum float64
 	for _, w := range weights {

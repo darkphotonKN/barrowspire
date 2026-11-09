@@ -39,29 +39,36 @@ func provokeFarthest(t *testing.T, s *Session, playerID uuid.UUID) *components.M
 	return monster
 }
 
-// On floor 1, a dungeon, a chasing monster searches a path over the floor's
-// cells to the delver's cell; on floor 2, a floor of buildings, the AI is
-// rebuilt with no grid and chases straight, with no path. FS-KE075 §D R21,
-// R26 (owner: floor 1 only).
-func TestMonsterNavigation_Floor1PathsFloor2ChasesStraight(t *testing.T) {
+// On every dungeon floor a chasing monster searches a path over that floor's
+// cells to the delver's cell. A climb that fell back to a floor of buildings
+// rebuilds the AI with no grid, and it chases straight, with no path. FS-KE075
+// §D R21, R26; FS-M8CSE §C R14-15.
+func TestMonsterNavigation_DungeonFloorsPathFallbackFloorChasesStraight(t *testing.T) {
 	s, ids := dungeonRun(t, 3, 1, 0)
-	require.NotNil(t, s.dungeon)
 
-	monster := provokeFarthest(t, s, ids[0])
+	for depth := firstFloor; depth <= firstFloor+1; depth++ {
+		require.NotNil(t, s.dungeon, "floor %d", depth)
+		monster := provokeFarthest(t, s, ids[0])
 
-	require.NotEmpty(t, monster.Route.Cells, "floor 1 paths")
-	at := transformOf(t, delverEntity(t, s, ids[0]))
-	cell := s.dungeon.layout.CellSize
-	delverCell := int(at.Y/cell)*s.dungeon.layout.Cols + int(at.X/cell)
-	assert.Equal(t, delverCell, monster.Route.Goal, "searched to the delver's cell")
-	assert.Equal(t, delverCell, monster.Route.Cells[len(monster.Route.Cells)-1])
+		require.NotEmpty(t, monster.Route.Cells, "floor %d paths", depth)
+		at := transformOf(t, delverEntity(t, s, ids[0]))
+		cell := s.dungeon.layout.CellSize
+		delverCell := int(at.Y/cell)*s.dungeon.layout.Cols + int(at.X/cell)
+		assert.Equal(t, delverCell, monster.Route.Goal, "floor %d searched to the delver's cell", depth)
+		assert.Equal(t, delverCell, monster.Route.Cells[len(monster.Route.Cells)-1], "floor %d", depth)
 
+		if depth == firstFloor {
+			require.NoError(t, s.regenerateFloor())
+		}
+	}
+
+	failGeneration(s)
 	require.NoError(t, s.regenerateFloor())
 	require.Nil(t, s.dungeon)
 
-	monster = provokeFarthest(t, s, ids[0])
+	monster := provokeFarthest(t, s, ids[0])
 
-	assert.Empty(t, monster.Route.Cells, "floor 2 keeps the straight chase")
+	assert.Empty(t, monster.Route.Cells, "a floor of buildings keeps the straight chase")
 }
 
 // A floor 1 that fell back to a floor of buildings has no grid: its monsters

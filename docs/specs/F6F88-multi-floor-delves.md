@@ -280,3 +280,5 @@ fields are the contract between the two halves:
 - **Choosing floor count per delve** (tiers at the Spirewarden) and floor progress persisted across runs. Rejected at scoping.
 - **Fixing the end-of-run ordering defect and FS-QG1HR D4/D5.** Noted in §Edge States, owned elsewhere.
 - **Timers, forced ascent or a vote.** The gather rule is the only trigger.
+
+## Change: Spire height and the climb → FS-M8CSE

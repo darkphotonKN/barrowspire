@@ -138,8 +138,9 @@ func TestSpawnedContainerKind_SackAtTheShare(t *testing.T) {
 }
 
 // runWithKindRand is a run built as the server builds one, its chest point's
-// sack-share draw taken from r, climbed to floor 2: a floor of buildings, whose
-// one chest point this rule is about (floor 1 is a dungeon, FS-KE075 §B R15).
+// sack-share draw taken from r, climbed to floor 2 with its generation failed: a
+// floor of buildings, whose one chest point this rule is about (every other
+// floor is a dungeon, FS-M8CSE §C).
 func runWithKindRand(t *testing.T, r lootRand) *Session {
 	t.Helper()
 	em := ecs.NewEntityManager()
@@ -147,6 +148,7 @@ func runWithKindRand(t *testing.T, r lootRand) *Session {
 	s.containerKindRand = r
 	s.InitialSystems()
 	s.InitialMapObjects(nil)
+	failGeneration(s)
 	require.NoError(t, s.regenerateFloor())
 	return s
 }

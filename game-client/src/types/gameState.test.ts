@@ -180,12 +180,11 @@ describe('isGameState (FS-F6F88 §State broadcast 26–27)', () => {
     escaped_count: 0,
   };
 
-  it('should accept a run state carrying floor, floor_count and stairs', () => {
+  it('should accept a run state carrying floor and stairs', () => {
     const run: ClientGameState = {
       ...base,
       world_type: 'run',
       floor: 2,
-      floor_count: 3,
       stairs: [{ entity_id: 'stairs-1', position: { x: 120, y: 340 } }],
     };
     expect(isGameState(run)).toBe(true);
@@ -193,11 +192,11 @@ describe('isGameState (FS-F6F88 §State broadcast 26–27)', () => {
   });
 
   it('should accept a top-floor run state with no stairs', () => {
-    const top: ClientGameState = { ...base, world_type: 'run', floor: 3, floor_count: 3, stairs: [] };
+    const top: ClientGameState = { ...base, world_type: 'run', floor: 3, stairs: [] };
     expect(isGameState(top)).toBe(true);
   });
 
-  it('should accept a hub state without floor, floor_count or stairs', () => {
+  it('should accept a hub state without floor or stairs', () => {
     const hub: ClientGameState = { ...base, world_type: 'hub' };
     expect(isGameState(hub)).toBe(true);
     expect(hub.floor).toBeUndefined();

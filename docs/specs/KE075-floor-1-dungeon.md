@@ -698,3 +698,5 @@ target frame (FS-48CTQ); DB, migrations, other services and the HTTP contract; n
 the hub and field worlds' snapshots; interest filtering on floors 2–3 or outside runs (§I trims other players' bag and worn gear everywhere, but cuts nothing by distance outside a dungeon floor); an on-demand fetch of another player's items (none is built; R55 only sets the rule); a worn look on other players' sprites; a spatial
 index for the hub and fields; hysteresis on the interest radius; FS-QG1HR D2 race B and D4
 themselves (this FS only avoids adding to them).
+
+## Change: Spire height and the climb → FS-M8CSE

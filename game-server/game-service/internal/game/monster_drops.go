@@ -1,6 +1,7 @@
 package game
 
 import (
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -26,7 +27,8 @@ func (m *monsterDrops) ConsumeKill(record systems.KillRecord) {
 		return
 	}
 
-	itemIDs := m.s.rollKillDrop(m.r, table, table.Chance, record.Level)
+	chance := min(table.Chance*floorFactor(record.Floor), 1) // FS-M8CSE §F R29
+	itemIDs := m.s.rollKillDrop(m.r, table, chance, fabledChanceFor(record), record.Level)
 	if len(itemIDs) == 0 {
 		return
 	}
@@ -36,12 +38,13 @@ func (m *monsterDrops) ConsumeKill(record systems.KillRecord) {
 
 /**
 * rollKillDrop rolls one kill against a drop table row at the given chance:
-* the row's own for a run, derived from it for a field (FS-X2F2H §Requirements
-* 31). Item count, type split and rarity source are the row's, the item level
-* the kill's. It makes the items and hands back their ids; none when the roll
-* fails or nothing was eligible.
+* the row's times the floor factor for a run (FS-M8CSE §F R29), times the
+* place's drop factor for a field (FS-X2F2H §Requirements 31). Item count, type
+* split and rarity source are the row's, the item level the kill's, and each
+* item tests fabledChance on its own (FS-M8CSE §G R31). It makes the items and
+* hands back their ids; none when the roll fails or nothing was eligible.
 **/
-func (s *Session) rollKillDrop(r lootRand, table MonsterDrop, chance float64, level int) []uuid.UUID {
+func (s *Session) rollKillDrop(r lootRand, table MonsterDrop, chance, fabledChance float64, level int) []uuid.UUID {
 	if r.Float64() >= chance {
 		return nil
 	}
@@ -51,13 +54,29 @@ func (s *Session) rollKillDrop(r lootRand, table MonsterDrop, chance float64, le
 		n += r.IntN(table.MaxItems - table.MinItems + 1)
 	}
 
-	drop := lootDrop{ItemLevel: level, Source: table.Source}
+	drop := lootDrop{ItemLevel: level, Source: table.Source, FabledChance: fabledChance}
 	itemIDs := make([]uuid.UUID, 0, n)
 	for range n {
 		itemType := pickItemType(r, table.TypeSplit)
 		itemIDs = append(itemIDs, s.dropLoot(itemType, s.itemPool.of(itemType), 1, drop)...)
 	}
 	return itemIDs
+}
+
+// fabledChanceFor is a Spire kill's Fabled chance per item: Daa'gon's own, else
+// any boss's, else an elite's on the floors that allow it, each times the floor
+// factor; anything else rolls none. FS-M8CSE §G R32.
+func fabledChanceFor(record systems.KillRecord) float64 {
+	var base float64
+	switch {
+	case record.Archetype == components.MonsterArchetypeDaagon:
+		base = DaagonFabledChance
+	case record.Boss:
+		base = BossFabledChance
+	case record.Elite && record.Floor >= EliteFabledMinFloor:
+		base = EliteFabledChance
+	}
+	return base * floorFactor(record.Floor)
 }
 
 // monsterDropFor is the drop table row a kill rolls: the boss's, else an

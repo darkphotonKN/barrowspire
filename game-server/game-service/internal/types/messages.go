@@ -86,10 +86,9 @@ type ClientGameState struct {
 	NPCs         []*NPCState        `json:"npcs"`
 	Projectiles  []*ProjectileState `json:"projectiles"`
 	EscapedCount int                `json:"escaped_count"`
-	// Floor and FloorCount are a run's; the hub has no floors and omits both.
-	// FS-F6F88 §Requirements 26.
-	Floor      int `json:"floor,omitempty"`
-	FloorCount int `json:"floor_count,omitempty"`
+	// Floor is a run's; the hub has no floors and omits it. The run's height
+	// stays on the server. FS-F6F88 §Requirements 26, FS-M8CSE §A R5.
+	Floor int `json:"floor,omitempty"`
 	// Stairs are a run's, every tick, an empty list on the top floor; the hub
 	// has none and omits the key, hence the pointer. FS-F6F88 §Requirements 27.
 	Stairs *[]*StairsState `json:"stairs,omitempty"`
@@ -158,7 +157,6 @@ type BackendGameState struct {
 	Projectiles  []*ProjectileState
 	EscapedCount int
 	Floor        int
-	FloorCount   int
 	Stairs       []*StairsState
 	Monsters     []*MonsterState
 	Trails       []*TrailState

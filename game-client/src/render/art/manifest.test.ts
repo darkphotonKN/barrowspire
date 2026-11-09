@@ -1181,6 +1181,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "creature_troll_base",
       "creature_zombie_base",
       "creature_ghost_base",
+      "creature_barrow_thrall_base",
+      "creature_spire_wraith_base",
     ];
 
     /**
@@ -1284,6 +1286,60 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         "char_wizard_base",
       ])
         expect(baked.sheets[name].atlas, name).not.toBe(merc);
+    });
+  });
+
+  describe("the Spire's own dead (FS-M8CSE §H R37-R38)", () => {
+    // sheet, its builder in forlorn.js, and the Forest sheet it re-tones
+    const RETONED: [string, string, string][] = [
+      ["creature_barrow_thrall_base", "barrowThrall", "creature_zombie_base"],
+      ["creature_spire_wraith_base", "spireWraith", "creature_ghost_base"],
+    ];
+
+    it.each(RETONED)(
+      "%s is authored as forlorn.js#%s, under the project's licence",
+      (name, fn) => {
+        const sheet = baked.sheets[name];
+        expect(sheet.source).toBe(
+          `authored: tools/bake/page/characters/forlorn.js#${fn}`,
+        );
+        expect(sheet.licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(RETONED)("%s packs into the creatures group, not fodder", (name) => {
+      expect(baked.sheets[name].atlas).toMatch(/^creatures-\d+$/);
+    });
+
+    it.each(RETONED)(
+      "%s (%s) has every clip of its source, frame for frame, in the same frame box",
+      (name, _fn, source) => {
+        const sheet = baked.sheets[name];
+        const from = baked.sheets[source];
+        expect([sheet.frameWidth, sheet.frameHeight]).toEqual([
+          from.frameWidth,
+          from.frameHeight,
+        ]);
+        expect(sheet.directions).toBe(from.directions);
+        expect(Object.keys(sheet.animations)).toEqual(
+          Object.keys(from.animations),
+        );
+        for (const [clip, a] of Object.entries(from.animations) as [
+          string,
+          { fps: number; loop: boolean; frames: unknown[][] },
+        ][]) {
+          const own = sheet.animations[clip];
+          expect([own.fps, own.loop], clip).toEqual([a.fps, a.loop]);
+          expect(own.frames.map((f: unknown[]) => f.length), clip).toEqual(
+            a.frames.map((f) => f.length),
+          );
+        }
+      },
+    );
+
+    it("leaves the Forest's zombie and ghost in fodder", () => {
+      for (const [, , source] of RETONED)
+        expect(baked.sheets[source].atlas).toMatch(/^fodder-\d+$/);
     });
   });
 

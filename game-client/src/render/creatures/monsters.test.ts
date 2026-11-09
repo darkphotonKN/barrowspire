@@ -24,6 +24,7 @@ import {
   elitePlate,
   monsterClip,
   monsterScale,
+  monsterTint,
   nameplate,
   type MonsterArtFetch,
   type MonsterEffects,
@@ -389,6 +390,25 @@ describe("the Forlorn Forest's dead (FS-3QHQZ §C R29)", () => {
   });
 });
 
+describe("the tower's own dead (FS-M8CSE §D R17, §H R37)", () => {
+  it.each([
+    ["barrow_thrall", "creature_barrow_thrall_base"],
+    ["spire_wraith", "creature_spire_wraith_base"],
+  ] as [MonsterArchetype, string][])(
+    "should draw a %s from its own baked sheet, at fodder tier, with no tint",
+    (archetype, sheet) => {
+      expect(monsterLook(archetype)).toEqual({ sheet, tier: "fodder" });
+      expect(baked.has(sheet)).toBe(true);
+    },
+  );
+
+  it("should keep the elite wash on an elite tower monster", () => {
+    const look = monsterLook("barrow_thrall");
+    expect(monsterTint(look, { elite: true })).toBe(palette.eliteTint);
+    expect(monsterTint(look, { elite: false })).toBeUndefined();
+  });
+});
+
 describe("the boar and its elite (FS-X2F2H §H R61)", () => {
   const boar = (fields: Partial<MonsterState> = {}) =>
     monster({ archetype: "boar", name: "Boar", ...fields });
@@ -476,9 +496,12 @@ describe("size reads as threat tier (req 35)", () => {
     ["ghoul", SIZE_TIERS.fodder],
     ["zombie", SIZE_TIERS.fodder],
     ["ghost", SIZE_TIERS.fodder],
+    ["barrow_thrall", SIZE_TIERS.fodder],
+    ["spire_wraith", SIZE_TIERS.fodder],
     ["troll", SIZE_TIERS.brute],
     ["demon", SIZE_TIERS.boss],
     ["blood_demon", SIZE_TIERS.boss],
+    ["daagon", SIZE_TIERS.boss],
   ])("should stand a %s inside its tier's band", (archetype, tier) => {
     const ratio = heightOverPlayer(archetype);
     expect(ratio).toBeGreaterThanOrEqual(tier.min);
@@ -961,6 +984,26 @@ describe("the blood demon's art on demand (FS-VHGE7 §F)", () => {
     };
     return { fetch, asked, land: () => landed() };
   };
+  /** As `onDemandArt` is: a group's later ask is dropped, and its callback with it. */
+  const fetcherOnce = () => {
+    const asked: string[] = [];
+    let landed = () => {};
+    const fetch: MonsterArtFetch["fetch"] = (group, onLanded) => {
+      if (asked.includes(group)) return;
+      asked.push(group);
+      landed = onLanded;
+    };
+    return { fetch, asked, land: () => landed() };
+  };
+  const daagon = (fields: Partial<MonsterState> = {}) =>
+    monster({
+      entity_id: "daagon",
+      archetype: "daagon",
+      name: "Daa'gon",
+      boss: true,
+      level: 18,
+      ...fields,
+    });
   const bloodDemon = (fields: Partial<MonsterState> = {}) =>
     monster({
       entity_id: "blood",
@@ -1158,6 +1201,72 @@ describe("the blood demon's art on demand (FS-VHGE7 §F)", () => {
     expect(blood.anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
   });
 
+  // FS-M8CSE §H R41-R42: Daa'gon is a second archetype on the same group.
+  it("should draw Daa'gon's look as the blood demon's sheet at boss size, stood in until the group is in", () => {
+    const art = fixture();
+    expect(monsterLook("daagon")).toEqual({ sheet: "creature_blood_demon_base", tier: "boss" });
+    expect(drawnLook("daagon", art)).toEqual(drawnLook("blood_demon", art));
+    art.admit([PAGE]);
+    expect(drawnLook("daagon", art)).toEqual(monsterLook("daagon"));
+  });
+
+  it.each([
+    ["the Blood Demon", () => [bloodDemon(), daagon()]],
+    ["Daa'gon", () => [daagon(), bloodDemon()]],
+  ])("should ask once for both, and redress both when the group lands, %s listed first (R42)", (_first, listed) => {
+    const art = fixture();
+    const { stage, sprites } = fakeStage();
+    const { fetch, asked, land } = fetcherOnce();
+    const roster = new MonsterRoster(stage, art, undefined, undefined, { fetch });
+    roster.sync(listed());
+    roster.sync(listed());
+    roster.update(FRAME);
+    expect(asked).toEqual(["blood_demon"]);
+    for (const sprite of sprites) expect(sprite.tint).toBe(palette.bloodDemonStandIn);
+
+    art.admit([PAGE]);
+    land();
+
+    for (const sprite of sprites) {
+      expect(sprite.anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
+      expect(sprite.tint).toBeNull();
+    }
+  });
+
+  it("should redress a Daa'gon met while a lower floor's Blood Demon fetch is still in flight (R42)", () => {
+    const art = fixture();
+    const { stage, sprites } = fakeStage();
+    const { fetch, asked, land } = fetcherOnce();
+    const roster = new MonsterRoster(stage, art, undefined, undefined, { fetch });
+    roster.sync([bloodDemon()]);
+    roster.update(FRAME);
+
+    roster.sync([]); // the climb
+    roster.sync([daagon()]);
+    roster.update(FRAME);
+    expect(asked).toEqual(["blood_demon"]);
+    expect(sprites[1].tint).toBe(palette.bloodDemonStandIn);
+
+    art.admit([PAGE]);
+    land();
+
+    expect(sprites[1].anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
+    expect(sprites[1].tint).toBeNull();
+  });
+
+  it("should draw a Daa'gon first listed after a Blood Demon landed the group from its sheet, with no new ask", () => {
+    const { roster, sprites, asked, land } = met();
+    land();
+    const before = asked.length;
+
+    roster.sync([daagon()]);
+    roster.update(FRAME);
+
+    expect(asked.length).toBe(before);
+    expect(sprites[1].anims.currentAnim?.key).toMatch(/^creature_blood_demon_base\//);
+    expect(sprites[1].tint).toBeNull();
+  });
+
   it("should draw a blood demon first listed after the group landed from its own sheet directly (R48)", () => {
     const { roster, sprites, land, art } = met();
     land();
@@ -1190,6 +1299,11 @@ describe("elitePlate", () => {
     ["Grave-sworn", "ghoul", "Grave-sworn Ghoul"],
     ["Hollow", "troll", "Hollow Troll"],
     ["Barrow-cursed", "troll", "Barrow-cursed Troll"],
+    // FS-M8CSE §D R21: each `_` in the archetype reads as a space
+    ["Dread", "barrow_thrall", "Dread Barrow Thrall"],
+    ["Hollow", "spire_wraith", "Hollow Spire Wraith"],
+    // §D R22: the prefix's own "Barrow" is not the name
+    ["Barrow-cursed", "barrow_thrall", "Barrow-cursed Barrow Thrall"],
   ] as const)(
     "should take %s off an elite %s's name",
     (prefix, archetype, name) => {
@@ -1210,6 +1324,14 @@ describe("elitePlate", () => {
     [
       "a name without its base name",
       { name: "Hollow Thing", archetype: "ghoul", elite: true },
+    ],
+    [
+      "a blood demon, a boss and never an elite",
+      { name: "Blood Demon", archetype: "blood_demon", elite: false },
+    ],
+    [
+      "an elite whose two-word name has no prefix",
+      { name: "Blood Demon", archetype: "blood_demon", elite: true },
     ],
   ] as const)("should set nothing apart for %s", (_, fields) => {
     expect(elitePlate({ level: 2, ...fields })).toBeNull();

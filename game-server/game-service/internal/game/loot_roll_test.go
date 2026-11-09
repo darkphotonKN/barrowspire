@@ -278,7 +278,6 @@ func baseName(rolled string) string {
 }
 
 func TestRarityWeights_Modifiers(t *testing.T) {
-	fab := testRarities[4].DropRate // fixture weight; the live one is item_rarities'
 	f1 := 1 + 1/RarityItemLevelDivisor
 	f20 := 1 + 20/RarityItemLevelDivisor
 	e, d := EliteRarityWeightMultiplier, DemonRarityWeightMultiplier
@@ -288,18 +287,31 @@ func TestRarityWeights_Modifiers(t *testing.T) {
 		drop     lootDrop
 		want     []float64 // normal, uncommon, rare, runed, fabled
 	}{
-		{"ilvl 1 standard", types.ItemTypeWeapon, lootDrop{ItemLevel: 1}, []float64{1, 0.4, 0.15 * f1, 0.05 * f1, fab * f1}},
-		{"ilvl factor on Rare and above only", types.ItemTypeArmor, lootDrop{ItemLevel: 20}, []float64{1, 0.4, 0.15 * f20, 0.05 * f20, fab * f20}},
-		{"elite doubles above Normal", types.ItemTypeWeapon, lootDrop{ItemLevel: 1, Source: lootSourceElite}, []float64{1, 0.4 * e, 0.15 * f1 * e, 0.05 * f1 * e, fab * f1 * e}},
-		{"demon quadruples above Normal and drops Normal", types.ItemTypeWeapon, lootDrop{ItemLevel: 1, Source: lootSourceDemon}, []float64{0, 0.4 * d, 0.15 * f1 * d, 0.05 * f1 * d, fab * f1 * d}},
-		{"consumable never Fabled", types.ItemTypeConsumable, lootDrop{ItemLevel: 1}, []float64{1, 0.4, 0.15 * f1, 0.05 * f1, 0}},
-		{"Normal ring becomes Uncommon", types.ItemTypeRing, lootDrop{ItemLevel: 1}, []float64{0, 1.4, 0.15 * f1, 0.05 * f1, fab * f1}},
-		{"demon ring", types.ItemTypeRing, lootDrop{ItemLevel: 1, Source: lootSourceDemon}, []float64{0, 0.4 * d, 0.15 * f1 * d, 0.05 * f1 * d, fab * f1 * d}},
+		{"ilvl 1 standard", types.ItemTypeWeapon, lootDrop{ItemLevel: 1}, []float64{1, 0.4, 0.15 * f1, 0.05 * f1, 0}},
+		{"ilvl factor on Rare and above only", types.ItemTypeArmor, lootDrop{ItemLevel: 20}, []float64{1, 0.4, 0.15 * f20, 0.05 * f20, 0}},
+		{"elite doubles above Normal", types.ItemTypeWeapon, lootDrop{ItemLevel: 1, Source: lootSourceElite}, []float64{1, 0.4 * e, 0.15 * f1 * e, 0.05 * f1 * e, 0}},
+		{"demon quadruples above Normal and drops Normal", types.ItemTypeWeapon, lootDrop{ItemLevel: 1, Source: lootSourceDemon}, []float64{0, 0.4 * d, 0.15 * f1 * d, 0.05 * f1 * d, 0}},
+		{"consumable", types.ItemTypeConsumable, lootDrop{ItemLevel: 1}, []float64{1, 0.4, 0.15 * f1, 0.05 * f1, 0}},
+		{"Normal ring becomes Uncommon", types.ItemTypeRing, lootDrop{ItemLevel: 1}, []float64{0, 1.4, 0.15 * f1, 0.05 * f1, 0}},
+		{"demon ring", types.ItemTypeRing, lootDrop{ItemLevel: 1, Source: lootSourceDemon}, []float64{0, 0.4 * d, 0.15 * f1 * d, 0.05 * f1 * d, 0}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.InDeltaSlice(t, tt.want, rarityWeights(testRarities, tt.itemType, tt.drop), 1e-12)
 		})
+	}
+}
+
+// Whatever the DB gives Fabled, the weights give it nothing: for every item
+// type and source, at any weight. FS-M8CSE §G R31.
+func TestRarityWeights_DBFabledWeight_NeverReachesTheRoll(t *testing.T) {
+	huge := []lootRarity{{ID: "r-normal", Code: rarityNormal, DropRate: 1}, {ID: "r-fabled", Code: rarityFabled, DropRate: 5000}}
+	for _, itemType := range []types.ItemType{types.ItemTypeWeapon, types.ItemTypeArmor, types.ItemTypeRing, types.ItemTypeConsumable} {
+		for _, source := range []lootSource{lootSourceStandard, lootSourceElite, lootSourceDemon} {
+			t.Run(fmt.Sprintf("%s source %d", itemType, source), func(t *testing.T) {
+				assert.Zero(t, rarityWeights(huge, itemType, lootDrop{ItemLevel: 20, Source: source})[1])
+			})
+		}
 	}
 }
 
@@ -316,11 +328,11 @@ func TestRollDrop_RarityPick_RespectsWeights(t *testing.T) {
 	for _, x := range w {
 		sum += x
 	}
-	want := map[string]float64{ // no uniques: Fabled lands on Runed
+	want := map[string]float64{
 		"r-normal":   w[0] / sum,
 		"r-uncommon": w[1] / sum,
 		"r-rare":     w[2] / sum,
-		"r-runed":    (w[3] + w[4]) / sum,
+		"r-runed":    w[3] / sum,
 	}
 	for id, p := range want {
 		assert.InDelta(t, p, float64(counts[id])/n, 0.01, id)
@@ -339,7 +351,7 @@ func TestRollDrop_Fabled_WithNoUnique_RollsRunedOfSameType(t *testing.T) {
 	r := seeded()
 	for _, base := range []lootTemplate{longsword, plateHelm, ironBand} {
 		for range 300 {
-			item := roll(t, r, []lootTemplate{base}, fabledOnly(), 1)
+			item := rollWithUniques(t, r, base, nil, testRarities, 1)
 			assert.Equal(t, "r-runed", item.RarityID)
 			assert.Equal(t, base.Config.ItemType, item.ItemType)
 			assert.Contains(t, []int{3, 4}, len(item.Affixes))
@@ -492,21 +504,10 @@ func newUnique(name string, config types.ItemConfig, minItemLevel, requiredLevel
 	}
 }
 
-// fabledOnly is the fixture table with every tier but Fabled weighted out.
-func fabledOnly() []lootRarity {
-	out := make([]lootRarity, len(testRarities))
-	copy(out, testRarities)
-	for i := range out {
-		if out[i].Code != rarityFabled {
-			out[i].DropRate = 0
-		}
-	}
-	return out
-}
-
+// rollWithUniques rolls a drop that hits its Fabled chance.
 func rollWithUniques(t *testing.T, r lootRand, base lootTemplate, uniques []uniqueTemplate, rarities []lootRarity, ilvl int) types.ItemConfig {
 	t.Helper()
-	item, ok := rollDrop(r, []lootTemplate{base}, uniques, rarities, lootDrop{ItemLevel: ilvl})
+	item, ok := rollDrop(r, []lootTemplate{base}, uniques, rarities, lootDrop{ItemLevel: ilvl, FabledChance: 1})
 	require.True(t, ok)
 	return item
 }
@@ -519,7 +520,7 @@ func TestRollDrop_Fabled_PicksAUniqueEligibleAtTheItemLevel(t *testing.T) {
 	const n = 4000
 	for i := range n {
 		base := []lootTemplate{longsword, plateHelm, ironBand}[i%3]
-		item := rollWithUniques(t, r, base, sixUniques, fabledOnly(), 12)
+		item := rollWithUniques(t, r, base, sixUniques, testRarities, 12)
 		assert.Equal(t, "r-fabled", item.RarityID)
 		assert.Equal(t, rarityFabled, item.RarityCode)
 		counts[item.Name]++
@@ -538,7 +539,7 @@ func TestRollDrop_Fabled_NoUniqueEligible_RollsRunedOfTheDropsType(t *testing.T)
 	r := seeded()
 	for _, base := range []lootTemplate{longsword, plateHelm, ironBand} {
 		for range 300 {
-			item := rollWithUniques(t, r, base, sixUniques, fabledOnly(), 5)
+			item := rollWithUniques(t, r, base, sixUniques, testRarities, 5)
 			assert.Equal(t, "r-runed", item.RarityID)
 			assert.Equal(t, base.Config.ItemType, item.ItemType)
 			assert.Empty(t, item.UniqueEffectCode)
@@ -558,7 +559,7 @@ func TestRollDrop_Fabled_UniqueRollsFixedAffixesAndRunedStats(t *testing.T) {
 		t.Run(u.Config.Name, func(t *testing.T) {
 			solo := []uniqueTemplate{u}
 			for range 500 {
-				item := rollWithUniques(t, r, longsword, solo, fabledOnly(), 20)
+				item := rollWithUniques(t, r, longsword, solo, testRarities, 20)
 
 				assert.Equal(t, u.Config.Name, item.Name)
 				assert.Equal(t, u.Config.Description, item.Description)
@@ -599,4 +600,138 @@ func TestRollUnique_FixedAffixValuesCoverTheirRange(t *testing.T) {
 		seen[rollUnique(r, sixUniques[1], fabled, 8).Affixes[0].Value] = true // max_health 10–16
 	}
 	assert.Len(t, seen, 7)
+}
+
+// Fabled is tested on the drop before anything of the drop's type: at a chance
+// of 1 a would-be weapon, armor, ring or consumable alike is a unique, whatever
+// the weights say. FS-M8CSE §G R31, R34.
+func TestRollDrop_FabledChance_HitIsAUniqueBeforeTheType(t *testing.T) {
+	for _, base := range []lootTemplate{longsword, plateHelm, ironBand, lesserHeal} {
+		t.Run(base.Config.Name, func(t *testing.T) {
+			r := seeded()
+			for range 300 {
+				item, ok := rollDrop(r, []lootTemplate{base}, sixUniques, testRarities, lootDrop{ItemLevel: 20, FabledChance: 1})
+				require.True(t, ok)
+				assert.Equal(t, rarityFabled, item.RarityCode)
+				assert.NotEmpty(t, item.UniqueEffectCode)
+			}
+		})
+	}
+}
+
+// The chance is strict: a roll under it hits, a roll at it does not.
+func TestRollDrop_FabledChance_IsStrict(t *testing.T) {
+	tests := []struct {
+		name   string
+		roll   float64
+		chance float64
+		hit    bool
+	}{
+		{"just under", 0.0019, 0.002, true},
+		{"exactly at", 0.002, 0.002, false},
+		{"no chance at the lowest roll", 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item, ok := rollDrop(fixedRand{tt.roll}, []lootTemplate{longsword}, sixUniques, testRarities, lootDrop{ItemLevel: 20, FabledChance: tt.chance})
+			require.True(t, ok)
+			assert.Equal(t, tt.hit, item.RarityCode == rarityFabled, item.RarityCode)
+		})
+	}
+}
+
+// The stated rate holds on a would-be consumable and whatever the source's
+// weight multiplier: neither can move a flat roll. FS-M8CSE §G R31.
+func TestRollDrop_FabledChance_RateHoldsOnEveryTypeAndSource(t *testing.T) {
+	const chance, n = 0.05, 40_000
+	tests := []struct {
+		name   string
+		base   lootTemplate
+		source lootSource
+	}{
+		{"consumable, standard", lesserHeal, lootSourceStandard},
+		{"weapon, standard", longsword, lootSourceStandard},
+		{"weapon, elite", longsword, lootSourceElite},
+		{"weapon, demon", longsword, lootSourceDemon},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := seeded()
+			hits := 0
+			for range n {
+				item, ok := rollDrop(r, []lootTemplate{tt.base}, sixUniques, testRarities, lootDrop{ItemLevel: 20, Source: tt.source, FabledChance: chance})
+				require.True(t, ok)
+				if item.RarityCode == rarityFabled {
+					hits++
+				}
+			}
+			assert.InDelta(t, chance, float64(hits)/n, 0.005)
+		})
+	}
+}
+
+// A hit with no eligible unique is a Runed item of the drop's type, consumables
+// included. FS-M8CSE §G R34.
+func TestRollDrop_FabledChance_NoEligibleUnique_RollsRunedOfTheDropsType(t *testing.T) {
+	r := seeded()
+	for _, base := range []lootTemplate{longsword, plateHelm, ironBand, lesserHeal} {
+		t.Run(base.Config.Name, func(t *testing.T) {
+			for range 100 {
+				item, ok := rollDrop(r, []lootTemplate{base}, sixUniques, testRarities, lootDrop{ItemLevel: 1, FabledChance: 1})
+				require.True(t, ok)
+				assert.Equal(t, rarityRuned, item.RarityCode)
+				assert.Equal(t, base.Config.ItemType, item.ItemType)
+				assert.Empty(t, item.UniqueEffectCode)
+			}
+		})
+	}
+}
+
+// The drop's type does not gate a unique, so a hit needs no base of that type;
+// a hit with neither a unique nor a base yields nothing. FS-M8CSE §G R34.
+func TestRollDrop_FabledChance_NoEligibleBase(t *testing.T) {
+	r := seeded()
+
+	item, ok := rollDrop(r, nil, sixUniques, testRarities, lootDrop{ItemLevel: 20, FabledChance: 1})
+	require.True(t, ok, "a unique needs no base of the drop's type")
+	assert.Equal(t, rarityFabled, item.RarityCode)
+
+	_, ok = rollDrop(r, nil, sixUniques, testRarities, lootDrop{ItemLevel: 1, FabledChance: 1})
+	assert.False(t, ok, "no unique, no base: nothing")
+}
+
+// With no Fabled row a Fabled item cannot be built: the hit falls through to
+// Runed, unique or not. FS-M8CSE §Edge States.
+func TestRollDrop_FabledChance_NoFabledRow_RollsRuned(t *testing.T) {
+	r := seeded()
+	var noFabled []lootRarity
+	for _, rar := range testRarities {
+		if rar.Code != rarityFabled {
+			noFabled = append(noFabled, rar)
+		}
+	}
+
+	item, ok := rollDrop(r, []lootTemplate{longsword}, sixUniques, noFabled, lootDrop{ItemLevel: 20, FabledChance: 1})
+	require.True(t, ok)
+	assert.Equal(t, rarityRuned, item.RarityCode)
+	assert.Empty(t, item.UniqueEffectCode)
+}
+
+// A ring is left out of a chest's pick even at a hit, so a chest with only a
+// ring unique eligible rolls Runed. FS-M8CSE §G R34.
+func TestRollDrop_FabledChance_NoRings_NeverPicksARingUnique(t *testing.T) {
+	r := seeded()
+	var rings []uniqueTemplate
+	for _, u := range sixUniques {
+		if u.Config.ItemType == types.ItemTypeRing {
+			rings = append(rings, u)
+		}
+	}
+	require.NotEmpty(t, rings)
+
+	for range 200 {
+		item, ok := rollDrop(r, []lootTemplate{longsword}, rings, testRarities, lootDrop{ItemLevel: 20, NoRings: true, FabledChance: 1})
+		require.True(t, ok)
+		assert.Equal(t, rarityRuned, item.RarityCode)
+	}
 }

@@ -263,13 +263,38 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   corridor's monsters or a top-up. A guard **stands** while it is in the world with health above 0,
   wherever it has chased to. Server-only: nothing marks it on the wire (FS-KE075 §J).
 
+### Spire height and the climb (FS-M8CSE, locked, not built)
+
+- **Spire height** — how many floors a run has: rolled once when the run is built, 3 to 10, each
+  taller height rarer than the last, and fixed for that run. Server-only: never on the wire. Not
+  "tower height": 塔 is shorthand only (see **Run**).
+- **Top floor** — the floor whose depth equals the run's Spire height. It has no stairs up. Not a
+  fixed floor number: floor 4 is the top of a run of height 4 and an ordinary floor of a taller one.
+- **Master Spire** — a run whose Spire height is 10, the rarest roll (about 2%). Its top floor
+  holds Daa'gon. It is a height, not a mode: nobody picks or queues for one, it is built like any
+  other run, and a party that escapes from floor 2 of one was still in one.
+- **Floor factor** — what a Spire floor above the fifth multiplies its kill drop chances and Fabled
+  chances by, rising with the floor; 1 on floors 1-5. Spire-only, applied when the roll is made, so
+  the drop rows the fields read stay as they are. Not a field's **drop factor**, which scales those
+  same rows down for a place and has nothing to do with height.
+- **Barrow Thrall** — the Spire's grave-ash recolour of the Forest's zombie: its own archetype in
+  the Spire's standard mix, dropping on the ghoul row. A "zombie" is only ever the Forest's.
+- **Spire Wraith** — the Spire's bone-white recolour of the Forest's ghost: its own archetype in
+  the Spire's standard mix, dropping on the ghoul row. A "ghost" is only ever the Forest's.
+
 ### Bosses (FS-77AB6, FS-VHGE7)
 
 - **Boss** — a monster spawned with `Boss: true`: never an elite, at most one of each kind a
-  floor, rolls the boss drop row and the boss experience multiplier. The Spire has two.
-- **Demon** — the green boss (archetype `demon`): guaranteed on the top floor, rare below.
+  floor, rolls the boss drop row and the boss experience multiplier. The Spire has two, and three
+  once FS-M8CSE adds Daa'gon.
+- **Demon** — the green boss (archetype `demon`): guaranteed on the top floor, rare below. With
+  FS-M8CSE, a Master Spire's top floor holds Daa'gon in its place.
 - **Blood Demon** — the red boss (archetype `blood_demon`): never guaranteed, rolled on every run
   floor at odds that climb with the floor; tougher than the demon. "Red demon" in conversation.
+  With FS-M8CSE, it does not roll on a Master Spire's top floor.
+- **Daa'gon** — the boss of a Master Spire's top floor: the red demon, named, and scaled above the
+  Blood Demon that rolls on ordinary floors. Its own archetype on the blood demon's sheet. Only
+  ever there. Locked in FS-M8CSE, not built.
 - **Slam** — a demon's wind-up move: the roar, then a heavy hit at twice its level damage, rationed
   by a cooldown. On the wire it is the `attack` action.
 - **Fire claw** — a demon's regular move: one swipe, no wind-up, its level damage. On the wire it

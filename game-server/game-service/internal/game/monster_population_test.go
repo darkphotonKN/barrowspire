@@ -38,6 +38,7 @@ func rosterOnRun(t *testing.T, seed uint64, roster ...delverAt) *Session {
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
 	s.spawnRand = seededSpawns(seed)
 	s.InitialSystems()
+	fixSpireHeight(t, s)
 
 	for i, d := range roster {
 		playerID := uuid.New()
@@ -180,8 +181,8 @@ func TestBuildFloor_LevelsMonstersByTheFloorDepth(t *testing.T) {
 		min, max int
 	}{
 		{"party level 1 on floor 1 never goes below 1", []int{1}, 1, 1, 2},
-		{"party level 1 on floor 3", []int{1}, 3, 4, 6},
-		{"mixed party on floor 3 scales to the highest", []int{2, 5}, 3, 8, 10},
+		{"party level 1 on floor 3", []int{1}, 3, 2, 4},
+		{"mixed party on floor 3 scales to the highest", []int{2, 5}, 3, 6, 8},
 	}
 
 	for _, tt := range tests {
@@ -214,8 +215,8 @@ func TestMonsterLevel_IsPartyPlusFloorOffsetPlusSpreadAtLeastOne(t *testing.T) {
 		{1, 1, 0, 1},
 		{1, 1, 1, 2},
 		{7, 1, -1, 6},
-		{1, 3, 0, 5},
-		{4, 2, 1, 7},
+		{1, 3, 0, 3},
+		{4, 2, 1, 6},
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, monsterLevel(tt.party, tt.floor, tt.spread), "%+v", tt)
@@ -248,6 +249,91 @@ func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 		}
 		assert.InDelta(t, tt.want, float64(trolls)/float64(total), 0.02, "floor %d", tt.floor)
 	}
+}
+
+// A rolled non-troll monster is 70% ghoul, 20% Barrow Thrall, 10% Spire Wraith
+// on every Spire floor, and nothing else, while the troll share stands.
+// FS-M8CSE §D R18.
+func TestRollArchetype_NonTrollMixOnEveryFloor(t *testing.T) {
+	const rolls = 40000
+	for floor := 1; floor <= 10; floor++ {
+		rng := seededSpawns(uint64(300 + floor))
+		counts := map[components.MonsterArchetype]int{}
+		for range rolls {
+			counts[rollArchetype(rng, floor)]++
+		}
+
+		nonTroll := float64(rolls - counts[components.MonsterArchetypeTroll])
+		assert.InDelta(t, trollShare(floor), float64(counts[components.MonsterArchetypeTroll])/rolls, 0.01, "floor %d troll share", floor)
+		assert.InDelta(t, 0.70, float64(counts[components.MonsterArchetypeGhoul])/nonTroll, 0.015, "floor %d ghouls", floor)
+		assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.015, "floor %d Barrow Thralls", floor)
+		assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.015, "floor %d Spire Wraiths", floor)
+		assert.Len(t, counts, 4, "floor %d rolls only the four", floor)
+	}
+}
+
+// The shares of a non-troll roll make up the whole of it. FS-M8CSE §D R18.
+func TestSpireNonTrollMix_SharesSumToOne(t *testing.T) {
+	total := 0.0
+	for _, row := range spireNonTrollMix {
+		total += row.Share
+	}
+	assert.InDelta(t, 1.0, total, 1e-9)
+}
+
+// The Spire's roll stays the Spire's: populating is a run's alone, so a field
+// with a delver in it gains no monster by it, tower monster or otherwise.
+// FS-M8CSE §D R18.
+func TestPopulateMonsters_NoFieldRollsTheSpiresMix(t *testing.T) {
+	field := builtField(t)
+	field.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
+	require.NotEmpty(t, delversOf(field.EntityManager.GetAllEntities()))
+	before := len(monstersIn(field))
+
+	field.populateMonsters(firstFloor, false, nil)
+
+	assert.Len(t, monstersIn(field), before)
+}
+
+// The archetype strings the client's type and sheets are keyed on. FS-M8CSE §D R21.
+func TestTowerMonsters_ArchetypeStrings(t *testing.T) {
+	assert.Equal(t, "barrow_thrall", string(components.MonsterArchetypeBarrowThrall))
+	assert.Equal(t, "spire_wraith", string(components.MonsterArchetypeSpireWraith))
+}
+
+// The Barrow Thrall is the zombie's sheet and the Spire Wraith the ghost's,
+// under their own names and with no field factor. FS-M8CSE §D R19.
+func TestTowerMonsters_CarryTheForestsSheets(t *testing.T) {
+	tests := []struct {
+		archetype, source components.MonsterArchetype
+		name              string
+		hp, damage        int
+	}{
+		{components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeZombie, "Barrow Thrall", 70, 9},
+		{components.MonsterArchetypeSpireWraith, components.MonsterArchetypeGhost, "Spire Wraith", 30, 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sheet, ok := monsterSheets[tt.archetype]
+			require.True(t, ok, "a tower monster has a sheet")
+			assert.Equal(t, tt.name, sheet.Name)
+			assert.Equal(t, tt.hp, sheet.HP)
+			assert.Equal(t, tt.damage, sheet.Damage)
+
+			want := monsterSheets[tt.source]
+			want.Name = tt.name
+			assert.Equal(t, want, sheet, "every other field is the source's")
+		})
+	}
+}
+
+// An elite tower monster's server-authored name is its prefix and its two-word
+// name, which the client's plate splits. FS-M8CSE §D R21.
+func TestRollAs_EliteTowerMonsterIsNamedInFull(t *testing.T) {
+	monster := rollAs(fixedRand{0}, components.MonsterArchetypeBarrowThrall, 3, 1, 1)
+
+	assert.True(t, monster.Elite)
+	assert.Equal(t, ElitePrefixes[0]+" Barrow Thrall", monster.Name)
 }
 
 // Count and spread cover their whole ranges, and nothing outside them.
@@ -385,7 +471,7 @@ func TestPopulateMonsters_NeverInTheHub(t *testing.T) {
 // new floor is populated afresh, clear of where the party now stands.
 // FS-F6F88 §Requirements 9–12 with FS-77AB6 §Requirements 22.
 func TestRegenerateFloor_RepopulatesTheNewFloor(t *testing.T) {
-	s := rosterOnRun(t, 11, delverAt{level: 1, x: 100, y: 100})
+	s := rosterOnRun(t, 11, delverAt{level: 2, x: 100, y: 100})
 	s.InitialMapObjects(nil)
 
 	floorOne := map[uuid.UUID]bool{}
@@ -417,11 +503,12 @@ func TestRegenerateFloor_RepopulatesTheNewFloor(t *testing.T) {
 }
 
 // Every monster on a floor of buildings reaches every delver's broadcast.
-// FS-77AB6 §Requirements 32. Floor 1, a dungeon, is cut by distance instead
+// FS-77AB6 §Requirements 32. A dungeon floor is cut by distance instead
 // (FS-KE075 §G, interest_test.go).
 func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	s := rosterOnRun(t, 5, delverAt{level: 1, x: 100, y: 100})
 	s.InitialMapObjects(nil)
+	failGeneration(s)
 	require.NoError(t, s.regenerateFloor())
 	require.NotEmpty(t, monstersIn(s))
 
@@ -437,7 +524,7 @@ func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	got := map[uuid.UUID]bool{}
 	for _, m := range state.Monsters {
 		got[m.EntityID] = true
-		assert.Contains(t, []string{"ghoul", "troll", "demon", "blood_demon"}, m.Archetype) // any floor may roll a blood demon (FS-VHGE7 §A R6)
+		assert.Contains(t, []string{"ghoul", "troll", "barrow_thrall", "spire_wraith", "demon", "blood_demon"}, m.Archetype) // any floor may roll a blood demon (FS-VHGE7 §A R6)
 		assert.Equal(t, "idle", m.Action)
 		assert.Positive(t, m.MaxHealth)
 		assert.Equal(t, m.MaxHealth, m.CurrentHealth)
@@ -524,7 +611,7 @@ func TestPopulateMonsters_GuaranteedDemonRelaxesTheDelverExclusion(t *testing.T)
 
 	for seed := uint64(1); seed <= 10; seed++ {
 		s := crowded(seed)
-		s.populateMonsters(constants.RunFloorCount, true, nil)
+		s.populateMonsters(testSpireHeight, true, nil)
 
 		monsters := monstersIn(s)
 		require.Len(t, monsters, 1, "seed %d: only the guaranteed demon stands", seed)
@@ -615,7 +702,7 @@ func TestCreateMonsterEntity_EliteHasMoreHealthAndDamage(t *testing.T) {
 // boss, an elite with its prefix, the rest plain. FS-77AB6 §Requirements 32.
 func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 	s := rosterOnRun(t, 8, delverAt{level: 1, x: 100, y: 100})
-	s.populateMonsters(constants.RunFloorCount, true, nil)
+	s.populateMonsters(testSpireHeight, true, nil)
 	elite := CreateMonsterEntity(s.EntityManager, MonsterConfig{
 		Archetype: components.MonsterArchetypeTroll, Level: 2, Elite: true, Name: "Hollow Troll", X: 900, Y: 700,
 	})
@@ -633,7 +720,7 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 			assert.Equal(t, "demon", m.Archetype)
 			assert.Equal(t, "Demon", m.Name)
 			assert.False(t, m.Elite)
-			assert.Equal(t, 1+MonsterLevelPerFloor*(constants.RunFloorCount-1)+DemonLevelBonus, m.Level)
+			assert.Equal(t, 1+MonsterLevelPerFloor*(testSpireHeight-1)+DemonLevelBonus, m.Level)
 		case m.EntityID == elite.ID:
 			assert.True(t, m.Elite)
 			assert.Equal(t, "Hollow Troll", m.Name)
@@ -649,7 +736,7 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 func TestBuildFloor_TheTopFloorBringsItsDemon(t *testing.T) {
 	for seed := uint64(1); seed <= 10; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 1, x: 100, y: 100})
-		s.buildFloor(constants.RunFloorCount, nil)
+		s.buildFloor(testSpireHeight, nil)
 
 		bosses := 0
 		for _, m := range monstersIn(s) {
@@ -748,7 +835,7 @@ func bossesIn(s *Session) map[components.MonsterArchetype][]*ecs.Entity {
 // the green demon exactly where it stands without it. FS-VHGE7 §A R4–9;
 // §Edge States "Both demons on one floor".
 func TestPopulateMonsters_OpenFloorPlacesTheBloodDemonAfterTheDemon(t *testing.T) {
-	top := constants.RunFloorCount
+	top := testSpireHeight
 	for seed := uint64(1); seed <= 20; seed++ {
 		forceBloodDemon(t, 0)
 		without := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
@@ -798,7 +885,7 @@ func TestPopulateMonsters_BloodDemonWithNoSpotIsSkipped(t *testing.T) {
 
 	logs := capturedLog(t)
 
-	s.populateMonsters(constants.RunFloorCount, true, nil)
+	s.populateMonsters(testSpireHeight, true, nil)
 
 	bosses := bossesIn(s)
 	assert.Empty(t, bosses[components.MonsterArchetypeBloodDemon])
@@ -806,6 +893,124 @@ func TestPopulateMonsters_BloodDemonWithNoSpotIsSkipped(t *testing.T) {
 	assert.Contains(t, logs.String(), `"level":"WARN"`)
 	assert.Contains(t, logs.String(), "blood_demon")
 	assert.NotContains(t, logs.String(), `"level":"ERROR"`)
+}
+
+// The boss on a run's top floor is its height's: the Demon below 10, with a
+// Blood Demon still able to roll beside it, and on a Master Spire Daa'gon alone.
+// On a dungeon floor and on a floor of buildings alike. FS-M8CSE §E R23, R24, R27;
+// §Edge States "Generation fails on a Master Spire top floor".
+func TestBuildFloor_TopFloorBossIsTheHeights(t *testing.T) {
+	forceBloodDemon(t, 1)
+
+	tests := []struct {
+		name     string
+		fallback bool
+	}{
+		{"dungeon floor", false},
+		{"floor of buildings a failed generation leaves", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for height := 3; height <= MasterSpireHeight; height++ {
+				s := rosterOnRun(t, uint64(height), delverAt{level: 2, x: 100, y: 100})
+				currentFloor(t, s).Count = height
+				if tt.fallback {
+					failGeneration(s)
+				}
+
+				s.buildFloor(height, nil)
+
+				bosses := bossesIn(s)
+				if height == MasterSpireHeight {
+					assert.Len(t, bosses[components.MonsterArchetypeDaagon], 1, "the Master Spire's top floor holds Daa'gon")
+					assert.Empty(t, bosses[components.MonsterArchetypeDemon], "Daa'gon replaces the Demon")
+					assert.Empty(t, bosses[components.MonsterArchetypeBloodDemon], "no Blood Demon rolls beside Daa'gon")
+					continue
+				}
+				assert.Len(t, bosses[components.MonsterArchetypeDemon], 1, "height %d", height)
+				assert.Len(t, bosses[components.MonsterArchetypeBloodDemon], 1, "height %d keeps its Blood Demon roll", height)
+				assert.Empty(t, bosses[components.MonsterArchetypeDaagon], "height %d", height)
+			}
+		})
+	}
+}
+
+// A Master Spire differs only at its top: every floor below still rolls its
+// Blood Demon, and none holds Daa'gon. FS-M8CSE §E R24.
+func TestBuildFloor_MasterSpireLowerFloorsKeepTheirRolls(t *testing.T) {
+	forceBloodDemon(t, 1)
+
+	for floor := firstFloor; floor < MasterSpireHeight; floor++ {
+		s := rosterOnRun(t, uint64(floor), delverAt{level: 2, x: 100, y: 100})
+		currentFloor(t, s).Count = MasterSpireHeight
+
+		s.buildFloor(floor, nil)
+
+		bosses := bossesIn(s)
+		assert.Len(t, bosses[components.MonsterArchetypeBloodDemon], 1, "floor %d", floor)
+		assert.Empty(t, bosses[components.MonsterArchetypeDaagon], "floor %d", floor)
+	}
+}
+
+// The demon's roll names the top floor's boss, and leaves any other floor to
+// its rare chance, a Master Spire's included. FS-M8CSE §E R23-R25.
+func TestRollDemon_NamesTheFloorsBoss(t *testing.T) {
+	tests := []struct {
+		name          string
+		floor         int
+		topFloor      bool
+		draws         []float64
+		wantRolled    bool
+		wantArchetype components.MonsterArchetype
+		wantLevel     int
+	}{
+		{"height 10's top", 10, true, nil, true, components.MonsterArchetypeDaagon, 4 + 9 + DaagonLevelBonus},
+		{"height 9's top", 9, true, nil, true, components.MonsterArchetypeDemon, 4 + 8 + DemonLevelBonus},
+		{"height 3's top", 3, true, nil, true, components.MonsterArchetypeDemon, 4 + 2 + DemonLevelBonus},
+		{"floor 9 of a Master Spire, on its chance", 9, false, []float64{0}, true, components.MonsterArchetypeDemon, 4 + 8 + DemonLevelBonus},
+		{"floor 9 of a Master Spire, off its chance", 9, false, []float64{DemonChance}, false, "", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			boss, rolled := rollDemon(&drawQueue{floats: tt.draws}, 4, tt.floor, tt.topFloor)
+
+			require.Equal(t, tt.wantRolled, rolled)
+			if !rolled {
+				return
+			}
+			assert.Equal(t, tt.wantArchetype, boss.Archetype)
+			assert.Equal(t, tt.wantLevel, boss.Level)
+			assert.True(t, boss.Boss)
+			assert.False(t, boss.Elite, "a boss is never an elite")
+		})
+	}
+}
+
+// Daa'gon stands at party level + floor offset + 5, under its own name.
+// FS-M8CSE §E R25.
+func TestPopulateMonsters_DaagonIsNamedAndLevelled(t *testing.T) {
+	s := rosterOnRun(t, 1, delverAt{level: 2, x: 100, y: 100}, delverAt{level: 4, x: 160, y: 100})
+	currentFloor(t, s).Count = MasterSpireHeight
+
+	s.buildFloor(MasterSpireHeight, nil)
+
+	bosses := bossesIn(s)[components.MonsterArchetypeDaagon]
+	require.Len(t, bosses, 1)
+	daagon := monsterOf(bosses[0])
+	assert.Equal(t, 4+MonsterLevelPerFloor*9+5, daagon.Level)
+	assert.Equal(t, "Daa'gon", daagon.Name)
+	assert.True(t, daagon.Boss)
+	assert.False(t, daagon.Elite)
+}
+
+// Daa'gon's sheet is the Blood Demon's with 2200 HP and 45 damage, every other
+// field the same. FS-M8CSE §E R25.
+func TestMonsterSheet_DaagonIsTheBloodDemonHarder(t *testing.T) {
+	want := monsterSheets[components.MonsterArchetypeBloodDemon]
+	want.Name, want.HP, want.Damage = "Daa'gon", 2200, 45
+
+	assert.Equal(t, want, monsterSheets[components.MonsterArchetypeDaagon])
 }
 
 // The blood demon's sheet is the demon's, harder and longer: HP 1600, damage
@@ -826,7 +1031,7 @@ func TestBloodDemon_NeverInAFieldOrTheHub(t *testing.T) {
 	hub.spawnRand = seededSpawns(1)
 	hub.InitialHubMapObjects()
 	hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
-	hub.populateMonsters(constants.RunFloorCount, true, nil)
+	hub.populateMonsters(testSpireHeight, true, nil)
 
 	meadows := builtField(t)
 	forest, _, _ := builtForest(t, 7)

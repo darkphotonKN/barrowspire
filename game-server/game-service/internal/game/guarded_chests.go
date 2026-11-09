@@ -1,6 +1,8 @@
 package game
 
 import (
+	"slices"
+
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
@@ -29,7 +31,8 @@ func (role spawnRole) guardsRoom() bool {
 /**
 * guardChests sets every chest standing in a room of guards to wait on them
 * (FS-KE075 §J Requirement 57). A sack is never guarded, and a room whose
-* guards all failed to place has none to wait on.
+* guards all failed to place has none to wait on. A treasure room's chest is
+* marked as one, a hall's is not (FS-M8CSE §G R35).
 **/
 func (s *Session) guardChests(d *dungeonFloor, guards map[int][]uuid.UUID) {
 	if len(guards) == 0 {
@@ -44,8 +47,9 @@ func (s *Session) guardChests(d *dungeonFloor, guards map[int][]uuid.UUID) {
 			continue
 		}
 		at := tc.(*components.TransformComponent)
-		if ids := guards[d.roomAt(at.X, at.Y)]; len(ids) > 0 {
-			entity.AddComponent(components.NewGuardedComponent(ids))
+		room := d.roomAt(at.X, at.Y)
+		if ids := guards[room]; len(ids) > 0 {
+			entity.AddComponent(components.NewGuardedComponent(ids, slices.Contains(d.layout.Roles.Treasure, room)))
 		}
 	}
 }

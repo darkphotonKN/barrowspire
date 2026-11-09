@@ -21,6 +21,7 @@ func TestCreateMonsterEntity_OnlyTheDemonsCarryTheClaw(t *testing.T) {
 	}{
 		{components.MonsterArchetypeDemon, true},
 		{components.MonsterArchetypeBloodDemon, true},
+		{components.MonsterArchetypeDaagon, true},
 		{components.MonsterArchetypeGhoul, false},
 		{components.MonsterArchetypeTroll, false},
 		{components.MonsterArchetypeBoar, false},
@@ -57,6 +58,7 @@ func TestDemonMoves_LevelOneDamage(t *testing.T) {
 	}{
 		{components.MonsterArchetypeDemon, 56, 28},
 		{components.MonsterArchetypeBloodDemon, 68, 34},
+		{components.MonsterArchetypeDaagon, 90, 45}, // FS-M8CSE §E R25
 	}
 
 	for _, tt := range tests {

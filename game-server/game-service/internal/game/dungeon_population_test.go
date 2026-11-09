@@ -106,6 +106,8 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 					trolls = append(trolls, m.at)
 				case components.MonsterArchetypeGhoul:
 					ghouls = append(ghouls, m.at)
+				default:
+					assert.Failf(t, "a hall pack is a troll and ghouls", "seed %d room %d: %s", seed, room, m.monster.Archetype)
 				}
 			}
 			require.Len(t, trolls, 1, "seed %d room %d: a hall holds one troll", seed, room)
@@ -148,6 +150,28 @@ func TestDungeonPopulation_TreasureGuardsAreElite(t *testing.T) {
 	}
 	share := float64(packs) / float64(alone+packs)
 	assert.InDelta(t, TreasureGuardPackShare, share, 0.05, "a treasure room holds a pack about half the time")
+}
+
+// A treasure guard draws through the same roll as any rolled monster, so the
+// tower monsters stand guard at their shares. FS-M8CSE §D R18.
+func TestDungeonPopulation_TreasureGuardsRollTheSpiresMix(t *testing.T) {
+	counts := map[components.MonsterArchetype]int{}
+	for seed := uint64(1); seed <= 300; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+		monsters := floor1Monsters(t, s)
+		for _, room := range s.dungeon.layout.Roles.Treasure {
+			for _, m := range monsters {
+				if m.room == room && !m.monster.Boss {
+					counts[m.monster.Archetype]++
+				}
+			}
+		}
+	}
+
+	nonTroll := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBarrowThrall] + counts[components.MonsterArchetypeSpireWraith])
+	require.Positive(t, nonTroll)
+	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.05)
+	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.05)
 }
 
 // The corridors hold 4–8 monsters in all, never two in one segment.

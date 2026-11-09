@@ -26,7 +26,7 @@ const (
 	TrollShareCap      = 0.60
 
 	// monster level = party level + step × (floor − 1) ± spread, at least 1
-	MonsterLevelPerFloor = 2
+	MonsterLevelPerFloor = 1
 	MonsterLevelSpread   = 1
 
 	// no monster spawns closer than this to any delver, in px
@@ -40,6 +40,18 @@ const (
 	// random positions tried per monster before it is skipped
 	MonsterPlacementAttempts = 200
 )
+
+// spireNonTrollMix is what a rolled Spire monster is when it is not a troll, as
+// shares of those rolls, the same on every floor. Hall packs are not rolled and
+// stay a troll and ghouls. FS-M8CSE §D R18.
+var spireNonTrollMix = []struct {
+	Archetype components.MonsterArchetype
+	Share     float64
+}{
+	{components.MonsterArchetypeGhoul, 0.70},
+	{components.MonsterArchetypeBarrowThrall, 0.20},
+	{components.MonsterArchetypeSpireWraith, 0.10},
+}
 
 // A dungeon floor's population, by room and role (FS-KE075 §C R18–20, ADR-0061
 // Decision 7). It replaces MonsterCountMin/Max on a dungeon floor only; the
@@ -97,6 +109,36 @@ const (
 // ElitePrefixes is the authored list an elite's name prefix is drawn from, as
 // in "Dread Ghoul".
 var ElitePrefixes = []string{"Dread", "Grave-sworn", "Hollow", "Barrow-cursed"}
+
+// spireHeightOdds is how likely each Spire height is, as percentages of a run:
+// the only place a run's height comes from. To force a height, edit this table
+// in a local build (FS-M8CSE §A Requirements 1-2).
+var spireHeightOdds = []struct{ Height, Weight int }{
+	{3, 35},
+	{4, 23},
+	{5, 15},
+	{6, 10},
+	{7, 7},
+	{8, 5},
+	{9, 3},
+	{10, 2},
+}
+
+// rollSpireHeight draws a run's height from spireHeightOdds.
+func rollSpireHeight(rng populationRand) int {
+	total := 0
+	for _, row := range spireHeightOdds {
+		total += row.Weight
+	}
+
+	draw := rng.IntN(total)
+	for _, row := range spireHeightOdds {
+		if draw -= row.Weight; draw < 0 {
+			return row.Height
+		}
+	}
+	return spireHeightOdds[len(spireHeightOdds)-1].Height
+}
 
 /*
 	Field tuning: the field worlds' numbers, beside the Spire's they derive from.
@@ -200,10 +242,17 @@ const (
 	BloodDemonLevelBonus = 3
 )
 
+// Daa'gon: the boss of a Master Spire's top floor. FS-M8CSE §E R24-R25.
+const (
+	// the Spire height that is a Master Spire: a height, not a mode
+	MasterSpireHeight = 10
+	// Daa'gon's level = party level + floor offset + bonus, with no spread
+	DaagonLevelBonus = 5
+)
+
 // BloodDemonChanceByFloor is the chance of a blood demon on each run floor,
-// floor 1 first. A floor past its end uses the last row, so raising
-// RunFloorCount never quietly removes it. Its roll is independent of the
-// demon's.
+// floor 1 first. A floor past its end uses the last row, so a taller Spire
+// never quietly removes it. Its roll is independent of the demon's.
 var BloodDemonChanceByFloor = []float64{0.02, 0.05, 0.10}
 
 // MonsterCorpseLifetime is how long, in seconds, a dead monster lies broadcast as
@@ -296,6 +345,15 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 
 		Moves: demonMoves,
 	},
+	// a Master Spire's boss: the blood demon's sheet, harder (FS-M8CSE §E R25)
+	components.MonsterArchetypeDaagon: {
+		Name: "Daa'gon", HP: 2200, Damage: 45,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		Defense: 15, MagicResistance: 15,
+		AggroRadius: 320, LeashRadius: 700,
+
+		Moves: demonMoves,
+	},
 	// field wildlife: a lowered-head charge (FS-X2F2H §Requirements 37)
 	components.MonsterArchetypeBoar: {
 		Name: "Boar", HP: 36, Damage: 5,
@@ -317,6 +375,21 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
+	// the tower's own dead: the Forest's sheets under their own names, with no
+	// field factor (FS-M8CSE §D R19). The Barrow Thrall is the zombie's
+	components.MonsterArchetypeBarrowThrall: {
+		Name: "Barrow Thrall", HP: 70, Damage: 9,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+		Defense: 5, MagicResistance: 1,
+		AggroRadius: 240, LeashRadius: 480,
+	},
+	// and the Spire Wraith the ghost's
+	components.MonsterArchetypeSpireWraith: {
+		Name: "Spire Wraith", HP: 30, Damage: 8,
+		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+		Defense: 0, MagicResistance: 8,
+		AggroRadius: 300, LeashRadius: 560,
+	},
 }
 
 // killExperienceBase is what killing a level-1 monster of an archetype is worth,
@@ -327,9 +400,13 @@ var killExperienceBase = map[components.MonsterArchetype]int{
 	components.MonsterArchetypeTroll:      25,
 	components.MonsterArchetypeDemon:      25,
 	components.MonsterArchetypeBloodDemon: 35, // FS-VHGE7 §A R13
+	components.MonsterArchetypeDaagon:     50, // FS-M8CSE §E R26: scaled by HP over the Blood Demon's
 	components.MonsterArchetypeBoar:       8,
 	components.MonsterArchetypeZombie:     15,
 	components.MonsterArchetypeGhost:      20,
+	// FS-M8CSE §D R20: matching the Forest
+	components.MonsterArchetypeBarrowThrall: 15,
+	components.MonsterArchetypeSpireWraith:  20,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.
@@ -402,6 +479,12 @@ func demonLevel(partyLevel, floor int) int {
 // with its own bonus. It has no spread.
 func bloodDemonLevel(partyLevel, floor int) int {
 	return max(partyLevel+MonsterLevelPerFloor*(floor-1)+BloodDemonLevelBonus, 1)
+}
+
+// daagonLevel is Daa'gon's level, as demonLevel is the demon's but with its own
+// bonus. It has no spread.
+func daagonLevel(partyLevel, floor int) int {
+	return max(partyLevel+MonsterLevelPerFloor*(floor-1)+DaagonLevelBonus, 1)
 }
 
 // bloodDemonChance is the chance of a blood demon on this floor: its row of

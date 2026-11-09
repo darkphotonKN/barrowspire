@@ -557,3 +557,5 @@ resource. All changes are additive response fields plus a widened documented val
 - **Character sheet** showing effective (gear-included) attributes.
 - **The marketplace's `ItemReserved` payload** — unchanged; the gateway reads live summaries.
 - **CONTEXT.md entries** for the new terms — routed to `domain-model`.
+
+## Change: Spire height and the climb → FS-M8CSE

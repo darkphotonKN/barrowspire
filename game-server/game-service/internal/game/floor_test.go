@@ -91,6 +91,16 @@ func (c *countingItemsClient) ListItemInstances(_ context.Context, _ *pb.ListIte
 	return nil, nil
 }
 
+// testSpireHeight is the height a test's climb tops out at: a run rolls its own,
+// so a test that reaches the top fixes it.
+const testSpireHeight = 3
+
+// fixSpireHeight stands in for the roll on an already built run-level entity.
+func fixSpireHeight(t *testing.T, s *Session) {
+	t.Helper()
+	currentFloor(t, s).Count = testSpireHeight
+}
+
 // newRun builds a run the way the server does, without starting its loops, so
 // the test is the only thing touching the world. Its chest point holds a chest.
 func newRun(t *testing.T, client *countingItemsClient) *Session {
@@ -101,6 +111,7 @@ func newRun(t *testing.T, client *countingItemsClient) *Session {
 	s.containerKindRand = chestsOnly
 	s.InitialMapObjects(nil)
 	s.InitialSystems()
+	fixSpireHeight(t, s)
 
 	return s
 }
@@ -123,14 +134,105 @@ func currentFloor(t *testing.T, s *Session) *components.FloorComponent {
 	return floor
 }
 
+// heightDraw is a spawn source whose integer draw is fixed, to walk a table.
+type heightDraw int
+
+func (d heightDraw) Float64() float64 { return 0 }
+func (d heightDraw) IntN(int) int     { return int(d) }
+
+// Every height from 3 to 10 is drawn at exactly its share of the table, and the
+// shares are the whole of it. FS-M8CSE §A Requirements 1-2.
+func TestRollSpireHeight_DrawsEachHeightAtItsShare(t *testing.T) {
+	want := map[int]int{3: 35, 4: 23, 5: 15, 6: 10, 7: 7, 8: 5, 9: 3, 10: 2}
+
+	got := map[int]int{}
+	for draw := range 100 {
+		got[rollSpireHeight(heightDraw(draw))]++
+	}
+
+	assert.Equal(t, want, got)
+}
+
+// A seeded source lands only in 3-10, and rolls the same heights again.
+// FS-M8CSE §A Requirements 1-2.
+func TestRollSpireHeight_SeededStaysInRangeAndRepeats(t *testing.T) {
+	for seed := uint64(1); seed <= 200; seed++ {
+		first, second := seededSpawns(seed), seededSpawns(seed)
+		for range 50 {
+			height := rollSpireHeight(first)
+			assert.GreaterOrEqual(t, height, 3, "seed %d", seed)
+			assert.LessOrEqual(t, height, 10, "seed %d", seed)
+			assert.Equal(t, height, rollSpireHeight(second), "seed %d", seed)
+		}
+	}
+}
+
+// A run's height is rolled once, from its spawn source, when its run-level
+// entity is made. FS-M8CSE §A Requirements 1-3.
+func TestInitialSystems_RollsTheHeightFromTheSpawnSource(t *testing.T) {
+	for seed := uint64(1); seed <= 50; seed++ {
+		s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
+		s.spawnRand = seededSpawns(seed)
+
+		s.InitialSystems()
+
+		floor := currentFloor(t, s)
+		assert.Equal(t, firstFloor, floor.Depth, "seed %d", seed)
+		assert.Equal(t, rollSpireHeight(seededSpawns(seed)), floor.Count, "seed %d", seed)
+	}
+}
+
+// The top floor is wherever the run's own height says: below it stairs, on it
+// none and the guaranteed demon, on a dungeon and on a fallback floor alike, and
+// the height stands through the climb. FS-M8CSE §A Requirements 3-4, §C R15.
+func TestClimb_TheRollsHeightPlacesTheTopFloor(t *testing.T) {
+	tests := []struct {
+		name     string
+		fallback bool
+	}{
+		{"dungeon floors", false},
+		{"floors of buildings a failed generation leaves", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const height = 5
+			s, _ := dungeonRun(t, 21, 2, 0)
+			currentFloor(t, s).Count = height
+			if tt.fallback {
+				failGeneration(s)
+			}
+
+			for depth := 2; depth <= height; depth++ {
+				require.NoError(t, s.regenerateFloor())
+				assert.Equal(t, height, currentFloor(t, s).Count, "the height is fixed for the run")
+
+				demons := 0
+				for _, m := range monstersIn(s) {
+					if monsterOf(m).Archetype == components.MonsterArchetypeDemon {
+						demons++
+					}
+				}
+				if depth < height {
+					assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1, "floor %d has stairs", depth)
+					continue
+				}
+				assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "the top floor has none")
+				assert.Equal(t, 1, demons, "the top floor holds its demon")
+			}
+
+			before := len(s.EntityManager.GetAllEntities())
+			assert.ErrorIs(t, s.regenerateFloor(), ErrTopFloor)
+			assert.Equal(t, height, currentFloor(t, s).Depth)
+			assert.Len(t, s.EntityManager.GetAllEntities(), before, "nothing was cleared")
+		})
+	}
+}
+
 // FS-F6F88 §Requirements 1, 2, 5, 8.
-func TestNewRun_StartsOnTheFirstOfThreeFloors(t *testing.T) {
+func TestNewRun_StartsOnTheFirstFloor(t *testing.T) {
 	s := newRun(t, &countingItemsClient{})
 
-	floor := currentFloor(t, s)
-	assert.Equal(t, 1, floor.Depth)
-	assert.Equal(t, constants.RunFloorCount, floor.Count)
-	assert.Equal(t, 3, constants.RunFloorCount)
+	assert.Equal(t, 1, currentFloor(t, s).Depth)
 
 	// floor 1 is a dungeon: its fixtures, and no buildings (FS-KE075 §B R10)
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), 1)
@@ -272,48 +374,69 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 
 	// counted by kind
 	doors := len(entityIDsWith(s, ecs.ComponentTypeDoor))
+	walls := len(entityIDsWith(s, ecs.ComponentTypeWall))
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypePlayer), 2, "delvers")
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeItem), len(p.carriedItemIDs), "only carried items")
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeMatchProgress), 1, "run-level entity")
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), 1, "escape door")
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeSwitch), 1, "switch")
-	assert.LessOrEqual(t, len(entityIDsWith(s, ecs.ComponentTypeContainer)), 1, "chest")
 	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeProjectile), "projectiles")
-	assert.GreaterOrEqual(t, doors, 1, "buildings place on the new floor")
-	assert.LessOrEqual(t, doors, 3)
-	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeWall), 5*doors, "five walls per building")
 
 	// the new floor is populated afresh; every monster is a floor entity
 	monsters := len(entityIDsWith(s, ecs.ComponentTypeEnemy))
 	assert.NotZero(t, monsters, "the new floor has its own monsters")
-	assert.LessOrEqual(t, monsters, MonsterCountMax+1, "the standard count, plus at most one demon")
+
+	if s.dungeon != nil {
+		assert.Zero(t, doors, "a dungeon floor has no buildings")
+		assert.Len(t, entityIDsWith(s, ecs.ComponentTypeWall), len(s.dungeon.layout.Walls), "the new layout's walls")
+	} else {
+		assert.LessOrEqual(t, len(entityIDsWith(s, ecs.ComponentTypeContainer)), 1, "chest")
+		assert.GreaterOrEqual(t, doors, 1, "buildings place on the new floor")
+		assert.LessOrEqual(t, doors, 3)
+		assert.Equal(t, 5*doors, walls, "five walls per building")
+		assert.LessOrEqual(t, monsters, MonsterCountMax+2, "the standard count, plus at most a demon and a blood demon")
+	}
 
 	// the way up, below the top floor only
 	stairs := len(entityIDsWith(s, ecs.ComponentTypeStairs))
 	wantStairs := 0
-	if currentFloor(t, s).Depth < constants.RunFloorCount {
+	if currentFloor(t, s).Depth < testSpireHeight {
 		wantStairs = 1
 	}
 	assert.Equal(t, wantStairs, stairs, "stairs")
 
 	total := len(s.EntityManager.GetAllEntities())
-	floorKinds := doors*6 + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs
+	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs
 	assert.Equal(t, len(keep)+floorKinds, total, "nothing else is in the world")
 }
 
 // A floor change clears the floor and nothing else, and does it again on the
 // next climb. FS-F6F88 §Requirements 9–12; AC "Regeneration is leak-free".
 func TestRegenerateFloor_KeepsOnlyTheNewFloorAndWhatThePartyCarries(t *testing.T) {
-	p := newParty(t, &countingItemsClient{})
-	s := p.s
+	tests := []struct {
+		name     string
+		fallback bool
+	}{
+		{"climbing into dungeon floors", false},
+		{"climbing into floors of buildings a failed generation leaves", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := newParty(t, &countingItemsClient{})
+			s := p.s
+			if tt.fallback {
+				failGeneration(s)
+			}
 
-	for wantDepth := 2; wantDepth <= 3; wantDepth++ {
-		previousFloor := p.floorIDs(t)
+			for wantDepth := 2; wantDepth <= 3; wantDepth++ {
+				previousFloor := p.floorIDs(t)
 
-		require.NoError(t, s.regenerateFloor())
+				require.NoError(t, s.regenerateFloor())
 
-		assert.Equal(t, wantDepth, currentFloor(t, s).Depth)
-		assertOnlyNewFloorAndPersistent(t, p, previousFloor)
+				assert.Equal(t, wantDepth, currentFloor(t, s).Depth)
+				assertOnlyNewFloorAndPersistent(t, p, previousFloor)
+			}
+		})
 	}
 }
 
@@ -330,6 +453,8 @@ func TestRegenerateFloor_ResetsPerFloorBookkeeping(t *testing.T) {
 	s.containerInteractedCache[oldExitDoor] = true
 	s.playerInteractedCache[delverEntity(t, s, p.carrier).ID] = true
 
+	// on a floor of buildings, where every object holds an occupied area
+	failGeneration(s)
 	require.NoError(t, s.regenerateFloor())
 
 	doors := entityIDsWith(s, ecs.ComponentTypeDoor)
@@ -384,8 +509,8 @@ func TestRegenerateFloor_MovesTheLivingAndLeavesTheDeadBehind(t *testing.T) {
 
 	// the living
 	at := transformOf(t, carrier)
-	assert.True(t, at.X >= constants.PlayerRadius && at.X <= constants.MapWidth-constants.PlayerRadius, "x in bounds")
-	assert.True(t, at.Y >= constants.PlayerRadius && at.Y <= constants.MapHeight-constants.PlayerRadius, "y in bounds")
+	assert.True(t, at.X >= constants.PlayerRadius && at.X <= s.mapWidth-constants.PlayerRadius, "x in bounds")
+	assert.True(t, at.Y >= constants.PlayerRadius && at.Y <= s.mapHeight-constants.PlayerRadius, "y in bounds")
 	assert.Zero(t, velocity.VX)
 	assert.Zero(t, velocity.VY)
 	ic, _ := carrier.GetComponent(ecs.ComponentTypeAttackIntent)
@@ -409,7 +534,6 @@ func TestRegenerateFloor_MovesTheLivingAndLeavesTheDeadBehind(t *testing.T) {
 	assert.NotContains(t, state.Players, escaped)
 	assert.Equal(t, 1, state.EscapedCount, "escaped count unchanged")
 	assert.Equal(t, 2, state.Floor)
-	assert.Equal(t, constants.RunFloorCount, state.FloorCount)
 }
 
 func transformOf(t *testing.T, e *ecs.Entity) *components.TransformComponent {
@@ -541,6 +665,8 @@ func TestRegenerateFloor_NextBroadcastHoldsOnlyTheNewFloor(t *testing.T) {
 	s := p.s
 	oldFloor := p.floorIDs(t)
 
+	// a floor of buildings: its walls are entities, named on the map by id
+	failGeneration(s)
 	require.NoError(t, s.regenerateFloor())
 
 	state, err := serializer.NewStateSerializer(s.EntityManager, nil).SerializeBackendState(

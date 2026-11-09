@@ -29,6 +29,7 @@ func dungeonRun(t *testing.T, seed uint64, seated, expected int) (*Session, []uu
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
 	s.spawnRand = seededSpawns(seed)
 	s.InitialSystems()
+	fixSpireHeight(t, s)
 
 	ids := make([]uuid.UUID, seated)
 	for i := range ids {
@@ -93,11 +94,19 @@ func onlyEntity(t *testing.T, s *Session, componentType ecs.ComponentType) *ecs.
 	return e
 }
 
-// Floor 1 is the dungeon's 5 760 x 3 840 with its 80 px cell grid; floors 2
-// and 3 are today's 1 440 x 960 with none, the cell size the floor entity
-// carries across the climb reset to 0, so they are never cut by distance.
-// FS-KE075 §B Requirements 10–11, §G Requirement 39.
-func TestDungeonFloor1_SizeAndCellSizePerFloor(t *testing.T) {
+// Every Spire floor is built from floor 1's parameter set: the generator takes
+// no depth. FS-M8CSE §C Requirements 12-13.
+func TestDungeonParams_EveryFloorIsFloor1s(t *testing.T) {
+	for depth := firstFloor; depth <= 10; depth++ {
+		params, isDungeon := dungeonParams(depth)
+		assert.True(t, isDungeon, "floor %d is a dungeon", depth)
+		assert.Equal(t, levelgen.DungeonFloor1Params, params, "floor %d", depth)
+	}
+}
+
+// Every floor of the climb is the dungeon's 5 760 x 3 840 with its 80 px cell
+// grid and its own layout. FS-M8CSE §C Requirements 12-13.
+func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 	s, _ := dungeonRun(t, 3, 2, 0)
 
 	width, height := floorSize(firstFloor)
@@ -108,13 +117,82 @@ func TestDungeonFloor1_SizeAndCellSizePerFloor(t *testing.T) {
 	assert.Equal(t, s.dungeon.layout.Bounds.W, s.mapWidth, "the map and the layout are one build")
 	assert.Equal(t, 80.0, currentFloor(t, s).CellSize)
 
-	for depth := 2; depth <= constants.RunFloorCount; depth++ {
+	for depth := 2; depth <= testSpireHeight; depth++ {
+		previous := s.dungeon.layout.Seed
 		require.NoError(t, s.regenerateFloor())
-		assert.Nil(t, s.dungeon, "floor %d is a floor of buildings", depth)
+		require.NotNil(t, s.dungeon, "floor %d is a dungeon", depth)
+		assert.NotEqual(t, previous, s.dungeon.layout.Seed, "floor %d has a layout of its own", depth)
+		assert.Equal(t, [2]float64{5760, 3840}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
+		assert.Equal(t, 80.0, currentFloor(t, s).CellSize, "floor %d", depth)
+		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "floor %d has no buildings", depth)
+	}
+}
+
+// Floors above the first hold floor 1's 45-70 monsters besides their bosses,
+// none in the start room. FS-M8CSE §C Requirement 12.
+func TestDungeonFloors_AboveTheFirstHoldTheFullPopulation(t *testing.T) {
+	for seed := uint64(1); seed <= 30; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+
+		for depth := 2; depth <= testSpireHeight; depth++ {
+			require.NoError(t, s.regenerateFloor())
+			require.NotNil(t, s.dungeon, "seed %d floor %d is a dungeon", seed, depth)
+
+			standard := standardMonstersIn(s)
+			assert.GreaterOrEqual(t, len(standard), DungeonMonstersMin, "seed %d floor %d: too few monsters", seed, depth)
+			assert.LessOrEqual(t, len(standard), DungeonMonstersMax, "seed %d floor %d: too many monsters", seed, depth)
+			for _, m := range monstersIn(s) {
+				at := transformOf(t, m)
+				assert.NotEqual(t, s.dungeon.layout.Roles.Start, roomOf(s.dungeon, at.X, at.Y),
+					"seed %d floor %d: a monster in the start room", seed, depth)
+			}
+		}
+	}
+}
+
+// A climb whose generation fails builds a floor of buildings rather than
+// stopping the run: logged, with today's size, its cell size cleared so it is
+// not cut by distance, no regions on its map, and its stairs below the top.
+// The top floor falls back the same way, with no stairs and with its demon.
+// FS-M8CSE §C Requirement 15, FS-KE075 §B R17.
+func TestDungeonFloors_GenerationFailureOnAClimbBuildsAFloorOfBuildings(t *testing.T) {
+	log := capturedLog(t)
+	s, _ := dungeonRun(t, 21, 2, 0)
+	require.NotNil(t, s.dungeon)
+	failGeneration(s)
+
+	for depth := 2; depth <= testSpireHeight; depth++ {
+		require.NoError(t, s.regenerateFloor())
+
+		assert.Nil(t, s.dungeon, "floor %d", depth)
 		assert.Equal(t, [2]float64{constants.MapWidth, constants.MapHeight}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
 		assert.Zero(t, currentFloor(t, s).CellSize, "floor %d is not cut by distance", depth)
 		assert.NotEmpty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "floor %d has its buildings", depth)
+		message, ok := s.FloorMapMessage()
+		require.True(t, ok, "floor %d has a map", depth)
+		assert.NotContains(t, message.Payload, "regions", "floor %d", depth)
+
+		if depth < testSpireHeight {
+			assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1, "floor %d has its stairs", depth)
+			continue
+		}
+		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "the top floor has none")
+		demons := 0
+		for _, m := range monstersIn(s) {
+			if monsterOf(m).Archetype == components.MonsterArchetypeDemon {
+				demons++
+			}
+		}
+		assert.Equal(t, 1, demons, "the top floor keeps its demon")
 	}
+	assert.Contains(t, log.String(), `"level":"ERROR"`)
+	assert.Contains(t, log.String(), "fell back to a floor of buildings")
+}
+
+// failGeneration makes every later floor of s the floor of buildings a failed
+// generation leaves (FS-KE075 §B R17, FS-M8CSE §C R15).
+func failGeneration(s *Session) {
+	s.generateDungeon = (&failingGenerator{}).generate
 }
 
 // The switch, escape door and stairs each stand in their own role room, three
@@ -276,6 +354,26 @@ func TestDungeonFloor1_ArrivalWithNoSlotStandsInTheStartRoom(t *testing.T) {
 }
 
 func dist(ax, ay, bx, by float64) float64 { return math.Hypot(ax-bx, ay-by) }
+
+// A climbed floor's map carries the cell size and regions of its own layout,
+// not the floor below's. FS-M8CSE §C Requirement 14.
+func TestDungeonFloors_ClimbedFloorMapCarriesItsOwnRegions(t *testing.T) {
+	s, _ := dungeonRun(t, 9, 2, 0)
+	require.NoError(t, s.regenerateFloor())
+	require.NotNil(t, s.dungeon)
+
+	message, ok := s.FloorMapMessage()
+	require.True(t, ok)
+	payload := wireOf(t, message)["payload"].(map[string]any)
+
+	assert.Equal(t, 2.0, payload["floor"])
+	assert.Equal(t, 80.0, payload["cell_size"])
+	raw, err := json.Marshal(s.dungeon.layout.Regions)
+	require.NoError(t, err)
+	var want []any
+	require.NoError(t, json.Unmarshal(raw, &want))
+	assert.Equal(t, want, payload["regions"])
+}
 
 // Floor 1's map carries its cell size and regions from the one layout it was
 // built from, and its shell walls, top-left as WallState's, with no house id
