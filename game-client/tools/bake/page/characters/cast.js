@@ -58,7 +58,7 @@ import {
   tome,
 } from "./gear.js";
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
-import { ghost, zombie } from "./forlorn.js";
+import { barrowThrall, ghost, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 
 /**
@@ -533,6 +533,9 @@ export const CAST = [
   // the Forlorn Forest's dead (FS-3QHQZ §C R29), packed in their own group so no atlas reflows
   { sheet: "creature_zombie_base", group: "fodder", fn: "zombie", module: "forlorn", build: zombie },
   { sheet: "creature_ghost_base", group: "fodder", fn: "ghost", module: "forlorn", build: ghost },
+  // the Spire's own dead (FS-M8CSE §H R37, R38): the Forest's two re-toned, in the group the run already holds
+  { sheet: "creature_barrow_thrall_base", group: "creatures", fn: "barrowThrall", module: "forlorn", build: barrowThrall },
+  { sheet: "creature_spire_wraith_base", group: "creatures", fn: "spireWraith", module: "forlorn", build: spireWraith },
   // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
   { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
   { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },

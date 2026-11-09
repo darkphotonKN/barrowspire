@@ -32,14 +32,18 @@ func runOfSize(t *testing.T, bounds WorldBounds) *Session {
 	return s
 }
 
-// A run is built at its first floor's size; floors 2 and 3 keep today's map.
-func TestFloorSize_RunBoundsAreTheFirstFloors(t *testing.T) {
+// tallestSpire is the last row of the height odds (FS-M8CSE §A Requirement 1).
+const tallestSpire = 10
+
+// A run is built at its first floor's size, and every floor of the climb is
+// that size (FS-M8CSE §C R13).
+func TestFloorSize_RunBoundsAreEveryFloors(t *testing.T) {
 	w, h := floorSize(firstFloor)
 	assert.Equal(t, WorldBounds{Type: types.WorldTypeRun, Width: w, Height: h}, RunBounds())
 
-	for depth := firstFloor + 1; depth <= constants.RunFloorCount; depth++ {
-		w, h := floorSize(depth)
-		assert.Equal(t, [2]float64{constants.MapWidth, constants.MapHeight}, [2]float64{w, h}, "floor %d", depth)
+	for depth := firstFloor + 1; depth <= tallestSpire; depth++ {
+		dw, dh := floorSize(depth)
+		assert.Equal(t, [2]float64{w, h}, [2]float64{dw, dh}, "floor %d", depth)
 	}
 }
 
@@ -91,13 +95,16 @@ func TestSession_ClampsToItsOwnMap(t *testing.T) {
 	assert.InDelta(t, dungeonSize.Height-r, at.Y, 1e-9, "clamped short of the session's map")
 }
 
-// The floor build sets the session to the floor's size, and the clamp follows.
+// The floor build sets the session to the floor's size, and the clamp follows:
+// a run at the dungeon's size whose generation fails shrinks to a floor of
+// buildings.
 func TestBuildFloor_SetsTheFloorsSize(t *testing.T) {
 	s := runOfSize(t, dungeonSize)
+	failGeneration(s)
 
 	s.buildFloor(firstFloor+1, nil)
 
-	w, h := floorSize(firstFloor + 1)
+	w, h := constants.MapWidth, constants.MapHeight
 	assert.Equal(t, [2]float64{w, h}, [2]float64{s.mapWidth, s.mapHeight})
 	// clear the floor's random layout out of the walk
 	for _, e := range s.EntityManager.GetAllEntities() {
@@ -114,7 +121,7 @@ func TestBuildFloor_SetsTheFloorsSize(t *testing.T) {
 func TestFloorSize_FitsTheSpatialHash(t *testing.T) {
 	assert.Equal(t, 96, systems.SpatialHashRows(dungeonSize.Height))
 	assert.Less(t, systems.SpatialHashRows(dungeonSize.Height), systems.SpatialHashMaxRows)
-	for depth := firstFloor; depth <= constants.RunFloorCount; depth++ {
+	for depth := firstFloor; depth <= tallestSpire; depth++ {
 		_, h := floorSize(depth)
 		assert.Less(t, systems.SpatialHashRows(h), systems.SpatialHashMaxRows, "floor %d", depth)
 	}

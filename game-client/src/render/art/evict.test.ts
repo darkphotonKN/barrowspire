@@ -63,7 +63,13 @@ describe("eviction once the next scene has loaded (FS-C4JWH §C, ADR-0059)", () 
   it("should take every animation on an evicted page with it, and keep those on the pages kept", () => {
     const art = after(SCENE_ART.BarrowspireScene);
     const knight = sheetAnims("char_knight_base");
-    const run = ["creature_ghoul_base", "creature_troll_base", "creature_demon_base"].flatMap(sheetAnims);
+    const run = [
+      "creature_ghoul_base",
+      "creature_troll_base",
+      "creature_barrow_thrall_base",
+      "creature_spire_wraith_base",
+      "creature_demon_base",
+    ].flatMap(sheetAnims);
     expect(run.length).toBeGreaterThan(0);
 
     const seen = enter(art, SCENE_ART.HubScene);
@@ -224,6 +230,8 @@ describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
       "250 evicted art:boss-2",
       "250 evicted art:creatures-0",
       "250 evicted art:creatures-1",
+      "250 evicted art:creatures-2",
+      "250 evicted art:creatures-3",
       "250 create",
     ]);
   });
@@ -243,6 +251,8 @@ describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
       "400 evicted art:boss-2",
       "400 evicted art:creatures-0",
       "400 evicted art:creatures-1",
+      "400 evicted art:creatures-2",
+      "400 evicted art:creatures-3",
       "1050 bar destroyed",
       "1050 create",
     ]);
@@ -269,8 +279,8 @@ describe("the loading bar, paced (FS-C4JWH §D R17, Amendment A1)", () => {
     vi.advanceTimersByTime(300);
     art.finish();
 
-    // five pages: the creatures' two and the boss's three
-    expect(bar.progress.map((p) => Math.round(p * 100) / 100)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1]);
+    // seven pages: the creatures' four and the boss's three
+    expect(bar.progress.map((p) => Math.round(p * 100) / 100)).toEqual([0, 0.14, 0.29, 0.43, 0.57, 0.71, 0.86, 1]);
   });
 
   it("should show no bar when the scene queued nothing", () => {
@@ -446,7 +456,7 @@ describe("downloads a stopped scene left in flight (FS-C4JWH Edge States: a worl
     art.finish();
 
     expect(artKeys(art.textures.getTextureKeys())).toEqual(
-      artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1", "boss-2")]),
+      artKeys([...resident, ...pages("creatures-0", "creatures-1", "creatures-2", "creatures-3", "boss-0", "boss-1", "boss-2")]),
     );
     expect(art.consoleErrors).toEqual([]);
   });
@@ -475,7 +485,7 @@ describe("downloads a stopped scene left in flight (FS-C4JWH Edge States: a worl
 
     art.landStrays();
 
-    expect(seen.textures).toEqual(artKeys([...resident, ...pages("creatures-0", "creatures-1", "boss-0", "boss-1", "boss-2")]));
+    expect(seen.textures).toEqual(artKeys([...resident, ...pages("creatures-0", "creatures-1", "creatures-2", "creatures-3", "boss-0", "boss-1", "boss-2")]));
     expect(art.consoleErrors).toEqual([]);
   });
 });

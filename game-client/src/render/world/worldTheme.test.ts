@@ -120,21 +120,24 @@ describe("the tower's fixed lights on the server's largest floor", () => {
   });
 });
 
-describe("floorBand (FS-8RBQY §C.1)", () => {
+describe("floorBand (FS-M8CSE R11)", () => {
   it.each([
-    [1, 3, "lower"],
-    [2, 3, "middle"],
-    [3, 3, "upper"],
-    [1, 1, "lower"],
-  ] as const)("should put floor %i of %i in the %s band", (floor, count, band) => {
-    expect(floorBand(floor, count)).toBe(band);
+    [1, "lower"],
+    [2, "lower"],
+    [3, "middle"],
+    [4, "middle"],
+    [5, "middle"],
+    [6, "upper"],
+    [10, "upper"],
+  ] as const)("should put floor %i in the %s band, from the floor number alone", (floor, band) => {
+    expect(floorBand(floor)).toBe(band);
   });
 
-  it("should ramp a five-floor run from lower to upper, never stepping back", () => {
+  it("should climb from lower to upper, never stepping back", () => {
     const order = ["lower", "middle", "upper"];
-    const ranks = [1, 2, 3, 4, 5].map((f) => order.indexOf(floorBand(f, 5)));
+    const ranks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((f) => order.indexOf(floorBand(f)));
     expect(ranks[0]).toBe(0);
-    expect(ranks[4]).toBe(2);
+    expect(ranks[9]).toBe(2);
     for (let i = 1; i < ranks.length; i++) expect(ranks[i]).toBeGreaterThanOrEqual(ranks[i - 1]);
   });
 });
@@ -168,8 +171,8 @@ describe("floorLook: what one floor of a run is drawn with (FS-8RBQY §C.2–§C
     960,
   );
   /** Everything a floor plans: ground, wall pieces, dressing. */
-  const plans = (floor: number, count = 3) => {
-    const look = floorLook(tower, floor, count);
+  const plans = (floor: number) => {
+    const look = floorLook(tower, floor);
     return {
       ground: planGroundLayer({ width: 1440, height: 960, kind: "run", houses, look: look.ground, seed: look.seed }),
       walls: planWalls(walls, look.seed, look.walls).pieces,
@@ -179,8 +182,8 @@ describe("floorLook: what one floor of a run is drawn with (FS-8RBQY §C.2–§C
 
   it("should draw the exterior the same on every floor, as it always was, with no dressing (§A.3)", () => {
     for (const floor of [1, 2, 3])
-      expect(floorLook(WORLD_THEMES.exterior, floor, 3)).toEqual({
-        band: floorBand(floor, 3),
+      expect(floorLook(WORLD_THEMES.exterior, floor)).toEqual({
+        band: floorBand(floor),
         ground: OUTDOOR_GROUND,
         walls: TIMBER_WALLS,
         dressing: null,
@@ -189,7 +192,7 @@ describe("floorLook: what one floor of a run is drawn with (FS-8RBQY §C.2–§C
   });
 
   it("should draw a tower's middle floor as the tower look slice 2 settled", () => {
-    const middle = floorLook(tower, 2, 3);
+    const middle = floorLook(tower, 3);
     expect(middle.band).toBe("middle");
     expect(middle.ground).toEqual(TOWER_GROUND);
     expect(middle.walls).toEqual(MASONRY_WALLS);
@@ -207,8 +210,8 @@ describe("floorLook: what one floor of a run is drawn with (FS-8RBQY §C.2–§C
   });
 
   it("should seed each floor apart, even two floors of one band", () => {
-    expect(floorLook(tower, 4, 10).seed).not.toBe(floorLook(tower, 5, 10).seed);
-    expect(floorLook(tower, 4, 10).band).toBe(floorLook(tower, 5, 10).band);
+    expect(floorLook(tower, 4).seed).not.toBe(floorLook(tower, 5).seed);
+    expect(floorLook(tower, 4).band).toBe(floorLook(tower, 5).band);
   });
 
   it("should break the lower floor's flags with barrow earth, and dress the upper floor's stone", () => {
@@ -216,7 +219,7 @@ describe("floorLook: what one floor of a run is drawn with (FS-8RBQY §C.2–§C
     expect(lower).toContain("ground_dirt");
     expect(lower).toContain("ground_flags_dirt");
     expect(lower).toContain("ground_flags");
-    const upper = new Set(plans(3).ground.map((p) => p.sheet));
+    const upper = new Set(plans(6).ground.map((p) => p.sheet));
     expect(upper).toEqual(new Set(["ground_dressed", "ground_planks"]));
   });
 
@@ -229,15 +232,15 @@ describe("floorLook: what one floor of a run is drawn with (FS-8RBQY §C.2–§C
     const kinds = (floor: number) => new Set(plans(floor).walls.map((p) => p.sheet.split("_")[3]));
     expect(kinds(1).has("banner")).toBe(false);
     expect(kinds(1).has("cobweb")).toBe(true);
-    expect(kinds(3).has("cobweb")).toBe(false);
-    expect(kinds(3).has("banner")).toBe(true);
+    expect(kinds(6).has("cobweb")).toBe(false);
+    expect(kinds(6).has("banner")).toBe(true);
     for (const band of ["lower", "middle", "upper"] as const)
       expect(TOWER_BANDS[band].walls.front).toEqual(MASONRY_WALLS.front);
   });
 
   it("should strew no roots or bone piles on an upper floor, and lean each band its own way", () => {
     const sheets = (floor: number) => new Set(plans(floor).dressing.map((p) => p.sheet));
-    for (const s of ["roots", "bone_pile"]) expect(sheets(3).has(s as never)).toBe(false);
+    for (const s of ["roots", "bone_pile"]) expect(sheets(6).has(s as never)).toBe(false);
     expect(TOWER_BANDS.upper.dressing.weights.map(([, s]) => s)).not.toContain("roots");
     expect(TOWER_BANDS.upper.dressing.weights.map(([, s]) => s)).not.toContain("bone_pile");
     expect(TOWER_BANDS.lower.dressing.weights.map(([, s]) => s)).not.toContain("brazier");

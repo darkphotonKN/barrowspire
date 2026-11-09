@@ -32,14 +32,33 @@ func spawnedContainerKind(r lootRand) components.ContainerKind {
 	return components.ContainerKindChest
 }
 
-// containerKindOf is the container's kind, a chest when it names none.
+// containerKindGuardedTreasure is what a guarded treasure-room chest rolls as.
+// Roll-only: it is never stored on a ContainerComponent and never reaches the
+// wire, where the chest stays a chest. With no ContainerRolls row it rolls a
+// chest's odds (FS-1D6BX D2). FS-M8CSE §G R35.
+const containerKindGuardedTreasure components.ContainerKind = "guarded_treasure_chest"
+
+// containerKindOf is the kind the container rolls as: what it names, a chest
+// when it names none, and a chest marked at the build as guarded in a treasure
+// room rolls as containerKindGuardedTreasure.
 func containerKindOf(container *ecs.Entity) components.ContainerKind {
+	kind := components.ContainerKindChest
 	if cc, ok := container.GetComponent(ecs.ComponentTypeContainer); ok {
 		if c, ok := cc.(*components.ContainerComponent); ok && c.Kind != "" {
-			return c.Kind
+			kind = c.Kind
 		}
 	}
-	return components.ContainerKindChest
+	if kind == components.ContainerKindChest && inGuardedTreasureRoom(container) {
+		return containerKindGuardedTreasure
+	}
+	return kind
+}
+
+// inGuardedTreasureRoom is whether the container was marked at the build as
+// standing in a treasure room that had guards placed.
+func inGuardedTreasureRoom(container *ecs.Entity) bool {
+	gc, ok := container.GetComponent(ecs.ComponentTypeGuarded)
+	return ok && gc.(*components.GuardedComponent).TreasureRoom
 }
 
 /**

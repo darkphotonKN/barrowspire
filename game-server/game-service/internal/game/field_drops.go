@@ -29,7 +29,8 @@ const fieldItemPoolLoadTimeout = 3 * time.Second
 * stands: one roll per kill record, against the live Spire row the creature
 * drops as, at that row's chance × the place's drop factor, read at roll time
 * (FS-X2F2H §Requirements 31, D17, D23). What drops lands in a pile reserved
-* for the killer (R33). It runs on the field's tick, like any KillConsumer.
+* for the killer (R33). No field kill rolls Fabled. It runs on the field's tick,
+* like any KillConsumer.
 **/
 type fieldDrops struct {
 	s *Session
@@ -50,7 +51,8 @@ func (f *fieldDrops) ConsumeKill(record systems.KillRecord) {
 		return
 	}
 
-	itemIDs := f.s.rollKillDrop(f.r, table, table.Chance*place.DropFactor, record.Level)
+	// a field rolls no Fabled at any chance (FS-M8CSE §G R33)
+	itemIDs := f.s.rollKillDrop(f.r, table, table.Chance*place.DropFactor, 0, record.Level)
 	if len(itemIDs) == 0 {
 		return
 	}

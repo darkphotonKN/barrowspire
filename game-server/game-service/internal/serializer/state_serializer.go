@@ -72,7 +72,6 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		if fc, hasFloor := entity.GetComponent(ecs.ComponentTypeFloor); hasFloor {
 			floor := fc.(*components.FloorComponent)
 			backendState.Floor = floor.Depth
-			backendState.FloorCount = floor.Count
 			backendState.CellSize = floor.CellSize
 		}
 
@@ -552,7 +551,6 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Projectiles:   backendState.Projectiles,
 		EscapedCount:  backendState.EscapedCount,
 		Floor:         backendState.Floor,
-		FloorCount:    backendState.FloorCount,
 		Monsters:      backendState.Monsters,
 		Trails:        backendState.Trails,
 		Gates:         backendState.Gates,
@@ -621,7 +619,6 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.SessionID = uuid.Nil
 	state.EscapedCount = 0
 	state.Floor = 0
-	state.FloorCount = 0
 	state.CellSize = 0
 	state.Stairs = fresh(state.Stairs)
 	state.Monsters = fresh(state.Monsters)

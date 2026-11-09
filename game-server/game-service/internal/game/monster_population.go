@@ -34,6 +34,9 @@ type populationRand interface {
 * The blood demon comes after the demon, on its own roll at the floor's odds,
 * never guaranteed, never in the demon's dungeon room (FS-VHGE7 §A R5–10).
 *
+* A Master Spire's top floor holds Daa'gon where the demon would stand, and no
+* blood demon rolls beside it (FS-M8CSE §E R24). Its floors below are any run's.
+*
 * A dungeon floor is populated by room and role instead (populateDungeon,
 * FS-KE075 §C), its demon in the farthest room.
 *
@@ -75,6 +78,9 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
 			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
 		}
+		if isMasterSpireTop(floor, topFloor) {
+			return
+		}
 		// FS-VHGE7 §A R8, R10: after the demon, never in its room
 		if blood, rolled := rollBloodDemon(s.spawnRand, level, floor); rolled {
 			s.placeDungeonBloodDemon(s.dungeon, &area, blood, floor, demonRoom)
@@ -101,6 +107,9 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 
 	if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
 		s.placeDemon(&area, demon, floor, topFloor)
+	}
+	if isMasterSpireTop(floor, topFloor) {
+		return
 	}
 	// FS-VHGE7 §A R8–9: after the demon, so its draws come first; never
 	// guaranteed, so no relaxed retry
@@ -146,8 +155,17 @@ func (s *Session) placeDemon(area *spawnArea, demon MonsterConfig, floor int, gu
 }
 
 // rollDemon decides whether this floor has its demon: always on the top floor,
-// otherwise on its rare chance. There is never more than one.
+// otherwise on its rare chance. There is never more than one. A Master Spire's
+// top floor has Daa'gon in its place (FS-M8CSE §E R24).
 func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (MonsterConfig, bool) {
+	if isMasterSpireTop(floor, topFloor) {
+		return MonsterConfig{
+			Archetype: components.MonsterArchetypeDaagon,
+			Level:     daagonLevel(partyLevel, floor),
+			Boss:      true,
+		}, true
+	}
+
 	if !topFloor && rng.Float64() >= DemonChance {
 		return MonsterConfig{}, false
 	}
@@ -157,6 +175,12 @@ func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (Monste
 		Level:     demonLevel(partyLevel, floor),
 		Boss:      true,
 	}, true
+}
+
+// isMasterSpireTop is whether this floor is the top of a Master Spire. Only the
+// top floor of a run is its height, so the floor's number says which run it is.
+func isMasterSpireTop(floor int, topFloor bool) bool {
+	return topFloor && floor == MasterSpireHeight
 }
 
 // rollBloodDemon decides whether this floor has a blood demon: its own draw
@@ -188,18 +212,27 @@ func rollMonsters(rng populationRand, partyLevel, floor int) []MonsterConfig {
 	return monsters
 }
 
-// rollMonster is one standard monster: its archetype by the floor's troll
-// share, then its level and elite roll (rollAs).
+// rollMonster is one standard monster: its archetype (rollArchetype), then its
+// level and elite roll (rollAs).
 func rollMonster(rng populationRand, partyLevel, floor int) MonsterConfig {
 	return rollAs(rng, rollArchetype(rng, floor), partyLevel, floor, eliteChance(floor))
 }
 
-// rollArchetype is a troll at the floor's troll share, otherwise a ghoul.
+// rollArchetype is a troll at the floor's troll share, otherwise a draw from the
+// Spire's non-troll mix. Only a Spire population reaches it: a field rolls its
+// own place's creatures.
 func rollArchetype(rng populationRand, floor int) components.MonsterArchetype {
 	if rng.Float64() < trollShare(floor) {
 		return components.MonsterArchetypeTroll
 	}
-	return components.MonsterArchetypeGhoul
+
+	draw := rng.Float64()
+	for _, row := range spireNonTrollMix {
+		if draw -= row.Share; draw < 0 {
+			return row.Archetype
+		}
+	}
+	return spireNonTrollMix[len(spireNonTrollMix)-1].Archetype
 }
 
 // rollAs is a monster of archetype at its level's spread, promoted to an elite

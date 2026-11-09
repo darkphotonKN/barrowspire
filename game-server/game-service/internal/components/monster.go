@@ -12,10 +12,17 @@ type MonsterArchetype string
 const (
 	MonsterArchetypeGhoul MonsterArchetype = "ghoul"
 	MonsterArchetypeTroll MonsterArchetype = "troll"
+	// the tower's own dead, in the Spire's rolled mix: new names on the Forest's
+	// models, and never rolled in a field (FS-M8CSE §D R17, R21)
+	MonsterArchetypeBarrowThrall MonsterArchetype = "barrow_thrall"
+	MonsterArchetypeSpireWraith  MonsterArchetype = "spire_wraith"
 	// the bosses: never an elite, at most one of each a floor. The demon is
 	// the green one; the blood demon the rarer red one (FS-VHGE7 §A R1)
 	MonsterArchetypeDemon      MonsterArchetype = "demon"
 	MonsterArchetypeBloodDemon MonsterArchetype = "blood_demon"
+	// the boss of a Master Spire's top floor, never rolled anywhere else
+	// (FS-M8CSE §E R24, R25)
+	MonsterArchetypeDaagon MonsterArchetype = "daagon"
 	// field wildlife: the Gentle Meadows' creature, never rolled in the Spire
 	// (FS-X2F2H §Requirements 37)
 	MonsterArchetypeBoar MonsterArchetype = "boar"

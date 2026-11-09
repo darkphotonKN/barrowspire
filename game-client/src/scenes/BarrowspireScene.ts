@@ -35,6 +35,7 @@ import {
   floorCard,
   floorLabel,
   interactNotice,
+  isTopFloor,
   refusesContainer,
   type InteractReply,
   type NoticeTone,
@@ -910,7 +911,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private previousSwitchActivated: boolean | null = null;
   private escapedPlayers: Set<string> = new Set();
   private escapedCountText?: Phaser.GameObjects.Text;
-  /** "Floor N of M" (FS-F6F88 req 29), hidden where the broadcast carries no floor. */
+  /** "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor. */
   private floorText?: Phaser.GameObjects.Text;
   private shownFloorLabel: string | null = null;
   /**
@@ -3533,7 +3534,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (state.floor !== undefined) this.lastFloor = state.floor;
     if (climb) this.leaveFloor();
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
-    this.floorLook ??= floorLook(this.worldLook, state.floor, state.floor_count);
+    this.floorLook ??= floorLook(this.worldLook, state.floor);
     // the floor is built from its map alone; without one its entities apply and it waits, asking
     // after a second (FS-KE075 §H.41, §H.43)
     const floorMap = held?.floor === state.floor ? held : undefined;
@@ -4076,10 +4077,10 @@ export class BarrowspireScene extends Phaser.Scene {
    * notices stay readable through it.
    */
   private playFloorTransition(state: ClientGameState): void {
-    if (state.floor === undefined || state.floor_count === undefined) return;
+    if (state.floor === undefined) return;
     this.floorVeil.forEach((obj) => obj.destroy());
 
-    const { title, line } = floorCard({ floor: state.floor, floor_count: state.floor_count });
+    const { title, line } = floorCard({ floor: state.floor, top: isTopFloor(state) });
     const veil = this.add.rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1);
     veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
 
@@ -4139,7 +4140,7 @@ export class BarrowspireScene extends Phaser.Scene {
     else this.veilRelease = lift;
   }
 
-  /** "Floor N of M" from the broadcast, redrawn only when it changes; hidden without floors. */
+  /** "Floor N" from the broadcast, redrawn only when it changes; hidden without floors. */
   private updateFloorIndicator(state: ClientGameState): void {
     const label = floorLabel(state);
     if (!this.floorText || label === this.shownFloorLabel) return;
@@ -4384,7 +4385,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // it stands outside every room: hidden from inside one (FS-9PN7X §C.1)
     this.view?.invalidate();
   }
-  /** This floor's look, or floor 1 of 1's before any broadcast has named the floor. */
+  /** This floor's look, or floor 1's before any broadcast has named the floor. */
   private currentFloorLook(): FloorLook {
     return (this.floorLook ??= floorLook(this.worldLook));
   }

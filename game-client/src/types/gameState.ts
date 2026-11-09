@@ -275,9 +275,14 @@ export interface NPCState {
 export type MonsterArchetype =
   | "ghoul"
   | "troll"
+  // the tower's own dead (FS-M8CSE §D R17, R21): sent only on run floors
+  | "barrow_thrall"
+  | "spire_wraith"
   | "demon"
   // the rarer second boss (FS-VHGE7 §C R26): sent only on run floors
   | "blood_demon"
+  // a Master Spire's boss (FS-M8CSE §E R25): sent only on the top floor of a height-10 run
+  | "daagon"
   // the Forlorn Forest's dead (FS-3QHQZ R18): sent only in the Forest field
   | "zombie"
   | "ghost"
@@ -333,8 +338,6 @@ export interface ClientGameState {
   monsters?: MonsterState[]; // A run's monsters, corpses included; absent in the hub
   /** The party's floor, 1-based (FS-F6F88 req 26). Run only; absent in the hub. */
   floor?: number;
-  /** How many floors the run has (FS-F6F88 req 26). Run only; absent in the hub. */
-  floor_count?: number;
   /** Stairs up: empty on the top floor, absent in the hub (FS-F6F88 req 27). */
   stairs?: StairsState[];
   /** Live burning trails, a full snapshot each tick; absent when none, always absent in the hub (FS-4R9M9 R56). */

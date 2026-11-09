@@ -466,3 +466,88 @@ func TestNewSession_FieldLoadsTheItemPool(t *testing.T) {
 
 	assert.Positive(t, field.itemPool.count())
 }
+
+// A field takes no floor factor, whatever floor its kill record says: the boar
+// rolls the ghoul's 8% and an elite boar the elite row's 50%, each times the
+// place's drop factor, as before. The rows are named by value so that rewriting
+// one to absorb the factor fails here. FS-M8CSE §F R30; FS-X2F2H R31.
+func TestFieldDrops_FloorFactor_DoesNotReachAField(t *testing.T) {
+	const margin = 1e-9
+	tests := []struct {
+		name   string
+		elite  bool
+		chance float64
+	}{
+		{"boar", false, 0.08 * MeadowsDropFactor},
+		{"elite boar", true, 0.50 * MeadowsDropFactor},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kill := killedAt(components.MonsterArchetypeBoar, uuid.New(), 2, tt.elite, 100, 100)
+			kill.Floor = 10
+
+			under := lootedField(t)
+			newFieldDrops(under, fixedRand{tt.chance - margin}).ConsumeKill(kill)
+			assert.Len(t, dropPiles(under), 1, "a roll just under the old chance still drops")
+
+			at := lootedField(t)
+			newFieldDrops(at, fixedRand{tt.chance}).ConsumeKill(kill)
+			assert.Empty(t, dropPiles(at), "a roll at the old chance still does not")
+		})
+	}
+}
+
+// fabledField is a built field with every unique eligible and a DB Fabled
+// weight that would swamp the table if it still reached a roll.
+func fabledField(t *testing.T) *Session {
+	t.Helper()
+	field := lootedField(t)
+	field.itemPool.Uniques = sixUniques
+	field.lootRarities = []lootRarity{
+		{ID: "r-normal", Code: rarityNormal, DropRate: 1},
+		{ID: "r-runed", Code: rarityRuned, DropRate: 0.05},
+		{ID: "r-fabled", Code: rarityFabled, DropRate: 5000},
+	}
+	return field
+}
+
+// A field kill rolls no Fabled, an elite's on a high floor record included:
+// the Spire's rate never reaches a field, and neither does the DB weight.
+// FS-M8CSE §G R33.
+func TestFieldDrops_Kill_RollsNoFabled(t *testing.T) {
+	field := fabledField(t)
+	drops := newFieldDrops(field, fixedRand{0})
+
+	kill := killedAt(components.MonsterArchetypeBoar, uuid.New(), 20, true, 100, 100)
+	kill.Floor = 10
+	const kills = 20_000
+	for range kills {
+		drops.ConsumeKill(kill)
+	}
+
+	piles := dropPiles(field)
+	require.Len(t, piles, kills, "every kill at the lowest roll drops: the chance is untouched")
+	for _, pile := range piles {
+		for _, item := range itemsByID(field, pileItemIDs(t, pile)) {
+			assert.NotEqual(t, rarityFabled, item.RarityCode, item.Name)
+			assert.Empty(t, item.UniqueEffectCode, item.Name)
+		}
+	}
+}
+
+// A field chest and sack roll no Fabled either. FS-M8CSE §G R33.
+func TestFieldContainerRoll_RollsNoFabled(t *testing.T) {
+	for _, kind := range []components.ContainerKind{components.ContainerKindChest, components.ContainerKindSack} {
+		t.Run(string(kind), func(t *testing.T) {
+			field := fabledField(t)
+			for range 2000 {
+				ids, err := field.fieldContainerRoll(fixedRand{0}, kind, 20, 1)
+				require.NoError(t, err)
+				for _, item := range itemsByID(field, ids) {
+					assert.NotEqual(t, rarityFabled, item.RarityCode, item.Name)
+					assert.Empty(t, item.UniqueEffectCode, item.Name)
+				}
+			}
+		})
+	}
+}

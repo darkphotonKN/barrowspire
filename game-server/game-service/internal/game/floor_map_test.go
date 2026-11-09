@@ -120,13 +120,14 @@ func TestFloorChange_DroppedClimbSendsNoMap(t *testing.T) {
 
 // A run floor's map is its size and its walls in today's shape, the house id
 // included; walls exactly what a snapshot used to carry. A floor with no cell
-// grid sends neither cell_size nor regions. Floors 2–3 are floors of
-// buildings; floor 1 is a dungeon. FS-KE075 §F Requirements 31, 35.
+// grid sends neither cell_size nor regions. A floor of buildings is what a
+// failed generation leaves. FS-KE075 §F Requirements 31, 35.
 func TestFloorMapMessage_FloorsOfBuildingsCarrySizeAndWalls(t *testing.T) {
 	p := newParty(t, &countingItemsClient{})
 	s := p.s
+	failGeneration(s)
 
-	for depth := 2; depth <= constants.RunFloorCount; depth++ {
+	for depth := 2; depth <= testSpireHeight; depth++ {
 		require.NoError(t, s.regenerateFloor())
 		message, ok := s.FloorMapMessage()
 		require.True(t, ok, "floor %d has a map", depth)
@@ -142,9 +143,8 @@ func TestFloorMapMessage_FloorsOfBuildingsCarrySizeAndWalls(t *testing.T) {
 			"no cell_size and no regions on a floor of buildings")
 		assert.Equal(t, s.ID.String(), payload["session_id"])
 		assert.Equal(t, float64(depth), payload["floor"])
-		width, height := floorSize(depth)
-		assert.Equal(t, width, payload["width"])
-		assert.Equal(t, height, payload["height"])
+		assert.Equal(t, constants.MapWidth, payload["width"])
+		assert.Equal(t, constants.MapHeight, payload["height"])
 
 		// what a snapshot of the same floor carried, read the way the hub's still is
 		snapshot, err := serializer.NewStateSerializer(s.EntityManager, nil).SerializeBackendState(

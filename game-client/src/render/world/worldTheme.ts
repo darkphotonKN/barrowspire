@@ -24,7 +24,7 @@ import { MASONRY_WALLS, TIMBER_WALLS, type WallSheets } from "./walls";
 
 export type WorldTheme = "exterior" | "tower";
 
-/** A run floor's place in the climb (FS-8RBQY §C.1, CONTEXT.md "Floor band"). */
+/** How high a run floor stands (FS-M8CSE R11, CONTEXT.md "Floor band"). */
 export type FloorBand = "lower" | "middle" | "upper";
 
 /** What one floor band changes, within the theme's sheets (§C.2). */
@@ -157,12 +157,11 @@ export const WORLD_THEMES: Record<WorldTheme, WorldThemeLook> = {
 export const RUN_WORLD_THEME: WorldTheme = "tower";
 
 /**
- * The band of floor `floor` of `floorCount`: the climb's fraction `t`, cut at thirds. A
- * single-floor run is `lower`, and any future floor count still ramps lower → upper.
+ * The band of a floor, from its number alone (FS-M8CSE R11): how high it stands, never how far
+ * through the run, which the client cannot know.
  */
-export function floorBand(floor: number, floorCount: number): FloorBand {
-  const t = floorCount > 1 ? (floor - 1) / (floorCount - 1) : 0;
-  return t < 1 / 3 ? "lower" : t < 2 / 3 ? "middle" : "upper";
+export function floorBand(floor: number): FloorBand {
+  return floor <= 2 ? "lower" : floor <= 5 ? "middle" : "upper";
 }
 
 /** What one floor of a run is drawn with: its band's ground, walls and dressing, and its seed. */
@@ -180,16 +179,12 @@ export interface FloorLook {
 const BANDED_SALT = 0x544f_5752;
 
 /**
- * Floor `floor` of `floorCount` in `theme`. A theme without bands draws every floor alike from
- * the run's seed, exactly as runs were drawn before FS-8RBQY; a banded theme seeds each floor
- * apart, so a climb never repeats the floor below. Missing floor numbers read as floor 1 of 1.
+ * Floor `floor` in `theme`. A theme without bands draws every floor alike from the run's seed,
+ * exactly as runs were drawn before FS-8RBQY; a banded theme seeds each floor apart, so a climb
+ * never repeats the floor below. A missing floor number reads as floor 1.
  */
-export function floorLook(
-  theme: WorldThemeLook,
-  floor = 1,
-  floorCount = 1,
-): FloorLook {
-  const band = floorBand(floor, floorCount);
+export function floorLook(theme: WorldThemeLook, floor = 1): FloorLook {
+  const band = floorBand(floor);
   const banded = theme.bands?.[band];
   if (!banded)
     return {

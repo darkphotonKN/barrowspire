@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -116,6 +117,32 @@ func TestMonsterDrops_DropChance_PerArchetypeEliteAndDemon(t *testing.T) {
 				assert.Len(t, dropPiles(s), 1)
 			} else {
 				assert.Empty(t, dropPiles(s), "no drop, no pile")
+			}
+		})
+	}
+}
+
+// Both tower monsters drop on the ghoul row's values: its chance, its count,
+// its source and its type split. FS-M8CSE §D R20.
+func TestMonsterDrops_TowerMonstersDropOnTheGhoulRow(t *testing.T) {
+	ghoulRow := MonsterDrops[components.MonsterArchetypeGhoul]
+	for _, archetype := range []components.MonsterArchetype{components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeSpireWraith} {
+		t.Run(string(archetype), func(t *testing.T) {
+			row, ok := MonsterDrops[archetype]
+			require.True(t, ok, "without a row it drops nothing")
+			assert.Equal(t, ghoulRow, row)
+
+			for _, tt := range []struct {
+				roll  float64
+				drops bool
+			}{{0.0799, true}, {0.08, false}} {
+				s := dropSession()
+				newMonsterDrops(s, fixedRand{tt.roll}).ConsumeKill(systems.KillRecord{Archetype: archetype, Level: 1})
+				if tt.drops {
+					assert.Len(t, dropPiles(s), 1)
+				} else {
+					assert.Empty(t, dropPiles(s))
+				}
 			}
 		})
 	}
@@ -357,30 +384,241 @@ func TestRegenerateFloor_ClearsDropPilesAndTheirItems(t *testing.T) {
 	assert.True(t, kept, "an item a delver carries climbs with them")
 }
 
-// The blood demon drops as the demon does: its MonsterDrops row is the boss
+// The red bosses drop as the demon does: their MonsterDrops row is the boss
 // row, and a kill lays one pile of 2 or 3 items, never a consumable, at its
-// level. FS-VHGE7 §A R12.
-func TestMonsterDrops_BloodDemon_DropsTheBossRow(t *testing.T) {
-	assert.Equal(t, BossMonsterDrop, MonsterDrops[components.MonsterArchetypeBloodDemon])
+// level. FS-VHGE7 §A R12; FS-M8CSE §E R26.
+func TestMonsterDrops_RedBosses_DropTheBossRow(t *testing.T) {
+	for _, archetype := range []components.MonsterArchetype{
+		components.MonsterArchetypeBloodDemon,
+		components.MonsterArchetypeDaagon,
+	} {
+		t.Run(string(archetype), func(t *testing.T) {
+			assert.Equal(t, BossMonsterDrop, MonsterDrops[archetype])
+
+			r := seeded()
+			counts := map[int]bool{}
+			for range 200 {
+				s := dropSession()
+				newMonsterDrops(s, r).ConsumeKill(systems.KillRecord{
+					MonsterEntityID: uuid.New(), Archetype: archetype,
+					Level: 11, Boss: true, KillerMemberID: uuid.New(), X: 640, Y: 360, Floor: 3,
+				})
+
+				piles := dropPiles(s)
+				require.Len(t, piles, 1)
+				ids := pileItemIDs(t, piles[0])
+				counts[len(ids)] = true
+				require.Contains(t, []int{2, 3}, len(ids))
+				for _, item := range itemsByID(s, ids) {
+					assert.NotEqual(t, types.ItemTypeConsumable, item.ItemType)
+					assert.Equal(t, 11, item.ItemLevel)
+				}
+			}
+			assert.Equal(t, map[int]bool{2: true, 3: true}, counts, "both counts occur")
+		})
+	}
+}
+
+// The floor factor is 1 up to floor 5, then 5% more for each floor above it:
+// 1.05 on floor 6, 1.25 on floor 10. A record with no floor is below the rule.
+// FS-M8CSE §F R28.
+func TestFloorFactor_RisesAboveFloorFive(t *testing.T) {
+	tests := []struct {
+		floor int
+		want  float64
+	}{
+		{0, 1}, {1, 1}, {3, 1}, {5, 1},
+		{6, 1.05}, {7, 1.10}, {8, 1.15}, {9, 1.20}, {10, 1.25},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("floor %d", tt.floor), func(t *testing.T) {
+			assert.InDelta(t, tt.want, floorFactor(tt.floor), 1e-9)
+		})
+	}
+}
+
+// A Spire kill rolls its row's chance times the factor at the floor it died on:
+// floor 10 lifts the ghoul to 10%, the troll to 18.75% and an elite to 62.5%;
+// floors 1-5 leave the rows as they are. FS-M8CSE §F R29.
+func TestMonsterDrops_FloorFactor_LiftsTheChanceAboveFloorFive(t *testing.T) {
+	ghoul, troll := components.MonsterArchetypeGhoul, components.MonsterArchetypeTroll
+	const margin = 1e-9
+	tests := []struct {
+		name   string
+		record systems.KillRecord
+		chance float64
+	}{
+		{"ghoul on floor 10", systems.KillRecord{Archetype: ghoul, Floor: 10}, 0.10},
+		{"troll on floor 10", systems.KillRecord{Archetype: troll, Floor: 10}, 0.1875},
+		{"elite on floor 10", systems.KillRecord{Archetype: troll, Elite: true, Floor: 10}, 0.625},
+		{"ghoul on floor 6", systems.KillRecord{Archetype: ghoul, Floor: 6}, 0.084},
+		{"ghoul on floor 5", systems.KillRecord{Archetype: ghoul, Floor: 5}, 0.08},
+		{"tower monster on floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeSpireWraith, Floor: 10}, 0.10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.record.Level = 1
+
+			under := dropSession()
+			newMonsterDrops(under, fixedRand{tt.chance - margin}).ConsumeKill(tt.record)
+			assert.Len(t, dropPiles(under), 1, "a roll just under the chance drops")
+
+			over := dropSession()
+			newMonsterDrops(over, fixedRand{tt.chance + margin}).ConsumeKill(tt.record)
+			assert.Empty(t, dropPiles(over), "a roll just over the chance does not")
+		})
+	}
+}
+
+// The factor cannot lift a boss past certainty: on floor 10 the boss row stays
+// exactly 100% with 2 or 3 items, none a consumable. The roll of 1 is outside
+// what a real roll gives; it is the one that tells a clamped 1 from an unclamped
+// 1.25. FS-M8CSE §F R29.
+func TestMonsterDrops_FloorFactor_CapsTheBossAtCertainty(t *testing.T) {
+	floorTen := demonRecord(9)
+	floorTen.Floor = 10
+
+	clamped := dropSession()
+	newMonsterDrops(clamped, fixedRand{1}).ConsumeKill(floorTen)
+	assert.Empty(t, dropPiles(clamped), "the chance is capped at 1, not 1.25")
 
 	r := seeded()
 	counts := map[int]bool{}
 	for range 200 {
 		s := dropSession()
-		newMonsterDrops(s, r).ConsumeKill(systems.KillRecord{
-			MonsterEntityID: uuid.New(), Archetype: components.MonsterArchetypeBloodDemon,
-			Level: 11, Boss: true, KillerMemberID: uuid.New(), X: 640, Y: 360, Floor: 3,
-		})
+		newMonsterDrops(s, r).ConsumeKill(floorTen)
 
 		piles := dropPiles(s)
-		require.Len(t, piles, 1)
+		require.Len(t, piles, 1, "a boss always drops")
 		ids := pileItemIDs(t, piles[0])
 		counts[len(ids)] = true
-		require.Contains(t, []int{2, 3}, len(ids))
 		for _, item := range itemsByID(s, ids) {
 			assert.NotEqual(t, types.ItemTypeConsumable, item.ItemType)
-			assert.Equal(t, 11, item.ItemLevel)
 		}
 	}
-	assert.Equal(t, map[int]bool{2: true, 3: true}, counts, "both counts occur")
+	assert.Equal(t, map[int]bool{2: true, 3: true}, counts, "the count stays 2 or 3")
+}
+
+// The Fabled chance per item is by the kill's source, each times the floor
+// factor: any boss, Daa'gon's own base, elites only from floor 6, everything
+// else nothing. FS-M8CSE §G R32.
+func TestFabledChanceFor_MatchesTheRatesAtEachFloor(t *testing.T) {
+	boss := func(floor int) systems.KillRecord {
+		return systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Boss: true, Floor: floor}
+	}
+	daagon := func(floor int) systems.KillRecord {
+		return systems.KillRecord{Archetype: components.MonsterArchetypeDaagon, Boss: true, Floor: floor}
+	}
+	elite := func(floor int) systems.KillRecord {
+		return systems.KillRecord{Archetype: components.MonsterArchetypeTroll, Elite: true, Floor: floor}
+	}
+	tests := []struct {
+		name   string
+		record systems.KillRecord
+		want   float64
+	}{
+		{"boss floor 1", boss(1), 0.002},
+		{"boss floor 5", boss(5), 0.002},
+		{"boss floor 6", boss(6), 0.0021},
+		{"boss floor 9", boss(9), 0.0024},
+		{"boss floor 10", boss(10), 0.0025},
+		{"blood demon floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Boss: true, Floor: 10}, 0.0025},
+		{"daagon floor 1", daagon(1), 0.004},
+		{"daagon floor 5", daagon(5), 0.004},
+		{"daagon floor 6", daagon(6), 0.0042},
+		{"daagon floor 9", daagon(9), 0.0048},
+		{"daagon floor 10", daagon(10), 0.005},
+		{"elite floor 1", elite(1), 0},
+		{"elite floor 5", elite(5), 0},
+		{"elite floor 6", elite(6), 0.00105},
+		{"elite floor 9", elite(9), 0.0012},
+		{"elite floor 10", elite(10), 0.00125},
+		{"ghoul floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeGhoul, Floor: 10}, 0},
+		{"troll floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeTroll, Floor: 10}, 0},
+		{"barrow thrall floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeBarrowThrall, Floor: 10}, 0},
+		{"spire wraith floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeSpireWraith, Floor: 10}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.InDelta(t, tt.want, fabledChanceFor(tt.record), 1e-12)
+		})
+	}
+}
+
+// fabledRate kills the record over and over in one world with every unique
+// eligible and every kill dropping, and returns the share of items that came
+// out Fabled, with how many items there were.
+func fabledRate(t *testing.T, record systems.KillRecord, kills int) (float64, int) {
+	t.Helper()
+	s := dropSession()
+	s.itemPool.Uniques = sixUniques
+	drops := newMonsterDrops(s, fixedRand{0})
+	record.Level = 20
+	for range kills {
+		drops.ConsumeKill(record)
+	}
+
+	items, fabled := 0, 0
+	for _, pile := range dropPiles(s) {
+		for _, item := range itemsByID(s, pileItemIDs(t, pile)) {
+			items++
+			if item.RarityCode == rarityFabled {
+				fabled++
+			}
+		}
+	}
+	require.Positive(t, items)
+	return float64(fabled) / float64(items), items
+}
+
+// The kill consumer hands each item its kill's chance. FS-M8CSE §G R32.
+//
+// This pins the wiring, not the rate: TestFabledChanceFor_MatchesTheRatesAtEachFloor
+// pins the numbers and TestRollDrop_FabledChance_RateHoldsOnEveryTypeAndSource the
+// roll. Each item's draw comes from the unseedable sharedLootRand in dropLoot, so
+// the bands are set wide enough that a correct roll falls outside one less than
+// about once in 10^9 runs. They catch a kill handed no chance at all; the rows
+// are not sharp enough to tell near rates apart, which is the table's job.
+func TestMonsterDrops_FabledRate_PerItemFromTheKill(t *testing.T) {
+	const kills = 20_000
+	tests := []struct {
+		name      string
+		record    systems.KillRecord
+		low, high float64
+	}{
+		{"boss on floor 1", systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Boss: true, Floor: 1}, 0.0008, 0.0036},
+		{"daagon on floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeDaagon, Boss: true, Floor: 10}, 0.0030, 0.0075},
+		{"elite on floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeTroll, Elite: true, Floor: 10}, 0.00005, 0.0035},
+		{"elite on floor 5", systems.KillRecord{Archetype: components.MonsterArchetypeTroll, Elite: true, Floor: 5}, 0, 0},
+		{"ghoul on floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeGhoul, Floor: 10}, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rate, _ := fabledRate(t, tt.record, kills)
+			assert.GreaterOrEqual(t, rate, tt.low)
+			assert.LessOrEqual(t, rate, tt.high)
+		})
+	}
+}
+
+// A hit on a kill's item with no unique the kill's level allows is Runed, and
+// a hit on a would-be consumable is still a unique. FS-M8CSE §G R34.
+func TestRollKillDrop_FabledChance_ResolvesEachItem(t *testing.T) {
+	row := GhoulMonsterDrop // one item, the standard split with its consumables
+
+	s := dropSession()
+	s.itemPool.Uniques = sixUniques
+	for range 200 {
+		ids := s.rollKillDrop(fixedRand{0}, row, 1, 1, 20)
+		require.Len(t, ids, 1)
+		assert.Equal(t, rarityFabled, itemsByID(s, ids)[0].RarityCode)
+	}
+
+	low := dropSession()
+	low.itemPool.Uniques = sixUniques
+	for range 200 {
+		ids := low.rollKillDrop(fixedRand{0}, row, 1, 1, 1)
+		require.Len(t, ids, 1)
+		assert.Equal(t, rarityRuned, itemsByID(low, ids)[0].RarityCode)
+	}
 }

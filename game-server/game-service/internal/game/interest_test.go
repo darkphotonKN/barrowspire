@@ -39,16 +39,19 @@ func (s *stateSender) latest(playerID uuid.UUID) *types.ClientGameState {
 
 // A run's broadcast on a dungeon floor cuts each recipient's monsters and
 // containers to those near its own body, while the teammate far away is still
-// sent; on a floor of buildings everyone is sent everything. FS-KE075 §G
-// R36, R39; ADR-0060 Decision 4.
+// sent; on a floor of buildings everyone is sent everything. A floor reached by
+// climbing is cut from its own build. FS-KE075 §G R36, R39; ADR-0060 Decision
+// 4; FS-M8CSE §C R14.
 func TestBroadcastFullState_DungeonFloorCutsEachRecipientToItsOwnInterest(t *testing.T) {
 	tests := []struct {
 		name     string
 		cellSize float64
+		climb    bool
 		cut      bool
 	}{
-		{"a dungeon floor", 80, true},
-		{"a floor of buildings", 0, false},
+		{name: "a dungeon floor", cellSize: 80, cut: true},
+		{name: "a floor of buildings", cellSize: 0, cut: false},
+		{name: "floor 2, built by the climb", climb: true, cut: true},
 	}
 
 	for _, tt := range tests {
@@ -57,13 +60,17 @@ func TestBroadcastFullState_DungeonFloorCutsEachRecipientToItsOwnInterest(t *tes
 			west, east := uuid.New(), uuid.New()
 			s.AddPlayer(west, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
 			s.AddPlayer(east, types.CharacterInPlay{Name: "Kaelen", Class: "mage"}, "")
+			if tt.climb {
+				require.NoError(t, s.regenerateFloor())
+				require.Equal(t, 80.0, currentFloor(t, s).CellSize, "the climb's own build sets the cut")
+			}
 			westBody := bodyAt(t, s, delverEntity(t, s, west).ID)
 			westBody.X, westBody.Y = 100, 100
 			eastBody := bodyAt(t, s, delverEntity(t, s, east).ID)
 			eastBody.X, eastBody.Y = 5600, 3700
 
 			for _, e := range s.EntityManager.GetAllEntities() {
-				if fc, ok := e.GetComponent(ecs.ComponentTypeFloor); ok {
+				if fc, ok := e.GetComponent(ecs.ComponentTypeFloor); ok && !tt.climb {
 					fc.(*components.FloorComponent).CellSize = tt.cellSize
 				}
 			}

@@ -6,12 +6,9 @@
 
 import type { ClientGameState } from "@/types/gameState";
 
-/** "Floor N of M" from the broadcast, or `null` where there are no floors (the hub). */
-export function floorLabel(
-  state: Pick<ClientGameState, "floor" | "floor_count">,
-): string | null {
-  if (state.floor === undefined || state.floor_count === undefined) return null;
-  return `Floor ${state.floor} of ${state.floor_count}`;
+/** "Floor N" from the broadcast, or `null` where there are no floors (the hub) (FS-M8CSE R7). */
+export function floorLabel(state: Pick<ClientGameState, "floor">): string | null {
+  return state.floor === undefined ? null : `Floor ${state.floor}`;
 }
 
 /**
@@ -21,6 +18,14 @@ export function floorLabel(
  */
 export function climbed(previous: number | undefined, incoming: number | undefined): boolean {
   return previous !== undefined && incoming !== undefined && incoming > previous;
+}
+
+/**
+ * Whether the party stands on the top floor (FS-M8CSE R8): the broadcast's `stairs` list is
+ * there and empty. An absent list is the hub, which has no stairs to run out of.
+ */
+export function isTopFloor(state: Pick<ClientGameState, "stairs">): boolean {
+  return state.stairs?.length === 0;
 }
 
 const ORDINALS = [
@@ -43,13 +48,12 @@ export interface FloorCard {
 }
 
 /** "The Second Floor", and what waits there: worse below the top, the end of the stair at it. */
-export function floorCard(state: { floor: number; floor_count: number }): FloorCard {
+export function floorCard(state: { floor: number; top: boolean }): FloorCard {
   const ordinal = ORDINALS[state.floor - 1];
   const title = ordinal ? `The ${ordinal} Floor` : `Floor ${state.floor}`;
-  const line =
-    state.floor >= state.floor_count
-      ? "No stair climbs higher. Only the way out remains."
-      : "The dead walk heavier here.";
+  const line = state.top
+    ? "No stair climbs higher. Only the way out remains."
+    : "The dead walk heavier here.";
   return { title, line };
 }
 

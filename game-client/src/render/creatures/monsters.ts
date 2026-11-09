@@ -87,10 +87,18 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
    * blood hide with heavier horns and larger wings, drawn as baked, at boss size.
    */
   blood_demon: { sheet: "creature_blood_demon_base", tier: "boss" },
+  /** A Master Spire's boss (FS-M8CSE §H R41): the blood demon's own sheet, at boss size. */
+  daagon: { sheet: "creature_blood_demon_base", tier: "boss" },
   /** The Forlorn Forest's dead (FS-3QHQZ §C R29): the shambling zombie, and the rarer ghost. */
   zombie: { sheet: "creature_zombie_base", tier: "fodder" },
   /** Its translucence is baked into the sheet (body alpha ≈ 0.6, eyes opaque): no tint here. */
   ghost: { sheet: "creature_ghost_base", tier: "fodder" },
+  /**
+   * The Spire's own dead (FS-M8CSE §H R37): baked recolours of the zombie and the ghost, in the
+   * `creatures` group. Their colours are in the sheets: a tint would override the elite wash.
+   */
+  barrow_thrall: { sheet: "creature_barrow_thrall_base", tier: "fodder" },
+  spire_wraith: { sheet: "creature_spire_wraith_base", tier: "fodder" },
   /**
    * Gentle Meadows' boar (FS-X2F2H §H R61): field wildlife on the quadruped rig, fodder by body
    * length, with its own elite sheet (bigger tusks, scarred, darker bristle).
@@ -282,8 +290,9 @@ export interface ElitePlate {
 
 /**
  * Splits an elite's server-authored name (`Hollow Troll`) into its prefix and the plate proper
- * (`Troll · Lv 9`): the prefix is everything before the archetype's base name. A name that does
- * not carry its base name, or carries nothing before it, has no prefix to set apart.
+ * (`Troll · Lv 9`): the prefix is everything before the archetype's base name, each `_` of the
+ * archetype read as a space (`barrow_thrall` names `Barrow Thrall`, FS-M8CSE §D R21). A name that
+ * does not carry its base name, or carries nothing before it, has no prefix to set apart.
  */
 export function elitePlate(
   monster: Pick<MonsterState, "name" | "level" | "archetype" | "elite">,
@@ -291,7 +300,7 @@ export function elitePlate(
   if (!monster.elite || !monster.archetype) return null;
   const at = monster.name
     .toLowerCase()
-    .lastIndexOf(monster.archetype.toLowerCase());
+    .lastIndexOf(monster.archetype.toLowerCase().replaceAll("_", " "));
   const prefix = at > 0 ? monster.name.slice(0, at).trim() : "";
   if (!prefix) return null;
   return {
@@ -667,13 +676,17 @@ export class MonsterRoster {
   private fetchArtOf(archetype: string): void {
     const onDemand = onDemandFor(archetype);
     if (onDemand && !this.art.has(monsterLook(archetype).sheet))
-      this.artFetch?.fetch(onDemand.group, () => this.redress(archetype));
+      this.artFetch?.fetch(onDemand.group, () => this.redress(onDemand.group));
   }
 
-  /** The group's art is in: every monster of `archetype` drawn as its stand-in changes (§F R48). */
-  private redress(archetype: string): void {
+  /**
+   * The group's art is in: every monster drawn as a stand-in for it changes (§F R48), whichever
+   * archetype asked. A group's later asks are dropped, so the first asker's callback answers them
+   * all (FS-M8CSE §H R42).
+   */
+  private redress(group: string): void {
     for (const view of this.views.values())
-      if (view.state.archetype === archetype) this.wearOwnLook(view);
+      if (onDemandFor(view.state.archetype)?.group === group) this.wearOwnLook(view);
   }
 
   /**

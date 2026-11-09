@@ -3199,8 +3199,9 @@ func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
 }
 
 func (s *Session) InitialSystems() {
-	// creates and setsup match progress entity within the entity manager
-	CreateMatchProgressEntity(s.EntityManager)
+	// creates and setsup match progress entity within the entity manager; the
+	// run's height is rolled here, once, and never leaves the server
+	CreateMatchProgressEntity(s.EntityManager, rollSpireHeight(s.spawnRand))
 }
 
 type PlaceArea struct {
@@ -3255,11 +3256,11 @@ func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 
 /**
 * buildFloor is the floor build step: the one place a floor is made, for the
-* first floor and every one after it (FS-F6F88 §Requirements 8). It chooses the
-* floor's generator by depth (FS-KE075 §B R10): floor 1 is a dungeon of rooms
-* and corridors (layDungeon), every other floor is today's map of buildings
-* (layBuildings). Either way it then sets the party down and populates the
-* floor with monsters levelled to its depth.
+* first floor and every one after it (FS-F6F88 §Requirements 8). Every floor is
+* a dungeon of rooms and corridors (layDungeon, FS-M8CSE §C R12); a floor whose
+* generation failed is today's map of buildings (layBuildings, FS-KE075 §B R17).
+* Either way it then sets the party down and populates the floor with monsters
+* levelled to its depth.
 *
 * depth is the floor being built. The roster must already be seated: once the
 * layout stands, the party is set down together at one spawn point, and only
@@ -3296,7 +3297,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 
 	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
 	// expected included, not only who is seated now
-	s.populateMonsters(depth, depth == constants.RunFloorCount, expected)
+	s.populateMonsters(depth, s.isTopFloor(depth), expected)
 
 	// the floor's layout stands: its map is what anyone entering is sent
 	s.publishFloorMap(depth)
@@ -3333,8 +3334,8 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 
 // newMonsterAI is the monster AI for a floor, rolling from roll: on a dungeon
 // floor it paths over the floor's cells; on any other (nil) it steers
-// straight, as floors 2-3 and the fields always have (FS-KE075 §D R26,
-// ADR-0062).
+// straight, as a fallback floor of buildings and the fields do (FS-M8CSE §C
+// R14-15, ADR-0062).
 func newMonsterAI(roll func() float64, dungeon *dungeonFloor) *systems.MonsterAISystem {
 	if dungeon == nil {
 		return systems.NewMonsterAISystem(roll, nil)
@@ -3345,8 +3346,8 @@ func newMonsterAI(roll func() float64, dungeon *dungeonFloor) *systems.MonsterAI
 /**
 * layBuildings lays out today's run floor (FS-F6F88 §5): a chest, three
 * buildings, a locked escape door and the switch that unlocks it on empty
-* ground, then stairs below the top floor. Floors 2–3 are built by it, and
-* floor 1 when its dungeon cannot be generated.
+* ground, then stairs below the top floor. A floor is built by it only when
+* its dungeon cannot be generated (FS-KE075 §B R17, FS-M8CSE §C R15).
 **/
 func (s *Session) layBuildings(depth int) {
 	s.CreateContainer()
@@ -3392,7 +3393,7 @@ func (s *Session) layBuildings(depth int) {
 
 	// every floor but the top has a way up; placed before the monsters, so they
 	// keep clear of it
-	if depth < constants.RunFloorCount {
+	if s.hasStairs(depth) {
 		s.CreateStairs()
 	}
 }

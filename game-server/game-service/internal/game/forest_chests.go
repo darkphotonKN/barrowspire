@@ -19,14 +19,18 @@ import (
 /**
 * rollChest is what a placed container of the kind holds on its first open: a
 * field's chest roll in a field, the Spire's roll at the floor's area level
-* anywhere else, each at the kind's odds (FS-1D6BX §Requirements 4).
+* anywhere else, each at the kind's odds (FS-1D6BX §Requirements 4). Only a
+* guarded treasure-room chest in the Spire rolls with a Fabled chance; a field
+* never does (FS-M8CSE §G R32, R33, R35).
 **/
 func (s *Session) rollChest(kind components.ContainerKind) ([]uuid.UUID, error) {
-	place, ok := s.FieldPlace()
-	if !ok {
-		return s.generateItems(kind)
+	if place, ok := s.FieldPlace(); ok {
+		return s.fieldChestRoll(s.chestRand, kind, place)
 	}
-	return s.fieldChestRoll(s.chestRand, kind, place)
+	if kind == containerKindGuardedTreasure {
+		return s.rollContainer(s.chestRand, kind, s.guardedTreasureDrop())
+	}
+	return s.generateItems(kind)
 }
 
 /**

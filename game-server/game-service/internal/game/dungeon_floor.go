@@ -9,6 +9,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/navigation"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/google/uuid"
 )
 
@@ -26,14 +27,11 @@ import (
 **/
 
 // dungeonParams is the generator's parameter set for a run floor built as a
-// dungeon; false for a floor of buildings. Floor 1 only (FS-KE075 §B R10,
-// owner: floor 1 only); a later dungeon floor is a new parameter set here
-// (ADR-0061 Decision 2).
-func dungeonParams(depth int) (levelgen.DungeonParams, bool) {
-	if depth == firstFloor {
-		return levelgen.DungeonFloor1Params, true
-	}
-	return levelgen.DungeonParams{}, false
+// dungeon. Every Spire floor is one, on floor 1's set (FS-M8CSE §C R12-13); a
+// floor that needs its own set is a new parameter set here (ADR-0061 Decision
+// 2). A floor of buildings is now only what a failed generation leaves.
+func dungeonParams(_ int) (levelgen.DungeonParams, bool) {
+	return levelgen.DungeonFloor1Params, true
 }
 
 // dungeonGenerator is the dungeon generator the floor build calls. A session
@@ -96,9 +94,9 @@ func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
 * generateDungeonFloor draws the floor's seed, generates its layout and finds
 * where its switch, escape door and stairs stand, trying a fresh seed if the
 * first is exhausted or leaves a fixture no spot (FS-KE075 §B R14, R17). nil
-* when depth is not a dungeon floor, or when both seeds fail: the floor is then
-* built of buildings so the run still starts (ADR-0061 Decision 13). Nothing is
-* laid yet; a seed that fails leaves nothing behind.
+* when both seeds fail: the floor is then built of buildings so the run still
+* plays (ADR-0061 Decision 13, FS-M8CSE §C R15). Nothing is laid yet; a seed
+* that fails leaves nothing behind.
 **/
 func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixtures) {
 	params, isDungeon := dungeonParams(depth)
@@ -130,7 +128,7 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 		return d, fixtures
 	}
 
-	slog.Error("Dungeon floor fell back to a floor of buildings: the run starts on a small floor",
+	slog.Error("Dungeon floor fell back to a floor of buildings: this floor is a small one",
 		"sessionID", s.ID, "floor", depth, "tries", dungeonGenerations)
 	return nil, dungeonFixtures{}
 }
@@ -141,9 +139,16 @@ type dungeonFixtures struct {
 	exitDoor, exitSwitch, stairs point
 }
 
+// isTopFloor is whether depth is the floor the run's Spire height names (FS-M8CSE
+// §A Requirement 4). Without a run-level entity nothing is the top.
+func (s *Session) isTopFloor(depth int) bool {
+	floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities())
+	return ok && depth == floor.Count
+}
+
 // hasStairs is whether the floor at depth has a way up: every floor but the
 // top, and floor 1 is never the top (FS-F6F88 §Requirements 7).
-func hasStairs(depth int) bool { return depth < constants.RunFloorCount }
+func (s *Session) hasStairs(depth int) bool { return !s.isTopFloor(depth) }
 
 // placeFixtures finds the escape door's, the switch's and the stairs' spots in
 // their rooms, each through the occupied-area check. An error when a room has
@@ -158,7 +163,7 @@ func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, er
 	if f.exitSwitch, ok = s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
 		return f, fmt.Errorf("the switch's room %d has no spot off its doorways", roles.Switch)
 	}
-	if hasStairs(depth) {
+	if s.hasStairs(depth) {
 		if f.stairs, ok = s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius); !ok {
 			return f, fmt.Errorf("the stairs' room %d has no spot off its doorways", roles.Stairs)
 		}
@@ -185,7 +190,7 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 	s.switchEntityIDs = []uuid.UUID{switchEntity.ID}
 	s.mu.Unlock()
 
-	if hasStairs(depth) {
+	if s.hasStairs(depth) {
 		CreateStairsEntity(s.EntityManager, StairsConfig{X: fixtures.stairs.x, Y: fixtures.stairs.y})
 	}
 

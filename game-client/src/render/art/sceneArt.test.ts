@@ -72,7 +72,7 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
     ["the hub", SCENE_ART.HubScene, ["folk-0"]],
     ["gentle_meadows", fieldArt("gentle_meadows"), ["wildlife-0", "wildlife-1"]],
     ["forlorn_forest", fieldArt("forlorn_forest"), ["fodder-0", "fodder-1"]],
-    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1"]],
+    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3"]],
     ["the main menu", SCENE_ART.MainMenuScene, []],
     ["character creation", SCENE_ART.CharacterCreationScene, []],
   ])("should hold the resident pages plus %s's own", (_scene, groups, own) => {
@@ -104,9 +104,26 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
         archetype: "blood_demon",
         standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
       },
+      {
+        group: "blood_demon",
+        archetype: "daagon",
+        standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
+      },
     ]);
     expect(onDemandFor("blood_demon")?.group).toBe("blood_demon");
     expect(onDemandFor("demon")).toBeUndefined();
+  });
+
+  it("should put Daa'gon on the blood demon's group, with the blood demon's stand-in (FS-M8CSE §H R41)", () => {
+    expect(onDemandFor("daagon")?.group).toBe("blood_demon");
+    expect(onDemandFor("daagon")?.standIn).toEqual(onDemandFor("blood_demon")?.standIn);
+  });
+
+  it("should count a group with two archetypes once, so its pages are fetched and evicted as one (FS-M8CSE §H R41)", () => {
+    expect(new Set(ON_DEMAND_ART.map((entry) => entry.group))).toEqual(new Set(["blood_demon"]));
+    expect(sorted(SCENE_SCOPED_GROUPS).filter((group) => group === "blood_demon")).toEqual(["blood_demon"]);
+    const pages = sceneAtlases(manifest, ["blood_demon"]);
+    expect(pages.length).toBe(new Set(pages).size);
   });
 
   it("should count each among the scene-scoped groups, and in no scene's preload set (R43, R52)", () => {
@@ -151,15 +168,16 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
  * - gentle_meadows: boar (`internal/game/meadows_map.go:29`, FS-X2F2H §H R61)
  * - forlorn_forest: zombie and ghost (`internal/game/forest_map.go:42-43`, FS-3QHQZ §C R29)
  * - dev_test_room: troll, elite troll and demon (`internal/game/dev_test_room.go`, FS-BDRTJ R14)
- * - the run: ghoul and troll on every floor, the demon on the top one and by chance on any
- *   other (`internal/game/monster_population.go:129,145-147`), and the blood demon by chance on
- *   any floor (FS-VHGE7 §A, §C R30)
+ * - the run: ghoul, troll, Barrow Thrall and Spire Wraith on every floor (FS-M8CSE §D R18), the
+ *   demon on the top one and by chance on any other
+ *   (`internal/game/monster_population.go:129,145-147`), and the blood demon by chance on any
+ *   floor (FS-VHGE7 §A, §C R30), and Daa'gon on a Master Spire's top floor (FS-M8CSE §E R24)
  */
 const MET = [
   { scene: "gentle_meadows", groups: fieldArt("gentle_meadows"), archetypes: ["boar"] },
   { scene: "forlorn_forest", groups: fieldArt("forlorn_forest"), archetypes: ["zombie", "ghost"] },
   { scene: "dev_test_room", groups: fieldArt("dev_test_room"), archetypes: ["troll", "demon"] },
-  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "demon", "blood_demon"] },
+  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "barrow_thrall", "spire_wraith", "demon", "blood_demon", "daagon"] },
 ];
 
 /** The sheets of `sheets` the scene holding `groups` would draw as a placeholder. */

@@ -99,9 +99,10 @@ func TestCreateStairs_PlacementExhausted_StillPlaces(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// floor 2: a floor of buildings, where the stairs are placed by the
-			// occupied-area scan (floor 1 is a dungeon, FS-KE075 §B R14)
+			// a floor of buildings, where the stairs are placed by the
+			// occupied-area scan (a dungeon floor's go in their room, FS-KE075 §B R14)
 			s := newRun(t, &countingItemsClient{})
+			failGeneration(s)
 			require.NoError(t, s.regenerateFloor())
 			for _, id := range entityIDsWith(s, ecs.ComponentTypeStairs) {
 				s.EntityManager.RemoveEntity(id)
@@ -380,7 +381,7 @@ func TestStairs_RefusalDoesNotLockTheStairs(t *testing.T) {
 // switch unlocks that floor's escape door and the door lets a delver out.
 // FS-F6F88 §Requirements 23, 24; AC "Escape and run end".
 func TestStairs_ClimbingNeverEndsTheRun_AndEscapeWorksOnEveryFloor(t *testing.T) {
-	for escapeFloor := 1; escapeFloor <= constants.RunFloorCount; escapeFloor++ {
+	for escapeFloor := 1; escapeFloor <= testSpireHeight; escapeFloor++ {
 		c := newClimb(t)
 		s := c.s
 		s.endSessionCh = make(chan bool, 1)
@@ -396,7 +397,7 @@ func TestStairs_ClimbingNeverEndsTheRun_AndEscapeWorksOnEveryFloor(t *testing.T)
 			require.Equal(t, depth+1, currentFloor(t, s).Depth)
 			assert.Empty(t, s.endSessionCh, "a climb never ends the run")
 		}
-		if escapeFloor == constants.RunFloorCount {
+		if escapeFloor == testSpireHeight {
 			assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "no way up from the top")
 		}
 

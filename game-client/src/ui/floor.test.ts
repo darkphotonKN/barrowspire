@@ -5,26 +5,17 @@ import {
   floorCard,
   floorLabel,
   interactNotice,
+  isTopFloor,
   refusesContainer,
 } from "./floor";
 
-describe("floorLabel (FS-F6F88 req 29)", () => {
-  it("should read 'Floor N of M' from the broadcast", () => {
-    expect(floorLabel({ floor: 2, floor_count: 3 })).toBe("Floor 2 of 3");
+describe("floorLabel (FS-M8CSE R7)", () => {
+  it.each([1, 3, 4, 10])("should read floor %i with no total", (floor) => {
+    expect(floorLabel({ floor })).toBe(`Floor ${floor}`);
   });
 
-  it("should read the first and the top floor the same way", () => {
-    expect(floorLabel({ floor: 1, floor_count: 3 })).toBe("Floor 1 of 3");
-    expect(floorLabel({ floor: 3, floor_count: 3 })).toBe("Floor 3 of 3");
-  });
-
-  it("should have nothing to show in the hub, where both are absent", () => {
+  it("should have nothing to show in the hub, where there is no floor", () => {
     expect(floorLabel({})).toBeNull();
-  });
-
-  it("should have nothing to show when only one of the two arrived", () => {
-    expect(floorLabel({ floor: 2 })).toBeNull();
-    expect(floorLabel({ floor_count: 3 })).toBeNull();
   });
 });
 
@@ -124,27 +115,53 @@ describe("climbed (FS-F6F88 req 28, 32)", () => {
   });
 });
 
-describe("floorCard (FS-F6F88 req 32)", () => {
-  it("should name the floor the party has climbed to in words", () => {
-    expect(floorCard({ floor: 2, floor_count: 3 }).title).toBe("The Second Floor");
-    expect(floorCard({ floor: 3, floor_count: 3 }).title).toBe("The Third Floor");
+describe("isTopFloor (FS-M8CSE R8)", () => {
+  it("should read an empty stairs list as the top floor", () => {
+    expect(isTopFloor({ stairs: [] })).toBe(true);
   });
 
-  it("should warn of worse to come below the top, and that the stair ends at the top", () => {
-    const below = floorCard({ floor: 2, floor_count: 3 }).line;
-    const top = floorCard({ floor: 3, floor_count: 3 }).line;
-    expect(below).not.toBe(top);
-    expect(top).toMatch(/no stair/i);
+  it("should not read a floor with a stair as the top", () => {
+    expect(isTopFloor({ stairs: [{ entity_id: "st", position: { x: 1, y: 2 } }] })).toBe(false);
+  });
+
+  it("should not read an absent list as the top: the hub has no stairs at all", () => {
+    expect(isTopFloor({})).toBe(false);
+  });
+});
+
+describe("floorCard (FS-F6F88 req 32, FS-M8CSE R9)", () => {
+  it("should name the floor the party has climbed to in words", () => {
+    expect(floorCard({ floor: 2, top: false }).title).toBe("The Second Floor");
+    expect(floorCard({ floor: 3, top: true }).title).toBe("The Third Floor");
+  });
+
+  it("should warn of worse to come below the top", () => {
+    expect(floorCard({ floor: 3, top: false }).line).toBe("The dead walk heavier here.");
+  });
+
+  it("should say the stair ends at the top, on whichever floor that is", () => {
+    for (const floor of [3, 7, 10])
+      expect(floorCard({ floor, top: true }).line).toBe(
+        "No stair climbs higher. Only the way out remains.",
+      );
   });
 
   it("should fall back to the number past the floors it has words for", () => {
-    expect(floorCard({ floor: 12, floor_count: 12 }).title).toBe("Floor 12");
+    expect(floorCard({ floor: 12, top: true }).title).toBe("Floor 12");
+  });
+
+  it("should read floor 10 as any top floor (R10)", () => {
+    expect(floorCard({ floor: 10, top: true })).toEqual({
+      title: "The Tenth Floor",
+      line: floorCard({ floor: 3, top: true }).line,
+    });
   });
 
   it("should speak in the lore voice, never the sci-fi register", () => {
-    for (const floor of [1, 2, 3]) {
-      const { title, line } = floorCard({ floor, floor_count: 3 });
-      expect(`${title} ${line}`).not.toMatch(/sector|level|deploy|extraction|operator/i);
-    }
+    for (const floor of [1, 2, 3])
+      for (const top of [false, true]) {
+        const { title, line } = floorCard({ floor, top });
+        expect(`${title} ${line}`).not.toMatch(/sector|level|deploy|extraction|operator/i);
+      }
   });
 });
