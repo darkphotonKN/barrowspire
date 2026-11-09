@@ -326,8 +326,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   play area. Not a server wall: no entity, no collision, not in `walls[]`. Its south and east runs
   are always low so it never covers anything in play.
 - **Floor band**: `lower` / `middle` / `upper`, a run floor's place in the climb, derived from
-  `floor` and `floor_count` (FS-8RBQY §C.1). The only input that varies the tower look per floor.
-  Not the same as **floor**, the wire number it is derived from.
+  `floor` and `floor_count` (FS-8RBQY §C.1). FS-M8CSE (locked, not built) derives it from `floor`
+  alone, because the run's height leaves the wire; the band then says how high a floor is, never
+  how far through the run. The only input that varies the tower look per floor. Not the same as
+  **floor**, the wire number it is derived from.
 - **Building**: in this client, the drawn thing a group of server walls sharing a `house_id` makes,
   whatever the world calls it (a town building in the hub, a **room** in the Spire, a **house** in
   the exterior theme). Used where a rule holds for all of them (ADR-0036, FS-9PN7X).

@@ -520,3 +520,5 @@ directly (ADR-0004), which is outside the generated OpenAPI surface.
   `AttackActive`/`AttackTargetEntityID`/`HasHit`, or in a dedicated component.
 - The exact elite tint versus aura treatment, settled against the 3:1 marker test and the bake
   pipeline's options.
+
+## Change: Spire height and the climb → FS-M8CSE

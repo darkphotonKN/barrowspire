@@ -487,3 +487,5 @@ the session scratchpad.
 - Prefetching the next scene's art, or evicting before the new scene's load completes.
 - Byte-level progress on the bar.
 - A memory budget enforced at runtime.
+
+## Change: Spire height and the climb → FS-M8CSE

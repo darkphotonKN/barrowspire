@@ -415,3 +415,5 @@ ADR-0071 accepts.
 - `internal/matchmaker` and `internal/match_queue` (owner-held).
 - Renaming the green demon or giving it a new sheet beyond the added `claw` clip.
 - On-demand loading for the green demon or any group but `blood_demon`; prefetching a group before a monster is listed; a bar or a retry for an on-demand load.
+
+## Change: Spire height and the climb → FS-M8CSE

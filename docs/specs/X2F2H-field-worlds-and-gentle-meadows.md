@@ -477,3 +477,5 @@ the cost of the stats and notification side effects above.
 - Any change to `internal/matchmaker`, `internal/match_queue` or their wiring; any new HTTP
   endpoint; any DB migration.
 - Renaming backend "delver" identifiers.
+
+## Change: Spire height and the climb → FS-M8CSE
