@@ -60,6 +60,9 @@ message PlayerItems {
   // up during the run, e.g. a drunk health potion. The consumer deletes them
   // in the extraction transaction. Empty means nothing consumed (FS-P9G8R).
   repeated string consumed_item_ids = 5;
+  // Whose finds: the character in play (FS-50MTX R30). Empty on an event
+  // written before FS-50MTX shipped (R32).
+  string character_id = 6;
 }
 
 // All equipment slots — mirrors EquipmentComponent in game-service.

@@ -361,6 +361,8 @@ message CreateCompleteConsumableRequest {
 
 message GetLoadoutRequest {
   string member_id= 1;
+  // Whose loadout: the character it is read for (FS-50MTX R22).
+  string character_id = 2;
 }
 
 message GetLoadoutResponse {
@@ -382,6 +384,9 @@ message GetLoadoutResponse {
 
 message ListItemInstancesRequest {
   string member_id = 1;
+  // Optional. Set: that character's held instances plus the account's stash.
+  // Empty: the stash only (FS-50MTX R23).
+  string character_id = 2;
 }
 
 message ItemInstance {
@@ -420,6 +425,8 @@ message ItemInstance {
   // Where the owner keeps it: "bag" or "stash", lowercase, the HTTP vocabulary
   // (FS-VPD8Y R14). Worn is the loadout, not a location value.
   string location = 26;
+  // The holder, the character holding it; empty for a stash item (FS-50MTX R24).
+  string character_id = 27;
 }
 
 // One rolled affix (FS-4R9M9 R16): a stat code from the affix table, the tier
@@ -436,6 +443,8 @@ message ListItemInstancesResponse {
 
 message GetLoadoutWithItemsRequest {
   string member_id = 1;
+  // Whose loadout: the character in play (FS-50MTX R28).
+  string character_id = 2;
 }
 
 message GetLoadoutWithItemsResponse {
@@ -456,6 +465,8 @@ message GetLoadoutWithItemsResponse {
 message CheckOutRunGearRequest {
   string member_id = 1;
   string run_id = 2;
+  // Whose gear: the set is this character's worn and bag instances (FS-50MTX R25).
+  string character_id = 3;
 }
 
 // Every instance here has status IN_RUN. A worn item that stayed home (listed,
@@ -478,6 +489,8 @@ message UpdateLoadoutRequest {
   string member_id = 1;
   string slot = 2;
   string item_instance_id = 3;
+  // Whose slot: the character the loadout write is for (FS-50MTX R10).
+  string character_id = 4;
 }
 
 message UpdateLoadoutResponse {
@@ -490,6 +503,8 @@ message MoveItemInstanceRequest {
   string item_instance_id = 1;
   // "bag" or "stash", lowercase, the HTTP vocabulary.
   string location = 2;
+  // The character moving it, in both directions (FS-50MTX R18).
+  string character_id = 3;
 }
 
 // The instance's location after the call; unchanged on a no-op.
