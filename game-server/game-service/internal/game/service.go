@@ -94,6 +94,7 @@ func (s *service) PublishSettlement(ctx context.Context, settlement *types.RawSe
 	player := settlement.Player
 	result := types.RankedPlayerState{
 		MemberID:        player.MemberID,
+		CharacterID:     player.CharacterID,
 		Username:        player.Username,
 		Kills:           player.Kills,
 		Deaths:          player.Deaths,
@@ -156,6 +157,7 @@ func (s *service) Drain() {
 func (s *service) PublishFieldVisit(ctx context.Context, visit FieldVisit) error {
 	result := types.RankedPlayerState{
 		MemberID:      visit.MemberID.String(),
+		CharacterID:   visit.CharacterID,
 		Username:      visit.Username,
 		Deaths:        int32(visit.Deaths),
 		FinalPosition: 1,
@@ -312,7 +314,8 @@ func (s *service) formatMatchData(sessionID uuid.UUID, startedAt time.Time, ende
 
 	for idx, player := range players {
 		playerItems[idx] = &pb.PlayerItems{
-			MemberId: player.MemberID,
+			MemberId:    player.MemberID,
+			CharacterId: types.WireCharacterID(player.CharacterID),
 			Equipment: &pb.Equipment{
 				Weapon:       extractedItemToPb(player.Equipment.WeaponSlot),
 				Head:         extractedItemToPb(player.Equipment.HeadSlot),
@@ -425,11 +428,12 @@ func (s *service) rankPlayers(players []types.RawPlayerState, eliminationOrder m
 		position, exists := eliminationOrder[memberID]
 
 		rankedPlayer := types.RankedPlayerState{
-			MemberID: player.MemberID,
-			Username: player.Username,
-			Kills:    player.Kills,
-			Deaths:   player.Deaths,
-			Escape:   player.Escape,
+			MemberID:    player.MemberID,
+			CharacterID: player.CharacterID,
+			Username:    player.Username,
+			Kills:       player.Kills,
+			Deaths:      player.Deaths,
+			Escape:      player.Escape,
 			// what the delver brings out; dropping it here lost every extraction
 			Equipment:       player.Equipment,
 			Inventory:       player.Inventory,

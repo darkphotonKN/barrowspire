@@ -1056,7 +1056,7 @@ func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPla
 		return existing
 	}
 
-	loadout, bag := s.seatGearLocked(playerID, token)
+	loadout, bag := s.seatGearLocked(playerID, character, token)
 	return s.buildBodyLocked(playerID, character, x, y, loadout, bag)
 }
 
@@ -1076,19 +1076,19 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 
 	spawnX, spawnY := s.spawnPoint()
 
-	loadout, bag := s.seatGearLocked(playerID, token)
+	loadout, bag := s.seatGearLocked(playerID, character, token)
 	return s.buildBodyLocked(playerID, character, spawnX, spawnY, loadout, bag)
 }
 
 /**
-* seatGearLocked loads what the member brings into this world. A run checks
-* their worn and bag items out of items-service under its own session id, so
-* nothing else can touch them while they are in play; any other world reads
-* the worn loadout and seats no bag (FS-18Z5F §C R13). A nil loadout means it
-* was not loaded: there is no client, or the call failed or timed out, and the
-* delver is seated without equipment (R15).
+* seatGearLocked loads what the member's character in play brings into this
+* world (FS-50MTX R28). A run checks its worn and bag items out of items-service
+* under its own session id, so nothing else can touch them while they are in
+* play; any other world reads the worn loadout and seats no bag (FS-18Z5F §C
+* R13). A nil loadout means it was not loaded: there is no client, or the call
+* failed or timed out, and the delver is seated without equipment (R15).
 **/
-func (s *Session) seatGearLocked(playerID uuid.UUID, token types.BearerToken) (*pbitems.GetLoadoutWithItemsResponse, []*pbitems.ItemInstance) {
+func (s *Session) seatGearLocked(playerID uuid.UUID, character types.CharacterInPlay, token types.BearerToken) (*pbitems.GetLoadoutWithItemsResponse, []*pbitems.ItemInstance) {
 	if s.itemsClient == nil {
 		return nil, nil
 	}
@@ -1107,13 +1107,15 @@ func (s *Session) seatGearLocked(playerID uuid.UUID, token types.BearerToken) (*
 	if s.worldType == types.WorldTypeRun {
 		var gear *pbitems.CheckOutRunGearResponse
 		gear, err = s.itemsClient.CheckOutRunGear(ctx, &pbitems.CheckOutRunGearRequest{
-			MemberId: playerID.String(),
-			RunId:    s.ID.String(),
+			MemberId:    playerID.String(),
+			RunId:       s.ID.String(),
+			CharacterId: types.WireCharacterID(character.ID),
 		})
 		loadout, bag = gear.GetLoadout(), gear.GetBag()
 	} else {
 		loadout, err = s.itemsClient.GetLoadoutWithItems(ctx, &pbitems.GetLoadoutWithItemsRequest{
-			MemberId: playerID.String(),
+			MemberId:    playerID.String(),
+			CharacterId: types.WireCharacterID(character.ID),
 		})
 	}
 
@@ -1240,18 +1242,22 @@ const (
 * already seated, so a handoff connection is decided before its gear is checked
 * out: a stale or expired handoff must not re-tag live gear into a run that then
 * refuses it (FS-18Z5F §C R13). SeatArrival checks again under its own lock.
+*
+* An expected member also gets the character they queued with, off the same
+* pending entry SeatArrival seats from: the checkout runs before the seating and
+* takes it from here (FS-50MTX R29). Any other seat has no character.
 **/
-func (s *Session) HandoffSeatOf(memberID uuid.UUID) HandoffSeat {
+func (s *Session) HandoffSeatOf(memberID uuid.UUID) (HandoffSeat, types.CharacterInPlay) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if _, seated := s.playerIDToEntitiesID[memberID]; seated {
-		return HandoffSeatTaken
+		return HandoffSeatTaken, types.CharacterInPlay{}
 	}
-	if _, expected := s.playersPendingConnection[memberID]; expected {
-		return HandoffSeatExpected
+	if pending, expected := s.playersPendingConnection[memberID]; expected {
+		return HandoffSeatExpected, pending.Character
 	}
-	return HandoffSeatNone
+	return HandoffSeatNone, types.CharacterInPlay{}
 }
 
 // add a player connecting in from a handoff, "seat them", wearing and carrying
@@ -3164,6 +3170,7 @@ func (s *Session) rawPlayerStateOf(entity *ecs.Entity, held map[uuid.UUID]*compo
 
 	return types.RawPlayerState{
 		MemberID:        playerState.MemberID.String(),
+		CharacterID:     playerState.CharacterID,
 		Username:        playerState.Username,
 		Kills:           int32(stats.Kills),
 		Deaths:          int32(stats.Deaths),
