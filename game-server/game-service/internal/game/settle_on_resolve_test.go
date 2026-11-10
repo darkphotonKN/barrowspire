@@ -87,6 +87,35 @@ func TestSettleOnResolve_Escape_SettlesThatPlayerAtOnce(t *testing.T) {
 	assert.Equal(t, escapee, closer.applied[0].MemberID)
 }
 
+// A settlement is taken as the character the body is seated as. FS-50MTX R30.
+func TestSettleOnResolve_Escape_CarriesTheBodysCharacter(t *testing.T) {
+	s, emitter, _ := settlingRun(t)
+	memberID := uuid.New()
+	characterID := uuid.New()
+	s.AddPlayer(memberID, types.CharacterInPlay{ID: characterID, Name: "Wren", Class: "warrior", Level: 3}, "")
+	seatedDelver(t, s, "mage", 600, 300)
+
+	s.handlePlayerEscape(memberID)
+
+	require.Len(t, emitter.settlements, 1)
+	assert.Equal(t, characterID, emitter.settlements[0].Player.CharacterID)
+}
+
+// The run's end snapshots each body as the character it is seated as.
+// FS-50MTX R30.
+func TestRawMatchState_CarriesEachBodysCharacter(t *testing.T) {
+	s, _, _ := settlingRun(t)
+	memberID := uuid.New()
+	characterID := uuid.New()
+	s.AddPlayer(memberID, types.CharacterInPlay{ID: characterID, Name: "Wren", Class: "warrior", Level: 3}, "")
+
+	state := s.getRawMatchState(nil)
+
+	require.Len(t, state.Players, 1)
+	assert.Equal(t, memberID.String(), state.Players[0].MemberID)
+	assert.Equal(t, characterID, state.Players[0].CharacterID)
+}
+
 // A player is settled on the tick they die, as a death, at the position their
 // fall gave them. FS-GV8WN §A R1–R2, I-GV8WN-6.
 func TestSettleOnResolve_Death_SettlesOnTheTickTheyFall(t *testing.T) {

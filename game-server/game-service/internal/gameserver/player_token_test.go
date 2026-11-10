@@ -21,6 +21,7 @@ type loadoutAuthRecorder struct {
 	mu        sync.Mutex
 	auth      [][]string
 	reads     int
+	readReqs  []*itemspb.GetLoadoutWithItemsRequest
 	checkouts []*itemspb.CheckOutRunGearRequest
 }
 
@@ -29,6 +30,7 @@ func (r *loadoutAuthRecorder) GetLoadoutWithItems(ctx context.Context, req *item
 	r.mu.Lock()
 	r.auth = append(r.auth, md.Get("authorization"))
 	r.reads++
+	r.readReqs = append(r.readReqs, req)
 	r.mu.Unlock()
 	return r.MockItemsClient.GetLoadoutWithItems(ctx, req)
 }
@@ -49,6 +51,28 @@ func (r *loadoutAuthRecorder) checkoutRunIDs() []string {
 	ids := make([]string, 0, len(r.checkouts))
 	for _, req := range r.checkouts {
 		ids = append(ids, req.GetRunId())
+	}
+	return ids
+}
+
+// checkoutCharacterIDs is the character of every checkout, in order.
+func (r *loadoutAuthRecorder) checkoutCharacterIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.checkouts))
+	for _, req := range r.checkouts {
+		ids = append(ids, req.GetCharacterId())
+	}
+	return ids
+}
+
+// readCharacterIDs is the character of every loadout read, in order.
+func (r *loadoutAuthRecorder) readCharacterIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.readReqs))
+	for _, req := range r.readReqs {
+		ids = append(ids, req.GetCharacterId())
 	}
 	return ids
 }

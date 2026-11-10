@@ -154,6 +154,7 @@ func TestLeaveField_SettlesThroughTheOutbox(t *testing.T) {
 	require.Len(t, extracted.GetPlayerItems(), 1)
 	items := extracted.GetPlayerItems()[0]
 	assert.Equal(t, wren.ID.String(), items.GetMemberId())
+	assert.Equal(t, wren.Character.ID.String(), items.GetCharacterId(), "the visit's character in play (FS-50MTX R30)")
 	require.NotNil(t, items.GetEquipment(), "equipment is never nil")
 	assert.Equal(t, meadowsSword.String(), items.GetEquipment().GetWeapon().GetInstanceId(), "the worn sword, as stored")
 }

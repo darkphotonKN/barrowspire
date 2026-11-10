@@ -45,12 +45,14 @@ func TestAddPlayer_RunSeat_ChecksOutUnderTheRunIDAndSeatsTheBagAfterCarriedItems
 	}
 	s, _ := equipRun(t, client)
 	memberID := uuid.New()
+	characterID := uuid.New()
 
-	entityID := s.AddPlayer(memberID, types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
+	entityID := s.AddPlayer(memberID, types.CharacterInPlay{ID: characterID, Name: "Wren", Class: "warrior", Level: 3}, "")
 
 	require.Len(t, client.checkouts, 1, "the seat checks out once")
 	assert.Equal(t, memberID.String(), client.checkouts[0].GetMemberId())
 	assert.Equal(t, s.ID.String(), client.checkouts[0].GetRunId(), "under the run's session id")
+	assert.Equal(t, characterID.String(), client.checkouts[0].GetCharacterId(), "as the character in play (FS-50MTX R28)")
 	assert.Empty(t, client.loadoutReads, "a run seat no longer reads the loadout")
 
 	assert.Equal(t, []string{"Seax"}, itemNames(t, s, wornIDs(t, s, entityID)))
@@ -65,11 +67,40 @@ func TestAddPlayer_HubSeat_ReadsTheLoadoutAndChecksNothingOut(t *testing.T) {
 	client := &mockItemsClient{loadout: &pb.GetLoadoutWithItemsResponse{}, bag: []*pb.ItemInstance{bagItem("Rope")}}
 	hub := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, client, HubBounds())
 
-	entityID := hub.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
+	characterID := uuid.New()
 
-	assert.Len(t, client.loadoutReads, 1, "the hub reads the loadout")
+	entityID := hub.AddPlayer(uuid.New(), types.CharacterInPlay{ID: characterID, Name: "Wren", Class: "warrior", Level: 3}, "")
+
+	require.Len(t, client.loadoutReads, 1, "the hub reads the loadout")
+	assert.Equal(t, characterID.String(), client.loadoutReads[0].GetCharacterId(), "as the character in play (FS-50MTX R28)")
 	assert.Empty(t, client.checkouts, "the hub checks nothing out")
 	assert.Empty(t, inventory(t, hub, entityID).ItemIDs, "the hub seats no bag")
+}
+
+// A member walked back to the hub reads the loadout as their character too.
+// FS-50MTX R28.
+func TestAddPlayerAt_HubSeat_ReadsAsTheCharacterInPlay(t *testing.T) {
+	client := &mockItemsClient{loadout: &pb.GetLoadoutWithItemsResponse{}}
+	hub := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, client, HubBounds())
+	characterID := uuid.New()
+
+	hub.AddPlayerAt(uuid.New(), types.CharacterInPlay{ID: characterID, Name: "Wren", Class: "warrior", Level: 3}, "", 100, 100)
+
+	require.Len(t, client.loadoutReads, 1)
+	assert.Equal(t, characterID.String(), client.loadoutReads[0].GetCharacterId())
+}
+
+// No character is sent as empty, never as the zero UUID, so items-service
+// refuses the read and the delver seats as loadout unknown instead of as a
+// character with an empty loadout. FS-50MTX R28.
+func TestAddPlayer_NoCharacter_SendsNoCharacterID(t *testing.T) {
+	client := &mockItemsClient{loadout: &pb.GetLoadoutWithItemsResponse{}}
+	s, _ := equipRun(t, client)
+
+	s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Wren", Class: "warrior", Level: 3}, "")
+
+	require.Len(t, client.checkouts, 1)
+	assert.Empty(t, client.checkouts[0].GetCharacterId())
 }
 
 // Seating is not capped: a legacy bag over capacity is seated in full.
@@ -145,6 +176,30 @@ func TestSeatArrival_SeatsTheCheckedOutWornAndBag(t *testing.T) {
 	assert.Empty(t, wornIDs(t, s, entityID), "the over-level seax is carried")
 	assert.Equal(t, []string{"Seax", "Rope"}, itemNames(t, s, inventory(t, s, entityID).ItemIDs))
 	assert.False(t, delverEntityLoadoutUnknown(t, s, memberID))
+}
+
+// A handoff seat names the character on its pending entry, for the checkout
+// that runs before the arrival is seated; a member with no pending entry has
+// none. FS-50MTX R29.
+func TestHandoffSeatOf_ExpectedMember_NamesThePendingCharacter(t *testing.T) {
+	s, _ := equipRun(t, nil)
+	expected := uuid.New()
+	character := types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "warrior", Level: 3}
+	s.AddPlayersToPendingConnection([]*types.Player{{ID: expected, Character: character}})
+
+	seat, got := s.HandoffSeatOf(expected)
+	assert.Equal(t, HandoffSeatExpected, seat)
+	assert.Equal(t, character, got)
+
+	seat, got = s.HandoffSeatOf(uuid.New())
+	assert.Equal(t, HandoffSeatNone, seat)
+	assert.Equal(t, types.CharacterInPlay{}, got)
+
+	_, err := s.SeatArrival(&types.Player{ID: expected}, nil)
+	require.NoError(t, err)
+	seat, got = s.HandoffSeatOf(expected)
+	assert.Equal(t, HandoffSeatTaken, seat)
+	assert.Equal(t, types.CharacterInPlay{}, got)
 }
 
 // A field visitor carries the checked-out bag after the over-level carried

@@ -22,7 +22,7 @@ func TestPublishSettlement_OnePlayer_PartialPairUnderTheirIDs(t *testing.T) {
 
 	svc.PublishSettlement(context.Background(), &types.RawSettlement{
 		SessionID:     run,
-		Player:        types.RawPlayerState{MemberID: wren.String(), Username: "wren", Kills: 3, Escape: true},
+		Player:        types.RawPlayerState{MemberID: wren.String(), CharacterID: character, Username: "wren", Kills: 3, Escape: true},
 		Progress:      types.RunProgress{MemberID: wren, CharacterID: character, Gained: 120},
 		FinalPosition: 1,
 	}, nil)
@@ -32,6 +32,7 @@ func TestPublishSettlement_OnePlayer_PartialPairUnderTheirIDs(t *testing.T) {
 	assert.True(t, extracted.GetPartial(), "a player's own settlement releases only them")
 	require.Len(t, extracted.GetPlayerItems(), 1)
 	assert.Equal(t, wren.String(), extracted.GetPlayerItems()[0].GetMemberId())
+	assert.Equal(t, character.String(), extracted.GetPlayerItems()[0].GetCharacterId(), "the character in play (FS-50MTX R30)")
 
 	ended := outbox.matchEnded(t)
 	require.Len(t, ended.GetPlayers(), 1)
@@ -81,6 +82,59 @@ func TestPublishMatchComplete_SomeSettled_NamesThemOnTheWholeRunEvent(t *testing
 	extracted := outbox.itemsExtracted(t)
 	assert.False(t, extracted.GetPartial(), "the run's end releases the whole run")
 	assert.Equal(t, []string{settled.String()}, extracted.GetSettledMemberIds())
+}
+
+// The run's end names each player's character on their items, through
+// rankPlayers. FS-50MTX R30.
+func TestPublishMatchComplete_CarriesEachPlayersCharacter(t *testing.T) {
+	outbox := &capturingOutbox{}
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
+	wren, character := uuid.New(), uuid.New()
+
+	svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
+		SessionID: uuid.New(),
+		Players:   []types.RawPlayerState{{MemberID: wren.String(), CharacterID: character, Username: "wren"}},
+	})
+
+	items := outbox.itemsExtracted(t).GetPlayerItems()
+	require.Len(t, items, 1)
+	assert.Equal(t, character.String(), items[0].GetCharacterId())
+}
+
+// A settlement with no character on the body names none: empty, never the zero
+// UUID, so items-service reads it as an event with no character. FS-50MTX R30,
+// R32.
+func TestPublishSettlement_NoCharacter_SentEmpty(t *testing.T) {
+	tests := []struct {
+		name    string
+		publish func(svc *service)
+	}{
+		{"partial settlement", func(svc *service) {
+			svc.PublishSettlement(context.Background(), &types.RawSettlement{
+				SessionID: uuid.New(),
+				Player:    types.RawPlayerState{MemberID: uuid.NewString(), Username: "wren"},
+			}, nil)
+			svc.Drain()
+		}},
+		{"whole run", func(svc *service) {
+			svc.PublishMatchComplete(context.Background(), &types.RawMatchState{
+				SessionID: uuid.New(),
+				Players:   []types.RawPlayerState{{MemberID: uuid.NewString(), Username: "wren"}},
+			})
+			svc.Drain()
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outbox := &capturingOutbox{}
+			tt.publish(NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil))
+
+			items := outbox.itemsExtracted(t).GetPlayerItems()
+			require.Len(t, items, 1)
+			assert.Empty(t, items[0].GetCharacterId())
+		})
+	}
 }
 
 // With everyone already settled, the run's end is only a sweep: one

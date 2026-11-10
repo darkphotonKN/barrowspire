@@ -32,6 +32,7 @@ func TestEnterField_ChecksOutUnderTheVisitID(t *testing.T) {
 	settled := rig.settle.settled()
 	require.Len(t, settled, 1)
 	assert.Equal(t, []string{settled[0].ID.String()}, items.checkoutRunIDs(), "checked out once, under the visit's id")
+	assert.Equal(t, []string{wren.Character.ID.String()}, items.checkoutCharacterIDs(), "as the character in play (FS-50MTX R28)")
 }
 
 // The pre-check before queueing or a solo run reads the loadout and checks
@@ -40,10 +41,12 @@ func TestCheckLoadout_ReadsAndChecksNothingOut(t *testing.T) {
 	items := &loadoutAuthRecorder{}
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, items, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 
-	require.NoError(t, server.CheckLoadout(context.Background(), &types.Player{ID: uuid.New()}))
+	character := types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"}
+	require.NoError(t, server.CheckLoadout(context.Background(), &types.Player{ID: uuid.New(), Character: character}))
 
 	assert.Equal(t, 1, items.readCount())
 	assert.Empty(t, items.checkoutRunIDs())
+	assert.Equal(t, []string{character.ID.String()}, items.readCharacterIDs(), "as the character in play (FS-50MTX R28)")
 }
 
 // A reconnect keeps the body the member has: reconnecting into a run or a
@@ -65,7 +68,7 @@ func TestReconnect_IntoARunOrField_ChecksNothingOut(t *testing.T) {
 			seat: func(t *testing.T, server *Server, record *types.Player) *game.Session {
 				meadows, ok := server.FieldSession(game.FieldGentleMeadows)
 				require.True(t, ok)
-				gear, err := server.setupHandoffConnectingPlayer(context.Background(), record.ID, uuid.New(), "")
+				gear, err := server.setupHandoffConnectingPlayer(context.Background(), record.ID, types.CharacterInPlay{ID: uuid.New()}, uuid.New(), "")
 				require.NoError(t, err)
 				_, err = meadows.SeatVisitor(record.ID, types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Wren"}, uuid.New(), gear)
 				require.NoError(t, err)
