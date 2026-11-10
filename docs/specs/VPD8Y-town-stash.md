@@ -311,3 +311,5 @@ both rules. Standing more than `NPC_TALK_RANGE` (80) from every outer wall leave
 centred near the Quartermaster (1280, 270), and no point in it is 80 plus R31's margin from him.
 The chest keeps its spot at (1180, 245), which is about 50 px inside the west wall. From the road
 west of the store it is within reach, and `E` there offers nothing.
+
+## Change: Per-character gear → FS-50MTX

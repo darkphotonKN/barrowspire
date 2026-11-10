@@ -378,3 +378,5 @@ Recorded from the code review. No requirement above changes.
 - **Container views show no "Found this run" line.** A tip in a container view leaves out
   R36's line: those items are not the player's yet. This is a deliberate reading of R36, which
   marks the delver's own bag cells and worn slots.
+
+## Change: Per-character gear → FS-50MTX
