@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jwtWith } from "./jwt.fixture";
 
+const CHARACTER = "11111111-1111-4111-8111-111111111111";
+
 /**
  * FS-ZPX58 §C: an authenticated call refused with 401 renews the session once and is sent again;
  * only a refused renewal signs the player out.
@@ -126,7 +128,7 @@ describe("apiClient renews on a 401 (FS-ZPX58 R13, R16, R17)", () => {
     route = (req) => (isRefresh(req) ? renewed() : bearer(req) === `Bearer ${NEW}` ? json(200, {}) : problem(401, "UNAUTHENTICATED"));
     const { apiClient } = await loadApi();
 
-    await Promise.all([apiClient.getWalletAccount(), apiClient.getLoadout(), apiClient.getItemInstances()]);
+    await Promise.all([apiClient.getWalletAccount(), apiClient.getLoadout(CHARACTER), apiClient.getItemInstances()]);
 
     expect(requests.filter(isRefresh)).toHaveLength(1);
   });
@@ -212,7 +214,7 @@ describe("apiClient renews on a 401 (FS-ZPX58 R13, R16, R17)", () => {
     const { apiClient } = await loadApi();
 
     await apiClient.getWalletAccount().catch(() => undefined);
-    await apiClient.getLoadout().catch(() => undefined);
+    await apiClient.getLoadout(CHARACTER).catch(() => undefined);
     await apiClient.getItemInstances().catch(() => undefined);
 
     expect(requests.filter(isRefresh)).toHaveLength(1);

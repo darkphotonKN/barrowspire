@@ -29,10 +29,14 @@ type stubItemClient struct {
 	weapons   *pb.ListWeaponsResponse
 	loadout   *pb.GetLoadoutResponse
 	instances *pb.ListItemInstancesResponse
+	updated   *pb.UpdateLoadoutResponse
 	moved     *pb.MoveItemInstanceResponse
 
-	gotAuth []string // outgoing authorization metadata of the last call
-	gotMove *pb.MoveItemInstanceRequest
+	gotAuth      []string // outgoing authorization metadata of the last call
+	gotLoadout   *pb.GetLoadoutRequest
+	gotInstances *pb.ListItemInstancesRequest
+	gotUpdate    *pb.UpdateLoadoutRequest
+	gotMove      *pb.MoveItemInstanceRequest
 }
 
 func (s *stubItemClient) recordAuth(ctx context.Context) {
@@ -80,19 +84,22 @@ func (s *stubItemClient) CreateCompleteConsumable(ctx context.Context, _ *pb.Cre
 	return nil, s.err
 }
 
-func (s *stubItemClient) GetLoadout(ctx context.Context, _ *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
+func (s *stubItemClient) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
 	s.recordAuth(ctx)
+	s.gotLoadout = req
 	return s.loadout, s.err
 }
 
-func (s *stubItemClient) ListItemInstances(ctx context.Context, _ *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
+func (s *stubItemClient) ListItemInstances(ctx context.Context, req *pb.ListItemInstancesRequest) (*pb.ListItemInstancesResponse, error) {
 	s.recordAuth(ctx)
+	s.gotInstances = req
 	return s.instances, s.err
 }
 
-func (s *stubItemClient) UpdateLoadout(ctx context.Context, _ *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
+func (s *stubItemClient) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
 	s.recordAuth(ctx)
-	return nil, s.err
+	s.gotUpdate = req
+	return s.updated, s.err
 }
 
 func (s *stubItemClient) MoveItemInstance(ctx context.Context, req *pb.MoveItemInstanceRequest) (*pb.MoveItemInstanceResponse, error) {

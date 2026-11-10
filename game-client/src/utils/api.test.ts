@@ -273,12 +273,12 @@ describe("apiClient.moveItemInstance (FS-VPD8Y R22, R42)", () => {
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     const { apiClient } = await loadApi();
-    const res = await apiClient.moveItemInstance("i1", "stash");
+    const res = await apiClient.moveItemInstance("c1", "i1", "stash");
     expect(requests[0].method).toBe("PUT");
     expect(new URL(requests[0].url).pathname).toBe(
       "/api/items/instances/i1/location",
     );
-    expect(await requests[0].json()).toEqual({ location: "stash" });
+    expect(await requests[0].json()).toEqual({ location: "stash", character_id: "c1" });
     expect(res.result).toEqual({ id: "i1", location: "stash" });
   });
 
@@ -290,9 +290,48 @@ describe("apiClient.moveItemInstance (FS-VPD8Y R22, R42)", () => {
       );
     const { apiClient } = await loadApi();
     const { ApiError } = await import("./apiError");
-    const err = await apiClient.moveItemInstance("i1", "stash").catch((e: unknown) => e);
+    const err = await apiClient.moveItemInstance("c1", "i1", "stash").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as InstanceType<typeof ApiError>).code).toBe("STASH_FULL");
+  });
+});
+
+describe("apiClient's per-character gear (FS-50MTX §API surface)", () => {
+  const ok = () =>
+    new Response(JSON.stringify({ statusCode: 200, message: "ok", result: {} }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("should read the loadout under the character", async () => {
+    answer = ok;
+    const { apiClient } = await loadApi();
+    await apiClient.getLoadout("c1");
+    expect(requests[0].method).toBe("GET");
+    expect(new URL(requests[0].url).pathname).toBe("/api/characters/c1/loadout");
+  });
+
+  it("should write a slot under the character, an empty id unequipping", async () => {
+    answer = ok;
+    const { apiClient } = await loadApi();
+    await apiClient.updateLoadout("c1", "weapon", null);
+    expect(requests[0].method).toBe("PUT");
+    expect(new URL(requests[0].url).pathname).toBe("/api/characters/c1/loadout");
+    expect(await requests[0].json()).toEqual({ slot: "weapon", item_instance_id: "" });
+  });
+
+  it("should ask for the character's items when one is named", async () => {
+    answer = ok;
+    const { apiClient } = await loadApi();
+    await apiClient.getItemInstances("c1");
+    expect(new URL(requests[0].url).searchParams.get("characterId")).toBe("c1");
+  });
+
+  it("should send no character for the stash alone", async () => {
+    answer = ok;
+    const { apiClient } = await loadApi();
+    await apiClient.getItemInstances();
+    expect(new URL(requests[0].url).search).toBe("");
   });
 });
 

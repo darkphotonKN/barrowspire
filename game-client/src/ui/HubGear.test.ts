@@ -19,6 +19,7 @@ import {
   LISTED_NOTICE,
   SETTLING_NOTICE,
   backendSlot,
+  gearAsCharacter,
   loadHubGear,
   type HubGearApi,
   type HubGearPanel,
@@ -76,6 +77,65 @@ const ids = (items: readonly ItemState[]) => items.map((i) => i.entity_id);
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("gearAsCharacter (FS-50MTX R37)", () => {
+  function rest() {
+    return {
+      getItemInstances: vi.fn(async (_character: string) => ({ result: { items: [] } })),
+      getLoadout: vi.fn(async (_character: string) => ({ result: {} })),
+      getItemRarities: vi.fn(async () => ({ result: [] })),
+      updateLoadout: vi.fn(
+        async (_character: string, _slot: string, _id: string | null) => ({}),
+      ),
+      moveItemInstance: vi.fn(
+        async (_character: string, _id: string, _to: ItemLocation) => ({}),
+      ),
+    };
+  }
+
+  it("should make every gear call as the active character", async () => {
+    const api = rest();
+    const gear = gearAsCharacter(api, () => "ash");
+
+    await gear.getItemInstances();
+    await gear.getLoadout();
+    await gear.updateLoadout("chest", "cloak");
+    await gear.moveItemInstance("sword", "stash");
+
+    expect(api.getItemInstances).toHaveBeenCalledWith("ash");
+    expect(api.getLoadout).toHaveBeenCalledWith("ash");
+    expect(api.updateLoadout).toHaveBeenCalledWith("ash", "chest", "cloak");
+    expect(api.moveItemInstance).toHaveBeenCalledWith("ash", "sword", "stash");
+  });
+
+  it("should read the active character at each call, so a changed character shows its own gear", async () => {
+    const api = rest();
+    let active = "ash";
+    const gear = gearAsCharacter(api, () => active);
+
+    await gear.getLoadout();
+    active = "ember";
+    await gear.getLoadout();
+
+    expect(api.getLoadout.mock.calls.map(([c]) => c)).toEqual(["ash", "ember"]);
+  });
+
+  it("should leave the rarities alone, which belong to no character", async () => {
+    const api = rest();
+    await gearAsCharacter(api, () => null).getItemRarities();
+    expect(api.getItemRarities).toHaveBeenCalledTimes(1);
+  });
+
+  it("should refuse, sending nothing, with no active character", async () => {
+    const api = rest();
+    const gear = gearAsCharacter(api, () => null);
+
+    await expect(gear.getLoadout()).rejects.toThrow();
+    await expect(gear.moveItemInstance("sword", "bag")).rejects.toThrow();
+    expect(api.getLoadout).not.toHaveBeenCalled();
+    expect(api.moveItemInstance).not.toHaveBeenCalled();
+  });
 });
 
 describe("loadHubGear (FS-HRH2J R41)", () => {
@@ -558,6 +618,24 @@ describe("HubGear (FS-HRH2J §E R40–44)", () => {
         detail: "listed",
         errors: [],
       }),
+    );
+
+    panel.onEquip?.(panel.inventory[0], "weapon");
+    await settle();
+
+    expect(notice).toHaveBeenCalledWith(NOT_FREE_NOTICE);
+    expect(notice).not.toHaveBeenCalledWith(GEAR_CHANGE_FAILED);
+    expect(api.getItemInstances).toHaveBeenCalledTimes(2);
+    expect(panel.equipped.weapon).toBeNull();
+    expect(ids(panel.inventory)).toEqual(["sword"]);
+  });
+
+  it("should say the item is not free and reload the real bag and stash when the server refuses an equip with NOT_FOUND (FS-50MTX R15)", async () => {
+    const { gear, panel, api, notice } = hubGearOnStage([instance("sword")]);
+    gear.toggle();
+    await settle();
+    api.updateLoadout.mockRejectedValueOnce(
+      new ApiError({ code: "NOT_FOUND", status: 404, detail: "gone", errors: [] }),
     );
 
     panel.onEquip?.(panel.inventory[0], "weapon");
