@@ -165,10 +165,10 @@ func TestItemInstances_RingsAndUniqueEffect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := repo.InsertItemInstancesTx(ctx, tx, []*ItemInstance{
+	if err := repo.InsertItemInstancesAtTx(ctx, tx, []*ItemInstance{
 		ring(plainID, plainTpl, normal, "Test Iron Band"),
 		ring(uniqueID, uniqueTpl, fabled, "Test Last King"),
-	}); err != nil {
+	}, LocationStash); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("store rings: %v", err)
 	}

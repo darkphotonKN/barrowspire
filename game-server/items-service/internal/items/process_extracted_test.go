@@ -33,11 +33,12 @@ type extractionRepo struct {
 	// runOwners are the owners of instances still IN_RUN under the run
 	runOwners []uuid.UUID
 
-	inserted []*ItemInstance
-	applied  []*ItemInstance
-	loadouts []*UpsertPlayerLoadoutRequest
-	locked   []uuid.UUID
-	released []uuid.UUID
+	inserted   []*ItemInstance
+	insertedAt []string
+	applied    []*ItemInstance
+	loadouts   []*UpsertPlayerLoadoutRequest
+	locked     []uuid.UUID
+	released   []uuid.UUID
 	// memberReleases are the member-scoped releases of partial events
 	memberReleases []memberRelease
 	// exceptReleases are whole-run releases that skip members already settled
@@ -57,8 +58,9 @@ func (r *extractionRepo) RunItemOwnersTx(_ context.Context, _ *sqlx.Tx, runID uu
 	return r.runOwners, nil
 }
 
-func (r *extractionRepo) InsertItemInstancesTx(_ context.Context, _ *sqlx.Tx, items []*ItemInstance) error {
+func (r *extractionRepo) InsertItemInstancesAtTx(_ context.Context, _ *sqlx.Tx, items []*ItemInstance, location string) error {
 	r.calls = append(r.calls, "insert")
+	r.insertedAt = append(r.insertedAt, location)
 	r.inserted = append(r.inserted, items...)
 	return r.insertErr
 }
@@ -139,9 +141,10 @@ func extractedEvent(items ...*pb.Item) *pb.ItemsExtractedEvent {
 		SessionId: uuid.NewString(),
 		EventId:   uuid.NewString(),
 		PlayerItems: []*pb.PlayerItems{{
-			MemberId:  uuid.NewString(),
-			Equipment: &pb.Equipment{},
-			Inventory: items,
+			MemberId:    uuid.NewString(),
+			CharacterId: uuid.NewString(),
+			Equipment:   &pb.Equipment{},
+			Inventory:   items,
 		}},
 	}
 }
@@ -404,7 +407,7 @@ func instanceID(item *pb.Item) uuid.UUID { return uuid.MustParse(item.GetInstanc
 
 // FS-18Z5F R26-R29: under the run id the event carries, a find is inserted, a
 // brought-in item is applied through the run fence (a bag item back to the
-// bag, a worn one keeping its location), the loadout is written, and then
+// bag held by the event's character, worn or not), the loadout is written, and then
 // everything still IN_RUN under the run is released, a member absent from the
 // event included.
 func TestProcessItemsExtracted_SettlesTheRun(t *testing.T) {
@@ -433,8 +436,11 @@ func TestProcessItemsExtracted_SettlesTheRun(t *testing.T) {
 	if got := applied[instanceID(scroll)].Location; got != LocationBag {
 		t.Errorf("bag scroll location = %q, want %q", got, LocationBag)
 	}
-	if got := applied[instanceID(sword)].Location; got != "" {
-		t.Errorf("worn sword location = %q, want none (kept as stored)", got)
+	character := uuid.MustParse(event.PlayerItems[0].CharacterId)
+	for _, item := range applied {
+		if item.Location != LocationBag || item.CharacterID == nil || *item.CharacterID != character {
+			t.Errorf("%s at %q held by %v, want the bag held by %v", item.Name, item.Location, item.CharacterID, character)
+		}
 	}
 	for _, run := range repo.fenceRun {
 		if run != runA {
@@ -584,7 +590,7 @@ func TestProcessItemsExtracted_SettledMemberNotUUID_Malformed(t *testing.T) {
 func TestMapProtoEquipmentToItemInstances_NilEquipment(t *testing.T) {
 	member := uuid.New()
 
-	instances, loadout, err := (&service{}).MapProtoEquipmentToItemInstances(member, nil)
+	instances, loadout, err := (&service{}).MapProtoEquipmentToItemInstances(member, uuid.New(), nil)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -606,13 +612,24 @@ type settlementFixture struct {
 
 func (f settlementFixture) settle(t *testing.T, runID uuid.UUID, players ...*pb.PlayerItems) {
 	t.Helper()
-	f.apply(t, &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: players})
+	f.apply(t, &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: withCharacters(players)})
+}
+
+// withCharacters gives each player that names none their testCharacter, so a
+// test only says so when it means another character or none at all.
+func withCharacters(players []*pb.PlayerItems) []*pb.PlayerItems {
+	for _, player := range players {
+		if player.CharacterId == "" {
+			player.CharacterId = testCharacter(uuid.MustParse(player.MemberId)).String()
+		}
+	}
+	return players
 }
 
 // settlePartial settles only players' members of the run (FS-GV8WN R6).
 func (f settlementFixture) settlePartial(t *testing.T, runID uuid.UUID, players ...*pb.PlayerItems) {
 	t.Helper()
-	f.apply(t, &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: players, Partial: true})
+	f.apply(t, &pb.ItemsExtractedEvent{SessionId: runID.String(), EventId: uuid.NewString(), PlayerItems: withCharacters(players), Partial: true})
 }
 
 func (f settlementFixture) apply(t *testing.T, event *pb.ItemsExtractedEvent) {
@@ -681,11 +698,11 @@ func expectHome(t *testing.T, ctx context.Context, db *sqlx.DB, id uuid.UUID, lo
 // fence and release against a real schema (FS-18Z5F R26-R31).
 func TestProcessItemsExtracted_AgainstTheSchema(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	f := settlementFixture{ctx: ctx, db: db, svc: NewService(NewRepository(db), db, nil, nil, &fakeInbox{})}
+	f := settlementFixture{ctx: ctx, db: db, svc: NewService(NewRepository(db), db, nil, nil, &fakeInbox{}, everyCharacterOwned{})}
 
 	t.Run("a find goes to the bag; brought-in items come home; the loadout is written", func(t *testing.T) {
 		member, runA := uuid.New(), uuid.New()
-		sword := seedInRun(t, ctx, db, member, LocationStash, runA) // legacy worn: stash location
+		sword := seedInRun(t, ctx, db, member, LocationBag, runA)
 		wear(t, ctx, db, member, sword)
 		dagger := seedInRun(t, ctx, db, member, LocationStash, runA) // unequipped in the run
 		f.cleanUpAfter(t, member)
@@ -696,8 +713,8 @@ func TestProcessItemsExtracted_AgainstTheSchema(t *testing.T) {
 			Inventory: []*pb.Item{f.carried(t, dagger), f.find(t, sword)},
 		})
 
-		expectHome(t, ctx, db, sword, LocationStash) // worn: keeps its location
-		expectHome(t, ctx, db, dagger, LocationBag)  // carried out in the bag
+		expectHome(t, ctx, db, sword, LocationBag)  // worn, in its character's bag location
+		expectHome(t, ctx, db, dagger, LocationBag) // carried out in the bag
 		if got := f.owned(t, member); got != 3 {
 			t.Fatalf("member owns %d instances, want the sword, the dagger and the find", got)
 		}
@@ -912,7 +929,7 @@ func TestProcessItemsExtracted_ConsumedItems_DeletedBeforeRelease(t *testing.T) 
 			event.PlayerItems[0].ConsumedItemIds = []string{drunk1.String(), drunk2.String()}
 			if tt.secondMember {
 				event.PlayerItems = append(event.PlayerItems, &pb.PlayerItems{
-					MemberId: uuid.NewString(), Equipment: &pb.Equipment{}, Inventory: []*pb.Item{potion()},
+					MemberId: uuid.NewString(), CharacterId: uuid.NewString(), Equipment: &pb.Equipment{}, Inventory: []*pb.Item{potion()},
 				})
 			}
 			member := uuid.MustParse(event.PlayerItems[0].MemberId)

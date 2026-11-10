@@ -102,7 +102,7 @@ func TestHandler_ItemInstances_CarryRequiredLevel(t *testing.T) {
 		h := NewHandler(&fakeLoadoutService{loadout: &LoadoutWithItems{Weapon: instance(7), Ring1: instance(3)}}, nil)
 		owner := uuid.New()
 		ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner})
-		res, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String()})
+		res, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String(), CharacterId: uuid.NewString()})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -139,6 +139,163 @@ func TestItemInstanceToProto_CarriesLevelAndAffixes(t *testing.T) {
 		if got.Affixes[i].Stat != want[i].Stat || got.Affixes[i].Tier != want[i].Tier || got.Affixes[i].Value != want[i].Value {
 			t.Errorf("Affixes[%d] = %v, want %v", i, got.Affixes[i], want[i])
 		}
+	}
+}
+
+// FS-50MTX R24: the holder goes on the wire, empty for a stash item.
+func TestItemInstanceToProto_CarriesHolder(t *testing.T) {
+	character := uuid.New()
+
+	if got := itemInstanceToProto(&ItemInstance{ID: uuid.New(), Location: LocationBag, CharacterID: &character}).CharacterId; got != character.String() {
+		t.Errorf("held item: CharacterId = %q, want %q", got, character)
+	}
+	if got := itemInstanceToProto(&ItemInstance{ID: uuid.New(), Location: LocationStash}).CharacterId; got != "" {
+		t.Errorf("stash item: CharacterId = %q, want empty", got)
+	}
+}
+
+// gearReadService records what each gear read was asked for; any other call
+// panics on the nil embedded interface.
+type gearReadService struct {
+	Service
+	calls      int
+	gotLoadout *GetLoadoutRequest
+	gotList    *ListItemInstancesRequest
+	gotGear    *CheckOutRunGearRequest
+}
+
+func (f *gearReadService) GetLoadout(_ context.Context, _ uuid.UUID, req *GetLoadoutRequest) (*Loadout, error) {
+	f.calls, f.gotLoadout = f.calls+1, req
+	return &Loadout{}, nil
+}
+
+func (f *gearReadService) GetLoadoutWithItems(_ context.Context, _ uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
+	f.calls, f.gotLoadout = f.calls+1, req
+	return &LoadoutWithItems{}, nil
+}
+
+func (f *gearReadService) ListItemInstances(_ context.Context, _ uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
+	f.calls, f.gotList = f.calls+1, req
+	return nil, nil
+}
+
+func (f *gearReadService) CheckOutRunGear(_ context.Context, _ uuid.UUID, req *CheckOutRunGearRequest) (*RunGear, error) {
+	f.calls, f.gotGear = f.calls+1, req
+	return &RunGear{Loadout: &LoadoutWithItems{}}, nil
+}
+
+// FS-50MTX R22, R25: the loadout reads and the checkout need a character; a
+// missing or malformed one is InvalidArgument and reaches nothing, which
+// game-service's empty id for a seat with no character relies on. A good one
+// goes to the service. The nil uuid is an unknown character to a read, but is
+// still refused at checkout, which has no ownership check behind it (R27).
+func TestHandler_GearReads_NeedACharacter(t *testing.T) {
+	member := uuid.New()
+	ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: member})
+	rpcs := []struct {
+		name string
+		call func(h *Handler, character string) error
+		got  func(f *gearReadService) uuid.UUID
+		// nilCode is what the nil uuid answers
+		nilCode codes.Code
+	}{
+		{"GetLoadout", func(h *Handler, character string) error {
+			_, err := h.GetLoadout(ctx, &pb.GetLoadoutRequest{MemberId: member.String(), CharacterId: character})
+			return err
+		}, func(f *gearReadService) uuid.UUID { return f.gotLoadout.CharacterId }, codes.OK},
+		{"GetLoadoutWithItems", func(h *Handler, character string) error {
+			_, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: member.String(), CharacterId: character})
+			return err
+		}, func(f *gearReadService) uuid.UUID { return f.gotLoadout.CharacterId }, codes.OK},
+		{"CheckOutRunGear", func(h *Handler, character string) error {
+			_, err := h.CheckOutRunGear(ctx, &pb.CheckOutRunGearRequest{MemberId: member.String(), RunId: uuid.NewString(), CharacterId: character})
+			return err
+		}, func(f *gearReadService) uuid.UUID { return f.gotGear.CharacterID }, codes.InvalidArgument},
+	}
+	for _, rpc := range rpcs {
+		t.Run(rpc.name+"/the nil uuid", func(t *testing.T) {
+			svc := &gearReadService{}
+
+			err := rpc.call(NewHandler(svc, nil), uuid.Nil.String())
+
+			if got := status.Code(err); got != rpc.nilCode {
+				t.Fatalf("code = %v, want %v (err %v)", got, rpc.nilCode, err)
+			}
+			if rpc.nilCode != codes.OK {
+				if svc.calls != 0 {
+					t.Errorf("service called %d times, want none", svc.calls)
+				}
+				return
+			}
+			if got := rpc.got(svc); got != uuid.Nil {
+				t.Errorf("service got character %v, want the nil uuid", got)
+			}
+		})
+
+		for name, bad := range map[string]string{"missing": "", "malformed": "nope"} {
+			t.Run(rpc.name+"/"+name+" character is refused", func(t *testing.T) {
+				svc := &gearReadService{}
+
+				err := rpc.call(NewHandler(svc, nil), bad)
+
+				if got := status.Code(err); got != codes.InvalidArgument {
+					t.Fatalf("code = %v, want InvalidArgument (err %v)", got, err)
+				}
+				if svc.calls != 0 {
+					t.Errorf("service called %d times, want none", svc.calls)
+				}
+			})
+		}
+
+		t.Run(rpc.name+"/the character reaches the service", func(t *testing.T) {
+			svc := &gearReadService{}
+			character := uuid.New()
+
+			if err := rpc.call(NewHandler(svc, nil), character.String()); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := rpc.got(svc); got != character {
+				t.Errorf("service got character %v, want %v", got, character)
+			}
+		})
+	}
+}
+
+// FS-50MTX R23: the list's character is optional. Absent is the stash, a good
+// one reaches the service, and only a malformed one is refused.
+func TestHandler_ListItemInstances_TakesAnOptionalCharacter(t *testing.T) {
+	member, character, unknown := uuid.New(), uuid.New(), uuid.Nil
+	ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: member})
+	tests := []struct {
+		name     string
+		raw      string
+		want     *uuid.UUID
+		wantCode codes.Code
+	}{
+		{name: "absent lists with no character", raw: "", want: nil, wantCode: codes.OK},
+		{name: "a character is passed on", raw: character.String(), want: &character, wantCode: codes.OK},
+		{name: "malformed is refused", raw: "nope", wantCode: codes.InvalidArgument},
+		{name: "the nil uuid is an unknown character", raw: uuid.Nil.String(), want: &unknown, wantCode: codes.OK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &gearReadService{}
+
+			_, err := NewHandler(svc, nil).ListItemInstances(ctx, &pb.ListItemInstancesRequest{MemberId: member.String(), CharacterId: tt.raw})
+
+			if got := status.Code(err); got != tt.wantCode {
+				t.Fatalf("code = %v, want %v (err %v)", got, tt.wantCode, err)
+			}
+			if tt.wantCode != codes.OK {
+				if svc.calls != 0 {
+					t.Errorf("service called %d times, want none", svc.calls)
+				}
+				return
+			}
+			if got := svc.gotList.CharacterId; (got == nil) != (tt.want == nil) || (got != nil && *got != *tt.want) {
+				t.Errorf("service got character %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -198,9 +355,9 @@ func TestHandler_GetLoadoutWithItems_OnlyTheOwnerReadsIt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &loadoutRepo{owner: owner, weapon: &ItemInstance{ID: uuid.New(), OwnerMemberID: owner, ItemType: "weapon", Name: "Blade"}}
-			h := NewHandler(NewService(repo, nil, nil, nil, nil), nil)
+			h := NewHandler(NewService(repo, nil, nil, nil, nil, everyCharacterOwned{}), nil)
 
-			res, err := h.GetLoadoutWithItems(tt.ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String()})
+			res, err := h.GetLoadoutWithItems(tt.ctx, &pb.GetLoadoutWithItemsRequest{MemberId: owner.String(), CharacterId: uuid.NewString()})
 
 			if got := status.Code(err); got != tt.wantCode {
 				t.Fatalf("code = %v, want %v (err %v)", got, tt.wantCode, err)
@@ -247,7 +404,7 @@ func (r *stashRepo) LockAccountTx(context.Context, *sqlx.Tx, uuid.UUID) error {
 	return nil
 }
 
-func (r *stashRepo) LoadoutSlotTx(context.Context, *sqlx.Tx, uuid.UUID, string) (*uuid.UUID, error) {
+func (r *stashRepo) LoadoutSlotTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID, string) (*uuid.UUID, error) {
 	r.reads++
 	return nil, nil
 }
@@ -257,24 +414,29 @@ func (r *stashRepo) LockItemPlacementTx(context.Context, *sqlx.Tx, uuid.UUID, uu
 	return &ItemPlacement{Status: itemStatusAvailable, Location: LocationBag}, nil
 }
 
+func (r *stashRepo) HoldInBagTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	r.writes++
+	return nil
+}
+
 func (r *stashRepo) UpsertLoadoutSlotTx(context.Context, *sqlx.Tx, *UpdateLoadoutRequest) error {
 	r.writes++
 	return nil
 }
 
-func (r *stashRepo) LoadoutTx(context.Context, *sqlx.Tx, uuid.UUID) (*Loadout, error) {
+func (r *stashRepo) LoadoutTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID) (*Loadout, error) {
 	r.reads++
 	return &Loadout{MemberId: &r.owner}, nil
 }
 
-func (r *stashRepo) CheckOutRunGearTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID) ([]*ItemInstance, error) {
+func (r *stashRepo) CheckOutRunGearTx(context.Context, *sqlx.Tx, uuid.UUID, uuid.UUID, uuid.UUID) ([]*ItemInstance, error) {
 	r.writes++
 	return nil, nil
 }
 
 // stashService serves repo with its transactions run inline, no database.
 func stashService(repo *stashRepo) *service {
-	svc := NewService(repo, nil, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil, everyCharacterOwned{})
 	svc.withTx = runInline
 	return svc
 }
@@ -285,11 +447,11 @@ var ownedRPCs = []struct {
 	call func(h *Handler, ctx context.Context, member string) error
 }{
 	{"GetLoadout", func(h *Handler, ctx context.Context, member string) error {
-		_, err := h.GetLoadout(ctx, &pb.GetLoadoutRequest{MemberId: member})
+		_, err := h.GetLoadout(ctx, &pb.GetLoadoutRequest{MemberId: member, CharacterId: uuid.NewString()})
 		return err
 	}},
 	{"GetLoadoutWithItems", func(h *Handler, ctx context.Context, member string) error {
-		_, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: member})
+		_, err := h.GetLoadoutWithItems(ctx, &pb.GetLoadoutWithItemsRequest{MemberId: member, CharacterId: uuid.NewString()})
 		return err
 	}},
 	{"ListItemInstances", func(h *Handler, ctx context.Context, member string) error {
@@ -297,11 +459,11 @@ var ownedRPCs = []struct {
 		return err
 	}},
 	{"UpdateLoadout", func(h *Handler, ctx context.Context, member string) error {
-		_, err := h.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{MemberId: member, Slot: "weapon", ItemInstanceId: uuid.NewString()})
+		_, err := h.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{MemberId: member, CharacterId: uuid.NewString(), Slot: "weapon", ItemInstanceId: uuid.NewString()})
 		return err
 	}},
 	{"CheckOutRunGear", func(h *Handler, ctx context.Context, member string) error {
-		_, err := h.CheckOutRunGear(ctx, &pb.CheckOutRunGearRequest{MemberId: member, RunId: uuid.NewString()})
+		_, err := h.CheckOutRunGear(ctx, &pb.CheckOutRunGearRequest{MemberId: member, CharacterId: uuid.NewString(), RunId: uuid.NewString()})
 		return err
 	}},
 }
@@ -444,10 +606,10 @@ func TestHandler_MoveItemInstance_Outcomes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			caller := uuid.New()
+			caller, character := uuid.New(), uuid.New()
 			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: caller})
 
-			res, err := NewHandler(tt.svc, nil).MoveItemInstance(ctx, &pb.MoveItemInstanceRequest{ItemInstanceId: tt.id, Location: tt.location})
+			res, err := NewHandler(tt.svc, nil).MoveItemInstance(ctx, &pb.MoveItemInstanceRequest{ItemInstanceId: tt.id, Location: tt.location, CharacterId: character.String()})
 
 			st := status.Convert(err)
 			if st.Code() != tt.wantCode {
@@ -462,6 +624,9 @@ func TestHandler_MoveItemInstance_Outcomes(t *testing.T) {
 				}
 				return
 			}
+			if tt.svc.gotReq.CharacterID != character {
+				t.Errorf("character = %v, want the request's %v", tt.svc.gotReq.CharacterID, character)
+			}
 			if tt.svc.gotCaller != caller || tt.svc.gotReq.ItemInstanceID != itemID || tt.svc.gotReq.Location != tt.wantStored {
 				t.Errorf("service got (%v, %+v), want (%v, {%v %s})", tt.svc.gotCaller, tt.svc.gotReq, caller, itemID, tt.wantStored)
 			}
@@ -474,7 +639,7 @@ func TestHandler_MoveItemInstance_Outcomes(t *testing.T) {
 
 func TestHandler_MoveItemInstance_NeedsAnIdentity(t *testing.T) {
 	svc := &fakeMoveService{}
-	_, err := NewHandler(svc, nil).MoveItemInstance(context.Background(), &pb.MoveItemInstanceRequest{ItemInstanceId: uuid.NewString(), Location: "bag"})
+	_, err := NewHandler(svc, nil).MoveItemInstance(context.Background(), &pb.MoveItemInstanceRequest{ItemInstanceId: uuid.NewString(), Location: "bag", CharacterId: uuid.NewString()})
 
 	if status.Code(err) != codes.Unauthenticated || svc.called {
 		t.Errorf("code = %v, called = %v; want Unauthenticated and no call", status.Code(err), svc.called)
@@ -575,6 +740,8 @@ func TestHandler_UpdateLoadout_Outcomes(t *testing.T) {
 		{"wrapped bag full", fmt.Errorf("update loadout: %w", errcode.Refuse(errcode.BagFull)), codes.FailedPrecondition, errcode.BagFull},
 		// FS-18Z5F R32, R33: equipping an item not AVAILABLE
 		{"item not available", errcode.Refuse(errcode.ItemNotAvailable), codes.FailedPrecondition, errcode.ItemNotAvailable},
+		// FS-50MTX R15: absent, not the caller's or held by another character
+		{"item not found", fmt.Errorf("equip: %w", commonconstants.ErrNotFound), codes.NotFound, ""},
 		{"infrastructure failure", errors.New("connection refused"), codes.Internal, ""},
 	}
 	for _, tt := range tests {
@@ -583,7 +750,7 @@ func TestHandler_UpdateLoadout_Outcomes(t *testing.T) {
 			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: caller})
 
 			_, err := NewHandler(&fakeLoadoutWriteService{err: tt.err}, nil).UpdateLoadout(ctx,
-				&pb.UpdateLoadoutRequest{MemberId: caller.String(), Slot: "weapon"})
+				&pb.UpdateLoadoutRequest{MemberId: caller.String(), CharacterId: uuid.NewString(), Slot: "weapon"})
 
 			st := status.Convert(err)
 			if st.Code() != tt.wantCode {
@@ -964,5 +1131,121 @@ func TestHandler_ReleaseConfirmedReservation_DatabaseFailureIsInternal(t *testin
 	}
 	if res != nil {
 		t.Errorf("response = %v, want none", res)
+	}
+}
+
+// FS-50MTX R10, R18: a write names its character. Missing or malformed never
+// reach the service, and answer InvalidArgument.
+func TestHandler_LoadoutAndMoveRefuseABadCharacter(t *testing.T) {
+	for name, character := range map[string]string{"missing": "", "malformed": "nope"} {
+		t.Run(name, func(t *testing.T) {
+			caller := uuid.New()
+			ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: caller})
+
+			_, loadoutErr := NewHandler(&fakeLoadoutWriteService{}, nil).UpdateLoadout(ctx,
+				&pb.UpdateLoadoutRequest{MemberId: caller.String(), CharacterId: character, Slot: "weapon"})
+			if code := status.Code(loadoutErr); code != codes.InvalidArgument {
+				t.Errorf("UpdateLoadout code = %v, want InvalidArgument", code)
+			}
+
+			move := &fakeMoveService{}
+			_, moveErr := NewHandler(move, nil).MoveItemInstance(ctx,
+				&pb.MoveItemInstanceRequest{ItemInstanceId: uuid.NewString(), Location: "bag", CharacterId: character})
+			if code := status.Code(moveErr); code != codes.InvalidArgument {
+				t.Errorf("MoveItemInstance code = %v, want InvalidArgument", code)
+			}
+			if move.called {
+				t.Errorf("service called for a bad character")
+			}
+		})
+	}
+}
+
+// FS-50MTX R10: the nil uuid is well formed, so a write naming it goes through
+// the ownership check like any other unknown character: 404, nothing written.
+func TestHandler_CharacterWrites_NilCharacterIsNotFound(t *testing.T) {
+	owner := uuid.New()
+	ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner})
+	nilID := uuid.Nil.String()
+	writes := []struct {
+		name string
+		call func(h *Handler) error
+	}{
+		{"UpdateLoadout", func(h *Handler) error {
+			_, err := h.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{MemberId: owner.String(), CharacterId: nilID, Slot: "weapon", ItemInstanceId: uuid.NewString()})
+			return err
+		}},
+		{"MoveItemInstance", func(h *Handler) error {
+			_, err := h.MoveItemInstance(ctx, &pb.MoveItemInstanceRequest{ItemInstanceId: uuid.NewString(), Location: "bag", CharacterId: nilID})
+			return err
+		}},
+	}
+	for _, write := range writes {
+		t.Run(write.name, func(t *testing.T) {
+			repo := &stashRepo{owner: owner}
+			svc := stashService(repo)
+			check := &characterCheck{owned: false}
+			svc.characters = check
+
+			err := write.call(NewHandler(svc, nil))
+
+			if got := status.Code(err); got != codes.NotFound {
+				t.Fatalf("code = %v, want NotFound (err %v)", got, err)
+			}
+			if len(check.characters) != 1 || check.characters[0] != uuid.Nil {
+				t.Errorf("checked characters %v, want the nil uuid once", check.characters)
+			}
+			if repo.reads != 0 || repo.writes != 0 {
+				t.Errorf("a refused write reached the repository: %d reads, %d writes", repo.reads, repo.writes)
+			}
+		})
+	}
+}
+
+// FS-50MTX R10, R11: a refused character check reaches the caller as 404 or
+// 503, the two kept apart, and the write never starts.
+func TestHandler_CharacterWrites_CheckRefusalAnswers(t *testing.T) {
+	owner := uuid.New()
+	ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: owner})
+	writes := []struct {
+		name string
+		call func(h *Handler) error
+	}{
+		{"UpdateLoadout", func(h *Handler) error {
+			_, err := h.UpdateLoadout(ctx, &pb.UpdateLoadoutRequest{MemberId: owner.String(), CharacterId: uuid.NewString(), Slot: "weapon", ItemInstanceId: uuid.NewString()})
+			return err
+		}},
+		{"MoveItemInstance", func(h *Handler) error {
+			_, err := h.MoveItemInstance(ctx, &pb.MoveItemInstanceRequest{ItemInstanceId: uuid.NewString(), Location: "bag", CharacterId: uuid.NewString()})
+			return err
+		}},
+	}
+	checks := []struct {
+		name     string
+		check    *characterCheck
+		wantCode codes.Code
+	}{
+		{"foreign, deleted or unknown character", &characterCheck{owned: false}, codes.NotFound},
+		{"character-service unreachable", &characterCheck{err: status.Error(codes.Unavailable, "connection refused")}, codes.Unavailable},
+		{"character-service stalled past the deadline", &characterCheck{err: status.Error(codes.DeadlineExceeded, "context deadline exceeded")}, codes.Unavailable},
+		{"character-service answers an unexpected failure", &characterCheck{err: status.Error(codes.Internal, "boom")}, codes.Unavailable},
+	}
+	for _, write := range writes {
+		for _, tt := range checks {
+			t.Run(write.name+"/"+tt.name, func(t *testing.T) {
+				repo := &stashRepo{owner: owner}
+				svc := stashService(repo)
+				svc.characters = tt.check
+
+				err := write.call(NewHandler(svc, nil))
+
+				if got := status.Code(err); got != tt.wantCode {
+					t.Fatalf("code = %v, want %v (err %v)", got, tt.wantCode, err)
+				}
+				if repo.reads != 0 || repo.writes != 0 {
+					t.Errorf("a refused write reached the repository: %d reads, %d writes", repo.reads, repo.writes)
+				}
+			})
+		}
 	}
 }

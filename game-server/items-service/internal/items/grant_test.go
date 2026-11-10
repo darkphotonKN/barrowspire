@@ -67,6 +67,7 @@ type mintedRow struct {
 	WeaponType    *string    `db:"weapon_type"`
 	Status        string     `db:"status"`
 	Location      string     `db:"location"`
+	CharacterID   *uuid.UUID `db:"character_id"`
 	ListingID     *uuid.UUID `db:"listing_id"`
 	ItemLevel     int        `db:"item_level"`
 	RequiredLevel *int       `db:"required_level"`
@@ -82,7 +83,7 @@ func mintedRows(t *testing.T, ctx context.Context, db *sqlx.DB, ids []uuid.UUID)
 	if err := db.SelectContext(ctx, &rows, `
 		SELECT ii.id, ii.template_id, ii.owner_member_id, ii.source, ii.item_type, ii.name, ii.description,
 		       COALESCE(r.rarity_code, '') AS rarity, ii.attack_power, ii.critical_rate, ii.weapon_type,
-		       ii.status, ii.location, ii.listing_id, ii.item_level, ii.required_level, ii.affixes
+		       ii.status, ii.location, ii.character_id, ii.listing_id, ii.item_level, ii.required_level, ii.affixes
 		FROM item_instances AS ii
 		LEFT JOIN item_rarities AS r ON r.id = ii.rarity_id
 		WHERE ii.id = ANY($1::uuid[])`, pq.Array(ids)); err != nil {
@@ -140,7 +141,7 @@ func twoSnapshots(sword, ring uuid.UUID) (a, b *ItemSnapshot) {
 // with no listing; their ids come back in request order.
 func TestGrantItems_MintsEachSnapshotIntoTheStash(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "normal", 1, 1, "kill_frenzy", "Kills ignite.")
 	member := grantMember(t, ctx, db)
@@ -167,7 +168,7 @@ func TestGrantItems_MintsEachSnapshotIntoTheStash(t *testing.T) {
 			want = a
 		}
 		r := rows[id]
-		if r.Owner != member || r.Status != itemStatusAvailable || r.Location != LocationStash || r.ListingID != nil || r.Source != "reward" {
+		if r.Owner != member || r.Status != itemStatusAvailable || r.Location != LocationStash || r.CharacterID != nil || r.ListingID != nil || r.Source != "reward" {
 			t.Errorf("%d: owner %s status %s location %s listing %v source %s, want the member's AVAILABLE stash item, no listing, a reward",
 				i, r.Owner, r.Status, r.Location, r.ListingID, r.Source)
 		}
@@ -201,7 +202,7 @@ func TestGrantItems_MintsEachSnapshotIntoTheStash(t *testing.T) {
 // nothing and answers the first call's ids, already granted.
 func TestGrantItems_SameGrantIDTwiceMintsOnce(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "normal", 1, 1, "", "")
 	member := grantMember(t, ctx, db)
@@ -239,7 +240,7 @@ func TestGrantItems_SameGrantIDTwiceMintsOnce(t *testing.T) {
 // against a real database mint exactly one set; the unique grant id decides.
 func TestGrantItems_ConcurrentSameGrantIDMintsOnce(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 	member := grantMember(t, ctx, db)
 	a, _ := twoSnapshots(sword, uuid.Nil)
@@ -291,7 +292,7 @@ func TestGrantItems_ConcurrentSameGrantIDMintsOnce(t *testing.T) {
 // same grant succeeds.
 func TestGrantItems_StashShortMintsNothing(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 	member := grantMember(t, ctx, db)
 	var stashed []uuid.UUID
@@ -332,7 +333,7 @@ func TestGrantItems_StashShortMintsNothing(t *testing.T) {
 // and records no grant.
 func TestGrantItems_InvalidSnapshotMintsNothing(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 
 	cases := []struct {
@@ -378,7 +379,7 @@ func TestGrantItems_InvalidSnapshotMintsNothing(t *testing.T) {
 // nothing and is not handed the first member's ids.
 func TestGrantItems_AGrantIDOfAnotherMemberIsRefused(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 	first, other := grantMember(t, ctx, db), grantMember(t, ctx, db)
 	a, _ := twoSnapshots(sword, uuid.Nil)

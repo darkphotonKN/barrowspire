@@ -26,7 +26,7 @@ import (
 // inserted in the bag (FS-VPD8Y R9, FS-18Z5F R27), and the insert never
 // writes an existing row: there is no conflict path left for a row the run
 // fence skipped.
-func TestInsertItemInstancesTx_Executes(t *testing.T) {
+func TestInsertItemInstancesAtTx_Executes(t *testing.T) {
 	dsn := os.Getenv("ITEMS_TEST_DSN")
 	if dsn == "" {
 		t.Skip("ITEMS_TEST_DSN not set")
@@ -60,16 +60,16 @@ func TestInsertItemInstancesTx_Executes(t *testing.T) {
 		t.Fatalf("template: %v", err)
 	}
 
-	attack, crit, wtype := 6, 0.08, "sword"
+	attack, crit, wtype, character := 6, 0.08, "sword", uuid.New()
 	item := &ItemInstance{
 		ID: uuid.New(), TemplateID: templateID, OwnerMemberID: uuid.New(), Source: "extracted",
 		ItemType: "weapon", Name: "Test Blade", RarityID: &rarityID,
 		AttackPower: &attack, CriticalRate: &crit, WeaponType: &wtype, Status: "AVAILABLE",
-		Location: LocationStash,
+		Location: LocationStash, CharacterID: &character,
 	}
 
 	repo := NewRepository(db)
-	if err := repo.InsertItemInstancesTx(ctx, tx, []*ItemInstance{item}); err != nil {
+	if err := repo.InsertItemInstancesAtTx(ctx, tx, []*ItemInstance{item}, LocationBag); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	var row struct {
@@ -86,7 +86,7 @@ func TestInsertItemInstancesTx_Executes(t *testing.T) {
 	if _, err := tx.ExecContext(ctx, `SAVEPOINT again`); err != nil {
 		t.Fatalf("savepoint: %v", err)
 	}
-	if err := repo.InsertItemInstancesTx(ctx, tx, []*ItemInstance{item}); !errors.Is(err, commonconstants.ErrDuplicateResource) {
+	if err := repo.InsertItemInstancesAtTx(ctx, tx, []*ItemInstance{item}, LocationBag); !errors.Is(err, commonconstants.ErrDuplicateResource) {
 		t.Errorf("re-insert = %v, want a duplicate, never a write over the stored row", err)
 	}
 }
@@ -656,9 +656,9 @@ func seedItem(t *testing.T, ctx context.Context, db *sqlx.DB, itemID, owner uuid
 	// it to the stash (a transfer, FS-VPD8Y R7) is visible, and so is one that
 	// must leave it alone (R8)
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO item_instances (id, template_id, owner_member_id, source, item_type, name, rarity_id, attack_power, critical_rate, weapon_type, status, updated_at, listing_id, location)
-		 VALUES ($1, $2, $3, 'extracted', 'weapon', 'Test Blade', $4, 6, 0.08, 'sword', $5, $6, $7, $8)`,
-		itemID, templateID, owner, rarityID, status, updatedAt, listingID, LocationBag); err != nil {
+		`INSERT INTO item_instances (id, template_id, owner_member_id, source, item_type, name, rarity_id, attack_power, critical_rate, weapon_type, status, updated_at, listing_id, location, character_id)
+		 VALUES ($1, $2, $3, 'extracted', 'weapon', 'Test Blade', $4, 6, 0.08, 'sword', $5, $6, $7, $8, $9)`,
+		itemID, templateID, owner, rarityID, status, updatedAt, listingID, LocationBag, testCharacter(owner)); err != nil {
 		t.Fatalf("item instance: %v", err)
 	}
 }
@@ -685,7 +685,7 @@ func TestListItemInstances_ReturnsStatus(t *testing.T) {
 	seedItemInstance(t, ctx, db, availableID, owner, "AVAILABLE", earlier)
 	seedItemInstance(t, ctx, db, frozenID, owner, "PENDING_SETTLEMENT", earlier)
 
-	items, err := NewRepository(db).ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+	items, err := NewRepository(db).ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -720,13 +720,13 @@ func TestItemInstanceReads_CarryLocation(t *testing.T) {
 	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	seedItemInstance(t, ctx, db, bagID, owner, "AVAILABLE", earlier)
 	seedItemInstance(t, ctx, db, stashID, owner, "LISTED", earlier)
-	if _, err := db.ExecContext(ctx, `UPDATE item_instances SET location = $2 WHERE id = $1`, stashID, LocationStash); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE item_instances SET location = $2, character_id = NULL WHERE id = $1`, stashID, LocationStash); err != nil {
 		t.Fatalf("seed stash location: %v", err)
 	}
 	want := map[uuid.UUID]string{bagID: LocationBag, stashID: LocationStash}
 
 	repo := NewRepository(db)
-	items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+	items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -903,7 +903,7 @@ func TestItemInstances_CarryTemplateRequiredLevel(t *testing.T) {
 	seedItemInstanceAtLevel(t, ctx, db, itemID, owner, "AVAILABLE", time.Now(), 7)
 	repo := NewRepository(db)
 
-	items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+	items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -961,7 +961,7 @@ func TestItemInstances_LevelAffixesAndRequiredLevel(t *testing.T) {
 	}
 	readAll := func(t *testing.T, id uuid.UUID, want facts) {
 		t.Helper()
-		items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+		items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -1002,7 +1002,7 @@ func TestItemInstances_LevelAffixesAndRequiredLevel(t *testing.T) {
 		return &ItemInstance{
 			ID: id, TemplateID: templateID, OwnerMemberID: owner, Source: "extracted", Status: "AVAILABLE",
 			ItemType: "weapon", Name: "Test Blade", AttackPower: &attack, CriticalRate: &crit, WeaponType: &wtype,
-			ItemLevel: ilvl, RequiredLevel: required, Affixes: affixes,
+			ItemLevel: ilvl, RequiredLevel: required, Affixes: affixes, Location: LocationStash,
 		}
 	}
 	rolled := Affixes{{Stat: "strength", Tier: 2, Value: 3}, {Stat: "crit_chance", Tier: 1, Value: 1}}
@@ -1014,7 +1014,7 @@ func TestItemInstances_LevelAffixesAndRequiredLevel(t *testing.T) {
 	}
 	insert := func(t *testing.T, items ...*ItemInstance) {
 		t.Helper()
-		inTx(t, func(tx *sqlx.Tx) error { return repo.InsertItemInstancesTx(ctx, tx, items) })
+		inTx(t, func(tx *sqlx.Tx) error { return repo.InsertItemInstancesAtTx(ctx, tx, items, LocationStash) })
 	}
 	// reextract checks the items out into a run and brings them back out
 	// through the run fence (FS-18Z5F R27)
@@ -1074,7 +1074,7 @@ func TestItemInstances_LevelAffixesAndRequiredLevel(t *testing.T) {
 func TestInsertItemsQuery_PlaceholdersMatchArgs(t *testing.T) {
 	items := []*ItemInstance{{ItemLevel: 9, RequiredLevel: 6}, {}, {}}
 
-	query, args := insertItemsQuery(items)
+	query, args := insertItemsQueryAt(items, LocationBag)
 
 	if want := 3 * len(insertItemColumns); len(args) != want {
 		t.Fatalf("len(args) = %d, want %d", len(args), want)
@@ -1129,21 +1129,152 @@ func TestWrapDBErr_OtherConstraintViolationIsRejected(t *testing.T) {
 	}
 }
 
-// seedAt seeds an instance for owner with status, kept at location.
+// Opt-in and committed. Loadout reads filter by member and character, so each
+// character reads its own and a foreign or new one reads as empty (FS-50MTX
+// R12, R22).
+func TestGetLoadout_ByCharacter(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
+
+	owner, a, b := uuid.New(), uuid.New(), uuid.New()
+	swordA := seedHeld(t, ctx, db, owner, a)
+	wearAs(t, ctx, db, owner, a, swordA)
+	swordB := seedHeld(t, ctx, db, owner, b)
+	wearAs(t, ctx, db, owner, b, swordB)
+	stranger, theirs := uuid.New(), uuid.New()
+	wearAs(t, ctx, db, stranger, theirs, seedHeld(t, ctx, db, stranger, theirs))
+
+	t.Run("two characters read separately", func(t *testing.T) {
+		for character, want := range map[uuid.UUID]uuid.UUID{a: swordA, b: swordB} {
+			loadout, err := svc.GetLoadout(ctx, owner, &GetLoadoutRequest{MemberId: owner, CharacterId: character})
+			if err != nil {
+				t.Fatalf("GetLoadout: %v", err)
+			}
+			if loadout.WeaponId == nil || *loadout.WeaponId != want {
+				t.Errorf("GetLoadout of %s: weapon = %v, want %s", character, loadout.WeaponId, want)
+			}
+
+			worn, err := svc.GetLoadoutWithItems(ctx, owner, &GetLoadoutRequest{MemberId: owner, CharacterId: character})
+			if err != nil {
+				t.Fatalf("GetLoadoutWithItems: %v", err)
+			}
+			if worn.Weapon == nil || worn.Weapon.ID != want {
+				t.Fatalf("GetLoadoutWithItems of %s: weapon = %+v, want %s", character, worn.Weapon, want)
+			}
+			if worn.Weapon.CharacterID == nil || *worn.Weapon.CharacterID != character {
+				t.Errorf("worn weapon's holder = %v, want %s", worn.Weapon.CharacterID, character)
+			}
+		}
+	})
+
+	empties := []struct {
+		name      string
+		character uuid.UUID
+	}{
+		{"a new character reads an empty loadout", uuid.New()},
+		{"another member's character reads an empty loadout", theirs},
+	}
+	for _, tt := range empties {
+		t.Run(tt.name, func(t *testing.T) {
+			loadout, err := svc.GetLoadout(ctx, owner, &GetLoadoutRequest{MemberId: owner, CharacterId: tt.character})
+			if err != nil {
+				t.Fatalf("GetLoadout: %v", err)
+			}
+			if loadout.Id != nil || loadout.WeaponId != nil {
+				t.Errorf("GetLoadout = %+v, want empty", loadout)
+			}
+
+			worn, err := svc.GetLoadoutWithItems(ctx, owner, &GetLoadoutRequest{MemberId: owner, CharacterId: tt.character})
+			if err != nil {
+				t.Fatalf("GetLoadoutWithItems: %v", err)
+			}
+			if *worn != (LoadoutWithItems{}) {
+				t.Errorf("GetLoadoutWithItems = %+v, want empty", worn)
+			}
+		})
+	}
+}
+
+// Opt-in and committed. The instance list is a character's held instances plus
+// the account's stash, or the stash alone with no character; what another
+// character holds is never returned (FS-50MTX R23, R24).
+func TestListItemInstances_ByCharacter(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+
+	owner, a, b := uuid.New(), uuid.New(), uuid.New()
+	heldByA := seedHeld(t, ctx, db, owner, a)
+	wornByA := seedHeld(t, ctx, db, owner, a)
+	wearAs(t, ctx, db, owner, a, wornByA)
+	heldByB := seedHeld(t, ctx, db, owner, b)
+	stashed := seedAt(t, ctx, db, owner, "AVAILABLE", LocationStash)
+	strangersStash := seedAt(t, ctx, db, uuid.New(), "AVAILABLE", LocationStash)
+
+	tests := []struct {
+		name      string
+		character *uuid.UUID
+		want      []uuid.UUID
+	}{
+		{"a character gets what it holds, worn or not, and the stash", &a, []uuid.UUID{heldByA, wornByA, stashed}},
+		{"the other character gets its own and the same stash", &b, []uuid.UUID{heldByB, stashed}},
+		{"a character holding nothing gets the stash", ptrTo(uuid.New()), []uuid.UUID{stashed}},
+		{"no character gets the stash only", nil, []uuid.UUID{stashed}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: tt.character})
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+
+			got := make([]uuid.UUID, 0, len(items))
+			for _, item := range items {
+				got = append(got, item.ID)
+				if item.ID == strangersStash {
+					t.Errorf("listed another member's item")
+				}
+				switch {
+				case item.Location == LocationStash && item.CharacterID != nil:
+					t.Errorf("stash item %s has holder %v", item.ID, *item.CharacterID)
+				case item.Location == LocationBag && (tt.character == nil || item.CharacterID == nil || *item.CharacterID != *tt.character):
+					t.Errorf("held item %s has holder %v, want %v", item.ID, item.CharacterID, tt.character)
+				}
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("listed %v, want %v", got, tt.want)
+			}
+			for _, id := range tt.want {
+				if !containsID(got, id) {
+					t.Errorf("listed %v, missing %s", got, id)
+				}
+			}
+		})
+	}
+}
+
+func ptrTo[T any](v T) *T { return &v }
+
+// seedAt seeds an instance for owner with status, kept at location: a bag item
+// is held by owner's testCharacter.
 func seedAt(t *testing.T, ctx context.Context, db *sqlx.DB, owner uuid.UUID, status, location string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	seedItemInstance(t, ctx, db, id, owner, status, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
-	if _, err := db.ExecContext(ctx, `UPDATE item_instances SET location = $2 WHERE id = $1`, id, location); err != nil {
+	var holder *uuid.UUID
+	if location == LocationBag {
+		character := testCharacter(owner)
+		holder = &character
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE item_instances SET location = $2, character_id = $3 WHERE id = $1`, id, location, holder); err != nil {
 		t.Fatalf("seed location: %v", err)
 	}
 	return id
 }
 
-// wear puts id in owner's weapon slot.
+// wear puts id in the weapon slot of owner's testCharacter.
 func wear(t *testing.T, ctx context.Context, db *sqlx.DB, owner, id uuid.UUID) {
 	t.Helper()
-	if _, err := db.ExecContext(ctx, `INSERT INTO player_loadouts (member_id, weapon_instance_id) VALUES ($1, $2)`, owner, id); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO player_loadouts (member_id, character_id, weapon_instance_id) VALUES ($1, $2, $3)`, owner, testCharacter(owner), id); err != nil {
 		t.Fatalf("wear: %v", err)
 	}
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
@@ -1168,18 +1299,18 @@ func locationOf(t *testing.T, ctx context.Context, db *sqlx.DB, id uuid.UUID) (s
 func TestMoveItemInstance_AgainstTheSchema(t *testing.T) {
 	ctx, db := catalogueDB(t)
 	repo := NewRepository(db)
-	svc := NewService(repo, db, nil, nil, nil)
+	svc := NewService(repo, db, nil, nil, nil, everyCharacterOwned{})
 
 	t.Run("moves to the stash and back, and the list reads it", func(t *testing.T) {
 		owner := uuid.New()
 		id := seedAt(t, ctx, db, owner, "AVAILABLE", LocationBag)
 
 		for _, to := range []string{LocationStash, LocationBag} {
-			got, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: id, Location: to})
+			got, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: id, Location: to, CharacterID: testCharacter(owner)})
 			if err != nil || got != to {
 				t.Fatalf("move to %s = %q, %v", to, got, err)
 			}
-			items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+			items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 			if err != nil || len(items) != 1 || items[0].Location != to {
 				t.Fatalf("list after move to %s = %+v, %v", to, items, err)
 			}
@@ -1239,7 +1370,7 @@ func TestMoveItemInstance_AgainstTheSchema(t *testing.T) {
 				who = uuid.New()
 			}
 			err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
-				moved, err := repo.MoveItemInstanceTx(ctx, tx, who, id, LocationStash)
+				moved, err := repo.MoveItemInstanceTx(ctx, tx, who, testCharacter(who), id, LocationStash)
 				if err != nil || moved {
 					t.Errorf("%s by %v: moved = %v, %v; want false", status, who, moved, err)
 				}
@@ -1260,7 +1391,7 @@ func TestMoveItemInstance_AgainstTheSchema(t *testing.T) {
 // (FS-VPD8Y R11).
 func TestMoveItemInstance_ConcurrentMovesIntoABagAt29(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 
 	owner := uuid.New()
 	for range BagCapacity - 1 {
@@ -1276,7 +1407,7 @@ func TestMoveItemInstance_ConcurrentMovesIntoABagAt29(t *testing.T) {
 	for _, id := range stashed {
 		go func() {
 			<-start
-			_, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: id, Location: LocationBag})
+			_, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: id, Location: LocationBag, CharacterID: testCharacter(owner)})
 			errs <- err
 		}()
 	}
@@ -1340,7 +1471,7 @@ func TestMoveItemInstance_LosingARaceToAListing(t *testing.T) {
 	id := seedAt(t, ctx, db, owner, "AVAILABLE", LocationBag)
 	repo := &reservingRepo{repository: NewRepository(db), db: db, seller: owner, itemID: id}
 
-	_, err := NewService(repo, db, nil, nil, nil).MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: id, Location: LocationStash})
+	_, err := NewService(repo, db, nil, nil, nil, everyCharacterOwned{}).MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: id, Location: LocationStash, CharacterID: testCharacter(owner)})
 
 	var refusal *errcode.Refusal
 	if !errors.As(err, &refusal) || refusal.Code != errcode.ItemNotAvailable {
@@ -1369,7 +1500,7 @@ func bagOf(t *testing.T, ctx context.Context, db *sqlx.DB, owner uuid.UUID) int 
 // weaponOf reads the instance in owner's weapon slot, nil when empty.
 func weaponOf(t *testing.T, ctx context.Context, db *sqlx.DB, owner uuid.UUID) *uuid.UUID {
 	t.Helper()
-	loadout, err := NewRepository(db).GetLoadout(ctx, &GetLoadoutRequest{MemberId: owner})
+	loadout, err := NewRepository(db).GetLoadout(ctx, &GetLoadoutRequest{MemberId: owner, CharacterId: testCharacter(owner)})
 	if err != nil {
 		t.Fatalf("read loadout: %v", err)
 	}
@@ -1384,7 +1515,7 @@ func weaponOf(t *testing.T, ctx context.Context, db *sqlx.DB, owner uuid.UUID) *
 func TestUpdateLoadout_AgainstTheSchema(t *testing.T) {
 	ctx, db := catalogueDB(t)
 	repo := NewRepository(db)
-	svc := NewService(repo, db, nil, nil, nil)
+	svc := NewService(repo, db, nil, nil, nil, everyCharacterOwned{})
 
 	// account seeds an owner with bag unworn bag items and one stashed item
 	// worn in the weapon slot (wear removes the loadout row first on cleanup).
@@ -1399,7 +1530,7 @@ func TestUpdateLoadout_AgainstTheSchema(t *testing.T) {
 		return owner, worn, bagItems
 	}
 	update := func(owner uuid.UUID, equip *uuid.UUID) error {
-		return svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: equip})
+		return svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, CharacterId: testCharacter(owner), Slot: "weapon", ItemInstanceId: equip})
 	}
 	wantBagFull := func(t *testing.T, err error) {
 		t.Helper()
@@ -1418,7 +1549,7 @@ func TestUpdateLoadout_AgainstTheSchema(t *testing.T) {
 		if got := weaponOf(t, ctx, db, owner); got != nil {
 			t.Errorf("weapon slot = %v, want empty", *got)
 		}
-		items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+		items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 		if err != nil || len(items) != 1 || items[0].ID != worn || items[0].Location != LocationBag {
 			t.Fatalf("list after unequip = %+v, %v; want the item in the bag", items, err)
 		}
@@ -1492,7 +1623,7 @@ func TestUpdateLoadout_AgainstTheSchema(t *testing.T) {
 		if n := bagOf(t, ctx, db, owner); n != BagCapacity+3 {
 			t.Errorf("bag = %d, want %d", n, BagCapacity+3)
 		}
-		items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+		items, err := repo.ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 		if err != nil || len(items) != BagCapacity+4 {
 			t.Fatalf("list = %d items, %v; want %d", len(items), err, BagCapacity+4)
 		}
@@ -1508,9 +1639,9 @@ func TestUpdateLoadout_AgainstTheSchema(t *testing.T) {
 // slot is not checked (FS-18Z5F R32).
 func TestUpdateLoadout_RefusesAnItemNotAvailable_AgainstTheSchema(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	update := func(owner uuid.UUID, equip *uuid.UUID) error {
-		return svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: equip})
+		return svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, CharacterId: testCharacter(owner), Slot: "weapon", ItemInstanceId: equip})
 	}
 
 	seeds := map[string]func(owner uuid.UUID) uuid.UUID{
@@ -1594,8 +1725,8 @@ func TestUpdateLoadout_HoldsTheEquippedRow(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
 	repo := &lockProbeRepo{repository: NewRepository(db), db: db, owner: owner, itemID: item}
 
-	err := NewService(repo, db, nil, nil, nil).UpdateLoadout(ctx, owner,
-		&UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: &item})
+	err := NewService(repo, db, nil, nil, nil, everyCharacterOwned{}).UpdateLoadout(ctx, owner,
+		&UpdateLoadoutRequest{MemberId: owner, CharacterId: testCharacter(owner), Slot: "weapon", ItemInstanceId: &item})
 	if err != nil {
 		t.Fatalf("equip: %v", err)
 	}
@@ -1736,11 +1867,11 @@ func seedTxPotions(t *testing.T, ctx context.Context, tx *sqlx.Tx, runID uuid.UU
 		id := uuid.New()
 		ids = append(ids, id)
 		instances = append(instances, &ItemInstance{
-			ID: id, TemplateID: templateID, OwnerMemberID: owner, Source: "extracted", Status: "AVAILABLE", Location: LocationBag,
+			ID: id, TemplateID: templateID, OwnerMemberID: owner, Source: "extracted", Status: "AVAILABLE", Location: LocationStash,
 			ItemType: "consumable", Name: "Lesser Heal Potion", RarityID: &rarityID, HealingAmount: &healing,
 		})
 	}
-	if err := NewRepository(nil).InsertItemInstancesTx(ctx, tx, instances); err != nil {
+	if err := NewRepository(nil).InsertItemInstancesAtTx(ctx, tx, instances, LocationStash); err != nil {
 		t.Fatalf("seed potions: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -1878,7 +2009,7 @@ func TestReserveItemTx_StampsReservedAtOnTheDatabaseClock(t *testing.T) {
 // cannot push the seeded ones out of view.
 func TestListStaleReserved_OnlyReservationsOlderThanTheAge(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), nil, nil, nil, nil)
+	svc := NewService(NewRepository(db), nil, nil, nil, nil, everyCharacterOwned{})
 	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	seed := func(status string, reservedAgo time.Duration, confirmed bool) StaleReservation {
@@ -1918,7 +2049,7 @@ func TestListStaleReserved_OnlyReservationsOlderThanTheAge(t *testing.T) {
 // repeated.
 func TestListStaleReserved_PagesByReservedAtAndID(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), nil, nil, nil, nil)
+	svc := NewService(NewRepository(db), nil, nil, nil, nil, everyCharacterOwned{})
 	// older than any reservation other tests stamp from NOW(), so these lead
 	tied := time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
 	before := tied.Add(-time.Hour)
