@@ -248,3 +248,30 @@ func TestHandleWebSocketConnection_HandoffArrival_IsSeatedAndServed(t *testing.T
 	assert.Zero(t, items.readCount(), "an arrival no longer reads the loadout")
 	route.assertNoPanics(t)
 }
+
+// A handoff checks out before the arrival is seated, as the character the run
+// expects them as: the one on its pending entry, whatever character the
+// connecting member's record names. FS-50MTX R28, R29.
+func TestHandleWebSocketConnection_HandoffArrival_ChecksOutAsThePendingCharacter(t *testing.T) {
+	authClient := &oneMemberAuth{memberID: uuid.New()}
+	items := &loadoutAuthRecorder{}
+	server := newTestServer(t, context.Background(), authClient, NewMockQueueService(), &MockEventEmitter{}, items, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+	route := newConnectRoute(t, server, authClient)
+
+	route.connect(t, "token")
+	record := recordOf(t, server, authClient.memberID)
+	server.mu.Lock()
+	record.Character = types.CharacterInPlay{ID: uuid.New(), Class: "mage", Name: "Other", Level: 1}
+	server.mu.Unlock()
+
+	queued := types.CharacterInPlay{ID: uuid.New(), Class: "warrior", Name: "Arrival", Level: 1}
+	run := server.CreateGameSession(&types.ResolvedMatchedPlayers{
+		HandoffPlayers: []*types.Player{{ID: authClient.memberID, Character: queued}},
+	})
+
+	route.dialHandoff(t, "token", run.ID.String())
+	route.awaitHandled(t)
+
+	assert.Equal(t, []string{queued.ID.String()}, items.checkoutCharacterIDs(), "the pending entry's character, not the record's")
+	route.assertNoPanics(t)
+}

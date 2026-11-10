@@ -277,14 +277,23 @@ class ApiClient {
     );
   }
 
-  // Get player loadout
-  async getLoadout() {
-    return authed(() => client.GET("/api/items/loadout", {}));
+  // A character's loadout (FS-50MTX R22)
+  async getLoadout(characterId: string) {
+    return authed(() =>
+      client.GET("/api/characters/{characterId}/loadout", {
+        params: { path: { characterId } },
+      }),
+    );
   }
 
-  // Get player item instances (warehouse/stash)
-  async getItemInstances() {
-    return authed(() => client.GET("/api/items/instances", {}));
+  // The account's stash, plus what the named character holds; with none, the stash alone
+  // (FS-50MTX R23)
+  async getItemInstances(characterId?: string) {
+    return authed(() =>
+      client.GET("/api/items/instances", {
+        params: { query: characterId ? { characterId } : {} },
+      }),
+    );
   }
 
   // The rarity tiers by id, so an item instance's rarity_id can be named (FS-4R9M9 R59)
@@ -292,22 +301,24 @@ class ApiClient {
     return authed(() => client.GET("/api/items/rarities", {}));
   }
 
-  // Update loadout slot
-  async updateLoadout(slot: string, itemInstanceId: string | null) {
+  // Update one of a character's loadout slots (FS-50MTX §API surface)
+  async updateLoadout(characterId: string, slot: string, itemInstanceId: string | null) {
     return authed(() =>
-      client.PUT("/api/items/loadout", {
+      client.PUT("/api/characters/{characterId}/loadout", {
+        params: { path: { characterId } },
         body: { slot, item_instance_id: itemInstanceId || "" },
       }),
     );
   }
 
-  // Move an owned, unworn item between the bag and the stash (FS-VPD8Y R22); refusals carry
-  // BAG_FULL, STASH_FULL, ITEM_NOT_AVAILABLE, ITEM_WORN or NOT_FOUND as their code
-  async moveItemInstance(id: string, location: "bag" | "stash") {
+  // Move an owned, unworn item between the character's bag and the stash (FS-VPD8Y R22,
+  // FS-50MTX R18); refusals carry BAG_FULL, STASH_FULL, ITEM_NOT_AVAILABLE, ITEM_WORN or
+  // NOT_FOUND as their code
+  async moveItemInstance(characterId: string, id: string, location: "bag" | "stash") {
     return authed(() =>
       client.PUT("/api/items/instances/{id}/location", {
         params: { path: { id } },
-        body: { location },
+        body: { location, character_id: characterId },
       }),
     );
   }

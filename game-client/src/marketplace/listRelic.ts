@@ -142,18 +142,14 @@ export interface PickerCard {
 }
 
 /**
- * One card per relic the member can list right now (FS-3R77D R10–R12): it has an id, it is in the
- * stash, its status reads AVAILABLE, and it is not in `worn`, the ids in the member's loadout.
- * Anything else gets no card and no mark (R11). An absent location is not the stash (R12). A
- * loadout that could not be read leaves `worn` empty (FS-HBXZN R16); the server stays the
- * authority.
+ * One card per relic the member can list right now (FS-3R77D R10–R12, FS-50MTX R38): it has an
+ * id, it is in the stash and its status reads AVAILABLE; a worn relic is in a bag, so it has no
+ * card. Anything else gets no card and no mark (R11). An absent location is not the stash (R12).
+ * The server stays the authority.
  */
-export function pickerCards(
-  instances: readonly PickerInstance[],
-  worn: ReadonlySet<string> = new Set(),
-): PickerCard[] {
+export function pickerCards(instances: readonly PickerInstance[]): PickerCard[] {
   return instances.flatMap((inst) => {
-    if (!inst.id || !listable(inst, worn)) return [];
+    if (!inst.id || !listable(inst)) return [];
     return [
       {
         id: inst.id,
@@ -171,11 +167,9 @@ export function pickerCards(
   });
 }
 
-function listable(inst: PickerInstance, worn: ReadonlySet<string>): boolean {
+function listable(inst: PickerInstance): boolean {
   return (
-    inst.location?.toLowerCase() === "stash" &&
-    instanceStatus(inst.status) === "AVAILABLE" &&
-    !worn.has(inst.id ?? "")
+    inst.location?.toLowerCase() === "stash" && instanceStatus(inst.status) === "AVAILABLE"
   );
 }
 

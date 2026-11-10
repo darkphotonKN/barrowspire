@@ -152,10 +152,10 @@ func TestItemOperations_ForwardTheCallersToken(t *testing.T) {
 		{http.MethodPost, "/api/items/complete-consumable", `{` + rarity + `,"max_stack_size":1}`},
 		{http.MethodGet, "/api/items/types", ``},
 		{http.MethodGet, "/api/items/rarities", ``},
-		{http.MethodGet, "/api/items/loadout", ``},
+		{http.MethodGet, "/api/characters/" + uuid.NewString() + "/loadout", ``},
 		{http.MethodGet, "/api/items/instances", ``},
-		{http.MethodPut, "/api/items/loadout", `{"slot":"weapon"}`},
-		{http.MethodPut, "/api/items/instances/" + uuid.NewString() + "/location", `{"location":"stash"}`},
+		{http.MethodPut, "/api/characters/" + uuid.NewString() + "/loadout", `{"slot":"weapon"}`},
+		{http.MethodPut, "/api/items/instances/" + uuid.NewString() + "/location", `{"location":"stash","character_id":"` + uuid.NewString() + `"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -176,14 +176,14 @@ func TestItemOperations_ForwardTheCallersToken(t *testing.T) {
 // FS-VPD8Y §API surface (move-item-instance): the id and destination reach
 // items-service, never a member id, and the result echoes where the item is.
 func TestMoveItemInstance_MovesAndEchoes(t *testing.T) {
-	id := uuid.NewString()
+	id, character := uuid.NewString(), uuid.NewString()
 	client := &stubItemClient{moved: &pb.MoveItemInstanceResponse{Id: id, Location: "stash"}}
 
 	w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/items/instances/"+id+"/location",
-		`{"location":"stash"}`, map[string]string{"Content-Type": "application/json"})
+		`{"location":"stash","character_id":"`+character+`"}`, map[string]string{"Content-Type": "application/json"})
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, &pb.MoveItemInstanceRequest{ItemInstanceId: id, Location: "stash"}, client.gotMove)
+	assert.Equal(t, &pb.MoveItemInstanceRequest{ItemInstanceId: id, Location: "stash", CharacterId: character}, client.gotMove)
 	body := testsupport.Decode(t, w)
 	assert.EqualValues(t, http.StatusOK, body["statusCode"])
 	assert.Equal(t, map[string]any{"id": id, "location": "stash"}, body["result"])
@@ -194,6 +194,9 @@ func TestMoveItemInstance_MovesAndEchoes(t *testing.T) {
 // call. Each answer is problem+json.
 func TestMoveItemInstance_Errors(t *testing.T) {
 	id := uuid.NewString()
+	to := func(location string) string {
+		return `{"location":"` + location + `","character_id":"` + uuid.NewString() + `"}`
+	}
 	tests := []struct {
 		name       string
 		path       string
@@ -203,16 +206,19 @@ func TestMoveItemInstance_Errors(t *testing.T) {
 		wantCode   errcode.Code
 		wantCall   bool
 	}{
-		{"not the caller's", id, `{"location":"bag"}`, status.Error(codes.NotFound, "item instance not found"), http.StatusNotFound, errcode.NotFound, true},
-		{"worn", id, `{"location":"stash"}`, errcode.Refuse(errcode.ItemWorn), http.StatusBadRequest, errcode.ItemWorn, true},
-		{"listed", id, `{"location":"stash"}`, errcode.Refuse(errcode.ItemNotAvailable), http.StatusBadRequest, errcode.ItemNotAvailable, true},
-		{"bag full", id, `{"location":"bag"}`, errcode.Refuse(errcode.BagFull), http.StatusBadRequest, errcode.BagFull, true},
-		{"stash full", id, `{"location":"stash"}`, errcode.Refuse(errcode.StashFull), http.StatusBadRequest, errcode.StashFull, true},
-		{"items-service down", id, `{"location":"bag"}`, status.Error(codes.Unavailable, "dial tcp"), http.StatusServiceUnavailable, errcode.ServiceUnavailable, true},
-		{"malformed id", "not-a-uuid", `{"location":"bag"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
-		{"unknown location", id, `{"location":"worn"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
-		{"missing location", id, `{}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
-		{"unknown body member", id, `{"location":"bag","member_id":"x"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
+		{"not the caller's", id, to("bag"), status.Error(codes.NotFound, "item instance not found"), http.StatusNotFound, errcode.NotFound, true},
+		{"worn", id, to("stash"), errcode.Refuse(errcode.ItemWorn), http.StatusBadRequest, errcode.ItemWorn, true},
+		{"listed", id, to("stash"), errcode.Refuse(errcode.ItemNotAvailable), http.StatusBadRequest, errcode.ItemNotAvailable, true},
+		{"bag full", id, to("bag"), errcode.Refuse(errcode.BagFull), http.StatusBadRequest, errcode.BagFull, true},
+		{"stash full", id, to("stash"), errcode.Refuse(errcode.StashFull), http.StatusBadRequest, errcode.StashFull, true},
+		{"character-service down", id, to("bag"), status.Error(codes.Unavailable, "character-service"), http.StatusServiceUnavailable, errcode.ServiceUnavailable, true},
+		{"items-service down", id, to("bag"), status.Error(codes.Unavailable, "dial tcp"), http.StatusServiceUnavailable, errcode.ServiceUnavailable, true},
+		{"malformed id", "not-a-uuid", to("bag"), nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
+		{"unknown location", id, to("worn"), nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
+		{"missing location", id, `{"character_id":"` + uuid.NewString() + `"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
+		{"missing character", id, `{"location":"bag"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
+		{"malformed character", id, `{"location":"bag","character_id":"nope"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
+		{"unknown body member", id, `{"location":"bag","character_id":"` + uuid.NewString() + `","member_id":"x"}`, nil, http.StatusUnprocessableEntity, errcode.ValidationFailed, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -252,7 +258,7 @@ func TestMoveItemInstance_DocumentsItsErrors(t *testing.T) {
 func TestUpdateLoadout_BagFull(t *testing.T) {
 	client := &stubItemClient{err: errcode.Refuse(errcode.BagFull)}
 
-	w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/items/loadout",
+	w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/characters/"+uuid.NewString()+"/loadout",
 		`{"slot":"weapon","item_instance_id":""}`, map[string]string{"Content-Type": "application/json"})
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -266,10 +272,151 @@ func TestUpdateLoadout_BagFull(t *testing.T) {
 func TestUpdateLoadout_ItemNotAvailable(t *testing.T) {
 	client := &stubItemClient{err: errcode.Refuse(errcode.ItemNotAvailable)}
 
-	w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/items/loadout",
+	w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/characters/"+uuid.NewString()+"/loadout",
 		`{"slot":"weapon","item_instance_id":"`+uuid.NewString()+`"}`, map[string]string{"Content-Type": "application/json"})
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))
 	assert.Equal(t, string(errcode.ItemNotAvailable), testsupport.Decode(t, w)["code"])
+}
+
+// FS-50MTX R22 and §API surface (get-loadout): the loadout read names the
+// character in the path, with the caller from the token.
+func TestGetLoadout_ReadsTheCharacterInThePath(t *testing.T) {
+	character := uuid.NewString()
+	client := &stubItemClient{loadout: &pb.GetLoadoutResponse{WeaponId: "sword"}}
+
+	w := testsupport.Do(newTypedRouter(client), http.MethodGet, "/api/characters/"+character+"/loadout", "")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	if assert.NotNil(t, client.gotLoadout) {
+		assert.Equal(t, character, client.gotLoadout.CharacterId)
+		assert.NotEmpty(t, client.gotLoadout.MemberId)
+	}
+	assert.Equal(t, "sword", testsupport.Decode(t, w)["result"].(map[string]any)["weaponId"])
+}
+
+// FS-50MTX R10, R14 and §API surface (update-loadout): the write names the
+// character in the path; slot and item come through unchanged.
+func TestUpdateLoadout_WritesForTheCharacterInThePath(t *testing.T) {
+	character, instance := uuid.NewString(), uuid.NewString()
+	client := &stubItemClient{updated: &pb.UpdateLoadoutResponse{Success: true}}
+
+	w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/characters/"+character+"/loadout",
+		`{"slot":"weapon","item_instance_id":"`+instance+`"}`, map[string]string{"Content-Type": "application/json"})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	if assert.NotNil(t, client.gotUpdate) {
+		assert.Equal(t, character, client.gotUpdate.CharacterId)
+		assert.Equal(t, "weapon", client.gotUpdate.Slot)
+		assert.Equal(t, instance, client.gotUpdate.ItemInstanceId)
+		assert.NotEmpty(t, client.gotUpdate.MemberId)
+	}
+}
+
+// FS-50MTX R10, R11, R15 and §API surface (update-loadout): items-service
+// refuses a foreign character or an item not available to it with 404, and a
+// down character-service with 503; the seam carries both.
+func TestUpdateLoadout_RefusalsForTheCharacter(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   errcode.Code
+	}{
+		{"foreign character", status.Error(codes.NotFound, "character not found"), http.StatusNotFound, errcode.NotFound},
+		{"character-service down", status.Error(codes.Unavailable, "dial tcp"), http.StatusServiceUnavailable, errcode.ServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubItemClient{err: tt.err}
+
+			w := testsupport.DoWithHeaders(newTypedRouter(client), http.MethodPut, "/api/characters/"+uuid.NewString()+"/loadout",
+				`{"slot":"weapon"}`, map[string]string{"Content-Type": "application/json"})
+
+			testsupport.AssertProblem(t, w, tt.wantStatus, string(tt.wantCode))
+		})
+	}
+}
+
+// FS-50MTX §API surface: a malformed character id is the boundary's 422, on the
+// path and on the query, and never reaches items-service.
+func TestCharacterID_MalformedIsRejectedAtTheBoundary(t *testing.T) {
+	tests := []struct {
+		name, method, path, body string
+	}{
+		{"get-loadout path", http.MethodGet, "/api/characters/not-a-uuid/loadout", ""},
+		{"update-loadout path", http.MethodPut, "/api/characters/not-a-uuid/loadout", `{"slot":"weapon"}`},
+		{"list-item-instances query", http.MethodGet, "/api/items/instances?characterId=not-a-uuid", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubItemClient{}
+
+			w := testsupport.DoWithHeaders(newTypedRouter(client), tt.method, tt.path, tt.body,
+				map[string]string{"Content-Type": "application/json"})
+
+			testsupport.AssertProblem(t, w, http.StatusUnprocessableEntity, string(errcode.ValidationFailed))
+			assert.Nil(t, client.gotLoadout, "items-service called")
+			assert.Nil(t, client.gotUpdate, "items-service called")
+			assert.Nil(t, client.gotInstances, "items-service called")
+		})
+	}
+}
+
+// FS-50MTX R23: the instance list passes the character when one is named and
+// asks for the stash only when none is, as the Bazaar does.
+func TestListItemInstances_ScopesToTheOptionalCharacter(t *testing.T) {
+	character := uuid.NewString()
+	tests := []struct {
+		name, query, want string
+	}{
+		{"with a character", "?characterId=" + character, character},
+		{"without one", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubItemClient{instances: &pb.ListItemInstancesResponse{}}
+
+			w := testsupport.Do(newTypedRouter(client), http.MethodGet, "/api/items/instances"+tt.query, "")
+
+			assert.Equal(t, http.StatusOK, w.Code)
+			if assert.NotNil(t, client.gotInstances) {
+				assert.Equal(t, tt.want, client.gotInstances.CharacterId)
+				assert.NotEmpty(t, client.gotInstances.MemberId)
+			}
+		})
+	}
+}
+
+// FS-50MTX R24: an item says which character holds it, and a stash item has no
+// holder, so the field is absent.
+func TestListItemInstances_CarriesTheHolder(t *testing.T) {
+	character := uuid.NewString()
+	got := listInstances(t,
+		&pb.ItemInstance{Id: "held", Name: "Blade", Location: "bag", CharacterId: character},
+		&pb.ItemInstance{Id: "stored", Name: "Shield", Location: "stash"},
+	)
+
+	assert.Equal(t, character, got["held"]["character_id"])
+	assert.NotContains(t, got["stored"], "character_id")
+}
+
+// FS-50MTX §API surface: each operation documents what it can answer. The new
+// 404 and 503 are update-loadout's own, so get-loadout does not widen.
+func TestLoadoutOperations_DocumentTheirErrors(t *testing.T) {
+	api := contract.New(gin.New())
+	item.RegisterOperations(api, item.NewHandler(&stubItemClient{}),
+		contract.Protected(func(*gin.Context) {}), contract.SeamError, contract.Secured)
+
+	path := api.OpenAPI().Paths["/api/characters/{characterId}/loadout"]
+	if !assert.NotNil(t, path) || !assert.NotNil(t, path.Put) || !assert.NotNil(t, path.Get) {
+		return
+	}
+	for _, want := range []string{"400", "401", "404", "422", "500", "503"} {
+		assert.Contains(t, path.Put.Responses, want, "update-loadout documents %s", want)
+	}
+	assert.NotContains(t, path.Get.Responses, "404")
+	assert.NotContains(t, path.Get.Responses, "503")
+	assert.Nil(t, api.OpenAPI().Paths["/api/items/loadout"], "the old route is gone")
 }

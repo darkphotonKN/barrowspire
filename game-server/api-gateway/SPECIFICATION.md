@@ -183,7 +183,8 @@ All under `/api` unless noted. Each group forwards to the downstream service nam
 **items → `items`** (JWT)
 
 - Query: `GET /api/items/weapons`, `GET /api/items/types`, `GET /api/items/rarities`,
-  `GET /api/items/instances`, `GET /api/items/loadout`, `PUT /api/items/loadout`
+  `GET /api/items/instances`, `GET /api/characters/{characterId}/loadout`,
+  `PUT /api/characters/{characterId}/loadout`
 - Creation: `POST /api/items/complete-weapon`, `/complete-armor`, `/complete-consumable`
 - `POST /api/items/weapon`, `POST /api/items/template`
   > REVIEW: labeled "Legacy/Advanced APIs" in code (create weapon/template separately). Candidate

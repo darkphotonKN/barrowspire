@@ -125,10 +125,12 @@ type CreateCompleteConsumableBody struct {
 	Description   string  `json:"description,omitempty" doc:"Description"`
 }
 
-// MoveItemInstanceBody names the destination only: the caller comes from the
-// token (FS-VPD8Y R12), and the domain rules are items-service's (ADR-0001 §6).
+// MoveItemInstanceBody names the destination and the character moving the item,
+// in both directions (FS-50MTX R18). The caller comes from the token (FS-VPD8Y
+// R12), and the domain rules are items-service's (ADR-0001 §6).
 type MoveItemInstanceBody struct {
-	Location string `json:"location" enum:"bag,stash" doc:"Where to keep the item: carried in the bag or stored in the town stash"`
+	Location    string `json:"location" enum:"bag,stash" doc:"Where to keep the item: carried in the bag or stored in the town stash"`
+	CharacterID string `json:"character_id" format:"uuid" doc:"The character moving the item: the holder a move to the bag sets, and the one a move to the stash must be held by"`
 }
 
 type UpdateLoadoutBody struct {
@@ -145,6 +147,10 @@ var (
 	// and 503 (items-service down, FS-VPD8Y §API surface). The move's own
 	// list, so documenting its 503 widens no other operation.
 	errsMoveItemInstance = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusServiceUnavailable}
+	// errsUpdateLoadout adds 404 (a foreign, deleted or unknown character, or
+	// an item not available to it) and 503 (character-service down, FS-50MTX
+	// §API surface). Its own list, so no other operation widens.
+	errsUpdateLoadout = []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusServiceUnavailable}
 )
 
 // items-service authenticates every RPC from the caller's token (common/auth
@@ -537,6 +543,10 @@ func registerListItemRarities(api huma.API, h *Handler, mw huma.Middlewares) {
 }
 
 func registerGetLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		CharacterID   string `path:"characterId" format:"uuid" doc:"The character whose loadout to read"`
+	}
 	type output struct {
 		Body resultEnvelope[*GetLoadoutResponse]
 	}
@@ -544,20 +554,21 @@ func registerGetLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-loadout",
 		Method:      http.MethodGet,
-		Path:        "/api/items/loadout",
-		Summary:     "Get the signed-in member's loadout",
-		Description: "Returns the equipped item in each loadout slot.",
+		Path:        "/api/characters/{characterId}/loadout",
+		Summary:     "Get a character's loadout",
+		Description: "Returns the equipped item in each of the character's loadout slots. " +
+			"A character with no loadout, or one that is not the member's, reads as empty.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
 		id := caller.MemberID.String()
-		res, err := h.client.GetLoadout(withBearer(ctx, in.Authorization), &pb.GetLoadoutRequest{MemberId: id})
+		res, err := h.client.GetLoadout(withBearer(ctx, in.Authorization), &pb.GetLoadoutRequest{MemberId: id, CharacterId: in.CharacterID})
 		if err != nil {
 			return nil, err
 		}
@@ -572,6 +583,10 @@ func registerGetLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 }
 
 func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
+	type input struct {
+		Authorization string `header:"Authorization" hidden:"true"`
+		CharacterID   string `query:"characterId" format:"uuid" doc:"The character whose held items to include. Absent, only the stash is returned"`
+	}
 	type output struct {
 		Body resultEnvelope[*ListItemInstancesResponse]
 	}
@@ -581,18 +596,19 @@ func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 		Method:      http.MethodGet,
 		Path:        "/api/items/instances",
 		Summary:     "List the signed-in member's item instances",
-		Description: "Every item instance the member owns, worn or not, each with its location: the bag or the stash.",
+		Description: "The account's stash, plus every item the named character holds, worn or not, each with its location: the bag or the stash. " +
+			"With no character, only the stash. Another character's held items are never returned.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsAuthed,
-	}, guard(func(ctx context.Context, in *bearerInput) (*output, error) {
+	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
 			return nil, unauthenticated()
 		}
 		id := caller.MemberID.String()
-		res, err := h.client.ListItemInstances(withBearer(ctx, in.Authorization), &pb.ListItemInstancesRequest{MemberId: id})
+		res, err := h.client.ListItemInstances(withBearer(ctx, in.Authorization), &pb.ListItemInstancesRequest{MemberId: id, CharacterId: in.CharacterID})
 		if err != nil {
 			return nil, err
 		}
@@ -609,6 +625,7 @@ func registerListItemInstances(api huma.API, h *Handler, mw huma.Middlewares) {
 func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 	type input struct {
 		Authorization string `header:"Authorization" hidden:"true"`
+		CharacterID   string `path:"characterId" format:"uuid" doc:"The character whose loadout to change"`
 		Body          UpdateLoadoutBody
 	}
 	type output struct {
@@ -618,16 +635,17 @@ func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 	huma.Register(api, huma.Operation{
 		OperationID: "update-loadout",
 		Method:      http.MethodPut,
-		Path:        "/api/items/loadout",
-		Summary:     "Equip or unequip an item in a loadout slot",
-		Description: "Sets the item instance in a slot. An empty item_instance_id unequips the slot. " +
-			"The item the slot held, on an unequip or a swap, goes to the bag. " +
+		Path:        "/api/characters/{characterId}/loadout",
+		Summary:     "Equip or unequip an item in a character's loadout slot",
+		Description: "Sets the item instance in one of the character's slots. An empty item_instance_id unequips the slot. " +
+			"The item the slot held, on an unequip or a swap, goes to that character's bag. " +
 			"Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), " +
-			"BAG_FULL (an unequip, or a swap that would grow the bag, with the bag at or over 30).",
+			"BAG_FULL (an unequip, or a swap that would grow the bag, with the character's bag at or over 30). " +
+			"A character that is not the member's, or an item not available to it, answers 404.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
 		Security:    securedOp,
-		Errors:      errsAuthedDomain,
+		Errors:      errsUpdateLoadout,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		caller, ok := commonauth.IdentityFromCtx(ctx)
 		if !ok {
@@ -635,7 +653,7 @@ func registerUpdateLoadout(api huma.API, h *Handler, mw huma.Middlewares) {
 		}
 		id := caller.MemberID.String()
 		res, err := h.client.UpdateLoadout(withBearer(ctx, in.Authorization), &pb.UpdateLoadoutRequest{
-			MemberId: id, Slot: in.Body.Slot, ItemInstanceId: in.Body.ItemInstanceID,
+			MemberId: id, CharacterId: in.CharacterID, Slot: in.Body.Slot, ItemInstanceId: in.Body.ItemInstanceID,
 		})
 		if err != nil {
 			return nil, err
@@ -665,18 +683,18 @@ func registerMoveItemInstance(api huma.API, h *Handler, mw huma.Middlewares) {
 		Method:      http.MethodPut,
 		Path:        "/api/items/instances/{id}/location",
 		Summary:     "Move an item between the bag and the stash",
-		Description: "Moves one of the signed-in member's unworn, available items to the bag or the stash. " +
+		Description: "Moves one of the signed-in member's unworn, available items between the character's bag and the stash. " +
 			"Moving it where it already is succeeds and changes nothing. " +
 			"Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), " +
-			"BAG_FULL (bag at or over 30), STASH_FULL (stash at or over 60). " +
-			"An item that is not the member's answers 404.",
+			"BAG_FULL (the character's bag at or over 30), STASH_FULL (stash at or over 60). " +
+			"An item that is not the member's or is held by another character, or a character that is not the member's, answers 404.",
 		Tags:        []string{"items"},
 		Middlewares: mw,
 		Security:    securedOp,
 		Errors:      errsMoveItemInstance,
 	}, guard(func(ctx context.Context, in *input) (*output, error) {
 		res, err := h.client.MoveItemInstance(withBearer(ctx, in.Authorization), &pb.MoveItemInstanceRequest{
-			ItemInstanceId: in.ID, Location: in.Body.Location,
+			ItemInstanceId: in.ID, Location: in.Body.Location, CharacterId: in.Body.CharacterID,
 		})
 		if err != nil {
 			return nil, err

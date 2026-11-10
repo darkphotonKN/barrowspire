@@ -282,3 +282,5 @@ Changed (existing) operations only; no new endpoint, no request or response fiel
 - A data migration for rows already worn and listed (ops note R19 instead).
 - A thin line for api-gateway: the gateway's mapping is unchanged; only its description and the
   regenerated contract move.
+
+## Change: Per-character gear → FS-50MTX

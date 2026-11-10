@@ -952,7 +952,7 @@ func (s *Server) AtSpireGate(playerID uuid.UUID) bool {
 * read, so callers run it off the message hub's loop and bound ctx.
 **/
 func (s *Server) CheckLoadout(ctx context.Context, player *types.Player) error {
-	if _, err := s.readLoadout(ctx, player.ID, s.tokenOf(player)); err != nil {
+	if _, err := s.readLoadout(ctx, player.ID, s.characterOf(player), s.tokenOf(player)); err != nil {
 		return fmt.Errorf("check loadout of %s: %w: %w", player.ID, errNoLoadout, err)
 	}
 	return nil

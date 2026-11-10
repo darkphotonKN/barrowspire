@@ -27,11 +27,11 @@ func seedUniqueRingInstance(t *testing.T, ctx context.Context, db *sqlx.DB, temp
 	fabled := rarityID(t, ctx, db, "fabled")
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO item_instances (id, template_id, owner_member_id, source, item_type, name, rarity_id,
-		                            description, status, listing_id, reserved_at, location,
+		                            description, status, listing_id, reserved_at, location, character_id,
 		                            item_level, required_level, affixes)
 		VALUES ($1, $2, $3, 'extracted', 'ring', 'Band of Embers', $4,
-		        'Warm to the touch.', 'LISTED', $5, NOW(), 'BAG', 77, 9, $6::jsonb)`,
-		id, template, owner, fabled, uuid.New(), affixes); err != nil {
+		        'Warm to the touch.', 'LISTED', $5, NOW(), 'BAG', $7, 77, 9, $6::jsonb)`,
+		id, template, owner, fabled, uuid.New(), affixes, testCharacter(owner)); err != nil {
 		t.Fatalf("seed unique instance: %v", err)
 	}
 	return id
@@ -42,7 +42,7 @@ func seedUniqueRingInstance(t *testing.T, ctx context.Context, db *sqlx.DB, temp
 // affixes; with item level 40, the same at 40, above the template's band.
 func TestResolveItemSnapshots_ATemplateIsAFreshNormalItem(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 5, 3)
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "fabled", 1, 1, "kill_frenzy", "Kills ignite.")
 
@@ -93,7 +93,7 @@ func TestResolveItemSnapshots_ATemplateIsAFreshNormalItem(t *testing.T) {
 // location exists on a snapshot to carry.
 func TestResolveItemSnapshots_AnInstanceIsACopyAsItStands(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "fabled", 1, 1, "kill_frenzy", "Kills ignite.")
 	// six tier-3 affixes on one ring, two of them the same stat: no rule rolls that
 	source := seedUniqueRingInstance(t, ctx, db, ring, uuid.New(),
@@ -143,7 +143,7 @@ func TestResolveItemSnapshots_AnInstanceIsACopyAsItStands(t *testing.T) {
 // with a malformed affix is unrepresentable too.
 func TestResolveItemSnapshots_ReportsWhatDidNotResolve(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 1, 1)
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "fabled", 1, 1, "", "")
 	malformed := seedUniqueRingInstance(t, ctx, db, ring, uuid.New(), `[{"stat":"luck","tier":1,"value":1}]`)
@@ -180,7 +180,7 @@ func TestResolveItemSnapshots_ReportsWhatDidNotResolve(t *testing.T) {
 // unrepresentable at send. Every snapshot the resolve does answer grants.
 func TestResolveItemSnapshots_NeverResolvesWhatAGrantRefuses(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	levelZero := seedWeaponTemplate(t, ctx, db, "Training Sword", 1, 0)
 	sword := seedWeaponTemplate(t, ctx, db, "Rusted Sword", 5, 3)
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "fabled", 1, 1, "kill_frenzy", "Kills ignite.")
@@ -217,7 +217,7 @@ func TestResolveItemSnapshots_NeverResolvesWhatAGrantRefuses(t *testing.T) {
 // grant from the snapshot.
 func TestResolveThenGrant_ACopyLeavesItsSourceUntouched(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	ring := seedRingTemplate(t, ctx, db, "Band of Embers", "fabled", 1, 1, "kill_frenzy", "Kills ignite.")
 	seller, claimer := uuid.New(), grantMember(t, ctx, db)
 	source := seedUniqueRingInstance(t, ctx, db, ring, seller, `[{"stat":"strength","tier":3,"value":500}]`)

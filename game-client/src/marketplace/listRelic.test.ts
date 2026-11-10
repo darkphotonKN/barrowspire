@@ -105,15 +105,13 @@ describe("pickerCards", () => {
       { id: "cloak", name: "Cloak", status: "PENDING_SETTLEMENT", location: "stash" },
       { id: "bow", name: "Bow", status: "IN_RUN", location: "stash" },
       { id: "odd", name: "Odd", status: "DESTROYED", location: "stash" },
-      { id: "crown", name: "Crown", status: "AVAILABLE", location: "stash" },
       { id: "old", name: "Old Dagger", location: "STASH" },
       { id: "nowhere", name: "Nowhere", status: "AVAILABLE" },
       { name: "No id", status: "AVAILABLE", location: "stash" },
     ],
-    new Set(["crown"]),
   );
 
-  it("should make a card only for an available, unworn stash relic with an id, in order", () => {
+  it("should make a card only for an available stash relic with an id, in order", () => {
     expect(cards.map((c) => c.id)).toEqual(["sword", "old"]);
   });
 
@@ -124,7 +122,6 @@ describe("pickerCards", () => {
     ["a settling relic", "cloak"],
     ["a relic in a run", "bow"],
     ["a relic of unknown status", "odd"],
-    ["a worn stash relic", "crown"],
     ["a relic with no location", "nowhere"],
   ])("should leave out %s", (_l, id) => {
     expect(cards.find((c) => c.id === id)).toBeUndefined();
@@ -152,15 +149,6 @@ describe("pickerCards", () => {
 
   it("should name a nameless relic", () => {
     expect(pickerCards([{ id: "x", location: "stash" }])[0].name).toBe("Unknown relic");
-  });
-
-  it("should read no worn ids as nothing worn", () => {
-    const instances = [
-      { id: "sword", status: "AVAILABLE", location: "stash" },
-      { id: "helm", status: "LISTED", location: "stash" },
-    ];
-    expect(pickerCards(instances, new Set())).toEqual(pickerCards(instances));
-    expect(pickerCards(instances).map((c) => c.id)).toEqual(["sword"]);
   });
 
   it("should say plainly when the stash holds nothing to list (FS-3R77D R14)", () => {
@@ -231,11 +219,8 @@ describe("canSubmitListing", () => {
     expect(canSubmitListing({ ...ok, ...change })).toBe(false);
   });
 
-  it("should refuse a worn relic, which gets no card (FS-3R77D R10)", () => {
-    const wornCards = pickerCards(
-      [{ id: "sword", status: "AVAILABLE", location: "stash" }],
-      new Set(["sword"]),
-    );
+  it("should refuse a worn relic: it is in a bag, so it gets no card (FS-50MTX R38)", () => {
+    const wornCards = pickerCards([{ id: "sword", status: "AVAILABLE", location: "bag" }]);
     expect(canSubmitListing({ ...ok, cards: wornCards })).toBe(false);
   });
 });

@@ -321,7 +321,7 @@ func (s *Server) EnterField(ctx context.Context, conn *websocket.Conn, fieldID s
 		character, gear = game.DevTestRoomSeat(character)
 	} else {
 		checkoutCtx, cancelCheckout := context.WithTimeout(ctx, fieldReadTimeout)
-		gear, err = s.setupHandoffConnectingPlayer(checkoutCtx, player.ID, visitID, s.tokenOf(player))
+		gear, err = s.setupHandoffConnectingPlayer(checkoutCtx, player.ID, character, visitID, s.tokenOf(player))
 		cancelCheckout()
 		if err != nil {
 			return nil, fmt.Errorf("enter field %s: %w: %w", place.ID, errNoLoadout, err)

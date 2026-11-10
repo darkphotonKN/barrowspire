@@ -274,3 +274,5 @@ Changed (existing) operations only; no new endpoint, no request or response fiel
   the reconciler.
 - A thin line for api-gateway or marketplace-service: neither one's behaviour changes; only the
   gateway's description and the regenerated contract move (as FS-HBXZN and FS-XEDFF did).
+
+## Change: Per-character gear → FS-50MTX

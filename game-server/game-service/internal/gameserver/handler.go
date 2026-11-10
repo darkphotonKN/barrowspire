@@ -135,7 +135,8 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 		// member already seated, whose record here names the run, is
 		// reconnecting; any other with no seat waiting is refused (FS-18Z5F
 		// §C R13, R18; FS-K2HKP R24).
-		switch run.HandoffSeatOf(memberId) {
+		seat, queuedCharacter := run.HandoffSeatOf(memberId)
+		switch seat {
 		case game.HandoffSeatTaken:
 			if !reconnecting || player.CurrentGameSessionId != run.ID {
 				slog.Warn("Refusing a handoff connection, seated here but not on record in the run", "session_id", sessionIDUUID, "member_id", memberId)
@@ -150,7 +151,7 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 			// arrival (FS-K2HKP R22; FS-18Z5F §C R13, R16)
 			handoffConnectCtx, handoffConnectCancel := context.WithTimeout(ctx, time.Second*3) // wait max 3 seconds for item
 			defer handoffConnectCancel()
-			gear, err := s.setupHandoffConnectingPlayer(handoffConnectCtx, memberId, run.ID, player.Token)
+			gear, err := s.setupHandoffConnectingPlayer(handoffConnectCtx, memberId, queuedCharacter, run.ID, player.Token)
 			if err != nil {
 				slog.Warn("Refusing a handoff connection, loadout unavailable", "session_id", sessionIDUUID, "member_id", memberId, "error", err)
 				s.refuseHandoff(conn, player.ID, isReconnection, "loadout unavailable")
@@ -797,15 +798,16 @@ func seatRefusalReason(err error) string {
 }
 
 /**
-* setupHandoffConnectingPlayer checks the member's worn and bag items out of
+* setupHandoffConnectingPlayer checks character's worn and bag items out of
 * items-service into the world runID names, a run's session id or a field
-* visit's id, and returns them to seat from (FS-18Z5F §C R13). A handoff
-* arrival and a field entry seat this way.
+* visit's id, and returns them to seat from (FS-18Z5F §C R13; FS-50MTX R28). A
+* handoff arrival and a field entry seat this way.
 **/
-func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID, runID uuid.UUID, token types.BearerToken) (*items.CheckOutRunGearResponse, error) {
+func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID uuid.UUID, character types.CharacterInPlay, runID uuid.UUID, token types.BearerToken) (*items.CheckOutRunGearResponse, error) {
 	gear, err := s.itemsClient.CheckOutRunGear(asMember(ctx, token), &items.CheckOutRunGearRequest{
-		MemberId: memberID.String(),
-		RunId:    runID.String(),
+		MemberId:    memberID.String(),
+		RunId:       runID.String(),
+		CharacterId: types.WireCharacterID(character.ID),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("check out run gear of %s into %s: %w", memberID, runID, err)
@@ -813,11 +815,12 @@ func (s *Server) setupHandoffConnectingPlayer(ctx context.Context, memberID, run
 	return gear, nil
 }
 
-// readLoadout reads the member's worn loadout without checking anything out:
-// a pre-check, not a seating (FS-18Z5F §C R13).
-func (s *Server) readLoadout(ctx context.Context, memberID uuid.UUID, token types.BearerToken) (*items.GetLoadoutWithItemsResponse, error) {
+// readLoadout reads character's worn loadout without checking anything out:
+// a pre-check, not a seating (FS-18Z5F §C R13; FS-50MTX R28).
+func (s *Server) readLoadout(ctx context.Context, memberID uuid.UUID, character types.CharacterInPlay, token types.BearerToken) (*items.GetLoadoutWithItemsResponse, error) {
 	res, err := s.itemsClient.GetLoadoutWithItems(asMember(ctx, token), &items.GetLoadoutWithItemsRequest{
-		MemberId: memberID.String(),
+		MemberId:    memberID.String(),
+		CharacterId: types.WireCharacterID(character.ID),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read loadout of %s: %w", memberID, err)

@@ -33,7 +33,7 @@ type Activities struct {
 // is a channel used for nothing else: the consumer puts it in confirm mode to
 // republish retries and dead letters. An error means the service cannot run
 // safely and must not start.
-func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *amqp.Channel, authClient auth.AuthClient) (*grpc.Server, *Activities, error) {
+func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *amqp.Channel, authClient auth.AuthClient, characterClient items.CharacterOwnership) (*grpc.Server, *Activities, error) {
 
 	// -- outbox --
 	outboxRepo := commonoutbox.NewRepo(db)
@@ -44,7 +44,7 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *a
 
 	// Create service with repository and AMQP channel
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
-	service := items.NewService(repo, db, publishCh, outboxService, commoninbox.NewRepo())
+	service := items.NewService(repo, db, publishCh, outboxService, commoninbox.NewRepo(), characterClient)
 
 	// instantiate activity
 	freezeItemActivity := items.NewItemsActivity(service)

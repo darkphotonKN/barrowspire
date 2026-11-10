@@ -76,6 +76,27 @@ func TestSetupRouter_CharacterRoutesAreTypedOnly(t *testing.T) {
 	}
 }
 
+// FS-50MTX §API surface: the loadout routes sit under the character routes and
+// share their wildcard (gin panics on a differing name at one position, so
+// building the router at all is half of this). The old paths are gone with no
+// shim, so with no token they 404 rather than answer the protected 401.
+func TestSetupRouter_LoadoutRoutesMoveUnderTheCharacter(t *testing.T) {
+	r := buildRouter(t, Features{})
+
+	owned := map[string]int{}
+	for _, route := range r.Routes() {
+		owned[route.Method+" "+route.Path]++
+	}
+	assert.Equal(t, 1, owned[http.MethodGet+" /api/characters/:characterId/loadout"])
+	assert.Equal(t, 1, owned[http.MethodPut+" /api/characters/:characterId/loadout"])
+
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		w := testsupport.Do(r, method, "/api/items/loadout", "")
+
+		testsupport.AssertProblem(t, w, http.StatusNotFound, string(errcode.NotFound))
+	}
+}
+
 // FS-TVCZQ §Requirements 11, §API surface: nothing mints S3 upload URLs through
 // the gateway any more, so both old paths fall through to the no-route handler.
 // A registered route would answer 401 here first, because neither request

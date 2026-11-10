@@ -254,7 +254,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
   `interact`/`equip`/`unequip`.
 - **Resolve:** server `end_game` → in-scene end overlay (`current_player === null` in state ⇒ escaped).
 - **Loadout (pre-game):** LoadoutScene, REST only (`getItemInstances`, `getLoadout`,
-  `PUT /api/items/loadout`).
+  `PUT /api/characters/{characterId}/loadout`).
 
 ## Reference — Phaser integration
 
@@ -284,9 +284,9 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
   (`POST /api/member/refresh`), a refused renewal → logout + `/login` (FS-ZPX58).
 - Endpoints called: `POST /api/member/{signin,signup}`, `GET /api/member`,
   `GET /api/stats/leaderboard`, `GET /api/notification/` + `PATCH /:id/read` + `/read-all`,
-  `GET /api/items/{loadout,instances}` + `PUT /api/items/loadout`.
+  `GET /api/items/instances` + `GET`/`PUT /api/characters/{characterId}/loadout`.
 > REVIEW: item JSON casing is split — `/api/items/instances` returns **snake_case** (proto),
-> `/api/items/loadout` returns **camelCase** ids; the code comments the hazard.
+> `/api/characters/{characterId}/loadout` returns **camelCase** ids; the code comments the hazard.
 > REVIEW: notification `created_at` is sometimes a string, sometimes `{seconds,nanos}` (proto).
 
 ## Reference — WebSocket contract (client side)

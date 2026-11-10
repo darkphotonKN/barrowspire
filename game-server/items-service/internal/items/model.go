@@ -158,9 +158,9 @@ const itemStatusAvailable = "AVAILABLE"
 // with that world's id (FS-18Z5F R1, ADR-0032).
 const itemStatusInRun = "IN_RUN"
 
-// Per-account caps on unworn instances, counted at write time (FS-VPD8Y R4).
-// They refuse growth into a location and never remove what is already there
-// (R5).
+// Caps on unworn instances, counted at write time (FS-VPD8Y R4): the bag per
+// character, the stash per account (FS-50MTX R5). They refuse growth into a
+// location and never remove what is already there (FS-VPD8Y R5).
 const (
 	BagCapacity   = 30
 	StashCapacity = 60
@@ -207,6 +207,10 @@ type ItemInstance struct {
 	// LocationStash (FS-VPD8Y R1). Worn is the loadout, not a location: a worn
 	// instance keeps whatever this says (R2). Independent of Status.
 	Location string `db:"location" json:"location"`
+	// CharacterID is the holder, the character holding the instance: set exactly
+	// when Location is LocationBag, nil in the stash (FS-50MTX R1, R2).
+	// OwnerMemberID stays the account that owns it.
+	CharacterID *uuid.UUID `db:"character_id" json:"character_id"`
 
 	// RequiredLevel is the level needed to equip (FS-BDA7X Req 30). Reads give
 	// the instance's own requirement, else its template's (FS-4R9M9 R48, R51);
@@ -293,11 +297,13 @@ type PlayerLoadout struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// UpsertPlayerLoadoutRequest is the param shape for upserting a player's full
-// loadout in one call. MemberID is the conflict / WHERE key. Each slot pointer
-// is nullable: nil means "clear this slot", a value means "set to this instance".
+// UpsertPlayerLoadoutRequest is the param shape for upserting one character's
+// full loadout in one call. CharacterID is the conflict key, guarded on MemberID
+// (FS-50MTX R4). Each slot pointer is nullable: nil means "clear this slot", a
+// value means "set to this instance".
 type UpsertPlayerLoadoutRequest struct {
-	MemberID uuid.UUID `db:"member_id" json:"member_id"`
+	MemberID    uuid.UUID `db:"member_id" json:"member_id"`
+	CharacterID uuid.UUID `db:"character_id" json:"character_id"`
 
 	WeaponInstanceID *uuid.UUID `db:"weapon_instance_id" json:"weapon_instance_id"`
 
@@ -487,8 +493,11 @@ type WeaponWithTemplate struct {
 	RequiredLevel  int       `db:"required_level"`
 }
 
+// GetLoadoutRequest reads CharacterId's loadout, filtered by both ids: a
+// character that is not MemberId's reads as empty (FS-50MTX R12, R22).
 type GetLoadoutRequest struct {
-	MemberId uuid.UUID `json:"member_id" binding:"required"`
+	MemberId    uuid.UUID `json:"member_id" binding:"required"`
+	CharacterId uuid.UUID `json:"character_id" binding:"required"`
 }
 
 type Loadout struct {
@@ -521,12 +530,13 @@ type LoadoutWithItems struct {
 	Consumable3 *ItemInstance
 }
 
-// CheckOutRunGearRequest checks MemberID's worn and bag instances out into the
-// run or field world RunID (FS-18Z5F R5). RunID is the world's own id: a run's
-// session id or a field visit's id (R3).
+// CheckOutRunGearRequest checks CharacterID's worn and bag instances out into
+// the run or field world RunID (FS-18Z5F R5, FS-50MTX R25). RunID is the
+// world's own id: a run's session id or a field visit's id (R3).
 type CheckOutRunGearRequest struct {
-	MemberID uuid.UUID
-	RunID    uuid.UUID
+	MemberID    uuid.UUID
+	CharacterID uuid.UUID
+	RunID       uuid.UUID
 }
 
 // RunGear is what a checkout seats: the worn instances in their slots and the
@@ -537,31 +547,44 @@ type RunGear struct {
 	Bag     []*ItemInstance
 }
 
+// ListItemInstancesRequest lists MemberId's stash, plus what CharacterId holds
+// when one is named (FS-50MTX R23).
 type ListItemInstancesRequest struct {
-	MemberId uuid.UUID `json:"member_id" binding:"required"`
+	MemberId    uuid.UUID  `json:"member_id" binding:"required"`
+	CharacterId *uuid.UUID `json:"character_id"`
 }
 
 type UpdateLoadoutRequest struct {
 	MemberId       uuid.UUID  `json:"member_id" binding:"required"`
+	CharacterId    uuid.UUID  `json:"character_id" binding:"required"`
 	Slot           string     `json:"slot" binding:"required"`
 	ItemInstanceId *uuid.UUID `json:"item_instance_id"`
 }
 
 // MoveItemInstanceRequest moves one of the caller's instances to Location,
-// LocationBag or LocationStash (FS-VPD8Y R10). The caller is never a field:
-// it comes from the authenticated context (R12).
+// LocationBag or LocationStash, for CharacterID in both directions (FS-VPD8Y
+// R10, FS-50MTX R18). The caller is never a field: it comes from the
+// authenticated context (R12).
 type MoveItemInstanceRequest struct {
 	ItemInstanceID uuid.UUID
 	Location       string
+	CharacterID    uuid.UUID
 }
 
 // ItemPlacement is what a move checks about one of its owner's instances:
-// whether it is worn (in the owner's loadout), its status and where it is kept
-// (FS-VPD8Y R10).
+// whether it is worn (in a loadout of the owner's), its status, where it is
+// kept and who holds it (FS-VPD8Y R10, FS-50MTX R15, R20).
 type ItemPlacement struct {
-	Status   string `db:"status"`
-	Location string `db:"location"`
-	Worn     bool   `db:"worn"`
+	Status      string     `db:"status"`
+	Location    string     `db:"location"`
+	CharacterID *uuid.UUID `db:"character_id"`
+	Worn        bool       `db:"worn"`
+}
+
+// heldByAnother reports whether a character other than character holds the
+// instance. A stash instance has no holder, so any character may claim it.
+func (p *ItemPlacement) heldByAnother(character uuid.UUID) bool {
+	return p.CharacterID != nil && *p.CharacterID != character
 }
 
 // ItemSummary is what anyone may see of an item instance (FS-8EGFA

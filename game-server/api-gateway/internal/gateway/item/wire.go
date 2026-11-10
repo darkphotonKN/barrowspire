@@ -157,6 +157,9 @@ type ItemInstance struct {
 	// so the schema declares it required and the client never has to guess one
 	// (contract-patterns §5).
 	Location string `json:"location" enum:"bag,stash" doc:"Where the member keeps the item: carried in the bag or stored in the town stash. A worn item is in the loadout whatever this says"`
+
+	// FS-50MTX R24. Absent for a stash item, which has no holder.
+	CharacterId string `json:"character_id,omitempty" format:"uuid" doc:"The character holding the item. Absent for a stash item"`
 }
 
 type GetLoadoutResponse struct {

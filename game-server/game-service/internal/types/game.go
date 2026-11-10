@@ -230,6 +230,9 @@ type RawPlayerState struct {
 	// ConsumedItemIDs: the stored-loadout items the delver used up this run,
 	// which leave the stash at extraction (FS-P9G8R §Requirements 14)
 	ConsumedItemIDs []uuid.UUID
+	// CharacterID: the character the body is seated as, whose finds these are
+	// (FS-50MTX R30); zero when none was resolved
+	CharacterID uuid.UUID
 }
 
 type RankedPlayerState struct {
@@ -245,6 +248,8 @@ type RankedPlayerState struct {
 	LoadoutUnknown bool
 	// ConsumedItemIDs: carried from RawPlayerState; a field visit has none
 	ConsumedItemIDs []uuid.UUID
+	// CharacterID: carried from RawPlayerState, or the visit's on a field visit
+	CharacterID uuid.UUID
 }
 
 type ExtractedItem struct {
@@ -521,6 +526,15 @@ type CharacterInPlay struct {
 	Level int `json:"level"`
 	// total experience, monotonic
 	Experience int64 `json:"experience"`
+}
+
+// WireCharacterID is id as a gRPC request or an event carries it. No character
+// is empty, never the zero UUID, which would read as a real id (FS-50MTX R32).
+func WireCharacterID(id uuid.UUID) string {
+	if id == uuid.Nil {
+		return ""
+	}
+	return id.String()
 }
 
 // RunProgress is what a run did to one member's character in play. Gained is

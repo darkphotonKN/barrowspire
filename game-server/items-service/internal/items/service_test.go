@@ -372,7 +372,7 @@ func TestServiceGetLoadoutWithItems_SlotReads(t *testing.T) {
 				errs:    tt.errs,
 			}
 
-			got, err := NewService(repo, nil, nil, nil, nil).GetLoadoutWithItems(context.Background(), owner, &GetLoadoutRequest{MemberId: owner})
+			got, err := NewService(repo, nil, nil, nil, nil, everyCharacterOwned{}).GetLoadoutWithItems(context.Background(), owner, &GetLoadoutRequest{MemberId: owner, CharacterId: uuid.New()})
 
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
@@ -430,7 +430,13 @@ func (r *moveRepo) CountUnwornAtTx(_ context.Context, _ *sqlx.Tx, _ uuid.UUID, l
 	return r.counts[location], r.countErr
 }
 
-func (r *moveRepo) MoveItemInstanceTx(_ context.Context, _ *sqlx.Tx, owner, _ uuid.UUID, location string) (bool, error) {
+func (r *moveRepo) CountUnwornInBagTx(_ context.Context, _ *sqlx.Tx, _, _ uuid.UUID) (int, error) {
+	r.calls = append(r.calls, "count")
+	r.countedAt = LocationBag
+	return r.counts[LocationBag], r.countErr
+}
+
+func (r *moveRepo) MoveItemInstanceTx(_ context.Context, _ *sqlx.Tx, owner, _, _ uuid.UUID, location string) (bool, error) {
 	r.calls = append(r.calls, "write")
 	r.movedOwner, r.movedTo = owner, location
 	return r.moved, nil
@@ -496,7 +502,7 @@ func TestServiceMoveItemInstance_Rules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			caller, itemID := uuid.New(), uuid.New()
-			svc := &service{repo: tt.repo, withTx: runInline}
+			svc := &service{repo: tt.repo, withTx: runInline, characters: everyCharacterOwned{}}
 
 			got, err := svc.MoveItemInstance(context.Background(), caller, &MoveItemInstanceRequest{ItemInstanceID: itemID, Location: tt.to})
 
@@ -549,11 +555,11 @@ type loadoutWriteRepo struct {
 	bagCount  int
 	countErr  error
 
-	calls      []string
-	lockedFor  uuid.UUID
-	equipped   *UpdateLoadoutRequest
-	relocated  uuid.UUID
-	relocateTo string
+	calls     []string
+	lockedFor uuid.UUID
+	equipped  *UpdateLoadoutRequest
+	held      []uuid.UUID
+	heldBy    uuid.UUID
 }
 
 func (r *loadoutWriteRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member uuid.UUID) error {
@@ -562,7 +568,7 @@ func (r *loadoutWriteRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member u
 	return nil
 }
 
-func (r *loadoutWriteRepo) LoadoutSlotTx(_ context.Context, _ *sqlx.Tx, _ uuid.UUID, _ string) (*uuid.UUID, error) {
+func (r *loadoutWriteRepo) LoadoutSlotTx(_ context.Context, _ *sqlx.Tx, _, _ uuid.UUID, _ string) (*uuid.UUID, error) {
 	r.calls = append(r.calls, "slot")
 	return r.worn, nil
 }
@@ -572,8 +578,8 @@ func (r *loadoutWriteRepo) LockItemPlacementTx(_ context.Context, _ *sqlx.Tx, _,
 	return r.placement, nil
 }
 
-func (r *loadoutWriteRepo) CountUnwornAtTx(_ context.Context, _ *sqlx.Tx, _ uuid.UUID, location string) (int, error) {
-	r.calls = append(r.calls, "count:"+location)
+func (r *loadoutWriteRepo) CountUnwornInBagTx(_ context.Context, _ *sqlx.Tx, _, _ uuid.UUID) (int, error) {
+	r.calls = append(r.calls, "count:"+LocationBag)
 	return r.bagCount, r.countErr
 }
 
@@ -583,9 +589,10 @@ func (r *loadoutWriteRepo) UpsertLoadoutSlotTx(_ context.Context, _ *sqlx.Tx, re
 	return nil
 }
 
-func (r *loadoutWriteRepo) SetLocationTx(_ context.Context, _ *sqlx.Tx, _, itemID uuid.UUID, location string) error {
-	r.calls = append(r.calls, "relocate")
-	r.relocated, r.relocateTo = itemID, location
+func (r *loadoutWriteRepo) HoldInBagTx(_ context.Context, _ *sqlx.Tx, _, character, itemID uuid.UUID) error {
+	r.calls = append(r.calls, "hold")
+	r.held = append(r.held, itemID)
+	r.heldBy = character
 	return nil
 }
 
@@ -611,7 +618,7 @@ func TestServiceUpdateLoadout_KeepsTheBagHonest(t *testing.T) {
 	}{
 		{name: "unequip under the cap sends the item to the bag", equip: nil,
 			repo:      &loadoutWriteRepo{worn: &worn, bagCount: BagCapacity - 1},
-			wantCalls: []string{"lock", "slot", "count:BAG", "equip", "relocate"}, wantToTheBag: true},
+			wantCalls: []string{"lock", "slot", "count:BAG", "equip", "hold"}, wantToTheBag: true},
 		{name: "unequip into a bag of 30 is refused and writes nothing", equip: nil,
 			repo:        &loadoutWriteRepo{worn: &worn, bagCount: BagCapacity},
 			wantRefusal: errcode.BagFull, wantCalls: []string{"lock", "slot", "count:BAG"}},
@@ -623,10 +630,10 @@ func TestServiceUpdateLoadout_KeepsTheBagHonest(t *testing.T) {
 			wantCalls: []string{"lock", "slot", "equip"}},
 		{name: "a bag-item swap at 30 is net zero and passes", equip: &equip,
 			repo:      &loadoutWriteRepo{worn: &worn, placement: fromBag, bagCount: BagCapacity},
-			wantCalls: []string{"lock", "slot", "read", "equip", "relocate"}, wantToTheBag: true},
+			wantCalls: []string{"lock", "slot", "read", "equip", "hold", "hold"}, wantToTheBag: true},
 		{name: "a stash-item swap under the cap sends the displaced item to the bag", equip: &equip,
 			repo:      &loadoutWriteRepo{worn: &worn, placement: fromStash, bagCount: 4},
-			wantCalls: []string{"lock", "slot", "read", "count:BAG", "equip", "relocate"}, wantToTheBag: true},
+			wantCalls: []string{"lock", "slot", "read", "count:BAG", "equip", "hold", "hold"}, wantToTheBag: true},
 		{name: "a stash-item swap into a bag of 30 grows it and is refused", equip: &equip,
 			repo:        &loadoutWriteRepo{worn: &worn, placement: fromStash, bagCount: BagCapacity},
 			wantRefusal: errcode.BagFull, wantCalls: []string{"lock", "slot", "read", "count:BAG"}},
@@ -635,13 +642,13 @@ func TestServiceUpdateLoadout_KeepsTheBagHonest(t *testing.T) {
 			wantRefusal: errcode.BagFull, wantCalls: []string{"lock", "slot", "read", "count:BAG"}},
 		{name: "equip into an empty slot at 30 always passes", equip: &equip,
 			repo:      &loadoutWriteRepo{placement: fromBag, bagCount: BagCapacity},
-			wantCalls: []string{"lock", "slot", "read", "equip"}},
+			wantCalls: []string{"lock", "slot", "read", "equip", "hold"}},
 		{name: "equip from the stash into an empty slot is not refused", equip: &equip,
 			repo:      &loadoutWriteRepo{placement: fromStash, bagCount: BagCapacity},
-			wantCalls: []string{"lock", "slot", "read", "equip"}},
+			wantCalls: []string{"lock", "slot", "read", "equip", "hold"}},
 		{name: "re-equipping the worn item displaces nothing", equip: &worn,
-			repo:      &loadoutWriteRepo{worn: &worn, bagCount: BagCapacity},
-			wantCalls: []string{"lock", "slot", "read", "equip"}},
+			repo:      &loadoutWriteRepo{worn: &worn, placement: fromBag, bagCount: BagCapacity},
+			wantCalls: []string{"lock", "slot", "read", "equip", "hold"}},
 		{name: "a count failure is returned, not read as a refusal", equip: nil,
 			repo:    &loadoutWriteRepo{worn: &worn, countErr: dbDown},
 			wantErr: dbDown, wantCalls: []string{"lock", "slot", "count:BAG"}},
@@ -649,9 +656,9 @@ func TestServiceUpdateLoadout_KeepsTheBagHonest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			caller := uuid.New()
-			svc := &service{repo: tt.repo, withTx: runInline}
-			req := &UpdateLoadoutRequest{MemberId: caller, Slot: "weapon", ItemInstanceId: tt.equip}
+			caller, character := uuid.New(), uuid.New()
+			svc := &service{repo: tt.repo, withTx: runInline, characters: everyCharacterOwned{}}
+			req := &UpdateLoadoutRequest{MemberId: caller, CharacterId: character, Slot: "weapon", ItemInstanceId: tt.equip}
 
 			err := svc.UpdateLoadout(context.Background(), caller, req)
 
@@ -678,8 +685,11 @@ func TestServiceUpdateLoadout_KeepsTheBagHonest(t *testing.T) {
 			if tt.repo.equipped != nil && tt.repo.equipped != req {
 				t.Errorf("equipped %+v, want the request %+v", tt.repo.equipped, req)
 			}
-			if tt.wantToTheBag && (tt.repo.relocated != worn || tt.repo.relocateTo != LocationBag) {
-				t.Errorf("relocated (%v, %q), want the slot's instance (%v) to %q", tt.repo.relocated, tt.repo.relocateTo, worn, LocationBag)
+			if tt.wantToTheBag && !slices.Contains(tt.repo.held, worn) {
+				t.Errorf("held %v, want the slot's instance %v among them", tt.repo.held, worn)
+			}
+			if len(tt.repo.held) > 0 && tt.repo.heldBy != character {
+				t.Errorf("held by %v, want the request's character %v", tt.repo.heldBy, character)
 			}
 		})
 	}
@@ -711,16 +721,16 @@ func TestServiceUpdateLoadout_RefusesAnItemNotAvailable(t *testing.T) {
 		{name: "re-equipping a worn item now in a run", status: itemStatusInRun, worn: &worn, equip: &worn,
 			wantRefus: true, wantCalls: []string{"lock", "slot", "read"}},
 		{name: "available equips", status: itemStatusAvailable, equip: &equip,
-			wantCalls: []string{"lock", "slot", "read", "equip"}},
+			wantCalls: []string{"lock", "slot", "read", "equip", "hold"}},
 		{name: "clearing a slot whatever its item is not checked", status: itemStatusInRun, worn: &worn,
-			wantCalls: []string{"lock", "slot", "count:BAG", "equip", "relocate"}},
+			wantCalls: []string{"lock", "slot", "count:BAG", "equip", "hold"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			caller := uuid.New()
 			repo := &loadoutWriteRepo{worn: tt.worn, placement: &ItemPlacement{Status: tt.status, Location: LocationBag}}
-			svc := &service{repo: repo, withTx: runInline}
+			svc := &service{repo: repo, withTx: runInline, characters: everyCharacterOwned{}}
 
 			err := svc.UpdateLoadout(context.Background(), caller,
 				&UpdateLoadoutRequest{MemberId: caller, Slot: "weapon", ItemInstanceId: tt.equip})
@@ -918,10 +928,10 @@ func refusedWith(t *testing.T, err error, code errcode.Code) {
 	}
 }
 
-// wearIn puts id in owner's loadout slot column.
+// wearIn puts id in the slot column of owner's testCharacter.
 func wearIn(t *testing.T, ctx context.Context, db *sqlx.DB, owner, id uuid.UUID, column string) {
 	t.Helper()
-	if _, err := db.ExecContext(ctx, `INSERT INTO player_loadouts (member_id, `+column+`) VALUES ($1, $2)`, owner, id); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO player_loadouts (member_id, character_id, `+column+`) VALUES ($1, $2, $3)`, owner, testCharacter(owner), id); err != nil {
 		t.Fatalf("wear in %s: %v", column, err)
 	}
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
@@ -938,7 +948,7 @@ func TestServiceReserveItem_AgainstTheSchema(t *testing.T) {
 	ctx, db := catalogueDB(t)
 	reserve := func(seller, itemID uuid.UUID) (*recordingOutbox, error) {
 		outbox := &recordingOutbox{}
-		_, err := NewService(NewRepository(db), db, nil, outbox, nil).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
+		_, err := NewService(NewRepository(db), db, nil, outbox, nil, everyCharacterOwned{}).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
 		return outbox, err
 	}
 
@@ -1051,7 +1061,7 @@ func TestServiceReserveItem_ListedItemCap(t *testing.T) {
 	ctx, db := catalogueDB(t)
 	reserve := func(seller, itemID uuid.UUID) (*recordingOutbox, error) {
 		outbox := &recordingOutbox{}
-		_, err := NewService(NewRepository(db), db, nil, outbox, nil).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
+		_, err := NewService(NewRepository(db), db, nil, outbox, nil, everyCharacterOwned{}).ReserveItem(ctx, seller, itemID, 100, nil, time.Now().Add(time.Hour))
 		return outbox, err
 	}
 	untouched := func(t *testing.T, item uuid.UUID) {
@@ -1114,7 +1124,7 @@ func TestServiceReserveItem_ListedItemCap(t *testing.T) {
 // never 21 listed (FS-XEDFF R6, §User Stories 5).
 func TestServiceReserveItem_ConcurrentReservesAt19(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil, everyCharacterOwned{})
 
 	for i := range 10 {
 		owner := uuid.New()
@@ -1219,7 +1229,7 @@ func TestServiceReserveItem_WaitsForAnEquipInProgress(t *testing.T) {
 	item := seedAt(t, ctx, db, owner, itemStatusAvailable, LocationBag)
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM player_loadouts WHERE member_id = $1`, owner) })
 
-	reserver := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+	reserver := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil, everyCharacterOwned{})
 	repo := &midEquipRepo{repository: NewRepository(db), reserve: func() (<-chan error, error) {
 		done := make(chan error, 1)
 		go func() {
@@ -1229,7 +1239,7 @@ func TestServiceReserveItem_WaitsForAnEquipInProgress(t *testing.T) {
 		return done, awaitAccountLockWaiter(ctx, db, owner, done)
 	}}
 
-	if err := NewService(repo, db, nil, nil, nil).UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: &item}); err != nil {
+	if err := NewService(repo, db, nil, nil, nil, everyCharacterOwned{}).UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, CharacterId: testCharacter(owner), Slot: "weapon", ItemInstanceId: &item}); err != nil {
 		t.Fatalf("equip: %v", err)
 	}
 	if repo.result == nil {
@@ -1257,7 +1267,7 @@ func TestServiceReserveItem_WaitsForAnEquipInProgress(t *testing.T) {
 // LISTED (FS-HBXZN R3, §Edge States "Equip and list race").
 func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil, everyCharacterOwned{})
 
 	for i := range 25 {
 		owner := uuid.New()
@@ -1270,7 +1280,7 @@ func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
 		equipped, reserved := make(chan error, 1), make(chan error, 1)
 		go func() {
 			<-start
-			equipped <- svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, Slot: "weapon", ItemInstanceId: &item})
+			equipped <- svc.UpdateLoadout(ctx, owner, &UpdateLoadoutRequest{MemberId: owner, CharacterId: testCharacter(owner), Slot: "weapon", ItemInstanceId: &item})
 		}()
 		go func() {
 			<-start
@@ -1315,7 +1325,7 @@ func TestServiceReserveItem_RacingAnEquip(t *testing.T) {
 // §Edge States "Move and list race").
 func TestServiceReserveItem_RacingAMoveToTheBag(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil)
+	svc := NewService(NewRepository(db), db, nil, &recordingOutbox{}, nil, everyCharacterOwned{})
 
 	for i := range 25 {
 		owner := uuid.New()
@@ -1325,7 +1335,7 @@ func TestServiceReserveItem_RacingAMoveToTheBag(t *testing.T) {
 		moved, reserved := make(chan error, 1), make(chan error, 1)
 		go func() {
 			<-start
-			_, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: item, Location: LocationBag})
+			_, err := svc.MoveItemInstance(ctx, owner, &MoveItemInstanceRequest{ItemInstanceID: item, Location: LocationBag, CharacterID: testCharacter(owner)})
 			moved <- err
 		}()
 		go func() {
@@ -1417,7 +1427,7 @@ func TestServiceListConfirmedReservations_ClampsAndPositionsTheNextPage(t *testi
 			repo := &confirmedListRepo{rows: stored}
 			after := &cursor.UpdatedAt{ID: uuid.New(), UpdatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
 
-			page, err := NewService(repo, nil, nil, nil, nil).ListConfirmedReservations(context.Background(), 10*time.Minute, after, tt.limit)
+			page, err := NewService(repo, nil, nil, nil, nil, everyCharacterOwned{}).ListConfirmedReservations(context.Background(), 10*time.Minute, after, tt.limit)
 
 			if err != nil {
 				t.Fatalf("ListConfirmedReservations: %v", err)
@@ -1445,7 +1455,7 @@ func TestServiceListConfirmedReservations_ClampsAndPositionsTheNextPage(t *testi
 func TestServiceListConfirmedReservations_WrapsARepositoryFailure(t *testing.T) {
 	dbDown := errors.New("connection refused")
 
-	_, err := NewService(&confirmedListRepo{err: dbDown}, nil, nil, nil, nil).ListConfirmedReservations(context.Background(), 10*time.Minute, nil, 10)
+	_, err := NewService(&confirmedListRepo{err: dbDown}, nil, nil, nil, nil, everyCharacterOwned{}).ListConfirmedReservations(context.Background(), 10*time.Minute, nil, 10)
 
 	if !errors.Is(err, dbDown) {
 		t.Errorf("err = %v, want it to wrap %v", err, dbDown)
@@ -1502,7 +1512,7 @@ func TestServiceListStaleReserved_ClampsAndPositionsTheNextPage(t *testing.T) {
 			repo := &staleListRepo{rows: stored}
 			after := &cursor.ReservedAt{ID: uuid.New(), ReservedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
 
-			page, err := NewService(repo, nil, nil, nil, nil).ListStaleReserved(context.Background(), 10*time.Minute, after, tt.limit)
+			page, err := NewService(repo, nil, nil, nil, nil, everyCharacterOwned{}).ListStaleReserved(context.Background(), 10*time.Minute, after, tt.limit)
 
 			if err != nil {
 				t.Fatalf("ListStaleReserved: %v", err)
@@ -1530,7 +1540,7 @@ func TestServiceListStaleReserved_ClampsAndPositionsTheNextPage(t *testing.T) {
 func TestServiceListStaleReserved_WrapsARepositoryFailure(t *testing.T) {
 	dbDown := errors.New("connection refused")
 
-	_, err := NewService(&staleListRepo{err: dbDown}, nil, nil, nil, nil).ListStaleReserved(context.Background(), 10*time.Minute, nil, 10)
+	_, err := NewService(&staleListRepo{err: dbDown}, nil, nil, nil, nil, everyCharacterOwned{}).ListStaleReserved(context.Background(), 10*time.Minute, nil, 10)
 
 	if !errors.Is(err, dbDown) {
 		t.Errorf("err = %v, want it to wrap %v", err, dbDown)

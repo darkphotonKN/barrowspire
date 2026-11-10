@@ -28,9 +28,11 @@ type checkoutRepo struct {
 	checkedOut []*ItemInstance
 	err        error
 
-	calls     []string
-	lockedFor uuid.UUID
-	runID     uuid.UUID
+	calls         []string
+	lockedFor     uuid.UUID
+	loadoutFor    uuid.UUID
+	checkedOutFor uuid.UUID
+	runID         uuid.UUID
 }
 
 func (r *checkoutRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member uuid.UUID) error {
@@ -39,14 +41,15 @@ func (r *checkoutRepo) LockAccountTx(_ context.Context, _ *sqlx.Tx, member uuid.
 	return nil
 }
 
-func (r *checkoutRepo) LoadoutTx(context.Context, *sqlx.Tx, uuid.UUID) (*Loadout, error) {
+func (r *checkoutRepo) LoadoutTx(_ context.Context, _ *sqlx.Tx, _, character uuid.UUID) (*Loadout, error) {
 	r.calls = append(r.calls, "loadout")
+	r.loadoutFor = character
 	return r.loadout, nil
 }
 
-func (r *checkoutRepo) CheckOutRunGearTx(_ context.Context, _ *sqlx.Tx, _, runID uuid.UUID) ([]*ItemInstance, error) {
+func (r *checkoutRepo) CheckOutRunGearTx(_ context.Context, _ *sqlx.Tx, _, character, runID uuid.UUID) ([]*ItemInstance, error) {
 	r.calls = append(r.calls, "checkout")
-	r.runID = runID
+	r.checkedOutFor, r.runID = character, runID
 	return r.checkedOut, r.err
 }
 
@@ -67,11 +70,15 @@ func TestServiceCheckOutRunGear_SeatsWornInSlotsAndTheRestInTheBag(t *testing.T)
 	}
 	svc := &service{repo: repo, withTx: runInline}
 
-	got, err := svc.CheckOutRunGear(context.Background(), member, &CheckOutRunGearRequest{MemberID: member, RunID: runID})
+	character := uuid.New()
+	got, err := svc.CheckOutRunGear(context.Background(), member, &CheckOutRunGearRequest{MemberID: member, CharacterID: character, RunID: runID})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if repo.loadoutFor != character || repo.checkedOutFor != character {
+		t.Errorf("read the loadout of %v and checked out %v, want %v for both", repo.loadoutFor, repo.checkedOutFor, character)
+	}
 	if got.Loadout.Weapon != sword || got.Loadout.Ring2 != ring {
 		t.Errorf("weapon, ring_2 = %v, %v; want the sword and the ring", got.Loadout.Weapon, got.Loadout.Ring2)
 	}
@@ -166,13 +173,13 @@ func TestHandler_CheckOutRunGear_Errors(t *testing.T) {
 		wantCode   codes.Code
 		wantCalled bool
 	}{
-		{name: "malformed member id", req: &pb.CheckOutRunGearRequest{MemberId: "nope", RunId: uuid.NewString()}, wantCode: codes.InvalidArgument},
-		{name: "missing run id", req: &pb.CheckOutRunGearRequest{MemberId: member.String()}, wantCode: codes.InvalidArgument},
-		{name: "malformed run id", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), RunId: "nope"}, wantCode: codes.InvalidArgument},
-		{name: "nil run id", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), RunId: uuid.Nil.String()}, wantCode: codes.InvalidArgument},
-		{name: "store down", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), RunId: uuid.NewString()},
+		{name: "malformed member id", req: &pb.CheckOutRunGearRequest{MemberId: "nope", CharacterId: uuid.NewString(), RunId: uuid.NewString()}, wantCode: codes.InvalidArgument},
+		{name: "missing run id", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), CharacterId: uuid.NewString()}, wantCode: codes.InvalidArgument},
+		{name: "malformed run id", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), CharacterId: uuid.NewString(), RunId: "nope"}, wantCode: codes.InvalidArgument},
+		{name: "nil run id", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), CharacterId: uuid.NewString(), RunId: uuid.Nil.String()}, wantCode: codes.InvalidArgument},
+		{name: "store down", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), CharacterId: uuid.NewString(), RunId: uuid.NewString()},
 			err: fmt.Errorf("check out: %w", commonconstants.ErrTransient), wantCode: codes.Unavailable, wantCalled: true},
-		{name: "anything else", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), RunId: uuid.NewString()},
+		{name: "anything else", req: &pb.CheckOutRunGearRequest{MemberId: member.String(), CharacterId: uuid.NewString(), RunId: uuid.NewString()},
 			err: errors.New("boom"), wantCode: codes.Internal, wantCalled: true},
 	}
 	for _, tt := range tests {
@@ -202,7 +209,7 @@ func TestHandler_CheckOutRunGear_MapsTheGear(t *testing.T) {
 	}}
 	ctx := commonauth.EmbedIdentity(context.Background(), commonauth.Identity{MemberID: member})
 
-	res, err := NewHandler(svc, nil).CheckOutRunGear(ctx, &pb.CheckOutRunGearRequest{MemberId: member.String(), RunId: runID.String()})
+	res, err := NewHandler(svc, nil).CheckOutRunGear(ctx, &pb.CheckOutRunGearRequest{MemberId: member.String(), CharacterId: uuid.NewString(), RunId: runID.String()})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -301,10 +308,10 @@ func TestItemInstances_InRunIffRunID(t *testing.T) {
 // checkout's conditional writes against a real schema (FS-18Z5F R7-R11).
 func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 	ctx, db := catalogueDB(t)
-	svc := NewService(NewRepository(db), db, nil, nil, nil)
+	svc := NewService(NewRepository(db), db, nil, nil, nil, everyCharacterOwned{})
 	checkOut := func(t *testing.T, member, runID uuid.UUID) *RunGear {
 		t.Helper()
-		gear, err := svc.CheckOutRunGear(ctx, member, &CheckOutRunGearRequest{MemberID: member, RunID: runID})
+		gear, err := svc.CheckOutRunGear(ctx, member, &CheckOutRunGearRequest{MemberID: member, CharacterID: testCharacter(member), RunID: runID})
 		if err != nil {
 			t.Fatalf("checkout: %v", err)
 		}
@@ -313,7 +320,7 @@ func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 
 	t.Run("worn and bag items go in; stash, listed and settling stay home", func(t *testing.T) {
 		owner, runA := uuid.New(), uuid.New()
-		sword := seedAt(t, ctx, db, owner, "AVAILABLE", LocationStash) // legacy worn: stash location
+		sword := seedAt(t, ctx, db, owner, "AVAILABLE", LocationBag)
 		wear(t, ctx, db, owner, sword)
 		potion := seedAt(t, ctx, db, owner, "AVAILABLE", LocationBag)
 		stashed := seedAt(t, ctx, db, owner, "AVAILABLE", LocationStash)
@@ -341,7 +348,7 @@ func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 		}
 
 		// the owner's list reads IN_RUN rows as they are (R4)
-		items, err := NewRepository(db).ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner})
+		items, err := NewRepository(db).ListItemInstances(ctx, &ListItemInstancesRequest{MemberId: owner, CharacterId: ptrTo(testCharacter(owner))})
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -369,7 +376,7 @@ func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 
 	t.Run("run B re-tags what run A left IN_RUN and returns the worn and bag ones", func(t *testing.T) {
 		owner, runA, runB := uuid.New(), uuid.New(), uuid.New()
-		sword := seedInRun(t, ctx, db, owner, LocationStash, runA)
+		sword := seedInRun(t, ctx, db, owner, LocationBag, runA)
 		wear(t, ctx, db, owner, sword)
 		potion := seedInRun(t, ctx, db, owner, LocationBag, runA)
 		stashedOrphan := seedInRun(t, ctx, db, owner, LocationStash, runA)
@@ -434,7 +441,7 @@ func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 		owner := uuid.New()
 		potion := seedAt(t, ctx, db, owner, "AVAILABLE", LocationBag)
 
-		_, err := svc.CheckOutRunGear(ctx, uuid.New(), &CheckOutRunGearRequest{MemberID: owner, RunID: uuid.New()})
+		_, err := svc.CheckOutRunGear(ctx, uuid.New(), &CheckOutRunGearRequest{MemberID: owner, CharacterID: testCharacter(owner), RunID: uuid.New()})
 
 		if !errors.Is(err, commonconstants.ErrForbidden) {
 			t.Fatalf("err = %v, want forbidden", err)
@@ -461,6 +468,179 @@ func TestCheckOutRunGear_AgainstTheSchema(t *testing.T) {
 	})
 }
 
+// seedHeld seeds an AVAILABLE instance for owner, held in character's bag.
+func seedHeld(t *testing.T, ctx context.Context, db *sqlx.DB, owner, character uuid.UUID) uuid.UUID {
+	t.Helper()
+	id := seedAt(t, ctx, db, owner, "AVAILABLE", LocationStash)
+	if _, err := db.ExecContext(ctx, `UPDATE item_instances SET location = 'BAG', character_id = $2 WHERE id = $1`, id, character); err != nil {
+		t.Fatalf("seed held: %v", err)
+	}
+	return id
+}
+
+// wearAs puts id in the weapon slot of character's own loadout row.
+func wearAs(t *testing.T, ctx context.Context, db *sqlx.DB, owner, character, id uuid.UUID) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `INSERT INTO player_loadouts (member_id, character_id, weapon_instance_id) VALUES ($1, $2, $3)`, owner, character, id); err != nil {
+		t.Fatalf("wear: %v", err)
+	}
+	cleanLoadouts(t, ctx, db, owner)
+}
+
+// Opt-in and committed. A checkout carries one character's gear and leaves the
+// account's other characters at home; its reclaim stays per member (FS-50MTX
+// R25, R26).
+func TestCheckOutRunGear_ByCharacter(t *testing.T) {
+	ctx, db := catalogueDB(t)
+	repo := NewRepository(db)
+	svc := NewService(repo, db, nil, nil, nil, everyCharacterOwned{})
+	checkOut := func(t *testing.T, member, character, runID uuid.UUID) *RunGear {
+		t.Helper()
+		gear, err := svc.CheckOutRunGear(ctx, member, &CheckOutRunGearRequest{MemberID: member, CharacterID: character, RunID: runID})
+		if err != nil {
+			t.Fatalf("checkout: %v", err)
+		}
+		return gear
+	}
+
+	t.Run("moves only the named character's worn and bag items", func(t *testing.T) {
+		owner, a, b, run := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		sword, potion := seedHeld(t, ctx, db, owner, a), seedHeld(t, ctx, db, owner, a)
+		wearAs(t, ctx, db, owner, a, sword)
+		axe, scroll := seedHeld(t, ctx, db, owner, b), seedHeld(t, ctx, db, owner, b)
+		wearAs(t, ctx, db, owner, b, axe)
+		stashed := seedAt(t, ctx, db, owner, "AVAILABLE", LocationStash)
+
+		gear := checkOut(t, owner, a, run)
+
+		if gear.Loadout.Weapon == nil || gear.Loadout.Weapon.ID != sword {
+			t.Errorf("weapon = %+v, want the sword", gear.Loadout.Weapon)
+		}
+		if ids := bagIDs(gear); len(ids) != 1 || ids[0] != potion {
+			t.Errorf("bag = %v, want only the potion", ids)
+		}
+		for _, id := range []uuid.UUID{sword, potion} {
+			if s := runStateOf(t, ctx, db, id); !s.inRun(run) {
+				t.Errorf("%s = %+v, want IN_RUN under the run", id, s)
+			}
+		}
+		for _, id := range []uuid.UUID{axe, scroll, stashed} {
+			if s := runStateOf(t, ctx, db, id); s.Status != "AVAILABLE" || s.RunID != nil {
+				t.Errorf("%s = %+v, want it left AVAILABLE", id, s)
+			}
+		}
+	})
+
+	t.Run("a character with no loadout row wears nothing, whatever another wears", func(t *testing.T) {
+		owner, a, b := uuid.New(), uuid.New(), uuid.New()
+		sword := seedHeld(t, ctx, db, owner, a)
+		wearAs(t, ctx, db, owner, a, sword)
+		potion := seedHeld(t, ctx, db, owner, b)
+
+		gear := checkOut(t, owner, b, uuid.New())
+
+		if *gear.Loadout != (LoadoutWithItems{}) {
+			t.Errorf("loadout = %+v, want empty", gear.Loadout)
+		}
+		if ids := bagIDs(gear); len(ids) != 1 || ids[0] != potion {
+			t.Errorf("bag = %v, want the potion", ids)
+		}
+	})
+
+	t.Run("each character reads its own row when both have one", func(t *testing.T) {
+		owner, a, b := uuid.New(), uuid.New(), uuid.New()
+		swordA := seedHeld(t, ctx, db, owner, a)
+		wearAs(t, ctx, db, owner, a, swordA)
+		swordB := seedHeld(t, ctx, db, owner, b)
+		wearAs(t, ctx, db, owner, b, swordB)
+
+		for character, want := range map[uuid.UUID]uuid.UUID{a: swordA, b: swordB} {
+			err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
+				loadout, err := repo.LoadoutTx(ctx, tx, owner, character)
+				if err != nil {
+					return err
+				}
+				if loadout.WeaponId == nil || *loadout.WeaponId != want {
+					t.Errorf("weapon of %s = %v, want %s", character, loadout.WeaponId, want)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("read loadout: %v", err)
+			}
+		}
+	})
+
+	t.Run("reclaims the member's orphans of any character, seats none, and settlement releases them to their holder", func(t *testing.T) {
+		owner, a, b, deadRun, run := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		own := seedHeld(t, ctx, db, owner, a)
+		orphanOfA := seedHeld(t, ctx, db, owner, a)
+		orphanOfB := seedHeld(t, ctx, db, owner, b)
+		for _, id := range []uuid.UUID{orphanOfA, orphanOfB} {
+			if _, err := db.ExecContext(ctx, `UPDATE item_instances SET status = 'IN_RUN', run_id = $2 WHERE id = $1`, id, deadRun); err != nil {
+				t.Fatalf("seed orphan: %v", err)
+			}
+		}
+
+		gear := checkOut(t, owner, a, run)
+
+		ids := bagIDs(gear)
+		if len(ids) != 2 || !containsID(ids, own) || !containsID(ids, orphanOfA) {
+			t.Errorf("bag = %v, want A's item and A's orphan", ids)
+		}
+		if containsID(ids, orphanOfB) {
+			t.Errorf("bag = %v, seated an item B holds", ids)
+		}
+		if s := runStateOf(t, ctx, db, orphanOfB); !s.inRun(run) {
+			t.Fatalf("B's orphan = %+v, want re-tagged to the run", s)
+		}
+
+		err := commonutils.ExecTx(ctx, db, nil, func(tx *sqlx.Tx) error {
+			_, err := repo.ReleaseRunTx(ctx, tx, run)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("release: %v", err)
+		}
+		if s := runStateOf(t, ctx, db, orphanOfB); s.Status != "AVAILABLE" || s.RunID != nil {
+			t.Errorf("B's orphan = %+v, want released", s)
+		}
+		wantHeld(t, ctx, db, orphanOfB, b)
+	})
+
+	t.Run("a repeat under one run id writes nothing and returns the same set", func(t *testing.T) {
+		owner, a, b, run := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		sword, potion := seedHeld(t, ctx, db, owner, a), seedHeld(t, ctx, db, owner, a)
+		wearAs(t, ctx, db, owner, a, sword)
+		other := seedHeld(t, ctx, db, owner, b)
+
+		first := checkOut(t, owner, a, run)
+		before := map[uuid.UUID]runState{sword: runStateOf(t, ctx, db, sword), potion: runStateOf(t, ctx, db, potion), other: runStateOf(t, ctx, db, other)}
+		again := checkOut(t, owner, a, run)
+
+		if again.Loadout.Weapon == nil || again.Loadout.Weapon.ID != first.Loadout.Weapon.ID {
+			t.Errorf("weapon = %+v, want %v again", again.Loadout.Weapon, first.Loadout.Weapon.ID)
+		}
+		if ids := bagIDs(again); len(ids) != 1 || ids[0] != potion {
+			t.Errorf("bag = %v, want the potion again", ids)
+		}
+		for id, was := range before {
+			if now := runStateOf(t, ctx, db, id); !now.same(was) {
+				t.Errorf("%s = %+v, want unchanged %+v", id, now, was)
+			}
+		}
+	})
+}
+
+func containsID(ids []uuid.UUID, want uuid.UUID) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
+}
+
 // listingRepo reserves the item for a listing, committed on its own
 // connection, after the checkout has read the loadout and before it writes:
 // the bare conditional reserve, without the account lock ReserveItem now takes
@@ -472,7 +652,7 @@ type listingRepo struct {
 	itemID uuid.UUID
 }
 
-func (r *listingRepo) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) (*Loadout, error) {
+func (r *listingRepo) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID) (*Loadout, error) {
 	err := commonutils.ExecTx(ctx, r.db, nil, func(listing *sqlx.Tx) error {
 		_, err := r.ReserveItemTx(ctx, listing, r.seller, r.itemID, uuid.New(), time.Now())
 		return err
@@ -480,7 +660,7 @@ func (r *listingRepo) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member uuid.UU
 	if err != nil {
 		return nil, fmt.Errorf("reserve mid-checkout: %w", err)
 	}
-	return r.repository.LoadoutTx(ctx, tx, member)
+	return r.repository.LoadoutTx(ctx, tx, member, character)
 }
 
 // Opt-in and committed. A listing and a checkout racing for one item: whichever
@@ -495,7 +675,7 @@ func TestCheckOutRunGear_RacingAListing(t *testing.T) {
 		wear(t, ctx, db, owner, sword)
 		repo := &listingRepo{repository: NewRepository(db), db: db, seller: owner, itemID: sword}
 
-		gear, err := NewService(repo, db, nil, nil, nil).CheckOutRunGear(ctx, owner, &CheckOutRunGearRequest{MemberID: owner, RunID: uuid.New()})
+		gear, err := NewService(repo, db, nil, nil, nil, everyCharacterOwned{}).CheckOutRunGear(ctx, owner, &CheckOutRunGearRequest{MemberID: owner, CharacterID: testCharacter(owner), RunID: uuid.New()})
 		if err != nil {
 			t.Fatalf("checkout: %v", err)
 		}
@@ -512,7 +692,7 @@ func TestCheckOutRunGear_RacingAListing(t *testing.T) {
 		owner := uuid.New()
 		sword := seedAt(t, ctx, db, owner, "AVAILABLE", LocationBag)
 		repo := NewRepository(db)
-		if _, err := NewService(repo, db, nil, nil, nil).CheckOutRunGear(ctx, owner, &CheckOutRunGearRequest{MemberID: owner, RunID: uuid.New()}); err != nil {
+		if _, err := NewService(repo, db, nil, nil, nil, everyCharacterOwned{}).CheckOutRunGear(ctx, owner, &CheckOutRunGearRequest{MemberID: owner, CharacterID: testCharacter(owner), RunID: uuid.New()}); err != nil {
 			t.Fatalf("checkout: %v", err)
 		}
 
@@ -546,7 +726,7 @@ func TestCheckOutRunGear_WaitsForTheAccountLock(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := NewService(repo, db, nil, nil, nil).CheckOutRunGear(ctx, owner, &CheckOutRunGearRequest{MemberID: owner, RunID: uuid.New()})
+		_, err := NewService(repo, db, nil, nil, nil, everyCharacterOwned{}).CheckOutRunGear(ctx, owner, &CheckOutRunGearRequest{MemberID: owner, CharacterID: testCharacter(owner), RunID: uuid.New()})
 		done <- err
 	}()
 

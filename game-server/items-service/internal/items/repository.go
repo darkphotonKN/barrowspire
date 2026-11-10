@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/common/utils/cursor"
 	"github.com/google/uuid"
@@ -681,17 +682,20 @@ const loadoutColumns = `id, member_id,
 	        consumable_1_id, consumable_2_id, consumable_3_id,
 	        created_at, updated_at`
 
+// GetLoadout reads req.CharacterId's loadout, filtered by member and character,
+// so a character that is not req.MemberId's reads as empty, as does one with no
+// row yet (FS-50MTX R12, R22).
 func (r *repository) GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Loadout, error) {
-	memberId := req.MemberId
-
 	loadout := &Loadout{}
 
-	query := `SELECT ` + loadoutColumns + ` FROM player_loadouts WHERE member_id = $1`
+	query := `SELECT ` + loadoutColumns + ` FROM player_loadouts WHERE member_id = $1 AND character_id = $2`
 
-	err := r.DB.GetContext(ctx, loadout, query, memberId)
+	err := r.DB.GetContext(ctx, loadout, query, req.MemberId, req.CharacterId)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return loadout, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			// a fresh value: the failed scan left loadout's pointers at zero
+			// UUIDs, which would read as worn items
+			return &Loadout{}, nil
 		}
 		return nil, wrapDBErr("get loadout", err)
 	}
@@ -721,7 +725,7 @@ func (r *repository) GetItemInstanceByID(ctx context.Context, id uuid.UUID) (*It
 	 SELECT ii.id, ii.template_id, ii.owner_member_id, ii.source, ii.item_type, ii.name, ii.rarity_id,
 	        ii.attack_power, ii.critical_rate, ii.weapon_type, ii.defense_rating, ii.magic_resistance,
 	        ii.armor_slot, ii.healing_amount, ii.mana_amount, ii.buff_duration,
-	        ii.description, ii.location, ii.acquired_at, ii.created_at, ii.updated_at,
+	        ii.description, ii.location, ii.character_id, ii.acquired_at, ii.created_at, ii.updated_at,
 	        ` + instanceLevelColumns + `,
 	        ` + instanceUniqueColumns + `
 	 FROM item_instances AS ii
@@ -742,14 +746,17 @@ func (r *repository) GetItemInstanceByID(ctx context.Context, id uuid.UUID) (*It
 }
 
 // ownedInstanceColumns are what the owner sees of an instance (aliased ii,
-// its template t, its unique row u), status and location included.
+// its template t, its unique row u), status, location and holder included.
 const ownedInstanceColumns = `ii.id, ii.template_id, ii.owner_member_id, ii.source, ii.item_type, ii.name, ii.rarity_id,
 	        ii.attack_power, ii.critical_rate, ii.weapon_type, ii.defense_rating, ii.magic_resistance,
 	        ii.armor_slot, ii.healing_amount, ii.mana_amount, ii.buff_duration,
-	        ii.description, ii.status, ii.location, ii.acquired_at, ii.created_at, ii.updated_at,
+	        ii.description, ii.status, ii.location, ii.character_id, ii.acquired_at, ii.created_at, ii.updated_at,
 	        ` + instanceLevelColumns + `,
 	        ` + instanceUniqueColumns
 
+// ListItemInstances reads req.MemberId's stash, plus what req.CharacterId holds
+// when one is named: a nil character is NULL, which matches no holder, so the
+// stash is all that is left (FS-50MTX R23).
 func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
 	items := []*ItemInstance{}
 
@@ -759,10 +766,11 @@ func (r *repository) ListItemInstances(ctx context.Context, req *ListItemInstanc
 	 JOIN item_templates AS t ON t.id = ii.template_id
 	 ` + uniqueEffectJoin + `
 	 WHERE ii.owner_member_id = $1
+	 AND (ii.location = 'STASH' OR ii.character_id = $2)
 	 ORDER BY ii.created_at DESC
 	`
 
-	err := r.DB.SelectContext(ctx, &items, query, req.MemberId)
+	err := r.DB.SelectContext(ctx, &items, query, req.MemberId, req.CharacterId)
 	if err != nil {
 		return nil, wrapDBErr("list item instances", err)
 	}
@@ -785,19 +793,19 @@ var loadoutSlotColumns = map[string]string{
 	"consumable_3": "consumable_3_id",
 }
 
-// LoadoutSlotTx reads the instance member wears in slot, nil when the slot is
-// empty or member has no loadout yet. The row is locked for the rest of tx, so
-// the slot cannot change between this read and the write that follows it.
-func (r *repository) LoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID, slot string) (*uuid.UUID, error) {
+// LoadoutSlotTx reads the instance character wears in slot, nil when the slot
+// is empty or character has no loadout yet. The row is locked for the rest of
+// tx, so the slot cannot change between this read and the write that follows it.
+func (r *repository) LoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID, slot string) (*uuid.UUID, error) {
 	column, ok := loadoutSlotColumns[slot]
 	if !ok {
 		return nil, fmt.Errorf("invalid slot: %s", slot)
 	}
 
-	query := fmt.Sprintf(`SELECT %s FROM player_loadouts WHERE member_id = $1 FOR UPDATE`, column)
+	query := fmt.Sprintf(`SELECT %s FROM player_loadouts WHERE member_id = $1 AND character_id = $2 FOR UPDATE`, column)
 
 	var worn *uuid.UUID
-	if err := tx.GetContext(ctx, &worn, query, member); err != nil {
+	if err := tx.GetContext(ctx, &worn, query, member, character); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -806,6 +814,9 @@ func (r *repository) LoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, member uuid
 	return worn, nil
 }
 
+// UpsertLoadoutSlotTx writes one slot of req.CharacterId's loadout. The update
+// arm is guarded on the member, so a character another account's row names
+// matches nothing and reads as commonconstants.ErrNotFound (FS-50MTX R4, R10).
 func (r *repository) UpsertLoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, req *UpdateLoadoutRequest) error {
 	column, ok := loadoutSlotColumns[req.Slot]
 	if !ok {
@@ -815,39 +826,52 @@ func (r *repository) UpsertLoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, req *
 	// Upsert: first-time equippers won't have a player_loadouts row yet,
 	// so a plain UPDATE would silently affect 0 rows.
 	query := fmt.Sprintf(`
-	 INSERT INTO player_loadouts (member_id, %s)
-	 VALUES ($1, $2)
-	 ON CONFLICT (member_id) DO UPDATE
+	 INSERT INTO player_loadouts (member_id, character_id, %s)
+	 VALUES ($1, $2, $3)
+	 ON CONFLICT (character_id) DO UPDATE
 	 SET %s = EXCLUDED.%s, updated_at = NOW()
+	 WHERE player_loadouts.member_id = EXCLUDED.member_id
 	`, column, column, column)
 
-	_, err := tx.ExecContext(ctx, query, req.MemberId, req.ItemInstanceId)
+	res, err := tx.ExecContext(ctx, query, req.MemberId, req.CharacterId, req.ItemInstanceId)
 	if err != nil {
 		return wrapDBErr("update loadout (tx)", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update loadout (tx), rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update loadout of character %s for %s: %w", req.CharacterId, req.MemberId, commonconstants.ErrNotFound)
 	}
 
 	return nil
 }
 
-// UpsertPlayerLoadoutTx writes the full loadout snapshot for a member.
-// Nil slot pointers in req become NULL (slot cleared); non-nil values are set.
-// updated_at is left to the BEFORE UPDATE trigger.
+// UpsertPlayerLoadoutTx writes the full loadout snapshot for a character. Nil
+// slot pointers in req become NULL (slot cleared); non-nil values are set.
+// updated_at is left to the BEFORE UPDATE trigger. The update arm is guarded on
+// the member, so one account never overwrites another's row (FS-50MTX R4): a
+// settlement naming such a character writes nothing and logs it, and never
+// fails the event for it.
 func (r *repository) UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req *UpsertPlayerLoadoutRequest) error {
 	query := `
 		INSERT INTO player_loadouts (
 			member_id,
+			character_id,
 			weapon_instance_id,
 			head_instance_id, chest_instance_id, legs_instance_id, gloves_instance_id,
 			ring_1_instance_id, ring_2_instance_id,
 			consumable_1_id, consumable_2_id, consumable_3_id
 		) VALUES (
 			:member_id,
+			:character_id,
 			:weapon_instance_id,
 			:head_instance_id, :chest_instance_id, :legs_instance_id, :gloves_instance_id,
 			:ring_1_instance_id, :ring_2_instance_id,
 			:consumable_1_id, :consumable_2_id, :consumable_3_id
 		)
-		ON CONFLICT (member_id) DO UPDATE SET
+		ON CONFLICT (character_id) DO UPDATE SET
 			weapon_instance_id = EXCLUDED.weapon_instance_id,
 			head_instance_id   = EXCLUDED.head_instance_id,
 			chest_instance_id  = EXCLUDED.chest_instance_id,
@@ -857,17 +881,26 @@ func (r *repository) UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req
 			ring_2_instance_id = EXCLUDED.ring_2_instance_id,
 			consumable_1_id    = EXCLUDED.consumable_1_id,
 			consumable_2_id    = EXCLUDED.consumable_2_id,
-			consumable_3_id    = EXCLUDED.consumable_3_id`
+			consumable_3_id    = EXCLUDED.consumable_3_id
+		WHERE player_loadouts.member_id = EXCLUDED.member_id`
 
-	_, err := tx.NamedExecContext(ctx, query, req)
+	res, err := tx.NamedExecContext(ctx, query, req)
 	if err != nil {
 		return wrapDBErr("upsert player loadout (tx)", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("upsert player loadout (tx), rows affected: %w", err)
+	}
+	if n == 0 {
+		slog.WarnContext(ctx, "loadout row belongs to another account, left as it is",
+			"member_id", req.MemberID, "character_id", req.CharacterID)
 	}
 
 	return nil
 }
 
-// insertItemColumns are the item_instances columns InsertItemInstancesTx
+// insertItemColumns are the item_instances columns InsertItemInstancesAtTx
 // writes, in the order insertItemArgs supplies them.
 var insertItemColumns = []string{
 	"id", "template_id", "owner_member_id", "source",
@@ -875,14 +908,15 @@ var insertItemColumns = []string{
 	"attack_power", "critical_rate", "weapon_type",
 	"defense_rating", "magic_resistance", "armor_slot",
 	"healing_amount", "mana_amount", "buff_duration",
-	"durability", "description", "status", "location",
+	"durability", "description", "status", "location", "character_id",
 	"item_level", "affixes", "required_level",
 }
 
 // insertItemArgs is one row's values for insertItemColumns. A RequiredLevel
 // of 0 means the instance has no requirement of its own and stores NULL, so
 // reads fall back to the template's (FS-4R9M9 R48-49). Every row goes to
-// location, whatever the item says.
+// location, whatever the item says, held by the item's CharacterID: nil for
+// the stash, a character for the bag (FS-50MTX R2).
 func insertItemArgs(item *ItemInstance, location string) []any {
 	var requiredLevel *int
 	if item.RequiredLevel > 0 {
@@ -894,23 +928,15 @@ func insertItemArgs(item *ItemInstance, location string) []any {
 		item.AttackPower, item.CriticalRate, item.WeaponType,
 		item.DefenseRating, item.MagicResistance, item.ArmorSlot,
 		item.HealingAmount, item.ManaAmount, item.BuffDuration,
-		item.Durability, item.Description, item.Status, location,
+		item.Durability, item.Description, item.Status, location, item.CharacterID,
 		max(item.ItemLevel, 1), item.Affixes, requiredLevel,
 	}
 }
 
-// InsertItemInstancesTx inserts new instances, the finds of a run, in one
-// statement. Insert only: an existing row is never the path here, so nothing
-// the run fence skipped can be written through a conflict clause (FS-18Z5F
-// R27); brought-in items go through ApplyRunItemsTx. Every find goes to the
-// bag: it is carried out of the run (FS-VPD8Y R9, FS-18Z5F R27), worn or not,
-// and a worn one only reads its location once it is unequipped.
-func (r *repository) InsertItemInstancesTx(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance) error {
-	return r.InsertItemInstancesAtTx(ctx, tx, items, LocationBag)
-}
-
-// InsertItemInstancesAtTx inserts new instances at location in one statement,
-// insert only, as InsertItemInstancesTx does.
+// InsertItemInstancesAtTx inserts new instances at location in one statement:
+// the finds of a run, or a grant. Insert only: an existing row is never the
+// path here, so nothing the run fence skipped can be written through a conflict
+// clause (FS-18Z5F R27); brought-in items go through ApplyRunItemsTx.
 func (r *repository) InsertItemInstancesAtTx(ctx context.Context, tx *sqlx.Tx, items []*ItemInstance, location string) error {
 	if len(items) == 0 {
 		return nil
@@ -958,11 +984,6 @@ func (r *repository) DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx
 	return deleted, nil
 }
 
-// insertItemsQuery is insertItemsQueryAt for the bag, where finds go.
-func insertItemsQuery(items []*ItemInstance) (string, []any) {
-	return insertItemsQueryAt(items, LocationBag)
-}
-
 // insertItemsQueryAt builds the multi-row insert at location and its
 // arguments, giving any item without an id a new one. Placeholders are
 // numbered from the column list, so they cannot drift from the arguments.
@@ -1004,7 +1025,8 @@ func insertItemsQueryAt(items []*ItemInstance, location string) (string, []any) 
 // while it is still member's and IN_RUN under that run ($1 id, $2 member, $3
 // run): the run fence (FS-18Z5F R27, ADR-0032). Its owner, source, rarity and
 // roll are fixed once and never written here (FS-4R9M9 R20, R53), whatever the
-// event carries. A NULL location ($18) keeps the stored one.
+// event carries. Location ($18) and holder ($19) are written together, so the
+// holder check holds for every row (FS-50MTX R2).
 const applyRunItemQuery = `
 		UPDATE item_instances
 		SET
@@ -1022,7 +1044,8 @@ const applyRunItemQuery = `
 			buff_duration    = $15,
 			durability       = $16,
 			description      = $17,
-			location         = COALESCE($18::varchar, location),
+			location         = $18,
+			character_id     = $19,
 			status           = 'AVAILABLE',
 			run_id           = NULL,
 			updated_at       = NOW()
@@ -1036,16 +1059,11 @@ const applyRunItemQuery = `
 // returns the ids it wrote. An item is written only while the run still owns
 // it (applyRunItemQuery); any other, re-tagged by a later checkout, already
 // released, someone else's or unknown, is left exactly as it is and missing
-// from the result (FS-18Z5F R27). An item with a Location goes there; one
-// without keeps its stored location (a worn item, R27).
+// from the result (FS-18Z5F R27). Each item goes to its Location, held by its
+// CharacterID, both written outright (FS-50MTX R31, R32).
 func (r *repository) ApplyRunItemsTx(ctx context.Context, tx *sqlx.Tx, member, runID uuid.UUID, items []*ItemInstance) ([]uuid.UUID, error) {
 	applied := make([]uuid.UUID, 0, len(items))
 	for _, item := range items {
-		var location *string
-		if item.Location != "" {
-			location = &item.Location
-		}
-
 		var id uuid.UUID
 		err := tx.GetContext(ctx, &id, applyRunItemQuery,
 			item.ID, member, runID,
@@ -1053,7 +1071,7 @@ func (r *repository) ApplyRunItemsTx(ctx context.Context, tx *sqlx.Tx, member, r
 			item.AttackPower, item.CriticalRate, item.WeaponType,
 			item.DefenseRating, item.MagicResistance, item.ArmorSlot,
 			item.HealingAmount, item.ManaAmount, item.BuffDuration,
-			item.Durability, item.Description, location,
+			item.Durability, item.Description, item.Location, item.CharacterID,
 		)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
@@ -1635,14 +1653,15 @@ func (r *repository) TransferItem(ctx context.Context, itemID, buyerID, listingI
 
 		// a purchase lands in the buyer's stash, never the bag: the bag may be
 		// full or the buyer in a run, and a purchase is never refused for space
-		// (FS-VPD8Y R7)
+		// (FS-VPD8Y R7), and a stash item has no holder (FS-50MTX R34)
 		query := `
 			UPDATE item_instances 
 			SET 
 				owner_member_id = $1,
 				status = 'AVAILABLE',
 				listing_id = NULL,
-				location = 'STASH'
+				location = 'STASH',
+				character_id = NULL
 			WHERE status = 'PENDING_SETTLEMENT'
 			AND id = $2
 			AND listing_id = $3
@@ -1699,10 +1718,10 @@ func (r *repository) LockAccountTx(ctx context.Context, tx *sqlx.Tx, member uuid
 	return nil
 }
 
-// placementQuery reads an instance's status, location and whether it is
-// worn, only if $2 owns it.
+// placementQuery reads an instance's status, location, holder and whether it
+// is worn, only if $2 owns it.
 const placementQuery = `
-		SELECT ii.status, ii.location, ` + wornByOwner + ` AS worn
+		SELECT ii.status, ii.location, ii.character_id, ` + wornByOwner + ` AS worn
 		FROM item_instances AS ii
 		WHERE ii.id = $1
 		AND ii.owner_member_id = $2
@@ -1734,8 +1753,10 @@ func itemPlacementTx(ctx context.Context, tx *sqlx.Tx, query string, owner, item
 	return placement, nil
 }
 
-// CountUnwornAtTx counts member's instances kept at location and not worn,
-// whatever their status: a listed item still occupies its cell (FS-VPD8Y R4).
+// CountUnwornAtTx counts the instances member's account keeps at location and
+// does not wear, whatever their status: a listed item still occupies its cell
+// (FS-VPD8Y R4). The stash cap's count; the bag cap counts one character
+// (CountUnwornInBagTx).
 func (r *repository) CountUnwornAtTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID, location string) (int, error) {
 	query := `
 		SELECT COUNT(*)
@@ -1747,6 +1768,24 @@ func (r *repository) CountUnwornAtTx(ctx context.Context, tx *sqlx.Tx, member uu
 	var count int
 	if err := tx.GetContext(ctx, &count, query, member, location); err != nil {
 		return 0, wrapDBErr("count unworn items", err)
+	}
+	return count, nil
+}
+
+// CountUnwornInBagTx counts the instances character holds in its bag and does
+// not wear, whatever their status: the bag cap's count (FS-50MTX R5).
+func (r *repository) CountUnwornInBagTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM item_instances AS ii
+		WHERE ii.owner_member_id = $1
+		AND ii.character_id = $2
+		AND ii.location = 'BAG'
+		AND NOT ` + wornByOwner
+
+	var count int
+	if err := tx.GetContext(ctx, &count, query, member, character); err != nil {
+		return 0, wrapDBErr("count unworn bag items", err)
 	}
 	return count, nil
 }
@@ -1769,19 +1808,25 @@ func (r *repository) CountListedTx(ctx context.Context, tx *sqlx.Tx, seller uuid
 	return count, nil
 }
 
-// MoveItemInstanceTx sets itemID's location, only while owner owns it and it
-// is AVAILABLE; false when that no longer holds, so a listing that reserved it
-// first is never moved (FS-VPD8Y R10).
-func (r *repository) MoveItemInstanceTx(ctx context.Context, tx *sqlx.Tx, owner, itemID uuid.UUID, location string) (bool, error) {
+// MoveItemInstanceTx sets itemID's location and holder in one statement, only
+// while owner owns it and it is AVAILABLE: into the bag character holds it, into
+// the stash nobody does (FS-50MTX R19). False when that no longer holds, so a
+// listing that reserved it first is never moved (FS-VPD8Y R10).
+func (r *repository) MoveItemInstanceTx(ctx context.Context, tx *sqlx.Tx, owner, character, itemID uuid.UUID, location string) (bool, error) {
+	var holder *uuid.UUID
+	if location == LocationBag {
+		holder = &character
+	}
+
 	query := `
 		UPDATE item_instances
-		SET location = $3, updated_at = NOW()
+		SET location = $3, character_id = $4, updated_at = NOW()
 		WHERE id = $1
 		AND owner_member_id = $2
 		AND status = 'AVAILABLE'
 	`
 
-	res, err := tx.ExecContext(ctx, query, itemID, owner, location)
+	res, err := tx.ExecContext(ctx, query, itemID, owner, location, holder)
 	if err != nil {
 		return false, wrapDBErr("move item instance", err)
 	}
@@ -1792,31 +1837,32 @@ func (r *repository) MoveItemInstanceTx(ctx context.Context, tx *sqlx.Tx, owner,
 	return n > 0, nil
 }
 
-// SetLocationTx keeps itemID at location, while owner owns it, whatever its
-// status: a loadout write sends the slot's instance to the bag
-// unconditionally (FS-VPD8Y R16, R17), unlike a move (MoveItemInstanceTx).
-func (r *repository) SetLocationTx(ctx context.Context, tx *sqlx.Tx, owner, itemID uuid.UUID, location string) error {
+// HoldInBagTx puts itemID in character's bag, while owner owns it, whatever its
+// status: a loadout write claims what it equips and sends the slot's instance
+// to the bag unconditionally (FS-VPD8Y R16, R17, FS-50MTX R14, R17), unlike a
+// move (MoveItemInstanceTx).
+func (r *repository) HoldInBagTx(ctx context.Context, tx *sqlx.Tx, owner, character, itemID uuid.UUID) error {
 	query := `
 		UPDATE item_instances
-		SET location = $3, updated_at = NOW()
+		SET location = 'BAG', character_id = $3, updated_at = NOW()
 		WHERE id = $1
 		AND owner_member_id = $2
 	`
 
-	if _, err := tx.ExecContext(ctx, query, itemID, owner, location); err != nil {
-		return wrapDBErr("set item location", err)
+	if _, err := tx.ExecContext(ctx, query, itemID, owner, character); err != nil {
+		return wrapDBErr("hold item in bag", err)
 	}
 	return nil
 }
 
-// LoadoutTx reads member's loadout and locks its row for the rest of tx, so a
-// settlement writing the loadout waits for the checkout reading it; an empty
-// loadout when member has no row yet (FS-18Z5F R7, R11).
-func (r *repository) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) (*Loadout, error) {
-	query := `SELECT ` + loadoutColumns + ` FROM player_loadouts WHERE member_id = $1 FOR UPDATE`
+// LoadoutTx reads character's loadout and locks its row for the rest of tx, so
+// a settlement writing the loadout waits for the checkout reading it; an empty
+// loadout when character has no row yet (FS-18Z5F R7, R11, FS-50MTX R25).
+func (r *repository) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID) (*Loadout, error) {
+	query := `SELECT ` + loadoutColumns + ` FROM player_loadouts WHERE member_id = $1 AND character_id = $2 FOR UPDATE`
 
 	loadout := &Loadout{}
-	if err := tx.GetContext(ctx, loadout, query, member); err != nil {
+	if err := tx.GetContext(ctx, loadout, query, member, character); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return &Loadout{}, nil
 		}
@@ -1825,22 +1871,25 @@ func (r *repository) LoadoutTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUI
 	return loadout, nil
 }
 
-// runGear matches member's instances (aliased ii) a run carries: worn ones,
-// whatever their location, and bag ones. Needs member as $1 and the bag as $3.
-const runGear = `ii.owner_member_id = $1 AND (ii.location = $3 OR ` + wornByOwner + `)`
+// runGear matches the instances (aliased ii) a run carries: what the character
+// holds, worn or not, since a worn instance is always in its character's bag
+// (FS-50MTX R3, R25). Needs member as $1 and the character as $3.
+const runGear = `ii.owner_member_id = $1 AND ii.character_id = $3`
 
-// CheckOutRunGearTx moves member's run gear into the run runID and returns
-// what it now carries, newest first (FS-18Z5F R7-R11, ADR-0032). First every
-// instance of member still IN_RUN under another run id is re-tagged to runID:
-// a member is in one world at a time, so those are orphans of a run that never
-// settled (R9). Then the worn and bag instances that are AVAILABLE move to
-// IN_RUN under runID; a LISTED or PENDING_SETTLEMENT one stays home, and the
-// stash is never touched (R8). Both writes are conditional on status, so a
-// listing racing the checkout serializes on the row and one of them misses.
-// The read returns exactly the worn and bag instances IN_RUN under runID, so a
-// repeat call writes nothing and returns the same set (R10). Neither write sets
+// CheckOutRunGearTx moves character's run gear into the run runID and returns
+// what it now carries, newest first (FS-18Z5F R7-R11, ADR-0032, FS-50MTX R25).
+// First every instance of member still IN_RUN under another run id is re-tagged
+// to runID, whichever character holds it: a member is in one world at a time,
+// so those are orphans of a run that never settled (R9, FS-50MTX R26). Then the
+// worn and bag instances of character that are AVAILABLE move to IN_RUN under
+// runID; a LISTED or PENDING_SETTLEMENT one stays home, and the stash is never
+// touched (R8). Both writes are conditional on status, so a listing racing the
+// checkout serializes on the row and one of them misses. The read returns
+// exactly character's instances IN_RUN under runID, so a repeat call writes
+// nothing and returns the same set (R10), and an orphan another character holds
+// is not seated: it is released at this run's settlement. Neither write sets
 // updated_at: the item_instances BEFORE UPDATE trigger stamps it.
-func (r *repository) CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member, runID uuid.UUID) ([]*ItemInstance, error) {
+func (r *repository) CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member, character, runID uuid.UUID) ([]*ItemInstance, error) {
 	reclaim := `
 		UPDATE item_instances
 		SET run_id = $2
@@ -1858,7 +1907,7 @@ func (r *repository) CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member,
 		WHERE ` + runGear + `
 		AND ii.status = 'AVAILABLE'
 	`
-	if _, err := tx.ExecContext(ctx, checkout, member, runID, LocationBag); err != nil {
+	if _, err := tx.ExecContext(ctx, checkout, member, runID, character); err != nil {
 		return nil, wrapDBErr("check out run gear (tx)", err)
 	}
 
@@ -1872,7 +1921,7 @@ func (r *repository) CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member,
 	 ORDER BY ii.created_at DESC
 	`
 	items := []*ItemInstance{}
-	if err := tx.SelectContext(ctx, &items, read, member, runID, LocationBag); err != nil {
+	if err := tx.SelectContext(ctx, &items, read, member, runID, character); err != nil {
 		return nil, wrapDBErr("read run gear (tx)", err)
 	}
 	return items, nil

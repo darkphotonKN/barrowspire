@@ -43,7 +43,8 @@ func TestMapProtoEquipmentToItemInstances_RowsSatisfyConstraints(t *testing.T) {
 	broughtIn := uuid.New()
 	chest := "chest"
 
-	instances, loadout, err := (&service{}).MapProtoEquipmentToItemInstances(member, &pb.Equipment{
+	character := uuid.New()
+	instances, loadout, err := (&service{}).MapProtoEquipmentToItemInstances(member, character, &pb.Equipment{
 		Weapon: &pb.Item{TemplateId: weaponTemplate.String(), InstanceId: broughtIn.String(), ItemType: "weapon", Name: "Barrow Seax", ItemLevel: 4},
 		Chest:  &pb.Item{TemplateId: chestTemplate.String(), ItemType: "armor", ArmorSlot: "chest", Name: "Grave Mail"},
 	})
@@ -52,6 +53,9 @@ func TestMapProtoEquipmentToItemInstances_RowsSatisfyConstraints(t *testing.T) {
 	}
 	if len(instances) != 2 {
 		t.Fatalf("got %d instances, want 2", len(instances))
+	}
+	if loadout.CharacterID != character {
+		t.Errorf("loadout character = %v, want %v", loadout.CharacterID, character)
 	}
 
 	byTemplate := map[uuid.UUID]*ItemInstance{}
@@ -123,12 +127,13 @@ func TestApplyRunItemQuery_KeepsStoredOwnershipAndRoll(t *testing.T) {
 	}
 }
 
-// FS-VPD8Y R9, FS-18Z5F R27: a find lands in the bag whatever location it
-// carries, and the insert has no conflict path to write an existing row by.
-func TestInsertItemsQuery_FindsGoToTheBag(t *testing.T) {
+// FS-VPD8Y R9, FS-18Z5F R27: a row lands at the location asked for whatever it
+// carries, with the item's holder, and the insert has no conflict path to write
+// an existing row by.
+func TestInsertItemsQuery_RowsGoToTheLocation(t *testing.T) {
 	items := []*ItemInstance{{Location: LocationStash}, {}}
 
-	query, args := insertItemsQuery(items)
+	query, args := insertItemsQueryAt(items, LocationBag)
 
 	col := slices.Index(insertItemColumns, "location")
 	if col < 0 {
@@ -185,15 +190,15 @@ func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 
 	// a brought-in item already stored, owned and rolled before the run, and
 	// checked out into it
-	member, broughtIn, runID := uuid.New(), uuid.New(), uuid.New()
+	member, broughtIn, runID, character := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	rolled := Affixes{{Stat: "strength", Tier: 2, Value: 3}}
 	attack, crit, wtype := 6, 0.08, "sword"
 	repo := NewRepository(db)
-	if err := repo.InsertItemInstancesTx(ctx, tx, []*ItemInstance{{
+	if err := repo.InsertItemInstancesAtTx(ctx, tx, []*ItemInstance{{
 		ID: broughtIn, TemplateID: templateID, OwnerMemberID: member, Source: "starting_gear", Status: "AVAILABLE",
 		ItemType: "weapon", Name: "Test Blade", RarityID: &rarityID, AttackPower: &attack, CriticalRate: &crit, WeaponType: &wtype,
 		ItemLevel: 5, RequiredLevel: 3, Affixes: rolled,
-	}}); err != nil {
+	}}, LocationStash); err != nil {
 		t.Fatalf("seed brought-in item: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE item_instances SET status = 'IN_RUN', run_id = $2 WHERE id = $1`, broughtIn, runID); err != nil {
@@ -201,7 +206,7 @@ func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 	}
 
 	svc := &service{}
-	equipped, _, err := svc.MapProtoEquipmentToItemInstances(member, &pb.Equipment{
+	equipped, _, err := svc.MapProtoEquipmentToItemInstances(member, character, &pb.Equipment{
 		// an older producer: the brought-in item comes back without its roll
 		Weapon: &pb.Item{TemplateId: templateID.String(), InstanceId: broughtIn.String(), ItemType: "weapon", Name: "Test Blade", AttackPower: 6, WeaponType: "sword"},
 		Chest:  &pb.Item{TemplateId: templateID.String(), ItemType: "armor", ArmorSlot: "chest", Name: "Grave Mail", DefenseRating: 4},
@@ -216,8 +221,12 @@ func TestExtraction_MappedBatchStoresWithoutConstraintErrors(t *testing.T) {
 		t.Fatalf("map inventory: %v", err)
 	}
 
-	finds, back := splitFinds(append(equipped, carried...), map[uuid.UUID]bool{broughtIn: true})
-	if err := repo.InsertItemInstancesTx(ctx, tx, finds); err != nil {
+	items := append(equipped, carried...)
+	for _, item := range items {
+		item.Location, item.CharacterID = LocationBag, &character
+	}
+	finds, back := splitFinds(items, map[uuid.UUID]bool{broughtIn: true})
+	if err := repo.InsertItemInstancesAtTx(ctx, tx, finds, LocationBag); err != nil {
 		t.Fatalf("extraction finds: %v", err)
 	}
 	if applied, err := repo.ApplyRunItemsTx(ctx, tx, member, runID, back); err != nil || len(applied) != 1 {

@@ -72,6 +72,7 @@ func TestPublishFieldVisit_WritesTheReturnedResult(t *testing.T) {
 	require.Len(t, extracted.GetPlayerItems(), 1)
 	items := extracted.GetPlayerItems()[0]
 	assert.Equal(t, visit.MemberID.String(), items.GetMemberId())
+	assert.Equal(t, visit.CharacterID.String(), items.GetCharacterId(), "the character in play (FS-50MTX R30)")
 	require.NotNil(t, items.GetEquipment(), "equipment is never nil")
 	assert.Equal(t, visit.Equipment.WeaponSlot.InstanceID.String(), items.GetEquipment().GetWeapon().GetInstanceId())
 	require.Len(t, items.GetInventory(), 1)
@@ -92,6 +93,17 @@ func TestPublishFieldVisit_EmptyVisit_StillSettles(t *testing.T) {
 
 	assert.Zero(t, outbox.matchEnded(t).GetPlayers()[0].GetExperienceGained())
 	assert.NotNil(t, outbox.itemsExtracted(t).GetPlayerItems()[0].GetEquipment())
+}
+
+// A visit with no character names none: empty, never the zero UUID.
+// FS-50MTX R30, R32.
+func TestPublishFieldVisit_NoCharacter_SentEmpty(t *testing.T) {
+	outbox := &capturingOutbox{}
+	svc := NewService(committingTxDB(t), outbox, noWake{}, testRetry(t), nil)
+
+	require.NoError(t, svc.PublishFieldVisit(context.Background(), FieldVisit{ID: uuid.New(), MemberID: uuid.New(), EnteredAt: time.Now(), LeftAt: time.Now()}))
+
+	assert.Empty(t, outbox.itemsExtracted(t).GetPlayerItems()[0].GetCharacterId())
 }
 
 // Both rows go through the run's own write, in one transaction, items first;
