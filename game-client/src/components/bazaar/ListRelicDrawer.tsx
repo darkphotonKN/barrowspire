@@ -48,10 +48,7 @@ export default function ListRelicDrawer({
   const panel = useRef<HTMLDivElement>(null);
   useDialogFocus(panel, { onClose, returnFocus });
 
-  const cards = useMemo(
-    () => pickerCards(instances.items, instances.worn),
-    [instances.items, instances.worn],
-  );
+  const cards = useMemo(() => pickerCards(instances.items), [instances.items]);
   const [selectedId, setSelectedId] = useState<string>();
   const [priceText, setPriceText] = useState("");
   const [buyoutText, setBuyoutText] = useState("");

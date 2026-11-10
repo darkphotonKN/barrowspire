@@ -650,6 +650,10 @@ components:
         buy_price:
           format: int32
           type: integer
+        character_id:
+          description: The character holding the item. Absent for a stash item
+          format: uuid
+          type: string
         critical_rate:
           format: float
           type: number
@@ -1274,6 +1278,10 @@ components:
     MoveItemInstanceBody:
       additionalProperties: false
       properties:
+        character_id:
+          description: "The character moving the item: the holder a move to the bag sets, and the one a move to the stash must be held by"
+          format: uuid
+          type: string
         location:
           description: "Where to keep the item: carried in the bag or stored in the town stash"
           enum:
@@ -1282,6 +1290,7 @@ components:
           type: string
       required:
         - location
+        - character_id
       type: object
     MoveItemInstanceResponse:
       additionalProperties: false
@@ -2420,6 +2429,115 @@ paths:
       summary: Get one of my characters
       tags:
         - characters
+  /api/characters/{characterId}/loadout:
+    get:
+      description: Returns the equipped item in each of the character's loadout slots. A character with no loadout, or one that is not the member's, reads as empty.
+      operationId: get-loadout
+      parameters:
+        - description: The character whose loadout to read
+          in: path
+          name: characterId
+          required: true
+          schema:
+            description: The character whose loadout to read
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultEnvelopeGetLoadoutResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Get a character's loadout
+      tags:
+        - items
+    put:
+      description: "Sets the item instance in one of the character's slots. An empty item_instance_id unequips the slot. The item the slot held, on an unequip or a swap, goes to that character's bag. Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), BAG_FULL (an unequip, or a swap that would grow the bag, with the character's bag at or over 30). A character that is not the member's, or an item not available to it, answers 404."
+      operationId: update-loadout
+      parameters:
+        - description: The character whose loadout to change
+          in: path
+          name: characterId
+          required: true
+          schema:
+            description: The character whose loadout to change
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLoadoutBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultEnvelopeUpdateLoadoutResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SeamError"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Equip or unequip an item in a character's loadout slot
+      tags:
+        - items
   /api/items/complete-armor:
     post:
       description: Creates the armor and its item template in one request and notifies admins.
@@ -2560,8 +2678,17 @@ paths:
         - items
   /api/items/instances:
     get:
-      description: "Every item instance the member owns, worn or not, each with its location: the bag or the stash."
+      description: "The account's stash, plus every item the named character holds, worn or not, each with its location: the bag or the stash. With no character, only the stash. Another character's held items are never returned."
       operationId: list-item-instances
+      parameters:
+        - description: The character whose held items to include. Absent, only the stash is returned
+          explode: false
+          in: query
+          name: characterId
+          schema:
+            description: The character whose held items to include. Absent, only the stash is returned
+            format: uuid
+            type: string
       responses:
         "200":
           content:
@@ -2594,7 +2721,7 @@ paths:
         - items
   /api/items/instances/{id}/location:
     put:
-      description: "Moves one of the signed-in member's unworn, available items to the bag or the stash. Moving it where it already is succeeds and changes nothing. Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), BAG_FULL (bag at or over 30), STASH_FULL (stash at or over 60). An item that is not the member's answers 404."
+      description: "Moves one of the signed-in member's unworn, available items between the character's bag and the stash. Moving it where it already is succeeds and changes nothing. Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), BAG_FULL (the character's bag at or over 30), STASH_FULL (stash at or over 60). An item that is not the member's or is held by another character, or a character that is not the member's, answers 404."
       operationId: move-item-instance
       parameters:
         - description: The item instance to move
@@ -2657,85 +2784,6 @@ paths:
       security:
         - bearerAuth: []
       summary: Move an item between the bag and the stash
-      tags:
-        - items
-  /api/items/loadout:
-    get:
-      description: Returns the equipped item in each loadout slot.
-      operationId: get-loadout
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultEnvelopeGetLoadoutResponse"
-          description: OK
-        "401":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Unauthorized
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Internal Server Error
-      security:
-        - bearerAuth: []
-      summary: Get the signed-in member's loadout
-      tags:
-        - items
-    put:
-      description: "Sets the item instance in a slot. An empty item_instance_id unequips the slot. The item the slot held, on an unequip or a swap, goes to the bag. Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), BAG_FULL (an unequip, or a swap that would grow the bag, with the bag at or over 30)."
-      operationId: update-loadout
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateLoadoutBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultEnvelopeUpdateLoadoutResponse"
-          description: OK
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Bad Request
-        "401":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Unauthorized
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/SeamError"
-          description: Internal Server Error
-      security:
-        - bearerAuth: []
-      summary: Equip or unequip an item in a loadout slot
       tags:
         - items
   /api/items/rarities:

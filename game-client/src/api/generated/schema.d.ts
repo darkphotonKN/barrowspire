@@ -72,6 +72,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{characterId}/loadout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a character's loadout
+         * @description Returns the equipped item in each of the character's loadout slots. A character with no loadout, or one that is not the member's, reads as empty.
+         */
+        get: operations["get-loadout"];
+        /**
+         * Equip or unequip an item in a character's loadout slot
+         * @description Sets the item instance in one of the character's slots. An empty item_instance_id unequips the slot. The item the slot held, on an unequip or a swap, goes to that character's bag. Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), BAG_FULL (an unequip, or a swap that would grow the bag, with the character's bag at or over 30). A character that is not the member's, or an item not available to it, answers 404.
+         */
+        put: operations["update-loadout"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/complete-armor": {
         parameters: {
             query?: never;
@@ -141,7 +165,7 @@ export interface paths {
         };
         /**
          * List the signed-in member's item instances
-         * @description Every item instance the member owns, worn or not, each with its location: the bag or the stash.
+         * @description The account's stash, plus every item the named character holds, worn or not, each with its location: the bag or the stash. With no character, only the stash. Another character's held items are never returned.
          */
         get: operations["list-item-instances"];
         put?: never;
@@ -162,33 +186,9 @@ export interface paths {
         get?: never;
         /**
          * Move an item between the bag and the stash
-         * @description Moves one of the signed-in member's unworn, available items to the bag or the stash. Moving it where it already is succeeds and changes nothing. Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), BAG_FULL (bag at or over 30), STASH_FULL (stash at or over 60). An item that is not the member's answers 404.
+         * @description Moves one of the signed-in member's unworn, available items between the character's bag and the stash. Moving it where it already is succeeds and changes nothing. Refusals: ITEM_WORN (in the loadout), ITEM_NOT_AVAILABLE (listed or pending settlement), BAG_FULL (the character's bag at or over 30), STASH_FULL (stash at or over 60). An item that is not the member's or is held by another character, or a character that is not the member's, answers 404.
          */
         put: operations["move-item-instance"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/loadout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the signed-in member's loadout
-         * @description Returns the equipped item in each loadout slot.
-         */
-        get: operations["get-loadout"];
-        /**
-         * Equip or unequip an item in a loadout slot
-         * @description Sets the item instance in a slot. An empty item_instance_id unequips the slot. The item the slot held, on an unequip or a swap, goes to the bag. Refusals: ITEM_NOT_AVAILABLE (equipping an item in a run, listed or pending settlement), BAG_FULL (an unequip, or a swap that would grow the bag, with the bag at or over 30).
-         */
-        put: operations["update-loadout"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1330,6 +1330,11 @@ export interface components {
             buff_duration?: number;
             /** Format: int32 */
             buy_price?: number;
+            /**
+             * Format: uuid
+             * @description The character holding the item. Absent for a stash item
+             */
+            character_id?: string;
             /** Format: float */
             critical_rate?: number;
             /** Format: int32 */
@@ -1708,6 +1713,11 @@ export interface components {
             statusCode: number;
         };
         MoveItemInstanceBody: {
+            /**
+             * Format: uuid
+             * @description The character moving the item: the holder a move to the bag sets, and the one a move to the stash must be held by
+             */
+            character_id: string;
             /**
              * @description Where to keep the item: carried in the bag or stored in the town stash
              * @enum {string}
@@ -2592,6 +2602,137 @@ export interface operations {
             };
         };
     };
+    "get-loadout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The character whose loadout to read */
+                characterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultEnvelopeGetLoadoutResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
+    "update-loadout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The character whose loadout to change */
+                characterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLoadoutBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultEnvelopeUpdateLoadoutResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["SeamError"];
+                };
+            };
+        };
+    };
     "create-complete-armor": {
         parameters: {
             query?: never;
@@ -2774,7 +2915,10 @@ export interface operations {
     };
     "list-item-instances": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The character whose held items to include. Absent, only the stash is returned */
+                characterId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2891,113 +3035,6 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "get-loadout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultEnvelopeGetLoadoutResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-        };
-    };
-    "update-loadout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateLoadoutBody"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultEnvelopeUpdateLoadoutResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["SeamError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
                 headers: {
                     [name: string]: unknown;
                 };

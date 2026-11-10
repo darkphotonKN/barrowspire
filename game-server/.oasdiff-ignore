@@ -190,3 +190,31 @@ in api post /api/member/signin removed the optional property `result/member_info
 in api post /api/member/signup removed the optional property `avatar_url` from the response with the `201` status
 in api patch /api/member/update-info removed the optional property `result/avatar_url` from the response with the `200` status
 in api get /api/stats/leaderboard removed the optional property `players/items/avatar_url` from the response with the `200` status
+
+# ---------------------------------------------------------------------------
+# FS-50MTX §API surface (I-50MTX-6): the loadout routes move under the character.
+#
+# WHY: each character now wears its own gear (FS-50MTX R4, R22; ADR-0072), so a
+# loadout is addressed by character and get-loadout and update-loadout move to
+# /api/characters/{characterId}/loadout.
+#
+# Removed WITHOUT a deprecation window deliberately (charter default: alpha, one
+# client): the only consumer is this repo's generated client, regenerated in the
+# same change, and the old paths name no character, so a shim would have no
+# loadout to answer with.
+#
+# Lines copied verbatim from `make openapi-breaking` output, lowercased.
+in api get /api/items/loadout api path removed without deprecation
+in api put /api/items/loadout api path removed without deprecation
+
+# ---------------------------------------------------------------------------
+# FS-50MTX R18, §API surface (I-50MTX-6): move-item-instance names the character.
+#
+# WHY: a move sets or clears the holder and BAG_FULL is measured per character,
+# so the request names the character in both directions. Required on purpose:
+# with no character there is no bag to move to or from. The only consumer is
+# this repo's generated client, regenerated in the same change, and the hub's
+# gear sends the active character.
+#
+# Line copied verbatim from `make openapi-breaking` output, lowercased.
+in api put /api/items/instances/{id}/location added the new required request property `character_id`

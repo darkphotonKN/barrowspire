@@ -56,6 +56,50 @@ export interface HubGearApi {
   moveItemInstance(id: string, location: ItemLocation): Promise<unknown>;
 }
 
+/** The same REST calls as `apiClient` takes them, each naming the character (FS-50MTX R37). */
+export interface CharacterGearApi {
+  getItemInstances(
+    characterId: string,
+  ): ReturnType<HubGearApi["getItemInstances"]>;
+  getLoadout(characterId: string): ReturnType<HubGearApi["getLoadout"]>;
+  getItemRarities: HubGearApi["getItemRarities"];
+  updateLoadout(
+    characterId: string,
+    slot: string,
+    itemInstanceId: string | null,
+  ): Promise<unknown>;
+  moveItemInstance(
+    characterId: string,
+    id: string,
+    location: ItemLocation,
+  ): Promise<unknown>;
+}
+
+/**
+ * The hub's gear calls, made as the active character (FS-50MTX R37). The character is read at
+ * each call, so changing character shows that character's gear and bag on the next open. With no
+ * active character a call rejects and sends nothing, taking the overlay's own failure path.
+ */
+export function gearAsCharacter(
+  api: CharacterGearApi,
+  activeCharacterId: () => string | null,
+): HubGearApi {
+  const character = (): string => {
+    const id = activeCharacterId();
+    if (!id) throw new Error("hub gear: no active character");
+    return id;
+  };
+  return {
+    getItemInstances: async () => api.getItemInstances(character()),
+    getLoadout: async () => api.getLoadout(character()),
+    getItemRarities: () => api.getItemRarities(),
+    updateLoadout: async (slot, itemInstanceId) =>
+      api.updateLoadout(character(), slot, itemInstanceId),
+    moveItemInstance: async (id, location) =>
+      api.moveItemInstance(character(), id, location),
+  };
+}
+
 /** What the hub's gear asks of the overlay: the run's panel, plus a status line and stash mode. */
 export type HubGearPanel = HudPanel & {
   /** A line in the bag area (and the stash's); while one is set, equip, unequip and move input is ignored. */
@@ -177,12 +221,13 @@ export async function loadHubGear(api: HubGearApi): Promise<HubGearState> {
 
 /**
  * The words a refused loadout change shows, by its code: the full bag (FS-VPD8Y R29); an item
- * that is not free to wear, listed or lost to a checkout race (FS-18Z5F story 14); else the
- * generic line (R43).
+ * that is not free to wear, listed or lost to a checkout race (FS-18Z5F story 14), or no longer
+ * this character's to wear (FS-50MTX R15); else the generic line (R43).
  */
 const LOADOUT_REFUSALS: Readonly<Record<string, string>> = {
   BAG_FULL: BAG_FULL_NOTICE,
   ITEM_NOT_AVAILABLE: NOT_FREE_NOTICE,
+  NOT_FOUND: NOT_FREE_NOTICE,
 };
 
 /** The words a refused move shows, by its code (FS-VPD8Y R42). */

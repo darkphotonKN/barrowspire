@@ -62,7 +62,7 @@ probe "bad credentials" -X POST -H 'Content-Type: application/json' \
 probe "unknown route" "${BASE}/api/definitely-not-a-route"
 
 # 401 first, then whatever the item surface says — needs a token to reach 404
-probe "item, no token" "${BASE}/api/items/loadout"
+probe "item, no token" "${BASE}/api/items/instances"
 
 echo
 cat <<'EOF'
