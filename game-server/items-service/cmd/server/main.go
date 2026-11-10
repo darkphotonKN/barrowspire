@@ -23,6 +23,7 @@ import (
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/items-service/config"
 	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/auth"
+	"github.com/darkphotonKN/barrowspire-server/items-service/grpc/character"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -37,6 +38,7 @@ var (
 	serviceName    = "items"
 	grpcAddr       = commonhelpers.GetEnvString("GRPC_ITEMS_ADDR", "7126")
 	authAddr       = commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116")
+	characterAddr  = commonhelpers.GetEnvString("CHARACTER_ADDR", "localhost:7123")
 	serviceVersion = commonhelpers.GetEnvString("SERVICE_VERSION", "1.0.0")
 
 	amqpUser     = commonhelpers.GetEnvString("RABBITMQ_USER", "guest")
@@ -126,6 +128,17 @@ func main() {
 		}
 	}()
 
+	characterClient, err := character.NewClient(characterAddr)
+	if err != nil {
+		slog.Error("failed to create character client", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := characterClient.Close(); err != nil {
+			slog.Error("close character client", "error", err)
+		}
+	}()
+
 	// The consumer republishes retries and dead letters on a connection of its
 	// own: a channel in confirm mode, apart from the shared one, and kept off
 	// the consuming connection so broker flow control on publishes cannot stall
@@ -142,7 +155,7 @@ func main() {
 		}
 	}()
 
-	grpcServer, activities, err := config.SetupServices(ctx, db, ch, republishCh, authClient)
+	grpcServer, activities, err := config.SetupServices(ctx, db, ch, republishCh, authClient, characterClient)
 	if err != nil {
 		slog.Error("failed to set up items service", "error", err)
 		os.Exit(1)

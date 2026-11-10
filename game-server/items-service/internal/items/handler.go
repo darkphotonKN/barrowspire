@@ -870,6 +870,21 @@ func refuseForeignMember(err error, method string, caller uuid.UUID, member stri
 	return status.Error(codes.PermissionDenied, "permission denied")
 }
 
+// refuseCharacterCheck answers a write that failed its character check, nil
+// for any other outcome. A foreign, deleted or unknown character is NotFound,
+// never PermissionDenied, so ownership is not disclosed; character-service not
+// answering is Unavailable, the 503 the gateway surfaces (FS-50MTX R10, R11).
+func refuseCharacterCheck(err error, method string, caller uuid.UUID) error {
+	switch {
+	case errors.Is(err, errCharacterNotFound):
+		return status.Error(codes.NotFound, "character not found")
+	case errors.Is(err, errCharacterCheckUnavailable):
+		slog.Error("character check failed", "method", method, "caller", caller, "error", err)
+		return status.Error(codes.Unavailable, "character service unavailable")
+	}
+	return nil
+}
+
 func (h *Handler) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*pb.GetLoadoutResponse, error) {
 	caller, ok := commonauth.MemberIDFromCtx(ctx)
 	if !ok {
@@ -880,8 +895,13 @@ func (h *Handler) GetLoadout(ctx context.Context, req *pb.GetLoadoutRequest) (*p
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user_id: %v", err)
 	}
+	characterId, err := parseCharacterID(req.GetCharacterId())
+	if err != nil {
+		return nil, err
+	}
 	payload := &GetLoadoutRequest{
-		MemberId: MemberId,
+		MemberId:    MemberId,
+		CharacterId: characterId,
 	}
 
 	loadout, err := h.service.GetLoadout(ctx, caller, payload)
@@ -921,8 +941,14 @@ func (h *Handler) GetLoadoutWithItems(ctx context.Context, req *pb.GetLoadoutWit
 		return nil, status.Errorf(codes.InvalidArgument, "invalid member_id: %v", err)
 	}
 
+	characterId, err := parseCharacterID(req.GetCharacterId())
+	if err != nil {
+		return nil, err
+	}
+
 	payload := &GetLoadoutRequest{
-		MemberId: memberId,
+		MemberId:    memberId,
+		CharacterId: characterId,
 	}
 
 	loadout, err := h.service.GetLoadoutWithItems(ctx, caller, payload)
@@ -953,8 +979,8 @@ func loadoutWithItemsToProto(loadout *LoadoutWithItems) *pb.GetLoadoutWithItemsR
 	}
 }
 
-// CheckOutRunGear checks the caller's worn and bag items out into a run or
-// field world at seating (FS-18Z5F R5-R11). Outcomes per §API surface: a
+// CheckOutRunGear checks one character's worn and bag items out into a run or
+// field world at seating (FS-18Z5F R5-R11, FS-50MTX R25). Outcomes per §API surface: a
 // malformed or missing id → InvalidArgument; another member's gear →
 // PermissionDenied, nothing written (R6); the store down → Unavailable;
 // anything else → Internal.
@@ -972,8 +998,17 @@ func (h *Handler) CheckOutRunGear(ctx context.Context, req *pb.CheckOutRunGearRe
 	if err != nil || runID == uuid.Nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid run_id")
 	}
+	// no ownership check stands behind a checkout (FS-50MTX R27), so the nil
+	// uuid is refused here rather than read as an unknown character
+	characterID, err := parseCharacterID(req.GetCharacterId())
+	if err != nil {
+		return nil, err
+	}
+	if characterID == uuid.Nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid character_id")
+	}
 
-	gear, err := h.service.CheckOutRunGear(ctx, caller, &CheckOutRunGearRequest{MemberID: memberID, RunID: runID})
+	gear, err := h.service.CheckOutRunGear(ctx, caller, &CheckOutRunGearRequest{MemberID: memberID, CharacterID: characterID, RunID: runID})
 	if denied := refuseForeignMember(err, "CheckOutRunGear", caller, req.GetMemberId()); denied != nil {
 		return nil, denied
 	}
@@ -1051,8 +1086,19 @@ func (h *Handler) ListItemInstances(ctx context.Context, req *pb.ListItemInstanc
 		return nil, status.Errorf(codes.InvalidArgument, "invalid member_id: %v", err)
 	}
 
+	// optional: absent lists the stash only (FS-50MTX R23)
+	var characterId *uuid.UUID
+	if raw := req.GetCharacterId(); raw != "" {
+		parsed, err := parseCharacterID(raw)
+		if err != nil {
+			return nil, err
+		}
+		characterId = &parsed
+	}
+
 	payload := &ListItemInstancesRequest{
-		MemberId: memberId,
+		MemberId:    memberId,
+		CharacterId: characterId,
 	}
 
 	items, err := h.service.ListItemInstances(ctx, caller, payload)
@@ -1090,6 +1136,7 @@ func itemInstanceToProto(item *ItemInstance) *pb.ItemInstance {
 		RarityId:      commonhelpers.UuidPtrToString(item.RarityID),
 		Status:        item.Status,
 		Location:      strings.ToLower(item.Location),
+		CharacterId:   commonhelpers.UuidPtrToString(item.CharacterID),
 		RequiredLevel: int32(item.RequiredLevel),
 		ItemLevel:     int32(item.ItemLevel),
 		Affixes:       affixesToProto(item.Affixes),
@@ -1133,6 +1180,18 @@ func itemInstanceToProto(item *ItemInstance) *pb.ItemInstance {
 	return pbItem
 }
 
+// parseCharacterID reads a request's required character_id; a missing or
+// malformed one is InvalidArgument (FS-50MTX). The nil uuid is well formed, so
+// it parses and is an unknown character like any other: a read finds nothing
+// held by it and a write is refused by its ownership check (R10, R12, R22).
+func parseCharacterID(raw string) (uuid.UUID, error) {
+	character, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, status.Error(codes.InvalidArgument, "invalid character_id")
+	}
+	return character, nil
+}
+
 func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutRequest) (*pb.UpdateLoadoutResponse, error) {
 	caller, ok := commonauth.MemberIDFromCtx(ctx)
 	if !ok {
@@ -1142,6 +1201,11 @@ func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutReques
 	memberId, err := uuid.Parse(req.MemberId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid member_id: %v", err)
+	}
+
+	characterId, err := parseCharacterID(req.GetCharacterId())
+	if err != nil {
+		return nil, err
 	}
 
 	var itemInstanceId *uuid.UUID
@@ -1155,6 +1219,7 @@ func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutReques
 
 	payload := &UpdateLoadoutRequest{
 		MemberId:       memberId,
+		CharacterId:    characterId,
 		Slot:           req.Slot,
 		ItemInstanceId: itemInstanceId,
 	}
@@ -1163,12 +1228,17 @@ func (h *Handler) UpdateLoadout(ctx context.Context, req *pb.UpdateLoadoutReques
 	if denied := refuseForeignMember(err, "UpdateLoadout", caller, req.MemberId); denied != nil {
 		return nil, denied
 	}
+	if refused := refuseCharacterCheck(err, "UpdateLoadout", caller); refused != nil {
+		return nil, refused
+	}
 	// A domain refusal (BAG_FULL, FS-VPD8Y R18) carries its code as the
 	// ErrorInfo reason (R13); any code the service refuses with passes through.
 	var refusal *errcode.Refusal
 	switch {
 	case errors.As(err, &refusal):
 		return nil, refusal.GRPCStatus().Err()
+	case errors.Is(err, commonconstants.ErrNotFound):
+		return nil, status.Error(codes.NotFound, "item instance not found")
 	case err != nil:
 		return nil, status.Errorf(codes.Internal, "failed to update loadout: %v", err)
 	}
@@ -1205,7 +1275,15 @@ func (h *Handler) MoveItemInstance(ctx context.Context, req *pb.MoveItemInstance
 		return nil, status.Error(codes.InvalidArgument, "location must be bag or stash")
 	}
 
-	got, err := h.service.MoveItemInstance(ctx, caller, &MoveItemInstanceRequest{ItemInstanceID: itemID, Location: location})
+	characterID, err := parseCharacterID(req.GetCharacterId())
+	if err != nil {
+		return nil, err
+	}
+
+	got, err := h.service.MoveItemInstance(ctx, caller, &MoveItemInstanceRequest{ItemInstanceID: itemID, Location: location, CharacterID: characterID})
+	if refused := refuseCharacterCheck(err, "MoveItemInstance", caller); refused != nil {
+		return nil, refused
+	}
 	var refusal *errcode.Refusal
 	switch {
 	case errors.As(err, &refusal):

@@ -29,17 +29,19 @@ type service struct {
 	publishCh       commonbroker.Publisher
 	outboxPublisher commonoutbox.OutboxPublisher
 	inbox           Inbox
+	characters      CharacterOwnership
 	// withTx runs fn in one transaction on db, committing when fn succeeds.
 	withTx func(ctx context.Context, fn func(tx *sqlx.Tx) error) error
 }
 
-func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher, inbox Inbox) *service {
+func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, outboxPublisher commonoutbox.OutboxPublisher, inbox Inbox, characters CharacterOwnership) *service {
 	return &service{
 		repo:            repo,
 		db:              db,
 		publishCh:       publishCh,
 		outboxPublisher: outboxPublisher,
 		inbox:           inbox,
+		characters:      characters,
 		withTx: func(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
 			return commonutils.ExecTx(ctx, db, nil, fn)
 		},
@@ -51,6 +53,23 @@ func NewService(repo Repository, db *sqlx.DB, publishCh commonbroker.Publisher, 
 // event's own writes.
 type Inbox interface {
 	MarkEventProcessed(ctx context.Context, tx *sqlx.Tx, eventID uuid.UUID, eventType string) (bool, error)
+}
+
+var (
+	// errCharacterNotFound: a write named a character that is not one of the
+	// caller's live ones. A 404, so another member's character is not disclosed.
+	errCharacterNotFound = fmt.Errorf("character not found: %w", commonconstants.ErrNotFound)
+	// errCharacterCheckUnavailable: character-service could not answer, so the
+	// write is refused. Its own sentinel, because ErrTransient also marks a
+	// database fault and only this one may read as character-service being down.
+	errCharacterCheckUnavailable = errors.New("character service unavailable")
+)
+
+// CharacterOwnership answers whether a character is one of a member's live
+// characters. False means foreign, deleted or unknown; an error means the
+// question could not be answered, which is never a yes (FS-50MTX R10, R11).
+type CharacterOwnership interface {
+	OwnsCharacter(ctx context.Context, member, character uuid.UUID) (bool, error)
 }
 
 type Repository interface {
@@ -107,11 +126,10 @@ type Repository interface {
 	GetLoadout(ctx context.Context, req *GetLoadoutRequest) (*Loadout, error)
 	GetItemInstanceByID(ctx context.Context, id uuid.UUID) (*ItemInstance, error)
 	ListItemInstances(ctx context.Context, req *ListItemInstancesRequest) ([]*ItemInstance, error)
-	LoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID, slot string) (*uuid.UUID, error)
+	LoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID, slot string) (*uuid.UUID, error)
 	UpsertLoadoutSlotTx(ctx context.Context, tx *sqlx.Tx, req *UpdateLoadoutRequest) error
 	UpsertPlayerLoadoutTx(ctx context.Context, tx *sqlx.Tx, req *UpsertPlayerLoadoutRequest) error
 	UpsertItemInstanceTx(ctx context.Context, tx *sqlx.Tx, instance *ItemInstance) error
-	InsertItemInstancesTx(ctx context.Context, tx *sqlx.Tx, instances []*ItemInstance) error
 	DeleteConsumedItemInstancesTx(ctx context.Context, tx *sqlx.Tx, memberID, runID uuid.UUID, ids []uuid.UUID) (int64, error)
 
 	// bag and stash (FS-VPD8Y)
@@ -119,12 +137,13 @@ type Repository interface {
 	ItemPlacementTx(ctx context.Context, tx *sqlx.Tx, owner, itemID uuid.UUID) (*ItemPlacement, error)
 	LockItemPlacementTx(ctx context.Context, tx *sqlx.Tx, owner, itemID uuid.UUID) (*ItemPlacement, error)
 	CountUnwornAtTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID, location string) (int, error)
-	MoveItemInstanceTx(ctx context.Context, tx *sqlx.Tx, owner, itemID uuid.UUID, location string) (bool, error)
-	SetLocationTx(ctx context.Context, tx *sqlx.Tx, owner, itemID uuid.UUID, location string) error
+	CountUnwornInBagTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID) (int, error)
+	MoveItemInstanceTx(ctx context.Context, tx *sqlx.Tx, owner, character, itemID uuid.UUID, location string) (bool, error)
+	HoldInBagTx(ctx context.Context, tx *sqlx.Tx, owner, character, itemID uuid.UUID) error
 
 	// run gear checkout (FS-18Z5F)
-	LoadoutTx(ctx context.Context, tx *sqlx.Tx, member uuid.UUID) (*Loadout, error)
-	CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member, runID uuid.UUID) ([]*ItemInstance, error)
+	LoadoutTx(ctx context.Context, tx *sqlx.Tx, member, character uuid.UUID) (*Loadout, error)
+	CheckOutRunGearTx(ctx context.Context, tx *sqlx.Tx, member, character, runID uuid.UUID) ([]*ItemInstance, error)
 
 	// run settlement (FS-18Z5F §F)
 	RunItemOwnersTx(ctx context.Context, tx *sqlx.Tx, runID uuid.UUID) ([]uuid.UUID, error)
@@ -194,6 +213,10 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 	if err != nil {
 		return fmt.Errorf("store items extracted %s: %w", eventID, err)
 	}
+	characters, err := extractedCharacters(req, members)
+	if err != nil {
+		return fmt.Errorf("store items extracted %s: %w", eventID, err)
+	}
 	consumed, err := extractedConsumed(req, members)
 	if err != nil {
 		return fmt.Errorf("store items extracted %s: %w", eventID, err)
@@ -215,7 +238,7 @@ func (s *service) ProcessItemsExtracted(ctx context.Context, eventID uuid.UUID, 
 			writeErr = commonconstants.ErrAlreadyProcessed
 			return writeErr
 		}
-		writeErr = s.settleRun(ctx, tx, scope, members, consumed, req.GetPlayerItems())
+		writeErr = s.settleRun(ctx, tx, scope, members, characters, consumed, req.GetPlayerItems())
 		return writeErr
 	})
 	switch {
@@ -249,6 +272,28 @@ func extractedMembers(req *pb.ItemsExtractedEvent) ([]uuid.UUID, error) {
 		members = append(members, member)
 	}
 	return members, nil
+}
+
+// extractedCharacters parses each player's character id, in event order,
+// uuid.Nil for an event that names none, the zero id included: one written
+// before FS-50MTX, or a player with no character in play (R32). A value that
+// is not a UUID is a producer bug and fails the event as malformed before any
+// write, as a member id does.
+func extractedCharacters(req *pb.ItemsExtractedEvent, members []uuid.UUID) ([]uuid.UUID, error) {
+	characters := make([]uuid.UUID, 0, len(req.GetPlayerItems()))
+	for i, playerItems := range req.GetPlayerItems() {
+		raw := playerItems.GetCharacterId()
+		if raw == "" {
+			characters = append(characters, uuid.Nil)
+			continue
+		}
+		character, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("character id %q of member %s: %w: %w", raw, members[i], commonconstants.ErrUUIDCouldNotBeParsed, err)
+		}
+		characters = append(characters, character)
+	}
+	return characters, nil
 }
 
 // settledMembers parses the members a whole-run event says were already
@@ -351,9 +396,9 @@ func (s *service) newSettlementScope(runID uuid.UUID, partial bool, members, set
 }
 
 // settleRun locks, stores every member, deletes what they used up and
-// releases what scope covers of its run. members[i] and consumed[i] are
-// players[i]'s member id and consumed item ids.
-func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, scope settlementScope, members []uuid.UUID, consumed [][]uuid.UUID, players []*pb.PlayerItems) error {
+// releases what scope covers of its run. members[i], characters[i] and
+// consumed[i] are players[i]'s member id, character and consumed item ids.
+func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, scope settlementScope, members, characters []uuid.UUID, consumed [][]uuid.UUID, players []*pb.PlayerItems) error {
 	runID := scope.runID
 	accounts, err := scope.accounts(ctx, tx)
 	if err != nil {
@@ -363,7 +408,7 @@ func (s *service) settleRun(ctx context.Context, tx *sqlx.Tx, scope settlementSc
 		return err
 	}
 	for i, playerItems := range players {
-		if err := s.storeExtractedPlayerItems(ctx, tx, runID, members[i], playerItems); err != nil {
+		if err := s.storeExtractedPlayerItems(ctx, tx, runID, members[i], characters[i], playerItems); err != nil {
 			return err
 		}
 	}
@@ -435,11 +480,13 @@ func (s *service) lockAccounts(ctx context.Context, tx *sqlx.Tx, accounts []uuid
 
 // storeExtractedPlayerItems stores one member's extraction from the run runID
 // (FS-18Z5F R27, R28). Finds are inserted. Brought-in items are applied only
-// while the run still owns them: bag items back to the bag, worn ones where
-// they were kept. The loadout is written as worn out, unless the run never
-// knew it (loadout unknown) or the fence skipped any brought-in item: a later
-// checkout owns the member's gear, so this loadout is stale.
-func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, runID, memberID uuid.UUID, playerItems *pb.PlayerItems) error {
+// while the run still owns them. Both come home to character's bag, worn or not
+// (FS-50MTX R31). The loadout is written as worn out, for that character,
+// unless the run never knew it (loadout unknown) or the fence skipped any
+// brought-in item: a later checkout owns the member's gear, so this loadout is
+// stale. An event with no character (uuid.Nil) has nowhere to hold anything: its
+// finds and applied items go to the stash and no loadout is written (R32).
+func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, runID, memberID, character uuid.UUID, playerItems *pb.PlayerItems) error {
 	slog.Debug("single player iterated from req.PlayerItems",
 		"member_id", memberID,
 		"equipment", playerItems.GetEquipment(),
@@ -451,18 +498,20 @@ func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, ru
 	if err != nil {
 		return fmt.Errorf("map inventory of member %s: %w", memberID, err)
 	}
-	for _, item := range invItemInstances {
-		item.Location = LocationBag
-	}
 
-	equipItemInstances, upsertParams, err := s.MapProtoEquipmentToItemInstances(memberID, playerItems.GetEquipment())
+	equipItemInstances, upsertParams, err := s.MapProtoEquipmentToItemInstances(memberID, character, playerItems.GetEquipment())
 	if err != nil {
 		return fmt.Errorf("map equipment of member %s: %w", memberID, err)
 	}
 
-	finds, carried := splitFinds(append(equipItemInstances, invItemInstances...), broughtInIDs(playerItems))
+	items := append(equipItemInstances, invItemInstances...)
+	location, holder := settledHome(character)
+	for _, item := range items {
+		item.Location, item.CharacterID = location, holder
+	}
+	finds, carried := splitFinds(items, broughtInIDs(playerItems))
 
-	if err := s.repo.InsertItemInstancesTx(ctx, tx, finds); err != nil {
+	if err := s.repo.InsertItemInstancesAtTx(ctx, tx, finds, location); err != nil {
 		return fmt.Errorf("insert finds of member %s: %w", memberID, err)
 	}
 
@@ -475,6 +524,16 @@ func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, ru
 		slog.Info("brought-in item no longer in this run, skipped",
 			"member_id", memberID, "run_id", runID, "item_id", id,
 		)
+	}
+
+	if holder == nil {
+		slog.Warn("settlement event names no character, items left in the stash and no loadout written",
+			"member_id", memberID,
+			"run_id", runID,
+			"finds", len(finds),
+			"brought_in_applied", len(applied),
+		)
+		return nil
 	}
 
 	// the run never read their stored loadout, so its empty slots are not an
@@ -498,6 +557,16 @@ func (s *service) storeExtractedPlayerItems(ctx context.Context, tx *sqlx.Tx, ru
 		return fmt.Errorf("upsert loadout of member %s: %w", memberID, err)
 	}
 	return nil
+}
+
+// settledHome is where a settlement for character sends a member's items: its
+// bag, held by it, or the stash with no holder when the event named none
+// (FS-50MTX R31, R32).
+func settledHome(character uuid.UUID) (string, *uuid.UUID) {
+	if character == uuid.Nil {
+		return LocationStash, nil
+	}
+	return LocationBag, &character
 }
 
 // broughtInIDs are the instance ids an extraction carries: the items the
@@ -549,10 +618,11 @@ func skippedItems(carried []*ItemInstance, applied []uuid.UUID) []uuid.UUID {
 * updating the item instance table and formatted into PlayerLoadout for updating player_loadouts table.
 * Nil equipment means nothing equipped: the proto getters are nil-safe.
 **/
-func (s *service) MapProtoEquipmentToItemInstances(memberID uuid.UUID, equipmentProto *pb.Equipment) ([]*ItemInstance, *UpsertPlayerLoadoutRequest, error) {
+func (s *service) MapProtoEquipmentToItemInstances(memberID, characterID uuid.UUID, equipmentProto *pb.Equipment) ([]*ItemInstance, *UpsertPlayerLoadoutRequest, error) {
 	// holds both existing ids and new ids
 	playerLoadoutParam := &UpsertPlayerLoadoutRequest{
-		MemberID: memberID,
+		MemberID:    memberID,
+		CharacterID: characterID,
 	}
 
 	itemInstances := make([]*ItemInstance, 0)
@@ -1313,7 +1383,9 @@ func ensureOwner(caller, member uuid.UUID, action string) error {
 	return nil
 }
 
-// GetLoadout returns the loadout req.MemberId wears, and only to that member.
+// GetLoadout returns the loadout req.CharacterId wears, and only to its member;
+// a character that is not theirs reads as empty, so no character-service call is
+// needed (FS-50MTX R12, R22).
 func (h *service) GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*Loadout, error) {
 	if err := ensureOwner(caller, req.MemberId, "loadout read"); err != nil {
 		return nil, err
@@ -1321,9 +1393,10 @@ func (h *service) GetLoadout(ctx context.Context, caller uuid.UUID, req *GetLoad
 	return h.repo.GetLoadout(ctx, req)
 }
 
-// GetLoadoutWithItems returns the gear req.MemberId wears, and only to that
+// GetLoadoutWithItems returns the gear req.CharacterId wears, and only to its
 // member: a caller asking for anyone else's loadout gets ErrForbidden before any
-// read (FS-4R9M9 R53).
+// read (FS-4R9M9 R53). A character that is not theirs reads as empty (FS-50MTX
+// R12).
 func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req *GetLoadoutRequest) (*LoadoutWithItems, error) {
 	if err := ensureOwner(caller, req.MemberId, "loadout read"); err != nil {
 		return nil, err
@@ -1354,14 +1427,14 @@ func (h *service) GetLoadoutWithItems(ctx context.Context, caller uuid.UUID, req
 	return result, nil
 }
 
-// CheckOutRunGear checks req.MemberID's worn and bag instances out into the run
-// req.RunID, and only for that member: a caller checking out anyone else's
+// CheckOutRunGear checks req.CharacterID's worn and bag instances out into the
+// run req.RunID, and only for that member: a caller checking out anyone else's
 // gear gets ErrForbidden before any write (FS-18Z5F R6). Under the member's
-// account lock, so it serializes with moves and loadout writes, the loadout
-// row is read and locked and the repository moves the gear to IN_RUN under the
-// run id, reclaiming any still IN_RUN under another (R7, R9). What it returns
-// is seated: worn instances in their slots, the rest as the bag, in the order
-// the repository gives it (R11).
+// account lock, so it serializes with moves and loadout writes, the character's
+// loadout row is read and locked and the repository moves the gear to IN_RUN
+// under the run id, reclaiming any of the member's still IN_RUN under another
+// (R7, R9, FS-50MTX R25, R26). What it returns is seated: worn instances in
+// their slots, the rest as the bag, in the order the repository gives it (R11).
 func (s *service) CheckOutRunGear(ctx context.Context, caller uuid.UUID, req *CheckOutRunGearRequest) (*RunGear, error) {
 	if err := ensureOwner(caller, req.MemberID, "run gear checkout"); err != nil {
 		return nil, err
@@ -1372,11 +1445,11 @@ func (s *service) CheckOutRunGear(ctx context.Context, caller uuid.UUID, req *Ch
 		if err := s.repo.LockAccountTx(ctx, tx, req.MemberID); err != nil {
 			return err
 		}
-		loadout, err := s.repo.LoadoutTx(ctx, tx, req.MemberID)
+		loadout, err := s.repo.LoadoutTx(ctx, tx, req.MemberID, req.CharacterID)
 		if err != nil {
 			return err
 		}
-		checkedOut, err := s.repo.CheckOutRunGearTx(ctx, tx, req.MemberID, req.RunID)
+		checkedOut, err := s.repo.CheckOutRunGearTx(ctx, tx, req.MemberID, req.CharacterID, req.RunID)
 		if err != nil {
 			return err
 		}
@@ -1439,7 +1512,8 @@ func loadoutSlots(loadout *Loadout, result *LoadoutWithItems) []loadoutSlot {
 	}
 }
 
-// ListItemInstances returns the stash req.MemberId owns, and only to that member.
+// ListItemInstances returns the stash req.MemberId owns, plus what
+// req.CharacterId holds when one is named, and only to that member (FS-50MTX R23).
 func (h *service) ListItemInstances(ctx context.Context, caller uuid.UUID, req *ListItemInstancesRequest) ([]*ItemInstance, error) {
 	if err := ensureOwner(caller, req.MemberId, "stash read"); err != nil {
 		return nil, err
@@ -1447,19 +1521,42 @@ func (h *service) ListItemInstances(ctx context.Context, caller uuid.UUID, req *
 	return h.repo.ListItemInstances(ctx, req)
 }
 
-// UpdateLoadout changes a slot of req.MemberId's loadout, and only for that
-// member. Under the caller's account lock (FS-VPD8Y R11), the slot's previous
-// instance goes to the bag in the same transaction, on an unequip (R17) and on
-// a swap (R16). Equipping an instance that is not AVAILABLE (in a run, listed
-// or pending settlement) is refused with ITEM_NOT_AVAILABLE, its row locked so
-// a concurrent checkout or listing serializes behind the write (FS-18Z5F R32);
-// clearing a slot is not checked. A write that would grow a bag already at or
-// over its cap is refused with BAG_FULL and writes nothing (R18): an unequip,
-// or a swap whose equipped item was not an unworn bag item. A bag-item swap is
-// net zero and an equip into an empty slot shrinks the bag, so both always
-// pass; equipping from the stash is not refused for that (R19).
+// ensureCharacterOwned refuses a write naming a character that is not one of
+// member's live ones, or when character-service cannot say (FS-50MTX R10, R11).
+// Callers run it before their transaction: a network call never holds the
+// account lock.
+func (s *service) ensureCharacterOwned(ctx context.Context, member, character uuid.UUID) error {
+	owned, err := s.characters.OwnsCharacter(ctx, member, character)
+	if err != nil {
+		return fmt.Errorf("check character %s of member %s: %w: %w", character, member, errCharacterCheckUnavailable, err)
+	}
+	if !owned {
+		return fmt.Errorf("character %s of member %s: %w", character, member, errCharacterNotFound)
+	}
+	return nil
+}
+
+// UpdateLoadout changes a slot of req.CharacterId's loadout, and only for its
+// member, once character-service has confirmed the character is the caller's.
+// Under the caller's account lock (FS-VPD8Y R11), the slot's previous
+// instance goes to the character's bag in the same transaction, on an unequip
+// (R17) and on a swap (R16), and the equipped instance is claimed for the
+// character, held in its bag (FS-50MTX R14). An instance absent, someone else's
+// or held by another character answers ErrNotFound, before its status is looked
+// at (R15). Equipping one that is not AVAILABLE (in a run, listed or pending
+// settlement) is refused with ITEM_NOT_AVAILABLE, its row locked so a concurrent
+// checkout or listing serializes behind the write (FS-18Z5F R32); clearing a
+// slot is not checked. A write that would grow a bag already at or over its cap
+// is refused with BAG_FULL and writes nothing (R18), measured against this
+// character: an unequip, or a swap whose equipped item was not an unworn bag
+// item. A bag-item swap is net zero and an equip into an empty slot shrinks the
+// bag, so both always pass; equipping from the stash is not refused for that
+// (R19).
 func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *UpdateLoadoutRequest) error {
 	if err := ensureOwner(caller, req.MemberId, "loadout update"); err != nil {
+		return err
+	}
+	if err := h.ensureCharacterOwned(ctx, caller, req.CharacterId); err != nil {
 		return err
 	}
 
@@ -1468,7 +1565,7 @@ func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *Upda
 			return err
 		}
 
-		displaced, err := h.repo.LoadoutSlotTx(ctx, tx, caller, req.Slot)
+		displaced, err := h.repo.LoadoutSlotTx(ctx, tx, caller, req.CharacterId, req.Slot)
 		if err != nil {
 			return err
 		}
@@ -1479,7 +1576,10 @@ func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *Upda
 			if err != nil {
 				return err
 			}
-			if placement != nil && placement.Status != itemStatusAvailable {
+			switch {
+			case placement == nil, placement.heldByAnother(req.CharacterId):
+				return fmt.Errorf("equip item %s on %s: %w", *req.ItemInstanceId, req.CharacterId, commonconstants.ErrNotFound)
+			case placement.Status != itemStatusAvailable:
 				return errcode.Refuse(errcode.ItemNotAvailable)
 			}
 		}
@@ -1489,7 +1589,7 @@ func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *Upda
 		}
 
 		if displaced != nil && equipGrowsBag(placement) {
-			count, err := h.repo.CountUnwornAtTx(ctx, tx, caller, LocationBag)
+			count, err := h.repo.CountUnwornInBagTx(ctx, tx, caller, req.CharacterId)
 			if err != nil {
 				return err
 			}
@@ -1501,10 +1601,15 @@ func (h *service) UpdateLoadout(ctx context.Context, caller uuid.UUID, req *Upda
 		if err := h.repo.UpsertLoadoutSlotTx(ctx, tx, req); err != nil {
 			return err
 		}
+		if req.ItemInstanceId != nil {
+			if err := h.repo.HoldInBagTx(ctx, tx, caller, req.CharacterId, *req.ItemInstanceId); err != nil {
+				return err
+			}
+		}
 		if displaced == nil {
 			return nil
 		}
-		return h.repo.SetLocationTx(ctx, tx, caller, *displaced, LocationBag)
+		return h.repo.HoldInBagTx(ctx, tx, caller, req.CharacterId, *displaced)
 	})
 }
 
@@ -1518,7 +1623,8 @@ func equipGrowsBag(placement *ItemPlacement) bool {
 }
 
 // locationCaps is each location's cap and the refusal that names it
-// (FS-VPD8Y R4, R10.5).
+// (FS-VPD8Y R4, R10.5). The bag's is per character, the stash's per account
+// (FS-50MTX R5).
 var locationCaps = map[string]struct {
 	capacity int
 	full     errcode.Code
@@ -1528,17 +1634,22 @@ var locationCaps = map[string]struct {
 }
 
 // MoveItemInstance moves one of the caller's instances between bag and stash
-// and returns where it is kept afterwards (FS-VPD8Y R10). Under the caller's
-// account lock (R11), the first failing check answers: not the caller's →
-// ErrNotFound; worn → ITEM_WORN; not AVAILABLE → ITEM_NOT_AVAILABLE; already
-// there → success with nothing written; destination at or over its cap →
-// BAG_FULL / STASH_FULL. The write is conditional on owner and status, so a
+// and returns where it is kept afterwards (FS-VPD8Y R10), once character-service
+// has confirmed the character is the caller's (FS-50MTX R10). Under the caller's
+// account lock (R11), the first failing check answers: not the caller's or held
+// by another character → ErrNotFound (FS-50MTX R20); worn → ITEM_WORN; not
+// AVAILABLE → ITEM_NOT_AVAILABLE; already there → success with nothing written;
+// destination at or over its cap → BAG_FULL / STASH_FULL. The write sets the
+// holder with the location (R19) and is conditional on owner and status, so a
 // listing that reserves the item first turns the move into ITEM_NOT_AVAILABLE,
 // never a moved listed item.
 func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *MoveItemInstanceRequest) (string, error) {
 	limit, ok := locationCaps[req.Location]
 	if !ok {
 		return "", fmt.Errorf("move item %s to %q: %w", req.ItemInstanceID, req.Location, commonconstants.ErrInvalidInput)
+	}
+	if err := s.ensureCharacterOwned(ctx, caller, req.CharacterID); err != nil {
+		return "", err
 	}
 
 	var location string
@@ -1552,7 +1663,7 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 			return err
 		}
 		switch {
-		case placement == nil:
+		case placement == nil, placement.heldByAnother(req.CharacterID):
 			return fmt.Errorf("move item %s for %s: %w", req.ItemInstanceID, caller, commonconstants.ErrNotFound)
 		case placement.Worn:
 			return errcode.Refuse(errcode.ItemWorn)
@@ -1563,7 +1674,7 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 			return nil
 		}
 
-		count, err := s.repo.CountUnwornAtTx(ctx, tx, caller, req.Location)
+		count, err := s.countAtDestination(ctx, tx, caller, req)
 		if err != nil {
 			return err
 		}
@@ -1571,7 +1682,7 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 			return errcode.Refuse(limit.full)
 		}
 
-		moved, err := s.repo.MoveItemInstanceTx(ctx, tx, caller, req.ItemInstanceID, req.Location)
+		moved, err := s.repo.MoveItemInstanceTx(ctx, tx, caller, req.CharacterID, req.ItemInstanceID, req.Location)
 		if err != nil {
 			return err
 		}
@@ -1585,6 +1696,15 @@ func (s *service) MoveItemInstance(ctx context.Context, caller uuid.UUID, req *M
 		return "", err
 	}
 	return location, nil
+}
+
+// countAtDestination counts what a move's destination cap measures: the
+// character's bag, or the account's stash (FS-50MTX R5).
+func (s *service) countAtDestination(ctx context.Context, tx *sqlx.Tx, caller uuid.UUID, req *MoveItemInstanceRequest) (int, error) {
+	if req.Location == LocationBag {
+		return s.repo.CountUnwornInBagTx(ctx, tx, caller, req.CharacterID)
+	}
+	return s.repo.CountUnwornAtTx(ctx, tx, caller, req.Location)
 }
 
 // ReserveItem moves one of the seller's instances AVAILABLE → LISTED for a new
