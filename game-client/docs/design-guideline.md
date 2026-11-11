@@ -639,8 +639,10 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 - **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
   **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
   drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole
-  px, each glyph's px drawn as the whole-px span it scales to (nearest neighbour, 14 × 14), the
-  walls' line and the dots scaled exactly; the lines under it move down with it. The overlay is the
+  px, the walls' line scaled exactly; its glyphs and dots at the normal minimap's size, drawn as it
+  draws them (9 × 9 glyphs on whole px; *amended 2026-11-12 by the owner's "smaller marks on the
+  1.5 map too, as big as on the big map": were 14 × 14, the dots 1.5 ×*); the lines under it move
+  down with it. The overlay is the
   floor's map over the whole view, as Path of Exile 2 draws it: the world's own iso projection at
   1/8, about the figure the camera follows and moving with it, with no backing, rim or vignette;
   the seen regions in the minimap's one stone and the walls' 2px line, both at 40% so the game

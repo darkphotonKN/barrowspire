@@ -28,7 +28,7 @@
  * looks the same under both renderers.
  *
  * **Modes** (FS-1SEF0): normal; enlarged, the same panel half as large again, drawn at its size so
- * nothing blurs; and the map overlay, the same layers moved into the world under the HUD, the floor
+ * nothing blurs, its glyphs and dots at the normal size; and the map overlay, the same layers moved into the world under the HUD, the floor
  * at 1/8 of the world's projection about the followed figure, see-through, with no panel, rim or
  * vignette. Following the figure moves the layers; it never redraws them.
  *
@@ -58,8 +58,12 @@ export const MINIMAP = {
 /** The panel's backing and rim: the target frame's (FS-48CTQ), the HUD's look; unchanged (FS-56CKV §A.1). */
 const PANEL = { alpha: 0.85, rim: 1, rimAlpha: 0.6 } as const;
 
-/** The enlarged minimap (FS-1SEF0 §B): everything in it half as large again. */
-export const MINIMAP_ENLARGED = { scale: 1.5 } as const;
+/**
+ * The enlarged minimap (FS-1SEF0 §B.9): its map, panel, rim and vignette half as large again
+ * (`scale`); its glyphs and dots at `marks`, a value of its own, the normal minimap's and the
+ * overlay's size (the owner's "1.5被地圖的標記也改小一點ep 2倍一樣大", 2026-11-12; was the map's 1.5).
+ */
+export const MINIMAP_ENLARGED = { scale: 1.5, marks: 1 } as const;
 
 /**
  * The map overlay (FS-1SEF0 §C), each a starting value to tune by eye: the world's own iso
@@ -107,8 +111,8 @@ export const MINIMAP_EDGE = { width: 1 } as const;
 export const MINIMAP_GLYPH = { ink: 7, ring: 1, box: 9 } as const;
 
 /**
- * The panel's look at one size, in logical px: its size, inset and rim; the walls' line; and the
- * scale its glyphs and dots are drawn at.
+ * The panel's look at one size, in logical px: its size, inset and rim; the walls' line; the scale
+ * its map is drawn at; and the scale its glyphs and dots are drawn at.
  */
 export interface MinimapPanel {
   width: number;
@@ -116,13 +120,15 @@ export interface MinimapPanel {
   inset: number;
   rim: number;
   edge: number;
+  scale: number;
   marks: number;
 }
 
 /**
  * The panel normal or enlarged (FS-1SEF0 §B.9): lengths on the pixel grid (the panel, its inset,
  * its rim) scaled and rounded to whole logical px, so the enlarged panel is drawn at its size and
- * never blurs; the walls' line and the marks scaled exactly, being anti-aliased at any size.
+ * never blurs; the walls' line scaled exactly, being anti-aliased at any size; the marks at the
+ * mode's own size, apart from the map's scale.
  */
 export function minimapPanel(mode: "normal" | "enlarged"): MinimapPanel {
   const k = mode === "enlarged" ? MINIMAP_ENLARGED.scale : 1;
@@ -133,7 +139,8 @@ export function minimapPanel(mode: "normal" | "enlarged"): MinimapPanel {
     inset: grid(MINIMAP.inset),
     rim: grid(PANEL.rim),
     edge: MINIMAP_EDGE.width * k,
-    marks: k,
+    scale: k,
+    marks: mode === "enlarged" ? MINIMAP_ENLARGED.marks : 1,
   };
 }
 
@@ -336,7 +343,7 @@ const rimInside = (panel: MinimapPanel) => Math.ceil(panel.rim / 2);
  */
 const vignettePainter = (panel: MinimapPanel): CanvasPaint => (ctx, w, h) => {
   const { edgeAlpha, ease } = MINIMAP_VIGNETTE;
-  const reach = MINIMAP_VIGNETTE.reach * panel.marks;
+  const reach = MINIMAP_VIGNETTE.reach * panel.scale;
   const r = rimInside(panel);
   const bands: [from: Point, to: Point, rect: [number, number, number, number]][] = [
     [{ x: r, y: r }, { x: r, y: r + reach }, [r, r, w - r * 2, reach]],
