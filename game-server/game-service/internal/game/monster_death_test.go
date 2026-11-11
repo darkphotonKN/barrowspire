@@ -176,6 +176,9 @@ func TestRun_CorpseDoesNotBlockMovement(t *testing.T) {
 	require.NoError(t, s.handleAttack(delver, g.ID))
 	tick(s)
 	require.Equal(t, 0, currentHealth(g))
+	tickFor(s, 1) // the swing's attack slow lapses (FS-JS7C8 §C)
+	_, lies := s.EntityManager.GetEntity(g.ID)
+	require.True(t, lies, "the corpse still lies")
 
 	require.NoError(t, s.handleMove(delver, 1, 0))
 	tickFor(s, 0.5)

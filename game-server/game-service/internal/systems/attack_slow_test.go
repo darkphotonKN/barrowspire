@@ -241,7 +241,7 @@ func TestAttackSlow_TheChargeKeepsItsSpeedAndTheWalkAfterItIsSlowed(t *testing.T
 	w := newDashWorld()
 	d := walking(delver(w.em, 300, 300), 1, 0)
 
-	dashToward(d, 300, 600)
+	dashToward(d, 300+fullStep, 600) // straight down from where the walk's tick leaves it
 	w.tick()
 	charge := w.positions(t, d, dashTicks)
 	for i, at := range charge {

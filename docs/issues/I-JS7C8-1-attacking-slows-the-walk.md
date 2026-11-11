@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-1
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: []
 labels: [ready-for-agent]
@@ -31,16 +31,18 @@ The window is ticked down with the other per-tick timers and gone on the first t
 
 ## Acceptance Criteria
 
-- [ ] A resolved cast of each slowing kind moves the player at 0.45 × their move speed for 0.6 s,
+- [x] A resolved cast of each slowing kind moves the player at 0.45 × their move speed for 0.6 s,
       and at full speed on the first tick after.
-- [ ] A cast refused for cooldown, cost or target leaves the speed alone.
-- [ ] `parry` never slows; a monster's strike or shot never slows anything.
-- [ ] A second resolved cast inside the window restarts it at 0.6 s; the speed never drops below 0.45 ×.
-- [ ] A dash's charge travels `dashDistance` at `dashSpeed` as before; walking after it inside the window is slowed.
-- [ ] With +20% worn move speed the slowed walk is 0.45 × 240 = 108 px/s.
-- [ ] `direction.speed` in the state is unchanged by the slow.
-- [ ] Works in a run and in a field world (the combat system resolves player casts in both).
-- [ ] `go test ./...` and `golangci-lint run` green in `game-server/game-service`.
+- [x] A cast refused for cooldown, cost or target leaves the speed alone.
+- [x] `parry` never slows; a monster's strike or shot never slows anything.
+- [x] A second resolved cast inside the window restarts it at 0.6 s; the speed never drops below 0.45 ×.
+- [x] A dash's charge travels `dashDistance` at `dashSpeed` as before; walking after it inside the window is slowed.
+- [x] With +20% worn move speed the slowed walk is 0.45 × 240 = 108 px/s.
+- [x] `direction.speed` in the state is unchanged by the slow.
+- [x] Works in a run and in a field world (the combat system resolves player casts in both).
+- [x] `go test ./...` and `golangci-lint run` green in `game-server/game-service`. (`golangci-lint`
+      clean on this diff, `--new-from-rev`; its older findings in `cmd/server/main.go` and
+      `hub_town_golden_test.go` are not this slice's.)
 
 ## Blocked By
 
@@ -65,3 +67,14 @@ FS-JS7C8 §C R14–R20; Facts 2–3; Edge States "Latency", "Gear changed mid-sl
 - RED: a warrior who slashes while holding a move covers 0.45 × 200 × 0.6 px over the next 0.6 s
   of ticks, then 200 px/s.
 - GREEN: the component, the start in `resolve`, the factor in `MovementSystem`.
+
+## Done
+
+`AttackSlowComponent` (`internal/components/attack_slow.go`), started by `CombatSystem.resolve` beside
+the cooldown for every row marked `slows` (the player rows, riposte included; never the monster rows;
+the parry has no row), run down beside the cooldowns, and read by `MovementSystem` as a walk factor
+(`walkFactor`), never written into `VelocityComponent.Speed`. `AttackSlowFactor` = 0.45 and
+`AttackSlowDuration` = 0.6 s sit beside the attack table. Tests: `internal/systems/attack_slow_test.go`,
+`internal/game/attack_slow_test.go`. Two older tests re-read for the rule: the walk after a dash
+resumes at the slowed pace (`TestDash_ReplacesTheWalkWhileItLasts`, R19) and the corpse walk-through
+waits out the swing's slow (`TestRun_CorpseDoesNotBlockMovement`).
