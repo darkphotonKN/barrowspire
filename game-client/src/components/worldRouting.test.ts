@@ -146,12 +146,15 @@ describe("every world scene hands its arrival to the shared card (FS-PQ2TW R39)"
     expect(worlds).toEqual(expect.arrayContaining(Object.values(WorldType).map(sceneFor)));
   });
 
-  it.each(worlds)("%s should play its arrival through the shared card, leaving as dust", (key) => {
+  it.each(worlds)("%s should play its arrival through the shared card, with both its leaves", (key) => {
     const scene = source(key);
     // the start's verdict, decided at the switch (R8)
     expect(scene).toMatch(/this\.arrival = data\?\.arrival \?\? false/);
-    // the shared piece, with its dust: one without CardDust never breaks to dust (R30, R37)
-    expect(scene).toMatch(/new ArrivalCard\(this, new CardDust\(this, \(\) => this\.art\)\)/);
+    // the shared piece, with both its leaves: one without them never breaks to dust or smoke
+    // (R30, R37, §Change: Smoke R41)
+    expect(scene).toMatch(/new ArrivalCard\(this, cardLeaves\(this, \(\) => this\.art\)\)/);
+    // the card's one switch picks the leave: no scene names one (R41)
+    expect(scene).not.toMatch(/arrivalCard\.play\([^;]*["'](dust|smoke)["']/);
     // dark from create on an arrival (R11), with the table's words (R23)
     expect(scene).toMatch(/if \(this\.arrival\) this\.arrivalCard\.(play|dark)\(/);
     expect(scene).toMatch(/\bplaceCard\(/);

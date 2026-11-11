@@ -13,7 +13,6 @@ import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { AimLine } from "@/render/effects/aimLine";
-import { CardDust } from "@/render/effects/cardDust";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
@@ -37,7 +36,7 @@ import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
 import type { ItemState } from "@/types/gameState";
-import { ArrivalCard } from "@/ui/arrivalCard";
+import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
 import { itemShine } from "@/ui/itemShine";
 import { placeCard } from "@/ui/placeCard";
@@ -92,7 +91,8 @@ const FABLED_ICON_OFFSET = { x: 90, y: -60 };
 
 /**
  * The gallery's one arrival card, so a replay replaces the card still up as the game's next
- * arrival would (FS-PQ2TW R9). Drawn over the gallery's own canvas, not the game's view.
+ * arrival would (FS-PQ2TW R9), whichever leave either plays (§Change: Smoke R52). Drawn over the
+ * gallery's own canvas, not the game's view.
  */
 const arrivalCards = new WeakMap<Phaser.Scene, ArrivalCard>();
 
@@ -101,10 +101,18 @@ function arrivalCardOn(s: Stage): ArrivalCard {
   if (!card) {
     const { width, height } = s.scene.scale;
     const view = { width, height, centerX: width / 2, centerY: height / 2 };
-    card = new ArrivalCard(s.scene, new CardDust(s.scene, () => s.art), view);
+    card = new ArrivalCard(s.scene, cardLeaves(s.scene, () => s.art), view);
     arrivalCards.set(s.scene, card);
   }
   return card;
+}
+
+/**
+ * The climb's whole card, as the game plays it: the dark, the card, its hold, then `leave` off its
+ * letters (FS-PQ2TW §D, R40; §Change: Smoke R52). Under reduced motion it fades, as in the game.
+ */
+function playArrivalCard(s: Stage, leave: CardLeave): void {
+  arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), { built: true }, leave);
 }
 
 export const EFFECT_CARDS: EffectCard[] = [
@@ -134,12 +142,13 @@ export const EFFECT_CARDS: EffectCard[] = [
   {
     module: "cardDust",
     name: "Arrival card dust",
-    // the climb's whole card, as the game plays it: the dark, the card, its hold, then the dust
-    // off its letters (FS-PQ2TW §D, R40). Under reduced motion it fades, as in the game.
-    demo: (s) =>
-      arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), {
-        built: true,
-      }),
+    demo: (s) => playArrivalCard(s, "dust"),
+  },
+  {
+    module: "cardSmoke",
+    name: "Arrival card smoke",
+    // a trial beside the dust, for the owner to compare (§Change: Smoke R52)
+    demo: (s) => playArrivalCard(s, "smoke"),
   },
   {
     module: "charge",

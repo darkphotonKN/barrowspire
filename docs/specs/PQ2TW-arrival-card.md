@@ -93,6 +93,12 @@
 > | particle cap | 3000 | 6000 (trial) |
 > | motes per view px² of ink | 2 | 4 (trial) |
 > | R33's particle cap | 3000 | 6000 (trial) |
+>
+> **The owner's change, 2026-11-12, a trial.** He asked whether the card could go like smoke
+> ("如果做成像煙一樣散掉有可能嗎", then "換成煙的效果試試"), and, before it was built: "並存 先保留粒子的
+> 模組 煙另外做". The smoke is built as a leave of its own beside the dust; the dust stays the
+> card's leave in the game, and he compares the two in the gallery. See *Change: Smoke, a trial
+> alternate leave* at the end.
 
 ## Summary
 
@@ -467,3 +473,98 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
   tune, a trial, at most 6000 particles.
 - **O4. The subtitle lines** for the town, the two fields and the dev test room are starting
   lines for the browser check.
+
+## Change: Smoke, a trial alternate leave
+Status: work-order
+Date: 2026-11-12
+
+The owner, on the 6000-mote trial (2026-11-12): "如果做成像煙一樣散掉有可能嗎" (could it go like
+smoke?), then "換成煙的效果試試" (try a smoke effect). Offered soft puffs rising off the strokes, a
+shader dissolve of the text, or both, the puffs were recommended and taken. Before it was built he
+added: "並存 先保留粒子的模組 煙另外做": both stand, the dust's module stays as it is, the smoke is
+built apart. **A trial:** the dust stays the card's leave in the game (§D unchanged, the fifth
+tune's 6000 motes included); the smoke is a second leave, its own module, beside it in the
+gallery; the owner says which the game plays. Every number below is a starting value.
+
+### Requirements
+
+41. **Two leaves, one switch.** The card can leave as dust (§D) or as smoke (below). One named
+    value in the shared card (`src/ui/arrivalCard.ts`) picks which one the game plays, and it
+    is **dust**. Each world scene hands the card both leaves; no scene picks. A play may name
+    the other leave for itself (the gallery does); a scene's play never does.
+    **(the owner's "並存 先保留粒子的模組 煙另外做".)**
+42. **The smoke is its own module** (`src/render/effects/cardSmoke.ts`, its own tests). The dust's
+    module, its numbers and its tests are unchanged. The smoke reads the strokes as the dust does
+    (R25: the two texts' canvases and the rule's line, never a box), through the dust's own
+    reading, not a copy of it. **(the owner, as R41.)**
+43. **The card leaves as smoke.** When the hold ends, the letters soften: the heading and the line
+    blur (a blur growing from none), the heading, the rule and the line drift up a little and fade,
+    while soft, round, semi-transparent puffs rise from the strokes. Each puff starts small on a
+    point of ink and swells as it rises; puffs overlap, so the smoke reads as one body and not as
+    dots, and it thins out as it goes. Without a blur (no WebGL), the letters still drift and fade.
+    **(the owner's "像煙一樣散掉"; option A.)**
+44. **Slow and soft, never a burst.** Each puff rises at 10–30 px/s on a heading within 35° of
+    straight up, at a steady speed, with no drag and no fast start. It curls and wobbles as it
+    goes: a sideways sway, 4–10 px to either side over a 1000–1600 ms period, its own amplitude,
+    period and phase, growing from none over its life; and a slow turn of the puff itself,
+    −30 to 30° a second. **(the owner's brief: "slow and soft, not a burst".)**
+45. **Swelling.** A puff's size grows over its life from 0.3 to 1.5 of `fx_smoke`'s frame (about
+    10 to 48 view px), easing out, and never shrinks; within FS-KYPQ9 §B.4's 1.6. Its alpha falls
+    from 0.35 to 0, easing in: it holds, then thins out.
+46. **Colour.** Every puff starts in the card text's colour (`vellum`, `hudText`) and goes to a
+    grey (`slateLight`) as it rises. Tokens only, two of them, no new colour (ADR-0013).
+47. **How many, and from what.** 0.2 puffs per view px² of ink, at most 400 for the whole card,
+    spread over the strokes in proportion to their ink, from one emitter, drawn from the existing
+    `fx_smoke` sheet (a baked soft puff, three variants; FS-KYPQ9 §B.10). No new art, no runtime
+    texture.
+48. **About 2 seconds.** 2000 ms, one fixed duration for every puff and for the smoke; the
+    letters are gone by 1200 ms of it.
+49. **An exception to FS-KYPQ9 §B.6 and §B.2's ceiling, for the smoke, and only these.** The
+    smoke is more than 12 particles (at most 400) and lasts 2000 ms, past §B.2's 1200 ms. It
+    never sprays: no puff starts faster than 30 px/s or more than 35° off straight up. It calls no
+    `explode`, and every other rule of §B holds for it: one fixed duration, the easing allowlist,
+    a scale that only grows and ends at ≤ 1.6, no shake, tokens only, at most 3 colours, teardown
+    on end and on scene shutdown. Named as R33's is, beside it; the tests that hold §B.2 and §B.6
+    keep holding them for every other effect.
+50. **As the dust, for everything else.** Over the veil and under the HUD (R29); reduced motion:
+    no smoke, the card fades over 600 ms (R31); a stroke read that fails or finds no ink, or no
+    `fx_smoke` sheet: no smoke, the card fades, logged once (R35, Edge States); gone at once on a
+    stop, a new card, a view change or a scene's end (R9, R36, the resize edge state).
+51. **Its numbers are data.** The smoke's duration, cap, density, speed, heading spread, sway,
+    turn, size, alpha, the two tokens, the easings and the letters' blur, rise and fade are one
+    typed record in `cardSmoke.ts`, asserted by a vitest; a retune is an edit there.
+52. **The gallery shows both.** Two replayable cards, "Arrival card dust" and "Arrival card
+    smoke", each playing the whole card (dark, card, hold, leave) with its own leave, on the one
+    gallery card, so a replay of either replaces the card still up (R9). Added in the same change
+    (`Content: FS-1819Q`).
+
+### Acceptance Criteria
+
+- [ ] The shared card names one switch, and it is dust; every world scene hands the card both leaves and none names one. (R41)
+- [ ] `cardDust.ts` and its tests are unchanged; the smoke is `cardSmoke.ts` with its own tests and reads the strokes through `strokeCells` / `ruleCells` / `seedPoints`. (R42)
+- [ ] Every puff starts on a pixel the text drew or on the rule; none in the gaps between letters. (R42)
+- [ ] Played as smoke, the card's letters are not hidden at once: they blur from none, drift up and fade by 1200 ms. (R43, R48)
+- [ ] Puffs rise on average, at 10–30 px/s within 35° of up, at a steady speed; each sways and turns; the sway grows from none. (R44)
+- [ ] A puff's size grows from 0.3 to 1.5 and never shrinks; its alpha goes 0.35 to 0. (R45)
+- [ ] Puffs start `vellum` and end `slateLight`, and no other colour appears. (R46)
+- [ ] The card makes 0.2 puffs per view px² of ink, at most 400, from one `fx_smoke` emitter, with no `explode` call. (R47, R49)
+- [ ] The smoke is gone at 2000 ms. (R48)
+- [ ] With reduced motion, no puff is made and the card fades over 600 ms. (R50)
+- [ ] A failed read, no ink or no sheet: no puff, a fade, logged once. (R50)
+- [ ] A stop or a new card takes the puffs and the letters' tweens away at once. (R50)
+- [ ] The smoke's numbers are one typed record with a vitest on it. (R51)
+- [ ] `/dev/gallery` has a dust card and a smoke card that replay the whole card; `effects.test.ts` passes. (R52)
+
+### Edge States
+
+- **No WebGL** (the canvas renderer): no blur filter; the letters drift and fade, the puffs rise.
+- **The switch set to smoke** (the owner's pick, later): every arrival and climb leaves as smoke;
+  nothing else changes.
+- **A replay of the other leave in the gallery while a card is up:** the card up is removed, with
+  its puffs or motes, and the new one plays (R9).
+
+### Out of Scope
+
+- Taking the dust out, or changing any of its values (the fifth tune's trial stands).
+- A shader dissolve of the text (option B), or both at once (option C).
+- A setting that lets a player choose; any new art, colour or texture.

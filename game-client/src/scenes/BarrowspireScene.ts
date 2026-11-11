@@ -26,7 +26,7 @@ import {
   ProjectileState,
 } from "@/types/gameState";
 import { ABILITY_COPY } from "@/ui/abilityCopy";
-import { ArrivalCard } from "@/ui/arrivalCard";
+import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
@@ -116,7 +116,6 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
-import { CardDust } from "@/render/effects/cardDust";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
@@ -942,7 +941,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * the new floor is built from its map (FS-KE075 §H.41), and leaves as dust (FS-PQ2TW §D). It lets
    * its own card go at a scene end.
    */
-  private readonly arrivalCard = new ArrivalCard(this, new CardDust(this, () => this.art));
+  private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
 
   constructor() {
     super({ key: "BarrowspireScene" });

@@ -4,14 +4,16 @@
  * for every scene and belongs to none: a scene hands it the card's words and tells it one thing,
  * that its place is built; a scene whose words come later (a run's floor) first puts up the dark
  * alone. The dark, the card, its timing, its leaving and its teardown are here.
- * It leaves as dust off its letters (§D), or, where the dust plays nothing, fades.
+ * It leaves as dust off its letters (§D), or, as a trial, as smoke (§Change: Smoke), one switch
+ * picking which; where the leave plays nothing, it fades.
  *
  * Presentation only (R14, Decision 6): state keeps applying under it, it sits below the HUD so
  * the HUD and notices stay readable through it, it takes no input, and nothing waits on it.
  */
 
 import type Phaser from "phaser";
-import type { CardInk } from "@/render/effects/cardDust";
+import { CardDust, type CardInk, type DustArt } from "@/render/effects/cardDust";
+import { CardSmoke, type CardSmokeScene } from "@/render/effects/cardSmoke";
 import { crispen, viewport } from "@/render/viewport";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
@@ -45,16 +47,44 @@ export interface ArrivalCardScene extends EndingScene {
   time: Pick<Phaser.Time.Clock, "now" | "delayedCall">;
 }
 
+/** The ways the card can leave: as dust (§D), or as smoke (§Change: Smoke, a trial). */
+export type CardLeave = "dust" | "smoke";
+
 /**
- * How the card breaks to dust (FS-PQ2TW §D). `CardDust` is one. `play` says false when it plays
- * nothing (reduced motion, no fx sheet, strokes that cannot be read), and the card fades instead.
+ * The card's one switch (§Change: Smoke R41): how it leaves in the game. Dust, until the owner
+ * has compared the two in the gallery and picked.
  */
-export interface CardDustPlayer {
-  play(ink: CardInk, depth: number, gone: () => void): boolean;
-  /** The dust goes at once. */
+export const CARD_LEAVE: CardLeave = "dust";
+
+/** What a leave is handed: the card's ink, and its three pieces, heading, rule and line. */
+export interface CardLeaveInk extends CardInk {
+  letters: readonly CardPart[];
+}
+
+/**
+ * How the card leaves (FS-PQ2TW §D; §Change: Smoke). `CardDust` and `CardSmoke` are two. `play`
+ * says false when it plays nothing (reduced motion, no fx sheet, strokes that cannot be read), and
+ * the card fades instead.
+ */
+export interface CardLeavePlayer {
+  play(ink: CardLeaveInk, depth: number, gone: () => void): boolean;
+  /** It goes at once. */
   stop(): void;
-  /** The scene ended and took the dust with it. */
+  /** The scene ended and took it with it. */
   forget(): void;
+  /**
+   * Whether it takes the card's letters away itself (the smoke blurs and drifts them off);
+   * otherwise the card hides them as it plays (the dust).
+   */
+  readonly takesLetters?: boolean;
+}
+
+/** Every leave the card can take, one player each. */
+export type CardLeaves = Record<CardLeave, CardLeavePlayer>;
+
+/** A world scene's leaves for its card: the dust and the smoke, on its art. */
+export function cardLeaves(scene: CardSmokeScene, art: () => DustArt | undefined): CardLeaves {
+  return { dust: new CardDust(scene, art), smoke: new CardSmoke(scene, art) };
 }
 
 /** What of the view the card covers and centres on. The logical view (`viewport`) is one. */
@@ -95,19 +125,19 @@ export class ArrivalCard {
   private cancelSceneEnd?: () => void;
   /** The card's leave, from the end of its hold; none before the lift or once it has started. */
   private leaving?: { remove(dispatchCallback?: boolean): void };
-  /** Whether the card is in the air as dust. */
-  private dusting = false;
+  /** The leave in the air, the card's letters gone to it; none before it or after. */
+  private inAir?: CardLeavePlayer;
   /** When the dark went up alone, waiting for its words (R13); none once a card is drawn on it. */
   private darkSince?: number;
 
   /**
-   * @param dust how the card breaks to dust as it leaves
+   * @param leaves every way the card can leave; `CARD_LEAVE` picks the one played
    * @param view what the card covers and centres on: the logical view, unless a host draws it
    *   on a canvas of its own (the dev gallery)
    */
   constructor(
     private readonly scene: ArrivalCardScene,
-    private readonly dust: CardDustPlayer,
+    private readonly leaves: CardLeaves,
     private readonly view: CardView = viewport,
   ) {}
 
@@ -132,9 +162,9 @@ export class ArrivalCard {
    * Plays the card with `words`, in place of any card still up (R9), or on the dark that waited
    * for it. The view comes back up only over a built place: with `built` false the dark holds
    * until `built()` is called, then lifts as it would have, less the time already waited (R12,
-   * FS-KE075 §H.41).
+   * FS-KE075 §H.41). It leaves by the card's switch; only the gallery names a `leave` of its own.
    */
-  play(words: CardWords, place: { built: boolean }): void {
+  play(words: CardWords, place: { built: boolean }, leave: CardLeave = CARD_LEAVE): void {
     const shownAt = this.scene.time.now;
     // a dark already up alone counts toward the dark hold (R13); over a card it replaces, the
     // dark starts now
@@ -188,7 +218,7 @@ export class ArrivalCard {
         delay: hold,
       });
       // a card replaced while it was leaving ends late: it is gone already, and the one up stays
-      this.leave([heading, rule, subtitle], hold + ARRIVAL_CARD.cardHoldMs, () => {
+      this.leave(this.leaves[leave], [heading, rule, subtitle], hold + ARRIVAL_CARD.cardHoldMs, () => {
         if (this.parts === parts) this.remove();
       });
     };
@@ -221,7 +251,7 @@ export class ArrivalCard {
    * (R10, R16). Dust in the air is taken away, and the card with it: its leaving is over.
    */
   relayout(): void {
-    if (this.dusting) return this.remove();
+    if (this.inAir) return this.remove();
     const [veil, ...card] = this.parts;
     if (!veil?.active) return;
     (veil as Phaser.GameObjects.Rectangle).setSize(this.view.width, this.view.height);
@@ -232,12 +262,14 @@ export class ArrivalCard {
   }
 
   /**
-   * How the card leaves, `delay` ms from now, calling `gone` once it has: its letters and its
-   * rule break to dust together, the text gone as the dust appears (R24); where the dust plays
-   * nothing, a fade as before (R31, R35). The one step of the card that is its leaving, and
-   * nothing else of the card knows how it is done.
+   * How the card leaves by `player`, `delay` ms from now, calling `gone` once it has: its letters
+   * and its rule go to dust together, the text gone as the dust appears (R24), or to smoke, which
+   * takes the letters itself (§Change: Smoke R43); where the leave plays nothing, a fade as before
+   * (R31, R35, R50). The one step of the card that is its leaving, and nothing else of the card
+   * knows how it is done.
    */
   private leave(
+    player: CardLeavePlayer,
     card: [heading: Phaser.GameObjects.Text, rule: Phaser.GameObjects.Graphics, subtitle: Phaser.GameObjects.Text],
     delay: number,
     gone: () => void,
@@ -247,20 +279,24 @@ export class ArrivalCard {
       this.leaving = undefined;
       // the rule as it is drawn: about the card's centre now, at its height
       const { x, y } = this.centre();
-      const ink = { texts: [heading, subtitle], rule: { x1: x - RULE_HALF, x2: x + RULE_HALF, y: y + RULE_DY } };
-      if (this.dust.play(ink, ARRIVAL_CARD.depth + 1, gone)) {
-        this.dusting = true;
-        card.forEach((part) => part.setVisible(false));
+      const ink = {
+        texts: [heading, subtitle],
+        rule: { x1: x - RULE_HALF, x2: x + RULE_HALF, y: y + RULE_DY },
+        letters: card,
+      };
+      if (player.play(ink, ARRIVAL_CARD.depth + 1, gone)) {
+        this.inAir = player;
+        if (!player.takesLetters) card.forEach((part) => part.setVisible(false));
         return;
       }
       this.scene.tweens.add({ targets: card, alpha: 0, duration: ARRIVAL_CARD.cardLeaveMs, onComplete: gone });
     });
   }
 
-  /** Takes the card down: its objects destroyed, its leave called off, its dust gone. */
+  /** Takes the card down: its objects destroyed, its leave called off, its dust or smoke gone. */
   private remove(): void {
     this.leaving?.remove(false);
-    if (this.dusting) this.dust.stop();
+    this.inAir?.stop();
     this.parts.forEach((part) => part.destroy());
     this.forget();
   }
@@ -272,11 +308,11 @@ export class ArrivalCard {
   private forget(): void {
     this.cancelSceneEnd?.();
     this.cancelSceneEnd = undefined;
-    if (this.dusting) this.dust.forget();
+    this.inAir?.forget();
     this.parts = [];
     this.lift = undefined;
     this.leaving = undefined;
-    this.dusting = false;
+    this.inAir = undefined;
     this.darkSince = undefined;
   }
 }

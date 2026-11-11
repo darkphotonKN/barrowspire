@@ -70,9 +70,8 @@ import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFall
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
 import { boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
-import { ArrivalCard } from "@/ui/arrivalCard";
+import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
-import { CardDust } from "@/render/effects/cardDust";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
@@ -215,7 +214,7 @@ export class FieldScene extends Phaser.Scene {
    * The field's arrival card (FS-PQ2TW R37): the shared piece's, told once the field's first state
    * is drawn, and leaves as dust (FS-PQ2TW §D). It lets its own card go at a scene end.
    */
-  private readonly arrivalCard = new ArrivalCard(this, new CardDust(this, () => this.art));
+  private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
 
   constructor() {
     super({ key: "FieldScene" });
