@@ -2493,7 +2493,8 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
         updateOtherPlayersSmooth: vi.fn(),
         checkBuildingStatus: vi.fn(),
         sendMovementIntent: vi.fn(),
-        player: {},
+        // drawn, so the frame runs on past its "escaped" early return
+        player: new Proxy({ visible: true }, { get: (drawn, key) => (key === "visible" ? drawn.visible : vi.fn()) }),
         playerPos: at(600, 600),
         targetPosition: undefined,
       });
