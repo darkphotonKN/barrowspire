@@ -1048,8 +1048,8 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     return on;
   };
 
-  it("should hold its look as named values: 1/8 of the world's projection, 40%, a 2 px line, depth 920 (§C.15–§C.17)", () => {
-    expect(MINIMAP_OVERLAY).toEqual({ scale: 0.125, alpha: 0.4, edge: 2, depth: 920 });
+  it("should hold its look as named values: 1/8 of the world's projection, 40%, a 2 px line, depth 920, a hold of 2 backing px (§C.15–§C.17, §C.19)", () => {
+    expect(MINIMAP_OVERLAY).toEqual({ scale: 0.125, alpha: 0.4, edge: 2, depth: 920, hold: 2 });
     // over the dust and vignette (905), under the aim line (940), the floor veil (950) and the HUD
     expect(MINIMAP_OVERLAY.depth).toBeGreaterThan(905);
     expect(MINIMAP_OVERLAY.depth).toBeLessThan(940);
@@ -1229,18 +1229,26 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
      * The game's walk, frame by frame: broadcasts at 30 Hz walking 200 world px a second along
      * `way` from 0.5 s, the drawn position eased 0.3 a frame toward the last, the camera following
      * the figure's point with lerp 0.1 (Phaser's follow, centred, ADR-0056) and its scroll floored
-     * onto whole backing px (keepOnPixelGrid). Each frame: the drawn position, then the scroll the
-     * frame is drawn at.
+     * onto whole backing px (keepOnPixelGrid), each broadcast arriving up to `jitter` ms off its
+     * beat. Each frame: the drawn position, then the scroll the frame is drawn at.
      */
-    function walk(rs: number, fps: number, way: { x: number; y: number }, seconds: number, stopAt = Infinity) {
+    function walk(rs: number, fps: number, way: { x: number; y: number }, seconds: number, stopAt = Infinity, jitter = 0) {
       const frames: { t: number; pos: { x: number; y: number }; scroll: { x: number; y: number } }[] = [];
+      // each broadcast n arrives ± `jitter` ms off its 30 Hz beat, the same pseudo-random spread
+      // as the headless-Chrome measurement; the client takes the latest arrived, never an older one
+      const rnd = (n: number) => {
+        const x = Math.sin(n * 12.9898) * 43758.5453;
+        return 2 * (x - Math.floor(x)) - 1;
+      };
+      let last = 0;
       const grid = (v: number) => Math.floor(v * rs + 1e-6) / rs;
       let pos = { ...IN_ROOM };
       const start = worldToScreen(pos.x, pos.y);
       let scroll = at(grid(start.x - LOGICAL.x / 2), grid(start.y - LOGICAL.y / 2));
       for (let i = 1; i <= seconds * fps; i++) {
         const t = i / fps;
-        const sent = Math.floor(t * 30) / 30;
+        for (let n = last + 1; n <= Math.floor(t * 30) + 1; n++) if (n / 30 + (jitter / 1000) * rnd(n) <= t) last = n;
+        const sent = last / 30;
         const d = 200 * Math.min(Math.max(sent - 0.5, 0), stopAt - 0.5);
         const server = at(IN_ROOM.x + way.x * d, IN_ROOM.y + way.y * d);
         pos = at(pos.x + (server.x - pos.x) * 0.3, pos.y + (server.y - pos.y) * 0.3);
@@ -1266,7 +1274,7 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     );
 
     it.each(cases)(
-      "at render scale %s and %s fps, walking %s, should slide the map and its marks one way on screen, never back, an axis the walk does not move held still, within a backing px of the figure's point, the dots on the figures",
+      "at render scale %s and %s fps, walking %s, should slide the map and its marks one way on screen, never back, an axis the walk does not move held still, within the hold of the figure's point, the dots on the figures",
       (rs, fps, _, way) => {
         const { map, made, dots, frame } = overlaid(rs);
         const [layer, marks] = made;
@@ -1291,14 +1299,40 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
             const step = shown[i][axis] - shown[i - 1][axis];
             if (way === 0) expect(Math.abs(step)).toBeLessThan(1e-6);
             else expect(step * way).toBeGreaterThan(-1e-6);
-            // the figure's own point on the overlay is the dots layer's: within a backing px of it
-            expect(Math.abs(shown[i][axis] - stood[i][axis])).toBeLessThanOrEqual(1 + 1e-6);
+            // the figure's own point on the overlay is the dots layer's: within the hold of it
+            expect(Math.abs(shown[i][axis] - stood[i][axis])).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold + 1e-6);
           }
         }
       },
     );
 
-    it("should come to rest within a backing px of the figure's point once the walk stops, and then not move", () => {
+    // the owner, 2026-11-12, "好" to a hold of two backing px: held within one, ±8 ms of broadcast
+    // jitter still left up to 1.7 back-steps a second of one backing px at render scale 2
+    it.each([60, 120].flatMap((fps) => Object.entries(WAYS).map(([name, way]) => [fps, name, way] as const)))(
+      "at render scale 2 and %s fps with ±8 ms of broadcast jitter, walking %s, should never step the map back on screen and keep it within the hold of the figure's point",
+      (fps, _, way) => {
+        const rs = 2;
+        const { map, made, dots, frame } = overlaid(rs);
+        const [layer] = made;
+        const shown: { x: number; y: number }[] = [];
+        const stood: { x: number; y: number }[] = [];
+        for (const { t, pos, scroll } of walk(rs, fps, way, 3.5, Infinity, 8)) {
+          map.follow(pos, { self: pos, allies: [] });
+          frame(scroll);
+          if (t < 1.5) continue;
+          shown.push(onScreen(layer, scroll, rs));
+          stood.push(onScreen(dots, scroll, rs));
+        }
+        for (const axis of ["x", "y"] as const) {
+          const way = Math.sign(Math.round(shown.at(-1)![axis] - shown[0][axis]));
+          const back = shown.slice(1).filter((s, i) => (way === 0 ? Math.abs(s[axis] - shown[i][axis]) > 1e-6 : (s[axis] - shown[i][axis]) * way < -1e-6));
+          expect(back).toEqual([]);
+          for (let i = 0; i < shown.length; i++) expect(Math.abs(shown[i][axis] - stood[i][axis])).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold + 1e-6);
+        }
+      },
+    );
+
+    it("should come to rest within the hold of the figure's point once the walk stops, and then not move", () => {
       const rs = 2;
       const { map, made, dots, frame } = overlaid(rs);
       const [layer] = made;
@@ -1310,8 +1344,8 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       const { scroll } = frames.at(-1)!;
       const rest = onScreen(layer, scroll, rs);
       const point = onScreen(dots, scroll, rs);
-      expect(Math.abs(rest.x - point.x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(rest.y - point.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rest.x - point.x)).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold);
+      expect(Math.abs(rest.y - point.y)).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold);
       for (let i = 0; i < 30; i++) {
         map.follow(frames.at(-1)!.pos, { self: frames.at(-1)!.pos, allies: [] });
         frame(scroll);
@@ -1319,7 +1353,7 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       }
     });
 
-    it("should go with the figure at once on a jump, within a backing px, and start afresh on entering the overlay", () => {
+    it("should go with the figure at once on a jump, within the hold, and start afresh on entering the overlay", () => {
       const rs = 1.5;
       const { map, made, frame } = overlaid(rs);
       const [layer] = made;
@@ -1335,8 +1369,8 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       const far = at(4000, 1200);
       map.follow(far);
       frame(scroll);
-      expect(Math.abs(layer.position.x - stand(far).x) * rs).toBeLessThanOrEqual(1);
-      expect(Math.abs(layer.position.y - stand(far).y) * rs).toBeLessThanOrEqual(1);
+      expect(Math.abs(layer.position.x - stand(far).x) * rs).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold + 1e-6);
+      expect(Math.abs(layer.position.y - stand(far).y) * rs).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold + 1e-6);
       // back to a panel and to the overlay again: on the stand itself, nothing held from before
       map.setMode("normal");
       map.place({ x: 746, y: 44 });
