@@ -43,7 +43,8 @@ const (
 
 // spireNonTrollMix is what a rolled Spire monster is when it is not a troll, as
 // shares of those rolls, the same on every floor. Hall packs are not rolled and
-// stay a troll and ghouls. FS-M8CSE §D R18.
+// stay a troll and ghouls, one of them a Bone Archer on floor 1. FS-M8CSE §D
+// R18; on floor 1 a ghoul roll can turn (BoneArcherRoomShare, FS-B4SG9 §B).
 var spireNonTrollMix = []struct {
 	Archetype components.MonsterArchetype
 	Share     float64
@@ -91,6 +92,14 @@ const (
 	TreasureGuardPackShare = 0.5
 	TreasureGuardPackMin   = 2
 	TreasureGuardPackMax   = 3
+
+	// on floor 1 only, Bone Archers take ghouls' places (FS-B4SG9 §B R14–R17):
+	// a monster rolled for an ordinary room, a top-up included, that comes up a
+	// ghoul is a Bone Archer instead at this share, and the first of a hall
+	// pack's ghouls are Bone Archers, this many. Never a corridor's monster or
+	// a treasure guard
+	BoneArcherRoomShare = 0.25
+	HallPackBoneArchers = 1
 )
 
 // Elites: promoted standard monsters, stats-only. FS-77AB6 §Requirements 23.
