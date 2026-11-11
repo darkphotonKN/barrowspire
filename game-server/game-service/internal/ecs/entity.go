@@ -69,6 +69,7 @@ const (
 	ComponentTypeDash         ComponentType = "Dash"
 	ComponentTypeParry        ComponentType = "Parry"
 	ComponentTypePotion       ComponentType = "Potion"
+	ComponentTypeTimedOpen    ComponentType = "TimedOpen"
 
 	ComponentTypeRespawn ComponentType = "Respawn"
 )

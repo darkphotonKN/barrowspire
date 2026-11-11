@@ -870,6 +870,12 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.tickDevTestRoom(deltaTime)
 	}
 
+	// timed opens count the tick, after its movement and combat; only a run
+	// has them (FS-MQYEX §Requirements 1, 4)
+	if s.worldType == types.WorldTypeRun {
+		s.advanceTimedOpens(deltaTime, entities)
+	}
+
 	// interaction
 	interactionSys := systems.InteractionSystem{}
 	interactionSys.Update(entities)
@@ -2048,43 +2054,25 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			return ErrContainerGuarded
 		}
 
-		// only open, never close (chest stays open once opened)
-		containerOpenable.IsOpen = true
-
-		// create items on first open by using seeded itemPool
-		if !containerOpenable.HasBeenOpened {
-			containerOpenable.HasBeenOpened = true
-
-			// creates RANDOM items on the spot: the Spire's roll for the
-			// container's kind, or a field's derived from it (FS-3QHQZ
-			// §Requirements 19, FS-1D6BX §Requirements 4); an empty roll
-			// still leaves it opened
-			itemIDs, err := s.rollChest(containerKindOf(targetEntity))
-
-			if err != nil {
-				fmt.Printf("Error generating container items: %v\n", err)
-				return fmt.Errorf("failed to generate container items: %w", err)
+		if s.worldType == types.WorldTypeRun && !containerOpenable.IsOpen {
+			// a run's shut chest or sack opens through the delver's timed open:
+			// it stays shut and unrolled, and the tick opens it when the time
+			// has passed. The container is not held (FS-MQYEX §Requirements 2)
+			systems.NewTimedOpenSystem().Start(playerEntity, targetEntityID, TimedOpenDuration)
+		} else {
+			if err := s.openContainer(targetEntity, containerOpenable); err != nil {
+				return err
 			}
 
-			itemIDsComponent, hasItemIDs := targetEntity.GetComponent(ecs.ComponentTypeItemIDList)
-			if !hasItemIDs {
-				slog.Error("Failed to retrieve container entity itemIDs component", "targetEntityID", targetEntityID)
-				return fmt.Errorf("Error when attempting to retrieve container entity itemIDs component with entityID %s", targetEntityID)
-			}
-
-			containerItemIDs := itemIDsComponent.(*components.ItemIDListComponent)
-			// relate the container with the newly generated items
-			containerItemIDs.ItemIDs = itemIDs
+			// release cache in 100 milliseconds
+			releaseHandedOff = true
+			go func() {
+				time.Sleep(time.Millisecond * 100)
+				s.mu.Lock()
+				delete(s.containerInteractedCache, targetEntityID)
+				s.mu.Unlock()
+			}()
 		}
-
-		// release cache in 100 milliseconds
-		releaseHandedOff = true
-		go func() {
-			time.Sleep(time.Millisecond * 100)
-			s.mu.Lock()
-			delete(s.containerInteractedCache, targetEntityID)
-			s.mu.Unlock()
-		}()
 
 		// add player to interacted cache
 		s.mu.Lock()
