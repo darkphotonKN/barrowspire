@@ -115,6 +115,7 @@ import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { followPointer } from "@/render/art/pointerFacing";
+import { FaceSender, wireFacing } from "./faceWire";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
@@ -520,8 +521,12 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private playerAnim?: CharacterAnimator;
   private otherPlayersAnim: Map<string, CharacterAnimator> = new Map();
+  /** The facing each other player last sent, as their entry carries it (FS-JS7C8 §E R34). */
+  private otherPlayersWireFacing: Map<string, Facing8> = new Map();
   /** The pointer facing the own character turns to (FS-JS7C8 §D); one per visit. */
   private pointerFacing?: (from: Point) => Facing8 | undefined;
+  /** The own facing, sent up for the others to see (FS-JS7C8 §E R28, R29). */
+  private readonly faceSender = new FaceSender((facing) => socketManager.sendMessage("face", { facing }));
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
@@ -1018,6 +1023,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.otherPlayersWalkPhase.clear();
     this.otherPlayersClass.clear();
     this.otherPlayersAnim.clear();
+    this.otherPlayersWireFacing.clear();
     this.otherPlayersNameTexts.clear();
     this.otherPlayersPrevHp.clear();
 
@@ -4302,6 +4308,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersFacing.delete(playerId);
         this.otherPlayersWalkPhase.delete(playerId);
         this.otherPlayersAnim.delete(playerId);
+        this.otherPlayersWireFacing.delete(playerId);
 
         // remove name text
         const nameText = this.otherPlayersNameTexts.get(playerId);
@@ -4381,6 +4388,11 @@ export class BarrowspireScene extends Phaser.Scene {
         nameText.setDepth(MARKER_DEPTH.name);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
       }
+
+      // where they face, by what they last sent; none until they send one here (FS-JS7C8 §E R34)
+      const facing = wireFacing(playerData);
+      if (facing) this.otherPlayersWireFacing.set(playerData.id, facing);
+      else this.otherPlayersWireFacing.delete(playerData.id);
 
       // 設定目標位置，在 update() 中平滑移動
       this.otherPlayersTargets.set(playerData.id, {
@@ -5700,8 +5712,13 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!dead) this.deathDust.alive(this.player);
       // the merc's guard clip holds while his stance does (FS-MAMHR §G.35)
       this.playerAnim.guard(this.kit.guarding, this.time.now);
-      this.playerAnim.face(this.pointerFacing?.(this.playerPos));
+      const look = this.pointerFacing?.(this.playerPos);
+      this.playerAnim.face(look);
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
+      // the facing goes up for the others to see; never the turn of a Shadow Shot hold (FS-JS7C8
+      // §E R28, R29, ADR-0030), and none from a corpse, which the server would ignore
+      const me = this.lastGameState?.current_player;
+      if (me) this.faceSender.update(me.entity_id, look ?? this.playerAnim.facing, this.combat.aiming || dead, time);
     }
 
     this.updateOtherPlayersSmooth(time, delta);
@@ -5734,11 +5751,15 @@ export class BarrowspireScene extends Phaser.Scene {
         standAt(sprite, pos, 1);
 
         // A rival on a baked sheet walks, idles and dies in it, off the position just
-        // drawn. Their attacks are not known to this client, so they never swing.
+        // drawn, turned to the facing they sent, or their movement until they send one (FS-JS7C8
+        // §E R34). Their attacks are not known to this client, so they never swing.
         const anim = this.otherPlayersAnim.get(playerId);
         const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
         if (!dead) this.deathDust.alive(sprite);
-        if (anim?.baked) anim.show(sprite, anim.step(pos, time, delta, dead));
+        if (anim?.baked) {
+          anim.face(this.otherPlayersWireFacing.get(playerId));
+          anim.show(sprite, anim.step(pos, time, delta, dead));
+        }
 
         // update facing and legs for other players: the placeholder rig
         const legs = this.otherPlayersLegs.get(playerId);
