@@ -838,6 +838,21 @@ the tokens.
 | fire's tokens | `ember` | `fireCore`, `fireHot`, `ember`, `fireDeep` (new: fire effects only) |
 | the ash's own colours | 3: `ember`, `slate`, `slateLight` | 7: `fireCore`, `fireHot`, `ember`, `fireDeep`, `slate`, `pitch`, `vellumFaint` |
 
+**The owner's sixth tune of the ash, 2026-11-12.** Watching the charred flakes, he said:
+"灰燼碎屑少一點": a few fewer ash flakes. Read as his fourth tune was, another fifth fewer: the
+flakes' density goes from 0.08 to 0.064 per view px² of ink, and their cap from 240 to 192, so a
+card makes 20% fewer flakes again whether or not it reaches the cap ("The Second Floor" with its
+line, about 2400 view px² of ink: about 193 flakes before, about 155 now). The sparks (their
+density, 0.012, and cap, 40), the flakes' look (char, ash rim, seam), the sizes, the afterglow,
+the heading, the speeds, the fire's ramp, the front and the timing are unchanged. His values
+replace the fourth tune's where R56 and R59 stated them, and their criteria follow. A tune
+(`Tunes FS-PQ2TW`): R61 already names the flakes' density and cap as the record's data.
+
+| Value | Was | Now |
+|---|---|---|
+| the flakes' density | 0.08 per view px² of ink | 0.064 per view px² of ink |
+| the flakes' cap, for the whole card | 240 | 192 |
+
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
@@ -864,8 +879,9 @@ the tokens.
 56. **The flakes: burnt paper.** *(Replaced at the owner's look of 2026-11-12, "灰燼像泡泡一樣怪怪的".)*
     Flakes start where stroke pixels have just burned out: their start points are drawn over the
     strokes and the rule as the dust's are (R25), and each is let go on the frame its pixel goes.
-    0.08 flakes per view px² of ink, at most 240 for the whole card, from one emitter (the
-    owner's fourth tune of 2026-11-12, "灰燼 碎屑少２０％"; was 0.1 and 300).
+    0.064 flakes per view px² of ink, at most 192 for the whole card, from one emitter (the
+    owner's sixth tune of 2026-11-12, "灰燼碎屑少一點"; was 0.08 and 240, and before his fourth,
+    "灰燼 碎屑少２０％", 0.1 and 300).
     - **Shape.** A flake is a jagged shard of burnt paper: an uneven many-cornered outline,
       torn at its edge (edge pixels missing or thinned at random), mostly longer than wide
       (1.1–2.8 : 1). Sizes spread wide: 3–14 view px along its length (the owner's second tune
@@ -909,8 +925,8 @@ the tokens.
     something to act on (guideline, "Gameplay accent"). Tokens only (ADR-0013): the three fire
     tokens were added for this tune, for fire effects only.
 59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling, §B.4 and §B.10, for the ash, and only
-    these.** The ash is more than 12 particles (at most 240 flakes, the owner's fourth tune of
-    2026-11-12, was 300; and 40 sparks); its debris
+    these.** The ash is more than 12 particles (at most 192 flakes, the owner's sixth tune of
+    2026-11-12, was 240, and 300 before his fourth; and 40 sparks); its debris
     rises instead of falling or settling, and never sprays: no flake starts faster than 45 px/s
     or more than 60° off straight up, and none heads right of it; no spark faster than 80 px/s or
     more than 40° off it (the owner's third tune of 2026-11-12; was 32 px/s and 30° for a flake,
@@ -969,7 +985,7 @@ the tokens.
 - [ ] The front advances from the left: the burned share of the ink only grows, and its burning band moves right on average; every stroke pixel is gone when the front has crossed. (R55)
 - [ ] The burning band runs fire's ramp, hottest at its leading edge: a thin `fireCore`, then `fireHot` and `ember`, then `fireDeep`, then `slate` char at its trailing edge; pixels ahead of the front are as the card drew them. (R55, R58; the owner's fifth tune of 2026-11-12, was `ember` to `slate`)
 - [ ] Every flake starts on a stroke pixel or the rule, never in a gap, and only once that pixel has burned out. (R56)
-- [ ] Flakes rise on average, starting at 18–45 px/s and slowing a little (a drag of 0.4), so they go about 1.5 times as far as at 12–32 px/s and 0.5; their mean heading leans about 30° left of up, none heads right of straight up or more than 60° left of it; each turns slowly, 20–70° a second; 0.08 per view px² of ink, at most 240, from one emitter, with no `explode` call. (R56, R59; the owner's third tune of 2026-11-12, was 12–32 px/s within 30° of up; his fourth, "灰燼 碎屑少２０％", was 0.1 and 300)
+- [ ] Flakes rise on average, starting at 18–45 px/s and slowing a little (a drag of 0.4), so they go about 1.5 times as far as at 12–32 px/s and 0.5; their mean heading leans about 30° left of up, none heads right of straight up or more than 60° left of it; each turns slowly, 20–70° a second; 0.064 per view px² of ink, at most 192, from one emitter, with no `explode` call. (R56, R59; the owner's third tune of 2026-11-12, was 12–32 px/s within 30° of up; his fourth, "灰燼 碎屑少２０％", was 0.1 and 300; his sixth, "灰燼碎屑少一點", was 0.08 and 240)
 - [ ] Each flake flips: its scale on one axis passes through edge-on (zero) and changes sign within its life, never growing past its size; the other axis keeps its size. (R56, R59)
 - [ ] No flake draws a closed outline ring: its pale ash rim is broken, the char reaching its edge in places, and a glowing flake's fire lies on one side, on less than half of its outline. (R56; the owner's fifth tune of 2026-11-12)
 - [ ] A flake is charred: its core darker than its body and its rim, its torn edge lighter than its body, its blotches darker spots; a glowing flake's fire lies on its edge band, within about a view px of its edge, mostly on the edge itself. (R56; the owner's fifth tune of 2026-11-12, "灰燼碎屑再多一點燒焦感")
