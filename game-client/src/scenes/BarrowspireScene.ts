@@ -61,6 +61,7 @@ import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 
 /**
  * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
@@ -791,6 +792,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
    */
   private reaching?: string;
+  /**
+   * What the states have shown of that reach: it is given up when the player's own position
+   * changes, and when their timed open on it is gone with it still shut (FS-MQYEX R26).
+   */
+  private reachSeen: ReachSeen = reachMade(undefined);
   /**
    * The player's own timed open as the last state carried it, when that state arrived, and the
    * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
@@ -2481,6 +2487,17 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * A reach still pending once the state's open containers are read is kept or given up by what
+   * the state shows of the player (FS-MQYEX R26): given up, no view opens for it later.
+   */
+  private settleReach(state: ClientGameState): void {
+    if (!this.reaching) return;
+    const seen = reachAfter(this.reaching, this.reachSeen, state);
+    if (seen) this.reachSeen = seen;
+    else this.reaching = undefined;
+  }
+
+  /**
    * The open bar follows the state (FS-MQYEX R22, R23, R25): up while the player's own
    * `timed_open` names a shut container drawn here, gone with no notice on a state that carries
    * none, whether the container opened or the timed open was cancelled. Only `current_player` is
@@ -2918,6 +2935,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // shows it open, so nothing opens only to close again (FS-KE075 §J R60)
     if (!container?.is_open) {
       this.reaching = entityId;
+      this.reachSeen = reachMade(this.lastGameState);
       return;
     }
     // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
@@ -2949,11 +2967,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private checkChestDistance(): void {
     const me = this.playerPos;
     if (!this.player || !me) return;
-    // walking off gives up a reach the server never answered (it drops an interact sent too soon
-    // after another without a reply), so the chest opening later shows no coffer (§J R60)
-    const reached = this.reaching ? this.chests.get(this.reaching) : undefined;
-    if (this.reaching && (!reached || Phaser.Math.Distance.Between(me.x, me.y, reached.pos.x, reached.pos.y) > 60))
-      this.reaching = undefined;
     const openFor = this.containerView.entityId;
     if (!openFor) return;
 
@@ -3671,6 +3684,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Update containers from server
     this.updateContainers(state.containers || []);
+    // an open container has opened its view: what is still reached for is kept or given up
+    // (FS-MQYEX R26). Walking off ends a reach the server never answered (FS-KE075 §J R60)
+    this.settleReach(state);
     // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
     this.showTimedOpen(state);
 
@@ -5740,8 +5756,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the open bar fills on between states (FS-MQYEX R22)
     this.drawTimedOpen();
 
-    // 檢查寶箱距離，太遠自動關閉: while a coffer is open, and while a reach waits on the server
-    if (this.containerView.isOpen || this.reaching) {
+    // 檢查寶箱距離，太遠自動關閉. A reach that waits on the server is judged by the states (FS-MQYEX R26)
+    if (this.containerView.isOpen) {
       this.checkChestDistance();
     }
   }
