@@ -148,6 +148,41 @@ func TestMonsterDrops_TowerMonstersDropOnTheGhoulRow(t *testing.T) {
 	}
 }
 
+// A Bone Archer drops on a row of its own, the ghoul's: its chance, its count,
+// its source and its type split; an elite one on the elite row. FS-B4SG9 §A R3.
+func TestMonsterDrops_BoneArcherDropsOnTheGhoulRow(t *testing.T) {
+	archer := components.MonsterArchetypeBoneArcher
+	row, ok := MonsterDrops[archer]
+	require.True(t, ok, "without a row it drops nothing")
+	assert.Equal(t, GhoulMonsterDrop, row)
+
+	tests := []struct {
+		name   string
+		record systems.KillRecord
+		roll   float64
+		drops  bool
+	}{
+		{"under 8%", systems.KillRecord{Archetype: archer}, 0.0799, true},
+		{"at 8%", systems.KillRecord{Archetype: archer}, 0.08, false},
+		{"elite under 50%", systems.KillRecord{Archetype: archer, Elite: true}, 0.4999, true},
+		{"elite at 50%", systems.KillRecord{Archetype: archer, Elite: true}, 0.50, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := dropSession()
+			tt.record.Level = 1
+
+			newMonsterDrops(s, fixedRand{tt.roll}).ConsumeKill(tt.record)
+
+			if tt.drops {
+				assert.Len(t, dropPiles(s), 1)
+			} else {
+				assert.Empty(t, dropPiles(s), "no drop, no pile")
+			}
+		})
+	}
+}
+
 // Over many seeded kills the drop rates land on the table, and only the
 // demon drops more than one item. FS-4R9M9 §Requirements 44.
 func TestMonsterDrops_SeededRates_MatchTheTable(t *testing.T) {
