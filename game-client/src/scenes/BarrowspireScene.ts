@@ -138,6 +138,7 @@ import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, minimapRect, type MinimapFixture } from "@/ui/minimap";
+import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import {
@@ -3787,7 +3788,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // every region unexplored until the party is placed in it, this same broadcast (§B.6)
     fog.show((id) => dungeon.seen.state(id));
     // the floor's minimap, drawn from the same exploration (§E.23)
-    dungeon.minimap = new Minimap({ graphics: () => this.add.graphics() }, dungeon.grid);
+    dungeon.minimap = new Minimap(
+      { graphics: () => this.add.graphics(), canvasImage: (...image) => canvasImage(this, ...image) },
+      dungeon.grid,
+    );
     dungeon.minimap.place(this.minimapPlace());
     dungeon.minimap.setShown(this.minimapOn);
   }
