@@ -62,6 +62,7 @@ import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
+import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 
 /**
  * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
@@ -539,7 +540,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // HP change tracking for damage flash
   private otherPlayersPrevHp: Map<string, number> = new Map();
-  private prevLocalPlayerHp?: number;
+  /**
+   * The local player's health in the last state that had it: the hurt flash and the container
+   * view's close on a hit both read it. Unset until a start's first state, so that one is no hit.
+   */
+  private ownHealth?: HealthSeen;
 
   // Controls
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -999,7 +1004,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerAnim = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
-    this.prevLocalPlayerHp = undefined;
+    this.ownHealth = undefined;
     this.targetPosition = null;
 
     this.otherPlayers.clear();
@@ -3648,12 +3653,15 @@ export class BarrowspireScene extends Phaser.Scene {
       this.equipment?.updateCharacter(state.current_player);
 
       // 本身受傷變紅閃爍提示
-      const curHp = state.current_player.current_health;
-      if (this.prevLocalPlayerHp !== undefined && curHp !== undefined && curHp < this.prevLocalPlayerHp) {
+      const health = healthIn(state.current_player);
+      if (health) {
         // part of the way toward oxblood and back (FS-KYPQ9 §G.1)
-        if (this.player) this.hits?.play(this.player);
+        if (this.ownHealth && health.current < this.ownHealth.current && this.player) this.hits?.play(this.player);
+        // a hit closes the container view, and only that: judged before this state's containers
+        // are read, so a view this state opens for a reach stays (FS-1D6BX R19, R24, E4)
+        if (costHealth(this.ownHealth, health) && this.containerView?.isOpen) this.containerView.close();
+        this.ownHealth = health;
       }
-      if (curHp !== undefined) this.prevLocalPlayerHp = curHp;
     } else {
       // current_player is null — player has escaped
       this.hideOwnBody(true);

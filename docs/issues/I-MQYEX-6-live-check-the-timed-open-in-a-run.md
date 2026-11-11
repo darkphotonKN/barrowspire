@@ -1,6 +1,6 @@
 ---
 id: I-MQYEX-6
-status: open
+status: done
 implements: FS-MQYEX
 blocked_by: [I-MQYEX-1, I-MQYEX-2, I-MQYEX-3, I-MQYEX-4, I-MQYEX-5]
 labels: [ready-for-agent]
@@ -44,3 +44,5 @@ I-MQYEX-1, I-MQYEX-2, I-MQYEX-3, I-MQYEX-4, I-MQYEX-5.
 ## Spec Reference
 
 FS-MQYEX §Acceptance Criteria (Live check), Decision D15 (the tunable).
+
+**Owner check, 2026-11-11.** Nick tested the timed open on the local branch `play/floor1-fixes` (this branch merged with the Bone Archer, the wider doors and the wall-corner fix), asked how two players reaching together behave, and reported "剛測試沒問題". He gave one verdict for the whole check, not one per line, so the boxes above are left as written; he did not ask for the 1.5 s to change.
