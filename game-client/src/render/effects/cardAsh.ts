@@ -55,8 +55,19 @@ export interface CardAshRecord {
     aspect: Range;
     /** How far toward `tint.mottle` the lightest mottling goes, 0..1 (R56). */
     mottle: number;
-    /** The share of shapes with a glowing patch on one edge, and how it dims to grey, in `steps` frames (R56). */
-    glow: { share: number; ms: number; steps: number };
+    /**
+     * The share of shapes with a glowing patch on one edge, and how it dies to grey over `ms` (R56):
+     * `steps` frames of its anim, drawn from `shades` of the patch, from its heat to none. It holds
+     * its heat, then goes (`ease.glow`), and flickers `flicker.count` times on the way: a dip of
+     * `depth` of its heat and back within `ms`, each centred somewhere in `within` of its dying.
+     */
+    glow: {
+      share: number;
+      ms: number;
+      steps: number;
+      shades: number;
+      flicker: { count: Range; depth: number; ms: number; within: Range };
+    };
     /** View px/s, picked per flake as it leaves (R56). */
     speed: Range;
     /** The share of its speed a flake loses each second: it slows a little (R56). */
@@ -94,8 +105,8 @@ export interface CardAshRecord {
   tint: { edge: Token; char: Token; flake: Token; mottle: Token; glow: Token; spark: Token };
   /** The card's rule as the card draws it (`palette.frame` at 0.6), burned with the letters. */
   rule: { tint: Token; alpha: number };
-  /** The front's sweep, a flake's fading and a spark's fall (§B.3 allowlist). */
-  ease: { front: Easing; flake: Easing; spark: Easing };
+  /** The front's sweep, a flake's fading, a spark's fall and a glow's dying (§B.3 allowlist). */
+  ease: { front: Easing; flake: Easing; spark: Easing; glow: Easing };
 }
 
 /** The ash (R53–R64). Like the dust, not an `EFFECTS` entry: a view-space HUD effect, R59's exception. */
@@ -110,11 +121,17 @@ export const CARD_ASH = {
     maxParticles: 300,
     density: 0.1,
     shapes: 24,
-    lengthPx: { from: 1.5, to: 8 },
-    smallBias: 1.6,
+    lengthPx: { from: 3, to: 14 },
+    smallBias: 1.2,
     aspect: { from: 1.1, to: 2.8 },
     mottle: 0.6,
-    glow: { share: 1 / 3, ms: 500, steps: 8 },
+    glow: {
+      share: 2 / 3,
+      ms: 700,
+      steps: 20,
+      shades: 12,
+      flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
+    },
     speed: { from: 12, to: 32 },
     drag: 0.5,
     spreadDeg: 30,
@@ -136,7 +153,7 @@ export const CARD_ASH = {
   },
   tint: { edge: "ember", char: "slate", flake: "slate", mottle: "slateLight", glow: "ember", spark: "ember" },
   rule: { tint: "brass", alpha: 0.6 },
-  ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn" },
+  ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn", glow: "Sine.easeIn" },
 } as const satisfies CardAshRecord;
 
 /** A piece of the card the ash takes away: the heading, the rule, the line. */
@@ -347,8 +364,8 @@ function inside(poly: readonly (readonly [number, number])[], x: number, y: numb
 
 /**
  * Flake shape `k` of `n`, in a `cell`-px square at `resolution` canvas px per view px (R56): a
- * shard of burnt paper. Its length runs over the shapes as u^bias (many tiny, a few larger), its
- * aspect is spread over them (a speck stays a speck: no side under 1.5 view px unless the whole
+ * shard of burnt paper. Its length runs over the shapes as u^bias (the smaller more), its aspect
+ * is spread over them (a shard, not a line: no side under the shortest length unless the whole
  * shard is), and its outline is an angular polygon, its two ends at full length; a larger shard
  * has a bite torn out of it, and its edge pixels are torn (some missing, the rest thinned at
  * random), the same paper as its body, so no ring is drawn round it. Its paper is mottled in
@@ -361,15 +378,21 @@ function paperShape(k: number, n: number, cell: number, resolution: number, rand
   // a low-discrepancy walk over the aspects, so every sheet holds squat and long shards alike
   const aspect = f.aspect.from + (f.aspect.to - f.aspect.from) * ((k * 0.618034 + 0.31) % 1);
   const a = (length * resolution) / 2;
-  const b = Math.max(a / aspect, Math.min(a, 0.75 * resolution));
+  const b = Math.max(a / aspect, Math.min(a, (f.lengthPx.from / 2) * resolution));
   const corners = 6 + Math.floor(random() * 4);
   const ends = [0, Math.round(corners / 2)];
-  const poly = Array.from({ length: corners }, (_, i) => {
+  const outline = Array.from({ length: corners }, (_, i) => {
     const end = ends.includes(i);
     const th = (2 * Math.PI * (i + (end ? 0 : (random() - 0.5) * 0.6))) / corners;
     const r = end ? 1 : 0.72 + 0.28 * random();
     return [Math.cos(th) * a * r, Math.sin(th) * b * r] as const;
   });
+  // a shard, not a line: its corners, drawn in from its sides, still span the least width across
+  const ys = outline.map(([, y]) => y);
+  const across = Math.max(...ys) - Math.min(...ys);
+  const least = Math.min(2 * a, f.lengthPx.from * resolution);
+  const widen = across > 0 && across < least ? least / across : 1;
+  const poly = outline.map(([x, y]) => [x, y * widen] as const);
   const c = cell / 2;
   const key = (x: number, y: number) => y * cell + x;
   const at = new Map<number, PaperPixel>();
@@ -412,13 +435,42 @@ function paperShape(k: number, n: number, cell: number, resolution: number, rand
   return [...at.values()];
 }
 
+/**
+ * A glow's heat, 1 to 0, over its anim's `steps` frames (R56): it dies like an ember, not a fade.
+ * It holds its heat, then goes (`Sine.easeIn`, the record's `ease.glow`), and flickers once or
+ * twice on the way (`flicker.count`): each a quick dip of `flicker.depth` of its heat and back
+ * within `flicker.ms`, centred on a frame in `flicker.within` of its dying, the dips kept apart.
+ */
+function dying(random: () => number): number[] {
+  const { steps, ms, flicker } = CARD_ASH.flake.glow;
+  const last = steps - 1;
+  const frameMs = ms / last;
+  const count = Math.min(flicker.count.to, Math.floor(flicker.count.from + random() * (flicker.count.to - flicker.count.from + 1)));
+  const from = flicker.within.from * last;
+  const span = (flicker.within.to - flicker.within.from) * last;
+  // two dips at least a dip's time and a frame apart, so each recovers before the next
+  const apart = Math.ceil(flicker.ms / frameMs) + 1;
+  const centres: number[] = [];
+  for (let n = 0; n < count; n++) {
+    const at = Math.round(from + ((n + 0.25 + 0.5 * random()) * span) / count);
+    const c = n > 0 ? Math.max(at, centres[n - 1] + apart) : at;
+    if (c <= Math.floor(from + span)) centres.push(c);
+  }
+  return Array.from({ length: steps }, (_, i) => {
+    // Sine.easeIn's fall: 1 - (1 - cos(t·π/2))
+    const held = Math.cos(((i / last) * Math.PI) / 2);
+    const dip = Math.min(1, ...centres.map((c) => 1 - flicker.depth * Math.max(0, 1 - (Math.abs(i - c) * frameMs) / (flicker.ms / 2))));
+    return i === last ? 0 : held * dip;
+  });
+}
+
 /** The sheet's two spark frames: a pixel and its tail, and a two-pixel ember. */
 const SPARK_FRAMES = ["s0", "s1"];
 
 /**
  * The flakes' and the sparks' one sheet (R56, R59, R64), drawn at `resolution` canvas px per view
- * px: a row of cells per flake shape, a glowing shape's row holding its `glow.steps` frames as its
- * burnt edge dims from `ember` to ash grey, then a row of sparks, solid `ember`, each a pixel or a
+ * px: a row of cells per flake shape, a glowing shape's row holding its `glow.shades` frames, its
+ * burnt edge from `ember` to ash grey, then a row of sparks, solid `ember`, each a pixel or a
  * pixel and its tail. Every flake pixel is a mix of `slate`, `slateLight` and `ember`; no blend
  * with anything else.
  */
@@ -430,14 +482,14 @@ function ashSheet(resolution: number, random: () => number) {
   const hot = rgb(CARD_ASH.tint.glow);
   const spark = rgb(CARD_ASH.tint.spark);
   const cell = Math.ceil(f.lengthPx.to * resolution) + 2;
-  const steps = f.glow.steps;
+  const { shades } = f.glow;
   // a spark: a pixel with a fainter tail under it, or a two-pixel ember, its corners dimmed
   const px = (v: number) => Math.max(1, Math.round(v * resolution));
   const sparkSizes = [
     { w: px(s.sizePx.from), h: px(s.sizePx.to), tail: px(s.sizePx.from) },
     { w: px(s.sizePx.to), h: px(s.sizePx.to), tail: Infinity },
   ];
-  const width = Math.max(steps * cell, sparkSizes.reduce((sum, z) => sum + z.w + 1, 0));
+  const width = Math.max(shades * cell, sparkSizes.reduce((sum, z) => sum + z.w + 1, 0));
   const height = f.shapes * cell + Math.max(...sparkSizes.map((z) => z.h));
   const data = new Uint8ClampedArray(width * height * 4);
   const frames: SheetFrame[] = [];
@@ -446,12 +498,12 @@ function ashSheet(resolution: number, random: () => number) {
   const shapes = Array.from({ length: f.shapes }, (_, k) => {
     const glowing = glows(k);
     const pixels = paperShape(k, f.shapes, cell, resolution, random);
-    const names = Array.from({ length: glowing ? steps : 1 }, (_, j) => {
+    const names = Array.from({ length: glowing ? shades : 1 }, (_, j) => {
       const name = `f${k}-${j}`;
       const left = j * cell;
       const top = k * cell;
-      // the burnt edge's heat at this step: from its own down to none, the ash grey it leaves
-      const heat = glowing ? 1 - j / (steps - 1) : 0;
+      // the burnt edge's heat at this shade: from its own down to none, the ash grey it leaves
+      const heat = glowing ? 1 - j / (shades - 1) : 0;
       for (const p of pixels) {
         const paper = mix(mix(body, light, p.mottle), light, p.burnt * 0.7);
         const colour = mix(paper, hot, p.burnt * heat);
@@ -460,7 +512,8 @@ function ashSheet(resolution: number, random: () => number) {
       frames.push({ name, x: left, y: top, w: cell, h: cell });
       return name;
     });
-    return names;
+    // a glowing shape's anim: its dying, each frame the shade nearest its heat
+    return glowing ? dying(random).map((heat) => names[Math.round((1 - heat) * (shades - 1))]) : names;
   });
   let left = 0;
   const sparks = sparkSizes.map(({ w, h, tail }, n) => {
@@ -707,7 +760,7 @@ export class CardAsh {
   /**
    * The flakes (R56): rising within the spread of straight up and slowing a little, turning slowly,
    * turning over in depth (the scale across them swinging through zero, edge-on, and back), swaying
-   * sideways, and fading. Each takes one shape's anim: still, or a glow dimming over 500 ms.
+   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 700 ms.
    */
   private flakeConfig(anims: string[], resolution: number): EmitterConfig {
     const f = CARD_ASH.flake;
@@ -813,7 +866,7 @@ export class CardAsh {
     canvas.context.putImageData(image, 0, 0);
     sheet.frames.forEach((fr) => canvas.add(fr.name, 0, fr.x, fr.y, fr.w, fr.h));
     canvas.refresh();
-    // a glowing shape's steps over `glow.ms`, then held on the last, grey
+    // a glowing shape's dying, its `glow.steps` frames over `glow.ms`, then held on the last, grey
     const frameRate = (f.glow.steps * 1000) / f.glow.ms;
     sheet.shapes.forEach((names, k) => {
       if (this.scene.anims.exists(anims[k])) return;
