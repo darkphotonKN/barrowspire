@@ -151,6 +151,12 @@ export class FieldScene extends Phaser.Scene {
   private lastSent = { vx: 0, vy: 0 };
 
   private field: FieldId = "gentle_meadows";
+  /**
+   * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
+   * handed over in the start data. A start with no verdict is no arrival. Read only by the card's
+   * slice to come (I-PQ2TW-4), hence not private yet.
+   */
+  arrival = false;
   /** How this field is drawn, by its id (FS-X2F2H §Requirements 54). */
   private look: FieldLook = MEADOWS_LOOK;
   private size = FIELD_SIZE.gentle_meadows;
@@ -209,10 +215,12 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The field this start is for, from the start data: Phaser hands it to `init` and `create`,
-   * never to `preload`, which loads this field's own creatures (FS-C4JWH §B R8).
+   * never to `preload`, which loads this field's own creatures (FS-C4JWH §B R8). And whether it
+   * is an arrival (FS-PQ2TW R8).
    */
-  init(data?: { field?: FieldId }): void {
+  init(data?: { field?: FieldId; arrival?: boolean }): void {
     this.field = data?.field ?? "gentle_meadows";
+    this.arrival = data?.arrival ?? false;
   }
 
   preload(): void {

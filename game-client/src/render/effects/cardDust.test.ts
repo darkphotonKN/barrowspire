@@ -133,25 +133,25 @@ describe("the dust's start points (FS-PQ2TW R25)", () => {
 });
 
 describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
-  it("should be one typed record of starting values", () => {
+  it("should be one typed record, as the owner tuned it on 2026-11-12", () => {
     expect(CARD_DUST).toEqual({
-      durationMs: 1000,
-      maxParticles: 600,
+      durationMs: 1300,
+      maxParticles: 1500,
       texture: "fx_dust",
-      scale: { from: 0.25, to: 0.25 },
-      speed: { from: 15, to: 60 },
+      scale: { from: 0.15, to: 0.15 },
+      speed: { from: 25, to: 110 },
       lean: 0.5,
-      drag: 1.6,
+      drag: 1,
       tint: { from: "vellum", to: "vellumDark" },
       alpha: { from: 1, to: 0 },
       ease: "Sine.easeIn",
     });
   });
 
-  it("should keep every FS-KYPQ9 §B rule but §B.6's count and spread (R33)", () => {
-    // §B.2: one fixed duration, never over 1200 ms
+  it("should keep every FS-KYPQ9 §B rule but §B.6's count and spread and §B.2's ceiling (R33)", () => {
+    // §B.2: one fixed duration; the exception's ceiling is 1300 ms, not 1200
     expect(Number.isInteger(CARD_DUST.durationMs)).toBe(true);
-    expect(CARD_DUST.durationMs).toBeLessThanOrEqual(1200);
+    expect(CARD_DUST.durationMs).toBeLessThanOrEqual(1300);
     // §B.3: the easing allowlist
     expect(CARD_DUST.ease).toMatch(/^(Linear|(Sine|Quad|Cubic)\.ease(In|Out|InOut))$/);
     // §B.4: dust may grow, never shrinks, ends at ≤ 1.6
@@ -164,8 +164,10 @@ describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
     expect(colours).not.toContain("amber");
     expect(colours).not.toContain("oxblood");
     // the exception, bounded: a drift, not a burst
-    expect(CARD_DUST.maxParticles).toBeLessThanOrEqual(600);
-    expect(CARD_DUST.speed.to).toBeLessThanOrEqual(60);
+    expect(CARD_DUST.maxParticles).toBeLessThanOrEqual(1500);
+    expect(CARD_DUST.speed.from).toBeLessThanOrEqual(CARD_DUST.speed.to);
+    expect(CARD_DUST.speed.to).toBeLessThanOrEqual(110);
+    expect(CARD_DUST.drag).toBeGreaterThan(0);
   });
 
   it("should start in the heading's colour and darken to the subtitle's (R28)", () => {
@@ -232,11 +234,11 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     expect(emitter.calls.setScrollFactor).toEqual([0]);
     expect(config()).toMatchObject({
       frame: ["fx_dust/idle/0/0"],
-      lifespan: 1000,
-      speed: { min: 15, max: 60 },
-      maxParticles: 600,
+      lifespan: 1300,
+      speed: { min: 25, max: 110 },
+      maxParticles: 1500,
       emitting: false,
-      scale: { start: 0.25, end: 0.25, ease: "Sine.easeIn" },
+      scale: { start: 0.15, end: 0.15, ease: "Sine.easeIn" },
       alpha: { start: 1, end: 0, ease: "Sine.easeIn" },
       color: [palette.hudText, palette.hudLabel],
       colorEase: "Sine.easeIn",
@@ -261,23 +263,43 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     }
   });
 
-  it("should make at most 600 motes, however much ink there is (R32)", () => {
+  it("should make at most 1500 motes, however much ink there is (R32)", () => {
     const { dust, gone, emitters } = dustStage();
     const big = stubText(Array(40).fill("#".repeat(300)), { x: 250, y: 260 });
 
     dust.play(cardInk(big), 951, gone);
 
-    expect(emitters()[0].calls.emitParticle).toEqual([600]);
+    expect(emitters()[0].calls.emitParticle).toEqual([1500]);
   });
 
-  it("should send each mote out from the card's centre, never faster than 60 px/s at the start (R26)", () => {
+  it.each([
+    ["a little ink", ["####", "####"]],
+    ["a heading's worth", Array(24).fill("#".repeat(60))],
+    ["far more than the cap", Array(60).fill("#".repeat(400))],
+  ])("should stay within its caps from %s: count, start speed, life, size (R26, R27, R32, R33)", (_, rows) => {
+    const { dust, gone, emitters, config } = dustStage();
+
+    dust.play(cardInk(stubText(rows, { x: 200, y: 100 })), 951, gone);
+
+    const [emitted] = emitters()[0].calls.emitParticle as [number];
+    const ink = rows.length * rows[0].length + 20;
+    // one mote per view px² of ink (glyph and the 20 px rule), capped
+    expect(emitted).toBe(Math.min(ink, 1500));
+    expect(config().maxParticles).toBeLessThanOrEqual(1500);
+    expect((config().speed as { min: number; max: number }).min).toBeGreaterThanOrEqual(25);
+    expect((config().speed as { min: number; max: number }).max).toBeLessThanOrEqual(110);
+    expect(config().lifespan).toBeLessThanOrEqual(1300);
+    expect((config().scale as { start: number; end: number }).end).toBeLessThanOrEqual(0.15);
+  });
+
+  it("should send each mote out from the card's centre, never faster than 110 px/s at the start (R26)", () => {
     const { dust, gone, config } = dustStage();
     dust.play(cardInk(), 951, gone);
     const angle = config().angle as { onEmit: (p: { x: number; y: number }) => number };
 
     // the ink spans x 390..410 and y 280..300.5: its centre is (400, 290.25)
     expect(angle.onEmit({ x: 409, y: 300 })).toBeCloseTo(driftAngle({ x: 409, y: 300 }, { x: 400, y: 290.25 }, CARD_DUST.lean));
-    expect((config().speed as { max: number }).max).toBeLessThanOrEqual(60);
+    expect((config().speed as { max: number }).max).toBeLessThanOrEqual(110);
   });
 
   it("should slow every mote as it drifts (R26)", () => {
@@ -299,12 +321,12 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     expect(speeds.at(-1)!).toBeLessThan(50 / 2);
   });
 
-  it("should be gone at 1000 ms, its emitter destroyed, and say so (R27, R36)", () => {
+  it("should be gone at 1300 ms, its emitter destroyed, and say so (R27, R36)", () => {
     const { dust, gone, timers, live } = dustStage();
     dust.play(cardInk(), 951, gone);
 
     const [end] = timers;
-    expect(end.delay).toBe(1000);
+    expect(end.delay).toBe(1300);
     end.fire();
 
     expect(live()).toEqual([]);

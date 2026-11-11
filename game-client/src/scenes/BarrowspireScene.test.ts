@@ -7472,3 +7472,176 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     });
   });
 });
+
+// FS-PQ2TW R5, R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the run with its
+// start. A climb is not a world switch (ADR-0015) and keeps its own trigger.
+describe("BarrowspireScene arrival from its start (FS-PQ2TW R5–R8)", () => {
+  it.each([true, false])("should keep the arrival %s its start was handed, beside its session", (arrival) => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { arrival: boolean; sessionID?: string };
+
+    (scene.init as (data?: { sessionID?: string; arrival?: boolean }) => void)({ sessionID: "run-a", arrival });
+
+    expect(run.arrival).toBe(arrival);
+    expect(run.sessionID).toBe("run-a");
+  });
+
+  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { arrival: boolean };
+
+    (scene.init as (data?: { arrival?: boolean }) => void)({ arrival: true });
+    scene.init();
+
+    expect(run.arrival).toBe(false);
+  });
+});
+
+// FS-PQ2TW §A R2, R5, R9; §B R11–R14; §C R19, R21, R22; FS-KE075 §H.41. I-PQ2TW-3: entering a run
+// plays the first floor's card; a return plays nothing.
+describe("BarrowspireScene arrival card (FS-PQ2TW §A–§C; I-PQ2TW-3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGameStore.setState({ floorMap: null });
+  });
+
+  type ArrivingRun = MapRun & { init(data?: object): void; create(): void; connectToServer(): void };
+
+  /** A run scene started by a world switch that told it an arrival, or a return. */
+  function startedAs(arrival: boolean) {
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as ArrivingRun;
+    const clock = { now: 0 };
+    run.time = { delayedCall: vi.fn(), get now() { return clock.now; } };
+    run.init({ sessionID: "run", arrival });
+    // the real state path, without the harness' map-first shim (FS-KE075 §H.41)
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    /** The words on screen now. */
+    const words = () =>
+      scene.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    /** Every card title ever drawn, gone or not. */
+    const titles = () => scene.texts().map((t) => String(t.content)).filter((t) => /Floor$/.test(t));
+    const veilFades = () =>
+      (run.tweens as { add: ReturnType<typeof vi.fn> }).add.mock.calls.filter(
+        ([t]) => t.targets === run.arrivalCard.parts[0] && t.alpha === 0,
+      ).length;
+    return { ...scene, run, clock, handle, words, titles, veilFades };
+  }
+
+  /** Runs `create` up to the run's connect, which stands in for everything create builds after. */
+  function createUpToConnect(run: ArrivingRun): void {
+    run.connectToServer = () => {
+      throw new Error("the rest of create");
+    };
+    expect(() => run.create()).toThrow("the rest of create");
+  }
+
+  it("should put the dark up first thing at create on an arrival, before anything of the floor (R11)", () => {
+    const { run, stage } = startedAs(true);
+
+    createUpToConnect(run);
+
+    expect(stage.made.map((m) => [m.kind, m.args])).toEqual([["rectangle", [0, 0, 800, 600, palette.inkDeep, 1]]]);
+    expect(stage.made[0].last.setDepth).toEqual([950]);
+  });
+
+  it("should put no dark up at create on a return (R5)", () => {
+    const { run, stage } = startedAs(false);
+
+    createUpToConnect(run);
+
+    expect(stage.made).toEqual([]);
+  });
+
+  it("should play The First Floor at an arrival's first broadcast, over the dark from create (R2, R13, R19)", () => {
+    const { run, stage, words } = startedAs(true);
+    createUpToConnect(run);
+    expect(words()).toEqual([]);
+
+    run.handleGameStateUpdate(floorState(1));
+
+    expect(words()).toEqual(expect.arrayContaining(["The First Floor", "The barrow takes you in."]));
+    // one dark, whole: the card's own, standing where the dark from create stood
+    expect(stage.made.filter((m) => m.kind === "rectangle" && m.args[4] === palette.inkDeep && !m.destroyed)).toHaveLength(1);
+  });
+
+  it("should lift the dark on today's schedule when floor 1's map came first (R12)", () => {
+    const { run, veilFades } = startedAs(true);
+
+    run.handleGameStateUpdate(floorState(1));
+
+    expect(veilFades()).toBe(1);
+  });
+
+  it("should hold the dark until floor 1 is built from its map, when the map comes late (R12; FS-KE075 §H.41)", () => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run, handle, words, veilFades } = startedAs(true);
+    run.subscribeFloorMap();
+
+    handle(bare(floorState(1)));
+    expect(words()).toContain("The First Floor");
+    expect(run.walls.size).toBe(0);
+    expect(veilFades()).toBe(0);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    expect(run.walls.size).toBe(4);
+    expect(veilFades()).toBe(1);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("should play the arrival once, never again on its floor's next broadcasts", () => {
+    const { run, titles } = startedAs(true);
+
+    for (let i = 0; i < 3; i++) run.handleGameStateUpdate(floorState(1));
+
+    expect(titles()).toEqual(["The First Floor"]);
+  });
+
+  it("should give an arrival that lands above floor 1 that floor's climb card (R22)", () => {
+    const { run, words } = startedAs(true);
+
+    run.handleGameStateUpdate(floorState(2));
+
+    expect(words()).toEqual(expect.arrayContaining(["The Second Floor", "The dead walk heavier here."]));
+  });
+
+  it.each([
+    [1, "The Second Floor"],
+    [2, "The Third Floor"],
+    [3, undefined],
+  ])("should play nothing on a return to floor %i, and the next climb's card after it (R5)", (floor, next) => {
+    const { run, titles, words } = startedAs(false);
+
+    run.handleGameStateUpdate(floorState(floor));
+    run.handleGameStateUpdate(floorState(floor));
+
+    expect(titles()).toEqual([]);
+    expect(words()).not.toContain("The barrow takes you in.");
+    expect(run.arrivalCard.parts).toHaveLength(0);
+    if (!next) return;
+    run.handleGameStateUpdate(floorState(floor + 1));
+    expect(titles()).toEqual([next]);
+  });
+
+  it("should replace the arrival's card with the climb's when the party climbs under it (R9)", () => {
+    const { run, words } = startedAs(true);
+    run.handleGameStateUpdate(floorState(1));
+    expect(words()).toContain("The First Floor");
+
+    run.handleGameStateUpdate(floorState(2));
+
+    expect(words()).toContain("The Second Floor");
+    expect(words()).not.toContain("The First Floor");
+    expect(words()).not.toContain("The barrow takes you in.");
+  });
+
+  it("should apply the state under the card: the floor built, the player made (R14)", () => {
+    const { run } = startedAs(true);
+
+    run.handleGameStateUpdate(partyState());
+
+    expect(run.arrivalCard.parts.length).toBeGreaterThan(0);
+    expect(run.walls.size).toBe(4);
+    expect((run as unknown as { player?: unknown }).player).toBeDefined();
+  });
+});

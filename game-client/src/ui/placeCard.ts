@@ -3,7 +3,8 @@
  * places a player can arrive in. A place gets no card code of its own, only its entry here, and a
  * field id with no entry does not compile. Pure, so the copy is tested without a canvas.
  *
- * A run's floors are not rows: their words are worked out from the floor by `floorCard`.
+ * A run's floor 1 has its own row (R21); every floor above it is worked out from the floor by
+ * `floorCard`, the climb's words (R22).
  */
 
 import type { FieldId } from "@/assets/types/client";
@@ -21,14 +22,18 @@ export type Place =
   | { world: "field"; field: FieldId }
   | { world: "run"; floor: number; top: boolean };
 
-/** The town's and each field's words. The titles are the names the screen already uses. */
-export const PLACE_CARDS: { hub: CardWords; field: Record<FieldId, CardWords> } = {
+/**
+ * The town's, each field's and a run's first floor's words. The titles are the names the screen
+ * already uses; floor 1's line is the owner's.
+ */
+export const PLACE_CARDS: { hub: CardWords; field: Record<FieldId, CardWords>; firstFloor: CardWords } = {
   hub: { title: "The Town", line: "The Spire's shadow lies on every roof." },
   field: {
     gentle_meadows: { title: "Gentle Meadows", line: "The grass is soft, and the Spire is far." },
     forlorn_forest: { title: "The Forlorn Forest", line: "The dead have not left these trees." },
     dev_test_room: { title: "Dev Test Room", line: "Nothing here is kept." },
   },
+  firstFloor: { title: "The First Floor", line: "The barrow takes you in." },
 };
 
 /** The words of the card an arrival in `place` plays. */
@@ -39,6 +44,7 @@ export function placeCard(place: Place): CardWords {
     case "field":
       return PLACE_CARDS.field[place.field];
     case "run":
-      return floorCard(place);
+      // floor 1 is only ever arrived on, never climbed to, whatever the run's height (R21)
+      return place.floor === 1 ? PLACE_CARDS.firstFloor : floorCard(place);
   }
 }

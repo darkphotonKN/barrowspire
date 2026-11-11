@@ -2,7 +2,8 @@
  * The arrival card (FS-PQ2TW §B, §E; ADR-0073 Decision 3): the view goes dark, the place's name
  * rises over a rule and one line, the view comes back up, and the card leaves. One piece plays it
  * for every scene and belongs to none: a scene hands it the card's words and tells it one thing,
- * that its place is built. The dark, the card, its timing, its leaving and its teardown are here.
+ * that its place is built; a scene whose words come later (a run's floor) first puts up the dark
+ * alone. The dark, the card, its timing, its leaving and its teardown are here.
  * It leaves as dust off its letters (§D), or, where the dust plays nothing, fades.
  *
  * Presentation only (R14, Decision 6): state keeps applying under it, it sits below the HUD so
@@ -62,13 +63,27 @@ export interface CardView {
   readonly centerY: number;
 }
 
+/**
+ * The card's place and type (R10; the owner's tune of 2026-11-12). The card's centre stands
+ * `rise` of the view's height above the view's middle: at 0.3, 20% of the height from the top.
+ * The heading and the line are body serif at these px.
+ */
+export const CARD_LAYOUT = {
+  rise: 0.3,
+  headingPx: 34,
+  linePx: 19,
+} as const;
+
 type CardPart = Phaser.GameObjects.Text | Phaser.GameObjects.Graphics;
 
-/** The rule's half length and the heading's, rule's and line's offsets from the view's middle. */
+/**
+ * The rule's half length and the heading's, rule's and line's offsets from the card's centre,
+ * their spacing scaled with the type.
+ */
 const RULE_HALF = 90;
-const HEADING_DY = -14;
-const RULE_DY = 8;
-const LINE_DY = 26;
+const HEADING_DY = -18;
+const RULE_DY = 10;
+const LINE_DY = 33;
 
 export class ArrivalCard {
   /** The dark first, then the heading, the rule and the line; empty when no card is up. */
@@ -80,6 +95,8 @@ export class ArrivalCard {
   private leaving?: { remove(dispatchCallback?: boolean): void };
   /** Whether the card is in the air as dust. */
   private dusting = false;
+  /** When the dark went up alone, waiting for its words (R13); none once a card is drawn on it. */
+  private darkSince?: number;
 
   /**
    * @param dust how the card breaks to dust as it leaves
@@ -98,31 +115,48 @@ export class ArrivalCard {
   }
 
   /**
-   * Plays the card with `words`, in place of any card still up (R9). The view comes back up only
-   * over a built place: with `built` false the dark holds until `built()` is called, then lifts
-   * as it would have, less the time already waited (R12, FS-KE075 §H.41).
+   * The dark alone, before the place's words are known (R11, R13): a run is dark from `create`,
+   * and its floor, and so its card, comes with the first broadcast. It holds, whatever is built,
+   * until `play` draws the card on it; that card's dark hold is counted from now.
+   */
+  dark(): void {
+    this.remove();
+    this.parts = [this.veil()];
+    this.cancelSceneEnd = onSceneEnd(this.scene, () => this.forget());
+    this.darkSince = this.scene.time.now;
+  }
+
+  /**
+   * Plays the card with `words`, in place of any card still up (R9), or on the dark that waited
+   * for it. The view comes back up only over a built place: with `built` false the dark holds
+   * until `built()` is called, then lifts as it would have, less the time already waited (R12,
+   * FS-KE075 §H.41).
    */
   play(words: CardWords, place: { built: boolean }): void {
+    const shownAt = this.scene.time.now;
+    // a dark already up alone counts toward the dark hold (R13); over a card it replaces, the
+    // dark starts now
+    const darkened = shownAt - (this.darkSince ?? shownAt) || 0;
+    const rise = Math.max(0, ARRIVAL_CARD.darkHoldMs - darkened);
     this.remove();
-    const { scene, view } = this;
-    const { centerX, centerY } = view;
+    const { scene } = this;
+    const { x, y } = this.centre();
 
-    const veil = scene.add.rectangle(0, 0, view.width, view.height, palette.inkDeep, 1);
-    veil.setOrigin(0, 0).setScrollFactor(0).setDepth(ARRIVAL_CARD.depth);
+    const veil = this.veil();
 
-    const heading = scene.add.text(centerX, centerY + HEADING_DY, words.title, {
+    const heading = scene.add.text(x, y + HEADING_DY, words.title, {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "26px",
+      fontSize: `${CARD_LAYOUT.headingPx}px`,
       color: toCss(palette.hudText),
       letterSpacing: 4,
     });
     const rule = scene.add.graphics();
     rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(-RULE_HALF, centerY + RULE_DY, RULE_HALF, centerY + RULE_DY);
-    rule.setX(centerX);
-    const subtitle = scene.add.text(centerX, centerY + LINE_DY, words.line, {
+    rule.lineBetween(-RULE_HALF, 0, RULE_HALF, 0);
+    rule.setPosition(x, y + RULE_DY);
+    const subtitle = scene.add.text(x, y + LINE_DY, words.line, {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
+      fontSize: `${CARD_LAYOUT.linePx}px`,
       fontStyle: "italic",
       color: toCss(palette.hudLabel),
     });
@@ -138,13 +172,13 @@ export class ArrivalCard {
       targets: card,
       alpha: 1,
       duration: ARRIVAL_CARD.cardFadeMs,
-      delay: ARRIVAL_CARD.darkHoldMs,
+      delay: rise,
     });
-    const shownAt = scene.time.now;
     this.lift = () => {
       this.lift = undefined;
+      // the view comes back once the card is in
       const waited = scene.time.now - shownAt || 0;
-      const hold = Math.max(0, ARRIVAL_CARD.darkHoldMs + ARRIVAL_CARD.cardFadeMs - waited);
+      const hold = Math.max(0, rise + ARRIVAL_CARD.cardFadeMs - waited);
       scene.tweens.add({
         targets: veil,
         alpha: 0,
@@ -159,21 +193,39 @@ export class ArrivalCard {
     if (place.built) this.lift();
   }
 
-  /** The scene's place is built: a dark that was holding for it lifts. Nothing otherwise. */
+  /** The card's centre in the view now: across its middle, `rise` of its height above it (R10). */
+  private centre(): { x: number; y: number } {
+    const { view } = this;
+    return { x: view.centerX, y: view.centerY - CARD_LAYOUT.rise * view.height };
+  }
+
+  /** The dark over the whole view, over the world and under the card and the HUD (R15). */
+  private veil(): Phaser.GameObjects.Rectangle {
+    const { view } = this;
+    const veil = this.scene.add.rectangle(0, 0, view.width, view.height, palette.inkDeep, 1);
+    return veil.setOrigin(0, 0).setScrollFactor(0).setDepth(ARRIVAL_CARD.depth);
+  }
+
+  /**
+   * The scene's place is built: a dark that was holding for it lifts. Nothing otherwise: a dark
+   * still waiting for its words holds for them.
+   */
   built(): void {
     this.lift?.();
   }
 
   /**
-   * The view changed: the dark covers it again and the card is about its centre (R16). Dust in
-   * the air is taken away, and the card with it: its leaving is over.
+   * The view changed: the dark covers it again and the card stands at its place in the new view
+   * (R10, R16). Dust in the air is taken away, and the card with it: its leaving is over.
    */
   relayout(): void {
     if (this.dusting) return this.remove();
     const [veil, ...card] = this.parts;
     if (!veil?.active) return;
     (veil as Phaser.GameObjects.Rectangle).setSize(this.view.width, this.view.height);
-    for (const part of card) (part as CardPart).setX(this.view.centerX);
+    const { x, y } = this.centre();
+    const offsets = [HEADING_DY, RULE_DY, LINE_DY];
+    card.forEach((part, i) => (part as CardPart).setPosition(x, y + offsets[i]));
     crispen(card);
   }
 
@@ -192,9 +244,8 @@ export class ArrivalCard {
     this.leaving = this.scene.time.delayedCall(delay, () => {
       this.leaving = undefined;
       // the rule as it is drawn: about the card's centre now, at its height
-      const x = this.view.centerX;
-      const y = this.view.centerY + RULE_DY;
-      const ink = { texts: [heading, subtitle], rule: { x1: x - RULE_HALF, x2: x + RULE_HALF, y } };
+      const { x, y } = this.centre();
+      const ink = { texts: [heading, subtitle], rule: { x1: x - RULE_HALF, x2: x + RULE_HALF, y: y + RULE_DY } };
       if (this.dust.play(ink, ARRIVAL_CARD.depth + 1, gone)) {
         this.dusting = true;
         card.forEach((part) => part.setVisible(false));
@@ -224,5 +275,6 @@ export class ArrivalCard {
     this.lift = undefined;
     this.leaving = undefined;
     this.dusting = false;
+    this.darkSince = undefined;
   }
 }

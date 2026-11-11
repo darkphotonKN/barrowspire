@@ -30,10 +30,19 @@ export interface WorldSwitcher extends SceneStatusReader {
 }
 
 /**
+ * Whether a `world_entered` is an arrival or a return (FS-PQ2TW R6). The page's kept place
+ * (`arrivals`, ./arrival.ts) is one.
+ */
+export interface ArrivalJudge {
+  isArrival(payload: WorldEnteredPayload): boolean;
+}
+
+/**
  * THE transition (FS-29KSH §Requirements 15, 36): every other world scene stops, then the
- * world's own starts with the payload's session and field. `scene.start()` from the manager does
- * not stop what is already running, unlike the same call from inside a scene, so the previous
- * world would stay live underneath.
+ * world's own starts with the payload's session and field, and whether it is an arrival: asked
+ * here once, so no scene works it out for itself (FS-PQ2TW R8, ADR-0073 Decision 4).
+ * `scene.start()` from the manager does not stop what is already running, unlike the same call
+ * from inside a scene, so the previous world would stay live underneath.
  *
  * "Running" here is any scene starting or running (`inFlight`), not `isActive`: a world scene sits
  * LOADING while its art downloads (FS-C4JWH), and Phaser 4.2.1 counts only RUNNING as active. A
@@ -46,6 +55,7 @@ export interface WorldSwitcher extends SceneStatusReader {
 export function switchWorld(
   scenes: WorldSwitcher,
   payload: WorldEnteredPayload,
+  arrivals: ArrivalJudge,
 ): void {
   const target = sceneFor(payload.world_type);
   for (const key of WORLD_SCENES) {
@@ -56,5 +66,6 @@ export function switchWorld(
   scenes.start(target, {
     sessionID: payload.session_id,
     field: payload.field,
+    arrival: arrivals.isArrival(payload),
   });
 }

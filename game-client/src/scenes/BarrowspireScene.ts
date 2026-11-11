@@ -588,6 +588,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * player between two positions every tick.
    */
   private sessionID?: string;
+  /**
+   * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
+   * handed over in the start data. A start with no verdict is no arrival. An arrival is dark from
+   * `create` and plays its floor's card at the first broadcast; a return plays nothing. A climb
+   * is not a world switch (ADR-0015): the run detects it itself.
+   */
+  private arrival = false;
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
@@ -947,9 +954,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * builds is forgotten when it stops, and the next start rebuilds it through the
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
-  init(data?: { sessionID?: string }): void {
+  init(data?: { sessionID?: string; arrival?: boolean }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
+    // whether the switch that started it was an arrival (FS-PQ2TW R8); a reconnect is a return
+    this.arrival = data?.arrival ?? false;
     // a Leave the last run left pending (one pressed while it still loaded) is not this run's
     this.leavePending = false;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
@@ -3115,6 +3124,9 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
+    // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
+    if (this.arrival) this.arrivalCard.dark();
     // Connect via SocketManager
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
@@ -3608,6 +3620,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
     // the new one, so nothing waits on the transition, which only plays over the result.
     const climb = climbed(this.lastFloor, state.floor);
+    // an arrival's first floor, at the first broadcast that names one (FS-PQ2TW R2, R13)
+    const arrived = this.arrival && this.lastFloor === undefined && state.floor !== undefined;
     if (state.floor !== undefined) this.lastFloor = state.floor;
     if (climb) this.leaveFloor();
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
@@ -3729,10 +3743,8 @@ export class BarrowspireScene extends Phaser.Scene {
       this.escapedCountText.setText(`Escaped: ${count}`);
     }
 
-    if (climb) {
-      this.settlePlayers();
-      this.playFloorCard(state);
-    }
+    if (climb) this.settlePlayers();
+    if (climb || arrived) this.playFloorCard(state);
     if (building) this.arrivalCard.built();
   }
 
@@ -4154,9 +4166,10 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The climb's floor card (FS-F6F88 req 32), played through the shared arrival card: the view
-   * drops to dark over the floor just built and comes back up with the floor's words, held dark
-   * until the floor is built from its map (FS-KE075 §H.41).
+   * The floor's card, on a climb (FS-F6F88 req 32) or on an arrival (FS-PQ2TW R2), played through
+   * the shared arrival card: the view drops to dark over the floor, or stays in the arrival's dark,
+   * and comes back up with the floor's words, held dark until the floor is built from its map
+   * (FS-KE075 §H.41).
    */
   private playFloorCard(state: ClientGameState): void {
     if (state.floor === undefined) return;

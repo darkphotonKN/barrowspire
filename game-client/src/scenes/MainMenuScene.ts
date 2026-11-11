@@ -23,6 +23,7 @@ import {
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
 import { onSceneEnd } from "./sceneEnd";
+import { forgetPlace } from "@/components/arrival";
 import {
   LOGICAL_HEIGHT,
   LOGICAL_MAX_WIDTH,
@@ -829,7 +830,9 @@ export class MainMenuScene extends Phaser.Scene {
 
     // Pressing start leads to the hub, not to a queue. Delving is started from
     // inside the hub by talking to an NPC (I-29KSH-6). FS-29KSH §Requirements 34.
-    // The server seats by the character's id (FS-BDA7X req 41).
+    // The server seats by the character's id (FS-BDA7X req 41). Entering from the menu is always
+    // an arrival, the same hub session included (FS-PQ2TW R7): the kept place goes first.
+    forgetPlace();
     socketManager.sendMessage(ActionType.EnterHub, enterHubPayload(activeChar));
   }
 

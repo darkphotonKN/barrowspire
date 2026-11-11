@@ -266,3 +266,32 @@ describe("MainMenuScene art loading (FS-C4JWH §B R7)", () => {
     expect(art.drawn).toEqual([]);
   });
 });
+
+const { socketManager } = await import("@/utils/class/SocketManager");
+const { ActionType } = await import("@/assets/types/client");
+const { arrivals } = await import("@/components/arrival");
+
+// FS-PQ2TW R7. I-PQ2TW-2: entering from the main menu is always an arrival, so logging out and in
+// again within one tab, into the same hub session, still plays the card.
+describe("MainMenuScene ENTER THE TOWN forgets the kept place (FS-PQ2TW R7)", () => {
+  it("should forget the kept place before enter_hub is sent", () => {
+    const town = { world_type: "hub", session_id: "hub-a" } as const;
+    arrivals.isArrival(town);
+    arrivals.isArrival(town);
+    vi.spyOn(useGameStore, "getState").mockReturnValue({
+      ...useGameStore.getState(),
+      rosterStatus: "ready",
+      getActiveCharacter: () => ({ id: "c1", name: "Hero", className: "warrior" }),
+    } as unknown as ReturnType<typeof useGameStore.getState>);
+    const verdictAtSend: boolean[] = [];
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {
+      verdictAtSend.push(arrivals.isArrival(town));
+    });
+    const menu = new MainMenuScene() as unknown as { handleStartGame(): void };
+
+    menu.handleStartGame();
+
+    expect(send).toHaveBeenCalledWith(ActionType.EnterHub, expect.objectContaining({ characterId: "c1" }));
+    expect(verdictAtSend).toEqual([true]);
+  });
+});

@@ -15,14 +15,14 @@ import { BARROW_HEX } from "@/utils/theme";
 import { prefersReducedMotion } from "./mist";
 import type { Easing, FxTexture, Range, Token } from "./table";
 
-/** The dust's numbers (R34): every one a starting value the owner tunes here. */
+/** The dust's numbers (R34), as the owner tuned them on 2026-11-12; a retune is an edit here. */
 export interface CardDustRecord {
-  /** Every mote's life, and the dust's: one fixed duration (FS-KYPQ9 §B.2). */
+  /** Every mote's life, and the dust's: one fixed duration (FS-KYPQ9 §B.2; past its 1200 ms, R33). */
   durationMs: number;
-  /** Motes for the whole card, at most (R32): the one exception to §B.6's 12. */
+  /** Motes for the whole card, at most (R32): one per view px² of ink, past §B.6's 12 (R33). */
   maxParticles: number;
   texture: FxTexture;
-  /** A mote's size over its life, × the sheet's frame: 0.25 of `fx_dust` is about 2 view px. */
+  /** A mote's size over its life, × the sheet's frame: 0.15 of `fx_dust` is about 1.2 view px. */
   scale: Range;
   /** View px/s at the start, picked per mote; the top is the cap that keeps it dust (R26). */
   speed: Range;
@@ -39,17 +39,18 @@ export interface CardDustRecord {
 
 /**
  * The dust (FS-PQ2TW §D). Not an `EFFECTS` entry: it is a view-space HUD effect with no world
- * position, and its count and outward drift are the one named exception to FS-KYPQ9 §B.6 (R33),
- * so the table's rules hold unchanged for every effect there. Its own rule test is beside it.
+ * position, and its count, outward drift and length are the one named exception to FS-KYPQ9
+ * §B.6 and §B.2's ceiling (R33), so the table's rules hold unchanged for every effect there. Its
+ * own rule test is beside it.
  */
 export const CARD_DUST = {
-  durationMs: 1000,
-  maxParticles: 600,
+  durationMs: 1300,
+  maxParticles: 1500,
   texture: "fx_dust",
-  scale: { from: 0.25, to: 0.25 },
-  speed: { from: 15, to: 60 },
+  scale: { from: 0.15, to: 0.15 },
+  speed: { from: 25, to: 110 },
   lean: 0.5,
-  drag: 1.6,
+  drag: 1,
   // hudText, hudLabel
   tint: { from: "vellum", to: "vellumDark" },
   alpha: { from: 1, to: 0 },
