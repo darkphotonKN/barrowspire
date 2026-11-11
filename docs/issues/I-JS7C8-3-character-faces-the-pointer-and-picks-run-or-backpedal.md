@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-3
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: []
 labels: [ready-for-agent]
@@ -37,14 +37,14 @@ character turning to the pointer.
 
 ## Acceptance Criteria
 
-- [ ] Standing, the local character turns to the pointer's 8-way world direction in the town, a field and a run.
-- [ ] With a test sheet carrying `run` and `backpedal`: ≤ 90° plays `run`, > 90° plays `backpedal`, exactly 90° plays `run`, each turned to the look; with `run` only, > 90° plays `run` turned to the movement.
-- [ ] Without `run`, a moving class walks at `speed / WALK_PACE` as today.
-- [ ] A `run` ↔ `backpedal` swap keeps the frame index.
-- [ ] Attacks and `walk_attack` still face their aim; death keeps its facing; the Shadow Shot hold turns to the held aim.
-- [ ] Pointer off the canvas: the facing does not change.
-- [ ] Hub folk, monsters and the menu figures choose exactly as before (existing tests unchanged and green).
-- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `tsc` and the lint are green.
+- [x] Standing, the local character turns to the pointer's 8-way world direction in the town, a field and a run. *(pointerFacing.test.ts, the facing tests in character.test.ts, and one wiring test each in HubScene/FieldScene/BarrowspireScene.test.ts; seen in a browser at I-JS7C8-9)*
+- [x] With a test sheet carrying `run` and `backpedal`: ≤ 90° plays `run`, > 90° plays `backpedal`, exactly 90° plays `run`, each turned to the look; with `run` only, > 90° plays `run` turned to the movement.
+- [x] Without `run`, a moving class walks at `speed / WALK_PACE` as today.
+- [x] A `run` ↔ `backpedal` swap keeps the frame index.
+- [x] Attacks and `walk_attack` still face their aim; death keeps its facing; the Shadow Shot hold turns to the held aim.
+- [x] Pointer off the canvas: the facing does not change.
+- [x] Hub folk, monsters and the menu figures choose exactly as before (existing tests unchanged and green).
+- [x] `npx vitest run --maxWorkers=4 --minWorkers=1`, `tsc` and the lint are green.
 
 ## Blocked By
 
