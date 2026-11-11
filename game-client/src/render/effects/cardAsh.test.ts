@@ -5,14 +5,17 @@ import { BARROW_HEX } from "@/utils/theme";
 import { CARD_ASH, CardAsh, type AshInk, type CardAshScene } from "./cardAsh";
 import type { InkText } from "./cardDust";
 
-// FS-PQ2TW §Change: Ash, a trial alternate leave, R53–R62: the arrival card can leave as ash, a
-// burn front crossing its letters pixel by pixel while flakes rise off the burned strokes.
+// FS-PQ2TW §Change: Ash, a trial alternate leave, R53–R64: the arrival card can leave as ash, a
+// burn front crossing its letters pixel by pixel while flakes of burnt paper flutter up off the
+// burned strokes and a few ember sparks rise off the front (reworked at the owner's look of
+// 2026-11-12: "灰燼像泡泡一樣怪怪的").
 
 const rgb = (hex: number) => [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff];
 const INK = rgb(BARROW_HEX.vellum);
 const EMBER = rgb(BARROW_HEX.ember);
 const SLATE = rgb(BARROW_HEX.slate);
 const BRASS = rgb(BARROW_HEX.brass);
+const SLATE_LIGHT = rgb(BARROW_HEX.slateLight);
 
 /** A text's canvas as a Phaser Text holds it, its ink in vellum from `rows` ('#' is ink). */
 function stubText(rows: string[], { x = 380, y = 270, resolution = 1 } = {}): InkText {
@@ -72,6 +75,7 @@ function ashStage({ reduced = false, canvases: canMake = true } = {}) {
   const canvases: Canvas[] = [];
   const tweens: { config: Record<string, unknown>; stopped: boolean; at(v: number): void; complete(): void }[] = [];
   const timers: { delay: number; removed: boolean; fire(): void }[] = [];
+  const anims = new Map<string, { key: string; frames: { key: string; frame: string }[]; frameRate: number; repeat: number }>();
   const obj = (kind: Made["kind"]) => (...args: unknown[]) => {
     const record: Made = { kind, args, destroyed: false, calls: {} };
     made.push(record);
@@ -112,6 +116,14 @@ function ashStage({ reduced = false, canvases: canMake = true } = {}) {
         return handle;
       },
     },
+    anims: {
+      exists: (key: string) => anims.has(key),
+      create: (config: { key: string; frames: { key: string; frame: string }[]; frameRate: number; repeat: number }) => {
+        if (anims.has(config.key)) return false;
+        anims.set(config.key, config);
+        return config;
+      },
+    },
     time: {
       delayedCall: (delay: number, fire: () => void) => {
         const t = { delay, fire, removed: false };
@@ -150,9 +162,10 @@ function ashStage({ reduced = false, canvases: canMake = true } = {}) {
   const emitters = () => made.filter((m) => m.kind === "particles");
   const images = () => made.filter((m) => m.kind === "image");
   const config = () => emitters()[0].args[3] as Phaser.Types.GameObjects.Particles.ParticleEmitterConfig;
+  const sparkConfig = () => emitters()[1].args[3] as Phaser.Types.GameObjects.Particles.ParticleEmitterConfig;
   const burn = () => canvases.find((c) => c.key === images()[0].args[2])!;
   const front = () => tweens[0];
-  return { scene, made, canvases, tweens, timers, logger, ash, gone, emitters, images, config, burn, front };
+  return { scene, made, canvases, tweens, timers, anims, logger, ash, gone, emitters, images, config, sparkConfig, burn, front };
 }
 
 /** The card's three pieces as the ash takes them: they can be hidden. */
@@ -186,16 +199,34 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
         lifeMs: 1000,
         maxParticles: 300,
         density: 0.1,
-        sizePx: { from: 3, to: 6 },
+        shapes: 24,
+        lengthPx: { from: 1.5, to: 8 },
+        smallBias: 2.2,
+        aspect: { from: 1.1, to: 2.8 },
+        mottle: 0.5,
+        glow: { share: 1 / 3, ms: 500, steps: 8 },
         speed: { from: 12, to: 32 },
+        drag: 0.5,
         spreadDeg: 30,
-        spinDegPerS: { from: 90, to: 270 },
+        spinDegPerS: { from: 20, to: 70 },
+        flipMs: { from: 500, to: 1300 },
+        sway: { amplitude: { from: 1.5, to: 4 }, periodMs: { from: 900, to: 1600 } },
         alpha: { from: 1, to: 0 },
-        rimAlpha: 0.6,
       },
-      tint: { edge: "ember", char: "slate", flake: "slate", rim: "ember" },
+      spark: {
+        maxParticles: 40,
+        density: 0.012,
+        lifeMs: { from: 300, to: 600 },
+        sizePx: { from: 1, to: 2 },
+        speed: { from: 40, to: 80 },
+        drag: 1.5,
+        spreadDeg: 25,
+        flickerHz: { from: 6, to: 14 },
+        blend: "ADD",
+      },
+      tint: { edge: "ember", char: "slate", flake: "slate", mottle: "slateLight", glow: "ember", spark: "ember" },
       rule: { tint: "brass", alpha: 0.6 },
-      ease: { front: "Linear", flake: "Sine.easeIn" },
+      ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn" },
     });
   });
 
@@ -204,6 +235,7 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     expect(Number.isInteger(CARD_ASH.durationMs)).toBe(true);
     expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2000);
     expect(CARD_ASH.frontMs + CARD_ASH.flake.lifeMs).toBeLessThanOrEqual(CARD_ASH.durationMs);
+    expect(CARD_ASH.frontMs + CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(CARD_ASH.durationMs);
     // §B.3: the easing allowlist
     for (const ease of Object.values(CARD_ASH.ease))
       expect(ease).toMatch(/^(Linear|(Sine|Quad|Cubic)\.ease(In|Out|InOut))$/);
@@ -214,12 +246,22 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     expect(own).not.toContain("amber");
     expect(own).not.toContain("oxblood");
     expect(BARROW_HEX[CARD_ASH.rule.tint]).toBe(palette.frame);
-    // the exception, bounded: a few hundred flakes, slow, rising, never sprayed
+    // three of its own, the third the flakes' mottling: ember, slate, slateLight
+    expect([...new Set(own)].sort()).toEqual(["ember", "slate", "slateLight"]);
+    // the exception, bounded: a few hundred flakes and a few tens of sparks, rising, never sprayed
     expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(300);
     expect(CARD_ASH.flake.speed.to).toBeLessThanOrEqual(32);
     expect(CARD_ASH.flake.spreadDeg).toBeLessThanOrEqual(30);
-    // larger than the dust's motes (about 1.2 view px)
-    expect(CARD_ASH.flake.sizePx.from).toBeGreaterThan(1.2);
+    expect(CARD_ASH.spark.maxParticles).toBeLessThanOrEqual(40);
+    expect(CARD_ASH.spark.speed.to).toBeLessThanOrEqual(80);
+    expect(CARD_ASH.spark.spreadDeg).toBeLessThanOrEqual(25);
+    expect(CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(600);
+    // the sparks rise faster than any flake
+    expect(CARD_ASH.spark.speed.from).toBeGreaterThan(CARD_ASH.flake.speed.to);
+    // the smallest flake still larger than the dust's motes (about 1.2 view px)
+    expect(CARD_ASH.flake.lengthPx.from).toBeGreaterThan(1.2);
+    // a flip only: the half-turn, edge-on to the other face, falls inside a flake's life
+    expect(CARD_ASH.flake.flipMs.to / 2).toBeLessThan(CARD_ASH.flake.lifeMs);
   });
 });
 
@@ -349,11 +391,10 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     });
   });
 
-  describe("the flakes (R56)", () => {
-    function flakes() {
+  describe("the flakes: burnt paper (R56)", () => {
+    function flakes(text?: InkText) {
       const stage = ashStage();
-      const ink = cardInk();
-      stage.ash.play(ink, 961, stage.gone);
+      stage.ash.play(cardInk(text), 961, stage.gone);
       const emitted: { v: number; x: number; y: number; data: Uint8ClampedArray }[] = [];
       let seen = 0;
       for (let v = 0; v <= 1.0001; v += 0.05) {
@@ -368,27 +409,85 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       return { ...stage, emitted };
     }
 
-    it("should come from one emitter of runtime flakes, rising, tumbling and fading over 1000 ms, at a steady speed", () => {
-      const { emitters, config, canvases } = flakes();
+    /** Each flake shape of the sheet, by its anim: its frames' pixels, at `resolution` canvas px per view px. */
+    function shapes(resolution = 2) {
+      const stage = flakes(stubText(Array(6 * resolution).fill("#".repeat(40 * resolution)), { resolution }));
+      const sheet = stage.canvases.find((c) => c.key === stage.emitters()[0].args[2])!;
+      const [data] = sheet.puts;
+      const keys = (stage.config().anim as string[]) ?? [];
+      const frameOf = (name: string) => sheet.frames.find((f) => f.name === name)!;
+      const pixels = (name: string) => {
+        const f = frameOf(name);
+        const out: { c: number[]; a: number; x: number; y: number }[] = [];
+        for (let y = f.y; y < f.y + f.h; y++)
+          for (let x = f.x; x < f.x + f.w; x++) {
+            const p = px(data, y * sheet.width + x);
+            if (p.a > 0) out.push({ ...p, x: x - f.x, y: y - f.y });
+          }
+        return out;
+      };
+      return keys.map((key) => {
+        const anim = stage.anims.get(key)!;
+        const frames = anim.frames.map((f) => pixels(f.frame));
+        const first = frames[0];
+        const xs = first.map((p) => p.x);
+        const ys = first.map((p) => p.y);
+        const w = (Math.max(...xs) - Math.min(...xs) + 1) / resolution;
+        const h = (Math.max(...ys) - Math.min(...ys) + 1) / resolution;
+        return { key, anim, frames, length: Math.max(w, h), aspect: Math.max(w, h) / Math.min(w, h) };
+      });
+    }
 
-      expect(emitters()).toHaveLength(1);
+    /** The pixels of `drawn` with an undrawn 4-neighbour: the flake's outline. */
+    function outline<P extends { x: number; y: number }>(drawn: P[]): P[] {
+      const at = new Set(drawn.map((p) => `${p.x},${p.y}`));
+      return drawn.filter((p) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !at.has(`${p.x + dx},${p.y + dy}`)));
+    }
+
+    /** How far `c` lies from the triangle `a`, `b`, `e` in RGB (0 inside it): a mix of the three tokens. */
+    function offMix(c: number[], a: number[], b: number[], e: number[]): number {
+      let best = Infinity;
+      for (let u = 0; u <= 1.0001; u += 0.02)
+        for (let v = 0; u + v <= 1.0001; v += 0.02) {
+          const m = [0, 1, 2].map((k) => a[k] + (b[k] - a[k]) * u + (e[k] - a[k]) * v);
+          best = Math.min(best, dist(c, m));
+        }
+      return best;
+    }
+
+    it("should come from one emitter of runtime flakes, each shape its own anim, rising, slowing and fading over 1000 ms", () => {
+      const { emitters, config, canvases, anims } = flakes();
+
       const [emitter] = emitters();
       const sheet = canvases.find((c) => c.key === emitter.args[2])!;
-      expect(sheet.frames.length).toBeGreaterThanOrEqual(4);
       expect(emitter.calls.setDepth).toEqual([[961]]);
       expect(emitter.calls.setScrollFactor).toEqual([[0]]);
       expect(config()).toMatchObject({
-        frame: sheet.frames.map((f) => f.name),
         lifespan: 1000,
         speed: { min: 12, max: 32 },
         maxParticles: 300,
         emitting: false,
-        scale: 1,
+        scaleX: 1,
         alpha: { start: 1, end: 0, ease: "Sine.easeIn" },
       });
-      expect(config().accelerationX).toBeUndefined();
-      expect(config().accelerationY).toBeUndefined();
+      expect(config().scale).toBeUndefined();
       expect(config().emitZone).toBeUndefined();
+      // 24 shapes, each an anim over the sheet's frames
+      const keys = config().anim as string[];
+      expect(keys).toHaveLength(24);
+      for (const key of keys) {
+        const anim = anims.get(key)!;
+        expect(anim.repeat).toBe(0);
+        for (const f of anim.frames) {
+          expect(f.key).toBe(sheet.key);
+          expect(sheet.frames.some((fr) => fr.name === f.frame)).toBe(true);
+        }
+      }
+      // slowing a little: a drag of 0.5 of its speed a second, never turning it back
+      const ax = config().accelerationX as { onUpdate(p: object, k: string, t: number, v: number): number };
+      const ay = config().accelerationY as { onUpdate(p: object, k: string, t: number, v: number): number };
+      expect(ax.onUpdate({ velocityX: 10, velocityY: -20 }, "accelerationX", 0.5, 0)).toBeCloseTo(-5);
+      expect(ay.onUpdate({ velocityX: 10, velocityY: -20 }, "accelerationY", 0.5, 0)).toBeCloseTo(10);
     });
 
     it("should let each go from a stroke pixel or the rule, only once that pixel has burned out", () => {
@@ -419,7 +518,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(calls.reduce((n, [count]) => n + count, 0)).toBe(want);
     });
 
-    it("should rise within 30° of straight up, tumbling 90–270° a second either way", () => {
+    it("should rise within 30° of straight up, turning slowly, 20–70° a second either way", () => {
       const { config } = flakes();
       const angle = config().angle as { onEmit(p: object, key: string): number };
       const rotate = config().rotate as {
@@ -434,64 +533,276 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       // the mean heading is straight up: the ash rises on average
       expect(headings.reduce((s, d) => s + d, 0) / headings.length).toBeCloseTo(-90, -1);
 
-      const spins = Array.from({ length: 200 }, () => {
+      const turns = Array.from({ length: 200 }, () => {
         const p = {};
         const from = rotate.onEmit(p, "rotate");
         // a whole life: 1 s
         return rotate.onUpdate(p, "rotate", 1, from) - from;
       });
-      for (const s of spins) {
-        expect(Math.abs(s)).toBeGreaterThanOrEqual(90 - 1e-9);
-        expect(Math.abs(s)).toBeLessThanOrEqual(270 + 1e-9);
+      for (const s of turns) {
+        expect(Math.abs(s)).toBeGreaterThanOrEqual(20 - 1e-9);
+        expect(Math.abs(s)).toBeLessThanOrEqual(70 + 1e-9);
       }
-      expect(spins.some((s) => s > 0)).toBe(true);
-      expect(spins.some((s) => s < 0)).toBe(true);
+      expect(turns.some((s) => s > 0)).toBe(true);
+      expect(turns.some((s) => s < 0)).toBe(true);
     });
 
-    it("should be irregular slate flakes 3–6 view px across with a dim ember rim", () => {
-      const { emitters, canvases } = flakes();
-      const sheet = canvases.find((c) => c.key === emitters()[0].args[2])!;
-      const [data] = sheet.puts;
+    it("should flutter, not spin: each flake's scale on one axis swings through edge-on and over, never past its size", () => {
+      const { config } = flakes();
+      const flip = config().scaleY as {
+        onEmit(p: object, key: string): number;
+        onUpdate(p: object, key: string, t: number, value: number): number;
+      };
 
-      for (const f of sheet.frames) {
-        const cells: { c: number[]; a: number; x: number; y: number }[] = [];
-        for (let y = f.y; y < f.y + f.h; y++)
-          for (let x = f.x; x < f.x + f.w; x++) cells.push({ ...px(data, y * sheet.width + x), x, y });
-        const drawn = cells.filter((c) => c.a > 0);
-        const xs = drawn.map((c) => c.x);
-        const ys = drawn.map((c) => c.y);
-        const across = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) + 1;
-        expect(across).toBeGreaterThanOrEqual(3);
-        expect(across).toBeLessThanOrEqual(6 + 1);
-        // a slate body, opaque, and an ember rim, dim (partly see-through)
-        expect(drawn.some((c) => c.a === 255 && dist(c.c, SLATE) < 2)).toBe(true);
-        const rim = drawn.filter((c) => dist(c.c, EMBER) < 2);
-        expect(rim.length).toBeGreaterThan(0);
-        for (const c of rim) expect(c.a).toBeLessThanOrEqual(Math.round(0.6 * 255));
-        // only the two tokens
-        for (const c of drawn) expect(Math.min(dist(c.c, SLATE), dist(c.c, EMBER))).toBeLessThan(2);
+      for (let n = 0; n < 200; n++) {
+        const p = {};
+        let value = flip.onEmit(p, "scaleY");
+        const life = [value];
+        for (let t = 0.01; t <= 1.0001; t += 0.01) {
+          value = flip.onUpdate(p, "scaleY", Math.min(t, 1), value);
+          life.push(value);
+        }
+        for (const v of life) expect(Math.abs(v)).toBeLessThanOrEqual(1 + 1e-9);
+        // edge-on at least once: the scale changes sign, passing through zero
+        const flips = life.slice(1).filter((v, k) => Math.sign(v) !== Math.sign(life[k]) && v !== 0).length;
+        expect(flips, `flake ${n}`).toBeGreaterThanOrEqual(1);
+        expect(Math.min(...life.map(Math.abs))).toBeLessThan(0.1);
       }
-      // irregular: not every flake the same shape
-      const shapes = new Set(sheet.frames.map((f) => `${f.w}x${f.h}`));
-      const counts = new Set(
-        sheet.frames.map((f) => {
-          let n = 0;
-          for (let y = f.y; y < f.y + f.h; y++)
-            for (let x = f.x; x < f.x + f.w; x++) if (data[(y * sheet.width + x) * 4 + 3] > 0) n++;
-          return n;
-        }),
-      );
-      expect(shapes.size + counts.size).toBeGreaterThan(2);
+      // the other axis keeps the flake's size
+      expect(config().scaleX).toBe(1);
     });
 
-    it("should make the flake sheet once, and keep it for the next card", () => {
+    it("should sway gently sideways as it rises, at most 4 px off its path", () => {
+      const { config } = flakes();
+      const angle = config().angle as { onEmit(p: object, key: string): number };
+      const x = config().x as { onUpdate(p: object, key: string, t: number, value: number): number };
+
+      let widest = 0;
+      for (let n = 0; n < 50; n++) {
+        const p: Record<string | symbol, unknown> = {};
+        angle.onEmit(p, "angle");
+        let at = 0;
+        for (let t = 0.02; t <= 1.0001; t += 0.02) {
+          at = x.onUpdate(p, "x", Math.min(t, 1), at);
+          expect(Math.abs(at)).toBeLessThanOrEqual(4 + 1e-9);
+          widest = Math.max(widest, Math.abs(at));
+        }
+      }
+      expect(widest).toBeGreaterThan(1);
+    });
+
+    it("should span a range of sizes, many tiny and a few larger, and of aspects, mostly longer than wide", () => {
+      const all = shapes(2);
+
+      const lengths = all.map((s) => s.length).sort((a, b) => a - b);
+      expect(lengths[0]).toBeLessThanOrEqual(2.5);
+      expect(lengths.at(-1)!).toBeGreaterThanOrEqual(6.5);
+      expect(lengths.at(-1)!).toBeLessThanOrEqual(8.5);
+      // many tiny: the median nearer the small end than the large
+      expect(lengths[Math.floor(lengths.length / 2)]).toBeLessThan((lengths[0] + lengths.at(-1)!) / 2);
+      // aspects: large enough flakes to tell, some near square and most longer than wide
+      const aspects = all.filter((s) => s.length >= 3).map((s) => s.aspect);
+      expect(aspects.length).toBeGreaterThanOrEqual(8);
+      expect(Math.min(...aspects)).toBeLessThan(1.5);
+      expect(Math.max(...aspects)).toBeGreaterThan(2);
+      expect(aspects.filter((a) => a >= 1.3).length).toBeGreaterThan(aspects.length / 2);
+    });
+
+    it("should be jagged, not round: its outline uneven and torn", () => {
+      const all = shapes(2).filter((s) => s.length >= 4);
+
+      for (const { frames } of all) {
+        const [drawn] = frames;
+        // torn: not a filled ellipse — some of the edge thinned or bitten (partly see-through)
+        const edge = outline(drawn);
+        expect(edge.some((p) => p.a < 255), "a torn edge").toBe(true);
+      }
+      // uneven: the shapes' pixel counts differ from what a filled ellipse of the same box holds
+      const fill = all.map(({ frames: [drawn] }) => {
+        const xs = drawn.map((p) => p.x);
+        const ys = drawn.map((p) => p.y);
+        const w = Math.max(...xs) - Math.min(...xs) + 1;
+        const h = Math.max(...ys) - Math.min(...ys) + 1;
+        return drawn.length / ((Math.PI / 4) * w * h);
+      });
+      expect(fill.some((f) => Math.abs(f - 1) > 0.12)).toBe(true);
+    });
+
+    it("should draw no closed outline ring: a plain flake's edge is its body, a glowing flake's ember on one side only", () => {
+      const all = shapes(2);
+
+      for (const { frames } of all) {
+        const [drawn] = frames;
+        const edge = outline(drawn);
+        const emberish = (c: number[]) => dist(c, EMBER) < Math.min(dist(c, SLATE), dist(c, SLATE_LIGHT));
+        if (!drawn.some((p) => emberish(p.c))) {
+          // a plain flake: its edge the same paper as its body, slate toward slateLight
+          for (const p of edge) expect(offSegment(p.c, SLATE, SLATE_LIGHT)).toBeLessThan(3);
+          continue;
+        }
+        if (edge.length < 8) continue; // a speck: too few edge pixels to have a side
+        const lit = edge.filter((p) => emberish(p.c));
+        expect(lit.length).toBeLessThan(edge.length / 2);
+        // on one side: every lit edge pixel within a half-turn of the lit pixels' mean bearing
+        const cx = drawn.reduce((s, p) => s + p.x, 0) / drawn.length;
+        const cy = drawn.reduce((s, p) => s + p.y, 0) / drawn.length;
+        const mean = Math.atan2(
+          lit.reduce((s, p) => s + (p.y - cy), 0),
+          lit.reduce((s, p) => s + (p.x - cx), 0),
+        );
+        for (const p of lit) {
+          const off = Math.abs(((Math.atan2(p.y - cy, p.x - cx) - mean + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+          expect(off).toBeLessThan(Math.PI / 2 + 0.3);
+        }
+      }
+    });
+
+    it("should be slate mottled toward slateLight, a third with an ember patch that dims to grey over its first 500 ms", () => {
+      const all = shapes(2);
+
+      for (const { frames } of all)
+        for (const drawn of frames) for (const p of drawn) expect(offMix(p.c, SLATE, SLATE_LIGHT, EMBER)).toBeLessThan(3);
+      // mottled: a flake of any size shows more than one shade
+      for (const { frames } of all.filter((s) => s.length >= 4)) {
+        const shades = new Set(frames[0].map((p) => p.c.join(",")));
+        expect(shades.size).toBeGreaterThan(1);
+      }
+      const glowing = all.filter((s) => s.frames.length > 1);
+      expect(glowing).toHaveLength(8);
+      for (const { anim, frames } of glowing) {
+        // 8 steps over 500 ms, then held on the last
+        expect(frames).toHaveLength(8);
+        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(500);
+        const heat = (drawn: { c: number[] }[]) => Math.max(...drawn.map((p) => 255 - dist(p.c, EMBER)));
+        expect(frames[0].some((p) => dist(p.c, EMBER) < 40)).toBe(true);
+        for (let k = 1; k < frames.length; k++) expect(heat(frames[k])).toBeLessThanOrEqual(heat(frames[k - 1]) + 1e-9);
+        // dimmed to grey: nothing ember-ish left
+        for (const p of frames.at(-1)!) expect(offSegment(p.c, SLATE, SLATE_LIGHT)).toBeLessThan(3);
+      }
+      for (const { anim } of all.filter((s) => s.frames.length === 1)) expect(anim.frames).toHaveLength(1);
+    });
+
+    it("should make the flake sheet and its anims once, and keep them for the next card", () => {
       const stage = ashStage();
       stage.ash.play(cardInk(), 961, stage.gone);
+      const anims = stage.anims.size;
       stage.ash.play(cardInk(), 961, stage.gone);
 
       const sheets = stage.canvases.filter((c) => c.frames.length > 0);
       expect(sheets).toHaveLength(1);
       expect(sheets[0].removed).toBe(false);
+      expect(stage.anims.size).toBe(anims);
+    });
+  });
+
+  describe("the embers (R64)", () => {
+    function sparks(text?: InkText) {
+      const stage = ashStage();
+      stage.ash.play(cardInk(text), 961, stage.gone);
+      const emitted: { x: number; y: number; data: Uint8ClampedArray; start: Uint8ClampedArray }[] = [];
+      let seen = 0;
+      const start = stage.burn().puts[0];
+      for (let v = 0; v <= 1.0001; v += 0.02) {
+        stage.front().at(Math.min(v, 1));
+        const calls = stage.emitters()[1].calls.emitParticle ?? [];
+        for (const [count, x, y] of calls.slice(seen) as [number, number, number][]) {
+          expect(count).toBe(1);
+          emitted.push({ x, y, data: stage.burn().puts.at(-1)!, start });
+        }
+        seen = calls.length;
+      }
+      return { ...stage, emitted };
+    }
+
+    it("should come from a second emitter, additive, few, short-lived and faster than any flake", () => {
+      const { emitters, sparkConfig, canvases } = sparks();
+
+      expect(emitters()).toHaveLength(2);
+      const spark = emitters()[1];
+      expect(spark.calls.setDepth).toEqual([[961]]);
+      expect(spark.calls.setScrollFactor).toEqual([[0]]);
+      expect(sparkConfig()).toMatchObject({
+        lifespan: { min: 300, max: 600 },
+        speed: { min: 40, max: 80 },
+        maxParticles: 40,
+        blendMode: "ADD",
+        emitting: false,
+      });
+      expect(sparkConfig().emitZone).toBeUndefined();
+      // its frames: 1–2 view px of ember, on the flakes' one sheet
+      const sheet = canvases.find((c) => c.key === spark.args[2])!;
+      const names = sparkConfig().frame as string[];
+      expect(names.length).toBeGreaterThanOrEqual(2);
+      const [data] = sheet.puts;
+      for (const name of names) {
+        const f = sheet.frames.find((fr) => fr.name === name)!;
+        expect(Math.max(f.w, f.h)).toBeLessThanOrEqual(2);
+        for (let y = f.y; y < f.y + f.h; y++)
+          for (let x = f.x; x < f.x + f.w; x++) {
+            const p = px(data, y * sheet.width + x);
+            if (p.a > 0) expect(dist(p.c, EMBER)).toBe(0);
+          }
+      }
+    });
+
+    it.each([
+      ["a card's worth", Array(6).fill("#".repeat(40)), 3],
+      ["far more than the cap", Array(60).fill("#".repeat(400)), 40],
+    ])("should make 0.012 sparks per view px² of ink from %s, at most 40", (_, rows, want) => {
+      const stage = ashStage();
+      stage.ash.play(cardInk(stubText(rows)), 961, stage.gone);
+      stage.front().at(1);
+
+      const calls = stage.emitters()[1].calls.emitParticle as [number, number, number][];
+      expect(calls.reduce((n, [count]) => n + count, 0)).toBe(want);
+    });
+
+    it("should let each go off the front, from ink the front has reached", () => {
+      const { emitted } = sparks(stubText(Array(20).fill("#".repeat(60))));
+
+      expect(emitted.length).toBeGreaterThan(0);
+      for (const { x, y, data, start } of emitted) {
+        const onText = x >= 380 && x < 440 && y >= 270 && y < 290;
+        const onRule = x >= 390 && x <= 410 && y >= 300 && y < 301;
+        expect(onText || onRule, `${x},${y}`).toBe(true);
+        if (!onText) continue;
+        const i = (Math.floor(y - 270) * 60 + Math.floor(x - 380)) * 4;
+        // burning or gone: no longer as the card drew it
+        expect([...data.subarray(i, i + 4)], `${x},${y}`).not.toEqual([...start.subarray(i, i + 4)]);
+      }
+    });
+
+    it("should rise within 25° of up, slowing a little, and flicker as it dies out", () => {
+      const { sparkConfig } = sparks();
+      const angle = sparkConfig().angle as { onEmit(p: object, key: string): number };
+      const alpha = sparkConfig().alpha as {
+        onEmit(p: object, key: string): number;
+        onUpdate(p: object, key: string, t: number, value: number): number;
+      };
+      const ay = sparkConfig().accelerationY as { onUpdate(p: object, k: string, t: number, v: number): number };
+
+      for (let n = 0; n < 200; n++) expect(Math.abs(angle.onEmit({}, "angle") + 90)).toBeLessThanOrEqual(25);
+      expect(ay.onUpdate({ velocityX: 0, velocityY: -60 }, "accelerationY", 0.5, 0)).toBeCloseTo(90);
+
+      for (let n = 0; n < 50; n++) {
+        const p = { lifeT: 0, life: 450 };
+        let a = alpha.onEmit(p, "alpha");
+        const seen = [a];
+        for (let t = 0.02; t <= 1.0001; t += 0.02) {
+          a = alpha.onUpdate(p, "alpha", Math.min(t, 1), a);
+          seen.push(a);
+        }
+        // under its fall (Quad.easeIn): it holds its light, then goes
+        seen.forEach((v, k) => {
+          const t = Math.min(1, k * 0.02);
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(v).toBeLessThanOrEqual(1 - t * t + 1e-9);
+        });
+        expect(seen.at(-1)).toBeCloseTo(0);
+        // a flicker: it brightens again more than once on its way out
+        const rises = seen.slice(1).filter((v, k) => v > seen[k] + 0.02).length;
+        expect(rises, `spark ${n}`).toBeGreaterThanOrEqual(1);
+      }
     });
   });
 
@@ -540,7 +851,8 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     ash.play(cardInk(), 961, gone);
 
     expect(images().map((i) => i.destroyed)).toEqual([true, false]);
-    expect(emitters().map((e) => e.destroyed)).toEqual([true, false]);
+    // the flakes' emitter and the sparks', each
+    expect(emitters().map((e) => e.destroyed)).toEqual([true, true, false, false]);
     expect(timers[0].removed).toBe(true);
     const burns = canvases.filter((c) => c.frames.length === 0);
     expect(burns.map((c) => c.removed)).toEqual([true, false]);
