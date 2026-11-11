@@ -63,13 +63,27 @@ export interface CardView {
   readonly centerY: number;
 }
 
+/**
+ * The card's place and type (R10; the owner's tune of 2026-11-12). The card's centre stands
+ * `rise` of the view's height above the view's middle: at 0.3, 20% of the height from the top.
+ * The heading and the line are body serif at these px.
+ */
+export const CARD_LAYOUT = {
+  rise: 0.3,
+  headingPx: 34,
+  linePx: 19,
+} as const;
+
 type CardPart = Phaser.GameObjects.Text | Phaser.GameObjects.Graphics;
 
-/** The rule's half length and the heading's, rule's and line's offsets from the view's middle. */
+/**
+ * The rule's half length and the heading's, rule's and line's offsets from the card's centre,
+ * their spacing scaled with the type.
+ */
 const RULE_HALF = 90;
-const HEADING_DY = -14;
-const RULE_DY = 8;
-const LINE_DY = 26;
+const HEADING_DY = -18;
+const RULE_DY = 10;
+const LINE_DY = 33;
 
 export class ArrivalCard {
   /** The dark first, then the heading, the rule and the line; empty when no card is up. */
@@ -125,24 +139,24 @@ export class ArrivalCard {
     const darkened = shownAt - (this.darkSince ?? shownAt) || 0;
     const rise = Math.max(0, ARRIVAL_CARD.darkHoldMs - darkened);
     this.remove();
-    const { scene, view } = this;
-    const { centerX, centerY } = view;
+    const { scene } = this;
+    const { x, y } = this.centre();
 
     const veil = this.veil();
 
-    const heading = scene.add.text(centerX, centerY + HEADING_DY, words.title, {
+    const heading = scene.add.text(x, y + HEADING_DY, words.title, {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "26px",
+      fontSize: `${CARD_LAYOUT.headingPx}px`,
       color: toCss(palette.hudText),
       letterSpacing: 4,
     });
     const rule = scene.add.graphics();
     rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(-RULE_HALF, centerY + RULE_DY, RULE_HALF, centerY + RULE_DY);
-    rule.setX(centerX);
-    const subtitle = scene.add.text(centerX, centerY + LINE_DY, words.line, {
+    rule.lineBetween(-RULE_HALF, 0, RULE_HALF, 0);
+    rule.setPosition(x, y + RULE_DY);
+    const subtitle = scene.add.text(x, y + LINE_DY, words.line, {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
+      fontSize: `${CARD_LAYOUT.linePx}px`,
       fontStyle: "italic",
       color: toCss(palette.hudLabel),
     });
@@ -179,6 +193,12 @@ export class ArrivalCard {
     if (place.built) this.lift();
   }
 
+  /** The card's centre in the view now: across its middle, `rise` of its height above it (R10). */
+  private centre(): { x: number; y: number } {
+    const { view } = this;
+    return { x: view.centerX, y: view.centerY - CARD_LAYOUT.rise * view.height };
+  }
+
   /** The dark over the whole view, over the world and under the card and the HUD (R15). */
   private veil(): Phaser.GameObjects.Rectangle {
     const { view } = this;
@@ -195,15 +215,17 @@ export class ArrivalCard {
   }
 
   /**
-   * The view changed: the dark covers it again and the card is about its centre (R16). Dust in
-   * the air is taken away, and the card with it: its leaving is over.
+   * The view changed: the dark covers it again and the card stands at its place in the new view
+   * (R10, R16). Dust in the air is taken away, and the card with it: its leaving is over.
    */
   relayout(): void {
     if (this.dusting) return this.remove();
     const [veil, ...card] = this.parts;
     if (!veil?.active) return;
     (veil as Phaser.GameObjects.Rectangle).setSize(this.view.width, this.view.height);
-    for (const part of card) (part as CardPart).setX(this.view.centerX);
+    const { x, y } = this.centre();
+    const offsets = [HEADING_DY, RULE_DY, LINE_DY];
+    card.forEach((part, i) => (part as CardPart).setPosition(x, y + offsets[i]));
     crispen(card);
   }
 
@@ -222,9 +244,8 @@ export class ArrivalCard {
     this.leaving = this.scene.time.delayedCall(delay, () => {
       this.leaving = undefined;
       // the rule as it is drawn: about the card's centre now, at its height
-      const x = this.view.centerX;
-      const y = this.view.centerY + RULE_DY;
-      const ink = { texts: [heading, subtitle], rule: { x1: x - RULE_HALF, x2: x + RULE_HALF, y } };
+      const { x, y } = this.centre();
+      const ink = { texts: [heading, subtitle], rule: { x1: x - RULE_HALF, x2: x + RULE_HALF, y: y + RULE_DY } };
       if (this.dust.play(ink, ARRIVAL_CARD.depth + 1, gone)) {
         this.dusting = true;
         card.forEach((part) => part.setVisible(false));
