@@ -41,15 +41,15 @@ Not `GroundLayer`: I-V8FT3-2 built the paint pass; this slice only hands it shap
 
 ## Acceptance Criteria
 
-- [ ] For a building: no exterior-look shape reaches inside the footprint and no interior-look
+- [x] For a building: no exterior-look shape reaches inside the footprint and no interior-look
       shape reaches outside it; outside, the shape of a wall with a door gap is unbroken across the
       gap; inside, the gap casts nothing.
-- [ ] The Inn's partition casts as a front wall, inside the Inn's footprint.
-- [ ] A wall of no house casts as a back wall.
-- [ ] The perimeter wall, roofs, caps, gables and door leaves give no shape.
-- [ ] The hub's ground and a floor of buildings' ground are each handed their shapes once, with
+- [x] The Inn's partition casts as a front wall, inside the Inn's footprint.
+- [x] A wall of no house casts as a back wall.
+- [x] The perimeter wall, roofs, caps, gables and door leaves give no shape.
+- [x] The hub's ground and a floor of buildings' ground are each handed their shapes once, with
       the houses' floors; a room on a floor of buildings casts as a village building does.
-- [ ] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.
+- [x] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.
 
 ## Blocked By
 
