@@ -31,8 +31,8 @@ timed open completes on the 45th tick after the reach's, never earlier. A
 completed one leaves the body and is reported; opening the container is the
 caller's.
 
-A timed open is cancelled on the tick that finds its delver out of play, their
-body not where it stood at the reach, health lost to the tick's combat, or the
+A timed open is cancelled on the tick that finds its delver out of play or gone
+from the world, their body not where it stood at the reach, health lost to the tick's combat, or the
 container out of reach or gone. A cancel is judged before the timer's end,
 leaves the body silently and is reported to nobody; nothing else cancels.
 
@@ -142,6 +142,11 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 	// only a delver in play acts: one who died, escaped or was left behind
 	// has none
 	if !InPlay(delver) {
+		return true
+	}
+	// nor has one whose body left the world on this tick: the tick's entities
+	// were read before its intents took the body out (§Requirements 9)
+	if _, stands := s.em.GetEntity(delver.ID); !stands {
 		return true
 	}
 	// the body is not where it stood at the reach, whatever moved it
