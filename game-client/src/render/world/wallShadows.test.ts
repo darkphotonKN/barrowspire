@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE, worldToScreen, type Point } from "@/render/iso";
 import { BAKE } from "./bake";
 import type { FloorRegion, WallState } from "@/types/gameState";
-import { RegionGrid, wallRule, wallRuns } from "./dungeon";
-import { MASONRY_WALLS, TIMBER_WALLS, planWalls, type WallHeight, type WallPiece } from "./walls";
+import { RegionGrid, dungeonWalls, wallPlan, type DungeonMap, type EdgeRun } from "./dungeon";
+import fixture from "./dungeon.fixture.json";
+import { MASONRY_WALLS, TIMBER_WALLS, planWalls, wallward, type WallHeight, type WallPiece } from "./walls";
 import { castOffset, castShadow, planWallShadows, wallFeet, type WallFoot } from "./wallShadows";
 
 const T = WORLD_PX_PER_TILE;
@@ -189,7 +190,7 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
     expect(110 - half - Math.min(...run.map((p) => p.y))).toBeCloseTo(50.9, 1);
   });
 
-  describe("on a dungeon floor (wallRuns, wallRule)", () => {
+  describe("on a dungeon floor (wallPlan, dungeonWalls: FS-XK2B6)", () => {
     const CELL = 80;
     const room: FloorRegion = { id: 1, kind: "room", cells: [{ x: 2, y: 2, w: 4, h: 4 }] };
     const grid = new RegionGrid({ width: 10 * CELL, height: 10 * CELL, cell_size: CELL, regions: [room] });
@@ -200,49 +201,81 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
       wall(6 * CELL, 2 * CELL, CELL, 4 * CELL),
       wall(1 * CELL, 6 * CELL, 6 * CELL, CELL),
     ];
-    const plan = planWalls(wallRuns(walls, grid), 1, MASONRY_WALLS, wallRule(grid));
-    const feet = wallFeet(plan, "masonry");
+    const THICK = BAKE.WALL_FOOT.masonry * T;
+    const plan = wallPlan(walls, grid, THICK);
+    const drawn = dungeonWalls(plan, grid, 1, MASONRY_WALLS);
+    const feet = wallFeet(drawn, "masonry");
 
-    const half = (BAKE.WALL_FOOT.masonry * T) / 2;
-    /** The wall feet standing on one line (`axis` is the line's fixed coordinate), in order along it. */
-    const onLine = (axis: "x" | "y", line: number) => {
-      const along = axis === "x" ? "y" : "x";
-      return runsOf(feet)
-        .filter((f) => Math.abs(f.min[axis] + half - line) < 1e-6 && Math.abs(f.max[axis] - half - line) < 1e-6)
-        .map((f) => [f.min[along], f.max[along], f.height])
-        .sort((a, b) => a[0] - b[0]);
+    /**
+     * A run's foot (FS-XK2B6 §I.27): the strip from its edge line to one thickness on its wall
+     * cells' side, between its two ends, as tall as the run is drawn.
+     */
+    const stripOf = (run: EdgeRun): WallFoot => {
+      const across = run.axis === "x" ? "y" : "x";
+      const line = run.from[across];
+      const [a, b] = wallward(run.wallSide) > 0 ? [line, line + run.thickness] : [line - run.thickness, line];
+      const height = run.height === "back" ? BAKE.WALL_BACK : BAKE.WALL_FRONT;
+      return run.axis === "x"
+        ? { min: { x: run.from.x, y: a }, max: { x: run.to.x, y: b }, height }
+        : { min: { x: a, y: run.from.y }, max: { x: b, y: run.to.y }, height };
     };
-    // the corner posts stand at the centres of cells 1 and 6
-    const [lo, hi] = [1.5 * CELL, 6.5 * CELL];
+    /** A foot, rounded, so two feet of one rect compare equal. */
+    const key = (f: WallFoot) => [f.min.x, f.min.y, f.max.x, f.max.y].map((v) => v.toFixed(6)).join(",") + `@${f.height}`;
 
-    it("should cast one shape per post and per stretch of a side, whatever the pieces", () => {
+    it("should cast one shape per edge run and one per post, whatever the pieces", () => {
+      // the room's four sides, each one run of one height, and a post at each corner
+      expect(plan.runs).toHaveLength(4);
       expect(plan.posts).toHaveLength(4);
-      expect(plan.pieces.length).toBeGreaterThan(30);
-      // four sides; the south and the east side each change height once
-      expect(runsOf(feet)).toHaveLength(6);
-      expect(planWallShadows(plan, "masonry")).toHaveLength(10);
+      expect(drawn.pieces).toHaveLength(4 * 4 * 2);
+      expect(runsOf(feet)).toHaveLength(4);
+      expect(planWallShadows(drawn, "masonry")).toHaveLength(8);
     });
 
-    it("should cast a full-height side as one foot from corner post to corner post, and no further", () => {
-      expect(onLine("y", lo)).toEqual([[lo, hi, BAKE.WALL_BACK]]);
-      expect(onLine("x", lo)).toEqual([[lo, hi, BAKE.WALL_BACK]]);
+    it("should stand each run's foot on its edge, one thickness into its wall cells, from end to end", () => {
+      const [lo, hi] = [2 * CELL, 6 * CELL];
+      expect(runsOf(feet).map(key).sort()).toEqual(
+        [
+          // the north side, full height: its masonry north of the room's north edge
+          { min: { x: lo, y: lo - THICK }, max: { x: hi, y: lo }, height: BAKE.WALL_BACK },
+          // the west side, full height
+          { min: { x: lo - THICK, y: lo }, max: { x: lo, y: hi }, height: BAKE.WALL_BACK },
+          // the south and east sides, cut away: their masonry south and east of the room's edges
+          { min: { x: lo, y: hi }, max: { x: hi, y: hi + THICK }, height: BAKE.WALL_FRONT },
+          { min: { x: hi, y: lo }, max: { x: hi + THICK, y: hi }, height: BAKE.WALL_FRONT },
+        ]
+          .map(key)
+          .sort(),
+      );
     });
 
-    it("should cast a cut-away side by its pieces' own heights, between its posts", () => {
-      // the part of the run in the south-west (north-east) corner's cell stands full height (wallRule)
-      const stretches = [
-        [lo, 2 * CELL, BAKE.WALL_BACK],
-        [2 * CELL, hi, BAKE.WALL_FRONT],
-      ];
-      expect(onLine("y", hi)).toEqual(stretches);
-      expect(onLine("x", hi)).toEqual(stretches);
+    it("should cast each post from the square where its walls' thicknesses cross, by its own height", () => {
+      const half = (BAKE.POST_FOOT * T) / 2;
+      const posts = feet.filter((f) => !runsOf(feet).includes(f));
+      expect(posts.map(key).sort()).toEqual(
+        plan.posts
+          .map((p) => ({
+            min: { x: p.at.x - half, y: p.at.y - half },
+            max: { x: p.at.x + half, y: p.at.y + half },
+            height: p.height === "back" ? BAKE.WALL_BACK : BAKE.WALL_FRONT,
+          }))
+          .map(key)
+          .sort(),
+      );
+      // the masonry post's foot is exactly where its two walls' feet cross
+      expect(BAKE.POST_FOOT).toBe(BAKE.WALL_FOOT.masonry);
     });
 
-    it("should cast nothing from a piece outside its run's end posts", () => {
-      for (const f of runsOf(feet)) {
-        expect(Math.min(f.min.x, f.min.y)).toBeGreaterThanOrEqual(lo - half - 1e-6);
-        expect(Math.max(f.max.x, f.max.y)).toBeLessThanOrEqual(hi + half + 1e-6);
-      }
+    describe("the sample floor (dungeon.fixture.json)", () => {
+      const sample = fixture as unknown as DungeonMap & { walls: WallState[] };
+      const floor = new RegionGrid(sample);
+      const samplePlan = wallPlan(sample.walls, floor, THICK);
+      const sampleDrawn = dungeonWalls(samplePlan, floor, 7, MASONRY_WALLS);
+      const sampleFeet = wallFeet(sampleDrawn, "masonry");
+
+      it("should give every edge run exactly one foot, its strip, and every post one", () => {
+        expect(runsOf(sampleFeet).map(key).sort()).toEqual(samplePlan.runs.map(stripOf).map(key).sort());
+        expect(sampleFeet).toHaveLength(samplePlan.runs.length + samplePlan.posts.length);
+      });
     });
   });
 });
