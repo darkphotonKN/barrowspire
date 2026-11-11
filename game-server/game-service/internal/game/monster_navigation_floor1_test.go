@@ -75,9 +75,14 @@ func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, see
 		}
 	}
 
-	for i := range chasers {
-		// five bodies of 40 px crowd round one delver: within a few bodies
-		assert.LessOrEqual(t, closest[i], 4*2*constants.PlayerRadius, "seed %d: monster %d never reached the delver", seed, i)
+	for i, m := range chasers {
+		// five bodies of 40 px crowd round one delver: within a few bodies; a
+		// ranged monster stops where it shoots from (FS-B4SG9 §A R4)
+		reach := 4 * 2 * constants.PlayerRadius
+		if mc := monsterOf(m); mc.ShotProjectileType != "" {
+			reach = max(reach, mc.AttackRange)
+		}
+		assert.LessOrEqual(t, closest[i], reach, "seed %d: monster %d never reached the delver", seed, i)
 	}
 }
 
