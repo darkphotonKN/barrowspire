@@ -210,6 +210,7 @@ import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { thicknessPx, type WallHeight } from "@/render/world/walls";
 import {
   FULLSCREEN_BUTTON_CLEARANCE,
+  afterFrameSetUp,
   anchorAt,
   boundCamera,
   crispen,
@@ -3905,9 +3906,14 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     // every region unexplored until the party is placed in it, this same broadcast (§B.6)
     fog.show((id) => dungeon.seen.state(id));
-    // the floor's minimap, drawn from the same exploration (§E.23)
+    // the floor's minimap, drawn from the same exploration (§E.23); as the overlay, held against
+    // the screen from the main camera's frames (FS-1SEF0 §C.19)
     dungeon.minimap = new Minimap(
-      { graphics: () => this.add.graphics(), canvasImage: (...image) => canvasImage(this, ...image) },
+      {
+        graphics: () => this.add.graphics(),
+        canvasImage: (...image) => canvasImage(this, ...image),
+        frames: (listener) => afterFrameSetUp(this.cameras.main, listener),
+      },
       dungeon.grid,
       () => viewport.renderScale,
     );

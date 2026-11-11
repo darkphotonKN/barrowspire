@@ -12,6 +12,12 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/render/viewport")>()),
   boundCamera: () => {},
   followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
+  // the stub camera keeps who hears its frames; a test sets a frame up by calling them
+  afterFrameSetUp: (cam: { frames?: Set<(scroll: { x: number; y: number }) => void> }, listener: (scroll: { x: number; y: number }) => void) => {
+    const frames = (cam.frames ??= new Set());
+    frames.add(listener);
+    return () => frames.delete(listener);
+  },
 }));
 
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
@@ -7836,6 +7842,32 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
             }
           },
         );
+
+        // the owner, 2026-11-12: "最大的全螢幕還是會有震動感", "人在左右移動時地圖點位不是直線 會鋸齒狀上下移動".
+        // The figure dances a backing px each way on screen against the camera's floored scroll;
+        // the map, held against the screen from each frame's scroll, does not dance with it.
+        it("should hold the map against the screen from the main camera's frames, the dots left on the figure, and stop hearing them with the floor's minimap (§C.19)", () => {
+          const { run, map, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          r.playerPos = { x: 2570, y: 3090 };
+          r.followMapOverlay();
+          const layers = map() as unknown as { map: Made; dots: Made };
+          const stood = layers.map.last.setPosition as number[];
+          const cam = (run as unknown as { cameras: { main: { frames?: Set<(scroll: { x: number; y: number }) => void> } } }).cameras.main;
+          const frameAt = (x: number, y: number) => {
+            for (const listener of [...(cam.frames ?? [])]) listener({ x, y });
+          };
+          frameAt(1000, 800);
+          expect(layers.map.last.setPosition).toEqual(stood);
+          // the camera a px on: on screen the figure's point steps a px back; the map holds there
+          r.followMapOverlay();
+          frameAt(1001, 800);
+          expect(layers.map.last.setPosition).toEqual([stood[0] + 1, stood[1]]);
+          expect(layers.dots.last.setPosition).toEqual(stood);
+          map()!.destroy();
+          expect(cam.frames?.size).toBe(0);
+        });
       });
 
       it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
