@@ -200,11 +200,17 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
         maxParticles: 300,
         density: 0.1,
         shapes: 24,
-        lengthPx: { from: 1.5, to: 8 },
-        smallBias: 1.6,
+        lengthPx: { from: 3, to: 14 },
+        smallBias: 1.2,
         aspect: { from: 1.1, to: 2.8 },
         mottle: 0.6,
-        glow: { share: 1 / 3, ms: 500, steps: 8 },
+        glow: {
+          share: 2 / 3,
+          ms: 700,
+          steps: 20,
+          shades: 12,
+          flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
+        },
         speed: { from: 12, to: 32 },
         drag: 0.5,
         spreadDeg: 30,
@@ -226,7 +232,7 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
       },
       tint: { edge: "ember", char: "slate", flake: "slate", mottle: "slateLight", glow: "ember", spark: "ember" },
       rule: { tint: "brass", alpha: 0.6 },
-      ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn" },
+      ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn", glow: "Sine.easeIn" },
     });
   });
 
@@ -262,6 +268,12 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     expect(CARD_ASH.flake.lengthPx.from).toBeGreaterThan(1.2);
     // a flip only: the half-turn, edge-on to the other face, falls inside a flake's life
     expect(CARD_ASH.flake.flipMs.to / 2).toBeLessThan(CARD_ASH.flake.lifeMs);
+    // a glow dies inside its flake's life, and its flicker inside its dying
+    const { glow } = CARD_ASH.flake;
+    expect(glow.ms).toBeLessThan(CARD_ASH.flake.lifeMs);
+    expect(glow.flicker.within.from).toBeGreaterThan(0);
+    expect(glow.flicker.within.to).toBeLessThan(1);
+    expect(glow.flicker.depth).toBeLessThan(1);
   });
 });
 
@@ -444,6 +456,9 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       return drawn.filter((p) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !at.has(`${p.x + dx},${p.y + dy}`)));
     }
 
+    /** How hot a frame of a flake is: its pixel nearest `ember`, as 255 less its distance. */
+    const heat = (drawn: { c: number[] }[]) => Math.max(...drawn.map((p) => 255 - dist(p.c, EMBER)));
+
     /** How far `c` lies from the triangle `a`, `b`, `e` in RGB (0 inside it): a mix of the three tokens. */
     function offMix(c: number[], a: number[], b: number[], e: number[]): number {
       let best = Infinity;
@@ -592,15 +607,28 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(widest).toBeGreaterThan(1);
     });
 
-    it("should span a range of sizes, many tiny and a few larger, and of aspects, mostly longer than wide", () => {
+    it("should span a range of sizes, from about 3 to about 14 px, the middle about 8, and of aspects, mostly longer than wide", () => {
       const all = shapes(2);
 
+      // the owner's second tune of 2026-11-12, "碎屑再大片一點": 3–14 view px, was 1.5–8
       const lengths = all.map((s) => s.length).sort((a, b) => a - b);
-      expect(lengths[0]).toBeLessThanOrEqual(2.5);
-      expect(lengths.at(-1)!).toBeGreaterThanOrEqual(6.5);
-      expect(lengths.at(-1)!).toBeLessThanOrEqual(8.5);
-      // many tiny: the median nearer the small end than the large
-      expect(lengths[Math.floor(lengths.length / 2)]).toBeLessThan((lengths[0] + lengths.at(-1)!) / 2);
+      expect(lengths[0]).toBeGreaterThanOrEqual(2.5);
+      expect(lengths[0]).toBeLessThanOrEqual(3.5);
+      // the longest about 14: a torn tip or a bite may take a view px or two off its drawn length
+      expect(lengths.at(-1)!).toBeGreaterThanOrEqual(11.5);
+      expect(lengths.at(-1)!).toBeLessThanOrEqual(14.5);
+      // the middle flake about 8 px, the smaller more than the larger: the lower half spans less length
+      const middle = lengths[Math.floor(lengths.length / 2)];
+      expect(middle).toBeGreaterThanOrEqual(7);
+      expect(middle).toBeLessThanOrEqual(9);
+      expect(middle - lengths[0]).toBeLessThan(lengths.at(-1)! - middle);
+      // a shard, not a line: no side under 3 view px (a pixel's tear allowed)
+      for (const { frames } of all) {
+        const xs = frames[0].map((p) => p.x);
+        const ys = frames[0].map((p) => p.y);
+        const side = Math.min(Math.max(...xs) - Math.min(...xs) + 1, Math.max(...ys) - Math.min(...ys) + 1) / 2;
+        expect(side).toBeGreaterThanOrEqual(2.5);
+      }
       // aspects: large enough flakes to tell, some near square and most longer than wide
       const aspects = all.filter((s) => s.length >= 3).map((s) => s.aspect);
       expect(aspects.length).toBeGreaterThanOrEqual(8);
@@ -658,7 +686,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
     });
 
-    it("should be slate mottled toward slateLight, a third with an ember patch that dims to grey over its first 500 ms", () => {
+    it("should be slate mottled toward slateLight, two thirds with an ember patch that dies to grey over its first 700 ms", () => {
       const all = shapes(2);
 
       for (const { frames } of all)
@@ -668,19 +696,39 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         const shades = new Set(frames[0].map((p) => p.c.join(",")));
         expect(shades.size).toBeGreaterThan(1);
       }
+      // the owner's second tune of 2026-11-12, "再加一些快滅掉的火光": two thirds, was a third
       const glowing = all.filter((s) => s.frames.length > 1);
-      expect(glowing).toHaveLength(8);
+      expect(glowing).toHaveLength(16);
       for (const { anim, frames } of glowing) {
-        // 8 steps over 500 ms, then held on the last
-        expect(frames).toHaveLength(8);
-        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(500);
-        const heat = (drawn: { c: number[] }[]) => Math.max(...drawn.map((p) => 255 - dist(p.c, EMBER)));
+        // 20 frames over 700 ms (was 8 over 500), then held on the last
+        expect(frames).toHaveLength(20);
+        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(700);
         expect(frames[0].some((p) => dist(p.c, EMBER) < 40)).toBe(true);
-        for (let k = 1; k < frames.length; k++) expect(heat(frames[k])).toBeLessThanOrEqual(heat(frames[k - 1]) + 1e-9);
+        expect(heat(frames.at(-1)!)).toBeLessThan(heat(frames[0]));
         // dimmed to grey: nothing ember-ish left
         for (const p of frames.at(-1)!) expect(offSegment(p.c, SLATE, SLATE_LIGHT)).toBeLessThan(3);
       }
       for (const { anim } of all.filter((s) => s.frames.length === 1)) expect(anim.frames).toHaveLength(1);
+    });
+
+    it("should die like an ember, not fade: a glowing flake's heat dips and recovers once or twice before it goes", () => {
+      const glowing = shapes(2).filter((s) => s.frames.length > 1);
+
+      const counts = glowing.map(({ frames }) => {
+        const h = frames.map(heat);
+        // holding its heat at first: still more than half its way from grey a third of the way in
+        // (the best of three frames there, so a dip falling on it does not count)
+        const grey = h.at(-1)!;
+        const third = Math.floor(h.length / 3);
+        expect(Math.max(...h.slice(third - 1, third + 2)) - grey).toBeGreaterThan((h[0] - grey) / 2);
+        // a dip: a fall to a low, then a recovery, all before the last frame
+        const dips = h.slice(1, -1).filter((v, k) => v < h[k] - 8 && h[k + 2] > v + 8).length;
+        expect(dips).toBeGreaterThanOrEqual(1);
+        expect(dips).toBeLessThanOrEqual(2);
+        return dips;
+      });
+      // once on some flakes and twice on others
+      expect(new Set(counts)).toEqual(new Set([1, 2]));
     });
 
     it("should make the flake sheet and its anims once, and keep them for the next card", () => {
