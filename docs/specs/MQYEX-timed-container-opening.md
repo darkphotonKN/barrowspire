@@ -100,9 +100,18 @@ Derived here (chosen by the charter run where the locked decisions were silent; 
 - **D12: the per-player 100 ms interact throttle is unchanged** and a reach counts toward it as
   any interact does. *Reason:* the owner lifted only the per-container one.
 - **D13: the client gives up a pending reach when its timed open ends with the container still
-  shut, and when the player moves.** *Reason:* without it, a player who was hit out of a timed
-  open and stayed put would have the view pop open later when a teammate finished, against "a
-  cancel affects only the player it happened to" read from the other side.
+  shut, and when the player moves after a state has shown that timed open.** *Reason:* without
+  it, a player who was hit out of a timed open and stayed put would have the view pop open later
+  when a teammate finished, against "a cancel affects only the player it happened to" read from
+  the other side.
+  **Owner ruling, 2026-11-11 ("好那就用a"): "moves" is measured from the position in the first
+  state that shows the player's own timed open on that container.** Between the E press and that
+  state the client judges no change of position: it waits for the server's answer. *Reason:* the
+  state the client holds at the E press can be older than the player's stop by a round trip. A
+  player who pressed E just after stopping was then seen to "move" by the next state, the reach
+  was given up, the server's timed open ran on, the bar filled, the chest opened and no view
+  did. The server takes its own baseline where the body stands when the timed open starts (D3);
+  the first state that shows the timed open is the client's nearest sight of that place.
 - **D14: the open bar's look** (R24) is new art direction: FS-B3NDZ left channel bars out. It
   borrows the countdown's bar so the canvas keeps one bar look, fills instead of draining, and
   carries no number. *Reason:* 1.5 s has no whole seconds worth reading, and a fill reads as
@@ -237,11 +246,19 @@ Read in the code on 2026-11-11 (`feat/run-chest-open-channel`, cut from `fix/gua
     number. The design guideline gains an "Open bar" entry beside "Countdowns" saying so, and
     that it is not a countdown (D14).
 25. **Only one's own.** The client draws no bar for another player, and none while spectating.
-26. **Giving up a reach.** A pending reach ends, and no view will open for it, when: the server
-    refuses it (as today); the player's own position changes; or a state showed the player's
-    timed open on that container and a later state shows none while the container is still shut.
-    A state that shows the container open is read first: a player whose timed open ended because
-    a teammate finished gets the view (D13).
+26. **Giving up a reach.** A pending reach ends, and no view will open for it, when:
+    - the server refuses it (as today);
+    - its container is no longer in the state, or the state has the player farther from it than
+      the interact range (as today);
+    - a state has shown the player's timed open on that container, and a later state has the
+      player's own position different from the one in the **first** state that showed it;
+    - a state has shown the player's timed open on that container, and a later state shows none
+      while the container is still shut.
+
+    Between the E press and the first state that shows the timed open, the client judges no
+    change of position: it waits for the server's answer. A state that shows the container open
+    is read first: a player whose timed open ended because a teammate finished gets the view
+    (D13).
 27. **Nothing else on the client changes.** Taking items, the per-kind views, the "It will not
     open." notice, the field scene and the hub are as they are.
 
@@ -305,7 +322,9 @@ Read in the code on 2026-11-11 (`feat/run-chest-open-channel`, cut from `fix/gua
 - [ ] The E key on a shut container opens no view; a state with `timed_open` for it draws the open bar at `elapsed / duration`; a state showing the container open opens the view and removes the bar.
 - [ ] A state without `timed_open`, the container still shut, after one that had it: the bar is gone, no notice is raised, the reach is given up, and a later state showing the container open opens no view.
 - [ ] A state that both drops `timed_open` and shows the container open opens the view.
-- [ ] A pending reach is given up when the player's own position changes.
+- [ ] E pressed while the held state still has the player at the place they were before they stopped: the next state has them stopped and shows their `timed_open` on the container, later states hold that position, and the state that shows the container open opens the view.
+- [ ] After the first state that shows the player's `timed_open` on the container, a state with the player's own position changed gives the reach up, the container as near as before.
+- [ ] Before any state shows that `timed_open`, a changed position within the interact range does not give the reach up; a state with the player beyond the interact range of the container, or without the container, does.
 - [ ] The bar's fill never passes full and nothing opens without a state showing the container open.
 - [ ] No bar is drawn from another player's state or while spectating.
 - [ ] An already-open container's view opens at once on the E key; a guarded refusal still shows "It will not open." and no bar.
@@ -321,8 +340,13 @@ Read in the code on 2026-11-11 (`feat/run-chest-open-channel`, cut from `fix/gua
 ## Edge States
 
 - **The reach is made while walking.** The timed open starts and is cancelled on the same tick
-  (R6). No state ever shows it, the client gives the reach up because the player is moving (R26),
-  and nothing opens.
+  (R6). No state ever shows it and nothing opens. The client has no answer to judge, so the
+  reach is pending until the player is out of reach of the container or it leaves the state
+  (R26); a teammate who opens it while the player is still in reach opens the player's view.
+- **E is pressed within a round trip of stopping.** The state held at the press is older than
+  the stop. The client judges no position until a state shows the timed open; that state's
+  position is the baseline, the player holds it, and the view opens when the container does
+  (R26, D13).
 - **A hit and the last tick coincide.** The hit wins; the container stays shut (R10).
 - **Two players finish on the same tick.** The first in the tick's order opens and rolls; the
   second finds it open and ends. One roll (R16).
@@ -341,7 +365,8 @@ Read in the code on 2026-11-11 (`feat/run-chest-open-channel`, cut from `fix/gua
   bar from the next state; one whose body left the run has none.
 - **A frame is dropped.** The next state carries the timed open again; the bar corrects (R22).
 - **The reach is dropped by the per-player throttle.** As today, nothing starts and no reply
-  comes; the reach is pending until the player moves (R3, R26).
+  comes; the reach is pending until the player is out of reach of the container or it leaves
+  the state (R3, R26).
 - **An empty roll.** The container opens empty and shows "(Picked clean)", as today (R5).
 - **The container is out of the recipient's snapshot.** It cannot be: the player is within reach
   of it. If it is ever missing, no bar is drawn (R22).
