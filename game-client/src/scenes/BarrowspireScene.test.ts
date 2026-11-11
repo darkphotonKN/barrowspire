@@ -83,6 +83,7 @@ const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
 const await_minimap = await import("@/ui/minimap");
 const await_topRightColumn = await import("@/ui/topRightColumn");
+const await_positionReadout = await import("@/ui/positionReadout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -5310,7 +5311,7 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const column = (minimap: boolean) => topRightColumn({ corner, minimap, floorHeight: LINE.height });
+      const column = (minimap: boolean) => topRightColumn({ corner, minimap, floorHeight: LINE.height, escapedHeight: LINE.height });
       const { minimap: map, floor: floorAt } = column(true);
       expect(map).toEqual({ x: corner.x - 216, y: 44, width: 216, height: 108 });
       expect(floorAt.y).toBe(map.y + map.height + 6);
@@ -6333,6 +6334,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         dungeon?: FoggedRun["dungeon"] & { minimap?: Map };
         floorText?: object;
         escapedCountText?: object;
+        positionReadout?: object;
         menu?: unknown;
         chatWindow?: { isTyping(): boolean };
         minimapOn: boolean;
@@ -6377,6 +6379,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         run.createUI();
         run.bindRunInput();
         Object.assign(run.floorText!, FLOOR_LINE);
+        Object.assign(run.escapedCountText!, FLOOR_LINE);
         const view = (width: number) => {
           viewport.set({ width, height: 720, renderScale: 1 });
           run.relayoutHud();
@@ -6596,6 +6599,103 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         }
         expect(destroyed).toHaveBeenCalled();
         expect(shown).not.toHaveBeenCalled();
+      });
+
+      describe("the dev position readout (FS-56CKV §C, I-56CKV-3)", () => {
+        const { POSITION_READOUT } = await_positionReadout;
+        /** Where the readout was last stood, and on which corner of its box. */
+        const readoutAt = (run: MappedRun) => {
+          const { last } = run.positionReadout as Made;
+          return { at: last.setPosition, origin: last.setOrigin };
+        };
+        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 44 + 108 - 4], origin: [0, 1] });
+        /** Under the column closed up to its top: the floor indicator, the escaped count, then 4 px. */
+        const underColumn = (right: number, lines = 2) => ({ at: [right, 44 + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
+
+        afterEach(() => {
+          vi.unstubAllEnvs();
+        });
+
+        it("should draw it at 10 px in a HUD text token at a partial alpha, with no backing, over the minimap's depth (§C.15, §C.16)", () => {
+          const { run } = mapped();
+          const readout = run.positionReadout as Made;
+          expect(readout.args[3]).toEqual({ fontFamily: CANVAS_FONT.body, fontSize: "10px", color: toCss(palette.hudText) });
+          expect(readout.last.setAlpha).toEqual([POSITION_READOUT.alpha]);
+          expect(readout.last.setScrollFactor).toEqual([0]);
+          expect(readout.depth).toBeGreaterThan(await_minimap.MINIMAP.depth);
+        });
+
+        it("should stand it in the minimap's bottom-left corner, 4 px in, and follow the minimap on resize, re-crispened (§C.14, §C.19)", () => {
+          const { run, view } = mapped();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+          viewport.set({ width: 1280, height: 720, renderScale: 2 });
+          run.relayoutHud();
+          expect(readoutAt(run)).toEqual(inMinimap(1270));
+          expect((run.positionReadout as Made).last.setResolution).toEqual([2]);
+          view(1080);
+        });
+
+        it("should never stand it at the top left, in a run on a floor with a minimap or without one", () => {
+          const { run, handle } = mapped();
+          const left = () => (readoutAt(run).at![0] as number) < viewport.width / 2;
+          expect(left()).toBe(false);
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(left()).toBe(false);
+        });
+
+        it("should stand it 4 px under the column's last line, right-aligned, while M hides the minimap, and back in the minimap on M (§C.18)", () => {
+          const { run, keys } = mapped();
+          keys["keydown-M"]();
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          keys["keydown-M"]();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should follow the column as the floor indicator's label goes and comes, with no minimap shown (§C.18)", () => {
+          const { run, keys } = mapped();
+          keys["keydown-M"]();
+          run.updateFloorIndicator({ floor: undefined });
+          expect(readoutAt(run)).toEqual(underColumn(1070, 1));
+          run.updateFloorIndicator({ floor: 1 });
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+        });
+
+        it("should stand it under the column on a floor without regions and on a dungeon floor before its map, and in the minimap once it is built (§C.18, §C.19)", () => {
+          const { run, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(run.dungeon).toBeUndefined();
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          // floor 3 laid out as floor 1: before its map, then with it
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(run.dungeon?.minimap).toBeDefined();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should refresh it every frame without redrawing either of the minimap's layers (§C.16, FS-SRA9J §E.23)", () => {
+          const { run, map } = mapped();
+          const [redraws, dotRedraws] = [map()!.redraws, map()!.dotRedraws];
+          Object.assign(run, { player: (run as { player?: object }).player ?? {} });
+          for (const x of [200, 240, 280]) {
+            Object.assign(run, { playerPos: { x, y: 180 } });
+            (run as unknown as { events: Emitter }).events.emit("update");
+            expect((run.positionReadout as Made).args[2]).toBe(`X: ${x} Y: 180`);
+          }
+          expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
+        });
+
+        it("should make none in a production build, and the column lays out without it (§C.19)", () => {
+          vi.stubEnv("NEXT_PUBLIC_SHOW_POSITION_READOUT", "false");
+          const { run, keys, stage } = mapped();
+          expect(run.positionReadout).toBeUndefined();
+          expect(stage.made.some((m) => m.kind === "text" && (m.args[3] as { fontSize?: string })?.fontSize === "10px")).toBe(false);
+          keys["keydown-M"]();
+          expect(standing(run.escapedCountText)).toEqual([1070, 69]);
+        });
       });
 
       it("should not exist in the hub or field scenes", () => {
