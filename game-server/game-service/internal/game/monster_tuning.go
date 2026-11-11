@@ -328,13 +328,14 @@ type monsterShot struct {
 }
 
 // The Bone Archer's arrow: a hostile one, drawn apart from a party archer's.
-// Its max flight outruns a delver fleeing straight from shooting range.
+// Its max flight catches a delver at the base speed who runs straight away
+// from shooting range from the first tick of the draw (826 px of flight).
 // FS-B4SG9 §A R2. Starting values.
 var boneArrowShot = monsterShot{
 	ProjectileType: "bone_arrow",
 	Speed:          420,
 	Radius:         8,
-	MaxFlight:      700,
+	MaxFlight:      850,
 }
 
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
