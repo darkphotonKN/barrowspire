@@ -5689,8 +5689,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkBuildingStatus();
     this.updateTargetFrame(delta);
 
-    // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
-    if (this.containerView.isOpen) {
+    // 檢查寶箱距離，太遠自動關閉: while a coffer is open, and while a reach waits on the server
+    if (this.containerView.isOpen || this.reaching) {
       this.checkChestDistance();
     }
   }
