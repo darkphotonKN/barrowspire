@@ -211,9 +211,10 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
       band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
       flake: {
         lifeMs: 1000,
-        // the owner's fourth tune of 2026-11-12, "灰燼 碎屑少２０％": a fifth fewer (was 300 and 0.1)
-        maxParticles: 240,
-        density: 0.08,
+        // the owner's sixth tune of 2026-11-12, "灰燼碎屑少一點": a fifth fewer again (was 240 and
+        // 0.08; before his fourth, "灰燼 碎屑少２０％", 300 and 0.1)
+        maxParticles: 192,
+        density: 0.064,
         shapes: 24,
         lengthPx: { from: 3, to: 14 },
         smallBias: 1.2,
@@ -290,7 +291,7 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     expect(CARD_ASH.tint.seam).toEqual(CARD_ASH.tint.band.slice(1));
     expect(CARD_ASH.tint.spark).toEqual(CARD_ASH.tint.band.slice(1));
     // the exception, bounded: a few hundred flakes and a few tens of sparks, rising, never sprayed
-    expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(240);
+    expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(192);
     // the owner's third tune of 2026-11-12, "往左往上散": a flake at most 45 px/s and 60° off up,
     // never right of it; a spark at most 40° off up (was 32 px/s and 30°, and 25°)
     expect(CARD_ASH.flake.speed.to).toBeLessThanOrEqual(45);
@@ -559,7 +560,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(config()).toMatchObject({
         lifespan: 1000,
         speed: { min: 18, max: 45 },
-        maxParticles: 240,
+        maxParticles: 192,
         emitting: false,
         scaleX: 1,
         alpha: { start: 1, end: 0, ease: "Sine.easeIn" },
@@ -600,10 +601,10 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     });
 
     it.each([
-      ["a little ink", ["####", "####"], 3],
-      ["a card's worth", Array(6).fill("#".repeat(40)), 21],
-      ["far more than the cap", Array(60).fill("#".repeat(400)), 240],
-    ])("should make 0.08 flakes per view px² of ink from %s, at most 240 (the owner's fourth tune, 20% fewer)", (_, rows, want) => {
+      ["a little ink", ["####", "####"], 2],
+      ["a card's worth", Array(6).fill("#".repeat(40)), 17],
+      ["far more than the cap", Array(60).fill("#".repeat(400)), 192],
+    ])("should make 0.064 flakes per view px² of ink from %s, at most 192 (the owner's sixth tune, 20% fewer again)", (_, rows, want) => {
       const stage = ashStage();
       stage.ash.play(cardInk(stubText(rows)), 961, stage.gone);
       stage.front().at(1);
