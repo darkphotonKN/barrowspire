@@ -73,3 +73,15 @@ describe("the arrival card's two leaves (FS-PQ2TW §Change: Smoke, R52)", () => 
     for (const c of leaves) expect(c.demo).toBeTypeOf("function");
   });
 });
+
+describe("the arrival card's third leave (FS-PQ2TW §Change: Ash, R62)", () => {
+  it("should show the ash as its own replayable card, beside the dust and the smoke", () => {
+    const leaves = EFFECT_CARDS.filter((c) => c.module.startsWith("card"));
+    expect(leaves.map((c) => [c.module, c.name])).toEqual([
+      ["cardAsh", "Arrival card ash"],
+      ["cardDust", "Arrival card dust"],
+      ["cardSmoke", "Arrival card smoke"],
+    ]);
+    for (const c of leaves) expect(c.demo).toBeTypeOf("function");
+  });
+});

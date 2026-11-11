@@ -140,6 +140,12 @@ export const EFFECT_CARDS: EffectCard[] = [
     demo: (s) => s.fly("bone_arrow"),
   },
   {
+    module: "cardAsh",
+    name: "Arrival card ash",
+    // a third trial beside the dust and the smoke, for the owner to compare (§Change: Ash R62)
+    demo: (s) => playArrivalCard(s, "ash"),
+  },
+  {
     module: "cardDust",
     name: "Arrival card dust",
     demo: (s) => playArrivalCard(s, "dust"),

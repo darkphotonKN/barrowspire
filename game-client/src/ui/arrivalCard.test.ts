@@ -5,11 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { HUD_DEPTH, MARKER_DEPTH } from "@/render/markers/markers";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { CardAsh } from "@/render/effects/cardAsh";
 import {
   ARRIVAL_CARD,
   ArrivalCard,
   CARD_LAYOUT,
   CARD_LEAVE,
+  cardLeaves,
   type ArrivalCardScene,
   type CardLeaveInk,
   type CardLeavePlayer,
@@ -19,6 +21,7 @@ import {
 // card as one piece no scene owns, on a recording stand-in for the slice of a scene it draws with.
 // FS-PQ2TW §D R24, R29–R31, R35, R36. I-PQ2TW-5: the card leaves as dust, through a stand-in dust.
 // FS-PQ2TW §Change: Smoke, R41, R43, R50: or as smoke, behind one switch that picks dust.
+// FS-PQ2TW §Change: Ash, R53, R60: or as ash, behind the same switch.
 
 interface Part {
   kind: "rectangle" | "text" | "graphics";
@@ -120,8 +123,9 @@ function cardOnStage(plays = false) {
   const stage = fakeScene();
   const { leave: dust, asked } = fakeLeave(plays);
   const { leave: smoke, asked: smoked } = fakeLeave(true, true);
-  const card = new ArrivalCard(stage.scene, { dust, smoke });
-  return { ...stage, card, dust, asked, smoke, smoked };
+  const { leave: ash, asked: ashed } = fakeLeave(true, true);
+  const card = new ArrivalCard(stage.scene, { dust, smoke, ash });
+  return { ...stage, card, dust, asked, smoke, smoked, ash, ashed };
 }
 
 const WORDS = { title: "The Second Floor", line: "The dead walk heavier here." };
@@ -661,6 +665,50 @@ describe("the card can leave as smoke instead (FS-PQ2TW §Change: Smoke, a trial
 
     expect(smoke.forget).toHaveBeenCalled();
     expect(smoke.stop).not.toHaveBeenCalled();
+  });
+});
+
+describe("the card can leave as ash instead (FS-PQ2TW §Change: Ash, a trial alternate leave)", () => {
+  it("should keep the dust as the game's leave, and hand every scene the ash with the others (R53)", () => {
+    expect(CARD_LEAVE).toBe("dust");
+    const leaves = cardLeaves({} as never, () => undefined);
+    expect(Object.keys(leaves).sort()).toEqual(["ash", "dust", "smoke"]);
+    expect(leaves.ash).toBeInstanceOf(CardAsh);
+  });
+
+  it("should leave as ash when a play names it, the letters handed over and left to it (R53, R55)", () => {
+    const { card, parts, leaves, asked, smoked, ashed, last, cardTweens } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "ash");
+    const [, heading, rule, subtitle] = parts;
+
+    leaves()[0].fn();
+
+    expect(asked).toEqual([]);
+    expect(smoked).toEqual([]);
+    expect(ashed).toHaveLength(1);
+    const same = (got: readonly unknown[], want: unknown[]) =>
+      expect(got.length === want.length && got.every((g, i) => g === want[i])).toBe(true);
+    same(ashed[0].ink.texts, [heading.obj, subtitle.obj]);
+    same(ashed[0].ink.letters, [heading.obj, rule.obj, subtitle.obj]);
+    expect(ashed[0].depth).toBe(ARRIVAL_CARD.depth + 1);
+    // the ash hides them itself as its burning image takes their place
+    for (const part of [heading, rule, subtitle]) expect(last(part, "setVisible")).toBeUndefined();
+    expect(cardTweens(parts.slice(1), 0)).toEqual([]);
+  });
+
+  it("should take the ash away when the next card starts, and the card down once it has gone (R9, R60)", () => {
+    const { card, leaves, ash, ashed, dust } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "ash");
+    leaves()[0].fn();
+    ashed[0].gone();
+    expect(card.up).toBe(false);
+
+    card.play(WORDS, { built: true }, "ash");
+    leaves()[1].fn();
+    card.play(WORDS, { built: true });
+
+    expect(ash.stop).toHaveBeenCalled();
+    expect(dust.stop).not.toHaveBeenCalled();
   });
 });
 
