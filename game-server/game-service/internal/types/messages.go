@@ -113,6 +113,10 @@ type CurrentPlayerState struct {
 	*PlayerState
 	Resource *ResourceState `json:"resource,omitempty"`
 	*ParryState
+	// TimedOpen is the recipient's own timed open on a run's shut container;
+	// absent when they have none. Nobody else is told it. FS-MQYEX
+	// §Requirements 18–19.
+	TimedOpen *TimedOpenState `json:"timed_open,omitempty"`
 }
 
 // OtherPlayerState is another player as one recipient is told them: what every
@@ -142,6 +146,9 @@ type BackendGameState struct {
 	Resources map[uuid.UUID]*ResourceState
 	// Parries is each mercenary's parry stance, attached like Resources
 	Parries map[uuid.UUID]*ParryState
+	// TimedOpens is each delver's timed open, attached only to the frame
+	// their own client is sent
+	TimedOpens map[uuid.UUID]*TimedOpenState
 	// PartyOf is the pod's party membership snapshot (player id → party id) as
 	// this broadcast read it, once for all its recipients. Published immutable:
 	// shared, never written. FS-CH21F §Requirements 5–6.

@@ -853,8 +853,23 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
 	impacts := projectileSys.Update(deltaTime, entities)
 
+	// only a run has timed opens (FS-MQYEX §Requirements 1). They note the
+	// health their delvers take into the combat, so a hit that costs any is
+	// known after it (§Requirements 7)
+	timedOpens := s.worldType == types.WorldTypeRun
+	if timedOpens {
+		systems.NewTimedOpenSystem(s.EntityManager).MarkHealth(entities)
+	}
+
 	// combat
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
+
+	// timed opens count the tick, after its movement and combat and before a
+	// kill's heal can hide the combat's hit: each is cancelled or, its time
+	// passed, opens its container (FS-MQYEX §Requirements 4–10)
+	if timedOpens {
+		s.advanceTimedOpens(deltaTime, entities)
+	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters
 	if s.hasMonsters() {
@@ -1853,29 +1868,39 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		return ErrEntityNotFound
 	}
 
+	// a reach for a run's shut chest or sack starts a timed open, and several
+	// delvers may have one on the same container: it neither checks nor takes
+	// the per-container hold below, or a second delver's reach would be
+	// dropped without a reply (FS-MQYEX §Requirements 15)
+	startsTimedOpen := s.opensThroughTimedOpen(targetEntity)
+
 	// rate limiting cache
-	s.mu.Lock() // hold lock to prevent check then act races here
-	// check
-	_, exists := s.containerInteractedCache[targetEntityID]
-	if exists {
+	exists := false
+	if !startsTimedOpen {
+		s.mu.Lock() // hold lock to prevent check then act races here
+		// check
+		_, exists = s.containerInteractedCache[targetEntityID]
+		if exists {
+			s.mu.Unlock()
+			slog.Debug("Container entity still cached, not available for interaction", "targetEntityID", targetEntityID)
+			return fmt.Errorf("container targeted entityID %s was still cached and not available to be interacted", targetEntityID)
+		} else {
+			// act
+			s.containerInteractedCache[targetEntityID] = true
+		}
+		// release lock after act
 		s.mu.Unlock()
-		slog.Debug("Container entity still cached, not available for interaction", "targetEntityID", targetEntityID)
-		return fmt.Errorf("container targeted entityID %s was still cached and not available to be interacted", targetEntityID)
-	} else {
-		// act
-		s.containerInteractedCache[targetEntityID] = true
 	}
-	// release lock after act
-	s.mu.Unlock()
 
 	// a refused interaction must never keep the target reserved, or one bad
 	// click locks it for every delver for the rest of the run. Every exit
 	// releases it here unless a successful branch handed the release off to its
 	// own short cooldown timer (or to pickUpItem). The stairs keep no cooldown:
 	// one climb is guaranteed by the floor change request, so they never hand off.
+	// A reach that starts a timed open took no hold, and releases none.
 	releaseHandedOff := false
 	defer func() {
-		if releaseHandedOff {
+		if releaseHandedOff || startsTimedOpen {
 			return
 		}
 		s.mu.Lock()
@@ -2048,43 +2073,27 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			return ErrContainerGuarded
 		}
 
-		// only open, never close (chest stays open once opened)
-		containerOpenable.IsOpen = true
-
-		// create items on first open by using seeded itemPool
-		if !containerOpenable.HasBeenOpened {
-			containerOpenable.HasBeenOpened = true
-
-			// creates RANDOM items on the spot: the Spire's roll for the
-			// container's kind, or a field's derived from it (FS-3QHQZ
-			// §Requirements 19, FS-1D6BX §Requirements 4); an empty roll
-			// still leaves it opened
-			itemIDs, err := s.rollChest(containerKindOf(targetEntity))
-
-			if err != nil {
-				fmt.Printf("Error generating container items: %v\n", err)
-				return fmt.Errorf("failed to generate container items: %w", err)
+		if startsTimedOpen {
+			// a run's shut chest or sack opens through the delver's timed open:
+			// it stays shut and unrolled, and the tick opens it when the time
+			// has passed. The container is not held (FS-MQYEX §Requirements 2, 15).
+			// A reach for the one they are already opening changes nothing; for
+			// another, it takes the first one's place (§Requirements 12)
+			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, TimedOpenDuration)
+		} else {
+			if err := s.openContainer(targetEntity, containerOpenable); err != nil {
+				return err
 			}
 
-			itemIDsComponent, hasItemIDs := targetEntity.GetComponent(ecs.ComponentTypeItemIDList)
-			if !hasItemIDs {
-				slog.Error("Failed to retrieve container entity itemIDs component", "targetEntityID", targetEntityID)
-				return fmt.Errorf("Error when attempting to retrieve container entity itemIDs component with entityID %s", targetEntityID)
-			}
-
-			containerItemIDs := itemIDsComponent.(*components.ItemIDListComponent)
-			// relate the container with the newly generated items
-			containerItemIDs.ItemIDs = itemIDs
+			// release cache in 100 milliseconds
+			releaseHandedOff = true
+			go func() {
+				time.Sleep(time.Millisecond * 100)
+				s.mu.Lock()
+				delete(s.containerInteractedCache, targetEntityID)
+				s.mu.Unlock()
+			}()
 		}
-
-		// release cache in 100 milliseconds
-		releaseHandedOff = true
-		go func() {
-			time.Sleep(time.Millisecond * 100)
-			s.mu.Lock()
-			delete(s.containerInteractedCache, targetEntityID)
-			s.mu.Unlock()
-		}()
 
 		// add player to interacted cache
 		s.mu.Lock()
