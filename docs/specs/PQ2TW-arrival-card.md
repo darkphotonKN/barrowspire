@@ -625,6 +625,23 @@ behind the same switch as the smoke (R41), its own module, shown in the gallery 
 and the smoke. Every number below is a starting value. The front's shape was left to the build:
 it sweeps from one side, the left, the way the words read, ragged by noise.
 
+**The owner's look at the ash, 2026-11-12.** In the gallery he said: "灰燼左到右燒感覺不錯 但是燒掉後的
+質感很差 不夠高級 灰燼像泡泡一樣怪怪的": the burn from left to right is good, but what comes off it looks
+cheap, not premium, and the flakes look odd, like bubbles. The cause: each flake was a small round
+five-to-seven-sided blob of one flat `slate`, ringed all round by an `ember` rim at 0.6, all of
+one size range, at one steady speed; a closed ring round a round shape reads as a bubble. The
+burn front stays exactly as built (R55: its time, its ragged edge, its ember-to-char band). What
+comes off it is reworked toward burnt paper and embers, not shapes: R56 is replaced, R64 (the
+embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is added.
+
+| Value | Was | Now |
+|---|---|---|
+| a flake's shape | a round 5–7-sided blob, the same both ways | a jagged shard, torn at its edge, mostly longer than wide (1.1–2.8 : 1) |
+| a flake's size | 3–6 view px across | 1.5–8 view px along its length, many tiny and a few larger |
+| a flake's colour | flat `slate`, an `ember` rim all round at 0.6 | `slate` mottled toward `slateLight`; no rim; a third carry an `ember` patch on one edge that dims to grey over their first 500 ms |
+| a flake's motion | a steady 12–32 px/s, spinning 90–270°/s | 12–32 px/s, slowing (drag 0.5/s); turning slowly, 20–70°/s; flipping over on one axis every 500–1300 ms; swaying 1.5–4 px |
+| sparks | none | at most 40 ember sparks of 1–2 view px, 0.012 per view px² of ink, off the front, at 40–80 px/s, flickering, each gone within 300–600 ms |
+
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it stays
@@ -644,37 +661,61 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
     leading edge, charring to `slate` toward its trailing edge; a pixel past the band is **gone**.
     The band is 0.06 of ember and 0.08 of char, in threshold units. When the front has crossed,
     every pixel is gone. **(the owner's locked burn; the threshold, the spec's.)**
-56. **The flakes.** Flakes start where stroke pixels have just burned out: their start points
-    are drawn over the strokes and the rule as the dust's are (R25), and each is let go on the
-    frame its pixel goes. 0.1 flakes per view px² of ink, at most 300 for the whole card, from one
-    emitter. A flake is an irregular shape 3–6 view px across, `slate` with a dim `ember` rim
-    (alpha 0.6). Each rises at 12–32 px/s on a heading within 30° of straight up, at a steady
-    speed, tumbling at 90–270° a second either way, its size unchanged, its alpha falling from 1
-    to 0 (`Sine.easeIn`) over its 1000 ms life. **(the owner's "larger than the dust's motes,
-    dark grey with a dim ember rim, rise slowly, tumbling, and fade"; the numbers, the spec's.)**
-57. **About 2 seconds.** The front takes 1000 ms and a flake lives 1000 ms; the ash is gone by
-    2000 ms, one fixed duration.
-58. **Colour.** `ember` for the burning edge and the flakes' rim, `slate` for the char and the
-    flakes; the card's own ink (its texts' colours and the rule's `brass`, as the card drew them)
-    until a pixel burns. Never `amber`: the glow is torch warmth, not something to act on
-    (guideline, "Gameplay accent"). Tokens only, no new colour (ADR-0013).
-59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling and §B.10, for the ash, and only these.** The
-    ash is more than 12 particles (at most 300); its debris rises instead of falling or settling,
-    and never sprays: no flake starts faster than 32 px/s or more than 30° off straight up. It
-    lasts 2000 ms, past §B.2's 1200 ms. Its two textures are drawn at runtime from tokens, not
-    baked: the burning image is the card's own letters, and no baked sheet is a flake with a rim
-    (no baked art is added). It calls no `explode`, and every other rule of §B holds for it: one
-    fixed duration, the easing allowlist, no scale change at all, no shake, tokens only, at most
-    3 colours of its own, teardown on end and on scene shutdown. Named as R33 and R49 are, beside
-    them; the tests that hold §B.2, §B.6 and §B.10 keep holding them for every other effect.
+56. **The flakes: burnt paper.** *(Replaced at the owner's look of 2026-11-12, "灰燼像泡泡一樣怪怪的".)*
+    Flakes start where stroke pixels have just burned out: their start points are drawn over the
+    strokes and the rule as the dust's are (R25), and each is let go on the frame its pixel goes.
+    0.1 flakes per view px² of ink, at most 300 for the whole card, from one emitter.
+    - **Shape.** A flake is a jagged shard of burnt paper: an uneven many-cornered outline,
+      torn at its edge (edge pixels missing or thinned at random), mostly longer than wide
+      (1.1–2.8 : 1). Sizes spread wide: 1.5–8 view px along its length, drawn so that many are
+      tiny and a few larger. There is **no outline ring**: a flake's edge is the same paper as
+      its body.
+    - **Colour.** A dark `slate` body with faint lighter mottling toward `slateLight`. About a
+      third of flakes carry a small glowing `ember` patch on one edge, never round the whole
+      outline, that dims to ash grey over its first 500 ms.
+    - **Motion: flutter, not spin.** Each rises at 12–32 px/s on a heading within 30° of
+      straight up, slowing a little as it goes (a drag of 0.5 of its speed a second). It turns
+      slowly, 20–70° a second either way, and turns over in depth: its scale on one axis swings
+      through zero and back (edge-on, then its other face) once every 500–1300 ms, its own
+      period and phase, so every flake goes edge-on at least once in its life. It sways gently
+      sideways, 1.5–4 px over 900–1600 ms. Its size is otherwise unchanged; its alpha falls
+      from 1 to 0 (`Sine.easeIn`) over its 1000 ms life.
+    - **Drawn at runtime, at the render scale**, so a flake stays crisp at 1, 1.5 and 2.
+
+    **(the owner's "larger than the dust's motes, dark grey ... rise slowly ... and fade", and
+    his look of 2026-11-12, "燒掉後的質感很差 不夠高級"; the numbers, the spec's.)**
+57. **About 2 seconds.** The front takes 1000 ms and a flake lives 1000 ms; a spark is gone
+    within 600 ms of the front's passing. The ash is gone by 2000 ms, one fixed duration.
+58. **Colour.** `ember` for the burning edge, the flakes' glowing patches and the sparks;
+    `slate` for the char and the flakes' bodies; `slateLight` for the flakes' mottling and the
+    grey a patch dims to (each flake pixel a mix of these three); the card's own ink (its texts'
+    colours and the rule's `brass`, as the card drew them) until a pixel burns. Never `amber`:
+    the glow is torch warmth, not something to act on (guideline, "Gameplay accent"). Tokens
+    only, no new colour (ADR-0013).
+59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling, §B.4 and §B.10, for the ash, and only
+    these.** The ash is more than 12 particles (at most 300 flakes and 40 sparks); its debris
+    rises instead of falling or settling, and never sprays: no flake starts faster than 32 px/s
+    or more than 30° off straight up, no spark faster than 80 px/s or more than 25° off it. It
+    lasts 2000 ms, past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
+    other (§B.4's "no tween sets `scaleX` and `scaleY` to different values"): it is a turn in
+    depth, never a squash, a stretch or a bounce; its scale never grows past its size and its
+    size never changes otherwise. Its textures are drawn at runtime from tokens, not baked: the
+    burning image is the card's own letters, and no baked sheet is a paper shard or a one-pixel
+    spark (no baked art is added). It calls no `explode`, and every other rule of §B holds for
+    it: one fixed duration, the easing allowlist, no shake, tokens only, at most 3 colours of
+    its own (`ember`, `slate`, `slateLight`), teardown on end and on scene shutdown. Named as R33
+    and R49 are, beside them; the tests that hold §B.2, §B.4, §B.6 and §B.10 keep holding them
+    for every other effect.
 60. **As the dust, for everything else.** Over the veil and under the HUD (R29); reduced motion:
     no burn, the card fades over 600 ms (R31); a stroke read that fails or finds no ink, or a
     canvas texture that cannot be made: no burn, the card fades, logged once (R35); gone at once,
-    its burning image, its texture and its flakes with it, on a stop, a new card, a view change
-    or a scene's end (R9, R36, the resize edge state).
-61. **Its numbers are data.** The front's time and shape, the band, the flakes' density, cap,
-    size, speed, heading spread, tumble, life and alpha, the tokens and the easings are one typed
-    record in `cardAsh.ts`, asserted by a vitest; a retune is an edit there.
+    its burning image, its texture, its flakes and its sparks with it, on a stop, a new card, a
+    view change or a scene's end (R9, R36, the resize edge state).
+61. **Its numbers are data.** The front's time and shape, the band; the flakes' density, cap,
+    shapes, length and its bias toward the small, aspect, mottling, glowing share and its dimming,
+    speed, drag, heading spread, turn, flip, sway, life and alpha; the sparks' density, cap, size,
+    speed, drag, heading spread, life and flicker; the tokens and the easings are one typed record
+    in `cardAsh.ts`, asserted by a vitest; a retune is an edit there.
 62. **The gallery shows all three.** A third replayable card, "Arrival card ash", beside "Arrival
     card dust" and "Arrival card smoke", on the one gallery card (R52), so a replay of any
     replaces the card still up (R9). Added in the same change (`Content: FS-1819Q`).
@@ -682,6 +723,15 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
     the front. Its per-frame cost on a card of the game's size is measured in a browser and
     reported with the change, so the owner judges the look knowing the price. **(spec: the
     owner accepted a per-frame redraw if measured.)**
+64. **Embers.** *(Added at the owner's look of 2026-11-12, "不夠高級".)* As the front passes, a
+    sprinkle of tiny ember sparks comes off it: 0.012 per view px² of ink, at most 40 for the
+    whole card, from a second emitter, each let go from a start point on the strokes or the rule
+    on the frame the front reaches it. A spark is 1–2 view px of `ember`, drawn additively so it
+    reads as light; it rises faster than any flake, 40–80 px/s within 25° of straight up, slowing
+    a little (1.5 of its speed a second), flickers (its alpha beating at 6–14 Hz as it falls to
+    0), and dies out within 300–600 ms of leaving. No warm light token outside the amber family
+    exists (the guideline's torch warmth is `amber` and `ember`), so a spark brightens by its
+    additive blend, never by `amber`. Drawn at runtime at the render scale, as the flakes are.
 
 ### Acceptance Criteria
 
@@ -691,12 +741,16 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
 - [ ] The front advances from the left: the burned share of the ink only grows, and its burning band moves right on average; every stroke pixel is gone when the front has crossed. (R55)
 - [ ] The burning band is ember-tinted at its leading edge and slate at its trailing edge; pixels ahead of the front are as the card drew them. (R55, R58)
 - [ ] Every flake starts on a stroke pixel or the rule, never in a gap, and only once that pixel has burned out. (R56)
-- [ ] Flakes rise on average, at 12–32 px/s within 30° of up, at a steady speed; each tumbles; 0.1 per view px² of ink, at most 300, from one emitter, with no `explode` call. (R56, R59)
-- [ ] A flake is slate with an ember rim; no other colour appears but the card's own ink. (R56, R58)
+- [ ] Flakes rise on average, starting at 12–32 px/s within 30° of up and slowing a little; each turns slowly, 20–70° a second; 0.1 per view px² of ink, at most 300, from one emitter, with no `explode` call. (R56, R59)
+- [ ] Each flake flips: its scale on one axis passes through edge-on (zero) and changes sign within its life, never growing past its size; the other axis keeps its size. (R56, R59)
+- [ ] No flake draws a closed outline ring: a plain flake's edge pixels are its body's colours, and a glowing flake's ember lies on one side, on less than half of its outline. (R56)
+- [ ] The flakes span a range of sizes (from about 1.5 to about 8 view px long, most of them small) and of aspect ratios (some near 1, many longer than wide). (R56)
+- [ ] A flake's pixels are mixes of `slate`, `slateLight` and `ember`; about a third of flakes glow, and a glowing flake's patch dims to grey over its first 500 ms; no other colour appears but the card's own ink. (R56, R58)
+- [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px of `ember`, additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of up (faster than any flake), flicker, and are gone within 600 ms. (R64, R59)
 - [ ] The ash is gone at 2000 ms. (R57)
 - [ ] With reduced motion, no burn and no flake are made and the card fades over 600 ms. (R60)
 - [ ] A failed read, no ink or no canvas texture: no burn, a fade, logged once. (R60)
-- [ ] A stop or a new card takes the image, its texture, its flakes and its front away at once. (R60)
+- [ ] A stop or a new card takes the image, its texture, its flakes, its sparks and its front away at once. (R60)
 - [ ] The ash's numbers are one typed record with a vitest on it. (R61)
 - [ ] `/dev/gallery` has dust, smoke and ash cards that replay the whole card; `effects.test.ts` passes. (R62)
 - [ ] The burn's per-frame cost is measured in a browser and reported. (R63)
@@ -714,3 +768,5 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
 - Taking the dust or the smoke out, or changing any of their values.
 - A shader burn on the GPU; a burn spreading from several points.
 - A setting that lets a player choose; any baked art, new colour or token.
+- A wisp of smoke off the front (`fx_smoke` at a low alpha): offered with the rework of
+  2026-11-12 as optional, not built; the ash stays free of the art library.
