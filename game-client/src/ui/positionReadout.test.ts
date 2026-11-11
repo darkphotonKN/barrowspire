@@ -3,7 +3,7 @@ import { contrastRatio } from "@/render/lighting/lighting";
 import { RegionGrid, type DungeonMap } from "@/render/world/dungeon";
 import fixture from "@/render/world/dungeon.fixture.json";
 import { mix, palette } from "@/utils/canvasPalette";
-import { MINIMAP, MINIMAP_VIGNETTE, minimapProjection, minimapRect } from "./minimap";
+import { MINIMAP, MINIMAP_VIGNETTE, minimapPanel, minimapProjection, minimapRect } from "./minimap";
 import { POSITION_READOUT, positionReadoutPlace, showsPositionReadout } from "./positionReadout";
 
 describe("showsPositionReadout", () => {
@@ -110,6 +110,24 @@ describe("the position readout's look and place (FS-56CKV §C)", () => {
     const box = boxOf(WIDEST);
     const [x0, x1, top] = [at.x - panel.x, at.x - panel.x + box.width, at.y - panel.y - box.height];
     // the edge's y over the box's span; the box's top is below it all the way across
+    const edgeY = (x: number) => left.y + ((x - left.x) * (bottom.y - left.y)) / (bottom.x - left.x);
+    expect(x1).toBeLessThan(bottom.x);
+    expect(top).toBeGreaterThan(Math.max(edgeY(x0), edgeY(x1)));
+  });
+
+  // FS-1SEF0 §B.11: in the enlarged minimap's corner, at its own 10 px, it still covers no floor
+  it("should lie below floor 1's diamond's lower-left edge in the enlarged minimap too (FS-1SEF0 §B.11)", () => {
+    const grid = new RegionGrid(fixture as DungeonMap);
+    const look = minimapPanel("enlarged");
+    const project = minimapProjection(grid, look);
+    const [w, h] = [grid.cols * grid.cell, grid.rows * grid.cell];
+    const left = project({ x: 0, y: h });
+    const bottom = project({ x: w, y: h });
+    const panel = minimapRect(look.width, 0, look);
+    const at = positionReadoutPlace(panel, { right: 0, bottom: 0 });
+    expect([at.x, at.y]).toEqual([4, 158]);
+    const box = boxOf(WIDEST);
+    const [x0, x1, top] = [at.x - panel.x, at.x - panel.x + box.width, at.y - panel.y - box.height];
     const edgeY = (x: number) => left.y + ((x - left.x) * (bottom.y - left.y)) / (bottom.x - left.x);
     expect(x1).toBeLessThan(bottom.x);
     expect(top).toBeGreaterThan(Math.max(edgeY(x0), edgeY(x1)));

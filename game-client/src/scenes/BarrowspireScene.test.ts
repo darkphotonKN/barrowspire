@@ -5316,8 +5316,9 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const column = (minimap: boolean) => topRightColumn({ corner, minimap, floorHeight: LINE.height, escapedHeight: LINE.height });
-      const { minimap: map, floor: floorAt } = column(true);
+      const column = (shown: boolean) => topRightColumn({ corner, minimap: shown ? MINIMAP : null, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const { minimap, floor: floorAt } = column(true);
+      const map = minimap!;
       expect(map).toEqual({ x: corner.x - 216, y: 44, width: 216, height: 108 });
       expect(floorAt.y).toBe(map.y + map.height + 6);
       expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
@@ -5331,12 +5332,42 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
       for (const shown of [true, false]) {
         const c = column(shown);
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
-        const parts: Box[] = [...(shown ? [c.minimap] : []), line(c.floor), line(c.escaped)];
+        const parts: Box[] = [...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped)];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
         for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
       }
       expect(map.x).toBeGreaterThan(0);
       expect(map.y + map.height).toBeLessThan(720 / 2);
+    },
+  );
+
+  // FS-1SEF0 §B.12: the enlarged minimap, 324 × 162 at the same corner, and the lines under it
+  it.each([
+    [1080, 412],
+    [1280, 612],
+  ])(
+    "should keep the enlarged minimap and the lines under it clear of the fullscreen button, either target frame and a notice up to its clear width at logical width %i, %i px (FS-1SEF0 §B.12)",
+    (width, clearNotice) => {
+      const { minimapPanel } = await_minimap;
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const c = topRightColumn({ corner, minimap: minimapPanel("enlarged"), floorHeight: LINE.height, escapedHeight: LINE.height });
+      const map = c.minimap!;
+      expect(map).toEqual({ x: corner.x - 324, y: 44, width: 324, height: 162 });
+      if (width === 1080) {
+        expect(map.x).toBe(746);
+        expect(targetFrameRect(width / 2, TARGET_BOSS_FRAME).x + TARGET_BOSS_FRAME.width).toBe(729);
+      }
+      const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+      const parts: Box[] = [map, line(c.floor), line(c.escaped)];
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const notice = (w: number) => ({ x: width / 2 - w / 2, y: 100 - 22, width: w, height: 44 });
+      for (const part of parts)
+        for (const other of [button, notice(clearNotice), targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
+          expect(overlaps(part, other)).toBe(false);
+      // the clear width is the widest: 2 px more and the notice's right end lies over the map (Edge States)
+      expect(overlaps(map, notice(clearNotice + 2))).toBe(true);
+      for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
     },
   );
 });
@@ -5383,12 +5414,13 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
       const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
       const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
       const parts = stack();
-      for (const shown of [true, false]) {
-        const c = topRightColumn({ corner, minimap: shown, floorHeight: LINE.height, escapedHeight: LINE.height });
+      // the minimap normal, enlarged (FS-1SEF0 §B), or none in the corner (no regions, the overlay)
+      for (const panel of [await_minimap.minimapPanel("normal"), await_minimap.minimapPanel("enlarged"), null]) {
+        const c = topRightColumn({ corner, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
-        const at = positionReadoutPlace(shown ? c.minimap : null, { right: corner.x, bottom: c.bottom });
+        const at = positionReadoutPlace(c.minimap, { right: corner.x, bottom: c.bottom });
         const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
-        const others = [button, ...frames, ...(shown ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
+        const others = [button, ...frames, ...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
       }
       for (const part of parts) {
@@ -6518,6 +6550,22 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(standing(run.escapedCountText)).toEqual([1070, 183]);
       });
 
+      // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved down
+      it("should stand the enlarged minimap at the column's top and the floor indicator and the escaped count under it, at 1080 and 1280 (FS-1SEF0 §B.11)", () => {
+        const { run, view, placed, pressTo } = mapped();
+        const enlarged = await_minimap.minimapPanel("enlarged");
+        pressTo("enlarged");
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44, enlarged));
+        expect(standing(run.floorText)).toEqual([1070, 212]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 212 + 21 + 4]);
+        view(1280);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44, enlarged));
+        expect(standing(run.floorText)).toEqual([1270, 212]);
+        pressTo("normal");
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
+        expect(standing(run.floorText)).toEqual([1270, 158]);
+      });
+
       it("should stand the escaped count where the floor indicator would while it has no label, and step it down once it has (FS-56CKV §B.11)", () => {
         const { run, keys, pressTo } = mapped();
         run.updateFloorIndicator({ floor: undefined });
@@ -6781,6 +6829,13 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(readoutAt(run)).toEqual(underColumn(1070));
           keys["keydown-M"]();
           expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should stand it 4 px inside the enlarged minimap's bottom-left corner at its own 10 px (FS-1SEF0 §B.11)", () => {
+          const { run, pressTo } = mapped();
+          pressTo("enlarged");
+          expect(readoutAt(run)).toEqual({ at: [1070 - 324 + 4, 44 + 162 - 4], origin: [0, 1] });
+          expect((run.positionReadout as Made).args[3]).toMatchObject({ fontSize: "10px" });
         });
 
         it("should follow the column as the floor indicator's label goes and comes, with no minimap shown (§C.18)", () => {
