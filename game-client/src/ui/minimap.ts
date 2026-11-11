@@ -64,12 +64,14 @@ export const MINIMAP_ENLARGED = { scale: 1.5 } as const;
 /**
  * The map overlay (FS-1SEF0 §C), each a starting value to tune by eye: the world's own iso
  * projection scaled by `scale` (floor 1's diamond 960 × 480); the regions' fill and the walls'
- * line at `alpha`, the line `edge` logical px wide; at `depth`, over the world, the fog, the dust
- * and the vignette (905), under the aim line (940), the floor veil (950) and the HUD (1000). The
+ * line at `alpha`, the line `edge` logical px wide; the glyphs and dots at `marks`, two thirds of
+ * the enlarged map's 1.5 (§C.16; the owner's "最大的圖的標記小一點", 2026-11-12); at `depth`, over
+ * the world, the fog, the dust and the vignette (905), under the aim line (940), the floor veil
+ * (950) and the HUD (1000). The
  * map and marks are held on screen while the figure's stand is within `hold` backing px of where
  * they are shown (§C.19; the owner's two, 2026-11-12: one left back-steps under broadcast jitter).
  */
-export const MINIMAP_OVERLAY = { scale: 0.125, alpha: 0.4, edge: 2, depth: 920, hold: 2 } as const;
+export const MINIMAP_OVERLAY = { scale: 0.125, alpha: 0.4, edge: 2, marks: 1, depth: 920, hold: 2 } as const;
 /** Dot radii, logical px: the local player's larger, so it reads apart from the allies' (§E.22, FS-56CKV §A.7). */
 const DOT = { self: 3, ally: 2, outline: 1 } as const;
 
@@ -418,12 +420,12 @@ function drawingFor(mode: MinimapMode, grid: RegionGrid): Drawing {
     const panel = minimapPanel(mode);
     return { panel, edge: panel.edge, marks: panel.marks, alpha: 1, project: minimapProjection(grid, panel) };
   }
-  // the world's own projection, scaled about the world's origin; glyphs and dots as enlarged (§C.16)
+  // the world's own projection, scaled about the world's origin; glyphs and dots at its own marks (§C.16)
   const k = MINIMAP_OVERLAY.scale;
   return {
     panel: null,
     edge: MINIMAP_OVERLAY.edge,
-    marks: MINIMAP_ENLARGED.scale,
+    marks: MINIMAP_OVERLAY.marks,
     alpha: MINIMAP_OVERLAY.alpha,
     project: (p) => {
       const s = worldToScreen(p.x, p.y);
@@ -478,6 +480,8 @@ export class Minimap {
   private readonly unhear: () => void;
   private drawn?: string;
   private dotsDrawn?: string;
+  /** The backing px per logical px the marks were last drawn on: the overlay's grid (§C.16). */
+  private marksPerPx = 1;
   private shownMode: MinimapMode = "normal";
 
   /**
@@ -551,6 +555,8 @@ export class Minimap {
     const r = this.perPx();
     const stand = (v: number) => (Math.round(v * r) - Math.round(v * k * r)) / r;
     this.stood = { x: stand(s.x), y: stand(s.y) };
+    // a re-fit to another render scale: the glyphs onto the new backing grid, once
+    if (r !== this.marksPerPx) this.drawMarks(this.shownContent.fixtures);
     for (const layer of this.drawnLayers()) layer.setPosition(this.stood.x, this.stood.y);
     if (drawn) this.drawDots(drawn);
   }
@@ -733,23 +739,28 @@ export class Minimap {
   /**
    * Each found fixture's glyph, its ring first and its ink over it (FS-56CKV §A.6). At a larger
    * scale each of the glyph's px is the whole-px span its edges round to (FS-1SEF0 §B.9): nearest
-   * neighbour, every edge on a whole logical px.
+   * neighbour, every edge on a whole logical px; on the overlay, on a whole backing px at the
+   * render scale of now, the grid it stands on (§C.16).
    */
   private drawMarks(fixtures: readonly MinimapFixture[]): void {
     const g = this.marks;
     const { marks: k, project, panel } = this.drawing;
-    const { before, after } = glyphBox(k);
+    const r = panel ? 1 : this.perPx();
+    this.marksPerPx = r;
+    // the glyph in grid px: logical in a panel, backing on the overlay
+    const q = k * r;
+    const { before, after } = glyphBox(q);
     g.clear();
     for (const f of fixtures) {
-      const p = seat(project(f.at), before, after, panel);
-      const ox = p.x - before;
-      const oy = p.y - before;
+      const p = seat(project(f.at), before / r, after / r, panel, r);
+      const ox = p.x - before / r;
+      const oy = p.y - before / r;
       // a rect in the glyph's own px, the ink a ring's width in from the box's corner
-      const fill = (r: PxRect) => {
-        const [x0, y0] = [r.x + MINIMAP_GLYPH.ring, r.y + MINIMAP_GLYPH.ring];
-        const [x1, y1] = [x0 + r.w, y0 + r.h];
-        const [sx, sy] = [Math.round(x0 * k), Math.round(y0 * k)];
-        g.fillRect(ox + sx, oy + sy, Math.round(x1 * k) - sx, Math.round(y1 * k) - sy);
+      const fill = (px: PxRect) => {
+        const [x0, y0] = [px.x + MINIMAP_GLYPH.ring, px.y + MINIMAP_GLYPH.ring];
+        const [x1, y1] = [x0 + px.w, y0 + px.h];
+        const [sx, sy] = [Math.round(x0 * q), Math.round(y0 * q)];
+        g.fillRect(ox + sx / r, oy + sy / r, (Math.round(x1 * q) - sx) / r, (Math.round(y1 * q) - sy) / r);
       };
       const { ring, ink } = GLYPHS[f.kind];
       g.fillStyle(palette.markerStroke, 1);

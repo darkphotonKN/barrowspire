@@ -160,10 +160,24 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
     floor fits the view; a value the owner tunes by eye)**
 16. **See-through: the regions' fill and the walls' line at 40% opacity** (`MINIMAP_OVERLAY.alpha`
     = 0.4, tunable), so the game shows through; the walls' line 2 logical px wide
-    (`MINIMAP_OVERLAY.edge`, tunable). The glyphs and the dots are drawn as in the enlarged map
-    (§B.9) and at full opacity. Colours are the minimap's tokens. **(owner, 2026-11-12: "3好" to
-    about 40%; derived here: the line's width, since a 1 px line at 40% over a lit floor is lost,
-    and full opacity for what a player looks for, as FS-56CKV §A.3 never dims a glyph or a dot)**
+    (`MINIMAP_OVERLAY.edge`, tunable). The glyphs and the dots are drawn at full opacity, at
+    **`MINIMAP_OVERLAY.marks` = 1**, the one named scale for every mark on the overlay (tunable),
+    two thirds of the enlarged map's 1.5 (§B.9), so the normal minimap's own size: each glyph 9 × 9
+    (its 7 × 7 ink on its 1 px ring; was 14 × 14), the player's own dot r 3 in a 1 px ring (r 4
+    across; was r 4.5 in 1.5, r 6 across), an ally's r 2 in a 1 px ring (r 3 across; was r 3 in
+    1.5, r 4.5 across). Each glyph's px is drawn as the whole-**backing**-px span it scales to at
+    the render scale of now (nearest neighbour, as §B.9 on the logical grid), seated on the
+    backing-px grid the overlay stands on (§C.19), so a glyph's every edge is on a whole backing px
+    at render scale 1, 1.5 and 2, and a re-fit to another render scale redraws the marks once; the
+    dots' centres are on that grid as before. The glyph keeps its ring and the ink's 3:1 against
+    it; the normal and enlarged minimaps' marks are unchanged. Colours are the minimap's tokens.
+    **(owner, 2026-11-12: "3好" to about 40%; derived here: the line's width, since a 1 px line at
+    40% over a lit floor is lost, and full opacity for what a player looks for, as FS-56CKV §A.3
+    never dims a glyph or a dot; owner, 2026-11-12, "最大的圖的標記小一點" (on the biggest map, make
+    the marks smaller): about two thirds of the size they had, as the enlarged map's at 1.5, a
+    starting value; derived here: two thirds of 1.5 is the normal minimap's 1, which lies on whole
+    px at every whole render scale and keeps the ring readable, and the backing-px spans keep
+    the glyph crisp at 1.5 too)**
 17. **Above the fog and the world, below the HUD:** at depth 920 (`MINIMAP_OVERLAY.depth`), over
     the world, the fog, the dust and the vignette (905), under the aim line (940), the floor veil and
     its card (950), the world arrival card (960), the HUD and the overhead markers (1000), the gear
@@ -259,7 +273,7 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 19. As a player resizing the window, I want the column and the bigger map to follow the corner, and the big overlay to stay on me, so that nothing is left behind.
 20. As a player at the narrowest window, I want the bigger map clear of the target frame, so that I always see what I fight.
 21. As a developer, I want my x/y to follow the map, inside its corner or under the column, so that the aid is always at hand.
-22. As a developer, I want the overlay's scale, opacity and line width as named constants, so that a later tune is values-only.
+22. As a developer, I want the overlay's scale, opacity, line width and mark size as named constants, so that a later tune is values-only.
 23. As a player, I want the big map not to cost frame rate when I walk, so that the game stays smooth.
 24. As a player on the canvas renderer fallback, I want all three modes to look the same, so that no device gets a broken map.
 
@@ -272,7 +286,7 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 - [ ] Enlarged: the panel 324 × 162 at the column's top, right-aligned; the backing and a 2 px rim in today's tokens and alphas; the inset 6; the floor's fit 1.5 × the normal map's; the walls' line 1.5 px; the dots r 3 and r 4.5 in 1.5 px rings; each glyph 14 × 14 with every rect on whole px; the vignette painted at 324 × 162, reach 27, inside the rim (`minimap.test.ts`).
 - [ ] Switching normal ↔ enlarged redraws each layer once; a walk across seen regions in either size redraws the map no more than at normal size.
 - [ ] Enlarged column at 1080 and 1280: the floor indicator's top 6 px under the map (y 212), the escaped count 4 px under it, the readout 4 px inside the map's bottom-left at 10 px; none overlaps the fullscreen button, either target frame or the top-left stack; the enlarged map's left edge at 746 at 1080, right of the boss frame's 729; a notice clear up to 412 px wide at 1080 and 612 px at 1280.
-- [ ] Overlay: no backing, rim or vignette drawn; the fill and the walls' line at alpha 0.4, the line 2 px; glyphs and dots as enlarged, at alpha 1; layers at scroll factor 1 and depth 920; none interactive.
+- [ ] Overlay: no backing, rim or vignette drawn; the fill and the walls' line at alpha 0.4, the line 2 px; glyphs and dots at alpha 1 and at `MINIMAP_OVERLAY.marks` (1): each glyph 9 × 9 with its 1 px ring, every rect edge on a whole backing px at render scale 1, 1.5 and 2, the self's dot r 3 and an ally's r 2, each in a 1 px ring, centred on whole backing px; the normal (9 × 9, r 3 and r 2) and enlarged (14 × 14, r 4.5 and r 3 in 1.5) marks unchanged; layers at scroll factor 1 and depth 920; none interactive.
 - [ ] Overlay placement: for a focus at world point f, a world point p draws at `worldToScreen(f) + 0.125·(worldToScreen(p) − worldToScreen(f))` minus the camera's scroll, within 1 px (the whole-px placement); the focus is the player, or the watched teammate while spectating.
 - [ ] Overlay cost: as the player walks with no new region seen, the map and marks are not redrawn (counted) and the per-frame work is the layers' position; the dots redraw only when one moves a whole backing px; at render scales 1 to 2, fractional ones too, at 60 and 120 fps, walking world x, world y or screen right, the map and marks never step back on screen, hold still on an axis the walk does not move, keep within two backing px (the hold) of the figure's point, with ±8 ms of broadcast jitter at render scale 2 too, and the self's dot lies on the figure's backing px; a frame-time measurement with the overlay up is reported against normal.
 - [ ] With the overlay up the corner shows no map; the floor indicator at y 44, the escaped count under it, the readout 4 px under the column's last line, right-aligned.

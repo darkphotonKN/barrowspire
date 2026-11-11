@@ -1048,8 +1048,8 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     return on;
   };
 
-  it("should hold its look as named values: 1/8 of the world's projection, 40%, a 2 px line, depth 920, a hold of 2 backing px (§C.15–§C.17, §C.19)", () => {
-    expect(MINIMAP_OVERLAY).toEqual({ scale: 0.125, alpha: 0.4, edge: 2, depth: 920, hold: 2 });
+  it("should hold its look as named values: 1/8 of the world's projection, 40%, a 2 px line, marks at 1, depth 920, a hold of 2 backing px (§C.15–§C.17, §C.19)", () => {
+    expect(MINIMAP_OVERLAY).toEqual({ scale: 0.125, alpha: 0.4, edge: 2, marks: 1, depth: 920, hold: 2 });
     // over the dust and vignette (905), under the aim line (940), the floor veil (950) and the HUD
     expect(MINIMAP_OVERLAY.depth).toBeGreaterThan(905);
     expect(MINIMAP_OVERLAY.depth).toBeLessThan(940);
@@ -1098,14 +1098,111 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     expect(pts).toContainEqual(corner(room.x * c, room.y * c));
   });
 
-  it("should draw the glyphs and dots as the enlarged map does, at full opacity (§C.16)", () => {
-    const { marks, dots } = overlaid();
-    for (const c of marks.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
-    for (const c of marks.drawn().filter((c) => c.name === "fillRect")) for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
-    const ink = pixels(rectsByColour(marks.drawn()).get(palette.interactable) ?? []);
-    expect(ink.size).toBeGreaterThan(0);
-    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4.5, 3, 6, 4.5]);
+  // the owner, 2026-11-12, "最大的圖的標記小一點": on the overlay the marks at about two thirds of
+  // the enlarged map's 1.5, one named scale; the panel modes' marks unchanged
+  it("should name its marks' scale, two thirds of the enlarged map's: 1 (§C.16)", () => {
+    expect(MINIMAP_OVERLAY.marks).toBe(1);
+    expect(MINIMAP_OVERLAY.marks).toBeCloseTo((MINIMAP_ENLARGED.scale * 2) / 3, 9);
+  });
+
+  it("should draw the dots at the overlay's marks, at full opacity: the ally r 2 and the player's own r 3, each in a 1 px ring (§C.16)", () => {
+    const { dots } = overlaid();
+    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([3, 2, 4, 3]);
     for (const c of dots.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
+  });
+
+  /** A layer's fillRect calls in backing px at render scale `rs`, each edge asserted on a whole backing px. */
+  const onBacking = (calls: Call[], rs: number): Call[] =>
+    calls.map((c) => ({
+      ...c,
+      args: (c.args as number[]).map((v) => {
+        const b = v * rs;
+        expect(Math.abs(b - Math.round(b))).toBeLessThan(1e-6);
+        return Math.round(b);
+      }),
+    }));
+
+  it.each([1, 1.5, 2])(
+    "should draw each glyph 9 × 9 logical px at render scale %s, its ring and ink at full opacity, every edge on a whole backing px, the 1 × glyph nearest-neighbour (§C.16)",
+    (rs) => {
+      for (const f of FIXTURES) {
+        const small = (() => {
+          const { marks, show } = mapped();
+          show([f.at], [f]);
+          const by = rectsByColour(marks.drawn());
+          return { ink: pixels(by.get(palette.interactable) ?? []), ring: pixels(by.get(palette.markerStroke) ?? []) };
+        })();
+        const { marks, show, map } = mapped(grid, rs);
+        show([f.at], [f]);
+        map.setMode("overlay");
+        map.follow(IN_ROOM);
+        const drawn = marks.drawn();
+        for (const c of drawn.filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
+        const by = rectsByColour(drawn);
+        const big = {
+          ink: pixels(onBacking(by.get(palette.interactable) ?? [], rs)),
+          ring: pixels(onBacking(by.get(palette.markerStroke) ?? [], rs)),
+        };
+        expect(big.ink.size).toBeGreaterThan(0);
+        // the ring still round the ink: more px than the ink's alone
+        expect(big.ring.size).toBeGreaterThan(big.ink.size);
+        const box = bounds(new Set([...big.ink, ...big.ring]));
+        const size = Math.round(9 * rs);
+        expect([box.right - box.x, box.bottom - box.y]).toEqual([size, size]);
+        const sb = bounds(new Set([...small.ink, ...small.ring]));
+        const span = (i: number) => Math.round(rs * i);
+        for (let i = 0; i < 9; i++)
+          for (let j = 0; j < 9; j++) {
+            const inked = small.ink.has(`${sb.x + i},${sb.y + j}`);
+            for (let x = span(i); x < span(i + 1); x++)
+              for (let y = span(j); y < span(j + 1); y++) expect(big.ink.has(`${box.x + x},${box.y + y}`)).toBe(inked);
+          }
+      }
+    },
+  );
+
+  it("should redraw the marks once on a re-fit to another render scale, onto the new backing grid, and never the map (§C.16)", () => {
+    let rs = 1;
+    const { stage, made } = fakeStage();
+    const map = new Minimap(stage, grid, () => rs);
+    const seen = new Exploration(grid);
+    seen.see([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
+    map.show((id) => seen.state(id), FIXTURES);
+    map.setMode("overlay");
+    map.follow(IN_ROOM);
+    const marks = made[1];
+    const redraws = map.redraws;
+    const clears = () => marks.calls.filter((c) => c.name === "clear").length;
+    const before = clears();
+    map.follow(IN_ROOM);
+    expect(clears()).toBe(before);
+    rs = 1.5;
+    map.follow(IN_ROOM);
+    map.follow(IN_ROOM);
+    expect(clears()).toBe(before + 1);
+    expect(map.redraws).toBe(redraws);
+    onBacking(marks.drawn().filter((c) => c.name === "fillRect"), 1.5);
+  });
+
+  it("should leave the panel modes' marks as they were: normal 9 × 9 with dots r 2 and r 3 in 1 px, enlarged 14 × 14 with r 3 and r 4.5 in 1.5, after the overlay too", () => {
+    const { map, marks, dots, show } = mapped();
+    show([IN_ROOM, ...FIXTURES.map((f) => f.at)], [FIXTURES[0]]);
+    map.party({ self: IN_ROOM, allies: [at(3000, 900)] });
+    const look = () => {
+      const by = rectsByColour(marks.drawn());
+      const box = bounds(new Set([...pixels(by.get(palette.interactable) ?? []), ...pixels(by.get(palette.markerStroke) ?? [])]));
+      return { glyph: [box.right - box.x, box.bottom - box.y], dots: dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2]) };
+    };
+    const normal = { glyph: [9, 9], dots: [3, 2, 4, 3] };
+    const enlarged = { glyph: [14, 14], dots: [4.5, 3, 6, 4.5] };
+    expect(look()).toEqual(normal);
+    map.setMode("enlarged");
+    expect(look()).toEqual(enlarged);
+    map.setMode("overlay");
+    map.setMode("normal");
+    expect(look()).toEqual(normal);
+    map.setMode("enlarged");
+    expect(look()).toEqual(enlarged);
   });
 
   it("should be in the world, not the HUD: scroll factor 1 at depth 920, back to the HUD in a panel mode", () => {
