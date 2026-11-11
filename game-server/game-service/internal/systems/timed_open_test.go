@@ -257,3 +257,83 @@ func TestTimedOpenSystem_Update_ABodyOutOfPlayIsCancelled(t *testing.T) {
 		})
 	}
 }
+
+// FS-MQYEX §Requirements 14, 16. I-MQYEX-3.
+
+// The first timed open to complete on a container ends every other one on it
+// that tick, however far along, whichever body the tick reaches first; one on
+// another container keeps counting. R16.
+func TestTimedOpenSystem_Update_TheFirstToCompleteEndsTheOthersOnItsContainer(t *testing.T) {
+	for _, order := range []string{"the first to finish is reached first", "the first to finish is reached last"} {
+		t.Run(order, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			first, second, elsewhere := bodyAt(em, 500, 500), bodyAt(em, 500, 500), bodyAt(em, 500, 500)
+			chest, sack := containerBeside(em, 500, 500), containerBeside(em, 500, 500)
+			entities := []*ecs.Entity{first, second, elsewhere}
+			if order == "the first to finish is reached last" {
+				entities = []*ecs.Entity{elsewhere, second, first}
+			}
+			sys := NewTimedOpenSystem(em)
+
+			sys.Start(first, chest, timedOpenDuration)
+			for range 10 {
+				require.Empty(t, sys.Update(timedOpenTick, entities))
+			}
+			sys.Start(second, chest, timedOpenDuration)
+			sys.Start(elsewhere, sack, timedOpenDuration)
+			for range 35 {
+				require.Empty(t, sys.Update(timedOpenTick, entities))
+			}
+
+			assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: first.ID, ContainerID: chest}}, sys.Update(timedOpenTick, entities))
+			assert.False(t, second.HasComponent(ecs.ComponentTypeTimedOpen), "the other one on the container ends on that tick")
+			assert.InDelta(t, 36*timedOpenTick, timedOpenOn(t, elsewhere).Elapsed, 1e-9, "one on another container keeps counting")
+			assert.Empty(t, sys.Update(timedOpenTick, entities), "and the one that ended completes nothing later")
+		})
+	}
+}
+
+// Two timed opens on one container that complete on the same tick are one
+// completion, the first in the tick's order: the container opens once. R16,
+// edge state "two players finish on the same tick".
+func TestTimedOpenSystem_Update_TwoCompletingOnOneTickAreOneCompletion(t *testing.T) {
+	em := ecs.NewEntityManager()
+	one, two := bodyAt(em, 500, 500), bodyAt(em, 500, 500)
+	chest := containerBeside(em, 500, 500)
+	entities := []*ecs.Entity{one, two}
+	sys := NewTimedOpenSystem(em)
+	sys.Start(one, chest, timedOpenDuration)
+	sys.Start(two, chest, timedOpenDuration)
+	for range 45 {
+		require.Empty(t, sys.Update(timedOpenTick, entities))
+	}
+
+	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: one.ID, ContainerID: chest}}, sys.Update(timedOpenTick, entities))
+	assert.False(t, one.HasComponent(ecs.ComponentTypeTimedOpen))
+	assert.False(t, two.HasComponent(ecs.ComponentTypeTimedOpen))
+}
+
+// A cancel is the cancelled body's alone: another body's timed open on the
+// same container keeps counting and completes on its own time. R14.
+func TestTimedOpenSystem_Update_ACancelLeavesTheOthersOnTheContainer(t *testing.T) {
+	em := ecs.NewEntityManager()
+	leaver, stayer := bodyAt(em, 500, 500), bodyAt(em, 500, 500)
+	chest := containerBeside(em, 500, 500)
+	sys := NewTimedOpenSystem(em)
+	sys.Start(leaver, chest, timedOpenDuration)
+	sys.Start(stayer, chest, timedOpenDuration)
+	for range 20 {
+		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+	}
+
+	tc, _ := leaver.GetComponent(ecs.ComponentTypeTransform)
+	tc.(*components.TransformComponent).X += 0.5
+	require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+
+	require.False(t, leaver.HasComponent(ecs.ComponentTypeTimedOpen), "the one who moved is cancelled")
+	assert.InDelta(t, 21*timedOpenTick, timedOpenOn(t, stayer).Elapsed, 1e-9, "the other's is untouched")
+	for range 24 {
+		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+	}
+	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: stayer.ID, ContainerID: chest}}, sys.Update(timedOpenTick, em.GetAllEntities()))
+}
