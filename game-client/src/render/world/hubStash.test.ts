@@ -16,12 +16,12 @@ import {
   stashPlate,
   type PlateBrush,
 } from "./hubStash";
+import { TOWN_WALL_THICK, townDoorGap } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 
 type Box = { x: number; y: number; width: number; height: number };
 
-const THICK = 20;
-const DOOR = 50;
+const THICK = TOWN_WALL_THICK;
 /** NPC_TALK_RANGE (the server's NPCInteractRange). */
 const TALK_RANGE = 80;
 /** Clear of the Quartermaster's talk range by at least this, so standing at one is not standing at both. */
@@ -72,11 +72,11 @@ describe("the stash chest's spot (FS-VPD8Y R31)", () => {
   });
 
   it("should keep off the walk in from the door to the Quartermaster: gap-wide, from the sill to him", () => {
-    const sill = store.y + store.h;
+    const { x0, x1, sill } = townDoorGap(store);
     const lane = {
-      x: store.x + (store.w - DOOR) / 2,
+      x: x0,
       y: quartermaster.y,
-      width: DOOR,
+      width: x1 - x0,
       height: sill - quartermaster.y,
     };
     expect(overlaps(chest, lane)).toBe(false);

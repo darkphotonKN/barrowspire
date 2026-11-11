@@ -21,21 +21,21 @@ import {
   splitFurnishings,
   type IndoorSpot,
 } from "./hubInteriors";
+import { TOWN_DOOR, TOWN_WALL_THICK, townDoorGap, townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN, type TownRect } from "./hubTownGolden";
 import { TIMBER_WALLS } from "./walls";
 
 /**
  * The town's buildings and furnishings, from the golden of
  * game-server/game-service/internal/game/hub_map.go (hubBuildings): walled 20 thick as
- * addHubBuilding does, the south wall cut in two around a centred 50 px door gap, each furnishing
+ * addHubBuilding does, the south wall cut in two around its door gap (hubTown.fixture.ts), each furnishing
  * a wall carrying its building's house id (FS-B0H2D R1–R3, R9, R10, R12), and the Inn's partition
  * as hub_map.go walls it, north edge to south edge either side of its door gap. In hub_map.go's
  * order: the Inn, the Quartermaster's store, the smithy.
  */
 const rect4 = ({ x, y, w, h }: TownRect): [number, number, number, number] => [x, y, w, h];
 const BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(rect4);
-const THICK = 20;
-const DOOR = 50;
+const THICK = TOWN_WALL_THICK;
 
 const wall = (id: string, house: string, [x, y, w, h]: number[]): WallState => ({
   entity_id: id,
@@ -44,16 +44,9 @@ const wall = (id: string, house: string, [x, y, w, h]: number[]): WallState => (
   width: w,
   height: h,
 });
-const BUILDING_WALLS: WallState[] = BUILDINGS.flatMap(([x, y, w, h], i) => {
-  const side = (w - DOOR) / 2;
-  return [
-    [x, y, w, THICK],
-    [x, y, THICK, h],
-    [x + w - THICK, y, THICK, h],
-    [x, y + h - THICK, side, THICK],
-    [x + side + DOOR, y + h - THICK, side, THICK],
-  ].map((r, k) => wall(`b${i}w${k}`, `b${i}`, r));
-});
+const BUILDING_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+  townOutline(b).map((r, k) => wall(`b${i}w${k}`, `b${i}`, r)),
+);
 const PARTITION_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
   b.partitions.map((p, k) => wall(`b${i}p${k}`, `b${i}`, rect4(p))),
 );
@@ -142,11 +135,12 @@ describe("the Inn's partition (hub_map.go hubPartition)", () => {
     const inn = houseOf(PARTITION_WALLS[0]);
     const inside = PARTITION_WALLS.map((w) => partitionInside(w, inn));
     expect(inside.map(rectOf)).toEqual([
-      { x: 505, y: 70, width: 20, height: 175 },
-      { x: 505, y: 295, width: 20, height: 175 },
+      { x: 505, y: 70, width: 20, height: 160 },
+      { x: 505, y: 310, width: 20, height: 160 },
     ]);
-    // the door gap between them is the server's: 50 px, centred on the Inn's depth
-    expect(inside[1].position.y - (inside[0].position.y + inside[0].height)).toBe(DOOR);
+    // the door gap between them is the server's: a town door wide, centred on the Inn's depth
+    // (y 230–310, ADR-0073 Decision 3)
+    expect(inside[1].position.y - (inside[0].position.y + inside[0].height)).toBe(TOWN_DOOR);
     // trimming keeps the wall it came from
     expect(inside.map((w) => w.entity_id)).toEqual(PARTITION_WALLS.map((w) => w.entity_id));
   });
@@ -289,8 +283,8 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
   });
 
   it.each(spots)("should keep %s off its door's threshold: gap-wide, 80 px in", (_n, s) => {
-    for (const [x, y, w, h] of BUILDINGS) {
-      const threshold = { x: x + (w - DOOR) / 2, y: y + h - 80, width: DOOR, height: 80 };
+    for (const { x0, x1, sill } of HUB_TOWN_GOLDEN.buildings.map(townDoorGap)) {
+      const threshold = { x: x0, y: sill - 80, width: x1 - x0, height: 80 };
       expect(overlaps(footprint(s), threshold)).toBe(false);
     }
   });

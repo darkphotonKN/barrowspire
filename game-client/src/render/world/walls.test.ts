@@ -378,7 +378,7 @@ describe("unlitSheets (the Inn's walls: lit only by its hearth, candelabra and l
 
 describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", () => {
   // the Inn's partition inside the room, either side of its door gap
-  const partition = [wall(505, 70, 20, 175, "inn"), wall(505, 295, 20, 175, "inn")];
+  const partition = [wall(505, 70, 20, 160, "inn"), wall(505, 310, 20, 160, "inn")];
 
   it("should cut it low, in masonry, with no sconce: the camera sees over it into both rooms", () => {
     const { pieces, posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
@@ -393,7 +393,7 @@ describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", 
   it("should post both jambs of its door gap", () => {
     const { posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
     const ys = posts.map((p) => p.at.y).sort((a, b) => a - b);
-    // each segment's ends, inset by half its thickness: the gap's jambs at 235 and 305
-    expect(ys).toEqual([80, 235, 305, 460]);
+    // each segment's ends, inset by half its thickness: the gap's jambs at 220 and 320
+    expect(ys).toEqual([80, 220, 320, 460]);
   });
 });

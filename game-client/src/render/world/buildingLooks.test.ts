@@ -4,6 +4,7 @@ import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
 import { doorGaps, doorHead, gapDoor, planBuildings, planCap } from "./buildingLooks";
 import { housesFrom } from "./houses";
+import { townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { MASONRY_WALLS, TIMBER_WALLS, planWalls } from "./walls";
 
@@ -25,7 +26,7 @@ const wall = (
   height,
 });
 
-/** A building walled as AddBuilding and addHubBuilding do: 20 thick, a centred 80 gap in the south. */
+/** A building walled as AddBuilding does a run house: 20 thick, a centred 80 gap in the south. */
 const building = (x: number, y: number, w: number, h: number, id: string) => {
   const side = (w - DOOR) / 2;
   return [
@@ -45,9 +46,12 @@ const gapless = (x: number, y: number, w: number, h: number, id: string) => [
   wall(x, y + h - THICK, w, THICK, id),
 ];
 
-/** The client's town mirror (hub_map.go's buildings), walled as the server walls them. */
+/**
+ * The client's town mirror (hub_map.go's buildings), walled as the server walls them: the Inn's
+ * street gap off centre, against its partition (ADR-0073).
+ */
 const TOWN = HUB_TOWN_GOLDEN.buildings;
-const TOWN_WALLS = TOWN.flatMap(({ x, y, w, h }, i) => building(x, y, w, h, `b${i}`));
+const TOWN_WALLS = TOWN.flatMap((b, i) => townOutline(b).map(([x, y, w, h]) => wall(x, y, w, h, `b${i}`)));
 
 describe("planBuildings (FS-9PN7X §B.2)", () => {
   const walls = [...TOWN_WALLS, wall(0, 0, 200, THICK)];
@@ -163,15 +167,29 @@ describe("planCap (FS-9PN7X §B.3, §F.3)", () => {
 describe("doorGaps (FS-9PN7X §B.5)", () => {
   it("should find each town building's door gap from the walls, the gap's own rect", () => {
     const gaps = doorGaps(TOWN_WALLS);
-    expect(gaps).toHaveLength(3);
-    expect(gaps).toEqual(
-      TOWN.map(({ x, y, w, h }, i) => ({
-        houseId: `b${i}`,
-        position: { x: x + (w - DOOR) / 2, y: y + h - THICK },
-        width: DOOR,
-        height: THICK,
-      })),
+    // pinned as numbers, since the golden does not record a south wall: the Inn's at x 525–605,
+    // 15 px east of centre with its west jamb on the partition's east face (ADR-0073, hub_map.go
+    // `DoorShift`); the store's and the smithy's centred
+    expect(gaps).toEqual([
+      { houseId: "b0", position: { x: 525, y: 470 }, width: 80, height: THICK },
+      { houseId: "b1", position: { x: 1240, y: 370 }, width: 80, height: THICK },
+      { houseId: "b2", position: { x: 1590, y: 270 }, width: 80, height: THICK },
+    ]);
+  });
+
+  it("should open the Inn's street gap wholly into the taproom, no partition standing in it (FS-MMA2H R10)", () => {
+    const [inn] = doorGaps(TOWN_WALLS);
+    const partitions = TOWN[0].partitions;
+    expect(partitions.length).toBeGreaterThan(0);
+    for (const p of partitions) expect(p.x + p.w).toBeLessThanOrEqual(inn.position.x);
+    expect(inn.position.x + inn.width).toBeLessThanOrEqual(TOWN[0].x + TOWN[0].w - THICK);
+  });
+
+  it("should find the same gaps with the partition and the furnishings among the walls", () => {
+    const indoors = TOWN.flatMap((b, i) =>
+      [...b.partitions, ...b.furnishings].map(({ x, y, w, h }) => wall(x, y, w, h, `b${i}`)),
     );
+    expect(doorGaps([...TOWN_WALLS, ...indoors])).toEqual(doorGaps(TOWN_WALLS));
   });
 
   it("should find no gap in a gapless building, nor between two buildings' walls", () => {
