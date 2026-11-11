@@ -3821,6 +3821,81 @@ describe("HubScene pointer facing (FS-JS7C8 §D)", () => {
 
     expect(pointerFacing).toHaveBeenCalledWith(me.pos);
     expect(me.anim.face).toHaveBeenCalledWith("e");
-    expect(them.anim.face).not.toHaveBeenCalled();
+    expect(them.anim.face).not.toHaveBeenCalledWith("e");
+  });
+});
+
+// FS-JS7C8 §E R28, R34 (I-JS7C8-4): the own facing goes up as `face`; others are drawn turned to
+// the facing their entry carries, and the own echo never is
+describe("HubScene facing on the wire (FS-JS7C8 §E)", () => {
+  type Hub = {
+    views: Map<string, unknown>;
+    selfEntityID: string | null;
+    pointerFacing?: unknown;
+    placeName(view: unknown): void;
+    updateAppearance(view: unknown, player: unknown): void;
+    placePlayer(player: unknown, isSelf: boolean): void;
+    easeTowardServerPositions(time: number, delta: number): void;
+  };
+  const view = (x: number, wireFacing?: string) => ({
+    sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => null },
+    pos: { x, y: 0 },
+    target: { x, y: 0 },
+    wireFacing,
+    anim: { baked: true, facing: "se", face: vi.fn(), step: vi.fn(), show: vi.fn() },
+  });
+
+  function onHub(opts: { pointer?: string; them?: string }) {
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const hub = new HubScene() as unknown as Hub;
+    const me = view(100);
+    const them = view(300, opts.them);
+    hub.views = new Map([
+      ["me", me],
+      ["them", them],
+    ]);
+    hub.selfEntityID = "me";
+    hub.pointerFacing = vi.fn(() => opts.pointer);
+    hub.placeName = vi.fn();
+    const faces = () => send.mock.calls.filter(([action]) => action === "face").map(([, payload]) => payload);
+    return { hub, me, them, faces };
+  }
+
+  it("should send the pointer facing as face on the first frame of the own body, then only on a change", () => {
+    const { hub, faces } = onHub({ pointer: "e" });
+
+    hub.easeTowardServerPositions(0, 16);
+    hub.easeTowardServerPositions(200, 16);
+
+    expect(faces()).toEqual([{ facing: "e" }]);
+  });
+
+  it("should turn another player to the facing their entry carries, none when it carries none", () => {
+    const turned = onHub({ them: "w" });
+    turned.hub.easeTowardServerPositions(0, 16);
+    expect(turned.them.anim.face).toHaveBeenLastCalledWith("w");
+
+    const unturned = onHub({});
+    unturned.hub.easeTowardServerPositions(0, 16);
+    expect(unturned.them.anim.face).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("should keep another player's facing from their state, and never the own echo", () => {
+    const { hub, me, them } = onHub({});
+    hub.updateAppearance = vi.fn();
+    const entry = (entity_id: string, facing?: string) => ({
+      entity_id,
+      position: { x: 1, y: 2 },
+      direction: { vx: 0, vy: 0, speed: 0 },
+      ...(facing ? { facing } : {}),
+    });
+
+    hub.placePlayer(entry("me", "w"), true);
+    hub.placePlayer(entry("them", "ne"), false);
+    expect(me.wireFacing).toBeUndefined();
+    expect(them.wireFacing).toBe("ne");
+
+    hub.placePlayer(entry("them"), false);
+    expect(them.wireFacing).toBeUndefined();
   });
 });

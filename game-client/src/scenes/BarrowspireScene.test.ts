@@ -5423,6 +5423,121 @@ describe("BarrowspireScene pointer facing (FS-JS7C8 §D)", () => {
   });
 });
 
+// FS-JS7C8 §E R28, R29, R34: the own facing goes up as `face` (never while a Shadow Shot hold is
+// up), the own echo is never drawn, and another player is drawn turned to the facing their entry
+// carries, or to their movement with none.
+describe("BarrowspireScene facing on the wire (FS-JS7C8 §E; I-JS7C8-4)", () => {
+  type Run = {
+    handleGameStateUpdate(state: GameState): void;
+    update(time: number, delta: number): void;
+    updateOtherPlayersSmooth(time: number, delta: number): void;
+    otherPlayersAnim: Map<string, unknown>;
+  };
+
+  /** A baked animator's surface, recording what it is turned to. */
+  const animator = (facing = "se") => ({
+    baked: true,
+    facing,
+    guard: vi.fn(),
+    face: vi.fn(),
+    step: vi.fn(() => ({ animation: "idle", facing, direction: 0, timeScale: 1 })),
+    show: vi.fn(),
+  });
+
+  /** The run with this client's player in it, on their first state, ready to draw a frame. */
+  function ownFrame(opts: { pointer?: string; aiming?: boolean; echo?: string; dead?: boolean } = {}) {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const run = sceneOnStage().run as unknown as Run;
+    const me = {
+      ...player("me", "Aldric", 130, opts.dead ? { current_health: 0 } : {}),
+      ...(opts.echo ? { facing: opts.echo } : {}),
+    };
+    run.handleGameStateUpdate({ ...floorState(1), current_player: me, other_players: [] } as GameState);
+    const anim = animator("se");
+    const up = { isDown: false };
+    const keys = { left: up, right: up, up, down: up };
+    Object.assign(run, {
+      cursors: keys,
+      wasd: keys,
+      kit: { follow: vi.fn(), guarding: false },
+      combat: { aiming: opts.aiming ?? false, aimFrame: vi.fn() },
+      updateLighting: vi.fn(),
+      updateOtherPlayersSmooth: vi.fn(),
+      checkBuildingStatus: vi.fn(),
+      sendMovementIntent: vi.fn(),
+      playerPos: { x: 130, y: 0 },
+      targetPosition: { x: 130, y: 0 },
+      playerAnim: anim,
+      pointerFacing: vi.fn(() => opts.pointer),
+    });
+    const faces = () => sent.mock.calls.filter(([action]) => action === "face").map(([, payload]) => payload);
+    return { run, anim, faces };
+  }
+
+  it("should send the pointer facing as face on the first state's frame", () => {
+    const { run, faces } = ownFrame({ pointer: "nw" });
+
+    run.update(0, 16);
+
+    expect(faces()).toEqual([{ facing: "nw" }]);
+  });
+
+  it("should send the facing the character stands in before the pointer first moves", () => {
+    const { run, faces } = ownFrame({ pointer: undefined });
+
+    run.update(0, 16);
+
+    expect(faces()).toEqual([{ facing: "se" }]);
+  });
+
+  it("should send nothing while a Shadow Shot hold is up", () => {
+    const { run, faces } = ownFrame({ pointer: "nw", aiming: true });
+
+    run.update(0, 16);
+    run.update(200, 16);
+
+    expect(faces()).toEqual([]);
+  });
+
+  it("should send nothing while the own body lies dead", () => {
+    const { run, faces } = ownFrame({ pointer: "nw", dead: true });
+
+    run.update(0, 16);
+
+    expect(faces()).toEqual([]);
+  });
+
+  it("should never turn the own character to its own echoed facing", () => {
+    const { run, anim } = ownFrame({ pointer: undefined, echo: "w" });
+
+    run.update(0, 16);
+
+    expect(anim.face).not.toHaveBeenCalledWith("w");
+  });
+
+  it("should turn another player to the facing their entry carries, and to their movement with none", () => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const run = sceneOnStage().run as unknown as Run;
+    const state = (facing?: string) =>
+      ({
+        ...floorState(1),
+        current_player: player("me", "Aldric", 130),
+        other_players: [{ ...player("ally", "Wenna", 160), ...(facing ? { facing } : {}) }],
+      }) as GameState;
+    run.handleGameStateUpdate(state("w"));
+    const ally = animator("se");
+    run.otherPlayersAnim.set("ally", ally);
+
+    run.updateOtherPlayersSmooth(0, 16);
+    expect(ally.face).toHaveBeenLastCalledWith("w");
+    expect(ally.face.mock.invocationCallOrder[0]).toBeLessThan(ally.step.mock.invocationCallOrder[0]);
+
+    run.handleGameStateUpdate(state(undefined));
+    run.updateOtherPlayersSmooth(16, 16);
+    expect(ally.face).toHaveBeenLastCalledWith(undefined);
+  });
+});
+
 // FS-ZAJMH R18 and the top-right escalation, decided by Nick 2026-11-05: the fullscreen button
 // keeps the game frame's top-right corner in every scene, so the run's escaped count and the
 // floor under it step down clear of it, at every logical width.
