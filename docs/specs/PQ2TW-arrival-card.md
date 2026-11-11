@@ -145,14 +145,23 @@
 > unchanged, and so are the smoke's. Only the switch moves (R41, R53, and their criteria), with
 > the summary, §D's place and R30's criterion following it. See *Change: Smoke, a trial alternate
 > leave* at the end, which keeps its name as the anchor of the code that built it.
+>
+> **The owner's second pick, 2026-11-12, superseding the smoke pick of the same day.** He said:
+> "幫我把遊戲中的效果換成灰燼" (make the game's effect the ash). The ash becomes the card's leave in
+> the game: every arrival and every climb now leaves as ash. The dust and the smoke stay as
+> alternates, in the code and in the gallery, not deleted; their modules, numbers and tests are
+> unchanged, and so are the ash's. Only the switch moves (R41, R53, and their criteria), with the
+> summary, §D's place and R30's criterion following it. See *Change: Ash, a trial alternate
+> leave* at the end, which keeps its name as the anchor of the code that built it.
 
 ## Summary
 
 Coming into a place shows its name. Today only a climb does this: the view goes dark and comes
 back with "The Second Floor" and a line under it. After this change the same card plays on every
 arrival: into the town, into a field, onto the Spire's first floor, and on every climb as before.
-When the card goes, its letters soften into smoke that rises, swells and thins out (§Change:
-Smoke, the owner's pick of 2026-11-12); the dust (§D) and the ash stay as alternates.
+When the card goes, a burn front crosses its letters from the left and they come off as burnt
+flakes and embers that rise and fade (§Change: Ash, the owner's pick of 2026-11-12, superseding
+that day's smoke pick); the dust (§D) and the smoke stay as alternates.
 
 Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個全畫面的區域顯示 再慢慢淡出
 剛進一樓似乎沒顯示". He had seen the climb's card and expected it on floor 1. Then: "我要再進入
@@ -312,8 +321,9 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 ### §D. Leaving as dust
 
-Since the owner's pick of 2026-11-12 the dust is not the game's leave: the smoke is (R41). §D
-stays as the dust's work order; the dust is an alternate, kept in the code and the gallery.
+Since the owner's picks of 2026-11-12 the dust is not the game's leave: the ash is (R41, R53;
+the smoke was, earlier that day). §D stays as the dust's work order; the dust is an alternate,
+kept in the code and the gallery.
 
 24. **The card leaves as dust.** When its hold ends, the heading, the rule and the subtitle break
     into particles together; the text itself is gone as the particles appear in its place.
@@ -456,7 +466,7 @@ stays as the dust's work order; the dust is an alternate, kept in the code and t
 - [ ] Once a mote has slowed its path sways sideways, not a straight line, at most 5 px off it; it never turns back along its own heading, and ends within 22° of it. (R26)
 - [ ] Particles start `hudText`, end `hudLabel`, and no other colour appears. (R28)
 - [ ] The dust is drawn over the veil and under the HUD. (R29)
-- [ ] The climb's card leaves as an arrival's does, by the one switch (the smoke, R41). (R30)
+- [ ] The climb's card leaves as an arrival's does, by the one switch (the ash, R41, R53). (R30)
 - [ ] With reduced motion, no particle is made and the card fades over 600 ms. (R31)
 - [ ] The card makes four particles per view px² of ink, at most 6000, about 1.2 view px across, from one emitter, with no `explode` call. (R32, R33)
 - [ ] `table.test.ts` and `sourceScan.test.ts` still pass as written for every other effect. (R33)
@@ -531,24 +541,28 @@ stays as the dust's work order; the dust is an alternate, kept in the code and t
 Status: work-order
 Date: 2026-11-12
 
-**Now the game's leave.** The owner's pick, 2026-11-12: "幫我把煙的效果套到遊戲中" (put the smoke
-into the game). The smoke is no longer a trial alternate: it is the card's leave on every
-arrival and climb. The dust (§D) and the ash (§Change: Ash) stay as alternates in the code and
-the gallery, not deleted. The heading keeps its name, the anchor the code was built against.
+**An alternate again.** The owner's pick, 2026-11-12: "幫我把煙的效果套到遊戲中" (put the smoke
+into the game) made the smoke the card's leave on every arrival and climb. Later that day his
+second pick superseded it: "幫我把遊戲中的效果換成灰燼" (make the game's effect the ash). The ash
+(§Change: Ash) is now the game's leave; the smoke, like the dust (§D), stays as an alternate in
+the code and the gallery, not deleted, its module, numbers and tests unchanged. The heading
+keeps its name, the anchor the code was built against.
 
 The owner, on the 6000-mote trial (2026-11-12): "如果做成像煙一樣散掉有可能嗎" (could it go like
 smoke?), then "換成煙的效果試試" (try a smoke effect). Offered soft puffs rising off the strokes, a
 shader dissolve of the text, or both, the puffs were recommended and taken. Before it was built he
 added: "並存 先保留粒子的模組 煙另外做": both stand, the dust's module stays as it is, the smoke is
-built apart. **Built as a trial, now the game's leave:** the smoke is a second leave, its own
-module, beside the dust (§D unchanged, the fifth tune's 6000 motes included) in the gallery; the
-owner said which the game plays, and it is the smoke. Every number below is a starting value.
+built apart. **Built as a trial, the game's leave for part of a day, an alternate again:** the
+smoke is a second leave, its own module, beside the dust (§D unchanged, the fifth tune's 6000
+motes included) in the gallery; the owner said which the game plays, first the smoke, then the
+ash (§Change: Ash). Every number below is a starting value.
 
 ### Requirements
 
 41. **Two leaves, one switch.** The card can leave as dust (§D) or as smoke (below). One named
     value in the shared card (`src/ui/arrivalCard.ts`) picks which one the game plays, and it
-    is **smoke** (the owner's pick, 2026-11-12: "幫我把煙的效果套到遊戲中"). Each world scene hands the card both leaves; no scene picks. A play may name
+    is **ash** (R53; the owner's second pick, 2026-11-12: "幫我把遊戲中的效果換成灰燼", superseding
+    that day's smoke pick, "幫我把煙的效果套到遊戲中"). Each world scene hands the card both leaves; no scene picks. A play may name
     the other leave for itself (the gallery does); a scene's play never does.
     **(the owner's "並存 先保留粒子的模組 煙另外做".)**
 42. **The smoke is its own module** (`src/render/effects/cardSmoke.ts`, its own tests). The dust's
@@ -598,7 +612,7 @@ owner said which the game plays, and it is the smoke. Every number below is a st
 
 ### Acceptance Criteria
 
-- [ ] The shared card names one switch, and it is smoke; a scene's play that names no leave leaves as smoke; every world scene hands the card both leaves and none names one. (R41)
+- [ ] The shared card names one switch, and it is ash (R53); a scene's play that names no leave leaves as ash; a play naming the smoke or the dust leaves as that; every world scene hands the card both leaves and none names one. (R41)
 - [ ] `cardDust.ts` and its tests are unchanged; the smoke is `cardSmoke.ts` with its own tests and reads the strokes through `strokeCells` / `ruleCells` / `seedPoints`. (R42)
 - [ ] Every puff starts on a pixel the text drew or on the rule; none in the gaps between letters. (R42)
 - [ ] Played as smoke, the card's letters are not hidden at once: they blur from none, drift up and fade by 1200 ms. (R43, R48)
@@ -616,15 +630,16 @@ owner said which the game plays, and it is the smoke. Every number below is a st
 ### Edge States
 
 - **No WebGL** (the canvas renderer): no blur filter; the letters drift and fade, the puffs rise.
-- **The switch set to smoke** (the owner's pick, 2026-11-12): every arrival and climb leaves as
-  smoke; nothing else changes.
+- **The switch set to smoke** (the owner's pick, 2026-11-12, superseded the same day by the
+  ash): every arrival and climb would leave as smoke; nothing else changes.
 - **A replay of the other leave in the gallery while a card is up:** the card up is removed, with
   its puffs or motes, and the new one plays (R9).
 
 ### Out of Scope
 
 - Taking the dust out, or changing any of its values (the fifth tune's trial stands); it stays an
-  alternate in the code and the gallery.
+  alternate in the code and the gallery. Taking the smoke out: since the ash pick it is an
+  alternate too, kept in the code and the gallery.
 - A shader dissolve of the text (option B), or both at once (option C).
 - A setting that lets a player choose; any new art, colour or texture.
 
@@ -632,15 +647,21 @@ owner said which the game plays, and it is the smoke. Every number below is a st
 Status: work-order
 Date: 2026-11-12
 
+**Now the game's leave.** The owner's second pick, 2026-11-12, superseding that day's smoke
+pick: "幫我把遊戲中的效果換成灰燼" (make the game's effect the ash). The ash is no longer a trial
+alternate: it is the card's leave on every arrival and climb. The dust (§D) and the smoke
+(§Change: Smoke) stay as alternates in the code and the gallery, not deleted. The heading keeps
+its name, the anchor the code was built against.
+
 The owner, beside the smoke trial (2026-11-12): "地圖卡有可能像是灰燼的方式消失嗎" (could the card go
 the way ash does?), then "好 做灰燼試試 一樣獨立模組" (good, try ash, again its own module). Locked
 with him: a burn front crosses the card's text with a faint ember glow on its edge; the strokes it
 passes char and darken; the charred parts flake off as irregular ash flakes, larger than the
 dust's motes, dark grey with a dim ember rim, that rise slowly, tumbling, and fade; about 1 s for
-the front, about 1 s more for the flakes; a few hundred flakes; reduced motion only fades. **A
-trial:** the dust stays the card's leave in the game (§D unchanged); the ash is a third leave
-behind the same switch as the smoke (R41), its own module, shown in the gallery beside the dust
-and the smoke. Every number below is a starting value. The front's shape was left to the build:
+the front, about 1 s more for the flakes; a few hundred flakes; reduced motion only fades. **Built
+as a trial, now the game's leave:** the ash is a third leave behind the same switch as the smoke
+(R41), its own module, shown in the gallery beside the dust (§D unchanged) and the smoke; the
+owner said which the game plays, and it is the ash. Every number below is a starting value. The front's shape was left to the build:
 it sweeps from one side, the left, the way the words read, ragged by noise.
 
 **The owner's look at the ash, 2026-11-12.** In the gallery he said: "灰燼左到右燒感覺不錯 但是燒掉後的
@@ -663,8 +684,10 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
-    **smoke** for the game (the owner's pick, 2026-11-12, R41). Every world scene hands the card the ash with the other two, as it
-    hands it the smoke; no scene picks. Only the gallery names the ash for a play.
+    **ash** for the game (the owner's second pick, 2026-11-12: "幫我把遊戲中的效果換成灰燼",
+    superseding that day's smoke pick, R41). Every world scene hands the card the ash with the
+    other two, as it hands it the smoke; no scene picks. A scene's play names no leave and so
+    leaves as ash; only the gallery names a leave for a play.
     **(the owner's "一樣獨立模組".)**
 54. **The ash is its own module** (`src/render/effects/cardAsh.ts`, its own tests). The dust's and
     the smoke's modules, numbers and tests are unchanged. The ash reads the card's ink as the dust
@@ -753,7 +776,7 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 
 ### Acceptance Criteria
 
-- [ ] The switch's values are dust, smoke and ash, and it is smoke; every world scene hands the card the ash with the others and none names one. (R53)
+- [ ] The switch's values are dust, smoke and ash, and it is ash; a scene's play that names no leave leaves as ash; every world scene hands the card the ash with the others and none names one. (R53)
 - [ ] `cardDust.ts`, `cardSmoke.ts` and their tests are unchanged; the ash is `cardAsh.ts` with its own tests and reads the strokes through `strokeCells` / `ruleCells` / `seedPoints`. (R54)
 - [ ] Played as ash, the card's letters are hidden and a burning image of them stands in their place. (R55)
 - [ ] The front advances from the left: the burned share of the ink only grows, and its burning band moves right on average; every stroke pixel is gone when the front has crossed. (R55)
@@ -776,16 +799,16 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 ### Edge States
 
 - **No WebGL** (the canvas renderer): the burning image is a canvas texture either way; nothing changes.
-- **The switch set to ash** (not picked; the owner picked the smoke, 2026-11-12): every arrival
-  and climb would leave as ash.
+- **The switch set to ash** (the owner's second pick, 2026-11-12, superseding the smoke): every
+  arrival and climb leaves as ash; nothing else changes.
 - **A resize while it burns:** the card and its ash are removed (R60), as for the dust.
 - **A text drawn at another resolution than the other** (none today): the image is drawn at the
   finer one, the coarser text sampled up to it.
 
 ### Out of Scope
 
-- Taking the dust or the smoke out, or changing any of their values. The ash stays an alternate
-  in the code and the gallery.
+- Taking the dust or the smoke out, or changing any of their values. Both stay as alternates in
+  the code and the gallery; the ash is the game's leave.
 - A shader burn on the GPU; a burn spreading from several points.
 - A setting that lets a player choose; any baked art, new colour or token.
 - A wisp of smoke off the front (`fx_smoke` at a low alpha): offered with the rework of
