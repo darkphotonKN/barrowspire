@@ -107,6 +107,7 @@ server state and sends intents. ✅
 - [x] Container-open presentation → FS-2325V
 - [x] Distinct look per container kind → FS-1D6BX
 - [ ] Expanded baked enemy roster → FS-Q14EV
+- [ ] Ranged monsters drawn with their shots → FS-B4SG9
 - [x] Blood demon boss look → FS-VHGE7
 - [x] Demon fire claw look → FS-VHGE7
 - [x] Hub town props and dressing → FS-KYPQ9
