@@ -100,8 +100,8 @@ export interface CardAshRecord {
 
 /** The ash (R53–R64). Like the dust, not an `EFFECTS` entry: a view-space HUD effect, R59's exception. */
 export const CARD_ASH = {
-  frontMs: 1000,
-  durationMs: 2000,
+  frontMs: 2000,
+  durationMs: 3000,
   ragged: 0.35,
   grainPx: 6,
   band: { ember: 0.06, char: 0.08 },

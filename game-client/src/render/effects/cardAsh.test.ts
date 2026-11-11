@@ -190,8 +190,8 @@ function offSegment(c: number[], a: number[], b: number[]): number {
 describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should be one typed record, at its starting values", () => {
     expect(CARD_ASH).toEqual({
-      frontMs: 1000,
-      durationMs: 2000,
+      frontMs: 2000,
+      durationMs: 3000,
       ragged: 0.35,
       grainPx: 6,
       band: { ember: 0.06, char: 0.08 },
@@ -233,7 +233,7 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should keep every FS-KYPQ9 §B rule but §B.6's count and fall, §B.2's ceiling and §B.10 (R59)", () => {
     // §B.2: one fixed duration, the front's and a flake's life inside it
     expect(Number.isInteger(CARD_ASH.durationMs)).toBe(true);
-    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2000);
+    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(3000);
     expect(CARD_ASH.frontMs + CARD_ASH.flake.lifeMs).toBeLessThanOrEqual(CARD_ASH.durationMs);
     expect(CARD_ASH.frontMs + CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(CARD_ASH.durationMs);
     // §B.3: the easing allowlist
@@ -328,11 +328,11 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       });
     }
 
-    it("should run its front for 1000 ms, linear, redrawing and uploading the image each step", () => {
+    it("should run its front for 2000 ms, linear, redrawing and uploading the image each step", () => {
       const { ash, gone, front, burn } = ashStage();
       ash.play(cardInk(), 961, gone);
 
-      expect(front().config).toMatchObject({ from: 0, to: 1, duration: 1000, ease: "Linear" });
+      expect(front().config).toMatchObject({ from: 0, to: 1, duration: 2000, ease: "Linear" });
       const before = burn().refreshed;
       front().at(0.5);
       expect(burn().puts.length).toBeGreaterThan(1);
@@ -820,12 +820,12 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(gone).not.toHaveBeenCalled();
   });
 
-  it("should be gone at 2000 ms, everything of it destroyed, and say so (R57)", () => {
+  it("should be gone at 3000 ms, everything of it destroyed, and say so (R57)", () => {
     const { ash, gone, timers, made, burn } = ashStage();
     ash.play(cardInk(), 961, gone);
 
     const [end] = timers;
-    expect(end.delay).toBe(2000);
+    expect(end.delay).toBe(3000);
     end.fire();
 
     expect(made.every((m) => m.destroyed)).toBe(true);
