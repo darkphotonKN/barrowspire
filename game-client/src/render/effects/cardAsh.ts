@@ -160,13 +160,16 @@ export interface CardAshRecord {
 /** The ash (R53–R64). Like the dust, not an `EFFECTS` entry: a view-space HUD effect, R59's exception. */
 export const CARD_ASH = {
   frontMs: 2000,
-  durationMs: 3000,
+  // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": the front's 2000 ms and a
+  // flake's 700 (was 3000, with a 1000 ms flake)
+  durationMs: 2700,
   ragged: 0.35,
   grainPx: 6,
   // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): fire runs a temperature ramp
   band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
   flake: {
-    lifeMs: 1000,
+    // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": 30% sooner (was 1000)
+    lifeMs: 700,
     // the owner's sixth tune of 2026-11-12, "灰燼碎屑少一點": a fifth fewer again (was 240 and
     // 0.08; before his fourth, "灰燼 碎屑少２０％", 300 and 0.1)
     maxParticles: 192,
@@ -184,7 +187,8 @@ export const CARD_ASH = {
       seamPx: 0.75,
       cools: [1, 0.6, 0.3],
       edgeFrom: 0.28,
-      ms: 900,
+      // the seventh tune: 30% sooner, still out before its flake (was 900)
+      ms: 630,
       steps: 20,
       shades: 12,
       flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
@@ -899,7 +903,7 @@ export class CardAsh {
   /**
    * The flakes (R56): rising within the spread of their lean, up and to the left, and slowing a little, turning slowly,
    * turning over in depth (the scale across them swinging through zero, edge-on, and back), swaying
-   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 900 ms.
+   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 630 ms.
    */
   private flakeConfig(anims: string[], resolution: number): EmitterConfig {
     const f = CARD_ASH.flake;
