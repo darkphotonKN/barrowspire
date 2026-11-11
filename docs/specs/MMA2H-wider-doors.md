@@ -1,6 +1,6 @@
 # FS-MMA2H: Wider doors
 
-> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Wider doors → FS-MMA2H`: [FS-B0H2D](B0H2D-enterable-town-buildings-and-the-inn.md) (town door gaps, the Inn's partition gap, the town's client mirror), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (door heads, the drawn gap door), [FS-2325V](2325V-pre-rendered-isometric-art.md) (the `door_{x,y}` sheet), [FS-F6F88](F6F88-multi-floor-delves.md) (the floor of buildings and its run houses) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art), [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md), [ADR-0042](../adr/0042-a-building-entrance-shows-a-door-not-a-dark-opening.md) (a doorway shows a door under a head), [ADR-0070](../adr/0070-the-inn-becomes-a-two-hall-great-hall-and-the-forest-gate-moves-south.md) (the Inn's partition at x 505-525 with "a centred 50 px gap": see §C, Open decision D1) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Town buildings" (*door gap*, *partition*); no new term
+> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Wider doors → FS-MMA2H`: [FS-B0H2D](B0H2D-enterable-town-buildings-and-the-inn.md) (town door gaps, the Inn's partition gap, the town's client mirror), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (door heads, the drawn gap door), [FS-2325V](2325V-pre-rendered-isometric-art.md) (the `door_{x,y}` sheet), [FS-F6F88](F6F88-multi-floor-delves.md) (the floor of buildings and its run houses) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art), [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md), [ADR-0042](../adr/0042-a-building-entrance-shows-a-door-not-a-dark-opening.md) (a doorway shows a door under a head), [ADR-0070](../adr/0070-the-inn-becomes-a-two-hall-great-hall-and-the-forest-gate-moves-south.md) (the Inn's partition at x 505-525 with "a centred 50 px gap": see §C, Decision D1), [ADR-0073](../adr/0073-the-inns-street-door-is-80-px-wide-and-off-centre-and-its-partition-stays.md) (the Inn's street gap at x 525-605, off centre; amends ADR-0070 Decision 2) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Town buildings" (*door gap*, *partition*); no new term
 
 > Promoted `--from-thread` on 2026-11-11 from the locked scoping notes: the owner's approved
 > charter "門加寬". Requirements marked **(charter default)** are that charter's, each with its
@@ -67,7 +67,8 @@ one of these unavoidable stops and escalates.
    The number is written once: the hub's gap is defined from the run door's width, and
    `CreateBuilding` passes that name, not a literal.
 3. **Centred, nothing moved (charter default).** A door stays centred in its wall. No building,
-   partition or furnishing is moved or resized by this FS, save what Open decision D1 settles.
+   partition or furnishing is moved or resized by this FS. The one door off centre is the Inn's
+   street door (Decision D1).
 4. **Only the width (charter default).** Opening, closing, locking, the interact range and what it
    is measured to are unchanged. Wall thickness stays 20. The hub still has no door entity.
 5. **Floor 1's doorways and field worlds are untouched (charter default).** A dungeon doorway is
@@ -86,8 +87,9 @@ one of these unavoidable stops and escalates.
 
 ### C. The town (game-service)
 
-9. Each town building's south wall is cut around a centred 80 px gap; the Inn's partition is cut
-   around an 80 px gap centred on the Inn's depth.
+9. Each town building's south wall is cut around a centred 80 px gap, the Inn's around an 80 px
+   gap at x 525-605 (Decision D1); the Inn's partition is cut around an 80 px gap centred on the
+   Inn's depth.
 10. **No wall stands in a door gap (spec).** No wall, partition or furnishing of a building overlaps
     any of its door gaps. Reason: a gap narrower in play than it is drawn is the defect this FS
     exists to remove.
@@ -97,12 +99,19 @@ one of these unavoidable stops and escalates.
     for the hearth), the 240 px lanes (R4).
 12. The town golden is rewritten by its Go test (`-update`), never by hand.
 
-**Open decision D1 (owner): the Inn's street door.** R1, R3 and R10 cannot all hold for the Inn as
+**Decision D1 (owner, 2026-11-11): the Inn's street door is (b).** The owner's answer: "旅店街門
+照建議". The Inn's partition does not move; the Inn's street gap is 80 px wide at x 525-605, 15 px
+east of the wall's centre, its west jamb flush against the partition as today; nothing indoors
+moves. Every other town building's gap is centred. Recorded as
+[ADR-0073](../adr/0073-the-inns-street-door-is-80-px-wide-and-off-centre-and-its-partition-stays.md).
+What was decided between:
+
+R1, R3 and R10 cannot all hold for the Inn as
 it is laid out. The partition stands at x 505-525 (ADR-0070 Decision 2), flush against today's gap
 (x 525-575). A centred 80 px gap is x 510-590, so the partition's south end would stand 15 px inside
 it. Shown on a scratch copy with only the width changed:
 `TestHubLayout_Inn_IsSplitByOnePartition_WithACentredDoorGap` fails with "the partition stands in
-the Inn's street door"; every other hub layout test passes. The ways out, none chosen here:
+the Inn's street door"; every other hub layout test passes. The ways out, (b) chosen:
 
 | | Change | What it costs |
 |---|---|---|
@@ -111,8 +120,8 @@ the Inn's street door"; every other hub layout test passes. The ways out, none c
 | c | Keep the Inn's street door at 50 px | Breaks "every door" (R1) for the door players use most. |
 | d | Stop the partition short of the south wall | The client tells a partition by its reaching both edges end on (ADR-0070 Decision 6): a drawing-rule change. |
 
-Whichever is chosen, ADR-0070 Decision 2's "centred 50 px gap" no longer reads true and wants a new
-ADR. The town slices (I-MMA2H-3, I-MMA2H-4) wait on D1; §A, §B and §E do not.
+ADR-0070 Decision 2's "centred 50 px gap" no longer reads true: ADR-0073 amends that clause. The
+town slices (I-MMA2H-3, I-MMA2H-4) no longer wait on D1.
 
 ### D. The town on the client (game-client)
 
@@ -181,7 +190,7 @@ Server:
 
 - [ ] A run house of each size has a door 80 px wide and 20 px thick, centred in its south wall,
       with wall segments of 110, 160 and 210 px either side.
-- [ ] Each town building's south wall has a centred 80 px gap (the Inn's as D1 settles); the Inn's
+- [ ] Each town building's south wall has a centred 80 px gap (the Inn's at x 525-605, D1); the Inn's
       partition has an 80 px gap centred on the Inn's depth; the hub has no door entity.
 - [ ] Go test: no wall of a building overlaps one of its door gaps.
 - [ ] The hub layout tests of FS-B0H2D pass at the new width: lanes, ground in front of each door,
@@ -247,4 +256,4 @@ By eye (owner, browser):
 - The Spire's gate in the hub, escape doors, switches, stairs.
 - A double-leaf door, an opening animation, new materials or tokens.
 - Any proto, WS message, api-gateway, OpenAPI, database or other-service change.
-- A new ADR: this FS names where one is wanted (D1, ADR-0070 Decision 2) and leaves it to the owner.
+- Any ADR beyond ADR-0073, which records D1 over ADR-0070 Decision 2.
