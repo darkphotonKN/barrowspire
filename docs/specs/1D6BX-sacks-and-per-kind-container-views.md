@@ -202,3 +202,106 @@ Charter defaults (chosen by the charter run, Kranti delegated the calls; each ov
 - Sacks in the hub, and Meadows chests (it has none).
 - HTTP endpoints, OpenAPI, the generated client, protos, DB migrations.
 - A lid animation for the coffer, or any animation for the bone heap.
+
+## Change: The container view closes when its player is hit
+Status: work-order
+Date: 2026-11-11
+
+Owner decision (Nick, 2026-11-11: "開啟箱子時被攻擊可以自動關閉箱子嗎", decisions approved "好"). Written
+`--from-thread`: the thread is the owner's locked decisions, so no interview was held. It lands
+here because R16 is what changes: the view's close rules, the same in every face, are this FS's.
+[FS-MQYEX](MQYEX-timed-container-opening.md) owns the act of opening a shut container and is not
+changed; its D4 reading of "a hit" is borrowed.
+
+Locked (owner):
+
+- **L1.** While a container view is open in a run (the coffer, the satchel or the bone heap), a
+  hit that costs the local player health closes it.
+- **L2.** A hit is health actually lost. A parried strike that costs nothing closes nothing, and
+  neither does a heal. Damage over time closes the view each time it costs health.
+- **L3.** No notice is shown. E on the container opens its view again at once: the container is
+  already open, so there is no timed open.
+- **L4.** Only the container view closes. The gear and bag overlay and every other window stay
+  as they are.
+- **L5.** Client only. The server keeps no view state and is not changed.
+
+Derived here (the owner was silent; each overridable):
+
+- **E1: run worlds only.** A field world's container view is unchanged. *Reason:* the owner spoke
+  of the tower's chests, and a field's deaths cost nothing; the smaller reading.
+- **E2: the client reads the hit from its own health in two states in a row**, the reading the
+  hurt flash already makes, and keeps one record of it. *Reason:* the state carries no hit
+  event, every landed hit costs at least 1 health (FS-MQYEX D4), and the state comes every tick.
+- **E3: health that fell no further than max health fell in the same state is not a hit.**
+  *Reason:* taking off gear that raised max health lowers health with it by the same amount; the
+  player did that in the gear overlay, beside the open view.
+- **E4: the hit is judged before the state's containers are read.** A view the same state opens
+  for a pending reach was not open when the hit landed, and stays. *Reason:* FS-MQYEX R26 reads
+  the open container first; that flow is left exactly as it is.
+
+### Requirements
+
+19. **A hit closes the view.** In a run, when a state has the local player's `current_health`
+    lower than the state before it had, and the view is open, the view closes, whichever face it
+    wears. Nothing is sent and no notice, sound or effect is added.
+20. **Only health lost to a hit.** A state with the health the same or higher closes nothing: a
+    parried strike, a heal, a potion. A state in which health fell by no more than `max_health`
+    fell closes nothing (E3); one in which it fell by more does.
+21. **Each time.** Every state that costs health closes an open view, so a view opened again
+    under damage over time closes on the next state that costs health.
+22. **Two states of one start.** The first state after the scene starts is compared with nothing
+    and closes nothing: joining, and a reconnect mid-run (a restart of the scene), whatever the
+    health in it.
+23. **Opening again.** E on the container opens its view at once, as for any open container
+    (FS-MQYEX R21). Nothing blocks or delays it after a hit.
+24. **Nothing else closes or changes.** The gear and bag overlay, the menu, chat and the party
+    panel are untouched. A pending reach, the open bar and a running timed open are untouched:
+    the server cancels the timed open and the client follows it through `timed_open` going
+    absent (FS-MQYEX R23, R26). The view's other close rules (walking out of reach, the container
+    gone, a floor change, Q, E) are as they are. A view that is not open is not closed again.
+25. **Run only.** Field worlds and the hub are unchanged (E1). The server is unchanged.
+
+### Acceptance Criteria
+
+Client (`npm test`, `npm run lint`, `npx tsc --noEmit` in `game-client`), each through the run
+scene's state handling:
+
+- [ ] With the view open, a state with the player's health lower closes it, for a chest, a sack and a drop pile; no notice is raised and nothing is sent.
+- [ ] A state with the health unchanged (a parried strike), and one with it higher (a heal), leave the view open.
+- [ ] After a hit closed it, E opens the view at once; the next state that costs health closes it again, and one that costs none leaves it open.
+- [ ] The first state of a start, with the health below max health, leaves an open view open; so does the first state after the scene restarts with the health lower than the last state before it.
+- [ ] A floor change with the health lower closes the view once, as a floor change does; a view opened on the new floor stays open through a state with that same health.
+- [ ] A state in which health and `max_health` fell by the same amount leaves the view open; one in which health fell by more closes it.
+- [ ] With no view open, a state that costs health closes nothing: also when the hit kills the player, and when the state has the player escaped or carries no `current_player`.
+- [ ] A hit during a timed open leaves the open bar and the pending reach as the state has them: the bar stays while `timed_open` is sent and the view opens when the container does; with `timed_open` gone and the container shut the reach is given up as before.
+- [ ] A hit with the gear and bag overlay up leaves the overlay as it is.
+- [ ] `FieldScene` is not changed.
+
+Live check (one browser, one run): opening a coffer beside a monster, the first hit that costs
+health closes it with no notice, and E opens it again at once.
+
+### Edge States
+
+- **The hit kills the player.** The view closes on that state like any hit. Nothing else is done.
+- **The player is dead, escaped or watching a teammate.** Their own health no longer falls;
+  nothing closes. Another player's health is never read.
+- **A state without `current_player`, or without `current_health`.** Nothing is judged and the
+  last health seen is kept for the next state that has one.
+- **A hit and a gear change in one state.** Health fell by more than max health did: a hit (R20).
+- **A hit on the state that opens the view** (a teammate finished the container on the tick the
+  player was hit). The view opens and stays; the next hit closes it (E4).
+- **The view is open on one container while the player reaches for another.** The hit closes the
+  view; the reach and its timed open go on as the states say (R24).
+- **A dropped frame.** The next state is compared with the last one seen: health lost meanwhile
+  closes the view one state late.
+- **Health lost to something that is not a strike** (Fall where you stand). Health fell: the view
+  closes. The player is out of play either way.
+
+### Out of Scope
+
+- Field worlds and the hub (E1); any server change; a view state on the server.
+- A notice, sound, shake or animation when the view closes; a delay or lockout before E opens it
+  again.
+- Closing the gear and bag overlay, the menu or any other window on a hit.
+- The hurt flash, which keeps its own reading of the same record.
+- FS-MQYEX: the timed open, its cancel causes and the reach.
