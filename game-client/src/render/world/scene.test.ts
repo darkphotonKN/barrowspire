@@ -5,7 +5,7 @@ import { MANIFEST_VERSION, type ArtManifest, type ArtSheet } from "@/render/art/
 import type { WallState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
 import { BAKE } from "./bake";
-import { doorGaps } from "./buildingLooks";
+import { doorGaps, planBuildings } from "./buildingLooks";
 import { screenToWorld, worldDepth, worldToScreen, type Point } from "@/render/iso";
 import { planGables } from "./roofs";
 import {
@@ -22,7 +22,15 @@ import {
 import { projectedBounds } from "@/render/iso";
 import { ChunkGrid } from "./chunks";
 import { TOWER_GROUND } from "./ground";
-import { MASONRY_WALLS, planEdgeWalls, thicknessPx, type EdgeLine } from "./walls";
+import {
+  INTERIOR_PARTITION,
+  MASONRY_WALLS,
+  TIMBER_WALLS,
+  planEdgeWalls,
+  planWalls,
+  thicknessPx,
+  type EdgeLine,
+} from "./walls";
 
 describe("GroundLayer's world (FS-KSD6K §Requirements 16)", () => {
   // checked by `tsc`: a faded edge erases everything past the map, so nothing may be laid there
@@ -311,6 +319,27 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const pieces = (parts: unknown[]) => parts.filter((p) => sheetOf(p)?.startsWith("wall_"));
     expect(b.lights).toHaveLength(pieces(b.shared).length + pieces(b.interior).length);
     expect(b.lights.filter((l) => l.underRoof)).toHaveLength(pieces(b.shared).length);
+  });
+
+  it("should hand back what it drew each building's walls from, for their shadows to be cast from (FS-V8FT3 §F)", () => {
+    for (const sheets of [TIMBER_WALLS, MASONRY_WALLS]) {
+      const { scene } = stubScene();
+      const masonry = ["plain", "pillar", "sconce", "banner", "cobweb"].flatMap((k) =>
+        ["back", "front", "exterior"].flatMap((h) => ["x", "y"].map((a) => `tower_wall_${h}_${k}_${a}`)),
+      );
+      const { art } = library([...TIMBER_ART, ...masonry, "tower_post_back", "tower_post_front", "tower_cap"]);
+      const [b] = addBuildings(scene, art, HOUSE, 1, { sheets, doors: doorGaps });
+      // the plan its sprites stand by: each look's pieces and posts are the sprites of that look
+      const [plan] = planBuildings(HOUSE, 1, sheets);
+      expect(b.plan).toEqual(plan);
+      const walls = (parts: unknown[]) => parts.map(sheetOf).filter((s) => /wall_|post_/.test(s ?? ""));
+      for (const look of ["shared", "interior", "exterior"] as const)
+        expect(walls(b[look])).toEqual([...b.plan[look].pieces, ...b.plan[look].posts].map((p) => p.sheet));
+      // the gaps its heads close, and its material's thickness, not the server rects' (`wall`)
+      expect(b.gaps).toEqual(doorGaps(HOUSE));
+      expect(b.thickness).toBe(thicknessPx(sheets));
+      expect(b.thickness).not.toBe(b.wall);
+    }
   });
 });
 
@@ -837,5 +866,23 @@ describe("addWallPieces: planned pieces and posts as sprites (a dungeon floor's 
   it("should be null without the material's wall art: the scene draws its placeholder blocks", () => {
     const { scene } = stubScene();
     expect(addWallPieces(scene, library([]).art, planned, 7, MASONRY_WALLS)).toBeNull();
+  });
+
+  it("should hand back the plan it drew and its material's thickness, for the walls' shadows (FS-V8FT3 §D)", () => {
+    const { scene } = stubScene();
+    const { art } = library([...TOWER_ART, "tower_post_back", "tower_post_front"]);
+    const built = addWallPieces(scene, art, planned, 7, MASONRY_WALLS)!;
+    expect(built.plan).toEqual(planned);
+    expect(built.thickness).toBe(THICK);
+  });
+
+  it("should hand back from addWalls the plan its sheets and rule cut, not another", () => {
+    const { scene } = stubScene();
+    const { art } = library([...TOWER_ART, "tower_post_back", "tower_post_front"]);
+    const walls = [wall(0, 0, 400, 20)];
+    const built = addWalls(scene, art, walls, 7, MASONRY_WALLS, INTERIOR_PARTITION)!;
+    expect(built.plan).toEqual(planWalls(walls, 7, MASONRY_WALLS, INTERIOR_PARTITION));
+    expect(built.plan.pieces.every((p) => p.height === "front")).toBe(true);
+    expect(built.thickness).toBe(THICK);
   });
 });

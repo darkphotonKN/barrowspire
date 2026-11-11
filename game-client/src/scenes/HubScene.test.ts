@@ -2861,6 +2861,42 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(handed.cuts).toEqual([]);
     });
 
+    it("should cast each wall's shadow from the wall as drawn: drawn in another sheet or by another rule, its shadow follows the drawing", async () => {
+      const real = await vi.importActual<typeof import("@/render/world")>("@/render/world");
+      const { planWallShadows, shadowsWithin } = await import("@/render/world/wallShadows");
+      const { MASONRY_WALLS, TIMBER_WALLS, INTERIOR_PARTITION, planWalls, thicknessPx } = walls_;
+      // not the hub's own draw calls: the street's wall in masonry, the Inn's partition full height
+      const fullHeight = { height: () => "back" as const, lit: () => false };
+      vi.mocked(world.addWalls).mockImplementation((scene, art, walls, seed, sheets, rule) =>
+        sheets === MASONRY_WALLS
+          ? real.addWalls(scene, art, walls, seed, sheets, fullHeight)
+          : real.addWalls(scene, art, walls, seed, MASONRY_WALLS, rule),
+      );
+      try {
+        const { ground } = shadedTown(BAKED);
+        const handed = ground.shade.mock.calls[0][0].shapes.map(corners);
+        const seed = world.worldSeed("hub");
+        const masonry = thicknessPx(MASONRY_WALLS);
+        const [inn] = world.housesFrom(TOWN).filter((h) => h.id === "inn");
+        const inside = PARTITION_WALLS.map((w) => interiors.partitionInside(w, inn));
+        const drawn = [
+          ...planWallShadows(planWalls([LOOSE], seed, MASONRY_WALLS), masonry),
+          ...shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, fullHeight), masonry, inn),
+        ];
+        for (const shape of drawn) expect(handed).toContain(corners(shape));
+        // and not as the hub would have drawn them (a post's square is the same in either material)
+        const same = new Set(drawn.map(corners));
+        const planned = [
+          ...planWallShadows(planWalls([LOOSE], seed), thicknessPx(TIMBER_WALLS)),
+          ...shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, INTERIOR_PARTITION), masonry, inn),
+        ].filter((shape) => !same.has(corners(shape)));
+        expect(planned.length).toBeGreaterThan(0);
+        for (const shape of planned) expect(handed).not.toContain(corners(shape));
+      } finally {
+        vi.mocked(world.addWalls).mockImplementation(real.addWalls);
+      }
+    });
+
     it("should hand the ground no wall shadow without the wall art: placeholder walls never had one", () => {
       const { ground } = shadedTown(BARE);
       expect(ground.shade.mock.calls.flatMap(([shadows]) => shadows.shapes)).toEqual([]);
