@@ -771,6 +771,12 @@ export class HubScene extends Phaser.Scene {
   private unsubscribeState?: () => void;
   private lastSent = { vx: 0, vy: 0 };
 
+  /**
+   * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
+   * handed over in the start data. A start with no verdict is no arrival. Read only by the card's
+   * slice to come (I-PQ2TW-4), hence not private yet.
+   */
+  arrival = false;
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;
@@ -782,8 +788,10 @@ export class HubScene extends Phaser.Scene {
   /**
    * The server's one-shots are held from here: the folk may download before create subscribes to
    * them (FS-C4JWH Edge States). Handed over at the end of create ({@link openHeldMessages}).
+   * The start data says whether this start is an arrival (FS-PQ2TW R8).
    */
-  init(): void {
+  init(data?: { arrival?: boolean }): void {
+    this.arrival = data?.arrival ?? false;
     this.held = holdOneShots(this, socketManager, HUB_ONE_SHOTS);
   }
 

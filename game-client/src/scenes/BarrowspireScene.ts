@@ -580,6 +580,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * player between two positions every tick.
    */
   private sessionID?: string;
+  /**
+   * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
+   * handed over in the start data. A start with no verdict is no arrival. A climb is not a world
+   * switch (ADR-0015): the run detects it itself. Read only by the card's slices to come
+   * (I-PQ2TW-3), hence not private yet.
+   */
+  arrival = false;
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
@@ -922,9 +929,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * builds is forgotten when it stops, and the next start rebuilds it through the
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
-  init(data?: { sessionID?: string }): void {
+  init(data?: { sessionID?: string; arrival?: boolean }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
+    // whether the switch that started it was an arrival (FS-PQ2TW R8); a reconnect is a return
+    this.arrival = data?.arrival ?? false;
     // a Leave the last run left pending (one pressed while it still loaded) is not this run's
     this.leavePending = false;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
