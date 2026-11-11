@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { contrastRatio, relativeLuminance } from "@/render/lighting/lighting";
+import { contrastRatio } from "@/render/lighting/lighting";
 import { RegionGrid, type DungeonMap } from "@/render/world/dungeon";
 import fixture from "@/render/world/dungeon.fixture.json";
 import { Exploration, regionAt, type ExplorationState } from "@/render/world/exploration";
 import { palette, rgba } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
 import {
   MINIMAP,
   MINIMAP_EDGE,
@@ -294,7 +295,7 @@ describe("Minimap (§E.19–25)", () => {
     ]);
   });
 
-  it("should fill each explored and visible region's cells in its own token, visible brighter, and nothing more for unexplored ones", () => {
+  it("should fill every explored and visible region's cells in the one fill, the two drawn the same, and nothing more for unexplored ones (FS-56CKV §A.4)", () => {
     const { map, panel, show } = mapped();
     // in room 1, then out to another region: room 1 explored, that one visible
     show([IN_ROOM]);
@@ -306,11 +307,13 @@ describe("Minimap (§E.19–25)", () => {
     expect(visible.length).toBeGreaterThan(0);
     const cells = (rs: typeof visible) => rs.reduce((n, r) => n + r.cells.length, 0);
     expect(fills).toHaveLength(cells(visible) + cells(explored));
-    // one fill style per state, the brighter for visible
-    const styles = panel.drawn().filter((c) => c.name === "fillStyle").map((c) => c.args[0]);
-    expect(styles).toContain(palette.minimapExplored);
-    expect(styles).toContain(palette.minimapVisible);
-    expect(palette.minimapVisible).not.toBe(palette.minimapExplored);
+    // every region's cells in the one fill, explored and visible alike: the fill style in force at each fill
+    let style: unknown[] = [];
+    const filledIn = panel.drawn().flatMap((c) => {
+      if (c.name === "fillStyle") style = c.args;
+      return c.name === "fillPoints" ? [style] : [];
+    });
+    expect(filledIn).toEqual(Array(fills.length).fill([palette.minimapExplored, 1]));
     // every corner within the panel
     for (const { args } of fills)
       for (const p of args[0] as { x: number; y: number }[]) {
@@ -350,6 +353,19 @@ describe("Minimap (§E.19–25)", () => {
     expect(map.redraws).toBe(once + 2);
     show([ELSEWHERE, FIXTURES[1].at], FIXTURES.slice(2));
     expect(map.redraws).toBe(once + 3);
+  });
+
+  it("should not redraw the map when a seen region only turns visible or explored, since both are drawn the same (FS-56CKV §A.8)", () => {
+    const { map, show } = mapped();
+    show([IN_ROOM]);
+    show([ELSEWHERE]);
+    const shown = (s: "visible" | "explored") => map.content.regions.filter((r) => r.state === s).map((r) => r.id);
+    expect(shown("explored")).toContain(ROOM);
+    const once = map.redraws;
+    // back into room 1: it turns visible and the region left explored, every one already seen
+    show([IN_ROOM]);
+    expect(shown("visible")).toContain(ROOM);
+    expect(map.redraws).toBe(once);
   });
 
   it("should draw a dot per living member on its own layer, the local player distinct, and redraw it only when a dot moves a px", () => {
@@ -528,13 +544,12 @@ describe("the minimap's look (FS-56CKV §A)", () => {
   });
 
   describe("the region fills (§A.4)", () => {
-    it("should be dark stone over the backing, the visible a step lighter, by WCAG ratio", () => {
+    it("should be one dark stone over the backing, by WCAG ratio, with no separate visible fill", () => {
+      expect(palette.minimapExplored).toBe(BARROW_HEX.slate);
       expect(contrastRatio(palette.minimapExplored, palette.hudPanel)).toBeGreaterThanOrEqual(1.3);
-      expect(contrastRatio(palette.minimapVisible, palette.minimapExplored)).toBeGreaterThanOrEqual(1.3);
-      expect(relativeLuminance(palette.minimapVisible)).toBeGreaterThan(relativeLuminance(palette.minimapExplored));
+      expect("minimapVisible" in palette).toBe(false);
       // stone: never the interactable amber or the ally green the glyphs and dots carry
-      for (const fill of [palette.minimapExplored, palette.minimapVisible])
-        expect([palette.interactable, palette.markerAlly, palette.markerSelf]).not.toContain(fill);
+      expect([palette.interactable, palette.markerAlly, palette.markerSelf]).not.toContain(palette.minimapExplored);
     });
   });
 
@@ -705,9 +720,8 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       expect(new Set(units)).toEqual(expected(shownIds));
     });
 
-    it("should keep the edge line 1.3:1 against each fill it bounds", () => {
+    it("should keep the edge line 1.3:1 against the one fill it bounds", () => {
       expect(contrastRatio(palette.minimapEdge, palette.minimapExplored)).toBeGreaterThanOrEqual(1.3);
-      expect(contrastRatio(palette.minimapEdge, palette.minimapVisible)).toBeGreaterThanOrEqual(1.3);
     });
   });
 
