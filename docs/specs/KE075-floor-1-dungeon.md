@@ -522,8 +522,11 @@ else: the chest's roll, its placement (R15) and the population (R18–R20) are u
     server before anything opens. The chest stays shut and nothing is rolled. It is not held, so
     the next reach is answered afresh. Range is checked first, so a chest out of reach is refused
     for the distance. The delver is sent an `interact` refusal with reason `container_guarded`. The
-    client closes the coffer the E key opened and shows the refused notice **"It will not open."**,
-    in the client's words, naming no reason. The server logs the refusal at debug, as play, not a
+    client shows the refused notice **"It will not open."**, in the client's words, naming no
+    reason, and no coffer: the E key on a shut container opens its coffer only on the state that
+    shows the container open, so a refused reach never flashes a coffer open and shut; a container
+    already open opens its coffer at once. **(owner, 2026-11-11: "應該直接顯示無法開啟"; replaces
+    "closes the coffer the E key opened")** The server logs the refusal at debug, as play, not a
     fault. **(owner, playtest 2026-11-06: "就開的時候顯示無法開啟"; derived here: the copy, in the
     guideline's terse voice)**
 61. **Nothing is drawn or sent.** A guarded chest looks like any chest. No lock is drawn, no flag
@@ -630,7 +633,7 @@ else: the chest's roll, its placement (R15) and the population (R18–R20) are u
 - [ ] A guarded chest is refused (`container_guarded`) while a guard stands beside it, after it chased far out of the room, or while one of two guards still lives; it stays shut and rolls nothing.
 - [ ] It opens and rolls as any chest once every guard lies dead or its corpse is gone; a chest that waits on nobody opens with a monster beside it.
 - [ ] After a refusal, the next reach once the last guard falls opens it at once; out of reach, it is refused for the distance.
-- [ ] The client closes the coffer and shows "It will not open." on that refusal, and on no other reply.
+- [ ] The client shows "It will not open." on that refusal, and on no other reply, and no coffer opens for a refused reach.
 - [ ] `go test -race` on the game package passes with the guarded open in place.
 
 **Client (§H)**

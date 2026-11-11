@@ -36,7 +36,6 @@ import {
   floorLabel,
   interactNotice,
   isTopFloor,
-  refusesContainer,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
@@ -785,6 +784,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
   private containerView!: ContainerView;
+  /**
+   * The shut container the player reached for, until the server answers: its coffer opens on the
+   * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
+   */
+  private reaching?: string;
 
   // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
   private equipment?: EquipmentHud;
@@ -2452,6 +2456,11 @@ export class BarrowspireScene extends Phaser.Scene {
       standAt(chest.sprite, pos);
 
       // 如果是打開的寶箱，更新跳窗內容
+      if (container.is_open && this.reaching === container.entity_id) {
+        // the server opened what the player reached for: now its coffer shows (FS-KE075 §J R60)
+        this.reaching = undefined;
+        this.containerView.open(container.entity_id, placedKind(container));
+      }
       if (
         container.is_open &&
         this.containerView.entityId === container.entity_id
@@ -2850,21 +2859,29 @@ export class BarrowspireScene extends Phaser.Scene {
       entity_id: entityId,
     });
 
+    this.reaching = undefined;
     // 如果是關閉跳窗
     if (this.containerView.entityId === entityId) {
       this.containerView.close();
-    } else {
-      // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
-      const container = this.lastGameState?.containers?.find(
-        (c) => c.entity_id === entityId,
-      );
-      this.containerView.open(entityId, container ? placedKind(container) : "chest");
-
-      // If container already has items from server state, populate immediately
-      if (container && container.is_open && container.items?.length > 0) {
-        this.containerView.setItems(container.items);
-      }
+      return;
     }
+    const container = this.lastGameState?.containers?.find(
+      (c) => c.entity_id === entityId,
+    );
+    // a shut container may yet be refused (a guarded chest): its coffer waits for the state that
+    // shows it open, so nothing opens only to close again (FS-KE075 §J R60)
+    if (!container?.is_open) {
+      this.reaching = entityId;
+      return;
+    }
+    // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
+    this.containerView.open(entityId, placedKind(container));
+    if (container.items?.length > 0) this.containerView.setItems(container.items);
+  }
+
+  /** The server refused the reach (guarded, or out of reach): no coffer will open for it. */
+  private chestRefused(): void {
+    this.reaching = undefined;
   }
 
   private interactWithSwitch(entityId: string): void {
@@ -3468,8 +3485,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
     socketManager.on("interact", (payload: InteractReply) => {
       console.log("Interact response:", payload);
-      // a guarded chest stays shut: the coffer the E key opened closes again (FS-KE075 §J R60)
-      if (refusesContainer(payload)) this.containerView.close();
+      // a refused reach opens no coffer (FS-KE075 §J R60); the empty frame after a reply refuses nothing
+      if (!payload.success && (payload.reason || payload.message)) this.chestRefused();
       const notice = interactNotice(payload);
       if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
     });
@@ -4039,6 +4056,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.occluders.clear();
     this.lightMap?.clear();
     if (this.containerView?.entityId) this.containerView.close();
+    this.reaching = undefined;
 
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;

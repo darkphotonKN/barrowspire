@@ -86,7 +86,7 @@ export const PARTY_NOT_GATHERED = "party_not_gathered";
  */
 export const CONTAINER_GUARDED = "container_guarded";
 
-/** Whether a reply refuses the chest the E key just opened, so its coffer closes again. */
+/** Whether a reply refuses the chest the E key reached for: it is guarded, and stays shut. */
 export function refusesContainer(reply: InteractReply): boolean {
   return !reply.success && reply.reason === CONTAINER_GUARDED;
 }
