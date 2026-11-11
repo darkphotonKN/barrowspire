@@ -1,106 +1,284 @@
 # FS-56CKV: Minimap look and the run HUD's layout
 
-> Status: draft · SPECIFICATION.md: none (a change FS has no thin line; owners [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (Minimap), [FS-F6F88](F6F88-multi-floor-delves.md) (floor indicator), [FS-BDA7X](BDA7X-character-leveling.md) (level and XP bar), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) (resource bars), [FS-R82NV](R82NV-party-formation.md) (party frames) each carry a stub) · Related ADRs: [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) · Surface: game-client only
+> Status: work-order · SPECIFICATION.md: none (a change FS has no thin line; owners [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) "Minimap", [FS-F6F88](F6F88-multi-floor-delves.md) "Floor transitions" (the floor indicator, req 29), [FS-BDA7X](BDA7X-character-leveling.md) "Character level and experience display" (req 42), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) "Health and class resource bars on the HUD" (R20), [FS-R82NV](R82NV-party-formation.md) "Party frames" (R34) each carry a stub) · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4, `fullAuto` rounding), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog and minimap are presentation; unchanged here) · Supersedes in part: FS-SRA9J §E.20 (the minimap's place) and §E.22 (how its content is drawn, not what it is); FS-8AY7S's AC "the top left, at x 10, y 84" (now y 56); FS-R82NV R34's "run y 160" (now 132) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Minimap**, **Region**
 
-## Scoping notes (raw)
+## Summary
+
+In a run, the top-right minimap is drawn finer and in the game's own look: candle-lit at its
+edges, explored rooms in dark stone, the ones the party stands in a step lighter, each room and
+corridor outlined, and the switch, escape door and stairs as small drawn glyphs. It moves to the
+top of the top-right corner, with the floor indicator and the escaped count under it in smaller
+type. In dev builds the x/y position line moves into the minimap's bottom-left corner, small and
+dim, and the top-left HUD (XP bar, resource bars, party frames) moves up into the space it leaves.
+The minimap's frame, size and content are unchanged.
 
 Charter run "小地圖精緻化", 2026-11-12. The owner's words: "把右上角地圖有可能精緻一點嗎 配合遊戲主題
 然後地圖位置移動到逃離人數跟樓層資訊上方 字可以小一點"; "左上的x y點位移動到地圖匡內左下角 字可以小一點
-左上的其他資訊往上移動補原來的空位"; "地圖外匡暫時不改了 其他核准". The locked decisions below are his
-approval under the charter; no `challenge-me` pass. Each is a **charter default** with its reason;
-where this run had to settle something the decisions left open it says **derived here**.
+左上的其他資訊往上移動補原來的空位"; "地圖外匡暫時不改了 其他核准". Each requirement below is a
+**charter default** (the locked decisions, approved by the owner) or says **derived here** and
+why. Recorded without adversarial review: no `challenge-me` pass.
 
-**Shape.** One change FS with pointer stubs, not a `## Change:` on FS-SRA9J: the request moves five
-capabilities' designs at once (the minimap's look and place, FS-SRA9J §E; the floor indicator's
-place and size, FS-F6F88 req 29; the run's XP bar, FS-BDA7X req 42; the resource bars' top,
-FS-8AY7S R20 and its AC "x 10, y 84"; the party frames' run top, FS-R82NV R34's "run y 160"), plus
-the dev position readout, a dev aid with no owning FS or line (`src/ui/positionReadout.ts`). The
-column's order and the stack's shift are one layout and are sliced together, so one work order.
-No thin line changes: every touched line names a capability that survives this.
+**Why a change FS.** The request moves five capabilities' designs at once: the minimap's look and
+place (FS-SRA9J §E), the floor indicator's place and size (FS-F6F88 req 29), the run's XP bar
+(FS-BDA7X req 42), the resource bars' top (FS-8AY7S R20 and its AC "x 10, y 84") and the party
+frames' run top (FS-R82NV R34, "run y 160"). The top-right column's order and the top-left stack's
+shift are one layout, so they are one work order. The dev position readout has no owning FS or
+line; it is a dev aid (`src/ui/positionReadout.ts`) and is specified here. No thin line changes.
 
-Verified today (main 28a7a377): top right, from the top, "Escaped: N" (14 px, `frameBright` on
-`hudPanel`, padding 10/5), "Floor N" (14 px, `hudText` on `hudPanel`), then the minimap 6 px under
-it (`minimapRect`), 216 × 108 on `hudPanel` 0.85 with a 1 px `frame` rim at 0.6, explored and
-visible regions as flat fills (`minimapExplored` = slateLight, `minimapVisible`), fixtures as 4 px
-amber squares in a `markerStroke` ring, dots `markerAlly` r 2 / `markerSelf` r 3 with a 1 px
-`markerStroke` ring. The column is anchored at `TOP_RIGHT_HUD` (dx −10, dy 10 + 34, the fullscreen
-button's clearance). Top left: the readout at (10, 10), 14 px, `hudText` on `hudPanel`, dev builds
-only (`showsPositionReadout`); the XP bar at (10, 44) (`PROGRESS_HUD_AT.run`); resource bars at
-(10, 84) (`RESOURCE_HUD_AT.run`); party frames at top 160 (`PARTY_FRAMES_PLACEMENT.run`). The hub's
-XP bar is at (16, 16).
+## Facts this spec rests on
 
-Decisions:
+Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 
-- **The frame is not changed** (charter default; owner "地圖外匡暫時不改了"): the panel's `hudPanel`
-  backing and 1 px brass rim stay exactly as drawn today, nothing drawn over the rim.
-- **Inside the frame, finer and in the game's look** (charter default; owner "精緻一點 配合遊戲主題"):
-  a soft vignette round the inside edge, as the game's own vignette (`inkDeep`, `utils/atmosphere.ts`),
-  so the map reads candle-lit; explored regions a dark stone, visible a step lighter, each region
-  with a thin edge line, so they read finer than flat fills and still apart at a glance; the
-  switch, escape door and stairs as small drawn glyphs (a lever, an arch, a few steps) instead of
-  squares; party dots with a dark ring, the player's own a little larger (already r 3 vs r 2; kept).
-  Drawn in code, no new baked art; tokens only, a token added only where none fits (ADR-0013).
-  Size (216 × 108) and content unchanged.
-  - **derived here:** no warm glow in the middle: amber/torch tone in the HUD reads as the
-    interactable channel. The "candle" is the darkening at the edges only.
-  - **derived here:** the vignette lies over the fills and edges and under the glyphs and dots, so
-    nothing a player looks for is dimmed; it stays inside the rim.
-  - **derived here:** Phaser's `fillGradientStyle` is WebGL only (its own doc comment, Phaser 4.2.1),
-    so the vignette is a canvas texture or fine steps, the same under both renderers.
-  - **derived here:** a region's edge is the outline of its footprint (the union of its cells), not
-    each cell's rect, so a room never reads as a grid; a shared edge between two seen regions is
-    drawn once.
-  - **derived here:** glyphs and dots keep their dark `markerStroke` ring and their ink keeps ≥ 3:1
-    against it, so they read on either fill (the field-marker outline mechanism); amber on the
-    visible fill alone is under 2:1, so the ring is load-bearing.
-- **The minimap to the top of the top-right column, then the floor indicator, then the escaped
-  count** (charter default; owner "地圖位置移動到逃離人數跟樓層資訊上方"). Type 14 → 12 px with smaller
-  padding, right-aligned as today. Where a floor has no minimap, the two lines move back to the top.
-  - **derived here:** "the top" is the column's top at `TOP_RIGHT_HUD` (y 44), still stepped down
-    clear of the fullscreen button (FS-ZAJMH R18; FS-SRA9J §E.20 "never covers the fullscreen
-    button"). The anchor is unchanged.
-  - **derived here:** padding 8/3, 6 px under the minimap (`MINIMAP.gap`), 4 px between the lines.
-  - **derived here:** "no minimap" covers every case where none is shown: a floor without regions,
-    the floor map not yet in, and M toggled off (M exists to clear the corner, FS-SRA9J story 10).
-    The column closes up. A hidden floor indicator (no label yet) closes up too.
-- **The readout into the minimap's frame, bottom-left, 14 → 10 px, no backing, dim** (charter
-  default; owner "左上的x y點位移動到地圖匡內左下角 字可以小一點"). Still dev builds only.
-  - **derived here:** it draws above the minimap (the minimap is built after the HUD, at the same
-    depth, so it would cover it otherwise).
-  - **derived here:** on floor 1 (72 × 48 cells fitted 200 × 100 in the panel), the panel's
-    bottom-left corner lies outside the floor's iso diamond (its left vertex at y 44, its bottom
-    at x 128), so the readout covers backing and vignette only, never a region.
-  - **derived here:** its ink keeps ≥ 3:1 against the darkest the vignetted backing gets under it
-    (dim, but a dev reads it at a glance). 10 logical px is ≥ 10 device px at every render scale.
-- **The top-left stack moves up** (charter default; owner "左上的其他資訊往上移動補原來的空位"): the
-  XP bar from y 44 to y 16, as in the hub, and the resource bars (y 84 → 56), the potion cell and
-  the party frames (top 160 → 132) with it. The frames' clearance from the chat window only grows.
-  - **derived here:** x stays 10 (the decision moves y only; the hub's x 16 is the hub's inset).
-  - **derived here:** it moves in every build and on every floor: the gap it fills is the
-    readout's old place, which production never had either.
-- **Dev gallery** (charter default): the gallery's tracked families are effects and item icons
-  only (`src/dev/gallery/families.ts`, FS-1819Q R3). HUD chrome is not tracked, so no card.
+- **The top-right column** is anchored at `TOP_RIGHT_HUD` (`scenes/BarrowspireScene.ts`: top-right,
+  dx −10, dy 10 + `FULLSCREEN_BUTTON_CLEARANCE` = 44), right-aligned (origin 1, 0). From the top:
+  "Escaped: N" (14 px, `palette.frameBright` on `palette.hudPanel`, padding 10/5); 6 px under it
+  "Floor N of M" (14 px, `palette.hudText` on `hudPanel`, padding 10/5, hidden until it has a
+  label); 6 px under that the minimap (`minimapRect(right, floorBottom)`, `MINIMAP.gap`). All at
+  depth 1000. `relayoutHud` re-anchors them on resize and re-crispens the texts (FS-ZAJMH R5).
+- **The minimap** (`ui/minimap.ts`): 216 × 108; a `hudPanel` backing at 0.85 with a 1 px
+  `palette.frame` rim at 0.6 (`PANEL`); the floor's iso diamond fitted inside a 4 px inset
+  (`MINIMAP.inset`); explored and visible regions as flat filled cell footprints
+  (`minimapExplored` = slateLight, `minimapVisible` = slateLight tinted 0.4 toward vellum); found
+  fixtures as 4 px `interactable` squares in a 1 px `markerStroke` ring (`MARK`); party dots,
+  `markerAlly` r 2 and `markerSelf` r 3, each in a 1 px `markerStroke` ring (`DOT`). Two Graphics
+  layers, map and dots, each redrawn only when what it shows changes (§E.23). Built when a floor's
+  map with regions is in (`dungeon.minimap`), so it is added after the HUD texts, at their depth.
+- **Floor 1's fit:** 72 × 48 cells of 80 px project to a 2:1 diamond fitted at 200 × 100 in the
+  panel: its top vertex at (108, 4), its left at (8, 44), its bottom at (128, 104), its right at
+  (208, 64). The panel's bottom-left corner below the line from (8, 44) to (128, 104) holds no floor.
+- **The position readout** (`createPositionReadout`): a text at (10, 10), 14 px, `hudText` on
+  `hudPanel`, padding 10/5, depth 1000, "X: … Y: …" refreshed every frame ("Awaiting the deep..."
+  before the player; a " | Indoor/Outdoor" suffix only where the world look has an indoor label,
+  never on a tower floor, FS-8RBQY §B.3). Shown only when `showsPositionReadout()` (dev builds, or
+  the `NEXT_PUBLIC_SHOW_POSITION_READOUT` override).
+- **The top-left stack in a run:** the XP bar at `PROGRESS_HUD_AT.run` (10, 44), 180 × 34; the
+  resource bars at `RESOURCE_HUD_AT.run` (10, 84), derived from it (+ 34 + 6); the potion cell
+  right of them, top-aligned; the party frames at `PARTY_FRAMES_PLACEMENT.run` top 160, derived
+  from the bars at their tallest (+ 52 + 24). The hub's XP bar is at (16, 16). A field's bars are
+  at (10, 16) (`RESOURCE_HUD_AT.field`). `partyFramesLayout.test.ts` pins the frames' clearance
+  from the chat window; `ResourceHud.test.ts` pins y 84.
+- **The game's vignette** (`utils/atmosphere.ts`) is a canvas texture with a radial gradient in
+  `palette.inkDeep` (`VIGNETTE_STOPS`), so it looks the same under both renderers. Phaser 4.2.1's
+  `Graphics.fillGradientStyle` is documented "a WebGL only feature".
+- **The dev gallery** tracks two families, effects and item icons (`dev/gallery/families.ts`,
+  FS-1819Q R3). HUD chrome is not tracked.
+- The design guideline sets no minimum HUD type size; 12 px is already HUD type (`ProgressHud`,
+  `torchBar`), and 10–11 px is used in the run scene and the gear overlay.
 
-**Conflict found, settled by a charter default, escalated.** "Where there is no minimap, the readout
-stays at the top left as today" collides with "the XP bar moves to y 16": the readout at (10, 10)
-would cover the XP bar on every floor without regions (floors 2–3, the test room). Rejected: keep
-the stack at y 44 where there is no minimap (the HUD would jump between floors and differ from
-production); squeeze the readout above the XP bar (16 px of room for a 13 px line at the canvas
-edge). Default taken: where no minimap is shown, the readout stands in the top-right column under
-its last line, right-aligned, in its new look. Its home is the top-right column either way. Owner
-to confirm.
+## Requirements
 
-Alternatives rejected: a `## Change:` on FS-SRA9J alone (the stack's and floor indicator's values
-live in other FSs, whose ACs name them); baked minimap art (owner: drawn in code; guideline "UI
-Chrome" asks for smooth fills and soft edges for world panels); a new frame (owner: not now).
+### §A. The minimap's look
 
-Edge cases raised: arrival on a floor (no minimap until the floor map is built, column at the top,
-then the minimap takes the top); a floor change rebuilds the minimap; spectating keeps it; the
-target frame and a 600 px top-centre notice stay clear (the minimap's x is unchanged, x ≥ 854 at
-1080); resize re-anchors everything, the readout included and re-crispened; render scales 1, 1.5, 2.
+1. **The frame is not changed.** The panel's `hudPanel` backing (alpha 0.85) and its 1 px brass
+   rim (`palette.frame`, 0.6) are drawn exactly as today, and nothing inside the frame is drawn
+   over the rim. **(charter default: owner, "地圖外匡暫時不改了")**
+2. **A soft vignette round the inside edge**, so the map reads lit by a candle: `palette.inkDeep`,
+   the game vignette's ink, strongest at the rim's inside edge and easing to nothing toward the
+   middle, inside the rim only. No warm glow is added in the middle. It is smooth to the eye at
+   render scales 1, 1.5 and 2 (a canvas texture's gradient, as the game's vignette is, or steps
+   no wider than 2 logical px and no more than 0.08 alpha apart), and looks the same under the
+   WebGL and canvas renderers: never Phaser's WebGL-only `fillGradientStyle`. Its reach and its
+   edge alpha are named constants in `ui/minimap.ts`, so they can be tuned. **(charter default;
+   derived here: an amber or torch-warm glow in the HUD would read as the interactable channel,
+   and the gradient rule keeps the canvas fallback whole)**
+3. **Layer order inside the frame**, bottom to top: backing, region fills, region edges,
+   vignette, fixture glyphs, party dots, then the readout (§C). The vignette dims the floor, never
+   a glyph, a dot or the readout. **(derived here: what a player looks for is never dimmed)**
+4. **Explored regions a dark stone, visible ones a step lighter**, both from stone tokens (the
+   `minimapExplored` and `minimapVisible` tokens may take new values). Measured as WCAG contrast
+   ratios: the explored fill against the backing (`hudPanel`) ≥ 1.3:1, the visible fill against
+   the explored ≥ 1.3:1, and the visible lighter. Still stone, never amber or the ally green,
+   which the glyphs and dots keep. **(charter default; the ratios derived here so "a step" is
+   testable)**
+5. **Each seen region has a thin edge line**: 1 logical px along the outline of its footprint
+   (the union of its cells), never along each cell's rect, so a room never reads as a grid. A
+   boundary shared by two seen regions is drawn once. The line keeps ≥ 1.3:1 against each fill it
+   bounds. Its colour is a token (a new `minimapEdge` only if no existing token fits). An
+   unexplored region has no fill and no edge, as today. **(charter default; derived here: the
+   outline, the single shared edge and the ratio)**
+6. **The switch, the escape door and the stairs as small drawn glyphs** in place of the squares:
+   the switch a lever (a base and a slanted handle with a knob), the escape door an arch, the
+   stairs a few steps. Each in the interactable channel (`palette.interactable`) on a dark
+   `markerStroke` ring 1 px wide round its shape, centred where today's mark sits, seated on whole
+   logical px, within 9 × 9 logical px and at least 7 px wide, so the three read apart at render
+   scale 1. The ink keeps ≥ 3:1 against its ring. Shown when they are today (once their region is
+   explored, §E.22). **(charter default; derived here: the ring is what carries contrast, since
+   amber on the visible fill alone is under 2:1, as a field marker's outline does)**
+7. **Party dots keep a dark ring, the player's own a little larger**: `markerAlly` r 2 and
+   `markerSelf` r 3, each in a 1 px `markerStroke` ring, the player's drawn over the rest. This is
+   today's rule, kept and now pinned; each ink keeps ≥ 3:1 against its ring. **(charter default)**
+8. **Drawn in code, tokens only.** No baked art and no texture file; colours from `palette` tokens
+   (ADR-0013), a token added only where none fits, named for its role and noted in the palette's
+   comment. The minimap's size (216 × 108), inset, projection and content (FS-SRA9J §E.21–§E.24)
+   are unchanged, and each layer is still redrawn only when what it shows changes (§E.23); the
+   vignette, which shows nothing that changes, is drawn once per minimap. **(charter default)**
 
-Constraints: ADR-0013 (tokens; the fence rejects `0xRRGGBB` in `src/render`), ADR-0057 (Phaser 4,
-`fullAuto` pixel rounding), ADR-0063 (fog is presentation; untouched), design guideline "UI
-Chrome". Bounds: game-client only; no bake, no baked art, no server.
+### §B. The top-right column
 
-Open: the readout's place on floors with no minimap (above). Nothing else.
+9. **Order, from the top: the minimap, then the floor indicator, then the escaped count**, each
+   right-aligned on `TOP_RIGHT_HUD`'s x as today. The minimap's top is the column's top,
+   `anchorAt(TOP_RIGHT_HUD).y` (44 at every width): the anchor is unchanged, so the column still
+   stands clear of the fullscreen button (FS-ZAJMH R18). The floor indicator stands 6 px under the
+   minimap (`MINIMAP.gap`), the escaped count 4 px under the floor indicator. **(charter default:
+   owner, "地圖位置移動到逃離人數跟樓層資訊上方"; derived here: "the top" is the column's top, since
+   the corner itself is the fullscreen button's, and the gaps)**
+10. **Smaller type:** the floor indicator and the escaped count at 12 px (from 14), padding 8 × 3
+    (from 10 × 5), each keeping its colour, backing and face (`CANVAS_FONT.body`). **(charter
+    default; derived here: the padding values)**
+11. **Where no minimap is shown, the column closes up:** the floor indicator's top is the column's
+    top, and the escaped count stands under it. "No minimap" is every case where none is up: a
+    floor without regions (floors 2–3, the dev test room), a dungeon floor before its map is in,
+    and the minimap toggled off with M. While the floor indicator has no label (hidden), the
+    escaped count stands where it would. The column re-lays when any of these changes: a floor
+    built or left, M pressed, the floor label set. **(charter default for a floor with no minimap;
+    derived here: M and the not-yet-built floor follow the same rule, since M exists to clear the
+    corner, FS-SRA9J story 10, and one rule keeps the column from holding an empty hole)**
+12. **Resize:** `relayoutHud` places the whole column from its anchor, the minimap included, and
+    re-crispens its texts (FS-ZAJMH R5). **(derived here)**
+13. **Clearances hold** at logical widths 1080 and 1280 (FS-SRA9J §E.20–21): nothing in the
+    column covers the fullscreen button, a 600 px top-centre notice or the target frame
+    (FS-48CTQ); the minimap's left edge stays at x ≥ 854 at 1080. **(derived here: the column's x
+    is unchanged, only its order)**
+
+### §C. The dev position readout
+
+14. **Inside the minimap's frame, bottom-left**, where a minimap is shown: its text's left edge and
+    bottom edge 4 px inside the panel's (`MINIMAP.inset`), so it sits inside the rim. **(charter
+    default: owner, "左上的x y點位移動到地圖匡內左下角")**
+15. **Its look: 10 px (from 14), no backing box, dim and semi-transparent**: a HUD text token at a
+    partial alpha, both named constants. Its ink, over the darkest the vignetted backing gets
+    under it, keeps ≥ 3:1. Its text is unchanged ("X: … Y: …", "Awaiting the deep..."). **(charter
+    default: owner, "字可以小一點"; derived here: the 3:1 floor, so a dev reads it at a glance)**
+16. **Over the minimap**: it draws above both minimap layers (its depth over `MINIMAP.depth`),
+    since the minimap is built after it at the HUD's depth. **(derived here)**
+17. **It never covers the floor on floor 1**: its box lies in the panel's bottom-left corner below
+    the floor diamond's lower-left edge (Facts), at its widest text. **(derived here, from the
+    fit; a later floor whose diamond reaches the corner is an Edge State)**
+18. **Where no minimap is shown** (the cases of §B.11), it stands in the top-right column, 4 px
+    under the column's last line, right-aligned, in the same look. **(charter default, adapted:
+    the locked decision kept it at the top left as today, which would cover the XP bar at y 16;
+    see Edge States, "the readout without a minimap". Owner to confirm.)**
+19. **Still dev builds only** (`showsPositionReadout`, unchanged); a production build draws no
+    readout and keeps nothing for it. It follows the minimap on resize, on M, and on a floor
+    change, re-crispened when it moves. **(charter default)**
+
+### §D. The top-left stack in a run
+
+20. **The XP bar moves up to y 16**, as in the hub, at x 10 (`PROGRESS_HUD_AT.run` = (10, 16)).
+    Everything derived from it moves with it: the resource bars to (10, 56)
+    (`RESOURCE_HUD_AT.run`), the potion cell beside them, the party frames' run top to 132
+    (`PARTY_FRAMES_PLACEMENT.run`). Every build and every floor. **(charter default: owner,
+    "左上的其他資訊往上移動補原來的空位"; derived here: x stays 10, since the decision moves y only and
+    the hub's x 16 is the hub's inset; production moves too, since the gap filled is one a
+    production build already had)**
+21. **The party frames' clearance from the chat window still holds**, and grows by 28 px; the
+    frames also stay clear of the XP bar, the resource bars, the potion cell, the T panel and the
+    prompts, as `partyFramesLayout.test.ts` pins today. **(charter default)**
+22. **The hub and the fields are unchanged**: the hub's XP bar at (16, 16) and frames at y 56, a
+    field's bars at (10, 16) and frames at y 92. **(derived here)**
+
+### §E. Docs and gallery
+
+23. **The design guideline's "UI Chrome" gains a "Minimap" bullet** naming this look in one
+    paragraph (unchanged frame; candle vignette in `inkDeep`; dark-stone explored, lighter visible,
+    outlined regions; amber glyphs in a dark ring; dots in a dark ring; drawn in code), marked
+    "*(Added by FS-56CKV, 2026-11-12.)*", as the countdown and health-bar bullets are.
+    **(derived here: a canvas look others will match belongs in the guideline, its single source
+    of truth for appearance)**
+24. **No dev-gallery card.** The gallery tracks effects and item icons only; HUD chrome is not a
+    tracked family, so none is added. **(charter default)**
+
+## User Stories
+
+1. As a player, I want the minimap to look like part of the barrow, so that the HUD does not break the game's mood.
+2. As a player, I want the map's edges to fall into shadow like the rest of the screen, so that it reads candle-lit.
+3. As a player, I want rooms I have explored and rooms my party stands in to read apart at a glance, so that I know where we are.
+4. As a player, I want each room and corridor outlined, so that the map reads as a floor plan rather than blocks of colour.
+5. As a player, I want the stairs, the escape door and the switch drawn as what they are, so that I can tell them apart without guessing.
+6. As a player, I want my own dot a little larger than my party's, so that I find myself first.
+7. As a player, I want the minimap's frame to stay as it is, so that the change does not disturb what I already know.
+8. As a player, I want the minimap at the top of the corner, so that the map, the thing I glance at most there, comes first.
+9. As a player, I want the floor and the escaped count small and under the map, so that they take less room.
+10. As a player on a floor with no minimap, I want the floor and the escaped count at the top of the corner, so that the corner holds no empty gap.
+11. As a player who hid the minimap with M, I want the corner to close up, so that hiding it actually clears the corner.
+12. As a player, I want my XP bar, my bars and my party frames at the very top left, so that the top left holds no empty gap.
+13. As a player in a party, I want my party frames to keep clear of the chat window, so that neither covers the other.
+14. As a player resizing the window, I want the whole top-right column to follow its corner, so that nothing is left behind.
+15. As a player in the hub or a field, I want my HUD where it was, so that only the run's corners change.
+16. As a developer, I want my x/y inside the minimap's corner, small and dim, so that it is at hand without taking the top left.
+17. As a developer on a floor without a minimap, I want my x/y still shown, out of the bars' way, so that the aid works on every floor.
+18. As a developer, I want the readout to never cover a room on the minimap, so that the aid does not hide what it sits on.
+19. As a developer, I want a production build to show no readout, so that players never see it.
+20. As a developer, I want the minimap's look in the design guideline, so that the next HUD piece matches it.
+21. As a developer, I want the vignette and the type sizes as named constants, so that a later tune is values-only.
+22. As a player on the canvas renderer fallback, I want the minimap to look the same, so that no device gets a broken map.
+23. As a player on a high-density screen, I want the glyphs, edges and text crisp at every render scale, so that the finer look stays fine.
+
+## Acceptance Criteria
+
+- [ ] The minimap's backing and rim are drawn with today's calls and values (`hudPanel` 0.85; 1 px `frame` 0.6), and nothing is drawn over the rim (`minimap.test.ts`).
+- [ ] The vignette is in `palette.inkDeep`, inside the rim, strongest at the inside edge and nothing at the middle; drawn once per minimap, not on a content change; never through `fillGradientStyle`; steps, if any, no wider than 2 px and no more than 0.08 alpha apart.
+- [ ] Draw order inside the frame: backing, fills, edges, vignette, glyphs; dots on their own layer above; the readout above both.
+- [ ] Explored fill vs backing ≥ 1.3:1, visible vs explored ≥ 1.3:1, visible the lighter; the edge line ≥ 1.3:1 against each fill it bounds (contrast ratios over the tokens, in a test).
+- [ ] A region's edge follows its footprint's outline: on the fixture floor, a room of several cell rects draws no edge between its own cells, and a boundary shared by two seen regions is drawn once.
+- [ ] The switch, escape door and stairs each draw a distinct glyph within 9 × 9 px and at least 7 px wide, in `interactable` on a 1 px `markerStroke` ring, centred on whole px where the mark sits today, only once their region is explored; ink vs ring ≥ 3:1.
+- [ ] Dots: ally r 2, self r 3, each in a 1 px `markerStroke` ring, self drawn last; ink vs ring ≥ 3:1.
+- [ ] Size, inset, projection and content unchanged: FS-SRA9J's `minimapRect` size, `minimapProjection` and `minimapContent` tests still pass as written; the redraw counts (§E.23) unchanged.
+- [ ] No raw colour literal added outside `utils/theme.ts` / `utils/canvasPalette.ts`; the token fence passes.
+- [ ] Top-right column at logical widths 1080 and 1280 with a minimap: the minimap's top at the column's top (y 44), the floor indicator's top 6 px under its bottom, the escaped count's top 4 px under the floor indicator's bottom, every right edge on `TOP_RIGHT_HUD`'s x.
+- [ ] Both lines at 12 px, padding 8 × 3, their colours, backings and face unchanged.
+- [ ] With no minimap shown (a floor without regions; a dungeon floor before its map; M off): the floor indicator's top at the column's top, the escaped count under it; with the floor indicator hidden, the escaped count takes its place; pressing M re-lays the column both ways.
+- [ ] On resize the column re-anchors from `TOP_RIGHT_HUD` and its texts are re-crispened.
+- [ ] Nothing in the column overlaps the fullscreen button, a 600 px top-centre notice or the target frame at 1080 and 1280; the minimap's left edge ≥ 854 at 1080.
+- [ ] With a minimap shown in a dev build: the readout's text at 10 px, no backing, its left and bottom edges 4 px inside the panel's, at a depth over `MINIMAP.depth`; its ink ≥ 3:1 over the darkest vignetted backing under it.
+- [ ] On the fixture floor, the readout's box at its widest text ("X: 5760 Y: 3840") lies below the floor diamond's lower-left edge.
+- [ ] With no minimap shown in a dev build: the readout stands 4 px under the column's last line, right-aligned, same look; it moves as the column does (M, floor change, resize).
+- [ ] A production build (`showsPositionReadout()` false) creates no readout.
+- [ ] `PROGRESS_HUD_AT.run` is (10, 16), `RESOURCE_HUD_AT.run` (10, 56), `PARTY_FRAMES_PLACEMENT.run.top` 132; the hub's and the field's placements unchanged (`ResourceHud.test.ts`, `partyFramesLayout.test.ts`).
+- [ ] In a run, the party frames at their tallest (four rows) clear the chat window, the XP bar, the resource bars, the potion cell, the T panel and the prompts (`partyFramesLayout.test.ts`).
+- [ ] The design guideline's "UI Chrome" has a "Minimap" bullet marked "Added by FS-56CKV".
+- [ ] No dev-gallery card or family is added.
+- [ ] Headless captures of the minimap at render scales 1, 1.5 and 2 on the fixture floor (some regions explored, one visible, all three fixtures found, two dots, the readout), checked by eye for crisp glyphs, dots and text.
+- [ ] Typecheck and the full vitest suite pass.
+- [ ] Nick's browser check passes: floor 1 and a tower floor, 1080 and 1280 wide, windowed and fullscreen, a dev build and a production build.
+
+## Edge States
+
+- **Arriving on a dungeon floor:** until its map is in there is no minimap, so the column sits at
+  the top (§B.11) and the readout under it; when the minimap is built it takes the top and the
+  lines step down under it, once. Accepted: it happens as the floor appears, before play.
+- **A floor change:** the minimap is destroyed and rebuilt (§E.23); the column closes up and opens
+  again, as on arrival.
+- **M pressed:** the column closes up or opens at once, no tween. Accepted: the player asked for it.
+- **Spectating** (FS-SRA9J §E.24): the minimap stays, so the column and the readout stay as they
+  are. The readout still reads this client's own position, as today.
+- **Floor indicator not yet labelled:** the escaped count takes its place under the minimap or at
+  the top; it moves down once when the label arrives.
+- **The readout without a minimap (decision adapted, escalated):** the locked decision kept the
+  readout at the top left where there is no minimap, as today. With the XP bar at y 16 it would
+  cover the bar on every floor without regions, so it stands under the top-right column instead
+  (§C.18). Rejected: keeping the stack at y 44 where there is no minimap (the HUD would jump from
+  floor to floor and differ from production) and squeezing the readout above the XP bar (16 px of
+  room for a 13 px line at the canvas edge). Owner to confirm.
+- **The readout over a lit ground** (no minimap, no backing): it may read less well over a bright
+  patch of floor. Accepted for a dev aid; the run's floors are dark at the screen's edge.
+- **A later floor whose diamond reaches the bottom-left corner:** the readout would cover a little
+  of the floor there. Accepted; it is a dev aid, and §C.17 is pinned to floor 1's fit.
+- **A tower floor's "| Indoor/Outdoor" suffix** is never shown on a tower floor (FS-8RBQY §B.3),
+  and only a tower-look floor has an indoor label; such a floor has no minimap, so a long readout
+  only ever stands in the column.
+- **Regions at the minimap's edge:** the vignette darkens fills and edges near the rim; the
+  visible fill stays the lighter wherever both meet, since the vignette lies over both alike.
+- **Two seen regions sharing a doorway:** the shared edge is drawn once, so a room and its
+  corridor read apart, with a single line across the doorway.
+- **Canvas renderer fallback:** the vignette is a canvas texture or fills, so it is the same.
+- **Party frames at their shortest or with no party:** placed by the same fixed top; nothing jumps.
+
+## Out of Scope
+
+The minimap's frame (owner: not now); its size, projection or content; a full-screen map, zoom,
+pings or monsters on the minimap; the switch's on/off state on its glyph; fog of war itself
+(FS-SRA9J §A–§D, ADR-0063, ADR-0068); any baked art or the bake; the hub's and fields' HUD; the
+fullscreen button and the `TOP_RIGHT_HUD` anchor; the target frame, notices and spectate HUD; the
+readout's content or its build switch; a dev-gallery family for HUD chrome; any server, proto or
+gateway change.
