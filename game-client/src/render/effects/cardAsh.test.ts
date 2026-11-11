@@ -204,16 +204,17 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should be one typed record, at its starting values", () => {
     expect(CARD_ASH).toEqual({
       frontMs: 2000,
-      // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": the front's 2000 ms and a
-      // flake's 700 (was 3000, with a 1000 ms flake)
-      durationMs: 2700,
+      // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": the front's 2000 ms and
+      // a flake's 500 (was 2700 with a 700 ms flake; before his seventh, 3000 with a 1000 ms flake)
+      durationMs: 2500,
       ragged: 0.35,
       grainPx: 6,
       // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): the band runs fire's ramp
       band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
       flake: {
-        // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": 30% sooner (was 1000)
-        lifeMs: 700,
+        // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": about 30% sooner
+        // again (was 700; before his seventh, "灰燼碎屑消失的快一點", 1000)
+        lifeMs: 500,
         // the owner's sixth tune of 2026-11-12, "灰燼碎屑少一點": a fifth fewer again (was 240 and
         // 0.08; before his fourth, "灰燼 碎屑少２０％", 300 and 0.1)
         maxParticles: 192,
@@ -231,8 +232,9 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
           seamPx: 0.75,
           cools: [1, 0.6, 0.3],
           edgeFrom: 0.28,
-          // the seventh tune: 30% sooner, still out before its flake (was 900)
-          ms: 630,
+          // the eighth tune: about 30% sooner again, still out before its flake (was 630; before
+          // the seventh, 900)
+          ms: 450,
           steps: 20,
           shades: 12,
           flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
@@ -276,10 +278,16 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should keep every FS-KYPQ9 §B rule but §B.6's count and fall, §B.2's ceiling and §B.10 (R59)", () => {
     // §B.2: one fixed duration, the front's and a flake's life inside it
     expect(Number.isInteger(CARD_ASH.durationMs)).toBe(true);
-    // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": 2700 ms (was 3000)
-    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2700);
+    // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": 2500 ms (was 2700; before
+    // his seventh, 3000)
+    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2500);
     expect(CARD_ASH.frontMs + CARD_ASH.flake.lifeMs).toBeLessThanOrEqual(CARD_ASH.durationMs);
-    expect(CARD_ASH.frontMs + CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(CARD_ASH.durationMs);
+    // a spark leaves as the front reaches its pixel, every threshold under 1, so the last leaves
+    // before the front's sweep (0 past 1 + the band) reaches 1, and is gone within its life after
+    // (R57; since the owner's eighth tune of 2026-11-12, 2000 + 600 is past the 2500 ms, 1754 + 600
+    // is not)
+    const lastSpark = CARD_ASH.frontMs / (1 + CARD_ASH.band.ember + CARD_ASH.band.char);
+    expect(lastSpark + CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(CARD_ASH.durationMs);
     // §B.3: the easing allowlist
     for (const ease of Object.values(CARD_ASH.ease))
       expect(ease).toMatch(/^(Linear|(Sine|Quad|Cubic)\.ease(In|Out|InOut))$/);
@@ -312,8 +320,11 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     expect(mid(CARD_ASH.spark.speed)).toBeGreaterThan(mid(CARD_ASH.flake.speed));
     // the smallest flake still larger than the dust's motes (about 1.2 view px)
     expect(CARD_ASH.flake.lengthPx.from).toBeGreaterThan(1.2);
-    // a flip only: the half-turn, edge-on to the other face, falls inside a flake's life
-    expect(CARD_ASH.flake.flipMs.to / 2).toBeLessThan(CARD_ASH.flake.lifeMs);
+    // a flip only: since the owner's eighth tune of 2026-11-12 the slowest half-turn (650 ms)
+    // outlasts a 500 ms life, so its phase brings edge-on inside the life (the flutter test); the
+    // period is his third tune's, unchanged, and the quickest still turns over and back in a life
+    expect(CARD_ASH.flake.flipMs.to / 2).toBeGreaterThan(CARD_ASH.flake.lifeMs);
+    expect(CARD_ASH.flake.flipMs.from).toBeLessThanOrEqual(CARD_ASH.flake.lifeMs);
     // a glow dies inside its flake's life, and its flicker inside its dying
     const { glow } = CARD_ASH.flake;
     expect(glow.ms).toBeLessThan(CARD_ASH.flake.lifeMs);
@@ -555,7 +566,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       return best;
     }
 
-    it("should come from one emitter of runtime flakes, each shape its own anim, rising, slowing and fading over 700 ms", () => {
+    it("should come from one emitter of runtime flakes, each shape its own anim, rising, slowing and fading over 500 ms", () => {
       const { emitters, config, canvases, anims } = flakes();
 
       const [emitter] = emitters();
@@ -563,7 +574,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(emitter.calls.setDepth).toEqual([[961]]);
       expect(emitter.calls.setScrollFactor).toEqual([[0]]);
       expect(config()).toMatchObject({
-        lifespan: 700,
+        lifespan: 500,
         speed: { min: 18, max: 45 },
         maxParticles: 192,
         emitting: false,
@@ -643,7 +654,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       const turns = Array.from({ length: 200 }, () => {
         const p = {};
         const from = rotate.onEmit(p, "rotate");
-        // a whole life, 700 ms since the seventh tune: its turn a second
+        // a whole life, 500 ms since the eighth tune: its turn a second
         return ((rotate.onUpdate(p, "rotate", 1, from) - from) * 1000) / (config().lifespan as number);
       });
       for (const s of turns) {
@@ -654,7 +665,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(turns.some((s) => s < 0)).toBe(true);
     });
 
-    it("should travel about a quarter to 30% less far than in the third tune's 1000 ms life, in its 700 ms", () => {
+    it("should travel about a quarter less far than in the seventh tune's 700 ms life, in its 500 ms", () => {
       const { config } = flakes();
       const { min, max } = config().speed as { min: number; max: number };
       const ax = config().accelerationX as { onUpdate(p: object, k: string, t: number, v: number): number };
@@ -673,19 +684,19 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         return -y;
       };
       const mean = Array.from({ length: 21 }, (_, k) => travel(min + ((max - min) * k) / 20)).reduce((s, d) => s + d) / 21;
-      // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": before, the same 18–45 px/s
-      // under the same drag of 0.4 over 1 s, about 26 px on average, at most about 37; now about
-      // 19, at most about 27
-      const before = (v: number) => (v * (1 - Math.exp(-0.4))) / 0.4;
+      // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": before, the same 18–45
+      // px/s under the same drag of 0.4 over 700 ms, about 19 px on average, at most about 27; now
+      // about 14, at most about 20
+      const before = (v: number) => (v * (1 - Math.exp(-0.4 * 0.7))) / 0.4;
       const was = (before(18) + before(45)) / 2;
-      expect(mean / was).toBeGreaterThan(0.68);
+      expect(mean / was).toBeGreaterThan(0.7);
       expect(mean / was).toBeLessThan(0.78);
-      expect(mean).toBeCloseTo(19.2, 0);
+      expect(mean).toBeCloseTo(14.3, 0);
       expect(travel(max)).toBeLessThan(before(45));
-      expect(travel(max)).toBeCloseTo(27.5, 0);
+      expect(travel(max)).toBeCloseTo(20.4, 0);
     });
 
-    it("should flutter, not spin: each flake's scale on one axis swings through edge-on and over, never past its size", () => {
+    it("should flutter, not spin: each flake's scale on one axis swings through edge-on and over within its 500 ms life, never past its size", () => {
       const { config } = flakes();
       const flip = config().scaleY as {
         onEmit(p: object, key: string): number;
@@ -813,7 +824,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
     });
 
-    it("should be charred paper, pitch, slate and ash, 0.85 with a glowing seam that dies to ash over its first 630 ms", () => {
+    it("should be charred paper, pitch, slate and ash, 0.85 with a glowing seam that dies to ash over its first 450 ms", () => {
       const all = shapes(2);
 
       // the owner's "灰燼碎屑再多一點燒焦感": cold, every pixel a mix of the char, the body and the ash
@@ -827,10 +838,11 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       const glowing = all.filter((s) => s.frames.length > 1);
       expect(glowing).toHaveLength(20);
       for (const { anim, frames } of glowing) {
-        // 20 frames over 630 ms (the seventh tune, "灰燼碎屑消失的快一點"; was 900, before that 700,
+        // 20 frames over 450 ms (the eighth tune, "灰燼碎屑消失速度在加快一些"; was 630, before the
+        // seventh, "灰燼碎屑消失的快一點", 900, before that 700,
         // and 8 over 500 before that), then held on the last
         expect(frames).toHaveLength(20);
-        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(630);
+        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(450);
         // hot at first: orange on its seam
         expect(frames[0].some((p) => dist(p.c, FIRE_HOT) < 40)).toBe(true);
         expect(heat(frames.at(-1)!)).toBeLessThan(heat(frames[0]));
@@ -1105,12 +1117,12 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(gone).not.toHaveBeenCalled();
   });
 
-  it("should be gone at 2700 ms, everything of it destroyed, and say so (R57)", () => {
+  it("should be gone at 2500 ms, everything of it destroyed, and say so (R57)", () => {
     const { ash, gone, timers, made, burn } = ashStage();
     ash.play(cardInk(), 961, gone);
 
     const [end] = timers;
-    expect(end.delay).toBe(2700);
+    expect(end.delay).toBe(2500);
     end.fire();
 
     expect(made.every((m) => m.destroyed)).toBe(true);
