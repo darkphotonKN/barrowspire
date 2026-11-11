@@ -1,9 +1,9 @@
 ---
 id: I-V8FT3-1
-status: open
+status: done
 implements: FS-V8FT3
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-V8FT3 slice 1: the bake's light and wall feet are defined once, and a wall run's shadow shape is planned from them (game-client)"
 ---
 Implements FS-V8FT3 §C, §D
@@ -46,8 +46,9 @@ minutes; installed Google Chrome on SwiftShader).
       run's centreline between its ends, as thick as `BAKE` says for its material.
 - [ ] Every post of `planWalls` gives one shape from its square foot and its own height.
 - [ ] A wall 2.75 tiles long casts from a foot 2.75 tiles long.
-- [ ] A dungeon floor's shapes come from `wallRuns` and `wallRule`: none from a piece outside its
-      run's end posts.
+- [ ] A dungeon floor's shapes come from `wallPlan` and `dungeonWalls` (FS-XK2B6): one foot per
+      edge run, the strip from its edge line to one thickness on its wall cells' side between its
+      two ends, and one square per post of the plan.
 - [ ] No source under `src/` holds 2.83, the shadow's 0.5 or a wall thickness as its own number
       outside `BAKE`.
 - [ ] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.

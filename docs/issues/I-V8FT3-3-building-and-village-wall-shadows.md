@@ -1,9 +1,9 @@
 ---
 id: I-V8FT3-3
-status: open
+status: done
 implements: FS-V8FT3
 blocked_by: [I-V8FT3-2]
-labels: [blocked]
+labels: []
 title: "FS-V8FT3 slice 3: buildings, the Inn's partition and walls of no house cast into the village's and a floor of buildings' ground (game-client)"
 ---
 Implements FS-V8FT3 §F

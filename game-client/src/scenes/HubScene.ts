@@ -93,6 +93,7 @@ import {
   addWalls,
   coverOf,
   doorGaps,
+  hasWallArt,
   showState,
   housesFrom,
   insideHouse,
@@ -155,7 +156,16 @@ import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMes
  * cannot come before create, which sends them.
  */
 const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"];
-import { INTERIOR_PARTITION, MASONRY_WALLS, trimCrop, type WallSheets } from "@/render/world/walls";
+import {
+  INTERIOR_PARTITION,
+  MASONRY_WALLS,
+  TIMBER_WALLS,
+  planWalls,
+  thicknessPx,
+  trimCrop,
+  type WallSheets,
+} from "@/render/world/walls";
+import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
@@ -2308,7 +2318,13 @@ export class HubScene extends Phaser.Scene {
     // ridge pieces sorted by their own footprints (FS-2325V §C.3) closed at both
     // ends by gables (ADR-0036), or without art a placeholder roof on a plane
     // lifted to the wall tops. Either covers the player from outside (§E.1).
+    // The walls' shadows go over the floors in the same step (FS-V8FT3 §F).
+    const trimmed = partitions.flatMap((wall) => {
+      const house = houses.find((h) => h.id === wall.house_id);
+      return house ? [{ house, wall: partitionInside(wall, house) }] : [];
+    });
     this.groundLayer?.paint(houses);
+    this.groundLayer?.shade(this.wallShadows(walls.filter((w) => !w.house_id), bySheets, trimmed, seed));
     for (const house of houses) {
       const roof = addRoof(this, this.art, house);
       const own = walls.find((w) => w.house_id === house.id);
@@ -2325,7 +2341,7 @@ export class HubScene extends Phaser.Scene {
       this.roofs.push({ house, baked: false, parts: [slab, ...gables] });
     }
     const interiors = new Map<House, Interior>(houses.map((house) => [house, { house, parts: [], lights: [] }]));
-    this.partition(houses, partitions, seed, interiors);
+    this.partition(trimmed, seed, interiors);
     this.furnish(houses, furnishings, interiors);
     // the dark outside whichever house the player stands in, as tall as the walls drawn (FS-9PN7X §D.2)
     const baked = this.art.available && this.art.has("wall_back_plain_x");
@@ -2448,16 +2464,38 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * A house's partition (the Inn's, between its great hall and taproom) as interior masonry: each
-   * segment trimmed to inside the walls, cut in the tower's low masonry pieces with posts at both
-   * jambs of its door gap and no light, or without that art a low stone placeholder block. Never a
-   * building wall: it has no exterior look, and joins its house's interior, hidden under the roof.
+   * The walls' shadows the hub's ground carries (FS-V8FT3 §F), of the walls drawn baked only:
+   * placeholder walls never had one. A wall of no house as drawn, full height (R28); each house by
+   * the look each side of its outline is seen in, in its look's sheets (R26, R27); a partition low,
+   * inside its house (R25). The hub's ground lies everywhere, so nothing is cut from them.
    */
-  private partition(houses: House[], partitions: WallState[], seed: number, interiors: Map<House, Interior>): void {
-    const inside = partitions.flatMap((wall) => {
-      const house = houses.find((h) => h.id === wall.house_id);
-      return house ? [{ house, wall: partitionInside(wall, house) }] : [];
-    });
+  private wallShadows(
+    loose: readonly WallState[],
+    bySheets: ReadonlyMap<WallSheets, readonly WallState[]>,
+    partitions: readonly { house: House; wall: WallState }[],
+    seed: number,
+  ): GroundShadows {
+    const shapes: Point[][] = [];
+    // in the sheets each is drawn in: the street's walls timber (drawLooseWalls), each house its look's
+    for (const [sheets, own] of [[TIMBER_WALLS, loose] as const, ...bySheets])
+      if (hasWallArt(this.art, sheets)) shapes.push(...buildingWallShadows(own, seed, sheets));
+    if (hasWallArt(this.art, MASONRY_WALLS))
+      for (const house of new Set(partitions.map((p) => p.house))) {
+        const own = partitions.filter((p) => p.house === house).map((p) => p.wall);
+        const plan = planWalls(own, seed, MASONRY_WALLS, INTERIOR_PARTITION);
+        shapes.push(...shadowsWithin(plan, thicknessPx(MASONRY_WALLS), house));
+      }
+    return { shapes, cuts: [] };
+  }
+
+  /**
+   * A house's partition (the Inn's, between its great hall and taproom) as interior masonry: each
+   * segment trimmed to inside the walls (`partitionInside`), cut in the tower's low masonry pieces
+   * with posts at both jambs of its door gap and no light, or without that art a low stone
+   * placeholder block. Never a building wall: it has no exterior look, and joins its house's
+   * interior, hidden under the roof.
+   */
+  private partition(inside: readonly { house: House; wall: WallState }[], seed: number, interiors: Map<House, Interior>): void {
     if (inside.length === 0) return;
     const baked = addWalls(this, this.art, inside.map((p) => p.wall), seed, MASONRY_WALLS, INTERIOR_PARTITION);
     for (const { house, wall } of inside) {

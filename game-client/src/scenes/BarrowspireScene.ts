@@ -169,6 +169,7 @@ import {
   planDressing,
   tileHash,
   footprintHitArea,
+  hasWallArt,
   housesFrom,
   insideHouse,
   paintDropPile,
@@ -191,7 +192,7 @@ import {
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
-import { dungeonShadows } from "@/render/world/wallShadows";
+import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
@@ -2683,8 +2684,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
       const houses = housesFrom(walls);
       // flagstone (or planks) under each house, painted into this floor's baked ground
-      // (FS-2325V §C.1, FS-8RBQY §C.3)
+      // (FS-2325V §C.1, FS-8RBQY §C.3), and the walls' shadows over it in the same step: those of
+      // the walls known now, as the floors are (FS-V8FT3 §F R29, Edge States)
       this.groundLayer?.paint(houses, { look: look.ground, seed: look.seed });
+      if (hasWallArt(this.art, look.walls))
+        this.groundLayer?.shade({ shapes: buildingWallShadows(walls, look.seed, look.walls), cuts: [] });
 
       houses.forEach((house, buildingIndex) => {
         const { x: minX, y: minY, width: bw, height: bh } = house;

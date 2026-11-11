@@ -530,7 +530,11 @@ export function addWalls(
   return addWallPieces(scene, art, planWalls(walls, seed, sheets, rule), seed, sheets);
 }
 
-const hasWallArt = (art: ArtLibrary, sheets: WallSheets): boolean =>
+/**
+ * Whether a material's walls are drawn baked: a manifest, and its pieces' sheets. Without, they
+ * are placeholder blocks, which cast no ground shadow (FS-V8FT3 Out of Scope).
+ */
+export const hasWallArt = (art: ArtLibrary, sheets: WallSheets): boolean =>
   art.available && art.has(`${sheets.prefix}wall_back_plain_x`);
 
 /**

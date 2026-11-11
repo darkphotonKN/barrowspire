@@ -8,14 +8,19 @@
  * A shadow is cast by a **foot**: the ground a stretch of wall, or a post, is drawn standing on,
  * with how tall it stands. Nothing here reads a server wall rect or a cell: a foot comes from the
  * pieces and posts as they are drawn (`planWalls`), so wherever a wall is drawn, its shadow starts
- * there. One foot is one shape, and a run of pieces of one height is one foot, never one per piece.
+ * there; only a building's door gap is read as found (`doorGaps`), since from outside the wall's
+ * shadow runs across it (FS-V8FT3 R27). One foot is one shape, and a run of pieces of one height is
+ * one foot, never one per piece.
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
 import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
+import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
+import { doorGaps, planBuildings, type BuildingWalls, type DoorGap } from "./buildingLooks";
 import type { RegionGrid } from "./dungeon";
-import type { WallHeight, WallPiece, WallPost } from "./walls";
+import { axisOf } from "./houses";
+import { planWalls, thicknessPx, type WallHeight, type WallPiece, type WallPost, type WallSheets } from "./walls";
 
 /** The ground something that casts stands on: an axis-aligned rect in world px, and its height. */
 export interface WallFoot {
@@ -128,6 +133,127 @@ export function wallFeet(walls: DrawnWalls, thickness: number): WallFoot[] {
  */
 export function planWallShadows(walls: DrawnWalls, thickness: number): Point[][] {
   return wallFeet(walls, thickness).map(castShadow);
+}
+
+/**
+ * What of a convex shape lies on one side of a line of constant x or y: where `keep` times
+ * (`p[axis]` − `at`) is not negative (Sutherland–Hodgman, one edge). Convex, in the shape's order.
+ */
+function clip(shape: readonly Point[], axis: "x" | "y", at: number, keep: 1 | -1): Point[] {
+  const out: Point[] = [];
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i];
+    const b = shape[(i + 1) % shape.length];
+    const sa = keep * (a[axis] - at);
+    const sb = keep * (b[axis] - at);
+    if (sa >= 0) out.push(a);
+    if ((sa > 0 && sb < 0) || (sa < 0 && sb > 0)) {
+      const t = sa / (sa - sb);
+      out.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+    }
+  }
+  return out;
+}
+
+/** Whether a polygon covers any ground: three corners or more, not all on one line. */
+function covers(shape: readonly Point[]): boolean {
+  let twice = 0;
+  for (let i = 0; i < shape.length; i++) {
+    const p = shape[i];
+    const q = shape[(i + 1) % shape.length];
+    twice += p.x * q.y - q.x * p.y;
+  }
+  return shape.length >= 3 && Math.abs(twice) > EPSILON;
+}
+
+/** What of a convex shape lies within a rect: none, or one convex shape. */
+function within(shape: readonly Point[], r: Rect): Point[][] {
+  let s = clip(shape, "x", r.x, 1);
+  s = clip(s, "x", r.x + r.width, -1);
+  s = clip(s, "y", r.y, 1);
+  s = clip(s, "y", r.y + r.height, -1);
+  return covers(s) ? [s] : [];
+}
+
+/**
+ * What of a convex shape lies outside a rect: up to four convex shapes, west, east, north and
+ * south of it, overlapping past its corners (they are drawn opaque, so an overlap is no darker),
+ * none reaching into it.
+ */
+function without(shape: readonly Point[], r: Rect): Point[][] {
+  return [
+    clip(shape, "x", r.x, -1),
+    clip(shape, "x", r.x + r.width, 1),
+    clip(shape, "y", r.y, -1),
+    clip(shape, "y", r.y + r.height, 1),
+  ].filter(covers);
+}
+
+/**
+ * The shadows of drawn walls that show within a footprint (FS-V8FT3 §F): each shape cut at the
+ * footprint's edge. A building's interior look, and the walls inside it (the Inn's partition, R25).
+ */
+export function shadowsWithin(walls: DrawnWalls, thickness: number, footprint: Rect): Point[][] {
+  return planWallShadows(walls, thickness).flatMap((shape) => within(shape, footprint));
+}
+
+/**
+ * The shadows a building's ground carries (FS-V8FT3 §F R26, R27), `thickness` its material's.
+ * Outside its footprint, those of its exterior look (every side full height) and, across each of
+ * its door gaps, the wall as if it were whole: from outside a gap holds a shut door under its
+ * head. Inside, those of its interior look (south and east cut away), where a gap casts nothing.
+ * Each is cut at the footprint's edge: the ground is painted once, and each patch of it is only
+ * ever seen in one look.
+ */
+export function buildingShadows(
+  building: BuildingWalls,
+  gaps: readonly DoorGap[],
+  thickness: number,
+): { outside: Point[][]; inside: Point[][] } {
+  const { house, shared, interior, exterior } = building;
+  const across = gaps.filter((g) => g.houseId === house.id).map(gapSpan);
+  const outer: DrawnWalls = {
+    pieces: [...shared.pieces, ...exterior.pieces, ...across],
+    posts: [...shared.posts, ...exterior.posts],
+  };
+  const inner: DrawnWalls = {
+    pieces: [...shared.pieces, ...interior.pieces],
+    posts: [...shared.posts, ...interior.posts],
+  };
+  return {
+    outside: planWallShadows(outer, thickness).flatMap((shape) => without(shape, house)),
+    inside: shadowsWithin(inner, thickness, house),
+  };
+}
+
+/**
+ * The shadows of server wall rects as one material draws them (FS-V8FT3 §F): each house by its
+ * two looks, in `planBuildings`' order (`buildingShadows`), and every wall of no house as drawn,
+ * full height (R28). The village's houses and walls, and a floor of buildings' rooms and halls.
+ */
+export function buildingWallShadows(walls: readonly WallState[], seed: number, sheets: WallSheets): Point[][] {
+  const thickness = thicknessPx(sheets);
+  const gaps = doorGaps(walls);
+  const houses = planBuildings(walls, seed, sheets).flatMap((building) => {
+    const { outside, inside } = buildingShadows(building, gaps, thickness);
+    return [...outside, ...inside];
+  });
+  const loose = walls.filter((w) => !w.house_id);
+  return [...houses, ...planWallShadows(planWalls(loose, seed, sheets), thickness)];
+}
+
+/**
+ * A door gap as a stretch of full-height wall on the line of the walls either side of it, from
+ * jamb to jamb: shaped as a trimmed piece is (`keep` the gap's length in tiles), so `wallFeet`
+ * joins it to them in one foot.
+ */
+function gapSpan({ position, width, height }: DoorGap): DrawnWalls["pieces"][number] {
+  const axis = axisOf({ width, height });
+  const at =
+    axis === "x"
+      ? { x: position.x + T / 2, y: position.y + height / 2 }
+      : { x: position.x + width / 2, y: position.y + T / 2 };
+  return { axis, at, keep: (axis === "x" ? width : height) / T, height: "back" };
 }
 
 /**
