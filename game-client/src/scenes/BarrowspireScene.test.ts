@@ -876,7 +876,8 @@ interface MapRun extends FloorRun {
   perimeter?: unknown[];
   dressing?: unknown[];
   lastFloor?: number;
-  floorVeil: unknown[];
+  /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
+  arrivalCard: { parts: unknown[] };
   mapWidth: number;
   mapHeight: number;
   subscribeFloorMap(): void;
@@ -974,7 +975,7 @@ describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
 
     handle(bare(floorState(1)));
     expect(run.lastFloor).toBe(1);
-    expect(run.floorVeil).toHaveLength(0);
+    expect(run.arrivalCard.parts).toHaveLength(0);
 
     handle(bare(floorState(2)));
     expect(run.lastFloor).toBe(2);
@@ -987,10 +988,10 @@ describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
     useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
     handle(bare(floorState(1)));
     const tweens = (run.tweens as { add: ReturnType<typeof vi.fn> }).add;
-    const veilFades = () => tweens.mock.calls.filter(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0).length;
+    const veilFades = () => tweens.mock.calls.filter(([t]) => t.targets === run.arrivalCard.parts[0] && t.alpha === 0).length;
 
     handle(bare(floorState(2)));
-    expect(run.floorVeil.length).toBeGreaterThan(0);
+    expect(run.arrivalCard.parts.length).toBeGreaterThan(0);
     expect(run.walls.size).toBe(0);
     expect(veilFades()).toBe(0);
 
@@ -1009,7 +1010,7 @@ describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
 
     handle(bare(floorState(2)));
 
-    const fade = tweens.mock.calls.find(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0);
+    const fade = tweens.mock.calls.find(([t]) => t.targets === run.arrivalCard.parts[0] && t.alpha === 0);
     expect(fade).toBeDefined();
   });
 
@@ -5328,7 +5329,8 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     resetRun(end: "shutdown" | "destroy"): void;
     targetFrame?: { texts(): Made[] };
     spectateHud?: unknown;
-    floorVeil: unknown[];
+    /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
+    arrivalCard: { parts: unknown[] };
     events: Emitter;
   }
 
@@ -5467,7 +5469,7 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
 
   it.each([
     ["the spectate HUD", (run: FrameRun) => (run.spectateHud = {})],
-    ["the floor-change veil", (run: FrameRun) => (run.floorVeil = [{}])],
+    ["the floor-change veil", (run: FrameRun) => (run.arrivalCard.parts = [{}])],
   ])("should hide while %s holds the top centre", (_, cover) => {
     const { run, monsters, named, tick } = framed();
     monsters()[0].handlers.pointerover();
