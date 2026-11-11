@@ -666,7 +666,8 @@ function ashSheet(resolution: number, random: () => number) {
 
 /**
  * A flake's flutter, picked as it leaves (R56): its slow turn, its turning over in depth and its
- * sway. Made on the first op that asks for it, whichever the engine calls first.
+ * sway. Picked afresh on each life's first emit that asks for it, never carried over from a
+ * pooled particle's last life.
  */
 interface Flutter {
   angle: number;
@@ -883,10 +884,17 @@ export class CardAsh {
     };
   }
 
-  /** A flake's flutter, made on the first ask (R56). */
+  /** A flake's flutter, as it was picked when it left (R56); picked now if none was. */
   private flutter(p: object): Flutter {
-    const held = (p as Fluttering)[FLUTTER];
-    if (held) return held;
+    return (p as Fluttering)[FLUTTER] ?? this.flutterAfresh(p);
+  }
+
+  /**
+   * A flake's flutter, picked afresh as it leaves (R56). The engine fires a dead particle again from
+   * its pool (`ParticleEmitter.emitParticle`: `dead.pop()`), so whatever the last life left on it
+   * is replaced, never reused.
+   */
+  private flutterAfresh(p: object): Flutter {
     const f = CARD_ASH.flake;
     const side = () => (this.random() < 0.5 ? -1 : 1);
     const angle = this.random() * 360;
@@ -950,7 +958,9 @@ export class CardAsh {
       // the turn over, the scale on one axis through zero and back (R59's §B.4 exception)
       scaleX: size,
       scaleY: {
-        onEmit: (p?: Particle) => (p ? size * turnedOver(this.flutter(p).flipPhase) : size),
+        // the first of a flake's ops the engine fires that asks for its flutter (Particle.fire:
+        // scaleX, scaleY, then its turn and its heading): picked afresh here, for each life
+        onEmit: (p?: Particle) => (p ? size * turnedOver(this.flutterAfresh(p).flipPhase) : size),
         onUpdate: (p: Particle, _key: string, t: number) => {
           const fl = this.flutter(p);
           return size * turnedOver(fl.flipPhase + fl.flipRate * ms(t));
@@ -969,15 +979,13 @@ export class CardAsh {
    */
   private sparkConfig(frames: string[], resolution: number): EmitterConfig {
     const s = CARD_ASH.spark;
-    const flicker = (p: Particle) => {
-      const held = (p as Fluttering)[FLICKER];
-      if (held) return held;
+    // picked afresh as each spark leaves: a pooled particle fired again keeps nothing of its last life
+    const flickerAfresh = (p: Particle) => {
       const made: Flicker = { rate: (2 * Math.PI * pick(s.flickerHz, this.random)) / 1000, phase: this.random() * 2 * Math.PI };
       (p as Fluttering)[FLICKER] = made;
       return made;
     };
-    const light = (p: Particle, t: number) => {
-      const fl = flicker(p);
+    const light = (p: Particle, t: number, fl: Flicker = (p as Fluttering)[FLICKER] ?? flickerAfresh(p)) => {
       // Quad.easeIn's fall: it holds its light, then goes
       const fall = 1 - t * t;
       return Math.min(1, Math.max(0, fall * (0.65 + 0.35 * Math.sin(fl.phase + fl.rate * t * p.life))));
@@ -996,7 +1004,8 @@ export class CardAsh {
       accelerationY: { onUpdate: (p: Particle) => -p.velocityY * s.drag },
       scale: 1 / resolution,
       alpha: {
-        onEmit: (p?: Particle) => (p ? light(p, 0) : 1),
+        // the only op that asks for its flicker, and fired once per life
+        onEmit: (p?: Particle) => (p ? light(p, 0, flickerAfresh(p)) : 1),
         onUpdate: (p: Particle, _key: string, t: number) => light(p, t),
       },
       // its colour, cooling as it flies: the tint fills the frame, so the ramp is its colour
@@ -1058,13 +1067,20 @@ export class CardAsh {
     this.forget();
   }
 
-  /** Lets go of the ash without touching it: at a scene's end, it went with the scene. */
+  /**
+   * Lets go of the ash without touching the scene: at a scene's end, its image, flakes, front and
+   * end went with the scene. Its burn texture did not: the TextureManager is the game's and
+   * outlives the scene (Phaser 4.2.1 destroys it only on the game's own DESTROY, after every
+   * scene's), so a burn ended mid-way is taken out of it here (R60). The flakes' sheet is kept, for
+   * the next card.
+   */
   forget(): void {
     this.end = undefined;
     this.front = undefined;
     this.emitter = undefined;
     this.sparks = undefined;
     this.image = undefined;
+    if (this.scene.textures.exists(this.burnKey)) this.scene.textures.remove(this.burnKey);
   }
 
   /** The strokes and the rule, and the card's ink in one image; undefined when they cannot be read. */
