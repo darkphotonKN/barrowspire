@@ -12,6 +12,10 @@
 > marked **(spec)**: R4's post where a straight wall changes height, and R12's back corner for a
 > piece on a north or west edge (retagged 2026-11-12 after code review; they were tagged as
 > rulings).
+> A fourth consequence, found by fix round 1 on 2026-11-12, went to the owner as E4: the fog's
+> clearance over a wall left a strip of veiled floor clear over a low wall's top. He ruled on it
+> the same day ("迷霧用A"); R18 is written as ruled, marked **(ruling E4)**, and the px the baked
+> art loses to it are a measured tolerance in Edge States.
 > Recorded without adversarial review: no `challenge-me` pass. Code citations are against the
 > working tree at `a427b0c3`.
 
@@ -187,10 +191,18 @@ Read 2026-11-11; client paths under `game-client/src/`.
 ### §F. Fog
 
 18. **The fog's walls stand where the drawn walls stand (charter default).** The fog leaves clear
-    a slab over each wall edge, raised to that edge's height plus `FOG.headroom`, and a post at
-    each corner where a run ends, raised to its height plus `FOG.post`. No slab stands through a
-    cell's middle and no post at a cell's centre. This replaces "the wall on its cell's
-    centreline" in FS-SRA9J §C.13.
+    a slab over each wall edge and a post at each corner where a run ends. No slab stands through
+    a cell's middle and no post at a cell's centre. This replaces "the wall on its cell's
+    centreline" in FS-SRA9J §C.13. **(ruling E4)** A slab is raised to its edge's height and its
+    top face, no further: the face's back edge, half the wall's thickness behind its centre line,
+    which on one screen column stands 0.4 × the thickness over the centre line's top (3.84 px for
+    the tower's masonry). A post is raised to its height and its cap: the cap's top, 0.2 tile over
+    the wall's (the bake's beam 0.12 and cap 0.08), and the cap's top face, 0.3 tile square,
+    peaked over its middle (12.64 px in all). Both are worked out in one place from the numbers
+    the pieces are drawn with (the material's thickness, `BAKE.VPX`, the projection, and the
+    post's cap written once beside the fog with the bake's numbers it mirrors), never a px
+    literal. This replaces "a few px for its top" in FS-SRA9J §C.13, and the fog's 6 px
+    `FOG.headroom` and 14 px `FOG.post`.
 19. **A wall cell is still not veiled (spec).** As today the fog lays no veil over a wall cell
     that borders a region, so a wall's thickness and foot are never covered. With no ground under
     it, what shows there is the void's ink.
@@ -251,7 +263,13 @@ each ("照你建議"). The requirements above are written as ruled.
   about 9. A body pressed against it loses about 19 px of its feet, and a drop pile lying within
   that strip is partly or wholly behind the wall. This is what a cut-away wall on the edge looks
   like. **Ruling:** accepted. The owner looks in the browser check (I-XK2B6-5) and decides then
-  whether anything changes. No requirement and no code follows from it.
+  whether anything changes. No requirement and no code follows from it. *(Measure corrected
+  2026-11-12, fix round 2: 44 and 19 were measured from the wall's camera-side face. The wall's
+  top on screen is its top face's back edge, on the edge itself, so by the client's 43 px height
+  it covers the floor up to about 54 px in from the edge and about 27 px of the feet; the baked
+  low wall's broken top stands 2–5 px under that top face, so on screen about 48–52 px and
+  22–25 px.
+  Where 44 and 19 appear below, read these. The ruling is unchanged.)*
 - **E3. A body against a front wall is drawn behind it: ruled, ADR-0074.** Sorted by its back
   corner, a piece on a region's south edge would be drawn under a body pressed against it once
   the body is more than 20 px along that piece (and the same against an east wall), though the
@@ -262,6 +280,18 @@ each ("照你建議"). The requirements above are written as ruled.
   records it, and why it is the front corner only for a wall on a region's south or east edge: on
   a north or west edge the body stands on the wall's camera side, and the front corner would draw
   it behind a wall it stands in front of (R12).
+- **E4. The fog's clearance over a wall: ruled, cut to the wall's top face (option A).** Found by
+  fix round 1 (finding 7). The fog stood each drawn wall's slab `FOG.headroom` (6 px) over the
+  wall's height so the fog never ate the wall's art, but the wall's top face reaches only 3.84 px
+  over it, and the baked low wall's top less. So a low wall whose region in front is visible and
+  whose floor behind is veiled left a strip of that floor clear just over its top, under no fog
+  shape: on the sample floor screen (16, 283.2), world (364, 344), room A's cell (4, 4), 56 px in
+  from its low south wall. `FOG.headroom = 6` is on main, so the strip predates this FS, which
+  only moved it to the edge. Three options went to the owner: A, cut the fog's clearance over a
+  wall to the wall's real top face and cap height; B, keep the band but veil the floor inside it;
+  C, record the strip as a tolerance. **Ruling** (2026-11-12, "迷霧用A"): A, accepting that a
+  wall's top edge may now and then lose a px or two to the fog. B and C were not chosen. R18 is
+  written as ruled; the px the baked art loses are measured in Edge States.
 
 ## User Stories
 
@@ -360,7 +390,13 @@ Fog:
 - [ ] `wallLayout` gives a slab for every wall edge of the plan and a post for every post of the
       plan, and nothing else.
 - [ ] With every region unexplored, no fog px lies over any drawn piece or post of the sample
-      floor, from its foot to its top.
+      floor, from its foot to its top. *(Amended by the owner's ruling E4 of 2026-11-12: a piece
+      measured by its own height and thickness, a post by its own cap; the baked art's top edge
+      has the measured tolerance in Edge States.)*
+- [ ] With a low wall's region in front visible and the region behind it unexplored, no floor of
+      the region behind lies clear over the wall's top face: every point of it is fogged or behind
+      the drawn wall by its own height and thickness, the point 56 px in from the wall among them
+      (ruling E4).
 - [ ] No two fog shapes overlap (the existing partition test).
 - [ ] With one region visible, every other region's cell middle is fogged, behind a drawn wall's
       slab, or where a member's head could be (FS-SRA9J's existing test, every region in turn).
@@ -424,6 +460,24 @@ By eye (owner, browser):
   that strip can claim the post clear; the post's footprint stands in its wall cell and does not
   reach into the strip, only its cap's edge does, and a clear shape of the post's own there is
   not worth under 2 px of cap. Found by code review, 2026-11-12; the fog is not changed for it.
+- **A baked piece's top edge over its top face (ruling E4, measured tolerance).** The fog leaves
+  clear what the client knows of a wall: its thickness and height, and the post's cap (R18). The
+  bake lays a little more on some pieces. Measured on the baked tower sheets
+  (`public/art/tower-0.png` by `manifest.json`, every frame, every column, px of alpha 64 or
+  more, 2026-11-12), the most any piece's art stands over the fog's line is: a back piece 4.8 px,
+  its coping (`tower.js` `partitionWall`: 0.1 tile over `BAKE.WALL_BACK`, 0.26 deep), where the
+  old 6 px left 2.7; a post 0.5 px, the roughness of its cap, where the old 14 px left none; a
+  front piece none, its broken top standing at least 1.7 px under the line. Those px take the fog
+  of the half behind them on screen where that is veiled or void. This is the tolerance of the
+  Fog criterion "no fog px lies over any drawn piece or post". On a back piece it is more than
+  the ruling's "a px or two"; the feather (FS-SRA9J §C.26) eases what lies there to the wall's
+  own tint share beside the wall, so a visible region's back wall loses none of it on screen and
+  an explored or unexplored one shows its coping's top a shade darker. The owner's browser check
+  looks at it. Over a low wall a hair of veiled floor can still show, between the client's height
+  and the baked broken top. What E4 closes is the strip in the sharp partition the tests hold; on
+  screen the feather erodes a veil two texels (16 px) back from a wall that stands as a visible
+  region's and eases it in over the next two, so over such a low wall the floor behind still
+  fades in from clear, as it did before.
 - **A wall light on a wall with nothing behind it.** Its pool falls on the void's ink.
 - **A piece kind that stands out from the wall** (a pillar's pier, a sconce). It reaches a few px
   over the walkable cell, above the floor. It does not collide.
