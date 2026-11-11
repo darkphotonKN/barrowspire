@@ -2902,8 +2902,14 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private checkChestDistance(): void {
     const me = this.playerPos;
+    if (!this.player || !me) return;
+    // walking off gives up a reach the server never answered (it drops an interact sent too soon
+    // after another without a reply), so the chest opening later shows no coffer (§J R60)
+    const reached = this.reaching ? this.chests.get(this.reaching) : undefined;
+    if (this.reaching && (!reached || Phaser.Math.Distance.Between(me.x, me.y, reached.pos.x, reached.pos.y) > 60))
+      this.reaching = undefined;
     const openFor = this.containerView.entityId;
-    if (!this.player || !me || !openFor) return;
+    if (!openFor) return;
 
     // the coffer vanished from the server's state, or the pile was emptied: nothing left to show
     const chest = this.chests.get(openFor);
