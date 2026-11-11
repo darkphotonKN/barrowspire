@@ -67,6 +67,24 @@ export interface PublicPlayerState {
 export interface PlayerState extends PublicPlayerState {
   inventory?: ItemState[]; // 玩家背包
   equipment?: EquipmentState; // 玩家已裝備的 loadout
+  /**
+   * The recipient's own timed open (FS-MQYEX R18): sent every tick while it runs, in a run only;
+   * absent when they have none. Never on an `other_players` entry (R19).
+   */
+  timed_open?: TimedOpenState;
+}
+
+/**
+ * A timed open as the server counts it (FS-MQYEX R18): the shut container a player is standing at,
+ * and how far along the server's own timer is. The client draws it and never times it.
+ */
+export interface TimedOpenState {
+  /** The container being opened. */
+  entity_id: UUID;
+  /** Simulation time counted so far, in seconds. */
+  elapsed: number;
+  /** The time it takes, in seconds. */
+  duration: number;
 }
 
 /** What a class resource is (FS-8AY7S req 17): mage mana, warrior/archer stamina, mercenary parry charges. */

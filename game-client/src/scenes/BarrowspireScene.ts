@@ -14,6 +14,7 @@ import {
   ClientGameState,
   PlayerState,
   ContainerState,
+  TimedOpenState,
   type ContainerKind,
   placedKind,
   ItemState,
@@ -108,6 +109,7 @@ import {
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
+import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -789,6 +791,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
    */
   private reaching?: string;
+  /**
+   * The player's own timed open as the last state carried it, when that state arrived, and the
+   * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
+   * the bar only shows what the server counts, and never opens anything.
+   */
+  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
 
   // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
   private equipment?: EquipmentHud;
@@ -1008,6 +1016,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.roofCover = [];
     this.outsideObjects = [];
     this.chests.clear();
+    // the bar went down with the scene's objects
+    this.timedOpen = undefined;
     this.escapeDoors.clear();
     this.switches.clear();
     this.stairs.forget();
@@ -2470,6 +2480,42 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * The open bar follows the state (FS-MQYEX R22, R23, R25): up while the player's own
+   * `timed_open` names a shut container drawn here, gone with no notice on a state that carries
+   * none, whether the container opened or the timed open was cancelled. Only `current_player` is
+   * read, never another player's entry, and nothing is drawn while spectating.
+   */
+  private showTimedOpen(state: ClientGameState): void {
+    const open = this.watchedPlayerId === undefined ? state.current_player?.timed_open : undefined;
+    const shut =
+      open &&
+      this.chests.has(open.entity_id) &&
+      state.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open);
+    if (!open || !shut) {
+      this.timedOpen?.bar.destroy();
+      this.timedOpen = undefined;
+      return;
+    }
+    const bar = this.timedOpen?.bar ?? this.add.graphics().setDepth(MARKER_DEPTH.bar).setName("open-bar");
+    this.timedOpen = { open, seenAt: this.time.now, bar };
+    this.drawTimedOpen();
+  }
+
+  /**
+   * Draws the open bar as it stands this frame: the state's fill, run on by the real time since
+   * that state so it reads smooth, never past full (R22). Hidden with its container's sprite.
+   */
+  private drawTimedOpen(): void {
+    if (!this.timedOpen) return;
+    const { open, seenAt, bar } = this.timedOpen;
+    const sprite = this.chests.get(open.entity_id)?.sprite;
+    bar.setVisible(!!sprite?.visible);
+    if (!sprite?.visible) return;
+    bar.clear();
+    drawOpenBar(bar, sprite.getBounds(), openBarFraction(open, this.time.now - seenAt));
+  }
+
   private updateEscapeDoors(escapeDoors: EscapeDoorState[]): void {
     const activeEntityIds = new Set(escapeDoors.map((d) => d.entity_id));
 
@@ -3625,6 +3671,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Update containers from server
     this.updateContainers(state.containers || []);
+    // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
+    this.showTimedOpen(state);
 
     // Update escape doors from server
     this.updateEscapeDoors(state.escape_doors || []);
@@ -5688,6 +5736,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
     this.updateTargetFrame(delta);
+
+    // the open bar fills on between states (FS-MQYEX R22)
+    this.drawTimedOpen();
 
     // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
     if (this.containerView.isOpen) {

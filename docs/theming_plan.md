@@ -73,6 +73,12 @@ plan/status; the design guideline is the spec.
   bright-brass bar draining right to left along the panel's foot, larger seconds above it. Rule
   in the guideline's "UI Chrome" → Countdowns.
 
+### 🔨 In progress — [FS-MQYEX](specs/MQYEX-timed-container-opening.md) (the open bar over a container)
+- The bar over a shut chest or sack while the player's own timed open runs: the countdown's bar
+  look, filling left to right, no number, 44 × 7 px in the world above the container. Rule in the
+  guideline's "UI Chrome" → Open bar. Client drawing done against fixture states; the server side
+  and the live check are still open.
+
 ### ⏳ Planned / Not Started
 - **Fully medieval typography** wired into the canvas (Pirata One display + EB Garamond body).
 

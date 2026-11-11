@@ -607,6 +607,16 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   above the bar. Bright brass because a countdown is progress, never amber. A new countdown is
   drawn by the shared `src/ui/countdownBar.ts`, never by hand. *(Added by
   [FS-B3NDZ](../../docs/specs/B3NDZ-unified-countdown-bar.md), 2026-11-02.)*
+- **Open bar.** The bar that fills while the player stands at a shut chest or sack in a run, for
+  the length of their own timed open. It is **not a countdown**: it fills from the left toward the
+  right, the left end anchored, it carries no number, and it sits in the world, centred over the
+  container and 10 px above its sprite, 44 px wide and 7 px high. It borrows the countdown's bar
+  so the canvas keeps one bar look: the same charcoal track, bright-brass fill and brass rim
+  (`palette.xpFill` on `palette.xpTrack`), drawn through `src/ui/countdownBar.ts` by
+  `src/ui/openBar.ts`, never by hand. Bright brass because it is progress, never amber. Only the
+  player's own is drawn, never another player's and never while spectating. It goes with no
+  notice, sound or effect, whether the container opened or the timed open was cancelled.
+  *(Added by [FS-MQYEX](../../docs/specs/MQYEX-timed-container-opening.md), 2026-11-11.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,
   drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand:
   no rim; a deep-red trough (`markerHpTrough`, oxblood taken toward pitch), so the health missing
