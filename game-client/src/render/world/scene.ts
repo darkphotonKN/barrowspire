@@ -70,9 +70,21 @@ import {
   type WallPost,
   type WallSheets,
 } from "./walls";
+import type { GroundShadows } from "./wallShadows";
 
 /** Below every world object: the ground is flat and everything stands on it. */
 export const GROUND_DEPTH = -1;
+
+/**
+ * The key of the scratch texture a chunk's wall shadows are drawn into (FS-V8FT3 §E): one at a
+ * time, destroyed before the next is made.
+ */
+const SHADOW_SCRATCH = "ground-wall-shadows";
+
+/** Whether two rects overlap by more than an edge. */
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
 /** Screen px of ground drawn past the projected map, for tiles and decals that overhang it. */
 export const GROUND_MARGIN = 48;
 
@@ -164,6 +176,9 @@ export class GroundLayer {
   private tint?: number;
   /** What was painted last, so the same paint asked again is not redrawn (FS-KE075 §H.44). */
   private painted?: { houses: readonly House[]; look: GroundLook; seed?: number };
+  /** The walls' shadows this ground carries (FS-V8FT3 §E), and whether they lie on it now. */
+  private shadows?: GroundShadows;
+  private shaded = false;
   /** Each chunk, to show and hide as the camera passes (FS-KE075 §H.45). */
   readonly chunks: readonly GroundChunk[];
 
@@ -251,7 +266,82 @@ export class GroundLayer {
     this.draw(planGroundLayer({ ...plan, houses, look, seed }));
     // Phaser 4 buffers a render texture's drawing until render()
     for (const { rt } of this.parts) rt?.render();
+    // the tiles are new: the walls' shadows go over them once more (FS-V8FT3 R22)
+    this.shaded = false;
+    if (this.shadows) this.layShadows();
     if (fadeEdge) this.fadeEdge();
+  }
+
+  /**
+   * Lays the walls' shadows over the ground already painted (FS-V8FT3 §E), without repainting a
+   * tile: the same shadows asked again are already there. Other shadows over shadows already laid
+   * repaint the ground first, so no px is darkened twice. A repaint lays them again.
+   */
+  shade(shadows: GroundShadows): void {
+    if (shadows === this.shadows && this.shaded) return;
+    const laid = this.shaded;
+    this.shadows = shadows;
+    if (!laid) {
+      this.layShadows();
+      return;
+    }
+    const houses = this.painted?.houses ?? [];
+    this.painted = undefined;
+    this.paint(houses);
+  }
+
+  /**
+   * The shadows into every chunk that has a texture and a shadow falling in it (R19–R23): all its
+   * shapes drawn opaque, in the bake's shadow colour, into one scratch the chunk's size, the cuts
+   * (ground no shadow may lie on) erased from it, and the scratch laid on the chunk once, at the
+   * catcher's opacity, so a px under any number of shadows is darkened once. Each shape is drawn
+   * from the ground's corner, so a shadow across two chunks lands on the same screen px in both.
+   * The scratch goes once the chunk has rendered, and the shapes' graphics after the last: nothing
+   * is kept, and no chunk's texture is made for a shadow.
+   */
+  private layShadows(): void {
+    const shadows = this.shadows;
+    this.shaded = true;
+    if (!shadows || shadows.shapes.length === 0) return;
+    const onGround = (p: Point) => {
+      const s = worldToScreen(p.x, p.y);
+      return { x: s.x - this.origin.x, y: s.y - this.origin.y };
+    };
+    const shapes = shadows.shapes.map((shape) => shape.map(onGround));
+    const spans = shapes.map(spanOf);
+    const ink = this.scene.make.graphics({}, false);
+    ink.fillStyle(BAKE.SHADOW_COLOR, 1);
+    for (const shape of shapes) ink.fillPoints(shape as Phaser.Math.Vector2[], true);
+    // the ground no shadow may lie on: only the alpha erases, the colour is never seen
+    const cut = shadows.cuts.length > 0 ? this.scene.make.graphics({}, false) : undefined;
+    cut?.fillStyle(BAKE.SHADOW_COLOR, 1);
+    for (const { x, y, width, height } of shadows.cuts) {
+      const corners = [
+        { x, y },
+        { x: x + width, y },
+        { x: x + width, y: y + height },
+        { x, y: y + height },
+      ].map(onGround);
+      cut?.fillPoints(corners as Phaser.Math.Vector2[], true);
+    }
+    for (const { rect, rt } of this.parts) {
+      if (!rt) continue;
+      const dx = rect.x - this.origin.x;
+      const dy = rect.y - this.origin.y;
+      const chunk = { x: dx, y: dy, width: rect.width, height: rect.height };
+      if (!spans.some((span) => overlaps(span, chunk))) continue;
+      const scratch = this.scene.textures.addDynamicTexture(SHADOW_SCRATCH, rect.width, rect.height, false);
+      if (!scratch) continue;
+      scratch.draw(ink, -dx, -dy);
+      if (cut) scratch.erase(cut, -dx, -dy);
+      scratch.render();
+      rt.stamp(SHADOW_SCRATCH, undefined, 0, 0, { alpha: BAKE.SHADOW_OPACITY, originX: 0, originY: 0 });
+      // drawn before the scratch goes: the stamp reads it when the chunk renders
+      rt.render();
+      scratch.destroy();
+    }
+    ink.destroy();
+    cut?.destroy();
   }
 
   /**

@@ -12,8 +12,9 @@
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
-import { WORLD_PX_PER_TILE, type Point } from "@/render/iso/projection";
+import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
 import { BAKE } from "./bake";
+import type { RegionGrid } from "./dungeon";
 import type { WallHeight, WallPiece, WallPost } from "./walls";
 
 /** The ground something that casts stands on: an axis-aligned rect in world px, and its height. */
@@ -127,4 +128,40 @@ export function wallFeet(walls: DrawnWalls, thickness: number): WallFoot[] {
  */
 export function planWallShadows(walls: DrawnWalls, thickness: number): Point[][] {
   return wallFeet(walls, thickness).map(castShadow);
+}
+
+/**
+ * A ground's wall shadows as they are painted (FS-V8FT3 §E): the shapes, and what is cut from them
+ * before they are laid on the ground.
+ */
+export interface GroundShadows {
+  /** One closed polygon per foot, world px (`planWallShadows`). */
+  shapes: readonly (readonly Point[])[];
+  /**
+   * World rects no shadow is laid on: on a dungeon floor, the wall cells and void cells a shape
+   * reaches, whole cells, never a walkable one (R23).
+   */
+  cuts: readonly Rect[];
+}
+
+/**
+ * A dungeon floor's wall shadows (FS-V8FT3 §D, §E R23): one shape per edge run and per post of
+ * the walls as drawn (`dungeonWalls`), and every cell with no ground under it (a wall cell or the
+ * void, FS-XK2B6 §E) that a shape's bounds reach, to cut. The shapes stay whole: the cut is made
+ * where they are laid, so a shadow over several walkable cells has no seam between them.
+ */
+export function dungeonShadows(walls: DrawnWalls, thickness: number, grid: RegionGrid): GroundShadows {
+  const shapes = planWallShadows(walls, thickness);
+  const c = grid.cell;
+  const cuts = new Map<string, Rect>();
+  for (const shape of shapes) {
+    const xs = shape.map((p) => p.x);
+    const ys = shape.map((p) => p.y);
+    const [x0, x1] = [Math.floor(Math.min(...xs) / c), Math.ceil(Math.max(...xs) / c)];
+    const [y0, y1] = [Math.floor(Math.min(...ys) / c), Math.ceil(Math.max(...ys) / c)];
+    for (let cx = x0; cx < x1; cx++)
+      for (let cy = y0; cy < y1; cy++)
+        if (!grid.walkable(cx, cy)) cuts.set(`${cx},${cy}`, { x: cx * c, y: cy * c, width: c, height: c });
+  }
+  return { shapes, cuts: [...cuts.values()] };
 }

@@ -1,9 +1,9 @@
 ---
 id: I-V8FT3-2
-status: open
+status: done
 implements: FS-V8FT3
 blocked_by: [I-V8FT3-1]
-labels: [blocked]
+labels: []
 title: "FS-V8FT3 slice 2: a dungeon floor's wall shadows are painted flat into its ground (game-client)"
 ---
 Implements FS-V8FT3 §E
