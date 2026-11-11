@@ -79,6 +79,20 @@
 > | drag | 1.6/s | 1.8/s (still fast out, then slow; a mote goes about 0.53 × its start speed, about 27–107 px, about 66 on average) |
 > | a mote's sideways sway | 4–10 px to either side | 3–7 px to either side |
 > | R33's start-speed cap | 320 px/s | 200 px/s |
+>
+> **The owner's fifth tune, 2026-11-12, a trial.** Then he said: "粒子6000個試試": try 6000
+> particles. A usual card already reached the 3000 cap at two motes per view px² of ink, so the
+> density doubles with the cap, or a card would not reach it. His values replace the fourth
+> tune's where they differ: the dust's cap and density (R32), and R33's particle cap. It is a
+> trial: he judges it in the browser and may take it back. Everything else is unchanged: the
+> speed (50–200 px/s), the drag (1.8), the sway (3–7 px), the full-turn headings, the lean
+> (0.2), the duration (1800 ms) and the size (× 0.15).
+>
+> | Value | Was | Now |
+> |---|---|---|
+> | particle cap | 3000 | 6000 (trial) |
+> | motes per view px² of ink | 2 | 4 (trial) |
+> | R33's particle cap | 3000 | 6000 (trial) |
 
 ## Summary
 
@@ -277,13 +291,14 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 30. **The climb's card leaves the same way.** There is one card. **(charter default.)**
 31. **Reduced motion: no particles.** With `prefersReducedMotion()` true the card fades out as it
     does today (600 ms). **(charter default; the helper is the repo's convention, Fact 11.)**
-32. **How many.** Two particles per view px² of ink, at most 3000 for the whole card, spread over
+32. **How many.** Four particles per view px² of ink, at most 6000 for the whole card, spread over
     the strokes in proportion to their ink, each about 1.2 view px across (`fx_dust` × 0.15),
     drawn from the existing `fx_dust` sheet; one emitter. **(spec: enough to hold the letters'
     shapes; no new baked art, Bounds. Size and cap, the owner's tune of 2026-11-12: "粒子再細一點
-    多一點"; count and cap doubled, his second tune, "粒子再多1倍".)**
+    多一點"; count and cap doubled, his second tune, "粒子再多1倍"; doubled again, as a trial, his
+    fifth tune, "粒子6000個試試".)**
 33. **An exception to FS-KYPQ9 §B.6 and §B.2's ceiling, and only these.** The dust is more than
-    12 particles (at most 3000), it scatters every way (no particle starts faster than 200 px/s), and
+    12 particles (at most 6000), it scatters every way (no particle starts faster than 200 px/s), and
     it lasts 1800 ms, past §B.2's 1200 ms. It still calls no `explode`, and every other rule of §B
     holds for it: one fixed duration, the easing allowlist, no scale bounce, no shake, tokens only,
     at most 3 colours, teardown on end and on scene shutdown. The tests that hold §B.2 and §B.6
@@ -385,7 +400,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 - [ ] The dust is drawn over the veil and under the HUD. (R29)
 - [ ] The climb's card leaves as dust too. (R30)
 - [ ] With reduced motion, no particle is made and the card fades over 600 ms. (R31)
-- [ ] The card makes two particles per view px² of ink, at most 3000, about 1.2 view px across, from one emitter, with no `explode` call. (R32, R33)
+- [ ] The card makes four particles per view px² of ink, at most 6000, about 1.2 view px across, from one emitter, with no `explode` call. (R32, R33)
 - [ ] `table.test.ts` and `sourceScan.test.ts` still pass as written for every other effect. (R33)
 - [ ] The dust's numbers are one typed record with a vitest on it. (R34)
 - [ ] A failed stroke read falls back to the fade and logs once; nothing is emitted from the text's bounds. (R35)
@@ -448,6 +463,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
   outward". R33 makes it the one exception and keeps the drift slow. Since the owner's tune of
   2026-11-12 the exception also covers §B.2's 1200 ms ceiling; since his second tune that day
   the dust lasts 1800 ms, at most 3000 particles; since his third tune it scatters every way,
-  inward included; since his fourth tune none starts faster than 200 px/s.
+  inward included; since his fourth tune none starts faster than 200 px/s; since his fifth
+  tune, a trial, at most 6000 particles.
 - **O4. The subtitle lines** for the town, the two fields and the dev test room are starting
   lines for the browser check.
