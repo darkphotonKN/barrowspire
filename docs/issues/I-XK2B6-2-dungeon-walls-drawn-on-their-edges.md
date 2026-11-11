@@ -19,7 +19,10 @@ slabs 40 px off each wall and a strip of floor beyond each wall (FS-XK2B6 Edge S
 - `game-client/src/render/world/scene.ts`: `addWalls` only, if it must take the plan
 - `game-client/src/scenes/BarrowspireScene.ts`: `buildDungeonWalls` only (baked pieces,
   placeholder blocks, lights, chunks, occluders). The `Fog` it builds keeps reading `wallRuns`,
-  `wallRule` and `wallLayout` until I-XK2B6-3: leave those three compiling and unchanged.
+  `wallRule` and `wallLayout` until I-XK2B6-3: leave those three compiling and unchanged, save
+  the next line.
+- `game-client/src/render/world/dungeon.ts`: `wallRule` loses its `betweenPosts` property, nothing
+  else
 - `game-client/src/render/world/{walls,scene,runDressing}.test.ts`,
   `game-client/src/scenes/BarrowspireScene.test.ts`: dungeon cases only
 
