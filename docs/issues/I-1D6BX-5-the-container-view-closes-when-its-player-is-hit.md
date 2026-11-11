@@ -1,6 +1,6 @@
 ---
 id: I-1D6BX-5
-status: open
+status: done
 implements: FS-1D6BX
 blocked_by: []
 labels: [ready-for-agent]
@@ -53,3 +53,5 @@ FS-1D6BX §Change: The container view closes when its player is hit: Requirement
 
 - RED: the view open, a state with the health lower, through `handleGameStateUpdate`: expect the view closed.
 - GREEN: the close on a state that cost health. Then RED/GREEN for the max-health guard; the other guards are pinned as tests that must stay green.
+
+**Owner check, 2026-11-11.** Nick tested it on the local branch `play/floor1-fixes` and reported "寶箱被打關閉測試沒問題". One verdict for the whole check, not one per line, so the boxes above are left as written.

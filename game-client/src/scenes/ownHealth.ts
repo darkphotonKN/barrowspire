@@ -19,11 +19,11 @@ export function healthIn(player: { current_health?: number; max_health?: number 
 
 /**
  * Whether the player lost health to a hit between `before` and `now`, two states of one start:
- * health fell, and by more than max health fell, since gear taken off lowers both together.
- * Nothing seen before (the first state of a start) is no hit.
+ * health is below both the health before and the max health now. Gear taken off clamps health to
+ * the new max health and lowers it no further (game-service `applyMaxima`), so health at that
+ * new max is no hit, and health under it is. Nothing seen before (a start's first state) is no hit.
  */
 export function costHealth(before: HealthSeen | undefined, now: HealthSeen): boolean {
   if (!before) return false;
-  const maxFell = before.max !== undefined && now.max !== undefined ? Math.max(0, before.max - now.max) : 0;
-  return before.current - now.current > maxFell;
+  return now.current < Math.min(before.current, now.max ?? before.current);
 }

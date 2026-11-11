@@ -6297,6 +6297,16 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
     expect(view.isOpen).toBe(false);
   });
 
+  it("should close the view on a hit in the same state as gear coming off below full health: health is clamped, not lowered by as much", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(60, { max_health: 100 }));
+    run.toggleChest("c1");
+
+    // 20 max health gone, 10 health gone: the gear alone would have left 60
+    run.handleGameStateUpdate(state(50, { max_health: 80 }));
+    expect(view.isOpen).toBe(false);
+  });
+
   it("should close nothing when no view is open: a hit, the killing hit, an escaped player, a state with no player", () => {
     const { run, view } = onStage();
     run.handleGameStateUpdate(state(100));
@@ -6414,6 +6424,55 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
       run.handleGameStateUpdate(state(90));
       expect(view.open).toHaveBeenCalledWith("c1", "chest");
     });
+  });
+});
+
+// The hurt flash reads the same record of the player's own health as the container view's hit
+// (FS-KYPQ9 §G.1; FS-1D6BX §Change E2): it flashes on any fall in health, gear coming off too.
+describe("BarrowspireScene the local player's hurt flash (FS-KYPQ9 §G.1; I-1D6BX-5)", () => {
+  const state = (health: number, max?: number): GameState => {
+    const base = floorState(1);
+    return {
+      ...base,
+      current_player: { ...player("me", "Aldric", 150, { current_health: health }), ...(max === undefined ? {} : { max_health: max }) },
+    } as GameState;
+  };
+
+  function onStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run } = sceneOnStage();
+    const hits = { play: vi.fn(), clearAll: vi.fn() };
+    const scene = run as unknown as FloorRun & { hits: typeof hits; player?: unknown };
+    scene.hits = hits;
+    /** How many times the flash played on the local player's own body. */
+    const flashes = () => hits.play.mock.calls.filter(([target]) => target !== undefined && target === scene.player).length;
+    return { run: scene, flashes };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should not flash on the first state of a start, whatever the health in it", () => {
+    const { run, flashes } = onStage();
+    run.handleGameStateUpdate(state(40, 100));
+
+    expect(run.player).toBeDefined();
+    expect(flashes()).toBe(0);
+  });
+
+  it.each([
+    ["a hit", [100, 100], [90, 100], 1],
+    ["the same health", [100, 100], [100, 100], 0],
+    ["a heal", [60, 100], [80, 100], 0],
+    ["gear off, health down with max health", [100, 100], [80, 80], 1],
+    ["gear off below the new max health, health unchanged", [60, 100], [60, 80], 0],
+  ])("should flash %s: %j → %j", (_what, [h0, m0], [h1, m1], times) => {
+    const { run, flashes } = onStage();
+    run.handleGameStateUpdate(state(h0, m0));
+    run.handleGameStateUpdate(state(h1, m1));
+
+    expect(flashes()).toBe(times);
   });
 });
 
