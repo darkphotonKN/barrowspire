@@ -498,6 +498,28 @@ func TestTimedOpen_ADelverOutOfPlayHasNone(t *testing.T) {
 	}
 }
 
+// A delver removed from a ticking run goes on the tick, through its intents,
+// after the tick's entities were read: their body is still among them. Leaving
+// on the tick their timed open would complete opens nothing. R9, D7.
+func TestTimedOpen_ADelverRemovedOnTheLastTickOpensNothing(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	s.endSessionCh = make(chan bool, 64)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	// someone else keeps the run going
+	placeDelver(t, s, "mage", 900, 900)
+	reach(t, s, player, chest.ID)
+	ticks(s, timedOpenTicks()-1)
+	require.NotNil(t, timedOpenOf(delverEntity(t, s, player)), "still counting on the 44th tick")
+	s.isRunning = true // a tick runs: the removal waits for it
+
+	s.RemovePlayer(player.String())
+	require.Contains(t, s.GetPlayerIDs(), player, "the body goes on the tick")
+	tick(s)
+
+	require.NotContains(t, s.GetPlayerIDs(), player)
+	assertShutAndUnrolled(t, chest)
+}
+
 // A floor change ends every timed open: the container went with the floor, and
 // nothing carries to the next one. R8–R9, D7.
 func TestTimedOpen_AFloorChangeLeavesNone(t *testing.T) {
