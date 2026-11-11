@@ -55,10 +55,10 @@ export interface ArrivalCardScene extends EndingScene {
 export type CardLeave = "dust" | "smoke" | "ash";
 
 /**
- * The card's one switch (§Change: Smoke R41): how it leaves in the game. Dust, until the owner
- * has compared the two in the gallery and picked.
+ * The card's one switch (§Change: Smoke R41): how it leaves in the game. Smoke, the owner's pick
+ * of 2026-11-12 ("幫我把煙的效果套到遊戲中"); the dust and the ash stay as alternates a play may name.
  */
-export const CARD_LEAVE: CardLeave = "dust";
+export const CARD_LEAVE: CardLeave = "smoke";
 
 /** What a leave is handed: the card's ink, and its three pieces, heading, rule and line. */
 export interface CardLeaveInk extends CardInk {

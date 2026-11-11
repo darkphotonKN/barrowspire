@@ -262,7 +262,7 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
     const { card, parts, standing, cardTweens, leaves, events } = cardOnStage();
     expect(card.up).toBe(false);
 
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     expect(card.up).toBe(true);
     expect(standing()).toHaveLength(4);
 
@@ -332,11 +332,11 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
 
   it("should let a replaced card's fade, ending late, take nothing of the new one", () => {
     const { card, parts, standing, cardTweens, leaves } = cardOnStage();
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     leaves()[0].fn();
     const first = parts.slice(0, 4);
 
-    card.play(WORDS, { built: false });
+    card.play(WORDS, { built: false }, "dust");
     cardTweens(first.slice(1), 0)[0].onComplete!();
 
     expect(standing()).toHaveLength(4);
@@ -356,7 +356,7 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
 
   it.each(["shutdown", "destroy"] as const)("should let the card go with its scene on a %s", (end) => {
     const { card, tweens, timers, events, dust } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     timers[0].fn();
     const before = tweens.length;
 
@@ -510,7 +510,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
   it("should break heading, rule and line to dust together at the end of the hold, the text gone (R24, R25, R29)", () => {
     viewport.set({ width: 800, height: 600, renderScale: 1 });
     const { card, parts, leaves, asked, last, cardTweens } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     const [, heading, rule, subtitle] = parts;
     expect(asked).toEqual([]);
 
@@ -531,7 +531,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
   it("should read the rule where the card stands now, after a view change", () => {
     viewport.set({ width: 800, height: 600, renderScale: 1 });
     const { card, leaves, asked } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     viewport.set({ width: 1000, height: 600, renderScale: 1 });
     card.relayout();
 
@@ -542,7 +542,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
 
   it("should take the card down once the dust has gone (R27)", () => {
     const { card, leaves, asked, standing } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     leaves()[0].fn();
     expect(card.up).toBe(true);
 
@@ -555,7 +555,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
   it("should fade the card over 600 ms as today when the dust plays nothing (R31, R35)", () => {
     // reduced motion, a failed read, or no fx sheet: the dust declines, the card fades
     const { card, parts, leaves, asked, last, cardTweens } = cardOnStage(false);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
 
     leaves()[0].fn();
 
@@ -566,10 +566,10 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
 
   it("should take the dust away when a new card starts, its end taking nothing of the new card (R9, R36)", () => {
     const { card, leaves, asked, dust, standing } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     leaves()[0].fn();
 
-    card.play(WORDS, { built: false });
+    card.play(WORDS, { built: false }, "dust");
 
     expect(dust.stop).toHaveBeenCalled();
     asked[0].gone();
@@ -579,7 +579,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
 
   it("should take the dust and the card away on a view change while the dust is in the air", () => {
     const { card, leaves, dust, standing } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     leaves()[0].fn();
     dust.stop.mockClear();
 
@@ -592,7 +592,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
 
   it("should leave the dust alone on a view change before the card leaves", () => {
     const { card, dust } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
     dust.stop.mockClear();
 
     card.relayout();
@@ -602,11 +602,22 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
   });
 });
 
-describe("the card can leave as smoke instead (FS-PQ2TW §Change: Smoke, a trial alternate leave)", () => {
-  it("should pick the dust by its one switch, the game's leave until the owner says (R41)", () => {
-    expect(CARD_LEAVE).toBe("dust");
-    const { card, leaves, asked, smoked } = cardOnStage(true);
+describe("the card leaves as smoke in the game (FS-PQ2TW §Change: Smoke, a trial alternate leave; the owner's pick, 2026-11-12)", () => {
+  it("should pick the smoke by its one switch, the game's leave since the owner's pick (R41)", () => {
+    expect(CARD_LEAVE).toBe("smoke");
+    const { card, leaves, asked, smoked, ashed } = cardOnStage(true);
     card.play(WORDS, { built: true });
+
+    leaves()[0].fn();
+
+    expect(smoked).toHaveLength(1);
+    expect(asked).toEqual([]);
+    expect(ashed).toEqual([]);
+  });
+
+  it("should still leave as dust when a play names it, the dust kept as an alternate (R41)", () => {
+    const { card, leaves, asked, smoked } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "dust");
 
     leaves()[0].fn();
 
@@ -650,7 +661,7 @@ describe("the card can leave as smoke instead (FS-PQ2TW §Change: Smoke, a trial
     card.play(WORDS, { built: true }, "smoke");
     leaves()[0].fn();
 
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
 
     expect(smoke.stop).toHaveBeenCalled();
     expect(dust.stop).not.toHaveBeenCalled();
@@ -669,8 +680,8 @@ describe("the card can leave as smoke instead (FS-PQ2TW §Change: Smoke, a trial
 });
 
 describe("the card can leave as ash instead (FS-PQ2TW §Change: Ash, a trial alternate leave)", () => {
-  it("should keep the dust as the game's leave, and hand every scene the ash with the others (R53)", () => {
-    expect(CARD_LEAVE).toBe("dust");
+  it("should keep the smoke as the game's leave, and hand every scene the ash with the others (R53)", () => {
+    expect(CARD_LEAVE).toBe("smoke");
     const leaves = cardLeaves({} as never, () => undefined);
     expect(Object.keys(leaves).sort()).toEqual(["ash", "dust", "smoke"]);
     expect(leaves.ash).toBeInstanceOf(CardAsh);

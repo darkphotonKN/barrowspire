@@ -137,13 +137,22 @@
 > ("地圖卡有可能像是灰燼的方式消失嗎"), then: "好 做灰燼試試 一樣獨立模組". The ash is a third leave,
 > its own module, beside the dust and the smoke in the gallery; the dust stays the game's leave.
 > See *Change: Ash, a trial alternate leave* at the end.
+>
+> **The owner's pick, 2026-11-12.** Having compared the leaves in the gallery, he said:
+> "幫我把煙的效果套到遊戲中" (put the smoke into the game). The smoke becomes the card's leave in the
+> game: every arrival and every climb now leaves as smoke. The dust and the ash stay as
+> alternates, in the code and in the gallery, not deleted; their modules, numbers and tests are
+> unchanged, and so are the smoke's. Only the switch moves (R41, R53, and their criteria), with
+> the summary, §D's place and R30's criterion following it. See *Change: Smoke, a trial alternate
+> leave* at the end, which keeps its name as the anchor of the code that built it.
 
 ## Summary
 
 Coming into a place shows its name. Today only a climb does this: the view goes dark and comes
 back with "The Second Floor" and a line under it. After this change the same card plays on every
 arrival: into the town, into a field, onto the Spire's first floor, and on every climb as before.
-When the card goes, its letters break into dust that drifts off and fades.
+When the card goes, its letters soften into smoke that rises, swells and thins out (§Change:
+Smoke, the owner's pick of 2026-11-12); the dust (§D) and the ash stay as alternates.
 
 Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個全畫面的區域顯示 再慢慢淡出
 剛進一樓似乎沒顯示". He had seen the climb's card and expected it on floor 1. Then: "我要再進入
@@ -303,6 +312,9 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 ### §D. Leaving as dust
 
+Since the owner's pick of 2026-11-12 the dust is not the game's leave: the smoke is (R41). §D
+stays as the dust's work order; the dust is an alternate, kept in the code and the gallery.
+
 24. **The card leaves as dust.** When its hold ends, the heading, the rule and the subtitle break
     into particles together; the text itself is gone as the particles appear in its place.
     **(charter default: the owner's "變成粒子粉末的方式向周圍散開".)**
@@ -444,7 +456,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 - [ ] Once a mote has slowed its path sways sideways, not a straight line, at most 5 px off it; it never turns back along its own heading, and ends within 22° of it. (R26)
 - [ ] Particles start `hudText`, end `hudLabel`, and no other colour appears. (R28)
 - [ ] The dust is drawn over the veil and under the HUD. (R29)
-- [ ] The climb's card leaves as dust too. (R30)
+- [ ] The climb's card leaves as an arrival's does, by the one switch (the smoke, R41). (R30)
 - [ ] With reduced motion, no particle is made and the card fades over 600 ms. (R31)
 - [ ] The card makes four particles per view px² of ink, at most 6000, about 1.2 view px across, from one emitter, with no `explode` call. (R32, R33)
 - [ ] `table.test.ts` and `sourceScan.test.ts` still pass as written for every other effect. (R33)
@@ -519,19 +531,24 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 Status: work-order
 Date: 2026-11-12
 
+**Now the game's leave.** The owner's pick, 2026-11-12: "幫我把煙的效果套到遊戲中" (put the smoke
+into the game). The smoke is no longer a trial alternate: it is the card's leave on every
+arrival and climb. The dust (§D) and the ash (§Change: Ash) stay as alternates in the code and
+the gallery, not deleted. The heading keeps its name, the anchor the code was built against.
+
 The owner, on the 6000-mote trial (2026-11-12): "如果做成像煙一樣散掉有可能嗎" (could it go like
 smoke?), then "換成煙的效果試試" (try a smoke effect). Offered soft puffs rising off the strokes, a
 shader dissolve of the text, or both, the puffs were recommended and taken. Before it was built he
 added: "並存 先保留粒子的模組 煙另外做": both stand, the dust's module stays as it is, the smoke is
-built apart. **A trial:** the dust stays the card's leave in the game (§D unchanged, the fifth
-tune's 6000 motes included); the smoke is a second leave, its own module, beside it in the
-gallery; the owner says which the game plays. Every number below is a starting value.
+built apart. **Built as a trial, now the game's leave:** the smoke is a second leave, its own
+module, beside the dust (§D unchanged, the fifth tune's 6000 motes included) in the gallery; the
+owner said which the game plays, and it is the smoke. Every number below is a starting value.
 
 ### Requirements
 
 41. **Two leaves, one switch.** The card can leave as dust (§D) or as smoke (below). One named
     value in the shared card (`src/ui/arrivalCard.ts`) picks which one the game plays, and it
-    is **dust**. Each world scene hands the card both leaves; no scene picks. A play may name
+    is **smoke** (the owner's pick, 2026-11-12: "幫我把煙的效果套到遊戲中"). Each world scene hands the card both leaves; no scene picks. A play may name
     the other leave for itself (the gallery does); a scene's play never does.
     **(the owner's "並存 先保留粒子的模組 煙另外做".)**
 42. **The smoke is its own module** (`src/render/effects/cardSmoke.ts`, its own tests). The dust's
@@ -581,7 +598,7 @@ gallery; the owner says which the game plays. Every number below is a starting v
 
 ### Acceptance Criteria
 
-- [ ] The shared card names one switch, and it is dust; every world scene hands the card both leaves and none names one. (R41)
+- [ ] The shared card names one switch, and it is smoke; a scene's play that names no leave leaves as smoke; every world scene hands the card both leaves and none names one. (R41)
 - [ ] `cardDust.ts` and its tests are unchanged; the smoke is `cardSmoke.ts` with its own tests and reads the strokes through `strokeCells` / `ruleCells` / `seedPoints`. (R42)
 - [ ] Every puff starts on a pixel the text drew or on the rule; none in the gaps between letters. (R42)
 - [ ] Played as smoke, the card's letters are not hidden at once: they blur from none, drift up and fade by 1200 ms. (R43, R48)
@@ -599,14 +616,15 @@ gallery; the owner says which the game plays. Every number below is a starting v
 ### Edge States
 
 - **No WebGL** (the canvas renderer): no blur filter; the letters drift and fade, the puffs rise.
-- **The switch set to smoke** (the owner's pick, later): every arrival and climb leaves as smoke;
-  nothing else changes.
+- **The switch set to smoke** (the owner's pick, 2026-11-12): every arrival and climb leaves as
+  smoke; nothing else changes.
 - **A replay of the other leave in the gallery while a card is up:** the card up is removed, with
   its puffs or motes, and the new one plays (R9).
 
 ### Out of Scope
 
-- Taking the dust out, or changing any of its values (the fifth tune's trial stands).
+- Taking the dust out, or changing any of its values (the fifth tune's trial stands); it stays an
+  alternate in the code and the gallery.
 - A shader dissolve of the text (option B), or both at once (option C).
 - A setting that lets a player choose; any new art, colour or texture.
 
@@ -625,10 +643,27 @@ behind the same switch as the smoke (R41), its own module, shown in the gallery 
 and the smoke. Every number below is a starting value. The front's shape was left to the build:
 it sweeps from one side, the left, the way the words read, ragged by noise.
 
+**The owner's look at the ash, 2026-11-12.** In the gallery he said: "灰燼左到右燒感覺不錯 但是燒掉後的
+質感很差 不夠高級 灰燼像泡泡一樣怪怪的": the burn from left to right is good, but what comes off it looks
+cheap, not premium, and the flakes look odd, like bubbles. The cause: each flake was a small round
+five-to-seven-sided blob of one flat `slate`, ringed all round by an `ember` rim at 0.6, all of
+one size range, at one steady speed; a closed ring round a round shape reads as a bubble. The
+burn front stays exactly as built (R55: its time, its ragged edge, its ember-to-char band). What
+comes off it is reworked toward burnt paper and embers, not shapes: R56 is replaced, R64 (the
+embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is added.
+
+| Value | Was | Now |
+|---|---|---|
+| a flake's shape | a round 5–7-sided blob, the same both ways | a jagged shard, torn at its edge, mostly longer than wide (1.1–2.8 : 1) |
+| a flake's size | 3–6 view px across | 1.5–8 view px along its length, many tiny and a few larger |
+| a flake's colour | flat `slate`, an `ember` rim all round at 0.6 | `slate` mottled toward `slateLight`; no rim; a third carry an `ember` patch on one edge that dims to grey over their first 500 ms |
+| a flake's motion | a steady 12–32 px/s, spinning 90–270°/s | 12–32 px/s, slowing (drag 0.5/s); turning slowly, 20–70°/s; flipping over on one axis every 500–1300 ms; swaying 1.5–4 px |
+| sparks | none | at most 40 ember sparks of 1–2 view px, 0.012 per view px² of ink, off the front, at 40–80 px/s, flickering, each gone within 300–600 ms |
+
 ### Requirements
 
-53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it stays
-    **dust** for the game. Every world scene hands the card the ash with the other two, as it
+53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
+    **smoke** for the game (the owner's pick, 2026-11-12, R41). Every world scene hands the card the ash with the other two, as it
     hands it the smoke; no scene picks. Only the gallery names the ash for a play.
     **(the owner's "一樣獨立模組".)**
 54. **The ash is its own module** (`src/render/effects/cardAsh.ts`, its own tests). The dust's and
@@ -644,37 +679,61 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
     leading edge, charring to `slate` toward its trailing edge; a pixel past the band is **gone**.
     The band is 0.06 of ember and 0.08 of char, in threshold units. When the front has crossed,
     every pixel is gone. **(the owner's locked burn; the threshold, the spec's.)**
-56. **The flakes.** Flakes start where stroke pixels have just burned out: their start points
-    are drawn over the strokes and the rule as the dust's are (R25), and each is let go on the
-    frame its pixel goes. 0.1 flakes per view px² of ink, at most 300 for the whole card, from one
-    emitter. A flake is an irregular shape 3–6 view px across, `slate` with a dim `ember` rim
-    (alpha 0.6). Each rises at 12–32 px/s on a heading within 30° of straight up, at a steady
-    speed, tumbling at 90–270° a second either way, its size unchanged, its alpha falling from 1
-    to 0 (`Sine.easeIn`) over its 1000 ms life. **(the owner's "larger than the dust's motes,
-    dark grey with a dim ember rim, rise slowly, tumbling, and fade"; the numbers, the spec's.)**
-57. **About 2 seconds.** The front takes 1000 ms and a flake lives 1000 ms; the ash is gone by
-    2000 ms, one fixed duration.
-58. **Colour.** `ember` for the burning edge and the flakes' rim, `slate` for the char and the
-    flakes; the card's own ink (its texts' colours and the rule's `brass`, as the card drew them)
-    until a pixel burns. Never `amber`: the glow is torch warmth, not something to act on
-    (guideline, "Gameplay accent"). Tokens only, no new colour (ADR-0013).
-59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling and §B.10, for the ash, and only these.** The
-    ash is more than 12 particles (at most 300); its debris rises instead of falling or settling,
-    and never sprays: no flake starts faster than 32 px/s or more than 30° off straight up. It
-    lasts 2000 ms, past §B.2's 1200 ms. Its two textures are drawn at runtime from tokens, not
-    baked: the burning image is the card's own letters, and no baked sheet is a flake with a rim
-    (no baked art is added). It calls no `explode`, and every other rule of §B holds for it: one
-    fixed duration, the easing allowlist, no scale change at all, no shake, tokens only, at most
-    3 colours of its own, teardown on end and on scene shutdown. Named as R33 and R49 are, beside
-    them; the tests that hold §B.2, §B.6 and §B.10 keep holding them for every other effect.
+56. **The flakes: burnt paper.** *(Replaced at the owner's look of 2026-11-12, "灰燼像泡泡一樣怪怪的".)*
+    Flakes start where stroke pixels have just burned out: their start points are drawn over the
+    strokes and the rule as the dust's are (R25), and each is let go on the frame its pixel goes.
+    0.1 flakes per view px² of ink, at most 300 for the whole card, from one emitter.
+    - **Shape.** A flake is a jagged shard of burnt paper: an uneven many-cornered outline,
+      torn at its edge (edge pixels missing or thinned at random), mostly longer than wide
+      (1.1–2.8 : 1). Sizes spread wide: 1.5–8 view px along its length, drawn so that many are
+      tiny and a few larger. There is **no outline ring**: a flake's edge is the same paper as
+      its body.
+    - **Colour.** A dark `slate` body with faint lighter mottling toward `slateLight`. About a
+      third of flakes carry a small glowing `ember` patch on one edge, never round the whole
+      outline, that dims to ash grey over its first 500 ms.
+    - **Motion: flutter, not spin.** Each rises at 12–32 px/s on a heading within 30° of
+      straight up, slowing a little as it goes (a drag of 0.5 of its speed a second). It turns
+      slowly, 20–70° a second either way, and turns over in depth: its scale on one axis swings
+      through zero and back (edge-on, then its other face) once every 500–1300 ms, its own
+      period and phase, so every flake goes edge-on at least once in its life. It sways gently
+      sideways, 1.5–4 px over 900–1600 ms. Its size is otherwise unchanged; its alpha falls
+      from 1 to 0 (`Sine.easeIn`) over its 1000 ms life.
+    - **Drawn at runtime, at the render scale**, so a flake stays crisp at 1, 1.5 and 2.
+
+    **(the owner's "larger than the dust's motes, dark grey ... rise slowly ... and fade", and
+    his look of 2026-11-12, "燒掉後的質感很差 不夠高級"; the numbers, the spec's.)**
+57. **About 2 seconds.** The front takes 1000 ms and a flake lives 1000 ms; a spark is gone
+    within 600 ms of the front's passing. The ash is gone by 2000 ms, one fixed duration.
+58. **Colour.** `ember` for the burning edge, the flakes' glowing patches and the sparks;
+    `slate` for the char and the flakes' bodies; `slateLight` for the flakes' mottling and the
+    grey a patch dims to (each flake pixel a mix of these three); the card's own ink (its texts'
+    colours and the rule's `brass`, as the card drew them) until a pixel burns. Never `amber`:
+    the glow is torch warmth, not something to act on (guideline, "Gameplay accent"). Tokens
+    only, no new colour (ADR-0013).
+59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling, §B.4 and §B.10, for the ash, and only
+    these.** The ash is more than 12 particles (at most 300 flakes and 40 sparks); its debris
+    rises instead of falling or settling, and never sprays: no flake starts faster than 32 px/s
+    or more than 30° off straight up, no spark faster than 80 px/s or more than 25° off it. It
+    lasts 2000 ms, past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
+    other (§B.4's "no tween sets `scaleX` and `scaleY` to different values"): it is a turn in
+    depth, never a squash, a stretch or a bounce; its scale never grows past its size and its
+    size never changes otherwise. Its textures are drawn at runtime from tokens, not baked: the
+    burning image is the card's own letters, and no baked sheet is a paper shard or a one-pixel
+    spark (no baked art is added). It calls no `explode`, and every other rule of §B holds for
+    it: one fixed duration, the easing allowlist, no shake, tokens only, at most 3 colours of
+    its own (`ember`, `slate`, `slateLight`), teardown on end and on scene shutdown. Named as R33
+    and R49 are, beside them; the tests that hold §B.2, §B.4, §B.6 and §B.10 keep holding them
+    for every other effect.
 60. **As the dust, for everything else.** Over the veil and under the HUD (R29); reduced motion:
     no burn, the card fades over 600 ms (R31); a stroke read that fails or finds no ink, or a
     canvas texture that cannot be made: no burn, the card fades, logged once (R35); gone at once,
-    its burning image, its texture and its flakes with it, on a stop, a new card, a view change
-    or a scene's end (R9, R36, the resize edge state).
-61. **Its numbers are data.** The front's time and shape, the band, the flakes' density, cap,
-    size, speed, heading spread, tumble, life and alpha, the tokens and the easings are one typed
-    record in `cardAsh.ts`, asserted by a vitest; a retune is an edit there.
+    its burning image, its texture, its flakes and its sparks with it, on a stop, a new card, a
+    view change or a scene's end (R9, R36, the resize edge state).
+61. **Its numbers are data.** The front's time and shape, the band; the flakes' density, cap,
+    shapes, length and its bias toward the small, aspect, mottling, glowing share and its dimming,
+    speed, drag, heading spread, turn, flip, sway, life and alpha; the sparks' density, cap, size,
+    speed, drag, heading spread, life and flicker; the tokens and the easings are one typed record
+    in `cardAsh.ts`, asserted by a vitest; a retune is an edit there.
 62. **The gallery shows all three.** A third replayable card, "Arrival card ash", beside "Arrival
     card dust" and "Arrival card smoke", on the one gallery card (R52), so a replay of any
     replaces the card still up (R9). Added in the same change (`Content: FS-1819Q`).
@@ -682,21 +741,34 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
     the front. Its per-frame cost on a card of the game's size is measured in a browser and
     reported with the change, so the owner judges the look knowing the price. **(spec: the
     owner accepted a per-frame redraw if measured.)**
+64. **Embers.** *(Added at the owner's look of 2026-11-12, "不夠高級".)* As the front passes, a
+    sprinkle of tiny ember sparks comes off it: 0.012 per view px² of ink, at most 40 for the
+    whole card, from a second emitter, each let go from a start point on the strokes or the rule
+    on the frame the front reaches it. A spark is 1–2 view px of `ember`, drawn additively so it
+    reads as light; it rises faster than any flake, 40–80 px/s within 25° of straight up, slowing
+    a little (1.5 of its speed a second), flickers (its alpha beating at 6–14 Hz as it falls to
+    0), and dies out within 300–600 ms of leaving. No warm light token outside the amber family
+    exists (the guideline's torch warmth is `amber` and `ember`), so a spark brightens by its
+    additive blend, never by `amber`. Drawn at runtime at the render scale, as the flakes are.
 
 ### Acceptance Criteria
 
-- [ ] The switch's values are dust, smoke and ash, and it is dust; every world scene hands the card the ash with the others and none names one. (R53)
+- [ ] The switch's values are dust, smoke and ash, and it is smoke; every world scene hands the card the ash with the others and none names one. (R53)
 - [ ] `cardDust.ts`, `cardSmoke.ts` and their tests are unchanged; the ash is `cardAsh.ts` with its own tests and reads the strokes through `strokeCells` / `ruleCells` / `seedPoints`. (R54)
 - [ ] Played as ash, the card's letters are hidden and a burning image of them stands in their place. (R55)
 - [ ] The front advances from the left: the burned share of the ink only grows, and its burning band moves right on average; every stroke pixel is gone when the front has crossed. (R55)
 - [ ] The burning band is ember-tinted at its leading edge and slate at its trailing edge; pixels ahead of the front are as the card drew them. (R55, R58)
 - [ ] Every flake starts on a stroke pixel or the rule, never in a gap, and only once that pixel has burned out. (R56)
-- [ ] Flakes rise on average, at 12–32 px/s within 30° of up, at a steady speed; each tumbles; 0.1 per view px² of ink, at most 300, from one emitter, with no `explode` call. (R56, R59)
-- [ ] A flake is slate with an ember rim; no other colour appears but the card's own ink. (R56, R58)
+- [ ] Flakes rise on average, starting at 12–32 px/s within 30° of up and slowing a little; each turns slowly, 20–70° a second; 0.1 per view px² of ink, at most 300, from one emitter, with no `explode` call. (R56, R59)
+- [ ] Each flake flips: its scale on one axis passes through edge-on (zero) and changes sign within its life, never growing past its size; the other axis keeps its size. (R56, R59)
+- [ ] No flake draws a closed outline ring: a plain flake's edge pixels are its body's colours, and a glowing flake's ember lies on one side, on less than half of its outline. (R56)
+- [ ] The flakes span a range of sizes (from about 1.5 to about 8 view px long, most of them small) and of aspect ratios (some near 1, many longer than wide). (R56)
+- [ ] A flake's pixels are mixes of `slate`, `slateLight` and `ember`; about a third of flakes glow, and a glowing flake's patch dims to grey over its first 500 ms; no other colour appears but the card's own ink. (R56, R58)
+- [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px of `ember`, additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of up (faster than any flake), flicker, and are gone within 600 ms. (R64, R59)
 - [ ] The ash is gone at 2000 ms. (R57)
 - [ ] With reduced motion, no burn and no flake are made and the card fades over 600 ms. (R60)
 - [ ] A failed read, no ink or no canvas texture: no burn, a fade, logged once. (R60)
-- [ ] A stop or a new card takes the image, its texture, its flakes and its front away at once. (R60)
+- [ ] A stop or a new card takes the image, its texture, its flakes, its sparks and its front away at once. (R60)
 - [ ] The ash's numbers are one typed record with a vitest on it. (R61)
 - [ ] `/dev/gallery` has dust, smoke and ash cards that replay the whole card; `effects.test.ts` passes. (R62)
 - [ ] The burn's per-frame cost is measured in a browser and reported. (R63)
@@ -704,13 +776,17 @@ it sweeps from one side, the left, the way the words read, ragged by noise.
 ### Edge States
 
 - **No WebGL** (the canvas renderer): the burning image is a canvas texture either way; nothing changes.
-- **The switch set to ash** (the owner's pick, later): every arrival and climb leaves as ash.
+- **The switch set to ash** (not picked; the owner picked the smoke, 2026-11-12): every arrival
+  and climb would leave as ash.
 - **A resize while it burns:** the card and its ash are removed (R60), as for the dust.
 - **A text drawn at another resolution than the other** (none today): the image is drawn at the
   finer one, the coarser text sampled up to it.
 
 ### Out of Scope
 
-- Taking the dust or the smoke out, or changing any of their values.
+- Taking the dust or the smoke out, or changing any of their values. The ash stays an alternate
+  in the code and the gallery.
 - A shader burn on the GPU; a burn spreading from several points.
 - A setting that lets a player choose; any baked art, new colour or token.
+- A wisp of smoke off the front (`fx_smoke` at a low alpha): offered with the rework of
+  2026-11-12 as optional, not built; the ash stays free of the art library.
