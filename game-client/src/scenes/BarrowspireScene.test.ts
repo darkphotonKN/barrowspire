@@ -727,6 +727,8 @@ function sceneOnStage() {
     // the scratch a chunk's wall shadows are drawn into (FS-V8FT3 §E): recorded, and gone after
     addDynamicTexture: (key: string, w: number, h: number) => stage.make("dynamicTexture", [key, w, h]),
   };
+  // what the ground draws off the display list: its wall shadows' shapes and cuts (FS-V8FT3 §E)
+  (run as unknown as { make: unknown }).make = { graphics: () => stage.make("graphics", ["off the display list"]) };
   // the HUD lays out in the logical view, which the viewport owns (FS-ZAJMH R2)
   viewport.set({ width: 800, height: 600, renderScale: 1 });
   run.cameras = {
@@ -763,6 +765,8 @@ function sceneOnStage() {
       painted.push(houses);
       if (floor) grounds.push(floor);
     },
+    // the walls' shadows laid over it (FS-V8FT3 §E, §F): not under test here
+    shade: () => {},
   };
   // the satchel a coffer opens into, closed: the state path only asks what it shows
   Object.assign(run, {
@@ -6559,6 +6563,7 @@ const await_dungeon = await import("@/render/world/dungeon");
 const await_walls = await import("@/render/world/walls");
 const await_bake = await import("@/render/world/bake");
 const await_wallShadows = await import("@/render/world/wallShadows");
+const await_buildingLooks = await import("@/render/world/buildingLooks");
 const { RegionGrid } = await_dungeon;
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
@@ -6609,8 +6614,6 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     // `without`: the manifest's sheets whose name starts so are missing (a bake without them)
     const sheets = Object.fromEntries(Object.entries(manifest.sheets).filter(([name]) => !without || !name.startsWith(without)));
     run.art = new ArtLibrary({ ...manifest, sheets }, { warn: () => {} });
-    // what the ground draws off the display list (its wall shadows' shapes and cuts)
-    (run as unknown as { make: unknown }).make = { graphics: () => stage.make("graphics", ["off the display list"]) };
     // the ground is the scene's own, painted in the stage's render textures
     run.groundLayer = undefined;
     const camera = run.cameras as { main: Record<string, unknown> };
@@ -6870,6 +6873,94 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(rts.length).toBeGreaterThan(0);
       expect(stage.made.filter((m) => m.kind === "dynamicTexture")).toEqual([]);
       for (const rt of rts) expect(shadowStamps(stamped, rt)).toEqual([]);
+    });
+  });
+
+  describe("a floor of buildings' wall shadows (FS-V8FT3 §F R29)", () => {
+    const { buildingShadows, planWallShadows } = await_wallShadows;
+    const { MASONRY_WALLS, planWalls, thicknessPx } = await_walls;
+    const { doorGaps, planBuildings } = await_buildingLooks;
+    const thick = thicknessPx(MASONRY_WALLS);
+    const wallOf = (entity_id: string, house_id: string | undefined, x: number, y: number, width: number, height: number) => ({
+      entity_id,
+      house_id,
+      position: at(x, y),
+      width,
+      height,
+    });
+    // a room with a door gap in its south wall from x 720 to 780, and a wall of no room in the hall
+    const ROOM = [
+      wallOf("rn", "r", 600, 100, 300, 20),
+      wallOf("rw", "r", 600, 100, 20, 200),
+      wallOf("re", "r", 880, 100, 20, 200),
+      wallOf("rs1", "r", 600, 280, 120, 20),
+      wallOf("rs2", "r", 780, 280, 120, 20),
+    ];
+    const HALL = [wallOf("hall", undefined, 1000, 500, 200, 20)];
+    /** A polygon's corners in a fixed order, rounded, so two outlines of one shape compare equal. */
+    const corners = (shape: readonly { x: number; y: number }[]) =>
+      shape
+        .map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`)
+        .sort()
+        .join(" ");
+
+    /** Floor 2 of the tower, a floor of buildings, on stage with `walls`, the manifest's art less `without`. */
+    function buildingsStage(without?: string) {
+      const scene = sceneOnStage();
+      const { stage } = scene;
+      const run = scene.run as unknown as DungeonRun;
+      run.worldLook = WORLD_THEMES.tower;
+      const sheets = Object.fromEntries(Object.entries(manifest.sheets).filter(([name]) => !without || !name.startsWith(without)));
+      run.art = new ArtLibrary({ ...manifest, sheets }, { warn: () => {} });
+      run.groundLayer = undefined;
+      const camera = run.cameras as { main: Record<string, unknown> };
+      Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+      const state = { ...floorState(2), walls: [...ROOM, ...HALL] };
+      useGameStore.getState().receiveFloorMap(mapOf(state));
+      run.handleGameStateUpdate(bare(state));
+      return { run, stage, state };
+    }
+
+    it("should hand the ground its rooms' and hall walls' shadows once, after the rooms' floors: a room as a village building, a wall of no room full height", () => {
+      const paint = vi.spyOn(GroundLayer.prototype, "paint");
+      const shade = vi.spyOn(GroundLayer.prototype, "shade");
+      try {
+        const { run, stage, state } = buildingsStage();
+        expect(shade).toHaveBeenCalledTimes(1);
+        // over the rooms' floors: the paint with the room comes before it
+        const floors = paint.mock.calls.findIndex(([houses]) => houses.length > 0);
+        expect(floors).toBeGreaterThanOrEqual(0);
+        expect(paint.mock.invocationCallOrder[floors]).toBeLessThan(shade.mock.invocationCallOrder[0]);
+        const [room] = planBuildings(ROOM, 1, MASONRY_WALLS);
+        const { outside, inside } = buildingShadows(room, doorGaps(ROOM), thick);
+        const expected = [...planWallShadows(planWalls(HALL, 1, MASONRY_WALLS), thick), ...outside, ...inside];
+        const [handed] = shade.mock.calls[0];
+        expect(handed.shapes.map(corners).sort()).toEqual(expected.map(corners).sort());
+        expect(handed.cuts).toEqual([]);
+        // laid in, its scratch gone; the same walls again hand it nothing more
+        const scratches = stage.made.filter((m) => m.kind === "dynamicTexture");
+        expect(scratches.length).toBeGreaterThan(0);
+        expect(scratches.every((m) => m.destroyed)).toBe(true);
+        run.handleGameStateUpdate(bare(state));
+        expect(shade).toHaveBeenCalledTimes(1);
+      } finally {
+        paint.mockRestore();
+        shade.mockRestore();
+      }
+    });
+
+    it("should hand the ground no wall shadow without the wall art: placeholder walls never had one", () => {
+      const shade = vi.spyOn(GroundLayer.prototype, "shade");
+      // each missing sheet is reported once; not under test here
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const { stage } = buildingsStage("tower_wall_");
+        expect(shade.mock.calls.flatMap(([shadows]) => shadows.shapes)).toEqual([]);
+        expect(stage.made.filter((m) => m.kind === "dynamicTexture")).toEqual([]);
+      } finally {
+        shade.mockRestore();
+        warn.mockRestore();
+      }
     });
   });
 

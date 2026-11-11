@@ -4,8 +4,27 @@ import { BAKE } from "./bake";
 import type { FloorRegion, WallState } from "@/types/gameState";
 import { RegionGrid, dungeonWalls, wallPlan, type DungeonMap, type EdgeRun } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
-import { MASONRY_WALLS, TIMBER_WALLS, planWalls, thicknessPx, wallward, type WallHeight, type WallPiece } from "./walls";
-import { castOffset, castShadow, dungeonShadows, planWallShadows, wallFeet, type WallFoot } from "./wallShadows";
+import { doorGaps, planBuildings } from "./buildingLooks";
+import {
+  INTERIOR_PARTITION,
+  MASONRY_WALLS,
+  TIMBER_WALLS,
+  planWalls,
+  thicknessPx,
+  wallward,
+  type WallHeight,
+  type WallPiece,
+} from "./walls";
+import {
+  buildingShadows,
+  castOffset,
+  castShadow,
+  dungeonShadows,
+  planWallShadows,
+  shadowsWithin,
+  wallFeet,
+  type WallFoot,
+} from "./wallShadows";
 
 const T = WORLD_PX_PER_TILE;
 /** How thick each material's wall stands, world px: as its sheets say. */
@@ -25,6 +44,34 @@ const area2 = (shape: readonly Point[]) =>
     const q = shape[(i + 1) % shape.length];
     return sum + p.x * q.y - q.x * p.y;
   }, 0);
+
+/** Whether a point lies inside a convex polygon (on its outline counts). */
+const inside = (shape: readonly Point[], p: Point) => {
+  let sign = 0;
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i];
+    const b = shape[(i + 1) % shape.length];
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (Math.abs(cross) < 1e-9) continue;
+    if (sign === 0) sign = Math.sign(cross);
+    else if (Math.sign(cross) !== sign) return false;
+  }
+  return true;
+};
+/** Whether a point lies strictly inside a rect. */
+const within = (r: { x: number; y: number; width: number; height: number }, p: Point) =>
+  p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height;
+/** Points every 4 px over a shape's bounds that lie in it, off the cell lines. */
+const samples = (shape: readonly Point[]) => {
+  const xs = shape.map((p) => p.x);
+  const ys = shape.map((p) => p.y);
+  const out: Point[] = [];
+  for (let x = Math.floor(Math.min(...xs)) + 0.5; x < Math.max(...xs); x += 4)
+    for (let y = Math.floor(Math.min(...ys)) + 0.5; y < Math.max(...ys); y += 4) if (inside(shape, { x, y })) out.push({ x, y });
+  return out;
+};
+/** Whether any of the shapes covers a point. */
+const covered = (shapes: readonly (readonly Point[])[], p: Point) => shapes.some((s) => inside(s, p));
 
 describe("a wall's cast offset (FS-V8FT3 §C R11)", () => {
   it.each([
@@ -291,32 +338,6 @@ describe("a dungeon floor's wall shadows, cut to its ground (FS-V8FT3 §E R23)",
   const drawn = dungeonWalls(plan, floor, 7, MASONRY_WALLS);
   const shadows = dungeonShadows(drawn, MASONRY, floor);
 
-  /** Whether a point lies inside a convex polygon (on its outline counts). */
-  const inside = (shape: readonly Point[], p: Point) => {
-    let sign = 0;
-    for (let i = 0; i < shape.length; i++) {
-      const a = shape[i];
-      const b = shape[(i + 1) % shape.length];
-      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
-      if (Math.abs(cross) < 1e-9) continue;
-      if (sign === 0) sign = Math.sign(cross);
-      else if (Math.sign(cross) !== sign) return false;
-    }
-    return true;
-  };
-  /** Whether a point lies strictly inside a rect. */
-  const within = (r: { x: number; y: number; width: number; height: number }, p: Point) =>
-    p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height;
-  /** Points every 4 px over a shape's bounds that lie in it, off the cell lines. */
-  const samples = (shape: readonly Point[]) => {
-    const xs = shape.map((p) => p.x);
-    const ys = shape.map((p) => p.y);
-    const out: Point[] = [];
-    for (let x = Math.floor(Math.min(...xs)) + 0.5; x < Math.max(...xs); x += 4)
-      for (let y = Math.floor(Math.min(...ys)) + 0.5; y < Math.max(...ys); y += 4) if (inside(shape, { x, y })) out.push({ x, y });
-    return out;
-  };
-
   it("should cast every run and post of the plan, one shape each", () => {
     expect(shadows.shapes).toEqual(planWallShadows(drawn, MASONRY));
     expect(shadows.shapes).toHaveLength(plan.runs.length + plan.posts.length);
@@ -375,5 +396,105 @@ describe("a dungeon floor's wall shadows, cut to its ground (FS-V8FT3 §E R23)",
     // the west wall's long shadow lies across the room's floor
     const [west] = wallFeet({ pieces: one.pieces.filter((p) => p.axis === "y" && p.at.x < 2 * CELL), posts: [] }, MASONRY);
     expect(shown(castShadow(west)).length).toBeGreaterThan(100);
+  });
+});
+
+describe("a building's wall shadows, by the look each side of its outline is seen in (FS-V8FT3 §F)", () => {
+  // a 300 × 200 house, its walls 20 thick, at (100, 100): the footprint is the walls' outer faces
+  const FOOT = { x: 100, y: 100, width: 300, height: 200 };
+  const NORTH = wall(100, 100, 300, 20, "h");
+  const WEST = wall(100, 100, 20, 200, "h");
+  const EAST = wall(380, 100, 20, 200, "h");
+  // the south wall with a door gap from x 240 to 300
+  const SOUTH = [wall(100, 280, 140, 20, "h"), wall(300, 280, 100, 20, "h")];
+  const house = [NORTH, WEST, EAST, ...SOUTH];
+  const shadowsOf = (walls: readonly WallState[], sheets = TIMBER_WALLS) => {
+    const [building] = planBuildings(walls, 3, sheets);
+    return buildingShadows(building, doorGaps(walls), thicknessPx(sheets));
+  };
+  const { outside, inside: indoors } = shadowsOf(house);
+
+  it("should lay no outside shape inside the footprint and no inside shape outside it (R26)", () => {
+    const stray = (shapes: readonly (readonly Point[])[], wrong: (p: Point) => boolean) =>
+      shapes.flatMap((s) => samples(s).filter(wrong)).map((p) => `${p.x},${p.y}`);
+    expect(stray(outside, (p) => within(FOOT, p))).toEqual([]);
+    const beyond = (p: Point) => p.x < FOOT.x || p.x > FOOT.x + FOOT.width || p.y < FOOT.y || p.y > FOOT.y + FOOT.height;
+    expect(stray(indoors, beyond)).toEqual([]);
+    // both sides carry shadow
+    expect(outside.flatMap(samples).length).toBeGreaterThan(500);
+    expect(indoors.flatMap(samples).length).toBeGreaterThan(500);
+  });
+
+  it("should cast the east wall outside as a back wall: its shadow reaches 50.9 px east of its foot, not a front wall's 15.5", () => {
+    // the east wall's foot stands on x 386.4–393.6; a front wall's shadow would end at x 409.1
+    expect(covered(outside, { x: 430, y: 200 })).toBe(true);
+    expect(covered(indoors, { x: 430, y: 200 })).toBe(false);
+  });
+
+  it("should cast the cut-away south wall inside as a front wall: 15.5 px into the room, not a back wall's 50.9", () => {
+    // the south wall's foot's north edge is y 286.4: a front wall casts to y 270.9, a back wall to 235.5
+    expect(covered(indoors, { x: 200, y: 280 })).toBe(true);
+    expect(covered(indoors, { x: 200, y: 260 })).toBe(false);
+    // and the back walls cast long inside: the west wall's across the room's west side
+    expect(covered(indoors, { x: 150, y: 200 })).toBe(true);
+  });
+
+  it("should cast nothing inside from a door gap (R27)", () => {
+    // in the gap's footing, a whole wall's front shadow would cover it
+    expect(covered(indoors, { x: 270, y: 284 })).toBe(false);
+    expect(covered(outside, { x: 270, y: 284 })).toBe(false);
+  });
+
+  it("should run a wall's outside shadow across its door gap as if the wall were whole (R27)", () => {
+    // the east wall with a door gap from y 180 to 220
+    const gapped = [NORTH, WEST, wall(380, 100, 20, 80, "h"), wall(380, 220, 20, 80, "h"), wall(100, 280, 300, 20, "h")];
+    // the middle of the gap's foot swept half its way along the light: only the gap's own shadow
+    const d = castOffset(BAKE.WALL_BACK);
+    const mid = { x: 390 + d.x / 2, y: 200 + d.y / 2 };
+    expect(covered(shadowsOf(gapped).outside, mid)).toBe(true);
+    // the exterior's pieces either side of the gap alone would leave it bare
+    const [b] = planBuildings(gapped, 3, TIMBER_WALLS);
+    const pieces = { pieces: [...b.shared.pieces, ...b.exterior.pieces], posts: [...b.shared.posts, ...b.exterior.posts] };
+    expect(covered(planWallShadows(pieces, TIMBER), mid)).toBe(false);
+    // and inside the gap casts nothing
+    expect(covered(shadowsOf(gapped).inside, { x: 390, y: 200 })).toBe(false);
+  });
+
+  it("should cast a building's walls from feet as thick as its material's", () => {
+    const masonry = shadowsOf(house, MASONRY_WALLS);
+    // the west wall's foot is 9.6 px of masonry, 7.2 of timber, centred on x 110: its inside shadow
+    // starts at its foot's west edge
+    expect(covered(masonry.inside, { x: 105.5, y: 200 })).toBe(true);
+    expect(covered(indoors, { x: 105.5, y: 200 })).toBe(false);
+  });
+});
+
+describe("walls inside a footprint (FS-V8FT3 §F R25)", () => {
+  // a house of walls 10 thick at (100, 100), 300 × 200; a low partition across it, along world y,
+  // between the north and south walls' inner faces
+  const HOUSE = { x: 100, y: 100, width: 300, height: 200 };
+  const PARTITION = wall(240, 110, 20, 180, "h");
+
+  it("should cast a partition as a front wall, cut at its house's footprint", () => {
+    const plan = planWalls([PARTITION], 5, MASONRY_WALLS, INTERIOR_PARTITION);
+    const shapes = shadowsWithin(plan, MASONRY, HOUSE);
+    expect(shapes.length).toBeGreaterThan(0);
+    // its foot's east edge is x 254.8: a front wall's shadow ends 15.5 px east of it
+    const xs = shapes.flatMap((s) => s.map((p) => p.x));
+    expect(Math.max(...xs)).toBeCloseTo(254.8 + castOffset(BAKE.WALL_FRONT).x, 6);
+    // it would reach 15.5 px north of y 110, past the house's north edge: cut there
+    const ys = shapes.flatMap((s) => s.map((p) => p.y));
+    expect(Math.min(...ys)).toBeCloseTo(HOUSE.y, 6);
+    for (const s of shapes) for (const p of samples(s)) expect(within(HOUSE, p)).toBe(true);
+  });
+
+  it("should leave a shape wholly inside the footprint as it is", () => {
+    const plan = planWalls([wall(240, 150, 20, 100, "h")], 5, MASONRY_WALLS, INTERIOR_PARTITION);
+    expect(shadowsWithin(plan, MASONRY, HOUSE).map(corners)).toEqual(planWallShadows(plan, MASONRY).map(corners));
+  });
+
+  it("should give nothing for a shape wholly outside the footprint", () => {
+    const plan = planWalls([wall(600, 600, 20, 100)], 5, MASONRY_WALLS);
+    expect(shadowsWithin(plan, MASONRY, HOUSE)).toEqual([]);
   });
 });
