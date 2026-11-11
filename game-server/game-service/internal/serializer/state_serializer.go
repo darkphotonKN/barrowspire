@@ -200,6 +200,7 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 					Level:         level,
 					Experience:    experience,
 					LevelFloor:    progression.LevelFloor(int32(level)),
+					Facing:        facingOf(entity),
 				},
 				Inventory: inventory,
 				Equipment: equipmentState,
@@ -789,4 +790,14 @@ func ItemStateOf(itemID uuid.UUID, entityID uuid.UUID, item *components.ItemComp
 		UniqueEffect:    item.UniqueEffectText,
 		Unsafe:          item.Unsafe,
 	}
+}
+
+// facingOf is the facing the player's client last sent, "" (absent on the
+// wire) until it has sent one. Relaying it is the one read of facing in the
+// service: no rule reads it. FS-JS7C8 §E R32, R35.
+func facingOf(entity *ecs.Entity) string {
+	if fc, ok := entity.GetComponent(ecs.ComponentTypeFacing); ok {
+		return string(fc.(*components.FacingComponent).Facing)
+	}
+	return ""
 }

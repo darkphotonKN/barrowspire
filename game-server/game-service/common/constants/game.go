@@ -55,6 +55,11 @@ const (
 	ActionEquip     Action = "equip"
 	ActionUnequip   Action = "unequip"
 	ActionCastSkill Action = "cast_skill"
+	// ActionFace is the client telling the world which of the 8 world-compass
+	// directions its character faces, as { "player_id", "facing" }. Stored and
+	// relayed in the state, never read by a rule; nothing is sent back.
+	// FS-JS7C8 §E R27, R31.
+	ActionFace Action = "face"
 	// ActionChat is a chat line, inbound as { "channel", "text" } and outbound
 	// as the pod-stamped line. Handled on the message hub, never by a world.
 	// FS-WJGFJ §Requirements A2–A4, B11.

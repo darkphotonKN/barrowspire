@@ -156,8 +156,9 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		} else {
 			velocityComp, _ := targetEntity.GetComponent(ecs.ComponentTypeVelocity)
 			velocity := velocityComp.(*components.VelocityComponent)
-			dx = velocity.VX * velocity.Speed * deltaTime
-			dy = velocity.VY * velocity.Speed * deltaTime
+			speed := velocity.Speed * walkFactor(targetEntity)
+			dx = velocity.VX * speed * deltaTime
+			dy = velocity.VY * speed * deltaTime
 		}
 
 		// split-axis swept collision against walls and closed doors, X first
@@ -221,6 +222,17 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 	}
 
+}
+
+// walkFactor is what the entity's walk is paced at this tick, as a share of
+// its move speed: AttackSlowFactor inside an attack slow, else 1. It scales the
+// walk only, never VelocityComponent.Speed, which gear owns and the wire
+// reports. FS-JS7C8 §C R15.
+func walkFactor(entity *ecs.Entity) float64 {
+	if entity.HasComponent(ecs.ComponentTypeAttackSlow) {
+		return AttackSlowFactor
+	}
+	return 1
 }
 
 // bothPlayers reports whether a and b are both player bodies: the one pair a
