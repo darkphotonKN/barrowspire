@@ -11,8 +11,8 @@
  * into one image; each of its pixels carries a fixed threshold, how far along it lies from the left
  * made ragged by noise, and each frame of the front decides from it which pixels are whole, which
  * burning and which gone, redrawn on the CPU into a canvas texture (R55, R63). Flakes start on the
- * strokes as the dust's motes do, through the dust's own `strokeCells` / `ruleCells` /
- * `seedPoints` (R54), each let go on the frame its pixel burns out (R56); sparks likewise, on the
+ * strokes as the dust's motes do, through the reading the leaves share (`cardLeaveCore.ts`:
+ * `strokeCells` / `ruleCells` / `seedPoints`, R54), each text's canvas read once for both, each let go on the frame its pixel burns out (R56); sparks likewise, on the
  * frame the front reaches theirs (R64). Flakes and sparks are drawn at runtime, at the render
  * scale, into one sheet; each flake shape is an anim, so a glowing one can dim.
  *
@@ -21,11 +21,9 @@
  */
 
 import type Phaser from "phaser";
-import type { ArtLogger } from "@/render/art/library";
 import type { Point } from "@/render/iso/projection";
 import { BARROW_HEX } from "@/utils/theme";
-import { ruleCells, seedPoints, strokeCells, type CardInk, type InkCell, type InkText } from "./cardDust";
-import { prefersReducedMotion } from "./mist";
+import { LeaveCore, seedPoints, type CardInk, type InkCell, type InkText, type LeaveOptions } from "./cardLeaveCore";
 import type { Easing, Range, Token } from "./table";
 
 /** The ash's numbers (R61), at their starting values; a retune is an edit here. */
@@ -264,12 +262,7 @@ export interface CardAshScene {
   };
 }
 
-export interface CardAshOptions {
-  /** Whether the player asked for less motion; read once, as the card starts to leave. */
-  reducedMotion?: () => boolean;
-  logger?: ArtLogger;
-  random?: () => number;
-}
+export type CardAshOptions = LeaveOptions;
 
 /** The card's ink in one image, in canvas px at `resolution` per view px, its top left at (`left`, `top`) view px. */
 interface InkSheet {
@@ -313,10 +306,10 @@ function placeOf(text: InkText) {
 }
 
 /**
- * The card's ink in one image: each text's own pixels, at the finest text's resolution, and the
- * rule's line under them as the card draws it. A failed read throws.
+ * The card's ink in one image: each text's own `pixels` (as they were read for its strokes), at the
+ * finest text's resolution, and the rule's line under them as the card draws it.
  */
-function inkSheet(ink: CardInk): InkSheet {
+function inkSheet(ink: CardInk, pixels: readonly Uint8ClampedArray[]): InkSheet {
   const places = ink.texts.map(placeOf);
   const resolution = Math.max(1, ...places.map((p) => p.resolution));
   const { rule } = ink;
@@ -330,7 +323,7 @@ function inkSheet(ink: CardInk): InkSheet {
 
   ink.texts.forEach((text, n) => {
     const place = places[n];
-    const src = text.context.getImageData(0, 0, text.canvas.width, text.canvas.height).data;
+    const src = pixels[n];
     const x0 = Math.round((place.left - left) * resolution);
     const y0 = Math.round((place.top - top) * resolution);
     // canvas px of the text per canvas px of the sheet: 1 when the two share a resolution
@@ -730,21 +723,15 @@ export class CardAsh {
   private readonly burnKey = `cardAsh-burn-${burns++}`;
   private image?: { destroy(): void };
   private front?: { stop(): unknown };
-  private emitter?: { destroy(): void };
-  private sparks?: { destroy(): void };
-  private end?: { remove(dispatchCallback?: boolean): void };
-  private readonly warned = new Set<string>();
-  private readonly reducedMotion: () => boolean;
-  private readonly logger: ArtLogger;
+  private readonly core: LeaveCore;
   private readonly random: () => number;
 
   constructor(
     private readonly scene: CardAshScene,
     options: CardAshOptions = {},
   ) {
-    this.reducedMotion = options.reducedMotion ?? (() => prefersReducedMotion());
-    this.logger = options.logger ?? console;
-    this.random = options.random ?? Math.random;
+    this.core = new LeaveCore("card ash", options);
+    this.random = this.core.random;
   }
 
   /**
@@ -754,16 +741,17 @@ export class CardAsh {
    */
   play(ink: AshInk, depth: number, gone: () => void): boolean {
     this.stop();
-    if (this.reducedMotion()) return false;
-    const read = this.read(ink);
+    if (this.core.reducedMotion()) return false;
+    const read = this.core.read(ink);
     if (!read) return false;
-    const { cells, sheet } = read;
+    const { cells } = read;
+    const sheet = inkSheet(ink, read.pixels);
     const art = this.art(sheet.resolution);
     if (!art) return false;
     if (this.scene.textures.exists(this.burnKey)) this.scene.textures.remove(this.burnKey);
     const canvas = this.scene.textures.createCanvas(this.burnKey, sheet.width, sheet.height);
     if (!canvas) {
-      this.warn("texture", "card ash: no canvas texture for the burn; the card fades");
+      this.core.warn("texture", "no canvas texture for the burn; the card fades");
       return false;
     }
 
@@ -781,13 +769,18 @@ export class CardAsh {
       .setScrollFactor(0)
       .setDepth(depth);
     ink.letters.forEach((letter) => letter.setVisible(false));
+    // the front and the burning image go first on a stop or at the end, unless burned out already
+    this.core.hold(() => {
+      this.front?.stop();
+      if (this.image) this.putAway();
+    });
 
     const emitter = this.scene.add.particles(0, 0, art.key, this.flakeConfig(art.anims, sheet.resolution));
     emitter.setScrollFactor(0).setDepth(depth);
-    this.emitter = emitter;
+    this.core.hold(() => emitter.destroy());
     const sparks = this.scene.add.particles(0, 0, art.key, this.sparkConfig(art.sparks, sheet.resolution));
     sparks.setScrollFactor(0).setDepth(depth);
-    this.sparks = sparks;
+    this.core.hold(() => sparks.destroy());
 
     const burn = this.burner(
       sheet,
@@ -808,10 +801,7 @@ export class CardAsh {
       // burned out: nothing of the image is left to draw
       onComplete: () => this.putAway(),
     });
-    this.end = this.scene.time.delayedCall(CARD_ASH.durationMs, () => {
-      this.stop();
-      gone();
-    });
+    this.core.endAt(this.scene.time, CARD_ASH.durationMs, gone);
     return true;
   }
 
@@ -1032,7 +1022,7 @@ export class CardAsh {
     const sheet = ashSheet(resolution, this.random);
     const canvas = this.scene.textures.createCanvas(key, sheet.width, sheet.height);
     if (!canvas) {
-      this.warn("texture", "card ash: no canvas texture for the flakes; the card fades");
+      this.core.warn("texture", "no canvas texture for the flakes; the card fades");
       return undefined;
     }
     const image = canvas.context.createImageData(sheet.width, sheet.height);
@@ -1059,11 +1049,7 @@ export class CardAsh {
 
   /** Takes the ash away at once: its image, its texture, its flakes, its sparks and its front. */
   stop(): void {
-    this.end?.remove(false);
-    this.front?.stop();
-    this.emitter?.destroy();
-    this.sparks?.destroy();
-    if (this.image) this.putAway();
+    this.core.stop();
     this.forget();
   }
 
@@ -1075,35 +1061,9 @@ export class CardAsh {
    * the next card.
    */
   forget(): void {
-    this.end = undefined;
+    this.core.forget();
     this.front = undefined;
-    this.emitter = undefined;
-    this.sparks = undefined;
     this.image = undefined;
     if (this.scene.textures.exists(this.burnKey)) this.scene.textures.remove(this.burnKey);
-  }
-
-  /** The strokes and the rule, and the card's ink in one image; undefined when they cannot be read. */
-  private read(ink: CardInk): { cells: InkCell[]; sheet: InkSheet } | undefined {
-    let strokes: InkCell[];
-    let sheet: InkSheet;
-    try {
-      strokes = strokeCells(ink.texts);
-      sheet = inkSheet(ink);
-    } catch (error) {
-      this.warn("read", "card ash: the card's strokes could not be read; the card fades", { error });
-      return undefined;
-    }
-    if (strokes.length === 0) {
-      this.warn("read", "card ash: the card's texts drew no ink; the card fades");
-      return undefined;
-    }
-    return { cells: [...strokes, ...ruleCells(ink.rule)], sheet };
-  }
-
-  private warn(what: string, message: string, context?: Record<string, unknown>): void {
-    if (this.warned.has(what)) return;
-    this.warned.add(what);
-    this.logger.warn(message, context);
   }
 }

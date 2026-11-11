@@ -64,7 +64,7 @@ describe("LeaveCore: what the card's leaves share (FS-PQ2TW R35, R50, R60)", () 
   describe("the sheet", () => {
     it("should give the sheet's texture and its variants' frames, once each", () => {
       const { core: c } = core();
-      const same: FxArt = { has: () => true, resolve: () => fakeArt.resolve("fx_dust", { index: 0 }) };
+      const same: FxArt = { has: () => true, resolve: () => fakeArt.resolve("fx_dust") };
 
       expect(c.sheet(fakeArt, "fx_dust")).toEqual({ texture: "art:fx-0", frames: ["fx_dust/idle/0/0"] });
       expect(c.sheet(same, "fx_dust")?.frames).toHaveLength(1);
