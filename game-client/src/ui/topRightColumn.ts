@@ -18,6 +18,8 @@ export interface TopRightColumnParts {
   minimap: boolean;
   /** The floor indicator's height, or null while it is hidden (no label). */
   floorHeight: number | null;
+  /** The escaped count's height: the column's last line. */
+  escapedHeight: number;
 }
 
 export interface TopRightColumn {
@@ -27,10 +29,12 @@ export interface TopRightColumn {
   floor: Point;
   /** The escaped count's top-right (origin 1, 0). */
   escaped: Point;
+  /** The escaped count's bottom, the column's last line's, which the dev readout stands under (FS-56CKV §C.18). */
+  bottom: number;
 }
 
 /** Every part's place in the column, each top on a whole logical px. */
-export function topRightColumn({ corner, minimap, floorHeight }: TopRightColumnParts): TopRightColumn {
+export function topRightColumn({ corner, minimap, floorHeight, escapedHeight }: TopRightColumnParts): TopRightColumn {
   const map = minimapRect(corner.x, corner.y);
   const floorTop = minimap ? map.y + map.height + MINIMAP.gap : map.y;
   const escapedTop = floorHeight === null ? floorTop : Math.round(floorTop + floorHeight) + TOP_RIGHT_LINE.gap;
@@ -38,5 +42,6 @@ export function topRightColumn({ corner, minimap, floorHeight }: TopRightColumnP
     minimap: map,
     floor: { x: corner.x, y: floorTop },
     escaped: { x: corner.x, y: escapedTop },
+    bottom: Math.round(escapedTop + escapedHeight),
   };
 }

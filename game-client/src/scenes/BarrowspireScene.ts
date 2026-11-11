@@ -75,7 +75,7 @@ import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
-import { showsPositionReadout } from "@/ui/positionReadout";
+import { POSITION_READOUT, positionReadoutPlace, showsPositionReadout } from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
 import { SettlementRecord } from "@/ui/SettlementRecord";
 import { settlementRecord } from "@/ui/settlement";
@@ -913,6 +913,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private previousSwitchActivated: boolean | null = null;
   private escapedPlayers: Set<string> = new Set();
   private escapedCountText?: Phaser.GameObjects.Text;
+  /** The dev position readout (FS-56CKV §C); none in a production build. */
+  private positionReadout?: Phaser.GameObjects.Text;
   /** "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor. */
   private floorText?: Phaser.GameObjects.Text;
   private shownFloorLabel: string | null = null;
@@ -1095,6 +1097,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
+    this.positionReadout = undefined;
     // the frame went down with the scene's objects; the next run's first state sets its floor's mode
     this.targetFrame = undefined;
     // the next run scene starts with the minimap up; it went down with the scene's objects
@@ -3133,6 +3136,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...(this.targetFrame?.texts() ?? []),
       this.escapedCountText,
       this.floorText,
+      this.positionReadout,
       this.spectateHud?.watching,
       this.spectateHud?.hint,
       this.controlsPanel,
@@ -3798,19 +3802,25 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The top-right column from its anchor (FS-56CKV §B, superseding FS-SRA9J §E.20 in part): the
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
-   * that; where no minimap is shown, or the floor indicator has no label, the rest closes up.
+   * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
+   * dev readout goes with it (§C.14, §C.18): in the minimap's bottom-left corner, else under the
+   * column's last line.
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
+    const shown = !!minimap?.shown;
     const column = topRightColumn({
       corner: anchorAt(TOP_RIGHT_HUD),
-      minimap: !!minimap?.shown,
+      minimap: shown,
       floorHeight: floor?.visible ? floor.height : null,
+      escapedHeight: this.escapedCountText?.height ?? 0,
     });
     minimap?.place(column.minimap);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
+    const readout = positionReadoutPlace(shown ? column.minimap : null, { right: column.escaped.x, bottom: column.bottom });
+    this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
   }
 
   /** M (FS-SRA9J §E.19): the minimap down or up for the rest of the run scene, this floor's and the next. */
@@ -4860,17 +4870,20 @@ export class BarrowspireScene extends Phaser.Scene {
     this.targetFrame.update(deltaMs, target, covered);
   }
 
-  /** The debug position line (top-left): the player's x/y, refreshed every frame. */
+  /**
+   * The dev position readout (FS-56CKV §C): the player's x/y, refreshed every frame; small and dim
+   * with no backing, over the minimap's layers. `placeTopRightColumn` stands it, with the column.
+   */
   private createPositionReadout(): void {
-    const posText = this.add.text(10, 10, "", {
+    const posText = this.add.text(0, 0, "", {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.hudText),
-      backgroundColor: toCss(palette.hudPanel),
-      padding: { x: 10, y: 5 },
+      fontSize: POSITION_READOUT.fontSize,
+      color: toCss(POSITION_READOUT.colour),
     });
+    posText.setAlpha(POSITION_READOUT.alpha);
     posText.setScrollFactor(0);
-    posText.setDepth(1000);
+    posText.setDepth(POSITION_READOUT.depth);
+    this.positionReadout = posText;
 
     // 每幀更新座標 — scene events outlive a shutdown, so the listener goes with it
     const showPosition = () => {
