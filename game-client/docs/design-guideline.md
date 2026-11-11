@@ -86,8 +86,11 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   did, so "up" walks a diagonal on screen, as it does in UO.
 - **Draw order is by footprint** (`x + y` of the ground an object stands on), not by sprite
   bounds. Clicks hit-test the footprint too.
-- **Eight facings.** Characters face one of eight world directions, taken from the velocity the
-  client already renders.
+- **Eight facings.** Characters face one of eight world directions. The local player's character
+  faces the pointer (the 8-way world direction from it to the pointer), moving or standing; other
+  players face the facing the server relays, and with none, like folk and creatures, the velocity
+  the client already renders. An attack faces its aim (FS-JS7C8 §D, §E). *(Amended with
+  FS-JS7C8, 2026-11-12.)*
 - **Occlusion: buildings stay closed, the cut-away is for the room you are in, trees fade.** From
   outside, a building is a closed block and never fades; a player it covers shows through it as a
   silhouette. The cut-away (low south and east fronts) is how a room the player stands in is
@@ -255,6 +258,11 @@ lit) while the player stands inside.
 - **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
+  The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
+  `run` (a jog: arms against legs, the chest turning against the hips, a bounce with a flight in
+  each step, the head steady) and `backpedal` (the feet stepping back under a body turned to the
+  pointer); a class with `run` walks its `walk_attack` legs over one walk cycle (FS-JS7C8, the
+  archer first). Folk and creatures keep idle and walk.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
