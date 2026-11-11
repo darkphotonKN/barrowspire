@@ -8,6 +8,23 @@
 > did not settle, and are this spec's own; the three the owner should look at are listed under
 > *Open for the owner*. Every number and every subtitle line is a starting value. Code citations
 > are against the tree at `28a7a377`.
+>
+> **The owner's tune, 2026-11-12.** Looking at the card on a climb, the owner asked: "地圖卡顯示在
+> 中間偏上方一些 字體可以再大一些 粒子再細一點多一點", then "中心偏上３０％好了", then "粒子擴散得再遠
+> 一點". His values replace the starting values where this spec stated them: the card's place and
+> type (R10, R16) and the dust's speed, drag, duration, size and count (R26, R27, R32, R33).
+>
+> | Value | Was | Now |
+> |---|---|---|
+> | the card's centre | the view's centre | 30% of the view's height above it (about 20% from the top) |
+> | heading | 26 px | 34 px |
+> | subtitle | 15 px | 19 px |
+> | heading, rule, subtitle from the card's centre | −14, +8, +26 px | −18, +10, +33 px (scaled with the type) |
+> | a mote's size | about 2 view px (`fx_dust` × 0.25) | about 1.2 view px (× 0.15) |
+> | particle cap | 600 | 1500 |
+> | start speed | 15–60 px/s | 25–110 px/s |
+> | drag | 1.6/s | 1.0/s |
+> | the dust's duration | 1000 ms | 1300 ms |
 
 ## Summary
 
@@ -110,8 +127,14 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 ### §B. The card
 
 10. **The motion is the climb's.** The view is fully dark; the card (heading, rule, subtitle)
-    fades in; the view comes back up; the card holds, then leaves (§D). Look and timings are
-    today's (Fact 1) and are named in one place. **(charter default: "the motion is the climb's".)**
+    fades in; the view comes back up; the card holds, then leaves (§D). Timings are today's
+    (Fact 1); the look is today's but for the owner's tune of 2026-11-12: the card's centre stands
+    30% of the view's height above the view's centre (about 20% from the top), one named value;
+    the heading is 34 px and the subtitle 19 px, same faces, colours and letter-spacing; heading,
+    rule and subtitle keep their spacing to each other, scaled with the type (−18, +10, +33 px
+    from the card's centre). The dark still covers the whole view. All named in one place.
+    **(charter default: "the motion is the climb's"; place and type, the owner's: "地圖卡顯示在中間
+    偏上方一些 字體可以再大一些", "中心偏上３０％好了".)**
 11. **On a world arrival the dark is up from the scene's first drawn frame.** The veil is made in
     `create`, before anything of the place can be seen, so the world's 200 ms fade-in (Fact 6)
     opens on the dark. The loading bar, when one shows, comes and goes before it as today.
@@ -130,8 +153,9 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     **(charter default: "as today".)**
 15. **The veil sits at the same depth in every world scene:** over the world and its atmosphere,
     under the HUD. **(spec: ADR-0073 Consequences.)**
-16. **The card follows the view.** On a resize it re-covers the view and re-centres, as the climb's
-    does (FS-ZAJMH R13). **(spec.)**
+16. **The card follows the view.** On a resize it re-covers the view and re-places the card,
+    centred across and at its height (R10) in the new view, as the climb's does (FS-ZAJMH R13).
+    **(spec.)**
 17. **Body serif, never the display face** (FS-F6F88 req 32's bound stands). **(charter default.)**
 
 ### §C. The words
@@ -173,10 +197,13 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     empty space between letters or around the card. **(charter default: "from the strokes of the
     letters themselves, not from a box around them". Feasible: Fact 9.)**
 26. **They drift outward and a little upward, and fade.** Outward is away from the card's centre.
-    A drift, not a burst: no particle starts faster than 60 px/s, and all slow as they go.
-    **(charter default; the speed cap is the spec's, to keep it dust and not confetti.)**
-27. **About one second.** 1000 ms, one fixed duration, a starting value, never over 1200 ms
-    (FS-KYPQ9 §B.2 stands). **(charter default.)**
+    A drift, not a burst: each starts at 25–110 px/s, none faster than 110 px/s, and all slow as
+    they go, each losing 1.0 of its speed per second (a drag). **(charter default; the speed cap is
+    the spec's, to keep it dust and not confetti; speed and drag, the owner's tune of 2026-11-12,
+    "粒子擴散得再遠一點".)**
+27. **About 1.3 seconds.** 1300 ms, one fixed duration. It passes FS-KYPQ9 §B.2's 1200 ms
+    ceiling, under the exception of R33; never over 1300 ms. **(charter default; the duration, the
+    owner's tune of 2026-11-12: the dust carries further and needs the time to fade.)**
 28. **Colour.** Every particle starts in the heading's colour (`hudText`, vellum), the subtitle's
     included, and darkens to `hudLabel` (vellumDark) as it drifts, while its alpha falls to 0.
     Tokens only, two of them, no new colour. **(charter default.)**
@@ -185,15 +212,17 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 30. **The climb's card leaves the same way.** There is one card. **(charter default.)**
 31. **Reduced motion: no particles.** With `prefersReducedMotion()` true the card fades out as it
     does today (600 ms). **(charter default; the helper is the repo's convention, Fact 11.)**
-32. **How many.** At most 600 particles for the whole card, spread over the strokes in proportion
-    to their ink, each about 2 view px across, drawn from the existing `fx_dust` sheet; one
-    emitter. A starting value. **(spec: enough to hold the letters' shapes at 26 px; no new baked
-    art, Bounds.)**
-33. **An exception to FS-KYPQ9 §B.6, and only this.** The dust is more than 12 particles and it
-    drifts outward. It still calls no `explode`, and every other rule of §B holds for it: fixed
-    duration, the easing allowlist, no scale bounce, no shake, tokens only, at most 3 colours,
-    teardown on end and on scene shutdown. The tests that hold §B.6 keep holding it for every
-    other effect. **(charter default: the owner's request cannot be met inside §B.6; named here so
+32. **How many.** One particle per view px² of ink, at most 1500 for the whole card, spread over
+    the strokes in proportion to their ink, each about 1.2 view px across (`fx_dust` × 0.15),
+    drawn from the existing `fx_dust` sheet; one emitter. **(spec: enough to hold the letters'
+    shapes; no new baked art, Bounds. Size and cap, the owner's tune of 2026-11-12: "粒子再細一點
+    多一點".)**
+33. **An exception to FS-KYPQ9 §B.6 and §B.2's ceiling, and only these.** The dust is more than
+    12 particles (at most 1500), it drifts outward (no particle starts faster than 110 px/s), and
+    it lasts 1300 ms, past §B.2's 1200 ms. It still calls no `explode`, and every other rule of §B
+    holds for it: one fixed duration, the easing allowlist, no scale bounce, no shake, tokens only,
+    at most 3 colours, teardown on end and on scene shutdown. The tests that hold §B.2 and §B.6
+    keep holding them for every other effect. **(charter default: the owner's request cannot be met inside §B.6; named here so
     the rule is not quietly broken. Open for the owner, O3.)**
 34. **Its numbers are data.** Duration, particle cap, speed, drift, the two tokens and the easing
     are one typed record in `src/render/effects/`, asserted by a vitest, as the effects table is.
@@ -267,13 +296,13 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 ### The card
 
-- [ ] The card's look and its five timings are today's, named in one place. (R10)
+- [ ] The card's five timings are today's; its centre is 20% of the view's height from the top (30% above the middle, one named value), its heading 34 px and its subtitle 19 px; all named in one place. (R10)
 - [ ] On a world arrival nothing of the place is visible before the dark. (R11)
 - [ ] The dark lifts only after the town's or field's first game state is drawn, and only after a run's floor is built from its map; a place built in time lifts on today's schedule. (R12)
 - [ ] On a run arrival the card fades in at the first broadcast. (R13)
 - [ ] Under the card: state applies, the HUD and notices are readable, input works. (R14)
 - [ ] The veil is over the world and atmosphere and under the HUD in all three world scenes. (R15)
-- [ ] A resize during the card keeps the view covered and the card centred. (R16)
+- [ ] A resize during the card keeps the view covered, the card centred across and its centre 20% of the new height from the top. (R16)
 - [ ] Heading and subtitle use the body serif. (R17)
 
 ### The words
@@ -285,12 +314,12 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 - [ ] At the end of the hold, heading, rule and subtitle break up together and the text is gone. (R24)
 - [ ] Every particle starts on a pixel the text drew or on the rule; none in the gaps between letters. (R25)
-- [ ] Particles move away from the card's centre with an upward lean, none faster than 60 px/s at the start, and all are gone at 1000 ms. (R26, R27)
+- [ ] Particles move away from the card's centre with an upward lean, at 25–110 px/s at the start, slowing at 1.0/s, and all are gone at 1300 ms. (R26, R27)
 - [ ] Particles start `hudText`, end `hudLabel`, and no other colour appears. (R28)
 - [ ] The dust is drawn over the veil and under the HUD. (R29)
 - [ ] The climb's card leaves as dust too. (R30)
 - [ ] With reduced motion, no particle is made and the card fades over 600 ms. (R31)
-- [ ] The card makes at most 600 particles from one emitter, with no `explode` call. (R32, R33)
+- [ ] The card makes one particle per view px² of ink, at most 1500, about 1.2 view px across, from one emitter, with no `explode` call. (R32, R33)
 - [ ] `table.test.ts` and `sourceScan.test.ts` still pass as written for every other effect. (R33)
 - [ ] The dust's numbers are one typed record with a vitest on it. (R34)
 - [ ] A failed stroke read falls back to the fade and logs once; nothing is emitted from the text's bounds. (R35)
@@ -350,6 +379,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
   the last place in the tab's session storage, client only. The exact answer would be a flag on
   `world_entered`, which crosses Bounds.
 - **O3. "No confetti."** The dust breaks FS-KYPQ9 §B.6's 12-particle cap and its "never sprays
-  outward". R33 makes it the one exception and keeps the drift slow.
+  outward". R33 makes it the one exception and keeps the drift slow. Since the owner's tune of
+  2026-11-12 the exception also covers §B.2's 1200 ms ceiling (the dust lasts 1300 ms).
 - **O4. The subtitle lines** for the town, the two fields and the dev test room are starting
   lines for the browser check.
