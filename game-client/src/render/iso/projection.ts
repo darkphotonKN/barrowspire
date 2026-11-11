@@ -36,8 +36,8 @@ export const TILE_HEIGHT = 32;
  * - `PlayerRadius = 20` → a player's footprint is 40 world px across: one tile.
  * - run and hub wall thickness is `20` → half a tile, a wall reads as a wall and
  *   not as a floor strip.
- * - a run building's door gap is `50` → 1.25 tiles, one player wide with room to
- *   spare, which is what walking through it feels like.
+ * - a run building's door gap is `80` → 2 tiles, two players wide, which is what
+ *   walking through it feels like.
  *
  * So 40. At this scale one world pixel moves a sprite about 0.9 screen px, and
  * the run map (1440×960) projects to a 1920×960 diamond.

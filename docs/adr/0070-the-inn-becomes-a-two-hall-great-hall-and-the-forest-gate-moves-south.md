@@ -10,6 +10,7 @@ record of what changed.
 Builds on: [ADR-0036](0036-buildings-have-an-exterior-and-an-interior.md) (exterior and interior
 looks), [ADR-0042](0042-a-building-entrance-shows-a-door-not-a-dark-opening.md) (an entrance shows a
 door)
+Amended by: [ADR-0073](0073-the-inns-street-door-is-80-px-wide-and-off-centre-and-its-partition-stays.md) — Decision 2's "cut around a centred 50 px gap" (the partition's gap is 80 px; the Inn's street gap is 80 px at x 525-605, off centre); the partition's place, x 505 to 525, and the rest stand
 
 ## Context
 

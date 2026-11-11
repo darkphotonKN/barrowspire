@@ -13,21 +13,23 @@ import {
   type DressingPiece,
   type DressingStatics,
 } from "./runDressing";
-import { RegionGrid, dressingRooms, type DungeonMap } from "./dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, wallPlan, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
+import pinned from "./runDressing.fixture.json";
+import { MASONRY_WALLS, thicknessPx } from "./walls";
 import { TOWER_BANDS } from "./worldTheme";
 
 const at = (x: number, y: number) => ({ x, y });
 
-/** `AddBuilding`'s rooms: 20-thick walls, a 50-wide door gap centred in the south wall. */
+/** `AddBuilding`'s rooms: 20-thick walls, an 80-wide door gap centred in the south wall. */
 function room(bx: number, by: number, bw: number, bh: number, id: string) {
-  const gap = (bw - 50) / 2;
+  const gap = (bw - 80) / 2;
   const walls = [
     [bx, by, bw, 20],
     [bx, by, 20, bh],
     [bx + bw - 20, by, 20, bh],
     [bx, by + bh - 20, gap, 20],
-    [bx + gap + 50, by + bh - 20, gap, 20],
+    [bx + gap + 80, by + bh - 20, gap, 20],
   ].map(([x, y, width, height], i) => ({
     entity_id: `${id}${i}`,
     house_id: id,
@@ -35,7 +37,7 @@ function room(bx: number, by: number, bw: number, bh: number, id: string) {
     width,
     height,
   }));
-  const door = { entity_id: `d${id}`, position: at(bx + gap, by + bh - 20), width: 50, height: 20, is_open: true };
+  const door = { entity_id: `d${id}`, position: at(bx + gap, by + bh - 20), width: 80, height: 20, is_open: true };
   return { walls, door };
 }
 
@@ -113,11 +115,11 @@ describe("dressingBreaches (FS-8RBQY §C.5)", () => {
   });
 
   it("should refuse one in a door's threshold, and 60 px down its approach lane", () => {
-    const s = { ...empty, doors: [{ x: 600, y: 400, width: 50, height: 20 }] };
-    expect(dressingBreaches(fp(625, 375), s)).toContain("door");
-    expect(dressingBreaches(fp(625, 525), s)).toContain("door");
-    expect(dressingBreaches(fp(625, 535), s)).not.toContain("door");
-    expect(dressingBreaches(fp(625, 345), s)).not.toContain("door");
+    const s = { ...empty, doors: [{ x: 600, y: 400, width: 80, height: 20 }] };
+    expect(dressingBreaches(fp(640, 375), s)).toContain("door");
+    expect(dressingBreaches(fp(640, 525), s)).toContain("door");
+    expect(dressingBreaches(fp(640, 535), s)).not.toContain("door");
+    expect(dressingBreaches(fp(640, 345), s)).not.toContain("door");
   });
 
   it("should refuse one within 60 px of something a player uses", () => {
@@ -261,6 +263,27 @@ describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 �
   it("should strew the same floor on every client, and another floor's otherwise", () => {
     expect(planRoomDressing(lean, 41, statics, rooms)).toEqual(plan);
     expect(planRoomDressing(lean, 42, statics, rooms)).not.toEqual(plan);
+  });
+
+  it("should plan the same dressing as before the walls moved to their edges, piece for piece (FS-XK2B6 §D.14)", () => {
+    // the plan for this floor, look and seed as it stood before FS-XK2B6, one piece per line in
+    // runDressing.fixture.json, so a change shows which pieces moved: 24 px off every wall cell
+    // was already the distance from the cell's edge, where the wall now stands
+    expect(pinned).toHaveLength(77);
+    expect(plan).toEqual(pinned);
+  });
+
+  it("should keep every footprint 24 px or more from the face of every wall as it is drawn on its edge (FS-XK2B6 §D.14)", () => {
+    const thick = thicknessPx(MASONRY_WALLS);
+    const { pieces } = dungeonWalls(wallPlan(map.walls, grid, thick), grid, 41, MASONRY_WALLS);
+    expect(pieces.length).toBeGreaterThan(1000);
+    for (const p of plan)
+      for (const w of pieces) {
+        const [hx, hy] = w.axis === "x" ? [20, thick / 2] : [thick / 2, 20];
+        // the gap between the footprint's square and the piece's footprint, along each axis
+        const gap = Math.max(Math.abs(p.at.x - w.at.x) - p.r - hx, Math.abs(p.at.y - w.at.y) - p.r - hy);
+        expect(gap).toBeGreaterThanOrEqual(24);
+      }
   });
 
   it("should hold a sheet's floor-wide most across every room", () => {

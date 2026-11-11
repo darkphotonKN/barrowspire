@@ -354,3 +354,5 @@ nothing is bought or sold. Tests guarantee clear lanes from the spawn to every g
 - Doors that open or close, locks, or anything per-building on the server beyond walls.
 - Enterable structures in the Spire or in field worlds (the Forest's are FS-KSD6K's concern).
 - Anything in `internal/matchmaker` or `internal/match_queue`, and stats.
+
+## Change: Wider doors → FS-MMA2H

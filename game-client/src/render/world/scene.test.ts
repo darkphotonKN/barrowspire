@@ -14,6 +14,7 @@ import {
   PLACEHOLDER_STONE,
   addBuildings,
   addGables,
+  addWallPieces,
   addWalls,
   showLook,
   type GroundWorld,
@@ -21,7 +22,7 @@ import {
 import { projectedBounds } from "@/render/iso";
 import { ChunkGrid } from "./chunks";
 import { TOWER_GROUND } from "./ground";
-import { MASONRY_WALLS } from "./walls";
+import { MASONRY_WALLS, planEdgeWalls, thicknessPx, type EdgeLine } from "./walls";
 
 describe("GroundLayer's world (FS-KSD6K §Requirements 16)", () => {
   // checked by `tsc`: a faded edge erases everything past the map, so nothing may be laid there
@@ -165,13 +166,13 @@ const wall = (x: number, y: number, width: number, height: number, house_id?: st
   width,
   height,
 });
-/** A 300 × 200 building, walls 20 thick, a centred 50 door gap in the south wall. */
+/** A 300 × 200 building, walls 20 thick, a centred 80 door gap in the south wall. */
 const HOUSE = [
   wall(100, 60, 300, 20, "h"),
   wall(100, 60, 20, 200, "h"),
   wall(380, 60, 20, 200, "h"),
-  wall(100, 240, 125, 20, "h"),
-  wall(275, 240, 125, 20, "h"),
+  wall(100, 240, 110, 20, "h"),
+  wall(290, 240, 110, 20, "h"),
 ];
 
 describe("addBuildings (FS-9PN7X §B)", () => {
@@ -217,7 +218,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const at = worldToScreen(250, 250);
     for (const door of [...doorsIn(b.exterior), ...doorsIn(b.interior)]) {
       expect(recOf(door).args.slice(0, 2)).toEqual([at.x, at.y]);
-      expect(recOf(door).depth).toBe(worldDepth(225, 240, 1));
+      expect(recOf(door).depth).toBe(worldDepth(210, 240, 1));
     }
     // the shut door is seen from outside, so it covers the player; the open one never does
     expect(b.cover.map((c) => c.part)).toContain(doorsIn(b.exterior)[0]);
@@ -241,7 +242,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
       // standing in the gap and sorted like the door below it
       const at = worldToScreen(250, 250);
       expect(recOf(heads[0]).args.slice(0, 2)).toEqual([at.x, at.y]);
-      expect(recOf(heads[0]).depth).toBe(worldDepth(225, 240, 1));
+      expect(recOf(heads[0]).depth).toBe(worldDepth(210, 240, 1));
       // seen from outside only: it covers the player, and the interior look has none
       expect(b.cover.map((c) => c.part)).toContain(heads[0]);
       expect([...b.shared, ...b.interior].map(sheetOf)).not.toContain("door_head_x");
@@ -342,7 +343,7 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
     const heads = made.filter(
       (m) =>
         m.kind === "graphics" &&
-        (m.calls.fillRect ?? []).some(([x, y, w, h]) => x === 225 && y === 240 && w === 50 && h === 20) &&
+        (m.calls.fillRect ?? []).some(([x, y, w, h]) => x === 210 && y === 240 && w === 80 && h === 20) &&
         (m.calls.fillStyle ?? []).every(([c]) => c === PLACEHOLDER_STONE.top),
     );
     expect(heads).toHaveLength(1);
@@ -530,5 +531,64 @@ describe("addWalls by a piece rule (a dungeon floor)", () => {
     expect(built.standing).toHaveLength(built.byWall.get(wall(0, 0, 400, 80).entity_id)!.length);
     // the tall ones are the full-height ones
     expect(built.tall.every((s) => sheetOf(s)!.includes("back"))).toBe(true);
+  });
+});
+
+// ── Walls on their edges (FS-XK2B6 §A–§D) ─────────────────────────────────
+
+describe("addWallPieces: planned pieces and posts as sprites (a dungeon floor's walls on their edges)", () => {
+  const TOWER_ART = ["plain", "pillar", "sconce", "cobweb", "banner"].flatMap((k) =>
+    ["back", "front"].flatMap((h) => ["x", "y"].map((a) => `tower_wall_${h}_${k}_${a}`)),
+  );
+  const THICK = thicknessPx(MASONRY_WALLS);
+  // a room 3 × 3 cells at (80, 80): its back north wall and its front south wall
+  const north: EdgeLine = { wallId: "n", axis: "x", from: { x: 80, y: 80 }, to: { x: 320, y: 80 }, wallSide: "north", height: "back", thickness: THICK };
+  const south: EdgeLine = { ...north, wallId: "s", from: { x: 80, y: 320 }, to: { x: 320, y: 320 }, wallSide: "south", height: "front" };
+  const planned = planEdgeWalls(
+    {
+      runs: [north, south],
+      posts: [
+        { wallId: "n", at: { x: 80 - THICK / 2, y: 80 - THICK / 2 }, height: "back" },
+        { wallId: "s", at: { x: 320 + THICK / 2, y: 320 + THICK / 2 }, height: "front" },
+      ],
+    },
+    7,
+    MASONRY_WALLS,
+    () => false,
+  );
+
+  it("should stand a sprite for every piece and post where the plan puts it, the back ones tall", () => {
+    const { scene } = stubScene();
+    const { art } = library([...TOWER_ART, "tower_post_back", "tower_post_front"]);
+    const built = addWallPieces(scene, art, planned, 7, MASONRY_WALLS)!;
+    const all = [...planned.pieces, ...planned.posts];
+    expect(built.standing.map(({ at }) => at)).toEqual(all.map((p) => p.at));
+    expect(built.standing.map(({ sprite }) => sheetOf(sprite))).toEqual(all.map((p) => p.sheet));
+    built.standing.forEach(({ sprite }, i) => {
+      const s = worldToScreen(all[i].at.x, all[i].at.y);
+      expect(recOf(sprite).args.slice(0, 2)).toEqual([s.x, s.y]);
+    });
+    expect(built.tall.map((s) => sheetOf(s))).toEqual(all.filter((p) => p.height === "back").map((p) => p.sheet));
+    expect(built.byWall.get("n")).toHaveLength(7);
+    expect(built.byWall.get("s")).toHaveLength(7);
+  });
+
+  it("should sort each piece by the point its plan names, and a post by its own place a layer over (ADR-0074)", () => {
+    const { scene } = stubScene();
+    const { art } = library([...TOWER_ART, "tower_post_back", "tower_post_front"]);
+    const built = addWallPieces(scene, art, planned, 7, MASONRY_WALLS)!;
+    planned.pieces.forEach((p, i) => expect(recOf(built.standing[i].sprite).depth).toBe(worldDepth(p.depthAt.x, p.depthAt.y)));
+    planned.posts.forEach((p, i) =>
+      expect(recOf(built.standing[planned.pieces.length + i].sprite).depth).toBe(worldDepth(p.at.x, p.at.y, 1)),
+    );
+    // a body against the south wall is behind it, one against the north wall in front of it
+    const [n, s] = [built.byWall.get("n")![0], built.byWall.get("s")![0]];
+    expect(worldDepth(110, 320 - 20)).toBeLessThan(recOf(s).depth);
+    expect(worldDepth(90, 80 + 20)).toBeGreaterThan(recOf(n).depth);
+  });
+
+  it("should be null without the material's wall art: the scene draws its placeholder blocks", () => {
+    const { scene } = stubScene();
+    expect(addWallPieces(scene, library([]).art, planned, 7, MASONRY_WALLS)).toBeNull();
   });
 });

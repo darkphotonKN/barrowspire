@@ -9,6 +9,7 @@ import {
   HUB_CAMERA_MARGIN,
   HUB_CARTS,
   HUB_CRATES,
+  HUB_DOOR_SPURS,
   HUB_DRESSING,
   HUB_FENCES,
   HUB_GATE_DRESSING,
@@ -27,41 +28,33 @@ import {
   type Footprint,
   type PropSpot,
 } from "./hubKeepOut";
+import { townDoorGap, townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { ROOF_EAVE } from "./roofs";
 
 /**
  * The town's buildings, from the golden of game-server/game-service/internal/game/hub_map.go
  * (hubBuildings): the Inn, the Quartermaster's store and the smithy (FS-B0H2D R1–R3), walled
- * 20 thick as addHubBuilding does, the south wall cut in two around a centred door gap a run
- * door wide (R9). Furnishings are not used here: they stand indoors, and this checks the
+ * 20 thick as addHubBuilding does, the south wall cut in two around the door gap the golden
+ * records (R9; hubTown.fixture.ts, the Inn's off centre by ADR-0073). Furnishings are not used here: they stand indoors, and this checks the
  * outdoor dressing. The scene takes its walls from the server; the golden lets the keep-out rule
  * be checked at review against the town hub_map.go actually lays out.
  */
 const HUB_BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(({ x, y, w, h }): Rect4 => [x, y, w, h]);
-const THICK = 20;
-const DOOR = 50;
-/** Each building's door gap, as the span along its south wall's line: [x0, x1, y of the sill]. */
-const DOOR_GAPS = HUB_BUILDINGS.map(([x, y, w, h]) => {
-  const side = (w - DOOR) / 2;
-  return { x0: x + side, x1: x + side + DOOR, sill: y + h };
-});
-const HUB_WALLS: WallState[] = HUB_BUILDINGS.flatMap(([x, y, w, h], i) => {
-  const side = (w - DOOR) / 2;
-  return [
-    [x, y, w, THICK],
-    [x, y, THICK, h],
-    [x + w - THICK, y, THICK, h],
-    [x, y + h - THICK, side, THICK],
-    [x + side + DOOR, y + h - THICK, side, THICK],
-  ].map(([wx, wy, ww, wh], k) => ({
+/**
+ * Each building's door gap as the server cuts it (the golden's), as the span along its south
+ * wall's line and the y of its sill.
+ */
+const DOOR_GAPS = HUB_TOWN_GOLDEN.buildings.map(townDoorGap);
+const HUB_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+  townOutline(b).map(([wx, wy, ww, wh], k) => ({
     entity_id: `b${i}w${k}`,
     house_id: `b${i}`,
     position: { x: wx, y: wy },
     width: ww,
     height: wh,
-  }));
-});
+  })),
+);
 /**
  * blocked() clears what a building looks like, eave included: HubScene's ROOF_EAVE, the same
  * overhang the roofs are laid with.
@@ -204,10 +197,12 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
       ["hay_cart", 400, 880, 26],
     ]);
     expect(HUB_CRATES.map((s) => [s.sheet, s.at.x, s.at.y, s.r])).toEqual([
-      // off the store's threshold, from (1300, 470)
-      ["crate", 1320, 470, 14],
-      // nudged off the east road's drop (FS-0XMCP R19, K8), from (1330, 500)
-      ["crate", 1320, 505, 14],
+      // off the store's threshold, from (1300, 470); south off it again now it is 80 px wide
+      // (FS-MMA2H R15), from (1320, 470)
+      ["crate", 1320, 484, 14],
+      // nudged off the east road's drop (FS-0XMCP R19, K8), from (1330, 500); south with the
+      // crate above it, keeping the pair's spacing, from (1320, 505)
+      ["crate", 1320, 519, 14],
       ["crate", 530, 730, 14],
       ["crate", 1050, 910, 14],
       ["crate_stack", 1110, 935, 14],
@@ -236,8 +231,9 @@ describe("every hub prop clears K1–K8 (FS-KYPQ9 §A.4, §A.5; FS-0XMCP R20)", 
       ["water_trough", 310, 840, 20, false],
       ["woodpile", 660, 880, 24, false],
       // off the Inn's road and out of the market stall's way, from (620, 490) and (1150, 460)
-      // off the Inn's new threshold, from (535, 540)
-      ["sacks", 610, 530, 12, false],
+      // off the Inn's new threshold, from (535, 540); east off it and its spur again now the
+      // gap is x 525–605 (FS-MMA2H R15), from (610, 530)
+      ["sacks", 618, 530, 12, false],
       ["sacks", 1125, 455, 12, false],
       ["sacks", 600, 840, 12, false],
       ["signpost", 1085, 520, 10, true],
@@ -406,6 +402,15 @@ describe("the town buildings' doors and the trodden ground (FS-B0H2D R24)", () =
   /** The rect of trodden ground that starts at a door gap and spans it. */
   const spurOf = (g: (typeof DOOR_GAPS)[number]) =>
     HUB_PATHS.find(([x, y, w]) => y === g.sill && x <= g.x0 && x + w >= g.x1);
+
+  it("lays one spur per door, as wide as its gap, from its west jamb and its sill (FS-MMA2H R14)", () => {
+    // the spurs are kept by hand, the gaps are the server's: a gap moved or widened in
+    // hub_map.go goes red here until the spur follows
+    expect(HUB_DOOR_SPURS.map(([x, y, w]) => [x, y, w])).toEqual(
+      DOOR_GAPS.map((g) => [g.x0, g.sill, g.x1 - g.x0]),
+    );
+    for (const spur of HUB_DOOR_SPURS) expect(HUB_PATHS).toContain(spur);
+  });
 
   it.each(DOOR_GAPS.map((g, i) => [`building ${i}'s door at x ${g.x0}–${g.x1}`, g] as const))(
     "lays a short spur from %s to another path or approach",

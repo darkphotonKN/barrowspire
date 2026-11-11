@@ -16,14 +16,14 @@ const wall = (
   height,
 });
 
-/** A run building (AddBuilding): 300×200, walls 20 thick, a 50-wide door gap in the south. */
+/** A run building (AddBuilding): 300×200, walls 20 thick, an 80-wide door gap in the south. */
 function runHouse(bx: number, by: number, id: string): WallState[] {
   return [
     wall(bx, by, 300, 20, id),
     wall(bx, by, 20, 200, id),
     wall(bx + 280, by, 20, 200, id),
-    wall(bx, by + 180, 125, 20, id),
-    wall(bx + 175, by + 180, 125, 20, id),
+    wall(bx, by + 180, 110, 20, id),
+    wall(bx + 190, by + 180, 110, 20, id),
   ];
 }
 
@@ -74,7 +74,7 @@ describe("onOutline, the one outline test (doorGaps, isPartition)", () => {
     ["the north wall", w(0, 0, 300, 20)],
     ["the west wall", w(0, 0, 20, 240)],
     ["the east wall", w(280, 0, 20, 240)],
-    ["a south segment beside the door gap", w(175, 220, 125, 20)],
+    ["a south segment beside the door gap", w(190, 220, 110, 20)],
   ])("should put %s on the outline", (_name, wall) => {
     expect(onOutline(wall, house)).toBe(true);
   });

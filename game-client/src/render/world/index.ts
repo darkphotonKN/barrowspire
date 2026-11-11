@@ -115,6 +115,7 @@ export {
   addPerimeter,
   addProp,
   addRoof,
+  addWallPieces,
   addWalls,
   coverOf,
   showLook,

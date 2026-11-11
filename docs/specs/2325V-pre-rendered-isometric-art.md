@@ -304,3 +304,5 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
 - The web/platform DOM UI (Part II of the guideline).
 - Sound.
 - A lore name for the hub (CONTEXT.md open item).
+
+## Change: Wider doors → FS-MMA2H

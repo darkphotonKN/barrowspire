@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { FloorRegion, WallState } from "@/types/gameState";
-import { worldToScreen, type Point } from "@/render/iso/projection";
+import { WORLD_PX_PER_TILE, screenToWorld, worldToScreen, type Point } from "@/render/iso/projection";
+import { BAKE } from "./bake";
 import { ChunkGrid, ChunkVisibility } from "./chunks";
-import { RegionGrid, wallRule, wallRuns } from "./dungeon";
+import { RegionGrid, dungeonWalls, edgeHeight, wallPlan, type EdgeSide, type WallPlan } from "./dungeon";
 import { Exploration, type ExplorationState } from "./exploration";
 import { FOG, Fog, fogShapes, wallLayout, type FogHeights, type FogShape, type FogTweenConfig } from "./fog";
 import { FEATHER, fogField } from "./fogField";
-import { axisOf } from "./walls";
+import { MASONRY_WALLS, thicknessPx } from "./walls";
 import fixture from "./dungeon.fixture.json";
 import { mix, palette } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
 
 const CELL = 80;
 const HEIGHTS = { back: 141, front: 43 };
+/** The tower's masonry, as a dungeon floor draws it: its thickness and half of it, world px. */
+const THICK = thicknessPx(MASONRY_WALLS);
+const HALF = THICK / 2;
 
 const floor = (cols: number, rows: number, regions: FloorRegion[]) =>
   new RegionGrid({ width: cols * CELL, height: rows * CELL, cell_size: CELL, regions });
@@ -24,12 +28,17 @@ const region = (kind: FloorRegion["kind"]) => (id: number, x: number, y: number,
 const room = region("room");
 const corridor = region("corridor");
 
+/** Whether a cell is a shell cell: not walkable, and 8-adjacent to a walkable one (FS-KE075 R7). */
+const isShell = (grid: RegionGrid, cx: number, cy: number) =>
+  !grid.walkable(cx, cy) &&
+  [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => grid.walkable(cx + dx, cy + dy)));
+
 /**
  * A floor's walls as the server lays them (levelgen `mergeWalls`): the shell's cells, each row cut
- * into runs, a run the same as the one above it carried on down; then cut into runs as the scene cuts them.
+ * into runs, a run the same as the one above it carried on down.
  */
 function shellWalls(grid: RegionGrid): WallState[] {
-  const shell = (cx: number, cy: number) => !grid.walkable(cx, cy) && grid.hasGround(mid(cx, cy));
+  const shell = (cx: number, cy: number) => isShell(grid, cx, cy);
   const rects: { x: number; y: number; w: number; h: number }[] = [];
   let open: { x: number; y: number; w: number; h: number }[] = [];
   for (let cy = 0; cy <= grid.rows; cy++) {
@@ -51,21 +60,70 @@ function shellWalls(grid: RegionGrid): WallState[] {
     for (const o of open) if (!next.includes(o)) rects.push(o);
     open = next;
   }
-  const walls = rects.map((r, i) => ({
+  return rects.map((r, i) => ({
     entity_id: `w-${i}`,
     position: { x: r.x * CELL, y: r.y * CELL },
     width: r.w * CELL,
     height: r.h * CELL,
   }));
-  return wallRuns(walls, grid);
 }
 
-/** The fixture floor's walls, as the scene cuts them into runs. */
-const fixtureWalls = (): WallState[] => wallRuns((fixture as { walls: WallState[] }).walls, new RegionGrid(fixture as never));
+/** The fixture floor's walls, as the server sends them. */
+const fixtureWalls = (): WallState[] => (fixture as { walls: WallState[] }).walls;
+
+/** A floor's wall plan (FS-XK2B6 §A), in the tower's masonry. */
+const planOf = (grid: RegionGrid, walls: readonly WallState[] = shellWalls(grid)): WallPlan => wallPlan(walls, grid, THICK);
 
 /** The fog over a floor whose walls are its shell's, as the server lays them. */
 const fogOf = (grid: RegionGrid, state: (id: number) => ExplorationState, walls = shellWalls(grid), heights: FogHeights = HEIGHTS) =>
-  fogShapes(grid, wallRule(grid), state, heights, wallLayout(grid, walls));
+  fogShapes(grid, state, heights, wallLayout(grid, planOf(grid, walls)));
+
+/** World point (x, y) on screen, raised by `up` px. */
+const lifted = (x: number, y: number, up = 0) => {
+  const s = worldToScreen(x, y);
+  return { x: s.x, y: s.y - up };
+};
+
+/**
+ * A post's cap as the bake builds it (`tools/bake/page/models/architecture.js` `post`, `tower.js`
+ * `partitionPost`), screen px over its wall top and world px across: its pier reaches 0.12 tile
+ * over the wall top, the cap 0.08 more, and the cap is 0.3 tile square.
+ */
+const CAP = { beam: 0.12 * BAKE.VPX, top: 0.2 * BAKE.VPX, side: 0.3 * WORLD_PX_PER_TILE };
+
+/**
+ * The top of a post's cap on screen, `dx` screen px from its middle (|dx| up to 0.8 · its side):
+ * its top face's outline, peaked over its middle, where the face's back corner stands.
+ */
+function capTop(post: { at: Point; height: keyof FogHeights }, dx: number, heights: FogHeights = HEIGHTS): Point {
+  const foot = worldToScreen(post.at.x, post.at.y);
+  return { x: foot.x + dx, y: foot.y - heights[post.height] - CAP.top - 0.4 * CAP.side + 0.5 * Math.abs(dx) };
+}
+
+/** The outline on screen of a box standing on a world footprint (its corners), from `from` px up to `to`. */
+function silhouette(footprint: readonly Point[], from: number, to: number): Point[] {
+  const points = footprint.flatMap((p) => [lifted(p.x, p.y, from), lifted(p.x, p.y, to)]);
+  // the convex hull, by the monotone chain
+  const sorted = [...points].sort((p, q) => p.x - q.x || p.y - q.y);
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: Point[]) => {
+    const out: Point[] = [];
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+/** The four corners of a world footprint `along` by `across` about `at`, `along` lying on `axis`. */
+function footprint(at: Point, axis: "x" | "y", along: number, across: number): Point[] {
+  const u = along / 2;
+  const v = across / 2;
+  return [[-u, -v], [u, -v], [u, v], [-u, v]].map(([du, dv]) => (axis === "x" ? { x: at.x + du, y: at.y + dv } : { x: at.x + dv, y: at.y + du }));
+}
 
 /** The middle of cell (cx, cy), world px. */
 const mid = (cx: number, cy: number) => ({ x: (cx + 0.5) * CELL, y: (cy + 0.5) * CELL });
@@ -86,6 +144,18 @@ function inside(p: Point, poly: readonly Point[]): boolean {
   return hit;
 }
 
+/** Whether `p` lies on one of the polygon's sides. */
+function onEdge(p: Point, poly: readonly Point[]): boolean {
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j];
+    const b = poly[i];
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    const within = Math.min(a.x, b.x) - 1e-6 <= p.x && p.x <= Math.max(a.x, b.x) + 1e-6 && Math.min(a.y, b.y) - 1e-6 <= p.y && p.y <= Math.max(a.y, b.y) + 1e-6;
+    if (within && Math.abs(cross) <= 1e-6 * Math.hypot(b.x - a.x, b.y - a.y)) return true;
+  }
+  return false;
+}
+
 /** The fog over a screen point: the veil of every shape covering it, the drawn walls' clear columns left out. */
 const fogAt = (shapes: readonly FogShape[], p: Point) => shapes.filter((s) => s.alpha > 0 && inside(p, s.points)).map((s) => s.alpha);
 /** Every shape of the partition over a screen point, clear wall columns too. */
@@ -102,6 +172,8 @@ const A = 1;
 const C = 2;
 const B = 3;
 const walk = () => floor(17, 7, [room(A, 1, 1, 4, 4), corridor(C, 5, 2, 6, 2), room(B, 11, 1, 4, 4)]);
+/** Where a piece of room B's north wall stands: on row 0's south edge, half a thickness into its wall cell. */
+const NORTH_OF_B = { x: 12.25 * CELL, y: CELL - HALF };
 
 describe("the fog over each region (FS-SRA9J §C.8–§C.10)", () => {
   it("lays the dense veil over an unexplored region, the lighter one over an explored one, and none over a visible one", () => {
@@ -115,7 +187,11 @@ describe("the fog over each region (FS-SRA9J §C.8–§C.10)", () => {
   it("veils the whole floor before anyone is seen", () => {
     const grid = walk();
     const shapes = fogOf(grid, states({}));
-    for (const [cx, cy] of [[2, 2], [4, 4], [7, 3], [12, 1], [14, 4]]) expect(fogAt(shapes, onScreen(cx, cy))).toEqual([DARK]);
+    // cell middles no wall stands in front of: a low wall on a region's south or east edge covers
+    // its floor up to about 54 px in by its 43 px height, and a corner post the middles on its
+    // screen column above it (FS-XK2B6 ruling E2, its measure as corrected 2026-11-12: its "about
+    // 44" was taken from the wall's camera-side face)
+    for (const [cx, cy] of [[2, 2], [3, 3], [7, 2], [12, 1], [13, 3]]) expect(fogAt(shapes, onScreen(cx, cy))).toEqual([DARK]);
   });
 
   it("veils an unexplored region densely but not opaquely, darker than an explored one, the void opaque (owner playtest 2026-11-06)", () => {
@@ -148,11 +224,12 @@ describe("the fog and what stands up (FS-SRA9J §C.11, §C.13)", () => {
   // borders both
   const split = () => floor(10, 9, [room(A, 1, 1, 6, 3), corridor(C, 1, 5, 6, 2)]);
 
-  it("leaves a wall bordering a visible region clear, whatever is behind it", () => {
+  it("leaves a wall cell bordering a visible region clear, both its walls, whatever is behind them (FS-XK2B6 §F.19)", () => {
     const grid = split();
     const shapes = fogOf(grid, states({ [C]: "visible" }));
-    // the wall on row 4 is low (walkable on both sides): the middle of its face is clear
-    expect(fogAt(shapes, onScreen(3, 4, HEIGHTS.front / 2))).toEqual([]);
+    // the wall cell on row 4 shows an edge to the room (its north side) and one to the corridor
+    // (its south side), both low (walkable on both sides): the middle of each face is clear
+    for (const y of [4 * CELL + HALF, 5 * CELL - HALF]) expect(fogAt(shapes, lifted(3.5 * CELL, y, HEIGHTS.front / 2))).toEqual([]);
     // and the room behind it is veiled
     expect(fogAt(shapes, onScreen(3, 2))).toEqual([DARK]);
   });
@@ -160,8 +237,9 @@ describe("the fog and what stands up (FS-SRA9J §C.11, §C.13)", () => {
   it("draws an unexplored region's walls, standing clear of the veil behind them, to be tinted as dark (owner playtest 2026-11-06)", () => {
     const grid = walk();
     const shapes = fogOf(grid, states({}));
-    // room B's north wall, row 0, full height: clear over its face, feathering as the veil it is tinted to
-    const face = onScreen(12, 0, HEIGHTS.back / 2);
+    // room B's north wall, on row 0's south edge, full height: clear over its face, feathering as
+    // the veil it is tinted to
+    const face = lifted(12.5 * CELL, CELL - HALF, HEIGHTS.back / 2);
     expect(fogAt(shapes, face)).toEqual([]);
     expect(partsAt(shapes, face).map((s) => s.equiv)).toEqual([DARK]);
   });
@@ -169,8 +247,8 @@ describe("the fog and what stands up (FS-SRA9J §C.11, §C.13)", () => {
   it("leaves a visible region's back wall clear over its full height", () => {
     const grid = walk();
     const shapes = fogOf(grid, states({ [B]: "visible" }));
-    // room B's north wall, row 0, is full height
-    expect(fogAt(shapes, onScreen(12, 0, HEIGHTS.back - 10))).toEqual([]);
+    // room B's north wall, on row 0's south edge, is full height
+    expect(fogAt(shapes, lifted(12.5 * CELL, CELL - HALF, HEIGHTS.back - 10))).toEqual([]);
   });
 
   it("never covers a member's head where they stand by the region behind them", () => {
@@ -192,30 +270,27 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
   const HEAD = FOG.stand;
   const GIRTH = FOG.girth;
 
-  /** Each drawn wall cell's slab on screen: its centreline from edge to edge, raised to its height. */
-  function drawnSlabs(grid: RegionGrid, walls: readonly WallState[], state: (id: number) => ExplorationState, heights: FogHeights) {
-    const rule = wallRule(grid);
-    // every wall bordering a region is drawn, whatever its state (owner playtest 2026-11-06)
-    void state;
-    const drawn = (cx: number, cy: number) => {
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (grid.region(cx + dx, cy + dy)) return true;
-      return false;
-    };
-    const quads: Point[][] = [];
-    for (const w of walls) {
-      const along = axisOf(w);
-      const cells = (along === "x" ? w.width : w.height) / CELL;
-      for (let k = 0; k < cells; k++) {
-        const cx = Math.round(w.position.x / CELL) + (along === "x" ? k : 0);
-        const cy = Math.round(w.position.y / CELL) + (along === "y" ? k : 0);
-        if (!drawn(cx, cy)) continue;
-        const h = rule.height(mid(cx, cy)) === "back" ? heights.back : heights.front;
-        const ends = along === "x" ? [[cx * CELL, (cy + 0.5) * CELL], [(cx + 1) * CELL, (cy + 0.5) * CELL]] : [[(cx + 0.5) * CELL, cy * CELL], [(cx + 0.5) * CELL, (cy + 1) * CELL]];
-        const [a, b] = ends.map(([x, y]) => worldToScreen(x, y));
-        quads.push([a, b, { x: b.x, y: b.y - h }, { x: a.x, y: a.y - h }]);
-      }
-    }
-    return quads;
+  /**
+   * Each drawn wall piece and post on screen (FS-XK2B6 §A, as I-XK2B6-2 draws them), measured by
+   * its own size and nothing the fog keeps: a piece as the box it is, a tile long, its material's
+   * thickness through, its height up, so its top is its top face; a post as its pier, its
+   * material's thickness square, up to its beam, and its cap (`CAP`) over that. Every wall
+   * bordering a region is drawn, whatever its state (owner playtest 2026-11-06). A post stands at
+   * a cell corner, on the same screen column as the cells' middles above it, so it stands in
+   * front of floor there.
+   */
+  function drawnSlabs(grid: RegionGrid, walls: readonly WallState[], heights: FogHeights) {
+    const { pieces, posts } = dungeonWalls(planOf(grid, walls), grid, 1, MASONRY_WALLS);
+    return [
+      ...pieces.map((p) => silhouette(footprint(p.at, p.axis, CELL / 2, THICK), 0, heights[p.height])),
+      ...posts.flatMap((post) => {
+        const wall = heights[post.height];
+        return [
+          silhouette(footprint(post.at, "x", THICK, THICK), 0, wall + CAP.beam),
+          silhouette(footprint(post.at, "x", CAP.side, CAP.side), wall + CAP.beam, wall + CAP.top),
+        ];
+      }),
+    ];
   }
 
   /** Every place a member's feet can be in a region, on screen: RADIUS world px off any closed cell. */
@@ -247,7 +322,7 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
     for (const seen of grid.regions) {
       const state = (id: number): ExplorationState => (id === seen.id ? "visible" : "unexplored");
       const shapes = fogOf(grid, state, walls);
-      const slabs = drawnSlabs(grid, walls, state, HEIGHTS);
+      const slabs = drawnSlabs(grid, walls, HEIGHTS);
       const feet = feetIn(grid, seen);
       for (let cy = 0; cy < grid.rows; cy++)
         for (let cx = 0; cx < grid.cols; cx++) {
@@ -269,8 +344,18 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
     // room A (1) over rows 1–4, a low wall on row 5, a corridor (2) on row 6: the corridor visible
     const grid = floor(12, 9, [room(A, 1, 1, 8, 4), corridor(C, 1, 6, 8, 1)]);
     const shapes = fogOf(grid, states({ [C]: "visible" }));
-    // its front row's middle, and its next row all over: points off the seams between strips
-    expect(fogAt(shapes, worldToScreen(4.55 * CELL, 4.5 * CELL))).toEqual([DARK]);
+    const slabs = drawnSlabs(grid, shellWalls(grid), HEIGHTS);
+    // its front row down its middle: veiled, or behind its own low south wall, which now stands on
+    // its edge and, by its 43 px height, covers its floor up to about 54 px in (FS-XK2B6 ruling E2,
+    // its measure as corrected); veiled past that, right up to the wall's top face (ruling E4):
+    // fy 0.3 is 56 px in, a hair over that face
+    for (const fy of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const p = worldToScreen(4.55 * CELL, (4 + fy) * CELL);
+      expect(slabs.some((q) => inside(p, q))).toBe(fy > 0.3);
+      if (fy <= 0.3) expect(fogAt(shapes, p)).toEqual([DARK]);
+      else expect(fogAt(shapes, p).join() === String(DARK) || slabs.some((q) => inside(p, q))).toBe(true);
+    }
+    // and its next row all over: points off the seams between strips
     for (const [fx, fy] of [[0.55, 0.5], [0.85, 0.9], [0.2, 0.75], [0.75, 0.2]]) {
       const p = worldToScreen((4 + fx) * CELL, (3 + fy) * CELL);
       expect(fogAt(shapes, p)).toEqual([DARK]);
@@ -283,10 +368,13 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
     const state = states({ [A]: "visible" });
     const walls = shellWalls(grid);
     const shapes = fogOf(grid, state, walls);
-    const slabs = drawnSlabs(grid, walls, state, HEIGHTS);
+    const slabs = drawnSlabs(grid, walls, HEIGHTS);
     let fogged = 0;
+    // across the corridor: its low east wall, on its edge, covers about 54 px of its 80 by its
+    // 43 px height (FS-XK2B6 ruling E2, its measure as corrected), so the points by its west wall
+    // are the ones the fog must cover
     for (const cy of [0, 1, 2])
-      for (const [fx, fy] of [[0.55, 0.5], [0.2, 0.75], [0.75, 0.2]]) {
+      for (const [fx, fy] of [[0.55, 0.5], [0.2, 0.75], [0.75, 0.2], [0.1, 0.5]]) {
         const p = worldToScreen((4 + fx) * CELL, (cy + fy) * CELL);
         const dark = fogAt(shapes, p).join() === String(DARK);
         if (dark) fogged++;
@@ -297,15 +385,157 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
     expect(fogged).toBeGreaterThan(4);
   });
 
-  it("leaves a corner post standing where a drawn wall ends clear to its cap", () => {
-    // room A's north wall runs along row 0 from column 0 to column 5, its posts at both ends
+  it("leaves every corner post standing where drawn walls end clear to its cap (FS-XK2B6 §F.18)", () => {
+    // room A's shell: a post at each of the room's four corners, set off into the corner's cell
     const grid = floor(8, 6, [room(A, 1, 1, 4, 3)]);
-    const shapes = fogOf(grid, states({ [A]: "visible" }));
-    for (const cx of [0, 5])
-      for (const dx of [-7, -3, 3, 7]) {
-        const top = onScreen(cx, 0, HEIGHTS.back + 10);
-        expect(fogAt(shapes, { x: top.x + dx, y: top.y })).toEqual([]);
+    const plan = planOf(grid);
+    expect(plan.posts).toHaveLength(4);
+    for (const state of [states({ [A]: "visible" }), states({})]) {
+      const shapes = fogOf(grid, state);
+      for (const post of plan.posts)
+        for (const dx of [-7, -3, 0, 3, 7]) {
+          // a hair under its cap's top
+          const top = capTop(post, dx);
+          expect(fogAt(shapes, { x: top.x, y: top.y + 0.3 })).toEqual([]);
+        }
+    }
+  });
+
+  it("leaves nothing clear over a post's cap: the fog stands on its cap's top, no higher (FS-XK2B6 ruling E4)", () => {
+    // room A's shell, with floor round it far enough that each post's cap stands over the floor's
+    // fog, not off its top
+    const grid = floor(10, 8, [room(A, 3, 3, 4, 3)]);
+    const shapes = fogOf(grid, states({}));
+    for (const post of planOf(grid).posts) {
+      const top = capTop(post, 0);
+      expect(fogAt(shapes, { x: top.x, y: top.y - 0.5 })).not.toEqual([]);
+    }
+  });
+});
+
+/**
+ * The screen points of a drawn thing, from its foot to its top: its footprint (world px, `along`
+ * by `across` about `at`, kept a hair inside its sides) raised to `height` px.
+ */
+function standing(at: Point, axis: "x" | "y", along: number, across: number, height: number): Point[] {
+  const points: Point[] = [];
+  const u = along / 2 - 0.3;
+  const v = across / 2 - 0.3;
+  for (const du of [-u, 0, u])
+    for (const dv of [-v, v])
+      for (const up of [0, height / 2, height]) {
+        const [dx, dy] = axis === "x" ? [du, dv] : [dv, du];
+        points.push(lifted(at.x + dx, at.y + dy, up));
       }
+  return points;
+}
+
+/** The veils over a screen point, looked up among only the shapes whose box is near it. */
+function veilsAt(shapes: readonly FogShape[]): (p: Point) => number[] {
+  const side = 64;
+  const buckets = new Map<string, FogShape[]>();
+  for (const s of shapes) {
+    if (s.alpha === 0) continue;
+    const xs = s.points.map((p) => p.x);
+    const ys = s.points.map((p) => p.y);
+    for (let bx = Math.floor(Math.min(...xs) / side); bx <= Math.floor(Math.max(...xs) / side); bx++)
+      for (let by = Math.floor(Math.min(...ys) / side); by <= Math.floor(Math.max(...ys) / side); by++) {
+        const key = `${bx},${by}`;
+        buckets.set(key, [...(buckets.get(key) ?? []), s]);
+      }
+  }
+  return (p) => fogAt(buckets.get(`${Math.floor(p.x / side)},${Math.floor(p.y / side)}`) ?? [], p);
+}
+
+describe("a floor's wall layout, as the fog sees it (FS-XK2B6 §F)", () => {
+  const LEFT = false;
+  const RIGHT = true;
+  /** A cell's north and east edges are the outer sides of its right half, its west and south its left's. */
+  const HALF_OF: Record<EdgeSide, { right: boolean; axis: "x" | "y" }> = {
+    south: { right: RIGHT, axis: "x" },
+    west: { right: RIGHT, axis: "y" },
+    east: { right: LEFT, axis: "y" },
+    north: { right: LEFT, axis: "x" },
+  };
+
+  describe("a room's north wall", () => {
+    // room A over 1–4 × 1–3: its north wall cells on row 0 each show one edge, their south side
+    const grid = floor(8, 6, [room(A, 1, 1, 4, 3)]);
+    const layout = wallLayout(grid, planOf(grid));
+
+    it("stands a slab on each wall cell's south side, on the half that side bounds, and none through its middle", () => {
+      for (let cx = 1; cx <= 4; cx++) {
+        expect(layout.slabs(cx, 0, LEFT)).toEqual([
+          { axis: "x", height: "back", thickness: THICK, foot: worldToScreen((cx + 0.5) * CELL, CELL - HALF) },
+        ]);
+        expect(layout.slabs(cx, 0, RIGHT)).toEqual([]);
+      }
+    });
+
+    it("leaves the px over the edge clear up to the wall's top, whatever the room's state", () => {
+      for (const state of [states({}), states({ [A]: "explored" }), states({ [A]: "visible" })]) {
+        const at = veilsAt(fogOf(grid, state));
+        for (let cx = 1; cx <= 4; cx++)
+          for (const p of standing({ x: (cx + 0.5) * CELL, y: CELL - HALF }, "x", CELL, THICK, HEIGHTS.back))
+            expect(at(p)).toEqual([]);
+      }
+    });
+  });
+
+  describe("on the sample floor", () => {
+    const grid = new RegionGrid(fixture as never);
+    const plan = planOf(grid, fixtureWalls());
+    const layout = wallLayout(grid, plan);
+    const halves: { cx: number; cy: number; right: boolean }[] = [];
+    for (let cy = -1; cy <= grid.rows; cy++)
+      for (let cx = -1; cx <= grid.cols; cx++) for (const right of [LEFT, RIGHT]) halves.push({ cx, cy, right });
+
+    it("gives a slab for every wall edge of the plan, on the half of its wall cell that edge bounds, at its height, and nothing else", () => {
+      const got = halves.flatMap(({ cx, cy, right }) => layout.slabs(cx, cy, right).map((s) => `${cx},${cy},${right},${s.axis},${s.height}`));
+      const want = plan.edges.map((e) => `${e.cx},${e.cy},${HALF_OF[e.wallSide].right},${HALF_OF[e.wallSide].axis},${edgeHeight(e, grid)}`);
+      expect(got.sort()).toEqual(want.sort());
+      expect(got).toHaveLength(766);
+    });
+
+    it("stands each slab on its wall's centre line: half a thickness from its edge, in its wall cell", () => {
+      for (const { cx, cy, right } of halves)
+        for (const s of layout.slabs(cx, cy, right)) {
+          const foot = screenToWorld(s.foot.x, s.foot.y);
+          expect(grid.cellOf(foot)).toEqual({ cx, cy });
+          const across = s.axis === "x" ? foot.y : foot.x;
+          const off = Math.abs(across - Math.round(across / CELL) * CELL);
+          expect(off).toBeCloseTo(HALF, 6);
+        }
+    });
+
+    it("gives a post for every post of the plan, at its place and height, claimed only by halves of cells no one walks on", () => {
+      const claims = halves.flatMap(({ cx, cy, right }) => layout.posts(cx, cy, right).map((p) => ({ cx, cy, ...p })));
+      for (const c of claims) expect(grid.walkable(c.cx, c.cy)).toBe(false);
+      const key = (p: Point, height: string) => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)},${height}`;
+      expect(new Set(claims.map((c) => key(c.foot, c.height)))).toEqual(new Set(plan.posts.map((p) => key(worldToScreen(p.at.x, p.at.y), p.height))));
+    });
+
+    it("lays no fog over any drawn piece or post, from its foot to its top, with every region unexplored or under a scatter of states", () => {
+      const { pieces, posts } = dungeonWalls(plan, grid, 41, MASONRY_WALLS);
+      expect(pieces).toHaveLength(2 * 766);
+      const scatter = (id: number): ExplorationState => (["unexplored", "explored", "visible"] as const)[id % 3];
+      for (const state of [states({}), scatter]) {
+        const at = veilsAt(fogOf(grid, state, fixtureWalls()));
+        const veiled: string[] = [];
+        for (const p of pieces)
+          for (const q of standing(p.at, p.axis, CELL / 2, THICK, HEIGHTS[p.height])) if (at(q).length) veiled.push(`piece ${p.at.x},${p.at.y}`);
+        for (const post of posts) {
+          const top = HEIGHTS[post.height];
+          // its cap's top, a hair under it
+          const cap = [-7, -3, 0, 3, 7].map((dx) => {
+            const c = capTop(post, dx);
+            return { x: c.x, y: c.y + 0.3 };
+          });
+          for (const q of [...standing(post.at, "x", THICK, THICK, top), ...cap]) if (at(q).length) veiled.push(`post ${post.at.x},${post.at.y}`);
+        }
+        expect([...new Set(veiled)]).toEqual([]);
+      }
+    });
   });
 });
 
@@ -428,7 +658,7 @@ function fogOver(grid: RegionGrid, side = 512) {
   };
   const bounds = { x: -grid.rows * 64, y: 0, width: (grid.cols + grid.rows) * 64, height: (grid.cols + grid.rows) * 32 };
   const chunks = new ChunkVisibility(new ChunkGrid(bounds, side));
-  const fog = new Fog(stage, grid, wallRule(grid), chunks, () => HEIGHTS, wallLayout(grid, shellWalls(grid)));
+  const fog = new Fog(stage, grid, chunks, () => HEIGHTS, wallLayout(grid, planOf(grid)));
   /**
    * The alpha one layer of the fog lays over screen point `p`, and its image: the base over the
    * world, the fog that comes (`up`), or the fog that lifts (`down`).
@@ -484,7 +714,7 @@ describe("the fog layer (FS-SRA9J §C.13)", () => {
     for (let cy = 0; cy < grid.rows; cy++)
       for (let cx = 0; cx < grid.cols; cx++) {
         if (grid.walkable(cx, cy)) expect(fogAt(shapes, onScreen(cx, cy))).toEqual([]);
-        else if (grid.hasGround(mid(cx, cy))) expect(fogAt(shapes, onScreen(cx, cy, HEIGHTS.front / 2))).toEqual([]);
+        else if (isShell(grid, cx, cy)) expect(fogAt(shapes, onScreen(cx, cy, HEIGHTS.front / 2))).toEqual([]);
       }
   });
 
@@ -571,7 +801,8 @@ describe("the feather at the fog's edges (FS-SRA9J §C.13, owner playtest 2026-1
       for (let row = 0; row < win.rows; row++)
         for (let col = 0; col < win.cols; col++) {
           const p = { x: win.x + (col + 0.5) * FEATHER.texel, y: win.y + (row + 0.5) * FEATHER.texel };
-          const sharp = fogAt(shapes, p)[0] ?? 0;
+          // a texel's middle on the line between two shapes lies in either: the darker is the sharp veil there
+          const sharp = Math.max(0, ...shapes.filter((s) => s.alpha > 0 && (inside(p, s.points) || onEdge(p, s.points))).map((s) => s.alpha));
           expect(alpha[row * win.cols + col]).toBeLessThanOrEqual(sharp + 1e-6);
         }
     }
@@ -664,7 +895,7 @@ describe("the fade between states (FS-SRA9J §C.13, owner playtest 2026-11-06)",
     const { fog, tweens } = fogOver(grid);
     const piece = new FakePiece();
     // room B's north wall, which borders B alone
-    fog.gate(piece, mid(12, 0));
+    fog.gate(piece, NORTH_OF_B);
     fog.show(() => "unexplored");
     expect(piece.tint).toBe(FOG.unexplored.tint);
     fog.show(states({ [B]: "visible" }));
@@ -681,7 +912,7 @@ describe("a wall piece under the fog (FS-SRA9J §C.8, §C.9, §C.11)", () => {
     const { fog, tweens } = fogOver(grid);
     const piece = new FakePiece();
     // room B's north wall, which borders B alone
-    fog.gate(piece, mid(12, 0));
+    fog.gate(piece, NORTH_OF_B);
     fog.show(() => "unexplored");
     expect([piece.visible, piece.tint]).toEqual([true, FOG.unexplored.tint]);
     fog.show(states({ [B]: "explored" }));
@@ -692,13 +923,23 @@ describe("a wall piece under the fog (FS-SRA9J §C.8, §C.9, §C.11)", () => {
     expect([piece.visible, piece.tint]).toEqual([true, undefined]);
   });
 
-  it("takes the brightest of the regions it borders", () => {
+  it("takes the brightest of the regions its wall cell borders: a wall cell between a visible and an unexplored region shows both its walls plain (FS-XK2B6 §F.20)", () => {
+    // room A over rows 1–3, the wall cells of row 4, a corridor over rows 5–6: each wall cell of
+    // row 4 carries a wall on its north edge, facing A, and one on its south edge, facing C
     const grid = floor(10, 9, [room(A, 1, 1, 6, 3), corridor(C, 1, 5, 6, 2)]);
-    const { fog } = fogOver(grid);
-    const piece = new FakePiece();
-    fog.gate(piece, mid(3, 4));
-    fog.show(states({ [A]: "explored", [C]: "visible" }));
-    expect([piece.visible, piece.tint]).toEqual([true, undefined]);
+    const { pieces } = dungeonWalls(planOf(grid), grid, 1, MASONRY_WALLS);
+    const own = pieces.filter((p) => grid.cellOf(p.at).cx === 3 && grid.cellOf(p.at).cy === 4);
+    expect(new Set(own.map((p) => p.at.y))).toEqual(new Set([4 * CELL + HALF, 5 * CELL - HALF]));
+    for (const lit of [{ [A]: "unexplored", [C]: "visible" }, { [A]: "visible", [C]: "unexplored" }, { [A]: "explored", [C]: "visible" }] as const) {
+      const { fog } = fogOver(grid);
+      const gated = own.map((p) => {
+        const piece = new FakePiece();
+        fog.gate(piece, p.at);
+        return piece;
+      });
+      fog.show(states(lit));
+      for (const piece of gated) expect([piece.visible, piece.tint]).toEqual([true, undefined]);
+    }
   });
 
   it("standing on a region's floor (run dressing), takes that region's state: hidden while unexplored, never tinted", () => {
@@ -719,7 +960,7 @@ describe("a wall piece under the fog (FS-SRA9J §C.8, §C.9, §C.11)", () => {
     const grid = walk();
     const { fog } = fogOver(grid);
     const piece = new FakePiece();
-    const gate = fog.gate(piece, mid(12, 0));
+    const gate = fog.gate(piece, NORTH_OF_B);
     fog.show(() => "visible");
     gate.setVisible(false);
     expect(piece.visible).toBe(false);

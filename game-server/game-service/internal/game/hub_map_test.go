@@ -171,10 +171,6 @@ func TestHubLayout_LanesToEveryGate_CrossedByNoWall(t *testing.T) {
 	}
 }
 
-// runDoorWidth is the door a run house has, and the gap every town building
-// keeps. FS-B0H2D §Requirements 9.
-const runDoorWidth = 50
-
 // doorGapOf is the opening in a building's south wall: the stretch of its
 // bottom edge no south-wall segment covers. ok is false unless the south wall is
 // exactly two segments with one gap between them.
@@ -202,16 +198,62 @@ func doorGapOf(walls []box) (gap box, ok bool) {
 	return box{X: left.X + left.W, Y: bottom - hubWallThickness, W: right.X - (left.X + left.W), H: hubWallThickness}, true
 }
 
-// A town building is walked into through a gap in its south wall, the run
-// house's cut, centred and a run door wide. FS-B0H2D §Requirements 9.
-func TestHubLayout_EveryBuilding_HasACentredDoorGapInItsSouthWall(t *testing.T) {
-	for _, walls := range hubWalls(t) {
-		foot := footprintOf(walls)
+// innStreetGapX is the west jamb of the Inn's street door: flush against the
+// partition's east face, 15 px east of centre, so the partition stands clear
+// of the doorway. FS-MMA2H §C, D1; ADR-0073.
+const innStreetGapX = 525
 
-		gap, ok := doorGapOf(walls)
-		require.True(t, ok, "the building at %+v has no single gap in its south wall", foot)
-		assert.Equal(t, float64(runDoorWidth), gap.W, "the building at %+v", foot)
-		assert.InDelta(t, foot.X+foot.W/2, gap.X+gap.W/2, 0.001, "the gap of the building at %+v is off centre", foot)
+// A town building is walked into through a gap in its south wall, the run
+// house's cut, a run door wide: centred, save the Inn's, which stands against
+// its partition. FS-B0H2D §Requirements 9; FS-MMA2H §Requirements 9.
+func TestHubLayout_EveryBuilding_HasADoorGapARunDoorWideInItsSouthWall(t *testing.T) {
+	houses := hubWalls(t)
+
+	for _, b := range hubBuildings {
+		gap, ok := doorGapOf(houseOf(t, houses, b.Name))
+		require.True(t, ok, "the %s has no single gap in its south wall", b.Name)
+		assert.Equal(t, float64(runDoorWidth), gap.W, "the %s's door gap", b.Name)
+
+		if b.Name == "Inn" {
+			assert.Equal(t, float64(innStreetGapX), gap.X, "the Inn's street door does not stand against its partition")
+			continue
+		}
+		assert.InDelta(t, b.X+b.W/2, gap.X+gap.W/2, 0.001, "the %s's door gap is off centre", b.Name)
+	}
+}
+
+// A door is as wide in play as it is cut: no wall, partition or furnishing of a
+// building stands in its street door's gap or in its partition's.
+// FS-MMA2H §Requirements 10.
+func TestHubLayout_NoWall_StandsInADoorGap(t *testing.T) {
+	houses := hubWalls(t)
+
+	for _, b := range hubBuildings {
+		house := houseOf(t, houses, b.Name)
+
+		street, ok := doorGapOf(house)
+		require.True(t, ok, "the %s has no single gap in its south wall", b.Name)
+		gaps := []box{street}
+
+		segments := partitionsOf(house)
+		if b.Partition == nil {
+			require.Empty(t, segments, "the %s is divided", b.Name)
+		} else {
+			// a partition walled as anything but two segments has no gap this
+			// test can name: that is a failure, never a pass
+			require.Len(t, segments, 2, "the %s's partition, either side of its door gap", b.Name)
+			north, south := segments[0], segments[1]
+			if north.Y > south.Y {
+				north, south = south, north
+			}
+			gaps = append(gaps, box{X: north.X, Y: north.Y + north.H, W: north.W, H: south.Y - (north.Y + north.H)})
+		}
+
+		for _, gap := range gaps {
+			for _, wall := range house {
+				assert.False(t, gap.overlaps(wall), "a wall at %+v stands in the %s's door gap at %+v", wall, b.Name, gap)
+			}
+		}
 	}
 }
 
@@ -669,8 +711,9 @@ func TestHubLayout_Inn_GreatHallAndTaproom_HoldWhatTheyShould(t *testing.T) {
 
 // ----- The room is reachable (FS-B0H2D §Requirements 13, 18) -----
 
-// reachCell is the flood fill's grid: 10 px, the coarsest R13 allows. Door-gap
-// centres sit on it, and a player only fits a 50 px gap within 5 px of centre.
+// reachCell is the flood fill's grid: 10 px, the coarsest R13 allows. A walk
+// starts on it, in a door gap: a gap is two bodies wide, so a player fits it
+// anywhere within 20 px of its centre.
 const reachCell = 10
 
 // walkerFits is true when a player's body, centred at p, overlaps no wall.
@@ -717,14 +760,14 @@ func reachableFrom(start point, walls []box) []point {
 	return reached
 }
 
-// doorwayOf is where a player stands in a building's door gap: its centre.
+// doorwayOf is where a player stands in a building's door gap: the grid point
+// nearest its centre (the Inn's street door is centred 5 px off the grid).
 func doorwayOf(t *testing.T, walls []box) point {
 	t.Helper()
 
 	gap, ok := doorGapOf(walls)
 	require.True(t, ok, "the building at %+v has no door gap", footprintOf(walls))
-	at := point{x: gap.X + gap.W/2, y: gap.Y + gap.H/2}
-	require.Zero(t, math.Mod(at.x, reachCell), "the door gap's centre is off the flood fill's grid")
+	at := point{x: math.Round((gap.X+gap.W/2)/reachCell) * reachCell, y: gap.Y + gap.H/2}
 	require.Zero(t, math.Mod(at.y, reachCell), "the door gap's centre is off the flood fill's grid")
 	return at
 }

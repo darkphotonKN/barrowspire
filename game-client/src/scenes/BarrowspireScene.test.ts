@@ -2984,7 +2984,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     serverDoors: Map<string, { sprite?: Made }>;
     checkBuildingStatus(): void;
   }
-  // room r1 spans x 100–340, y 100–300 in 20 px walls, a 50 px door gap in its south wall, as the
+  // room r1 spans x 100–340, y 100–300 in 20 px walls, an 80 px door gap in its south wall, as the
   // server builds a room (`AddBuilding`); room r2 stands beside it, and a wall of no room in the halls
   const IN_ROOM = at(220, 200);
   const IN_HALL = at(220, 420);
@@ -2992,13 +2992,13 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
   // nearer the viewer than every room's footprint: nothing of them can cover the player
   const IN_FRONT = at(400, 800);
   const room = (id: string, x: number, prefix: string) => {
-    const side = (240 - 50) / 2;
+    const side = (240 - 80) / 2;
     return [
       { entity_id: `${prefix}n`, house_id: id, position: at(x, 100), width: 240, height: 20 },
       { entity_id: `${prefix}w`, house_id: id, position: at(x, 100), width: 20, height: 200 },
       { entity_id: `${prefix}e`, house_id: id, position: at(x + 220, 100), width: 20, height: 200 },
       { entity_id: `${prefix}sl`, house_id: id, position: at(x, 280), width: side, height: 20 },
-      { entity_id: `${prefix}sr`, house_id: id, position: at(x + side + 50, 280), width: side, height: 20 },
+      { entity_id: `${prefix}sr`, house_id: id, position: at(x + side + 80, 280), width: side, height: 20 },
     ];
   };
   const HALL_WALL = { entity_id: "hall", house_id: "", position: at(100, 500), width: 300, height: 20 };
@@ -3009,8 +3009,8 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
       ...floorState(floor),
       walls: [...room(`r1_${floor}`, x, `a${floor}`), ...room(`r2_${floor}`, x + 400, `b${floor}`), HALL_WALL],
       doors: [
-        { entity_id: `d1_${floor}`, position: at(x + 95, 280), width: 50, height: 20, is_open: open },
-        { entity_id: `d2_${floor}`, position: at(x + 495, 280), width: 50, height: 20, is_open: false },
+        { entity_id: `d1_${floor}`, position: at(x + 80, 280), width: 80, height: 20, is_open: open },
+        { entity_id: `d2_${floor}`, position: at(x + 480, 280), width: 80, height: 20, is_open: false },
       ],
     } as GameState;
   };
@@ -5714,7 +5714,10 @@ describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edg
 });
 
 const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
-const { RegionGrid } = await import("@/render/world/dungeon");
+const await_dungeon = await import("@/render/world/dungeon");
+const await_walls = await import("@/render/world/walls");
+const await_bake = await import("@/render/world/bake");
+const { RegionGrid } = await_dungeon;
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
 const { GROUND_DEPTH, GROUND_MARGIN, GroundLayer } = await import("@/render/world/scene");
@@ -5814,26 +5817,34 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
   });
 
-  it("should paint the ground in chunks no larger than 2048 px, nothing on a void cell", () => {
+  it("should paint the ground in chunks no larger than 2048 px, under every tile of every walkable cell and no tile of a wall cell or the void (FS-XK2B6 §E)", () => {
     const { stage, stamped } = dungeonStage();
     const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
     expect(rts.length).toBeGreaterThan(1);
     for (const rt of rts) expect(Math.max(rt.args[2] as number, rt.args[3] as number)).toBeLessThanOrEqual(CHUNK_MAX);
     // each stamp back to the world tile it was laid for: the frame's top-left plus its anchor
     const sheet = manifest.sheets.ground_flags;
-    let stamps = 0;
+    const tiles = new Set<string>();
+    const offFloor: string[] = [];
     for (const rt of rts)
       for (const [, , x, y] of stamped.get(rt) ?? []) {
         const sx = (rt.args[0] as number) + (x as number) + sheet.anchor.x * sheet.frameWidth;
         const sy = (rt.args[1] as number) + (y as number) + sheet.anchor.y * sheet.frameHeight;
-        expect(grid.hasGround(screenToWorld(sx, sy))).toBe(true);
-        stamps++;
+        const at = screenToWorld(sx, sy);
+        const { cx, cy } = grid.cellOf(at);
+        if (!grid.walkable(cx, cy)) offFloor.push(`${cx},${cy}`);
+        tiles.add(`${Math.floor(at.x / 40)},${Math.floor(at.y / 40)}`);
       }
-    // every ground cell's four tiles, at least once
-    let cells = 0;
+    // no piece laid by a point on a wall cell or the void
+    expect(offFloor).toEqual([]);
+    // and every walkable cell's four tiles, each once
+    const walkable = new Set<string>();
     for (let cx = 0; cx < grid.cols; cx++)
-      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 1, y: cy * 80 + 1 })) cells++;
-    expect(stamps).toBeGreaterThanOrEqual(cells * 4);
+      for (let cy = 0; cy < grid.rows; cy++) {
+        if (!grid.walkable(cx, cy)) continue;
+        for (const [tx, ty] of [[0, 0], [1, 0], [0, 1], [1, 1]]) walkable.add(`${cx * 2 + tx},${cy * 2 + ty}`);
+      }
+    expect([...tiles].sort()).toEqual([...walkable].sort());
   });
 
   it("should leave void to the camera's background, the darkest ink", () => {
@@ -5940,21 +5951,24 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
   });
 
-  it("should make no ground texture for a chunk no walkable or shell cell falls in (review M4)", () => {
+  it("should make no ground texture for a chunk no walkable cell falls in (review M4, FS-XK2B6 §E)", () => {
     const { stage, stamped } = dungeonStage();
     const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
     // every texture made is painted, and the floor's empty chunks have none
     for (const rt of rts) expect((stamped.get(rt) ?? []).length).toBeGreaterThan(0);
     expect(rts.length).toBeLessThan(chunks.rects.length);
-    // each chunk a ground cell's diamond falls in has its texture
+    // each chunk a walkable cell's diamond falls in has its texture
     const made = new Set(rts.map((rt) => `${rt.args[0]},${rt.args[1]}`));
     for (let cx = 0; cx < grid.cols; cx++)
       for (let cy = 0; cy < grid.rows; cy++) {
-        if (!grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) continue;
+        if (!grid.walkable(cx, cy)) continue;
         const c = await_iso.worldToScreen(cx * 80 + 40, cy * 80 + 40);
         const r = chunks.rects[chunks.indexAt(c)];
         expect(made.has(`${r.x},${r.y}`)).toBe(true);
       }
+    // the count on the sample floor, pinned: 65 of its 128 chunks (71 while the shell had ground),
+    // so a chunk only wall cells fall in has none
+    expect([rts.length, chunks.rects.length]).toEqual([65, 128]);
   });
 
   it("should paint a dungeon floor's ground once as it is built, and not again as the party leaves it (review L13)", () => {
@@ -5972,7 +5986,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     }
   });
 
-  it("should lay the placeholder floor without its art under ground cells only, void left to the background (review L13)", () => {
+  it("should lay the placeholder floor without its art under walkable cells only, wall cells and void left to the background (review L13, FS-XK2B6 §E)", () => {
     const scene = sceneOnStage();
     const run = scene.run as unknown as DungeonRun;
     run.worldLook = WORLD_THEMES.tower;
@@ -5986,7 +6000,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(stone).toHaveLength(1);
     let cells = 0;
     for (let cx = 0; cx < grid.cols; cx++)
-      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) cells++;
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.walkable(cx, cy)) cells++;
     expect(stone[0].calls.filter((c) => c === "fillRect")).toHaveLength(cells);
   });
 
@@ -6017,6 +6031,100 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     // some of the floor's wall lights were lit along the way, never all of them at once
     expect(lit).toBeGreaterThan(0);
     expect(walls.filter(shownNow).length).toBeLessThan(walls.length);
+  });
+
+  describe("its walls on their wall edges (FS-XK2B6 §A–§D)", () => {
+    const { wallPlan, dungeonWalls } = await_dungeon;
+    const { thicknessPx } = await_walls;
+    const { BAKE } = await_bake;
+    type Point = { x: number; y: number };
+    const { worldToScreen, worldDepth, boxFaces, WALL_HEIGHT } = await_iso;
+    type EdgedRun = DungeonRun & {
+      currentFloorLook(): { seed: number; walls: import("@/render/world/walls").WallSheets };
+      occluders: { size: number; items: { sprite: Made }[] };
+      dungeon: { lights: { kind: string; region: number; light: { at?: Point } }[] };
+    };
+    /** The floor's walls as the plan cuts them, in the look the staged floor has. */
+    const planned = (run: EdgedRun) => {
+      const look = run.currentFloorLook();
+      const plan = wallPlan(dungeonMap.walls!, grid, thicknessPx(look.walls));
+      return { plan, look, ...dungeonWalls(plan, grid, look.seed, look.walls) };
+    };
+    const screenKey = (p: Point) => {
+      const s = worldToScreen(p.x, p.y);
+      return `${s.x},${s.y}`;
+    };
+    const placeOf = (m: Made) => `${m.args[0]},${m.args[1]}`;
+
+    it("should stand a sprite for every piece and post of the wall plan where it stands, sorted by the point the plan names, the back ones among the occluders", () => {
+      const { run, stage } = dungeonStage();
+      const { pieces, posts } = planned(run as EdgedRun);
+      const walls = drawn(stage.made, "tower_wall_");
+      const stood = drawn(stage.made, "tower_post_");
+      expect(walls.map(placeOf).sort()).toEqual(pieces.map((p) => screenKey(p.at)).sort());
+      expect(stood.map(placeOf).sort()).toEqual(posts.map((p) => screenKey(p.at)).sort());
+      const depthAt = new Map(pieces.map((p) => [screenKey(p.at), worldDepth(p.depthAt.x, p.depthAt.y)]));
+      for (const m of walls) expect(m.depth).toBe(depthAt.get(placeOf(m)));
+      // none through a wall cell's middle: every piece is half a thickness from a cell line
+      for (const p of pieces) expect([p.at.x % 80, p.at.y % 80]).not.toContain(40);
+      // every full-height piece and post fades over the player, and no cut-away one
+      const tall = [...pieces, ...posts].filter((p) => p.height === "back");
+      const fading = new Set((run as EdgedRun).occluders.items.map((i) => i.sprite.calls));
+      for (const m of [...walls, ...stood]) expect(fading.has(m.calls)).toBe(String(m.args[3]).includes("_back"));
+      expect([...walls, ...stood].filter((m) => fading.has(m.calls))).toHaveLength(tall.length);
+    });
+
+    it("should queue a wall light where its piece stands, for the region its edge faces: only a room's", () => {
+      const { run } = dungeonStage();
+      const { plan, look } = planned(run as EdgedRun);
+      const lights = (run as EdgedRun).dungeon.lights.filter((l) => l.kind === "sconce");
+      const want: { at: Point; region: number }[] = [];
+      for (const edge of plan.runs)
+        for (const p of dungeonWalls({ edges: [], runs: [edge], posts: [] }, grid, look.seed, look.walls).pieces) {
+          if (!p.sheet.includes("sconce")) continue;
+          const { cx, cy } = grid.cellOf(p.at);
+          // the cell the edge faces: one step off the wall cell, away from the side it lies on
+          const [dx, dy] = { north: [0, 1], south: [0, -1], west: [1, 0], east: [-1, 0] }[edge.wallSide];
+          expect(grid.kind(cx + dx, cy + dy)).toBe("room");
+          expect(edge.height).toBe("back");
+          want.push({ at: p.at, region: grid.region(cx + dx, cy + dy) });
+        }
+      expect(want.length).toBeGreaterThan(0);
+      const key = (l: { at?: Point; region: number }) => `${l.at!.x},${l.at!.y}:${l.region}`;
+      expect(lights.map((l) => key({ at: l.light.at, region: l.region })).sort()).toEqual(want.map(key).sort());
+    });
+
+    it("should stand a placeholder block on every edge without the wall art, as thick as the material and as tall as its run, and one at every post", () => {
+      const scene = sceneOnStage();
+      const run = scene.run as unknown as EdgedRun;
+      run.worldLook = WORLD_THEMES.tower;
+      run.groundLayer = undefined;
+      const camera = run.cameras as { main: Record<string, unknown> };
+      Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+      useGameStore.getState().receiveFloorMap(dungeonMap as never);
+      (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.call(run, dungeonState());
+      const { pieces, posts, look } = planned(run);
+      const thick = thicknessPx(look.walls);
+      const low = (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+      const tops = (p: { height: string }, x: number, y: number, w: number, h: number) =>
+        JSON.stringify(boxFaces(x, y, w, h, p.height === "back" ? WALL_HEIGHT : low).top);
+      const want = [
+        ...pieces.map((p) =>
+          p.axis === "x" ? tops(p, p.at.x - 20, p.at.y - thick / 2, 40, thick) : tops(p, p.at.x - thick / 2, p.at.y - 20, thick, 40),
+        ),
+        ...posts.map((p) => tops(p, p.at.x - thick / 2, p.at.y - thick / 2, thick, thick)),
+      ];
+      // an upright block: three filled faces, the top the last
+      const blocks = scene.stage.made.filter((m) => m.kind === "graphics" && m.calls.filter((c) => c === "fillPoints").length === 3);
+      expect(blocks.map((m) => JSON.stringify(m.last.fillPoints[0])).sort()).toEqual([...want].sort());
+      // sorted as the baked pieces are (ADR-0074)
+      const depthAt = new Map(pieces.map((p, i) => [want[i], worldDepth(p.depthAt.x, p.depthAt.y)]));
+      for (const m of blocks) {
+        const depth = depthAt.get(JSON.stringify(m.last.fillPoints[0]));
+        if (depth !== undefined) expect(m.depth).toBe(depth);
+      }
+      expect(run.walls.size).toBe(dungeonMap.walls!.length);
+    });
   });
 
   describe("the fog of war (FS-SRA9J §B, §C)", () => {
