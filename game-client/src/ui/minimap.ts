@@ -74,7 +74,7 @@ export const MINIMAP_VIGNETTE = {
 /** The one texture every minimap's vignette is an image of. */
 const VIGNETTE_TEXTURE = "minimapVignette";
 
-/** Each seen region's outline (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
+/** The outline round the shown floor's outer edge (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
 export const MINIMAP_EDGE = { width: 1 } as const;
 
 /**
@@ -147,58 +147,54 @@ export function minimapContent(
   return { regions, fixtures: found };
 }
 
-/** A straight run of cell boundary, in cell units: along a row's or a column's grid line. */
-export interface RegionEdge {
-  from: Point;
-  to: Point;
-}
-
 /**
- * The outline of the seen regions' footprints (FS-56CKV §A.5), in cell units: every boundary
- * between a region's cell and a cell not of that region, joined into straight runs. Never along a
- * cell rect's side inside its own region, so a room never reads as a grid; a boundary between two
- * seen regions comes once.
+ * The outer edge of the seen regions taken together (FS-56CKV §A.5), in cell units: every boundary
+ * between a seen region's cell and a cell of no seen region (unexplored, or no region at all), as
+ * closed loops of corner points, each side of the outline once. No line where two seen regions
+ * meet, whatever their states, and none along a cell rect's side inside the shown floor.
  */
-export function regionEdges(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): RegionEdge[] {
+export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): Point[][] {
   const ids = new Set(seen.map((r) => r.id));
-  // unit boundaries: a row line's by its y, each running x..x+1; a column line's by its x, y..y+1
-  const rows = new Map<number, Set<number>>();
-  const cols = new Map<number, Set<number>>();
-  const add = (lines: Map<number, Set<number>>, line: number, at: number) => {
-    if (!lines.has(line)) lines.set(line, new Set());
-    lines.get(line)!.add(at);
+  const shown = (cx: number, cy: number) => ids.has(grid.region(cx, cy));
+  // each unit side, directed clockwise round the shown cells (y down), by the corner it leaves
+  const key = (p: Point) => `${p.x},${p.y}`;
+  const out = new Map<string, Point[]>();
+  const side = (from: Point, to: Point) => {
+    const k = key(from);
+    if (!out.has(k)) out.set(k, []);
+    out.get(k)!.push(to);
   };
-  for (const { id, cells } of seen) {
-    // a boundary shared with another seen region is the lower id's to draw
-    const bounds = (cx: number, cy: number) => {
-      const other = grid.region(cx, cy);
-      return other !== id && (!ids.has(other) || id < other);
-    };
+  for (const { id, cells } of seen)
     for (const { x, y, w, h } of cells)
       for (let cx = x; cx < x + w; cx++)
         for (let cy = y; cy < y + h; cy++) {
           if (grid.region(cx, cy) !== id) continue;
-          if (bounds(cx, cy - 1)) add(rows, cy, cx);
-          if (bounds(cx, cy + 1)) add(rows, cy + 1, cx);
-          if (bounds(cx - 1, cy)) add(cols, cx, cy);
-          if (bounds(cx + 1, cy)) add(cols, cx + 1, cy);
+          if (!shown(cx, cy - 1)) side({ x: cx, y: cy }, { x: cx + 1, y: cy });
+          if (!shown(cx + 1, cy)) side({ x: cx + 1, y: cy }, { x: cx + 1, y: cy + 1 });
+          if (!shown(cx, cy + 1)) side({ x: cx + 1, y: cy + 1 }, { x: cx, y: cy + 1 });
+          if (!shown(cx - 1, cy)) side({ x: cx, y: cy + 1 }, { x: cx, y: cy });
         }
-  }
-  const edges: RegionEdge[] = [];
-  const join = (lines: Map<number, Set<number>>, edge: (line: number, a: number, b: number) => RegionEdge) => {
-    for (const line of [...lines.keys()].sort((a, b) => a - b)) {
-      const units = [...lines.get(line)!].sort((a, b) => a - b);
-      let start = units[0];
-      for (let i = 1; i <= units.length; i++)
-        if (i === units.length || units[i] !== units[i - 1] + 1) {
-          edges.push(edge(line, start, units[i - 1] + 1));
-          start = units[i];
-        }
+  // every corner has as many sides in as out, so a walk from a corner always closes on it
+  const loops: Point[][] = [];
+  for (const [k, nexts] of out)
+    while (nexts.length > 0) {
+      const walk: Point[] = [];
+      let at = k;
+      do {
+        const [x, y] = at.split(",").map(Number);
+        walk.push({ x, y });
+        at = key(out.get(at)!.pop()!);
+      } while (at !== k);
+      // keep only the corners: a point where the line runs straight on is dropped
+      loops.push(
+        walk.filter((p, i) => {
+          const a = walk[(i + walk.length - 1) % walk.length];
+          const b = walk[(i + 1) % walk.length];
+          return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
+        }),
+      );
     }
-  };
-  join(rows, (y, a, b) => ({ from: { x: a, y }, to: { x: b, y } }));
-  join(cols, (x, a, b) => ({ from: { x, y: a }, to: { x, y: b } }));
-  return edges;
+  return loops;
 }
 
 /** Where the party's living, in-play members stand (§E.22): this client's player apart. */
@@ -228,6 +224,7 @@ export interface MinimapGraphics extends MinimapLayer {
   beginPath(): unknown;
   moveTo(x: number, y: number): unknown;
   lineTo(x: number, y: number): unknown;
+  closePath(): unknown;
   strokePath(): unknown;
 }
 
@@ -442,15 +439,19 @@ export class Minimap {
           );
     }
 
-    const edges = regionEdges(this.grid, content.regions);
-    if (edges.length === 0) return;
+    // one line round the shown floor's outer edge, closed so no corner is left open (FS-56CKV §A.5)
+    const loops = regionOutline(this.grid, content.regions);
+    if (loops.length === 0) return;
     g.lineStyle(MINIMAP_EDGE.width, palette.minimapEdge, 1);
     g.beginPath();
-    for (const { from, to } of edges) {
-      const a = cellPoint(from);
-      const b = cellPoint(to);
+    for (const [first, ...rest] of loops) {
+      const a = cellPoint(first);
       g.moveTo(a.x, a.y);
-      g.lineTo(b.x, b.y);
+      for (const q of rest) {
+        const b = cellPoint(q);
+        g.lineTo(b.x, b.y);
+      }
+      g.closePath();
     }
     g.strokePath();
   }
