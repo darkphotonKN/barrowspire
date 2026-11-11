@@ -163,10 +163,11 @@ describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
         .map((p) => p.at[run])
         .sort((a, b) => a - b);
     const tiles = (from: number, to: number) => Array.from({ length: (to - from) / 40 }, (_, k) => from + 20 + k * 40);
-    // the north side: cell 1 to cell 6, whole; the west and east sides the same, along y
-    expect(along("x", "y", 1.5 * CELL, "x")).toEqual(tiles(CELL, 7 * CELL));
-    expect(along("y", "x", 1.5 * CELL, "y")).toEqual(tiles(CELL, 7 * CELL));
-    expect(along("y", "x", 6.5 * CELL, "y")).toEqual(tiles(CELL, 7 * CELL));
+    // the north side: from the corner post in cell 1 to the one in cell 6, and no further, so
+    // nothing sticks out past a corner; the west and east sides the same, along y
+    expect(along("x", "y", 1.5 * CELL, "x")).toEqual(tiles(1.5 * CELL, 6.5 * CELL));
+    expect(along("y", "x", 1.5 * CELL, "y")).toEqual(tiles(1.5 * CELL, 6.5 * CELL));
+    expect(along("y", "x", 6.5 * CELL, "y")).toEqual(tiles(1.5 * CELL, 6.5 * CELL));
     // a post at each corner and nowhere along a side
     expect(new Set(posts.map((p) => `${p.at.x / CELL - 0.5},${p.at.y / CELL - 0.5}`))).toEqual(
       new Set(["1,1", "6,1", "1,6", "6,6"]),
@@ -221,6 +222,20 @@ describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
         expect(stray).toEqual([]);
       },
     );
+
+    it("stands every piece of a run between the run's two end posts, none sticking out past one", () => {
+      const stubs = wallRuns(walls, golden)
+        .filter((run) => run.width !== run.height)
+        .flatMap((run) => {
+          const axis = run.width > run.height ? "x" : "y";
+          const from = run.position[axis] + CELL / 2;
+          const to = run.position[axis] + (axis === "x" ? run.width : run.height) - CELL / 2;
+          return planWalls([run], 1, MASONRY_WALLS, wallRule(golden))
+            .pieces.filter((p) => p.at[axis] < from || p.at[axis] > to)
+            .map((p) => `${p.axis}@${p.at.x},${p.at.y}`);
+        });
+      expect(stubs).toEqual([]);
+    });
 
     it("leaves no wall cell without a piece", () => {
       expect(wallCells(walls).filter((key) => !axes.has(key))).toEqual([]);

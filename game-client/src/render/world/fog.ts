@@ -144,40 +144,56 @@ function bordering(
 
 /** How a dungeon floor's walls stand, cell by cell, as the fog needs them (§C.13). */
 export interface WallLayout {
-  /** The axis of the slab standing on cell (cx, cy), none where no wall does. */
-  axis(cx: number, cy: number): WallAxis | undefined;
+  /**
+   * The axis of the slab standing on one half of cell (cx, cy), its right half on screen or its
+   * left; none where no wall piece is drawn on that half.
+   */
+  axis(cx: number, cy: number, right: boolean): WallAxis | undefined;
   /** Whether a corner post stands at cell (cx, cy)'s centre: where a wall strip ends. */
   post(cx: number, cy: number): boolean;
 }
 
 /**
- * A floor's wall layout from its one-cell wall runs (`wallRuns`): every piece of a run is a
- * slab on its centreline from one end of the rect to the other, so each cell a strip covers carries
- * a slab along the strip's axis; its two posts stand at its end cells' centres (`planWalls`).
+ * A floor's wall layout from its one-cell wall runs (`wallRuns`): a run's pieces are slabs on its
+ * centreline between its two posts, which stand at its end cells' centres (`planWalls`, FS-KE075
+ * §H.46). So a cell in the middle of a strip carries a slab along the strip's axis on both its
+ * halves, and an end cell only on the half towards the run: nothing is drawn past the post. On
+ * screen a cell's left half holds its low-x half and its high-y half. A strip of one cell keeps
+ * its slab whole. Where strips share a half, the one along x has it, as the later of the runs.
  */
 export function wallLayout(grid: RegionGrid, strips: readonly WallState[]): WallLayout {
-  const axes = new Uint8Array(grid.cols * grid.rows);
+  // per half: 0 none, 1 a slab along x, 2 along y
+  const left = new Uint8Array(grid.cols * grid.rows);
+  const right = new Uint8Array(grid.cols * grid.rows);
   const posts = new Uint8Array(grid.cols * grid.rows);
   const index = (cx: number, cy: number) =>
     cx >= 0 && cy >= 0 && cx < grid.cols && cy < grid.rows ? cy * grid.cols + cx : -1;
   const c = grid.cell;
   for (const w of strips) {
-    const along = axisOf(w) === "x" ? 1 : 2;
+    const x = axisOf(w) === "x";
+    const along = x ? 1 : 2;
     const cx0 = Math.round(w.position.x / c);
     const cy0 = Math.round(w.position.y / c);
     const cx1 = Math.max(cx0, Math.round((w.position.x + w.width) / c) - 1);
     const cy1 = Math.max(cy0, Math.round((w.position.y + w.height) / c) - 1);
+    const one = cx0 === cx1 && cy0 === cy1;
     for (let cy = cy0; cy <= cy1; cy++)
       for (let cx = cx0; cx <= cx1; cx++) {
         const i = index(cx, cy);
-        if (i >= 0) axes[i] = along;
+        if (i < 0) continue;
+        const first = !one && cx === cx0 && cy === cy0;
+        const last = !one && cx === cx1 && cy === cy1;
+        // the half past the post: the first cell's low half along the run, the last cell's high
+        if (!(x ? first : last)) left[i] = along;
+        if (!(x ? last : first)) right[i] = along;
       }
     for (const i of [index(cx0, cy0), index(cx1, cy1)]) if (i >= 0) posts[i] = 1;
   }
   return {
-    axis: (cx, cy) => {
+    axis: (cx, cy, onRight) => {
       const i = index(cx, cy);
-      return i < 0 || !axes[i] ? undefined : axes[i] === 1 ? "x" : "y";
+      const along = i < 0 ? 0 : (onRight ? right : left)[i];
+      return along === 0 ? undefined : along === 1 ? "x" : "y";
     },
     post: (cx, cy) => {
       const i = index(cx, cy);
@@ -435,7 +451,7 @@ function halfOf(
   const s = bordering(grid, cx, cy, state);
   if (!s) return { alpha: FOG.void, equiv: FOG.void, right, y };
   const wall = rule.height({ x: (cx + 0.5) * grid.cell, y: (cy + 0.5) * grid.cell }) === "back" ? heights.back : heights.front;
-  const axis = walls.axis(cx, cy);
+  const axis = walls.axis(cx, cy, right);
   return {
     alpha: 0,
     equiv: VEIL[s],

@@ -192,6 +192,7 @@ import { Fog, wallLayout } from "@/render/world/fog";
 import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
+import { withinPosts } from "@/render/world/walls";
 import {
   FULLSCREEN_BUTTON_CLEARANCE,
   anchorAt,
@@ -3792,10 +3793,12 @@ export class BarrowspireScene extends Phaser.Scene {
       const own = pieces.get(w.entity_id) ?? [];
       pieces.set(w.entity_id, own);
       if (baked) continue;
-      // no art: placeholder blocks, one per tile of wall, as tall as the rule makes each
+      // no art: placeholder blocks, one per tile of wall, as tall as the rule makes each, and
+      // like the baked pieces only between the run's two posts (§H.46)
       const { x, y } = w.position;
       for (const p of splitAlongLength(x, y, w.width, w.height, WORLD_PX_PER_TILE)) {
         const centre = { x: p.x + p.width / 2, y: p.y + p.height / 2 };
+        if (rule.betweenPosts && !withinPosts(w, centre)) continue;
         const tall = rule.height(centre) === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
         for (const g of addUprightBlock(this, p.x, p.y, p.width, p.height, PLACEHOLDER_STONE, tall)) {
           own.push(g);
