@@ -15,7 +15,7 @@ import { BARROW_HEX } from "@/utils/theme";
 import { prefersReducedMotion } from "./mist";
 import type { Easing, FxTexture, Range, Token } from "./table";
 
-/** The dust's numbers (R34), as the owner tuned them three times on 2026-11-12; a retune is an edit here. */
+/** The dust's numbers (R34), as the owner tuned them four times on 2026-11-12; a retune is an edit here. */
 export interface CardDustRecord {
   /** Every mote's life, and the dust's: one fixed duration (FS-KYPQ9 §B.2; past its 1200 ms, R33). */
   durationMs: number;
@@ -56,11 +56,11 @@ export const CARD_DUST = {
   density: 2,
   texture: "fx_dust",
   scale: { from: 0.15, to: 0.15 },
-  speed: { from: 80, to: 320 },
+  speed: { from: 50, to: 200 },
   lean: 0.2,
   // fast out, then slow
-  drag: 1.6,
-  sway: { amplitude: { from: 4, to: 10 }, periodMs: { from: 700, to: 1200 } },
+  drag: 1.8,
+  sway: { amplitude: { from: 3, to: 7 }, periodMs: { from: 700, to: 1200 } },
   // hudText, hudLabel
   tint: { from: "vellum", to: "vellumDark" },
   alpha: { from: 1, to: 0 },
