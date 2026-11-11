@@ -36,16 +36,19 @@ export type CharacterAnimation =
  */
 export const WALK_PACE = 74;
 /**
- * World px per second the run clip covers at 1x, measured as {@link WALK_PACE} is (FS-JS7C8 R3).
- * A placeholder inside the band the run is keyed to (180–220) until the bake measures the keyed
- * clip; inert while no sheet carries `run`.
+ * World px per second the run clip covers at 1x (FS-JS7C8 R3), measured on the rig, not guessed:
+ * the speed the planted foot slides back under the body, averaged over the time a foot is down,
+ * with the clip at its authored 14 fps on the archer's legs (tools/bake/page/characters/pace.js,
+ * which reads the walk at about 80 against WALK_PACE's 74). 193.7 measured; clips.test.mjs holds
+ * this to it. At the server's 200 px/s the run plays at about 1.03x.
  */
-export const RUN_PACE = 200;
+export const RUN_PACE = 194;
 /**
- * World px per second the backpedal clip covers at 1x (FS-JS7C8 R10). A placeholder inside its
- * band (150–220) until the bake measures it; inert while no sheet carries `backpedal`.
+ * World px per second the backpedal clip covers at 1x (FS-JS7C8 R10), measured as
+ * {@link RUN_PACE} is, at its authored 18 fps: 165.4 measured, backward. At 200 px/s it plays at
+ * about 1.21x.
  */
-export const BACKPEDAL_PACE = 200;
+export const BACKPEDAL_PACE = 165;
 /** Below this drawn speed (world px/s) a player is standing, not walking: easing residue. */
 export const MOVING_SPEED = 20;
 /**

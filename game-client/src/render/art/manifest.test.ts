@@ -1189,12 +1189,13 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     ];
 
     /**
-     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), and every
-     * class's attack on the move (FS-HF0WW, FS-3V7GC).
+     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), every
+     * class's attack on the move (FS-HF0WW, FS-3V7GC), and a re-baked class's run and backpedal
+     * (FS-JS7C8 §A, §B: the archer first).
      */
     const OWN_CLIPS: Record<string, string[]> = {
       char_knight_base: ["walk_attack"],
-      char_archer_base: ["walk_attack"],
+      char_archer_base: ["run", "backpedal", "walk_attack"],
       char_wizard_base: ["walk_attack"],
       char_mercenary_base: ["parry", "walk_attack"],
     };
@@ -1259,6 +1260,19 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         "char_mercenary_base",
         "char_wizard_base",
       ]);
+    });
+
+    it("gives the archer a run and a backpedal: 8 frames, looping, in the 8 facings, at its scale and trimmed (FS-JS7C8 R1, R8)", () => {
+      const sheet = baked.sheets.char_archer_base;
+      expect(sheet.scale).toBe(2);
+      expect(sheet.trimmed).toBe(true);
+      for (const anim of ["run", "backpedal"]) {
+        const a = sheet.animations[anim];
+        expect(a, anim).toBeDefined();
+        expect(a.loop, anim).toBe(true);
+        expect(a.frames, anim).toHaveLength(8);
+        for (const dir of a.frames) expect(dir, anim).toHaveLength(8);
+      }
     });
 
     it("loops idle and walk, and plays attack and death once", () => {

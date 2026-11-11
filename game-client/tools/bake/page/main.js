@@ -173,10 +173,12 @@ function characterPoses(sheet) {
     const frames = clips[anim];
     if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
     // walk_attack (a class's attack on the move) walks its cloth like the walk and calms the
-    // shot's fling like the attack
+    // shot's fling like the attack; a run or backpedal names how fast it carries the cloth
+    // (characters/clips.js RUN_ANIMATIONS), in walks
+    const carried = spec.speed ?? (anim === "walk" || anim === "walk_attack" ? 1 : 0);
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,
-      speed: anim === "walk" || anim === "walk_attack" ? (style.speed ?? 1) : 0,
+      speed: carried * (style.speed ?? 1),
       settle: anim === "death",
       calm: anim === "attack" || anim === "parry" || anim === "walk_attack" ? 0.25 : 1,
     });

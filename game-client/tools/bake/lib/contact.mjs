@@ -1,5 +1,6 @@
 // The owner's review of character art (ADR-0021 §5, FS-2325V §E.7): every class and creature ×
-// 8 directions × each animation, at game scale (1×) and zoomed ×2. The tower interior sheets
+// 8 directions × each animation, at game scale (1×) and zoomed ×2. A re-baked class shows its
+// `run` and `backpedal` (FS-JS7C8 R37) beside its `walk` and `walk_attack`, in clip order. The tower interior sheets
 // (FS-8RBQY §D.7) follow the cast on the same sheet, one row per sheet, frames left to right.
 //
 // Written to tools/bake/review/ (gitignored) on every `npm run bake`, never by --check:

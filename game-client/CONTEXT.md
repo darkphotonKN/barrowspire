@@ -228,6 +228,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Run** (`run`): a playable class's looping clip while it moves, a jog keyed to the server's
   move speed so it plays at about its own pace. Replaces the walk for the four classes; folk and
   creatures still walk. Not the walk, which the class sheets keep for later use (FS-JS7C8).
+- **Pace** (`WALK_PACE`, `RUN_PACE`, `BACKPEDAL_PACE`): the world px per second a looping clip
+  carries the body at 1x: the speed its planted foot slides back under the body, measured on the
+  rig by the bake's `pace.js`, never guessed. The client plays the clip at the drawn speed over
+  its pace, so planted feet stay planted (FS-JS7C8 R3, R10).
 - **Backpedal** (`backpedal`): a playable class's looping clip while it moves away from where it
   faces (more than 90° between its facing and its movement): the body toward the pointer, the
   feet stepping back (FS-JS7C8).
