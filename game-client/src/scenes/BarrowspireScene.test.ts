@@ -5376,6 +5376,53 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
   });
 });
 
+// FS-JS7C8 §D R22: the own character turns to the pointer facing each frame, before its clip is
+// chosen; no other body is told of it.
+describe("BarrowspireScene pointer facing (FS-JS7C8 §D)", () => {
+  it("should turn the own character to the pointer facing from where its body is drawn, before its step", () => {
+    const run = sceneOnStage().run as unknown as {
+      handleGameStateUpdate(state: GameState): void;
+      update(time: number, delta: number): void;
+      playerPos?: { x: number; y: number };
+    };
+    run.handleGameStateUpdate({
+      ...floorState(1),
+      current_player: player("me", "Aldric", 130),
+      other_players: [],
+    } as GameState);
+    const told: string[] = [];
+    const anim = {
+      baked: true,
+      guard: vi.fn(),
+      face: vi.fn(() => told.push("face")),
+      step: vi.fn(() => (told.push("step"), { animation: "idle", facing: "n", direction: 6, timeScale: 1 })),
+      show: vi.fn(),
+    };
+    const pointerFacing = vi.fn(() => "n");
+    const up = { isDown: false };
+    const keys = { left: up, right: up, up, down: up };
+    Object.assign(run, {
+      cursors: keys,
+      wasd: keys,
+      kit: { follow: vi.fn(), guarding: false },
+      updateLighting: vi.fn(),
+      updateOtherPlayersSmooth: vi.fn(),
+      checkBuildingStatus: vi.fn(),
+      sendMovementIntent: vi.fn(),
+      playerPos: { x: 130, y: 0 },
+      targetPosition: { x: 130, y: 0 },
+      playerAnim: anim,
+      pointerFacing,
+    });
+
+    run.update(0, 16);
+
+    expect(pointerFacing).toHaveBeenCalledWith(run.playerPos);
+    expect(anim.face).toHaveBeenCalledWith("n");
+    expect(told).toEqual(["face", "step"]);
+  });
+});
+
 // FS-ZAJMH R18 and the top-right escalation, decided by Nick 2026-11-05: the fullscreen button
 // keeps the game frame's top-right corner in every scene, so the run's escaped count and the
 // floor under it step down clear of it, at every logical width.

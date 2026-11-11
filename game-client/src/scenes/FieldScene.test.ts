@@ -1143,6 +1143,37 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
   });
 
+  // FS-JS7C8 §D R22: the own character turns to the pointer facing each frame; no one else does
+  it("should turn the own character, and no other, to the pointer facing from where it is drawn", () => {
+    const { field } = kitOnStage({ aiming: false });
+    const view = (x: number) => ({
+      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => null },
+      name: { setPosition: vi.fn() },
+      pos: { x, y: 0 },
+      target: { x, y: 0 },
+      facing: "se",
+      anim: { baked: true, face: vi.fn(), step: vi.fn(), show: vi.fn() },
+      fallen: false,
+    });
+    const me = view(100);
+    const them = view(300);
+    const pointerFacing = vi.fn(() => "w");
+    Object.assign(field, {
+      views: new Map([
+        ["me", me],
+        ["them", them],
+      ]),
+      selfEntityID: "me",
+      pointerFacing,
+    });
+
+    field.update(16, 16);
+
+    expect(pointerFacing).toHaveBeenCalledWith(me.pos);
+    expect(me.anim.face).toHaveBeenCalledWith("w");
+    expect(them.anim.face).not.toHaveBeenCalled();
+  });
+
   it("should stand still while an archer draws a Shadow Shot, and walk on once it ends", () => {
     const fight = { aiming: true };
     const { field, send } = kitOnStage(fight);

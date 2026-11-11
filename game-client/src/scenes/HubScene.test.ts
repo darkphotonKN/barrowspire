@@ -3789,3 +3789,38 @@ describe("HubScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
     expect(relayout).toHaveBeenCalled();
   });
 });
+
+// FS-JS7C8 §D R22: the own character turns to the pointer facing each frame; no one else does
+describe("HubScene pointer facing (FS-JS7C8 §D)", () => {
+  it("should turn the own character, and no other, to the pointer facing from where it is drawn", () => {
+    const hub = new HubScene() as unknown as {
+      views: Map<string, unknown>;
+      selfEntityID: string | null;
+      pointerFacing?: unknown;
+      placeName(view: unknown): void;
+      easeTowardServerPositions(time: number, delta: number): void;
+    };
+    const view = (x: number) => ({
+      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => null },
+      pos: { x, y: 0 },
+      target: { x, y: 0 },
+      anim: { baked: true, face: vi.fn(), step: vi.fn(), show: vi.fn() },
+    });
+    const me = view(100);
+    const them = view(300);
+    const pointerFacing = vi.fn(() => "e");
+    hub.views = new Map([
+      ["me", me],
+      ["them", them],
+    ]);
+    hub.selfEntityID = "me";
+    hub.pointerFacing = pointerFacing;
+    hub.placeName = vi.fn();
+
+    hub.easeTowardServerPositions(0, 16);
+
+    expect(pointerFacing).toHaveBeenCalledWith(me.pos);
+    expect(me.anim.face).toHaveBeenCalledWith("e");
+    expect(them.anim.face).not.toHaveBeenCalled();
+  });
+});
