@@ -14,6 +14,7 @@
 import type Phaser from "phaser";
 import { CardDust, type CardInk, type DustArt } from "@/render/effects/cardDust";
 import { CardSmoke, type CardSmokeScene } from "@/render/effects/cardSmoke";
+import { CardAsh, type CardAshScene } from "@/render/effects/cardAsh";
 import { crispen, viewport } from "@/render/viewport";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
@@ -47,8 +48,11 @@ export interface ArrivalCardScene extends EndingScene {
   time: Pick<Phaser.Time.Clock, "now" | "delayedCall">;
 }
 
-/** The ways the card can leave: as dust (§D), or as smoke (§Change: Smoke, a trial). */
-export type CardLeave = "dust" | "smoke";
+/**
+ * The ways the card can leave: as dust (§D), or as smoke (§Change: Smoke, a trial), or as ash
+ * (§Change: Ash, a trial).
+ */
+export type CardLeave = "dust" | "smoke" | "ash";
 
 /**
  * The card's one switch (§Change: Smoke R41): how it leaves in the game. Dust, until the owner
@@ -82,9 +86,9 @@ export interface CardLeavePlayer {
 /** Every leave the card can take, one player each. */
 export type CardLeaves = Record<CardLeave, CardLeavePlayer>;
 
-/** A world scene's leaves for its card: the dust and the smoke, on its art. */
-export function cardLeaves(scene: CardSmokeScene, art: () => DustArt | undefined): CardLeaves {
-  return { dust: new CardDust(scene, art), smoke: new CardSmoke(scene, art) };
+/** A world scene's leaves for its card: the dust and the smoke, on its art, and the ash. */
+export function cardLeaves(scene: CardSmokeScene & CardAshScene, art: () => DustArt | undefined): CardLeaves {
+  return { dust: new CardDust(scene, art), smoke: new CardSmoke(scene, art), ash: new CardAsh(scene) };
 }
 
 /** What of the view the card covers and centres on. The logical view (`viewport`) is one. */
