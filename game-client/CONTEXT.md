@@ -320,6 +320,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   map. Every walkable cell is in exactly one. The unit of fog and of the minimap.
 - **Void**: the rock of a dungeon floor outside every region and its shell walls. Drawn as the
   canvas's darkest ink; nothing stands in it.
+- **Wall edge**: on a dungeon floor, the side a wall cell shares with a walkable cell directly
+  north, south, west or east of it (FS-XK2B6). A dungeon floor's walls are drawn on wall edges,
+  never through a wall cell's middle; a wall cell may carry up to four. The whole cell still
+  collides, and what lies of it beyond its walls is drawn as void is. Say *edge run* for a
+  straight line of wall edges facing the same way, from one corner of the walkable outline to the
+  next. A building's wall is still cut along its rect's centreline (**Wall piece**).
 - **Partition wall**: a server wall as the tower theme draws it: masonry, cut into wall pieces
   with the same geometry and cut-away rule as a house wall. It is a server wall, with collision.
 - **Perimeter wall**: the tower's outer wall, drawn by the client alone around the outside of the
