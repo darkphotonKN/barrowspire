@@ -1,6 +1,6 @@
 ---
 id: I-B4SG9-1
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: []
 labels: [ready-for-agent]

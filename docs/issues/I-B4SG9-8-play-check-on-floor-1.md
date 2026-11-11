@@ -3,7 +3,7 @@ id: I-B4SG9-8
 status: open
 implements: FS-B4SG9
 blocked_by: [I-B4SG9-7]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-B4SG9 slice 8: play check of the Bone Archer on floor 1"
 ---
 Implements FS-B4SG9 §Acceptance Criteria ("In play")

@@ -1,9 +1,9 @@
 ---
 id: I-B4SG9-7
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: [I-B4SG9-3, I-B4SG9-4, I-B4SG9-6]
-labels: [blocked]
+labels: []
 title: "FS-B4SG9 slice 7: Bone Archers take ghouls' places in floor 1's rooms and hall packs, and the hall's archer guards its chest"
 ---
 Implements FS-B4SG9 §B (R14–R19)

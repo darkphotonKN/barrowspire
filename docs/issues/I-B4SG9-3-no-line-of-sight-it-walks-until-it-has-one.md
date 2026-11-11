@@ -1,9 +1,9 @@
 ---
 id: I-B4SG9-3
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: [I-B4SG9-2]
-labels: [blocked]
+labels: []
 title: "FS-B4SG9 slice 3: with no line of sight a ranged monster walks until it has one"
 ---
 Implements FS-B4SG9 §A (R4, R5)

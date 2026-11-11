@@ -1,6 +1,6 @@
 ---
 id: I-B4SG9-5
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: []
 labels: [ready-for-agent]
@@ -48,7 +48,7 @@ the owner.
 - [ ] `creature_ghoul_base`'s frames are pixel-identical to before the change.
 - [ ] `npm run bake -- --check` exits 0 after the committed bake; the bake's own tests and
       `npm test` pass.
-- [ ] **The owner has approved the contact sheet** in `tools/bake/review/` (R29). A rejection is
+- [x] **The owner has approved the contact sheet** in `tools/bake/review/` (R29). Approved by Nick on 2026-11-11 ("核可"), on `contact-creature_bone_archer_base-2x.png`, before I-B4SG9-6 started. A rejection is
       more modelling or animation work in this slice, not a change of method.
 
 ## Blocked By

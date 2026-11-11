@@ -1,9 +1,9 @@
 ---
 id: I-B4SG9-6
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: [I-B4SG9-5]
-labels: [blocked]
+labels: []
 title: "FS-B4SG9 slice 6: the client draws the Bone Archer from its own sheet and plays its draw as the telegraph"
 ---
 Implements FS-B4SG9 §C (R20, R21)

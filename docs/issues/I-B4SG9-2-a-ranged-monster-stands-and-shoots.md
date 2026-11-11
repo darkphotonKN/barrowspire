@@ -1,9 +1,9 @@
 ---
 id: I-B4SG9-2
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: [I-B4SG9-1]
-labels: [blocked]
+labels: []
 title: "FS-B4SG9 slice 2: a ranged monster walks to range, draws, and looses an arrow the CombatSystem resolves"
 ---
 Implements FS-B4SG9 §A (R4, R6–R12)
