@@ -204,13 +204,16 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should be one typed record, at its starting values", () => {
     expect(CARD_ASH).toEqual({
       frontMs: 2000,
-      durationMs: 3000,
+      // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": the front's 2000 ms and a
+      // flake's 700 (was 3000, with a 1000 ms flake)
+      durationMs: 2700,
       ragged: 0.35,
       grainPx: 6,
       // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): the band runs fire's ramp
       band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
       flake: {
-        lifeMs: 1000,
+        // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": 30% sooner (was 1000)
+        lifeMs: 700,
         // the owner's sixth tune of 2026-11-12, "灰燼碎屑少一點": a fifth fewer again (was 240 and
         // 0.08; before his fourth, "灰燼 碎屑少２０％", 300 and 0.1)
         maxParticles: 192,
@@ -228,7 +231,8 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
           seamPx: 0.75,
           cools: [1, 0.6, 0.3],
           edgeFrom: 0.28,
-          ms: 900,
+          // the seventh tune: 30% sooner, still out before its flake (was 900)
+          ms: 630,
           steps: 20,
           shades: 12,
           flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
@@ -272,7 +276,8 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should keep every FS-KYPQ9 §B rule but §B.6's count and fall, §B.2's ceiling and §B.10 (R59)", () => {
     // §B.2: one fixed duration, the front's and a flake's life inside it
     expect(Number.isInteger(CARD_ASH.durationMs)).toBe(true);
-    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(3000);
+    // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": 2700 ms (was 3000)
+    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2700);
     expect(CARD_ASH.frontMs + CARD_ASH.flake.lifeMs).toBeLessThanOrEqual(CARD_ASH.durationMs);
     expect(CARD_ASH.frontMs + CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(CARD_ASH.durationMs);
     // §B.3: the easing allowlist
@@ -550,7 +555,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       return best;
     }
 
-    it("should come from one emitter of runtime flakes, each shape its own anim, rising, slowing and fading over 1000 ms", () => {
+    it("should come from one emitter of runtime flakes, each shape its own anim, rising, slowing and fading over 700 ms", () => {
       const { emitters, config, canvases, anims } = flakes();
 
       const [emitter] = emitters();
@@ -558,7 +563,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(emitter.calls.setDepth).toEqual([[961]]);
       expect(emitter.calls.setScrollFactor).toEqual([[0]]);
       expect(config()).toMatchObject({
-        lifespan: 1000,
+        lifespan: 700,
         speed: { min: 18, max: 45 },
         maxParticles: 192,
         emitting: false,
@@ -638,8 +643,8 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       const turns = Array.from({ length: 200 }, () => {
         const p = {};
         const from = rotate.onEmit(p, "rotate");
-        // a whole life: 1 s
-        return rotate.onUpdate(p, "rotate", 1, from) - from;
+        // a whole life, 700 ms since the seventh tune: its turn a second
+        return ((rotate.onUpdate(p, "rotate", 1, from) - from) * 1000) / (config().lifespan as number);
       });
       for (const s of turns) {
         expect(Math.abs(s)).toBeGreaterThanOrEqual(20 - 1e-9);
@@ -649,7 +654,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(turns.some((s) => s < 0)).toBe(true);
     });
 
-    it("should travel farther than before the third tune, about 1.5 times as far in its life", () => {
+    it("should travel about a quarter to 30% less far than in the third tune's 1000 ms life, in its 700 ms", () => {
       const { config } = flakes();
       const { min, max } = config().speed as { min: number; max: number };
       const ax = config().accelerationX as { onUpdate(p: object, k: string, t: number, v: number): number };
@@ -668,12 +673,16 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         return -y;
       };
       const mean = Array.from({ length: 21 }, (_, k) => travel(min + ((max - min) * k) / 20)).reduce((s, d) => s + d) / 21;
-      // before: 12–32 px/s under a drag of 0.5 over 1 s, about 17.3 px on average, at most about 25.2
-      const before = (v: number) => (v * (1 - Math.exp(-0.5))) / 0.5;
-      const was = (before(12) + before(32)) / 2;
-      expect(mean / was).toBeGreaterThan(1.4);
-      expect(mean / was).toBeLessThan(1.65);
-      expect(travel(max)).toBeGreaterThan(before(32));
+      // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": before, the same 18–45 px/s
+      // under the same drag of 0.4 over 1 s, about 26 px on average, at most about 37; now about
+      // 19, at most about 27
+      const before = (v: number) => (v * (1 - Math.exp(-0.4))) / 0.4;
+      const was = (before(18) + before(45)) / 2;
+      expect(mean / was).toBeGreaterThan(0.68);
+      expect(mean / was).toBeLessThan(0.78);
+      expect(mean).toBeCloseTo(19.2, 0);
+      expect(travel(max)).toBeLessThan(before(45));
+      expect(travel(max)).toBeCloseTo(27.5, 0);
     });
 
     it("should flutter, not spin: each flake's scale on one axis swings through edge-on and over, never past its size", () => {
@@ -804,7 +813,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
     });
 
-    it("should be charred paper, pitch, slate and ash, 0.85 with a glowing seam that dies to ash over its first 900 ms", () => {
+    it("should be charred paper, pitch, slate and ash, 0.85 with a glowing seam that dies to ash over its first 630 ms", () => {
       const all = shapes(2);
 
       // the owner's "灰燼碎屑再多一點燒焦感": cold, every pixel a mix of the char, the body and the ash
@@ -818,9 +827,10 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       const glowing = all.filter((s) => s.frames.length > 1);
       expect(glowing).toHaveLength(20);
       for (const { anim, frames } of glowing) {
-        // 20 frames over 900 ms (was 700, and 8 over 500 before that), then held on the last
+        // 20 frames over 630 ms (the seventh tune, "灰燼碎屑消失的快一點"; was 900, before that 700,
+        // and 8 over 500 before that), then held on the last
         expect(frames).toHaveLength(20);
-        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(900);
+        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(630);
         // hot at first: orange on its seam
         expect(frames[0].some((p) => dist(p.c, FIRE_HOT) < 40)).toBe(true);
         expect(heat(frames.at(-1)!)).toBeLessThan(heat(frames[0]));
@@ -1095,12 +1105,12 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(gone).not.toHaveBeenCalled();
   });
 
-  it("should be gone at 3000 ms, everything of it destroyed, and say so (R57)", () => {
+  it("should be gone at 2700 ms, everything of it destroyed, and say so (R57)", () => {
     const { ash, gone, timers, made, burn } = ashStage();
     ash.play(cardInk(), 961, gone);
 
     const [end] = timers;
-    expect(end.delay).toBe(3000);
+    expect(end.delay).toBe(2700);
     end.fire();
 
     expect(made.every((m) => m.destroyed)).toBe(true);
