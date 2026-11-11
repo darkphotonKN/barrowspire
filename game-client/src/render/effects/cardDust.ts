@@ -57,7 +57,7 @@ export const CARD_DUST = {
   density: 4,
   texture: "fx_dust",
   scale: { from: 0.15, to: 0.15 },
-  speed: { from: 30, to: 120 },
+  speed: { from: 24, to: 96 },
   lean: 0.2,
   // fast out, then slow
   drag: 1.8,

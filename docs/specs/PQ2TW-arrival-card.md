@@ -115,6 +115,23 @@
 > | start speed | 50–200 px/s | 30–120 px/s (at drag 1.8 a mote goes about 16–62 px, about 39 on average) |
 > | a mote's sideways sway | 3–7 px to either side | 2–5 px to either side |
 > | R33's start-speed cap | 200 px/s | 120 px/s |
+>
+> **The owner's seventh tune, 2026-11-12.** Looking at the sixth tune, he said: "粒子在減少２０％擴散
+> 距離": cut the dust's spread by another 20% (a mote went about 0.53 × its start speed, about 16,
+> 39 and 62 px at the slowest, middling and fastest start). At a fixed drag and duration a mote's
+> travel is in proportion to its start speed, so the start speed falls by 20% and the drag stays,
+> keeping the fast-then-slow feel. His values replace the sixth tune's where they differ: the
+> dust's start speed (R26), and R33's start-speed cap. The sway (2–5 px), the full-turn headings,
+> the lean (0.2), the drag (1.8), the duration (1800 ms), the cap (6000, the fifth tune's trial),
+> the density (4) and the size (× 0.15) are unchanged; the sway's period, phase and its growing as
+> the mote slows are unchanged. The smoke and the switch are untouched. With the sway kept, the
+> slowest mote (about 12.5 px) may now end up to about 22° off its heading (a 5 px sway over
+> 12.5 px), no longer within 20°, so R26's acceptance bound on where a mote ends follows to 22°.
+>
+> | Value | Was | Now |
+> |---|---|---|
+> | start speed | 30–120 px/s | 24–96 px/s (at drag 1.8 a mote goes about 12.5–50 px, about 31 on average) |
+> | R33's start-speed cap | 120 px/s | 96 px/s |
 
 ## Summary
 
@@ -291,7 +308,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 26. **They scatter every way, a little upward, and fade.** Each mote's heading is drawn at random
     over the full turn, inward over the card as much as out, then leaned up by 0.2 (under 1, so a
     mote drawn downward still goes down); motes may cross the subtitle and each other. A drift,
-    not a burst: each starts at 30–120 px/s, none faster than 120 px/s, and all slow as they go,
+    not a burst: each starts at 24–96 px/s, none faster than 96 px/s, and all slow as they go,
     each losing 1.8 of its speed per second (a drag): fast out, then slow. Each mote also sways gently
     sideways off its straight path, 2–5 px to either side over a 700–1200 ms period, each its
     own amplitude, period and phase, the sway growing as the mote slows, so a path is not a
@@ -302,7 +319,8 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     wider start speed, lighter drag and wider sway, his third tune, "粒子散的開一點"; the random
     heading and the lighter lean, the same tune, "應該是說也要往內散 目前都是散在同一個方向"; the
     slower start, stronger drag and narrower sway, his fourth tune, "目前散得很平均 但似乎太快太遠"; the
-    slower start and narrower sway again, his sixth tune, "粒子調整不要散這麼遠".)**
+    slower start and narrower sway again, his sixth tune, "粒子調整不要散這麼遠"; the start 20% slower
+    again, his seventh tune, "粒子在減少２０％擴散距離".)**
 27. **About 1.8 seconds.** 1800 ms, one fixed duration. It passes FS-KYPQ9 §B.2's 1200 ms
     ceiling, under the exception of R33; never over 1800 ms. **(charter default; the duration, the
     owner's tunes of 2026-11-12: the dust carries further and needs the time to fade.)**
@@ -321,7 +339,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     多一點"; count and cap doubled, his second tune, "粒子再多1倍"; doubled again, as a trial, his
     fifth tune, "粒子6000個試試".)**
 33. **An exception to FS-KYPQ9 §B.6 and §B.2's ceiling, and only these.** The dust is more than
-    12 particles (at most 6000), it scatters every way (no particle starts faster than 120 px/s), and
+    12 particles (at most 6000), it scatters every way (no particle starts faster than 96 px/s), and
     it lasts 1800 ms, past §B.2's 1200 ms. It still calls no `explode`, and every other rule of §B
     holds for it: one fixed duration, the easing allowlist, no scale bounce, no shake, tokens only,
     at most 3 colours, teardown on end and on scene shutdown. The tests that hold §B.2 and §B.6
@@ -417,8 +435,8 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 - [ ] At the end of the hold, heading, rule and subtitle break up together and the text is gone. (R24)
 - [ ] Every particle starts on a pixel the text drew or on the rule; none in the gaps between letters. (R25)
-- [ ] Each particle's heading is drawn at random over the full turn, a card's headings covering all four quadrants, leaned up by 0.2, at 30–120 px/s at the start, slowing at 1.8/s, and all are gone at 1800 ms. (R26, R27)
-- [ ] Once a mote has slowed its path sways sideways, not a straight line, at most 5 px off it; it never turns back along its own heading, and ends within 20° of it. (R26)
+- [ ] Each particle's heading is drawn at random over the full turn, a card's headings covering all four quadrants, leaned up by 0.2, at 24–96 px/s at the start, slowing at 1.8/s, and all are gone at 1800 ms. (R26, R27)
+- [ ] Once a mote has slowed its path sways sideways, not a straight line, at most 5 px off it; it never turns back along its own heading, and ends within 22° of it. (R26)
 - [ ] Particles start `hudText`, end `hudLabel`, and no other colour appears. (R28)
 - [ ] The dust is drawn over the veil and under the HUD. (R29)
 - [ ] The climb's card leaves as dust too. (R30)
@@ -487,7 +505,8 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
   2026-11-12 the exception also covers §B.2's 1200 ms ceiling; since his second tune that day
   the dust lasts 1800 ms, at most 3000 particles; since his third tune it scatters every way,
   inward included; since his fourth tune none starts faster than 200 px/s; since his fifth
-  tune, a trial, at most 6000 particles; since his sixth tune none starts faster than 120 px/s.
+  tune, a trial, at most 6000 particles; since his sixth tune none starts faster than 120 px/s; since his seventh,
+  none faster than 96 px/s.
 - **O4. The subtitle lines** for the town, the two fields and the dev test room are starting
   lines for the browser check.
 
