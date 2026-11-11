@@ -2,8 +2,10 @@
  * The arrival card's leaving as ash (FS-PQ2TW §Change: Ash, a trial alternate leave, R53–R64): when
  * the card's hold ends, a burn front crosses its letters from the left, an ember glow on its edge;
  * the strokes it passes char and go. What comes off is burnt paper and embers, not shapes (the
- * owner's look of 2026-11-12, "灰燼像泡泡一樣怪怪的"): jagged, torn slate shards, some still glowing
- * at one edge, that flutter up, turning over as they go, and a few ember sparks off the front.
+ * owner's look of 2026-11-12, "灰燼像泡泡一樣怪怪的"): jagged, torn shards of charred paper, a
+ * black core and a broken pale ash rim, some with a seam of fire still eating their edge
+ * ("灰燼碎屑再多一點燒焦感"), that flutter up, turning over as they go, and a few sparks off the
+ * front. Every hot thing runs fire's ramp, hottest first ("火的顏色有辦法擬真一點嗎").
  *
  * The burn is per pixel. The card's ink (its two texts' own canvases and its rule) is copied once
  * into one image; each of its pixels carries a fixed threshold, how far along it lies from the left
@@ -36,8 +38,12 @@ export interface CardAshRecord {
   ragged: number;
   /** The noise's grain, in view px: the size of the front's bays and tongues (R55). */
   grainPx: number;
-  /** The band behind the front, in threshold units: its ember edge, then its char (R55). */
-  band: { ember: number; char: number };
+  /**
+   * The band behind the front, in threshold units: its fire, then its char (R55). Across the fire
+   * a pixel runs `tint.band`'s ramp, hottest first, reaching each stop at its share of the fire in
+   * `stops`; across the char, from the ramp's last stop to `tint.char`.
+   */
+  band: { ember: number; char: number; stops: readonly number[] };
   flake: {
     /** Each flake's life (R56). */
     lifeMs: number;
@@ -53,16 +59,32 @@ export interface CardAshRecord {
     smallBias: number;
     /** Long side to short, spread over the shapes (R56). */
     aspect: Range;
-    /** How far toward `tint.mottle` the lightest mottling goes, 0..1 (R56). */
+    /** How far toward `tint.core` a char blotch goes, 0..1: darker spots in the body (R56). */
     mottle: number;
     /**
-     * The share of shapes with a glowing patch on one edge, and how it dies to grey over `ms` (R56):
-     * `steps` frames of its anim, drawn from `shades` of the patch, from its heat to none. It holds
-     * its heat, then goes (`ease.glow`), and flickers `flicker.count` times on the way: a dip of
-     * `depth` of its heat and back within `ms`, each centred somewhere in `within` of its dying.
+     * The charred body (R56): its lift from `tint.core` toward `tint.flake`, `core` at its deepest
+     * and `edge` by its torn edge, the core reached `depthPx` view px in.
+     */
+    char: { core: number; edge: number; depthPx: number };
+    /**
+     * The ash rim (R56): the torn edge going pale toward `tint.rim`, by up to `pale`, `depthPx` view
+     * px deep, broken round the outline (where its noise falls under `gap`, the char shows to the
+     * edge), so it is never a closed ring.
+     */
+    ash: { depthPx: number; pale: number; gap: number };
+    /**
+     * The share of shapes with a glowing seam along part of their torn edge, and how it dies to ash
+     * over `ms` (R56): `steps` frames of its anim, drawn from `shades` of the seam, from its heat to
+     * none. Its colour cools down `tint.seam`, passing each stop at its heat in `cools`, then goes
+     * to the rim's ash. It holds its heat, then goes (`ease.glow`), and flickers `flicker.count`
+     * times on the way: a dip of `depth` of its heat and back within `ms`, each centred somewhere
+     * in `within` of its dying.
      */
     glow: {
       share: number;
+      /** How deep the seam reaches in from the edge, in view px (R56). */
+      seamPx: number;
+      cools: readonly number[];
       /**
        * Where a glowing shape's burnt edge starts, as a share of the way from its middle to its far
        * side (a plain shape's starts at 0.4): lower, a larger ember patch, still on one side (R56).
@@ -111,11 +133,24 @@ export interface CardAshRecord {
     spreadDeg: number;
     /** How fast its light beats as it dies, picked per spark. */
     flickerHz: Range;
+    /** Where in its life it passes each stop of `tint.spark`, born hottest, cooling to red. */
+    cools: readonly number[];
     /** Drawn additively, so it reads as light. */
     blend: "ADD";
   };
-  /** The burning edge, the char, the flake, its mottling, its glow and the sparks (R58). */
-  tint: { edge: Token; char: Token; flake: Token; mottle: Token; glow: Token; spark: Token };
+  /**
+   * The colours (R58): the burn's fire ramp, hottest first, and its char; a flake's char core (and
+   * its blotches), its body and its ash rim; its glowing seam's ramp and the sparks', hottest first.
+   */
+  tint: {
+    band: readonly Token[];
+    char: Token;
+    core: Token;
+    flake: Token;
+    rim: Token;
+    seam: readonly Token[];
+    spark: readonly Token[];
+  };
   /** The card's rule as the card draws it (`palette.frame` at 0.6), burned with the letters. */
   rule: { tint: Token; alpha: number };
   /** The front's sweep, a flake's fading, a spark's fall and a glow's dying (§B.3 allowlist). */
@@ -128,7 +163,8 @@ export const CARD_ASH = {
   durationMs: 3000,
   ragged: 0.35,
   grainPx: 6,
-  band: { ember: 0.06, char: 0.08 },
+  // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): fire runs a temperature ramp
+  band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
   flake: {
     lifeMs: 1000,
     // the owner's fourth tune of 2026-11-12, "灰燼 碎屑少２０％": a fifth fewer (was 300 and 0.1)
@@ -138,9 +174,14 @@ export const CARD_ASH = {
     lengthPx: { from: 3, to: 14 },
     smallBias: 1.2,
     aspect: { from: 1.1, to: 2.8 },
+    // the owner's "灰燼碎屑再多一點燒焦感" (2026-11-12): a charred core, char blotches, a pale ash rim
     mottle: 0.6,
+    char: { core: 0.08, edge: 0.55, depthPx: 2 },
+    ash: { depthPx: 0.75, pale: 0.85, gap: 0.45 },
     glow: {
       share: 0.85,
+      seamPx: 0.75,
+      cools: [1, 0.6, 0.3],
       edgeFrom: 0.28,
       ms: 900,
       steps: 20,
@@ -166,9 +207,18 @@ export const CARD_ASH = {
     leanLeftDeg: 15,
     spreadDeg: 25,
     flickerHz: { from: 6, to: 14 },
+    cools: [0, 0.45, 1],
     blend: "ADD",
   },
-  tint: { edge: "ember", char: "slate", flake: "slate", mottle: "slateLight", glow: "ember", spark: "ember" },
+  tint: {
+    band: ["fireCore", "fireHot", "ember", "fireDeep"],
+    char: "slate",
+    core: "pitch",
+    flake: "slate",
+    rim: "vellumFaint",
+    seam: ["fireHot", "ember", "fireDeep"],
+    spark: ["fireHot", "ember", "fireDeep"],
+  },
   rule: { tint: "brass", alpha: 0.6 },
   ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn", glow: "Sine.easeIn" },
 } as const satisfies CardAshRecord;
@@ -230,6 +280,20 @@ const rgb = (token: Token) => {
   const hex = BARROW_HEX[token];
   return [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff] as const;
 };
+
+/**
+ * The colour at `x` along a ramp of `colours` placed at `at` (rising or falling), held at its ends:
+ * how a fire's colour runs with its heat (the owner's "火的顏色有辦法擬真一點嗎").
+ */
+function ramp(colours: readonly (readonly number[])[], at: readonly number[], x: number): number[] {
+  const rising = at[0] <= at[at.length - 1];
+  const cs = rising ? colours : [...colours].reverse();
+  const ps = rising ? at : [...at].reverse();
+  if (x <= ps[0]) return [...cs[0]];
+  for (let n = 1; n < ps.length; n++)
+    if (x <= ps[n]) return mix(cs[n - 1], cs[n], (x - ps[n - 1]) / (ps[n] - ps[n - 1] || 1));
+  return [...cs[cs.length - 1]];
+}
 
 /** Where a text lies, in view px, and how its canvas maps onto it. */
 function placeOf(text: InkText) {
@@ -355,15 +419,19 @@ interface SheetFrame {
   h: number;
 }
 
-/** One pixel of a flake shape: where it lies in its cell, its alpha, its mottling and its burnt edge. */
+/** One pixel of a flake shape: where it lies in its cell, its alpha, and what of burnt paper it is. */
 interface PaperPixel {
   x: number;
   y: number;
   alpha: number;
-  /** 0..1: how far toward `tint.mottle` its paper is. */
-  mottle: number;
-  /** 0..1: how far into the shape's burnt edge it lies: grey ash, and on a glowing shape, hot. */
-  burnt: number;
+  /** Canvas px in from outside the shape: 1 on its outline. */
+  depth: number;
+  /** 0..1: how far a char blotch takes it toward `tint.core`. */
+  blotch: number;
+  /** 0..1: how far into the ash rim it lies, toward `tint.rim`. */
+  rim: number;
+  /** 0..1: how much of the glowing seam it carries (a glowing shape only). */
+  seam: number;
 }
 
 const mix = (a: readonly number[], b: readonly number[], k: number) => [0, 1, 2].map((c) => a[c] + (b[c] - a[c]) * k);
@@ -385,12 +453,13 @@ function inside(poly: readonly (readonly [number, number])[], x: number, y: numb
  * is spread over them (a shard, not a line: no side under the shortest length unless the whole
  * shard is), and its outline is an angular polygon, its two ends at full length; a larger shard
  * has a bite torn out of it, and its edge pixels are torn (some missing, the rest thinned at
- * random), the same paper as its body, so no ring is drawn round it. Its paper is mottled in
- * small patches, and one side of it, never all round, is its burnt edge (from `edgeFrom` of the way
- * out, nearer the middle on a glowing shape, `glow.edgeFrom`): ash grey, or on a
- * glowing shape, hot.
+ * random). Its paper is charred (the owner's "灰燼碎屑再多一點燒焦感"): blotched darker in small
+ * patches, its depth read in from the edge so the core is the darkest, and its torn edge pale
+ * ash, a rim that comes and goes round the outline (never a closed ring), palest on its burnt side
+ * (from `edgeFrom` of the way out along a heading of its own). On a glowing shape the burnt side's
+ * edge band, `glow.seamPx` deep, carries the seam: the ember eating into the edge, on one side only.
  */
-function paperShape(k: number, n: number, cell: number, resolution: number, random: () => number, edgeFrom = 0.4): PaperPixel[] {
+function paperShape(k: number, n: number, cell: number, resolution: number, random: () => number, glowing: boolean): PaperPixel[] {
   const f = CARD_ASH.flake;
   const length = f.lengthPx.from + (f.lengthPx.to - f.lengthPx.from) * ((k + 0.5) / n) ** f.smallBias;
   // a low-discrepancy walk over the aspects, so every sheet holds squat and long shards alike
@@ -416,10 +485,10 @@ function paperShape(k: number, n: number, cell: number, resolution: number, rand
   const at = new Map<number, PaperPixel>();
   for (let y = 0; y < cell; y++)
     for (let x = 0; x < cell; x++)
-      if (inside(poly, x + 0.5 - c, y + 0.5 - c)) at.set(key(x, y), { x, y, alpha: 255, mottle: 0, burnt: 0 });
+      if (inside(poly, x + 0.5 - c, y + 0.5 - c)) at.set(key(x, y), { x, y, alpha: 255, depth: 0, blotch: 0, rim: 0, seam: 0 });
   if (at.size === 0) {
     const m = Math.floor(c);
-    at.set(key(m, m), { x: m, y: m, alpha: 255, mottle: 0, burnt: 0 });
+    at.set(key(m, m), { x: m, y: m, alpha: 255, depth: 0, blotch: 0, rim: 0, seam: 0 });
   }
   const edgeOf = () =>
     [...at.values()].filter((p) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !at.has(key(p.x + dx, p.y + dy))));
@@ -435,20 +504,47 @@ function paperShape(k: number, n: number, cell: number, resolution: number, rand
     if (at.size > 12 && random() < 0.15) at.delete(key(p.x, p.y));
     else p.alpha = Math.round(150 + 105 * random());
   }
-  // mottled in patches of 2 × 2 canvas px
+  // its depth, read in from the outline: 1 there, rising a canvas px a ring
+  let ring = edgeOf();
+  for (const p of ring) p.depth = 1;
+  for (let d = 2; ring.length > 0; d++) {
+    const next: PaperPixel[] = [];
+    for (const p of ring)
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const q = at.get(key(p.x + dx, p.y + dy));
+        if (q && q.depth === 0) {
+          q.depth = d;
+          next.push(q);
+        }
+      }
+    ring = next;
+  }
+  // char blotches in patches of 2 × 2 canvas px
   const patches = new Map<number, number>();
   for (const p of at.values()) {
     const patch = key(p.x >> 1, p.y >> 1);
     if (!patches.has(patch)) patches.set(patch, random() < 0.5 ? random() * f.mottle : 0);
-    p.mottle = patches.get(patch)!;
+    p.blotch = patches.get(patch)!;
   }
-  // its burnt edge: the far side along a heading of its own, deepest at the very edge
+  // its burnt side: the far side along a heading of its own, deepest at the very edge
   const phi = random() * 2 * Math.PI;
   const along = (p: PaperPixel) => (p.x + 0.5 - c) * Math.cos(phi) + (p.y + 0.5 - c) * Math.sin(phi);
   const far = Math.max(...[...at.values()].map(along));
+  const edgeFrom = glowing ? f.glow.edgeFrom : 0.4;
+  // the ash rim's cover round the outline: a slow wave of the bearing, so it comes and goes, its
+  // phase from the burnt side's heading (no draw of its own: the shapes stay as they were drawn)
+  const cover = (p: PaperPixel) => {
+    const th = Math.atan2(p.y + 0.5 - c, p.x + 0.5 - c);
+    return 0.5 + 0.28 * Math.sin(2 * th + 3 * phi) + 0.22 * Math.sin(3 * th + 5 * phi + 1);
+  };
+  const within = (d: number, px: number) => Math.min(1, Math.max(0, 1 - (d - 1) / Math.max(1, px * resolution)));
   for (const p of at.values()) {
     const e = far > 0 ? along(p) / far : 1;
-    p.burnt = e < edgeFrom ? 0 : Math.min(1, Math.max(0, (e - edgeFrom) / 0.6 + (random() - 0.5) * 0.3));
+    const burnt = e < edgeFrom ? 0 : Math.min(1, Math.max(0, (e - edgeFrom) / 0.6 + (random() - 0.5) * 0.3));
+    const band = within(p.depth, f.ash.depthPx);
+    const shown = Math.min(1, Math.max(0, (cover(p) + 0.5 * burnt - f.ash.gap) / 0.25));
+    p.seam = glowing ? Math.min(1, Math.max(0, (burnt - 0.15) * 1.6)) * within(p.depth, f.glow.seamPx) : 0;
+    p.rim = Math.max(shown * band, p.seam > 0 ? band : 0);
   }
   return [...at.values()];
 }
@@ -488,17 +584,21 @@ const SPARK_FRAMES = ["s0", "s1"];
 /**
  * The flakes' and the sparks' one sheet (R56, R59, R64), drawn at `resolution` canvas px per view
  * px: a row of cells per flake shape, a glowing shape's row holding its `glow.shades` frames, its
- * burnt edge from `ember` to ash grey, then a row of sparks, solid `ember`, each a pixel or a
- * pixel and its tail. Every flake pixel is a mix of `slate`, `slateLight` and `ember`; no blend
- * with anything else.
+ * seam cooling down `tint.seam` to the rim's ash, then a row of sparks, drawn in the hottest of
+ * `tint.spark` (each tinted down the ramp as it flies), each a pixel or a pixel and its tail.
+ * Every flake pixel is a mix of `tint.core`, `tint.flake`, `tint.rim` and `tint.seam`'s stops; no
+ * blend with anything else.
  */
 function ashSheet(resolution: number, random: () => number) {
   const f = CARD_ASH.flake;
   const s = CARD_ASH.spark;
+  const core = rgb(CARD_ASH.tint.core);
   const body = rgb(CARD_ASH.tint.flake);
-  const light = rgb(CARD_ASH.tint.mottle);
-  const hot = rgb(CARD_ASH.tint.glow);
-  const spark = rgb(CARD_ASH.tint.spark);
+  const ash = rgb(CARD_ASH.tint.rim);
+  const seam = CARD_ASH.tint.seam.map(rgb);
+  const { cools } = f.glow;
+  const coolest = cools[cools.length - 1];
+  const spark = rgb(CARD_ASH.tint.spark[0]);
   const cell = Math.ceil(f.lengthPx.to * resolution) + 2;
   const { shades } = f.glow;
   // a spark: a pixel with a fainter tail under it, or a two-pixel ember, its corners dimmed
@@ -515,18 +615,26 @@ function ashSheet(resolution: number, random: () => number) {
   const glows = (k: number) => Math.floor((k + 1) * f.glow.share) > Math.floor(k * f.glow.share);
   const shapes = Array.from({ length: f.shapes }, (_, k) => {
     const glowing = glows(k);
-    const pixels = paperShape(k, f.shapes, cell, resolution, random, glowing ? f.glow.edgeFrom : 0.4);
+    const pixels = paperShape(k, f.shapes, cell, resolution, random, glowing);
+    // its charred paper: the core darkest, lifted toward the body by the edge, blotched, the rim ash
+    const paper = pixels.map((p) => {
+      const deep = Math.min(1, Math.max(0, (p.depth - 1) / (f.char.depthPx * resolution)));
+      const lift = (f.char.edge + (f.char.core - f.char.edge) * deep) * (1 - p.blotch);
+      return mix(mix(core, body, lift), ash, p.rim * f.ash.pale);
+    });
     const names = Array.from({ length: glowing ? shades : 1 }, (_, j) => {
       const name = `f${k}-${j}`;
       const left = j * cell;
       const top = k * cell;
-      // the burnt edge's heat at this shade: from its own down to none, the ash grey it leaves
+      // the seam's heat at this shade, from its own down to none: it cools down the ramp, its
+      // hottest first, then from its coolest stop to the rim's ash it leaves
       const heat = glowing ? 1 - j / (shades - 1) : 0;
-      for (const p of pixels) {
-        const paper = mix(mix(body, light, p.mottle), light, p.burnt * 0.7);
-        const colour = mix(paper, hot, p.burnt * heat);
-        data.set([...colour, p.alpha], ((top + p.y) * width + left + p.x) * 4);
-      }
+      const fire = ramp(seam, cools, heat);
+      const hold = heat >= coolest ? 1 : heat / coolest;
+      pixels.forEach((p, n) => {
+        const colour = mix(paper[n], fire, p.seam * hold);
+        data.set([...colour.map(Math.round), p.alpha], ((top + p.y) * width + left + p.x) * 4);
+      });
       frames.push({ name, x: left, y: top, w: cell, h: cell });
       return name;
     });
@@ -584,6 +692,9 @@ function turnedOver(phase: number): number {
   const c = Math.cos(phase);
   return Math.sign(c) * Math.sqrt(Math.abs(c));
 }
+
+/** Phaser 4's `TintModes.FILL`: the tint replaces the frame's colours, its alpha kept. */
+const TINT_FILL = 1 as Phaser.TintModes;
 
 const FLUTTER = Symbol("cardAshFlutter");
 const FLICKER = Symbol("cardAshFlicker");
@@ -698,8 +809,8 @@ export class CardAsh {
 
   /**
    * The burn over `sheet`, writing into `out`: given the front at `v` (0..1), every ink pixel it has
-   * passed by the whole band is gone, each within the band is tinted from its ink to ember at the
-   * front, then charred to slate; each flake whose pixel has just gone is let go by `release`, and
+   * passed by the whole band is gone, each within the band burns from its ink to the fire's
+   * hottest at the front, cools down the fire's ramp, then chars to slate; each flake whose pixel has just gone is let go by `release`, and
    * each spark whose pixel the front has just reached by `spark`. Only the band and what has just
    * left it are visited: the pixels are kept in threshold order.
    */
@@ -731,8 +842,10 @@ export class CardAsh {
     const flakes = seeds(f.maxParticles, f.density);
     const embers = seeds(CARD_ASH.spark.maxParticles, CARD_ASH.spark.density);
 
-    const edge = rgb(CARD_ASH.tint.edge);
+    const fire = CARD_ASH.tint.band.map(rgb);
+    const { stops } = band;
     const char = rgb(CARD_ASH.tint.char);
+    const deep = fire[fire.length - 1];
     let goneTo = 0;
     let released = 0;
     let sparked = 0;
@@ -745,11 +858,18 @@ export class CardAsh {
         if (field[i] >= q) break;
         const k = Math.min(1, (q - field[i]) / width);
         const o = i * 4;
-        for (let ch = 0; ch < 3; ch++)
-          out[o + ch] =
-            k < edgeShare
-              ? src[o + ch] + (edge[ch] - src[o + ch]) * (k / edgeShare)
-              : edge[ch] + (char[ch] - edge[ch]) * ((k - edgeShare) / (1 - edgeShare));
+        // its fire, hottest at the leading edge: from its ink to the ramp's hottest stop, then down
+        // the ramp; then its char, from the ramp's last stop
+        const x = k / edgeShare;
+        const colour =
+          k >= edgeShare
+            ? mix(deep, char, (k - edgeShare) / (1 - edgeShare))
+            : x < stops[0]
+              ? mix([src[o], src[o + 1], src[o + 2]], fire[0], x / stops[0])
+              : ramp(fire, stops, x);
+        out[o] = colour[0];
+        out[o + 1] = colour[1];
+        out[o + 2] = colour[2];
       }
       while (released < flakes.length && flakes[released].t <= behind) release(flakes[released++].at);
       while (sparked < embers.length && embers[sparked].t < q) spark(embers[sparked++].at);
@@ -830,7 +950,7 @@ export class CardAsh {
   /**
    * The sparks (R64): faster than the flakes, within their spread of their lean left of up, slowing a little,
    * drawn additively; each flickers as its light falls (`Quad.easeIn`, the record's `ease.spark`)
-   * and is gone within its life.
+   * and is gone within its life, born hottest and cooling down `tint.spark` to red as it goes.
    */
   private sparkConfig(frames: string[], resolution: number): EmitterConfig {
     const s = CARD_ASH.spark;
@@ -847,6 +967,11 @@ export class CardAsh {
       const fall = 1 - t * t;
       return Math.min(1, Math.max(0, fall * (0.65 + 0.35 * Math.sin(fl.phase + fl.rate * t * p.life))));
     };
+    const ramped = CARD_ASH.tint.spark.map(rgb);
+    const cooled = (t: number) => {
+      const [r, g, b] = ramp(ramped, s.cools, t).map(Math.round);
+      return (r << 16) | (g << 8) | b;
+    };
     return {
       frame: frames,
       lifespan: { min: s.lifeMs.from, max: s.lifeMs.to },
@@ -858,6 +983,12 @@ export class CardAsh {
       alpha: {
         onEmit: (p?: Particle) => (p ? light(p, 0) : 1),
         onUpdate: (p: Particle, _key: string, t: number) => light(p, t),
+      },
+      // its colour, cooling as it flies: the tint fills the frame, so the ramp is its colour
+      tintMode: TINT_FILL,
+      tint: {
+        onEmit: () => cooled(0),
+        onUpdate: (_p: Particle, _key: string, t: number) => cooled(t),
       },
       blendMode: s.blend,
       maxParticles: s.maxParticles,
