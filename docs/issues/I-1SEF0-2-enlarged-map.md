@@ -1,6 +1,6 @@
 ---
 id: I-1SEF0-2
-status: open
+status: done
 implements: FS-1SEF0
 blocked_by: [I-1SEF0-1]
 labels: [ready-for-agent]
@@ -25,10 +25,10 @@ readout keep their gaps under or inside it. Switching sizes redraws once.
 
 ## Acceptance Criteria
 
-- [ ] FS-1SEF0 §Acceptance Criteria, the enlarged items: sizes and rounding; redraw once on a switch;
+- [x] FS-1SEF0 §Acceptance Criteria, the enlarged items: sizes and rounding; redraw once on a switch;
       the column at 1080 and 1280 (y 212, the gaps, the readout); the clearances, with the notice
       widths and the boss frame's 729 against 746.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] Typecheck, lint and the full vitest suite pass.
 
 ## Blocked By
 

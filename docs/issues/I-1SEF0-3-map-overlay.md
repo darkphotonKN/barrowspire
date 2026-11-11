@@ -3,7 +3,7 @@ id: I-1SEF0-3
 status: open
 implements: FS-1SEF0
 blocked_by: [I-1SEF0-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-1SEF0 slice 3: the map overlay, the floor over the whole view at 40%, centred on the followed figure, moved not repainted (game-client)"
 ---
 Implements FS-1SEF0 §C, §E

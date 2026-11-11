@@ -6,7 +6,7 @@
  */
 
 import type { Point, Rect } from "@/render/iso/projection";
-import { MINIMAP, minimapRect } from "./minimap";
+import { MINIMAP, minimapRect, type MinimapPanel } from "./minimap";
 
 /** The floor indicator's and the escaped count's type and padding, and the gap between them (§B.9, §B.10). */
 export const TOP_RIGHT_LINE = { fontSize: "12px", padding: { x: 8, y: 3 }, gap: 4 } as const;
@@ -14,8 +14,8 @@ export const TOP_RIGHT_LINE = { fontSize: "12px", padding: { x: 8, y: 3 }, gap: 
 export interface TopRightColumnParts {
   /** The column's top-right corner. */
   corner: Point;
-  /** Whether a minimap is shown in the corner: built for this floor and not the map overlay (FS-1SEF0 §D.21). */
-  minimap: boolean;
+  /** The minimap's panel in the corner, normal or enlarged, or null where none is: no minimap built, or the map overlay (FS-1SEF0 §D.21). */
+  minimap: Pick<MinimapPanel, "width" | "height"> | null;
   /** The floor indicator's height, or null while it is hidden (no label). */
   floorHeight: number | null;
   /** The escaped count's height: the column's last line. */
@@ -23,8 +23,8 @@ export interface TopRightColumnParts {
 }
 
 export interface TopRightColumn {
-  /** Where the minimap stands, shown or not: always the column's top. */
-  minimap: Rect;
+  /** Where the minimap's panel stands, at the column's top; null where none is in the corner. */
+  minimap: Rect | null;
   /** The floor indicator's top-right (origin 1, 0), where it stands even while hidden. */
   floor: Point;
   /** The escaped count's top-right (origin 1, 0). */
@@ -35,8 +35,8 @@ export interface TopRightColumn {
 
 /** Every part's place in the column, each top on a whole logical px. */
 export function topRightColumn({ corner, minimap, floorHeight, escapedHeight }: TopRightColumnParts): TopRightColumn {
-  const map = minimapRect(corner.x, corner.y);
-  const floorTop = minimap ? map.y + map.height + MINIMAP.gap : map.y;
+  const map = minimap ? minimapRect(corner.x, corner.y, minimap) : null;
+  const floorTop = map ? map.y + map.height + MINIMAP.gap : Math.round(corner.y);
   const escapedTop = floorHeight === null ? floorTop : Math.round(floorTop + floorHeight) + TOP_RIGHT_LINE.gap;
   return {
     minimap: map,

@@ -3822,17 +3822,16 @@ export class BarrowspireScene extends Phaser.Scene {
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
-    const shown = !!minimap?.panel;
     const column = topRightColumn({
       corner: anchorAt(TOP_RIGHT_HUD),
-      minimap: shown,
+      minimap: minimap?.panel ?? null,
       floorHeight: floor?.visible ? floor.height : null,
       escapedHeight: this.escapedCountText?.height ?? 0,
     });
-    minimap?.place(column.minimap);
+    if (column.minimap) minimap?.place(column.minimap);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
-    const readout = positionReadoutPlace(shown ? column.minimap : null, { right: column.escaped.x, bottom: column.bottom });
+    const readout = positionReadoutPlace(column.minimap, { right: column.escaped.x, bottom: column.bottom });
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
   }
 
