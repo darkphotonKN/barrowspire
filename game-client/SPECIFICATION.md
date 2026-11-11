@@ -59,6 +59,7 @@ server state and sends intents. ✅
 - [x] Floor transitions → FS-F6F88
 - [ ] Floor layout from the floor map → FS-KE075
 - [ ] Told when a guarded chest will not open → FS-KE075
+- [ ] Progress shown while a container opens → FS-MQYEX
 - [ ] Fog of war → FS-SRA9J
 - [ ] Minimap → FS-SRA9J
 - [x] Spectate living teammates after resolving → FS-QPDKN

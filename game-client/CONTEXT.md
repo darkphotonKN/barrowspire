@@ -386,6 +386,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
     animation.
   - **Satchel**: a sack's view, the leather satchel with its flap opening (FS-2325V §D).
   - **Bone heap**: a drop pile's view, the heap with the items lying on top. No animation.
+- **Timed open** (FS-MQYEX): the wait between reaching for a shut chest or sack in a run and its
+  view opening, counted by the server and sent as `current_player.timed_open`. The client only
+  draws it, as the **open bar** over the container. It **completes** (the container opens) or is
+  **cancelled** (nothing opens, nothing is said). Not a **countdown** (FS-B3NDZ): it fills, it
+  carries no number, and it sits on no panel. Not a "channel": on screen that word is chat's.
 - **Sack**: the container kind `"sack"` (FS-1D6BX), placed on the floor where a chest would be and
   opening into the satchel. **Not the bag**: say "sack", never "bag" or "loot bag", for it.
 - **Bag**: the ordered list of items the player's character carries but does not wear, drawn as

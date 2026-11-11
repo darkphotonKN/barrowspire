@@ -91,6 +91,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Bag carried into runs and field worlds → FS-18Z5F
 - [x] Unsafe run finds lost on death → FS-18Z5F
 - [x] Drink an equipped health potion → FS-P9G8R
+- [ ] Timed container opening → FS-MQYEX
 
 ### Classes
 
