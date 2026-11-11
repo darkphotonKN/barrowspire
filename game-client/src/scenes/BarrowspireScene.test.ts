@@ -2395,6 +2395,7 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
 
     expect(scene.getNearbyChest()?.entityId).toBe("c1");
     scene.toggleChest("c1");
+    run.handleGameStateUpdate(withKind("sack", true));
     expect(view.open).toHaveBeenCalledWith("c1", "sack");
     vi.restoreAllMocks();
   });
@@ -2411,8 +2412,112 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
     run.handleGameStateUpdate(withKind(kind));
 
     scene.toggleChest("c1");
+    run.handleGameStateUpdate(withKind(kind, true));
     expect(view.open).toHaveBeenCalledWith("c1", opensAs);
     vi.restoreAllMocks();
+  });
+
+  // The coffer waits for the server: a shut container shows nothing until a state says it opened,
+  // so a refused reach (a guarded chest) never flashes the coffer open and shut (FS-KE075 §J R60).
+  describe("reaching for a shut container (FS-KE075 §J R60)", () => {
+    const blade = { entity_id: "i1", name: "Blade" };
+    /** The same state with the player in it, where the server has them: at `x` on the chest's row (the chest is at x 150). */
+    const standing = (state: GameState, x: number): GameState =>
+      ({ ...state, current_player: { ...player("me", "Aldric", x), position: at(x, 150) } }) as GameState;
+    /** The chest reached for; `standingAt` puts the player in that first state, at that x. */
+    function reached(is_open = false, standingAt?: number) {
+      vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const { run } = onStage();
+      const view = { entityId: null as string | null, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+      view.open.mockImplementation((id: string) => void (view.entityId = id));
+      const scene = run as unknown as {
+        containerView: typeof view;
+        toggleChest(id: string): void;
+        chestRefused(): void;
+      };
+      scene.containerView = view;
+      const first = withKind("chest", is_open, is_open ? [blade] : []);
+      run.handleGameStateUpdate(standingAt === undefined ? first : standing(first, standingAt));
+      scene.toggleChest("c1");
+      return { run, scene, view };
+    }
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should not open the coffer before the server says the chest opened", () => {
+      const { run, view } = reached();
+      expect(view.open).not.toHaveBeenCalled();
+      run.handleGameStateUpdate(withKind("chest"));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should open the coffer with its contents on the state that shows the chest open", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should open at once a container the server already shows open", () => {
+      const { view } = reached(true);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should give up the reach once the player walks off, so another's opening it later shows no coffer", () => {
+      // the server drops an interact sent too soon after another without a word, so no refusal
+      // ends that reach: walking out of reach of the chest does (FS-MQYEX R26)
+      const { run, view } = reached(false, 150);
+      run.handleGameStateUpdate(standing(withKind("chest"), 150));
+      run.handleGameStateUpdate(standing(withKind("chest"), 211));
+      run.handleGameStateUpdate(standing(withKind("chest", true, [blade]), 211));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should keep the reach through a frame, and give it up on the state that shows the player has walked off, with no coffer open", () => {
+      // where the player stands is the server's word: a frame between states judges nothing, and
+      // the state that moved them ends the reach whether or not a coffer is open (FS-MQYEX R26)
+      const { run, scene, view } = reached(false, 150);
+      const up = { isDown: false };
+      const keys = { left: up, right: up, up, down: up };
+      Object.assign(run, {
+        cursors: keys,
+        wasd: keys,
+        kit: new Proxy({}, { get: (_kit, key) => (key === "guarding" ? false : vi.fn()) }),
+        updateLighting: vi.fn(),
+        updateOtherPlayersSmooth: vi.fn(),
+        checkBuildingStatus: vi.fn(),
+        sendMovementIntent: vi.fn(),
+        // drawn, so the frame runs on past its "escaped" early return
+        player: new Proxy({ visible: true }, { get: (drawn, key) => (key === "visible" ? drawn.visible : vi.fn()) }),
+      });
+      Object.assign(view, { isOpen: false });
+      const reach = scene as unknown as { reaching?: string };
+
+      (run as unknown as { update(time: number, delta: number): void }).update(0, 16);
+      expect(reach.reaching).toBe("c1");
+
+      run.handleGameStateUpdate(standing(withKind("chest"), 600));
+      expect(reach.reaching).toBeUndefined();
+      run.handleGameStateUpdate(standing(withKind("chest", true, [blade]), 600));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should keep the reach while the player stays by the chest", () => {
+      const { run, view } = reached(false, 150);
+      run.handleGameStateUpdate(standing(withKind("chest"), 150));
+      run.handleGameStateUpdate(standing(withKind("chest", true, [blade]), 150));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should never open the coffer for a refused reach, even once another opens the chest", () => {
+      const { run, scene, view } = reached();
+      scene.chestRefused();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).not.toHaveBeenCalled();
+    });
   });
 
   it("should draw a kind it does not know as a chest", () => {
@@ -5594,8 +5699,8 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
   });
 });
 
-// A floor-1 chest whose guards still stand is refused by the server: the coffer the E key opened
-// at once closes again, and the notice says only that it will not open (FS-KE075 §J R60).
+// A floor-1 chest whose guards still stand is refused by the server: the coffer never opened (it
+// waits for the server), and the notice says only that it will not open (FS-KE075 §J R60).
 describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -5614,29 +5719,760 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       connectToServer(): void;
       showNotification(message: string, color: string): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
+      reaching?: string;
     };
     run.init({ sessionID: "run-a" });
-    run.containerView = { entityId: "chest-1", close: vi.fn() };
+    run.containerView = { entityId: null, close: vi.fn() };
+    run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
     run.connectToServer();
     return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
   }
 
-  it("should close the coffer it opened and say it will not open", () => {
+  it("should give up the reach and say it will not open", () => {
     const { run, notified, reply } = connected();
     reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
 
-    expect(run.containerView.close).toHaveBeenCalledTimes(1);
+    expect(run.reaching).toBeUndefined();
     expect(notified).toHaveBeenCalledTimes(1);
     expect(notified.mock.calls[0][0]).toBe("It will not open.");
   });
 
-  it("should leave the coffer open on any other reply", () => {
+  it("should give up the reach on a chest out of reach too", () => {
     const { run, reply } = connected();
     reply({ success: false, message: "too far away to interact" });
+
+    expect(run.reaching).toBeUndefined();
+  });
+
+  it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {
+    const { run, reply } = connected();
     reply({ success: false, message: "" });
 
+    expect(run.reaching).toBe("chest-1");
     expect(run.containerView.close).not.toHaveBeenCalled();
+  });
+});
+
+// The server counts a timed open and says so on the player's own state, every tick; the client only
+// draws it. Built against the FS's wire shape with fixture states (FS-MQYEX R18).
+describe("BarrowspireScene the open bar (FS-MQYEX §D R21–R25; I-MQYEX-4)", () => {
+  type TimedOpen = { entity_id: string; elapsed: number; duration: number };
+  const blade = { entity_id: "i1", name: "Blade" };
+  /** The player's own timed open on floor 1's chest, `elapsed` seconds into its 1.5. */
+  const opening = (elapsed: number, entity_id = "c1"): TimedOpen => ({ entity_id, elapsed, duration: 1.5 });
+  /** Floor 1 as this player's state: their timed open if any, and the chest shut or open. */
+  const state = (
+    timed_open?: TimedOpen,
+    chest: { is_open?: boolean; items?: unknown[] } = {},
+    others: unknown[] = [],
+  ): GameState => {
+    const floor = floorState(1);
+    return {
+      ...floor,
+      // by the chest, which is at (150, 150)
+      current_player: { ...player("me", "Aldric", 150), position: at(150, 150), ...(timed_open ? { timed_open } : {}) },
+      other_players: others,
+      containers: [{ ...floor.containers[0], is_open: false, items: [], ...chest }],
+    } as GameState;
+  };
+  // every recorded sprite reports 10 px bounds at the origin: the bar over one is centred on x 5,
+  // its foot 10 px above y 0
+  const BAR = { x: -17, y: -17, width: 44, height: 7 };
+
+  function onStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const view = { entityId: null as string | null, isOpen: false, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+    view.open.mockImplementation((id: string) => void (view.entityId = id));
+    const clock = { delayedCall: vi.fn(), now: 1000 };
+    const run = scene.run as unknown as FloorRun & {
+      containerView: typeof view;
+      watchedPlayerId?: string;
+      events: Emitter;
+      init(): void;
+      toggleChest(id: string): void;
+      showNotification(message: string, color: string): void;
+      update(time: number, delta: number): void;
+    };
+    run.containerView = view;
+    run.time = clock;
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    /** Every open bar the scene made, and those still up and showing. */
+    const made = () => scene.stage.made.filter((m) => m.kind === "graphics" && (m as { name?: string }).name === "open-bar");
+    const bars = () => made().filter((m) => !m.destroyed && m.shown !== false);
+    /** The bar's fill as last drawn: the latest rectangle filled. */
+    const fill = () => {
+      const [x, y, width, height] = bars()[0].last.fillRect as number[];
+      return { x, y, width, height };
+    };
+    const chestSprite = () =>
+      scene.stage.made.find((m) => m.kind === "sprite" && String(m.args[2]).startsWith("chest_")) as Made & {
+        visible?: boolean;
+      };
+    /** One frame, no key down, with nothing else on stage to draw. */
+    const frame = (ms: number) => {
+      const up = { isDown: false };
+      const keys = { left: up, right: up, up, down: up };
+      Object.assign(run, {
+        cursors: keys,
+        wasd: keys,
+        kit: { follow: vi.fn(), guarding: false, sync: vi.fn() },
+        updateLighting: vi.fn(),
+        updateOtherPlayersSmooth: vi.fn(),
+        checkBuildingStatus: vi.fn(),
+        updateTargetFrame: vi.fn(),
+        sendMovementIntent: vi.fn(),
+      });
+      clock.now += ms;
+      run.update(clock.now, ms);
+    };
+    return { run, view, clock, notified, made, bars, fill, chestSprite, frame };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should draw the bar over the container at elapsed / duration, in the world's marker band", () => {
+    const { run, bars, fill } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+
+    expect(bars()).toHaveLength(1);
+    expect(bars()[0].depth).toBe(MARKER_DEPTH.bar);
+    expect(bars()[0].last.strokeRect).toEqual([BAR.x, BAR.y, BAR.width, BAR.height]);
+    // half full, from the left end
+    expect(fill()).toEqual({ ...BAR, width: 22 });
+  });
+
+  it("should draw nothing while the state carries no timed open", () => {
+    const { run, made } = onStage();
+    run.handleGameStateUpdate(state());
+    run.handleGameStateUpdate(state());
+    expect(made()).toHaveLength(0);
+  });
+
+  it("should move the one bar with the next state", () => {
+    const { run, made, bars, fill } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.handleGameStateUpdate(state(opening(1.2)));
+
+    expect(made()).toHaveLength(1);
+    expect(bars()).toHaveLength(1);
+    expect(fill().width).toBeCloseTo(35.2);
+  });
+
+  it("should take the bar down, with no notice, on a state without the timed open", () => {
+    const { run, bars, notified } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    notified.mockClear();
+    run.handleGameStateUpdate(state());
+
+    expect(bars()).toHaveLength(0);
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should open no view on the E key or while the bar fills, then open it and drop the bar on the state that shows the container open", () => {
+    const { run, view, bars } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.handleGameStateUpdate(state(opening(1.47)));
+    expect(view.open).not.toHaveBeenCalled();
+    expect(bars()).toHaveLength(1);
+
+    run.handleGameStateUpdate(state(undefined, { is_open: true, items: [blade] }));
+    expect(view.open).toHaveBeenCalledTimes(1);
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should draw no bar over a container the same state shows open", () => {
+    const { run, view, bars } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(1.5), { is_open: true, items: [blade] }));
+
+    expect(bars()).toHaveLength(0);
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+  });
+
+  it("should stop at full and open nothing, whatever the state's times say", () => {
+    const { run, view, fill } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(1.5)));
+    expect(fill().width).toBe(44);
+    run.handleGameStateUpdate(state(opening(9)));
+    expect(fill().width).toBe(44);
+    expect(view.open).not.toHaveBeenCalled();
+  });
+
+  it("should run the fill on with real time between states, never past full, and let the next state correct it", () => {
+    const { run, view, bars, fill, frame } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(0.75)));
+
+    // 0.3 s on with no state: 1.05 s of 1.5 s
+    frame(300);
+    expect(fill().width).toBeCloseTo(30.8);
+    // the states stop coming: the bar fills, waits, and opens nothing
+    frame(5_000);
+    expect(fill()).toEqual({ ...BAR, width: 44 });
+    expect(bars()).toHaveLength(1);
+    expect(view.open).not.toHaveBeenCalled();
+
+    // the server's count is the truth, even when it is behind the bar
+    run.handleGameStateUpdate(state(opening(0.9)));
+    expect(fill().width).toBeCloseTo(26.4);
+  });
+
+  it("should draw no bar from another player's state", () => {
+    const { run, made } = onStage();
+    const ally = { ...player("ally", "Wenna", 160), timed_open: opening(0.75) };
+    run.handleGameStateUpdate(state(undefined, {}, [ally]));
+    expect(made()).toHaveLength(0);
+  });
+
+  it("should draw no bar while spectating, and take down one that was up", () => {
+    const { run, bars } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    expect(bars()).toHaveLength(1);
+
+    run.watchedPlayerId = "ally";
+    run.handleGameStateUpdate(state(opening(0.9)));
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should draw no bar for a container the client is not drawing", () => {
+    const { run, bars } = onStage();
+    // one the snapshot never held
+    run.handleGameStateUpdate(state(opening(0.75, "elsewhere")));
+    expect(bars()).toHaveLength(0);
+
+    // one that leaves the snapshot mid-open
+    run.handleGameStateUpdate(state(opening(0.75)));
+    expect(bars()).toHaveLength(1);
+    run.handleGameStateUpdate({ ...state(opening(0.9)), containers: [] });
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should hide the bar while the container's sprite is hidden, and show it again with it", () => {
+    const { run, bars, chestSprite, frame } = onStage();
+    run.handleGameStateUpdate(state(opening(0.3)));
+    chestSprite().visible = false;
+    frame(16);
+    expect(bars()).toHaveLength(0);
+
+    chestSprite().visible = true;
+    frame(16);
+    expect(bars()).toHaveLength(1);
+  });
+
+  it("should open an already-open container's view at once on the E key, with no bar", () => {
+    const { run, view, made } = onStage();
+    run.handleGameStateUpdate(state(undefined, { is_open: true, items: [blade] }));
+    run.toggleChest("c1");
+
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    expect(made()).toHaveLength(0);
+  });
+
+  it.each(["shutdown", "destroy"])("should hold no bar past %s: the next run draws its own", (event) => {
+    const { run, made, bars } = onStage();
+    run.init();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.events.emit(event);
+
+    run.handleGameStateUpdate(state(opening(0.3)));
+    expect(made()).toHaveLength(2);
+    expect(bars().at(-1)).toBe(made()[1]);
+  });
+
+  // A cancel affects only the player it happened to: their reach ends with their timed open, so a
+  // teammate opening the container later opens no view for them (FS-MQYEX R26, D13).
+  describe("giving up the reach (FS-MQYEX §D R26; I-MQYEX-5)", () => {
+    const opened = { is_open: true, items: [blade] };
+    /** The same state with the player at `x` on the chest's row, as the server has them; the chest is at x 150. */
+    const movedTo = (moved: GameState, x: number): GameState =>
+      ({ ...moved, current_player: { ...moved.current_player, position: at(x, 150) } }) as GameState;
+    /** The player standing by the shut chest, having pressed E on it. */
+    function reached() {
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(state());
+      stage.run.toggleChest("c1");
+      return stage;
+    }
+
+    it("should give up the reach when the timed open a state showed is gone with the container still shut", () => {
+      const { run, view, bars, notified } = reached();
+      run.handleGameStateUpdate(state(opening(0.3)));
+      run.handleGameStateUpdate(state());
+
+      expect(bars()).toHaveLength(0);
+      expect(notified).not.toHaveBeenCalled();
+      // a teammate finishes later: the chest is drawn open, and no view opens
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should give up the reach when the timed open has moved to another container", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(state(opening(0.3)));
+      run.handleGameStateUpdate(state(opening(0.1, "elsewhere")));
+
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should open the view on the state that both drops the timed open and shows the container open", () => {
+      // the player's own finished, or a teammate's did while theirs ran
+      const { run, view, bars } = reached();
+      run.handleGameStateUpdate(state(opening(0.9)));
+      run.handleGameStateUpdate(state(undefined, opened));
+
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+      expect(bars()).toHaveLength(0);
+    });
+
+    it("should keep a reach no state has answered yet through states without a timed open", () => {
+      // the reply is still on its way
+      const { run, view, frame } = reached();
+      run.handleGameStateUpdate(state());
+      frame(16);
+      run.handleGameStateUpdate(state());
+
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should open the view for a reach made before the held state showed the player stopped", () => {
+      // E pressed within a round trip of stopping: the state held at the press is older than the stop
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(movedTo(state(), 140));
+      stage.run.toggleChest("c1");
+      const { run, view } = stage;
+
+      // the server's answer: the player where they stopped, their timed open on the chest
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(opening(0.5)));
+      run.handleGameStateUpdate(state(opening(1.47)));
+      run.handleGameStateUpdate(state(undefined, opened));
+
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should judge no change of position before a state shows the timed open", () => {
+      const { run, view } = reached();
+      // still in reach of the chest, and no answer yet
+      run.handleGameStateUpdate(movedTo(state(), 151));
+      run.handleGameStateUpdate(movedTo(state(), 152));
+
+      run.handleGameStateUpdate(movedTo(state(opening(0.03)), 152));
+      run.handleGameStateUpdate(movedTo(state(undefined, opened), 152));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should give up the reach when the player's own position changes from the first state that showed the timed open", () => {
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(movedTo(state(), 140));
+      stage.run.toggleChest("c1");
+      const { run, view } = stage;
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(opening(0.3)));
+      // one step, the chest as near as before, the timed open still showing
+      run.handleGameStateUpdate(movedTo(state(opening(0.33)), 151));
+
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["keep", "in reach of the container, at its edge", 210, 1],
+      ["give up", "out of reach of the container", 211, 0],
+    ])("should %s a reach no state answered once the state has the player %s", (_what, _where, x, views) => {
+      // the request was dropped and nothing ever comes: walking out of reach (60 px) ends the reach
+      const { run, view } = reached();
+      run.handleGameStateUpdate(movedTo(state(), x));
+
+      run.handleGameStateUpdate(movedTo(state(undefined, opened), x));
+      expect(view.open).toHaveBeenCalledTimes(views);
+    });
+
+    it("should read the container open before the position: a state that shows both opens the view", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(state(opening(0.9)));
+      run.handleGameStateUpdate(movedTo(state(undefined, opened), 151));
+
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should give up the reach when its container has left the state", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate({ ...state(), containers: [] });
+
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should take a new reach after one was given up, and open the view for it", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(state(opening(0.3)));
+      run.handleGameStateUpdate(state());
+
+      run.toggleChest("c1");
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+// A hit that costs the player health closes the container view they have open: read from their own
+// health in two states in a row, with no notice, and E opens it again at once. Fixture states only.
+describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: The container view closes when its player is hit; I-1D6BX-5)", () => {
+  type TimedOpen = { entity_id: string; elapsed: number; duration: number };
+  type Me = { max_health?: number; parries?: number; escape?: boolean; timed_open?: TimedOpen };
+  const blade = { entity_id: "i1", name: "Blade" };
+  const opening = (elapsed: number): TimedOpen => ({ entity_id: "c1", elapsed, duration: 1.5 });
+  /**
+   * A floor as this player's state, with `health`: they stand at its container `c1`, which is
+   * open with a blade in it unless `chest` says otherwise, beside a slain monster's pile `p1`.
+   */
+  const state = (health: number, me: Me = {}, chest: { is_open?: boolean; kind?: string; items?: unknown[] } = {}, floor = 1): GameState => {
+    const base = floorState(floor);
+    const c1 = base.containers[0];
+    return {
+      ...base,
+      current_player: { ...player("me", "Aldric", 150, { current_health: health }), position: c1.position, ...me },
+      containers: [
+        { ...c1, is_open: true, items: [blade], ...chest },
+        { container_id: "pc", entity_id: "p1", kind: "drop_pile", position: at(c1.position.x + 10, 150), is_open: true, items: [blade] },
+      ],
+    } as GameState;
+  };
+
+  function onStage() {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    // the view as the scene sees it: open on a container until it is closed
+    const view = {
+      entityId: null as string | null,
+      get isOpen() {
+        return this.entityId !== null;
+      },
+      open: vi.fn(),
+      close: vi.fn(),
+      setItems: vi.fn(),
+    };
+    view.open.mockImplementation((id: string) => void (view.entityId = id));
+    view.close.mockImplementation(() => void (view.entityId = null));
+    const run = scene.run as unknown as FloorRun & {
+      containerView: typeof view;
+      equipment?: unknown;
+      events: Emitter;
+      init(): void;
+      toggleChest(id: string): void;
+      showNotification(message: string, color: string): void;
+    };
+    run.containerView = view;
+    run.time = { delayedCall: vi.fn(), now: 1000 };
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    /** The open bars still up (FS-MQYEX R22). */
+    const bars = () =>
+      scene.stage.made.filter((m) => m.kind === "graphics" && (m as { name?: string }).name === "open-bar" && !m.destroyed);
+    return { run, view, sent, notified, bars };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["coffer", "c1", "chest"],
+    ["satchel", "c1", "sack"],
+    ["bone heap", "p1", "drop_pile"],
+  ])("should close the %s on a state with the player's health lower, with no notice and nothing sent", (_face, id, kind) => {
+    const { run, view, sent, notified } = onStage();
+    run.handleGameStateUpdate(state(100, {}, { kind }));
+    run.toggleChest(id);
+    expect(view.open).toHaveBeenCalledWith(id, kind);
+    sent.mockClear();
+    notified.mockClear();
+
+    run.handleGameStateUpdate(state(90, {}, { kind }));
+
+    expect(view.isOpen).toBe(false);
+    expect(view.close).toHaveBeenCalledTimes(1);
+    expect(notified).not.toHaveBeenCalled();
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  it("should leave the view open through a parried strike that costs nothing, and through a heal", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(60));
+    run.toggleChest("c1");
+
+    run.handleGameStateUpdate(state(60, { parries: 1 }));
+    run.handleGameStateUpdate(state(80));
+    run.handleGameStateUpdate(state(80));
+
+    expect(view.isOpen).toBe(true);
+    expect(view.close).not.toHaveBeenCalled();
+  });
+
+  it("should open the view again at once on E, and close it each time a state costs health", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(95));
+    expect(view.isOpen).toBe(false);
+
+    // the container is open: no reach, no timed open, the view is up on the key
+    run.toggleChest("c1");
+    expect(view.open).toHaveBeenCalledTimes(2);
+    expect(view.isOpen).toBe(true);
+    // a burn's next tick
+    run.handleGameStateUpdate(state(90));
+    expect(view.isOpen).toBe(false);
+
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(90));
+    expect(view.isOpen).toBe(true);
+    expect(view.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("should close nothing on the first state of a start, whatever the health in it", () => {
+    const { run, view } = onStage();
+    view.open("c1");
+    run.handleGameStateUpdate(state(40));
+
+    expect(view.isOpen).toBe(true);
+  });
+
+  it.each(["shutdown", "destroy"])("should close nothing on the first state after a %s and a new start (a reconnect), with the health lower than before it", (end) => {
+    const { run, view } = onStage();
+    run.init();
+    run.handleGameStateUpdate(state(100));
+    run.events.emit(end);
+
+    view.open("c1");
+    run.handleGameStateUpdate(state(60));
+    expect(view.isOpen).toBe(true);
+    // the same start's next state is judged
+    run.handleGameStateUpdate(state(50));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close the view once on a floor change with the health lower, and leave one opened on the new floor alone", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+
+    run.handleGameStateUpdate(state(80, {}, {}, 2));
+    expect(view.isOpen).toBe(false);
+    expect(view.close).toHaveBeenCalledTimes(1);
+
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(80, {}, {}, 2));
+    expect(view.isOpen).toBe(true);
+  });
+
+  it("should leave the view open when health fell only as far as max health did (gear taken off), and close it when it fell further", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100, { max_health: 100 }));
+    run.toggleChest("c1");
+
+    run.handleGameStateUpdate(state(80, { max_health: 80 }));
+    expect(view.isOpen).toBe(true);
+
+    // 10 health gone with 5 max health: a hit
+    run.handleGameStateUpdate(state(70, { max_health: 75 }));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close the view on a hit in the same state as gear coming off below full health: health is clamped, not lowered by as much", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(60, { max_health: 100 }));
+    run.toggleChest("c1");
+
+    // 20 max health gone, 10 health gone: the gear alone would have left 60
+    run.handleGameStateUpdate(state(50, { max_health: 80 }));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close nothing when no view is open: a hit, the killing hit, an escaped player, a state with no player", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.handleGameStateUpdate(state(90));
+    run.handleGameStateUpdate(state(0));
+    run.handleGameStateUpdate(state(0, { escape: true }));
+    run.handleGameStateUpdate({ ...state(0), current_player: null });
+
+    expect(view.close).not.toHaveBeenCalled();
+  });
+
+  it("should keep the last health seen through a state with no player", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate({ ...state(100), current_player: null });
+    expect(view.isOpen).toBe(true);
+
+    run.handleGameStateUpdate(state(90));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close the view on the killing hit", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(10));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(0));
+
+    expect(view.isOpen).toBe(false);
+    expect(view.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("should leave the gear and bag overlay as it is", () => {
+    const { run, view } = onStage();
+    const overlay = {
+      sync: vi.fn(),
+      updateCharacter: vi.fn(),
+      setCharacterLevel: vi.fn(),
+      isOpen: () => true,
+      hide: vi.fn(),
+      release: vi.fn(),
+    };
+    run.equipment = overlay;
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(90));
+
+    expect(view.isOpen).toBe(false);
+    expect(overlay.hide).not.toHaveBeenCalled();
+    expect(overlay.release).not.toHaveBeenCalled();
+  });
+
+  // The server cancels the timed open the hit landed on; the client only follows `timed_open`
+  // (FS-MQYEX R23, R26). The hit itself touches neither the open bar nor the pending reach.
+  describe("during a timed open (FS-MQYEX §D R22, R23, R26)", () => {
+    const shut = { is_open: false, items: [] };
+    /** The pile's view open, and a reach for the shut chest beside it that the server has answered. */
+    function midOpen() {
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(state(100, {}, shut));
+      stage.run.toggleChest("p1");
+      stage.run.toggleChest("c1");
+      stage.run.handleGameStateUpdate(state(100, { timed_open: opening(0.3) }, shut));
+      expect(stage.view.entityId).toBe("p1");
+      expect(stage.bars()).toHaveLength(1);
+      return stage;
+    }
+
+    it("should close the view and leave the bar and the reach while the state still sends the timed open", () => {
+      const { run, view, bars } = midOpen();
+      run.handleGameStateUpdate(state(90, { timed_open: opening(0.33) }, shut));
+      expect(view.isOpen).toBe(false);
+      expect(bars()).toHaveLength(1);
+
+      // the reach is still pending: the container opening opens its view
+      run.handleGameStateUpdate(state(90));
+      expect(view.open).toHaveBeenLastCalledWith("c1", "chest");
+      expect(view.isOpen).toBe(true);
+      expect(bars()).toHaveLength(0);
+    });
+
+    it("should follow the server's cancel as before: the bar gone and the reach given up, by the state and not by the hit", () => {
+      const { run, view, bars, notified } = midOpen();
+      run.handleGameStateUpdate(state(90, {}, shut));
+      expect(view.isOpen).toBe(false);
+      expect(bars()).toHaveLength(0);
+      expect(notified).not.toHaveBeenCalled();
+
+      // a teammate finishes later: no view opens
+      run.handleGameStateUpdate(state(90));
+      expect(view.isOpen).toBe(false);
+      expect(view.open).toHaveBeenCalledTimes(1);
+    });
+
+    it("should leave a view the same state opens for the reach: it was not open when the hit landed", () => {
+      const { run, view } = midOpen();
+      run.handleGameStateUpdate(state(90));
+
+      expect(view.entityId).toBe("c1");
+      // the next hit closes it
+      run.handleGameStateUpdate(state(85));
+      expect(view.isOpen).toBe(false);
+    });
+
+    it("should touch nothing with no view open: the bar and the reach go on", () => {
+      const stage = onStage();
+      const { run, view, bars } = stage;
+      run.handleGameStateUpdate(state(100, {}, shut));
+      run.toggleChest("c1");
+      run.handleGameStateUpdate(state(100, { timed_open: opening(0.3) }, shut));
+      run.handleGameStateUpdate(state(90, { timed_open: opening(0.33) }, shut));
+
+      expect(view.close).not.toHaveBeenCalled();
+      expect(bars()).toHaveLength(1);
+      run.handleGameStateUpdate(state(90));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+  });
+});
+
+// The hurt flash reads the same record of the player's own health as the container view's hit
+// (FS-KYPQ9 §G.1; FS-1D6BX §Change E2): it flashes on any fall in health, gear coming off too.
+describe("BarrowspireScene the local player's hurt flash (FS-KYPQ9 §G.1; I-1D6BX-5)", () => {
+  const state = (health: number, max?: number): GameState => {
+    const base = floorState(1);
+    return {
+      ...base,
+      current_player: { ...player("me", "Aldric", 150, { current_health: health }), ...(max === undefined ? {} : { max_health: max }) },
+    } as GameState;
+  };
+
+  function onStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run } = sceneOnStage();
+    const hits = { play: vi.fn(), clearAll: vi.fn() };
+    const scene = run as unknown as FloorRun & { hits: typeof hits; player?: unknown };
+    scene.hits = hits;
+    /** How many times the flash played on the local player's own body. */
+    const flashes = () => hits.play.mock.calls.filter(([target]) => target !== undefined && target === scene.player).length;
+    return { run: scene, flashes };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should not flash on the first state of a start, whatever the health in it", () => {
+    const { run, flashes } = onStage();
+    run.handleGameStateUpdate(state(40, 100));
+
+    expect(run.player).toBeDefined();
+    expect(flashes()).toBe(0);
+  });
+
+  it.each([
+    ["a hit", [100, 100], [90, 100], 1],
+    ["the same health", [100, 100], [100, 100], 0],
+    ["a heal", [60, 100], [80, 100], 0],
+    ["gear off, health down with max health", [100, 100], [80, 80], 1],
+    ["gear off below the new max health, health unchanged", [60, 100], [60, 80], 0],
+  ])("should flash %s: %j → %j", (_what, [h0, m0], [h1, m1], times) => {
+    const { run, flashes } = onStage();
+    run.handleGameStateUpdate(state(h0, m0));
+    run.handleGameStateUpdate(state(h1, m1));
+
+    expect(flashes()).toBe(times);
   });
 });
 

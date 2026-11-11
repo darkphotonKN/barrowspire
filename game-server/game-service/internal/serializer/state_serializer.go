@@ -43,6 +43,7 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 				Escaped:    make(map[uuid.UUID]*types.PlayerState),
 				Resources:  make(map[uuid.UUID]*types.ResourceState),
 				Parries:    make(map[uuid.UUID]*types.ParryState),
+				TimedOpens: make(map[uuid.UUID]*types.TimedOpenState),
 				InPlay:     make(map[uuid.UUID]types.Position),
 				Items:      make([]uuid.UUID, 0),
 				Doors:      make([]*types.DoorState, 0),
@@ -167,6 +168,9 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 			if parry := parryState(entity); parry != nil {
 				backendState.Parries[player.MemberID] = parry
+			}
+			if timedOpen := timedOpenState(entity); timedOpen != nil {
+				backendState.TimedOpens[player.MemberID] = timedOpen
 			}
 
 			level, experience := 1, int64(0)
@@ -533,6 +537,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 			PlayerState: ownState,
 			Resource:    backendState.Resources[playerID],
 			ParryState:  backendState.Parries[playerID],
+			TimedOpen:   backendState.TimedOpens[playerID],
 		}
 	}
 
@@ -599,6 +604,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	}
 	for k := range state.Parries {
 		delete(state.Parries, k)
+	}
+	for k := range state.TimedOpens {
+		delete(state.TimedOpens, k)
 	}
 	// the published snapshot is shared, so it is let go, never cleared
 	state.PartyOf = nil
@@ -700,6 +708,17 @@ func parryState(entity *ecs.Entity) *types.ParryState {
 	}
 	stance := pc.(*components.ParryComponent)
 	return &types.ParryState{ParryOpen: stance.Open, ParryLockout: stance.LockoutRemaining, Parries: stance.Parries}
+}
+
+// timedOpenState is a delver's timed open as its owner is told it; nil for
+// anyone without one. FS-MQYEX §Requirements 18.
+func timedOpenState(entity *ecs.Entity) *types.TimedOpenState {
+	oc, ok := entity.GetComponent(ecs.ComponentTypeTimedOpen)
+	if !ok {
+		return nil
+	}
+	open := oc.(*components.TimedOpenComponent)
+	return &types.TimedOpenState{EntityID: open.ContainerID, Elapsed: open.Elapsed, Duration: open.Duration}
 }
 
 // monsterState is a monster as the client draws it. One at no health lies dead,

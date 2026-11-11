@@ -402,6 +402,11 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Drop pile**: the container a slain monster leaves holding its kill drop
   (`ContainerKindDropPile`). It is never placed at build time. Its odds are the lowest of the
   three.
+- **Timed open** (FS-MQYEX): the time a player must stand at a shut chest or sack in a run before
+  it opens. The server starts it on the reach, counts it on the tick, and ends it: it **completes**
+  (the container opens) or is **cancelled** (the player moved, was hit, or left reach; nothing
+  opens). Each player has their own. **Never "channel"** for this, though design talk calls it
+  one: here a channel is a field channel, a Redis channel or a chat channel (see **Channel**).
 
 ### The message hub (the other `hub`)
 

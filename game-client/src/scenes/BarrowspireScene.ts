@@ -14,6 +14,7 @@ import {
   ClientGameState,
   PlayerState,
   ContainerState,
+  TimedOpenState,
   type ContainerKind,
   placedKind,
   ItemState,
@@ -36,7 +37,6 @@ import {
   floorLabel,
   interactNotice,
   isTopFloor,
-  refusesContainer,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
@@ -61,6 +61,8 @@ import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
+import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 
 /**
  * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
@@ -108,6 +110,7 @@ import {
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
+import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -537,7 +540,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // HP change tracking for damage flash
   private otherPlayersPrevHp: Map<string, number> = new Map();
-  private prevLocalPlayerHp?: number;
+  /**
+   * The local player's health in the last state that had it: the hurt flash and the container
+   * view's close on a hit both read it. Unset until a start's first state, so that one is no hit.
+   */
+  private ownHealth?: HealthSeen;
 
   // Controls
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -786,6 +793,23 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
   private containerView!: ContainerView;
+  /**
+   * The shut container the player reached for, until the server answers: its coffer opens on the
+   * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
+   */
+  private reaching?: string;
+  /**
+   * What the states have shown of that reach: once one shows the player's timed open on it, the
+   * reach is given up when their position changes from that state's, and when the timed open is
+   * gone with the container still shut (FS-MQYEX R26).
+   */
+  private reachSeen: ReachSeen = reachMade();
+  /**
+   * The player's own timed open as the last state carried it, when that state arrived, and the
+   * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
+   * the bar only shows what the server counts, and never opens anything.
+   */
+  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
 
   // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
   private equipment?: EquipmentHud;
@@ -980,7 +1004,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerAnim = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
-    this.prevLocalPlayerHp = undefined;
+    this.ownHealth = undefined;
     this.targetPosition = null;
 
     this.otherPlayers.clear();
@@ -1005,6 +1029,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.roofCover = [];
     this.outsideObjects = [];
     this.chests.clear();
+    // the bar went down with the scene's objects
+    this.timedOpen = undefined;
     this.escapeDoors.clear();
     this.switches.clear();
     this.stairs.forget();
@@ -2453,6 +2479,11 @@ export class BarrowspireScene extends Phaser.Scene {
       standAt(chest.sprite, pos);
 
       // 如果是打開的寶箱，更新跳窗內容
+      if (container.is_open && this.reaching === container.entity_id) {
+        // the server opened what the player reached for: now its coffer shows (FS-KE075 §J R60)
+        this.reaching = undefined;
+        this.containerView.open(container.entity_id, placedKind(container));
+      }
       if (
         container.is_open &&
         this.containerView.entityId === container.entity_id
@@ -2460,6 +2491,53 @@ export class BarrowspireScene extends Phaser.Scene {
         this.containerView.setItems(container.items);
       }
     });
+  }
+
+  /**
+   * A reach still pending once the state's open containers are read is kept or given up by what
+   * the state shows of the player (FS-MQYEX R26): given up, no view opens for it later.
+   */
+  private settleReach(state: ClientGameState): void {
+    if (!this.reaching) return;
+    const seen = reachAfter(this.reaching, this.reachSeen, state);
+    if (seen) this.reachSeen = seen;
+    else this.reaching = undefined;
+  }
+
+  /**
+   * The open bar follows the state (FS-MQYEX R22, R23, R25): up while the player's own
+   * `timed_open` names a shut container drawn here, gone with no notice on a state that carries
+   * none, whether the container opened or the timed open was cancelled. Only `current_player` is
+   * read, never another player's entry, and nothing is drawn while spectating.
+   */
+  private showTimedOpen(state: ClientGameState): void {
+    const open = this.watchedPlayerId === undefined ? state.current_player?.timed_open : undefined;
+    const shut =
+      open &&
+      this.chests.has(open.entity_id) &&
+      state.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open);
+    if (!open || !shut) {
+      this.timedOpen?.bar.destroy();
+      this.timedOpen = undefined;
+      return;
+    }
+    const bar = this.timedOpen?.bar ?? this.add.graphics().setDepth(MARKER_DEPTH.bar).setName("open-bar");
+    this.timedOpen = { open, seenAt: this.time.now, bar };
+    this.drawTimedOpen();
+  }
+
+  /**
+   * Draws the open bar as it stands this frame: the state's fill, run on by the real time since
+   * that state so it reads smooth, never past full (R22). Hidden with its container's sprite.
+   */
+  private drawTimedOpen(): void {
+    if (!this.timedOpen) return;
+    const { open, seenAt, bar } = this.timedOpen;
+    const sprite = this.chests.get(open.entity_id)?.sprite;
+    bar.setVisible(!!sprite?.visible);
+    if (!sprite?.visible) return;
+    bar.clear();
+    drawOpenBar(bar, sprite.getBounds(), openBarFraction(open, this.time.now - seenAt));
   }
 
   private updateEscapeDoors(escapeDoors: EscapeDoorState[]): void {
@@ -2851,21 +2929,30 @@ export class BarrowspireScene extends Phaser.Scene {
       entity_id: entityId,
     });
 
+    this.reaching = undefined;
     // 如果是關閉跳窗
     if (this.containerView.entityId === entityId) {
       this.containerView.close();
-    } else {
-      // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
-      const container = this.lastGameState?.containers?.find(
-        (c) => c.entity_id === entityId,
-      );
-      this.containerView.open(entityId, container ? placedKind(container) : "chest");
-
-      // If container already has items from server state, populate immediately
-      if (container && container.is_open && container.items?.length > 0) {
-        this.containerView.setItems(container.items);
-      }
+      return;
     }
+    const container = this.lastGameState?.containers?.find(
+      (c) => c.entity_id === entityId,
+    );
+    // a shut container may yet be refused (a guarded chest): its coffer waits for the state that
+    // shows it open, so nothing opens only to close again (FS-KE075 §J R60)
+    if (!container?.is_open) {
+      this.reaching = entityId;
+      this.reachSeen = reachMade();
+      return;
+    }
+    // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
+    this.containerView.open(entityId, placedKind(container));
+    if (container.items?.length > 0) this.containerView.setItems(container.items);
+  }
+
+  /** The server refused the reach (guarded, or out of reach): no coffer will open for it. */
+  private chestRefused(): void {
+    this.reaching = undefined;
   }
 
   private interactWithSwitch(entityId: string): void {
@@ -2886,8 +2973,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private checkChestDistance(): void {
     const me = this.playerPos;
+    if (!this.player || !me) return;
     const openFor = this.containerView.entityId;
-    if (!this.player || !me || !openFor) return;
+    if (!openFor) return;
 
     // the coffer vanished from the server's state, or the pile was emptied: nothing left to show
     const chest = this.chests.get(openFor);
@@ -3469,8 +3557,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
     socketManager.on("interact", (payload: InteractReply) => {
       console.log("Interact response:", payload);
-      // a guarded chest stays shut: the coffer the E key opened closes again (FS-KE075 §J R60)
-      if (refusesContainer(payload)) this.containerView.close();
+      // a refused reach opens no coffer (FS-KE075 §J R60); the empty frame after a reply refuses nothing
+      if (!payload.success && (payload.reason || payload.message)) this.chestRefused();
       const notice = interactNotice(payload);
       if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
     });
@@ -3565,12 +3653,15 @@ export class BarrowspireScene extends Phaser.Scene {
       this.equipment?.updateCharacter(state.current_player);
 
       // 本身受傷變紅閃爍提示
-      const curHp = state.current_player.current_health;
-      if (this.prevLocalPlayerHp !== undefined && curHp !== undefined && curHp < this.prevLocalPlayerHp) {
+      const health = healthIn(state.current_player);
+      if (health) {
         // part of the way toward oxblood and back (FS-KYPQ9 §G.1)
-        if (this.player) this.hits?.play(this.player);
+        if (this.ownHealth && health.current < this.ownHealth.current && this.player) this.hits?.play(this.player);
+        // a hit closes the container view, and only that: judged before this state's containers
+        // are read, so a view this state opens for a reach stays (FS-1D6BX R19, R24, E4)
+        if (costHealth(this.ownHealth, health) && this.containerView?.isOpen) this.containerView.close();
+        this.ownHealth = health;
       }
-      if (curHp !== undefined) this.prevLocalPlayerHp = curHp;
     } else {
       // current_player is null — player has escaped
       this.hideOwnBody(true);
@@ -3603,6 +3694,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Update containers from server
     this.updateContainers(state.containers || []);
+    // an open container has opened its view: what is still reached for is kept or given up
+    // (FS-MQYEX R26). Walking out of reach ends a reach the server never answered (FS-KE075 §J R60)
+    this.settleReach(state);
+    // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
+    this.showTimedOpen(state);
 
     // Update escape doors from server
     this.updateEscapeDoors(state.escape_doors || []);
@@ -4046,6 +4142,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.occluders.clear();
     this.lightMap?.clear();
     if (this.containerView?.entityId) this.containerView.close();
+    this.reaching = undefined;
 
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;
@@ -5672,7 +5769,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkBuildingStatus();
     this.updateTargetFrame(delta);
 
-    // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
+    // the open bar fills on between states (FS-MQYEX R22)
+    this.drawTimedOpen();
+
+    // 檢查寶箱距離，太遠自動關閉. A reach that waits on the server is judged by the states (FS-MQYEX R26)
     if (this.containerView.isOpen) {
       this.checkChestDistance();
     }
