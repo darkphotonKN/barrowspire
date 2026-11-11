@@ -1,6 +1,6 @@
 # FS-V8FT3: Wall shadow layer
 
-> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Wall shadow layer → FS-V8FT3`: [FS-2325V](2325V-pre-rendered-isometric-art.md) (timber wall pieces and posts, the bake's shadow catcher, the painted ground), [FS-8RBQY](8RBQY-tower-interior-run-look.md) (masonry partition walls and posts), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (exterior wall pieces, door heads, the two looks), [FS-KE075](KE075-floor-1-dungeon.md) (a dungeon floor's wall runs and chunked ground) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art; the bake's light), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (art authored in code), [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md) (two looks per building), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (colour by token: see R14), [ADR-0074](../adr/0074-a-dungeon-wall-on-a-cell-edge-sorts-by-the-corner-of-its-footprint-away-from-the-cells-it-faces.md) (a dungeon piece's `depthAt` is not its back corner) · Builds on: [FS-XK2B6](XK2B6-walls-on-the-cell-boundary.md) (a dungeon floor's walls on the cell boundary; its §I.27 wall plan is what a dungeon floor casts from) · Vocabulary: no new term; *wall run* is, on a dungeon floor, an **edge run** ([`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Wall edge"), and elsewhere a wall as `planWalls` cuts it
+> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Wall shadow layer → FS-V8FT3`: [FS-2325V](2325V-pre-rendered-isometric-art.md) (timber wall pieces and posts, the bake's shadow catcher, the painted ground), [FS-8RBQY](8RBQY-tower-interior-run-look.md) (masonry partition walls and posts), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (exterior wall pieces, door heads, the two looks), [FS-KE075](KE075-floor-1-dungeon.md) (a dungeon floor's wall runs and chunked ground) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art; the bake's light), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (art authored in code), [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md) (two looks per building), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (colour by token: see R14), [ADR-0074](../adr/0074-a-dungeon-wall-on-a-cell-edge-sorts-by-the-corner-of-its-footprint-away-from-the-cells-it-faces.md) (a dungeon piece's `depthAt` is not its back corner) · Builds on: [FS-XK2B6](XK2B6-walls-on-the-cell-boundary.md) (a dungeon floor's walls on the cell boundary; its §I.27 wall plan is what a dungeon floor casts from) · Vocabulary: **wall foot** ([`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Wall foot", added 2026-11-12: what R13 calls a wall's foot, never its footprint); *wall run* is, on a dungeon floor, an **edge run** ("Wall edge"), and elsewhere a wall as `planWalls` cuts it
 
 > Promoted `--from-thread` on 2026-11-11 from the locked scoping notes: the owner's approved
 > charter "牆影不疊深". Requirements marked **(charter default)** are that charter's, each with its
@@ -155,6 +155,13 @@ of a shipped FS. A slice that finds one of these unavoidable stops and escalates
 6. **Only the ground shadow goes (spec).** A piece's own faces look as they do today: its parts
    still shade one another (the coping on the face, a sconce on the stone). So the sheet is baked
    without the catcher; its meshes still cast.
+   **Exception (amended 2026-11-12, review fix round 1).** `tower_wall_back_cobweb_{x,y}`: the
+   small web at the piece's far end moved 0.01 tile inward (`models/tower.js`, `partitionWall`),
+   so about 100 to 116 opaque px of each of its frames differ from before. Reason: R7. Turned a
+   quarter, the web spans 0.36 tile along the piece and reached 0.01 tile past its end, beyond
+   the timber frame guide; the baked ground shadow's bounds used to hold it inside the frame, and
+   with that shadow gone the guide alone frames the piece, so left where it was the web would have
+   grown the frame past the timber piece's. No other sheet's faces change.
 7. **Placement unchanged (spec).** A piece stands on the same screen px as before. A frame may
    shrink to the piece; a tower piece's and an exterior piece's frame and anchor still equal the
    timber piece's.
@@ -404,7 +411,10 @@ By eye (owner, browser, and the review sheets):
   are built; the shadows are added when the walls are (R22). The hub and a floor of buildings paint
   the ground for their houses and add the shadows in the same step.
 - **A new floor.** The ground of the floor left is destroyed with its shadows; the next floor's
-  ground gets its own. Nothing is carried over.
+  ground gets its own. Nothing is carried over. (Amended 2026-11-12, review fix round 1.) A climb
+  between floors of buildings of one size keeps the ground (`fitFloor`): it forgets the floor
+  left's shadows as the new floor is fitted, so the new floor's paint lays none of them on its
+  tiles, and its own are laid over it once, with no second repaint.
 - **Walls that change within a floor.** A run's walls come once per floor (FS-KE075 §H.43). Should
   a wall come or go later, the shadows are those of the walls known when they were painted, as the
   houses' flagstones are.

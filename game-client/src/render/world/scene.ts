@@ -64,13 +64,14 @@ import type { DressingPiece } from "./runDressing";
 import {
   TIMBER_WALLS,
   planWalls,
+  thicknessPx,
   trimCrop,
   type PieceRule,
   type WallPiece,
   type WallPost,
   type WallSheets,
 } from "./walls";
-import type { GroundShadows } from "./wallShadows";
+import type { DrawnBuilding, DrawnWallSet, GroundShadows } from "./wallShadows";
 
 /** Below every world object: the ground is flat and everything stands on it. */
 export const GROUND_DEPTH = -1;
@@ -291,6 +292,16 @@ export class GroundLayer {
   }
 
   /**
+   * Forgets the walls' shadows this ground holds, repainting nothing: their walls are gone (a climb
+   * to a floor of the same size keeps the ground, FS-V8FT3 Edge States "A new floor"). Those laid
+   * stay until the next paint, which lays none of them; the next `shade` lays its own over it.
+   */
+  unshade(): void {
+    this.shadows = undefined;
+    this.shaded = false;
+  }
+
+  /**
    * The shadows into every chunk that has a texture and a shadow falling in it (R19–R23): all its
    * shapes drawn opaque, in the bake's shadow colour, into one scratch the chunk's size, the cuts
    * (ground no shadow may lie on) erased from it, and the scratch laid on the chunk once, at the
@@ -499,7 +510,12 @@ export function addDressing(
   return built;
 }
 
-export interface BuiltWalls {
+export interface BuiltWalls extends DrawnWallSet {
+  /**
+   * The pieces and posts the sprites stand by, as planned: what the walls' ground shadows are cast
+   * from (FS-V8FT3 §D), so they fall from the walls as drawn.
+   */
+  plan: { pieces: readonly WallPiece[]; posts: readonly WallPost[] };
   /** Every piece and post, by the server wall it belongs to. */
   byWall: Map<string, Phaser.GameObjects.Sprite[]>;
   /** Every piece and post with the world point it stands on (a dungeon floor's chunks, §H.45). */
@@ -551,7 +567,14 @@ export function addWallPieces(
   sheets: WallSheets,
 ): BuiltWalls | null {
   if (!hasWallArt(art, sheets)) return null;
-  const built: BuiltWalls = { byWall: new Map(), standing: [], tall: [], lights: [] };
+  const built: BuiltWalls = {
+    plan: { pieces, posts },
+    thickness: thicknessPx(sheets),
+    byWall: new Map(),
+    standing: [],
+    tall: [],
+    lights: [],
+  };
   const keep = (wallId: string, sprite: Phaser.GameObjects.Sprite, at: Point) => {
     const list = built.byWall.get(wallId);
     if (list) list.push(sprite);
@@ -689,8 +712,13 @@ export interface BuiltParts {
   cover: Cover[];
 }
 
-/** One building drawn in both its looks (ADR-0036, FS-9PN7X §B): a scene shows one at a time. */
-export interface BuiltBuilding {
+/**
+ * One building drawn in both its looks (ADR-0036, FS-9PN7X §B): a scene shows one at a time. It
+ * carries what it was drawn from (`DrawnBuilding`): the plan its wall sprites stand by, the door
+ * gaps its heads close and its material's `thickness`, which its ground shadows are cast from
+ * (FS-V8FT3 §F). That thickness is the drawn piece's, not `wall`, the server rects'.
+ */
+export interface BuiltBuilding extends DrawnBuilding {
   house: House;
   /** Standing in both looks: the north and west walls and the posts already full height. */
   shared: BuildingPart[];
@@ -856,6 +884,9 @@ export function addBuildings(
   return planBuildings(walls, seed, sheets).map((plan) => {
     const own = walls.filter((w) => w.house_id === plan.house.id);
     const built: BuiltBuilding = {
+      plan,
+      gaps: heads.filter((g) => g.houseId === plan.house.id),
+      thickness: thicknessPx(sheets),
       house: plan.house,
       shared: [],
       interior: [],
@@ -925,7 +956,7 @@ export function addBuildings(
       exterior.cover.push(...shut.cover);
       interior.parts.push(...addGapDoor(scene, art, gapDoor(gap, true), sheets, logger).parts);
     }
-    for (const gap of heads.filter((g) => g.houseId === plan.house.id)) {
+    for (const gap of built.gaps) {
       const head = addDoorHead(scene, art, doorHead(gap, sheets), sheets, style, logger);
       exterior.parts.push(...head.parts);
       exterior.cover.push(...head.cover);

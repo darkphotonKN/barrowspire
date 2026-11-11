@@ -39,23 +39,23 @@ drawing shapes at 50% each.
 
 ## Acceptance Criteria
 
-- [ ] All shapes of one ground texture are drawn opaque into one scratch surface, and that surface
+- [x] All shapes of one ground texture are drawn opaque into one scratch surface, and that surface
       is laid on the ground texture once, at `BAKE`'s shadow opacity and colour. Nothing draws a
       shape onto the ground at an alpha below 1.
-- [ ] After painting, the scratch surface is destroyed; the scene's display list and texture
+- [x] After painting, the scratch surface is destroyed; the scene's display list and texture
       manager hold nothing for shadows.
-- [ ] A shape lying across two chunks is drawn into both from the same screen px.
-- [ ] Painting shadows does not clear a ground texture or stamp a ground tile; asking for the same
+- [x] A shape lying across two chunks is drawn into both from the same screen px.
+- [x] Painting shadows does not clear a ground texture or stamp a ground tile; asking for the same
       walls' shadows again paints nothing; a ground repaint paints them once more.
-- [ ] On the sample floor the chunks with a texture are the same 65 before and after, and no
+- [x] On the sample floor the chunks with a texture are the same 65 before and after, and no
       shadow px is laid on a wall cell or the void: every px a shadow covers is in a walkable
       cell.
-- [ ] Every shadow over walkable cells is laid whole: the cut takes only what lies on a wall cell
+- [x] Every shadow over walkable cells is laid whole: the cut takes only what lies on a wall cell
       or the void.
-- [ ] A fading occluder changes no ground texture.
-- [ ] Without the wall sheets (placeholder walls) or without the ground's art, no wall shadow is
+- [x] A fading occluder changes no ground texture.
+- [x] Without the wall sheets (placeholder walls) or without the ground's art, no wall shadow is
       painted and nothing fails.
-- [ ] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.
+- [x] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.
 
 ## Blocked By
 

@@ -15,12 +15,11 @@
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
 import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
-import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
-import { doorGaps, planBuildings, type BuildingWalls, type DoorGap } from "./buildingLooks";
+import type { BuildingWalls, DoorGap } from "./buildingLooks";
 import type { RegionGrid } from "./dungeon";
 import { axisOf } from "./houses";
-import { planWalls, thicknessPx, type WallHeight, type WallPiece, type WallPost, type WallSheets } from "./walls";
+import type { WallHeight, WallPiece, WallPost } from "./walls";
 
 /** The ground something that casts stands on: an axis-aligned rect in world px, and its height. */
 export interface WallFoot {
@@ -36,6 +35,25 @@ export interface WallFoot {
 export interface DrawnWalls {
   pieces: readonly Pick<WallPiece, "axis" | "at" | "keep" | "height">[];
   posts: readonly Pick<WallPost, "at" | "height">[];
+}
+
+/**
+ * Walls as a draw call drew them (`addWalls`, `addWallPieces`): the pieces and posts its sprites
+ * stand by, and its material's thickness in world px (`thicknessPx`).
+ */
+export interface DrawnWallSet {
+  plan: DrawnWalls;
+  thickness: number;
+}
+
+/**
+ * A building as `addBuildings` drew it: its walls in both looks, the door gaps its heads close, and
+ * its material's thickness in world px.
+ */
+export interface DrawnBuilding {
+  plan: BuildingWalls;
+  gaps: readonly DoorGap[];
+  thickness: number;
 }
 
 const T = WORLD_PX_PER_TILE;
@@ -227,19 +245,17 @@ export function buildingShadows(
 }
 
 /**
- * The shadows of server wall rects as one material draws them (FS-V8FT3 §F): each house by its
- * two looks, in `planBuildings`' order (`buildingShadows`), and every wall of no house as drawn,
- * full height (R28). The village's houses and walls, and a floor of buildings' rooms and halls.
+ * The shadows of walls as they were drawn (FS-V8FT3 §F), never planned a second time: each building
+ * by its two looks (`buildingShadows`), from the plan its sprites stand by, and walls of no house as
+ * their pieces stand, at the height drawn (R28). The village's houses and walls, and a floor of
+ * buildings' rooms and halls.
  */
-export function buildingWallShadows(walls: readonly WallState[], seed: number, sheets: WallSheets): Point[][] {
-  const thickness = thicknessPx(sheets);
-  const gaps = doorGaps(walls);
-  const houses = planBuildings(walls, seed, sheets).flatMap((building) => {
-    const { outside, inside } = buildingShadows(building, gaps, thickness);
+export function buildingWallShadows(buildings: readonly DrawnBuilding[], loose?: DrawnWallSet | null): Point[][] {
+  const houses = buildings.flatMap(({ plan, gaps, thickness }) => {
+    const { outside, inside } = buildingShadows(plan, gaps, thickness);
     return [...outside, ...inside];
   });
-  const loose = walls.filter((w) => !w.house_id);
-  return [...houses, ...planWallShadows(planWalls(loose, seed, sheets), thickness)];
+  return [...houses, ...(loose ? planWallShadows(loose.plan, loose.thickness) : [])];
 }
 
 /**
