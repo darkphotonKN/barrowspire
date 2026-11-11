@@ -109,7 +109,8 @@ function arrivalCardOn(s: Stage): ArrivalCard {
 
 /**
  * The climb's whole card, as the game plays it: the dark, the card, its hold, then `leave` off its
- * letters (FS-PQ2TW §D, R40; §Change: Smoke R52). Under reduced motion it fades, as in the game.
+ * letters (FS-PQ2TW §D, R40; §Change: Smoke R52; §Change: Ash R62). Under reduced motion it
+ * fades, as in the game.
  */
 function playArrivalCard(s: Stage, leave: CardLeave): void {
   arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), { built: true }, leave);
@@ -136,7 +137,7 @@ export const EFFECT_CARDS: EffectCard[] = [
   {
     module: "cardAsh",
     name: "Arrival card ash",
-    // a third trial beside the dust and the smoke, for the owner to compare (§Change: Ash R62)
+    // the game's leave, beside its alternates the dust and the smoke (§Change: Ash R62)
     demo: (s) => playArrivalCard(s, "ash"),
   },
   {
@@ -147,7 +148,7 @@ export const EFFECT_CARDS: EffectCard[] = [
   {
     module: "cardSmoke",
     name: "Arrival card smoke",
-    // a trial beside the dust, for the owner to compare (§Change: Smoke R52)
+    // an alternate, beside the ash and the dust (§Change: Smoke R52)
     demo: (s) => playArrivalCard(s, "smoke"),
   },
   {

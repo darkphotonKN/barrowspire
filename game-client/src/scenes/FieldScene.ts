@@ -212,7 +212,8 @@ export class FieldScene extends Phaser.Scene {
   private unsubscribeState?: () => void;
   /**
    * The field's arrival card (FS-PQ2TW R37): the shared piece's, told once the field's first state
-   * is drawn, and leaves as dust (FS-PQ2TW §D). It lets its own card go at a scene end.
+   * is drawn, and leaves as the card's one switch says, ash (FS-PQ2TW §Change: Ash R53). It lets
+   * its own card go at a scene end.
    */
   private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
 

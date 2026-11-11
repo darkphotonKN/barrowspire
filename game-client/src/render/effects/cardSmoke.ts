@@ -4,10 +4,12 @@
  * from their strokes, each starting small and swelling, rising slowly, curling and turning as it
  * goes, overlapping into one body of smoke that thins out.
  *
- * A trial beside the dust (`cardDust.ts`), which stays the card's leave in the game; the card's one
- * switch picks between them (`CARD_LEAVE`, `src/ui/arrivalCard.ts`). The strokes are read as the
- * dust reads them, through the reading the leaves share (`cardLeaveCore.ts`: `strokeCells` /
- * `ruleCells` / `seedPoints`): never from a box around the text (R42). Where it plays nothing, the card fades (R50).
+ * An alternate beside the dust (`cardDust.ts`): the game's leave is the ash (`cardAsh.ts`), the
+ * card's one switch picking it (`CARD_LEAVE`, `src/ui/arrivalCard.ts`); the smoke was the game's
+ * for part of 2026-11-12 and plays now when a play names it (the gallery). The strokes are read as
+ * the dust reads them, through the reading the leaves share (`cardLeaveCore.ts`: `strokeCells` /
+ * `ruleCells` / `seedPoints`): never from a box around the text (R42). Where it plays nothing, the
+ * card fades (R50).
  */
 
 import type Phaser from "phaser";

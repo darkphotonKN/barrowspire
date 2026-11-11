@@ -16,8 +16,9 @@
  * frame the front reaches theirs (R64). Flakes and sparks are drawn at runtime, at the render
  * scale, into one sheet; each flake shape is an anim, so a glowing one can dim.
  *
- * A trial beside the dust and the smoke; the card's one switch picks between them (`CARD_LEAVE`,
- * `src/ui/arrivalCard.ts`). Where it plays nothing, the card fades (R60).
+ * The game's leave (the owner's second pick of 2026-11-12): the card's one switch picks it
+ * (`CARD_LEAVE`, `src/ui/arrivalCard.ts`), with the dust and the smoke as alternates a play may
+ * name. Where it plays nothing, the card fades (R60).
  */
 
 import type Phaser from "phaser";
