@@ -25,7 +25,9 @@ export function paint(
 
 /**
  * An image of the canvas texture `key`, its origin its top-left; `draw` paints the texture only the
- * first time the key is asked for (the minimap's vignette, FS-56CKV §A.2).
+ * first time the key is asked for (the minimap's vignette, FS-56CKV §A.2). A key already painted at
+ * another size is a caller's mistake, two looks sharing one key, so it throws rather than hand back
+ * the old texture or repaint the one other images already show.
  */
 export function canvasImage(
   scene: Phaser.Scene,
@@ -35,6 +37,13 @@ export function canvasImage(
   draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
 ): Phaser.GameObjects.Image {
   if (!scene.textures.exists(key)) paint(scene, key, w, h, draw);
+  else {
+    const painted = scene.textures.get(key).getSourceImage();
+    if (painted.width !== w || painted.height !== h)
+      throw new Error(
+        `canvasImage: texture "${key}" is ${painted.width}x${painted.height}, asked for ${w}x${h}`,
+      );
+  }
   return scene.add.image(0, 0, key).setOrigin(0);
 }
 
