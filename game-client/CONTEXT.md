@@ -247,9 +247,18 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   (`FIELD_MARKER_OUTLINE`), so it keeps the 3:1 readability floor on bright, daylit ground. It is
   why a field's daylight need not be capped for the floor. Runs and the hub draw markers without
   it.
-- **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
-  along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
-  pieces stand full height (north and west sides); "front" pieces are the low cut-away.
+- **Wall piece**: one tile of a wall as drawn (`WallPiece`), each sorted by its own footprint,
+  with a **post** wherever walls end or meet. "Back" pieces stand full height; "front" pieces are
+  the low cut-away. What a wall is cut from, and what decides its height, depend on where it
+  stands:
+  - **A building's wall** (a house, a partition, a floor of buildings): a server wall rect, cut
+    along the rect's centreline, a post at each end. Its height is its house side's: back on the
+    north and west sides, front on the south and east (or a piece rule's, where one is given).
+  - **A dungeon floor's wall**: an *edge run* (**Wall edge**), cut on the edge, two pieces per
+    cell, its centre half the wall's thickness into the wall cell, a post at each end of the run
+    (FS-XK2B6). Its height is its edge's (`edgeHeight`), never its place's: front on a region's
+    south or east edge, and on any edge whose wall cell also has a walkable cell directly north or
+    west of it; back otherwise. So some north and west pieces are low.
 - **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
   fades while its sprite overlaps the player's and its footprint sorts nearer the viewer.
 - **Dressing**: a decorative prop placed by the client (a cart, stall, trough, signpost, lamp post,
