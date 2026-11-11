@@ -21,8 +21,9 @@ slabs 40 px off each wall and a strip of floor beyond each wall (FS-XK2B6 Edge S
   placeholder blocks, lights, chunks, occluders). The `Fog` it builds keeps reading `wallRuns`,
   `wallRule` and `wallLayout` until I-XK2B6-3: leave those three compiling and unchanged, save
   the next line.
-- `game-client/src/render/world/dungeon.ts`: `wallRule` loses its `betweenPosts` property, nothing
-  else
+- `game-client/src/render/world/dungeon.ts`: `wallRule` loses its `betweenPosts` property; and,
+  since ruling E1 (2026-11-11), `edgeHeight` and where `wallPlan` ends a run (R3, R4, R8), with
+  their cases in `dungeon.test.ts`. Nothing else.
 - `game-client/src/render/world/{walls,scene,runDressing}.test.ts`,
   `game-client/src/scenes/BarrowspireScene.test.ts`: dungeon cases only
 
@@ -36,7 +37,8 @@ face towards the walkable cell stands on the edge (R1-R3). A post stands at each
 Each piece takes its run's height, and may be a lit kind only on a back run facing a room (R8, R9,
 R13); a light is queued where its piece now stands. Back pieces and posts join the occluders
 (R10). Every piece and post joins the ground chunk it stands in and is gated by the fog where it
-stands (R15). A piece sorts by the back corner of its footprint, as today (R12): add no sort rule.
+stands (R15). A piece sorts by the corner of its footprint away from the cells its edge faces (R12, ADR-0074):
+the front corner when its wall cell lies south or east of the edge, the back corner otherwise.
 The placeholder blocks, drawn without the wall art, stand on the same edges at the same thickness
 and heights. With no piece past a post left to drop, `betweenPosts`, `withinPosts` and the
 placeholder filter go, with their tests (R25, R26). Dressing is not changed: pin that its plan for
@@ -67,8 +69,9 @@ I-XK2B6-1. Blocks I-XK2B6-3 and I-XK2B6-5.
 ## Spec Reference
 
 FS-XK2B6 §A R1-R7, §B R8-R10, §C R12, §D R13-R15, §G R21-R24, §H R25-R26; user stories 1-4, 6, 7,
-10-14, 17, 19; Acceptance Criteria "Drawing", "Unchanged". Open to the owner E1 and E3 are not
-decided here: build R8 and R12 as written.
+10-14, 17, 19-21; Acceptance Criteria "Drawing", "Unchanged", and the wall plan's criteria on
+heights and run ends. The owner's rulings E1 and E3 (2026-11-11) are built here: R8 and R12 as
+ruled.
 
 ## TDD Approach
 

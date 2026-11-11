@@ -1,12 +1,14 @@
 # FS-XK2B6: Walls on the cell boundary
 
-> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Walls on the cell boundary → FS-XK2B6`: [FS-KE075](KE075-floor-1-dungeon.md) (§H.44 ground, §H.46 wall runs and heights, §H.47 wall lights and dressing), [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (§C.13 the fog's wall slabs and posts) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art; draw order by footprint), [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (the floor map, unchanged), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) and [ADR-0068](../adr/0068-unexplored-regions-are-veiled-not-blacked-out-and-fog-edges-are-feathered-and-faded.md) (fog), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only) · Followed by: FS-V8FT3 (wall shadows, on branch `feat/world-wall-shadow-layer`; rebuilt on this, see §I) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Wall edge**, **Void**, **Region**, **Wall piece**, **Occluder**
+> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Walls on the cell boundary → FS-XK2B6`: [FS-KE075](KE075-floor-1-dungeon.md) (§H.44 ground, §H.46 wall runs and heights, §H.47 wall lights and dressing), [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) (§C.13 the fog's wall slabs and posts) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art; draw order by footprint), [ADR-0060](../adr/0060-the-floor-map-is-sent-once-and-snapshots-are-cut-per-recipient.md) (the floor map, unchanged), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) and [ADR-0068](../adr/0068-unexplored-regions-are-veiled-not-blacked-out-and-fog-edges-are-feathered-and-faded.md) (fog), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0074](../adr/0074-a-dungeon-wall-on-a-cell-edge-sorts-by-the-corner-of-its-footprint-away-from-the-cells-it-faces.md) (an edge piece's sort point; ruling E3) · Followed by: FS-V8FT3 (wall shadows, on branch `feat/world-wall-shadow-layer`; rebuilt on this, see §I) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Wall edge**, **Void**, **Region**, **Wall piece**, **Occluder**
 
 > Promoted `--from-thread` on 2026-11-11 from the locked scoping notes: the owner's approved
 > charter "牆畫在格子交界" ("好 核准"). Requirements marked **(charter default)** are that charter's,
 > each with its reason. Those marked **(spec)** fill an acceptance-level gap the charter left, and
-> are this spec's own. Three consequences the charter told this spec to report and not decide are
-> in *Open to the owner*; the requirements follow the charter's words until the owner rules.
+> are this spec's own. Three consequences the charter told this spec to report and not decide
+> went to the owner as E1, E2 and E3. He ruled on all three on 2026-11-11 ("照你建議"); they are in
+> *The owner's rulings*, and R3, R4, R8, R9, R11 and R12 are written as ruled, marked
+> **(ruling E1)** or **(ruling E3)**.
 > Recorded without adversarial review: no `challenge-me` pass. Code citations are against the
 > working tree at `a427b0c3`.
 
@@ -53,8 +55,9 @@ Read 2026-11-11; client paths under `game-client/src/`.
 - **The sample floor** (`render/world/dungeon.fixture.json`, 72 × 48 cells): 745 wall cells, 650
   of them with a walkable cell directly north, south, west or east. Those 650 show 766 wall edges:
   195 on their north side, 195 south, 188 west, 188 east. 113 cells carry more than one edge. 7
-  have walkable cells on opposite sides, all north and south. 58 carry both an edge that is front
-  and an edge that is back by R9. No walkable cell faces anything but a wall cell, none lies on
+  have walkable cells on opposite sides, all north and south. 58 carry both an edge whose wall
+  cell lies south or east of it and an edge whose wall cell lies north or west of it: the 7, and
+  51 at corners where the outline steps. No walkable cell faces anything but a wall cell, none lies on
   the grid's edge ring (FS-KE075 §A), and no two walkable cells touch only by a corner.
 - **The screen.** A floor point `d` px straight behind a wall, on the same screen column, is
   `0.8 · d` screen px above the wall's foot (`render/iso/projection.ts`). So a 43 px front wall
@@ -94,16 +97,19 @@ Read 2026-11-11; client paths under `game-client/src/`.
    piece's centre is half the wall's thickness inside its wall cell: 4.8 px for the tower's
    masonry. Each material's thickness is written once on the client, beside its sheets, with the
    bake model's number it mirrors; no other source holds it.
-3. **Edge runs (spec).** A straight line of wall edges facing the same way, one after another, is
-   one **edge run**. Its pieces lie end to end from the cell corner where it starts to the cell
+3. **Edge runs (spec).** A straight line of wall edges facing the same way and drawn at one
+   height (R8), one after another, is one **edge run**. Its pieces lie end to end from the cell corner where it starts to the cell
    corner where it ends: two pieces per cell, a whole number, none trimmed. A run of one cell is a
    run like any other. Runs still come from the wall cells and the sides they show, never from the
    server's rects (FS-KE075 §H.46, kept). Reason: a run then ends exactly where the outline of the
-   walkable area turns.
+   walkable area turns, or where the wall along it changes height.
 4. **Corners at cell corners (charter default).** Where the outline turns, two runs meet at a cell
    corner. **(spec)** One post stands there, where the two walls' thicknesses cross: the cell
    corner, set half a thickness to the wall side along each axis. It is as tall as the tallest
    wall that ends at it, as `planWalls` posts are today. Every end of every run has a post.
+   **(ruling E1)** Where a straight wall changes height, one run ends and the next begins at a
+   cell corner the outline does not turn at. The post there stands on the wall's own line: half a
+   thickness to the wall side across it, on the corner along it.
 5. **A doorway is as wide as it is to walk through (charter default).** The two walls either side
    of a doorway end 80 px apart, and a corridor's two walls face each other across exactly its
    walkable width.
@@ -117,23 +123,36 @@ Read 2026-11-11; client paths under `game-client/src/`.
 
 ### §B. Heights
 
-8. **By edge (charter default).** An edge that bounds its region on the region's south or east
-   side is **front** (cut away, low). Any other edge is **back** (full height). Every edge of one
-   run faces the same way, so a run is one height.
-9. **Never by the cell under the piece (spec).** A piece's height, whether it may carry a light,
-   and its post's height are decided by the edge the piece stands on. Reason: 58 cells of the
-   sample floor carry a front edge and a back edge at once, so the cell cannot answer.
+8. **By edge (charter default, ruling E1).** An edge that bounds its region on the region's south
+   or east side is **front** (cut away, low). **(ruling E1)** So is any other edge whose wall cell
+   also has a walkable cell directly north or west of it: that wall cell stands in front of a
+   region, and a full wall on it would hide who stands there. Every other edge is **back** (full
+   height). So no wall cell carries a front wall and a back wall, and nothing in play is hidden,
+   as FS-KE075 §H.46's "front wins" has it today. A run is one height (R3): along a straight line
+   of edges that face the same way, a new run starts where the height changes.
+9. **Asked of the edge, in one place (spec).** A piece's height, whether it may carry a light, and
+   its post's height are decided by the edge the piece stands on, by one function of the edge and
+   the cells round its wall cell (`edgeHeight`). Never by the place a piece or a post stands: a
+   post stands on a corner four cells share, and a piece's own place says nothing of which cell
+   it faces.
 10. **Occluders as today (charter default).** A back piece and a back post fade over the local
     player by the occluder rule. A front piece never does.
-11. **This replaces the per-cell rule.** FS-KE075 §H.46's "where a wall borders walkable cells on
-    both sides, front wins" no longer applies: by the charter's words each edge takes its own
-    height. What that hides is *Open to the owner* E1.
+11. **What is kept of the per-cell rule, and what goes (ruling E1).** FS-KE075 §H.46's "where a
+    wall borders walkable cells on both sides, front wins" is kept, by R8. What goes is its third
+    clause, a shell cell made front by a walkable cell to its north-west alone: that cell is a
+    corner's, it carries no wall (R7), and the post beside it takes its height from the runs that
+    end at it (R4).
 
 ### §C. Draw order
 
-12. **By footprint, as today (spec).** A piece sorts by the back corner of its footprint, which
-    now lies on the wall edge, and a post by its own place (ADR-0020 Decision 7). No new sort rule is
-    added in v1. What that does to a body pressed against a front wall is *Open to the owner* E3.
+12. **By the footprint's corner away from the cells the wall faces (ruling E3, ADR-0074).** A piece
+    on an edge whose wall cell lies south or east of it sorts by the front corner of its
+    footprint, the one nearest the camera, so a body pressed against that wall is drawn behind it.
+    A piece on an edge whose wall cell lies north or west of it sorts by the back corner, as every
+    wall piece does today, so a body pressed against that wall is drawn over it. The side decides,
+    never the height: an edge R8 draws low on a region's north or west side keeps the back corner.
+    A post sorts by its own place (ADR-0020 Decision 7). The placeholder blocks sort as the baked
+    pieces do.
 
 ### §D. Wall lights, dressing, and what else is placed by a wall
 
@@ -205,31 +224,38 @@ Read 2026-11-11; client paths under `game-client/src/`.
     wall cells lie on, its height and its thickness; each post with its place and height. Reason:
     the fog reads it here, and FS-V8FT3 will cast its shadows from each run's foot.
 
-## Open to the owner
+## The owner's rulings
 
-The charter told this spec to report these and not decide them. The requirements above follow the
-charter's words; each answer below would change one requirement.
+The charter told this spec to report three consequences and not decide them. They went to the
+owner as E1, E2 and E3, and he ruled on 2026-11-11, taking the coordinator's recommendation on
+each ("照你建議"). The requirements above are written as ruled.
 
-- **E1. Full walls where today front wins.** On the 58 cells of the sample floor that carry a
-  front edge and a back edge, R8 stands a full-height wall one cell in front of a region: beside a
-  corridor that runs along a room (the 7 two-sided cells) and at the 51 corners where the outline
-  steps. In the two-sided case a body standing in the corridor, against its own low wall, is
-  covered by the room's full wall from the feet up to about 61 px of its 93; at a step, about half
-  a body's width is covered. The local player fades the wall; a teammate or a monster is hidden.
-  Today that cell is low on purpose, "so nothing in play is hidden" (FS-KE075 §H.46). The other
-  reading keeps that: a back edge on a wall cell that also has a walkable cell north or west of
-  it is drawn low.
-- **E2. A front wall covers the floor behind it.** A cut-away wall on a region's south or east
-  edge covers the floor up to about 44 px in from that edge, where today it covers about 9. A body
-  pressed against it loses about 19 px of its feet, and a drop pile lying within that strip is
-  partly or wholly behind the wall. This is what a cut-away wall on the edge looks like; the
-  question is whether it is accepted.
-- **E3. A body against a front wall, and which draws over which.** A body pressed against a
-  region's south wall sorts after the piece beside it once it is more than 20 px along that piece
-  (and the same against an east wall), so it is drawn over a wall that stands in front of it. The
-  comparison is the same today, but the wall is 40 px away and nothing shows. Sorting an edge
-  piece by its footprint's front corner would put every such body behind the wall, at the cost of
-  E2's 19 px.
+- **E1. No full wall where today front wins: ruled, drawn low.** By the charter's words alone, the
+  58 cells of the sample floor that carry an edge on a region's south or east side and an edge on
+  another region's north or west side would stand a full-height wall one cell in front of a
+  region: beside a corridor that runs along a room (the 7 two-sided cells) and at the 51 corners
+  where the outline steps. In the two-sided case a body standing in the corridor, against its own
+  low wall, would be covered by the room's full wall from the feet up to about 61 px of its 93;
+  at a step, about half a body's width. The local player fades the wall; a teammate or a monster
+  would be hidden. **Ruling:** such a wall cell draws its back edge low as well, so nothing in
+  play is hidden, as FS-KE075 §H.46's "front wins" does today. In terms of an edge: a back edge
+  is drawn front when its wall cell also has a walkable cell directly north or west of it (R8).
+- **E2. A front wall covers the floor behind it: accepted for v1.** A cut-away wall on a region's
+  south or east edge covers the floor up to about 44 px in from that edge, where today it covers
+  about 9. A body pressed against it loses about 19 px of its feet, and a drop pile lying within
+  that strip is partly or wholly behind the wall. This is what a cut-away wall on the edge looks
+  like. **Ruling:** accepted. The owner looks in the browser check (I-XK2B6-5) and decides then
+  whether anything changes. No requirement and no code follows from it.
+- **E3. A body against a front wall is drawn behind it: ruled, ADR-0074.** Sorted by its back
+  corner, a piece on a region's south edge would be drawn under a body pressed against it once
+  the body is more than 20 px along that piece (and the same against an east wall), though the
+  wall stands in front of the body. The comparison is the same today, but the wall is 40 px away
+  and nothing shows. **Ruling:** an edge piece sorts by its footprint's corner nearest the camera,
+  so a body pressed against a front wall is drawn behind that wall, at the cost of E2's 19 px.
+  [ADR-0074](../adr/0074-a-dungeon-wall-on-a-cell-edge-sorts-by-the-corner-of-its-footprint-away-from-the-cells-it-faces.md)
+  records it, and why it is the front corner only for a wall on a region's south or east edge: on
+  a north or west edge the body stands on the wall's camera side, and the front corner would draw
+  it behind a wall it stands in front of (R12).
 
 ## User Stories
 
@@ -258,13 +284,17 @@ charter's words; each answer below would change one requirement.
     about the same room.
 15. As the owner, I want the cell between a corridor and a room left as plain void first, so that
     I can judge it before any art is made.
-16. As the owner, I want each wall's height decided by the side of the region it stands on, so
-    that I can see what that hides and rule on it.
+16. As the owner, I want each wall's height decided by its edge, and no full wall standing one
+    cell in front of a region, so that nothing in play is hidden.
 17. As the owner, I want collision, the map and monster paths untouched, so that this is a drawing
     change I can take back.
 18. As a developer of wall shadows, I want each run's foot as data, so that a shadow starts where
     the wall stands.
 19. As a developer, I want one rule for where a run ends, so that no corner needs a fix of its own.
+20. As a delver standing against a room's south or east wall, I want to be drawn behind that
+    wall, so that I read as standing in the room and not on top of its wall.
+21. As a delver standing against a room's north or west wall, I want to be drawn in front of it,
+    as I am today.
 
 ## Acceptance Criteria
 
@@ -273,17 +303,22 @@ The wall plan, on the sample floor (`dungeon.fixture.json`):
 - [ ] The plan holds exactly the 766 wall edges: one for every wall cell and walkable cell that
       share a side, and none anywhere else.
 - [ ] Every edge is in exactly one run; every run is a whole number of cells long, lies on one
-      cell line, and all its edges face the same way.
+      cell line, and all its edges face the same way and are one height.
+- [ ] A run ends only where the next cell along shows no such edge, or shows it at the other
+      height.
 - [ ] Every run is cut into two pieces per cell, each whole (`keep` 1); no piece lies past a run's
       end and no two pieces of the floor share a place.
 - [ ] Every piece's centre is half its material's thickness from its edge, on the wall cell's
       side; none is on a cell's centreline.
 - [ ] A post stands at each end of every run, one per corner however many runs meet there, half a
-      thickness to the wall side of the cell corner on each axis.
+      thickness to the wall side of the cell corner on each axis; where a straight wall changes
+      height, on the wall's line.
 - [ ] A post is back when any run ending at it is back, front otherwise.
-- [ ] A run whose wall cells lie south or east of the cells it faces is front; any other is back.
-      A wall cell with walkable cells north and south carries a front wall on its north edge and a
-      back wall on its south edge.
+- [ ] An edge whose wall cell lies south or east of the cell it faces is front. An edge whose
+      wall cell lies north or west of the cell it faces is front when that wall cell has a
+      walkable cell directly north or west of it, back otherwise.
+- [ ] No wall cell carries a front wall and a back wall. A wall cell with walkable cells north and
+      south carries a front wall on each of its two edges.
 - [ ] Either side of every doorway, the two runs end 80 px apart; across every corridor cell the
       two facing walls are the corridor's walkable width apart.
 - [ ] A wall cell with no walkable cell directly beside it has no piece.
@@ -297,6 +332,10 @@ Drawing:
       posts among the occluders, each in its ground chunk.
 - [ ] Without the wall art, the placeholder blocks stand on the same edges at the same thickness
       and heights.
+- [ ] A piece on an edge whose wall cell lies south or east of it sorts by its footprint's front
+      corner; any other piece by its back corner (ADR-0074).
+- [ ] A body pressed against any wall of the sample floor, anywhere along any piece, sorts behind
+      the piece when the wall cell lies south or east of the edge and in front of it otherwise.
 - [ ] A lit kind appears only on a back run facing a room; its light is queued at the piece's new
       place and belongs to the region the run faces.
 - [ ] `betweenPosts` and `withinPosts` are gone from the source and the tests.
@@ -334,16 +373,31 @@ By eye (owner, browser):
 - [ ] Corners close with one post and nothing sticking out, on outer and inner corners.
 - [ ] Past every wall is ink: no floor strip, no lit patch, no fog hanging off a wall.
 - [ ] Entering a room, its walls stand whole and the next room's fog ends at its own walls.
-- [ ] The cell between a corridor and the room it runs beside (E1): the owner's ruling.
-- [ ] Standing against a south and an east wall (E2, E3): the owner's ruling.
+- [ ] The cell between a corridor and the room it runs beside, and the corners where the outline
+      steps (E1): both walls are low, and nobody standing there is hidden.
+- [ ] Where a straight wall drops from full height to low (E1): a post stands at the change and
+      it reads as one wall.
+- [ ] Standing against a south and an east wall (E3): the body is drawn behind the low wall.
+- [ ] The same place (E2): the low wall covers the feet and what lies within about 44 px of that
+      edge. The owner decides whether anything changes.
 - [ ] The village, a field and the Inn look as before.
 
 ## Edge States
 
 - **A cell with several edges.** Each edge is in its own run; the walls on two adjacent edges meet
   at the cell's corner under one post; walls on opposite edges do not touch.
-- **A front and a back wall on one cell.** Each keeps its own height (R9). Their shared post, if
-  any, is back.
+- **A wall cell in front of one region and behind another.** Every wall on it is front (R8), so it
+  carries no light (R13). A post at one of its corners is back only if a back run of another cell
+  ends there.
+- **A straight wall that changes height.** Two runs, one post between them on the wall's line, as
+  tall as the taller (R4). On the sample floor this is where a corridor's or a room's north or
+  west wall passes a cell with a region on its other side.
+- **Floor and bodies behind a front wall.** A low wall on a region's south or east edge covers the
+  floor up to about 44 px in from the edge and about 19 px of the feet of a body pressed against
+  it; a drop pile in that strip may be partly or wholly behind the wall (ruling E2, accepted for
+  v1).
+- **A body against a wall drawn low on a region's north or west side** (R8). It is drawn over the
+  wall, as against a full wall there (R12).
 - **A wall cell between two regions under different fog.** Both its walls take the brighter
   region's tint, as its one wall does today (FS-SRA9J §C.11). The darker region's wall is then
   lighter than its floor.
@@ -371,10 +425,11 @@ By eye (owner, browser):
 
 - Collision, wall cells, the floor map, monster pathing, anything in `game-server/`.
 - New or re-baked art: a wall top, a thick wall, a filled cell between a corridor and a room.
-- A new draw-order rule, or a different height rule for a cell with several edges (E1, E3), until
-  the owner rules.
+- Anything to uncover the floor a front wall covers (ruling E2): a lower wall, a fade, moving the
+  wall. The owner looks first.
+- A new sort point for a post, or for any wall that is not a dungeon floor's.
 - Wall shadows (FS-V8FT3).
 - The minimap, which draws regions and no walls.
 - Buildings, the village, field worlds, the perimeter wall.
-- Any ADR. The draw-order rule (ADR-0020 Decision 7) is kept; if E3 is answered with a new sort point for
-  edge pieces, that answer may want one.
+- Amending ADR-0020. Its Decision 7 is kept as written; ADR-0074 names the point of the footprint
+  an edge piece sorts by.
