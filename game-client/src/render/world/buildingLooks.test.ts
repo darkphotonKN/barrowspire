@@ -167,14 +167,17 @@ describe("planCap (FS-9PN7X §B.3, §F.3)", () => {
 describe("doorGaps (FS-9PN7X §B.5)", () => {
   it("should find each town building's door gap from the walls, the gap's own rect", () => {
     const gaps = doorGaps(TOWN_WALLS);
-    // pinned as numbers, since the golden does not record a south wall: the Inn's at x 525–605,
-    // 15 px east of centre with its west jamb on the partition's east face (ADR-0073, hub_map.go
-    // `DoorShift`); the store's and the smithy's centred
-    expect(gaps).toEqual([
-      { houseId: "b0", position: { x: 525, y: 470 }, width: 80, height: THICK },
-      { houseId: "b1", position: { x: 1240, y: 370 }, width: 80, height: THICK },
-      { houseId: "b2", position: { x: 1590, y: 270 }, width: 80, height: THICK },
-    ]);
+    // the golden's gaps, as the server cuts them: the Inn's 15 px east of centre with its west
+    // jamb on the partition's east face (ADR-0073), the store's and the smithy's centred
+    expect(gaps).toEqual(
+      TOWN.map(({ doorGap: g }, i) => ({
+        houseId: `b${i}`,
+        position: { x: g.x, y: g.y },
+        width: g.w,
+        height: g.h,
+      })),
+    );
+    expect(gaps).toHaveLength(3);
   });
 
   it("should open the Inn's street gap wholly into the taproom, no partition standing in it (FS-MMA2H R10)", () => {
