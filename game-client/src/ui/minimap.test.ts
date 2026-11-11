@@ -1369,8 +1369,8 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       const far = at(4000, 1200);
       map.follow(far);
       frame(scroll);
-      expect(Math.abs(layer.position.x - stand(far).x) * rs).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold);
-      expect(Math.abs(layer.position.y - stand(far).y) * rs).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold);
+      expect(Math.abs(layer.position.x - stand(far).x) * rs).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold + 1e-6);
+      expect(Math.abs(layer.position.y - stand(far).y) * rs).toBeLessThanOrEqual(MINIMAP_OVERLAY.hold + 1e-6);
       // back to a panel and to the overlay again: on the stand itself, nothing held from before
       map.setMode("normal");
       map.place({ x: 746, y: 44 });

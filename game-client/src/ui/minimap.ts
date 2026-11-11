@@ -65,9 +65,11 @@ export const MINIMAP_ENLARGED = { scale: 1.5 } as const;
  * The map overlay (FS-1SEF0 §C), each a starting value to tune by eye: the world's own iso
  * projection scaled by `scale` (floor 1's diamond 960 × 480); the regions' fill and the walls'
  * line at `alpha`, the line `edge` logical px wide; at `depth`, over the world, the fog, the dust
- * and the vignette (905), under the aim line (940), the floor veil (950) and the HUD (1000).
+ * and the vignette (905), under the aim line (940), the floor veil (950) and the HUD (1000). The
+ * map and marks are held on screen while the figure's stand is within `hold` backing px of where
+ * they are shown (§C.19; the owner's two, 2026-11-12: one left back-steps under broadcast jitter).
  */
-export const MINIMAP_OVERLAY = { scale: 0.125, alpha: 0.4, edge: 2, depth: 920 } as const;
+export const MINIMAP_OVERLAY = { scale: 0.125, alpha: 0.4, edge: 2, depth: 920, hold: 2 } as const;
 /** Dot radii, logical px: the local player's larger, so it reads apart from the allies' (§E.22, FS-56CKV §A.7). */
 const DOT = { self: 3, ally: 2, outline: 1 } as const;
 
@@ -558,16 +560,17 @@ export class Minimap {
    * §C.19). On screen the stand is the figure's backing px less its point's, and the figure, eased
    * toward 30 Hz broadcasts against the camera's lerp and floored scroll, steps a backing px or two
    * back and forth there as it walks; the map, sliding at 1/8 of the walk, would step back with
-   * it. So on each axis they stay where they were shown while the stand is within a backing px of
-   * that, and otherwise go to within a backing px of it: never back against a walk, still on an
-   * axis it does not move, at most a backing px off the figure's point, on whole backing px. The
-   * dots stay on the stand, on their figures.
+   * it. So on each axis they stay where they were shown while the stand is within the hold (two
+   * backing px) of that, and otherwise go to within the hold of it: never back against a walk, even
+   * under broadcast jitter, still on an axis it does not move, at most the hold off the figure's
+   * point, on whole backing px. The dots stay on the stand, on their figures.
    */
   private hold(scroll: Point): void {
     if (this.drawing.panel || !this.stood) return;
     const r = this.perPx();
     const stand = { x: Math.round((this.stood.x - scroll.x) * r), y: Math.round((this.stood.y - scroll.y) * r) };
-    const near = (shown: number, to: number) => Math.min(Math.max(shown, to - 1), to + 1);
+    const { hold } = MINIMAP_OVERLAY;
+    const near = (shown: number, to: number) => Math.min(Math.max(shown, to - hold), to + hold);
     const held = this.held?.scale === r ? this.held : undefined;
     this.held = held ? { x: near(held.x, stand.x), y: near(held.y, stand.y), scale: r } : { ...stand, scale: r };
     for (const layer of [this.map, this.marks]) layer.setPosition(scroll.x + this.held.x / r, scroll.y + this.held.y / r);
