@@ -1,5 +1,5 @@
 /**
- * Whether a `world_entered` is an arrival or a return (FS-PQ2TW §A R5–R8, ADR-0073 Decisions 2, 4).
+ * Whether a `world_entered` is an arrival or a return (FS-PQ2TW §A R5–R8, ADR-0075 Decisions 2, 4).
  *
  * The server sends the same `world_entered` on entering a world and on a reconnect or a refresh
  * into it, with no flag (FS-PQ2TW Facts 3, 4), so the client keeps the last place it was in: world

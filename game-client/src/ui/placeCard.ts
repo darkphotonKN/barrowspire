@@ -1,5 +1,5 @@
 /**
- * The arrival card's words (FS-PQ2TW §C R19, R23; ADR-0073 Decision 5): one table, total over the
+ * The arrival card's words (FS-PQ2TW §C R19, R23; ADR-0075 Decision 5): one table, total over the
  * places a player can arrive in. A place gets no card code of its own, only its entry here, and a
  * field id with no entry does not compile. Pure, so the copy is tested without a canvas.
  *

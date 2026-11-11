@@ -5,7 +5,7 @@ import type { WorldEnteredPayload } from "@/assets/types/client";
 import { keptPlaces, type PlaceStore } from "./arrival";
 
 // FS-PQ2TW §A R5–R8; Facts 3, 4; Edge States (session storage unavailable, a refresh that lands on
-// another server, a redirect back to the holding pod, two tabs). ADR-0073 Decisions 2, 4.
+// another server, a redirect back to the holding pod, two tabs). ADR-0075 Decisions 2, 4.
 // I-PQ2TW-2: an arrival is told from a return, once, at the world switch.
 
 const hub = (session = "hub-a"): WorldEnteredPayload => ({ world_type: "hub", session_id: session });
@@ -151,7 +151,7 @@ describe("session storage unavailable or throwing (FS-PQ2TW Edge States)", () =>
   });
 });
 
-describe("no world scene reads the kept place (FS-PQ2TW R8; ADR-0073 Decision 4)", () => {
+describe("no world scene reads the kept place (FS-PQ2TW R8; ADR-0075 Decision 4)", () => {
   const scenes = join(process.cwd(), "src", "scenes");
   const sources = readdirSync(scenes)
     .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.endsWith(".standin.ts"))

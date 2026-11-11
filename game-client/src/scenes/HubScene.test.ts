@@ -3638,7 +3638,7 @@ describe("HubScene messages while its art downloads (FS-C4JWH Edge States)", () 
   });
 });
 
-// FS-PQ2TW R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the town with its start.
+// FS-PQ2TW R8; ADR-0075 Decision 4. I-PQ2TW-2: the switch's verdict reaches the town with its start.
 describe("HubScene arrival from its start (FS-PQ2TW R5–R8)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

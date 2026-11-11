@@ -1,11 +1,12 @@
 /**
- * The arrival card (FS-PQ2TW §B, §E; ADR-0073 Decision 3): the view goes dark, the place's name
+ * The arrival card (FS-PQ2TW §B, §E; ADR-0075 Decision 3): the view goes dark, the place's name
  * rises over a rule and one line, the view comes back up, and the card leaves. One piece plays it
  * for every scene and belongs to none: a scene hands it the card's words and tells it one thing,
  * that its place is built; a scene whose words come later (a run's floor) first puts up the dark
  * alone. The dark, the card, its timing, its leaving and its teardown are here.
- * It leaves as dust off its letters (§D), or, as a trial, as smoke (§Change: Smoke), one switch
- * picking which; where the leave plays nothing, it fades.
+ * It leaves as ash, a burn crossing its letters (§Change: Ash), the game's leave by one switch;
+ * the dust off its letters (§D) and the smoke (§Change: Smoke) stay as alternates a play may name.
+ * Where the leave plays nothing, it fades.
  *
  * Presentation only (R14, Decision 6): state keeps applying under it, it sits below the HUD so
  * the HUD and notices stay readable through it, it takes no input, and nothing waits on it.
@@ -49,10 +50,12 @@ export interface ArrivalCardScene extends EndingScene {
 }
 
 /**
- * The ways the card can leave: as dust (§D), or as smoke (§Change: Smoke, a trial), or as ash
- * (§Change: Ash, a trial).
+ * The ways the card can leave: as ash (§Change: Ash, the game's), or as dust (§D) or smoke
+ * (§Change: Smoke), the alternates. Every value of the switch, in one list.
  */
-export type CardLeave = "dust" | "smoke" | "ash";
+export const CARD_LEAVES = ["dust", "smoke", "ash"] as const;
+
+export type CardLeave = (typeof CARD_LEAVES)[number];
 
 /**
  * The card's one switch (§Change: Smoke R41, §Change: Ash R53): how it leaves in the game. Ash,
@@ -67,7 +70,8 @@ export interface CardLeaveInk extends CardInk {
 }
 
 /**
- * How the card leaves (FS-PQ2TW §D; §Change: Smoke). `CardDust` and `CardSmoke` are two. `play`
+ * How the card leaves (FS-PQ2TW §D; §Change: Smoke; §Change: Ash). `CardAsh`, `CardDust` and
+ * `CardSmoke` are three. `play`
  * says false when it plays nothing (reduced motion, no fx sheet, strokes that cannot be read), and
  * the card fades instead.
  */
@@ -78,8 +82,8 @@ export interface CardLeavePlayer {
   /** The scene ended and took it with it. */
   forget(): void;
   /**
-   * Whether it takes the card's letters away itself (the smoke blurs and drifts them off);
-   * otherwise the card hides them as it plays (the dust).
+   * Whether it takes the card's letters away itself (the ash burns them, the smoke blurs and
+   * drifts them off); otherwise the card hides them as it plays (the dust).
    */
   readonly takesLetters?: boolean;
 }
@@ -87,7 +91,7 @@ export interface CardLeavePlayer {
 /** Every leave the card can take, one player each. */
 export type CardLeaves = Record<CardLeave, CardLeavePlayer>;
 
-/** A world scene's leaves for its card: the dust and the smoke, on its art, and the ash. */
+/** A world scene's leaves for its card: the ash, and the dust and the smoke on its art. */
 export function cardLeaves(scene: CardSmokeScene & CardAshScene, art: () => DustArt | undefined): CardLeaves {
   return { dust: new CardDust(scene, art), smoke: new CardSmoke(scene, art), ash: new CardAsh(scene) };
 }
@@ -253,7 +257,8 @@ export class ArrivalCard {
 
   /**
    * The view changed: the dark covers it again and the card stands at its place in the new view
-   * (R10, R16). Dust in the air is taken away, and the card with it: its leaving is over.
+   * (R10, R16). A leave still in the air (ash, dust or smoke) is taken away, and the card with it:
+   * its leaving is over.
    */
   relayout(): void {
     if (this.inAir) return this.remove();
@@ -267,10 +272,11 @@ export class ArrivalCard {
   }
 
   /**
-   * How the card leaves by `player`, `delay` ms from now, calling `gone` once it has: its letters
-   * and its rule go to dust together, the text gone as the dust appears (R24), or to smoke, which
-   * takes the letters itself (§Change: Smoke R43); where the leave plays nothing, a fade as before
-   * (R31, R35, R50). The one step of the card that is its leaving, and nothing else of the card
+   * How the card leaves by `player`, `delay` ms from now, calling `gone` once it has: a leave that
+   * takes the letters itself does (the ash burns them, §Change: Ash R55; the smoke blurs and drifts
+   * them, §Change: Smoke R43); otherwise its letters and its rule go to dust together, the text
+   * gone as the dust appears (R24); where the leave plays nothing, a fade as before (R31, R35, R50,
+   * R60). The one step of the card that is its leaving, and nothing else of the card
    * knows how it is done.
    */
   private leave(
@@ -298,7 +304,7 @@ export class ArrivalCard {
     });
   }
 
-  /** Takes the card down: its objects destroyed, its leave called off, its dust or smoke gone. */
+  /** Takes the card down: its objects destroyed, its leave called off, its ash, dust or smoke gone. */
   private remove(): void {
     this.leaving?.remove(false);
     this.inAir?.stop();

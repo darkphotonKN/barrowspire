@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { palette } from "./canvasPalette";
 import { BARROW, BARROW_HEX } from "./theme";
@@ -33,12 +35,55 @@ describe("fire's ramp (FS-PQ2TW, ADR-0013)", () => {
     }
   });
 
-  it("should be named for the canvas as fire, hottest first", () => {
-    expect(palette.fire).toEqual({
-      core: BARROW_HEX.fireCore,
-      hot: BARROW_HEX.fireHot,
-      ember: BARROW_HEX.ember,
-      deep: BARROW_HEX.fireDeep,
-    });
+});
+
+// The guideline's rule (Part I, "Fire's ramp is for fire effects only"): fire never marks an
+// interactable, which stays amber. Fire effects read the ramp's tokens by name in their own typed
+// records (`CARD_ASH.tint`), as every effect reads its tokens; nothing else does.
+describe("fire marks no interactable (design guideline, FS-PQ2TW)", () => {
+  /** The palette's interactable channel: what the player can do something with, and its markers. */
+  const INTERACTABLE = [
+    "interactable",
+    "interactableBright",
+    "switchOn",
+    "escapeGlow",
+    "stairsNosing",
+    "markerFunction",
+    "markerGate",
+  ] as const;
+  /** The ramp's own tokens: `ember` is older and shared, the three others are fire's alone. */
+  const FIRE_ONLY = ["fireCore", "fireHot", "fireDeep"] as const;
+
+  /** Every colour the canvas palette holds, by its path. */
+  const colours = (node: unknown, path = "palette"): [string, unknown][] =>
+    node !== null && typeof node === "object"
+      ? Object.entries(node).flatMap(([k, v]) => colours(v, `${path}.${k}`))
+      : [[path, node]];
+
+  it("should keep the interactable channel off fire's ramp, on amber", () => {
+    for (const key of INTERACTABLE) {
+      expect(RAMP.map((r) => BARROW_HEX[r]), key).not.toContain(palette[key]);
+      expect([BARROW_HEX.amber, BARROW_HEX.amberBright], key).toContain(palette[key]);
+    }
+  });
+
+  it("should hold no fire-only colour in the canvas palette every marker draws from", () => {
+    const fire: number[] = FIRE_ONLY.map((key) => BARROW_HEX[key]);
+    expect(colours(palette).filter(([, v]) => fire.includes(v as number)).map(([path]) => path)).toEqual([]);
+  });
+
+  it("should name fire's tokens only in the theme and in fire effects", () => {
+    const SRC = join(__dirname, "..");
+    const sources = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+        const path = join(dir, d.name);
+        if (d.isDirectory()) return sources(path);
+        return /\.tsx?$/.test(d.name) && !/\.test\.tsx?$/.test(d.name) ? [path] : [];
+      });
+    const naming = sources(SRC)
+      .filter((file) => new RegExp(`\\b(${FIRE_ONLY.join("|")})\\b`).test(readFileSync(file, "utf8")))
+      .map((file) => relative(SRC, file));
+    // the fire effects: a new one is added here, by name, as a deliberate call
+    expect(naming.sort()).toEqual(["render/effects/cardAsh.ts", "utils/theme.ts"]);
   });
 });

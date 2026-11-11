@@ -4,7 +4,7 @@ import { FIELD_IDS, FIELD_NAMES, type FieldDestination } from "@/scenes/hubGates
 import { floorCard } from "./floor";
 import { PLACE_CARDS, placeCard, type CardWords } from "./placeCard";
 
-// FS-PQ2TW §C R19, R23; ADR-0073 Decision 5. I-PQ2TW-1: the arrival card's words, one table.
+// FS-PQ2TW §C R19, R23; ADR-0075 Decision 5. I-PQ2TW-1: the arrival card's words, one table.
 
 describe("placeCard (FS-PQ2TW R19, R23)", () => {
   it("should give a climbed floor the words the climb has today", () => {

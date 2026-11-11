@@ -4,16 +4,27 @@
  * every way and a little upward, fast and then slow, sway gently as they slow, darken and fade.
  *
  * The strokes are read from each text's own rendered canvas (a Phaser `Text` draws to a 2D canvas
- * of its own, at its resolution: `Text.canvas`, `Text.context`), and from the rule's line. Never
- * from a box around the text: a failed read plays nothing, and the card fades (R35).
+ * of its own, at its resolution: `Text.canvas`, `Text.context`), and from the rule's line, by the
+ * reading the three leaves share (`cardLeaveCore.ts`; its `strokeCells` / `ruleCells` /
+ * `seedPoints` are re-exported here, as the smoke and the ash first read them). Never from a box
+ * around the text: a failed read plays nothing, and the card fades (R35).
  */
 
 import type Phaser from "phaser";
-import type { ArtLogger, FrameQuery, ResolvedFrame } from "@/render/art/library";
-import type { Point } from "@/render/iso/projection";
 import { BARROW_HEX } from "@/utils/theme";
-import { prefersReducedMotion } from "./mist";
+import { LeaveCore, seedPoints, seedZone, type CardInk, type LeaveArt, type LeaveOptions } from "./cardLeaveCore";
 import type { Easing, FxTexture, Range, Token } from "./table";
+
+export {
+  inkPixels,
+  ruleCells,
+  seedPoints,
+  strokeCells,
+  type CardInk,
+  type InkCell,
+  type InkText,
+  type RuleLine,
+} from "./cardLeaveCore";
 
 /** The dust's numbers (R34), as the owner tuned them five times on 2026-11-12 (the fifth a trial); a retune is an edit here. */
 export interface CardDustRecord {
@@ -67,96 +78,6 @@ export const CARD_DUST = {
   alpha: { from: 1, to: 0 },
   ease: "Sine.easeIn",
 } as const satisfies CardDustRecord;
-
-/** What of a text its strokes are read from. A Phaser `Text` is one. */
-export interface InkText {
-  canvas: { width: number; height: number };
-  context: Pick<CanvasRenderingContext2D, "getImageData">;
-  /** Canvas px per view px: the text is rasterised at the render scale (FS-ZAJMH R5). */
-  style: { resolution: number };
-  x: number;
-  y: number;
-  /** The text's origin, in view px from its canvas' top left. */
-  displayOriginX: number;
-  displayOriginY: number;
-  scaleX: number;
-  scaleY: number;
-}
-
-/** The card's rule: a line across, in view px. */
-export interface RuleLine {
-  x1: number;
-  x2: number;
-  y: number;
-}
-
-/** A piece of ink, a rectangle in view px: one pixel of a text's canvas, or one px of the rule. */
-export interface InkCell {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/** A canvas pixel this opaque or more is a stroke; below it, the faint edge around one. */
-const INK_ALPHA = 128;
-
-/** Every drawn pixel of `texts`, in view px. Reads each canvas once; a failed read throws. */
-export function strokeCells(texts: readonly InkText[]): InkCell[] {
-  const cells: InkCell[] = [];
-  for (const text of texts) {
-    const { width, height } = text.canvas;
-    const { data } = text.context.getImageData(0, 0, width, height);
-    const resolution = text.style.resolution || 1;
-    const w = text.scaleX / resolution;
-    const h = text.scaleY / resolution;
-    const left = text.x - text.displayOriginX * text.scaleX;
-    const top = text.y - text.displayOriginY * text.scaleY;
-    for (let py = 0; py < height; py++)
-      for (let px = 0; px < width; px++)
-        if (data[(py * width + px) * 4 + 3] >= INK_ALPHA)
-          cells.push({ x: left + px * w, y: top + py * h, w, h });
-  }
-  return cells;
-}
-
-/** The rule's ink: one view px of line per px across, centred on its `y`. */
-export function ruleCells(rule: RuleLine): InkCell[] {
-  const cells: InkCell[] = [];
-  for (let x = rule.x1; x < rule.x2; x++)
-    cells.push({ x, y: rule.y - 0.5, w: Math.min(1, rule.x2 - x), h: 1 });
-  return cells;
-}
-
-/**
- * `count` start points over `cells`, each cell picked in proportion to its area, so the motes
- * spread over the strokes as their ink does, and each point lands inside its cell. No cells, no
- * points.
- */
-export function seedPoints(cells: readonly InkCell[], count: number, random: () => number): Point[] {
-  if (cells.length === 0) return [];
-  const upTo = new Float64Array(cells.length);
-  let total = 0;
-  cells.forEach((c, i) => (upTo[i] = total += c.w * c.h));
-  const points: Point[] = [];
-  for (let n = 0; n < count; n++) {
-    const cell = cells[firstAbove(upTo, random() * total)];
-    points.push({ x: cell.x + random() * cell.w, y: cell.y + random() * cell.h });
-  }
-  return points;
-}
-
-/** The first index whose running total is above `v`. */
-function firstAbove(upTo: Float64Array, v: number): number {
-  let lo = 0;
-  let hi = upTo.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (upTo[mid] > v) hi = mid;
-    else lo = mid + 1;
-  }
-  return lo;
-}
 
 /**
  * A mote's heading in screen degrees (0 east, 90 down): drawn at `u` (0..1) of the full turn, any
@@ -225,16 +146,7 @@ const SWAY = Symbol("cardDustSway");
 type Swaying = { [SWAY]?: Sway };
 
 /** What the dust needs of the art library: whether its sheet is there, and each variant's frame. */
-export interface DustArt {
-  has(name: string): boolean;
-  resolve(name: string, query?: Pick<FrameQuery, "index">): ResolvedFrame;
-}
-
-/** What the dust reads: the card's two texts and its rule. */
-export interface CardInk {
-  texts: readonly InkText[];
-  rule: RuleLine;
-}
+export type DustArt = LeaveArt;
 
 /** The slice of a Phaser scene the dust draws and times with. */
 export interface CardDustScene {
@@ -242,12 +154,7 @@ export interface CardDustScene {
   time: Pick<Phaser.Time.Clock, "delayedCall">;
 }
 
-export interface CardDustOptions {
-  /** Whether the player asked for less motion; read once, as the card starts to leave. */
-  reducedMotion?: () => boolean;
-  logger?: ArtLogger;
-  random?: () => number;
-}
+export type CardDustOptions = LeaveOptions;
 
 type EmitterConfig = Phaser.Types.GameObjects.Particles.ParticleEmitterConfig;
 
@@ -260,12 +167,7 @@ type EmitterConfig = Phaser.Types.GameObjects.Particles.ParticleEmitterConfig;
  *   dust.forget(); // the scene ended and took it
  */
 export class CardDust {
-  private emitter?: { destroy(): void };
-  private end?: { remove(dispatchCallback?: boolean): void };
-  private readonly warned = new Set<string>();
-  private readonly reducedMotion: () => boolean;
-  private readonly logger: ArtLogger;
-  private readonly random: () => number;
+  private readonly core: LeaveCore;
 
   /** `art` is asked at each play: a scene registers its art anew on every start. */
   constructor(
@@ -273,9 +175,7 @@ export class CardDust {
     private readonly art: () => DustArt | undefined,
     options: CardDustOptions = {},
   ) {
-    this.reducedMotion = options.reducedMotion ?? (() => prefersReducedMotion());
-    this.logger = options.logger ?? console;
-    this.random = options.random ?? Math.random;
+    this.core = new LeaveCore("card dust", options);
   }
 
   /**
@@ -285,16 +185,17 @@ export class CardDust {
    */
   play(ink: CardInk, depth: number, gone: () => void): boolean {
     this.stop();
-    if (this.reducedMotion()) return false;
-    const frames = this.frames();
+    const { core } = this;
+    if (core.reducedMotion()) return false;
+    const frames = core.sheet(this.art(), CARD_DUST.texture);
     if (!frames) return false;
-    const cells = this.read(ink);
-    if (!cells) return false;
+    const read = core.read(ink);
+    if (!read) return false;
+    const { cells } = read;
 
     const d = CARD_DUST;
     const area = cells.reduce((sum, c) => sum + c.w * c.h, 0);
-    const points = seedPoints(cells, Math.min(d.maxParticles, Math.ceil(area * d.density)), this.random);
-    let next = 0;
+    const points = seedPoints(cells, Math.min(d.maxParticles, Math.ceil(area * d.density)), core.random);
     const slow = (key: "velocityX" | "velocityY") => ({
       onUpdate: (p: Phaser.GameObjects.Particles.Particle) => -p[key] * d.drag,
     });
@@ -318,8 +219,8 @@ export class CardDust {
       angle: {
         onEmit: (p) => {
           if (!p) return -90;
-          const heading = scatterAngle(this.random(), d.lean);
-          (p as Swaying)[SWAY] = swayFor(heading, this.random);
+          const heading = scatterAngle(core.random(), d.lean);
+          (p as Swaying)[SWAY] = swayFor(heading, core.random);
           return heading;
         },
       },
@@ -335,76 +236,24 @@ export class CardDust {
       colorEase: d.ease,
       maxParticles: d.maxParticles,
       emitting: false,
-      emitZone: {
-        type: "random",
-        source: {
-          getRandomPoint: (p: Phaser.Types.Math.Vector2Like) => {
-            const at = points[next++ % points.length];
-            p.x = at.x;
-            p.y = at.y;
-          },
-        },
-      },
+      emitZone: seedZone(points),
     };
     // in view px: the emitter at the origin, still with the HUD
     const emitter = this.scene.add.particles(0, 0, frames.texture, config);
     emitter.setScrollFactor(0).setDepth(depth);
     emitter.emitParticle(points.length);
-    this.emitter = emitter;
-    this.end = this.scene.time.delayedCall(d.durationMs, () => {
-      this.stop();
-      gone();
-    });
+    core.hold(() => emitter.destroy());
+    core.endAt(this.scene.time, d.durationMs, gone);
     return true;
   }
 
   /** Takes the dust away at once. Harmless with none in the air. */
   stop(): void {
-    this.end?.remove(false);
-    this.emitter?.destroy();
-    this.forget();
+    this.core.stop();
   }
 
   /** Lets go of the dust without touching it: at a scene's end, it went with the scene. */
   forget(): void {
-    this.end = undefined;
-    this.emitter = undefined;
-  }
-
-  /** The sheet's texture and its variants, or undefined when the sheet is not there. */
-  private frames(): { texture: string; frames: string[] } | undefined {
-    const art = this.art();
-    const variants = art?.has(CARD_DUST.texture)
-      ? [0, 1, 2].map((index) => art.resolve(CARD_DUST.texture, { index }))
-      : [];
-    const [first] = variants;
-    if (!first || first.placeholder) {
-      this.warn("sheet", `card dust: "${CARD_DUST.texture}" missing; the card fades`);
-      return undefined;
-    }
-    const frames = variants.flatMap((v) => (v.placeholder || v.texture !== first.texture ? [] : [v.frame]));
-    return { texture: first.texture, frames: [...new Set(frames)] };
-  }
-
-  /** The strokes and the rule, or undefined when the texts cannot be read or drew nothing. */
-  private read(ink: CardInk): InkCell[] | undefined {
-    let strokes: InkCell[];
-    try {
-      strokes = strokeCells(ink.texts);
-    } catch (error) {
-      this.warn("read", "card dust: the card's strokes could not be read; the card fades", { error });
-      return undefined;
-    }
-    if (strokes.length === 0) {
-      this.warn("read", "card dust: the card's texts drew no ink; the card fades");
-      return undefined;
-    }
-    return [...strokes, ...ruleCells(ink.rule)];
-  }
-
-  private warn(what: string, message: string, context?: Record<string, unknown>): void {
-    if (this.warned.has(what)) return;
-    this.warned.add(what);
-    this.logger.warn(message, context);
+    this.core.forget();
   }
 }

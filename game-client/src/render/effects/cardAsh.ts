@@ -11,21 +11,20 @@
  * into one image; each of its pixels carries a fixed threshold, how far along it lies from the left
  * made ragged by noise, and each frame of the front decides from it which pixels are whole, which
  * burning and which gone, redrawn on the CPU into a canvas texture (R55, R63). Flakes start on the
- * strokes as the dust's motes do, through the dust's own `strokeCells` / `ruleCells` /
- * `seedPoints` (R54), each let go on the frame its pixel burns out (R56); sparks likewise, on the
+ * strokes as the dust's motes do, through the reading the leaves share (`cardLeaveCore.ts`:
+ * `strokeCells` / `ruleCells` / `seedPoints`, R54), each text's canvas read once for both, each let go on the frame its pixel burns out (R56); sparks likewise, on the
  * frame the front reaches theirs (R64). Flakes and sparks are drawn at runtime, at the render
  * scale, into one sheet; each flake shape is an anim, so a glowing one can dim.
  *
- * A trial beside the dust and the smoke; the card's one switch picks between them (`CARD_LEAVE`,
- * `src/ui/arrivalCard.ts`). Where it plays nothing, the card fades (R60).
+ * The game's leave (the owner's second pick of 2026-11-12): the card's one switch picks it
+ * (`CARD_LEAVE`, `src/ui/arrivalCard.ts`), with the dust and the smoke as alternates a play may
+ * name. Where it plays nothing, the card fades (R60).
  */
 
 import type Phaser from "phaser";
-import type { ArtLogger } from "@/render/art/library";
 import type { Point } from "@/render/iso/projection";
 import { BARROW_HEX } from "@/utils/theme";
-import { ruleCells, seedPoints, strokeCells, type CardInk, type InkCell, type InkText } from "./cardDust";
-import { prefersReducedMotion } from "./mist";
+import { LeaveCore, seedPoints, type CardInk, type InkCell, type InkText, type LeaveOptions } from "./cardLeaveCore";
 import type { Easing, Range, Token } from "./table";
 
 /** The ash's numbers (R61), at their starting values; a retune is an edit here. */
@@ -264,12 +263,7 @@ export interface CardAshScene {
   };
 }
 
-export interface CardAshOptions {
-  /** Whether the player asked for less motion; read once, as the card starts to leave. */
-  reducedMotion?: () => boolean;
-  logger?: ArtLogger;
-  random?: () => number;
-}
+export type CardAshOptions = LeaveOptions;
 
 /** The card's ink in one image, in canvas px at `resolution` per view px, its top left at (`left`, `top`) view px. */
 interface InkSheet {
@@ -288,19 +282,33 @@ const rgb = (token: Token) => {
   return [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff] as const;
 };
 
-/**
- * The colour at `x` along a ramp of `colours` placed at `at` (rising or falling), held at its ends:
- * how a fire's colour runs with its heat (the owner's "火的顏色有辦法擬真一點嗎").
- */
-function ramp(colours: readonly (readonly number[])[], at: readonly number[], x: number): number[] {
-  const rising = at[0] <= at[at.length - 1];
-  const cs = rising ? colours : [...colours].reverse();
-  const ps = rising ? at : [...at].reverse();
-  if (x <= ps[0]) return [...cs[0]];
-  for (let n = 1; n < ps.length; n++)
-    if (x <= ps[n]) return mix(cs[n - 1], cs[n], (x - ps[n - 1]) / (ps[n] - ps[n - 1] || 1));
-  return [...cs[cs.length - 1]];
+/** `a` mixed `k` of the way to `b`, written into `out`: no array made, for the burn's every pixel. */
+function mixInto(out: number[], a: readonly number[], b: readonly number[], k: number): number[] {
+  out[0] = a[0] + (b[0] - a[0]) * k;
+  out[1] = a[1] + (b[1] - a[1]) * k;
+  out[2] = a[2] + (b[2] - a[2]) * k;
+  return out;
 }
+
+/**
+ * The colour at `x` along a ramp of `colours` placed at `at` (rising or falling), held at its ends,
+ * written into `out`: how a fire's colour runs with its heat (the owner's "火的顏色有辦法擬真一點嗎").
+ */
+function rampInto(out: number[], colours: readonly (readonly number[])[], at: readonly number[], x: number): number[] {
+  const last = at.length - 1;
+  // the ramp walked in rising order, whichever way it was given
+  const nth = at[0] <= at[last] ? (n: number) => n : (n: number) => last - n;
+  if (x <= at[nth(0)]) return mixInto(out, colours[nth(0)], colours[nth(0)], 0);
+  for (let n = 1; n <= last; n++) {
+    const lo = nth(n - 1);
+    const hi = nth(n);
+    if (x <= at[hi]) return mixInto(out, colours[lo], colours[hi], (x - at[lo]) / (at[hi] - at[lo] || 1));
+  }
+  return mixInto(out, colours[nth(last)], colours[nth(last)], 0);
+}
+
+/** `rampInto` a new colour. */
+const ramp = (colours: readonly (readonly number[])[], at: readonly number[], x: number) => rampInto([0, 0, 0], colours, at, x);
 
 /** Where a text lies, in view px, and how its canvas maps onto it. */
 function placeOf(text: InkText) {
@@ -313,10 +321,10 @@ function placeOf(text: InkText) {
 }
 
 /**
- * The card's ink in one image: each text's own pixels, at the finest text's resolution, and the
- * rule's line under them as the card draws it. A failed read throws.
+ * The card's ink in one image: each text's own `pixels` (as they were read for its strokes), at the
+ * finest text's resolution, and the rule's line under them as the card draws it.
  */
-function inkSheet(ink: CardInk): InkSheet {
+function inkSheet(ink: CardInk, pixels: readonly Uint8ClampedArray[]): InkSheet {
   const places = ink.texts.map(placeOf);
   const resolution = Math.max(1, ...places.map((p) => p.resolution));
   const { rule } = ink;
@@ -330,7 +338,7 @@ function inkSheet(ink: CardInk): InkSheet {
 
   ink.texts.forEach((text, n) => {
     const place = places[n];
-    const src = text.context.getImageData(0, 0, text.canvas.width, text.canvas.height).data;
+    const src = pixels[n];
     const x0 = Math.round((place.left - left) * resolution);
     const y0 = Math.round((place.top - top) * resolution);
     // canvas px of the text per canvas px of the sheet: 1 when the two share a resolution
@@ -666,7 +674,8 @@ function ashSheet(resolution: number, random: () => number) {
 
 /**
  * A flake's flutter, picked as it leaves (R56): its slow turn, its turning over in depth and its
- * sway. Made on the first op that asks for it, whichever the engine calls first.
+ * sway. Picked afresh on each life's first emit that asks for it, never carried over from a
+ * pooled particle's last life.
  */
 interface Flutter {
   angle: number;
@@ -729,21 +738,15 @@ export class CardAsh {
   private readonly burnKey = `cardAsh-burn-${burns++}`;
   private image?: { destroy(): void };
   private front?: { stop(): unknown };
-  private emitter?: { destroy(): void };
-  private sparks?: { destroy(): void };
-  private end?: { remove(dispatchCallback?: boolean): void };
-  private readonly warned = new Set<string>();
-  private readonly reducedMotion: () => boolean;
-  private readonly logger: ArtLogger;
+  private readonly core: LeaveCore;
   private readonly random: () => number;
 
   constructor(
     private readonly scene: CardAshScene,
     options: CardAshOptions = {},
   ) {
-    this.reducedMotion = options.reducedMotion ?? (() => prefersReducedMotion());
-    this.logger = options.logger ?? console;
-    this.random = options.random ?? Math.random;
+    this.core = new LeaveCore("card ash", options);
+    this.random = this.core.random;
   }
 
   /**
@@ -753,16 +756,17 @@ export class CardAsh {
    */
   play(ink: AshInk, depth: number, gone: () => void): boolean {
     this.stop();
-    if (this.reducedMotion()) return false;
-    const read = this.read(ink);
+    if (this.core.reducedMotion()) return false;
+    const read = this.core.read(ink);
     if (!read) return false;
-    const { cells, sheet } = read;
+    const { cells } = read;
+    const sheet = inkSheet(ink, read.pixels);
     const art = this.art(sheet.resolution);
     if (!art) return false;
     if (this.scene.textures.exists(this.burnKey)) this.scene.textures.remove(this.burnKey);
     const canvas = this.scene.textures.createCanvas(this.burnKey, sheet.width, sheet.height);
     if (!canvas) {
-      this.warn("texture", "card ash: no canvas texture for the burn; the card fades");
+      this.core.warn("texture", "no canvas texture for the burn; the card fades");
       return false;
     }
 
@@ -780,13 +784,18 @@ export class CardAsh {
       .setScrollFactor(0)
       .setDepth(depth);
     ink.letters.forEach((letter) => letter.setVisible(false));
+    // the front and the burning image go first on a stop or at the end, unless burned out already
+    this.core.hold(() => {
+      this.front?.stop();
+      if (this.image) this.putAway();
+    });
 
     const emitter = this.scene.add.particles(0, 0, art.key, this.flakeConfig(art.anims, sheet.resolution));
     emitter.setScrollFactor(0).setDepth(depth);
-    this.emitter = emitter;
+    this.core.hold(() => emitter.destroy());
     const sparks = this.scene.add.particles(0, 0, art.key, this.sparkConfig(art.sparks, sheet.resolution));
     sparks.setScrollFactor(0).setDepth(depth);
-    this.sparks = sparks;
+    this.core.hold(() => sparks.destroy());
 
     const burn = this.burner(
       sheet,
@@ -807,10 +816,7 @@ export class CardAsh {
       // burned out: nothing of the image is left to draw
       onComplete: () => this.putAway(),
     });
-    this.end = this.scene.time.delayedCall(CARD_ASH.durationMs, () => {
-      this.stop();
-      gone();
-    });
+    this.core.endAt(this.scene.time, CARD_ASH.durationMs, gone);
     return true;
   }
 
@@ -856,6 +862,9 @@ export class CardAsh {
     let goneTo = 0;
     let released = 0;
     let sparked = 0;
+    // one colour and one ink, rewritten for each burning pixel: no array made per pixel per frame
+    const colour = [0, 0, 0];
+    const drawn = [0, 0, 0];
     return (v: number) => {
       const q = v * (1 + width);
       const behind = q - width;
@@ -868,12 +877,13 @@ export class CardAsh {
         // its fire, hottest at the leading edge: from its ink to the ramp's hottest stop, then down
         // the ramp; then its char, from the ramp's last stop
         const x = k / edgeShare;
-        const colour =
-          k >= edgeShare
-            ? mix(deep, char, (k - edgeShare) / (1 - edgeShare))
-            : x < stops[0]
-              ? mix([src[o], src[o + 1], src[o + 2]], fire[0], x / stops[0])
-              : ramp(fire, stops, x);
+        if (k >= edgeShare) mixInto(colour, deep, char, (k - edgeShare) / (1 - edgeShare));
+        else if (x < stops[0]) {
+          drawn[0] = src[o];
+          drawn[1] = src[o + 1];
+          drawn[2] = src[o + 2];
+          mixInto(colour, drawn, fire[0], x / stops[0]);
+        } else rampInto(colour, fire, stops, x);
         out[o] = colour[0];
         out[o + 1] = colour[1];
         out[o + 2] = colour[2];
@@ -883,10 +893,17 @@ export class CardAsh {
     };
   }
 
-  /** A flake's flutter, made on the first ask (R56). */
+  /** A flake's flutter, as it was picked when it left (R56); picked now if none was. */
   private flutter(p: object): Flutter {
-    const held = (p as Fluttering)[FLUTTER];
-    if (held) return held;
+    return (p as Fluttering)[FLUTTER] ?? this.flutterAfresh(p);
+  }
+
+  /**
+   * A flake's flutter, picked afresh as it leaves (R56). The engine fires a dead particle again from
+   * its pool (`ParticleEmitter.emitParticle`: `dead.pop()`), so whatever the last life left on it
+   * is replaced, never reused.
+   */
+  private flutterAfresh(p: object): Flutter {
     const f = CARD_ASH.flake;
     const side = () => (this.random() < 0.5 ? -1 : 1);
     const angle = this.random() * 360;
@@ -950,7 +967,9 @@ export class CardAsh {
       // the turn over, the scale on one axis through zero and back (R59's §B.4 exception)
       scaleX: size,
       scaleY: {
-        onEmit: (p?: Particle) => (p ? size * turnedOver(this.flutter(p).flipPhase) : size),
+        // the first of a flake's ops the engine fires that asks for its flutter (Particle.fire:
+        // scaleX, scaleY, then its turn and its heading): picked afresh here, for each life
+        onEmit: (p?: Particle) => (p ? size * turnedOver(this.flutterAfresh(p).flipPhase) : size),
         onUpdate: (p: Particle, _key: string, t: number) => {
           const fl = this.flutter(p);
           return size * turnedOver(fl.flipPhase + fl.flipRate * ms(t));
@@ -969,15 +988,13 @@ export class CardAsh {
    */
   private sparkConfig(frames: string[], resolution: number): EmitterConfig {
     const s = CARD_ASH.spark;
-    const flicker = (p: Particle) => {
-      const held = (p as Fluttering)[FLICKER];
-      if (held) return held;
+    // picked afresh as each spark leaves: a pooled particle fired again keeps nothing of its last life
+    const flickerAfresh = (p: Particle) => {
       const made: Flicker = { rate: (2 * Math.PI * pick(s.flickerHz, this.random)) / 1000, phase: this.random() * 2 * Math.PI };
       (p as Fluttering)[FLICKER] = made;
       return made;
     };
-    const light = (p: Particle, t: number) => {
-      const fl = flicker(p);
+    const light = (p: Particle, t: number, fl: Flicker = (p as Fluttering)[FLICKER] ?? flickerAfresh(p)) => {
       // Quad.easeIn's fall: it holds its light, then goes
       const fall = 1 - t * t;
       return Math.min(1, Math.max(0, fall * (0.65 + 0.35 * Math.sin(fl.phase + fl.rate * t * p.life))));
@@ -996,7 +1013,8 @@ export class CardAsh {
       accelerationY: { onUpdate: (p: Particle) => -p.velocityY * s.drag },
       scale: 1 / resolution,
       alpha: {
-        onEmit: (p?: Particle) => (p ? light(p, 0) : 1),
+        // the only op that asks for its flicker, and fired once per life
+        onEmit: (p?: Particle) => (p ? light(p, 0, flickerAfresh(p)) : 1),
         onUpdate: (p: Particle, _key: string, t: number) => light(p, t),
       },
       // its colour, cooling as it flies: the tint fills the frame, so the ramp is its colour
@@ -1023,7 +1041,7 @@ export class CardAsh {
     const sheet = ashSheet(resolution, this.random);
     const canvas = this.scene.textures.createCanvas(key, sheet.width, sheet.height);
     if (!canvas) {
-      this.warn("texture", "card ash: no canvas texture for the flakes; the card fades");
+      this.core.warn("texture", "no canvas texture for the flakes; the card fades");
       return undefined;
     }
     const image = canvas.context.createImageData(sheet.width, sheet.height);
@@ -1050,44 +1068,21 @@ export class CardAsh {
 
   /** Takes the ash away at once: its image, its texture, its flakes, its sparks and its front. */
   stop(): void {
-    this.end?.remove(false);
-    this.front?.stop();
-    this.emitter?.destroy();
-    this.sparks?.destroy();
-    if (this.image) this.putAway();
+    this.core.stop();
     this.forget();
   }
 
-  /** Lets go of the ash without touching it: at a scene's end, it went with the scene. */
+  /**
+   * Lets go of the ash without touching the scene: at a scene's end, its image, flakes, front and
+   * end went with the scene. Its burn texture did not: the TextureManager is the game's and
+   * outlives the scene (Phaser 4.2.1 destroys it only on the game's own DESTROY, after every
+   * scene's), so a burn ended mid-way is taken out of it here (R60). The flakes' sheet is kept, for
+   * the next card.
+   */
   forget(): void {
-    this.end = undefined;
+    this.core.forget();
     this.front = undefined;
-    this.emitter = undefined;
-    this.sparks = undefined;
     this.image = undefined;
-  }
-
-  /** The strokes and the rule, and the card's ink in one image; undefined when they cannot be read. */
-  private read(ink: CardInk): { cells: InkCell[]; sheet: InkSheet } | undefined {
-    let strokes: InkCell[];
-    let sheet: InkSheet;
-    try {
-      strokes = strokeCells(ink.texts);
-      sheet = inkSheet(ink);
-    } catch (error) {
-      this.warn("read", "card ash: the card's strokes could not be read; the card fades", { error });
-      return undefined;
-    }
-    if (strokes.length === 0) {
-      this.warn("read", "card ash: the card's texts drew no ink; the card fades");
-      return undefined;
-    }
-    return { cells: [...strokes, ...ruleCells(ink.rule)], sheet };
-  }
-
-  private warn(what: string, message: string, context?: Record<string, unknown>): void {
-    if (this.warned.has(what)) return;
-    this.warned.add(what);
-    this.logger.warn(message, context);
+    if (this.scene.textures.exists(this.burnKey)) this.scene.textures.remove(this.burnKey);
   }
 }

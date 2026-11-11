@@ -4,25 +4,18 @@
  * from their strokes, each starting small and swelling, rising slowly, curling and turning as it
  * goes, overlapping into one body of smoke that thins out.
  *
- * A trial beside the dust (`cardDust.ts`), which stays the card's leave in the game; the card's one
- * switch picks between them (`CARD_LEAVE`, `src/ui/arrivalCard.ts`). The strokes are read as the
- * dust reads them, through its own `strokeCells` / `ruleCells` / `seedPoints`: never from a box
- * around the text (R42). Where it plays nothing, the card fades (R50).
+ * An alternate beside the dust (`cardDust.ts`): the game's leave is the ash (`cardAsh.ts`), the
+ * card's one switch picking it (`CARD_LEAVE`, `src/ui/arrivalCard.ts`); the smoke was the game's
+ * for part of 2026-11-12 and plays now when a play names it (the gallery). The strokes are read as
+ * the dust reads them, through the reading the leaves share (`cardLeaveCore.ts`: `strokeCells` /
+ * `ruleCells` / `seedPoints`): never from a box around the text (R42). Where it plays nothing, the
+ * card fades (R50).
  */
 
 import type Phaser from "phaser";
-import type { ArtLogger } from "@/render/art/library";
 import { BARROW_HEX } from "@/utils/theme";
-import {
-  ruleCells,
-  seedPoints,
-  strokeCells,
-  type CardDustScene,
-  type CardInk,
-  type DustArt,
-  type InkCell,
-} from "./cardDust";
-import { prefersReducedMotion } from "./mist";
+import type { CardDustScene, DustArt } from "./cardDust";
+import { LeaveCore, seedPoints, seedZone, type CardInk, type LeaveOptions } from "./cardLeaveCore";
 import type { Easing, FxTexture, Range, Token } from "./table";
 
 /** The smoke's numbers (R51), at their starting values; a retune is an edit here. */
@@ -108,12 +101,7 @@ export interface CardSmokeScene extends CardDustScene {
   tweens: Pick<Phaser.Tweens.TweenManager, "add">;
 }
 
-export interface CardSmokeOptions {
-  /** Whether the player asked for less motion; read once, as the card starts to leave. */
-  reducedMotion?: () => boolean;
-  logger?: ArtLogger;
-  random?: () => number;
-}
+export type CardSmokeOptions = LeaveOptions;
 
 /** One puff's own wobble and turn, picked as it is emitted, and the wobble already put on its x. */
 interface Curl {
@@ -147,13 +135,7 @@ type Particle = Phaser.GameObjects.Particles.Particle;
 export class CardSmoke {
   /** The smoke blurs, drifts and fades the card's letters itself: the card leaves them to it. */
   readonly takesLetters = true;
-  private emitter?: { destroy(): void };
-  private end?: { remove(dispatchCallback?: boolean): void };
-  private tweens: { stop(): unknown }[] = [];
-  private readonly warned = new Set<string>();
-  private readonly reducedMotion: () => boolean;
-  private readonly logger: ArtLogger;
-  private readonly random: () => number;
+  private readonly core: LeaveCore;
 
   /** `art` is asked at each play: a scene registers its art anew on every start. */
   constructor(
@@ -161,9 +143,7 @@ export class CardSmoke {
     private readonly art: () => DustArt | undefined,
     options: CardSmokeOptions = {},
   ) {
-    this.reducedMotion = options.reducedMotion ?? (() => prefersReducedMotion());
-    this.logger = options.logger ?? console;
-    this.random = options.random ?? Math.random;
+    this.core = new LeaveCore("card smoke", options);
   }
 
   /**
@@ -173,23 +153,24 @@ export class CardSmoke {
    */
   play(ink: SmokeInk, depth: number, gone: () => void): boolean {
     this.stop();
-    if (this.reducedMotion()) return false;
-    const frames = this.frames();
+    const { core } = this;
+    if (core.reducedMotion()) return false;
+    const frames = core.sheet(this.art(), CARD_SMOKE.texture);
     if (!frames) return false;
-    const cells = this.read(ink);
-    if (!cells) return false;
+    const read = core.read(ink);
+    if (!read) return false;
+    const { cells } = read;
 
     const s = CARD_SMOKE;
     const area = cells.reduce((sum, c) => sum + c.w * c.h, 0);
-    const points = seedPoints(cells, Math.min(s.maxParticles, Math.ceil(area * s.density)), this.random);
-    const pick = (r: Range) => r.from + this.random() * (r.to - r.from);
-    let next = 0;
+    const points = seedPoints(cells, Math.min(s.maxParticles, Math.ceil(area * s.density)), core.random);
+    const pick = (r: Range) => r.from + core.random() * (r.to - r.from);
     const config: EmitterConfig = {
       frame: frames.frames,
       lifespan: s.durationMs,
       speed: { min: s.speed.from, max: s.speed.to },
       // up, within the spread either way
-      angle: { onEmit: () => -90 + (this.random() * 2 - 1) * s.spreadDeg },
+      angle: { onEmit: () => -90 + (core.random() * 2 - 1) * s.spreadDeg },
       // the wobble rides on the x the engine updates anyway (Particle.update): from none, growing
       // with the puff's life, never more than its amplitude to either side
       x: {
@@ -209,9 +190,9 @@ export class CardSmoke {
           const curl: Curl = {
             amplitude: pick(s.sway.amplitude),
             rate: (2 * Math.PI * 1000) / pick(s.sway.periodMs),
-            phase: this.random() * 2 * Math.PI,
+            phase: core.random() * 2 * Math.PI,
             turn: pick(s.turnDegPerS),
-            angle: this.random() * 360,
+            angle: core.random() * 360,
             onX: 0,
           };
           if (p) (p as Curling)[CURL] = curl;
@@ -228,27 +209,15 @@ export class CardSmoke {
       colorEase: s.ease.color,
       maxParticles: s.maxParticles,
       emitting: false,
-      emitZone: {
-        type: "random",
-        source: {
-          getRandomPoint: (p: Phaser.Types.Math.Vector2Like) => {
-            const at = points[next++ % points.length];
-            p.x = at.x;
-            p.y = at.y;
-          },
-        },
-      },
+      emitZone: seedZone(points),
     };
     // in view px: the emitter at the origin, still with the HUD
     const emitter = this.scene.add.particles(0, 0, frames.texture, config);
     emitter.setScrollFactor(0).setDepth(depth);
     emitter.emitParticle(points.length);
-    this.emitter = emitter;
+    core.hold(() => emitter.destroy());
     this.soften(ink);
-    this.end = this.scene.time.delayedCall(s.durationMs, () => {
-      this.stop();
-      gone();
-    });
+    core.endAt(this.scene.time, s.durationMs, gone);
     return true;
   }
 
@@ -263,7 +232,10 @@ export class CardSmoke {
       blur.setPaddingOverride(null);
       return [blur];
     });
-    const tween = (config: Phaser.Types.Tweens.TweenBuilderConfig) => this.tweens.push(this.scene.tweens.add(config));
+    const tween = (config: Phaser.Types.Tweens.TweenBuilderConfig) => {
+      const made = this.scene.tweens.add(config);
+      this.core.hold(() => made.stop());
+    };
     tween({ targets: ink.letters, alpha: 0, y: `-=${letters.rise}`, duration: letters.fadeMs, ease: letters.ease });
     if (blurs.length > 0)
       tween({ targets: blurs, strength: letters.blur, duration: letters.fadeMs, ease: letters.ease });
@@ -271,53 +243,11 @@ export class CardSmoke {
 
   /** Takes the smoke away at once, and calls off what it was doing to the letters. */
   stop(): void {
-    this.end?.remove(false);
-    this.emitter?.destroy();
-    this.tweens.forEach((t) => t.stop());
-    this.forget();
+    this.core.stop();
   }
 
   /** Lets go of the smoke without touching it: at a scene's end, it went with the scene. */
   forget(): void {
-    this.end = undefined;
-    this.emitter = undefined;
-    this.tweens = [];
-  }
-
-  /** The sheet's texture and its variants, or undefined when the sheet is not there. */
-  private frames(): { texture: string; frames: string[] } | undefined {
-    const art = this.art();
-    const variants = art?.has(CARD_SMOKE.texture)
-      ? [0, 1, 2].map((index) => art.resolve(CARD_SMOKE.texture, { index }))
-      : [];
-    const [first] = variants;
-    if (!first || first.placeholder) {
-      this.warn("sheet", `card smoke: "${CARD_SMOKE.texture}" missing; the card fades`);
-      return undefined;
-    }
-    const frames = variants.flatMap((v) => (v.placeholder || v.texture !== first.texture ? [] : [v.frame]));
-    return { texture: first.texture, frames: [...new Set(frames)] };
-  }
-
-  /** The strokes and the rule, or undefined when the texts cannot be read or drew nothing. */
-  private read(ink: CardInk): InkCell[] | undefined {
-    let strokes: InkCell[];
-    try {
-      strokes = strokeCells(ink.texts);
-    } catch (error) {
-      this.warn("read", "card smoke: the card's strokes could not be read; the card fades", { error });
-      return undefined;
-    }
-    if (strokes.length === 0) {
-      this.warn("read", "card smoke: the card's texts drew no ink; the card fades");
-      return undefined;
-    }
-    return [...strokes, ...ruleCells(ink.rule)];
-  }
-
-  private warn(what: string, message: string, context?: Record<string, unknown>): void {
-    if (this.warned.has(what)) return;
-    this.warned.add(what);
-    this.logger.warn(message, context);
+    this.core.forget();
   }
 }
