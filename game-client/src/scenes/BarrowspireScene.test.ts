@@ -765,8 +765,9 @@ function sceneOnStage() {
       painted.push(houses);
       if (floor) grounds.push(floor);
     },
-    // the walls' shadows laid over it (FS-V8FT3 §E, §F): not under test here
+    // the walls' shadows laid over it, and forgotten on a climb (FS-V8FT3 §E, §F): not under test here
     shade: () => {},
+    unshade: () => {},
   };
   // the satchel a coffer opens into, closed: the state path only asks what it shows
   Object.assign(run, {

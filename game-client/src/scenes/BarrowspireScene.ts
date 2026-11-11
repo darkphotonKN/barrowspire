@@ -676,10 +676,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private mapWidth = 0;
   private mapHeight = 0;
   /**
-   * The size the camera, physics and ground were fitted to, and the dungeon cells the ground was
-   * painted under (none on a floor of buildings); none before the first map.
+   * The size the camera, physics and ground were fitted to, the dungeon cells the ground was
+   * painted under (none on a floor of buildings), and the floor it was last fitted for; none before
+   * the first map.
    */
-  private fittedTo?: { width: number; height: number; cells?: RegionGrid };
+  private fittedTo?: { width: number; height: number; cells?: RegionGrid; floor: number };
   /** The dungeon floor being drawn (FS-KE075 §H.44–§H.47); none on a floor of buildings. */
   private dungeon?: DungeonFloor;
   /** The floor whose map is built (FS-KE075 §H.43): none until one is, and none after a teardown. */
@@ -4024,15 +4025,23 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Sizes the run to its floor (FS-KE075 §H.42): the camera and the (vestigial, collision-free)
    * physics world in projected space, the map a diamond clamped by its bounding box plus a margin
-   * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits.
+   * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits; a new
+   * floor of the same size keeps the ground, but not the walls' shadows of the floor left (FS-V8FT3
+   * Edge States, "A new floor"), so its paint lays none of them under the new floor's.
    */
   private fitFloor(map: FloorMap): void {
     this.enterDungeon(map);
-    const { width, height } = map;
+    const { width, height, floor } = map;
     const cells = this.dungeon?.grid;
     const before = this.fittedTo;
-    if (before?.width === width && before.height === height && before.cells === cells) return;
-    this.fittedTo = { width, height, cells };
+    if (before?.width === width && before.height === height && before.cells === cells) {
+      if (before.floor !== floor) {
+        this.groundLayer?.unshade();
+        this.fittedTo = { ...before, floor };
+      }
+      return;
+    }
+    this.fittedTo = { width, height, cells, floor };
     this.mapWidth = width;
     this.mapHeight = height;
     const bounds = projectedBounds(width, height, CAMERA_MARGIN);

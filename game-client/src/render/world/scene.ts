@@ -292,6 +292,16 @@ export class GroundLayer {
   }
 
   /**
+   * Forgets the walls' shadows this ground holds, repainting nothing: their walls are gone (a climb
+   * to a floor of the same size keeps the ground, FS-V8FT3 Edge States "A new floor"). Those laid
+   * stay until the next paint, which lays none of them; the next `shade` lays its own over it.
+   */
+  unshade(): void {
+    this.shadows = undefined;
+    this.shaded = false;
+  }
+
+  /**
    * The shadows into every chunk that has a texture and a shadow falling in it (R19–R23): all its
    * shapes drawn opaque, in the bake's shadow colour, into one scratch the chunk's size, the cuts
    * (ground no shadow may lie on) erased from it, and the scratch laid on the chunk once, at the
