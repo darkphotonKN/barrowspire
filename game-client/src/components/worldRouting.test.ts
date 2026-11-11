@@ -102,7 +102,7 @@ describe("switchWorld while a world scene is still loading (FS-C4JWH Edge States
   });
 });
 
-// FS-PQ2TW R8; ADR-0073 Decision 4. I-PQ2TW-2: the arrival is decided once, at the world switch,
+// FS-PQ2TW R8; ADR-0075 Decision 4. I-PQ2TW-2: the arrival is decided once, at the world switch,
 // and reaches the scene with its start.
 describe("switchWorld hands the scene its arrival (FS-PQ2TW R5–R8)", () => {
   const stopped = () => sceneManager({ MainMenuScene: SHUTDOWN, HubScene: SHUTDOWN, BarrowspireScene: SHUTDOWN, FieldScene: SHUTDOWN });
@@ -134,7 +134,7 @@ describe("switchWorld hands the scene its arrival (FS-PQ2TW R5–R8)", () => {
   });
 });
 
-// FS-PQ2TW R39; ADR-0073 Consequences: a world added later cannot come without the card. Every
+// FS-PQ2TW R39; ADR-0075 Consequences: a world added later cannot come without the card. Every
 // world scene builds the shared piece with its dust, hands it the start's verdict, tells it when its
 // place is built and keeps it on the view. The main menu is not a world: it has no place to arrive in.
 describe("every world scene hands its arrival to the shared card (FS-PQ2TW R39)", () => {

@@ -1,6 +1,6 @@
 # FS-PQ2TW: Arrival card
 
-> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Arrival card → FS-PQ2TW`: [FS-F6F88](F6F88-multi-floor-delves.md) (req 32, the floor card), [FS-KE075](KE075-floor-1-dungeon.md) (§H.41, the veil held for the map), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (the hub scene), [FS-X2F2H](X2F2H-field-worlds-and-gentle-meadows.md) (the field scene), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (§B.6, the effect rules) · Related ADRs: [ADR-0073](../adr/0073-every-arrival-in-a-place-plays-the-arrival-card-through-one-shared-piece.md) (every arrival plays the card, through one shared piece), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch; a town building adds no world), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the canvas palette) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (arrival, arrival card) · Surface: game-client only
+> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Arrival card → FS-PQ2TW`: [FS-F6F88](F6F88-multi-floor-delves.md) (req 32, the floor card), [FS-KE075](KE075-floor-1-dungeon.md) (§H.41, the veil held for the map), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (the hub scene), [FS-X2F2H](X2F2H-field-worlds-and-gentle-meadows.md) (the field scene), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (§B.6, the effect rules) · Related ADRs: [ADR-0075](../adr/0075-every-arrival-in-a-place-plays-the-arrival-card-through-one-shared-piece.md) (every arrival plays the card, through one shared piece), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch; a town building adds no world), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the canvas palette) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (arrival, arrival card) · Surface: game-client only
 
 > Promoted `--from-thread` on 2026-11-11 from the owner's charter ("進場卡", approved "核准"). The
 > thread is the charter's locked decisions. Requirements marked **(charter default)** are those
@@ -219,7 +219,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 ### §A. When the card plays
 
-1. **Every arrival plays the card** (ADR-0073). An arrival is coming into a place the player was
+1. **Every arrival plays the card** (ADR-0075). An arrival is coming into a place the player was
    not just in. The places: the town, each field, a run's first floor, and each floor climbed to.
    **(charter default: the owner's "我要再進入每個地方時都有這種效果".)**
 2. **The arrivals, in full:**
@@ -249,7 +249,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
    come into the same hub session and show no card.)**
 8. **Decided once.** Whether a `world_entered` is an arrival is worked out where the world switch
    is made and handed to the scene that starts. No scene compares places itself. The climb stays
-   the run scene's to detect. **(charter default: ADR-0073 Decisions 3–4.)**
+   the run scene's to detect. **(charter default: ADR-0075 Decisions 3–4.)**
 9. **A second arrival replaces the first.** If a card is still up, or its dust still in the air,
    when the next arrival or climb comes, it is removed at once and the new one starts.
    **(spec: as today's `floorVeil` is destroyed before a new one is made.)**
@@ -284,7 +284,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     and readable; input is never blocked; nothing sent to the server waits on it.
     **(charter default: "as today".)**
 15. **The veil sits at the same depth in every world scene:** over the world and its atmosphere,
-    under the HUD. **(spec: ADR-0073 Consequences.)**
+    under the HUD. **(spec: ADR-0075 Consequences.)**
 16. **The card follows the view.** On a resize it re-covers the view and re-places the card,
     centred across and at its height (R10) in the new view, as the climb's does (FS-ZAJMH R13).
     **(spec.)**
@@ -317,7 +317,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     **(spec.)**
 23. **One table, total over the places.** The words for every world type and every field id live
     in one typed table beside `floorCard`; a field id with no entry does not compile.
-    **(charter default: ADR-0073 Decision 5.)**
+    **(charter default: ADR-0075 Decision 5.)**
 
 ### §D. Leaving as dust
 
@@ -383,7 +383,7 @@ kept in the code and the gallery.
 
 ### §E. One shared piece
 
-37. **One piece plays the card for every scene** and belongs to none (ADR-0073 Decision 3). A
+37. **One piece plays the card for every scene** and belongs to none (ADR-0075 Decision 3). A
     world scene tells it two things: that its place is built, and, for a run, the floor.
     **(charter default.)**
 38. **The run scene keeps no card code of its own.** `playFloorTransition`, the veil's relayout and
@@ -391,7 +391,7 @@ kept in the code and the gallery.
     **(charter default.)**
 39. **Every world scene is held to it by a test** that walks `WORLD_SCENES` and fails for a world
     scene that does not hand its arrival to the piece. **(spec: so a world added later cannot
-    come without the card, ADR-0073 Consequences.)**
+    come without the card, ADR-0075 Consequences.)**
 
 ### §F. Dev gallery
 

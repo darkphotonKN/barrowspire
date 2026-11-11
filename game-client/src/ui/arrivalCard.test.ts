@@ -17,7 +17,7 @@ import {
   type CardLeavePlayer,
 } from "./arrivalCard";
 
-// FS-PQ2TW §B R10, R12, R14–R17; §E R37, R38; ADR-0073 Decisions 3, 6. I-PQ2TW-1: the arrival
+// FS-PQ2TW §B R10, R12, R14–R17; §E R37, R38; ADR-0075 Decisions 3, 6. I-PQ2TW-1: the arrival
 // card as one piece no scene owns, on a recording stand-in for the slice of a scene it draws with.
 // FS-PQ2TW §D R24, R29–R31, R35, R36. I-PQ2TW-5: the card leaves as dust, through a stand-in dust.
 // FS-PQ2TW §Change: Smoke, R41, R43, R50: or as smoke, behind one switch that picks dust.
@@ -733,7 +733,7 @@ describe("the card leaves as ash in the game (FS-PQ2TW §Change: Ash, a trial al
   });
 });
 
-describe("the card belongs to no scene (FS-PQ2TW R37, R38; ADR-0073 Decision 3)", () => {
+describe("the card belongs to no scene (FS-PQ2TW R37, R38; ADR-0075 Decision 3)", () => {
   const source = (path: string) => readFileSync(join(process.cwd(), "src", path), "utf8");
 
   it("should import no scene", () => {

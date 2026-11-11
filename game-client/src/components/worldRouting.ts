@@ -40,7 +40,7 @@ export interface ArrivalJudge {
 /**
  * THE transition (FS-29KSH §Requirements 15, 36): every other world scene stops, then the
  * world's own starts with the payload's session and field, and whether it is an arrival: asked
- * here once, so no scene works it out for itself (FS-PQ2TW R8, ADR-0073 Decision 4).
+ * here once, so no scene works it out for itself (FS-PQ2TW R8, ADR-0075 Decision 4).
  * `scene.start()` from the manager does not stop what is already running, unlike the same call
  * from inside a scene, so the previous world would stay live underneath.
  *

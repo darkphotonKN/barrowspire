@@ -6,7 +6,7 @@ blocked_by: []
 labels: [ready-for-agent]
 title: "FS-PQ2TW slice 1: the card is one shared piece with one table of words, and the climb plays through it (game-client)"
 ---
-Implements FS-PQ2TW §B (R10, R12, R14–R17), §C (R19 climb rows, R23), §E (R37, R38); ADR-0073 Decisions 3, 5, 6
+Implements FS-PQ2TW §B (R10, R12, R14–R17), §C (R19 climb rows, R23), §E (R37, R38); ADR-0075 Decisions 3, 5, 6
 
 **Author: agent.** game-client only. A move with no change the player can see: the climb's card
 looks and times as it does today.

@@ -1,5 +1,5 @@
 /**
- * The arrival card (FS-PQ2TW §B, §E; ADR-0073 Decision 3): the view goes dark, the place's name
+ * The arrival card (FS-PQ2TW §B, §E; ADR-0075 Decision 3): the view goes dark, the place's name
  * rises over a rule and one line, the view comes back up, and the card leaves. One piece plays it
  * for every scene and belongs to none: a scene hands it the card's words and tells it one thing,
  * that its place is built; a scene whose words come later (a run's floor) first puts up the dark

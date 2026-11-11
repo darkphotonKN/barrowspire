@@ -6,7 +6,7 @@ blocked_by: []
 labels: [ready-for-agent]
 title: "FS-PQ2TW slice 2: an arrival is told from a return, once, at the world switch (game-client)"
 ---
-Implements FS-PQ2TW §A (R5–R8); ADR-0073 Decisions 2, 4
+Implements FS-PQ2TW §A (R5–R8); ADR-0075 Decisions 2, 4
 
 **Author: agent.** game-client only. Nothing is drawn by this slice: it produces the one answer
 (arrival or return) that slices 3 and 4 play on.
