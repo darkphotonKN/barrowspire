@@ -118,6 +118,9 @@ export class RegionGrid {
  * the room.
  *
  * Only a room's back wall carries a light (§H.47): a corridor's walls and every front stay dark.
+ *
+ * A run's pieces stop at its end posts (`betweenPosts`): where an x run and a y run meet they share
+ * the corner's cell, and each one's half of that cell past the post would stick out of the corner.
  */
 export function wallRule(grid: RegionGrid): PieceRule {
   const height = (at: Point): WallHeight => {
@@ -131,7 +134,7 @@ export function wallRule(grid: RegionGrid): PieceRule {
     const { cx, cy } = grid.cellOf(at);
     return grid.kind(cx, cy + 1) === "room" || grid.kind(cx + 1, cy) === "room";
   };
-  return { height, lit };
+  return { height, lit, betweenPosts: true };
 }
 
 /**

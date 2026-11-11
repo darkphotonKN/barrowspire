@@ -85,6 +85,13 @@ export interface PieceRule {
   height(at: Point): WallHeight;
   /** Whether a piece here may be a kind that carries a light; when not, it is the plain kind. */
   lit(at: Point): boolean;
+  /**
+   * Whether a wall's pieces stop at its two end posts (a dungeon floor, §H.46): a run there is a
+   * cell thick and reaches a whole cell into the wall it meets, so the pieces past the post at that
+   * cell's centre would stick out of the corner as a stub. A wall whose two posts are one (a wall
+   * of one cell) keeps its pieces.
+   */
+  betweenPosts?: boolean;
 }
 
 /** Share of whole pieces of each kind, cumulative, in percent. The first kind is the plain one. */
@@ -284,6 +291,11 @@ function endsOf(w: WallState): [Point, Point] {
   ];
 }
 
+/** A wall's pieces that stand between its two end posts; all of them where the two are one. */
+function between(pieces: WallPiece[], [from, to]: [Point, Point]): WallPiece[] {
+  return pieces.filter(({ axis, at }) => from[axis] === to[axis] || (at[axis] > from[axis] && at[axis] < to[axis]));
+}
+
 /**
  * Every wall's pieces, and a post at every wall end: corners and door jambs, one post where
  * walls meet, as tall as the tallest wall it joins. With a piece rule, each piece and post takes
@@ -301,8 +313,10 @@ export function planWalls(
 
   for (const w of walls) {
     const side = heightOf(sideOf(w, w.house_id ? houses.get(w.house_id) : undefined));
-    pieces.push(...(rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets)));
-    for (const at of endsOf(w)) {
+    const ends = endsOf(w);
+    const own = rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets);
+    pieces.push(...(rule?.betweenPosts ? between(own, ends) : own));
+    for (const at of ends) {
       const height = rule ? rule.height(at) : side;
       const key = `${Math.round(at.x)},${Math.round(at.y)}`;
       const existing = posts.get(key);
