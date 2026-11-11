@@ -1,9 +1,9 @@
 ---
 id: I-PQ2TW-5
-status: open
+status: done
 implements: FS-PQ2TW
 blocked_by: [I-PQ2TW-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-PQ2TW slice 5: the card leaves as dust off its letters, with its gallery card (game-client)"
 ---
 Implements FS-PQ2TW §D (R24–R36), §F (R40); Content: FS-1819Q

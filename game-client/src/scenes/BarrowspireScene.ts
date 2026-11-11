@@ -938,8 +938,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private lastFloor?: number;
   /**
    * The arrival card a climb comes back up through (FS-PQ2TW R37): the shared piece's, told when
-   * the new floor is built from its map (FS-KE075 §H.41), and leaves as dust (FS-PQ2TW §D). It lets
-   * its own card go at a scene end.
+   * the new floor is built from its map (FS-KE075 §H.41), and leaves as the card's one switch says,
+   * ash (FS-PQ2TW §Change: Ash R53). It lets its own card go at a scene end.
    */
   private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
 

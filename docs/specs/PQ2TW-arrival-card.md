@@ -1,6 +1,6 @@
 # FS-PQ2TW: Arrival card
 
-> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Arrival card → FS-PQ2TW`: [FS-F6F88](F6F88-multi-floor-delves.md) (req 32, the floor card), [FS-KE075](KE075-floor-1-dungeon.md) (§H.41, the veil held for the map), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (the hub scene), [FS-X2F2H](X2F2H-field-worlds-and-gentle-meadows.md) (the field scene), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (§B.6, the effect rules) · Related ADRs: [ADR-0073](../adr/0073-every-arrival-in-a-place-plays-the-arrival-card-through-one-shared-piece.md) (every arrival plays the card, through one shared piece), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch; a town building adds no world), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the canvas palette) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (arrival, arrival card) · Surface: game-client only
+> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Arrival card → FS-PQ2TW`: [FS-F6F88](F6F88-multi-floor-delves.md) (req 32, the floor card), [FS-KE075](KE075-floor-1-dungeon.md) (§H.41, the veil held for the map), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) (the hub scene), [FS-X2F2H](X2F2H-field-worlds-and-gentle-meadows.md) (the field scene), [FS-KYPQ9](KYPQ9-remainder-restyle-town-dressing-and-effects.md) (§B.6, the effect rules) · Related ADRs: [ADR-0075](../adr/0075-every-arrival-in-a-place-plays-the-arrival-card-through-one-shared-piece.md) (every arrival plays the card, through one shared piece), [ADR-0015](../adr/0015-hub-and-runs-share-one-process-and-one-connection.md) (a floor change is not a world switch; a town building adds no world), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the canvas palette) · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (arrival, arrival card) · Surface: game-client only
 
 > Promoted `--from-thread` on 2026-11-11 from the owner's charter ("進場卡", approved "核准"). The
 > thread is the charter's locked decisions. Requirements marked **(charter default)** are those
@@ -153,6 +153,25 @@
 > unchanged, and so are the ash's. Only the switch moves (R41, R53, and their criteria), with the
 > summary, §D's place and R30's criterion following it. See *Change: Ash, a trial alternate
 > leave* at the end, which keeps its name as the anchor of the code that built it.
+>
+> **A note on the tunes, 2026-11-12, recorded in the code review's fix round.** Some commits
+> labelled `Tunes FS-PQ2TW` also added behaviour, not only values: the dust's sideways sway (the
+> second tune), its full-turn headings (the third), the ash's slowing, flip, sway and embers (the
+> owner's look), its heading lean and larger glowing patch (his third tune of the ash), its char,
+> ash rim, seam and fire's ramp with its three tokens (his fifth), and a flip set going inside a
+> shorter life (his eighth). Each is recorded in its own section above and below; the history on
+> main is not rewritten.
+>
+> **The code review's fix round, 2026-11-12.** What the three leaves do alike (their options'
+> defaults, a warning logged once per reason, the sheet they draw from, the card's ink read once
+> with the fade to fall back to, the start points they hand out, and what each holds until its
+> end, a stop or the scene's end) moved out of the dust's module into one piece the three use,
+> `src/render/effects/cardLeaveCore.ts`, with no change of behaviour, message or number. The stroke
+> reading (`strokeCells` / `ruleCells` / `seedPoints`) lives there and is re-exported from
+> `cardDust.ts`, so R42's and R54's "through the dust's own reading" now means through that one
+> shared reading, and their "`cardDust.ts` unchanged" means its behaviour, numbers and tests: the
+> file itself lost its private copy of the shared code. The ash reads each text's canvas once for
+> its strokes and its burning image (it read it twice).
 
 ## Summary
 
@@ -172,8 +191,14 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 - **May touch:** `game-client` only: the world switch (`src/components/worldRouting.ts`,
   `PhaserGame.tsx`), the three world scenes' arrival flows, the card and its copy (`src/ui/`),
   the dust (`src/render/effects/`), their tests, and the dev gallery (`src/dev/gallery/effects.ts`).
+  Since the ash's fire (§Change: Ash, the owner's fifth tune of 2026-11-12) also the colour tokens
+  (`src/utils/theme.ts`), the canvas palette (`src/utils/canvasPalette.ts`) and the design
+  guideline's palette (`game-client/docs/design-guideline.md`), for fire's ramp alone.
 - **May not touch:** `game-server/`, proto, the gateway, the wire, or the existing text of a
-  shipped FS. No new colour, no new baked art, no new font.
+  shipped FS. No new colour but fire's ramp, the three tokens the Ash section allowed (`fireCore`,
+  `fireHot`, `fireDeep`, around the existing `ember`; for fire effects only, never an
+  interactable); no new baked art, no new font. *(Amended in the code review's fix round of
+  2026-11-12: this said "No new colour" before the owner's fifth tune of the ash added the ramp.)*
 
 ## Facts this spec rests on
 
@@ -219,7 +244,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 ### §A. When the card plays
 
-1. **Every arrival plays the card** (ADR-0073). An arrival is coming into a place the player was
+1. **Every arrival plays the card** (ADR-0075). An arrival is coming into a place the player was
    not just in. The places: the town, each field, a run's first floor, and each floor climbed to.
    **(charter default: the owner's "我要再進入每個地方時都有這種效果".)**
 2. **The arrivals, in full:**
@@ -249,7 +274,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
    come into the same hub session and show no card.)**
 8. **Decided once.** Whether a `world_entered` is an arrival is worked out where the world switch
    is made and handed to the scene that starts. No scene compares places itself. The climb stays
-   the run scene's to detect. **(charter default: ADR-0073 Decisions 3–4.)**
+   the run scene's to detect. **(charter default: ADR-0075 Decisions 3–4.)**
 9. **A second arrival replaces the first.** If a card is still up, or its dust still in the air,
    when the next arrival or climb comes, it is removed at once and the new one starts.
    **(spec: as today's `floorVeil` is destroyed before a new one is made.)**
@@ -284,7 +309,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     and readable; input is never blocked; nothing sent to the server waits on it.
     **(charter default: "as today".)**
 15. **The veil sits at the same depth in every world scene:** over the world and its atmosphere,
-    under the HUD. **(spec: ADR-0073 Consequences.)**
+    under the HUD. **(spec: ADR-0075 Consequences.)**
 16. **The card follows the view.** On a resize it re-covers the view and re-places the card,
     centred across and at its height (R10) in the new view, as the climb's does (FS-ZAJMH R13).
     **(spec.)**
@@ -317,7 +342,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     **(spec.)**
 23. **One table, total over the places.** The words for every world type and every field id live
     in one typed table beside `floorCard`; a field id with no entry does not compile.
-    **(charter default: ADR-0073 Decision 5.)**
+    **(charter default: ADR-0075 Decision 5.)**
 
 ### §D. Leaving as dust
 
@@ -383,7 +408,7 @@ kept in the code and the gallery.
 
 ### §E. One shared piece
 
-37. **One piece plays the card for every scene** and belongs to none (ADR-0073 Decision 3). A
+37. **One piece plays the card for every scene** and belongs to none (ADR-0075 Decision 3). A
     world scene tells it two things: that its place is built, and, for a run, the floor.
     **(charter default.)**
 38. **The run scene keeps no card code of its own.** `playFloorTransition`, the veil's relayout and
@@ -391,7 +416,7 @@ kept in the code and the gallery.
     **(charter default.)**
 39. **Every world scene is held to it by a test** that walks `WORLD_SCENES` and fails for a world
     scene that does not hand its arrival to the piece. **(spec: so a world added later cannot
-    come without the card, ADR-0073 Consequences.)**
+    come without the card, ADR-0075 Consequences.)**
 
 ### §F. Dev gallery
 
@@ -1023,6 +1048,17 @@ data.
     the front. Its per-frame cost on a card of the game's size is measured in a browser and
     reported with the change, so the owner judges the look knowing the price. **(spec: the
     owner accepted a per-frame redraw if measured.)**
+
+    *Measured* (recorded in the code review's fix round of 2026-11-12; taken while the ash was
+    built and tuned): headless Chrome, ANGLE on Metal, an Apple M5 Pro, render scale 2, the
+    game's card ("The Second Floor" and its line). The front's CPU redraw and upload: median about
+    0.2 ms a front frame, p95 0.4–0.5 ms, max 1.4 ms; the whole step about 0.3–0.4 ms a frame
+    while it burns; the frame `play()` runs in (reading the ink, the burn's thresholds and order,
+    the flake sheet on its first play) 8–11 ms, worst about 20 ms; after the later tunes, about
+    0.5 ms median a frame during the ash. **GPU time was not measured**: these are CPU times
+    only. The fix round then made the band's colours with no array per pixel and each text read
+    once; in vitest under node on the same machine, over a card-sized burn, the front's redraw went
+    from a median of 0.20 to 0.10 ms a frame (p95 0.38 to 0.21).
 64. **Embers.** *(Added at the owner's look of 2026-11-12, "不夠高級".)* As the front passes, a
     sprinkle of tiny ember sparks comes off it: 0.012 per view px² of ink, at most 40 for the
     whole card, from a second emitter, each let go from a start point on the strokes or the rule

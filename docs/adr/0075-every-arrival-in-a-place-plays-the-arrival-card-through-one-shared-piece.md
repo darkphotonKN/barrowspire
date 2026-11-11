@@ -1,4 +1,4 @@
-# ADR-0073 — Every arrival in a place plays the arrival card, through one shared piece that no scene owns
+# ADR-0075 — Every arrival in a place plays the arrival card, through one shared piece that no scene owns
 
 Status: accepted
 Date: 2026-11-11

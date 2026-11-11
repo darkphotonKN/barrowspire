@@ -1,9 +1,9 @@
 ---
 id: I-PQ2TW-3
-status: open
+status: done
 implements: FS-PQ2TW
 blocked_by: [I-PQ2TW-1, I-PQ2TW-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-PQ2TW slice 3: entering a run plays the first floor's card (game-client)"
 ---
 Implements FS-PQ2TW §A (R2 run entry, R3, R5, R9), §B (R11–R13), §C (R19 floor 1, R21, R22)

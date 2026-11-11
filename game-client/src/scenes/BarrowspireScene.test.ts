@@ -7474,7 +7474,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
   });
 });
 
-// FS-PQ2TW R5, R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the run with its
+// FS-PQ2TW R5, R8; ADR-0075 Decision 4. I-PQ2TW-2: the switch's verdict reaches the run with its
 // start. A climb is not a world switch (ADR-0015) and keeps its own trigger.
 describe("BarrowspireScene arrival from its start (FS-PQ2TW R5–R8)", () => {
   it.each([true, false])("should keep the arrival %s its start was handed, beside its session", (arrival) => {
