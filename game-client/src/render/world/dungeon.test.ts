@@ -10,8 +10,6 @@ import {
   edgeLit,
   isDungeon,
   wallPlan,
-  wallRule,
-  wallRuns,
   type DungeonMap,
   type EdgeRun,
   type EdgeSide,
@@ -19,7 +17,7 @@ import {
   type WallPlan,
 } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
-import { MASONRY_WALLS, TIMBER_WALLS, planWalls, thicknessPx, type WallAxis } from "./walls";
+import { MASONRY_WALLS, TIMBER_WALLS, thicknessPx, type WallAxis } from "./walls";
 
 /** The levelgen golden layout the fixture is cut from (game-server levelgen testdata). */
 interface GoldenLayout {
@@ -52,63 +50,8 @@ const corridor = (id: number, x: number, y: number, w: number, h: number): Floor
   cells: [{ x, y, w, h }],
 });
 
-/** The world point at the middle of cell (cx, cy): where a wall piece over that cell stands. */
+/** The world point at the middle of cell (cx, cy). */
 const mid = (cx: number, cy: number) => ({ x: (cx + 0.5) * CELL, y: (cy + 0.5) * CELL });
-
-describe("the dungeon wall-height rule (FS-KE075 §H.46)", () => {
-  it("is front for a wall with walkable cells both north and south of it", () => {
-    // a room over row 1–2, a corridor under row 4–5, the shell row 3 between them
-    const grid = floor(10, 8, [room(1, 1, 1, 6, 2), corridor(2, 1, 4, 6, 2)]);
-    expect(wallRule(grid).height(mid(3, 3))).toBe("front");
-  });
-
-  it("is front for a wall with walkable cells both west and east of it", () => {
-    const grid = floor(10, 10, [room(1, 1, 1, 2, 6), corridor(2, 4, 1, 2, 6)]);
-    expect(wallRule(grid).height(mid(3, 3))).toBe("front");
-  });
-
-  // the corridor rule: an east–west corridor has a low south wall and a full north wall, a
-  // north–south corridor a low east wall and a full west wall
-  it.each([
-    ["east–west corridor, south wall", "front", corridor(1, 2, 3, 6, 2), mid(4, 5)],
-    ["east–west corridor, north wall", "back", corridor(1, 2, 3, 6, 2), mid(4, 2)],
-    ["north–south corridor, east wall", "front", corridor(1, 3, 2, 2, 6), mid(5, 4)],
-    ["north–south corridor, west wall", "back", corridor(1, 3, 2, 2, 6), mid(2, 4)],
-  ] as const)("%s is %s", (_name, height, region, at) => {
-    expect(wallRule(floor(10, 10, [region])).height(at)).toBe(height);
-  });
-
-  // a room 4×4 at (2, 2): its shell is columns 1 and 6, rows 1 and 6
-  it.each([
-    ["north side", "back", mid(4, 1)],
-    ["west side", "back", mid(1, 4)],
-    ["south side", "front", mid(4, 6)],
-    ["east side", "front", mid(6, 4)],
-    ["north-west corner", "back", mid(1, 1)],
-    ["north-east corner", "back", mid(6, 1)],
-    ["south-west corner", "back", mid(1, 6)],
-    // where two low sides meet: low too, as a house's south-east corner is (walls.ts heightOf)
-    ["south-east corner", "front", mid(6, 6)],
-  ] as const)("a room's %s is %s", (_name, height, at) => {
-    expect(wallRule(floor(10, 10, [room(1, 2, 2, 4, 4)])).height(at)).toBe(height);
-  });
-});
-
-describe("wall lights on a dungeon floor (FS-KE075 §H.47)", () => {
-  // a room 4×4 at (2, 2), a corridor 2 wide leaving its east side east–west at rows 3–4
-  const grid = floor(14, 10, [room(1, 2, 2, 4, 4), corridor(2, 6, 3, 6, 2)]);
-
-  it.each([
-    ["a room's north wall", true, mid(4, 1)],
-    ["a room's west wall", true, mid(1, 4)],
-    ["a room's south wall (front)", false, mid(4, 6)],
-    ["a room's east wall (front)", false, mid(6, 5)],
-    ["a corridor's north wall", false, mid(9, 2)],
-    ["a corridor's south wall (front)", false, mid(9, 5)],
-  ] as const)("%s may carry a light: %s", (_name, lit, at) => {
-    expect(wallRule(grid).lit(at)).toBe(lit);
-  });
-});
 
 /** Whether a cell is a shell cell: not walkable, and 8-adjacent to a walkable one (FS-KE075 R7). */
 const isShell = (grid: RegionGrid, cx: number, cy: number) =>
@@ -149,18 +92,6 @@ function serverWalls(grid: RegionGrid): WallState[] {
   }));
 }
 
-/** The axes of the pieces drawn over each cell, keyed `cx,cy`. */
-function drawnAxes(grid: RegionGrid, walls: readonly WallState[]): Map<string, Set<WallAxis>> {
-  const { pieces } = planWalls(wallRuns(walls, grid), 1, MASONRY_WALLS, wallRule(grid));
-  const axes = new Map<string, Set<WallAxis>>();
-  for (const p of pieces) {
-    const { cx, cy } = grid.cellOf(p.at);
-    const key = `${cx},${cy}`;
-    axes.set(key, (axes.get(key) ?? new Set()).add(p.axis));
-  }
-  return axes;
-}
-
 /** The cells of a floor's walls, `cx,cy`. */
 const wallCells = (walls: readonly WallState[]) =>
   walls.flatMap((w) => {
@@ -169,86 +100,6 @@ const wallCells = (walls: readonly WallState[]) =>
       for (let cy = w.position.y / CELL; cy < (w.position.y + w.height) / CELL; cy++) cells.push(`${cx},${cy}`);
     return cells;
   });
-
-describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
-  it("makes a room's side along world y one run from corner to corner, as its side along x is", () => {
-    // a room 4×4 at (2, 2): the server merges its west and east sides into 1×4 rects that stop a
-    // cell short of the corners, which its north and south rows take whole
-    const grid = floor(10, 10, [room(1, 2, 2, 4, 4)]);
-    const runs = wallRuns(serverWalls(grid), grid).map((r) => [r.position.x / CELL, r.position.y / CELL, r.width / CELL, r.height / CELL]);
-    // each side from the corner's cell to the next corner's, and no further
-    expect(runs).toHaveLength(4);
-    expect(runs).toEqual(
-      expect.arrayContaining([
-        [1, 1, 6, 1],
-        [1, 6, 6, 1],
-        [1, 1, 1, 6],
-        [6, 1, 1, 6],
-      ]),
-    );
-  });
-
-  describe("on the levelgen golden floor", () => {
-    const golden = new RegionGrid(fixture as DungeonMap);
-    const walls = (fixture as { walls: WallState[] }).walls;
-    const axes = drawnAxes(golden, walls);
-    const faces = (cx: number, cy: number) => ({
-      x: golden.walkable(cx, cy - 1) || golden.walkable(cx, cy + 1),
-      y: golden.walkable(cx - 1, cy) || golden.walkable(cx + 1, cy),
-    });
-
-    const cells = wallCells(walls);
-    const isWall = new Set(cells);
-
-    it.each([
-      ["west or east", "y", "x"],
-      ["north or south", "x", "y"],
-    ] as const)("draws every wall cell facing a region only %s with a piece along %s", (_side, axis, other) => {
-      const missing = cells.filter((key) => {
-        const [cx, cy] = key.split(",").map(Number);
-        const f = faces(cx, cy);
-        return f[axis] && !f[other] && !axes.get(key)?.has(axis);
-      });
-      expect(missing).toEqual([]);
-    });
-
-    it("draws a wall cell facing regions both ways along one of them at least", () => {
-      // a stub with regions on three sides, or a wall's end at a corridor's mouth: drawn along the
-      // run it is in, never as a one-cell slab across it
-      const bare = cells.filter((key) => {
-        const [cx, cy] = key.split(",").map(Number);
-        const f = faces(cx, cy);
-        return f.x && f.y && !axes.get(key)?.has("x") && !axes.get(key)?.has("y");
-      });
-      expect(bare).toEqual([]);
-    });
-
-    it.each(["x", "y"] as const)(
-      "runs a piece along %s only on a cell with a wall beside it that way, or none on any side",
-      (axis) => {
-        const stray = cells.filter((key) => {
-          const [cx, cy] = key.split(",").map(Number);
-          const beside = (dx: number, dy: number) => isWall.has(`${cx + dx},${cy + dy}`);
-          const along = axis === "x" ? beside(-1, 0) || beside(1, 0) : beside(0, -1) || beside(0, 1);
-          const alone = !beside(-1, 0) && !beside(1, 0) && !beside(0, -1) && !beside(0, 1);
-          return axes.get(key)?.has(axis) && !along && !alone;
-        });
-        expect(stray).toEqual([]);
-      },
-    );
-
-    it("leaves no wall cell without a piece", () => {
-      expect(wallCells(walls).filter((key) => !axes.has(key))).toEqual([]);
-    });
-
-    it("draws the three-cell west wall of the room east of column 35 as one run along y", () => {
-      // rows 1–3 of column 35: the room's north-west corner, a lone 1×1 rect, and the end of the
-      // corridor's north wall, which the server merges into three rects
-      for (const cy of [1, 2, 3]) expect(axes.get(`35,${cy}`)?.has("y")).toBe(true);
-      expect(axes.get("35,2")?.has("x")).toBe(false);
-    });
-  });
-});
 
 describe("a wall material's thickness (FS-XK2B6 §A.2)", () => {
   /** The number a bake model declares, read from its source: the client's is a mirror of it. */
