@@ -781,6 +781,63 @@ record's data.
 | the flakes' density | 0.1 per view px² of ink | 0.08 per view px² of ink |
 | the flakes' cap, for the whole card | 300 | 240 |
 
+**The owner's fifth tune of the ash, 2026-11-12, and the fire's colour.** Watching the fewer
+flakes, he said: "灰燼碎屑再多一點燒焦感": the flakes should look more charred, burnt paper rather
+than grey chips. Then, in the same look: "火的顏色有辦法擬真一點嗎": can the fire's colour be more
+realistic. Both are folded into one tune of the ash's look; its numbers, its motion and its timing
+are unchanged.
+
+*Charred.* A flake's body is char, not slate: near-black (`pitch`) at its core, lifting toward
+`slate` by its torn edge (0.08 of the way at its core, 0.55 by its edge, the core reached 2 view px
+in), so its core is its darkest part. Its mottling is char blotches, darker spots (0.6 of the way
+back toward `pitch`, in patches as before), not lighter speckle; `slateLight` leaves the flake.
+Its torn edge goes pale as burnt paper's does as it turns to ash: a dusty ash rim toward
+`vellumFaint` (0.85 of the way at the very edge, about 0.75 view px deep), palest on the flake's
+burnt side, and broken round the outline, coming and going with the bearing (where its wave falls
+under 0.45 the char reaches the edge), so it is never a closed ring. On the dark floor the black
+flake keeps its shape by that pale rim and its glow. The glow is now a thin glowing seam on the
+edge, the ember eating into it, instead of a patch reaching into the middle: on the flake's burnt
+side (from 0.28 of the way out, as before), within about 0.75 view px of the edge, between the
+black char and the pale ash it leaves. Its share (0.85 of the shapes), its 900 ms, its flicker and
+its area (about 14% of a glowing flake at full heat) are as they were. No curl or fold line was
+added: the char and the rim read as burnt paper without it.
+
+*Fire.* Every hot thing was one flat `ember`; fire runs a temperature ramp, hottest near
+white-yellow, then orange, then deep red, cooling to char. Three new tokens make the ramp around
+`ember`, hottest first: `fireCore` (`#f5d98f`, a pale white-yellow), `fireHot` (`#ea7f26`, orange),
+`ember`, `fireDeep` (`#8a2913`, a deep red). They are for fire effects only and never mark an
+interactable (amber does; the guideline says so beside the palette). Each hot thing runs it its own
+way:
+- **The burn's band** (R55): across its fire share (0.06 of the band, unchanged) a pixel goes from
+  its ink to `fireCore` in the first tenth (a thin pale leading edge), down to `fireHot` by 0.35,
+  `ember` by 0.65 and `fireDeep` at its end; then across the char share (0.08, unchanged) from
+  `fireDeep` to `slate`. The front's time, shape, grain and band widths are unchanged.
+- **A flake's seam** (R56): it starts `fireHot` and cools down the ramp with its heat, `ember` at
+  0.6 of it and `fireDeep` at 0.3, then from `fireDeep` to the pale ash it leaves; its hold, its
+  flicker dips and its 20 frames from 12 shades are unchanged.
+- **The sparks** (R64): born `fireHot`, cooling to `ember` by 0.45 of their life and `fireDeep` at
+  its end, the colour filling the spark (Phaser's fill tint), still drawn additively; their count,
+  size, speed, heading, flicker and life are unchanged.
+
+R59's colour bound moves with his words: the ash now uses seven tokens of its own (`fireCore`,
+`fireHot`, `ember`, `fireDeep`, `slate`, `pitch`, `vellumFaint`), an exception to FS-KYPQ9 §B.7's
+three, and still never `amber`, `amberBright` or `oxblood`. His values replace the starting values
+where R55, R56, R58, R59 and R64 stated them, and their criteria follow. A tune (`Tunes
+FS-PQ2TW`): R61 names the band's ramp stops, the char's lift and depth, the ash rim's depth,
+paleness and gap, the seam's depth and cooling, and the sparks' cooling as the record's data, beside
+the tokens.
+
+| Value | Was | Now |
+|---|---|---|
+| a flake's body | `slate`, mottled lighter toward `slateLight` (up to 0.6) | char: `pitch` at its core lifting to 0.55 of the way to `slate` by its edge, blotched darker toward `pitch` (up to 0.6) |
+| a flake's edge | the same paper as its body; one side greyer toward `slateLight` | a broken ash rim toward `vellumFaint` (0.85 at the edge, about 0.75 view px deep), palest on its burnt side, never a closed ring |
+| a glowing flake's glow | an `ember` patch on one side, from 0.28 of the way out | a seam on that side's edge band (about 0.75 view px deep), between the char and the ash; share, time, flicker and area unchanged |
+| a glowing flake's colour as it dies | `ember` to grey | `fireHot` → `ember` → `fireDeep` → the ash rim |
+| the burn's band | its ink to `ember`, then `ember` to `slate` | its ink to `fireCore` (thin), `fireHot`, `ember`, `fireDeep`, then `fireDeep` to `slate` |
+| a spark's colour | `ember` throughout | born `fireHot`, cooling to `ember` and then `fireDeep` as it fades |
+| fire's tokens | `ember` | `fireCore`, `fireHot`, `ember`, `fireDeep` (new: fire effects only) |
+| the ash's own colours | 3: `ember`, `slate`, `slateLight` | 7: `fireCore`, `fireHot`, `ember`, `fireDeep`, `slate`, `pitch`, `vellumFaint` |
+
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
@@ -798,8 +855,10 @@ record's data.
     threshold: how far along it lies from the left edge, made ragged by smooth noise (and a
     little grain, so the edge crumbles). A front sweeps that threshold from 0 past 1 over 2000 ms
     (the owner's tune of 2026-11-12, "左到右的速度拉長一點"; was 1000 ms), linear. Each frame, a pixel the front has not reached is **whole**, drawn as the card drew
-    it; a pixel within the band behind the front is **burning**: tinted `ember` at the band's
-    leading edge, charring to `slate` toward its trailing edge; a pixel past the band is **gone**.
+    it; a pixel within the band behind the front is **burning**: down fire's ramp from its leading
+    edge, a thin pale `fireCore`, then `fireHot`, `ember` and `fireDeep`, charring to `slate`
+    toward its trailing edge (the owner's fifth tune of 2026-11-12, "火的顏色有辦法擬真一點嗎"; was
+    `ember` to `slate`); a pixel past the band is **gone**.
     The band is 0.06 of ember and 0.08 of char, in threshold units. When the front has crossed,
     every pixel is gone. **(the owner's locked burn; the threshold, the spec's.)**
 56. **The flakes: burnt paper.** *(Replaced at the owner's look of 2026-11-12, "灰燼像泡泡一樣怪怪的".)*
@@ -813,7 +872,12 @@ record's data.
       of 2026-11-12, "碎屑再大片一點"; was 1.5–8), drawn so that the smaller are more, the middle
       flake about 8 px, and no side under 3 view px unless the whole shard is. There is **no
       outline ring**: a flake's edge is the same paper as its body.
-    - **Colour.** A dark `slate` body with faint lighter mottling toward `slateLight`. About 0.85
+    - **Colour.** *(The owner's fifth tune of 2026-11-12, "灰燼碎屑再多一點燒焦感"; was a dark `slate`
+      body with faint lighter mottling toward `slateLight`, an `ember` patch dying to grey.)*
+      Charred paper: a near-black `pitch` core lifting toward `slate` by the edge, blotched darker,
+      its torn edge a broken pale ash rim toward `vellumFaint`, never a closed ring; the glow below
+      is a thin seam on the burnt side's edge band, cooling `fireHot` → `ember` → `fireDeep` to the
+      ash ("火的顏色有辦法擬真一點嗎"). About 0.85
       of flakes (the owner's third tune of 2026-11-12, "灰燼 碎屑的火星在稍微多一些", "余光"; was two
       thirds, and a third before his second tune, "再加一些快滅掉的火光") carry a glowing `ember` patch on one edge, never round the whole outline, that dies
       like an ember over its first 900 ms (the owner's third tune of 2026-11-12, "余光"; was 700 ms,
@@ -836,12 +900,14 @@ record's data.
 57. **About 3 seconds.** The front takes 2000 ms and a flake lives 1000 ms; a spark is gone
     within 600 ms of the front's passing. The ash is gone by 3000 ms, one fixed duration (the
     owner's tune of 2026-11-12; was about 2 seconds: 1000 ms, then 2000 ms).
-58. **Colour.** `ember` for the burning edge, the flakes' glowing patches and the sparks;
-    `slate` for the char and the flakes' bodies; `slateLight` for the flakes' mottling and the
-    grey a patch dims to (each flake pixel a mix of these three); the card's own ink (its texts'
-    colours and the rule's `brass`, as the card drew them) until a pixel burns. Never `amber`:
-    the glow is torch warmth, not something to act on (guideline, "Gameplay accent"). Tokens
-    only, no new colour (ADR-0013).
+58. **Colour.** Fire's ramp, `fireCore`, `fireHot`, `ember`, `fireDeep`, for the burning band,
+    the flakes' seams and the sparks (the owner's fifth tune of 2026-11-12, "火的顏色有辦法擬真一點嗎";
+    was `ember` alone); `slate` for the band's char and the flakes' bodies; `pitch` for a flake's
+    char core and blotches; `vellumFaint` for its ash rim (was `slateLight` for its mottling and
+    grey; "灰燼碎屑再多一點燒焦感"); the card's own ink (its texts' colours and the rule's `brass`, as
+    the card drew them) until a pixel burns. Never `amber` or `amberBright`: the glow is fire, not
+    something to act on (guideline, "Gameplay accent"). Tokens only (ADR-0013): the three fire
+    tokens were added for this tune, for fire effects only.
 59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling, §B.4 and §B.10, for the ash, and only
     these.** The ash is more than 12 particles (at most 240 flakes, the owner's fourth tune of
     2026-11-12, was 300; and 40 sparks); its debris
@@ -855,8 +921,10 @@ record's data.
     size never changes otherwise. Its textures are drawn at runtime from tokens, not baked: the
     burning image is the card's own letters, and no baked sheet is a paper shard or a one-pixel
     spark (no baked art is added). It calls no `explode`, and every other rule of §B holds for
-    it: one fixed duration, the easing allowlist, no shake, tokens only, at most 3 colours of
-    its own (`ember`, `slate`, `slateLight`), teardown on end and on scene shutdown. Named as R33
+    it: one fixed duration, the easing allowlist, no shake, tokens only, teardown on end and on
+    scene shutdown. Its colours are the one further exception, to §B.7's three: seven of its own
+    (`fireCore`, `fireHot`, `ember`, `fireDeep`, `slate`, `pitch`, `vellumFaint`; the owner's fifth
+    tune of 2026-11-12; was three, `ember`, `slate`, `slateLight`). Named as R33
     and R49 are, beside them; the tests that hold §B.2, §B.4, §B.6 and §B.10 keep holding them
     for every other effect.
 60. **As the dust, for everything else.** Over the veil and under the HUD (R29); reduced motion:
@@ -864,11 +932,14 @@ record's data.
     canvas texture that cannot be made: no burn, the card fades, logged once (R35); gone at once,
     its burning image, its texture, its flakes and its sparks with it, on a stop, a new card, a
     view change or a scene's end (R9, R36, the resize edge state).
-61. **Its numbers are data.** The front's time and shape, the band; the flakes' density, cap,
-    shapes, length and its bias toward the small, aspect, mottling, glowing share and its dimming
+61. **Its numbers are data.** The front's time and shape, the band and (since the owner's fifth
+    tune of 2026-11-12) its ramp's stops; the flakes' density, cap,
+    shapes, length and its bias toward the small, aspect, mottling, (since the fifth tune) char lift
+    and depth, ash rim depth, paleness and gap, glowing share, seam depth and cooling, and its dimming
     (and, since the owner's second tune of 2026-11-12, its flicker), speed, drag, heading lean
     (since his third tune) and spread, turn, flip, sway, life and alpha; the sparks' density, cap, size,
-    speed, drag, heading lean (since his third tune) and spread, life and flicker; the tokens and the easings are one typed record
+    speed, drag, heading lean (since his third tune) and spread, life, flicker and (since his fifth)
+    cooling; the tokens and the easings are one typed record
     in `cardAsh.ts`, asserted by a vitest; a retune is an edit there.
 62. **The gallery shows all three.** A third replayable card, "Arrival card ash", beside "Arrival
     card dust" and "Arrival card smoke", on the one gallery card (R52), so a replay of any
@@ -880,15 +951,15 @@ record's data.
 64. **Embers.** *(Added at the owner's look of 2026-11-12, "不夠高級".)* As the front passes, a
     sprinkle of tiny ember sparks comes off it: 0.012 per view px² of ink, at most 40 for the
     whole card, from a second emitter, each let go from a start point on the strokes or the rule
-    on the frame the front reaches it. A spark is 1–2 view px of `ember`, drawn additively so it
-    reads as light; it rises faster than the flakes, 40–80 px/s within 25° of 15° left of
+    on the frame the front reaches it. A spark is 1–2 view px, born `fireHot` and cooling to
+    `ember` and then `fireDeep` as it fades (the owner's fifth tune of 2026-11-12, "火的顏色有辦法擬真一點嗎";
+    was `ember` throughout), drawn additively so it reads as light; it rises faster than the flakes, 40–80 px/s within 25° of 15° left of
     straight up (the owner's third tune of 2026-11-12, "往左往上散"; was within 25° of straight up;
     since that tune the fastest flake passes the slowest spark, and the sparks are faster on
     average, 60 px/s against about 31), slowing
     a little (1.5 of its speed a second), flickers (its alpha beating at 6–14 Hz as it falls to
-    0), and dies out within 300–600 ms of leaving. No warm light token outside the amber family
-    exists (the guideline's torch warmth is `amber` and `ember`), so a spark brightens by its
-    additive blend, never by `amber`. Drawn at runtime at the render scale, as the flakes are.
+    0), and dies out within 300–600 ms of leaving. A spark brightens by its additive blend and
+    fire's ramp, never by `amber`. Drawn at runtime at the render scale, as the flakes are.
 
 ### Acceptance Criteria
 
@@ -896,14 +967,15 @@ record's data.
 - [ ] `cardDust.ts`, `cardSmoke.ts` and their tests are unchanged; the ash is `cardAsh.ts` with its own tests and reads the strokes through `strokeCells` / `ruleCells` / `seedPoints`. (R54)
 - [ ] Played as ash, the card's letters are hidden and a burning image of them stands in their place. (R55)
 - [ ] The front advances from the left: the burned share of the ink only grows, and its burning band moves right on average; every stroke pixel is gone when the front has crossed. (R55)
-- [ ] The burning band is ember-tinted at its leading edge and slate at its trailing edge; pixels ahead of the front are as the card drew them. (R55, R58)
+- [ ] The burning band runs fire's ramp, hottest at its leading edge: a thin `fireCore`, then `fireHot` and `ember`, then `fireDeep`, then `slate` char at its trailing edge; pixels ahead of the front are as the card drew them. (R55, R58; the owner's fifth tune of 2026-11-12, was `ember` to `slate`)
 - [ ] Every flake starts on a stroke pixel or the rule, never in a gap, and only once that pixel has burned out. (R56)
 - [ ] Flakes rise on average, starting at 18–45 px/s and slowing a little (a drag of 0.4), so they go about 1.5 times as far as at 12–32 px/s and 0.5; their mean heading leans about 30° left of up, none heads right of straight up or more than 60° left of it; each turns slowly, 20–70° a second; 0.08 per view px² of ink, at most 240, from one emitter, with no `explode` call. (R56, R59; the owner's third tune of 2026-11-12, was 12–32 px/s within 30° of up; his fourth, "灰燼 碎屑少２０％", was 0.1 and 300)
 - [ ] Each flake flips: its scale on one axis passes through edge-on (zero) and changes sign within its life, never growing past its size; the other axis keeps its size. (R56, R59)
-- [ ] No flake draws a closed outline ring: a plain flake's edge pixels are its body's colours, and a glowing flake's ember lies on one side, on less than half of its outline. (R56)
+- [ ] No flake draws a closed outline ring: its pale ash rim is broken, the char reaching its edge in places, and a glowing flake's fire lies on one side, on less than half of its outline. (R56; the owner's fifth tune of 2026-11-12)
+- [ ] A flake is charred: its core darker than its body and its rim, its torn edge lighter than its body, its blotches darker spots; a glowing flake's fire lies on its edge band, within about a view px of its edge, mostly on the edge itself. (R56; the owner's fifth tune of 2026-11-12, "灰燼碎屑再多一點燒焦感")
 - [ ] The flakes span a range of sizes (from about 3 to about 14 view px long, the middle one about 8, more of them small than large; no side under 3 view px unless the whole shard is) and of aspect ratios (some near 1, many longer than wide). (R56; the owner's second tune of 2026-11-12, was about 1.5 to about 8)
-- [ ] A flake's pixels are mixes of `slate`, `slateLight` and `ember`; 0.85 of the flake shapes glow, a glowing flake's patch covering about 14% of it at full heat (about 1.5 times the area before the owner's third tune), and dies to grey over its first 900 ms, its heat dipping and recovering once or twice before it goes; no other colour appears but the card's own ink. (R56, R58; the owner's third tune of 2026-11-12, "余光", was two thirds over 700 ms; his second, was a third over 500 ms)
-- [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px of `ember`, additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of a heading 15° left of up (faster than the flakes on average), flicker, and are gone within 600 ms. (R64, R59; the owner's third tune of 2026-11-12, was within 25° of straight up)
+- [ ] A cold flake's pixels are mixes of `pitch`, `slate` and `vellumFaint`; 0.85 of the flake shapes glow, a glowing flake's seam covering about 14% of it at full heat (about 1.5 times the area before the owner's third tune), and cools from `fireHot` through `ember` to `fireDeep` and then to ash over its first 900 ms, never hotter or yellower than a moment before but for its heat dipping and recovering once or twice before it goes; no other colour appears but the card's own ink. (R56, R58; the owner's fifth tune of 2026-11-12, was `slate`, `slateLight` and `ember`; his third, "余光", was two thirds over 700 ms; his second, was a third over 500 ms)
+- [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px, born `fireHot` and cooling only, through `ember` to `fireDeep` as they fade (the owner's fifth tune of 2026-11-12, was `ember`), additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of a heading 15° left of up (faster than the flakes on average), flicker, and are gone within 600 ms. (R64, R59; the owner's third tune of 2026-11-12, was within 25° of straight up)
 - [ ] The front crosses in 2000 ms, linear, and the ash is gone at 3000 ms. (R55, R57)
 - [ ] With reduced motion, no burn and no flake are made and the card fades over 600 ms. (R60)
 - [ ] A failed read, no ink or no canvas texture: no burn, a fade, logged once. (R60)
@@ -926,6 +998,7 @@ record's data.
 - Taking the dust or the smoke out, or changing any of their values. Both stay as alternates in
   the code and the gallery; the ash is the game's leave.
 - A shader burn on the GPU; a burn spreading from several points.
-- A setting that lets a player choose; any baked art, new colour or token.
+- A setting that lets a player choose; any baked art; any new colour or token beyond the fire
+  ramp's three (the owner's fifth tune of 2026-11-12).
 - A wisp of smoke off the front (`fx_smoke` at a low alpha): offered with the rework of
   2026-11-12 as optional, not built; the ash stays free of the art library.
