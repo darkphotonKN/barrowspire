@@ -710,7 +710,7 @@ func archer(em *ecs.EntityManager, x, y float64) *ecs.Entity {
 		ShotProjectileType: "bone_arrow",
 		ShotSpeed:          420,
 		ShotRadius:         8,
-		ShotMaxFlight:      700,
+		ShotMaxFlight:      850,
 	})
 	e.AddComponent(components.NewTransformComponent(x, y))
 	e.AddComponent(components.NewVelocityComponent(0, 0, 130))

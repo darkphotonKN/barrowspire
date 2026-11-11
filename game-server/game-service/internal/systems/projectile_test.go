@@ -216,7 +216,7 @@ func TestProjectileSystem_OwnerGoneStillReportsTheirIdentity(t *testing.T) {
 }
 
 // boneArrow is a level-1 Bone Archer's arrow as loosed by owner from (0, 0)
-// along +x: 420 px/s, radius 8, 700 px of flight. FS-B4SG9 §A R2.
+// along +x: 420 px/s, radius 8, 850 px of flight. FS-B4SG9 §A R2.
 func boneArrow(em *ecs.EntityManager, owner uuid.UUID) *ecs.Entity {
 	e := em.CreateEntity()
 	e.AddComponent(components.NewTransformComponent(0, 0))
@@ -228,7 +228,7 @@ func boneArrow(em *ecs.EntityManager, owner uuid.UUID) *ecs.Entity {
 		Coefficient:      1,
 		CritChance:       BaseCritChance,
 		FromMonster:      true,
-	}, 420, 700, 8, "bone_arrow"))
+	}, 420, 850, 8, "bone_arrow"))
 	return e
 }
 
@@ -255,23 +255,23 @@ func TestProjectileSystem_MonsterArrow_StopsAtAWall(t *testing.T) {
 	assert.False(t, flying)
 }
 
-// A monster's arrow ends at its max flight, 700 px. FS-B4SG9 §A R10.
+// A monster's arrow ends at its max flight, 850 px. FS-B4SG9 §A R10.
 func TestProjectileSystem_MonsterArrow_EndsAtItsMaxFlight(t *testing.T) {
 	em := ecs.NewEntityManager()
 	a := archer(em, 0, 0)
 	arrow := boneArrow(em, a.ID)
 	sys := NewProjectileSystem(em, PlayerDamageOff)
 
-	for range 16 {
+	for range 20 {
 		sys.Update(0.1, em.GetAllEntities()) // 42 px a step
 	}
 	_, flying := em.GetEntity(arrow.ID)
-	require.True(t, flying, "672 px flown")
+	require.True(t, flying, "840 px flown")
 
 	sys.Update(0.1, em.GetAllEntities())
 
 	_, flying = em.GetEntity(arrow.ID)
-	assert.False(t, flying, "714 px is past its 700")
+	assert.False(t, flying, "882 px is past its 850")
 }
 
 // A monster's arrow passes through monsters, corpses and delvers out of play.

@@ -1034,7 +1034,7 @@ func TestCombatSystem_MonsterShot_FiresOneProjectileWithTheMonstersSnapshot(t *t
 	assert.Equal(t, "bone_arrow", arrow.shot.ProjectileType)
 	assert.Equal(t, 420.0, arrow.shot.Speed)
 	assert.Equal(t, 8.0, arrow.shot.Radius)
-	assert.Equal(t, 700.0, arrow.shot.MaxDistance)
+	assert.Equal(t, 850.0, arrow.shot.MaxDistance)
 	assert.Zero(t, arrow.shot.PierceLeft)
 
 	assert.Equal(t, 100.0, arrow.at.X)

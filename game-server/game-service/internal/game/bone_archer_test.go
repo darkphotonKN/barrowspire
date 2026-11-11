@@ -156,6 +156,29 @@ func TestBoneArcher_StrafingDodgesTheArrowRunningStraightAwayDoesNot(t *testing.
 	}
 }
 
+// A delver at the base 200 px/s who runs straight away from 320 px from the
+// first tick of the draw is still hit: the draw's clock runs a tick over
+// 0.6 s, so they are 453 px away when the arrow leaves, and an arrow of radius
+// 8 closing at 220 px/s on a body of radius 20 reaches them after 826 px of
+// flight. FS-B4SG9 §A R2, R8, user story 6.
+func TestBoneArcher_RunningStraightAwayFromTheStartOfTheDrawDoesNotDodge(t *testing.T) {
+	s := unstartedRun(t)
+	boneArcher(s, 1000, 1000)
+	_, delver := placeDelver(t, s, "warrior", 1320, 1000)
+	v := velocityOf(delver)
+	require.Equal(t, 200.0, v.Speed)
+	v.VX, v.VY = 1, 0
+
+	_, n := tickUntilLoosed(t, s, nil)
+	require.Equal(t, 20, n, "the draw lasted 19 ticks, 0.633 s")
+	require.InDelta(t, 1000+320+20*200*tickLength, transformOf(t, delver).X, 1e-6, "they ran through all of it")
+	full := currentHealth(delver)
+	tickFor(s, 3)
+
+	require.Empty(t, boneArrows(s), "the arrow is spent")
+	assert.Less(t, currentHealth(delver), full)
+}
+
 // A Bone Archer killed mid-draw looses nothing. FS-B4SG9 §A R12.
 func TestBoneArcher_KilledMidDraw_LoosesNothing(t *testing.T) {
 	s := unstartedRun(t)

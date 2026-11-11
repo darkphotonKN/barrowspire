@@ -56,7 +56,7 @@ func TestBoneArcherSheet_CarriesItsNumbers(t *testing.T) {
 		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 360, LeashRadius: 560,
-		Shot: monsterShot{ProjectileType: "bone_arrow", Speed: 420, Radius: 8, MaxFlight: 700},
+		Shot: monsterShot{ProjectileType: "bone_arrow", Speed: 420, Radius: 8, MaxFlight: 850},
 	}, sheet)
 }
 
@@ -91,7 +91,7 @@ func TestCreateMonsterEntity_BoneArcherCarriesItsShot(t *testing.T) {
 	assert.Equal(t, "bone_arrow", monster.ShotProjectileType)
 	assert.Equal(t, 420.0, monster.ShotSpeed)
 	assert.Equal(t, 8.0, monster.ShotRadius)
-	assert.Equal(t, 700.0, monster.ShotMaxFlight)
+	assert.Equal(t, 850.0, monster.ShotMaxFlight)
 }
 
 // A monster whose sheet has no shot spawns with none on its component.
