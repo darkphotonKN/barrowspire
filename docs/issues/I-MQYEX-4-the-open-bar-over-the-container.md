@@ -1,6 +1,6 @@
 ---
 id: I-MQYEX-4
-status: open
+status: done
 implements: FS-MQYEX
 blocked_by: []
 labels: [ready-for-agent]

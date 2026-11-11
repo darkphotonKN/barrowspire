@@ -3,7 +3,7 @@ id: I-MQYEX-6
 status: open
 implements: FS-MQYEX
 blocked_by: [I-MQYEX-1, I-MQYEX-2, I-MQYEX-3, I-MQYEX-4, I-MQYEX-5]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-MQYEX slice 6: live check — the timed open in a run, two browsers (HITL, Nick)"
 ---
 Implements FS-MQYEX §Acceptance Criteria (live check)
