@@ -688,3 +688,308 @@ func TestMonsterAISystem_GhoulHasNoClaw(t *testing.T) {
 	}
 	assert.Zero(t, monster(g).SlamCooldownRemaining)
 }
+
+// archer stands a level-1 Bone Archer (the sheet's timings, radii and shot) at
+// (x, y), home there. FS-B4SG9 §A R2.
+func archer(em *ecs.EntityManager, x, y float64) *ecs.Entity {
+	e := em.CreateEntity()
+	e.AddComponent(&components.MonsterComponent{
+		Archetype:      components.MonsterArchetypeBoneArcher,
+		Level:          1,
+		Name:           "Bone Archer",
+		HomeX:          x,
+		HomeY:          y,
+		Action:         components.MonsterActionIdle,
+		FacingY:        1,
+		AttackInterval: 2.0,
+		WindUp:         0.6,
+		AttackRange:    320,
+		AggroRadius:    360,
+		LeashRadius:    560,
+
+		ShotProjectileType: "bone_arrow",
+		ShotSpeed:          420,
+		ShotRadius:         8,
+		ShotMaxFlight:      700,
+	})
+	e.AddComponent(components.NewTransformComponent(x, y))
+	e.AddComponent(components.NewVelocityComponent(0, 0, 130))
+	e.AddComponent(components.NewHealthComponent(30, 30))
+	e.AddComponent(&components.CombatComponent{Attack: 7, Defense: 2})
+	e.AddComponent(components.NewAttackIntentComponent())
+	return e
+}
+
+// handed takes what a monster has handed the CombatSystem and not had
+// resolved, leaving it nothing queued.
+func handed(e *ecs.Entity) []components.AttackIntent {
+	c, _ := e.GetComponent(ecs.ComponentTypeAttackIntent)
+	ic := c.(*components.AttackIntentComponent)
+	pending := ic.Pending
+	ic.Pending = nil
+	return pending
+}
+
+// leaveDelver marks a delver left behind: out of play, as an escape is.
+func leaveDelver(e *ecs.Entity) {
+	c, _ := e.GetComponent(ecs.ComponentTypePlayer)
+	c.(*components.PlayerComponent).LeftBehind = true
+}
+
+// A ranged monster walks at its target until they are within its shooting
+// range, then stands and faces them. FS-B4SG9 §A R4.
+func TestMonsterAISystem_Ranged_WalksToShootingRangeThenStands(t *testing.T) {
+	tests := []struct {
+		name   string
+		apart  float64
+		stands bool
+	}{
+		{"at 500 px it walks", 500, false},
+		{"a step outside its range it walks", 321, false},
+		{"at 320 px it stands", 320, true},
+		{"point-blank it stands", 30, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			a := archer(em, 500, 500)
+			d := delver(em, 500, 500+tt.apart)
+			monster(a).Target = d.ID // 500 px is past its aggro, inside its leash
+
+			think(em)
+
+			m := monster(a)
+			assert.InDelta(t, 0.0, m.FacingX, 1e-9)
+			assert.InDelta(t, 1.0, m.FacingY, 1e-9)
+			if !tt.stands {
+				assert.InDelta(t, 1.0, velocityOf(t, a).VY, 1e-9)
+				assert.Equal(t, components.MonsterActionMove, m.Action)
+				return
+			}
+			assert.Zero(t, velocityOf(t, a).VX)
+			assert.Zero(t, velocityOf(t, a).VY)
+			assert.Equal(t, components.MonsterActionAttack, m.Action, "its interval has elapsed: it draws")
+		})
+	}
+}
+
+// Through the wind-up a ranged monster stands still, reports `attack` and keeps
+// turning to face its target; the shot it hands over as the wind-up ends is
+// aimed at where the target stands on that tick, not where they stood when the
+// draw began. FS-B4SG9 §A R7, R8.
+func TestMonsterAISystem_Ranged_DrawFollowsItsTargetAndShootsWhereTheyStand(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 500, 500)
+	d := delver(em, 700, 500)
+
+	think(em)
+	require.Equal(t, components.MonsterActionAttack, monster(a).Action)
+	require.InDelta(t, 1.0, monster(a).FacingX, 1e-9)
+
+	var shots []components.AttackIntent
+	var x, y float64
+	for i := 0; len(shots) == 0 && i < ticks(0.6); i++ {
+		// the target circles round to stand below it
+		x, y = 500+float64(i), 700
+		moveTo(t, d, x, y)
+		think(em)
+
+		m := monster(a)
+		assert.Equal(t, components.MonsterActionAttack, m.Action)
+		assert.Zero(t, velocityOf(t, a).VX)
+		assert.Zero(t, velocityOf(t, a).VY)
+		dist := math.Hypot(x-500, y-500)
+		assert.InDelta(t, (x-500)/dist, m.FacingX, 1e-9, "the draw points at its target")
+		assert.InDelta(t, (y-500)/dist, m.FacingY, 1e-9)
+		shots = handed(a)
+	}
+
+	assert.Equal(t, []components.AttackIntent{{Kind: components.AttackMonsterShot, TargetX: x, TargetY: y}}, shots)
+}
+
+// A melee wind-up does not turn: the swing keeps the facing it began with.
+func TestMonsterAISystem_MeleeWindUp_DoesNotTurn(t *testing.T) {
+	em := ecs.NewEntityManager()
+	g := hunter(em, 500, 500)
+	d := delver(em, 540, 500)
+	think(em)
+	require.Equal(t, components.MonsterActionAttack, monster(g).Action)
+
+	moveTo(t, d, 500, 540)
+	think(em)
+
+	assert.InDelta(t, 1.0, monster(g).FacingX, 1e-9)
+	assert.InDelta(t, 0.0, monster(g).FacingY, 1e-9)
+}
+
+// There is no range check at release: a target who ran out of its shooting
+// range during the draw, still inside the leash, is shot at where they stand.
+// FS-B4SG9 §A R8.
+func TestMonsterAISystem_Ranged_TargetOutOfRangeAtRelease_IsStillShotAt(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 500, 500)
+	d := delver(em, 700, 500)
+	think(em)
+
+	moveTo(t, d, 1040, 500) // 540: past range × 1.25, inside the 560 leash
+	var shots []components.AttackIntent
+	for i := 0; len(shots) == 0 && i < ticks(0.6); i++ {
+		think(em)
+		shots = handed(a)
+	}
+
+	assert.Equal(t, []components.AttackIntent{{Kind: components.AttackMonsterShot, TargetX: 1040, TargetY: 500}}, shots)
+}
+
+// A ranged monster with no target when its wind-up ends looses nothing.
+// FS-B4SG9 §A R8, R12.
+func TestMonsterAISystem_Ranged_NoTargetAtTheWindUpsEnd_LoosesNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		lose func(t *testing.T, d *ecs.Entity)
+	}{
+		{"the target died", func(_ *testing.T, d *ecs.Entity) { killDelver(d) }},
+		{"the target escaped", func(_ *testing.T, d *ecs.Entity) { escapeDelver(d) }},
+		{"the target left", func(_ *testing.T, d *ecs.Entity) { leaveDelver(d) }},
+		{"the target passed the leash", func(t *testing.T, d *ecs.Entity) { moveTo(t, d, 500+561, 500) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			a := archer(em, 500, 500)
+			d := delver(em, 700, 500)
+			think(em)
+			require.Equal(t, components.MonsterActionAttack, monster(a).Action)
+
+			tt.lose(t, d)
+			for range ticks(0.6) {
+				think(em)
+				assert.Empty(t, handed(a))
+			}
+
+			assert.Zero(t, monster(a).WindUpRemaining, "the wind-up ran out")
+			assert.Equal(t, uuid.Nil, monster(a).Target)
+		})
+	}
+}
+
+// Its target gone and another taken up during the wind-up: the shot goes at
+// the one it has when the wind-up ends. FS-B4SG9 §Edge States "Target swaps
+// during a wind-up".
+func TestMonsterAISystem_Ranged_TargetSwapsDuringTheWindUp_ShootsTheNewOne(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 500, 500)
+	first := delver(em, 700, 500)
+	think(em)
+	require.Equal(t, first.ID, monster(a).Target)
+
+	killDelver(first)
+	second := delver(em, 500, 300)
+	var shots []components.AttackIntent
+	for i := 0; len(shots) == 0 && i < ticks(0.6); i++ {
+		think(em)
+		shots = handed(a)
+	}
+
+	assert.Equal(t, second.ID, monster(a).Target)
+	assert.Equal(t, []components.AttackIntent{{Kind: components.AttackMonsterShot, TargetX: 500, TargetY: 300}}, shots)
+}
+
+// A delver standing against a ranged monster is shot at point-blank: it never
+// steps away from them and never queues a melee strike. FS-B4SG9 §A R6.
+func TestMonsterAISystem_Ranged_PointBlank_StandsAndShootsNeverStrikes(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 500, 500)
+	delver(em, 545, 500)
+
+	shots := 0
+	for range ticks(5) {
+		think(em)
+		assert.Zero(t, velocityOf(t, a).VX)
+		assert.Zero(t, velocityOf(t, a).VY)
+		for _, intent := range handed(a) {
+			require.Equal(t, components.AttackMonsterShot, intent.Kind)
+			shots++
+		}
+	}
+
+	assert.Equal(t, 3, shots, "one at 0.6 s, then every 2.0 s")
+}
+
+// Between arrows it stands idle, facing its target. FS-B4SG9 §A R6.
+func TestMonsterAISystem_Ranged_BetweenArrows_StandsIdleFacingItsTarget(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 500, 500)
+	d := delver(em, 700, 500)
+	for i := 0; len(handed(a)) == 0; i++ {
+		require.Less(t, i, ticks(0.6), "it loosed its first arrow")
+		think(em)
+	}
+
+	moveTo(t, d, 500, 700)
+	think(em)
+
+	m := monster(a)
+	assert.Equal(t, components.MonsterActionIdle, m.Action)
+	assert.Zero(t, velocityOf(t, a).VX)
+	assert.Zero(t, velocityOf(t, a).VY)
+	assert.InDelta(t, 0.0, m.FacingX, 1e-9)
+	assert.InDelta(t, 1.0, m.FacingY, 1e-9)
+}
+
+// Hit from beyond its aggro radius, a ranged monster takes the attacker as its
+// target and walks to its shooting range. FS-B4SG9 §A R5 (aggro and
+// retaliation unchanged).
+func TestMonsterAISystem_Ranged_HitFromBeyondAggro_WalksToRange(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 500, 500)
+	d := delver(em, 950, 500) // 450 > 360 aggro
+	think(em)
+	require.Equal(t, uuid.Nil, monster(a).Target)
+
+	monster(a).LastAttacker = d.ID
+	hunt(em, 1)
+	assert.Equal(t, d.ID, monster(a).Target)
+	assert.Equal(t, components.MonsterActionMove, monster(a).Action)
+
+	for i := 0; monster(a).Action == components.MonsterActionMove && i < ticks(2); i++ {
+		hunt(em, 1)
+	}
+	gap := 950 - transformOf(t, a).X
+	assert.LessOrEqual(t, gap, 320.0)
+	assert.Greater(t, gap, 320.0-130*tickSeconds-1e-9, "it stopped on the step that brought it in range")
+	assert.Equal(t, components.MonsterActionAttack, monster(a).Action)
+}
+
+// skirmish ticks a run's systems in their order (monster AI, movement,
+// projectiles, combat) for n ticks. FS-77AB6 §Requirements 27.
+func skirmish(em *ecs.EntityManager, n int) {
+	ai := NewMonsterAISystem(firstRoll, nil)
+	move := NewMovementSystem()
+	shots := NewProjectileSystem(em, PlayerDamageOff)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+	for range n {
+		entities := em.GetAllEntities()
+		ai.Update(tickSeconds, entities)
+		move.Update(tickSeconds, entities)
+		combat.Update(tickSeconds, entities, shots.Update(tickSeconds, entities))
+	}
+}
+
+// An arrow reaching a delver in play damages them through the CombatSystem by
+// the monster formula: the archer's damage at level, mitigated by the delver's
+// defense. FS-B4SG9 §A R9.
+func TestMonsterAISystem_Ranged_ArrowDamagesByTheMonsterFormula(t *testing.T) {
+	em := ecs.NewEntityManager()
+	archer(em, 500, 500)
+	d := delver(em, 700, 500)
+
+	skirmish(em, ticks(0.6))
+	require.Len(t, projectiles(em), 1, "loosed")
+	require.Equal(t, 150, health(d), "an arrow loosed on one tick first moves on the next")
+
+	skirmish(em, ticks(0.5))
+
+	assert.Equal(t, 150-mitigated(7, 1), health(d))
+	assert.Empty(t, projectiles(em), "the arrow never pierces")
+}
