@@ -1213,3 +1213,28 @@ describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
     expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
   });
 });
+
+// FS-PQ2TW R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the field with its start.
+describe("FieldScene arrival from its start (FS-PQ2TW R5–R8)", () => {
+  it.each([true, false])("should keep the arrival %s its start was handed, beside its field", (arrival) => {
+    const field = new FieldScene() as unknown as {
+      init(data?: { field?: string; arrival?: boolean }): void;
+      arrival: boolean;
+      field: string;
+    };
+
+    field.init({ field: "forlorn_forest", arrival });
+
+    expect(field.arrival).toBe(arrival);
+    expect(field.field).toBe("forlorn_forest");
+  });
+
+  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
+    const field = new FieldScene() as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
+
+    field.init({ arrival: true });
+    field.init();
+
+    expect(field.arrival).toBe(false);
+  });
+});

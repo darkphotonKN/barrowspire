@@ -3626,3 +3626,29 @@ describe("HubScene messages while its art downloads (FS-C4JWH Edge States)", () 
     );
   });
 });
+
+// FS-PQ2TW R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the town with its start.
+describe("HubScene arrival from its start (FS-PQ2TW R5–R8)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([true, false])("should keep the arrival %s its start was handed", (arrival) => {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const hub = hubOnStage().hub as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
+
+    hub.init({ arrival });
+
+    expect(hub.arrival).toBe(arrival);
+  });
+
+  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const hub = hubOnStage().hub as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
+
+    hub.init({ arrival: true });
+    hub.init();
+
+    expect(hub.arrival).toBe(false);
+  });
+});
