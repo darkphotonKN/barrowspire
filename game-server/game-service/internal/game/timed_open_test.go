@@ -259,3 +259,420 @@ func TestTimedOpen_RidesTheOwnersStateAlone(t *testing.T) {
 	assert.Equal(t, true, containerEntry()["is_open"])
 	assert.NotContains(t, me(), "timed_open", "gone once the container opens")
 }
+
+// FS-MQYEX §Requirements 6–13. I-MQYEX-2.
+
+// reach applies the delver's interact on the next tick, as a client's arrives,
+// and fails the test if it is refused.
+func reach(t *testing.T, s *Session, playerID, containerID uuid.UUID) {
+	t.Helper()
+	var reachErr error
+	s.queueIntent(func() { reachErr = s.handleInteract(playerID, containerID) })
+	tick(s)
+	require.NoError(t, reachErr)
+}
+
+// assertShutAndUnrolled is a container a cancelled timed open left alone.
+func assertShutAndUnrolled(t *testing.T, container *ecs.Entity) {
+	t.Helper()
+	assert.False(t, openable(t, container).IsOpen, "a cancel opens nothing")
+	assert.False(t, openable(t, container).HasBeenOpened, "and rolls nothing")
+	assert.Empty(t, chestHolds(t, container))
+}
+
+// A delver whose body moves during a timed open has none afterwards, and the
+// container stays shut and unrolled however long they then wait: walking, and
+// the warrior's dash. R6, R11, D3.
+func TestTimedOpen_MovingCancels(t *testing.T) {
+	moves := map[string]func(t *testing.T, s *Session, player uuid.UUID){
+		"walking": func(t *testing.T, s *Session, player uuid.UUID) {
+			require.NoError(t, s.handleMove(player, 0, 1))
+			tick(s)
+			require.NoError(t, s.handleMove(player, 0, 0))
+		},
+		"a dash": func(t *testing.T, s *Session, player uuid.UUID) {
+			require.NoError(t, s.handleCastSkill(player, "dash", 500, 900))
+			// the cast lands on one tick and carries the body from the next
+			ticks(s, 2)
+		},
+	}
+	for name, move := range moves {
+		t.Run(name, func(t *testing.T) {
+			s, player := containerSession(t, 500, 500)
+			chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+			delver := delverEntity(t, s, player)
+			reach(t, s, player, chest.ID)
+			ticks(s, 10)
+			require.NotNil(t, timedOpenOf(delver))
+
+			move(t, s, player)
+
+			require.NotEqual(t, components.TransformComponent{X: 500, Y: 500}, *transformOf(t, delver), "the body moved")
+			assert.Nil(t, timedOpenOf(delver), "moving cancels the timed open")
+			ticks(s, timedOpenTicks()+1)
+			assertShutAndUnrolled(t, chest)
+		})
+	}
+}
+
+// A move that moves nothing cancels nothing: one of no velocity, and one into
+// a wall the body already stands against. The timed open completes on its
+// 45th tick all the same. R6, D3.
+func TestTimedOpen_AMoveThatMovesNothingDoesNotCancel(t *testing.T) {
+	t.Run("zero velocity", func(t *testing.T) {
+		s, player := containerSession(t, 500, 500)
+		chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+		reach(t, s, player, chest.ID)
+
+		s.queueIntent(func() { _ = s.handleMove(player, 0, 0) })
+		ticks(s, timedOpenTicks()-1)
+		require.NotNil(t, timedOpenOf(delverEntity(t, s, player)), "still counting on the 44th tick")
+		assert.False(t, openable(t, chest).IsOpen)
+
+		tick(s)
+		assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick")
+	})
+	t.Run("a wall in the way", func(t *testing.T) {
+		s, player := containerSession(t, 500, 500)
+		delver := delverEntity(t, s, player)
+		CreateWallEntity(s.EntityManager, WallConfig{X: 540, Y: 0, Width: 20, Height: constants.MapHeight}, uuid.New())
+		// walk into the wall until it stops the body
+		require.NoError(t, s.handleMove(player, 1, 0))
+		ticks(s, 30)
+		at := *transformOf(t, delver)
+		tick(s)
+		require.Equal(t, at, *transformOf(t, delver), "the wall holds the body")
+		chest, _ := s.EntityManager.GetEntity(s.AddContainer(at.X, at.Y+5, components.ContainerKindChest))
+
+		reach(t, s, player, chest.ID)
+		ticks(s, timedOpenTicks()-1)
+		require.Equal(t, at, *transformOf(t, delver), "still pushing at the wall, going nowhere")
+		require.NotNil(t, timedOpenOf(delver), "still counting on the 44th tick")
+		assert.False(t, openable(t, chest).IsOpen)
+
+		tick(s)
+		assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick")
+	})
+}
+
+// strikeFrom stands a ghoul beside the delver and has it strike them on the
+// next tick.
+func strikeFrom(t *testing.T, s *Session, delver *ecs.Entity) {
+	t.Helper()
+	at := transformOf(t, delver)
+	ghoul := CreateMonsterEntity(s.EntityManager, MonsterConfig{Archetype: components.MonsterArchetypeGhoul, Level: 1, X: at.X + 40, Y: at.Y})
+	ic, _ := ghoul.GetComponent(ecs.ComponentTypeAttackIntent)
+	ic.(*components.AttackIntentComponent).Pending = []components.AttackIntent{{Kind: components.AttackMonsterStrike, TargetEntityID: delver.ID}}
+}
+
+// A hit that costs the delver health cancels their timed open: the container
+// stays shut and unrolled. R7, R11, D4.
+func TestTimedOpen_AHitThatCostsHealthCancels(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	delver := delverEntity(t, s, player)
+	reach(t, s, player, chest.ID)
+	ticks(s, 10)
+	before := currentHealth(delver)
+
+	strikeFrom(t, s, delver)
+	tick(s)
+
+	require.Less(t, currentHealth(delver), before, "the strike cost health")
+	assert.Nil(t, timedOpenOf(delver), "a hit cancels the timed open")
+	assertShutAndUnrolled(t, chest)
+}
+
+// A strike the mercenary parries costs no health and cancels nothing. R7, D4.
+func TestTimedOpen_AParriedStrikeDoesNotCancel(t *testing.T) {
+	s, _ := containerSession(t, 100, 100)
+	merc, delver := placeDelver(t, s, "mercenary", 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	reach(t, s, merc, chest.ID)
+	before := currentHealth(delver)
+
+	require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+	strikeFrom(t, s, delver)
+	tick(s)
+
+	require.Equal(t, 1, parryChargesOf(t, delver).Current, "the strike was parried")
+	require.Equal(t, before, currentHealth(delver), "and cost nothing")
+	assert.NotNil(t, timedOpenOf(delver), "a parried strike cancels nothing")
+}
+
+// A heal cancels nothing, and nor does the drink that gave it: the timed open
+// completes on its 45th tick. R7, R13, D4, D9.
+func TestTimedOpen_AHealDoesNotCancel(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	delver := delverEntity(t, s, player)
+	tick(s) // the gear is seated
+	hurt(t, delver, 40, 150)
+	inConsumableSlot(t, s, delver, 1, lootedHealthPotion(30))
+	reach(t, s, player, chest.ID)
+
+	s.Drink(player)
+	ticks(s, timedOpenTicks()-1)
+
+	require.Equal(t, 70, currentHealth(delver), "the drink healed")
+	require.NotNil(t, timedOpenOf(delver), "still counting on the 44th tick")
+	tick(s)
+	assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick")
+}
+
+// A hit on the tick the timed open would complete cancels it: the container
+// stays shut. R10, D6.
+func TestTimedOpen_AHitOnTheLastTickCancels(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	delver := delverEntity(t, s, player)
+	reach(t, s, player, chest.ID)
+	ticks(s, timedOpenTicks()-1)
+	require.NotNil(t, timedOpenOf(delver), "still counting on the 44th tick")
+	before := currentHealth(delver)
+
+	strikeFrom(t, s, delver)
+	tick(s)
+
+	require.Less(t, currentHealth(delver), before, "the strike cost health")
+	assert.Nil(t, timedOpenOf(delver))
+	assertShutAndUnrolled(t, chest)
+}
+
+// A hit cancels even when the same tick's kill heals the delver for more than
+// the hit cost: the hit is read from the combat, not from the health the tick
+// ends on. R7, D4.
+func TestTimedOpen_AHitCancelsThoughAKillsHealOutweighsIt(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	delver := delverEntity(t, s, player)
+	wearing(t, s, delver, inHeadSlot, hollowCrown())
+	tick(s) // the gear seats
+	hurt(t, delver, 500, 1000)
+	reach(t, s, player, chest.ID)
+
+	require.NoError(t, s.handleAttack(player, frailGhoul(s, 500, 545).ID))
+	strikeFrom(t, s, delver)
+	tick(s)
+
+	require.Greater(t, currentHealth(delver), 500, "the kill healed more than the hit cost")
+	require.Less(t, currentHealth(delver), 540, "and the hit cost health")
+	assert.Nil(t, timedOpenOf(delver), "the hit cancels the timed open")
+}
+
+// A delver who is no longer in play has no timed open from that tick, and the
+// container they were opening stays shut: one who dies, one who escapes, and
+// one who leaves the run. Nobody else's timed open is touched. R9, R11, D7.
+func TestTimedOpen_ADelverOutOfPlayHasNone(t *testing.T) {
+	tests := []struct {
+		name    string
+		resolve func(t *testing.T, s *Session, playerID uuid.UUID, delver *ecs.Entity)
+		gone    bool // the body left the world
+	}{
+		{"dies", func(t *testing.T, _ *Session, _ uuid.UUID, delver *ecs.Entity) { kill(t, delver) }, false},
+		{"escapes", func(_ *testing.T, s *Session, playerID uuid.UUID, _ *ecs.Entity) { s.handlePlayerEscape(playerID) }, false},
+		{"leaves the run", func(_ *testing.T, s *Session, playerID uuid.UUID, _ *ecs.Entity) { s.RemovePlayer(playerID.String()) }, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, player := containerSession(t, 500, 500)
+			s.endSessionCh = make(chan bool, 64)
+			delver := delverEntity(t, s, player)
+			chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+			// someone else, at their own chest, keeps the run going
+			other, otherDelver := placeDelver(t, s, "mage", 900, 900)
+			otherChest, _ := s.EntityManager.GetEntity(s.AddContainer(905, 900, components.ContainerKindChest))
+			reach(t, s, player, chest.ID)
+			reach(t, s, other, otherChest.ID)
+
+			tt.resolve(t, s, player, delver)
+			tick(s)
+
+			if !tt.gone {
+				assert.Nil(t, timedOpenOf(delver), "out of play ends the timed open")
+			}
+			assert.NotNil(t, timedOpenOf(otherDelver), "nobody else's is touched")
+			ticks(s, timedOpenTicks())
+			assertShutAndUnrolled(t, chest)
+		})
+	}
+}
+
+// A floor change ends every timed open: the container went with the floor, and
+// nothing carries to the next one. R8–R9, D7.
+func TestTimedOpen_AFloorChangeLeavesNone(t *testing.T) {
+	s := newRun(t, &countingItemsClient{})
+	player := uuid.New()
+	s.AddPlayer(player, types.CharacterInPlay{Name: "Wren", Class: "warrior"}, "")
+	delver := delverEntity(t, s, player)
+	at := transformOf(t, delver)
+	chestID := s.AddContainer(at.X+5, at.Y, components.ContainerKindChest)
+	reach(t, s, player, chestID)
+	require.NotNil(t, timedOpenOf(delver))
+
+	require.NoError(t, s.regenerateFloor())
+	// where the body stood is not what ends it here: the container is gone
+	open := timedOpenOf(delver)
+	open.FromX, open.FromY = transformOf(t, delver).X, transformOf(t, delver).Y
+	tick(s)
+
+	_, stands := s.EntityManager.GetEntity(chestID)
+	require.False(t, stands, "the container went with the floor")
+	assert.Nil(t, timedOpenOf(delverEntity(t, s, player)), "a floor change leaves no timed open")
+}
+
+// A second reach for the container the delver is already opening changes
+// nothing: the time neither restarts nor shortens, and the container opens on
+// the 45th tick after the first reach. R12, D8.
+func TestTimedOpen_ASecondReachForTheSameContainerChangesNothing(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	delver := delverEntity(t, s, player)
+	dt := 1.0 / float64(constants.GameFrameRate)
+	reach(t, s, player, chest.ID)
+	ticks(s, 20)
+
+	releaseInteraction(s, chest.ID, player)
+	reach(t, s, player, chest.ID) // the 21st tick after the first reach's
+
+	open := timedOpenOf(delver)
+	require.NotNil(t, open)
+	assert.InDelta(t, 22*dt, open.Elapsed, 1e-9, "the time is not restarted")
+	assert.False(t, targetReserved(s, chest.ID), "and the container is still held for nobody")
+
+	ticks(s, timedOpenTicks()-22)
+	require.NotNil(t, timedOpenOf(delver), "nor shortened: still counting on the 44th tick")
+	assert.False(t, openable(t, chest).IsOpen)
+	tick(s)
+	assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick after the first reach")
+}
+
+// A reach for another shut container replaces the delver's timed open, from
+// zero: the first container stays shut and the second opens on the 45th tick
+// after its own reach. R12, D8.
+func TestTimedOpen_AReachForAnotherContainerReplacesIt(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	first, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	second, _ := s.EntityManager.GetEntity(s.AddContainer(500, 505, components.ContainerKindSack))
+	s.chestRand = fixedRand{f: SackEmptyChance}
+	delver := delverEntity(t, s, player)
+	dt := 1.0 / float64(constants.GameFrameRate)
+	reach(t, s, player, first.ID)
+	ticks(s, 20)
+
+	releaseInteraction(s, first.ID, player)
+	reach(t, s, player, second.ID)
+
+	open := timedOpenOf(delver)
+	require.NotNil(t, open)
+	assert.Equal(t, second.ID, open.ContainerID)
+	assert.InDelta(t, dt, open.Elapsed, 1e-9, "from zero")
+
+	ticks(s, timedOpenTicks()-1)
+	assert.False(t, openable(t, second).IsOpen, "shut on the 44th tick after its own reach")
+	tick(s)
+	assert.True(t, openable(t, second).IsOpen, "open on the 45th")
+	assertShutAndUnrolled(t, first)
+}
+
+// After a cancel the delver may reach again at once: the new timed open starts
+// from zero and completes after the full 1.5 s. Nothing is sent for the
+// cancel. R11, R20.
+func TestTimedOpen_AfterACancelTheNextReachStartsFromZero(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	sent := &recordingSender{}
+	s.sender = sent
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	delver := delverEntity(t, s, player)
+	dt := 1.0 / float64(constants.GameFrameRate)
+	reach(t, s, player, chest.ID)
+	ticks(s, 30)
+
+	// a step aside cancels it
+	require.NoError(t, s.handleMove(player, 0, 1))
+	tick(s)
+	require.NoError(t, s.handleMove(player, 0, 0))
+	require.Nil(t, timedOpenOf(delver))
+	assert.Empty(t, sent.to(player), "no reply for the cancel")
+
+	releaseInteraction(s, chest.ID, player)
+	reach(t, s, player, chest.ID)
+
+	open := timedOpenOf(delver)
+	require.NotNil(t, open, "the next reach starts a timed open")
+	assert.InDelta(t, dt, open.Elapsed, 1e-9, "from zero")
+	ticks(s, timedOpenTicks()-1)
+	assert.False(t, openable(t, chest).IsOpen, "shut on the 44th tick after the new reach")
+	tick(s)
+	assert.True(t, openable(t, chest).IsOpen, "open after the full 1.5 s")
+	assert.Empty(t, sent.to(player))
+}
+
+// Nothing but moving, a hit and leaving reach cancels: a delver who attacks,
+// casts an ability that leaves the body where it stands, or equips and
+// unequips, still has their timed open, and it completes on its 45th tick.
+// (A drink: TestTimedOpen_AHealDoesNotCancel.) R13, D9.
+func TestTimedOpen_NothingElseCancels(t *testing.T) {
+	acts := map[string]func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity){
+		"attacking": func(t *testing.T, s *Session, player uuid.UUID, _ *ecs.Entity) {
+			target := unarmoredTarget(s, 500, 545)
+			require.NoError(t, s.handleAttack(player, target.ID))
+			tick(s)
+			require.Less(t, currentHealth(target), 1000, "the attack landed")
+		},
+		"casting an ability that does not move the body": func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity) {
+			before := currentResource(delver)
+			require.NoError(t, s.handleCastSkill(player, "triple_fireball", 500, 900))
+			tick(s)
+			require.Less(t, currentResource(delver), before, "the cast was paid for")
+		},
+		"equipping and unequipping": func(t *testing.T, s *Session, _ uuid.UUID, delver *ecs.Entity) {
+			sword := carried(t, s, delver.ID, types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeWeapon, Name: "Sword"})
+			require.NoError(t, s.handleEquip(constants.ActionEquip, delver.ID, sword))
+			tick(s)
+			require.NoError(t, s.handleEquip(constants.ActionUnequip, delver.ID, sword))
+			tick(s)
+		},
+	}
+	classes := map[string]string{"casting an ability that does not move the body": "mage"}
+	for name, act := range acts {
+		t.Run(name, func(t *testing.T) {
+			class := classes[name]
+			if class == "" {
+				class = "warrior"
+			}
+			s, _ := containerSession(t, 100, 100)
+			player, delver := placeDelver(t, s, class, 500, 500)
+			chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+			reach(t, s, player, chest.ID)
+			ticks(s, 5)
+
+			act(t, s, player, delver)
+
+			open := timedOpenOf(delver)
+			require.NotNil(t, open, "the timed open is still running")
+			left := timedOpenTicks() - int(math.Round(open.Elapsed*float64(constants.GameFrameRate)))
+			ticks(s, left)
+			assert.False(t, openable(t, chest).IsOpen, "shut on the 44th tick")
+			tick(s)
+			assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick")
+		})
+	}
+}
+
+// A reach made while walking starts a timed open and loses it on the same
+// tick: no state ever shows it, and nothing opens. Edge state "the reach is
+// made while walking".
+func TestTimedOpen_AReachMadeWhileWalkingIsCancelledOnItsOwnTick(t *testing.T) {
+	s, player := containerSession(t, 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	require.NoError(t, s.handleMove(player, 0, 1))
+
+	reach(t, s, player, chest.ID)
+
+	assert.Nil(t, timedOpenOf(delverEntity(t, s, player)))
+	assert.NotContains(t, frameOf(t, s, types.WorldTypeRun, player)["current_player"], "timed_open")
+	require.NoError(t, s.handleMove(player, 0, 0))
+	ticks(s, timedOpenTicks()+1)
+	assertShutAndUnrolled(t, chest)
+}

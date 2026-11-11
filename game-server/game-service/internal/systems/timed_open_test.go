@@ -3,6 +3,7 @@ package systems
 import (
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
@@ -17,12 +18,21 @@ const (
 	timedOpenDuration = 1.5
 )
 
-// bodyAt is a delver's body standing at x, y.
+// bodyAt is a delver's body standing at x, y, in play at full health.
 func bodyAt(em *ecs.EntityManager, x, y float64) *ecs.Entity {
 	body := em.CreateEntity()
 	body.AddComponent(components.NewPlayerComponent(uuid.New(), "warrior", "Wren", false))
 	body.AddComponent(components.NewTransformComponent(x, y))
+	body.AddComponent(components.NewHealthComponent(100, 100))
 	return body
+}
+
+// containerBeside is a container standing 5 px east of x, y: in reach of a
+// body there.
+func containerBeside(em *ecs.EntityManager, x, y float64) uuid.UUID {
+	container := em.CreateEntity()
+	container.AddComponent(components.NewTransformComponent(x+5, y))
+	return container.ID
 }
 
 func timedOpenOn(t *testing.T, body *ecs.Entity) *components.TimedOpenComponent {
@@ -38,15 +48,15 @@ func timedOpenOn(t *testing.T, body *ecs.Entity) *components.TimedOpenComponent 
 func TestTimedOpenSystem_Start_PutsItOnTheBodyFromZero(t *testing.T) {
 	em := ecs.NewEntityManager()
 	body := bodyAt(em, 120, 340)
-	first, second := uuid.New(), uuid.New()
-	sys := NewTimedOpenSystem()
+	first, second := containerBeside(em, 120, 340), containerBeside(em, 120, 340)
+	sys := NewTimedOpenSystem(em)
 
 	sys.Start(body, first, timedOpenDuration)
-	assert.Equal(t, components.TimedOpenComponent{ContainerID: first, Duration: timedOpenDuration, FromX: 120, FromY: 340}, *timedOpenOn(t, body))
+	assert.Equal(t, components.TimedOpenComponent{ContainerID: first, Duration: timedOpenDuration, FromX: 120, FromY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
 
 	sys.Update(timedOpenTick, em.GetAllEntities())
 	sys.Start(body, second, timedOpenDuration)
-	assert.Equal(t, components.TimedOpenComponent{ContainerID: second, Duration: timedOpenDuration, FromX: 120, FromY: 340}, *timedOpenOn(t, body))
+	assert.Equal(t, components.TimedOpenComponent{ContainerID: second, Duration: timedOpenDuration, FromX: 120, FromY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
 }
 
 // Each tick counts its simulation time on the timed open, the reach's own
@@ -55,8 +65,8 @@ func TestTimedOpenSystem_Start_PutsItOnTheBodyFromZero(t *testing.T) {
 func TestTimedOpenSystem_Update_CompletesOnTheTickAfterTheTimeIsCounted(t *testing.T) {
 	em := ecs.NewEntityManager()
 	body := bodyAt(em, 500, 500)
-	container := uuid.New()
-	sys := NewTimedOpenSystem()
+	container := containerBeside(em, 500, 500)
+	sys := NewTimedOpenSystem(em)
 	sys.Start(body, container, timedOpenDuration)
 
 	for n := 1; n <= 45; n++ {
@@ -74,8 +84,8 @@ func TestTimedOpenSystem_Update_CompletesOnTheTickAfterTheTimeIsCounted(t *testi
 func TestTimedOpenSystem_Update_CountsEachBodysOwn(t *testing.T) {
 	em := ecs.NewEntityManager()
 	early, late, idle := bodyAt(em, 100, 100), bodyAt(em, 200, 100), bodyAt(em, 300, 100)
-	chest, sack := uuid.New(), uuid.New()
-	sys := NewTimedOpenSystem()
+	chest, sack := containerBeside(em, 100, 100), containerBeside(em, 200, 100)
+	sys := NewTimedOpenSystem(em)
 
 	sys.Start(early, chest, timedOpenDuration)
 	for range 10 {
@@ -89,4 +99,161 @@ func TestTimedOpenSystem_Update_CountsEachBodysOwn(t *testing.T) {
 	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: early.ID, ContainerID: chest}}, sys.Update(timedOpenTick, em.GetAllEntities()))
 	assert.InDelta(t, 36*timedOpenTick, timedOpenOn(t, late).Elapsed, 1e-9, "the other keeps counting")
 	assert.False(t, idle.HasComponent(ecs.ComponentTypeTimedOpen))
+}
+
+// FS-MQYEX §Requirements 6–13. I-MQYEX-2.
+
+// A body that is not where it stood at the reach has no timed open after the
+// tick, and nothing is reported for it: a cancel opens nothing. However far
+// along it was, and by whatever moved it. R6, R11, D3.
+func TestTimedOpenSystem_Update_ABodyThatMovedIsCancelled(t *testing.T) {
+	for _, counted := range []int{0, 20, 45} {
+		em := ecs.NewEntityManager()
+		body := bodyAt(em, 500, 500)
+		sys := NewTimedOpenSystem(em)
+		sys.Start(body, containerBeside(em, 500, 500), timedOpenDuration)
+		for range counted {
+			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+		}
+
+		tc, _ := body.GetComponent(ecs.ComponentTypeTransform)
+		tc.(*components.TransformComponent).X += 0.5
+
+		assert.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()), "%d ticks in: a cancel completes nothing", counted)
+		assert.False(t, body.HasComponent(ecs.ComponentTypeTimedOpen), "%d ticks in: the timed open is gone", counted)
+	}
+}
+
+func healthOn(t *testing.T, body *ecs.Entity) *components.HealthComponent {
+	t.Helper()
+	hc, ok := body.GetComponent(ecs.ComponentTypeHealth)
+	require.True(t, ok)
+	return hc.(*components.HealthComponent)
+}
+
+// A hit costs health during the tick's combat: a body with less health after
+// it than it went in with has no timed open after the tick. Health that rose,
+// and health that changed before the combat, cancel nothing; a heal before the
+// combat does not hide a hit in it. R7, D4.
+func TestTimedOpenSystem_Update_AHitThatCostHealthCancels(t *testing.T) {
+	tests := []struct {
+		name         string
+		beforeCombat int // health change before the tick's combat
+		inCombat     int // health change in it
+		cancelled    bool
+	}{
+		{"a hit", 0, -1, true},
+		{"a heal before the combat, then a hit", +30, -10, true},
+		{"no hit", 0, 0, false},
+		{"a heal", 0, +10, false},
+		{"health lost before the combat", -5, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			body := bodyAt(em, 500, 500)
+			health := healthOn(t, body)
+			health.CurrentHealth = 60
+			sys := NewTimedOpenSystem(em)
+			sys.Start(body, containerBeside(em, 500, 500), timedOpenDuration)
+			sys.MarkHealth(em.GetAllEntities())
+			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+
+			health.CurrentHealth += tt.beforeCombat
+			sys.MarkHealth(em.GetAllEntities())
+			health.CurrentHealth += tt.inCombat
+
+			assert.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+			assert.Equal(t, !tt.cancelled, body.HasComponent(ecs.ComponentTypeTimedOpen))
+		})
+	}
+}
+
+// A timed open on a container that is farther than the interact range from
+// the body, or no longer in the world, is cancelled; one at the very edge of
+// the range is in reach, as it is for the reach itself. R8, D5.
+func TestTimedOpenSystem_Update_OutOfReachOfTheContainerIsCancelled(t *testing.T) {
+	const reach = constants.DefaultInteractableRange
+	tests := []struct {
+		name      string
+		change    func(em *ecs.EntityManager, container *ecs.Entity)
+		cancelled bool
+	}{
+		{"the container is gone", func(em *ecs.EntityManager, container *ecs.Entity) { em.RemoveEntity(container.ID) }, true},
+		{"the container is past the range", func(_ *ecs.EntityManager, container *ecs.Entity) {
+			container.AddComponent(components.NewTransformComponent(500+reach+1, 500))
+		}, true},
+		{"the container is at the edge of the range", func(_ *ecs.EntityManager, container *ecs.Entity) {
+			container.AddComponent(components.NewTransformComponent(500, 500+reach))
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			body := bodyAt(em, 500, 500)
+			container, _ := em.GetEntity(containerBeside(em, 500, 500))
+			sys := NewTimedOpenSystem(em)
+			sys.Start(body, container.ID, timedOpenDuration)
+			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+			require.True(t, body.HasComponent(ecs.ComponentTypeTimedOpen))
+
+			tt.change(em, container)
+
+			assert.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+			assert.Equal(t, !tt.cancelled, body.HasComponent(ecs.ComponentTypeTimedOpen))
+		})
+	}
+}
+
+// A start on the container the body is already opening changes nothing: what
+// is counted stays counted, and it still completes when its time has passed.
+// R12, D8.
+func TestTimedOpenSystem_Start_OnTheSameContainerChangesNothing(t *testing.T) {
+	em := ecs.NewEntityManager()
+	body := bodyAt(em, 500, 500)
+	container := containerBeside(em, 500, 500)
+	sys := NewTimedOpenSystem(em)
+	sys.Start(body, container, timedOpenDuration)
+	for range 20 {
+		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+	}
+	before := *timedOpenOn(t, body)
+
+	sys.Start(body, container, timedOpenDuration)
+
+	assert.Equal(t, before, *timedOpenOn(t, body))
+	for range 25 {
+		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+	}
+	assert.Len(t, sys.Update(timedOpenTick, em.GetAllEntities()), 1, "it completes on its own time")
+}
+
+// A body out of play has no timed open after the tick: dead, escaped, or left
+// behind on a floor below. R9, D7.
+func TestTimedOpenSystem_Update_ABodyOutOfPlayIsCancelled(t *testing.T) {
+	tests := map[string]func(t *testing.T, body *ecs.Entity){
+		"dead": func(t *testing.T, body *ecs.Entity) { healthOn(t, body).CurrentHealth = 0 },
+		"escaped": func(_ *testing.T, body *ecs.Entity) {
+			pc, _ := body.GetComponent(ecs.ComponentTypePlayer)
+			pc.(*components.PlayerComponent).Escape = true
+		},
+		"left behind": func(_ *testing.T, body *ecs.Entity) {
+			pc, _ := body.GetComponent(ecs.ComponentTypePlayer)
+			pc.(*components.PlayerComponent).LeftBehind = true
+		},
+	}
+	for name, resolve := range tests {
+		t.Run(name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			body := bodyAt(em, 500, 500)
+			sys := NewTimedOpenSystem(em)
+			sys.Start(body, containerBeside(em, 500, 500), timedOpenDuration)
+			// the health going into the combat is the health coming out: no hit
+			resolve(t, body)
+			sys.MarkHealth(em.GetAllEntities())
+
+			assert.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities()))
+			assert.False(t, body.HasComponent(ecs.ComponentTypeTimedOpen))
+		})
+	}
 }
