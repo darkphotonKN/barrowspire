@@ -2480,6 +2480,33 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
       expect(view.open).not.toHaveBeenCalled();
     });
 
+    it("should give up the reach on the frame the player has walked off, with no coffer open", () => {
+      // the per-frame check must run while a reach waits, not only while a coffer is open
+      const { run, scene, view } = reached();
+      const up = { isDown: false };
+      const keys = { left: up, right: up, up, down: up };
+      Object.assign(run, {
+        cursors: keys,
+        wasd: keys,
+        kit: new Proxy({}, { get: (_kit, key) => (key === "guarding" ? false : vi.fn()) }),
+        updateLighting: vi.fn(),
+        updateOtherPlayersSmooth: vi.fn(),
+        checkBuildingStatus: vi.fn(),
+        sendMovementIntent: vi.fn(),
+        // drawn, so the frame runs on past its "escaped" early return
+        player: new Proxy({ visible: true }, { get: (drawn, key) => (key === "visible" ? drawn.visible : vi.fn()) }),
+        playerPos: at(600, 600),
+        targetPosition: undefined,
+      });
+      Object.assign(view, { isOpen: false });
+
+      (run as unknown as { update(time: number, delta: number): void }).update(0, 16);
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+
+      expect((scene as unknown as { reaching?: string }).reaching).toBeUndefined();
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
     it("should keep the reach while the player stays by the chest", () => {
       const { run, scene, view } = reached();
       const walker = scene as unknown as {
