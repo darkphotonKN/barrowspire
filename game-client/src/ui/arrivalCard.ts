@@ -32,8 +32,8 @@ export const ARRIVAL_CARD = {
   cardFadeMs: 300,
   /** The dark lifting off the place. */
   viewReturnMs: 900,
-  /** How long the card holds once the view starts back. */
-  cardHoldMs: 1400,
+  /** How long the card holds, fully shown, once the view starts back (the owner's 3 s, 2026-11-12). */
+  cardHoldMs: 3000,
   /** The card's leaving. */
   cardLeaveMs: 600,
 } as const;
