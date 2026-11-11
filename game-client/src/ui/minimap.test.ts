@@ -930,10 +930,10 @@ describe("the enlarged minimap (FS-1SEF0 §B)", () => {
     return on;
   };
 
-  it("should hold its look as named values: 1.5 ×, 324 × 162, inset 6, rim 2, the walls' line 1.5 (§B.8, §B.9)", () => {
-    expect(MINIMAP_ENLARGED.scale).toBe(1.5);
-    expect(minimapPanel("normal")).toEqual({ width: 216, height: 108, inset: 4, rim: 1, edge: 1, marks: 1 });
-    expect(minimapPanel("enlarged")).toEqual({ width: 324, height: 162, inset: 6, rim: 2, edge: 1.5, marks: 1.5 });
+  it("should hold its look as named values: the map 1.5 ×, 324 × 162, inset 6, rim 2, the walls' line 1.5, its marks at 1 (§B.8, §B.9)", () => {
+    expect(MINIMAP_ENLARGED).toEqual({ scale: 1.5, marks: 1 });
+    expect(minimapPanel("normal")).toEqual({ width: 216, height: 108, inset: 4, rim: 1, edge: 1, scale: 1, marks: 1 });
+    expect(minimapPanel("enlarged")).toEqual({ width: 324, height: 162, inset: 6, rim: 2, edge: 1.5, scale: 1.5, marks: 1 });
     expect(minimapRect(1070, 44, minimapPanel("enlarged"))).toEqual({ x: 746, y: 44, width: 324, height: 162 });
   });
 
@@ -964,40 +964,64 @@ describe("the enlarged minimap (FS-1SEF0 §B)", () => {
     }
   });
 
-  it("should draw each glyph 14 × 14 on whole px, the 1 × glyph scaled nearest-neighbour, inside the rim", () => {
+  // the owner, 2026-11-12, "1.5被地圖的標記也改小一點ep 2倍一樣大": on the enlarged map the marks
+  // the same size as on the overlay, the normal minimap's; the map itself stays 1.5 ×
+  it("should name its marks' size apart from its map's scale: the overlay's and the normal minimap's 1 (§B.9)", () => {
+    expect(MINIMAP_ENLARGED.marks).toBe(1);
+    expect(MINIMAP_ENLARGED.marks).toBe(MINIMAP_OVERLAY.marks);
+    expect(MINIMAP_ENLARGED.scale).toBe(1.5);
+  });
+
+  it("should draw each glyph 9 × 9 on whole px, the normal minimap's glyph px for px with its ring, inside the rim", () => {
     for (const f of FIXTURES) {
       const one = (mode: "normal" | "enlarged") => {
         const { marks, show, map } = mapped();
         show([f.at], [f]);
         map.setMode(mode);
         const drawn = marks.drawn();
+        for (const c of drawn.filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
         for (const c of drawn.filter((c) => c.name === "fillRect")) for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
         const by = rectsByColour(drawn);
         return { ink: pixels(by.get(palette.interactable) ?? []), ring: pixels(by.get(palette.markerStroke) ?? []) };
       };
       const small = one("normal");
       const big = one("enlarged");
+      expect(big.ink.size).toBeGreaterThan(0);
+      // the ring still round the ink
+      expect(big.ring.size).toBeGreaterThan(big.ink.size);
       const box = bounds(new Set([...big.ink, ...big.ring]));
-      expect([box.right - box.x, box.bottom - box.y]).toEqual([14, 14]);
+      expect([box.right - box.x, box.bottom - box.y]).toEqual([9, 9]);
       expect(box.x).toBeGreaterThanOrEqual(1);
+      expect(box.y).toBeGreaterThanOrEqual(1);
       expect(box.right).toBeLessThanOrEqual(323);
-      // nearest-neighbour: each big px is ink exactly where the small px it falls in is
+      expect(box.bottom).toBeLessThanOrEqual(161);
+      // px for px the normal glyph, ink and ring, wherever it is seated
       const sb = bounds(new Set([...small.ink, ...small.ring]));
-      const span = (i: number) => Math.round(1.5 * i);
-      for (let i = 0; i < 9; i++)
-        for (let j = 0; j < 9; j++) {
-          const inked = small.ink.has(`${sb.x + i},${sb.y + j}`);
-          for (let x = span(i); x < span(i + 1); x++)
-            for (let y = span(j); y < span(j + 1); y++) expect(big.ink.has(`${box.x + x},${box.y + y}`)).toBe(inked);
-        }
+      const shift = (set: Set<string>, dx: number, dy: number) =>
+        new Set([...set].map((k) => k.split(",").map(Number)).map(([x, y]) => `${x + dx},${y + dy}`));
+      expect(shift(big.ink, sb.x - box.x, sb.y - box.y)).toEqual(small.ink);
+      expect(shift(big.ring, sb.x - box.x, sb.y - box.y)).toEqual(small.ring);
     }
   });
 
-  it("should draw the dots 1.5 ×: the ally r 3 and the player's own r 4.5, each in a 1.5 px ring, on whole px even held in at the rim", () => {
+  it.each([1, 1.5, 2])("should draw the glyphs at render scale %s as at 1, on the panel's logical px: the normal minimap's, never redrawn for the scale", (rs) => {
+    const draw = (scale: number) => {
+      const { marks, show, map } = mapped(grid, scale);
+      show([IN_ROOM, ...FIXTURES.map((f) => f.at)], FIXTURES);
+      map.setMode("enlarged");
+      map.follow(IN_ROOM);
+      return marks.drawn();
+    };
+    expect(draw(rs)).toEqual(draw(1));
+    for (const c of draw(rs).filter((c) => c.name === "fillRect")) for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
+  });
+
+  it("should draw the dots at the normal size: the ally r 2 and the player's own r 3, each in a 1 px ring, on whole px even held in at the rim", () => {
     const { map, dots } = mapped();
     map.setMode("enlarged");
     map.party({ self: IN_ROOM, allies: [at(3000, 900)] });
-    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4.5, 3, 6, 4.5]);
+    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([3, 2, 4, 3]);
+    for (const c of dots.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
     // past the floor's top corner, where a dot is held inside the rim by its reach
     map.party({ self: at(-400, -400), allies: [at(-400, -400)] });
     for (const c of dots.drawn().filter((c) => c.name === "fillCircle")) {
@@ -1005,6 +1029,19 @@ describe("the enlarged minimap (FS-1SEF0 §B)", () => {
       expect([Number.isInteger(x), Number.isInteger(y)]).toEqual([true, true]);
       expect(x - r >= 1 && y - r >= 1 && x + r <= 323 && y + r <= 161).toBe(true);
     }
+  });
+
+  it("should seat each dot where the 1.5 × map puts its figure: 1.5 × the normal map's place, to the whole px", () => {
+    const place = (mode: "normal" | "enlarged") => {
+      const { map, dots } = mapped();
+      map.setMode(mode);
+      map.party({ self: IN_ROOM, allies: [] });
+      const c = dots.drawn().find((c) => c.name === "fillCircle")!;
+      return at(c.args[0] as number, c.args[1] as number);
+    };
+    const [normal, enlarged] = [place("normal"), place("enlarged")];
+    expect(Math.abs(enlarged.x - normal.x * 1.5)).toBeLessThanOrEqual(1.25);
+    expect(Math.abs(enlarged.y - normal.y * 1.5)).toBeLessThanOrEqual(1.25);
   });
 
   it("should show the enlarged vignette in its place, painted at 324 × 162, reach 27, inside the rim", () => {
@@ -1184,7 +1221,7 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     onBacking(marks.drawn().filter((c) => c.name === "fillRect"), 1.5);
   });
 
-  it("should leave the panel modes' marks as they were: normal 9 × 9 with dots r 2 and r 3 in 1 px, enlarged 14 × 14 with r 3 and r 4.5 in 1.5, after the overlay too", () => {
+  it("should draw the panel modes' marks at the normal size: normal and enlarged 9 × 9 with dots r 2 and r 3 in 1 px, after the overlay too", () => {
     const { map, marks, dots, show } = mapped();
     show([IN_ROOM, ...FIXTURES.map((f) => f.at)], [FIXTURES[0]]);
     map.party({ self: IN_ROOM, allies: [at(3000, 900)] });
@@ -1194,7 +1231,7 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       return { glyph: [box.right - box.x, box.bottom - box.y], dots: dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2]) };
     };
     const normal = { glyph: [9, 9], dots: [3, 2, 4, 3] };
-    const enlarged = { glyph: [14, 14], dots: [4.5, 3, 6, 4.5] };
+    const enlarged = { glyph: [9, 9], dots: [3, 2, 4, 3] };
     expect(look()).toEqual(normal);
     map.setMode("enlarged");
     expect(look()).toEqual(enlarged);

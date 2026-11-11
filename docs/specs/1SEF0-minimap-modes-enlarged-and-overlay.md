@@ -112,18 +112,30 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 8. **324 × 162 logical px, the column's top at the top**: right-aligned on `TOP_RIGHT_HUD`'s x, its
    top at the column's top (y 44 at every width), as the normal minimap stands. **(charter
    default)**
-9. **Everything in it scales by 1.5 with it, with no blur.** Lengths that lie on the pixel grid are
-   1.5 × today's rounded to whole logical px: the panel (324 × 162), its inset (6), its rim (2 px,
-   from 1), the glyphs, each of whose 9 × 9 px (ink and ring) is drawn as the whole-px span
-   `round(1.5·i)` to `round(1.5·(i + 1))`, so a glyph is 14 × 14 px, every edge on a whole logical
-   px (nearest-neighbour, never a blurred stretch). Lines off the grid and round shapes are 1.5 ×
-   exactly, as they are anti-aliased at any size: the walls' line 1.5 px, the dots r 3 (ally) and
-   r 4.5 (self) in a 1.5 px ring. The floor's diamond is fitted in the bigger inset, so its scale is
-   1.5 × the normal map's. The vignette is painted for the bigger panel, its reach 27 px (1.5 × 18)
-   and its edge alpha unchanged, inside the 2 px rim; nothing is drawn over the rim. Colours,
-   tokens, layer order and contrast (FS-56CKV §A) are unchanged. **(charter default; derived here:
-   ADR-0057 rounds no `Graphics`, so the map is drawn at its size, not scaled as an object, and the
-   rounding rule keeps every grid edge on whole px)**
+9. **The map in it scales by 1.5 with it, with no blur; its marks do not.** The map's scale is
+   **`MINIMAP_ENLARGED.scale` = 1.5**; its marks' is a value of its own, **`MINIMAP_ENLARGED.marks`
+   = 1** (tunable, separate from the map's scale). Lengths that lie on the pixel grid are 1.5 ×
+   today's rounded to whole logical px: the panel (324 × 162), its inset (6), its rim (2 px, from
+   1). Lines off the grid are 1.5 × exactly, as they are anti-aliased at any size: the walls' line
+   1.5 px. The floor's diamond is fitted in the bigger inset, so its scale is 1.5 × the normal
+   map's. The vignette is painted for the bigger panel, its reach 27 px (1.5 × 18) and its edge
+   alpha unchanged, inside the 2 px rim; nothing is drawn over the rim. The glyphs and the party's
+   dots are drawn at `MINIMAP_ENLARGED.marks`, so at the normal minimap's size and as it draws
+   them, the same as the map overlay's (§C.16): each glyph 9 × 9 (its 7 × 7 ink on its 1 px ring;
+   was 14 × 14, each of its px the whole-px span `round(1.5·i)` to `round(1.5·(i + 1))`), every
+   edge on a whole logical px, seated on a whole logical px and held inside the rim; the player's
+   own dot r 3 in a 1 px ring (r 4 across; was r 4.5 in 1.5, r 6 across) and an ally's r 2 in a
+   1 px ring (r 3 across; was r 3 in 1.5, r 4.5 across), centred on whole logical px and held
+   inside the rim. The glyph keeps its ring and the ink's 3:1 against it. Colours, tokens, layer
+   order and contrast (FS-56CKV §A) are unchanged. **(charter default; derived here: ADR-0057
+   rounds no `Graphics`, so the map is drawn at its size, not scaled as an object, and the rounding
+   rule keeps every grid edge on whole px; owner, 2026-11-12, "1.5被地圖的標記也改小一點ep 2倍一樣大",
+   read by the coordinator as: on the 1.5 × (enlarged) map make the marks smaller too, the same
+   size as on the big map (the overlay, §C.16, `marks` = 1); not asked back. Derived here: the
+   marks drawn exactly as the normal minimap's, on its logical-px grid, so at render scale 1 and
+   2 every glyph edge is on a whole backing px and at 1.5 they blend as the normal minimap's do
+   (Edge States); the overlay seats its marks on the backing grid only because it moves in the
+   world)**
 10. **Redraw:** switching between normal and enlarged redraws the map, marks and dots once at the
     new size and swaps the vignette's image; otherwise each layer redraws only when what it shows
     changes, as at normal size (FS-56CKV §A.8). **(derived here)**
@@ -170,7 +182,8 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
     backing-px grid the overlay stands on (§C.19), so a glyph's every edge is on a whole backing px
     at render scale 1, 1.5 and 2, and a re-fit to another render scale redraws the marks once; the
     dots' centres are on that grid as before. The glyph keeps its ring and the ink's 3:1 against
-    it; the normal and enlarged minimaps' marks are unchanged. Colours are the minimap's tokens.
+    it; the normal minimap's marks are unchanged (the enlarged map's were too, until §B.9 put them
+    at this same size on 2026-11-12). Colours are the minimap's tokens.
     **(owner, 2026-11-12: "3好" to about 40%; derived here: the line's width, since a 1 px line at
     40% over a lit floor is lost, and full opacity for what a player looks for, as FS-56CKV §A.3
     never dims a glyph or a dot; owner, 2026-11-12, "最大的圖的標記小一點" (on the biggest map, make
@@ -276,6 +289,7 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 22. As a developer, I want the overlay's scale, opacity, line width and mark size as named constants, so that a later tune is values-only.
 23. As a player, I want the big map not to cost frame rate when I walk, so that the game stays smooth.
 24. As a player on the canvas renderer fallback, I want all three modes to look the same, so that no device gets a broken map.
+25. As a player, I want the bigger corner map's marks no bigger than the small map's and the big overlay's, so that a larger map does not crowd its rooms with large marks.
 
 ## Acceptance Criteria
 
@@ -283,10 +297,10 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 - [ ] On a floor without regions and on a dungeon floor before its map, M changes nothing, stored or shown.
 - [ ] The mode is written to `localStorage` `barrowspire_minimap_mode` on each M press and read when a run scene starts; a floor change and a new run scene keep it; no value, an unknown value and `off` read as normal; a throwing read starts at normal and a throwing write is swallowed, M still cycling (`minimapMode.test.ts`).
 - [ ] No `minimapOn` field and no shown/hidden switch on the minimap remain; the column's "no minimap shown" layout is reached by a floor without regions, a dungeon floor before its map, and the overlay.
-- [ ] Enlarged: the panel 324 × 162 at the column's top, right-aligned; the backing and a 2 px rim in today's tokens and alphas; the inset 6; the floor's fit 1.5 × the normal map's; the walls' line 1.5 px; the dots r 3 and r 4.5 in 1.5 px rings; each glyph 14 × 14 with every rect on whole px; the vignette painted at 324 × 162, reach 27, inside the rim (`minimap.test.ts`).
+- [ ] Enlarged: the panel 324 × 162 at the column's top, right-aligned; the backing and a 2 px rim in today's tokens and alphas; the inset 6; the floor's fit 1.5 × the normal map's; the walls' line 1.5 px; the marks at `MINIMAP_ENLARGED.marks` (1), separate from the map's `MINIMAP_ENLARGED.scale` (1.5): the dots r 3 and r 2, each in a 1 px ring, centred on whole px inside the rim; each glyph 9 × 9 with its 1 px ring, the normal minimap's glyph px for px, every rect on whole px, inside the rim; the vignette painted at 324 × 162, reach 27, inside the rim (`minimap.test.ts`).
 - [ ] Switching normal ↔ enlarged redraws each layer once; a walk across seen regions in either size redraws the map no more than at normal size.
 - [ ] Enlarged column at 1080 and 1280: the floor indicator's top 6 px under the map (y 212), the escaped count 4 px under it, the readout 4 px inside the map's bottom-left at 10 px; none overlaps the fullscreen button, either target frame or the top-left stack; the enlarged map's left edge at 746 at 1080, right of the boss frame's 729; a notice clear up to 412 px wide at 1080 and 612 px at 1280.
-- [ ] Overlay: no backing, rim or vignette drawn; the fill and the walls' line at alpha 0.4, the line 2 px; glyphs and dots at alpha 1 and at `MINIMAP_OVERLAY.marks` (1): each glyph 9 × 9 with its 1 px ring, every rect edge on a whole backing px at render scale 1, 1.5 and 2, the self's dot r 3 and an ally's r 2, each in a 1 px ring, centred on whole backing px; the normal (9 × 9, r 3 and r 2) and enlarged (14 × 14, r 4.5 and r 3 in 1.5) marks unchanged; layers at scroll factor 1 and depth 920; none interactive.
+- [ ] Overlay: no backing, rim or vignette drawn; the fill and the walls' line at alpha 0.4, the line 2 px; glyphs and dots at alpha 1 and at `MINIMAP_OVERLAY.marks` (1): each glyph 9 × 9 with its 1 px ring, every rect edge on a whole backing px at render scale 1, 1.5 and 2, the self's dot r 3 and an ally's r 2, each in a 1 px ring, centred on whole backing px; the normal marks (9 × 9, r 3 and r 2) unchanged and the enlarged map's the same (§B.9; was 14 × 14, r 4.5 and r 3 in 1.5); layers at scroll factor 1 and depth 920; none interactive.
 - [ ] Overlay placement: for a focus at world point f, a world point p draws at `worldToScreen(f) + 0.125·(worldToScreen(p) − worldToScreen(f))` minus the camera's scroll, within 1 px (the whole-px placement); the focus is the player, or the watched teammate while spectating.
 - [ ] Overlay cost: as the player walks with no new region seen, the map and marks are not redrawn (counted) and the per-frame work is the layers' position; the dots redraw only when one moves a whole backing px; at render scales 1 to 2, fractional ones too, at 60 and 120 fps, walking world x, world y or screen right, the map and marks never step back on screen, hold still on an axis the walk does not move, keep within two backing px (the hold) of the figure's point, with ±8 ms of broadcast jitter at render scale 2 too, and the self's dot lies on the figure's backing px; a frame-time measurement with the overlay up is reported against normal.
 - [ ] With the overlay up the corner shows no map; the floor indicator at y 44, the escaped count under it, the readout 4 px under the column's last line, right-aligned.
@@ -336,7 +350,9 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
   adjoining pair of cell footprints may show a faint seam at 40% under the canvas renderer's
   anti-aliasing. Accepted for the fallback.
 - **Render scales 1.5 and 2:** the enlarged panel, rim and glyphs on whole logical px stay crisp at
-  2; at 1.5 they blend as the normal minimap's do.
+  2; at 1.5 they blend as the normal minimap's do. The enlarged map's glyphs, at the normal size
+  since 2026-11-12 (§B.9), are the normal minimap's px for px, so they blend at 1.5 exactly as the
+  normal minimap's do, never more.
 
 ## Out of Scope
 
