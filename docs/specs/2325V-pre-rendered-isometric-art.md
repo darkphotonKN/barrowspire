@@ -306,3 +306,5 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
 - A lore name for the hub (CONTEXT.md open item).
 
 ## Change: Wider doors → FS-MMA2H
+
+## Change: Wall shadow layer → FS-V8FT3

@@ -703,3 +703,5 @@ index for the hub and fields; hysteresis on the interest radius; FS-QG1HR D2 rac
 themselves (this FS only avoids adding to them).
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Wall shadow layer → FS-V8FT3
