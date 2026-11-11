@@ -1125,6 +1125,39 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     for (const g of made) expect(g.position).not.toEqual(at(746, 44));
   });
 
+  // the owner, 2026-11-12: "全畫面地圖人物的座標會一直抖動". A figure eased across sub-px points:
+  // its whole px on screen and the overlay's place come from the one drawn position, rounded once
+  // each, so the map never steps back under it and its dot never leaves it.
+  it("should slide the map one way under a walking figure and keep its dot on the figure's whole px, from the drawn positions given with the focus (§C.14, §C.19)", () => {
+    const { map, made, dots } = overlaid();
+    const [layer] = made;
+    const selfDot = () => dots.drawn().filter((c) => c.name === "fillCircle").at(-1)!.args as number[];
+    let prev: { x: number; y: number } | undefined;
+    let broadcast = IN_ROOM;
+    for (let i = 0; i < 200; i++) {
+      // eased steps of every size under a whole px and over it, walking +x (right and down)
+      const f = at(IN_ROOM.x + i * 0.37 + (i % 3) * 0.11, IN_ROOM.y + i * 0.05);
+      // the broadcast leads the drawn figure; the overlay must not take its dot from there
+      broadcast = at(f.x + 15, f.y);
+      map.party({ self: broadcast, allies: [FIXTURES[0].at] });
+      map.follow(f, { self: f, allies: [FIXTURES[0].at] });
+      const iso = worldToScreen(f.x, f.y);
+      const figure = at(Math.round(iso.x), Math.round(iso.y));
+      const off = at(layer.position.x - figure.x, layer.position.y - figure.y);
+      if (prev) {
+        expect(off.x).toBeLessThanOrEqual(prev.x);
+        expect(off.y).toBeLessThanOrEqual(prev.y);
+      }
+      prev = off;
+      const [sx, sy] = selfDot();
+      expect(at(layer.position.x + sx, layer.position.y + sy)).toEqual(figure);
+    }
+    // back in a panel: the broadcast's places, as ever
+    map.setMode("normal");
+    const p = minimapProjection(grid)(broadcast);
+    expect(selfDot().slice(0, 2)).toEqual([Math.round(p.x), Math.round(p.y)]);
+  });
+
   it("should stand where the figure was last followed as soon as it becomes the overlay", () => {
     const on = mapped();
     on.map.follow(IN_ROOM);

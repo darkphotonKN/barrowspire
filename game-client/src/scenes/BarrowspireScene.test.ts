@@ -6748,6 +6748,79 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(order).toEqual(["figures", "overlay", "figures", "overlay"]);
           expect(map()!.redraws).toBe(redraws);
         });
+
+        // the owner, 2026-11-12: "全畫面地圖人物的座標會一直抖動". Played as the game plays it: the
+        // server's broadcasts at 30 Hz walking 200 world px a second, the scene at 60 fps easing
+        // the drawn position toward each. The camera's scroll moves the world and the overlay
+        // alike, so what the eye sees is where the dot and the map stand against the figure.
+        it("should keep the player's dot on the figure and slide the map one way under it as the player walks, and hold both still once stopped (§C.14, §C.19)", () => {
+          const { run, map, frame, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          const still = { isDown: false };
+          const keys = { left: still, right: still, up: still, down: still };
+          Object.assign(run, {
+            cursors: keys,
+            wasd: keys,
+            updateLighting: vi.fn(),
+            updateOtherPlayersSmooth: vi.fn(),
+            checkBuildingStatus: vi.fn(),
+            sendMovementIntent: vi.fn(),
+            updateTargetFrame: vi.fn(),
+          });
+          const layers = map() as unknown as { map: Made; dots: Made };
+          const figure = (run as unknown as { player: Made }).player;
+          const sample = () => {
+            const [fx, fy] = figure.last.setPosition as number[];
+            const [mx, my] = layers.map.last.setPosition as number[];
+            const [dx, dy] = layers.dots.last.setPosition as number[];
+            // the self's dot is drawn last, over the allies'
+            const [sx, sy] = layers.dots.last.fillCircle as number[];
+            // the figure's point as drawn, on whole px (zoom 1, scroll on whole px)
+            const f = at(Math.round(fx), Math.round(fy));
+            return { dot: at(dx + sx - f.x, dy + sy - f.y), map: at(mx - f.x, my - f.y) };
+          };
+          const at30Hz = (p: { x: number; y: number }) =>
+            frame({ current_player: { ...player("me", "Aldric", 0), position: p } as Party["current_player"] });
+          let server = at(2560, 3080);
+          let t = 0;
+          const tick = () => r.update((t += 1000 / 60), 1000 / 60);
+          // settled on the start
+          for (let i = 0; i < 120; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+          }
+          const walk: ReturnType<typeof sample>[] = [];
+          for (let i = 0; i < 60; i++) {
+            if (i % 2 === 0) at30Hz((server = at(server.x + 200 / 30, server.y)));
+            tick();
+            walk.push(sample());
+          }
+          // the dot lies on the figure, frame after frame, within the overlay's own whole px
+          for (const s of walk) {
+            expect(Math.abs(s.dot.x)).toBeLessThanOrEqual(0.5);
+            expect(Math.abs(s.dot.y)).toBeLessThanOrEqual(0.5);
+          }
+          // walking +x in the world is right and down on screen: the map slides left and up under
+          // the figure, at 1/8 of its pace, and never steps back
+          for (let i = 1; i < walk.length; i++) {
+            expect(walk[i].map.x).toBeLessThanOrEqual(walk[i - 1].map.x);
+            expect(walk[i].map.y).toBeLessThanOrEqual(walk[i - 1].map.y);
+          }
+          // stopped: the drawn position eases in, and then nothing in the overlay moves
+          for (let i = 0; i < 120; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+          }
+          const settled = sample();
+          const [redraws, dotRedraws] = [map()!.redraws, map()!.dotRedraws];
+          for (let i = 0; i < 30; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+            expect(sample()).toEqual(settled);
+          }
+          expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
+        });
       });
 
       it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
