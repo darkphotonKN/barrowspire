@@ -2,7 +2,7 @@
 // pieces beside the back and front pieces they stand in for, then a mock building laid from the
 // baked frames as the scenes lay them (pieces along each wall's centreline, a post at every
 // corner and door jamb, roof and gables or cap at the back walls' top), once closed (the player outside)
-// and once in the interior look (the player inside). A knight stands at the door for scale.
+// and once in the interior look (the player inside). A knight stands beside the door for scale.
 //
 // Written to tools/bake/review/contact-building.png (gitignored) on every `npm run bake`, never
 // by --check. Review output only: it lays the art the way walls.ts, roofs.ts and the cap plan do,
@@ -17,10 +17,16 @@ const WALL_BACK = 3.6;
 const ROOF_RISE = 0.7;
 /** Screen px per world unit of height (page/projection.js VPX). */
 const VPX = (32 / Math.SQRT1_2) * Math.cos(Math.PI / 6);
-/** The mock building: tiles along world x and y; the door is the middle tile of the south wall. */
-const W = 5;
+/**
+ * The mock building: tiles along world x and y. The doorway is the middle two tiles of the south
+ * wall, an 80 px door gap (FS-MMA2H R20), starting at tile DOOR.
+ */
+const W = 6;
 const D = 3;
 const DOOR = 2;
+const GAP = 2;
+/** A jamb post stands half a wall's thickness (10 world px) inside its wall's end, as walls.ts posts it. */
+const JAMB = 10 / 40;
 const ZOOM = 2;
 const M = 24;
 
@@ -123,13 +129,14 @@ function plan(type, closed) {
   for (let j = 0; j < D; j++) at(`${p}wall_back_${pick(type.back, j + 2)}_y`, "variants", j, 0, j + 0.5, j);
   // south and east: exterior pieces outside, cut-away fronts inside
   const side = closed ? (k) => `${p}wall_exterior_${pick(type.exterior, k)}` : (k) => `${p}wall_front_${pick(type.front, k)}`;
-  for (let i = 0; i < W; i++) if (i !== DOOR) at(`${side(i)}_x`, "variants", i, i + 0.5, D, i + D);
+  for (let i = 0; i < W; i++) if (i < DOOR || i >= DOOR + GAP) at(`${side(i)}_x`, "variants", i, i + 0.5, D, i + D);
   for (let j = 0; j < D; j++) at(`${side(j + 1)}_y`, "variants", j, W, j + 0.5, W + j);
   // the doorway shows a door: shut from outside under the head that closes the wall over it, open
   // from inside (FS-9PN7X §B.5, amended 2026-11-03). A town door is shut with no lock; a Spire
   // room's shows the server's state, here unlocked
-  at("door_x", closed ? (p === "" ? "shut" : "unlocked") : "open", 0, DOOR + 0.5, D, DOOR + D + 0.5);
-  if (closed) at(`${p}door_head_x`, "default", 0, DOOR + 0.5, D, DOOR + D + 0.51);
+  const mid = DOOR + GAP / 2;
+  at("door_x", closed ? (p === "" ? "shut" : "unlocked") : "open", 0, mid, D, mid + D);
+  if (closed) at(`${p}door_head_x`, "default", 0, mid, D, mid + D + 0.01);
   // posts at every corner and door jamb: back posts all round outside; inside, as tall as the
   // tallest wall they join
   const posts = [
@@ -137,12 +144,14 @@ function plan(type, closed) {
     [W, 0, "back"],
     [0, D, "back"],
     [W, D, "front"],
-    [DOOR, D, "front"],
-    [DOOR + 1, D, "front"],
+    [DOOR - JAMB, D, "front"],
+    [DOOR + GAP + JAMB, D, "front"],
   ];
   for (const [x, y, h] of posts) at(`${p}post_${closed ? "back" : h}`, "default", 0, x, y, x + y + 0.01);
-  // the knight at the door, outside
-  items.push({ sheet: "char_knight_base", anim: "idle", index: 0, dir: 2, x: DOOR + 0.5, y: D + 1.1, depth: DOOR + D + 1.6, lift: 0 });
+  // the knight outside, beside the door: far enough east that he hides none of the doorway, its
+  // jamb posts or the open leaf, which swings out from the west jamb
+  const knight = { x: DOOR + GAP + 2.2, y: D + 1.1 };
+  items.push({ sheet: "char_knight_base", anim: "idle", index: 0, dir: 2, ...knight, depth: knight.x + knight.y, lift: 0 });
   if (closed && type.top === "roof") {
     // planRoof for this house: ridge along x, 10 world px of eave
     const eave = 10 / 40;

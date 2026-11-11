@@ -23,6 +23,7 @@ import { cssRgb, grey, mix, shade } from "../palette.js";
 import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../materials.js";
 import { part } from "./util.js";
 import { ROOF_RISE, wallPiece, WALL_BACK } from "./architecture.js";
+import { DOOR_GAP } from "./interactables.js";
 import { masonry, PX, roughBox, stoneMat, towerMaterials } from "./tower.js";
 
 /** A piece is one tile along its axis plus the hair of overlap the timber pieces use. */
@@ -35,8 +36,8 @@ const PROUD = 0.13;
 
 /** A doorway's head height: a masonry exterior's string course runs level with it. */
 const OPEN_H = 2.4;
-/** A door gap: the run door's width (50 world px of a 40 px tile). */
-const GAP_W = 50 / 40;
+/** A door gap: the run door's width (80 world px of a 40 px tile), the door sheets' own. */
+const GAP_W = DOOR_GAP;
 /** The top of the run door's lintel (interactables.js: DOOR_H 2.4, its lintel 0.14 at +0.12). */
 const LINTEL_TOP = 2.4 + 0.19;
 
@@ -435,7 +436,7 @@ export function towerCap(variant) {
 /**
  * The wall over a doorway (FS-9PN7X §B.5, §F.4, amended 2026-11-03): the run door stands lower
  * than the walls, so from its lintel to the coping the gap is closed by the type's own outward
- * face, as wide as the gap (50 world px). Without it the room shows over a door from outside.
+ * face, exactly as wide as the gap (80 world px). Without it the room shows over a door from outside.
  * `type` is timber | masonry; `axis` x runs along world x, y along world y, as the door sheets do.
  */
 export function doorHead(type, axis) {
@@ -446,13 +447,11 @@ export function doorHead(type, axis) {
     const M = materials();
     const W = Math.round(128 * GAP_W);
     const Hp = Math.round(128 * h);
-    // the wall plate along the top and a king stud over the door, as a timber wall's frame
+    // the wall plate along the top, a king stud over the door and a stud at each quarter, half a
+    // tile apart as a timber wall's frame
     const map = timberFace(W, Hp, 61, {
       plinth: 0,
-      frame: [
-        [0, 0, W, 12],
-        [W / 2 - 5, 12, 10, Hp - 12],
-      ],
+      frame: [[0, 0, W, 12], ...[1, 2, 3].map((k) => [(k * W) / 4 - 5, 12, 10, Hp - 12])],
     });
     const face = new THREE.MeshStandardMaterial({ map, bumpMap: map, bumpScale: 0.6, roughness: 0.92 });
     g.add(part(new THREE.BoxGeometry(GAP_W, h, THICK), [M.cap, M.cap, M.cap, M.cap, face, face], { y: LINTEL_TOP + h / 2 }));
@@ -464,7 +463,8 @@ export function doorHead(type, axis) {
     g.add(part(new THREE.BoxGeometry(GAP_W, 0.1, 0.26), T.cap, { y: H + 0.05 }));
     // the string course and the corbel table carried on across the head, as on the walls beside it
     g.add(part(roughBox(GAP_W, 0.1, PROUD * 2, 85, 0.02), T.blockLight, { y: OPEN_H + 0.21 }));
-    for (const x of [-0.5, -0.25, 0, 0.25, 0.5])
+    // a quarter tile apart, the first an eighth in from each jamb, as a wall piece's
+    for (let x = -GAP_W / 2 + 0.125; x < GAP_W / 2; x += 0.25)
       g.add(part(roughBox(0.12, 0.14, 0.05, 89 + Math.round(x * 8), 0.05), T.blockLight, { x, y: H - 0.17, z: P_THICK / 2 + 0.006 }));
   }
   if (axis === "y") g.rotation.y = Math.PI / 2;
