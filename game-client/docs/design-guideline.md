@@ -49,7 +49,13 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   three.js never ships to players.
 - **Realistic light, soft shadow, texture grit.** Sprites carry their shading from the bake
   (tone-mapped, environment-lit, a warm key light from screen-left, baked contact shadows that
-  fall screen-right). They look lit *before* any overlay is applied.
+  fall screen-right). They look lit *before* any overlay is applied. **Except a wall's shadow
+  (2026-11-12, [FS-V8FT3](../../docs/specs/V8FT3-wall-shadow-layer.md)):** it is not in its
+  sprite. Wall pieces, posts, exterior pieces and door heads of both materials are baked with no
+  ground shadow (their own parts still shade one another); the client paints wall shadows into
+  the ground, flat, one per wall run, by the bake's light, so the floor under overlapping shadows
+  darkens once. Free-standing things (props, door leaves, chests, characters) and the tower's
+  outer wall's contact shadow stay baked.
 - **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. A sheet may
   instead be baked at 2x from a 4x render and drawn at half scale, so it stays sharp at render
   scale 2; today the four classes are (knight, archer, wizard, mercenary; FS-HF0WW, FS-3V7GC)

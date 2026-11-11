@@ -7,8 +7,9 @@
 // Partition pieces stand in for today's timber `wall_*`/`post_*` (architecture.js) through the
 // same cutWall geometry, so each one carries the timber piece it replaces as an invisible frame
 // guide: the bake frames a sheet by its models' bounds, and the guide pins those bounds, so a
-// tower piece's frame size and anchor equal the timber piece's. Everything visible stays inside
-// the guide's bounds and its shadow's.
+// tower piece's frame size and anchor equal the timber piece's. A partition piece and post bake
+// no ground shadow (the client paints a wall's, FS-V8FT3 §B), so everything visible stays inside
+// the guide's own bounds.
 
 import * as THREE from "three";
 import { fbm, hash2, rng, smoothstep, vnoise, vnoise3 } from "../noise.js";
@@ -489,8 +490,10 @@ export function partitionWall(H, variant, axis, seed) {
     // a web draped in the top corner of the piece and a smaller one at its far end
     const big = new THREE.PlaneGeometry(0.62, 0.7);
     g.add(part(big, T.web, { x: -LENGTH / 2 + 0.31, y: H - 0.35, z: P_THICK / 2 + 0.005 }));
+    // turned a quarter, so it spans 0.36 along the piece: it ends at the piece's end, inside the
+    // frame guide (with no ground shadow, the guide alone frames the piece: FS-V8FT3 R7)
     const small = new THREE.PlaneGeometry(0.34, 0.36);
-    g.add(part(small, T.web, { x: LENGTH / 2 - 0.17, y: H - 0.2, z: P_THICK / 2 + 0.005, rz: -Math.PI / 2 }));
+    g.add(part(small, T.web, { x: LENGTH / 2 - 0.18, y: H - 0.2, z: P_THICK / 2 + 0.005, rz: -Math.PI / 2 }));
   }
   // the timber piece this one replaces, as the frame guide
   g.add(guide(wallPiece(H, "plain", "x", 1)));

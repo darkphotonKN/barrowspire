@@ -1,9 +1,9 @@
 ---
 id: I-V8FT3-4
-status: open
+status: done
 implements: FS-V8FT3
 blocked_by: [I-V8FT3-1]
-labels: [blocked]
+labels: []
 title: "FS-V8FT3 slice 4: wall pieces, posts, exterior pieces and door heads are baked with no ground shadow (game-client)"
 ---
 Implements FS-V8FT3 §B
@@ -39,14 +39,14 @@ manifest by hand.
 
 ## Acceptance Criteria
 
-- [ ] The catalogue bakes every sheet of R4 and R5 with no ground shadow, and no other sheet's
+- [x] The catalogue bakes every sheet of R4 and R5 with no ground shadow, and no other sheet's
       shadow setting changes.
-- [ ] Atlases outside `architecture`, `tower` and `building` keep their `sha256`; in those three,
+- [x] Atlases outside `architecture`, `tower` and `building` keep their `sha256`; in those three,
       every sheet not named keeps its frame size and anchor in the manifest.
-- [ ] A tower piece's and an exterior piece's frame size and anchor equal the timber piece's.
-- [ ] `npm run bake -- --check` passes.
-- [ ] The design guideline carries R9's exception.
-- [ ] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.
+- [x] A tower piece's and an exterior piece's frame size and anchor equal the timber piece's.
+- [x] `npm run bake -- --check` passes.
+- [x] The design guideline carries R9's exception.
+- [x] `npx vitest run --maxWorkers=4` and `npm run lint` in game-client pass.
 - [ ] By eye (Nick): on the review sheets a wall piece's own faces look as before, and nothing of
       a shadow is left under a wall, a post or a door head.
 
