@@ -12,16 +12,21 @@
 > a named tunable or a small rule the owner may revise. **[open]** is a call left to the owner
 > (§Open questions); the FS states what the code does today and no slice changes it.
 > Every number is a *starting value*, expected to move in play.
+>
+> **Amended 2026-11-12** by the owner's change "弓箭手可以套用到其他樓層": Bone Archers go on every
+> dungeon floor of the Spire, not floor 1 only (§B R14). Floor 1's placement rules are unchanged
+> and now apply on every dungeon floor; no number is new. Nothing was asked of anyone.
 
 ## Summary
 
-Floor 1's monsters all walk up and hit. This adds the first monster that does not: the **Bone
+The Spire's monsters all walk up and hit. This adds the first monster that does not: the **Bone
 Archer**, the ghoul's skeleton holding a bow. It closes to shooting range, stands, draws for a
 moment the player can read, and looses an arrow at where its target stands. Strafing dodges the
 arrow, a wall stops it, and the archer itself is frail, so it is the thing to kill first.
 
 Underneath, monsters gain a **shot**: sheet data that makes an archetype ranged. The Bone Archer is
-the only archetype with one in v1, and it lives on floor 1 only.
+the only archetype with one in v1, and it lives on every dungeon floor of the Spire, placed as on
+floor 1 **(owner decision 2026-11-12: "弓箭手可以套用到其他樓層"; it was floor 1 only)**.
 
 ## Bounds
 
@@ -133,13 +138,19 @@ the only archetype with one in v1, and it lives on floor 1 only.
     strike is), and any hit from a monster, an arrow's included, is reflected by Gravewarden's
     Oath. No slice here touches either, and no test here pins either (§Open questions 1–2).
 
-### §B. Bone Archers on floor 1 (game-service)
+### §B. Bone Archers on every dungeon floor (game-service)
 
-14. **Floor 1 only.** Bone Archers are placed by the dungeon population on a floor of depth 1 and
-    nowhere else: not on floor 2 and up (every Spire floor is a dungeon since FS-M8CSE §C, so
-    this is a depth test), not in a field, the hub or the dev test room, and not on a floor 1
-    built of buildings after a failed generation (FS-KE075 R17). **(charter default: floor 1
-    only.)**
+14. **Every dungeon floor.** Bone Archers are placed by the dungeon population on every floor
+    built as a dungeon: floor 1 and every Spire floor above it, the top floor included (every
+    Spire floor is a dungeon since FS-M8CSE §C), by R15–R19 exactly as on floor 1. There is no
+    depth test. **(owner decision 2026-11-12: "弓箭手可以套用到其他樓層"; this replaces the
+    charter default, floor 1 only.)** None are placed in a field, the hub or the dev test room,
+    nor on a floor of any depth built of buildings after a failed generation (FS-KE075 R17,
+    FS-M8CSE §C R15): such a floor never reaches the dungeon population. **(derived here: the
+    fallback floor, as it stood for floor 1.)** An archer's level and elite roll are its floor's,
+    as for the ghoul it replaces there (R3, R16; FS-M8CSE §D R16), and its experience and drops
+    are its own rows (R3), on that floor's rules for a ghoul. No number is new. **(derived here:
+    R3 and R16 as they stand, on every floor.)**
 15. **Ordinary rooms: 1 in 4 ghouls.** Each monster rolled for an ordinary room that comes up a
     ghoul is, with probability 0.25, a Bone Archer instead. The roll is independent per monster.
     An ordinary room is any room that is not the start, a treasure room or a hall (FS-KE075 R18);
@@ -216,7 +227,7 @@ the only archetype with one in v1, and it lives on floor 1 only.
 
 ## User Stories
 
-1. As a delver, I want some of floor 1's skeletons to carry bows, so that a fight is not only
+1. As a delver, I want some of the Spire's skeletons to carry bows, so that a fight is not only
    things walking at me.
 2. As a delver, I want to tell a Bone Archer from a Ghoul before it shoots, so that I can choose
    to kill it first.
@@ -242,8 +253,9 @@ the only archetype with one in v1, and it lives on floor 1 only.
 15. As a delver, I want an elite Bone Archer to read as an elite, so that I know it hits harder.
 16. As a delver who shot an archer from far away, I want it to come for me, so that I get no free
     kill.
-17. As a delver on floor 2 or above, I want no Bone Archers, so that v1's pressure stays on the
-    first floor as designed.
+17. As a delver on floor 2 or above, I want Bone Archers there as on floor 1, so that their
+    pressure does not end at the first stairs. **(owner decision 2026-11-12; it was "no Bone
+    Archers above floor 1".)**
 18. As a delver in a corridor, I want no archer waiting down its length, so that corridors stay
     what they are.
 19. As a reconnecting delver, I want archers and arrows in flight to be where the server has
@@ -291,12 +303,15 @@ the only archetype with one in v1, and it lives on floor 1 only.
 - [ ] Hit by a delver from beyond its aggro radius, it takes them as its target and walks to
       shooting range.
 - [ ] It never moves away from its target and never queues a melee strike.
-- [ ] On a seeded floor 1: over many floors, the share of ordinary-room ghoul rolls that are Bone
-      Archers is near 0.25; troll, Barrow Thrall and Spire Wraith shares are unchanged.
-- [ ] Every placed hall pack that fitted at least one of its ghouls holds exactly one Bone Archer;
-      a short pack keeps it.
-- [ ] No Bone Archer is ever placed in a corridor, as a treasure guard, on a floor of depth ≥ 2,
-      or on a floor 1 without a dungeon layout.
+- [ ] On seeded dungeon floors, floor 1 and floors 2 and up alike: over many floors, the share of
+      ordinary-room ghoul rolls that are Bone Archers is near 0.25; troll (each floor's own share),
+      Barrow Thrall and Spire Wraith shares are unchanged.
+- [ ] Every placed hall pack that fitted at least one of its ghouls holds exactly one Bone Archer,
+      on every dungeon floor; a short pack keeps it.
+- [ ] No Bone Archer is ever placed in a corridor or as a treasure guard, on any floor, nor on a
+      floor of any depth without a dungeon layout (a floor of buildings after a failed
+      generation). **(owner decision 2026-11-12: this criterion read "on a floor of depth ≥ 2, or
+      on a floor 1 without a dungeon layout".)**
 - [ ] A hall's chest refuses with `container_guarded` while only the hall's Bone Archer stands,
       and opens once it is dead; the existing §J tests pass unchanged.
 - [ ] The floor total stays within 45–70 and the existing population tests pass.
@@ -356,6 +371,13 @@ the only archetype with one in v1, and it lives on floor 1 only.
 - **Hall pack with no room for any ghoul.** Only the troll is placed; the hall has no archer, and
   the chest waits on the troll alone, as FS-KE075's short-pack rule already gives.
 - **Elite hall archer.** An elite guard like any elite member; nothing special.
+- **Floors 2 and up.** An archer there is levelled and promoted at its floor's offset and elite
+  chance, as the ghoul it replaces would be; nothing else about the floor changes. The top floor,
+  a Master Spire's included, places them like any other: its demon, Daa'gon and the blood demon
+  are not ghoul rolls and never turn. **(derived here: R14 as amended 2026-11-12.)**
+- **A floor of buildings, any depth.** A failed generation on any floor builds it of buildings,
+  with no dungeon population, so it holds no archer, as floor 1's fallback never did. **(derived
+  here.)**
 - **A room that rolls only non-ghouls.** No archer; the 1 in 4 is per ghoul roll, not per room.
 - **Interest.** An archer is a monster, cut beyond 1600 px; projectiles are always sent
   (FS-KE075 R36). An archer shoots from 320 px, so it is always inside its target's cut.
@@ -380,7 +402,9 @@ the only archetype with one in v1, and it lives on floor 1 only.
 
 - Kiting, backing away, strafing or any movement while shooting; leading the target; volleys,
   spread or piercing arrows.
-- Any ranged monster other than the Bone Archer; floors 2 and up; fields; the dev test room.
+- Any ranged monster other than the Bone Archer; fields; the dev test room; a floor of buildings.
+  **(owner decision 2026-11-12: "floors 2 and up" was out of scope here and is now in, §B R14.)**
+- A share or a per-pack count that varies by depth: every dungeon floor uses floor 1's (R19).
 - Monster move speeds in general; any change to the ghoul, troll or other sheets.
 - The guarded-chest rule, its refusal and its wire (FS-KE075 §J); a chest-open channel.
 - Line-of-sight **aggro** (ADR-0062 Decision 6 stands).
