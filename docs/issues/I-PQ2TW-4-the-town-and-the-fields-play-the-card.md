@@ -1,9 +1,9 @@
 ---
 id: I-PQ2TW-4
-status: open
+status: done
 implements: FS-PQ2TW
 blocked_by: [I-PQ2TW-1, I-PQ2TW-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-PQ2TW slice 4: the town and the fields play the card, and every world scene is held to it (game-client)"
 ---
 Implements FS-PQ2TW §A (R2 town and field entries, R4, R5), §B (R11, R12, R15), §C (R19 town and field rows, R20), §E (R39)

@@ -1,6 +1,6 @@
 ---
 id: I-PQ2TW-1
-status: open
+status: done
 implements: FS-PQ2TW
 blocked_by: []
 labels: [ready-for-agent]
