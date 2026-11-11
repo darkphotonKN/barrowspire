@@ -67,15 +67,12 @@ export class RegionGrid {
   }
 
   /**
-   * Whether ground is painted at a world point (§H.44): on a walkable cell or the shell around one
-   * (8-adjacent). Everything else is void, where nothing is painted.
+   * Whether ground is painted at a world point (FS-XK2B6 §E): on a walkable cell only. A wall cell
+   * beyond its walls is as the void is, where nothing is painted.
    */
   hasGround(at: Point): boolean {
     const { cx, cy } = this.cellOf(at);
-    if (!this.inside(cx, cy)) return false;
-    for (let dx = -1; dx <= 1; dx++)
-      for (let dy = -1; dy <= 1; dy++) if (this.walkable(cx + dx, cy + dy)) return true;
-    return false;
+    return this.walkable(cx, cy);
   }
 
   /**

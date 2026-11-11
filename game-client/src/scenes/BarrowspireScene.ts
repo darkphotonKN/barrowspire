@@ -3942,7 +3942,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // is then the floor's, and the walls' build asks for nothing new (FS-KE075 §H.44)
     const own = this.floorLook && this.currentFloorLook();
     // in chunks of at most 2048 px, which a floor of buildings fits in one of; a dungeon floor's
-    // smaller, and only under its walkable and shell cells (FS-KE075 §H.44)
+    // smaller, and only under its walkable cells (FS-KE075 §H.44, FS-XK2B6 §E)
     this.groundLayer = GroundLayer.available(this.art, "run", look)
       ? new GroundLayer(this, this.art, {
           width: this.mapWidth,
@@ -4574,8 +4574,8 @@ export class BarrowspireScene extends Phaser.Scene {
     stone.lineStyle(1, palette.fallbackStoneJoint, 1);
     const grid = this.dungeon?.grid;
     if (grid) {
-      // a dungeon floor's under its walkable and shell cells only: void stays the background's
-      // darkest ink (FS-KE075 §H.44)
+      // a dungeon floor's under its walkable cells only: a wall cell and the void stay the
+      // background's darkest ink (FS-KE075 §H.44, FS-XK2B6 §E)
       const c = grid.cell;
       for (let cy = 0; cy < grid.rows; cy++)
         for (let cx = 0; cx < grid.cols; cx++) {
