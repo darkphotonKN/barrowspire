@@ -5736,6 +5736,242 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
   });
 });
 
+// The server counts a timed open and says so on the player's own state, every tick; the client only
+// draws it. Built against the FS's wire shape with fixture states (FS-MQYEX R18).
+describe("BarrowspireScene the open bar (FS-MQYEX §D R21–R25; I-MQYEX-4)", () => {
+  type TimedOpen = { entity_id: string; elapsed: number; duration: number };
+  const blade = { entity_id: "i1", name: "Blade" };
+  /** The player's own timed open on floor 1's chest, `elapsed` seconds into its 1.5. */
+  const opening = (elapsed: number, entity_id = "c1"): TimedOpen => ({ entity_id, elapsed, duration: 1.5 });
+  /** Floor 1 as this player's state: their timed open if any, and the chest shut or open. */
+  const state = (
+    timed_open?: TimedOpen,
+    chest: { is_open?: boolean; items?: unknown[] } = {},
+    others: unknown[] = [],
+  ): GameState => {
+    const floor = floorState(1);
+    return {
+      ...floor,
+      current_player: { ...player("me", "Aldric", 150), ...(timed_open ? { timed_open } : {}) },
+      other_players: others,
+      containers: [{ ...floor.containers[0], is_open: false, items: [], ...chest }],
+    } as GameState;
+  };
+  // every recorded sprite reports 10 px bounds at the origin: the bar over one is centred on x 5,
+  // its foot 10 px above y 0
+  const BAR = { x: -17, y: -17, width: 44, height: 7 };
+
+  function onStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const view = { entityId: null as string | null, isOpen: false, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+    view.open.mockImplementation((id: string) => void (view.entityId = id));
+    const clock = { delayedCall: vi.fn(), now: 1000 };
+    const run = scene.run as unknown as FloorRun & {
+      containerView: typeof view;
+      watchedPlayerId?: string;
+      events: Emitter;
+      init(): void;
+      toggleChest(id: string): void;
+      showNotification(message: string, color: string): void;
+      update(time: number, delta: number): void;
+    };
+    run.containerView = view;
+    run.time = clock;
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    /** Every open bar the scene made, and those still up and showing. */
+    const made = () => scene.stage.made.filter((m) => m.kind === "graphics" && (m as { name?: string }).name === "open-bar");
+    const bars = () => made().filter((m) => !m.destroyed && m.shown !== false);
+    /** The bar's fill as last drawn: the latest rectangle filled. */
+    const fill = () => {
+      const [x, y, width, height] = bars()[0].last.fillRect as number[];
+      return { x, y, width, height };
+    };
+    const chestSprite = () =>
+      scene.stage.made.find((m) => m.kind === "sprite" && String(m.args[2]).startsWith("chest_")) as Made & {
+        visible?: boolean;
+      };
+    /** One frame, no key down, with nothing else on stage to draw. */
+    const frame = (ms: number) => {
+      const up = { isDown: false };
+      const keys = { left: up, right: up, up, down: up };
+      Object.assign(run, {
+        cursors: keys,
+        wasd: keys,
+        kit: { follow: vi.fn(), guarding: false, sync: vi.fn() },
+        updateLighting: vi.fn(),
+        updateOtherPlayersSmooth: vi.fn(),
+        checkBuildingStatus: vi.fn(),
+        updateTargetFrame: vi.fn(),
+        sendMovementIntent: vi.fn(),
+      });
+      clock.now += ms;
+      run.update(clock.now, ms);
+    };
+    return { run, view, clock, notified, made, bars, fill, chestSprite, frame };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should draw the bar over the container at elapsed / duration, in the world's marker band", () => {
+    const { run, bars, fill } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+
+    expect(bars()).toHaveLength(1);
+    expect(bars()[0].depth).toBe(MARKER_DEPTH.bar);
+    expect(bars()[0].last.strokeRect).toEqual([BAR.x, BAR.y, BAR.width, BAR.height]);
+    // half full, from the left end
+    expect(fill()).toEqual({ ...BAR, width: 22 });
+  });
+
+  it("should draw nothing while the state carries no timed open", () => {
+    const { run, made } = onStage();
+    run.handleGameStateUpdate(state());
+    run.handleGameStateUpdate(state());
+    expect(made()).toHaveLength(0);
+  });
+
+  it("should move the one bar with the next state", () => {
+    const { run, made, bars, fill } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.handleGameStateUpdate(state(opening(1.2)));
+
+    expect(made()).toHaveLength(1);
+    expect(bars()).toHaveLength(1);
+    expect(fill().width).toBeCloseTo(35.2);
+  });
+
+  it("should take the bar down, with no notice, on a state without the timed open", () => {
+    const { run, bars, notified } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    notified.mockClear();
+    run.handleGameStateUpdate(state());
+
+    expect(bars()).toHaveLength(0);
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should open no view on the E key or while the bar fills, then open it and drop the bar on the state that shows the container open", () => {
+    const { run, view, bars } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.handleGameStateUpdate(state(opening(1.47)));
+    expect(view.open).not.toHaveBeenCalled();
+    expect(bars()).toHaveLength(1);
+
+    run.handleGameStateUpdate(state(undefined, { is_open: true, items: [blade] }));
+    expect(view.open).toHaveBeenCalledTimes(1);
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should draw no bar over a container the same state shows open", () => {
+    const { run, view, bars } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(1.5), { is_open: true, items: [blade] }));
+
+    expect(bars()).toHaveLength(0);
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+  });
+
+  it("should stop at full and open nothing, whatever the state's times say", () => {
+    const { run, view, fill } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(1.5)));
+    expect(fill().width).toBe(44);
+    run.handleGameStateUpdate(state(opening(9)));
+    expect(fill().width).toBe(44);
+    expect(view.open).not.toHaveBeenCalled();
+  });
+
+  it("should run the fill on with real time between states, never past full, and let the next state correct it", () => {
+    const { run, view, bars, fill, frame } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(0.75)));
+
+    // 0.3 s on with no state: 1.05 s of 1.5 s
+    frame(300);
+    expect(fill().width).toBeCloseTo(30.8);
+    // the states stop coming: the bar fills, waits, and opens nothing
+    frame(5_000);
+    expect(fill()).toEqual({ ...BAR, width: 44 });
+    expect(bars()).toHaveLength(1);
+    expect(view.open).not.toHaveBeenCalled();
+
+    // the server's count is the truth, even when it is behind the bar
+    run.handleGameStateUpdate(state(opening(0.9)));
+    expect(fill().width).toBeCloseTo(26.4);
+  });
+
+  it("should draw no bar from another player's state", () => {
+    const { run, made } = onStage();
+    const ally = { ...player("ally", "Wenna", 160), timed_open: opening(0.75) };
+    run.handleGameStateUpdate(state(undefined, {}, [ally]));
+    expect(made()).toHaveLength(0);
+  });
+
+  it("should draw no bar while spectating, and take down one that was up", () => {
+    const { run, bars } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    expect(bars()).toHaveLength(1);
+
+    run.watchedPlayerId = "ally";
+    run.handleGameStateUpdate(state(opening(0.9)));
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should draw no bar for a container the client is not drawing", () => {
+    const { run, bars } = onStage();
+    // one the snapshot never held
+    run.handleGameStateUpdate(state(opening(0.75, "elsewhere")));
+    expect(bars()).toHaveLength(0);
+
+    // one that leaves the snapshot mid-open
+    run.handleGameStateUpdate(state(opening(0.75)));
+    expect(bars()).toHaveLength(1);
+    run.handleGameStateUpdate({ ...state(opening(0.9)), containers: [] });
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should hide the bar while the container's sprite is hidden, and show it again with it", () => {
+    const { run, bars, chestSprite, frame } = onStage();
+    run.handleGameStateUpdate(state(opening(0.3)));
+    chestSprite().visible = false;
+    frame(16);
+    expect(bars()).toHaveLength(0);
+
+    chestSprite().visible = true;
+    frame(16);
+    expect(bars()).toHaveLength(1);
+  });
+
+  it("should open an already-open container's view at once on the E key, with no bar", () => {
+    const { run, view, made } = onStage();
+    run.handleGameStateUpdate(state(undefined, { is_open: true, items: [blade] }));
+    run.toggleChest("c1");
+
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    expect(made()).toHaveLength(0);
+  });
+
+  it.each(["shutdown", "destroy"])("should hold no bar past %s: the next run draws its own", (event) => {
+    const { run, made, bars } = onStage();
+    run.init();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.events.emit(event);
+
+    run.handleGameStateUpdate(state(opening(0.3)));
+    expect(made()).toHaveLength(2);
+    expect(bars().at(-1)).toBe(made()[1]);
+  });
+});
+
 // A refresh into a run: the menu evicted its creatures, so the run downloads them again, and an
 // end_game or a settlement sent meanwhile must still reach it (FS-C4JWH Edge States).
 describe("BarrowspireScene messages while its art downloads (FS-C4JWH Edge States)", () => {
