@@ -284,3 +284,5 @@ fields are the contract between the two halves:
 ## Change: Spire height and the climb → FS-M8CSE
 
 ## Change: Wider doors → FS-MMA2H
+
+## Change: Arrival card → FS-PQ2TW

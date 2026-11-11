@@ -13,6 +13,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { AimLine } from "@/render/effects/aimLine";
+import { CardDust } from "@/render/effects/cardDust";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
@@ -36,8 +37,10 @@ import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
 import type { ItemState } from "@/types/gameState";
+import { ArrivalCard } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
 import { itemShine } from "@/ui/itemShine";
+import { placeCard } from "@/ui/placeCard";
 
 /** What a demo plays on: the gallery's one figure, on its floor, under the run's light. */
 export interface Stage {
@@ -87,6 +90,23 @@ const FABLED_SAMPLE: ItemState = {
 const FABLED_ICON_SIDE = 64;
 const FABLED_ICON_OFFSET = { x: 90, y: -60 };
 
+/**
+ * The gallery's one arrival card, so a replay replaces the card still up as the game's next
+ * arrival would (FS-PQ2TW R9). Drawn over the gallery's own canvas, not the game's view.
+ */
+const arrivalCards = new WeakMap<Phaser.Scene, ArrivalCard>();
+
+function arrivalCardOn(s: Stage): ArrivalCard {
+  let card = arrivalCards.get(s.scene);
+  if (!card) {
+    const { width, height } = s.scene.scale;
+    const view = { width, height, centerX: width / 2, centerY: height / 2 };
+    card = new ArrivalCard(s.scene, new CardDust(s.scene, () => s.art), view);
+    arrivalCards.set(s.scene, card);
+  }
+  return card;
+}
+
 export const EFFECT_CARDS: EffectCard[] = [
   {
     module: "aimLine",
@@ -110,6 +130,16 @@ export const EFFECT_CARDS: EffectCard[] = [
     name: "Bone arrow (hostile)",
     // a Bone Archer's shot as a run flies it: the flight only, it has no release (FS-B4SG9 §D R22)
     demo: (s) => s.fly("bone_arrow"),
+  },
+  {
+    module: "cardDust",
+    name: "Arrival card dust",
+    // the climb's whole card, as the game plays it: the dark, the card, its hold, then the dust
+    // off its letters (FS-PQ2TW §D, R40). Under reduced motion it fades, as in the game.
+    demo: (s) =>
+      arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), {
+        built: true,
+      }),
   },
   {
     module: "charge",
