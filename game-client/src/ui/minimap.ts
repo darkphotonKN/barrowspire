@@ -34,7 +34,7 @@ export const MINIMAP = {
   gap: 6,
   /** From the rim to the floor's fit, each side. */
   inset: 4,
-  /** The HUD band, the floor indicator's: over the floor veil (950), under the overlays. */
+  /** The HUD band, the floor indicator's: over the arrival card (960), under the overlays. */
   depth: 1000,
 } as const;
 

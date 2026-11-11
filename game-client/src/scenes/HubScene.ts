@@ -157,6 +157,9 @@ import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMes
 const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"];
 import { INTERIOR_PARTITION, MASONRY_WALLS, trimCrop, type WallSheets } from "@/render/world/walls";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { ArrivalCard } from "@/ui/arrivalCard";
+import { placeCard } from "@/ui/placeCard";
+import { CardDust } from "@/render/effects/cardDust";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -773,10 +776,16 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
-   * handed over in the start data. A start with no verdict is no arrival. Read only by the card's
-   * slice to come (I-PQ2TW-4), hence not private yet.
+   * handed over in the start data. A start with no verdict is no arrival. An arrival plays the
+   * town's card from `create`; a return plays nothing. Walking into a town building is no world
+   * switch (ADR-0015) and so never an arrival.
    */
-  arrival = false;
+  private arrival = false;
+  /**
+   * The town's arrival card (FS-PQ2TW R37): the shared piece's, told once the town's first state
+   * is drawn, and leaves as dust (FS-PQ2TW §D). It lets its own card go at a scene end.
+   */
+  private readonly arrivalCard = new ArrivalCard(this, new CardDust(this, () => this.art));
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;
@@ -804,6 +813,9 @@ export class HubScene extends Phaser.Scene {
   }
 
   create(): void {
+    // an arrival is dark before anything of the town is made: the world's fade-in opens on the
+    // dark, and the town's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
+    if (this.arrival) this.arrivalCard.play(placeCard({ world: "hub" }), { built: false });
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
@@ -905,6 +917,7 @@ export class HubScene extends Phaser.Scene {
    * overlay follows Phaser's resize itself.
    */
   private relayoutHud(): void {
+    this.arrivalCard.relayout();
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
@@ -1978,6 +1991,8 @@ export class HubScene extends Phaser.Scene {
       view.legs.destroy();
       this.views.delete(entityID);
     }
+    // the town is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
+    this.arrivalCard.built();
   }
 
   /**
