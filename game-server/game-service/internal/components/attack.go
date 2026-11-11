@@ -34,6 +34,10 @@ const (
 	// AttackMonsterStrike is a monster's swing landing at the end of its
 	// wind-up. Only the MonsterAISystem records it; no client message maps to it.
 	AttackMonsterStrike AttackKind = "monster_strike"
+	// AttackMonsterShot is a ranged monster's projectile leaving at the end of
+	// its wind-up, aimed at the intent's TargetX, TargetY. Only the
+	// MonsterAISystem records it; no client message maps to it. FS-B4SG9 §A R8.
+	AttackMonsterShot AttackKind = "monster_shot"
 )
 
 // AttackSnapshot is what an attacker brought to a hit, captured when the hit was
