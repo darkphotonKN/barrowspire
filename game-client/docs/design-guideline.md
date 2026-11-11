@@ -622,9 +622,9 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 - **Minimap.** The run's top-right minimap (`src/ui/minimap.ts`) reads as candle-lit stone in the
   HUD's own frame, which stays as it is: the `hudPanel` backing and its 1px brass rim, and nothing
   drawn over the rim. Inside it, bottom to top: explored regions in dark stone
-  (`minimapExplored`) and the ones the party stands in a step lighter (`minimapVisible`), and the whole
-  shown floor outlined once by a 1px line (`minimapEdge`) round its outer edge only, never between
-  two regions or along a cell; a soft `inkDeep` vignette, strongest at the rim's inside
+  (`minimapExplored`) and the ones the party stands in a step lighter (`minimapVisible`), and the seen
+  rooms outlined by a 1px line (`minimapEdge`) along their outer edge only, never on a corridor,
+  across a doorway, between two regions or along a cell; a soft `inkDeep` vignette, strongest at the rim's inside
   edge and nothing in the middle, painted as a canvas gradient so both renderers match (never the
   WebGL-only `fillGradientStyle`); the switch, escape door and stairs as small glyphs (a lever, an
   arch, a flight of steps) in the interactable amber on a dark 1px `markerStroke` ring, within 9 × 9
