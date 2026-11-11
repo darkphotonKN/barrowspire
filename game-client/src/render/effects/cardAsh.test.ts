@@ -229,10 +229,11 @@ function offSegment(c: number[], a: number[], b: number[]): number {
 describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should be one typed record, at its starting values", () => {
     expect(CARD_ASH).toEqual({
-      frontMs: 2000,
-      // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": the front's 2000 ms and
-      // a flake's 500 (was 2700 with a 700 ms flake; before his seventh, 3000 with a 1000 ms flake)
-      durationMs: 2500,
+      // the owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒": 1500 ms (was 2000)
+      frontMs: 1500,
+      // the front's 1500 ms and a flake's 500 (was 2500 with a 2000 ms front; before his eighth,
+      // 2700 with a 700 ms flake; before his seventh, 3000 with a 1000 ms flake)
+      durationMs: 2000,
       ragged: 0.35,
       grainPx: 6,
       // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): the band runs fire's ramp
@@ -304,13 +305,13 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
   it("should keep every FS-KYPQ9 §B rule but §B.6's count and fall, §B.2's ceiling and §B.10 (R59)", () => {
     // §B.2: one fixed duration, the front's and a flake's life inside it
     expect(Number.isInteger(CARD_ASH.durationMs)).toBe(true);
-    // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": 2500 ms (was 2700; before
-    // his seventh, 3000)
-    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2500);
+    // the owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒": 2000 ms (was 2500; before
+    // his eighth, 2700; before his seventh, 3000)
+    expect(CARD_ASH.durationMs).toBeLessThanOrEqual(2000);
     expect(CARD_ASH.frontMs + CARD_ASH.flake.lifeMs).toBeLessThanOrEqual(CARD_ASH.durationMs);
     // a spark leaves as the front reaches its pixel, every threshold under 1, so the last leaves
     // before the front's sweep (0 past 1 + the band) reaches 1, and is gone within its life after
-    // (R57; since the owner's eighth tune of 2026-11-12, 2000 + 600 is past the 2500 ms, 1754 + 600
+    // (R57; since the owner's ninth tune of 2026-11-12, 1500 + 600 is past the 2000 ms, 1316 + 600
     // is not)
     const lastSpark = CARD_ASH.frontMs / (1 + CARD_ASH.band.ember + CARD_ASH.band.char);
     expect(lastSpark + CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(CARD_ASH.durationMs);
@@ -423,11 +424,11 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       });
     }
 
-    it("should run its front for 2000 ms, linear, redrawing and uploading the image each step", () => {
+    it("should run its front for 1500 ms, linear, redrawing and uploading the image each step", () => {
       const { ash, gone, front, burn } = ashStage();
       ash.play(cardInk(), 961, gone);
 
-      expect(front().config).toMatchObject({ from: 0, to: 1, duration: 2000, ease: "Linear" });
+      expect(front().config).toMatchObject({ from: 0, to: 1, duration: 1500, ease: "Linear" });
       const before = burn().refreshed;
       front().at(0.5);
       expect(burn().puts.length).toBeGreaterThan(1);
@@ -1180,12 +1181,12 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(gone).not.toHaveBeenCalled();
   });
 
-  it("should be gone at 2500 ms, everything of it destroyed, and say so (R57)", () => {
+  it("should be gone at 2000 ms, everything of it destroyed, and say so (R57)", () => {
     const { ash, gone, timers, made, burn } = ashStage();
     ash.play(cardInk(), 961, gone);
 
     const [end] = timers;
-    expect(end.delay).toBe(2500);
+    expect(end.delay).toBe(2000);
     end.fire();
 
     expect(made.every((m) => m.destroyed)).toBe(true);

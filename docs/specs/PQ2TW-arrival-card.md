@@ -932,6 +932,22 @@ data.
 | how far it turns in its life | 14–49° | 10–35° |
 | where its flip starts | anywhere in its turn | where it reaches edge-on within its life |
 
+**The owner's ninth tune of the ash, 2026-11-12.** He said: "圖片卡左到右的時間改1.5秒": the card's
+left-to-right takes 1.5 seconds. The front's crossing goes from 2000 to 1500 ms, the same `Linear`
+ease, the same ragged edge and grain, the same band widths. The ash's one fixed duration goes from
+2500 to 2000 ms, the front's 1500 ms and then the last flakes' 500 ms. Flakes and sparks leave as
+the front reaches their pixels, so both now leave over the faster front: the last spark leaves by
+about 1316 ms and is gone by about 1916, inside the 2000 (R57). Everything else of the flakes,
+sparks and glow (their counts, sizes, colours, lives, speeds, drag, heading, flip and the glow's
+450 ms dying) is unchanged. His values replace the eighth tune's where R55, R57 and R59 stated
+them, and their criteria follow. A tune (`Tunes FS-PQ2TW`): R61 names the front's time and the
+duration as the record's data.
+
+| Value | Was | Now |
+|---|---|---|
+| the front's crossing, left to right | 2000 ms | 1500 ms |
+| the ash's one fixed duration | 2500 ms (the front's 2000 + a flake's 500) | 2000 ms (the front's 1500 + a flake's 500) |
+
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
@@ -947,8 +963,9 @@ data.
 55. **The burn, per pixel.** When the hold ends, the card's letters and rule are replaced, in
     their exact place, by one image of them that burns. Each pixel of it carries a fixed
     threshold: how far along it lies from the left edge, made ragged by smooth noise (and a
-    little grain, so the edge crumbles). A front sweeps that threshold from 0 past 1 over 2000 ms
-    (the owner's tune of 2026-11-12, "左到右的速度拉長一點"; was 1000 ms), linear. Each frame, a pixel the front has not reached is **whole**, drawn as the card drew
+    little grain, so the edge crumbles). A front sweeps that threshold from 0 past 1 over 1500 ms
+    (the owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒"; was 2000 ms, and before his
+    first tune, "左到右的速度拉長一點", 1000 ms), linear. Each frame, a pixel the front has not reached is **whole**, drawn as the card drew
     it; a pixel within the band behind the front is **burning**: down fire's ramp from its leading
     edge, a thin pale `fireCore`, then `fireHot`, `ember` and `fireDeep`, charring to `slate`
     toward its trailing edge (the owner's fifth tune of 2026-11-12, "火的顏色有辦法擬真一點嗎"; was
@@ -995,9 +1012,10 @@ data.
 
     **(the owner's "larger than the dust's motes, dark grey ... rise slowly ... and fade", and
     his look of 2026-11-12, "燒掉後的質感很差 不夠高級"; the numbers, the spec's.)**
-57. **About 2.5 seconds.** The front takes 2000 ms and a flake lives 500 ms; a spark is gone
-    within 600 ms of the front's passing. The ash is gone by 2500 ms, one fixed duration (the
-    owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些"; was 2700 ms with a 700 ms flake,
+57. **About 2 seconds.** The front takes 1500 ms and a flake lives 500 ms; a spark is gone
+    within 600 ms of the front's passing. The ash is gone by 2000 ms, one fixed duration (the
+    owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒"; was 2500 ms with a 2000 ms front,
+    before his eighth, "灰燼碎屑消失速度在加快一些", 2700 ms with a 700 ms flake,
     before his seventh, "灰燼碎屑消失的快一點", 3000 ms with a 1000 ms flake, and before his first tune about 2 seconds: 1000 ms, then 2000 ms).
 58. **Colour.** Fire's ramp, `fireCore`, `fireHot`, `ember`, `fireDeep`, for the burning band,
     the flakes' seams and the sparks (the owner's fifth tune of 2026-11-12, "火的顏色有辦法擬真一點嗎";
@@ -1014,8 +1032,8 @@ data.
     or more than 60° off straight up, and none heads right of it; no spark faster than 80 px/s or
     more than 40° off it (the owner's third tune of 2026-11-12; was 32 px/s and 30° for a flake,
     25° for a spark). It
-    lasts 2500 ms (the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些"; was 2700 ms,
-    3000 ms before his seventh, and 2000 ms before his first), past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
+    lasts 2000 ms (the owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒"; was 2500 ms,
+    2700 ms before his eighth, 3000 ms before his seventh, and 2000 ms before his first), past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
     other (§B.4's "no tween sets `scaleX` and `scaleY` to different values"): it is a turn in
     depth, never a squash, a stretch or a bounce; its scale never grows past its size and its
     size never changes otherwise. Its textures are drawn at runtime from tokens, not baked: the
@@ -1087,7 +1105,7 @@ data.
 - [ ] The flakes span a range of sizes (from about 3 to about 14 view px long, the middle one about 8, more of them small than large; no side under 3 view px unless the whole shard is) and of aspect ratios (some near 1, many longer than wide). (R56; the owner's second tune of 2026-11-12, was about 1.5 to about 8)
 - [ ] A cold flake's pixels are mixes of `pitch`, `slate` and `vellumFaint`; 0.85 of the flake shapes glow, a glowing flake's seam covering about 14% of it at full heat (about 1.5 times the area before the owner's third tune), and cools from `fireHot` through `ember` to `fireDeep` and then to ash over its first 450 ms, never hotter or yellower than a moment before but for its heat dipping and recovering once or twice before it goes; no other colour appears but the card's own ink. (R56, R58; the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些", was 630 ms; his seventh, "灰燼碎屑消失的快一點", was 900 ms; his fifth, was `slate`, `slateLight` and `ember`; his third, "余光", was two thirds over 700 ms; his second, was a third over 500 ms)
 - [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px, born `fireHot` and cooling only, through `ember` to `fireDeep` as they fade (the owner's fifth tune of 2026-11-12, was `ember`), additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of a heading 15° left of up (faster than the flakes on average), flicker, and are gone within 600 ms. (R64, R59; the owner's third tune of 2026-11-12, was within 25° of straight up)
-- [ ] The front crosses in 2000 ms, linear, a flake fades over 500 ms, and the ash is gone at 2500 ms. (R55, R57, R59; the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些", was a 700 ms flake and 2700 ms; his seventh, "灰燼碎屑消失的快一點", was a 1000 ms flake and 3000 ms)
+- [ ] The front crosses in 1500 ms, linear, a flake fades over 500 ms, and the ash is gone at 2000 ms. (R55, R57, R59; the owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒", was a 2000 ms front and 2500 ms; his eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些", was a 700 ms flake and 2700 ms; his seventh, "灰燼碎屑消失的快一點", was a 1000 ms flake and 3000 ms)
 - [ ] With reduced motion, no burn and no flake are made and the card fades over 600 ms. (R60)
 - [ ] A failed read, no ink or no canvas texture: no burn, a fade, logged once. (R60)
 - [ ] A stop or a new card takes the image, its texture, its flakes, its sparks and its front away at once. (R60)
