@@ -8,7 +8,10 @@
 > are this spec's own. Three consequences the charter told this spec to report and not decide
 > went to the owner as E1, E2 and E3. He ruled on all three on 2026-11-11 ("照你建議"); they are in
 > *The owner's rulings*, and R3, R4, R8, R9, R11 and R12 are written as ruled, marked
-> **(ruling E1)** or **(ruling E3)**.
+> **(ruling E1)** or **(ruling E3)**. Two choices the rulings left open are this spec's own and
+> marked **(spec)**: R4's post where a straight wall changes height, and R12's back corner for a
+> piece on a north or west edge (retagged 2026-11-12 after code review; they were tagged as
+> rulings).
 > Recorded without adversarial review: no `challenge-me` pass. Code citations are against the
 > working tree at `a427b0c3`.
 
@@ -108,8 +111,10 @@ Read 2026-11-11; client paths under `game-client/src/`.
    corner, set half a thickness to the wall side along each axis. It is as tall as the tallest
    wall that ends at it, as `planWalls` posts are today. Every end of every run has a post.
    **(ruling E1)** Where a straight wall changes height, one run ends and the next begins at a
-   cell corner the outline does not turn at. The post there stands on the wall's own line: half a
-   thickness to the wall side across it, on the corner along it.
+   cell corner the outline does not turn at. **(spec)** The post there stands on the wall's own
+   line: half a thickness to the wall side across it, on the corner along it. Reason: both runs'
+   thicknesses lie on the same side of that line, so that is where they cross, as the two walls'
+   do at a turn.
 5. **A doorway is as wide as it is to walk through (charter default).** The two walls either side
    of a doorway end 80 px apart, and a corridor's two walls face each other across exactly its
    walkable width.
@@ -148,10 +153,11 @@ Read 2026-11-11; client paths under `game-client/src/`.
 12. **By the footprint's corner away from the cells the wall faces (ruling E3, ADR-0074).** A piece
     on an edge whose wall cell lies south or east of it sorts by the front corner of its
     footprint, the one nearest the camera, so a body pressed against that wall is drawn behind it.
-    A piece on an edge whose wall cell lies north or west of it sorts by the back corner, as every
-    wall piece does today, so a body pressed against that wall is drawn over it. The side decides,
-    never the height: an edge R8 draws low on a region's north or west side keeps the back corner.
-    A post sorts by its own place (ADR-0020 Decision 7). The placeholder blocks sort as the baked
+    **(spec)** A piece on an edge whose wall cell lies north or west of it sorts by the back
+    corner, as every wall piece does today, so a body pressed against that wall is drawn over it.
+    Reason: there the body stands on the wall's camera side, and the front corner would draw it
+    behind a wall it stands in front of. The side decides, never the height: an edge R8 draws low
+    on a region's north or west side keeps the back corner. A post sorts by its own place (ADR-0020 Decision 7). The placeholder blocks sort as the baked
     pieces do.
 
 ### §D. Wall lights, dressing, and what else is placed by a wall
@@ -409,6 +415,15 @@ By eye (owner, browser):
 - **A ground piece wider than a tile.** It is painted when its point is on a walkable cell, so one
   near a wall may reach past the edge, as one near the shell's edge reaches into the void today.
   The owner's browser check looks for it.
+- **The edge of a post's cap over walkable floor (known tolerance).** A post's fog clearance is
+  claimed, strip by strip, by the frontmost half meeting at its corner that no one walks on
+  (`wallLayout`). Where all three halves on one side of a post, in one strip, are walkable, none
+  claims it there, so about 1.9 px at the edge of its cap is left to that strip's veil. This is
+  a tolerance of the Fog criterion "no fog px lies over any drawn piece or post". Reason: what a
+  half claims takes that half's veil, and a walkable half carries its region's, so no half in
+  that strip can claim the post clear; the post's footprint stands in its wall cell and does not
+  reach into the strip, only its cap's edge does, and a clear shape of the post's own there is
+  not worth under 2 px of cap. Found by code review, 2026-11-12; the fog is not changed for it.
 - **A wall light on a wall with nothing behind it.** Its pool falls on the void's ink.
 - **A piece kind that stands out from the wall** (a pillar's pier, a sconce). It reaches a few px
   over the walkable cell, above the floor. It does not collide.
