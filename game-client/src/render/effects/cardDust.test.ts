@@ -133,14 +133,14 @@ describe("the dust's start points (FS-PQ2TW R25)", () => {
 });
 
 describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
-  it("should be one typed record, as the owner tuned it the sixth time on 2026-11-12 (the fifth tune's 6000 a trial)", () => {
+  it("should be one typed record, as the owner tuned it the seventh time on 2026-11-12 (the fifth tune's 6000 a trial)", () => {
     expect(CARD_DUST).toEqual({
       durationMs: 1800,
       maxParticles: 6000,
       density: 4,
       texture: "fx_dust",
       scale: { from: 0.15, to: 0.15 },
-      speed: { from: 30, to: 120 },
+      speed: { from: 24, to: 96 },
       lean: 0.2,
       drag: 1.8,
       sway: { amplitude: { from: 2, to: 5 }, periodMs: { from: 700, to: 1200 } },
@@ -168,7 +168,7 @@ describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
     // the exception, bounded: a drift, not a burst
     expect(CARD_DUST.maxParticles).toBeLessThanOrEqual(6000);
     expect(CARD_DUST.speed.from).toBeLessThanOrEqual(CARD_DUST.speed.to);
-    expect(CARD_DUST.speed.to).toBeLessThanOrEqual(120);
+    expect(CARD_DUST.speed.to).toBeLessThanOrEqual(96);
     expect(CARD_DUST.drag).toBeGreaterThan(0);
     // a gentle sway: a few px, slow, never more than the slowest mote's own drift could carry
     expect(CARD_DUST.sway.amplitude.from).toBeGreaterThan(0);
@@ -243,7 +243,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     expect(config()).toMatchObject({
       frame: ["fx_dust/idle/0/0"],
       lifespan: 1800,
-      speed: { min: 30, max: 120 },
+      speed: { min: 24, max: 96 },
       maxParticles: 6000,
       emitting: false,
       scale: { start: 0.15, end: 0.15, ease: "Sine.easeIn" },
@@ -294,13 +294,13 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     // four motes per view px² of ink (glyph and the 20 px rule), capped
     expect(emitted).toBe(Math.min(4 * ink, 6000));
     expect(config().maxParticles).toBeLessThanOrEqual(6000);
-    expect((config().speed as { min: number; max: number }).min).toBeGreaterThanOrEqual(30);
-    expect((config().speed as { min: number; max: number }).max).toBeLessThanOrEqual(120);
+    expect((config().speed as { min: number; max: number }).min).toBeGreaterThanOrEqual(24);
+    expect((config().speed as { min: number; max: number }).max).toBeLessThanOrEqual(96);
     expect(config().lifespan).toBeLessThanOrEqual(1800);
     expect((config().scale as { start: number; end: number }).end).toBeLessThanOrEqual(0.15);
   });
 
-  it("should scatter a card's motes every way, inward too, never faster than 120 px/s at the start (R26)", () => {
+  it("should scatter a card's motes every way, inward too, never faster than 96 px/s at the start (R26)", () => {
     const { dust, gone, config } = dustStage();
     dust.play(cardInk(), 951, gone);
     const angle = config().angle as { onEmit: (p: { x: number; y: number }) => number };
@@ -314,7 +314,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
       }),
     );
     expect(quadrants).toEqual(new Set(["right-down", "left-down", "left-up", "right-up"]));
-    expect((config().speed as { max: number }).max).toBeLessThanOrEqual(120);
+    expect((config().speed as { max: number }).max).toBeLessThanOrEqual(96);
   });
 
   it("should slow every mote as it drifts (R26)", () => {
@@ -336,7 +336,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     expect(speeds.at(-1)!).toBeLessThan(50 / 2);
   });
 
-  describe("each mote's sway (R26, the owner's second, third, fourth and sixth tunes)", () => {
+  describe("each mote's sway (R26, the owner's second, third, fourth, sixth and seventh tunes)", () => {
     type Op = {
       onEmit?: (p: object, key: string, value?: number) => number;
       onUpdate?: (p: object, key: string, t: number, value: number) => number;
@@ -401,8 +401,9 @@ describe("CardDust (FS-PQ2TW §D)", () => {
         for (let i = 1; i < path.length; i++) expect(path[i].out).toBeGreaterThan(path[i - 1].out);
         for (const s of path) expect(Math.abs(s.side)).toBeLessThanOrEqual(CARD_DUST.sway.amplitude.to + 1e-9);
         const end = path.at(-1)!;
-        // where it ends up lies within 20° of its own random heading
-        expect((Math.atan2(Math.abs(end.side), end.out) * 180) / Math.PI).toBeLessThan(20);
+        // where it ends up lies within 22° of its own random heading (since the seventh tune the
+        // slowest mote goes about 12.5 px against a sway of up to 5 px: atan(5 / 12.45) ≈ 21.9°)
+        expect((Math.atan2(Math.abs(end.side), end.out) * 180) / Math.PI).toBeLessThan(22);
       }
     });
 
