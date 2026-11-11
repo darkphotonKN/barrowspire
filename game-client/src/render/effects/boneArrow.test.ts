@@ -101,7 +101,7 @@ describe("bone arrow (FS-B4SG9 §D R22)", () => {
       expect(body.calls.setTint).toBeUndefined();
     });
 
-    it("should wrap the head in a hostile-red glow and shed ember motes behind it", () => {
+    it("should wrap the arrow in a hostile-red glow and shed ember motes behind it", () => {
       const trail: EffectEntry = EFFECTS.boneArrowTrail;
       expect(trail.sprite?.texture).toBe("fx_glow");
       expect(trail.sprite?.tint).toEqual(["oxbloodText"]);
