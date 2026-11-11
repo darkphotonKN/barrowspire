@@ -72,7 +72,7 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
     ["the hub", SCENE_ART.HubScene, ["folk-0"]],
     ["gentle_meadows", fieldArt("gentle_meadows"), ["wildlife-0", "wildlife-1"]],
     ["forlorn_forest", fieldArt("forlorn_forest"), ["fodder-0", "fodder-1"]],
-    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3"]],
+    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3", "creatures-4"]],
     ["the main menu", SCENE_ART.MainMenuScene, []],
     ["character creation", SCENE_ART.CharacterCreationScene, []],
   ])("should hold the resident pages plus %s's own", (_scene, groups, own) => {
