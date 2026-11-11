@@ -5,7 +5,7 @@ import type { FloorRegion, WallState } from "@/types/gameState";
 import { RegionGrid, dungeonWalls, wallPlan, type DungeonMap, type EdgeRun } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
 import { MASONRY_WALLS, TIMBER_WALLS, planWalls, thicknessPx, wallward, type WallHeight, type WallPiece } from "./walls";
-import { castOffset, castShadow, planWallShadows, wallFeet, type WallFoot } from "./wallShadows";
+import { castOffset, castShadow, dungeonShadows, planWallShadows, wallFeet, type WallFoot } from "./wallShadows";
 
 const T = WORLD_PX_PER_TILE;
 /** How thick each material's wall stands, world px: as its sheets say. */
@@ -280,5 +280,100 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
         expect(sampleFeet).toHaveLength(samplePlan.runs.length + samplePlan.posts.length);
       });
     });
+  });
+});
+
+describe("a dungeon floor's wall shadows, cut to its ground (FS-V8FT3 §E R23)", () => {
+  const CELL = 80;
+  const sample = fixture as unknown as DungeonMap & { walls: WallState[] };
+  const floor = new RegionGrid(sample);
+  const plan = wallPlan(sample.walls, floor, MASONRY);
+  const drawn = dungeonWalls(plan, floor, 7, MASONRY_WALLS);
+  const shadows = dungeonShadows(drawn, MASONRY, floor);
+
+  /** Whether a point lies inside a convex polygon (on its outline counts). */
+  const inside = (shape: readonly Point[], p: Point) => {
+    let sign = 0;
+    for (let i = 0; i < shape.length; i++) {
+      const a = shape[i];
+      const b = shape[(i + 1) % shape.length];
+      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      if (Math.abs(cross) < 1e-9) continue;
+      if (sign === 0) sign = Math.sign(cross);
+      else if (Math.sign(cross) !== sign) return false;
+    }
+    return true;
+  };
+  /** Whether a point lies strictly inside a rect. */
+  const within = (r: { x: number; y: number; width: number; height: number }, p: Point) =>
+    p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height;
+  /** Points every 4 px over a shape's bounds that lie in it, off the cell lines. */
+  const samples = (shape: readonly Point[]) => {
+    const xs = shape.map((p) => p.x);
+    const ys = shape.map((p) => p.y);
+    const out: Point[] = [];
+    for (let x = Math.floor(Math.min(...xs)) + 0.5; x < Math.max(...xs); x += 4)
+      for (let y = Math.floor(Math.min(...ys)) + 0.5; y < Math.max(...ys); y += 4) if (inside(shape, { x, y })) out.push({ x, y });
+    return out;
+  };
+
+  it("should cast every run and post of the plan, one shape each", () => {
+    expect(shadows.shapes).toEqual(planWallShadows(drawn, MASONRY));
+    expect(shadows.shapes).toHaveLength(plan.runs.length + plan.posts.length);
+  });
+
+  it("should cut every point a shadow covers on a wall cell or the void, so a shadow shows only on walkable cells", () => {
+    const uncut: string[] = [];
+    let covered = 0;
+    for (const shape of shadows.shapes)
+      for (const p of samples(shape)) {
+        const { cx, cy } = floor.cellOf(p);
+        if (floor.walkable(cx, cy)) covered++;
+        else if (!shadows.cuts.some((r) => within(r, p))) uncut.push(`${cx},${cy}`);
+      }
+    expect(uncut).toEqual([]);
+    // and the floor keeps shadow to show: the west and south walls' fall on it
+    expect(covered).toBeGreaterThan(1000);
+  });
+
+  it("should leave every walkable cell whole: no cut reaches into one", () => {
+    const into: string[] = [];
+    for (const r of shadows.cuts) {
+      // a cut is whole cells: each cell it covers is a wall cell or the void
+      expect(r.x % CELL).toBe(0);
+      expect(r.y % CELL).toBe(0);
+      for (let x = r.x; x < r.x + r.width; x += CELL)
+        for (let y = r.y; y < r.y + r.height; y += CELL) {
+          const { cx, cy } = floor.cellOf({ x: x + 1, y: y + 1 });
+          if (floor.walkable(cx, cy)) into.push(`${cx},${cy}`);
+        }
+    }
+    expect(into).toEqual([]);
+  });
+
+  it("should leave a room's north and east walls nothing to show in front of them: their shadows fall on their own wall cells", () => {
+    // the hand-made room of 4 × 4 cells: its north wall's shape lies wholly north of the room's edge
+    const room: FloorRegion = { id: 1, kind: "room", cells: [{ x: 2, y: 2, w: 4, h: 4 }] };
+    const grid = new RegionGrid({ width: 10 * CELL, height: 10 * CELL, cell_size: CELL, regions: [room] });
+    const walls = [
+      wall(1 * CELL, 1 * CELL, 6 * CELL, CELL),
+      wall(1 * CELL, 2 * CELL, CELL, 4 * CELL),
+      wall(6 * CELL, 2 * CELL, CELL, 4 * CELL),
+      wall(1 * CELL, 6 * CELL, 6 * CELL, CELL),
+    ];
+    const one = dungeonWalls(wallPlan(walls, grid, MASONRY), grid, 1, MASONRY_WALLS);
+    const { shapes, cuts } = dungeonShadows(one, MASONRY, grid);
+    const shown = (shape: readonly Point[]) =>
+      samples(shape).filter((p) => !cuts.some((r) => within(r, p)));
+    const [north, east] = [
+      wallFeet({ pieces: one.pieces.filter((p) => p.axis === "x" && p.at.y < 2 * CELL), posts: [] }, MASONRY),
+      wallFeet({ pieces: one.pieces.filter((p) => p.axis === "y" && p.at.x > 6 * CELL), posts: [] }, MASONRY),
+    ].map(([f]) => castShadow(f));
+    expect(shapes.map(corners)).toEqual(expect.arrayContaining([corners(north), corners(east)]));
+    expect(shown(north)).toEqual([]);
+    expect(shown(east)).toEqual([]);
+    // the west wall's long shadow lies across the room's floor
+    const [west] = wallFeet({ pieces: one.pieces.filter((p) => p.axis === "y" && p.at.x < 2 * CELL), posts: [] }, MASONRY);
+    expect(shown(castShadow(west)).length).toBeGreaterThan(100);
   });
 });

@@ -6,7 +6,7 @@ import type { WallState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
 import { BAKE } from "./bake";
 import { doorGaps } from "./buildingLooks";
-import { worldDepth, worldToScreen } from "@/render/iso";
+import { screenToWorld, worldDepth, worldToScreen, type Point } from "@/render/iso";
 import { planGables } from "./roofs";
 import {
   GroundLayer,
@@ -433,27 +433,99 @@ describe("addGables (FS-9PN7X §B.3, ADR-0036)", () => {
 /** A render texture as the ground paints it: where it stands, its size, and every stamp. */
 interface RecordedRT {
   at: [number, number, number, number];
-  stamps: { x: number; y: number }[];
+  stamps: { key: unknown; x: number; y: number; config?: Record<string, unknown> }[];
   visible: boolean;
+  destroyed: boolean;
+  /** How many times it was cleared. */
+  cleared: number;
+}
+
+/** A graphics made off the display list: its fills, and whether it went. */
+interface RecordedGraphics {
+  fills: { color: number; alpha: number }[];
+  polygons: Point[][];
+  destroyed: boolean;
+  /** Whether it was made onto the scene's display list. */
+  added: boolean;
+}
+
+/** A scratch texture: what was drawn and erased into it, at which offset, and whether it went. */
+interface RecordedScratch {
+  key: string;
+  size: [number, number];
+  drawn: { what: RecordedGraphics; x: number; y: number }[];
+  erased: { what: RecordedGraphics; x: number; y: number }[];
   destroyed: boolean;
 }
 
-/** The slice of a Phaser scene a GroundLayer paints with, recording each render texture. */
+/**
+ * The slice of a Phaser scene a GroundLayer paints with, recording each render texture, each
+ * scratch texture and graphics, and the order things happen in (`log`).
+ */
 function groundStage() {
   const rts: RecordedRT[] = [];
+  const graphics: RecordedGraphics[] = [];
+  const scratches: RecordedScratch[] = [];
+  const log: string[] = [];
+  const recOfGraphics = new Map<unknown, RecordedGraphics>();
   const renderTexture = (x: number, y: number, w: number, h: number) => {
-    const rec: RecordedRT = { at: [x, y, w, h], stamps: [], visible: true, destroyed: false };
+    const rec: RecordedRT = { at: [x, y, w, h], stamps: [], visible: true, destroyed: false, cleared: 0 };
     rts.push(rec);
-    const rt: Record<string, unknown> = { texture: { key: `rt${rts.length}` } };
-    for (const m of ["setOrigin", "setDepth", "clear", "render", "setTint", "clearTint", "erase"])
-      rt[m] = () => rt;
-    rt.stamp = (_t: unknown, _f: unknown, sx: number, sy: number) => (rec.stamps.push({ x: sx, y: sy }), rt);
+    const id = `rt${rts.length}`;
+    const rt: Record<string, unknown> = { texture: { key: id } };
+    for (const m of ["setOrigin", "setDepth", "setTint", "clearTint", "erase"]) rt[m] = () => rt;
+    rt.clear = () => (rec.cleared++, rt);
+    rt.render = () => (log.push(`render ${id}`), rt);
+    rt.stamp = (key: unknown, _f: unknown, sx: number, sy: number, config?: Record<string, unknown>) => {
+      log.push(`stamp ${id} ${String(key)}`);
+      rec.stamps.push({ key, x: sx, y: sy, config });
+      return rt;
+    };
     rt.setVisible = (v: boolean) => ((rec.visible = v), rt);
     rt.destroy = () => (rec.destroyed = true);
     return rt;
   };
-  const scene = { add: { renderTexture } } as unknown as Phaser.Scene;
-  return { scene, rts };
+  const makeGraphics = (added: boolean) => {
+    const rec: RecordedGraphics = { fills: [], polygons: [], destroyed: false, added };
+    graphics.push(rec);
+    let fill = { color: -1, alpha: -1 };
+    const g: Record<string, unknown> = {
+      fillStyle: (color: number, alpha = 1) => ((fill = { color, alpha }), g),
+      fillPoints: (points: Point[]) => (rec.fills.push(fill), rec.polygons.push(points.map((p) => ({ x: p.x, y: p.y }))), g),
+      fillRect: (x: number, y: number, w: number, h: number) => (
+        rec.fills.push(fill),
+        rec.polygons.push([
+          { x, y },
+          { x: x + w, y },
+          { x: x + w, y: y + h },
+          { x, y: y + h },
+        ]),
+        g
+      ),
+      destroy: () => (rec.destroyed = true),
+    };
+    recOfGraphics.set(g, rec);
+    return g;
+  };
+  const textures = {
+    addDynamicTexture: (key: string, w: number, h: number) => {
+      const rec: RecordedScratch = { key, size: [w, h], drawn: [], erased: [], destroyed: false };
+      scratches.push(rec);
+      log.push(`scratch ${key}`);
+      const dt: Record<string, unknown> = { key };
+      dt.draw = (what: unknown, x: number, y: number) => (log.push(`draw ${key}`), rec.drawn.push({ what: recOfGraphics.get(what)!, x, y }), dt);
+      dt.erase = (what: unknown, x: number, y: number) => (log.push(`erase ${key}`), rec.erased.push({ what: recOfGraphics.get(what)!, x, y }), dt);
+      dt.render = () => (log.push(`render ${key}`), dt);
+      dt.destroy = () => (log.push(`destroy ${key}`), (rec.destroyed = true));
+      return dt;
+    },
+  };
+  const scene = {
+    add: { renderTexture, graphics: () => makeGraphics(true) },
+    make: { graphics: (_config: unknown, add = true) => makeGraphics(add) },
+    textures,
+  } as unknown as Phaser.Scene;
+  return { scene, rts, graphics, scratches, log };
 }
 
 describe("GroundLayer in chunks (FS-KE075 §H.44)", () => {
@@ -505,6 +577,181 @@ describe("GroundLayer in chunks (FS-KE075 §H.44)", () => {
     expect(rts.map((r) => r.visible)).toEqual(rts.map((_, i) => i !== 1));
     ground.destroy();
     expect(rts.every((r) => r.destroyed)).toBe(true);
+  });
+});
+
+// ── Wall shadows painted into the ground (FS-V8FT3 §E) ───────────────────
+
+describe("GroundLayer's wall shadows (FS-V8FT3 §E R19–R23)", () => {
+  const { art } = library(["ground_flags"]);
+  const world = { width: 1440, height: 960, kind: "run" as const, look: TOWER_GROUND, chunk: 512 };
+  const bounds = projectedBounds(1440, 960, 48);
+  const grid = new ChunkGrid(bounds, 512);
+  /** A world square, `side` px, centred on a point, as a closed polygon. */
+  const square = (c: Point, side: number): Point[] => [
+    { x: c.x - side / 2, y: c.y - side / 2 },
+    { x: c.x + side / 2, y: c.y - side / 2 },
+    { x: c.x + side / 2, y: c.y + side / 2 },
+    { x: c.x - side / 2, y: c.y + side / 2 },
+  ];
+  /** The world point under the middle of a chunk. */
+  const middleOf = (i: number) => {
+    const r = grid.rects[i];
+    return screenToWorld(r.x + r.width / 2, r.y + r.height / 2);
+  };
+  /** A chunk well inside the ground, whose middle is on the map. */
+  const inner = grid.rects.findIndex((_, i) => {
+    const m = middleOf(i);
+    return m.x > 200 && m.x < 1240 && m.y > 200 && m.y < 760;
+  });
+  /** The render texture of a chunk, by its rect. */
+  const rtOf = (rts: RecordedRT[], i: number) => {
+    const r = grid.rects[i];
+    return rts.find((rt) => rt.at[0] === r.x && rt.at[1] === r.y)!;
+  };
+
+  it("should draw every shape of a chunk opaque into one scratch, and lay that scratch on the chunk once at the catcher's opacity", () => {
+    const { scene, rts, scratches } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    const before = rts.map((rt) => rt.stamps.length);
+    // two shadows crossing, in the middle of one chunk
+    const m = middleOf(inner);
+    ground.shade({ shapes: [square(m, 30), square({ x: m.x + 10, y: m.y + 10 }, 30)], cuts: [] });
+    expect(scratches).toHaveLength(1);
+    const [scratch] = scratches;
+    // no larger than the chunk it serves
+    expect(scratch.size).toEqual([grid.rects[inner].width, grid.rects[inner].height]);
+    expect(scratch.drawn).toHaveLength(1);
+    const shapes = scratch.drawn[0].what;
+    expect(shapes.polygons).toHaveLength(2);
+    // black, opaque: the overlap is no darker than either
+    expect(shapes.fills).toEqual([
+      { color: BAKE.SHADOW_COLOR, alpha: 1 },
+      { color: BAKE.SHADOW_COLOR, alpha: 1 },
+    ]);
+    // the one stamp onto the ground below an alpha of 1: the whole scratch, at the catcher's opacity
+    const rt = rtOf(rts, inner);
+    const added = rt.stamps.slice(before[rts.indexOf(rt)]);
+    expect(added).toEqual([{ key: scratch.key, x: 0, y: 0, config: { alpha: BAKE.SHADOW_OPACITY, originX: 0, originY: 0 } }]);
+    rts.forEach((other, i) => {
+      if (other !== rt) expect(other.stamps.length).toBe(before[i]);
+    });
+  });
+
+  it("should free every scratch and graphics once the ground has rendered, and add nothing to the scene", () => {
+    const { scene, scratches, graphics, log } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    const before = graphics.length;
+    log.length = 0;
+    ground.shade({ shapes: [square(middleOf(inner), 30)], cuts: [{ x: 0, y: 0, width: 80, height: 80 }] });
+    const [scratch] = scratches;
+    const rt = `rt${grid.rects.indexOf(grid.rects[inner]) + 1}`;
+    expect(log).toEqual([
+      `scratch ${scratch.key}`,
+      `draw ${scratch.key}`,
+      `erase ${scratch.key}`,
+      `render ${scratch.key}`,
+      `stamp ${rt} ${scratch.key}`,
+      `render ${rt}`,
+      `destroy ${scratch.key}`,
+    ]);
+    expect(scratches.every((s) => s.destroyed)).toBe(true);
+    const made = graphics.slice(before);
+    expect(made.length).toBeGreaterThan(0);
+    expect(made.every((g) => g.destroyed && !g.added)).toBe(true);
+  });
+
+  it("should draw a shape lying across two chunks into both, from the same screen px", () => {
+    const { scene, scratches } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    // a shadow over the corner the inner chunk shares with the next one east
+    const r = grid.rects[inner];
+    const corner = screenToWorld(r.x + r.width, r.y + r.height / 2);
+    const shape = square(corner, 40);
+    ground.shade({ shapes: [shape], cuts: [] });
+    expect(scratches.length).toBeGreaterThanOrEqual(2);
+    const want = shape.map((p) => worldToScreen(p.x, p.y)).map((p) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`);
+    const rects = new Set<string>();
+    for (const s of scratches) {
+      const [{ what, x, y }] = s.drawn;
+      rects.add(`${x},${y}`);
+      // the offset a scratch is drawn at is the ground's corner from its chunk's, so a scratch px
+      // plus that chunk's corner is a screen px
+      const placed = grid.rects.find((c) => Math.abs(bounds.x - c.x - x) < 1e-9 && Math.abs(bounds.y - c.y - y) < 1e-9)!;
+      expect(placed).toBeDefined();
+      expect(what.polygons[0].map((p) => `${(p.x + x + placed.x).toFixed(6)},${(p.y + y + placed.y).toFixed(6)}`)).toEqual(want);
+    }
+    expect(rects.size).toBe(scratches.length);
+  });
+
+  it("should erase every cut from the scratch, as the diamond it is on the screen, before the scratch is laid", () => {
+    const { scene, scratches } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    const m = middleOf(inner);
+    const cut = { x: Math.floor(m.x / 80) * 80, y: Math.floor(m.y / 80) * 80, width: 80, height: 80 };
+    ground.shade({ shapes: [square(m, 30)], cuts: [cut] });
+    const [scratch] = scratches;
+    expect(scratch.erased).toHaveLength(1);
+    const { what, x, y } = scratch.erased[0];
+    // the same offset as the shapes: one frame for both
+    expect([x, y]).toEqual([scratch.drawn[0].x, scratch.drawn[0].y]);
+    const corners = [
+      worldToScreen(cut.x, cut.y),
+      worldToScreen(cut.x + 80, cut.y),
+      worldToScreen(cut.x + 80, cut.y + 80),
+      worldToScreen(cut.x, cut.y + 80),
+    ].map((p) => `${(p.x - bounds.x).toFixed(6)},${(p.y - bounds.y).toFixed(6)}`);
+    expect(what.polygons.map((poly) => poly.map((p) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`))).toEqual([corners]);
+    expect(what.fills.every((f) => f.alpha === 1)).toBe(true);
+  });
+
+  it("should paint over the ground as painted, never twice for the same shadows, and again after a repaint", () => {
+    const { scene, rts, scratches } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    const tiles = rts.map((rt) => rt.stamps.filter((s) => s.config?.alpha !== BAKE.SHADOW_OPACITY).length);
+    const cleared = rts.map((rt) => rt.cleared);
+    const shadows = { shapes: [square(middleOf(inner), 30)], cuts: [] };
+    ground.shade(shadows);
+    // no tile stamped and no texture cleared: the shadow lies over the ground already there
+    expect(rts.map((rt) => rt.stamps.filter((s) => s.config?.alpha !== BAKE.SHADOW_OPACITY).length)).toEqual(tiles);
+    expect(rts.map((rt) => rt.cleared)).toEqual(cleared);
+    expect(scratches).toHaveLength(1);
+    // the same shadows asked again: nothing
+    ground.shade(shadows);
+    expect(scratches).toHaveLength(1);
+    // the same ground asked again: still nothing
+    ground.paint([]);
+    expect(scratches).toHaveLength(1);
+    // the ground repainted (another seed): its tiles again, and the shadows once more over them
+    ground.paint([], { look: TOWER_GROUND, seed: 9 });
+    expect(rtOf(rts, inner).cleared).toBe(cleared[rts.indexOf(rtOf(rts, inner))] + 1);
+    expect(scratches).toHaveLength(2);
+    const laid = rtOf(rts, inner).stamps.filter((s) => s.config?.alpha === BAKE.SHADOW_OPACITY);
+    expect(laid.map((s) => s.key)).toEqual(scratches.map((s) => s.key));
+  });
+
+  it("should repaint the ground before laying other shadows over shadows already laid", () => {
+    const { scene, rts, scratches } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    ground.shade({ shapes: [square(middleOf(inner), 30)], cuts: [] });
+    const cleared = rtOf(rts, inner).cleared;
+    ground.shade({ shapes: [square(middleOf(inner), 50)], cuts: [] });
+    expect(rtOf(rts, inner).cleared).toBe(cleared + 1);
+    expect(scratches).toHaveLength(2);
+  });
+
+  it("should never make a chunk's texture, nor a scratch where no shape falls", () => {
+    const { scene, rts, scratches } = groundStage();
+    // ground only in the map's west: the chunks of its east have no texture
+    const ground = new GroundLayer(scene, art, { ...world, where: (p) => p.x < 400 });
+    const made = rts.length;
+    expect(made).toBeLessThan(grid.rects.length);
+    // a shadow in the east, where no chunk has ground
+    ground.shade({ shapes: [square({ x: 1300, y: 100 }, 30)], cuts: [] });
+    expect(rts).toHaveLength(made);
+    expect(scratches).toHaveLength(0);
+    ground.shade({ shapes: [], cuts: [] });
+    expect(scratches).toHaveLength(0);
   });
 });
 

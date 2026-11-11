@@ -724,6 +724,8 @@ function sceneOnStage() {
       setFilter: vi.fn(),
       destroy: vi.fn(),
     }),
+    // the scratch a chunk's wall shadows are drawn into (FS-V8FT3 §E): recorded, and gone after
+    addDynamicTexture: (key: string, w: number, h: number) => stage.make("dynamicTexture", [key, w, h]),
   };
   // the HUD lays out in the logical view, which the viewport owns (FS-ZAJMH R2)
   viewport.set({ width: 800, height: 600, renderScale: 1 });
@@ -6556,6 +6558,7 @@ const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
 const await_dungeon = await import("@/render/world/dungeon");
 const await_walls = await import("@/render/world/walls");
 const await_bake = await import("@/render/world/bake");
+const await_wallShadows = await import("@/render/world/wallShadows");
 const { RegionGrid } = await_dungeon;
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
@@ -6594,12 +6597,20 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
    * The fixture floor on stage: its map, then its first snapshot (or, `late`, the snapshot first
    * and the map after it), `extra` laid over the snapshot.
    */
-  function dungeonStage(party: Partial<Party> = {}, extra: Partial<GameState> = {}, { late = false } = {}) {
+  function dungeonStage(
+    party: Partial<Party> = {},
+    extra: Partial<GameState> = {},
+    { late = false, without }: { late?: boolean; without?: string } = {},
+  ) {
     const scene = sceneOnStage();
     const { stage } = scene;
     const run = scene.run as unknown as DungeonRun;
     run.worldLook = WORLD_THEMES.tower;
-    run.art = new ArtLibrary(manifest, { warn: () => {} });
+    // `without`: the manifest's sheets whose name starts so are missing (a bake without them)
+    const sheets = Object.fromEntries(Object.entries(manifest.sheets).filter(([name]) => !without || !name.startsWith(without)));
+    run.art = new ArtLibrary({ ...manifest, sheets }, { warn: () => {} });
+    // what the ground draws off the display list (its wall shadows' shapes and cuts)
+    (run as unknown as { make: unknown }).make = { graphics: () => stage.make("graphics", ["off the display list"]) };
     // the ground is the scene's own, painted in the stage's render textures
     run.groundLayer = undefined;
     const camera = run.cameras as { main: Record<string, unknown> };
@@ -6666,7 +6677,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     const tiles = new Set<string>();
     const offFloor: string[] = [];
     for (const rt of rts)
-      for (const [, , x, y] of stamped.get(rt) ?? []) {
+      // the tiles' stamps: a chunk's wall shadows are stamped in too, as one scratch (FS-V8FT3 §E)
+      for (const [, , x, y] of (stamped.get(rt) ?? []).filter(([key]) => key !== "ground-wall-shadows")) {
         const sx = (rt.args[0] as number) + (x as number) + sheet.anchor.x * sheet.frameWidth;
         const sy = (rt.args[1] as number) + (y as number) + sheet.anchor.y * sheet.frameHeight;
         const at = screenToWorld(sx, sy);
@@ -6808,6 +6820,57 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     // the count on the sample floor, pinned: 65 of its 128 chunks (71 while the shell had ground),
     // so a chunk only wall cells fall in has none
     expect([rts.length, chunks.rects.length]).toEqual([65, 128]);
+  });
+
+  describe("its wall shadows (FS-V8FT3 §E)", () => {
+    const { dungeonWalls: wallsOf, wallPlan } = await_dungeon;
+    const { dungeonShadows, planWallShadows } = await_wallShadows;
+    const { MASONRY_WALLS, thicknessPx } = await_walls;
+    const { BAKE } = await_bake;
+    const thick = thicknessPx(MASONRY_WALLS);
+    const drawnWalls = wallsOf(wallPlan(dungeonMap.walls!, grid, thick), grid, 1, MASONRY_WALLS);
+    /** The shadow stamps laid on a ground texture: the scratch, at the catcher's opacity. */
+    const shadowStamps = (stamped: Map<Made, unknown[][]>, rt: Made) =>
+      (stamped.get(rt) ?? []).filter(([key]) => key === "ground-wall-shadows");
+
+    it("should hand the ground one shape per edge run and per post as the walls are built, cut to the walkable cells", () => {
+      const shade = vi.spyOn(GroundLayer.prototype, "shade");
+      try {
+        dungeonStage();
+        expect(shade).toHaveBeenCalledTimes(1);
+        const [shadows] = shade.mock.calls[0];
+        expect(shadows.shapes).toEqual(planWallShadows(drawnWalls, thick));
+        expect(shadows).toEqual(dungeonShadows(drawnWalls, thick, grid));
+      } finally {
+        shade.mockRestore();
+      }
+    });
+
+    it("should lay them on the ground once, in the same 65 chunks, each scratch and graphics gone after", () => {
+      const { stage, stamped } = dungeonStage();
+      const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
+      expect(rts).toHaveLength(65);
+      const scratches = stage.made.filter((m) => m.kind === "dynamicTexture");
+      expect(scratches.length).toBeGreaterThan(0);
+      expect(scratches.every((m) => m.destroyed)).toBe(true);
+      // each chunk a shadow falls in takes it once, at the catcher's opacity
+      const laid = rts.flatMap((rt) => shadowStamps(stamped, rt));
+      expect(laid).toHaveLength(scratches.length);
+      for (const rt of rts) expect(shadowStamps(stamped, rt).length).toBeLessThanOrEqual(1);
+      for (const [, , , , config] of laid) expect(config).toEqual({ alpha: BAKE.SHADOW_OPACITY, originX: 0, originY: 0 });
+      // the shapes and cuts were drawn off the display list, and went
+      const offList = stage.made.filter((m) => m.kind === "graphics" && m.args[0] === "off the display list");
+      expect(offList.length).toBeGreaterThan(0);
+      expect(offList.every((m) => m.destroyed)).toBe(true);
+    });
+
+    it("should lay no shadow without the wall art: the placeholder walls never had one", () => {
+      const { stage, stamped } = dungeonStage({}, {}, { without: "tower_wall_" });
+      const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
+      expect(rts.length).toBeGreaterThan(0);
+      expect(stage.made.filter((m) => m.kind === "dynamicTexture")).toEqual([]);
+      for (const rt of rts) expect(shadowStamps(stamped, rt)).toEqual([]);
+    });
   });
 
   it("should paint a dungeon floor's ground once as it is built, and not again as the party leaves it (review L13)", () => {
