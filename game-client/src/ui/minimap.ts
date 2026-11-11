@@ -312,6 +312,13 @@ export interface MinimapStage {
   graphics(): MinimapGraphics;
   /** An image of the canvas texture `key`, `width` × `height` logical px, its origin its top-left; `paint` paints the texture if it is not yet. */
   canvasImage(key: string, width: number, height: number, paint: CanvasPaint): MinimapLayer;
+  /**
+   * Hears each frame once the camera is set up for it and before anything is drawn, with the
+   * scroll the world is drawn at (world px, on the backing-px grid); the returned function stops
+   * it. The overlay holds its map against the screen from it (FS-1SEF0 §C.19); a stage without it
+   * leaves the overlay where {@link Minimap.follow} stands it.
+   */
+  frames?(listener: (scroll: Point) => void): () => void;
 }
 
 /** From the panel's edge to the rim's inside edge: a rim is stroked centred on the panel's edge. */
@@ -462,6 +469,11 @@ export class Minimap {
   private drawnParty?: MinimapParty;
   /** The figure the overlay was last stood about, in world px. */
   private focus?: Point;
+  /** Where {@link follow} last stood the overlay's layers, in world px: the figure's point on the backing grid. */
+  private stood?: Point;
+  /** Where the overlay's map and marks were last shown on screen, in backing px, and at what render scale. */
+  private held?: Point & { scale: number };
+  private readonly unhear: () => void;
   private drawn?: string;
   private dotsDrawn?: string;
   private shownMode: MinimapMode = "normal";
@@ -491,6 +503,7 @@ export class Minimap {
       layer.setScrollFactor(0);
       layer.setDepth(MINIMAP.depth);
     }
+    this.unhear = stage.frames?.((scroll) => this.hold(scroll)) ?? (() => {});
   }
 
   /** What the map layer shows now, each seen region with its state, though both are drawn alike. */
@@ -525,6 +538,7 @@ export class Minimap {
    * a backing px, never back; and the overlay's dots are placed from these same drawn positions,
    * never a broadcast's, seated on that grid too, so a figure's dot lies on it frame after frame.
    * A move, never a redraw of the map; the dots redrawn only when one moves a whole backing px.
+   * The map and marks are then held against the screen as each frame is set up ({@link hold}).
    */
   follow(focus: Point, drawn?: MinimapParty): void {
     this.focus = focus;
@@ -534,8 +548,29 @@ export class Minimap {
     const k = MINIMAP_OVERLAY.scale;
     const r = this.perPx();
     const stand = (v: number) => (Math.round(v * r) - Math.round(v * k * r)) / r;
-    for (const layer of this.drawnLayers()) layer.setPosition(stand(s.x), stand(s.y));
+    this.stood = { x: stand(s.x), y: stand(s.y) };
+    for (const layer of this.drawnLayers()) layer.setPosition(this.stood.x, this.stood.y);
     if (drawn) this.drawDots(drawn);
+  }
+
+  /**
+   * The overlay's map and marks held against the screen this frame, drawn at `scroll` (FS-1SEF0
+   * §C.19). On screen the stand is the figure's backing px less its point's, and the figure, eased
+   * toward 30 Hz broadcasts against the camera's lerp and floored scroll, steps a backing px or two
+   * back and forth there as it walks; the map, sliding at 1/8 of the walk, would step back with
+   * it. So on each axis they stay where they were shown while the stand is within a backing px of
+   * that, and otherwise go to within a backing px of it: never back against a walk, still on an
+   * axis it does not move, at most a backing px off the figure's point, on whole backing px. The
+   * dots stay on the stand, on their figures.
+   */
+  private hold(scroll: Point): void {
+    if (this.drawing.panel || !this.stood) return;
+    const r = this.perPx();
+    const stand = { x: Math.round((this.stood.x - scroll.x) * r), y: Math.round((this.stood.y - scroll.y) * r) };
+    const near = (shown: number, to: number) => Math.min(Math.max(shown, to - 1), to + 1);
+    const held = this.held?.scale === r ? this.held : undefined;
+    this.held = held ? { x: near(held.x, stand.x), y: near(held.y, stand.y), scale: r } : { ...stand, scale: r };
+    for (const layer of [this.map, this.marks]) layer.setPosition(scroll.x + this.held.x / r, scroll.y + this.held.y / r);
   }
 
   /** Backing px per logical px now: the overlay's grid. */
@@ -610,10 +645,14 @@ export class Minimap {
       layer.setDepth(overlay ? MINIMAP_OVERLAY.depth : MINIMAP.depth);
     }
     this.redraw();
+    // nothing held from an overlay shown before: it starts on the stand
+    this.held = undefined;
+    this.stood = undefined;
     if (overlay && this.focus) this.follow(this.focus);
   }
 
   destroy(): void {
+    this.unhear();
     for (const layer of this.layers()) layer.destroy();
   }
 

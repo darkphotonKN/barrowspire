@@ -288,20 +288,49 @@ export function keepOnPixelGrid(cam: PixelGridCamera): void {
     const rounds = gridded.get(cam) === true;
     cam.roundPixels = rounds;
     frame();
-    if (!rounds) return;
-    const z = cam.zoomX;
-    const x = onGrid(
-      cam.scrollX,
-      z,
-      cam.useBounds ? (v) => cam.clampX(v) : undefined,
-    );
-    const y = onGrid(
-      cam.scrollY,
-      z,
-      cam.useBounds ? (v) => cam.clampY(v) : undefined,
-    );
-    drawAt(cam, x, y);
-    cam.renderRoundPixels = true;
+    if (rounds) {
+      const z = cam.zoomX;
+      const x = onGrid(
+        cam.scrollX,
+        z,
+        cam.useBounds ? (v) => cam.clampX(v) : undefined,
+      );
+      const y = onGrid(
+        cam.scrollY,
+        z,
+        cam.useBounds ? (v) => cam.clampY(v) : undefined,
+      );
+      drawAt(cam, x, y);
+      cam.renderRoundPixels = true;
+    }
+    for (const listener of [...(frameListeners.get(cam) ?? [])])
+      listener({ x: cam.scrollX, y: cam.scrollY });
+  };
+}
+
+/** Who hears each camera's frames ({@link afterFrameSetUp}). */
+const frameListeners = new WeakMap<object, Set<(scroll: Point) => void>>();
+
+/**
+ * Tells `listener`, each frame once `cam` is set up for it (its follow, its scroll put on the pixel
+ * grid) and before anything is drawn, the scroll the frame is drawn at, in world units: for what
+ * must stand against the screen rather than the world, since whatever it moves then is drawn that
+ * frame. Heard from a camera on the pixel grid ({@link fitCamera}), however late it is put there.
+ * Returns the stop.
+ */
+export function afterFrameSetUp(
+  cam: object,
+  listener: (scroll: Point) => void,
+): () => void {
+  let listeners = frameListeners.get(cam);
+  if (!listeners) {
+    listeners = new Set();
+    frameListeners.set(cam, listeners);
+  }
+  listeners.add(listener);
+  const heard = listeners;
+  return () => {
+    heard.delete(listener);
   };
 }
 
