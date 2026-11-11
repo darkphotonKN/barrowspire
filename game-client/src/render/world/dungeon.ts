@@ -149,9 +149,9 @@ export function wallRule(grid: RegionGrid): PieceRule {
  * A wall cell faces a region along x when a walkable cell lies directly north or south of it, and
  * along y when one lies directly west or east. A run is a line of cells facing the same way, one
  * after another, reaching on one cell at each end into the wall it meets: so a corner's cell is in
- * both its runs, cut whole along each, as a row's corner always was, and its post stands at that
- * cell's centre. Only runs of two cells or more are kept; a wall cell no run reaches is a one-cell
- * wall of its own. The y runs come first, so where runs cross, the cell's axis is x (`wallLayout`),
+ * both its runs, and its post stands at that cell's centre; each run's pieces are drawn only
+ * between its two posts (`wallRule`), so neither sticks out of the corner. Only runs of two cells
+ * or more are kept; a wall cell no run reaches is a one-cell wall of its own. The y runs come first, so where runs cross, the cell's axis is x (`wallLayout`),
  * as the rows made it. A run keeps the entity id of the wall its first facing cell is in.
  */
 export function wallRuns(walls: readonly WallState[], grid: RegionGrid): WallState[] {

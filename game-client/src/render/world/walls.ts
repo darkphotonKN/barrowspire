@@ -291,9 +291,14 @@ function endsOf(w: WallState): [Point, Point] {
   ];
 }
 
-/** A wall's pieces that stand between its two end posts; all of them where the two are one. */
-function between(pieces: WallPiece[], [from, to]: [Point, Point]): WallPiece[] {
-  return pieces.filter(({ axis, at }) => from[axis] === to[axis] || (at[axis] > from[axis] && at[axis] < to[axis]));
+/**
+ * Whether a place on a wall's centreline lies between the wall's two end posts (a piece rule's
+ * `betweenPosts`); anywhere on a wall whose two posts are one.
+ */
+export function withinPosts(w: WallState, at: Point): boolean {
+  const axis = axisOf(w);
+  const [from, to] = endsOf(w);
+  return from[axis] === to[axis] || (at[axis] > from[axis] && at[axis] < to[axis]);
 }
 
 /**
@@ -315,7 +320,7 @@ export function planWalls(
     const side = heightOf(sideOf(w, w.house_id ? houses.get(w.house_id) : undefined));
     const ends = endsOf(w);
     const own = rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets);
-    pieces.push(...(rule?.betweenPosts ? between(own, ends) : own));
+    pieces.push(...(rule?.betweenPosts ? own.filter((p) => withinPosts(w, p.at)) : own));
     for (const at of ends) {
       const height = rule ? rule.height(at) : side;
       const key = `${Math.round(at.x)},${Math.round(at.y)}`;
