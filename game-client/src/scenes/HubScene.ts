@@ -157,9 +157,8 @@ import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMes
 const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"];
 import { INTERIOR_PARTITION, MASONRY_WALLS, trimCrop, type WallSheets } from "@/render/world/walls";
 import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
-import { ArrivalCard } from "@/ui/arrivalCard";
+import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
-import { CardDust } from "@/render/effects/cardDust";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -785,7 +784,7 @@ export class HubScene extends Phaser.Scene {
    * The town's arrival card (FS-PQ2TW R37): the shared piece's, told once the town's first state
    * is drawn, and leaves as dust (FS-PQ2TW §D). It lets its own card go at a scene end.
    */
-  private readonly arrivalCard = new ArrivalCard(this, new CardDust(this, () => this.art));
+  private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;

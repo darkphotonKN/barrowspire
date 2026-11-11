@@ -619,8 +619,11 @@ describe("the card can leave as smoke instead (FS-PQ2TW §Change: Smoke, a trial
 
     expect(asked).toEqual([]);
     expect(smoked).toHaveLength(1);
-    expect(smoked[0].ink.texts).toEqual([heading.obj, subtitle.obj]);
-    expect(smoked[0].ink.letters).toEqual([heading.obj, rule.obj, subtitle.obj]);
+    // the very pieces up, by identity: the stand-in's objects are proxies, equal to any other
+    const same = (got: readonly unknown[], want: unknown[]) =>
+      expect(got.length === want.length && got.every((g, i) => g === want[i])).toBe(true);
+    same(smoked[0].ink.texts, [heading.obj, subtitle.obj]);
+    same(smoked[0].ink.letters, [heading.obj, rule.obj, subtitle.obj]);
     expect(smoked[0].depth).toBe(ARRIVAL_CARD.depth + 1);
     // the smoke blurs and drifts them off itself: the card neither hides nor fades them
     for (const part of [heading, rule, subtitle]) expect(last(part, "setVisible")).toBeUndefined();

@@ -98,11 +98,12 @@ function rise(config: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig, 
   const puff: Puff = { x: 0, y: 0, velocityX: 0, velocityY: 0, angle: 0 };
   zone.source.getRandomPoint(puff);
   const start = { x: puff.x, y: puff.y };
+  // its turn first, then its heading, as the engine emits them (Particle.fire)
+  puff.angle = op("rotate")!.onEmit!(puff, "rotate");
   const rad = (op("angle")!.onEmit!(puff, "angle") * Math.PI) / 180;
   const heading = { x: Math.cos(rad), y: Math.sin(rad) };
   puff.velocityX = heading.x * speed;
   puff.velocityY = heading.y * speed;
-  puff.angle = op("rotate")!.onEmit!(puff, "rotate");
   const turnedFrom = puff.angle;
 
   const path: { t: number; x: number; y: number; side: number; angle: number }[] = [];
