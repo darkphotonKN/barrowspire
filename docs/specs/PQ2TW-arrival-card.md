@@ -153,6 +153,25 @@
 > unchanged, and so are the ash's. Only the switch moves (R41, R53, and their criteria), with the
 > summary, §D's place and R30's criterion following it. See *Change: Ash, a trial alternate
 > leave* at the end, which keeps its name as the anchor of the code that built it.
+>
+> **A note on the tunes, 2026-11-12, recorded in the code review's fix round.** Some commits
+> labelled `Tunes FS-PQ2TW` also added behaviour, not only values: the dust's sideways sway (the
+> second tune), its full-turn headings (the third), the ash's slowing, flip, sway and embers (the
+> owner's look), its heading lean and larger glowing patch (his third tune of the ash), its char,
+> ash rim, seam and fire's ramp with its three tokens (his fifth), and a flip set going inside a
+> shorter life (his eighth). Each is recorded in its own section above and below; the history on
+> main is not rewritten.
+>
+> **The code review's fix round, 2026-11-12.** What the three leaves do alike (their options'
+> defaults, a warning logged once per reason, the sheet they draw from, the card's ink read once
+> with the fade to fall back to, the start points they hand out, and what each holds until its
+> end, a stop or the scene's end) moved out of the dust's module into one piece the three use,
+> `src/render/effects/cardLeaveCore.ts`, with no change of behaviour, message or number. The stroke
+> reading (`strokeCells` / `ruleCells` / `seedPoints`) lives there and is re-exported from
+> `cardDust.ts`, so R42's and R54's "through the dust's own reading" now means through that one
+> shared reading, and their "`cardDust.ts` unchanged" means its behaviour, numbers and tests: the
+> file itself lost its private copy of the shared code. The ash reads each text's canvas once for
+> its strokes and its burning image (it read it twice).
 
 ## Summary
 
@@ -172,8 +191,14 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 - **May touch:** `game-client` only: the world switch (`src/components/worldRouting.ts`,
   `PhaserGame.tsx`), the three world scenes' arrival flows, the card and its copy (`src/ui/`),
   the dust (`src/render/effects/`), their tests, and the dev gallery (`src/dev/gallery/effects.ts`).
+  Since the ash's fire (§Change: Ash, the owner's fifth tune of 2026-11-12) also the colour tokens
+  (`src/utils/theme.ts`), the canvas palette (`src/utils/canvasPalette.ts`) and the design
+  guideline's palette (`game-client/docs/design-guideline.md`), for fire's ramp alone.
 - **May not touch:** `game-server/`, proto, the gateway, the wire, or the existing text of a
-  shipped FS. No new colour, no new baked art, no new font.
+  shipped FS. No new colour but fire's ramp, the three tokens the Ash section allowed (`fireCore`,
+  `fireHot`, `fireDeep`, around the existing `ember`; for fire effects only, never an
+  interactable); no new baked art, no new font. *(Amended in the code review's fix round of
+  2026-11-12: this said "No new colour" before the owner's fifth tune of the ash added the ramp.)*
 
 ## Facts this spec rests on
 
@@ -1023,6 +1048,17 @@ data.
     the front. Its per-frame cost on a card of the game's size is measured in a browser and
     reported with the change, so the owner judges the look knowing the price. **(spec: the
     owner accepted a per-frame redraw if measured.)**
+
+    *Measured* (recorded in the code review's fix round of 2026-11-12; taken while the ash was
+    built and tuned): headless Chrome, ANGLE on Metal, an Apple M5 Pro, render scale 2, the
+    game's card ("The Second Floor" and its line). The front's CPU redraw and upload: median about
+    0.2 ms a front frame, p95 0.4–0.5 ms, max 1.4 ms; the whole step about 0.3–0.4 ms a frame
+    while it burns; the frame `play()` runs in (reading the ink, the burn's thresholds and order,
+    the flake sheet on its first play) 8–11 ms, worst about 20 ms; after the later tunes, about
+    0.5 ms median a frame during the ash. **GPU time was not measured**: these are CPU times
+    only. The fix round then made the band's colours with no array per pixel and each text read
+    once; in vitest under node on the same machine, over a card-sized burn, the front's redraw went
+    from a median of 0.20 to 0.10 ms a frame (p95 0.38 to 0.21).
 64. **Embers.** *(Added at the owner's look of 2026-11-12, "不夠高級".)* As the front passes, a
     sprinkle of tiny ember sparks comes off it: 0.012 per view px² of ink, at most 40 for the
     whole card, from a second emitter, each let go from a start point on the strokes or the rule
