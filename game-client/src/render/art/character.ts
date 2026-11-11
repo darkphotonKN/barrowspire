@@ -58,6 +58,13 @@ export interface AnimatedSprite {
   };
 }
 
+/** Which of the optional clips a sheet carries ({@link CharacterMotion}). */
+export interface SheetClips {
+  walkAttack?: boolean;
+  run?: boolean;
+  backpedal?: boolean;
+}
+
 /** How a swing is drawn beyond its aim ({@link CharacterMotion.attack}). */
 export interface Swing {
   /** A charge (the warrior's dash): the whole attack pose, never over the walk. */
@@ -79,19 +86,34 @@ export class CharacterMotion {
   private guarding = false;
   /** The swing running is a charge, its pose held past the clip: never split over the walk. */
   private charging = false;
+  private faced?: Facing8;
 
-  private readonly walkAttack: boolean;
+  private readonly clips: Required<SheetClips>;
 
   /**
    * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the four classes', FS-HF0WW,
-   * FS-3V7GC), so an attack drawn while moving keeps the legs walking.
+   * FS-3V7GC), so an attack drawn while moving keeps the legs walking. `clips.run` and
+   * `clips.backpedal`: it carries those (FS-JS7C8), so a moving class runs or steps backward.
    */
   constructor(
     public facing: Facing8 = "se",
     private readonly attackMs = PLACEHOLDER_ATTACK_MS,
-    clips: { walkAttack?: boolean } = {},
+    clips: SheetClips = {},
   ) {
-    this.walkAttack = clips.walkAttack ?? false;
+    this.clips = {
+      walkAttack: clips.walkAttack ?? false,
+      run: clips.run ?? false,
+      backpedal: clips.backpedal ?? false,
+    };
+  }
+
+  /**
+   * Turns the character to `facing` from the next step on, until it is let go with undefined
+   * (FS-JS7C8 §D): idle, run, backpedal and the guard face it, as `selectAnimation`'s `face`.
+   * The local player's pointer facing; once let go, the facing it was turned to stands.
+   */
+  face(facing: Facing8 | undefined): void {
+    this.faced = facing;
   }
 
   /**
@@ -154,7 +176,10 @@ export class CharacterMotion {
       aim: attacking ? this.aim : undefined,
       holding: this.holding,
       guarding: this.guarding,
-      walkAttack: this.walkAttack && !this.charging,
+      walkAttack: this.clips.walkAttack && !this.charging,
+      face: this.faced,
+      run: this.clips.run,
+      backpedal: this.clips.backpedal,
     });
     this.facing = choice.facing;
     return choice;
@@ -192,8 +217,8 @@ export class CharacterAnimator {
     this.sheet = look.sheet;
     this.variant = look.variant;
     const attack = art.sheet(this.sheet)?.animations.attack;
-    this.baked = art.animationKey(this.sheet, this.clip("idle")) !== undefined;
-    this.guards = art.animationKey(this.sheet, this.clip("parry")) !== undefined;
+    this.baked = this.carries("idle");
+    this.guards = this.carries("parry");
     const sheet = this.baked ? art.sheet(this.sheet) : undefined;
     this.artScale = sheet ? 1 / sheetScale(sheet) : 1;
     this.motion = new CharacterMotion(
@@ -201,7 +226,11 @@ export class CharacterAnimator {
       attack && attack.fps > 0
         ? (attack.frames[0].length / attack.fps) * 1000
         : PLACEHOLDER_ATTACK_MS,
-      { walkAttack: art.animationKey(this.sheet, this.clip("walk_attack")) !== undefined },
+      {
+        walkAttack: this.carries("walk_attack"),
+        run: this.carries("run"),
+        backpedal: this.carries("backpedal"),
+      },
     );
   }
 
@@ -221,6 +250,11 @@ export class CharacterAnimator {
   attack(now: number, aim?: Point, swing?: Swing): void {
     this.motion.attack(now, aim, swing);
     this.swingPending = true;
+  }
+
+  /** Turns the character to `facing` while it may choose; as {@link CharacterMotion.face}. */
+  face(facing: Facing8 | undefined): void {
+    this.motion.face(facing);
   }
 
   /** Holds the idle clip turned to `aim`; as {@link CharacterMotion.holdAim}. */
@@ -261,8 +295,9 @@ export class CharacterAnimator {
   /**
    * Plays the chosen clip. The same clip carries on (a finished attack, guard or death holds its
    * last frame rather than replaying) unless a new attack or guard was started; a looping clip turning to a new facing keeps its place in the
-   * cycle, so a stride does not restart at every turn, and a swing that starts or stops moving
-   * swaps between `attack` and `walk_attack` at the same point of the shot. A clip continuing from
+   * cycle, so a stride does not restart at every turn, a run swapping to a backpedal or back keeps
+   * it too (FS-JS7C8 R13), and a swing that starts or stops moving swaps between `attack` and
+   * `walk_attack` at the same point of the shot. A clip continuing from
    * another sheet (a re-dress, FS-VHGE7 §F R48) keeps its place too, a one-shot included.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
@@ -283,6 +318,9 @@ export class CharacterAnimator {
       let startFrame = 0;
       if (current && from === clip && (this.loops(clip) || sheetOf(current.key) !== this.sheet))
         startFrame = Math.min(at, this.frameCount(clip) - 1);
+      // stepping forward or back mid-stride (FS-JS7C8 R13): the other carries on at the same frame
+      else if (current && from !== clip && from && this.strideClips.has(from) && this.strideClips.has(clip))
+        startFrame = Math.min(at, this.frameCount(clip) - 1);
       // starting or stopping mid-swing (FS-HF0WW): the other swing clip carries on from
       // as far through as this one got, rather than drawing the shot again from the start
       else if (current && from !== clip && from && this.swingClips.has(from) && this.swingClips.has(clip))
@@ -298,6 +336,16 @@ export class CharacterAnimator {
   /** The manifest clips one swing may play: the attack, and the attack on the move. */
   private get swingClips(): ReadonlySet<string> {
     return new Set([...SWINGS].map((a) => this.clip(a)));
+  }
+
+  /** The manifest clips a stride on the move may swap between, frame for frame. */
+  private get strideClips(): ReadonlySet<string> {
+    return new Set([...STRIDES].map((a) => this.clip(a)));
+  }
+
+  /** Whether the sheet carries `animation`, under this look's palette variant. */
+  private carries(animation: CharacterAnimation): boolean {
+    return this.art.animationKey(this.sheet, this.clip(animation)) !== undefined;
   }
 
   private frameCount(clip: string): number {
@@ -321,3 +369,5 @@ const sheetOf = (key: string) => key.split("/")[0];
 
 /** The clips an attack plays: standing, or on the move where the sheet carries it. */
 const SWINGS: ReadonlySet<CharacterAnimation> = new Set(["attack", "walk_attack"]);
+/** The clips a class strides in: forward, or stepping back from where it faces (FS-JS7C8). */
+const STRIDES: ReadonlySet<CharacterAnimation> = new Set(["run", "backpedal"]);

@@ -42,6 +42,15 @@ const UNIT: Record<Facing8, [number, number]> = {
 };
 
 /**
+ * Whether a world motion runs more than 90° from a facing: moving backward from where the
+ * character faces (FS-JS7C8 R9). Exactly 90° is not away, and standing still never is.
+ */
+export function movesAwayFrom(facing: Facing8, vx: number, vy: number): boolean {
+  const [fx, fy] = UNIT[facing];
+  return fx * vx + fy * vy < 0;
+}
+
+/**
  * The placeholder texture nearest a world facing once it is projected: the
  * dominant screen axis of the direction as drawn. Stands in until the 8-way
  * character sheets exist (FS-2325V §E).

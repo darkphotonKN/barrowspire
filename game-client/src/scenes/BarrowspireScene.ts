@@ -114,6 +114,7 @@ import { drawTorchBar } from "@/ui/torchBar";
 import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
+import { followPointer } from "@/render/art/pointerFacing";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
@@ -519,6 +520,8 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private playerAnim?: CharacterAnimator;
   private otherPlayersAnim: Map<string, CharacterAnimator> = new Map();
+  /** The pointer facing the own character turns to (FS-JS7C8 §D); one per visit. */
+  private pointerFacing?: (from: Point) => Facing8 | undefined;
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
@@ -1000,6 +1003,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerLegs = undefined;
     this.playerNameText = undefined;
     this.playerAnim = undefined;
+    this.pointerFacing = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
     this.ownHealth = undefined;
@@ -3271,6 +3275,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * it is open the keyboard and the pointer are its (FS-9K8EZ req 5), and closing it resumes them.
    */
   private bindRunInput(): void {
+    // the own character turns to the pointer, moving or standing (FS-JS7C8 §D)
+    this.pointerFacing = followPointer(this);
+
     // E 鍵互動（門、寶箱、開關、逃脫門）
     this.input.keyboard?.on("keydown-E", () => {
       if (this.menu) return;
@@ -5693,6 +5700,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!dead) this.deathDust.alive(this.player);
       // the merc's guard clip holds while his stance does (FS-MAMHR §G.35)
       this.playerAnim.guard(this.kit.guarding, this.time.now);
+      this.playerAnim.face(this.pointerFacing?.(this.playerPos));
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
     }
 

@@ -8,7 +8,7 @@
  * the server already sends reaching zero.
  */
 
-import { facingFrom, type Facing8 } from "@/render/iso/facing";
+import { facingFrom, movesAwayFrom, type Facing8 } from "@/render/iso/facing";
 import { directionIndex } from "./manifest";
 
 /** The clips every character and creature sheet carries (FS-2325V §E.2). */
@@ -18,13 +18,16 @@ export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const
  * raised into and then held on its last frame; and a class's attack on the move
  * (FS-HF0WW, FS-3V7GC): `walk_attack`, the attack from the waist up over the walk from the
  * waist down, lasting exactly as long as the attack, which the four classes' sheets carry; and
- * a demon's fire claw (FS-VHGE7 §D R31), which only the demons' sheets carry once baked.
+ * a demon's fire claw (FS-VHGE7 §D R31), which only the demons' sheets carry once baked; and
+ * a class's `run` and `backpedal` (FS-JS7C8 §A, §B), which a class sheet carries once re-baked.
  */
 export type CharacterAnimation =
   | (typeof CHARACTER_ANIMATIONS)[number]
   | "parry"
   | "walk_attack"
-  | "claw";
+  | "claw"
+  | "run"
+  | "backpedal";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
@@ -32,9 +35,23 @@ export type CharacterAnimation =
  * plays at about 2.7x to keep planted feet planted.
  */
 export const WALK_PACE = 74;
+/**
+ * World px per second the run clip covers at 1x, measured as {@link WALK_PACE} is (FS-JS7C8 R3).
+ * A placeholder inside the band the run is keyed to (180–220) until the bake measures the keyed
+ * clip; inert while no sheet carries `run`.
+ */
+export const RUN_PACE = 200;
+/**
+ * World px per second the backpedal clip covers at 1x (FS-JS7C8 R10). A placeholder inside its
+ * band (150–220) until the bake measures it; inert while no sheet carries `backpedal`.
+ */
+export const BACKPEDAL_PACE = 200;
 /** Below this drawn speed (world px/s) a player is standing, not walking: easing residue. */
 export const MOVING_SPEED = 20;
-/** The walk never plays faster than this, however fast a burst (a dash) carries the body. */
+/**
+ * The walk (and the run and backpedal) never plays faster than this, however fast a burst (a
+ * dash) carries the body.
+ */
 export const MAX_WALK_SCALE = 4;
 
 /** What a scene knows about one character this frame. */
@@ -67,6 +84,17 @@ export interface CharacterState {
    * Without it, or during a charge's held pose, the attack plays as before.
    */
   walkAttack?: boolean;
+  /**
+   * The facing the character is turned to while it may choose (FS-JS7C8 §D): the pointer facing
+   * for the local player. Idle, run, backpedal and the guard turn to it; an attack still faces
+   * its aim, death keeps its facing, a held aim turns to the hold. Absent (folk, monsters, menu
+   * figures, a player before the pointer moves): today's facing rules exactly.
+   */
+  face?: Facing8;
+  /** The sheet carries `run` (FS-JS7C8 §A): a moving class runs instead of walking. */
+  run?: boolean;
+  /** The sheet carries `backpedal` (FS-JS7C8 §B): moving away from `face` steps backward. */
+  backpedal?: boolean;
 }
 
 export interface AnimationChoice {
@@ -82,9 +110,13 @@ export interface AnimationChoice {
  * Dead over attacking over guarding over holding an aim over moving over idle. Attacking while
  * moving on a sheet that carries `walk_attack` plays that, turned the way the attack would be (to
  * the aim when known): the legs walk toward the aim, whichever way the body is going.
+ *
+ * Moving on a sheet that carries `run` runs, turned to `face`; moving more than 90° away from
+ * `face` backpedals, turned to it, or with no `backpedal` runs turned to the movement
+ * (FS-JS7C8 R9, R11). A sheet without `run` walks turned to the movement, as before.
  */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim, holding, guarding, walkAttack } =
+  const { velocity, facing, attacking, dead, aim, holding, guarding, walkAttack, face, run, backpedal } =
     state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
@@ -105,15 +137,24 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
       aim ? facingFrom(aim.x, aim.y, walking) : walking,
     );
 
-  // not directional (§C.10): he guards whichever way he is going
-  if (guarding) return choose("parry", walking);
+  // not directional (§C.10): he guards whichever way he is going, or faces where he looks
+  if (guarding) return choose("parry", face ?? walking);
 
   if (holding) return choose("idle", facingFrom(holding.x, holding.y, facing));
 
-  if (moving)
-    return choose("walk", walking, Math.min(speed / WALK_PACE, MAX_WALK_SCALE));
+  const paced = (pace: number) => Math.min(speed / pace, MAX_WALK_SCALE);
+  if (moving && run) {
+    if (!face || !movesAwayFrom(face, velocity.vx, velocity.vy))
+      return choose("run", face ?? walking, paced(RUN_PACE));
+    // a sheet baked with the run alone runs the way it goes rather than moonwalk (R11)
+    return backpedal
+      ? choose("backpedal", face, paced(BACKPEDAL_PACE))
+      : choose("run", walking, paced(RUN_PACE));
+  }
 
-  return choose("idle", facing);
+  if (moving) return choose("walk", walking, paced(WALK_PACE));
+
+  return choose("idle", face ?? facing);
 }
 
 /**

@@ -66,6 +66,7 @@ import { SCENE_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
+import { followPointer } from "@/render/art/pointerFacing";
 import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
@@ -605,6 +606,8 @@ export class HubScene extends Phaser.Scene {
   /** Everything the scene knows about one player, keyed by entity id. */
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
+  /** The pointer facing the own character turns to (FS-JS7C8 §D); one per visit. */
+  private pointerFacing?: (from: Point) => Facing8 | undefined;
   /** The sprite the camera is latched onto, so it is latched once per sprite, not per tick. */
   private followedSprite?: unknown;
 
@@ -845,6 +848,8 @@ export class HubScene extends Phaser.Scene {
       : undefined;
     if (!this.groundLayer) this.drawGround();
     this.bindInput();
+    // the own character turns to the pointer, moving or standing (FS-JS7C8 §D)
+    this.pointerFacing = followPointer(this);
     this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
@@ -1117,6 +1122,7 @@ export class HubScene extends Phaser.Scene {
     // the next visit rebuilds every sprite; the camera must latch onto the new body
     // whatever its entity id, so neither survives the visit
     this.selfEntityID = null;
+    this.pointerFacing = undefined;
     this.followedSprite = undefined;
     // the next visit steps into whatever gate it starts in
     this.atGate = undefined;
@@ -1380,7 +1386,7 @@ export class HubScene extends Phaser.Scene {
       this.placeMarker(npc.sprite, npc.name, npc.anim, npc.sigil);
     }
 
-    for (const view of this.views.values()) {
+    for (const [entityID, view] of this.views) {
       const { sprite, pos, target } = view;
 
       easeToward(pos, target);
@@ -1391,6 +1397,8 @@ export class HubScene extends Phaser.Scene {
       // drawn; the hub has no attacks and no deaths.
       if (view.anim.baked) {
         const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+        // the own character turns to the pointer (FS-JS7C8 §D)
+        if (entityID === this.selfEntityID) view.anim.face(this.pointerFacing?.(pos));
         if (body) view.anim.show(body, view.anim.step(pos, time, delta, false));
         continue;
       }

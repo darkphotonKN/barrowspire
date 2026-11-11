@@ -20,6 +20,7 @@ import { fieldArt } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
+import { followPointer } from "@/render/art/pointerFacing";
 import { LightMap } from "@/render/lighting";
 import { FIELD_MARKER_OUTLINE, MARKER_DEPTH } from "@/render/markers";
 import {
@@ -168,6 +169,8 @@ export class FieldScene extends Phaser.Scene {
   private lightMap?: LightMap;
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
+  /** The pointer facing the own character turns to (FS-JS7C8 §D); one per visit. */
+  private pointerFacing?: (from: Point) => Facing8 | undefined;
   private followedSprite?: unknown;
   /** Drawn once: a field's keep-out areas and entrance never move. */
   private groundDrawn = false;
@@ -256,6 +259,8 @@ export class FieldScene extends Phaser.Scene {
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
     this.bindInput();
+    // the own character turns to the pointer, moving or standing (FS-JS7C8 §D)
+    this.pointerFacing = followPointer(this);
 
     // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
     // (FS-X2F2H §Requirements 54, guideline "Lighting")
@@ -496,6 +501,7 @@ export class FieldScene extends Phaser.Scene {
     this.selfLevel = undefined;
     this.views.clear();
     this.selfEntityID = null;
+    this.pointerFacing = undefined;
     this.followedSprite = undefined;
     this.groundDrawn = false;
     this.obstaclesDrawn = false;
@@ -527,11 +533,12 @@ export class FieldScene extends Phaser.Scene {
     this.sendMovementIntent();
     this.fight?.update(delta);
     this.drainFallen(this.time.now);
-    for (const view of this.views.values()) {
+    for (const [entityID, view] of this.views) {
       view.pos.x = Phaser.Math.Linear(view.pos.x, view.target.x, POSITION_LERP);
       view.pos.y = Phaser.Math.Linear(view.pos.y, view.target.y, POSITION_LERP);
       standAt(view.sprite, view.pos, 1);
       const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+      if (entityID === this.selfEntityID) view.anim.face(this.pointerFacing?.(view.pos));
       if (view.anim.baked && body) view.anim.show(body, view.anim.step(view.pos, time, delta, view.fallen));
       const s = worldToScreen(view.pos.x, view.pos.y);
       view.name.setPosition(s.x, s.y - (body?.displayHeight ?? 60) - NAME_GAP);
