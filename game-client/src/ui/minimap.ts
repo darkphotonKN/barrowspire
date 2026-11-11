@@ -40,7 +40,7 @@ export const MINIMAP = {
   /** The panel, in logical px (§E.21). */
   width: 216,
   height: 108,
-  /** From the floor indicator's bottom to the panel's top (§E.20). */
+  /** From the panel's bottom to the floor indicator's top under it (FS-56CKV §B.9). */
   gap: 6,
   /** From the rim to the floor's fit, each side. */
   inset: 4,
@@ -84,11 +84,11 @@ export const MINIMAP_EDGE = { width: 1 } as const;
  */
 export const MINIMAP_GLYPH = { ink: 7, ring: 1, box: 9 } as const;
 
-/** Where the minimap stands (§E.20): its right edge on the column's, its top `gap` under the floor indicator. */
-export function minimapRect(right: number, floorBottom: number): Rect {
+/** Where the minimap stands (§E.20, FS-56CKV §B.9): its right edge on the column's, its top the column's top. */
+export function minimapRect(right: number, top: number): Rect {
   return {
     x: Math.round(right) - MINIMAP.width,
-    y: Math.round(floorBottom) + MINIMAP.gap,
+    y: Math.round(top),
     width: MINIMAP.width,
     height: MINIMAP.height,
   };
