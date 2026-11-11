@@ -1213,3 +1213,138 @@ describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
     expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
   });
 });
+
+// FS-PQ2TW R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the field with its start.
+describe("FieldScene arrival from its start (FS-PQ2TW R5–R8)", () => {
+  it.each([true, false])("should keep the arrival %s its start was handed, beside its field", (arrival) => {
+    const field = new FieldScene() as unknown as {
+      init(data?: { field?: string; arrival?: boolean }): void;
+      arrival: boolean;
+      field: string;
+    };
+
+    field.init({ field: "forlorn_forest", arrival });
+
+    expect(field.arrival).toBe(arrival);
+    expect(field.field).toBe("forlorn_forest");
+  });
+
+  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
+    const field = new FieldScene() as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
+
+    field.init({ arrival: true });
+    field.init();
+
+    expect(field.arrival).toBe(false);
+  });
+});
+
+const { ArrivalCard, ARRIVAL_CARD } = await import("@/ui/arrivalCard");
+
+// FS-PQ2TW §A R2, R5; §B R11, R12, R15; §C R19. I-PQ2TW-4: coming into a field plays that field's
+// card through the shared piece; a return plays nothing.
+describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type ArrivingField = {
+    add: unknown;
+    tweens: unknown;
+    renderState(state: unknown): void;
+    relayoutHud(): void;
+  };
+
+  /** What the field made, in order: its kind, its arguments and its depth. */
+  interface Made {
+    kind: string;
+    args: unknown[];
+    depth?: number;
+    self: unknown;
+  }
+
+  /** A field created by a world switch into `field` that told it an arrival, or a return. */
+  function createdAs(arrival: boolean, fieldId = "gentle_meadows") {
+    const { field, stub } = fieldToCreate<ArrivingField>();
+    const made: Made[] = [];
+    field.add = new Proxy(
+      {},
+      {
+        get: (_target, kind) =>
+          (...args: unknown[]) => {
+            const record: Made = { kind: String(kind), args, self: undefined };
+            const self: unknown = new Proxy(function () {}, {
+              get: (_t, key) => {
+                if (key === Symbol.toPrimitive) return () => 0;
+                if (key === "then") return undefined;
+                if (key === "setDepth")
+                  return (depth: number) => {
+                    record.depth = depth;
+                    return self;
+                  };
+                return self;
+              },
+              apply: () => self,
+            });
+            record.self = self;
+            made.push(record);
+            return self;
+          },
+      },
+    );
+    const tweens = { add: vi.fn((_tween: { targets?: unknown; alpha?: number }) => stub) };
+    field.tweens = tweens;
+    Object.assign(field, { placePlayer: vi.fn(), drawGround: vi.fn(), drawObstacles: vi.fn(), drawEntrance: vi.fn() });
+
+    (field.init as (data?: { field?: string; arrival?: boolean }) => void)({ field: fieldId, arrival });
+    field.create({ field: fieldId });
+
+    const veil = made.find((m) => m.kind === "rectangle" && m.depth === ARRIVAL_CARD.depth);
+    const words = () => made.filter((m) => m.kind === "text").map((m) => String(m.args[2]));
+    const lifts = () =>
+      tweens.add.mock.calls.filter(([t]) => veil !== undefined && t.targets === veil.self && t.alpha === 0).length;
+    const render = (worldType = "field") => field.renderState({ world_type: worldType, other_players: [] });
+    return { field, made, veil, words, lifts, render };
+  }
+
+  it.each([
+    ["gentle_meadows", "Gentle Meadows", "The grass is soft, and the Spire is far."],
+    ["forlorn_forest", "The Forlorn Forest", "The dead have not left these trees."],
+    ["dev_test_room", "Dev Test Room", "Nothing here is kept."],
+  ])("should put the dark up first thing at create on an arrival into %s, with its card (R11, R19)", (id, title, line) => {
+    const { made, words } = createdAs(true, id);
+
+    expect(made[0].kind).toBe("rectangle");
+    expect(made[0].args).toEqual([0, 0, viewport.width, viewport.height, palette.inkDeep, 1]);
+    expect(made[0].depth).toBe(ARRIVAL_CARD.depth);
+    expect(words().slice(0, 2)).toEqual([title, line]);
+  });
+
+  it("should put nothing up at create on a return (R5)", () => {
+    const { veil, words } = createdAs(false, "forlorn_forest");
+
+    expect(veil).toBeUndefined();
+    expect(words()).not.toContain("The Forlorn Forest");
+  });
+
+  it("should hold the dark until the field's first state is drawn, then lift it once (R12)", () => {
+    const { lifts, render } = createdAs(true);
+    expect(lifts()).toBe(0);
+
+    render("hub");
+    expect(lifts()).toBe(0);
+
+    render();
+    render();
+    expect(lifts()).toBe(1);
+  });
+
+  it("should re-cover the view with the dark when the view changes (R16)", () => {
+    const relayout = vi.spyOn(ArrivalCard.prototype, "relayout");
+    const { field } = createdAs(true);
+
+    field.relayoutHud();
+
+    expect(relayout).toHaveBeenCalled();
+  });
+});

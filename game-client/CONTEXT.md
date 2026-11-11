@@ -54,6 +54,12 @@ translation belongs to the surface that renders words.
 - **Town** — the hub, as the owner and the lore say it (the Elder: "the town needs heroes now").
   The screen may say town; code keeps **hub** (`HubScene`, `HUB_KEEP_OUT`). One world, not a
   district of it.
+- **Arrival** — coming into a place the player was not just in: the town, a field, the Spire's
+  first floor, or the next floor up on a climb. Not an arrival: a reconnect or a page refresh back
+  into the same place, and walking into a town building (FS-PQ2TW, ADR-0073).
+- **Arrival card** — what the screen shows on an arrival: the view dark, the place's name over a
+  rule and one line, then the view back and the card gone to dust. The climb's **floor card** is
+  the arrival card of a floor; "floor card" stays the word for that one.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.

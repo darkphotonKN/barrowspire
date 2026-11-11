@@ -36,8 +36,10 @@ import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
 import type { ItemState } from "@/types/gameState";
+import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
 import { itemShine } from "@/ui/itemShine";
+import { placeCard } from "@/ui/placeCard";
 
 /** What a demo plays on: the gallery's one figure, on its floor, under the run's light. */
 export interface Stage {
@@ -87,6 +89,32 @@ const FABLED_SAMPLE: ItemState = {
 const FABLED_ICON_SIDE = 64;
 const FABLED_ICON_OFFSET = { x: 90, y: -60 };
 
+/**
+ * The gallery's one arrival card, so a replay replaces the card still up as the game's next
+ * arrival would (FS-PQ2TW R9), whichever leave either plays (§Change: Smoke R52). Drawn over the
+ * gallery's own canvas, not the game's view.
+ */
+const arrivalCards = new WeakMap<Phaser.Scene, ArrivalCard>();
+
+function arrivalCardOn(s: Stage): ArrivalCard {
+  let card = arrivalCards.get(s.scene);
+  if (!card) {
+    const { width, height } = s.scene.scale;
+    const view = { width, height, centerX: width / 2, centerY: height / 2 };
+    card = new ArrivalCard(s.scene, cardLeaves(s.scene, () => s.art), view);
+    arrivalCards.set(s.scene, card);
+  }
+  return card;
+}
+
+/**
+ * The climb's whole card, as the game plays it: the dark, the card, its hold, then `leave` off its
+ * letters (FS-PQ2TW §D, R40; §Change: Smoke R52). Under reduced motion it fades, as in the game.
+ */
+function playArrivalCard(s: Stage, leave: CardLeave): void {
+  arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), { built: true }, leave);
+}
+
 export const EFFECT_CARDS: EffectCard[] = [
   {
     module: "aimLine",
@@ -110,6 +138,23 @@ export const EFFECT_CARDS: EffectCard[] = [
     name: "Bone arrow (hostile)",
     // a Bone Archer's shot as a run flies it: the flight only, it has no release (FS-B4SG9 §D R22)
     demo: (s) => s.fly("bone_arrow"),
+  },
+  {
+    module: "cardAsh",
+    name: "Arrival card ash",
+    // a third trial beside the dust and the smoke, for the owner to compare (§Change: Ash R62)
+    demo: (s) => playArrivalCard(s, "ash"),
+  },
+  {
+    module: "cardDust",
+    name: "Arrival card dust",
+    demo: (s) => playArrivalCard(s, "dust"),
+  },
+  {
+    module: "cardSmoke",
+    name: "Arrival card smoke",
+    // a trial beside the dust, for the owner to compare (§Change: Smoke R52)
+    demo: (s) => playArrivalCard(s, "smoke"),
   },
   {
     module: "charge",

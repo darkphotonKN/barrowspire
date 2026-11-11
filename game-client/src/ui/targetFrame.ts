@@ -28,7 +28,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 export const TARGET_FRAME_TOP = 10;
 /** A normal frame's size: within 280 × 52, ending above the notice band at y ≈ 78 (§E.14). */
 export const TARGET_FRAME = { width: 260, height: 46 } as const;
-/** The HUD band (§E.16): over the floor veil (950), under the passing notices (2000). */
+/** The HUD band (§E.16): over the arrival card (960), under the passing notices (2000). */
 export const TARGET_FRAME_DEPTH = 1000;
 export const TARGET_FADE_IN_MS = 120;
 export const TARGET_FADE_OUT_MS = 200;

@@ -26,6 +26,7 @@ import {
   ProjectileState,
 } from "@/types/gameState";
 import { ABILITY_COPY } from "@/ui/abilityCopy";
+import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
@@ -33,13 +34,13 @@ import { apiClient } from "@/utils/api";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
-  floorCard,
   floorLabel,
   interactNotice,
   isTopFloor,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
+import { placeCard } from "@/ui/placeCard";
 import {
   FALL_CONFIRM,
   nextWatched,
@@ -362,20 +363,6 @@ interface MenuState {
   resolved: boolean;
 }
 
-/**
- * The climb's dark and floor card (FS-F6F88 req 32): over the world and its atmosphere (~900),
- * under the HUD (1000) and notices (2000).
- */
-const FLOOR_VEIL_DEPTH = 950;
-/** How long the view stays dark before the card rises, in ms. */
-const FLOOR_DARK_HOLD_MS = 250;
-/** The card's fade, in ms; it leaves at twice this. */
-const FLOOR_CARD_FADE_MS = 300;
-/** The dark lifting off the new floor, in ms. */
-const FLOOR_VIEW_RETURN_MS = 900;
-/** How long the card holds once up, in ms. */
-const FLOOR_CARD_HOLD_MS = 1400;
-
 /** Health the server already sends, run out: a player's death clip plays on it. */
 const isDead = (player?: { current_health?: number } | null) =>
   player?.current_health !== undefined && player.current_health <= 0;
@@ -600,6 +587,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * player between two positions every tick.
    */
   private sessionID?: string;
+  /**
+   * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
+   * handed over in the start data. A start with no verdict is no arrival. An arrival is dark from
+   * `create` and plays its floor's card at the first broadcast; a return plays nothing. A climb
+   * is not a world switch (ADR-0015): the run detects it itself.
+   */
+  private arrival = false;
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
@@ -692,8 +686,6 @@ export class BarrowspireScene extends Phaser.Scene {
   /** Asks for a floor's map while a snapshot's floor has none (FS-KE075 §H.41). */
   private readonly mapWait = new FloorMapWait();
   private floorMapUnsubscribe?: () => void;
-  /** Lifts a climb's veil once the new floor's map is built (FS-KE075 §H.41); none otherwise. */
-  private veilRelease?: () => void;
 
   // 建築
   private buildings: Building[] = [];
@@ -944,8 +936,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * of a start, so a reconnect builds the party's floor directly with no transition (req 32).
    */
   private lastFloor?: number;
-  /** The dark and the floor card a climb comes back up through; gone once it has faded. */
-  private floorVeil: Phaser.GameObjects.GameObject[] = [];
+  /**
+   * The arrival card a climb comes back up through (FS-PQ2TW R37): the shared piece's, told when
+   * the new floor is built from its map (FS-KE075 §H.41), and leaves as dust (FS-PQ2TW §D). It lets
+   * its own card go at a scene end.
+   */
+  private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
 
   constructor() {
     super({ key: "BarrowspireScene" });
@@ -957,9 +953,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * builds is forgotten when it stops, and the next start rebuilds it through the
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
-  init(data?: { sessionID?: string }): void {
+  init(data?: { sessionID?: string; arrival?: boolean }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
+    // whether the switch that started it was an arrival (FS-PQ2TW R8); a reconnect is a return
+    this.arrival = data?.arrival ?? false;
     // a Leave the last run left pending (one pressed while it still loaded) is not this run's
     this.leavePending = false;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
@@ -1129,8 +1127,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.markers = "overhead";
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
-    this.floorVeil = [];
-    this.veilRelease = undefined;
     // the next run is sized and built from its own map
     this.mapWidth = 0;
     this.mapHeight = 0;
@@ -3127,6 +3123,9 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
+    // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
+    if (this.arrival) this.arrivalCard.dark();
     // Connect via SocketManager
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
@@ -3215,7 +3214,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
-    this.relayoutFloorVeil();
+    this.arrivalCard.relayout();
     this.targetFrame?.relayout();
     this.dungeon?.minimap?.place(this.minimapPlace());
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
@@ -3620,6 +3619,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
     // the new one, so nothing waits on the transition, which only plays over the result.
     const climb = climbed(this.lastFloor, state.floor);
+    // an arrival's first floor, at the first broadcast that names one (FS-PQ2TW R2, R13)
+    const arrived = this.arrival && this.lastFloor === undefined && state.floor !== undefined;
     if (state.floor !== undefined) this.lastFloor = state.floor;
     if (climb) this.leaveFloor();
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
@@ -3741,11 +3742,9 @@ export class BarrowspireScene extends Phaser.Scene {
       this.escapedCountText.setText(`Escaped: ${count}`);
     }
 
-    if (climb) {
-      this.settlePlayers();
-      this.playFloorTransition(state);
-    }
-    if (building) this.veilRelease?.();
+    if (climb) this.settlePlayers();
+    if (climb || arrived) this.playFloorCard(state);
+    if (building) this.arrivalCard.built();
   }
 
   /** This run's floor map as the store holds it, or none: another run's is not ours to build. */
@@ -3776,7 +3775,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.buildDressing(state);
     this.stampLights(state.floor);
     this.explore(state);
-    this.veilRelease?.();
+    this.arrivalCard.built();
   }
 
   /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
@@ -4165,83 +4164,17 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** The climb's dark and its card, over the whole view and about its centre again (FS-ZAJMH R13). */
-  private relayoutFloorVeil(): void {
-    const [veil, ...card] = this.floorVeil;
-    if (!veil?.active) return;
-    (veil as Phaser.GameObjects.Rectangle).setSize(viewport.width, viewport.height);
-    for (const obj of card) (obj as Phaser.GameObjects.Text | Phaser.GameObjects.Graphics).setX(viewport.centerX);
-    crispen(card);
-  }
-
   /**
-   * The climb's transition (FS-F6F88 req 32): the view drops to dark over the floor just built,
-   * then comes back up with the floor card. Presentation only: state has already applied and
-   * keeps applying under it. It sits below the HUD, so the floor indicator and the new floor's
-   * notices stay readable through it.
+   * The floor's card, on a climb (FS-F6F88 req 32) or on an arrival (FS-PQ2TW R2), played through
+   * the shared arrival card: the view drops to dark over the floor, or stays in the arrival's dark,
+   * and comes back up with the floor's words, held dark until the floor is built from its map
+   * (FS-KE075 §H.41).
    */
-  private playFloorTransition(state: ClientGameState): void {
+  private playFloorCard(state: ClientGameState): void {
     if (state.floor === undefined) return;
-    this.floorVeil.forEach((obj) => obj.destroy());
-
-    const { title, line } = floorCard({ floor: state.floor, top: isTopFloor(state) });
-    const veil = this.add.rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1);
-    veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
-
-    const heading = this.add.text(viewport.centerX, viewport.centerY - 14, title, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "26px",
-      color: toCss(palette.hudText),
-      letterSpacing: 4,
+    this.arrivalCard.play(placeCard({ world: "run", floor: state.floor, top: isTopFloor(state) }), {
+      built: this.builtFloor === state.floor,
     });
-    const rule = this.add.graphics();
-    rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(-90, viewport.centerY + 8, 90, viewport.centerY + 8);
-    rule.setX(viewport.centerX);
-    const subtitle = this.add.text(viewport.centerX, viewport.centerY + 26, line, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
-      fontStyle: "italic",
-      color: toCss(palette.hudLabel),
-    });
-    const card = [heading, rule, subtitle];
-    heading.setOrigin(0.5);
-    subtitle.setOrigin(0.5);
-    card.forEach((obj) => obj.setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH + 1).setAlpha(0));
-    this.floorVeil = [veil, ...card];
-
-    this.tweens.add({
-      targets: card,
-      alpha: 1,
-      duration: FLOOR_CARD_FADE_MS,
-      delay: FLOOR_DARK_HOLD_MS,
-    });
-    // the view comes back up only over a built floor: a climb whose map has not come keeps the
-    // dark until it is built, then lifts as it would have, less the time already waited (§H.41)
-    const shownAt = this.time.now;
-    const lift = () => {
-      this.veilRelease = undefined;
-      const waited = this.time.now - shownAt || 0;
-      const hold = Math.max(0, FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS - waited);
-      this.tweens.add({
-        targets: veil,
-        alpha: 0,
-        duration: FLOOR_VIEW_RETURN_MS,
-        delay: hold,
-      });
-      this.tweens.add({
-        targets: card,
-        alpha: 0,
-        duration: FLOOR_CARD_FADE_MS * 2,
-        delay: hold + FLOOR_CARD_HOLD_MS,
-        onComplete: () => {
-          this.floorVeil.forEach((obj) => obj.destroy());
-          this.floorVeil = [];
-        },
-      });
-    };
-    if (this.builtFloor === state.floor) lift();
-    else this.veilRelease = lift;
   }
 
   /** "Floor N" from the broadcast, redrawn only when it changes; hidden without floors. */
@@ -4946,7 +4879,7 @@ export class BarrowspireScene extends Phaser.Scene {
         lastHit: this.lastHit.current(this.time.now),
       });
     }
-    const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
+    const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
   }
 

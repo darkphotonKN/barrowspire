@@ -426,3 +426,5 @@ Not this feature's work, recorded so it is not lost:
   revisiting when the hub lands.
 - `character-service` exists under `game-server/` but is absent from the root
   `SPECIFICATION.md` service map. Pre-existing drift, unrelated to this feature.
+
+## Change: Arrival card → FS-PQ2TW

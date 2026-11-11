@@ -713,3 +713,5 @@ themselves (this FS only avoids adding to them).
 ## Change: Walls on the cell boundary → FS-XK2B6
 
 ## Change: Ranged monsters and the Bone Archer → FS-B4SG9
+
+## Change: Arrival card → FS-PQ2TW

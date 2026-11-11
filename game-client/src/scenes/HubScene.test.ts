@@ -2943,6 +2943,22 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(view.building).toBeUndefined();
     });
 
+    // FS-PQ2TW R4; ADR-0015: a town building adds no world, so no world_entered and no arrival
+    it("should play no arrival card stepping into and out of the Inn and the store", () => {
+      const play = vi.spyOn(ArrivalCard.prototype, "play");
+      const dark = vi.spyOn(ArrivalCard.prototype, "dark");
+      const { hub, standIn } = town(BAKED);
+      standIn(IN_INN);
+      standIn(OUTDOORS);
+      standIn(IN_STORE);
+      standIn(OUTDOORS);
+      expect(play).not.toHaveBeenCalled();
+      expect(dark).not.toHaveBeenCalled();
+      expect((hub as unknown as MenuHub).scene.start).not.toHaveBeenCalled();
+      play.mockRestore();
+      dark.mockRestore();
+    });
+
     it("should snap on at the door gap, the threshold being inside", () => {
       const { stage, standIn } = town(BARE);
       standIn({ x: 550, y: 485 });
@@ -3619,5 +3635,157 @@ describe("HubScene messages while its art downloads (FS-C4JWH Edge States)", () 
     expect(off.mock.calls.map(([action]) => action)).toEqual(
       expect.arrayContaining(["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"]),
     );
+  });
+});
+
+// FS-PQ2TW R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the town with its start.
+describe("HubScene arrival from its start (FS-PQ2TW R5–R8)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([true, false])("should keep the arrival %s its start was handed", (arrival) => {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const hub = hubOnStage().hub as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
+
+    hub.init({ arrival });
+
+    expect(hub.arrival).toBe(arrival);
+  });
+
+  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const hub = hubOnStage().hub as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
+
+    hub.init({ arrival: true });
+    hub.init();
+
+    expect(hub.arrival).toBe(false);
+  });
+});
+
+const { ArrivalCard, ARRIVAL_CARD } = await import("@/ui/arrivalCard");
+
+// FS-PQ2TW §A R2, R4, R5; §B R11, R12, R15; §C R19, R20. I-PQ2TW-4: coming into the town plays its
+// card through the shared piece; a return plays nothing.
+describe("HubScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type ArrivingHub = MenuHub &
+    Record<string, unknown> & { init(data?: object): void; create(): void; relayoutHud(): void };
+
+  /** A town started by a world switch that told it an arrival, or a return. */
+  function startedAs(arrival: boolean) {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as ArrivingHub;
+    const tweens = { add: vi.fn() };
+    Object.assign(hub, {
+      tweens,
+      time: { delayedCall: vi.fn(), now: 0 },
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+    });
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    hub.init({ arrival });
+    /** The words on screen now. */
+    const words = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    /** The dark: the first thing the card stands up. */
+    const veil = () => stage.stage.made.find((m) => m.kind === "rectangle" && m.depth === ARRIVAL_CARD.depth);
+    const lifts = () => tweens.add.mock.calls.filter(([t]) => t.targets === veil() && t.alpha === 0).length;
+    const render = (worldType = "hub") =>
+      hub.renderState({
+        world_type: worldType,
+        current_player: { entity_id: "me", position: AWAY },
+        other_players: [],
+        walls: [],
+        gates: [],
+      });
+    return { ...stage, hub, tweens, words, veil, lifts, render };
+  }
+
+  /** Runs `create` up to its camera, which stands in for everything create builds after. */
+  function createUpToCamera(hub: ArrivingHub): void {
+    const camera = {
+      width: 800,
+      height: 600,
+      startFollow: vi.fn(),
+      setBackgroundColor: () => {
+        throw new Error("the rest of create");
+      },
+    };
+    Object.assign(hub, { cameras: { main: camera } });
+    expect(() => hub.create()).toThrow("the rest of create");
+  }
+
+  it("should put the dark up first thing at create on an arrival, with The Town's card over it (R11, R19, R20)", () => {
+    const { hub, stage, words } = startedAs(true);
+
+    createUpToCamera(hub);
+
+    expect(stage.made[0].kind).toBe("rectangle");
+    // the whole view, before the camera or anything of the town
+    expect(stage.made[0].args).toEqual([0, 0, viewport.width, viewport.height, palette.inkDeep, 1]);
+    expect(stage.made[0].depth).toBe(ARRIVAL_CARD.depth);
+    expect(words()).toEqual(["The Town", "The Spire's shadow lies on every roof."]);
+  });
+
+  it("should bring the card in after the dark hold: the name is known at create (R13)", () => {
+    const { hub, tweens, stage } = startedAs(true);
+
+    createUpToCamera(hub);
+
+    const cardIn = tweens.add.mock.calls.find(([t]) => t.alpha === 1);
+    expect(cardIn?.[0].delay).toBe(ARRIVAL_CARD.darkHoldMs);
+    // the heading, the rule and the line: everything made but the dark
+    const card = cardIn?.[0].targets as Made[];
+    expect(card).toHaveLength(3);
+    card.forEach((part, i) => expect(part).toBe(stage.made[i + 1]));
+  });
+
+  it("should put nothing up at create on a return (R5)", () => {
+    const { hub, stage } = startedAs(false);
+
+    createUpToCamera(hub);
+
+    expect(stage.made).toEqual([]);
+  });
+
+  it("should hold the dark until the town's first state is drawn, then lift it once (R12)", () => {
+    const { hub, lifts, render } = startedAs(true);
+    createUpToCamera(hub);
+    expect(lifts()).toBe(0);
+
+    render("run");
+    expect(lifts()).toBe(0);
+
+    render();
+    render();
+    expect(lifts()).toBe(1);
+  });
+
+  it("should play nothing on a return's states (R5)", () => {
+    const { hub, stage, render, words } = startedAs(false);
+    createUpToCamera(hub);
+
+    render();
+
+    expect(stage.made.filter((m) => m.kind === "rectangle")).toEqual([]);
+    expect(words()).not.toContain("The Town");
+  });
+
+  it("should re-cover the view with the dark when the view changes (R16)", () => {
+    const relayout = vi.spyOn(ArrivalCard.prototype, "relayout");
+    const { hub } = startedAs(true);
+    createUpToCamera(hub);
+
+    hub.relayoutHud();
+
+    expect(relayout).toHaveBeenCalled();
   });
 });
