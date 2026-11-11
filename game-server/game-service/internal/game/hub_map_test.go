@@ -171,9 +171,10 @@ func TestHubLayout_LanesToEveryGate_CrossedByNoWall(t *testing.T) {
 	}
 }
 
-// runDoorWidth is the door a run house has, and the gap every town building
-// keeps. FS-B0H2D §Requirements 9.
-const runDoorWidth = 50
+// townDoorGap is the gap every town building keeps. FS-B0H2D §Requirements 9.
+// It was a run house's door width, and is to be again: the town stays at 50
+// until the Inn's street door is settled (FS-MMA2H §C, D1; I-MMA2H-3).
+const townDoorGap = 50
 
 // doorGapOf is the opening in a building's south wall: the stretch of its
 // bottom edge no south-wall segment covers. ok is false unless the south wall is
@@ -210,7 +211,7 @@ func TestHubLayout_EveryBuilding_HasACentredDoorGapInItsSouthWall(t *testing.T) 
 
 		gap, ok := doorGapOf(walls)
 		require.True(t, ok, "the building at %+v has no single gap in its south wall", foot)
-		assert.Equal(t, float64(runDoorWidth), gap.W, "the building at %+v", foot)
+		assert.Equal(t, float64(townDoorGap), gap.W, "the building at %+v", foot)
 		assert.InDelta(t, foot.X+foot.W/2, gap.X+gap.W/2, 0.001, "the gap of the building at %+v is off centre", foot)
 	}
 }
@@ -604,7 +605,7 @@ func TestHubLayout_Inn_IsSplitByOnePartition_WithACentredDoorGap(t *testing.T) {
 	assert.Equal(t, foot.Y+foot.H, south.Y+south.H, "the partition does not reach the south wall")
 
 	gap := south.Y - (north.Y + north.H)
-	assert.Equal(t, float64(runDoorWidth), gap, "the partition's door gap")
+	assert.Equal(t, float64(townDoorGap), gap, "the partition's door gap")
 	assert.InDelta(t, foot.Y+foot.H/2, north.Y+north.H+gap/2, 0.001, "the partition's door gap is off centre")
 
 	// the street door opens wholly into one hall, the partition clear of its jambs

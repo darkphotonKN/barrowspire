@@ -3701,6 +3701,11 @@ func (s *Session) CreateStairs() {
 	place(PlaceArea{X: (s.mapWidth - w) / 2, Y: (s.mapHeight - h) / 2, W: w, H: h})
 }
 
+// runDoorWidth is how wide a run house's door is: two bodies, so a delver
+// walks through without lining up, and two 40 px wall tiles. The one place the
+// width is written (FS-MMA2H §A R1, R2).
+const runDoorWidth = 80
+
 func (s *Session) CreateBuilding(buildConfig Building) {
 	buildingPadding := 60.0
 	buildingW := buildConfig.W + buildingPadding*2
@@ -3713,7 +3718,7 @@ func (s *Session) CreateBuilding(buildConfig Building) {
 			H: buildingH,
 		}
 		if !s.IsAreaOccupied(placeArea) {
-			s.AddBuilding(placeArea.X+buildingPadding, placeArea.Y+buildingPadding, buildConfig.W, buildConfig.H, 20, 50)
+			s.AddBuilding(placeArea.X+buildingPadding, placeArea.Y+buildingPadding, buildConfig.W, buildConfig.H, 20, runDoorWidth)
 			s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, placeArea)
 			break
 		}

@@ -152,7 +152,10 @@ var hubBuildings = []hubBuilding{
 
 const hubWallThickness = 20
 
-// hubDoorWidth is a town building's door gap: a run house's door width.
+// hubDoorWidth is a town building's door gap. It is to be a run house's door
+// width (runDoorWidth), and keeps its own number, the old 50, only until the
+// Inn's street door is settled: the Inn's partition stands in a centred 80 px
+// gap (FS-MMA2H §C, Open decision D1; I-MMA2H-3).
 const hubDoorWidth = 50
 
 // hubResident is an ambient NPC and the quarter they keep to.
