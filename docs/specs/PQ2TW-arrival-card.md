@@ -43,6 +43,27 @@
 > | the upward lean | 0.5 | 0.7 (under 1) |
 > | the dust's duration | 1300 ms | 1800 ms |
 > | a mote's sideways sway | none | 1.5–4 px to either side, a 700–1200 ms period, its own phase, growing as the mote slows |
+>
+> **The owner's third tune, 2026-11-12.** Looking at the second tune, he said: "粒子散的開一點
+> 感覺都還是散在文字旁邊而已": the motes stayed close beside the letters (a mote went at most
+> about 80 px, typically about 50). Spread them much wider, keeping the fast-then-slow feel.
+> Before it was built he added: "應該是說也要往內散 目前都是散在同一個方向": the motes all went one
+> way (out from the card's centre, leaned well up); scatter them every way, inward over the card
+> included. Each mote's heading is now drawn at random over the full turn, then leaned only a
+> little up, so motes off the heading's lower edge may cross down through the subtitle, and motes
+> cross each other. His values replace the second tune's where they differ: the dust's heading,
+> lean, start speed, drag and sway (R26), and R33's start-speed cap. The duration, cap, density
+> and size are unchanged; the sway's period, phase and its growing as the mote slows are
+> unchanged.
+>
+> | Value | Was | Now |
+> |---|---|---|
+> | a mote's heading | out from the card's centre | random over the full turn, inward included |
+> | the upward lean | 0.7 | 0.2 (under 1) |
+> | start speed | 40–160 px/s | 80–320 px/s |
+> | drag | 2.0/s | 1.6/s (still fast out, then slow; a mote goes at most about 200 px, typically about 125) |
+> | a mote's sideways sway | 1.5–4 px to either side | 4–10 px to either side |
+> | R33's start-speed cap | 160 px/s | 320 px/s |
 
 ## Summary
 
@@ -216,16 +237,19 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     from the two texts' own rendered canvases, and along the rule's line. None starts in the
     empty space between letters or around the card. **(charter default: "from the strokes of the
     letters themselves, not from a box around them". Feasible: Fact 9.)**
-26. **They drift outward and a little upward, and fade.** Outward is away from the card's centre,
-    leaned up by 0.7 (under 1, so a mote below the centre still goes out). A drift, not a burst:
-    each starts at 40–160 px/s, none faster than 160 px/s, and all slow as they go, each losing
-    2.0 of its speed per second (a drag): fast out, then slow. Each mote also sways gently
-    sideways off its straight path, 1.5–4 px to either side over a 700–1200 ms period, each its
+26. **They scatter every way, a little upward, and fade.** Each mote's heading is drawn at random
+    over the full turn, inward over the card as much as out, then leaned up by 0.2 (under 1, so a
+    mote drawn downward still goes down); motes may cross the subtitle and each other. A drift,
+    not a burst: each starts at 80–320 px/s, none faster than 320 px/s, and all slow as they go,
+    each losing 1.6 of its speed per second (a drag): fast out, then slow. Each mote also sways gently
+    sideways off its straight path, 4–10 px to either side over a 700–1200 ms period, each its
     own amplitude, period and phase, the sway growing as the mote slows, so a path is not a
-    straight line; the sway never turns a mote back, and the drift still reads as outward.
+    straight line; the sway never turns a mote back along its own heading, and it ends near it.
     **(charter default; the speed cap is the spec's, to keep it dust and not confetti; speed and
     drag, the owner's tune of 2026-11-12, "粒子擴散得再遠一點"; the faster start, stronger drag,
-    lean and sway, his second tune, "多一些飄散的感覺", "飄散的軌跡速度可以加一點快到慢的感覺".)**
+    lean and sway, his second tune, "多一些飄散的感覺", "飄散的軌跡速度可以加一點快到慢的感覺"; the
+    wider start speed, lighter drag and wider sway, his third tune, "粒子散的開一點"; the random
+    heading and the lighter lean, the same tune, "應該是說也要往內散 目前都是散在同一個方向".)**
 27. **About 1.8 seconds.** 1800 ms, one fixed duration. It passes FS-KYPQ9 §B.2's 1200 ms
     ceiling, under the exception of R33; never over 1800 ms. **(charter default; the duration, the
     owner's tunes of 2026-11-12: the dust carries further and needs the time to fade.)**
@@ -243,7 +267,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
     shapes; no new baked art, Bounds. Size and cap, the owner's tune of 2026-11-12: "粒子再細一點
     多一點"; count and cap doubled, his second tune, "粒子再多1倍".)**
 33. **An exception to FS-KYPQ9 §B.6 and §B.2's ceiling, and only these.** The dust is more than
-    12 particles (at most 3000), it drifts outward (no particle starts faster than 160 px/s), and
+    12 particles (at most 3000), it scatters every way (no particle starts faster than 320 px/s), and
     it lasts 1800 ms, past §B.2's 1200 ms. It still calls no `explode`, and every other rule of §B
     holds for it: one fixed duration, the easing allowlist, no scale bounce, no shake, tokens only,
     at most 3 colours, teardown on end and on scene shutdown. The tests that hold §B.2 and §B.6
@@ -339,8 +363,8 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 
 - [ ] At the end of the hold, heading, rule and subtitle break up together and the text is gone. (R24)
 - [ ] Every particle starts on a pixel the text drew or on the rule; none in the gaps between letters. (R25)
-- [ ] Particles move away from the card's centre with an upward lean of 0.7, at 40–160 px/s at the start, slowing at 2.0/s, and all are gone at 1800 ms. (R26, R27)
-- [ ] Once a mote has slowed its path sways sideways, not a straight line, at most 4 px off it; it never turns back toward the card, and its drift still reads as outward. (R26)
+- [ ] Each particle's heading is drawn at random over the full turn, a card's headings covering all four quadrants, leaned up by 0.2, at 80–320 px/s at the start, slowing at 1.6/s, and all are gone at 1800 ms. (R26, R27)
+- [ ] Once a mote has slowed its path sways sideways, not a straight line, at most 10 px off it; it never turns back along its own heading, and ends within 20° of it. (R26)
 - [ ] Particles start `hudText`, end `hudLabel`, and no other colour appears. (R28)
 - [ ] The dust is drawn over the veil and under the HUD. (R29)
 - [ ] The climb's card leaves as dust too. (R30)
@@ -407,6 +431,7 @@ Why (owner, playtest 2026-11-11): "之前好像進到不同地圖時會有一個
 - **O3. "No confetti."** The dust breaks FS-KYPQ9 §B.6's 12-particle cap and its "never sprays
   outward". R33 makes it the one exception and keeps the drift slow. Since the owner's tune of
   2026-11-12 the exception also covers §B.2's 1200 ms ceiling; since his second tune that day
-  the dust lasts 1800 ms, at most 3000 particles, none starting faster than 160 px/s.
+  the dust lasts 1800 ms, at most 3000 particles; since his third tune it scatters every way,
+  inward included, and none starts faster than 320 px/s.
 - **O4. The subtitle lines** for the town, the two fields and the dev test room are starting
   lines for the browser check.
