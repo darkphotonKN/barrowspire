@@ -6826,6 +6826,69 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           }
           expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
         });
+
+        // the owner, 2026-11-12, again: "還是有抖動感 可以加一些平滑效果嗎". At render scale 1.5 and 2
+        // the figure is drawn on whole backing px, finer than a logical px, so the overlay must
+        // stand on that grid too or the map steps back and forth under the figure.
+        it.each([1.5, 2])(
+          "should slide the map one way under the walking player and keep the dot on the figure's backing px at render scale %s (§C.14, §C.19)",
+          (rs) => {
+            const { run, map, frame, pressTo, view } = mapped();
+            const r = run as Followed;
+            pressTo("overlay");
+            viewport.set({ width: 1080, height: 720, renderScale: rs });
+            try {
+              const still = { isDown: false };
+              const keys = { left: still, right: still, up: still, down: still };
+              Object.assign(run, {
+                cursors: keys,
+                wasd: keys,
+                updateLighting: vi.fn(),
+                updateOtherPlayersSmooth: vi.fn(),
+                checkBuildingStatus: vi.fn(),
+                sendMovementIntent: vi.fn(),
+                updateTargetFrame: vi.fn(),
+              });
+              const layers = map() as unknown as { map: Made; dots: Made };
+              const figure = (run as unknown as { player: Made }).player;
+              const backing = (v: number) => Math.round(v * rs) / rs;
+              const sample = () => {
+                const [fx, fy] = figure.last.setPosition as number[];
+                const [mx, my] = layers.map.last.setPosition as number[];
+                const [dx, dy] = layers.dots.last.setPosition as number[];
+                const [sx, sy] = layers.dots.last.fillCircle as number[];
+                // the figure's point as drawn, on whole backing px (fullAuto, scroll on the 1/rs grid)
+                const f = at(backing(fx), backing(fy));
+                return { dot: at(dx + sx - f.x, dy + sy - f.y), map: at(mx - f.x, my - f.y) };
+              };
+              const at30Hz = (p: { x: number; y: number }) =>
+                frame({ current_player: { ...player("me", "Aldric", 0), position: p } as Party["current_player"] });
+              let server = at(2560, 3080);
+              let t = 0;
+              const tick = () => r.update((t += 1000 / 60), 1000 / 60);
+              for (let i = 0; i < 120; i++) {
+                if (i % 2 === 0) at30Hz(server);
+                tick();
+              }
+              const walk: ReturnType<typeof sample>[] = [];
+              for (let i = 0; i < 90; i++) {
+                if (i % 2 === 0) at30Hz((server = at(server.x + 200 / 30, server.y)));
+                tick();
+                walk.push(sample());
+              }
+              for (const s of walk) {
+                expect(s.dot.x).toBeCloseTo(0, 9);
+                expect(s.dot.y).toBeCloseTo(0, 9);
+              }
+              for (let i = 1; i < walk.length; i++) {
+                expect(walk[i].map.x).toBeLessThanOrEqual(walk[i - 1].map.x + 1e-9);
+                expect(walk[i].map.y).toBeLessThanOrEqual(walk[i - 1].map.y + 1e-9);
+              }
+            } finally {
+              view(1080);
+            }
+          },
+        );
       });
 
       it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
