@@ -9,8 +9,11 @@ import {
   cutExterior,
   cutWall,
   heightOf,
+  planEdgeWalls,
   planWalls,
   sideOf,
+  thicknessPx,
+  type EdgeLine,
   trimCrop,
   unlitSheets,
 } from "./walls";
@@ -395,5 +398,148 @@ describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", 
     const ys = posts.map((p) => p.at.y).sort((a, b) => a - b);
     // each segment's ends, inset by half its thickness: the gap's jambs at 220 and 320
     expect(ys).toEqual([80, 220, 320, 460]);
+  });
+});
+
+describe("planEdgeWalls: walls on their edges (a dungeon floor, FS-XK2B6 §A–§D)", () => {
+  const THICK = thicknessPx(MASONRY_WALLS);
+  const HALF = THICK / 2;
+  /** A 3 × 3 room of 80 px cells at (80, 80): its four sides as edge runs, three cells each. */
+  const run = (wallSide: EdgeLine["wallSide"], height: EdgeLine["height"] = wallSide === "north" || wallSide === "west" ? "back" : "front"): EdgeLine => {
+    const line = wallSide === "north" || wallSide === "west" ? 80 : 320;
+    const along = wallSide === "north" || wallSide === "south";
+    return {
+      wallId: `w-${wallSide}`,
+      axis: along ? "x" : "y",
+      from: along ? { x: 80, y: line } : { x: line, y: 80 },
+      to: along ? { x: 320, y: line } : { x: line, y: 320 },
+      wallSide,
+      height,
+      thickness: THICK,
+    };
+  };
+  const dark = () => false;
+  const piecesOf = (r: EdgeLine, lit: (run: EdgeLine, at: { x: number; y: number }) => boolean = dark) =>
+    planEdgeWalls({ runs: [r], posts: [] }, 7, MASONRY_WALLS, lit).pieces;
+
+  it("should cut a run three cells long along a room's north edge into six whole pieces, their centres half a thickness north of the edge, none beyond its two corners", () => {
+    const pieces = piecesOf(run("north"));
+    expect(pieces.map((p) => p.at.x)).toEqual([100, 140, 180, 220, 260, 300]);
+    for (const p of pieces) {
+      expect(p.at.y).toBeCloseTo(80 - HALF, 9);
+      expect([p.keep, p.axis, p.height, p.wallId]).toEqual([1, "x", "back", "w-north"]);
+      expect(p.sheet).toMatch(/^tower_wall_back_[a-z]+_x$/);
+    }
+  });
+
+  it.each([
+    ["north", "x", { x: 100, y: 80 - HALF }],
+    ["south", "x", { x: 100, y: 320 + HALF }],
+    ["west", "y", { x: 80 - HALF, y: 100 }],
+    ["east", "y", { x: 320 + HALF, y: 100 }],
+  ] as const)("should stand a piece on a region's %s edge half a thickness inside its wall cell, its face on the edge", (wallSide, axis, first) => {
+    const pieces = piecesOf(run(wallSide));
+    expect(pieces).toHaveLength(6);
+    expect(pieces[0].axis).toBe(axis);
+    expect(pieces[0].at.x).toBeCloseTo(first.x, 9);
+    expect(pieces[0].at.y).toBeCloseTo(first.y, 9);
+    // end to end along the edge, one tile apart
+    pieces.forEach((p, k) => expect(p.at[axis]).toBe(100 + k * T));
+  });
+
+  it("should give every piece its run's height, in that height's kinds", () => {
+    for (const p of piecesOf(run("south"))) {
+      expect(p.height).toBe("front");
+      expect(p.sheet).toMatch(/^tower_wall_front_(plain|pillar)_x$/);
+    }
+    // a wall on a region's north side drawn low (FS-XK2B6 §B.8, ruling E1)
+    for (const p of piecesOf(run("north", "front"))) expect(p.sheet).toMatch(/^tower_wall_front_(plain|pillar)_x$/);
+  });
+
+  describe("what a piece sorts by (ADR-0074)", () => {
+    const key = (p: { x: number; y: number }) => p.x + p.y;
+
+    it.each([
+      ["south", { x: 120, y: 320 + THICK }],
+      ["east", { x: 320 + THICK, y: 120 }],
+    ] as const)("should sort a piece on a region's %s edge by its footprint's front corner", (wallSide, corner) => {
+      const [first] = piecesOf(run(wallSide));
+      expect(first.depthAt.x).toBeCloseTo(corner.x, 9);
+      expect(first.depthAt.y).toBeCloseTo(corner.y, 9);
+    });
+
+    it.each([
+      ["north", { x: 80, y: 80 - THICK }],
+      ["west", { x: 80 - THICK, y: 80 }],
+    ] as const)("should sort a piece on a region's %s edge by its footprint's back corner, as a wall piece always has", (wallSide, corner) => {
+      const [first] = piecesOf(run(wallSide));
+      expect(first.depthAt.x).toBeCloseTo(corner.x, 9);
+      expect(first.depthAt.y).toBeCloseTo(corner.y, 9);
+    });
+
+    it("should keep the back corner for a wall on a region's north side drawn low: the side decides, not the height", () => {
+      expect(piecesOf(run("north", "front")).map((p) => p.depthAt)).toEqual(piecesOf(run("north")).map((p) => p.depthAt));
+    });
+
+    it.each(["north", "south", "west", "east"] as const)(
+      "should sort a body pressed against a region's %s wall on its own side of every piece it stands along",
+      (wallSide) => {
+        const r = run(wallSide);
+        const behind = wallSide === "south" || wallSide === "east";
+        // a body of radius 20 against the wall's face, its centre anywhere along the run
+        const into = wallSide === "north" || wallSide === "west" ? 20 : -20;
+        for (const p of piecesOf(r))
+          for (let d = -T / 2; d <= T / 2; d += 2) {
+            const body = r.axis === "x" ? { x: p.at.x + d, y: r.from.y + into } : { x: r.from.x + into, y: p.at.y + d };
+            if (behind) expect(key(body)).toBeLessThan(key(p.depthAt));
+            else expect(key(body)).toBeGreaterThan(key(p.depthAt));
+          }
+      },
+    );
+  });
+
+  describe("which pieces may carry a light", () => {
+    /** A back run 100 cells long: enough pieces for every kind to turn up. */
+    const long: EdgeLine = { ...run("north"), to: { x: 80 + 100 * 80, y: 80 } };
+
+    it("should draw a lit kind only where it is let: a sconce elsewhere is plain, every other kind's share kept", () => {
+      const lit = piecesOf(long, () => true);
+      const unlit = piecesOf(long);
+      expect(lit.some((p) => p.sheet.includes("sconce"))).toBe(true);
+      expect(unlit.some((p) => p.sheet.includes("sconce"))).toBe(false);
+      lit.forEach((p, i) => expect(unlit[i].sheet).toBe(p.sheet.replace("sconce", "plain")));
+    });
+
+    it("should ask of each piece by its run and the place it stands", () => {
+      const asked: [EdgeLine, { x: number; y: number }][] = [];
+      const pieces = piecesOf(run("west"), (r, at) => (asked.push([r, at]), false));
+      expect(asked.map(([r]) => r.wallSide)).toEqual(Array(6).fill("west"));
+      expect(asked.map(([, at]) => at)).toEqual(pieces.map((p) => p.at));
+    });
+  });
+
+  it("should stand a post where the plan says, in the sheet of its height", () => {
+    const { posts } = planEdgeWalls(
+      {
+        runs: [],
+        posts: [
+          { wallId: "a", at: { x: 80 - HALF, y: 80 - HALF }, height: "back" },
+          { wallId: "b", at: { x: 320 + HALF, y: 320 + HALF }, height: "front" },
+        ],
+      },
+      7,
+      MASONRY_WALLS,
+      dark,
+    );
+    expect(posts).toEqual([
+      { wallId: "a", sheet: "tower_post_back", height: "back", at: { x: 80 - HALF, y: 80 - HALF } },
+      { wallId: "b", sheet: "tower_post_front", height: "front", at: { x: 320 + HALF, y: 320 + HALF } },
+    ]);
+  });
+
+  it("should hash a piece's kind and variant from where it stands, the same on every client", () => {
+    expect(piecesOf(run("north"))).toEqual(piecesOf(run("north")));
+    const other = planEdgeWalls({ runs: [run("north")], posts: [] }, 8, MASONRY_WALLS, dark).pieces;
+    expect(other.map((p) => p.index)).not.toEqual(piecesOf(run("north")).map((p) => p.index));
   });
 });

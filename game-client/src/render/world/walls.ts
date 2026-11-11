@@ -3,6 +3,8 @@
  *
  * A server wall is an axis-aligned world rect. It is drawn as a run of one-tile pieces along its
  * centreline, each its own sprite sorted by its own footprint, with a corner post at each end.
+ * A dungeon floor's walls are cut the same way along their wall edges instead (`planEdgeWalls`,
+ * FS-XK2B6).
  * North- and west-facing house sides stand full height; south and east sides are the low
  * cut-away, so the fixed camera sees into a house. Variants are hashed per piece, never random.
  * The same geometry draws timber house walls or masonry partition walls (FS-8RBQY §B.2): only
@@ -38,7 +40,10 @@ export interface WallPiece {
   at: Point;
   /** How much of the tile is wall, 0..1. Below 1 the piece is trimmed at its far end. */
   keep: number;
-  /** The back corner of the kept footprint: what the piece sorts by. */
+  /**
+   * What the piece sorts by: the back corner of the kept footprint; for a dungeon floor's piece
+   * on an edge whose wall cell lies south or east of it, the front corner (ADR-0074).
+   */
   depthAt: Point;
 }
 
@@ -78,20 +83,14 @@ export function heightOf(side: HouseSide | undefined): WallHeight {
 }
 
 /**
- * How a floor of cells decides each wall piece by where it stands (a dungeon floor, FS-KE075
- * §H.46–§H.47), in place of the side of a house: its height, and whether it may carry a light.
+ * How a wall decides each piece by where it stands, in place of the side of a house: its height,
+ * and whether it may carry a light (the Inn's partition, `INTERIOR_PARTITION`). A dungeon floor's
+ * walls ask their edge instead (`edgeHeight`, FS-XK2B6 §B).
  */
 export interface PieceRule {
   height(at: Point): WallHeight;
   /** Whether a piece here may be a kind that carries a light; when not, it is the plain kind. */
   lit(at: Point): boolean;
-  /**
-   * Whether a wall's pieces stop at its two end posts (a dungeon floor, §H.46): a run there is a
-   * cell thick and reaches a whole cell into the wall it meets, so the pieces past the post at that
-   * cell's centre would stick out of the corner as a stub. A wall whose two posts are one (a wall
-   * of one cell) keeps its pieces.
-   */
-  betweenPosts?: boolean;
 }
 
 /** Share of whole pieces of each kind, cumulative, in percent. The first kind is the plain one. */
@@ -101,6 +100,11 @@ export type VariantTable = readonly (readonly [number, string])[];
 export interface WallSheets {
   /** Before every piece and post sheet name: `""` for timber, `"tower_"` for masonry. */
   prefix: string;
+  /**
+   * How thick the material's wall is, in tiles (FS-XK2B6 §A.2): the one place the client holds it.
+   * It mirrors the bake model the sheets are rendered from, which also makes the post that square.
+   */
+  thickness: number;
   /** Kinds a full-height piece may be. */
   back: VariantTable;
   /** Kinds a cut-away piece may be. */
@@ -129,6 +133,8 @@ const KINDS: VariantTable = [
 /** Timber-frame house walls, as the exterior world theme has always drawn them. */
 export const TIMBER_WALLS: WallSheets = {
   prefix: "",
+  // tools/bake/page/models/architecture.js `THICK`
+  thickness: 0.18,
   back: KINDS,
   front: KINDS,
   // the outward face: a shuttered or dark window, never a torch (FS-9PN7X §F.2)
@@ -146,6 +152,8 @@ export const TIMBER_WALLS: WallSheets = {
  */
 export const MASONRY_WALLS: WallSheets = {
   prefix: "tower_",
+  // tools/bake/page/models/tower.js `P_THICK`
+  thickness: 0.24,
   back: [
     [40, "plain"],
     [68, "pillar"],
@@ -164,6 +172,9 @@ export const MASONRY_WALLS: WallSheets = {
   cap: "tower_cap",
   lit: ["sconce"],
 };
+
+/** A material's wall thickness in world px: 9.6 for the tower's masonry, 7.2 for timber. */
+export const thicknessPx = (sheets: WallSheets): number => sheets.thickness * T;
 
 /** Cuts one wall rect into pieces along its centreline, trimmed at the far end if it must be. */
 export function cutWall(
@@ -191,9 +202,9 @@ export function cutExterior(
 }
 
 /**
- * One wall rect cut by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47): each piece takes the
- * rule's height where it stands, and where the rule lets no light stand, a lit kind is the plain
- * kind instead, so the share of every other kind is kept.
+ * One wall rect cut by a piece rule: each piece takes the rule's height where it stands, and
+ * where the rule lets no light stand, a lit kind is the plain kind instead, so the share of every
+ * other kind is kept.
  */
 export function cutByRule(
   w: WallState,
@@ -201,16 +212,15 @@ export function cutByRule(
   sheets: WallSheets,
   rule: PieceRule,
 ): WallPiece[] {
-  return cut(w, seed, (at) => {
-    const height = rule.height(at);
-    const kinds = sheets[height];
-    return {
-      height,
-      stem: `${sheets.prefix}wall_${height}`,
-      kinds: rule.lit(at) ? kinds : unlit(kinds, sheets.lit ?? []),
-    };
-  });
+  return cut(w, seed, (at) => lookOf(sheets, rule.height(at), rule.lit(at)));
 }
+
+/** A piece of a height as a material draws it; where no light may stand, its lit kinds plain. */
+const lookOf = (sheets: WallSheets, height: WallHeight, lit: boolean): PieceLook => ({
+  height,
+  stem: `${sheets.prefix}wall_${height}`,
+  kinds: lit ? sheets[height] : unlit(sheets[height], sheets.lit ?? []),
+});
 
 /** A variant table with each lit kind turned to the plain kind, its share and all. */
 const unlit = (kinds: VariantTable, lit: readonly string[]): VariantTable =>
@@ -239,6 +249,21 @@ export const INTERIOR_PARTITION: PieceRule = {
 /** What a piece standing at a place is drawn as: its height, sheet stem and kinds. */
 type PieceLook = { height: WallHeight; stem: string; kinds: VariantTable };
 
+/** A whole or trimmed tile of wall standing at `at`, its kind and variant hashed from that place. */
+function pieceAt(
+  wallId: string,
+  axis: WallAxis,
+  at: Point,
+  keep: number,
+  depthAt: Point,
+  seed: number,
+  { height, stem, kinds }: PieceLook,
+): WallPiece {
+  const h = tileHash(Math.round(at.x), Math.round(at.y), seed);
+  const kind = keep < 1 ? kinds[0][1] : kinds.find(([cut]) => h % 100 < cut)![1];
+  return { wallId, sheet: `${stem}_${kind}_${axis}`, height, index: h >>> 8, axis, at, keep, depthAt };
+}
+
 function cut(w: WallState, seed: number, lookAt: (at: Point) => PieceLook): WallPiece[] {
   const axis = axisOf(w);
   const { x, y } = w.position;
@@ -256,20 +281,7 @@ function cut(w: WallState, seed: number, lookAt: (at: Point) => PieceLook): Wall
         : { x: x + w.width / 2, y: y + along };
     const depthAt = axis === "x" ? { x: x + k * T, y } : { x, y: y + k * T };
     const keep = k < whole ? 1 : rest;
-    const { height, stem, kinds } = lookAt(at);
-    const h = tileHash(Math.round(at.x), Math.round(at.y), seed);
-    const kind =
-      keep < 1 ? kinds[0][1] : kinds.find(([cut]) => h % 100 < cut)![1];
-    pieces.push({
-      wallId: w.entity_id,
-      sheet: `${stem}_${kind}_${axis}`,
-      height,
-      index: h >>> 8,
-      axis,
-      at,
-      keep,
-      depthAt,
-    });
+    pieces.push(pieceAt(w.entity_id, axis, at, keep, depthAt, seed, lookAt(at)));
   }
   return pieces;
 }
@@ -292,19 +304,9 @@ function endsOf(w: WallState): [Point, Point] {
 }
 
 /**
- * Whether a place on a wall's centreline lies between the wall's two end posts (a piece rule's
- * `betweenPosts`); anywhere on a wall whose two posts are one.
- */
-export function withinPosts(w: WallState, at: Point): boolean {
-  const axis = axisOf(w);
-  const [from, to] = endsOf(w);
-  return from[axis] === to[axis] || (at[axis] > from[axis] && at[axis] < to[axis]);
-}
-
-/**
  * Every wall's pieces, and a post at every wall end: corners and door jambs, one post where
  * walls meet, as tall as the tallest wall it joins. With a piece rule, each piece and post takes
- * the rule's height where it stands instead of its house side's (a dungeon floor).
+ * the rule's height where it stands instead of its house side's.
  */
 export function planWalls(
   walls: readonly WallState[],
@@ -319,8 +321,7 @@ export function planWalls(
   for (const w of walls) {
     const side = heightOf(sideOf(w, w.house_id ? houses.get(w.house_id) : undefined));
     const ends = endsOf(w);
-    const own = rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets);
-    pieces.push(...(rule?.betweenPosts ? own.filter((p) => withinPosts(w, p.at)) : own));
+    pieces.push(...(rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets)));
     for (const at of ends) {
       const height = rule ? rule.height(at) : side;
       const key = `${Math.round(at.x)},${Math.round(at.y)}`;
@@ -335,6 +336,60 @@ export function planWalls(
     }
   }
   return { pieces, posts: [...posts.values()] };
+}
+
+/**
+ * An edge run as its pieces are cut from it (a dungeon floor's wall plan, FS-XK2B6 §I.27): the
+ * wall's face towards the cells it faces stands on the line from `from` to `to`, a whole number
+ * of tiles long, and its thickness lies on the `wallSide` of that line.
+ */
+export interface EdgeLine {
+  wallId: string;
+  axis: WallAxis;
+  from: Point;
+  to: Point;
+  /** The side of the line the wall's thickness, and its wall cells, lie on. */
+  wallSide: HouseSide;
+  height: WallHeight;
+  /** World px. */
+  thickness: number;
+}
+
+/**
+ * Walls drawn on their edges (a dungeon floor, FS-XK2B6 §A–§D): each run's pieces lie end to end
+ * along its line, none trimmed and none past its two ends, each piece's centre half a thickness
+ * to the wall side, so its face stands on the line. Every piece takes its run's height; `lit`
+ * says, of a run and the place a piece of it stands, whether that piece may be a kind that
+ * carries a light. A post stands where the plan puts one.
+ *
+ * A piece sorts by the corner of its footprint away from the cells its edge faces (ADR-0074): the
+ * front corner when its wall's thickness lies south or east of the line, so a body pressed
+ * against that wall is drawn behind it; the back corner otherwise, as every other wall piece.
+ */
+export function planEdgeWalls<R extends EdgeLine>(
+  plan: { runs: readonly R[]; posts: readonly Pick<WallPost, "wallId" | "at" | "height">[] },
+  seed: number,
+  sheets: WallSheets,
+  lit: (run: R, at: Point) => boolean,
+): { pieces: WallPiece[]; posts: WallPost[] } {
+  const pieces: WallPiece[] = [];
+  for (const run of plan.runs) {
+    const { axis, wallSide } = run;
+    const across = axis === "x" ? "y" : "x";
+    // towards the wall cells: world +x and +y run towards the camera
+    const out = wallSide === "south" || wallSide === "east" ? 1 : -1;
+    const centre = run.from[across] + (out * run.thickness) / 2;
+    const count = Math.round((run.to[axis] - run.from[axis]) / T);
+    for (let k = 0; k < count; k++) {
+      const along = run.from[axis] + (k + 0.5) * T;
+      const place = (a: number, b: number): Point => (axis === "x" ? { x: a, y: b } : { x: b, y: a });
+      const at = place(along, centre);
+      const depthAt = place(along + (out * T) / 2, centre + (out * run.thickness) / 2);
+      pieces.push(pieceAt(run.wallId, axis, at, 1, depthAt, seed, lookOf(sheets, run.height, lit(run, at))));
+    }
+  }
+  const posts = plan.posts.map(({ wallId, at, height }) => ({ wallId, sheet: `${sheets.prefix}post_${height}`, height, at }));
+  return { pieces, posts };
 }
 
 /**

@@ -67,6 +67,7 @@ import {
   trimCrop,
   type PieceRule,
   type WallPiece,
+  type WallPost,
   type WallSheets,
 } from "./walls";
 
@@ -424,8 +425,8 @@ export interface BuiltWalls {
 
 /**
  * Server walls as baked pieces and corner posts, in timber unless other sheets are named, each by
- * its house side or, given one, by a piece rule (a dungeon floor, FS-KE075 §H.46). Null without a
- * manifest, or without those sheets: the scene draws its placeholder blocks instead.
+ * its house side or, given one, by a piece rule (the Inn's partition). Null without a manifest,
+ * or without those sheets: the scene draws its placeholder blocks instead.
  */
 export function addWalls(
   scene: Phaser.Scene,
@@ -435,8 +436,27 @@ export function addWalls(
   sheets: WallSheets = TIMBER_WALLS,
   rule?: PieceRule,
 ): BuiltWalls | null {
-  if (!art.available || !art.has(`${sheets.prefix}wall_back_plain_x`))
-    return null;
+  if (!hasWallArt(art, sheets)) return null;
+  return addWallPieces(scene, art, planWalls(walls, seed, sheets, rule), seed, sheets);
+}
+
+const hasWallArt = (art: ArtLibrary, sheets: WallSheets): boolean =>
+  art.available && art.has(`${sheets.prefix}wall_back_plain_x`);
+
+/**
+ * Planned wall pieces and posts as baked sprites, each where its plan stands it and sorted by the
+ * point its plan names: what `addWalls` draws of a server wall's rect, and a dungeon floor's
+ * walls cut on their wall edges (`planEdgeWalls`, FS-XK2B6). Null without a manifest, or without
+ * the material's sheets.
+ */
+export function addWallPieces(
+  scene: Phaser.Scene,
+  art: ArtLibrary,
+  { pieces, posts }: { pieces: readonly WallPiece[]; posts: readonly WallPost[] },
+  seed: number,
+  sheets: WallSheets,
+): BuiltWalls | null {
+  if (!hasWallArt(art, sheets)) return null;
   const built: BuiltWalls = { byWall: new Map(), standing: [], tall: [], lights: [] };
   const keep = (wallId: string, sprite: Phaser.GameObjects.Sprite, at: Point) => {
     const list = built.byWall.get(wallId);
@@ -444,7 +464,6 @@ export function addWalls(
     else built.byWall.set(wallId, [sprite]);
     built.standing.push({ sprite, at });
   };
-  const { pieces, posts } = planWalls(walls, seed, sheets, rule);
 
   for (const p of pieces) {
     const s = worldToScreen(p.at.x, p.at.y);

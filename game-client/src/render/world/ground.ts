@@ -481,8 +481,8 @@ export interface GroundLayerOptions extends GroundOptions {
   /** The floor's seed (FS-8RBQY §C.3); absent, the world kind's. */
   seed?: number;
   /**
-   * Where the floor has ground, by a piece's world point: a dungeon floor's walkable and shell
-   * cells (FS-KE075 §H.44), the rest void, painted nothing. Absent, ground everywhere.
+   * Where the floor has ground, by a piece's world point: a dungeon floor's walkable cells only
+   * (FS-XK2B6 §E), its wall cells and the void painted nothing. Absent, ground everywhere.
    */
   where?: (at: Point) => boolean;
 }
