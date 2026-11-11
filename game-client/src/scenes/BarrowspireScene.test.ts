@@ -7651,18 +7651,23 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           update(time: number, delta: number): void;
         };
 
-        it("should follow the player's drawn position, and the watched teammate's while spectating", () => {
-          const { run, pressTo } = mapped();
+        it("should follow the player's drawn position, and the watched teammate's while spectating, with the party's dots where their figures are drawn", () => {
+          const { run, pressTo } = mapped({
+            ...inRoom,
+            other_players: [ally("a", at(4000, 1200)), ally("dead", placedAt.lever, { current_health: 0 })] as GameState["other_players"],
+          });
           const follow = vi.spyOn(Minimap.prototype, "follow");
           const r = run as Followed;
           pressTo("overlay");
           r.playerPos = { x: 2570, y: 3090 };
+          r.otherPlayersPos.set("a", { x: 3990, y: 1205 });
           r.followMapOverlay();
-          expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 });
+          // the drawn positions, never the broadcast's; the dead have no dot
+          const drawn = { self: { x: 2570, y: 3090 }, allies: [{ x: 3990, y: 1205 }] };
+          expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 }, drawn);
           r.watchedPlayerId = "a";
-          r.otherPlayersPos.set("a", { x: 4000, y: 1200 });
           r.followMapOverlay();
-          expect(follow).toHaveBeenLastCalledWith({ x: 4000, y: 1200 });
+          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, drawn);
         });
 
         it("should stand it each frame after the figures moved, playing or watching, without redrawing its map", () => {
@@ -7694,6 +7699,79 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           r.update(16, 16);
           expect(order).toEqual(["figures", "overlay", "figures", "overlay"]);
           expect(map()!.redraws).toBe(redraws);
+        });
+
+        // the owner, 2026-11-12: "全畫面地圖人物的座標會一直抖動". Played as the game plays it: the
+        // server's broadcasts at 30 Hz walking 200 world px a second, the scene at 60 fps easing
+        // the drawn position toward each. The camera's scroll moves the world and the overlay
+        // alike, so what the eye sees is where the dot and the map stand against the figure.
+        it("should keep the player's dot on the figure and slide the map one way under it as the player walks, and hold both still once stopped (§C.14, §C.19)", () => {
+          const { run, map, frame, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          const still = { isDown: false };
+          const keys = { left: still, right: still, up: still, down: still };
+          Object.assign(run, {
+            cursors: keys,
+            wasd: keys,
+            updateLighting: vi.fn(),
+            updateOtherPlayersSmooth: vi.fn(),
+            checkBuildingStatus: vi.fn(),
+            sendMovementIntent: vi.fn(),
+            updateTargetFrame: vi.fn(),
+          });
+          const layers = map() as unknown as { map: Made; dots: Made };
+          const figure = (run as unknown as { player: Made }).player;
+          const sample = () => {
+            const [fx, fy] = figure.last.setPosition as number[];
+            const [mx, my] = layers.map.last.setPosition as number[];
+            const [dx, dy] = layers.dots.last.setPosition as number[];
+            // the self's dot is drawn last, over the allies'
+            const [sx, sy] = layers.dots.last.fillCircle as number[];
+            // the figure's point as drawn, on whole px (zoom 1, scroll on whole px)
+            const f = at(Math.round(fx), Math.round(fy));
+            return { dot: at(dx + sx - f.x, dy + sy - f.y), map: at(mx - f.x, my - f.y) };
+          };
+          const at30Hz = (p: { x: number; y: number }) =>
+            frame({ current_player: { ...player("me", "Aldric", 0), position: p } as Party["current_player"] });
+          let server = at(2560, 3080);
+          let t = 0;
+          const tick = () => r.update((t += 1000 / 60), 1000 / 60);
+          // settled on the start
+          for (let i = 0; i < 120; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+          }
+          const walk: ReturnType<typeof sample>[] = [];
+          for (let i = 0; i < 60; i++) {
+            if (i % 2 === 0) at30Hz((server = at(server.x + 200 / 30, server.y)));
+            tick();
+            walk.push(sample());
+          }
+          // the dot lies on the figure, frame after frame, within the overlay's own whole px
+          for (const s of walk) {
+            expect(Math.abs(s.dot.x)).toBeLessThanOrEqual(0.5);
+            expect(Math.abs(s.dot.y)).toBeLessThanOrEqual(0.5);
+          }
+          // walking +x in the world is right and down on screen: the map slides left and up under
+          // the figure, at 1/8 of its pace, and never steps back
+          for (let i = 1; i < walk.length; i++) {
+            expect(walk[i].map.x).toBeLessThanOrEqual(walk[i - 1].map.x);
+            expect(walk[i].map.y).toBeLessThanOrEqual(walk[i - 1].map.y);
+          }
+          // stopped: the drawn position eases in, and then nothing in the overlay moves
+          for (let i = 0; i < 120; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+          }
+          const settled = sample();
+          const [redraws, dotRedraws] = [map()!.redraws, map()!.dotRedraws];
+          for (let i = 0; i < 30; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+            expect(sample()).toEqual(settled);
+          }
+          expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
         });
       });
 

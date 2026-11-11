@@ -3954,14 +3954,23 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The map overlay on the figure the camera follows (FS-1SEF0 §C.14, §C.19): the player, or the
    * teammate a resolved player watches. A move of its layers, never a redraw; each frame, after
-   * the figures have moved. In a panel mode the minimap only notes where the figure is.
+   * the figures have moved. Its dots are the party's living, in-play members where their figures
+   * were just drawn, the focus among them, so each dot lies on its figure. In a panel mode the
+   * minimap only notes these.
    */
   private followMapOverlay(): void {
     const minimap = this.dungeon?.minimap;
     if (!minimap) return;
     const watched = this.watchedPlayerId === undefined ? undefined : this.otherPlayersPos.get(this.watchedPlayerId);
     const focus = watched ?? this.playerPos;
-    if (focus) minimap.follow({ x: focus.x, y: focus.y });
+    if (!focus) return;
+    const state = this.lastGameState;
+    const me = state?.current_player;
+    const [self] = partyPositions({ current_player: me && { ...me, position: this.playerPos ?? me.position } });
+    const allies = partyPositions({
+      other_players: state?.other_players?.map((m) => ({ ...m, position: this.otherPlayersPos.get(m.id) ?? m.position })),
+    });
+    minimap.follow({ x: focus.x, y: focus.y }, { self, allies });
   }
 
   /**
