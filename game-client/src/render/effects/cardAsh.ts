@@ -63,6 +63,11 @@ export interface CardAshRecord {
      */
     glow: {
       share: number;
+      /**
+       * Where a glowing shape's burnt edge starts, as a share of the way from its middle to its far
+       * side (a plain shape's starts at 0.4): lower, a larger ember patch, still on one side (R56).
+       */
+      edgeFrom: number;
       ms: number;
       steps: number;
       shades: number;
@@ -72,7 +77,12 @@ export interface CardAshRecord {
     speed: Range;
     /** The share of its speed a flake loses each second: it slows a little (R56). */
     drag: number;
-    /** How far off straight up a flake's heading may be drawn, in degrees, either way (R56). */
+    /**
+     * How far left of straight up a flake's heading is centred, in degrees, screen-left (R56): the
+     * ash drifts back over what has burned.
+     */
+    leanLeftDeg: number;
+    /** How far off that centre a flake's heading may be drawn, in degrees, either way (R56). */
     spreadDeg: number;
     /** How fast a flake turns, degrees a second, picked per flake, either way (R56). */
     spinDegPerS: Range;
@@ -91,10 +101,13 @@ export interface CardAshRecord {
     lifeMs: Range;
     /** A spark's size, in view px: one frame each end. */
     sizePx: Range;
-    /** View px/s as it leaves: faster than any flake. */
+    /** View px/s as it leaves: faster than the flakes on average. */
     speed: Range;
     /** The share of its speed a spark loses each second. */
     drag: number;
+    /** How far left of straight up a spark's heading is centred, in degrees, screen-left (R64). */
+    leanLeftDeg: number;
+    /** How far off that centre a spark's heading may be drawn, in degrees, either way. */
     spreadDeg: number;
     /** How fast its light beats as it dies, picked per spark. */
     flickerHz: Range;
@@ -126,14 +139,16 @@ export const CARD_ASH = {
     aspect: { from: 1.1, to: 2.8 },
     mottle: 0.6,
     glow: {
-      share: 2 / 3,
-      ms: 700,
+      share: 0.85,
+      edgeFrom: 0.28,
+      ms: 900,
       steps: 20,
       shades: 12,
       flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
     },
-    speed: { from: 12, to: 32 },
-    drag: 0.5,
+    speed: { from: 18, to: 45 },
+    drag: 0.4,
+    leanLeftDeg: 30,
     spreadDeg: 30,
     spinDegPerS: { from: 20, to: 70 },
     flipMs: { from: 500, to: 1300 },
@@ -147,6 +162,7 @@ export const CARD_ASH = {
     sizePx: { from: 1, to: 2 },
     speed: { from: 40, to: 80 },
     drag: 1.5,
+    leanLeftDeg: 15,
     spreadDeg: 25,
     flickerHz: { from: 6, to: 14 },
     blend: "ADD",
@@ -369,10 +385,11 @@ function inside(poly: readonly (readonly [number, number])[], x: number, y: numb
  * shard is), and its outline is an angular polygon, its two ends at full length; a larger shard
  * has a bite torn out of it, and its edge pixels are torn (some missing, the rest thinned at
  * random), the same paper as its body, so no ring is drawn round it. Its paper is mottled in
- * small patches, and one side of it, never all round, is its burnt edge: ash grey, or on a
+ * small patches, and one side of it, never all round, is its burnt edge (from `edgeFrom` of the way
+ * out, nearer the middle on a glowing shape, `glow.edgeFrom`): ash grey, or on a
  * glowing shape, hot.
  */
-function paperShape(k: number, n: number, cell: number, resolution: number, random: () => number): PaperPixel[] {
+function paperShape(k: number, n: number, cell: number, resolution: number, random: () => number, edgeFrom = 0.4): PaperPixel[] {
   const f = CARD_ASH.flake;
   const length = f.lengthPx.from + (f.lengthPx.to - f.lengthPx.from) * ((k + 0.5) / n) ** f.smallBias;
   // a low-discrepancy walk over the aspects, so every sheet holds squat and long shards alike
@@ -430,7 +447,7 @@ function paperShape(k: number, n: number, cell: number, resolution: number, rand
   const far = Math.max(...[...at.values()].map(along));
   for (const p of at.values()) {
     const e = far > 0 ? along(p) / far : 1;
-    p.burnt = e < 0.4 ? 0 : Math.min(1, Math.max(0, (e - 0.4) / 0.6 + (random() - 0.5) * 0.3));
+    p.burnt = e < edgeFrom ? 0 : Math.min(1, Math.max(0, (e - edgeFrom) / 0.6 + (random() - 0.5) * 0.3));
   }
   return [...at.values()];
 }
@@ -497,7 +514,7 @@ function ashSheet(resolution: number, random: () => number) {
   const glows = (k: number) => Math.floor((k + 1) * f.glow.share) > Math.floor(k * f.glow.share);
   const shapes = Array.from({ length: f.shapes }, (_, k) => {
     const glowing = glows(k);
-    const pixels = paperShape(k, f.shapes, cell, resolution, random);
+    const pixels = paperShape(k, f.shapes, cell, resolution, random, glowing ? f.glow.edgeFrom : 0.4);
     const names = Array.from({ length: glowing ? shades : 1 }, (_, j) => {
       const name = `f${k}-${j}`;
       const left = j * cell;
@@ -758,9 +775,9 @@ export class CardAsh {
   }
 
   /**
-   * The flakes (R56): rising within the spread of straight up and slowing a little, turning slowly,
+   * The flakes (R56): rising within the spread of their lean, up and to the left, and slowing a little, turning slowly,
    * turning over in depth (the scale across them swinging through zero, edge-on, and back), swaying
-   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 700 ms.
+   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 900 ms.
    */
   private flakeConfig(anims: string[], resolution: number): EmitterConfig {
     const f = CARD_ASH.flake;
@@ -771,7 +788,8 @@ export class CardAsh {
       anim: anims,
       lifespan: f.lifeMs,
       speed: { min: f.speed.from, max: f.speed.to },
-      angle: { onEmit: () => -90 + (this.random() * 2 - 1) * f.spreadDeg },
+      // -90 is straight up and the screen's left is -180: leaning left, back over what has burned
+      angle: { onEmit: () => -90 - f.leanLeftDeg + (this.random() * 2 - 1) * f.spreadDeg },
       // a drag: each slows by a share of its own speed, and never turns back
       accelerationX: { onUpdate: (p: Particle) => -p.velocityX * f.drag },
       accelerationY: { onUpdate: (p: Particle) => -p.velocityY * f.drag },
@@ -809,7 +827,7 @@ export class CardAsh {
   }
 
   /**
-   * The sparks (R64): faster than any flake, within their spread of straight up, slowing a little,
+   * The sparks (R64): faster than the flakes, within their spread of their lean left of up, slowing a little,
    * drawn additively; each flickers as its light falls (`Quad.easeIn`, the record's `ease.spark`)
    * and is gone within its life.
    */
@@ -832,7 +850,7 @@ export class CardAsh {
       frame: frames,
       lifespan: { min: s.lifeMs.from, max: s.lifeMs.to },
       speed: { min: s.speed.from, max: s.speed.to },
-      angle: { onEmit: () => -90 + (this.random() * 2 - 1) * s.spreadDeg },
+      angle: { onEmit: () => -90 - s.leanLeftDeg + (this.random() * 2 - 1) * s.spreadDeg },
       accelerationX: { onUpdate: (p: Particle) => -p.velocityX * s.drag },
       accelerationY: { onUpdate: (p: Particle) => -p.velocityY * s.drag },
       scale: 1 / resolution,
