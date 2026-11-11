@@ -130,7 +130,16 @@ function fakeStage() {
   const painted: ReturnType<typeof fakeContext>[] = [];
   /** What the stage made, in the order it made it: the order Phaser draws a depth's objects in. */
   const order: string[] = [];
+  /** Who hears the camera's frames, and a frame set up at a scroll: what the game's camera does. */
+  const hearing = new Set<(scroll: { x: number; y: number }) => void>();
+  const frame = (scroll: { x: number; y: number }) => {
+    for (const listener of [...hearing]) listener(scroll);
+  };
   const stage: MinimapStage = {
+    frames: (listener) => {
+      hearing.add(listener);
+      return () => hearing.delete(listener);
+    },
     graphics: () => {
       const g = fakeGraphics();
       made.push(g);
@@ -147,12 +156,12 @@ function fakeStage() {
       return image;
     },
   };
-  return { stage, made, images, painted, order };
+  return { stage, made, images, painted, order, frame, hearing };
 }
 
 /** A minimap over `on` (the fixture floor by default), with the party's exploration of it; at `renderScale` if given. */
 function mapped(on: RegionGrid = grid, renderScale?: number) {
-  const { stage, made, images, painted, order } = fakeStage();
+  const { stage, made, images, painted, order, frame, hearing } = fakeStage();
   const map = renderScale === undefined ? new Minimap(stage, on) : new Minimap(stage, on, () => renderScale);
   const seen = new Exploration(on);
   const show = (positions: { x: number; y: number }[], fixtures = FIXTURES) => {
@@ -160,7 +169,7 @@ function mapped(on: RegionGrid = grid, renderScale?: number) {
     map.show((id) => seen.state(id), fixtures);
   };
   const [panel, marks, dots] = made;
-  return { map, seen, show, panel, marks, dots, made, images, painted, order };
+  return { map, seen, show, panel, marks, dots, made, images, painted, order, frame, hearing };
 }
 
 type Call = { name: string; args: unknown[] };
@@ -1205,6 +1214,151 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       }
     },
   );
+
+  // the owner, 2026-11-12, a third time: "最大的全螢幕還是會有震動感", then "人在左右移動時地圖點位不是直線
+  // 會鋸齒狀上下移動". On whole backing px about the figure the map is as steady as the figure is on
+  // screen, and the figure is not: its drawn point, eased toward 30 Hz broadcasts, against the
+  // camera's lerp and its scroll floored onto the backing grid, dances a backing px or two each
+  // way, so the map, sliding only 1/8 of the walk, stepped back and forth against the screen
+  // (measured in headless Chrome at real fullscreens: 10 to 30 back-steps a second, each 1.4 to 3.1
+  // screen px once the capped canvas is stretched to the screen). Walked here as the game walks,
+  // frame by frame, at fractional and capped render scales, at 60 and 120 frames a second.
+  describe("held against the screen (§C.19)", () => {
+    const LOGICAL = at(1080, 720);
+    /**
+     * The game's walk, frame by frame: broadcasts at 30 Hz walking 200 world px a second along
+     * `way` from 0.5 s, the drawn position eased 0.3 a frame toward the last, the camera following
+     * the figure's point with lerp 0.1 (Phaser's follow, centred, ADR-0056) and its scroll floored
+     * onto whole backing px (keepOnPixelGrid). Each frame: the drawn position, then the scroll the
+     * frame is drawn at.
+     */
+    function walk(rs: number, fps: number, way: { x: number; y: number }, seconds: number, stopAt = Infinity) {
+      const frames: { t: number; pos: { x: number; y: number }; scroll: { x: number; y: number } }[] = [];
+      const grid = (v: number) => Math.floor(v * rs + 1e-6) / rs;
+      let pos = { ...IN_ROOM };
+      const start = worldToScreen(pos.x, pos.y);
+      let scroll = at(grid(start.x - LOGICAL.x / 2), grid(start.y - LOGICAL.y / 2));
+      for (let i = 1; i <= seconds * fps; i++) {
+        const t = i / fps;
+        const sent = Math.floor(t * 30) / 30;
+        const d = 200 * Math.min(Math.max(sent - 0.5, 0), stopAt - 0.5);
+        const server = at(IN_ROOM.x + way.x * d, IN_ROOM.y + way.y * d);
+        pos = at(pos.x + (server.x - pos.x) * 0.3, pos.y + (server.y - pos.y) * 0.3);
+        const f = worldToScreen(pos.x, pos.y);
+        const lerp = (s: number, target: number) => grid(s + (target - s) * 0.1);
+        scroll = at(lerp(scroll.x, f.x - LOGICAL.x / 2), lerp(scroll.y, f.y - LOGICAL.y / 2));
+        frames.push({ t, pos, scroll });
+      }
+      return frames;
+    }
+
+    /** Where a layer is shown on screen, in backing px. */
+    const onScreen = (layer: { position: { x: number; y: number } }, scroll: { x: number; y: number }, rs: number) =>
+      at((layer.position.x - scroll.x) * rs, (layer.position.y - scroll.y) * rs);
+
+    const WAYS = {
+      "world +x (A or D: right and down)": at(1, 0),
+      "world +y (W or S: left and down)": at(0, 1),
+      "screen right": at(Math.SQRT1_2, -Math.SQRT1_2),
+    };
+    const cases = [1, 1.06, 1.39, 1.5, 1.94, 2].flatMap((rs) =>
+      [60, 120].flatMap((fps) => Object.entries(WAYS).map(([name, way]) => [rs, fps, name, way] as const)),
+    );
+
+    it.each(cases)(
+      "at render scale %s and %s fps, walking %s, should slide the map and its marks one way on screen, never back, an axis the walk does not move held still, within a backing px of the figure's point, the dots on the figures",
+      (rs, fps, _, way) => {
+        const { map, made, dots, frame } = overlaid(rs);
+        const [layer, marks] = made;
+        const shown: { x: number; y: number }[] = [];
+        const stood: { x: number; y: number }[] = [];
+        for (const { t, pos, scroll } of walk(rs, fps, way, 3.5)) {
+          map.follow(pos, { self: pos, allies: [FIXTURES[0].at] });
+          frame(scroll);
+          // the camera settled into the walk
+          if (t < 1.5) continue;
+          shown.push(onScreen(layer, scroll, rs));
+          // the dots stand on the figures' backing px, unheld: the stand, as follow puts it
+          stood.push(onScreen(dots, scroll, rs));
+          expect(marks.position).toEqual(layer.position);
+          // on whole backing px on screen, so every line edge stays on the grid
+          const s = shown.at(-1)!;
+          expect(Math.abs(s.x - Math.round(s.x)) + Math.abs(s.y - Math.round(s.y))).toBeLessThan(1e-6);
+        }
+        for (const axis of ["x", "y"] as const) {
+          const way = Math.sign(Math.round(shown.at(-1)![axis] - shown[0][axis]));
+          for (let i = 1; i < shown.length; i++) {
+            const step = shown[i][axis] - shown[i - 1][axis];
+            if (way === 0) expect(Math.abs(step)).toBeLessThan(1e-6);
+            else expect(step * way).toBeGreaterThan(-1e-6);
+            // the figure's own point on the overlay is the dots layer's: within a backing px of it
+            expect(Math.abs(shown[i][axis] - stood[i][axis])).toBeLessThanOrEqual(1 + 1e-6);
+          }
+        }
+      },
+    );
+
+    it("should come to rest within a backing px of the figure's point once the walk stops, and then not move", () => {
+      const rs = 2;
+      const { map, made, dots, frame } = overlaid(rs);
+      const [layer] = made;
+      const frames = walk(rs, 120, WAYS["world +x (A or D: right and down)"], 4, 1.5);
+      for (const { pos, scroll } of frames) {
+        map.follow(pos, { self: pos, allies: [] });
+        frame(scroll);
+      }
+      const { scroll } = frames.at(-1)!;
+      const rest = onScreen(layer, scroll, rs);
+      const point = onScreen(dots, scroll, rs);
+      expect(Math.abs(rest.x - point.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rest.y - point.y)).toBeLessThanOrEqual(1);
+      for (let i = 0; i < 30; i++) {
+        map.follow(frames.at(-1)!.pos, { self: frames.at(-1)!.pos, allies: [] });
+        frame(scroll);
+        expect(onScreen(layer, scroll, rs)).toEqual(rest);
+      }
+    });
+
+    it("should go with the figure at once on a jump, within a backing px, and start afresh on entering the overlay", () => {
+      const rs = 1.5;
+      const { map, made, frame } = overlaid(rs);
+      const [layer] = made;
+      const stand = (f: { x: number; y: number }) => {
+        const iso = worldToScreen(f.x, f.y);
+        const r = (v: number) => (Math.round(v * rs) - Math.round(v * 0.125 * rs)) / rs;
+        return at(r(iso.x), r(iso.y));
+      };
+      const scroll = at(1200, 900);
+      map.follow(IN_ROOM);
+      frame(scroll);
+      // a stairway, a teammate watched: far off, and the map is there in the same frame
+      const far = at(4000, 1200);
+      map.follow(far);
+      frame(scroll);
+      expect(Math.abs(layer.position.x - stand(far).x) * rs).toBeLessThanOrEqual(1);
+      expect(Math.abs(layer.position.y - stand(far).y) * rs).toBeLessThanOrEqual(1);
+      // back to a panel and to the overlay again: on the stand itself, nothing held from before
+      map.setMode("normal");
+      map.place({ x: 746, y: 44 });
+      frame(scroll);
+      expect(layer.position).toEqual(at(746, 44));
+      map.follow(IN_ROOM);
+      map.setMode("overlay");
+      frame(scroll);
+      expect(layer.position).toEqual(stand(IN_ROOM));
+    });
+
+    it("should leave a panel where it is placed, and stop hearing frames once destroyed", () => {
+      const { map, made, frame, hearing } = mapped();
+      map.place({ x: 746, y: 44 });
+      map.follow(IN_ROOM);
+      frame(at(300, 200));
+      for (const g of made) expect(g.position).toEqual(at(746, 44));
+      expect(hearing.size).toBe(1);
+      map.destroy();
+      expect(hearing.size).toBe(0);
+    });
+  });
 
   it("should stand where the figure was last followed as soon as it becomes the overlay", () => {
     const on = mapped();

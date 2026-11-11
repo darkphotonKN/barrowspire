@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   STAGE_WIDTH,
+  afterFrameSetUp,
   boundCamera,
   centreStage,
   fitCamera,
@@ -447,6 +448,46 @@ describe("the pixel grid (FS-ZAJMH R4: roundPixels stays on at a fractional rend
     const wrapped = cam.preRender;
     fitCamera(cam as ViewCamera, v);
     expect(cam.preRender).toBe(wrapped);
+  });
+});
+
+// FS-1SEF0 §C.19: the map overlay holds itself against the screen, so it must know, before anything
+// is drawn, the scroll the frame is drawn at: after the follow and the pixel grid, not before.
+describe("afterFrameSetUp (the scroll a frame is drawn at, before it is drawn)", () => {
+  it.each([1, 1.5, 1.94, 2])(
+    "should tell each listener, every frame at render scale %s, the scroll on the pixel grid the frame is drawn at",
+    (rs) => {
+      const cam = fakeCamera();
+      fitCamera(cam as ViewCamera, at(rs));
+      const target = { x: 3000.3, y: 2000.7 };
+      followWith(cam as ViewCamera, target);
+      cam.lerp = 0.1;
+      const heard: { x: number; y: number }[] = [];
+      afterFrameSetUp(cam as ViewCamera, (scroll) => heard.push(scroll));
+      for (let frame = 0; frame < 20; frame++) {
+        target.x += 3.1;
+        target.y -= 1.7;
+        cam.preRender();
+        expect(heard.at(-1)).toEqual({ x: cam.scrollX, y: cam.scrollY });
+        // the one the view matrix draws at
+        const [, , , , e, f] = cam.matrixCombined.m;
+        expect(e).toBeCloseTo(-heard.at(-1)!.x * rs, 9);
+        expect(f).toBeCloseTo(-heard.at(-1)!.y * rs, 9);
+      }
+      expect(heard).toHaveLength(20);
+    },
+  );
+
+  it("should tell a camera fitted later, and stop telling a listener once it is let go", () => {
+    const cam = fakeCamera();
+    const heard: number[] = [];
+    const stop = afterFrameSetUp(cam as ViewCamera, (scroll) => heard.push(scroll.x));
+    fitCamera(cam as ViewCamera, at(2));
+    cam.setScroll(10.7, 3.2).preRender();
+    expect(heard).toEqual([10.5]);
+    stop();
+    cam.preRender();
+    expect(heard).toEqual([10.5]);
   });
 });
 
