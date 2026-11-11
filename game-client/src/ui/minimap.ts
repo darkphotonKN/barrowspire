@@ -9,9 +9,9 @@
  *
  * **The look** (FS-56CKV §A; design-guideline "UI Chrome → Minimap"): candle-lit stone in the frame
  * as it was. Inside the rim, bottom to top: every seen region, explored or visible, in one dark stone
- * (the one the party stands in no lighter), the seen rooms outlined along their walls, open at every doorway, never a corridor; a soft `inkDeep` vignette strongest at
- * the rim's inside edge; the switch, escape door and stairs as small amber glyphs on a dark ring;
- * the party's dots, each ringed. Nothing warm in the middle: amber in the HUD means "interactable".
+ * (the one the party stands in no lighter), its walls outlined, rooms' and corridors' alike, every
+ * opening a gap; a soft `inkDeep` vignette strongest at the rim's inside edge; the switch, escape
+ * door and stairs as small amber glyphs on a dark ring; the party's dots, each ringed. Nothing warm in the middle: amber in the HUD means "interactable".
  *
  * **Layers, each redrawn only when it changes** (§E.23). The map (backing, region fills and edges)
  * and the marks (the glyphs) are keyed by which regions are seen and the marks found, not by which
@@ -75,7 +75,7 @@ export const MINIMAP_VIGNETTE = {
 /** The one texture every minimap's vignette is an image of. */
 const VIGNETTE_TEXTURE = "minimapVignette";
 
-/** The outline along the seen rooms' walls (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
+/** The outline along the seen regions' walls (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
 export const MINIMAP_EDGE = { width: 1 } as const;
 
 /**
@@ -148,24 +148,25 @@ export function minimapContent(
   return { regions, fixtures: found };
 }
 
-/** A run of the rooms' outline (FS-56CKV §A.5), in cell units: its corner points, and whether its last point joins back to its first. */
+/** A run of the walls' outline (FS-56CKV §A.5), in cell units: its corner points, and whether its last point joins back to its first. */
 export interface OutlineRun {
   points: Point[];
   closed: boolean;
 }
 
 /**
- * The seen rooms' walls (FS-56CKV §A.5), in cell units: every side of a seen room's cell that faces
- * a cell of no region (shell or void, or off the grid), from the whole floor's regions in `grid`. A
- * side facing a cell of another region is a doorway and gets no line, whatever that region's kind
- * and whether or not it is seen; a corridor's sides get no line, nor a cell rect's side inside a
- * region. Each side once, joined into runs that turn every corner unbroken: a closed loop where a
- * room's wall goes all the way round, an open run where it stops at a doorway.
+ * The shown regions' walls (FS-56CKV §A.5: walls are lines, openings are gaps), in cell units:
+ * every side of a seen region's cell, room or corridor alike, that faces a cell that is not
+ * walkable (shell or void, or off the grid), from the whole floor's regions in `grid`. A side
+ * between two walkable cells gets no line, whatever their regions, kinds or states: a doorway, a
+ * corridor meeting a room or another, a seen region meeting an unexplored one, nor a cell rect's
+ * side inside a region. Each side once, joined into runs that turn every corner unbroken: a closed
+ * loop where a wall goes all the way round, an open run where it stops at a gap.
  */
 export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): OutlineRun[] {
-  // walkable: in a region of the floor, seen or not, so a doorway opens before the path beyond is seen
-  const walkable = (cx: number, cy: number) => grid.region(cx, cy) !== 0;
-  // each unit side, directed clockwise round the room (y down), by the corner it leaves
+  // walkable: in a region of the floor, seen or not, so an opening shows before the path beyond is seen
+  const walkable = (cx: number, cy: number) => grid.walkable(cx, cy);
+  // each unit side, directed clockwise round its region (y down), by the corner it leaves
   const key = (p: Point) => `${p.x},${p.y}`;
   const out = new Map<string, Point[]>();
   const into = new Map<string, number>();
@@ -179,7 +180,7 @@ export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapConte
     for (const { x, y, w, h } of cells)
       for (let cx = x; cx < x + w; cx++)
         for (let cy = y; cy < y + h; cy++) {
-          if (grid.region(cx, cy) !== id || grid.kind(cx, cy) !== "room") continue;
+          if (grid.region(cx, cy) !== id) continue;
           if (!walkable(cx, cy - 1)) side({ x: cx, y: cy }, { x: cx + 1, y: cy });
           if (!walkable(cx + 1, cy)) side({ x: cx + 1, y: cy }, { x: cx + 1, y: cy + 1 });
           if (!walkable(cx, cy + 1)) side({ x: cx + 1, y: cy + 1 }, { x: cx, y: cy + 1 });
@@ -200,12 +201,12 @@ export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapConte
     return points;
   };
   const runs: OutlineRun[] = [];
-  // a room's edge stopping at a doorway: a run starts where more sides leave a corner than reach it,
-  // and ends where none is left to leave by
-  for (const [k, nexts] of out) {
-    let surplus = nexts.length - (into.get(k) ?? 0);
-    for (; surplus > 0 && nexts.length > 0; surplus--) runs.push({ points: walk(k), closed: false });
-  }
+  // a wall stopping at a gap: a run starts where more sides leave a corner than reach it, and ends
+  // where none is left to leave by; counted before any walk, since a walk passing through a corner
+  // takes one side in and one out and leaves that count as it was
+  const surplus = [...out].map(([k, nexts]) => [k, nexts.length - (into.get(k) ?? 0)] as const);
+  for (const [k, n] of surplus)
+    for (let i = 0; i < n && out.get(k)!.length > 0; i++) runs.push({ points: walk(k), closed: false });
   // every side left has as many in as out at each corner, so a walk from a corner closes on it
   for (const [k, nexts] of out)
     while (nexts.length > 0) runs.push({ points: walk(k).slice(0, -1), closed: true });
@@ -431,7 +432,7 @@ export class Minimap {
     return [this.map, this.vignette, this.marks, this.dots];
   }
 
-  /** The panel, the seen regions' one fill, then the rooms' outline (FS-56CKV §A.1, §A.4, §A.5). */
+  /** The panel, the seen regions' one fill, then the walls' outline (FS-56CKV §A.1, §A.4, §A.5). */
   private drawMap(content: MinimapContent): void {
     this.redraws++;
     const g = this.map;
@@ -458,8 +459,8 @@ export class Minimap {
           true,
         );
 
-    // one line along the seen rooms' walls (FS-56CKV §A.5): a loop closed so no corner is left
-    // open, a run that stops at a doorway left open
+    // one line along the seen regions' walls (FS-56CKV §A.5): a loop closed so no corner is left
+    // open, a run that stops at a gap left open
     const runs = regionOutline(this.grid, content.regions);
     if (runs.length === 0) return;
     g.lineStyle(MINIMAP_EDGE.width, palette.minimapEdge, 1);
