@@ -1,6 +1,6 @@
 # FS-56CKV: Minimap look and the run HUD's layout
 
-> Status: work-order · SPECIFICATION.md: none (a change FS has no thin line; owners [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) "Minimap", [FS-F6F88](F6F88-multi-floor-delves.md) "Floor transitions" (the floor indicator, req 29), [FS-BDA7X](BDA7X-character-leveling.md) "Character level and experience display" (req 42), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) "Health and class resource bars on the HUD" (R20), [FS-R82NV](R82NV-party-formation.md) "Party frames" (R34) each carry a stub) · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4, `fullAuto` rounding), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog and minimap are presentation; unchanged here) · Supersedes in part: FS-SRA9J §E.20 (the minimap's place) and §E.22 (how its content is drawn, not what it is); FS-8AY7S's AC "the top left, at x 10, y 84" (now y 56); FS-R82NV R34's "run y 160" (now 132) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Minimap**, **Region**
+> Status: work-order · SPECIFICATION.md: none (a change FS has no thin line; owners [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) "Minimap", [FS-F6F88](F6F88-multi-floor-delves.md) "Floor transitions" (the floor indicator, req 29), [FS-BDA7X](BDA7X-character-leveling.md) "Character level and experience display" (req 42), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) "Health and class resource bars on the HUD" (R20), [FS-R82NV](R82NV-party-formation.md) "Party frames" (R34) each carry a stub) · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4, `fullAuto` rounding), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog and minimap are presentation; unchanged here) · Supersedes in part: FS-SRA9J §E.20 (the minimap's place) and §E.22 (how its content is drawn, not what it is), including its "visible brighter", now one fill for every shown region *(Amended 2026-11-12, one fill; added)*; and §E.23's redraw on every change of state, now only on a change to what is drawn *(Amended 2026-11-12, one fill; added)*; FS-8AY7S's AC "the top left, at x 10, y 84" (now y 56); FS-R82NV R34's "run y 160" (now 132) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Minimap**, **Region**
 
 > **Amended 2026-11-12** by Nick, after slices I-56CKV-1 and I-56CKV-2 and before I-56CKV-3: one
 > owner confirmation, documentation only. Asked "沒有小地圖時，座標放在右上那一欄文字的下方，可以嗎？",
@@ -47,10 +47,30 @@
 > and the Summary, the outline criterion and the doorway Edge States are corrected in place, and
 > one Edge State is added; each says *(Amended 2026-11-12, gap at every doorway …)*.
 
+> **Amended 2026-11-12 (fifth)** by Nick, asked what "不用特別亮起來" meant. He said
+> "目前的區域不特別亮": the region the player stands in is not lit up. As on Path of Exile 2's map,
+> every region the party has seen is drawn the same. So **every shown region, explored or visible,
+> takes one fill, and the minimap no longer tells visible from explored.** This supersedes, here,
+> the part of FS-SRA9J §E.22 that draws the two states apart ("visible brighter"); FS-SRA9J's text
+> is not edited, and its stub already points here. The one fill is today's explored fill, `slate`
+> (`minimapExplored`), **derived here**: it is the calmer map, since most of a mapped floor already
+> wears it (every region behind the party), so only the party's own patch changes; it keeps 1.52:1
+> over the backing, the outline gains contrast against it (2.37:1, was 1.62:1 against the lighter
+> fill), and the amber glyphs read better on it (5.0:1, was 3.4:1). Where the player is stays told
+> by their own dot, larger and on top (§A.7). The `minimapVisible` token goes, nothing else reading
+> it. Since nothing drawn on the map layer depends on visible against explored any more (the glyphs
+> show once their region is seen, either state; the outline reads the floor's grid and the seen
+> set; the dots are their own layer), the map is redrawn only when the set of seen regions or the
+> fixtures found change, never when a seen region turns visible or explored. The fog of war in the
+> world is unchanged. The vignette, the outline, the glyphs, the dots, the frame, the layout and
+> the `minimapEdge` token are unchanged. §A.4 is replaced, and the header, the Summary, §A.5, §A.8,
+> §E.23, story 3, the fill and redraw criteria and the edge-of-map and doorway Edge States are
+> corrected in place; each says *(Amended 2026-11-12, one fill …)*.
+
 ## Summary
 
 In a run, the top-right minimap is drawn finer and in the game's own look: candle-lit at its
-edges, explored rooms in dark stone, the ones the party stands in a step lighter, the seen
+edges, every region the party has seen in one dark stone, the one it stands in no lighter, the seen
 rooms outlined along their walls only, open at every doorway, never a corridor, and the switch, escape door and stairs as small drawn glyphs. It moves to the
 top of the top-right corner, with the floor indicator and the escaped count under it in smaller
 type. In dev builds the x/y position line moves into the minimap's bottom-left corner, small and
@@ -58,7 +78,8 @@ dim, and the top-left HUD (XP bar, resource bars, party frames) moves up into th
 The minimap's frame, size and content are unchanged. *(Amended 2026-11-12, outer outline only; was: "each room and
 corridor outlined".)* *(Amended 2026-11-12, rooms only; was: "the whole shown floor outlined once
 round its outer edge".)* *(Amended 2026-11-12, gap at every doorway; was: "the seen
-rooms outlined along their outer edge only, never a corridor".)*
+rooms outlined along their outer edge only, never a corridor".)* *(Amended 2026-11-12, one fill;
+was: "explored rooms in dark stone, the ones the party stands in a step lighter".)*
 
 Charter run "小地圖精緻化", 2026-11-12. The owner's words: "把右上角地圖有可能精緻一點嗎 配合遊戲主題
 然後地圖位置移動到逃離人數跟樓層資訊上方 字可以小一點"; "左上的x y點位移動到地圖匡內左下角 字可以小一點
@@ -133,12 +154,18 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
    outline, vignette, fixture glyphs, party dots, then the readout (§C). The vignette dims the floor, never
    a glyph, a dot or the readout. **(derived here: what a player looks for is never dimmed)** *(Amended 2026-11-12, outer outline only; was:
    "region edges".)* *(Amended 2026-11-12, rooms only; was: "the outer outline".)*
-4. **Explored regions a dark stone, visible ones a step lighter**, both from stone tokens (the
-   `minimapExplored` and `minimapVisible` tokens may take new values). Measured as WCAG contrast
-   ratios: the explored fill against the backing (`hudPanel`) ≥ 1.3:1, the visible fill against
-   the explored ≥ 1.3:1, and the visible lighter. Still stone, never amber or the ally green,
-   which the glyphs and dots keep. **(charter default; the ratios derived here so "a step" is
-   testable)**
+4. **Every shown region in one dark stone**: an explored region and a visible one are filled
+   alike, in `minimapExplored` (`slate`), so the minimap does not tell visible from explored and
+   the region the party stands in is not lit up. The fill keeps ≥ 1.3:1 against the backing
+   (`hudPanel`), measured as a WCAG contrast ratio. Still stone, never amber or the ally green,
+   which the glyphs and dots keep. Where the player is, their own dot tells (§A.7). The
+   `minimapVisible` token is removed. **(owner, 2026-11-12, asked what "不用特別亮起來" meant:
+   "目前的區域不特別亮", as Path of Exile 2's map draws every seen region the same; the fill
+   derived here: the explored `slate` is the calmer map, worn already by most of a mapped floor,
+   and it gives the outline and the glyphs more contrast than the lighter fill did)** *(Amended
+   2026-11-12, one fill; was: "Explored regions a dark stone, visible ones a step lighter", the
+   visible fill ≥ 1.3:1 against the explored and the lighter, from the `minimapExplored` and
+   `minimapVisible` tokens.)*
 5. **One thin line along the seen rooms' walls, a gap at every doorway, and none on a corridor**:
    1 logical px on each side of a seen room's cell (`kind` "room", explored or visible) that faces
    a cell that is not walkable (a shell or void cell, or off the grid: no region at all). A side
@@ -150,7 +177,8 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
    where the line turns a corner it runs on unbroken, no gap; where a room's wall stops at a doorway
    the line ends there, so the outline is open runs of line, and closed loops only round a room
    with no doorway; an open run is never closed back on its start. The line keeps ≥ 1.3:1 against
-   each fill it bounds, in its token (`minimapEdge`). An unexplored region has no fill and no line,
+   the one fill it bounds (§A.4), in its token (`minimapEdge`) *(Amended 2026-11-12, one fill;
+   was: "each fill it bounds")*. An unexplored region has no fill and no line,
    as today; only the gap in a seen room's line shows where it opens. Showing that gap before the
    corridor beyond is seen is a deliberate owner choice: it tells the player a way out exists
    there. **(owner, 2026-11-12, on seeing the rooms still closed: "小地圖似乎還是一樣
@@ -176,7 +204,12 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
    (ADR-0013), a token added only where none fits, named for its role and noted in the palette's
    comment. The minimap's size (216 × 108), inset, projection and content (FS-SRA9J §E.21–§E.24)
    are unchanged, and each layer is still redrawn only when what it shows changes (§E.23); the
-   vignette, which shows nothing that changes, is drawn once per minimap. **(charter default)**
+   vignette, which shows nothing that changes, is drawn once per minimap. The map layer (fills,
+   outline, glyphs) shows which regions are seen and which fixtures are found, not which seen
+   region is visible, so it is redrawn when a region is first seen or a fixture found, and not
+   when a seen region turns visible or explored. **(charter default)** *(Amended 2026-11-12, one
+   fill; the redraw sentence added, since one fill leaves nothing drawn that tells the two states
+   apart.)*
 
 ### §B. The top-right column
 
@@ -246,12 +279,13 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 ### §E. Docs and gallery
 
 23. **The design guideline's "UI Chrome" gains a "Minimap" bullet** naming this look in one
-    paragraph (unchanged frame; candle vignette in `inkDeep`; dark-stone explored, lighter visible,
+    paragraph (unchanged frame; candle vignette in `inkDeep`; every seen region in one dark stone,
     the seen rooms' outer edge outlined, no corridor; amber glyphs in a dark ring; dots in a dark ring; drawn in code), marked
     "*(Added by FS-56CKV, 2026-11-12.)*", as the countdown and health-bar bullets are.
     **(derived here: a canvas look others will match belongs in the guideline, its single source
     of truth for appearance)** *(Amended 2026-11-12, outer outline only; was: "outlined regions".)*
     *(Amended 2026-11-12, rooms only; was: "one outline round the shown floor".)*
+    *(Amended 2026-11-12, one fill; was: "dark-stone explored, lighter visible".)*
 24. **No dev-gallery card.** The gallery tracks effects and item icons only; HUD chrome is not a
     tracked family, so none is added. **(charter default)**
 
@@ -259,7 +293,7 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 
 1. As a player, I want the minimap to look like part of the barrow, so that the HUD does not break the game's mood.
 2. As a player, I want the map's edges to fall into shadow like the rest of the screen, so that it reads candle-lit.
-3. As a player, I want rooms I have explored and rooms my party stands in to read apart at a glance, so that I know where we are.
+3. As a player, I want every room I have seen drawn the same, the one I stand in no brighter, so that the map reads as one calm floor plan and my own dot tells me where I am. *(Amended 2026-11-12, one fill; was: "rooms I have explored and rooms my party stands in to read apart at a glance, so that I know where we are".)*
 4. As a player, I want the rooms I have seen outlined along their outer edge, with no line on a corridor or across a doorway, so that the map reads as one floor plan whose rooms stand out from the paths between them. *(Amended 2026-11-12, outer outline only; was: "each room and corridor outlined".)* *(Amended 2026-11-12, rooms only; was: "what I have seen outlined once round its outer edge".)*
 5. As a player, I want the stairs, the escape door and the switch drawn as what they are, so that I can tell them apart without guessing.
 6. As a player, I want my own dot a little larger than my party's, so that I find myself first.
@@ -286,11 +320,11 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 - [ ] The minimap's backing and rim are drawn with today's calls and values (`hudPanel` 0.85; 1 px `frame` 0.6), and nothing is drawn over the rim (`minimap.test.ts`).
 - [ ] The vignette is in `palette.inkDeep`, inside the rim, strongest at the inside edge and nothing at the middle; drawn once per minimap, not on a content change; never through `fillGradientStyle`; steps, if any, no wider than 2 px and no more than 0.08 alpha apart.
 - [ ] Draw order inside the frame: backing, fills, edges, vignette, glyphs; dots on their own layer above; the readout above both.
-- [ ] Explored fill vs backing ≥ 1.3:1, visible vs explored ≥ 1.3:1, visible the lighter; the edge line ≥ 1.3:1 against each fill it bounds (contrast ratios over the tokens, in a test).
+- [ ] An explored region and a visible one are drawn the same, in the one fill `minimapExplored`; no `minimapVisible` token remains; the fill vs backing ≥ 1.3:1; the edge line ≥ 1.3:1 against the fill (contrast ratios over the tokens, in a test). *(Amended 2026-11-12, one fill; was: "Explored fill vs backing ≥ 1.3:1, visible vs explored ≥ 1.3:1, visible the lighter; the edge line ≥ 1.3:1 against each fill it bounds".)*
 - [ ] The outline follows the seen rooms' walls only: on the fixture floor, no line on any side of a corridor (seen alone or beside a room), none across a doorway, whatever the region beyond it and whether or not it is seen (a seen room beside an unexplored corridor leaves a gap there), none between a region's own cells or between two rooms; every side of a seen room's cell facing a cell that is not walkable drawn exactly once; no gap where the line turns a corner; open runs ending at a doorway stroked without `closePath`, closed loops with it. *(Amended 2026-11-12, gap at every doorway; was: "none across a doorway between a seen room and a seen corridor", and each side "facing unexplored ground or the void" drawn.)* *(Amended 2026-11-12, outer outline only; was: "a boundary shared by two seen regions is drawn once".)* *(Amended 2026-11-12, rooms only; was: "the outer edge of the seen regions together … as closed loops".)*
 - [ ] The switch, escape door and stairs each draw a distinct glyph within 9 × 9 px and at least 7 px wide, in `interactable` on a 1 px `markerStroke` ring, centred on whole px where the mark sits today, only once their region is explored; ink vs ring ≥ 3:1.
 - [ ] Dots: ally r 2, self r 3, each in a 1 px `markerStroke` ring, self drawn last; ink vs ring ≥ 3:1.
-- [ ] Size, inset, projection and content unchanged: FS-SRA9J's `minimapRect` size, `minimapProjection` and `minimapContent` tests still pass as written; the redraw counts (§E.23) unchanged.
+- [ ] Size, inset, projection and content unchanged: FS-SRA9J's `minimapRect` size, `minimapProjection` and `minimapContent` tests still pass as written; the map redraws when a region is first seen or a fixture found, and not when a seen region only turns visible or explored. *(Amended 2026-11-12, one fill; was: "the redraw counts (§E.23) unchanged".)*
 - [ ] No raw colour literal added outside `utils/theme.ts` / `utils/canvasPalette.ts`; the token fence passes.
 - [ ] Top-right column at logical widths 1080 and 1280 with a minimap: the minimap's top at the column's top (y 44), the floor indicator's top 6 px under its bottom, the escaped count's top 4 px under the floor indicator's bottom, every right edge on `TOP_RIGHT_HUD`'s x.
 - [ ] Both lines at 12 px, padding 8 × 3, their colours, backings and face unchanged.
@@ -336,11 +370,13 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 - **A tower floor's "| Indoor/Outdoor" suffix** is never shown on a tower floor (FS-8RBQY §B.3),
   and only a tower-look floor has an indoor label; such a floor has no minimap, so a long readout
   only ever stands in the column.
-- **Regions at the minimap's edge:** the vignette darkens fills and edges near the rim; the
-  visible fill stays the lighter wherever both meet, since the vignette lies over both alike.
+- **Regions at the minimap's edge:** the vignette darkens the fill and the outline near the rim,
+  over every seen region alike. *(Amended 2026-11-12, one fill; was: "the visible fill stays the
+  lighter wherever both meet".)*
 - **A seen room and a seen corridor sharing a doorway:** no line across the doorway and none
-  along the corridor; the room's line ends at each side of the doorway, an open run. Where both
-  are explored they read as one patch of stone, the room told apart by its line. Accepted: the
+  along the corridor; the room's line ends at each side of the doorway, an open run. Both read as
+  one patch of stone, explored or visible, the room told apart by its line. *(Amended 2026-11-12,
+  one fill; was: "Where both are explored they read as one patch of stone".)* Accepted: the
   owner asked for the rooms' outer edge only. *(Amended 2026-11-12, outer outline only; was: "the
   shared edge is drawn once".)* *(Amended 2026-11-12, rooms only; was: "Two seen regions sharing
   a doorway … the outline runs round the pair as one shape".)*
@@ -358,6 +394,8 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 - **A seen room touching another only at a corner:** the line passes through that corner point
   twice, once for each, unbroken. **(derived here)** *(Amended 2026-11-12, rooms only; was: "A
   seen region … stays closed".)*
+- **The party walking back into a region seen before:** nothing on the map layer changes, so it
+  is not redrawn; only the dots move. **(derived here, one fill, 2026-11-12)**
 - **Canvas renderer fallback:** the vignette is a canvas texture or fills, so it is the same.
 - **Party frames at their shortest or with no party:** placed by the same fixed top; nothing jumps.
 
