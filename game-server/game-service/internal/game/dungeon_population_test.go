@@ -151,8 +151,8 @@ func windowsOnly(width, height, left, right, top, w float64) []PlaceArea {
 }
 
 // A hall pack that fits only its troll and one other member keeps the Bone
-// Archer: the archer is the first of the pack's ghouls. On floor 2 the one
-// member that fits is a ghoul. FS-B4SG9 §B R16.
+// Archer: the archer is the first of the pack's ghouls, on every dungeon floor.
+// FS-B4SG9 §B R14, R16.
 func TestHallPack_AShortPackKeepsItsArcher(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -160,7 +160,8 @@ func TestHallPack_AShortPackKeepsItsArcher(t *testing.T) {
 		want  components.MonsterArchetype
 	}{
 		{"floor 1 keeps its archer", firstFloor, components.MonsterArchetypeBoneArcher},
-		{"floor 2 holds none", firstFloor + 1, components.MonsterArchetypeGhoul},
+		{"floor 2 keeps its archer", firstFloor + 1, components.MonsterArchetypeBoneArcher},
+		{"the top floor keeps its archer", MasterSpireHeight, components.MonsterArchetypeBoneArcher},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -264,30 +265,99 @@ func TestDungeonPopulation_NoBoneArcherInACorridorOrAmongTreasureGuards(t *testi
 	require.NotZero(t, archers, "floor 1 holds Bone Archers to check")
 }
 
-// No Bone Archer stands on any floor above the first, a top floor included,
-// nor on a floor 1 of buildings a failed generation leaves. FS-B4SG9 §B R14.
-func TestBuildFloor_BoneArchersOnlyOnADungeonFloor1(t *testing.T) {
-	const height = 6
-	for depth := firstFloor + 1; depth <= height; depth++ {
-		for seed := uint64(1); seed <= 40; seed++ {
-			s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
-			currentFloor(t, s).Count = height
-			s.buildFloor(depth, nil)
-			require.NotNil(t, s.dungeon, "depth %d seed %d: a Spire floor is a dungeon", depth, seed)
-			for _, m := range monstersIn(s) {
-				assert.NotEqual(t, components.MonsterArchetypeBoneArcher, monsterOf(m).Archetype, "depth %d seed %d", depth, seed)
+// spireFloor is a run whose Spire is a Master Spire, so its top floor is in a
+// sweep too, with depth just built, one delver of level 2 standing far from
+// the start.
+func spireFloor(t *testing.T, seed uint64, depth int) *Session {
+	t.Helper()
+	s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+	currentFloor(t, s).Count = MasterSpireHeight
+	s.buildFloor(depth, nil)
+	return s
+}
+
+// Every floor above the first, the top floor included, places Bone Archers as
+// floor 1 does: about 1 in 4 of the ordinary rooms' ghoul rolls, the first
+// ghoul of every hall pack, none in a corridor or among a treasure room's
+// guards; the floor's troll share and the Barrow Thrall and Spire Wraith
+// shares are untouched. FS-B4SG9 §B R14–R17 (owner decision 2026-11-12).
+func TestBuildFloor_BoneArchersOnEveryDungeonFloorAsOnFloor1(t *testing.T) {
+	const seeds = 120
+	counts := map[components.MonsterArchetype]int{}
+	all, packs := 0, 0
+	for depth := firstFloor + 1; depth <= MasterSpireHeight; depth++ {
+		trolls, rolled := 0, 0
+		for seed := uint64(1); seed <= seeds; seed++ {
+			s := spireFloor(t, seed, depth)
+			d := s.dungeon
+			require.NotNil(t, d, "depth %d seed %d: a Spire floor is a dungeon", depth, seed)
+
+			hallMembers := map[int]map[components.MonsterArchetype]int{}
+			for _, m := range floor1Monsters(t, s) {
+				if m.monster.Boss {
+					continue
+				}
+				archer := m.monster.Archetype == components.MonsterArchetypeBoneArcher
+				switch {
+				case m.room == -1:
+					assert.False(t, archer, "depth %d seed %d: a Bone Archer in a corridor", depth, seed)
+				case slices.Contains(d.layout.Roles.Treasure, m.room):
+					assert.False(t, archer, "depth %d seed %d: a Bone Archer guards a treasure room", depth, seed)
+				case eligibleHall(d, m.room):
+					if hallMembers[m.room] == nil {
+						hallMembers[m.room] = map[components.MonsterArchetype]int{}
+					}
+					hallMembers[m.room][m.monster.Archetype]++
+				default:
+					counts[m.monster.Archetype]++
+					all++
+					rolled++
+					if m.monster.Archetype == components.MonsterArchetypeTroll {
+						trolls++
+					}
+				}
+			}
+
+			for room, members := range hallMembers {
+				ghoulSlots := members[components.MonsterArchetypeGhoul] + members[components.MonsterArchetypeBoneArcher]
+				if members[components.MonsterArchetypeTroll] == 0 || ghoulSlots == 0 {
+					continue
+				}
+				packs++
+				assert.Equal(t, HallPackBoneArchers, members[components.MonsterArchetypeBoneArcher],
+					"depth %d seed %d room %d: a hall pack holds one Bone Archer", depth, seed, room)
+				assert.LessOrEqual(t, ghoulSlots, HallPackGhoulsMax, "depth %d seed %d room %d: the pack's size is unchanged", depth, seed, room)
 			}
 		}
+		require.Positive(t, rolled, "depth %d", depth)
+		assert.InDelta(t, trollShare(depth), float64(trolls)/float64(rolled), 0.03, "depth %d: the floor's troll share", depth)
 	}
 
-	for seed := uint64(1); seed <= 40; seed++ {
-		s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
-		failGeneration(s)
-		s.buildFloor(firstFloor, nil)
-		require.Nil(t, s.dungeon, "seed %d: floor 1 fell back to buildings", seed)
-		require.NotEmpty(t, monstersIn(s), "seed %d", seed)
-		for _, m := range monstersIn(s) {
-			assert.NotEqual(t, components.MonsterArchetypeBoneArcher, monsterOf(m).Archetype, "fallback seed %d", seed)
+	require.NotZero(t, packs, "the floors hold hall packs to check")
+	ghoulRolls := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBoneArcher])
+	nonTroll := float64(all - counts[components.MonsterArchetypeTroll])
+	require.Positive(t, ghoulRolls)
+	assert.InDelta(t, BoneArcherRoomShare, float64(counts[components.MonsterArchetypeBoneArcher])/ghoulRolls, 0.02, "the archers' share of ghoul rolls")
+	assert.InDelta(t, 0.70, ghoulRolls/nonTroll, 0.02, "the ghoul rolls' share")
+	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.02, "the Barrow Thrall share")
+	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.02, "the Spire Wraith share")
+}
+
+// A floor of buildings a failed generation leaves holds no Bone Archer, floor
+// 1 or any floor above: it never reaches the dungeon population. FS-B4SG9 §B
+// R14, §Edge States "A floor of buildings, any depth".
+func TestBuildFloor_NoBoneArcherOnAFloorOfBuildings(t *testing.T) {
+	for _, depth := range []int{firstFloor, firstFloor + 1, MasterSpireHeight} {
+		for seed := uint64(1); seed <= 40; seed++ {
+			s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+			currentFloor(t, s).Count = MasterSpireHeight
+			failGeneration(s)
+			s.buildFloor(depth, nil)
+			require.Nil(t, s.dungeon, "depth %d seed %d: the floor fell back to buildings", depth, seed)
+			require.NotEmpty(t, monstersIn(s), "depth %d seed %d", depth, seed)
+			for _, m := range monstersIn(s) {
+				assert.NotEqual(t, components.MonsterArchetypeBoneArcher, monsterOf(m).Archetype, "fallback depth %d seed %d", depth, seed)
+			}
 		}
 	}
 }
