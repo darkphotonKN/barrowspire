@@ -275,6 +275,8 @@ export interface NPCState {
 export type MonsterArchetype =
   | "ghoul"
   | "troll"
+  // the ghoul with a bow (FS-B4SG9 §A R2): sent only on floor 1 of a run
+  | "bone_archer"
   // the tower's own dead (FS-M8CSE §D R17, R21): sent only on run floors
   | "barrow_thrall"
   | "spire_wraith"

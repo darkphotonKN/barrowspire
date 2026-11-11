@@ -343,7 +343,7 @@ type NPCState struct {
 // are removed. FS-77AB6 §Requirements 32.
 type MonsterState struct {
 	EntityID uuid.UUID `json:"entity_id"`
-	// ghoul | troll | demon | blood_demon
+	// ghoul | troll | demon | blood_demon | bone_archer
 	Archetype string `json:"archetype"`
 	// server-authored, elite prefix included, level excluded: the client
 	// composes the nameplate

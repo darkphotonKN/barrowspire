@@ -235,6 +235,29 @@ const STANCE = pose({
 
 const P = pose;
 
+/**
+ * An archer's stance, side-on: the chest turned 1 rad right so the left shoulder leads; the bow
+ * arm ({@link bowArm}) swings 1 rad back left, so it points straight along the facing. handL
+ * turns the grip so the bow stands upright.
+ */
+const BOW_STANCE = pose({
+  hips: [0, -0.5, 0],
+  spine: [0, -0.25, 0],
+  chest: [0, -0.25, 0],
+  neck: [0, 0.85, 0],
+  thighL: [-0.18, 0, 0.12],
+  shinL: [0.12, 0, 0],
+  footL: [0.06, 0, 0],
+  thighR: [0.12, 0, -0.12],
+  shinR: [0.1, 0, 0],
+  footR: [-0.22, 0, 0],
+  foreArmL: [0, 0, 0],
+  handL: [0, 1.57, 0],
+});
+
+/** The bow arm in {@link BOW_STANCE}, lifted `raise` rad out from the side (1.47 is level). */
+const bowArm = (raise, ry = -0.57) => ({ upperArmL: [0, ry, raise] });
+
 export const ATTACKS = {
   /** Knight: overhead diagonal slash behind the shield. */
   slash: () => [
@@ -253,23 +276,7 @@ export const ATTACKS = {
    * hook solves the arm), `draw` makes the string follow it, `arrow` shows the nocked arrow.
    */
   shot: () => {
-    // chest turned 1 rad right so the left shoulder leads; the bow arm swings 1 rad back left,
-    // so it points straight along the facing. handL turns the grip so the bow stands upright.
-    const bowStance = pose({
-      hips: [0, -0.5, 0],
-      spine: [0, -0.25, 0],
-      chest: [0, -0.25, 0],
-      neck: [0, 0.85, 0],
-      thighL: [-0.18, 0, 0.12],
-      shinL: [0.12, 0, 0],
-      footL: [0.06, 0, 0],
-      thighR: [0.12, 0, -0.12],
-      shinR: [0.1, 0, 0],
-      footR: [-0.22, 0, 0],
-      foreArmL: [0, 0, 0],
-      handL: [0, 1.57, 0],
-    });
-    const aim = (raise, ry = -0.57) => ({ upperArmL: [0, ry, raise] });
+    const aim = bowArm;
     return [
       P({ ...aim(0.95, -0.4), upperArmR: [-0.6, 0, -0.1], foreArmR: [-1.4, 0, 0] }, {}, { arrow: 1, ik: 0.1, draw: 0 }),
       P({ ...aim(1.47) }, {}, { arrow: 1, ik: 0.5, draw: 1 }),
@@ -278,7 +285,28 @@ export const ATTACKS = {
       P({ ...aim(1.47), chest: [-0.05, 0, 0] }, {}, { ik: 1.3, draw: 0 }),
       P({ ...aim(1.1, -0.45), upperArmR: [-0.3, -0.3, -0.3], foreArmR: [-0.9, 0, 0] }, {}, {}),
       P({ ...aim(0.55, -0.3), upperArmR: [-0.1, 0, -0.1], foreArmR: [-0.6, 0, 0] }, {}, {}),
-    ].map((p) => add(bowStance, p));
+    ].map((p) => add(BOW_STANCE, p));
+  },
+
+  /**
+   * Bone Archer (FS-B4SG9 §E R26): the delver's shot on the hunched rig, retimed into a
+   * telegraph. The whole clip is the wind-up: the bow comes up with nothing on the string, an
+   * arrow is nocked, the string is pulled to the hand over three frames and held at the full
+   * draw, and only the last frame looses, the moment the server's arrow leaves. The knees stay
+   * bent and the jaw drops as it draws, so it never stands like a delver.
+   */
+  boneShot: () => {
+    const aim = bowArm;
+    const crouch = pose({ hunch: [-0.2, 0, 0], thighL: [-0.2, 0, 0], shinL: [0.34, 0, 0], footL: [-0.14, 0, 0], thighR: [-0.12, 0, 0], shinR: [0.34, 0, 0], footR: [-0.2, 0, 0] });
+    return [
+      P({ ...aim(0.6, -0.3), upperArmR: [-0.75, 0, -0.1], foreArmR: [-1.2, 0, 0] }, {}, { jaw: 0.1 }),
+      P({ ...aim(1.3, -0.48), upperArmR: [-0.6, 0, -0.1], foreArmR: [-1.4, 0, 0] }, {}, { arrow: 1, ik: 0.1, draw: 0, jaw: 0.15 }),
+      P({ ...aim(1.72) }, {}, { arrow: 1, ik: 0.4, draw: 1, jaw: 0.25 }),
+      P({ ...aim(1.72) }, {}, { arrow: 1, ik: 0.75, draw: 1, jaw: 0.4 }),
+      P({ ...aim(1.72), chest: [-0.03, 0, 0] }, {}, { arrow: 1, ik: 1, draw: 1, jaw: 0.55 }),
+      P({ ...aim(1.72), chest: [-0.05, 0, 0] }, {}, { arrow: 1, ik: 1.03, draw: 1, jaw: 0.6 }),
+      P({ ...aim(1.72), chest: [-0.02, 0, 0] }, {}, { ik: 1.3, draw: 0, jaw: 0.75 }),
+    ].map((p) => add(BOW_STANCE, crouch, p));
   },
 
   /** Wizard: gather, raise the staff, thrust it forward with an open palm, the orb flaring. */

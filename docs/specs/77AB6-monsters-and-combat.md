@@ -522,3 +522,5 @@ directly (ADR-0004), which is outside the generated OpenAPI surface.
   pipeline's options.
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Ranged monsters and the Bone Archer → FS-B4SG9

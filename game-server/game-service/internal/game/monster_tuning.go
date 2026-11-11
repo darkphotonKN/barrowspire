@@ -43,7 +43,9 @@ const (
 
 // spireNonTrollMix is what a rolled Spire monster is when it is not a troll, as
 // shares of those rolls, the same on every floor. Hall packs are not rolled and
-// stay a troll and ghouls. FS-M8CSE §D R18.
+// stay a troll and ghouls, one of them a Bone Archer. FS-M8CSE §D R18; in a
+// dungeon's ordinary room a ghoul roll can turn (BoneArcherRoomShare,
+// FS-B4SG9 §B).
 var spireNonTrollMix = []struct {
 	Archetype components.MonsterArchetype
 	Share     float64
@@ -91,6 +93,14 @@ const (
 	TreasureGuardPackShare = 0.5
 	TreasureGuardPackMin   = 2
 	TreasureGuardPackMax   = 3
+
+	// on every dungeon floor, Bone Archers take ghouls' places (FS-B4SG9 §B
+	// R14–R17): a monster rolled for an ordinary room, a top-up included, that
+	// comes up a ghoul is a Bone Archer instead at this share, and the first of
+	// a hall pack's ghouls are Bone Archers, this many. Never a corridor's
+	// monster or a treasure guard
+	BoneArcherRoomShare = 0.25
+	HallPackBoneArchers = 1
 )
 
 // Elites: promoted standard monsters, stats-only. FS-77AB6 §Requirements 23.
@@ -283,6 +293,9 @@ type monsterSheet struct {
 	LeashRadius     float64 // px
 	// Moves is its second move; zero for an archetype with its one strike.
 	Moves monsterMoves
+	// Shot is the projectile it looses; zero for an archetype that strikes in
+	// melee. With one, AttackRange is its shooting range.
+	Shot monsterShot
 }
 
 // The demons' two moves: the slam, their wind-up strike doubled and rationed,
@@ -315,12 +328,42 @@ var demonMoves = monsterMoves{
 	ClawShowFor:    ClawShowFor,
 }
 
+// monsterShot is a ranged archetype's projectile. Which archetypes shoot is
+// this data, never a check on the archetype (FS-B4SG9 §A R1).
+type monsterShot struct {
+	ProjectileType string  // what the client draws
+	Speed          float64 // px/s
+	Radius         float64 // px
+	MaxFlight      float64 // px
+}
+
+// The Bone Archer's arrow: a hostile one, drawn apart from a party archer's.
+// Its max flight catches a delver at the base speed who runs straight away
+// from shooting range from the first tick of the draw (826 px of flight).
+// FS-B4SG9 §A R2. Starting values.
+var boneArrowShot = monsterShot{
+	ProjectileType: "bone_arrow",
+	Speed:          420,
+	Radius:         8,
+	MaxFlight:      850,
+}
+
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	components.MonsterArchetypeGhoul: {
 		Name: "Ghoul", HP: 40, Damage: 6,
 		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 45, MoveSpeed: 150,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 260, LeashRadius: 520,
+	},
+	// the ghoul with a bow: frailer and slower, and its reach is its shooting
+	// range (FS-B4SG9 §A R2)
+	components.MonsterArchetypeBoneArcher: {
+		Name: "Bone Archer", HP: 30, Damage: 7,
+		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130,
+		Defense: 2, MagicResistance: 0,
+		AggroRadius: 360, LeashRadius: 560,
+
+		Shot: boneArrowShot,
 	},
 	components.MonsterArchetypeTroll: {
 		Name: "Troll", HP: 140, Damage: 16,
@@ -407,6 +450,8 @@ var killExperienceBase = map[components.MonsterArchetype]int{
 	// FS-M8CSE §D R20: matching the Forest
 	components.MonsterArchetypeBarrowThrall: 15,
 	components.MonsterArchetypeSpireWraith:  20,
+	// FS-B4SG9 §A R3: the ghoul's
+	components.MonsterArchetypeBoneArcher: 10,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.

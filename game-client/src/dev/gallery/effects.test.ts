@@ -45,6 +45,14 @@ describe("effect cards", () => {
     },
   );
 
+  it("should card the bone arrow, a hostile's shot, beside the party arrow (FS-B4SG9 §D R23)", () => {
+    const names = (module: string) =>
+      EFFECT_CARDS.filter((c) => c.module === module).map((c) => c.name);
+    expect(names("boneArrow")).toHaveLength(1);
+    expect(names("boneArrow")).not.toEqual(names("arrow"));
+    expect(EFFECT_CARDS.find((c) => c.module === "boneArrow")?.demo).not.toBeNull();
+  });
+
   it("should give every card that can't be played a reason", () => {
     const unexplained = EFFECT_CARDS.filter(
       (c) => c.demo === null && !c.reason.trim(),

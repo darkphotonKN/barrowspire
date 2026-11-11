@@ -16,6 +16,9 @@ const (
 	// models, and never rolled in a field (FS-M8CSE §D R17, R21)
 	MonsterArchetypeBarrowThrall MonsterArchetype = "barrow_thrall"
 	MonsterArchetypeSpireWraith  MonsterArchetype = "spire_wraith"
+	// the ghoul's skeleton holding a bow, the first ranged monster: it shoots
+	// where every other archetype strikes (FS-B4SG9 §A R2)
+	MonsterArchetypeBoneArcher MonsterArchetype = "bone_archer"
 	// the bosses: never an elite, at most one of each a floor. The demon is
 	// the green one; the blood demon the rarer red one (FS-VHGE7 §A R1)
 	MonsterArchetypeDemon      MonsterArchetype = "demon"
@@ -105,6 +108,14 @@ type MonsterComponent struct {
 	SlamCooldown   float64 // seconds between slams
 	SlamMultiplier float64 // the slam's damage over its level damage; 0 is 1
 	ClawShowFor    float64 // seconds it reports `claw`, standing, from a claw landing
+
+	// The shot, copied from its sheet at spawn (FS-B4SG9 §A R1). With a
+	// ShotProjectileType it is a ranged monster and AttackRange is its shooting
+	// range. Without one, none of these apply and it strikes in melee.
+	ShotProjectileType string  // what the client draws, as "bone_arrow"
+	ShotSpeed          float64 // px/s
+	ShotRadius         float64 // px
+	ShotMaxFlight      float64 // px
 
 	// Timers, counting down in seconds.
 	AttackCooldown        float64

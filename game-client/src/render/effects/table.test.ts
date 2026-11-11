@@ -37,6 +37,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "shadowShotImpact",
         // FS-VHGE7 §D R32: a demon's fire claw
         "demonClaw",
+        // FS-B4SG9 §D R22: a hostile's bone arrow in flight
+        "boneArrowTrail",
         "hit",
         "deathDust",
         "escape",

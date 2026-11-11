@@ -214,3 +214,127 @@ func TestProjectileSystem_OwnerGoneStillReportsTheirIdentity(t *testing.T) {
 	assert.Equal(t, owner.ID, impacts[0].Attack.AttackerEntityID)
 	assert.Equal(t, memberID, impacts[0].Attack.AttackerMemberID)
 }
+
+// boneArrow is a level-1 Bone Archer's arrow as loosed by owner from (0, 0)
+// along +x: 420 px/s, radius 8, 850 px of flight. FS-B4SG9 §A R2.
+func boneArrow(em *ecs.EntityManager, owner uuid.UUID) *ecs.Entity {
+	e := em.CreateEntity()
+	e.AddComponent(components.NewTransformComponent(0, 0))
+	e.AddComponent(components.NewVelocityComponent(420, 0, 420))
+	e.AddComponent(components.NewProjectileComponent(components.AttackSnapshot{
+		AttackerEntityID: owner,
+		DamageType:       components.DamagePhysical,
+		Power:            7,
+		Coefficient:      1,
+		CritChance:       BaseCritChance,
+		FromMonster:      true,
+	}, 420, 850, 8, "bone_arrow"))
+	return e
+}
+
+// A monster's arrow stops at a wall. FS-B4SG9 §A R10.
+func TestProjectileSystem_MonsterArrow_StopsAtAWall(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 0, 0)
+	delver(em, 160, 0) // behind the wall
+
+	wall := em.CreateEntity()
+	wall.AddComponent(components.NewWallComponent(uuid.New(), uuid.New(), 20, 100))
+	wall.AddComponent(components.NewTransformComponent(80, -50))
+
+	arrow := boneArrow(em, a.ID)
+	sys := NewProjectileSystem(em, PlayerDamageOff)
+
+	var impacts []Impact
+	for range 10 {
+		impacts = append(impacts, sys.Update(0.05, em.GetAllEntities())...) // 21 px a step
+	}
+
+	assert.Empty(t, impacts, "the wall took it")
+	_, flying := em.GetEntity(arrow.ID)
+	assert.False(t, flying)
+}
+
+// A monster's arrow ends at its max flight, 850 px. FS-B4SG9 §A R10.
+func TestProjectileSystem_MonsterArrow_EndsAtItsMaxFlight(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 0, 0)
+	arrow := boneArrow(em, a.ID)
+	sys := NewProjectileSystem(em, PlayerDamageOff)
+
+	for range 20 {
+		sys.Update(0.1, em.GetAllEntities()) // 42 px a step
+	}
+	_, flying := em.GetEntity(arrow.ID)
+	require.True(t, flying, "840 px flown")
+
+	sys.Update(0.1, em.GetAllEntities())
+
+	_, flying = em.GetEntity(arrow.ID)
+	assert.False(t, flying, "882 px is past its 850")
+}
+
+// A monster's arrow passes through monsters, corpses and delvers out of play.
+// FS-B4SG9 §A R10.
+func TestProjectileSystem_MonsterArrow_PassesThroughWhatItCannotHit(t *testing.T) {
+	tests := []struct {
+		name string
+		body func(em *ecs.EntityManager) *ecs.Entity
+	}{
+		{"a monster", func(em *ecs.EntityManager) *ecs.Entity { return ghoul(em, 42, 0, 40) }},
+		{"a corpse", func(em *ecs.EntityManager) *ecs.Entity { return ghoul(em, 42, 0, 0) }},
+		{"a dead delver", func(em *ecs.EntityManager) *ecs.Entity {
+			d := delver(em, 42, 0)
+			killDelver(d)
+			return d
+		}},
+		{"an escaped delver", func(em *ecs.EntityManager) *ecs.Entity {
+			d := delver(em, 42, 0)
+			escapeDelver(d)
+			return d
+		}},
+		{"a delver left behind", func(em *ecs.EntityManager) *ecs.Entity {
+			d := delver(em, 42, 0)
+			leaveDelver(d)
+			return d
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			a := archer(em, 0, 0)
+			body := tt.body(em)
+			before := health(body)
+			arrow := boneArrow(em, a.ID)
+
+			impacts := NewProjectileSystem(em, PlayerDamageOff).Update(0.1, em.GetAllEntities()) // onto the body
+
+			assert.Empty(t, impacts)
+			assert.Equal(t, before, health(body))
+			_, flying := em.GetEntity(arrow.ID)
+			assert.True(t, flying)
+		})
+	}
+}
+
+// The first delver in play an arrow reaches takes it, whoever it was aimed
+// at, and the arrow stops there. FS-B4SG9 §A R10.
+func TestProjectileSystem_MonsterArrow_LandsOnTheFirstDelverInTheLine(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 0, 0)
+	inTheWay := delver(em, 84, 0)
+	delver(em, 300, 0) // the one it was aimed at
+	arrow := boneArrow(em, a.ID)
+	sys := NewProjectileSystem(em, PlayerDamageOff)
+
+	var impacts []Impact
+	for range 10 {
+		impacts = append(impacts, sys.Update(0.1, em.GetAllEntities())...)
+	}
+
+	require.Len(t, impacts, 1)
+	assert.Equal(t, inTheWay.ID, impacts[0].TargetEntityID)
+	assert.True(t, impacts[0].Attack.FromMonster)
+	_, flying := em.GetEntity(arrow.ID)
+	assert.False(t, flying)
+}

@@ -1183,6 +1183,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       "creature_ghost_base",
       "creature_barrow_thrall_base",
       "creature_spire_wraith_base",
+      "creature_bone_archer_base",
     ];
 
     /**
@@ -1340,6 +1341,85 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     it("leaves the Forest's zombie and ghost in fodder", () => {
       for (const [, , source] of RETONED)
         expect(baked.sheets[source].atlas).toMatch(/^fodder-\d+$/);
+    });
+  });
+
+  describe("the Bone Archer (FS-B4SG9 §E R24-R28)", () => {
+    type ArcherSheet = {
+      atlas: string;
+      directions: number;
+      crown: number;
+      animations: Record<
+        string,
+        { fps: number; loop: boolean; atlas?: string; frames: unknown[][] }
+      >;
+      source: string;
+      licence: string;
+    };
+    const archer = (): ArcherSheet => baked.sheets.creature_bone_archer_base;
+
+    it("is a sheet of its own: 8 facings of idle, walk, attack and death", () => {
+      expect(archer()).toBeDefined();
+      expect(archer().directions).toBe(8);
+      expect(Object.keys(archer().animations)).toEqual([
+        "idle",
+        "walk",
+        "attack",
+        "death",
+      ]);
+      for (const a of Object.values(archer().animations))
+        expect(a.frames).toHaveLength(8);
+    });
+
+    it("is authored as cast.js#boneArcher, under the project's licence", () => {
+      expect(archer().source).toBe(
+        "authored: tools/bake/page/characters/cast.js#boneArcher",
+      );
+      expect(archer().licence).toBe(baked.sheets.brazier.licence);
+    });
+
+    it("packs into the creatures group the run already loads, whole on one page", () => {
+      expect(archer().atlas).toMatch(/^creatures-\d+$/);
+      for (const a of Object.values(archer().animations))
+        expect(a.atlas).toBeUndefined();
+    });
+
+    it("plays the clips at the ghoul's own rates, frame for frame", () => {
+      const ghoul: ArcherSheet = baked.sheets.creature_ghoul_base;
+      for (const [clip, a] of Object.entries(ghoul.animations)) {
+        const own = archer().animations[clip];
+        expect([own.fps, own.loop], clip).toEqual([a.fps, a.loop]);
+        expect(own.frames.map((f) => f.length), clip).toEqual(
+          a.frames.map((f) => f.length),
+        );
+      }
+    });
+
+    it("draws for the server's 0.6 s wind-up, within one frame (R26)", () => {
+      const attack = archer().animations.attack;
+      expect(attack.loop).toBe(false);
+      const seconds = attack.frames[0].length / attack.fps;
+      expect(Math.abs(seconds - 0.6)).toBeLessThanOrEqual(1 / attack.fps);
+    });
+
+    it("stands in the fodder band, 0.85 to 1.0 of a player's head height (R27)", () => {
+      const players = ["char_knight_base", "char_archer_base", "char_wizard_base"];
+      const playerCrown =
+        players.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+        players.length;
+      const ratio = archer().crown / playerCrown;
+      expect(ratio).toBeGreaterThanOrEqual(0.85);
+      expect(ratio).toBeLessThanOrEqual(1.0);
+    });
+
+    it("leaves the ghoul, the troll and the Spire's dead in the creatures group beside it", () => {
+      for (const name of [
+        "creature_ghoul_base",
+        "creature_troll_base",
+        "creature_barrow_thrall_base",
+        "creature_spire_wraith_base",
+      ])
+        expect(baked.sheets[name].atlas, name).toMatch(/^creatures-\d+$/);
     });
   });
 

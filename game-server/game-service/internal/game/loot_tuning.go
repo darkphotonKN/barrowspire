@@ -243,6 +243,8 @@ var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
 	// FS-M8CSE §D R20: the ghoul row's values
 	components.MonsterArchetypeBarrowThrall: GhoulMonsterDrop,
 	components.MonsterArchetypeSpireWraith:  GhoulMonsterDrop,
+	// FS-B4SG9 §A R3: the ghoul's row, as a row of its own
+	components.MonsterArchetypeBoneArcher: GhoulMonsterDrop,
 }
 
 // GhoulMonsterDrop is the ghoul's row, and the tower monsters' with it.

@@ -708,3 +708,5 @@ themselves (this FS only avoids adding to them).
 ## Change: Spire height and the climb → FS-M8CSE
 
 ## Change: Walls on the cell boundary → FS-XK2B6
+
+## Change: Ranged monsters and the Bone Archer → FS-B4SG9

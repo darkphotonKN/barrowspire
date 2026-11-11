@@ -2,6 +2,7 @@ package game
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -83,9 +84,11 @@ func eligibleHall(d *dungeonFloor, room int) bool {
 }
 
 // Every hall that is not the start or a treasure room holds one troll and 2–4
-// ghouls, each within 160 px of the troll. FS-KE075 §C R18.
+// ghouls, each within 160 px of the troll. On floor 1 one of those ghouls is a
+// Bone Archer, rolled for level and elite as the ghoul it replaces.
+// FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall archer".
 func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
-	halls := 0
+	halls, eliteArchers := 0, 0
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
 		s, _ := dungeonRun(t, seed, 4, 0)
 		d := s.dungeon
@@ -96,7 +99,7 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 				continue
 			}
 			halls++
-			var trolls, ghouls []point
+			var trolls, ghouls, archers []point
 			for _, m := range monsters {
 				if m.room != room || m.monster.Boss {
 					continue
@@ -106,20 +109,257 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 					trolls = append(trolls, m.at)
 				case components.MonsterArchetypeGhoul:
 					ghouls = append(ghouls, m.at)
+				case components.MonsterArchetypeBoneArcher:
+					archers = append(archers, m.at)
+					if m.monster.Elite {
+						eliteArchers++
+						assert.True(t, strings.HasSuffix(m.monster.Name, " Bone Archer"), "seed %d room %d: %q", seed, room, m.monster.Name)
+					}
 				default:
-					assert.Failf(t, "a hall pack is a troll and ghouls", "seed %d room %d: %s", seed, room, m.monster.Archetype)
+					assert.Failf(t, "a hall pack is a troll, a Bone Archer and ghouls", "seed %d room %d: %s", seed, room, m.monster.Archetype)
 				}
 			}
 			require.Len(t, trolls, 1, "seed %d room %d: a hall holds one troll", seed, room)
-			assert.GreaterOrEqual(t, len(ghouls), HallPackGhoulsMin, "seed %d room %d", seed, room)
-			assert.LessOrEqual(t, len(ghouls), HallPackGhoulsMax, "seed %d room %d", seed, room)
-			for _, g := range ghouls {
+			assert.Len(t, archers, HallPackBoneArchers, "seed %d room %d: a floor-1 hall pack holds one Bone Archer", seed, room)
+			// the archer takes a ghoul's place: the pack's size is unchanged
+			assert.GreaterOrEqual(t, len(ghouls)+len(archers), HallPackGhoulsMin, "seed %d room %d", seed, room)
+			assert.LessOrEqual(t, len(ghouls)+len(archers), HallPackGhoulsMax, "seed %d room %d", seed, room)
+			for _, g := range append(ghouls, archers...) {
 				assert.LessOrEqual(t, dist(g.x, g.y, trolls[0].x, trolls[0].y), HallPackRadius,
 					"seed %d room %d: a ghoul strayed from its troll", seed, room)
 			}
 		}
 	}
 	require.NotZero(t, halls, "the builds hold halls to check")
+	assert.NotZero(t, eliteArchers, "a hall's archer is promoted at the floor's elite chance")
+}
+
+// windowsOnly is keep-outs over the whole map but two square windows of side
+// w, on one row from top, their left edges at left and right: only a body
+// centred in a window may stand. Each holds one monster (its diagonal is under
+// MonsterSpacing), and any point of one is within HallPackRadius of any point
+// of the other.
+func windowsOnly(width, height, left, right, top, w float64) []PlaceArea {
+	r := constants.PlayerRadius
+	return []PlaceArea{
+		{X: -r, Y: -r, W: left, H: height + 2*r},                             // left of the first
+		{X: left + w + r, Y: -r, W: right - left - w - 2*r, H: height + 2*r}, // between them
+		{X: right + w + r, Y: -r, W: width, H: height + 2*r},                 // right of the second
+		{X: -r, Y: -r, W: width + 2*r, H: top},                               // above
+		{X: -r, Y: top + w + r, W: width + 2*r, H: height},                   // below
+	}
+}
+
+// A hall pack that fits only its troll and one other member keeps the Bone
+// Archer: the archer is the first of the pack's ghouls, on every dungeon floor.
+// FS-B4SG9 §B R14, R16.
+func TestHallPack_AShortPackKeepsItsArcher(t *testing.T) {
+	tests := []struct {
+		name  string
+		depth int
+		want  components.MonsterArchetype
+	}{
+		{"floor 1 keeps its archer", firstFloor, components.MonsterArchetypeBoneArcher},
+		{"floor 2 keeps its archer", firstFloor + 1, components.MonsterArchetypeBoneArcher},
+		{"the top floor keeps its archer", MasterSpireHeight, components.MonsterArchetypeBoneArcher},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			short, trollOnly := 0, 0
+			for seed := uint64(1); seed <= 60; seed++ {
+				s, _ := dungeonRun(t, seed, 1, 0)
+				d := s.dungeon
+				hall := -1
+				for room := range d.layout.Rooms {
+					if eligibleHall(d, room) {
+						hall = room
+						break
+					}
+				}
+				if hall == -1 {
+					continue
+				}
+				c := d.roomCentre(hall)
+				const w = 40.0
+				area := spawnArea{
+					width: s.mapWidth, height: s.mapHeight,
+					keepOut: windowsOnly(s.mapWidth, s.mapHeight, c.x-70, c.x+30, c.y-w/2, w),
+				}
+				p := &dungeonPopulation{session: s.ID, floor: d, area: &area, rng: seededSpawns(seed), level: 1, depth: tt.depth}
+
+				p.hallPack(hall)
+
+				require.NotEmpty(t, p.spawns, "seed %d: the troll stands", seed)
+				require.LessOrEqual(t, len(p.spawns), 2, "seed %d: the windows hold two", seed)
+				assert.Equal(t, components.MonsterArchetypeTroll, p.spawns[0].monster.Archetype, "seed %d", seed)
+				if len(p.spawns) == 1 {
+					trollOnly++
+					continue
+				}
+				short++
+				assert.Equal(t, tt.want, p.spawns[1].monster.Archetype, "seed %d: the member a short pack keeps", seed)
+				assert.Equal(t, spawnHallPack, p.spawns[1].role, "seed %d", seed)
+			}
+			require.NotZero(t, short, "the seeds hold short packs to check")
+			t.Logf("short packs %d, troll alone %d", short, trollOnly)
+		})
+	}
+}
+
+// ordinaryRoom is whether room holds rolled singles: not the start, a
+// treasure room or a hall that holds a pack, and not a corridor (-1).
+func ordinaryRoom(d *dungeonFloor, room int) bool {
+	return room != -1 && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room) && !eligibleHall(d, room)
+}
+
+// On floor 1, about 1 in 4 of the ordinary rooms' ghoul rolls, top-ups
+// included, are Bone Archers; the troll share and the Barrow Thrall and Spire
+// Wraith shares are untouched. FS-B4SG9 §B R15.
+func TestDungeonPopulation_Floor1RoomGhoulsAreBoneArchersAtTheirShare(t *testing.T) {
+	counts := map[components.MonsterArchetype]int{}
+	all := 0
+	for seed := uint64(1); seed <= floor1Builds; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+		for _, m := range floor1Monsters(t, s) {
+			if m.monster.Boss || !ordinaryRoom(s.dungeon, m.room) {
+				continue
+			}
+			counts[m.monster.Archetype]++
+			all++
+		}
+	}
+
+	ghoulRolls := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBoneArcher])
+	nonTroll := float64(all - counts[components.MonsterArchetypeTroll])
+	require.Positive(t, ghoulRolls)
+	assert.InDelta(t, BoneArcherRoomShare, float64(counts[components.MonsterArchetypeBoneArcher])/ghoulRolls, 0.02, "the archers' share of ghoul rolls")
+	assert.InDelta(t, trollShare(firstFloor), float64(counts[components.MonsterArchetypeTroll])/float64(all), 0.02, "the troll share")
+	assert.InDelta(t, 0.70, ghoulRolls/nonTroll, 0.02, "the ghoul rolls' share")
+	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.02, "the Barrow Thrall share")
+	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.02, "the Spire Wraith share")
+	for archetype := range counts {
+		assert.Contains(t, []components.MonsterArchetype{
+			components.MonsterArchetypeTroll, components.MonsterArchetypeGhoul, components.MonsterArchetypeBoneArcher,
+			components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeSpireWraith,
+		}, archetype, "nothing else stands in an ordinary room")
+	}
+}
+
+// On floor 1 a Bone Archer stands only in an ordinary room or a hall's pack:
+// never in a corridor, never among a treasure room's guards. FS-B4SG9 §B R17.
+func TestDungeonPopulation_NoBoneArcherInACorridorOrAmongTreasureGuards(t *testing.T) {
+	archers := 0
+	for seed := uint64(1); seed <= floor1Builds; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+		d := s.dungeon
+		for _, m := range floor1Monsters(t, s) {
+			if m.monster.Archetype != components.MonsterArchetypeBoneArcher {
+				continue
+			}
+			archers++
+			assert.NotEqual(t, -1, m.room, "seed %d: a Bone Archer in a corridor", seed)
+			assert.NotContains(t, d.layout.Roles.Treasure, m.room, "seed %d: a Bone Archer guards a treasure room", seed)
+			assert.False(t, m.monster.Boss, "seed %d", seed)
+		}
+	}
+	require.NotZero(t, archers, "floor 1 holds Bone Archers to check")
+}
+
+// spireFloor is a run whose Spire is a Master Spire, so its top floor is in a
+// sweep too, with depth just built, one delver of level 2 standing far from
+// the start.
+func spireFloor(t *testing.T, seed uint64, depth int) *Session {
+	t.Helper()
+	s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+	currentFloor(t, s).Count = MasterSpireHeight
+	s.buildFloor(depth, nil)
+	return s
+}
+
+// Every floor above the first, the top floor included, places Bone Archers as
+// floor 1 does: about 1 in 4 of the ordinary rooms' ghoul rolls, the first
+// ghoul of every hall pack, none in a corridor or among a treasure room's
+// guards; the floor's troll share and the Barrow Thrall and Spire Wraith
+// shares are untouched. FS-B4SG9 §B R14–R17 (owner decision 2026-11-12).
+func TestBuildFloor_BoneArchersOnEveryDungeonFloorAsOnFloor1(t *testing.T) {
+	const seeds = 120
+	counts := map[components.MonsterArchetype]int{}
+	all, packs := 0, 0
+	for depth := firstFloor + 1; depth <= MasterSpireHeight; depth++ {
+		trolls, rolled := 0, 0
+		for seed := uint64(1); seed <= seeds; seed++ {
+			s := spireFloor(t, seed, depth)
+			d := s.dungeon
+			require.NotNil(t, d, "depth %d seed %d: a Spire floor is a dungeon", depth, seed)
+
+			hallMembers := map[int]map[components.MonsterArchetype]int{}
+			for _, m := range floor1Monsters(t, s) {
+				if m.monster.Boss {
+					continue
+				}
+				archer := m.monster.Archetype == components.MonsterArchetypeBoneArcher
+				switch {
+				case m.room == -1:
+					assert.False(t, archer, "depth %d seed %d: a Bone Archer in a corridor", depth, seed)
+				case slices.Contains(d.layout.Roles.Treasure, m.room):
+					assert.False(t, archer, "depth %d seed %d: a Bone Archer guards a treasure room", depth, seed)
+				case eligibleHall(d, m.room):
+					if hallMembers[m.room] == nil {
+						hallMembers[m.room] = map[components.MonsterArchetype]int{}
+					}
+					hallMembers[m.room][m.monster.Archetype]++
+				default:
+					counts[m.monster.Archetype]++
+					all++
+					rolled++
+					if m.monster.Archetype == components.MonsterArchetypeTroll {
+						trolls++
+					}
+				}
+			}
+
+			for room, members := range hallMembers {
+				ghoulSlots := members[components.MonsterArchetypeGhoul] + members[components.MonsterArchetypeBoneArcher]
+				if members[components.MonsterArchetypeTroll] == 0 || ghoulSlots == 0 {
+					continue
+				}
+				packs++
+				assert.Equal(t, HallPackBoneArchers, members[components.MonsterArchetypeBoneArcher],
+					"depth %d seed %d room %d: a hall pack holds one Bone Archer", depth, seed, room)
+				assert.LessOrEqual(t, ghoulSlots, HallPackGhoulsMax, "depth %d seed %d room %d: the pack's size is unchanged", depth, seed, room)
+			}
+		}
+		require.Positive(t, rolled, "depth %d", depth)
+		assert.InDelta(t, trollShare(depth), float64(trolls)/float64(rolled), 0.03, "depth %d: the floor's troll share", depth)
+	}
+
+	require.NotZero(t, packs, "the floors hold hall packs to check")
+	ghoulRolls := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBoneArcher])
+	nonTroll := float64(all - counts[components.MonsterArchetypeTroll])
+	require.Positive(t, ghoulRolls)
+	assert.InDelta(t, BoneArcherRoomShare, float64(counts[components.MonsterArchetypeBoneArcher])/ghoulRolls, 0.02, "the archers' share of ghoul rolls")
+	assert.InDelta(t, 0.70, ghoulRolls/nonTroll, 0.02, "the ghoul rolls' share")
+	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.02, "the Barrow Thrall share")
+	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.02, "the Spire Wraith share")
+}
+
+// A floor of buildings a failed generation leaves holds no Bone Archer, floor
+// 1 or any floor above: it never reaches the dungeon population. FS-B4SG9 §B
+// R14, §Edge States "A floor of buildings, any depth".
+func TestBuildFloor_NoBoneArcherOnAFloorOfBuildings(t *testing.T) {
+	for _, depth := range []int{firstFloor, firstFloor + 1, MasterSpireHeight} {
+		for seed := uint64(1); seed <= 40; seed++ {
+			s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+			currentFloor(t, s).Count = MasterSpireHeight
+			failGeneration(s)
+			s.buildFloor(depth, nil)
+			require.Nil(t, s.dungeon, "depth %d seed %d: the floor fell back to buildings", depth, seed)
+			require.NotEmpty(t, monstersIn(s), "depth %d seed %d", depth, seed)
+			for _, m := range monstersIn(s) {
+				assert.NotEqual(t, components.MonsterArchetypeBoneArcher, monsterOf(m).Archetype, "fallback depth %d seed %d", depth, seed)
+			}
+		}
+	}
 }
 
 // Every treasure room is guarded by one to three monsters, every one an
