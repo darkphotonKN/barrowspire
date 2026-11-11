@@ -632,9 +632,10 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 - **Minimap.** The run's top-right minimap (`src/ui/minimap.ts`) reads as candle-lit stone in the
   HUD's own frame, which stays as it is: the `hudPanel` backing and its 1px brass rim, and nothing
   drawn over the rim. Inside it, bottom to top: every region the party has seen, explored or
-  visible, in one dark stone (`minimapExplored`), the one it stands in no lighter, and the seen
-  rooms outlined by a 1px line (`minimapEdge`) along their outer edge only, never on a corridor,
-  across a doorway, between two regions or along a cell; a soft `inkDeep` vignette, strongest at the rim's inside
+  visible, in one dark stone (`minimapExplored`), the one it stands in no lighter, and its walls
+  drawn as a 1px line (`minimapEdge`), rooms' and corridors' alike, on every cell side that faces
+  shell or void; every opening a gap, never a line across a doorway, where two regions meet or
+  along a cell; a soft `inkDeep` vignette, strongest at the rim's inside
   edge and nothing in the middle, painted as a canvas gradient so both renderers match (never the
   WebGL-only `fillGradientStyle`); the switch, escape door and stairs as small glyphs (a lever, an
   arch, a flight of steps) in the interactable amber on a dark 1px `markerStroke` ring, within 9 × 9
@@ -643,7 +644,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   from the next, each glyph and dot 3:1 from its ring. Drawn in code from tokens, no baked art.
   *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md), 2026-11-12; outer
   outline only, on the owner's look the same day; one fill for every seen region, the owner's
-  "目前的區域不特別亮", the same day.)*
+  "目前的區域不特別亮", the same day; walls are lines and openings are gaps, corridors lined as rooms
+  are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
