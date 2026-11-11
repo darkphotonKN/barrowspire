@@ -97,7 +97,6 @@ import {
   nearestScreenFacing,
   projectedBounds,
   screenToWorld,
-  splitAlongLength,
   standAt,
   WORLD_PX_PER_TILE,
   worldDepth,
@@ -155,6 +154,7 @@ import {
   addPerimeter,
   addProp,
   addRoof,
+  addWallPieces,
   addWalls,
   budgetLights,
   buildingAt,
@@ -186,14 +186,14 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
-import { RegionGrid, dressingRooms, isDungeon, wallRule, wallRuns } from "@/render/world/dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan, wallRule, wallRuns } from "@/render/world/dungeon";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
 import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
-import { withinPosts } from "@/render/world/walls";
+import { thicknessPx, type WallHeight } from "@/render/world/walls";
 import {
   FULLSCREEN_BUTTON_CLEARANCE,
   anchorAt,
@@ -3734,28 +3734,31 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A dungeon floor's walls (FS-KE075 §H.46–§H.47): the map's wall cells in masonry, cut along
-   * one-cell runs by the faces they show (`wallRuns`), each piece front where a walkable cell lies
-   * north or west of it and back otherwise, the full pieces fading over the player like any
-   * occluder; a light only on a room's back wall. No building is drawn, no blackout and no roof:
-   * every piece stands in its ground chunk, shown only near the camera (§H.45). The ground takes the floor's look and seed.
+   * A dungeon floor's walls (FS-XK2B6 §A–§D, FS-KE075 §H.47): the map's wall cells in masonry,
+   * drawn on their wall edges, the sides they share with the walkable cells they face
+   * (`wallPlan`), each piece at its edge's height, the full pieces and posts fading over the
+   * player like any occluder; a light only on a back edge facing a room. No building is drawn, no
+   * blackout and no roof: every piece stands in its ground chunk, shown only near the camera
+   * (§H.45). The ground takes the floor's look and seed.
    */
   private buildDungeonWalls(walls: readonly WallState[]): void {
     const dungeon = this.dungeon!;
     const look = this.currentFloorLook();
-    const rule = wallRule(dungeon.grid);
     this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
-    const strips = wallRuns(walls, dungeon.grid);
-    const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
-    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
+    const thickness = thicknessPx(look.walls);
+    const planned = dungeonWalls(wallPlan(walls, dungeon.grid, thickness), dungeon.grid, look.seed, look.walls);
+    const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
+    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13). Its
+    // slabs still stand on the cells' centrelines, by the per-cell rule, until they follow the
+    // wall edges (FS-XK2B6 §F)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
     const fog = new Fog(
       this,
       dungeon.grid,
-      rule,
+      wallRule(dungeon.grid),
       dungeon.chunks,
       () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
-      wallLayout(dungeon.grid, strips),
+      wallLayout(dungeon.grid, wallRuns(walls, dungeon.grid)),
     );
     dungeon.fog = fog;
     const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
@@ -3765,26 +3768,28 @@ export class BarrowspireScene extends Phaser.Scene {
       for (const { sprite, at } of baked.standing) stand(sprite, at);
       baked.lights.forEach(({ source, at }) => this.queueLight("sconce", source, { at }));
     }
-    const pieces = new Map<string, BuildingPart[]>();
-    for (const w of strips) {
-      const own = pieces.get(w.entity_id) ?? [];
-      pieces.set(w.entity_id, own);
-      if (baked) continue;
-      // no art: placeholder blocks, one per tile of wall, as tall as the rule makes each, and
-      // like the baked pieces only between the run's two posts (§H.46)
-      const { x, y } = w.position;
-      for (const p of splitAlongLength(x, y, w.width, w.height, WORLD_PX_PER_TILE)) {
-        const centre = { x: p.x + p.width / 2, y: p.y + p.height / 2 };
-        if (rule.betweenPosts && !withinPosts(w, centre)) continue;
-        const tall = rule.height(centre) === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
-        for (const g of addUprightBlock(this, p.x, p.y, p.width, p.height, PLACEHOLDER_STONE, tall)) {
-          own.push(g);
-          stand(g, centre);
+    const blocks = new Map<string, BuildingPart[]>();
+    if (!baked) {
+      // no art: a placeholder block on each piece's and post's footprint, as thick as the material
+      // and as tall as the plan makes it, sorted as the baked piece or post is (ADR-0074)
+      const block = (wallId: string, at: Point, w: number, h: number, height: WallHeight, depth: number) => {
+        const tall = height === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+        const own = blocks.get(wallId) ?? [];
+        blocks.set(wallId, own);
+        for (const g of addUprightBlock(this, at.x - w / 2, at.y - h / 2, w, h, PLACEHOLDER_STONE, tall)) {
+          own.push(g.setDepth(depth));
+          stand(g, at);
         }
+      };
+      for (const p of planned.pieces) {
+        const [w, h] = p.axis === "x" ? [WORLD_PX_PER_TILE, thickness] : [thickness, WORLD_PX_PER_TILE];
+        block(p.wallId, p.at, w, h, p.height, worldDepth(p.depthAt.x, p.depthAt.y));
       }
+      for (const post of planned.posts)
+        block(post.wallId, post.at, thickness, thickness, post.height, worldDepth(post.at.x, post.at.y, 1));
     }
     for (const w of walls) {
-      const own = baked?.byWall.get(w.entity_id) ?? pieces.get(w.entity_id) ?? [];
+      const own = baked?.byWall.get(w.entity_id) ?? blocks.get(w.entity_id) ?? [];
       this.walls.set(w.entity_id, { pieces: own, entityId: w.entity_id });
     }
     // every region unexplored until the party is placed in it, this same broadcast (§B.6)

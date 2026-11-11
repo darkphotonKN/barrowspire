@@ -11,7 +11,7 @@
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Point, Rect } from "@/render/iso/projection";
 import type { FloorMap, FloorRegion, WallState } from "@/types/gameState";
-import type { PieceRule, WallAxis, WallHeight } from "./walls";
+import { planEdgeWalls, type PieceRule, type WallAxis, type WallHeight, type WallPiece, type WallPost, type WallSheets } from "./walls";
 
 /** A floor map that carries a cell grid and its regions. */
 export type DungeonMap = Pick<FloorMap, "width" | "height"> & {
@@ -116,8 +116,9 @@ export class RegionGrid {
  *
  * Only a room's back wall carries a light (§H.47): a corridor's walls and every front stay dark.
  *
- * A run's pieces stop at its end posts (`betweenPosts`): where an x run and a y run meet they share
- * the corner's cell, and each one's half of that cell past the post would stick out of the corner.
+ * No wall is drawn by this rule any more: a dungeon floor's walls stand on their wall edges, each
+ * at its edge's height (`edgeHeight`, FS-XK2B6 §B). Only the fog still reads it, until its slabs
+ * follow the edges (FS-XK2B6 §F).
  */
 export function wallRule(grid: RegionGrid): PieceRule {
   const height = (at: Point): WallHeight => {
@@ -131,7 +132,7 @@ export function wallRule(grid: RegionGrid): PieceRule {
     const { cx, cy } = grid.cellOf(at);
     return grid.kind(cx, cy + 1) === "room" || grid.kind(cx + 1, cy) === "room";
   };
-  return { height, lit, betweenPosts: true };
+  return { height, lit };
 }
 
 /**
@@ -146,10 +147,12 @@ export function wallRule(grid: RegionGrid): PieceRule {
  * A wall cell faces a region along x when a walkable cell lies directly north or south of it, and
  * along y when one lies directly west or east. A run is a line of cells facing the same way, one
  * after another, reaching on one cell at each end into the wall it meets: so a corner's cell is in
- * both its runs, and its post stands at that cell's centre; each run's pieces are drawn only
- * between its two posts (`wallRule`), so neither sticks out of the corner. Only runs of two cells
- * or more are kept; a wall cell no run reaches is a one-cell wall of its own. The y runs come first, so where runs cross, the cell's axis is x (`wallLayout`),
+ * both its runs. Only runs of two cells or more are kept; a wall cell no run reaches is a one-cell
+ * wall of its own. The y runs come first, so where runs cross, the cell's axis is x (`wallLayout`),
  * as the rows made it. A run keeps the entity id of the wall its first facing cell is in.
+ *
+ * The walls are no longer drawn from these (`wallPlan`, FS-XK2B6 §A): they are what the fog's
+ * slabs still stand on (`wallLayout`) until the fog follows the wall edges (FS-XK2B6 §F).
  */
 export function wallRuns(walls: readonly WallState[], grid: RegionGrid): WallState[] {
   const c = grid.cell;
@@ -235,15 +238,16 @@ const TOWARDS_WALL: Record<EdgeSide, readonly [dx: number, dy: number]> = {
 /**
  * The height of the wall on a wall edge (FS-XK2B6 §B.8): **front** (cut away, low) when the edge
  * bounds the region it faces on that region's south or east side, so its wall cell lies south or
- * east of it; any other edge is **back** (full height). The one place a dungeon wall's height is
- * decided: by the edge, never by the cell under a piece (§B.9), since one wall cell may carry a
- * front edge and a back edge.
- *
- * The grid is here for a rule that asks what else lies round the edge's wall cell (FS-XK2B6 "Open
- * to the owner" E1, not ruled); the charter's rule does not read it.
+ * east of it; and front as well when its wall cell has a walkable cell directly north or west of
+ * it (the owner's ruling E1): that wall cell stands in front of a region, and a full wall on it
+ * would hide who stands there. Every other edge is **back** (full height). So no wall cell carries
+ * a front wall and a back wall. The one place a dungeon wall's height is decided: asked of the
+ * edge, never of the place a piece or a post stands (§B.9).
  */
-export function edgeHeight(edge: WallEdge, _grid: RegionGrid): WallHeight {
-  return edge.wallSide === "south" || edge.wallSide === "east" ? "front" : "back";
+export function edgeHeight(edge: WallEdge, grid: RegionGrid): WallHeight {
+  const facesCamera = edge.wallSide === "south" || edge.wallSide === "east";
+  const beforeARegion = grid.walkable(edge.cx, edge.cy - 1) || grid.walkable(edge.cx - 1, edge.cy);
+  return facesCamera || beforeARegion ? "front" : "back";
 }
 
 /**
@@ -258,7 +262,8 @@ export function edgeLit(edge: WallEdge, grid: RegionGrid): boolean {
 
 /**
  * An edge run (FS-XK2B6 §A.3, CONTEXT.md "Wall edge"): a straight line of wall edges facing the
- * same way, one after another, from one corner of the walkable outline to the next. The wall's
+ * same way and drawn at one height, one after another, from one corner of the walkable outline to
+ * the next, or to where the wall changes height. The wall's
  * face towards the walkable cells stands on the line from `from` to `to`; its thickness lies on
  * the `wallSide` of it.
  */
@@ -285,7 +290,8 @@ export interface EdgePost {
   corner: Point;
   /**
    * Where the post stands: the corner, set half a thickness to the wall side along each axis,
-   * where the walls' thicknesses cross. On the corner itself along an axis with walls on both sides.
+   * where the walls' thicknesses cross. On the corner itself along an axis with walls on both
+   * sides, or with none: where one straight wall changes height, the post stands on its line.
    */
   at: Point;
   /** As tall as the tallest run ending here. */
@@ -305,8 +311,8 @@ const EDGE_SIDES: readonly EdgeSide[] = ["north", "south", "west", "east"];
  * A dungeon floor's wall plan (FS-XK2B6 §A, §B): a wall edge wherever a cell of the map's walls has
  * a walkable cell directly north, south, west or east of it, so a wall cell carries up to four and
  * one with no walkable cell directly beside it carries none; the edges gathered into edge runs,
- * each ending at the cell corner where the walkable outline turns; and one post at every corner a
- * run ends at. From the wall cells and the sides they show, never from how the server merged them.
+ * each ending at the cell corner where the walkable outline turns or the wall changes height
+ * (§B.8); and one post at every corner a run ends at. From the wall cells and the sides they show, never from how the server merged them.
  * `thickness` is the material's, in world px (`thicknessPx`).
  */
 export function wallPlan(walls: readonly WallState[], grid: RegionGrid, thickness: number): WallPlan {
@@ -330,11 +336,17 @@ export function wallPlan(walls: readonly WallState[], grid: RegionGrid, thicknes
       for (let step = 0; step < steps; step++) {
         if (!shows(...cell(lane, step), wallSide)) continue;
         const first = step;
-        for (; step < steps && shows(...cell(lane, step), wallSide); step++) {
-          const [cx, cy] = cell(lane, step);
-          edges.push({ cx, cy, wallSide });
-        }
         const [cx, cy] = cell(lane, first);
+        const height = edgeHeight({ cx, cy, wallSide }, grid);
+        // the run goes on while the next cell shows the same side at the same height
+        for (; step < steps; step++) {
+          const [nx, ny] = cell(lane, step);
+          const edge = { cx: nx, cy: ny, wallSide };
+          if (!shows(nx, ny, wallSide) || edgeHeight(edge, grid) !== height) break;
+          edges.push(edge);
+        }
+        // the cell the run stopped at is looked at again: it may start the next run
+        step--;
         // the cell line the edges lie on: the wall cells' near side, or their far side when they lie before it
         const line = (lane + (dx + dy < 0 ? 1 : 0)) * c;
         const end = (along: number): Point => (axis === "x" ? { x: along * c, y: line } : { x: line, y: along * c });
@@ -342,14 +354,29 @@ export function wallPlan(walls: readonly WallState[], grid: RegionGrid, thicknes
           wallId: owners.get(`${cx},${cy}`)!,
           axis,
           from: end(first),
-          to: end(step),
+          to: end(step + 1),
           wallSide,
-          height: edgeHeight({ cx, cy, wallSide }, grid),
+          height,
           thickness,
         });
       }
   }
   return { edges, runs, posts: postsOf(runs) };
+}
+
+/**
+ * A dungeon floor's walls as they are drawn (FS-XK2B6 §A–§D): the plan's runs cut into pieces on
+ * their edges and its posts, in a material's sheets. A piece may be a kind that carries a light
+ * only on an edge that may (`edgeLit`); a piece's centre lies in its wall cell, so the cell it
+ * stands in and its run's side name its edge.
+ */
+export function dungeonWalls(
+  plan: WallPlan,
+  grid: RegionGrid,
+  seed: number,
+  sheets: WallSheets,
+): { pieces: WallPiece[]; posts: WallPost[] } {
+  return planEdgeWalls(plan, seed, sheets, (run, at) => edgeLit({ ...grid.cellOf(at), wallSide: run.wallSide }, grid));
 }
 
 /** The map wall each wall cell is in, keyed `cx,cy`. */
