@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Point, Rect } from "@/render/iso";
 import type { ClientGameState } from "@/types/gameState";
@@ -16,6 +15,7 @@ import {
 } from "./runDressing";
 import { RegionGrid, dressingRooms, dungeonWalls, wallPlan, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
+import pinned from "./runDressing.fixture.json";
 import { MASONRY_WALLS, thicknessPx } from "./walls";
 import { TOWER_BANDS } from "./worldTheme";
 
@@ -207,8 +207,6 @@ describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 ย
   const statics = dressingStatics({ walls: map.walls, doors: [], containers: [], escape_doors: [], switches: [], stairs: [] }, map.width, map.height);
   const lean = TOWER_BANDS.lower.dressing;
   const plan = planRoomDressing(lean, 41, statics, rooms);
-  /** That plan as it was planned before FS-XK2B6 moved the walls. */
-  const PINNED = { count: 77, sha256: "0e06fb653ff2dc4b952f18d7d423f84efbb49479aeca59c23030b953768e64ca" };
   const cellOf = (p: Point) => ({ cx: Math.floor(p.x / map.cell_size), cy: Math.floor(p.y / map.cell_size) });
   /** The cells a footprint touches. */
   const cellsUnder = (p: DressingPiece) => {
@@ -268,10 +266,11 @@ describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 ย
   });
 
   it("should plan the same dressing as before the walls moved to their edges, piece for piece (FS-XK2B6 ยงD.14)", () => {
-    // the plan for this floor, look and seed as it stood before FS-XK2B6, pinned: 24 px off every
-    // wall cell was already the distance from the cell's edge, where the wall now stands
-    expect(plan).toHaveLength(PINNED.count);
-    expect(createHash("sha256").update(JSON.stringify(plan)).digest("hex")).toBe(PINNED.sha256);
+    // the plan for this floor, look and seed as it stood before FS-XK2B6, one piece per line in
+    // runDressing.fixture.json, so a change shows which pieces moved: 24 px off every wall cell
+    // was already the distance from the cell's edge, where the wall now stands
+    expect(pinned).toHaveLength(77);
+    expect(plan).toEqual(pinned);
   });
 
   it("should keep every footprint 24 px or more from the face of every wall as it is drawn on its edge (FS-XK2B6 ยงD.14)", () => {
