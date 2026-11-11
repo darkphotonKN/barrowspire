@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { CardInk } from "@/render/effects/cardDust";
-import { ARRIVAL_CARD, ArrivalCard, type ArrivalCardScene, type CardDustPlayer } from "./arrivalCard";
+import { ARRIVAL_CARD, ArrivalCard, CARD_LAYOUT, type ArrivalCardScene, type CardDustPlayer } from "./arrivalCard";
 
 // FS-PQ2TW §B R10, R12, R14–R17; §E R37, R38; ADR-0073 Decisions 3, 6. I-PQ2TW-1: the arrival
 // card as one piece no scene owns, on a recording stand-in for the slice of a scene it draws with.
@@ -143,28 +143,33 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
     expect(ARRIVAL_CARD.depth + 1).toBeLessThan(1000);
   });
 
+  it("should name the card's place and type sizes as the owner tuned them (R10, Tunes 2026-11-12)", () => {
+    expect(CARD_LAYOUT).toEqual({ rise: 0.3, headingPx: 34, linePx: 19 });
+  });
+
   it("should draw the heading, the rule and the line as the climb's card is drawn (R10, R17)", () => {
     viewport.set({ width: 800, height: 600, renderScale: 1 });
     const { card, parts, last } = cardOnStage();
     card.play(WORDS, { built: true });
 
+    // the card's centre 30% of the height above the middle: y 120 of 600
     const [, heading, rule, subtitle] = parts;
     expect(heading.args).toEqual([
       400,
-      286,
+      102,
       "The Second Floor",
-      { fontFamily: CANVAS_FONT.body, fontSize: "26px", color: toCss(palette.hudText), letterSpacing: 4 },
+      { fontFamily: CANVAS_FONT.body, fontSize: "34px", color: toCss(palette.hudText), letterSpacing: 4 },
     ]);
     expect(subtitle.args).toEqual([
       400,
-      326,
+      153,
       "The dead walk heavier here.",
-      { fontFamily: CANVAS_FONT.body, fontSize: "15px", fontStyle: "italic", color: toCss(palette.hudLabel) },
+      { fontFamily: CANVAS_FONT.body, fontSize: "19px", fontStyle: "italic", color: toCss(palette.hudLabel) },
     ]);
     expect(rule.kind).toBe("graphics");
     expect(last(rule, "lineStyle")).toEqual([1, palette.frame, 0.6]);
-    expect(last(rule, "lineBetween")).toEqual([-90, 308, 90, 308]);
-    expect(last(rule, "setX")).toEqual([400]);
+    expect(last(rule, "lineBetween")).toEqual([-90, 0, 90, 0]);
+    expect(last(rule, "setPosition")).toEqual([400, 130]);
     for (const text of [heading, subtitle]) expect(last(text, "setOrigin")).toEqual([0.5]);
     for (const part of [heading, rule, subtitle]) {
       expect(last(part, "setScrollFactor")).toEqual([0]);
@@ -254,8 +259,33 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
 
     const [veil, heading, rule, subtitle] = parts;
     expect(last(veil, "setSize")).toEqual([1000, 700]);
-    for (const part of [heading, rule, subtitle]) expect(last(part, "setX")).toEqual([500]);
+    // the card's centre at 20% of 700 from the top: 140
+    expect(last(heading, "setPosition")).toEqual([500, 122]);
+    expect(last(rule, "setPosition")).toEqual([500, 150]);
+    expect(last(subtitle, "setPosition")).toEqual([500, 173]);
     for (const text of [heading, subtitle]) expect(last(text, "setResolution")).toEqual([2]);
+  });
+
+  it.each([
+    [800, 600],
+    [1080, 720],
+    [1280, 720],
+    [720, 360],
+  ])("should stand the card's centre 20%% of a %sx%s view's height from the top, on a play and on a resize (R10, R16)", (width, height) => {
+    viewport.set({ width: 1000, height: 500, renderScale: 1 });
+    const { card, parts, last } = cardOnStage();
+    card.play(WORDS, { built: true });
+    const [, heading, rule, subtitle] = parts;
+    // the card's centre is the rule's height less the rule's offset below it
+    const centre = () => (last(rule, "setPosition") as [number, number])[1] - 10;
+    expect(centre()).toBeCloseTo(0.2 * 500);
+
+    viewport.set({ width, height, renderScale: 1 });
+    card.relayout();
+
+    expect(centre()).toBeCloseTo(0.2 * height);
+    expect(last(heading, "setPosition")).toEqual([width / 2, 0.2 * height - 18]);
+    expect(last(subtitle, "setPosition")).toEqual([width / 2, 0.2 * height + 33]);
   });
 
   it("should remove the card that is up when a new one starts", () => {
@@ -465,7 +495,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
     expect(readHeading).toBe(heading.obj);
     expect(readSubtitle).toBe(subtitle.obj);
     expect(more).toEqual([]);
-    expect(asked[0].ink.rule).toEqual({ x1: 310, x2: 490, y: 308 });
+    expect(asked[0].ink.rule).toEqual({ x1: 310, x2: 490, y: 130 });
     // over the veil, with the card, under the HUD
     expect(asked[0].depth).toBe(ARRIVAL_CARD.depth + 1);
     for (const part of [heading, rule, subtitle]) expect(last(part, "setVisible")).toEqual([false]);
@@ -481,7 +511,7 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
 
     leaves()[0].fn();
 
-    expect(asked[0].ink.rule).toEqual({ x1: 410, x2: 590, y: 308 });
+    expect(asked[0].ink.rule).toEqual({ x1: 410, x2: 590, y: 130 });
   });
 
   it("should take the card down once the dust has gone (R27)", () => {
