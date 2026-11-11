@@ -3,7 +3,7 @@ id: I-MMA2H-5
 status: open
 implements: FS-MMA2H
 blocked_by: [I-MMA2H-1, I-MMA2H-2, I-MMA2H-3, I-MMA2H-4]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-MMA2H slice 5: browser check of the wider doors (Nick)"
 ---
 Implements FS-MMA2H §Acceptance Criteria (By eye)

@@ -54,6 +54,12 @@ translation belongs to the surface that renders words.
 - **Town** — the hub, as the owner and the lore say it (the Elder: "the town needs heroes now").
   The screen may say town; code keeps **hub** (`HubScene`, `HUB_KEEP_OUT`). One world, not a
   district of it.
+- **Arrival** — coming into a place the player was not just in: the town, a field, the Spire's
+  first floor, or the next floor up on a climb. Not an arrival: a reconnect or a page refresh back
+  into the same place, and walking into a town building (FS-PQ2TW, ADR-0073).
+- **Arrival card** — what the screen shows on an arrival: the view dark, the place's name over a
+  rule and one line, then the view back and the card gone to dust. The climb's **floor card** is
+  the arrival card of a floor; "floor card" stays the word for that one.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.
@@ -247,9 +253,18 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   (`FIELD_MARKER_OUTLINE`), so it keeps the 3:1 readability floor on bright, daylit ground. It is
   why a field's daylight need not be capped for the floor. Runs and the hub draw markers without
   it.
-- **Wall piece**: one tile of a server wall as drawn. A server wall rect is cut into wall pieces
-  along its centreline, each sorted by its own footprint, with a **post** at each end. "Back"
-  pieces stand full height (north and west sides); "front" pieces are the low cut-away.
+- **Wall piece**: one tile of a wall as drawn (`WallPiece`), each sorted by its own footprint,
+  with a **post** wherever walls end or meet. "Back" pieces stand full height; "front" pieces are
+  the low cut-away. What a wall is cut from, and what decides its height, depend on where it
+  stands:
+  - **A building's wall** (a house, a partition, a floor of buildings): a server wall rect, cut
+    along the rect's centreline, a post at each end. Its height is its house side's: back on the
+    north and west sides, front on the south and east (or a piece rule's, where one is given).
+  - **A dungeon floor's wall**: an *edge run* (**Wall edge**), cut on the edge, two pieces per
+    cell, its centre half the wall's thickness into the wall cell, a post at each end of the run
+    (FS-XK2B6). Its height is its edge's (`edgeHeight`), never its place's: front on a region's
+    south or east edge, and on any edge whose wall cell also has a walkable cell directly north or
+    west of it; back otherwise. So some north and west pieces are low.
 - **Occluder**: a tall drawn thing (tree, lamp post, back wall piece, roof piece, door, arch) that
   fades while its sprite overlaps the player's and its footprint sorts nearer the viewer.
 - **Dressing**: a decorative prop placed by the client (a cart, stall, trough, signpost, lamp post,
@@ -320,6 +335,13 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   map. Every walkable cell is in exactly one. The unit of fog and of the minimap.
 - **Void**: the rock of a dungeon floor outside every region and its shell walls. Drawn as the
   canvas's darkest ink; nothing stands in it.
+- **Wall edge**: on a dungeon floor, the side a wall cell shares with a walkable cell directly
+  north, south, west or east of it (FS-XK2B6). A dungeon floor's walls are drawn on wall edges,
+  never through a wall cell's middle; a wall cell may carry up to four. The whole cell still
+  collides, and what lies of it beyond its walls is drawn as void is. Say *edge run* for a
+  straight line of wall edges facing the same way and drawn at one height, from one corner of the
+  walkable outline to the next, or to where the wall changes height. A building's wall is still
+  cut along its rect's centreline (**Wall piece**).
 - **Partition wall**: a server wall as the tower theme draws it: masonry, cut into wall pieces
   with the same geometry and cut-away rule as a house wall. It is a server wall, with collision.
 - **Perimeter wall**: the tower's outer wall, drawn by the client alone around the outside of the
@@ -386,6 +408,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
     animation.
   - **Satchel**: a sack's view, the leather satchel with its flap opening (FS-2325V §D).
   - **Bone heap**: a drop pile's view, the heap with the items lying on top. No animation.
+- **Timed open** (FS-MQYEX): the wait between reaching for a shut chest or sack in a run and its
+  view opening, counted by the server and sent as `current_player.timed_open`. The client only
+  draws it, as the **open bar** over the container. It **completes** (the container opens) or is
+  **cancelled** (nothing opens, nothing is said). Not a **countdown** (FS-B3NDZ): it fills, it
+  carries no number, and it sits on no panel. Not a "channel": on screen that word is chat's.
 - **Sack**: the container kind `"sack"` (FS-1D6BX), placed on the floor where a chest would be and
   opening into the satchel. **Not the bag**: say "sack", never "bag" or "loot bag", for it.
 - **Bag**: the ordered list of items the player's character carries but does not wear, drawn as

@@ -11,6 +11,7 @@ import { BootScene } from "@/scenes/BootScene";
 import { HubScene } from "@/scenes/HubScene";
 import { FieldScene } from "@/scenes/FieldScene";
 import { switchWorld } from "./worldRouting";
+import { arrivals } from "./arrival";
 import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
@@ -113,9 +114,11 @@ export default function PhaserGame() {
     // and the scene follows. One handler at the Phaser bridge rather than one
     // per scene, so no scene has to know what comes after it.
     // FS-29KSH §Requirements 15, 36.
-    // Everything a world transition replaces: WORLD_SCENES (worldRouting.ts).
+    // Everything a world transition replaces: WORLD_SCENES (worldRouting.ts). Whether it is an
+    // arrival is asked as the switch is made, so a held hub is judged when it is let in
+    // (FS-PQ2TW R8).
     const enterWorld = (payload: WorldEnteredPayload) =>
-      switchWorld(game.scene, payload);
+      switchWorld(game.scene, payload, arrivals);
 
     socketManager.on("world_entered", (payload: WorldEnteredPayload) => {
       if (!payload?.world_type) return;

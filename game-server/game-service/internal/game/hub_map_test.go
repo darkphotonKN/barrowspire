@@ -235,7 +235,13 @@ func TestHubLayout_NoWall_StandsInADoorGap(t *testing.T) {
 		require.True(t, ok, "the %s has no single gap in its south wall", b.Name)
 		gaps := []box{street}
 
-		if segments := partitionsOf(house); len(segments) == 2 {
+		segments := partitionsOf(house)
+		if b.Partition == nil {
+			require.Empty(t, segments, "the %s is divided", b.Name)
+		} else {
+			// a partition walled as anything but two segments has no gap this
+			// test can name: that is a failure, never a pass
+			require.Len(t, segments, 2, "the %s's partition, either side of its door gap", b.Name)
 			north, south := segments[0], segments[1]
 			if north.Y > south.Y {
 				north, south = south, north

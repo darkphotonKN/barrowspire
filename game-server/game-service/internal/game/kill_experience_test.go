@@ -38,6 +38,10 @@ func TestKillExperience_Formula(t *testing.T) {
 		{"level-1 barrow thrall", systems.KillRecord{Archetype: components.MonsterArchetypeBarrowThrall, Level: 1}, 15},
 		{"level-1 spire wraith", systems.KillRecord{Archetype: components.MonsterArchetypeSpireWraith, Level: 1}, 20},
 		{"level-1 elite barrow thrall", systems.KillRecord{Archetype: components.MonsterArchetypeBarrowThrall, Level: 1, Elite: true}, 45},
+		// FS-B4SG9 §A R3: a row of its own, the ghoul's base
+		{"level-1 bone archer", systems.KillRecord{Archetype: components.MonsterArchetypeBoneArcher, Level: 1}, 10},
+		{"level-3 bone archer", systems.KillRecord{Archetype: components.MonsterArchetypeBoneArcher, Level: 3}, 13},
+		{"level-1 elite bone archer", systems.KillRecord{Archetype: components.MonsterArchetypeBoneArcher, Level: 1, Elite: true}, 30},
 		{"level 0 counts as level 1", systems.KillRecord{Archetype: components.MonsterArchetypeGhoul, Level: 0}, 10},
 		{"unknown archetype is worth nothing", systems.KillRecord{Archetype: "wisp", Level: 4}, 0},
 	}

@@ -43,6 +43,7 @@ const CHAINED = [
   "emitParticle",
   "startFollow",
   "setVisible",
+  "setScrollFactor",
 ];
 
 export function fakeScene() {

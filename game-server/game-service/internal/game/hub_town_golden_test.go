@@ -17,8 +17,8 @@ var updateTownGolden = flag.Bool("update", false, "rewrite the hub town golden t
 
 // hubTownGoldenPath is the town as hub_map.go lays it out, checked in where the
 // client reads it: this test holds hub_map.go to it, and the client's vitest
-// suites hold its mirrors (HUB_FURNISHINGS, HUB_FIXED_RESIDENTS, the test copies
-// of the buildings) to it. A deliberate change to the town is
+// suites hold its mirrors (HUB_FURNISHINGS, HUB_FIXED_RESIDENTS, HUB_DOOR_SPURS,
+// the test copies of the buildings) to it. A deliberate change to the town is
 // `go test ./internal/game -run TestHubTown_MatchesTheGolden -update`, then the
 // client's mirrors until vitest is green again. FS-B0H2D §Requirements 19, 23.
 var hubTownGoldenPath = filepath.Join("..", "..", "..", "..", "game-client", "src", "render", "world", "hubTown.golden.json")
@@ -34,6 +34,9 @@ type townGoldenBuilding struct {
 	Y    float64 `json:"y"`
 	W    float64 `json:"w"`
 	H    float64 `json:"h"`
+	// The gap in its south wall, as cut: the south wall's own rect between its
+	// two segments. The client's door spurs and its test walls are held to it.
+	DoorGap townGoldenRect `json:"doorGap"`
 	// The wall dividing its rooms, as walled: its segments either side of the
 	// door gap. Empty for a one-room building.
 	Partitions  []townGoldenRect       `json:"partitions"`
@@ -67,6 +70,7 @@ func townFromHubMap() townGolden {
 	town := townGolden{Buildings: []townGoldenBuilding{}, FixedResidents: []townGoldenResident{}}
 	for _, b := range hubBuildings {
 		building := townGoldenBuilding{Name: b.Name, X: b.X, Y: b.Y, W: b.W, H: b.H, Partitions: []townGoldenRect{}, Furnishings: []townGoldenFurnishing{}}
+		building.DoorGap = townGoldenRect{X: b.X + doorGapWest(b), Y: b.Y + b.H - hubWallThickness, W: hubDoorWidth, H: hubWallThickness}
 		for _, w := range partitionWalls(b) {
 			building.Partitions = append(building.Partitions, townGoldenRect{X: w.X, Y: w.Y, W: w.Width, H: w.Height})
 		}
@@ -103,7 +107,8 @@ func TestHubTown_MatchesTheGolden(t *testing.T) {
 
 // The golden is taken from hub_map.go's data, so it is only worth holding the
 // client to if the built hub stands exactly that: each building's walls enclose
-// its footprint, its partition is its walls reaching the edge off the outline,
+// its footprint, its door gap is the opening its south wall leaves, its
+// partition is its walls reaching the edge off the outline,
 // its furnishings are its walls clear of every edge, and each fixed resident
 // stands where the golden says.
 func TestHubTown_BuiltHubStandsTheGoldenTown(t *testing.T) {
@@ -114,6 +119,10 @@ func TestHubTown_BuiltHubStandsTheGoldenTown(t *testing.T) {
 	for _, b := range town.Buildings {
 		house := houseOf(t, houses, b.Name)
 		assert.Equal(t, box{X: b.X, Y: b.Y, W: b.W, H: b.H}, footprintOf(house), "the %s's footprint", b.Name)
+
+		gap, ok := doorGapOf(house)
+		require.True(t, ok, "the %s has no single gap in its south wall", b.Name)
+		assert.Equal(t, box{X: b.DoorGap.X, Y: b.DoorGap.Y, W: b.DoorGap.W, H: b.DoorGap.H}, gap, "the %s's door gap", b.Name)
 
 		partitions := []box{}
 		for _, p := range b.Partitions {

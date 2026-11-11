@@ -582,9 +582,9 @@ describe("planGroundLayer", () => {
   });
 });
 
-describe("planGroundLayer on a dungeon floor (FS-KE075 §H.44)", () => {
+describe("planGroundLayer on a dungeon floor (FS-KE075 §H.44, FS-XK2B6 §E)", () => {
   const world = { width: 12 * T, height: 8 * T, kind: "run" as const, houses: [] };
-  // ground only west of x = 4 tiles: a stand-in for a floor's walkable and shell cells
+  // ground only west of x = 4 tiles: a stand-in for a floor's walkable cells
   const where = (p: { x: number }) => p.x < 4 * T;
 
   it("should lay ground only where the floor has it, each piece as the whole floor lays it", () => {

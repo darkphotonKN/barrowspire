@@ -14,6 +14,7 @@ import {
   ClientGameState,
   PlayerState,
   ContainerState,
+  TimedOpenState,
   type ContainerKind,
   placedKind,
   ItemState,
@@ -25,6 +26,7 @@ import {
   ProjectileState,
 } from "@/types/gameState";
 import { ABILITY_COPY } from "@/ui/abilityCopy";
+import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
@@ -32,14 +34,13 @@ import { apiClient } from "@/utils/api";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
-  floorCard,
   floorLabel,
   interactNotice,
   isTopFloor,
-  refusesContainer,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
+import { placeCard } from "@/ui/placeCard";
 import {
   FALL_CONFIRM,
   nextWatched,
@@ -61,6 +62,8 @@ import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
+import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
+import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 
 /**
  * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
@@ -97,7 +100,6 @@ import {
   nearestScreenFacing,
   projectedBounds,
   screenToWorld,
-  splitAlongLength,
   standAt,
   WORLD_PX_PER_TILE,
   worldDepth,
@@ -109,6 +111,7 @@ import {
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
+import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -155,6 +158,7 @@ import {
   addPerimeter,
   addProp,
   addRoof,
+  addWallPieces,
   addWalls,
   budgetLights,
   buildingAt,
@@ -186,14 +190,14 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
-import { RegionGrid, dressingRooms, isDungeon, wallRule, wallRuns } from "@/render/world/dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
 import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
-import { withinPosts } from "@/render/world/walls";
+import { thicknessPx, type WallHeight } from "@/render/world/walls";
 import {
   FULLSCREEN_BUTTON_CLEARANCE,
   anchorAt,
@@ -359,20 +363,6 @@ interface MenuState {
   resolved: boolean;
 }
 
-/**
- * The climb's dark and floor card (FS-F6F88 req 32): over the world and its atmosphere (~900),
- * under the HUD (1000) and notices (2000).
- */
-const FLOOR_VEIL_DEPTH = 950;
-/** How long the view stays dark before the card rises, in ms. */
-const FLOOR_DARK_HOLD_MS = 250;
-/** The card's fade, in ms; it leaves at twice this. */
-const FLOOR_CARD_FADE_MS = 300;
-/** The dark lifting off the new floor, in ms. */
-const FLOOR_VIEW_RETURN_MS = 900;
-/** How long the card holds once up, in ms. */
-const FLOOR_CARD_HOLD_MS = 1400;
-
 /** Health the server already sends, run out: a player's death clip plays on it. */
 const isDead = (player?: { current_health?: number } | null) =>
   player?.current_health !== undefined && player.current_health <= 0;
@@ -537,7 +527,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // HP change tracking for damage flash
   private otherPlayersPrevHp: Map<string, number> = new Map();
-  private prevLocalPlayerHp?: number;
+  /**
+   * The local player's health in the last state that had it: the hurt flash and the container
+   * view's close on a hit both read it. Unset until a start's first state, so that one is no hit.
+   */
+  private ownHealth?: HealthSeen;
 
   // Controls
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -593,6 +587,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * player between two positions every tick.
    */
   private sessionID?: string;
+  /**
+   * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
+   * handed over in the start data. A start with no verdict is no arrival. An arrival is dark from
+   * `create` and plays its floor's card at the first broadcast; a return plays nothing. A climb
+   * is not a world switch (ADR-0015): the run detects it itself.
+   */
+  private arrival = false;
   /** Whose eyes, and how to switch (req 9); up while spectating. */
   private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
@@ -685,8 +686,6 @@ export class BarrowspireScene extends Phaser.Scene {
   /** Asks for a floor's map while a snapshot's floor has none (FS-KE075 §H.41). */
   private readonly mapWait = new FloorMapWait();
   private floorMapUnsubscribe?: () => void;
-  /** Lifts a climb's veil once the new floor's map is built (FS-KE075 §H.41); none otherwise. */
-  private veilRelease?: () => void;
 
   // 建築
   private buildings: Building[] = [];
@@ -786,6 +785,23 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
   private containerView!: ContainerView;
+  /**
+   * The shut container the player reached for, until the server answers: its coffer opens on the
+   * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
+   */
+  private reaching?: string;
+  /**
+   * What the states have shown of that reach: once one shows the player's timed open on it, the
+   * reach is given up when their position changes from that state's, and when the timed open is
+   * gone with the container still shut (FS-MQYEX R26).
+   */
+  private reachSeen: ReachSeen = reachMade();
+  /**
+   * The player's own timed open as the last state carried it, when that state arrived, and the
+   * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
+   * the bar only shows what the server counts, and never opens anything.
+   */
+  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
 
   // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
   private equipment?: EquipmentHud;
@@ -920,8 +936,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * of a start, so a reconnect builds the party's floor directly with no transition (req 32).
    */
   private lastFloor?: number;
-  /** The dark and the floor card a climb comes back up through; gone once it has faded. */
-  private floorVeil: Phaser.GameObjects.GameObject[] = [];
+  /**
+   * The arrival card a climb comes back up through (FS-PQ2TW R37): the shared piece's, told when
+   * the new floor is built from its map (FS-KE075 §H.41), and leaves as dust (FS-PQ2TW §D). It lets
+   * its own card go at a scene end.
+   */
+  private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
 
   constructor() {
     super({ key: "BarrowspireScene" });
@@ -933,9 +953,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * builds is forgotten when it stops, and the next start rebuilds it through the
    * same code path (FS-2325V "Edge States": reconnect mid-run).
    */
-  init(data?: { sessionID?: string }): void {
+  init(data?: { sessionID?: string; arrival?: boolean }): void {
     // the run this scene was started for; state from any other world is not ours to draw
     this.sessionID = data?.sessionID;
+    // whether the switch that started it was an arrival (FS-PQ2TW R8); a reconnect is a return
+    this.arrival = data?.arrival ?? false;
     // a Leave the last run left pending (one pressed while it still loaded) is not this run's
     this.leavePending = false;
     // a stop, or the game's destroy mid-run (the page unmounts), which skips SHUTDOWN
@@ -980,7 +1002,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerAnim = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
-    this.prevLocalPlayerHp = undefined;
+    this.ownHealth = undefined;
     this.targetPosition = null;
 
     this.otherPlayers.clear();
@@ -1005,6 +1027,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.roofCover = [];
     this.outsideObjects = [];
     this.chests.clear();
+    // the bar went down with the scene's objects
+    this.timedOpen = undefined;
     this.escapeDoors.clear();
     this.switches.clear();
     this.stairs.forget();
@@ -1103,8 +1127,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.markers = "overhead";
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
-    this.floorVeil = [];
-    this.veilRelease = undefined;
     // the next run is sized and built from its own map
     this.mapWidth = 0;
     this.mapHeight = 0;
@@ -2453,6 +2475,11 @@ export class BarrowspireScene extends Phaser.Scene {
       standAt(chest.sprite, pos);
 
       // 如果是打開的寶箱，更新跳窗內容
+      if (container.is_open && this.reaching === container.entity_id) {
+        // the server opened what the player reached for: now its coffer shows (FS-KE075 §J R60)
+        this.reaching = undefined;
+        this.containerView.open(container.entity_id, placedKind(container));
+      }
       if (
         container.is_open &&
         this.containerView.entityId === container.entity_id
@@ -2460,6 +2487,53 @@ export class BarrowspireScene extends Phaser.Scene {
         this.containerView.setItems(container.items);
       }
     });
+  }
+
+  /**
+   * A reach still pending once the state's open containers are read is kept or given up by what
+   * the state shows of the player (FS-MQYEX R26): given up, no view opens for it later.
+   */
+  private settleReach(state: ClientGameState): void {
+    if (!this.reaching) return;
+    const seen = reachAfter(this.reaching, this.reachSeen, state);
+    if (seen) this.reachSeen = seen;
+    else this.reaching = undefined;
+  }
+
+  /**
+   * The open bar follows the state (FS-MQYEX R22, R23, R25): up while the player's own
+   * `timed_open` names a shut container drawn here, gone with no notice on a state that carries
+   * none, whether the container opened or the timed open was cancelled. Only `current_player` is
+   * read, never another player's entry, and nothing is drawn while spectating.
+   */
+  private showTimedOpen(state: ClientGameState): void {
+    const open = this.watchedPlayerId === undefined ? state.current_player?.timed_open : undefined;
+    const shut =
+      open &&
+      this.chests.has(open.entity_id) &&
+      state.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open);
+    if (!open || !shut) {
+      this.timedOpen?.bar.destroy();
+      this.timedOpen = undefined;
+      return;
+    }
+    const bar = this.timedOpen?.bar ?? this.add.graphics().setDepth(MARKER_DEPTH.bar).setName("open-bar");
+    this.timedOpen = { open, seenAt: this.time.now, bar };
+    this.drawTimedOpen();
+  }
+
+  /**
+   * Draws the open bar as it stands this frame: the state's fill, run on by the real time since
+   * that state so it reads smooth, never past full (R22). Hidden with its container's sprite.
+   */
+  private drawTimedOpen(): void {
+    if (!this.timedOpen) return;
+    const { open, seenAt, bar } = this.timedOpen;
+    const sprite = this.chests.get(open.entity_id)?.sprite;
+    bar.setVisible(!!sprite?.visible);
+    if (!sprite?.visible) return;
+    bar.clear();
+    drawOpenBar(bar, sprite.getBounds(), openBarFraction(open, this.time.now - seenAt));
   }
 
   private updateEscapeDoors(escapeDoors: EscapeDoorState[]): void {
@@ -2851,21 +2925,30 @@ export class BarrowspireScene extends Phaser.Scene {
       entity_id: entityId,
     });
 
+    this.reaching = undefined;
     // 如果是關閉跳窗
     if (this.containerView.entityId === entityId) {
       this.containerView.close();
-    } else {
-      // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
-      const container = this.lastGameState?.containers?.find(
-        (c) => c.entity_id === entityId,
-      );
-      this.containerView.open(entityId, container ? placedKind(container) : "chest");
-
-      // If container already has items from server state, populate immediately
-      if (container && container.is_open && container.items?.length > 0) {
-        this.containerView.setItems(container.items);
-      }
+      return;
     }
+    const container = this.lastGameState?.containers?.find(
+      (c) => c.entity_id === entityId,
+    );
+    // a shut container may yet be refused (a guarded chest): its coffer waits for the state that
+    // shows it open, so nothing opens only to close again (FS-KE075 §J R60)
+    if (!container?.is_open) {
+      this.reaching = entityId;
+      this.reachSeen = reachMade();
+      return;
+    }
+    // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
+    this.containerView.open(entityId, placedKind(container));
+    if (container.items?.length > 0) this.containerView.setItems(container.items);
+  }
+
+  /** The server refused the reach (guarded, or out of reach): no coffer will open for it. */
+  private chestRefused(): void {
+    this.reaching = undefined;
   }
 
   private interactWithSwitch(entityId: string): void {
@@ -2886,8 +2969,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   private checkChestDistance(): void {
     const me = this.playerPos;
+    if (!this.player || !me) return;
     const openFor = this.containerView.entityId;
-    if (!this.player || !me || !openFor) return;
+    if (!openFor) return;
 
     // the coffer vanished from the server's state, or the pile was emptied: nothing left to show
     const chest = this.chests.get(openFor);
@@ -3039,6 +3123,9 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
+    // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
+    if (this.arrival) this.arrivalCard.dark();
     // Connect via SocketManager
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
@@ -3127,7 +3214,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
-    this.relayoutFloorVeil();
+    this.arrivalCard.relayout();
     this.targetFrame?.relayout();
     this.dungeon?.minimap?.place(this.minimapPlace());
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
@@ -3469,8 +3556,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // A climb that goes through sends no reply: the next broadcast's floor says so (FS-F6F88 req 28)
     socketManager.on("interact", (payload: InteractReply) => {
       console.log("Interact response:", payload);
-      // a guarded chest stays shut: the coffer the E key opened closes again (FS-KE075 §J R60)
-      if (refusesContainer(payload)) this.containerView.close();
+      // a refused reach opens no coffer (FS-KE075 §J R60); the empty frame after a reply refuses nothing
+      if (!payload.success && (payload.reason || payload.message)) this.chestRefused();
       const notice = interactNotice(payload);
       if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
     });
@@ -3532,6 +3619,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
     // the new one, so nothing waits on the transition, which only plays over the result.
     const climb = climbed(this.lastFloor, state.floor);
+    // an arrival's first floor, at the first broadcast that names one (FS-PQ2TW R2, R13)
+    const arrived = this.arrival && this.lastFloor === undefined && state.floor !== undefined;
     if (state.floor !== undefined) this.lastFloor = state.floor;
     if (climb) this.leaveFloor();
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
@@ -3565,12 +3654,15 @@ export class BarrowspireScene extends Phaser.Scene {
       this.equipment?.updateCharacter(state.current_player);
 
       // 本身受傷變紅閃爍提示
-      const curHp = state.current_player.current_health;
-      if (this.prevLocalPlayerHp !== undefined && curHp !== undefined && curHp < this.prevLocalPlayerHp) {
+      const health = healthIn(state.current_player);
+      if (health) {
         // part of the way toward oxblood and back (FS-KYPQ9 §G.1)
-        if (this.player) this.hits?.play(this.player);
+        if (this.ownHealth && health.current < this.ownHealth.current && this.player) this.hits?.play(this.player);
+        // a hit closes the container view, and only that: judged before this state's containers
+        // are read, so a view this state opens for a reach stays (FS-1D6BX R19, R24, E4)
+        if (costHealth(this.ownHealth, health) && this.containerView?.isOpen) this.containerView.close();
+        this.ownHealth = health;
       }
-      if (curHp !== undefined) this.prevLocalPlayerHp = curHp;
     } else {
       // current_player is null — player has escaped
       this.hideOwnBody(true);
@@ -3603,6 +3695,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Update containers from server
     this.updateContainers(state.containers || []);
+    // an open container has opened its view: what is still reached for is kept or given up
+    // (FS-MQYEX R26). Walking out of reach ends a reach the server never answered (FS-KE075 §J R60)
+    this.settleReach(state);
+    // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
+    this.showTimedOpen(state);
 
     // Update escape doors from server
     this.updateEscapeDoors(state.escape_doors || []);
@@ -3645,11 +3742,9 @@ export class BarrowspireScene extends Phaser.Scene {
       this.escapedCountText.setText(`Escaped: ${count}`);
     }
 
-    if (climb) {
-      this.settlePlayers();
-      this.playFloorTransition(state);
-    }
-    if (building) this.veilRelease?.();
+    if (climb) this.settlePlayers();
+    if (climb || arrived) this.playFloorCard(state);
+    if (building) this.arrivalCard.built();
   }
 
   /** This run's floor map as the store holds it, or none: another run's is not ours to build. */
@@ -3680,7 +3775,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.buildDressing(state);
     this.stampLights(state.floor);
     this.explore(state);
-    this.veilRelease?.();
+    this.arrivalCard.built();
   }
 
   /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
@@ -3734,28 +3829,30 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A dungeon floor's walls (FS-KE075 §H.46–§H.47): the map's wall cells in masonry, cut along
-   * one-cell runs by the faces they show (`wallRuns`), each piece front where a walkable cell lies
-   * north or west of it and back otherwise, the full pieces fading over the player like any
-   * occluder; a light only on a room's back wall. No building is drawn, no blackout and no roof:
-   * every piece stands in its ground chunk, shown only near the camera (§H.45). The ground takes the floor's look and seed.
+   * A dungeon floor's walls (FS-XK2B6 §A–§D, FS-KE075 §H.47): the map's wall cells in masonry,
+   * drawn on their wall edges, the sides they share with the walkable cells they face
+   * (`wallPlan`), each piece at its edge's height, the full pieces and posts fading over the
+   * player like any occluder; a light only on a back edge facing a room. No building is drawn, no
+   * blackout and no roof: every piece stands in its ground chunk, shown only near the camera
+   * (§H.45). The ground takes the floor's look and seed.
    */
   private buildDungeonWalls(walls: readonly WallState[]): void {
     const dungeon = this.dungeon!;
     const look = this.currentFloorLook();
-    const rule = wallRule(dungeon.grid);
     this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
-    const strips = wallRuns(walls, dungeon.grid);
-    const baked = addWalls(this, this.art, strips, look.seed, look.walls, rule);
-    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13)
+    const thickness = thicknessPx(look.walls);
+    const plan = wallPlan(walls, dungeon.grid, thickness);
+    const planned = dungeonWalls(plan, dungeon.grid, look.seed, look.walls);
+    const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
+    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13), its
+    // slabs and posts standing where the plan draws them (FS-XK2B6 §F)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
     const fog = new Fog(
       this,
       dungeon.grid,
-      rule,
       dungeon.chunks,
       () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
-      wallLayout(dungeon.grid, strips),
+      wallLayout(dungeon.grid, plan),
     );
     dungeon.fog = fog;
     const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
@@ -3765,26 +3862,28 @@ export class BarrowspireScene extends Phaser.Scene {
       for (const { sprite, at } of baked.standing) stand(sprite, at);
       baked.lights.forEach(({ source, at }) => this.queueLight("sconce", source, { at }));
     }
-    const pieces = new Map<string, BuildingPart[]>();
-    for (const w of strips) {
-      const own = pieces.get(w.entity_id) ?? [];
-      pieces.set(w.entity_id, own);
-      if (baked) continue;
-      // no art: placeholder blocks, one per tile of wall, as tall as the rule makes each, and
-      // like the baked pieces only between the run's two posts (§H.46)
-      const { x, y } = w.position;
-      for (const p of splitAlongLength(x, y, w.width, w.height, WORLD_PX_PER_TILE)) {
-        const centre = { x: p.x + p.width / 2, y: p.y + p.height / 2 };
-        if (rule.betweenPosts && !withinPosts(w, centre)) continue;
-        const tall = rule.height(centre) === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
-        for (const g of addUprightBlock(this, p.x, p.y, p.width, p.height, PLACEHOLDER_STONE, tall)) {
-          own.push(g);
-          stand(g, centre);
+    const blocks = new Map<string, BuildingPart[]>();
+    if (!baked) {
+      // no art: a placeholder block on each piece's and post's footprint, as thick as the material
+      // and as tall as the plan makes it, sorted as the baked piece or post is (ADR-0074)
+      const block = (wallId: string, at: Point, w: number, h: number, height: WallHeight, depth: number) => {
+        const tall = height === "back" ? WALL_HEIGHT : (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+        const own = blocks.get(wallId) ?? [];
+        blocks.set(wallId, own);
+        for (const g of addUprightBlock(this, at.x - w / 2, at.y - h / 2, w, h, PLACEHOLDER_STONE, tall)) {
+          own.push(g.setDepth(depth));
+          stand(g, at);
         }
+      };
+      for (const p of planned.pieces) {
+        const [w, h] = p.axis === "x" ? [WORLD_PX_PER_TILE, thickness] : [thickness, WORLD_PX_PER_TILE];
+        block(p.wallId, p.at, w, h, p.height, worldDepth(p.depthAt.x, p.depthAt.y));
       }
+      for (const post of planned.posts)
+        block(post.wallId, post.at, thickness, thickness, post.height, worldDepth(post.at.x, post.at.y, 1));
     }
     for (const w of walls) {
-      const own = baked?.byWall.get(w.entity_id) ?? pieces.get(w.entity_id) ?? [];
+      const own = baked?.byWall.get(w.entity_id) ?? blocks.get(w.entity_id) ?? [];
       this.walls.set(w.entity_id, { pieces: own, entityId: w.entity_id });
     }
     // every region unexplored until the party is placed in it, this same broadcast (§B.6)
@@ -3942,7 +4041,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // is then the floor's, and the walls' build asks for nothing new (FS-KE075 §H.44)
     const own = this.floorLook && this.currentFloorLook();
     // in chunks of at most 2048 px, which a floor of buildings fits in one of; a dungeon floor's
-    // smaller, and only under its walkable and shell cells (FS-KE075 §H.44)
+    // smaller, and only under its walkable cells (FS-KE075 §H.44, FS-XK2B6 §E)
     this.groundLayer = GroundLayer.available(this.art, "run", look)
       ? new GroundLayer(this, this.art, {
           width: this.mapWidth,
@@ -4042,6 +4141,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.occluders.clear();
     this.lightMap?.clear();
     if (this.containerView?.entityId) this.containerView.close();
+    this.reaching = undefined;
 
     this.previousEscapeDoorOpened = null;
     this.previousSwitchActivated = null;
@@ -4064,83 +4164,17 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** The climb's dark and its card, over the whole view and about its centre again (FS-ZAJMH R13). */
-  private relayoutFloorVeil(): void {
-    const [veil, ...card] = this.floorVeil;
-    if (!veil?.active) return;
-    (veil as Phaser.GameObjects.Rectangle).setSize(viewport.width, viewport.height);
-    for (const obj of card) (obj as Phaser.GameObjects.Text | Phaser.GameObjects.Graphics).setX(viewport.centerX);
-    crispen(card);
-  }
-
   /**
-   * The climb's transition (FS-F6F88 req 32): the view drops to dark over the floor just built,
-   * then comes back up with the floor card. Presentation only: state has already applied and
-   * keeps applying under it. It sits below the HUD, so the floor indicator and the new floor's
-   * notices stay readable through it.
+   * The floor's card, on a climb (FS-F6F88 req 32) or on an arrival (FS-PQ2TW R2), played through
+   * the shared arrival card: the view drops to dark over the floor, or stays in the arrival's dark,
+   * and comes back up with the floor's words, held dark until the floor is built from its map
+   * (FS-KE075 §H.41).
    */
-  private playFloorTransition(state: ClientGameState): void {
+  private playFloorCard(state: ClientGameState): void {
     if (state.floor === undefined) return;
-    this.floorVeil.forEach((obj) => obj.destroy());
-
-    const { title, line } = floorCard({ floor: state.floor, top: isTopFloor(state) });
-    const veil = this.add.rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1);
-    veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
-
-    const heading = this.add.text(viewport.centerX, viewport.centerY - 14, title, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "26px",
-      color: toCss(palette.hudText),
-      letterSpacing: 4,
+    this.arrivalCard.play(placeCard({ world: "run", floor: state.floor, top: isTopFloor(state) }), {
+      built: this.builtFloor === state.floor,
     });
-    const rule = this.add.graphics();
-    rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(-90, viewport.centerY + 8, 90, viewport.centerY + 8);
-    rule.setX(viewport.centerX);
-    const subtitle = this.add.text(viewport.centerX, viewport.centerY + 26, line, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
-      fontStyle: "italic",
-      color: toCss(palette.hudLabel),
-    });
-    const card = [heading, rule, subtitle];
-    heading.setOrigin(0.5);
-    subtitle.setOrigin(0.5);
-    card.forEach((obj) => obj.setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH + 1).setAlpha(0));
-    this.floorVeil = [veil, ...card];
-
-    this.tweens.add({
-      targets: card,
-      alpha: 1,
-      duration: FLOOR_CARD_FADE_MS,
-      delay: FLOOR_DARK_HOLD_MS,
-    });
-    // the view comes back up only over a built floor: a climb whose map has not come keeps the
-    // dark until it is built, then lifts as it would have, less the time already waited (§H.41)
-    const shownAt = this.time.now;
-    const lift = () => {
-      this.veilRelease = undefined;
-      const waited = this.time.now - shownAt || 0;
-      const hold = Math.max(0, FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS - waited);
-      this.tweens.add({
-        targets: veil,
-        alpha: 0,
-        duration: FLOOR_VIEW_RETURN_MS,
-        delay: hold,
-      });
-      this.tweens.add({
-        targets: card,
-        alpha: 0,
-        duration: FLOOR_CARD_FADE_MS * 2,
-        delay: hold + FLOOR_CARD_HOLD_MS,
-        onComplete: () => {
-          this.floorVeil.forEach((obj) => obj.destroy());
-          this.floorVeil = [];
-        },
-      });
-    };
-    if (this.builtFloor === state.floor) lift();
-    else this.veilRelease = lift;
   }
 
   /** "Floor N" from the broadcast, redrawn only when it changes; hidden without floors. */
@@ -4574,8 +4608,8 @@ export class BarrowspireScene extends Phaser.Scene {
     stone.lineStyle(1, palette.fallbackStoneJoint, 1);
     const grid = this.dungeon?.grid;
     if (grid) {
-      // a dungeon floor's under its walkable and shell cells only: void stays the background's
-      // darkest ink (FS-KE075 §H.44)
+      // a dungeon floor's under its walkable cells only: a wall cell and the void stay the
+      // background's darkest ink (FS-KE075 §H.44, FS-XK2B6 §E)
       const c = grid.cell;
       for (let cy = 0; cy < grid.rows; cy++)
         for (let cx = 0; cx < grid.cols; cx++) {
@@ -4845,7 +4879,7 @@ export class BarrowspireScene extends Phaser.Scene {
         lastHit: this.lastHit.current(this.time.now),
       });
     }
-    const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
+    const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
   }
 
@@ -5668,7 +5702,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkBuildingStatus();
     this.updateTargetFrame(delta);
 
-    // 檢查寶箱距離，太遠自動關閉（只有跳窗開啟時才檢查）
+    // the open bar fills on between states (FS-MQYEX R22)
+    this.drawTimedOpen();
+
+    // 檢查寶箱距離，太遠自動關閉. A reach that waits on the server is judged by the states (FS-MQYEX R26)
     if (this.containerView.isOpen) {
       this.checkChestDistance();
     }

@@ -107,12 +107,19 @@ func TestMonsterAISystem_TargetBehindAWall(t *testing.T) {
 }
 
 // countingGrid is a grid that counts its searches, and the tick each happened
-// on; with fail set, every search finds nothing.
+// on; with fail set, every search finds nothing. It also keeps the half-size
+// of every straight-walk test asked of it.
 type countingGrid struct {
 	*navigation.Grid
 	fail     bool
 	tick     int
 	searches []int
+	halves   []float64
+}
+
+func (c *countingGrid) Clear(ax, ay, bx, by, half float64) bool {
+	c.halves = append(c.halves, half)
+	return c.Grid.Clear(ax, ay, bx, by, half)
 }
 
 func (c *countingGrid) Path(dst []int, from, to int) ([]int, bool) {
@@ -423,4 +430,150 @@ func TestMonsterAISystem_CutLandsOnTheFarthestCell_ProgressMovesOn(t *testing.T)
 	assert.Empty(t, counting.searches, "the route still holds")
 	assert.Equal(t, far, monster(g).Route.Next)
 	assert.InDelta(t, 1.0, velocityOf(t, g).VX, 1e-9, "steering on east")
+}
+
+// In range of a target with rock between, a ranged monster on a dungeon floor
+// starts no wind-up and walks; with no grid its sight is always clear and it
+// draws. A monster without a shot is never asked for sight: in reach it winds
+// up, rock or no rock. Rock never hides a delver from aggro. FS-B4SG9 §A R4,
+// R5; §Edge States "No grid".
+func TestMonsterAISystem_RockBetween(t *testing.T) {
+	melee := func(em *ecs.EntityManager, x, y float64) *ecs.Entity {
+		g := hunter(em, x, y)
+		monster(g).AttackRange = 320 // a reach as long as the shot's, to stand where the archer does
+		return g
+	}
+	tests := []struct {
+		name   string
+		stand  func(em *ecs.EntityManager, x, y float64) *ecs.Entity
+		onGrid bool
+		draws  bool
+		sights bool
+	}{
+		{"ranged, on a dungeon floor: walks", archer, true, false, true},
+		{"ranged, no grid: draws", archer, false, true, false},
+		{"melee, on a dungeon floor: winds up, no sight test", melee, true, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			floor, _ := floorOf(t, em, behindAWall)
+			grid := &countingGrid{Grid: floor}
+			// 200 px apart, the rock of row 3 between them
+			m := tt.stand(em, 200, 180)
+			d := delver(em, 200, 380)
+			var onFloor NavGrid
+			if tt.onGrid {
+				onFloor = grid
+			}
+
+			NewMonsterAISystem(firstRoll, onFloor).Update(tickSeconds, em.GetAllEntities())
+
+			assert.Equal(t, d.ID, monster(m).Target, "aggro is by distance alone")
+			if tt.sights {
+				assert.Contains(t, grid.halves, 8.0, "sight is the shot's flight, at its radius")
+			} else {
+				assert.Empty(t, grid.halves)
+			}
+			v := velocityOf(t, m)
+			if tt.draws {
+				assert.Equal(t, components.MonsterActionAttack, monster(m).Action)
+				assert.Positive(t, monster(m).WindUpRemaining)
+				assert.Zero(t, math.Hypot(v.VX, v.VY))
+				return
+			}
+			assert.Equal(t, components.MonsterActionMove, monster(m).Action)
+			assert.Zero(t, monster(m).WindUpRemaining, "no wind-up starts out of sight")
+			assert.NotZero(t, math.Hypot(v.VX, v.VY))
+		})
+	}
+}
+
+// A ranged monster in range of a target behind rock walks its path round until
+// the straight flight to them is clear, and only then stands and shoots.
+// FS-B4SG9 §A R4, R5; AC "in range with rock between".
+func TestMonsterAISystem_Ranged_RockBetween_WalksUntilTheFlightIsClearThenShoots(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid, move := floorOf(t, em, behindAWall)
+	a := archer(em, 200, 180)
+	d := delver(em, 200, 380)
+	ai := NewMonsterAISystem(firstRoll, grid)
+	m, at, target := monster(a), transformOf(t, a), transformOf(t, d)
+
+	var shots []components.AttackIntent
+	draws := 0
+	for i := 0; len(shots) == 0 && i < ticks(15); i++ {
+		drawing := m.WindUpRemaining > 0
+		entities := em.GetAllEntities()
+		ai.Update(tickSeconds, entities)
+		if !drawing && m.WindUpRemaining > 0 {
+			draws++
+			assert.True(t, grid.Clear(at.X, at.Y, target.X, target.Y, m.ShotRadius), "drew at (%.0f, %.0f) with rock in the flight", at.X, at.Y)
+			assert.LessOrEqual(t, distance(at, target), m.AttackRange)
+		}
+		shots = handed(a)
+		move.Update(tickSeconds, entities)
+	}
+
+	assert.Equal(t, 1, draws)
+	assert.Equal(t, []components.AttackIntent{{Kind: components.AttackMonsterShot, TargetX: 200, TargetY: 380}}, shots)
+	assert.Greater(t, at.Y, 320.0, "it came round into its target's hall")
+}
+
+// A target who steps behind rock during the draw is still shot at: release has
+// no sight check, and the wall takes the arrow. FS-B4SG9 §A R8; AC "breaks line
+// of sight during a wind-up".
+func TestMonsterAISystem_Ranged_SightBrokenDuringTheWindUp_ArrowStopsAtTheWall(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid, move := floorOf(t, em, behindAWall)
+	// either side of the gap in the rock: a clear flight
+	a := archer(em, 600, 200)
+	d := delver(em, 600, 400)
+	ai := NewMonsterAISystem(firstRoll, grid)
+	skirmishOn(em, ai, move, 1)
+	require.Equal(t, components.MonsterActionAttack, monster(a).Action)
+
+	moveTo(t, d, 400, 400)
+	require.False(t, grid.Clear(600, 200, 400, 400, monster(a).ShotRadius), "the rock is in the flight now")
+	var loosed []*components.ProjectileComponent
+	for i := 0; len(loosed) == 0 && i < ticks(0.6); i++ {
+		skirmishOn(em, ai, move, 1)
+		loosed = projectiles(em)
+	}
+	require.Len(t, loosed, 1, "the arrow is loosed all the same")
+
+	skirmishOn(em, ai, move, ticks(1))
+
+	assert.Empty(t, projectiles(em), "the wall took the arrow")
+	assert.Equal(t, 150, health(d))
+}
+
+// Waiting out of sight does not consume the interval: with it elapsed, a
+// ranged monster draws on the tick it next stands in range and in sight.
+// FS-B4SG9 §Edge States "Target out of range or sight when the interval
+// elapses".
+func TestMonsterAISystem_Ranged_IntervalElapsedOutOfSight_ShootsOnceInSight(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid, _ := floorOf(t, em, behindAWall)
+	a := archer(em, 600, 200)
+	velocityOfEntity(a).Speed = 0 // held where it stands, so only its target's steps change its sight
+	d := delver(em, 600, 400)
+	ai := NewMonsterAISystem(firstRoll, grid)
+	for i := 0; len(handed(a)) == 0; i++ {
+		require.Less(t, i, ticks(0.6), "it loosed its first arrow")
+		ai.Update(tickSeconds, em.GetAllEntities())
+	}
+
+	moveTo(t, d, 400, 400) // 283 px off, behind the rock
+	for range ticks(2.5) {
+		ai.Update(tickSeconds, em.GetAllEntities())
+		require.Zero(t, monster(a).WindUpRemaining, "it drew with rock in the flight")
+	}
+	assert.Zero(t, monster(a).AttackCooldown, "the interval ran out while it waited")
+
+	moveTo(t, d, 600, 400)
+	ai.Update(tickSeconds, em.GetAllEntities())
+
+	assert.Equal(t, components.MonsterActionAttack, monster(a).Action)
+	assert.Positive(t, monster(a).WindUpRemaining)
 }

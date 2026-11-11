@@ -80,6 +80,11 @@ export interface MonsterLook {
 export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   ghoul: { sheet: "creature_ghoul_base", tier: "fodder" },
   troll: { sheet: "creature_troll_base", tier: "brute" },
+  /**
+   * The Bone Archer (FS-B4SG9 §C R20): the ghoul holding a bow, on its own sheet. Its `attack`
+   * clip is the shot, nock to loose, as long as the server's wind-up (§E R26).
+   */
+  bone_archer: { sheet: "creature_bone_archer_base", tier: "fodder" },
   /** The winged demon boss (req 41, FS-KYPQ9): its own baked sheet, drawn as baked, at boss size. */
   demon: { sheet: "creature_demon_base", tier: "boss" },
   /**
@@ -604,12 +609,14 @@ export class MonsterRoster {
       this.stand(view);
 
       const choice = this.clip(view);
+      const turnedFrom = view.facing;
       view.facing = choice.facing;
       // one that dies unseen lies where it fell, and is never seen mid-fall when it is shown again
       const fellUnseen = state.action === "dead" && !view.fallen && !view.sprite.visible;
       view.fallen = state.action === "dead";
       if (fellUnseen) this.layCorpse(view, view.anim.sheet);
-      else if (view.anim.baked) view.anim.show(view.sprite, choice);
+      else if (view.anim.baked && !this.turnWindUp(view, choice, turnedFrom))
+        view.anim.show(view.sprite, choice);
       if (view.flashMs > 0) {
         view.flashMs -= deltaMs;
         if (view.flashMs <= 0) this.wear(view);
@@ -665,6 +672,31 @@ export class MonsterRoster {
       view.scale,
       view.has,
     );
+  }
+
+  /**
+   * A wind-up that turns (FS-B4SG9 §C R21): a ranged monster keeps facing its target while it
+   * draws, and the draw is the telegraph, so the one-shot clip carries on in the new facing from
+   * the frame it had reached; the animator alone would draw it again from the start, and the
+   * loose would show after the arrow had left. Whether it did: false when the clip is not a
+   * one-shot already playing in `from`, which is the animator's to play.
+   */
+  private turnWindUp(view: MonsterView, choice: AnimationChoice, from: Facing8): boolean {
+    const { sprite, anim } = view;
+    const { animation, direction } = choice;
+    const current = sprite.anims.currentAnim;
+    const key = this.art.animationKey(anim.sheet, animation, direction);
+    const turning =
+      key !== undefined &&
+      current !== null &&
+      current.key !== key &&
+      current.key === this.art.animationKey(anim.sheet, animation, directionIndex(from)) &&
+      this.art.sheet(anim.sheet)?.animations[animation]?.loop === false;
+    if (!turning) return false;
+    const reached = Math.max(0, current.frames.indexOf(sprite.anims.currentFrame));
+    sprite.play({ key, startFrame: reached });
+    sprite.anims.timeScale = choice.timeScale;
+    return true;
   }
 
   /** Whether a sheet carries a clip. */

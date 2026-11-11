@@ -13,8 +13,10 @@ import {
   type DressingPiece,
   type DressingStatics,
 } from "./runDressing";
-import { RegionGrid, dressingRooms, type DungeonMap } from "./dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, wallPlan, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
+import pinned from "./runDressing.fixture.json";
+import { MASONRY_WALLS, thicknessPx } from "./walls";
 import { TOWER_BANDS } from "./worldTheme";
 
 const at = (x: number, y: number) => ({ x, y });
@@ -261,6 +263,27 @@ describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 �
   it("should strew the same floor on every client, and another floor's otherwise", () => {
     expect(planRoomDressing(lean, 41, statics, rooms)).toEqual(plan);
     expect(planRoomDressing(lean, 42, statics, rooms)).not.toEqual(plan);
+  });
+
+  it("should plan the same dressing as before the walls moved to their edges, piece for piece (FS-XK2B6 §D.14)", () => {
+    // the plan for this floor, look and seed as it stood before FS-XK2B6, one piece per line in
+    // runDressing.fixture.json, so a change shows which pieces moved: 24 px off every wall cell
+    // was already the distance from the cell's edge, where the wall now stands
+    expect(pinned).toHaveLength(77);
+    expect(plan).toEqual(pinned);
+  });
+
+  it("should keep every footprint 24 px or more from the face of every wall as it is drawn on its edge (FS-XK2B6 §D.14)", () => {
+    const thick = thicknessPx(MASONRY_WALLS);
+    const { pieces } = dungeonWalls(wallPlan(map.walls, grid, thick), grid, 41, MASONRY_WALLS);
+    expect(pieces.length).toBeGreaterThan(1000);
+    for (const p of plan)
+      for (const w of pieces) {
+        const [hx, hy] = w.axis === "x" ? [20, thick / 2] : [thick / 2, 20];
+        // the gap between the footprint's square and the piece's footprint, along each axis
+        const gap = Math.max(Math.abs(p.at.x - w.at.x) - p.r - hx, Math.abs(p.at.y - w.at.y) - p.r - hy);
+        expect(gap).toBeGreaterThanOrEqual(24);
+      }
   });
 
   it("should hold a sheet's floor-wide most across every room", () => {

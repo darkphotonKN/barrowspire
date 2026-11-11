@@ -21,7 +21,7 @@ import {
   splitFurnishings,
   type IndoorSpot,
 } from "./hubInteriors";
-import { TOWN_DOOR, TOWN_WALL_THICK, townDoorGap, townOutline } from "./hubTown.fixture";
+import { TOWN_WALL_THICK, townDoorGap, townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN, type TownRect } from "./hubTownGolden";
 import { TIMBER_WALLS } from "./walls";
 
@@ -138,9 +138,11 @@ describe("the Inn's partition (hub_map.go hubPartition)", () => {
       { x: 505, y: 70, width: 20, height: 160 },
       { x: 505, y: 310, width: 20, height: 160 },
     ]);
-    // the door gap between them is the server's: a town door wide, centred on the Inn's depth
-    // (y 230–310, ADR-0073 Decision 3)
-    expect(inside[1].position.y - (inside[0].position.y + inside[0].height)).toBe(TOWN_DOOR);
+    // the door gap between them is the server's: as wide as the Inn's street gap, centred on the
+    // Inn's depth (y 230–310, ADR-0073 Decision 3)
+    expect(inside[1].position.y - (inside[0].position.y + inside[0].height)).toBe(
+      HUB_TOWN_GOLDEN.buildings[0].doorGap.w,
+    );
     // trimming keeps the wall it came from
     expect(inside.map((w) => w.entity_id)).toEqual(PARTITION_WALLS.map((w) => w.entity_id));
   });

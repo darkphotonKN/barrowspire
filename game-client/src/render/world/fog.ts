@@ -29,16 +29,16 @@
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
-import { worldToScreen, type Point, type Rect } from "@/render/iso/projection";
+import { WORLD_PX_PER_TILE, worldToScreen, type Point, type Rect } from "@/render/iso/projection";
 import { mix, palette } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
+import { BAKE } from "./bake";
 import { BLACKOUT } from "./blackout";
 import type { ChunkVisibility, Toggle } from "./chunks";
-import type { WallState } from "@/types/gameState";
-import type { RegionGrid } from "./dungeon";
+import type { RegionGrid, WallPlan } from "./dungeon";
 import type { ExplorationState } from "./exploration";
 import { FEATHER, fieldWindow, fogField, type FieldShape, type FieldWindow } from "./fogField";
-import { axisOf, type PieceRule, type WallAxis } from "./walls";
+import { intoWall, wallward, type WallAxis, type WallHeight } from "./walls";
 
 /** A veil: the share of `palette.inkDeep` laid over a region's ground, and its walls' multiply tint. */
 export interface Veil {
@@ -47,6 +47,21 @@ export interface Veil {
 }
 
 const veil = (alpha: number): Veil => ({ alpha, tint: mix(TINT_IDENTITY, palette.inkDeep, alpha) });
+
+/**
+ * Screen px the back edge of a level top face stands over its middle on one screen column: the
+ * point `half` world px back along each axis (FS-XK2B6 R18, the owner's ruling E4 of 2026-11-12).
+ * A drawn wall's top face over its centre line, `half` its thickness; a post's cap over its middle,
+ * `half` its side. The fog stands clear over what is drawn to this and no higher, so it is worked
+ * out from the sizes the pieces are drawn with, never a px literal.
+ */
+const topFace = (half: number): number => worldToScreen(half, half).y;
+
+/**
+ * A post's cap as the bake builds it (`tools/bake/page/models/architecture.js` `post`, `tower.js`
+ * `partitionPost`), in tiles: its top over the wall top (the beam 0.12, the cap 0.08) and its side.
+ */
+const POST_CAP = { rise: 0.2, side: 0.3 } as const;
 
 export const FOG = {
   /**
@@ -93,14 +108,11 @@ export const FOG = {
    * wall keeps it too.
    */
   reach: 20,
-  /** Screen px a drawn wall's slab stands clear over its wall top: its top face and cap. */
-  headroom: 6,
   /**
-   * Screen px a corner post stands clear over its wall top: its beam 0.12 tile over the wall, its
-   * cap 0.08 more and the cap's top face behind it (`tools/bake/page/models/architecture.js`
-   * `post`), about 13 px at `BAKE.VPX`.
+   * Screen px a corner post stands clear over its wall top (FS-XK2B6 R18, ruling E4): its cap's top
+   * (`POST_CAP`) and that top face's back corner, peaked over its middle, about 12.6 px.
    */
-  post: 14,
+  post: POST_CAP.rise * BAKE.VPX + topFace((POST_CAP.side * WORLD_PX_PER_TILE) / 2),
   /** Screen px either side of a post's centre it covers: its cap, 0.3 tile square, on the diamond. */
   postHalf: 10,
 } as const;
@@ -142,63 +154,95 @@ function bordering(
   return best;
 }
 
-/** How a dungeon floor's walls stand, cell by cell, as the fog needs them (§C.13). */
-export interface WallLayout {
-  /**
-   * The axis of the slab standing on one half of cell (cx, cy), its right half on screen or its
-   * left; none where no wall piece is drawn on that half.
-   */
-  axis(cx: number, cy: number, right: boolean): WallAxis | undefined;
-  /** Whether a corner post stands at cell (cx, cy)'s centre: where a wall strip ends. */
-  post(cx: number, cy: number): boolean;
+/**
+ * A drawn wall on one of a half's outer sides, as the fog leaves it clear (FS-XK2B6 §F.18): one
+ * cell's length of an edge run.
+ */
+export interface WallSlab {
+  /** The world axis it runs along: on screen a line falling left to right along x, rising along y. */
+  axis: WallAxis;
+  /** A screen point of its centre line at its foot: half its thickness from its edge, in its wall cell. */
+  foot: Point;
+  height: WallHeight;
+  /** Its wall's thickness, world px: half of it is how far back its top face reaches ({@link topFace}). */
+  thickness: number;
 }
 
+/** A post where edge runs end, as the half that claims it leaves it clear (FS-XK2B6 §F.18). */
+export interface WallPostClaim {
+  /** Its place on screen, at its foot. */
+  foot: Point;
+  height: WallHeight;
+}
+
+/** How a dungeon floor's walls stand, half by half, as the fog needs them (§C.13, FS-XK2B6 §F). */
+export interface WallLayout {
+  /** The slabs standing on one half of cell (cx, cy), its right half on screen or its left: one per family at most. */
+  slabs(cx: number, cy: number, right: boolean): readonly WallSlab[];
+  /** The posts one half of cell (cx, cy) claims. */
+  posts(cx: number, cy: number, right: boolean): readonly WallPostClaim[];
+}
+
+const NONE: readonly never[] = [];
+
 /**
- * A floor's wall layout from its one-cell wall runs (`wallRuns`): a run's pieces are slabs on its
- * centreline between its two posts, which stand at its end cells' centres (`planWalls`, FS-KE075
- * §H.46). So a cell in the middle of a strip carries a slab along the strip's axis on both its
- * halves, and an end cell only on the half towards the run: nothing is drawn past the post. On
- * screen a cell's left half holds its low-x half and its high-y half. A strip of one cell keeps
- * its slab whole. Where strips share a half, the one along x has it, as the later of the runs.
+ * A dungeon floor's wall layout from its wall plan (`wallPlan`, FS-XK2B6 §A, §F): a slab over each
+ * wall edge and a claim on each post, nothing through a cell's middle.
+ *
+ * On screen a cell's north and east edges are the two outer sides of its right half, its west and
+ * south edges those of its left half: so an edge's slab is one line across the whole half its wall
+ * cell has on that side, and a half holds at most two, one per slope family.
+ *
+ * A post stands at a cell corner, which lies on the side between two strips, set off at most
+ * 7.68 px either way, so its claim reaches into both. In each strip three halves meet at the
+ * corner, back to front: the one whose bottom corner it is, the one beside it, the one whose top
+ * corner it is. The post goes to the frontmost of them whose cell no one walks on: in front of
+ * every veiled floor its px could fall on, and never a walkable half, whose veil would lie over it.
+ * A strip whose three halves are all walkable has no claim: the post's footprint does not reach
+ * into it, only the edge of its cap, under 2 px.
  */
-export function wallLayout(grid: RegionGrid, strips: readonly WallState[]): WallLayout {
-  // per half: 0 none, 1 a slab along x, 2 along y
-  const left = new Uint8Array(grid.cols * grid.rows);
-  const right = new Uint8Array(grid.cols * grid.rows);
-  const posts = new Uint8Array(grid.cols * grid.rows);
-  const index = (cx: number, cy: number) =>
-    cx >= 0 && cy >= 0 && cx < grid.cols && cy < grid.rows ? cy * grid.cols + cx : -1;
+export function wallLayout(grid: RegionGrid, plan: Pick<WallPlan, "runs" | "posts">): WallLayout {
   const c = grid.cell;
-  for (const w of strips) {
-    const x = axisOf(w) === "x";
-    const along = x ? 1 : 2;
-    const cx0 = Math.round(w.position.x / c);
-    const cy0 = Math.round(w.position.y / c);
-    const cx1 = Math.max(cx0, Math.round((w.position.x + w.width) / c) - 1);
-    const cy1 = Math.max(cy0, Math.round((w.position.y + w.height) / c) - 1);
-    const one = cx0 === cx1 && cy0 === cy1;
-    for (let cy = cy0; cy <= cy1; cy++)
-      for (let cx = cx0; cx <= cx1; cx++) {
-        const i = index(cx, cy);
-        if (i < 0) continue;
-        const first = !one && cx === cx0 && cy === cy0;
-        const last = !one && cx === cx1 && cy === cy1;
-        // the half past the post: the first cell's low half along the run, the last cell's high
-        if (!(x ? first : last)) left[i] = along;
-        if (!(x ? last : first)) right[i] = along;
-      }
-    for (const i of [index(cx0, cy0), index(cx1, cy1)]) if (i >= 0) posts[i] = 1;
+  const slabs = new Map<string, WallSlab[]>();
+  const posts = new Map<string, WallPostClaim[]>();
+  const key = (cx: number, cy: number, right: boolean) => `${cx},${cy},${right ? "r" : "l"}`;
+  const add = <T>(map: Map<string, T[]>, k: string, v: T) => map.set(k, [...(map.get(k) ?? []), v]);
+
+  for (const run of plan.runs) {
+    const across = run.axis === "x" ? "y" : "x";
+    const line = run.from[across];
+    // the wall cells' lane: past the line when they lie south or east of it, before it otherwise
+    const lane = line / c - (wallward(run.wallSide) > 0 ? 0 : 1);
+    // a wall cell's north side (its cells south of the line) and east side (west of it) are its right half's
+    const right = run.wallSide === "south" || run.wallSide === "west";
+    for (let at = run.from[run.axis]; at < run.to[run.axis]; at += c) {
+      const k = Math.round(at / c);
+      const [cx, cy] = run.axis === "x" ? [k, lane] : [lane, k];
+      const mid = at + c / 2;
+      const centre = intoWall(run.axis === "x" ? { x: mid, y: line } : { x: line, y: mid }, [run.wallSide], run.thickness);
+      const foot = worldToScreen(centre.x, centre.y);
+      add(slabs, key(cx, cy, right), { axis: run.axis, foot, height: run.height, thickness: run.thickness });
+    }
   }
+
+  for (const post of plan.posts) {
+    const gx = Math.round(post.corner.x / c);
+    const gy = Math.round(post.corner.y / c);
+    const claim = { foot: worldToScreen(post.at.x, post.at.y), height: post.height };
+    // the halves meeting at the corner in the strip left of it and the one right of it, front to back
+    const strips: (readonly [number, number, boolean])[][] = [
+      [[gx, gy, false], [gx - 1, gy, true], [gx - 1, gy - 1, false]],
+      [[gx, gy, true], [gx, gy - 1, false], [gx - 1, gy - 1, true]],
+    ];
+    for (const halves of strips) {
+      const front = halves.find(([cx, cy]) => !grid.walkable(cx, cy));
+      if (front) add(posts, key(...front), claim);
+    }
+  }
+
   return {
-    axis: (cx, cy, onRight) => {
-      const i = index(cx, cy);
-      const along = i < 0 ? 0 : (onRight ? right : left)[i];
-      return along === 0 ? undefined : along === 1 ? "x" : "y";
-    },
-    post: (cx, cy) => {
-      const i = index(cx, cy);
-      return i >= 0 && posts[i] === 1;
-    },
+    slabs: (cx, cy, right) => slabs.get(key(cx, cy, right)) ?? NONE,
+    posts: (cx, cy, right) => posts.get(key(cx, cy, right)) ?? NONE,
   };
 }
 
@@ -244,26 +288,25 @@ function feetOn(grid: RegionGrid, cx: number, cy: number): Point[] {
  * the px between its first index's envelope and the next run's, one polygon of at most six corners.
  *
  * What stands up is cut to what is there, so the fog leaves clear only what stands in front of it:
- * - **a drawn wall** claims its slab, a thin wall on its cell's centreline from edge to edge
- *   (`tools/bake/page/models/architecture.js`), raised to its height plus {@link FOG}`.headroom`,
- *   and its corner post where a strip ends, raised {@link FOG}`.post` over the wall top. A slab
- *   runs from a cell's centre to the middle of its edge, so the strip is cut at its middle, where
- *   one ends, and either side of a post, as wide as {@link FOG}`.postHalf`; in each part a slab or
- *   a post is one line of a family;
+ * - **a drawn wall** (FS-XK2B6 §F) claims a slab over each of its wall cell's edges that is a side
+ *   of the half: the wall's centre line, half its thickness from the edge, raised to its height
+ *   and its top face ({@link topFace}), one line of a family across the whole half, so the line
+ *   is the top face's back edge and nothing over it is left clear; and each post the half
+ *   claims (`wallLayout`), raised {@link FOG}`.post` over its wall top, peaked over its middle as
+ *   its cap is and {@link FOG}`.postHalf` px either side of it. The strip is cut at a post's middle
+ *   and either side of it, so in each part a post is one line of a family;
  * - **a visible region's floor** claims the head of a member standing anywhere their feet can be
  *   on it (`feetOn`): {@link FOG}`.stand` px over the feet, {@link FOG}`.girth` px either side.
  */
 export function fogShapes(
   grid: RegionGrid,
-  rule: PieceRule,
   state: (region: number) => ExplorationState,
   heights: FogHeights,
   walls: WallLayout,
 ): FogShape[] {
   const { x: w, y: hh } = worldToScreen(grid.cell, 0);
   const m = hh / w;
-  const mid = w / 2;
-  const ph = Math.min(FOG.postHalf, mid);
+  const ph = FOG.postHalf;
   const feet = new Map<number, Point[]>();
   const feetOf = (cx: number, cy: number) => {
     const key = cy * grid.cols + cx;
@@ -289,25 +332,28 @@ export function fogShapes(
     // a half is the right half of the cell with cx − cy = k when s − k is even, else the left
     // half of the one with cx − cy = k + 1
     const right = (s: number) => (((s - k) % 2) + 2) % 2 === 0;
-    // the strip is cut at its middle, either side of a post, and where the heads over a cell's
-    // feet change course, so each part's slab, post and heads are each one line
-    const cuts = new Set([0, mid, w]);
+    // the strip is cut at a post's middle and either side of it, and where the heads over a cell's
+    // feet change course, so each part's post and heads are each one line
+    const cuts = new Set([0, w]);
+    const cut = (t: number) => {
+      if (t > 1e-6 && t < w - 1e-6) cuts.add(Math.round(t * 1e6) / 1e6);
+    };
     for (let i = 0; i < n; i++) {
       const s = sLo + i;
       const r = right(s);
       const cx = r ? (s + k) / 2 : (s + k + 1) / 2;
       const cy = r ? (s - k) / 2 : (s - k - 1) / 2;
-      const half = halfOf(grid, rule, state, heights, walls, cx, cy, r, s * hh);
+      const half = halfOf(grid, state, heights, walls, cx, cy, r, s * hh);
       cells[i] = half;
-      if (half.post !== undefined) for (const t of half.right ? [ph] : [w - ph]) cuts.add(t);
-      if (half.stand) for (const t of peaks(feetOf(half.stand.cx, half.stand.cy))) if (t > x0 + 1e-6 && t < x0 + w - 1e-6) cuts.add(Math.round((t - x0) * 1e6) / 1e6);
+      for (const post of half.posts) for (const t of [post.x - ph, post.x, post.x + ph]) cut(t - x0);
+      if (half.stand) for (const t of peaks(feetOf(half.stand.cx, half.stand.cy))) cut(t - x0);
     }
     const parts = [...cuts].sort((p, q) => p - q);
     for (let p = 0; p + 1 < parts.length; p++) {
       const t0 = parts[p];
       const t1 = parts[p + 1];
       for (let i = 0; i < n; i++) {
-        const top = topOf(cells[i], t0, t1, { x0, m, hh, w, mid, ph }, feetOf);
+        const top = topOf(cells[i], t0, t1, { x0, m, hh, ph }, feetOf);
         A[i] = top[0];
         B[i] = top[1];
       }
@@ -416,10 +462,10 @@ interface Half {
   right: boolean;
   /** The y of its top corner, on its strip's left (right half) or right side (left half). */
   y: number;
-  /** A drawn wall's slab: its axis and how far it stands over the centreline. */
-  slab?: { axis: WallAxis; rise: number };
-  /** A drawn wall's post at its centre: how far it stands over the centre. */
-  post?: number;
+  /** The drawn walls on its outer sides: each a line of its axis's family through its top on screen. */
+  slabs: readonly { axis: WallAxis; top: Point }[];
+  /** The posts it claims: each the screen point over its foot at its top. */
+  posts: readonly Point[];
   /** A visible region's cell, where a member may stand. */
   stand?: { cx: number; cy: number };
 }
@@ -427,12 +473,12 @@ interface Half {
 /**
  * Cell (cx, cy)'s half (§C.8–§C.11): a visible region's floor clear, where a member may stand; an
  * explored or unexplored floor under its veil; the void and off the floor opaque. A wall cell
- * bordering any region is drawn, so it stands clear as its slab and post, its piece tinted to the
- * veil of the brightest region it borders, which it feathers as.
+ * bordering any region is not veiled, so its walls' feet and thickness are never covered (FS-XK2B6
+ * §F.19), and its half stands clear as the slabs on its sides and the posts it claims, its pieces
+ * tinted to the veil of the brightest region it borders, which it feathers as.
  */
 function halfOf(
   grid: RegionGrid,
-  rule: PieceRule,
   state: (region: number) => ExplorationState,
   heights: FogHeights,
   walls: WallLayout,
@@ -442,33 +488,33 @@ function halfOf(
   y: number,
 ): Half {
   const inside = cx >= 0 && cy >= 0 && cx < grid.cols && cy < grid.rows;
-  if (!inside) return { alpha: FOG.void, equiv: FOG.void, right, y };
+  const flat = { right, y, slabs: NONE, posts: NONE };
+  if (!inside) return { alpha: FOG.void, equiv: FOG.void, ...flat };
   const id = grid.region(cx, cy);
   if (id) {
     const s = state(id);
-    return s === "visible" ? { alpha: 0, equiv: 0, right, y, stand: { cx, cy } } : { alpha: VEIL[s], equiv: VEIL[s], right, y };
+    return s === "visible" ? { alpha: 0, equiv: 0, ...flat, stand: { cx, cy } } : { alpha: VEIL[s], equiv: VEIL[s], ...flat };
   }
   const s = bordering(grid, cx, cy, state);
-  if (!s) return { alpha: FOG.void, equiv: FOG.void, right, y };
-  const wall = rule.height({ x: (cx + 0.5) * grid.cell, y: (cy + 0.5) * grid.cell }) === "back" ? heights.back : heights.front;
-  const axis = walls.axis(cx, cy, right);
+  if (!s) return { alpha: FOG.void, equiv: FOG.void, ...flat };
+  const raised = (p: Point, up: number): Point => ({ x: p.x, y: p.y - up });
   return {
     alpha: 0,
     equiv: VEIL[s],
     right,
     y,
-    slab: axis ? { axis, rise: wall + FOG.headroom } : undefined,
-    post: walls.post(cx, cy) ? wall + FOG.post : undefined,
+    slabs: walls
+      .slabs(cx, cy, right)
+      .map(({ axis, foot, height, thickness }) => ({ axis, top: raised(foot, heights[height] + topFace(thickness / 2)) })),
+    posts: walls.posts(cx, cy, right).map(({ foot, height }) => raised(foot, heights[height] + FOG.post)),
   };
 }
 
-/** A strip's measures: its left side's x, the slope, a half diamond's height and width, its middle and a post's half width. */
+/** A strip's measures: its left side's x, the slope, a half diamond's height and a post's half width. */
 interface Frame {
   x0: number;
   m: number;
   hh: number;
-  w: number;
-  mid: number;
   ph: number;
 }
 
@@ -483,22 +529,21 @@ function topOf(
   f: Frame,
   feetOf: (cx: number, cy: number) => Point[],
 ): [number, number] {
-  const { m, hh, w, mid, ph } = f;
+  const { x0, m, hh, ph } = f;
   // its top edge: a right half's falls from its top corner, a left half's rises to it
   let a = half.right ? half.y : Infinity;
   let b = half.right ? Infinity : half.y + hh;
-  // its centre: the strip's left side for a right half, its right side for a left half
-  const tc = half.right ? 0 : w;
-  const yc = half.y + hh;
-  const inner = half.right ? t1 <= mid : t0 >= mid;
-  if (half.slab && inner) {
-    // the slab's line through the centre: along x it falls left to right, along y it rises
-    if (half.slab.axis === "x") a = Math.min(a, yc - m * tc - half.slab.rise);
-    else b = Math.min(b, yc + m * tc - half.slab.rise);
+  for (const { axis, top } of half.slabs) {
+    // the slab's line through its top, across the whole half: along x it falls left to right, along y it rises
+    if (axis === "x") a = Math.min(a, top.y - m * (top.x - x0));
+    else b = Math.min(b, top.y + m * (top.x - x0));
   }
-  if (half.post !== undefined && t0 < tc + ph && t1 > tc - ph) {
-    // the post's top, flat over its width: a line under it from one end of the part to the other
-    a = Math.min(a, yc - half.post - m * Math.min(t1, tc + ph));
+  for (const top of half.posts) {
+    // the post's top as its cap's outline on screen, peaked over its middle: a line of each family
+    // through its top, rising to it from its left side and falling away to its right
+    const tp = top.x - x0;
+    if (t0 < tp && t1 > tp - ph) b = Math.min(b, top.y + m * tp);
+    if (t0 < tp + ph && t1 > tp) a = Math.min(a, top.y - m * tp);
   }
   if (half.stand) {
     const line = standOver(feetOf(half.stand.cx, half.stand.cy), t0, t1, f);
@@ -789,7 +834,6 @@ export class Fog {
   constructor(
     private readonly stage: FogStage,
     private readonly grid: RegionGrid,
-    private readonly rule: PieceRule,
     private readonly chunks: ChunkVisibility,
     private readonly heights: () => FogHeights,
     private readonly walls: WallLayout,
@@ -832,7 +876,7 @@ export class Fog {
     this.stopFade();
     for (const gate of this.easing) gate.ease(this.progress);
     this.easing = this.gates.filter((gate) => this.look(gate, state, fade));
-    this.assign(fogShapes(this.grid, this.rule, state, this.heights(), this.walls));
+    this.assign(fogShapes(this.grid, state, this.heights(), this.walls));
     let fades = this.easing.length > 0;
     for (const chunk of this.chunkList) {
       if (!chunk.near || (chunk.target !== undefined && !chunk.fading)) continue;

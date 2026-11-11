@@ -28,20 +28,23 @@ import {
   type Footprint,
   type PropSpot,
 } from "./hubKeepOut";
-import { TOWN_DOOR, townDoorGap, townOutline } from "./hubTown.fixture";
+import { townDoorGap, townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { ROOF_EAVE } from "./roofs";
 
 /**
  * The town's buildings, from the golden of game-server/game-service/internal/game/hub_map.go
  * (hubBuildings): the Inn, the Quartermaster's store and the smithy (FS-B0H2D R1–R3), walled
- * 20 thick as addHubBuilding does, the south wall cut in two around a door gap a run door wide
- * (R9; hubTown.fixture.ts, the Inn's off centre by ADR-0073). Furnishings are not used here: they stand indoors, and this checks the
+ * 20 thick as addHubBuilding does, the south wall cut in two around the door gap the golden
+ * records (R9; hubTown.fixture.ts, the Inn's off centre by ADR-0073). Furnishings are not used here: they stand indoors, and this checks the
  * outdoor dressing. The scene takes its walls from the server; the golden lets the keep-out rule
  * be checked at review against the town hub_map.go actually lays out.
  */
 const HUB_BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(({ x, y, w, h }): Rect4 => [x, y, w, h]);
-/** Each building's door gap, as the span along its south wall's line and the y of its sill. */
+/**
+ * Each building's door gap as the server cuts it (the golden's), as the span along its south
+ * wall's line and the y of its sill.
+ */
 const DOOR_GAPS = HUB_TOWN_GOLDEN.buildings.map(townDoorGap);
 const HUB_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
   townOutline(b).map(([wx, wy, ww, wh], k) => ({
@@ -401,8 +404,10 @@ describe("the town buildings' doors and the trodden ground (FS-B0H2D R24)", () =
     HUB_PATHS.find(([x, y, w]) => y === g.sill && x <= g.x0 && x + w >= g.x1);
 
   it("lays one spur per door, as wide as its gap, from its west jamb and its sill (FS-MMA2H R14)", () => {
+    // the spurs are kept by hand, the gaps are the server's: a gap moved or widened in
+    // hub_map.go goes red here until the spur follows
     expect(HUB_DOOR_SPURS.map(([x, y, w]) => [x, y, w])).toEqual(
-      DOOR_GAPS.map((g) => [g.x0, g.sill, TOWN_DOOR]),
+      DOOR_GAPS.map((g) => [g.x0, g.sill, g.x1 - g.x0]),
     );
     for (const spur of HUB_DOOR_SPURS) expect(HUB_PATHS).toContain(spur);
   });

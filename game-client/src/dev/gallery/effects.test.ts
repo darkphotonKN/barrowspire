@@ -45,6 +45,14 @@ describe("effect cards", () => {
     },
   );
 
+  it("should card the bone arrow, a hostile's shot, beside the party arrow (FS-B4SG9 §D R23)", () => {
+    const names = (module: string) =>
+      EFFECT_CARDS.filter((c) => c.module === module).map((c) => c.name);
+    expect(names("boneArrow")).toHaveLength(1);
+    expect(names("boneArrow")).not.toEqual(names("arrow"));
+    expect(EFFECT_CARDS.find((c) => c.module === "boneArrow")?.demo).not.toBeNull();
+  });
+
   it("should give every card that can't be played a reason", () => {
     const unexplained = EFFECT_CARDS.filter(
       (c) => c.demo === null && !c.reason.trim(),
@@ -52,5 +60,28 @@ describe("effect cards", () => {
     expect(unexplained, "a demo: null card needs a one-line reason").toEqual(
       [],
     );
+  });
+});
+
+describe("the arrival card's two leaves (FS-PQ2TW §Change: Smoke, R52)", () => {
+  it("should show the dust and the smoke as two cards, each replayable, for the owner to compare", () => {
+    const leaves = EFFECT_CARDS.filter((c) => c.module === "cardDust" || c.module === "cardSmoke");
+    expect(leaves.map((c) => [c.module, c.name])).toEqual([
+      ["cardDust", "Arrival card dust"],
+      ["cardSmoke", "Arrival card smoke"],
+    ]);
+    for (const c of leaves) expect(c.demo).toBeTypeOf("function");
+  });
+});
+
+describe("the arrival card's third leave (FS-PQ2TW §Change: Ash, R62)", () => {
+  it("should show the ash as its own replayable card, beside the dust and the smoke", () => {
+    const leaves = EFFECT_CARDS.filter((c) => c.module.startsWith("card"));
+    expect(leaves.map((c) => [c.module, c.name])).toEqual([
+      ["cardAsh", "Arrival card ash"],
+      ["cardDust", "Arrival card dust"],
+      ["cardSmoke", "Arrival card smoke"],
+    ]);
+    for (const c of leaves) expect(c.demo).toBeTypeOf("function");
   });
 });

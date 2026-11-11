@@ -31,6 +31,7 @@ import {
   type Point,
 } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
+import { BARROW_HEX } from "@/utils/theme";
 import type {
   EffectsRuntime,
   FxArt,
@@ -38,7 +39,7 @@ import type {
   Played,
   ReleaseOptions,
 } from "./runtime";
-import type { EffectName, FxTexture } from "./table";
+import type { EffectName, FxTexture, Token } from "./table";
 
 /** The fields of a server `ProjectileState` a flight reads. */
 export interface Sighting {
@@ -50,8 +51,13 @@ export interface Sighting {
 
 /** What a kind of projectile looks like in flight and how it lands. */
 export interface ProjectileKind {
-  /** The baked body, drawn as is (its colours are baked). */
+  /** The baked body, drawn as is (its colours are baked) unless `tint` shades it. */
   body: FxTexture;
+  /**
+   * A multiply tint over the body: one token, or two shaded from the trailing side to the
+   * leading side. For a shot that shares a baked body and must not share its colours.
+   */
+  tint?: readonly Token[];
   /** A `stream` entry following the body. */
   trail: EffectName;
   /** Whether the body is rotated to the projected velocity (the arrow). */
@@ -150,7 +156,7 @@ export class ProjectileFlights {
     const kind = this.kindOf(type);
     const flight: Flight = {
       kind,
-      body: this.body(kind.body),
+      body: this.body(kind),
       trail: this.fx.play(id, kind.trail, pos, {
         ...(heading ? { direction: heading } : {}),
         lift: kind.lift,
@@ -190,7 +196,8 @@ export class ProjectileFlights {
   }
 
   /** The baked body, or nothing when its sheet is missing (logged once, §B.10). */
-  private body(sheet: FxTexture): Phaser.GameObjects.Image | undefined {
+  private body(kind: ProjectileKind): Phaser.GameObjects.Image | undefined {
+    const sheet = kind.body;
     if (!this.art.has(sheet)) {
       if (!this.warned.has(sheet)) {
         this.warned.add(sheet);
@@ -205,7 +212,12 @@ export class ProjectileFlights {
     const image = r.placeholder
       ? this.scene.add.image(0, 0, r.texture)
       : this.scene.add.image(0, 0, r.texture, r.frame);
-    return image.setOrigin(r.anchor.x, r.anchor.y);
+    image.setOrigin(r.anchor.x, r.anchor.y);
+    if (kind.tint) {
+      const [trailing, leading = trailing] = kind.tint.map((k) => BARROW_HEX[k]);
+      image.setTint(trailing, leading, trailing, leading);
+    }
+    return image;
   }
 }
 

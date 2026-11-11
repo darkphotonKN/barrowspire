@@ -1,9 +1,9 @@
 ---
 id: I-MMA2H-4
-status: open
+status: done
 implements: FS-MMA2H
 blocked_by: [I-MMA2H-2, I-MMA2H-3]
-labels: [blocked]
+labels: []
 title: "FS-MMA2H slice 4: the client's town follows the 80 px door gaps (game-client)"
 ---
 Implements FS-MMA2H §D

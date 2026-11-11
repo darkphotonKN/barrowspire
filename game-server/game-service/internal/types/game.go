@@ -77,6 +77,16 @@ type ParryState struct {
 	Parries int `json:"parries"`
 }
 
+// TimedOpenState is a delver's timed open as its owner is told it: the
+// container being opened and how far along it is. FS-MQYEX §Requirements 18.
+type TimedOpenState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	// Elapsed is the seconds of simulation time counted so far.
+	Elapsed float64 `json:"elapsed"`
+	// Duration is the seconds it takes.
+	Duration float64 `json:"duration"`
+}
+
 type EquipmentState struct {
 	Weapon      *ItemState `json:"weapon"`
 	Head        *ItemState `json:"head"`
@@ -343,7 +353,7 @@ type NPCState struct {
 // are removed. FS-77AB6 §Requirements 32.
 type MonsterState struct {
 	EntityID uuid.UUID `json:"entity_id"`
-	// ghoul | troll | demon | blood_demon
+	// ghoul | troll | demon | blood_demon | bone_archer
 	Archetype string `json:"archetype"`
 	// server-authored, elite prefix included, level excluded: the client
 	// composes the nameplate

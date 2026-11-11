@@ -115,6 +115,7 @@ and the two are not required to agree (ADR-0025).
 | **Stone** | slate `#3a3d42`, `#54585f` |
 | **Earth / barrow** | browns `#5a4632`, `#3e2f22` |
 | **Torch warmth** (the only real light) | amber `#e8a14d`, ember `#c2611f` |
+| **Fire's ramp** (fire effects only) | fireCore `#f5d98f`, fireHot `#ea7f26`, ember, fireDeep `#8a2913`, hottest first |
 | **Arcane / Lich corruption** | sickly green `#6f8f4a`, necrotic teal `#4a6b6f` |
 | **Umbra / shadow magic** | dusk violet `#3f3452`, lifted `#7d6c99` |
 | **Blood / danger** | oxblood `#6e1f1f` |
@@ -127,6 +128,9 @@ dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, 
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
 One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
+
+**Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
+interactable, which stays amber, and never stands in for a light source's colour.
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
@@ -607,6 +611,16 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   above the bar. Bright brass because a countdown is progress, never amber. A new countdown is
   drawn by the shared `src/ui/countdownBar.ts`, never by hand. *(Added by
   [FS-B3NDZ](../../docs/specs/B3NDZ-unified-countdown-bar.md), 2026-11-02.)*
+- **Open bar.** The bar that fills while the player stands at a shut chest or sack in a run, for
+  the length of their own timed open. It is **not a countdown**: it fills from the left toward the
+  right, the left end anchored, it carries no number, and it sits in the world, centred over the
+  container and 10 px above its sprite, 44 px wide and 7 px high. It borrows the countdown's bar
+  so the canvas keeps one bar look: the same charcoal track, bright-brass fill and brass rim
+  (`palette.xpFill` on `palette.xpTrack`), drawn through `src/ui/countdownBar.ts` by
+  `src/ui/openBar.ts`, never by hand. Bright brass because it is progress, never amber. Only the
+  player's own is drawn, never another player's and never while spectating. It goes with no
+  notice, sound or effect, whether the container opened or the timed open was cancelled.
+  *(Added by [FS-MQYEX](../../docs/specs/MQYEX-timed-container-opening.md), 2026-11-11.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,
   drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand:
   no rim; a deep-red trough (`markerHpTrough`, oxblood taken toward pitch), so the health missing

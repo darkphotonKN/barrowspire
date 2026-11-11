@@ -1,6 +1,6 @@
 ---
 id: I-MMA2H-3
-status: open
+status: done
 implements: FS-MMA2H
 blocked_by: [I-MMA2H-1]
 labels: [ready-for-agent]

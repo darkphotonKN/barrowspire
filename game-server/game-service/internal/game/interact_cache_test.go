@@ -127,3 +127,38 @@ func TestHandleInteract_Success_HoldsTheTargetBriefly(t *testing.T) {
 	assert.True(t, targetReserved(s, doorID))
 	require.Error(t, s.handleInteract(second, doorID), "the door is held for a moment after use")
 }
+
+// Only the start of a timed open goes without the per-container hold
+// (FS-MQYEX §Requirements 15). A container that opens on the reach still takes
+// it, and a second delver's reach inside it is dropped as before: an open
+// container in a run, a drop pile, and a shut container in the hub.
+func TestHandleInteract_AContainerOpenedOnTheReach_HoldsTheTargetBriefly(t *testing.T) {
+	cases := map[string]func(t *testing.T) (s *Session, first uuid.UUID, containerID uuid.UUID){
+		"an open container in a run": func(t *testing.T) (*Session, uuid.UUID, uuid.UUID) {
+			s, first := containerSession(t, 500, 500)
+			chestID := s.AddContainer(505, 500, components.ContainerKindChest)
+			require.NoError(t, openThrough(t, s, first, chestID))
+			releaseInteraction(s, chestID, first)
+			return s, first, chestID
+		},
+		"a drop pile in a run": func(t *testing.T) (*Session, uuid.UUID, uuid.UUID) {
+			s, first := containerSession(t, 500, 500)
+			return s, first, CreateDropPileEntity(s.EntityManager, 505, 500, []uuid.UUID{s.AddItem(pickupBread)}).ID
+		},
+		"a shut container in the hub": func(t *testing.T) (*Session, uuid.UUID, uuid.UUID) {
+			s, first, chest := worldWithShutChest(t, HubBounds())
+			return s, first, chest.ID
+		},
+	}
+	for name, place := range cases {
+		t.Run(name, func(t *testing.T) {
+			s, first, containerID := place(t)
+			second, _ := placeDelver(t, s, "mage", 510, 500)
+
+			require.NoError(t, s.handleInteract(first, containerID))
+			assert.True(t, targetReserved(s, containerID))
+			require.Error(t, s.handleInteract(second, containerID), "the container is held for a moment after use")
+			assert.True(t, targetReserved(s, containerID), "and the dropped reach leaves the hold in place")
+		})
+	}
+}

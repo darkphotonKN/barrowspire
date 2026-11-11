@@ -75,6 +75,7 @@ const { MonsterRoster } = await import("@/render/creatures");
 const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
+const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
@@ -876,7 +877,8 @@ interface MapRun extends FloorRun {
   perimeter?: unknown[];
   dressing?: unknown[];
   lastFloor?: number;
-  floorVeil: unknown[];
+  /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
+  arrivalCard: { parts: unknown[] };
   mapWidth: number;
   mapHeight: number;
   subscribeFloorMap(): void;
@@ -974,7 +976,7 @@ describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
 
     handle(bare(floorState(1)));
     expect(run.lastFloor).toBe(1);
-    expect(run.floorVeil).toHaveLength(0);
+    expect(run.arrivalCard.parts).toHaveLength(0);
 
     handle(bare(floorState(2)));
     expect(run.lastFloor).toBe(2);
@@ -987,10 +989,10 @@ describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
     useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
     handle(bare(floorState(1)));
     const tweens = (run.tweens as { add: ReturnType<typeof vi.fn> }).add;
-    const veilFades = () => tweens.mock.calls.filter(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0).length;
+    const veilFades = () => tweens.mock.calls.filter(([t]) => t.targets === run.arrivalCard.parts[0] && t.alpha === 0).length;
 
     handle(bare(floorState(2)));
-    expect(run.floorVeil.length).toBeGreaterThan(0);
+    expect(run.arrivalCard.parts.length).toBeGreaterThan(0);
     expect(run.walls.size).toBe(0);
     expect(veilFades()).toBe(0);
 
@@ -1009,7 +1011,7 @@ describe("BarrowspireScene floor map (FS-KE075 §H.40–§H.43)", () => {
 
     handle(bare(floorState(2)));
 
-    const fade = tweens.mock.calls.find(([t]) => t.targets === run.floorVeil[0] && t.alpha === 0);
+    const fade = tweens.mock.calls.find(([t]) => t.targets === run.arrivalCard.parts[0] && t.alpha === 0);
     expect(fade).toBeDefined();
   });
 
@@ -2395,6 +2397,7 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
 
     expect(scene.getNearbyChest()?.entityId).toBe("c1");
     scene.toggleChest("c1");
+    run.handleGameStateUpdate(withKind("sack", true));
     expect(view.open).toHaveBeenCalledWith("c1", "sack");
     vi.restoreAllMocks();
   });
@@ -2411,8 +2414,112 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
     run.handleGameStateUpdate(withKind(kind));
 
     scene.toggleChest("c1");
+    run.handleGameStateUpdate(withKind(kind, true));
     expect(view.open).toHaveBeenCalledWith("c1", opensAs);
     vi.restoreAllMocks();
+  });
+
+  // The coffer waits for the server: a shut container shows nothing until a state says it opened,
+  // so a refused reach (a guarded chest) never flashes the coffer open and shut (FS-KE075 §J R60).
+  describe("reaching for a shut container (FS-KE075 §J R60)", () => {
+    const blade = { entity_id: "i1", name: "Blade" };
+    /** The same state with the player in it, where the server has them: at `x` on the chest's row (the chest is at x 150). */
+    const standing = (state: GameState, x: number): GameState =>
+      ({ ...state, current_player: { ...player("me", "Aldric", x), position: at(x, 150) } }) as GameState;
+    /** The chest reached for; `standingAt` puts the player in that first state, at that x. */
+    function reached(is_open = false, standingAt?: number) {
+      vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const { run } = onStage();
+      const view = { entityId: null as string | null, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+      view.open.mockImplementation((id: string) => void (view.entityId = id));
+      const scene = run as unknown as {
+        containerView: typeof view;
+        toggleChest(id: string): void;
+        chestRefused(): void;
+      };
+      scene.containerView = view;
+      const first = withKind("chest", is_open, is_open ? [blade] : []);
+      run.handleGameStateUpdate(standingAt === undefined ? first : standing(first, standingAt));
+      scene.toggleChest("c1");
+      return { run, scene, view };
+    }
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should not open the coffer before the server says the chest opened", () => {
+      const { run, view } = reached();
+      expect(view.open).not.toHaveBeenCalled();
+      run.handleGameStateUpdate(withKind("chest"));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should open the coffer with its contents on the state that shows the chest open", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should open at once a container the server already shows open", () => {
+      const { view } = reached(true);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should give up the reach once the player walks off, so another's opening it later shows no coffer", () => {
+      // the server drops an interact sent too soon after another without a word, so no refusal
+      // ends that reach: walking out of reach of the chest does (FS-MQYEX R26)
+      const { run, view } = reached(false, 150);
+      run.handleGameStateUpdate(standing(withKind("chest"), 150));
+      run.handleGameStateUpdate(standing(withKind("chest"), 211));
+      run.handleGameStateUpdate(standing(withKind("chest", true, [blade]), 211));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should keep the reach through a frame, and give it up on the state that shows the player has walked off, with no coffer open", () => {
+      // where the player stands is the server's word: a frame between states judges nothing, and
+      // the state that moved them ends the reach whether or not a coffer is open (FS-MQYEX R26)
+      const { run, scene, view } = reached(false, 150);
+      const up = { isDown: false };
+      const keys = { left: up, right: up, up, down: up };
+      Object.assign(run, {
+        cursors: keys,
+        wasd: keys,
+        kit: new Proxy({}, { get: (_kit, key) => (key === "guarding" ? false : vi.fn()) }),
+        updateLighting: vi.fn(),
+        updateOtherPlayersSmooth: vi.fn(),
+        checkBuildingStatus: vi.fn(),
+        sendMovementIntent: vi.fn(),
+        // drawn, so the frame runs on past its "escaped" early return
+        player: new Proxy({ visible: true }, { get: (drawn, key) => (key === "visible" ? drawn.visible : vi.fn()) }),
+      });
+      Object.assign(view, { isOpen: false });
+      const reach = scene as unknown as { reaching?: string };
+
+      (run as unknown as { update(time: number, delta: number): void }).update(0, 16);
+      expect(reach.reaching).toBe("c1");
+
+      run.handleGameStateUpdate(standing(withKind("chest"), 600));
+      expect(reach.reaching).toBeUndefined();
+      run.handleGameStateUpdate(standing(withKind("chest", true, [blade]), 600));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should keep the reach while the player stays by the chest", () => {
+      const { run, view } = reached(false, 150);
+      run.handleGameStateUpdate(standing(withKind("chest"), 150));
+      run.handleGameStateUpdate(standing(withKind("chest", true, [blade]), 150));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should never open the coffer for a refused reach, even once another opens the chest", () => {
+      const { run, scene, view } = reached();
+      scene.chestRefused();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).not.toHaveBeenCalled();
+    });
   });
 
   it("should draw a kind it does not know as a chest", () => {
@@ -5328,7 +5435,8 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     resetRun(end: "shutdown" | "destroy"): void;
     targetFrame?: { texts(): Made[] };
     spectateHud?: unknown;
-    floorVeil: unknown[];
+    /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
+    arrivalCard: { parts: unknown[] };
     events: Emitter;
   }
 
@@ -5467,7 +5575,7 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
 
   it.each([
     ["the spectate HUD", (run: FrameRun) => (run.spectateHud = {})],
-    ["the floor-change veil", (run: FrameRun) => (run.floorVeil = [{}])],
+    ["the floor-change veil", (run: FrameRun) => (run.arrivalCard.parts = [{}])],
   ])("should hide while %s holds the top centre", (_, cover) => {
     const { run, monsters, named, tick } = framed();
     monsters()[0].handlers.pointerover();
@@ -5564,7 +5672,7 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
     run.preload();
 
-    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3"].map(atlasTextureKey));
+    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3", "creatures-4"].map(atlasTextureKey));
   });
 
   it("should show the torch bar over creatures and boss still downloading at 300 ms, gone before create, then fade the run in (FS-C4JWH §D R17, A1)", () => {
@@ -5594,8 +5702,8 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
   });
 });
 
-// A floor-1 chest whose guards still stand is refused by the server: the coffer the E key opened
-// at once closes again, and the notice says only that it will not open (FS-KE075 §J R60).
+// A floor-1 chest whose guards still stand is refused by the server: the coffer never opened (it
+// waits for the server), and the notice says only that it will not open (FS-KE075 §J R60).
 describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -5614,29 +5722,760 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       connectToServer(): void;
       showNotification(message: string, color: string): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
+      reaching?: string;
     };
     run.init({ sessionID: "run-a" });
-    run.containerView = { entityId: "chest-1", close: vi.fn() };
+    run.containerView = { entityId: null, close: vi.fn() };
+    run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
     run.connectToServer();
     return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
   }
 
-  it("should close the coffer it opened and say it will not open", () => {
+  it("should give up the reach and say it will not open", () => {
     const { run, notified, reply } = connected();
     reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
 
-    expect(run.containerView.close).toHaveBeenCalledTimes(1);
+    expect(run.reaching).toBeUndefined();
     expect(notified).toHaveBeenCalledTimes(1);
     expect(notified.mock.calls[0][0]).toBe("It will not open.");
   });
 
-  it("should leave the coffer open on any other reply", () => {
+  it("should give up the reach on a chest out of reach too", () => {
     const { run, reply } = connected();
     reply({ success: false, message: "too far away to interact" });
+
+    expect(run.reaching).toBeUndefined();
+  });
+
+  it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {
+    const { run, reply } = connected();
     reply({ success: false, message: "" });
 
+    expect(run.reaching).toBe("chest-1");
     expect(run.containerView.close).not.toHaveBeenCalled();
+  });
+});
+
+// The server counts a timed open and says so on the player's own state, every tick; the client only
+// draws it. Built against the FS's wire shape with fixture states (FS-MQYEX R18).
+describe("BarrowspireScene the open bar (FS-MQYEX §D R21–R25; I-MQYEX-4)", () => {
+  type TimedOpen = { entity_id: string; elapsed: number; duration: number };
+  const blade = { entity_id: "i1", name: "Blade" };
+  /** The player's own timed open on floor 1's chest, `elapsed` seconds into its 1.5. */
+  const opening = (elapsed: number, entity_id = "c1"): TimedOpen => ({ entity_id, elapsed, duration: 1.5 });
+  /** Floor 1 as this player's state: their timed open if any, and the chest shut or open. */
+  const state = (
+    timed_open?: TimedOpen,
+    chest: { is_open?: boolean; items?: unknown[] } = {},
+    others: unknown[] = [],
+  ): GameState => {
+    const floor = floorState(1);
+    return {
+      ...floor,
+      // by the chest, which is at (150, 150)
+      current_player: { ...player("me", "Aldric", 150), position: at(150, 150), ...(timed_open ? { timed_open } : {}) },
+      other_players: others,
+      containers: [{ ...floor.containers[0], is_open: false, items: [], ...chest }],
+    } as GameState;
+  };
+  // every recorded sprite reports 10 px bounds at the origin: the bar over one is centred on x 5,
+  // its foot 10 px above y 0
+  const BAR = { x: -17, y: -17, width: 44, height: 7 };
+
+  function onStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const view = { entityId: null as string | null, isOpen: false, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+    view.open.mockImplementation((id: string) => void (view.entityId = id));
+    const clock = { delayedCall: vi.fn(), now: 1000 };
+    const run = scene.run as unknown as FloorRun & {
+      containerView: typeof view;
+      watchedPlayerId?: string;
+      events: Emitter;
+      init(): void;
+      toggleChest(id: string): void;
+      showNotification(message: string, color: string): void;
+      update(time: number, delta: number): void;
+    };
+    run.containerView = view;
+    run.time = clock;
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    /** Every open bar the scene made, and those still up and showing. */
+    const made = () => scene.stage.made.filter((m) => m.kind === "graphics" && (m as { name?: string }).name === "open-bar");
+    const bars = () => made().filter((m) => !m.destroyed && m.shown !== false);
+    /** The bar's fill as last drawn: the latest rectangle filled. */
+    const fill = () => {
+      const [x, y, width, height] = bars()[0].last.fillRect as number[];
+      return { x, y, width, height };
+    };
+    const chestSprite = () =>
+      scene.stage.made.find((m) => m.kind === "sprite" && String(m.args[2]).startsWith("chest_")) as Made & {
+        visible?: boolean;
+      };
+    /** One frame, no key down, with nothing else on stage to draw. */
+    const frame = (ms: number) => {
+      const up = { isDown: false };
+      const keys = { left: up, right: up, up, down: up };
+      Object.assign(run, {
+        cursors: keys,
+        wasd: keys,
+        kit: { follow: vi.fn(), guarding: false, sync: vi.fn() },
+        updateLighting: vi.fn(),
+        updateOtherPlayersSmooth: vi.fn(),
+        checkBuildingStatus: vi.fn(),
+        updateTargetFrame: vi.fn(),
+        sendMovementIntent: vi.fn(),
+      });
+      clock.now += ms;
+      run.update(clock.now, ms);
+    };
+    return { run, view, clock, notified, made, bars, fill, chestSprite, frame };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should draw the bar over the container at elapsed / duration, in the world's marker band", () => {
+    const { run, bars, fill } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+
+    expect(bars()).toHaveLength(1);
+    expect(bars()[0].depth).toBe(MARKER_DEPTH.bar);
+    expect(bars()[0].last.strokeRect).toEqual([BAR.x, BAR.y, BAR.width, BAR.height]);
+    // half full, from the left end
+    expect(fill()).toEqual({ ...BAR, width: 22 });
+  });
+
+  it("should draw nothing while the state carries no timed open", () => {
+    const { run, made } = onStage();
+    run.handleGameStateUpdate(state());
+    run.handleGameStateUpdate(state());
+    expect(made()).toHaveLength(0);
+  });
+
+  it("should move the one bar with the next state", () => {
+    const { run, made, bars, fill } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.handleGameStateUpdate(state(opening(1.2)));
+
+    expect(made()).toHaveLength(1);
+    expect(bars()).toHaveLength(1);
+    expect(fill().width).toBeCloseTo(35.2);
+  });
+
+  it("should take the bar down, with no notice, on a state without the timed open", () => {
+    const { run, bars, notified } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    notified.mockClear();
+    run.handleGameStateUpdate(state());
+
+    expect(bars()).toHaveLength(0);
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should open no view on the E key or while the bar fills, then open it and drop the bar on the state that shows the container open", () => {
+    const { run, view, bars } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.handleGameStateUpdate(state(opening(1.47)));
+    expect(view.open).not.toHaveBeenCalled();
+    expect(bars()).toHaveLength(1);
+
+    run.handleGameStateUpdate(state(undefined, { is_open: true, items: [blade] }));
+    expect(view.open).toHaveBeenCalledTimes(1);
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should draw no bar over a container the same state shows open", () => {
+    const { run, view, bars } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(1.5), { is_open: true, items: [blade] }));
+
+    expect(bars()).toHaveLength(0);
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+  });
+
+  it("should stop at full and open nothing, whatever the state's times say", () => {
+    const { run, view, fill } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(1.5)));
+    expect(fill().width).toBe(44);
+    run.handleGameStateUpdate(state(opening(9)));
+    expect(fill().width).toBe(44);
+    expect(view.open).not.toHaveBeenCalled();
+  });
+
+  it("should run the fill on with real time between states, never past full, and let the next state correct it", () => {
+    const { run, view, bars, fill, frame } = onStage();
+    run.handleGameStateUpdate(state());
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(opening(0.75)));
+
+    // 0.3 s on with no state: 1.05 s of 1.5 s
+    frame(300);
+    expect(fill().width).toBeCloseTo(30.8);
+    // the states stop coming: the bar fills, waits, and opens nothing
+    frame(5_000);
+    expect(fill()).toEqual({ ...BAR, width: 44 });
+    expect(bars()).toHaveLength(1);
+    expect(view.open).not.toHaveBeenCalled();
+
+    // the server's count is the truth, even when it is behind the bar
+    run.handleGameStateUpdate(state(opening(0.9)));
+    expect(fill().width).toBeCloseTo(26.4);
+  });
+
+  it("should draw no bar from another player's state", () => {
+    const { run, made } = onStage();
+    const ally = { ...player("ally", "Wenna", 160), timed_open: opening(0.75) };
+    run.handleGameStateUpdate(state(undefined, {}, [ally]));
+    expect(made()).toHaveLength(0);
+  });
+
+  it("should draw no bar while spectating, and take down one that was up", () => {
+    const { run, bars } = onStage();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    expect(bars()).toHaveLength(1);
+
+    run.watchedPlayerId = "ally";
+    run.handleGameStateUpdate(state(opening(0.9)));
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should draw no bar for a container the client is not drawing", () => {
+    const { run, bars } = onStage();
+    // one the snapshot never held
+    run.handleGameStateUpdate(state(opening(0.75, "elsewhere")));
+    expect(bars()).toHaveLength(0);
+
+    // one that leaves the snapshot mid-open
+    run.handleGameStateUpdate(state(opening(0.75)));
+    expect(bars()).toHaveLength(1);
+    run.handleGameStateUpdate({ ...state(opening(0.9)), containers: [] });
+    expect(bars()).toHaveLength(0);
+  });
+
+  it("should hide the bar while the container's sprite is hidden, and show it again with it", () => {
+    const { run, bars, chestSprite, frame } = onStage();
+    run.handleGameStateUpdate(state(opening(0.3)));
+    chestSprite().visible = false;
+    frame(16);
+    expect(bars()).toHaveLength(0);
+
+    chestSprite().visible = true;
+    frame(16);
+    expect(bars()).toHaveLength(1);
+  });
+
+  it("should open an already-open container's view at once on the E key, with no bar", () => {
+    const { run, view, made } = onStage();
+    run.handleGameStateUpdate(state(undefined, { is_open: true, items: [blade] }));
+    run.toggleChest("c1");
+
+    expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    expect(made()).toHaveLength(0);
+  });
+
+  it.each(["shutdown", "destroy"])("should hold no bar past %s: the next run draws its own", (event) => {
+    const { run, made, bars } = onStage();
+    run.init();
+    run.handleGameStateUpdate(state(opening(0.75)));
+    run.events.emit(event);
+
+    run.handleGameStateUpdate(state(opening(0.3)));
+    expect(made()).toHaveLength(2);
+    expect(bars().at(-1)).toBe(made()[1]);
+  });
+
+  // A cancel affects only the player it happened to: their reach ends with their timed open, so a
+  // teammate opening the container later opens no view for them (FS-MQYEX R26, D13).
+  describe("giving up the reach (FS-MQYEX §D R26; I-MQYEX-5)", () => {
+    const opened = { is_open: true, items: [blade] };
+    /** The same state with the player at `x` on the chest's row, as the server has them; the chest is at x 150. */
+    const movedTo = (moved: GameState, x: number): GameState =>
+      ({ ...moved, current_player: { ...moved.current_player, position: at(x, 150) } }) as GameState;
+    /** The player standing by the shut chest, having pressed E on it. */
+    function reached() {
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(state());
+      stage.run.toggleChest("c1");
+      return stage;
+    }
+
+    it("should give up the reach when the timed open a state showed is gone with the container still shut", () => {
+      const { run, view, bars, notified } = reached();
+      run.handleGameStateUpdate(state(opening(0.3)));
+      run.handleGameStateUpdate(state());
+
+      expect(bars()).toHaveLength(0);
+      expect(notified).not.toHaveBeenCalled();
+      // a teammate finishes later: the chest is drawn open, and no view opens
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should give up the reach when the timed open has moved to another container", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(state(opening(0.3)));
+      run.handleGameStateUpdate(state(opening(0.1, "elsewhere")));
+
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should open the view on the state that both drops the timed open and shows the container open", () => {
+      // the player's own finished, or a teammate's did while theirs ran
+      const { run, view, bars } = reached();
+      run.handleGameStateUpdate(state(opening(0.9)));
+      run.handleGameStateUpdate(state(undefined, opened));
+
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+      expect(bars()).toHaveLength(0);
+    });
+
+    it("should keep a reach no state has answered yet through states without a timed open", () => {
+      // the reply is still on its way
+      const { run, view, frame } = reached();
+      run.handleGameStateUpdate(state());
+      frame(16);
+      run.handleGameStateUpdate(state());
+
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should open the view for a reach made before the held state showed the player stopped", () => {
+      // E pressed within a round trip of stopping: the state held at the press is older than the stop
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(movedTo(state(), 140));
+      stage.run.toggleChest("c1");
+      const { run, view } = stage;
+
+      // the server's answer: the player where they stopped, their timed open on the chest
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(opening(0.5)));
+      run.handleGameStateUpdate(state(opening(1.47)));
+      run.handleGameStateUpdate(state(undefined, opened));
+
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should judge no change of position before a state shows the timed open", () => {
+      const { run, view } = reached();
+      // still in reach of the chest, and no answer yet
+      run.handleGameStateUpdate(movedTo(state(), 151));
+      run.handleGameStateUpdate(movedTo(state(), 152));
+
+      run.handleGameStateUpdate(movedTo(state(opening(0.03)), 152));
+      run.handleGameStateUpdate(movedTo(state(undefined, opened), 152));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should give up the reach when the player's own position changes from the first state that showed the timed open", () => {
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(movedTo(state(), 140));
+      stage.run.toggleChest("c1");
+      const { run, view } = stage;
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(opening(0.3)));
+      // one step, the chest as near as before, the timed open still showing
+      run.handleGameStateUpdate(movedTo(state(opening(0.33)), 151));
+
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["keep", "in reach of the container, at its edge", 210, 1],
+      ["give up", "out of reach of the container", 211, 0],
+    ])("should %s a reach no state answered once the state has the player %s", (_what, _where, x, views) => {
+      // the request was dropped and nothing ever comes: walking out of reach (60 px) ends the reach
+      const { run, view } = reached();
+      run.handleGameStateUpdate(movedTo(state(), x));
+
+      run.handleGameStateUpdate(movedTo(state(undefined, opened), x));
+      expect(view.open).toHaveBeenCalledTimes(views);
+    });
+
+    it("should read the container open before the position: a state that shows both opens the view", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(state(opening(0.9)));
+      run.handleGameStateUpdate(movedTo(state(undefined, opened), 151));
+
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
+    it("should give up the reach when its container has left the state", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate({ ...state(), containers: [] });
+
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should take a new reach after one was given up, and open the view for it", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(state(opening(0.3)));
+      run.handleGameStateUpdate(state());
+
+      run.toggleChest("c1");
+      run.handleGameStateUpdate(state(opening(0.03)));
+      run.handleGameStateUpdate(state(undefined, opened));
+      expect(view.open).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+// A hit that costs the player health closes the container view they have open: read from their own
+// health in two states in a row, with no notice, and E opens it again at once. Fixture states only.
+describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: The container view closes when its player is hit; I-1D6BX-5)", () => {
+  type TimedOpen = { entity_id: string; elapsed: number; duration: number };
+  type Me = { max_health?: number; parries?: number; escape?: boolean; timed_open?: TimedOpen };
+  const blade = { entity_id: "i1", name: "Blade" };
+  const opening = (elapsed: number): TimedOpen => ({ entity_id: "c1", elapsed, duration: 1.5 });
+  /**
+   * A floor as this player's state, with `health`: they stand at its container `c1`, which is
+   * open with a blade in it unless `chest` says otherwise, beside a slain monster's pile `p1`.
+   */
+  const state = (health: number, me: Me = {}, chest: { is_open?: boolean; kind?: string; items?: unknown[] } = {}, floor = 1): GameState => {
+    const base = floorState(floor);
+    const c1 = base.containers[0];
+    return {
+      ...base,
+      current_player: { ...player("me", "Aldric", 150, { current_health: health }), position: c1.position, ...me },
+      containers: [
+        { ...c1, is_open: true, items: [blade], ...chest },
+        { container_id: "pc", entity_id: "p1", kind: "drop_pile", position: at(c1.position.x + 10, 150), is_open: true, items: [blade] },
+      ],
+    } as GameState;
+  };
+
+  function onStage() {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    // the view as the scene sees it: open on a container until it is closed
+    const view = {
+      entityId: null as string | null,
+      get isOpen() {
+        return this.entityId !== null;
+      },
+      open: vi.fn(),
+      close: vi.fn(),
+      setItems: vi.fn(),
+    };
+    view.open.mockImplementation((id: string) => void (view.entityId = id));
+    view.close.mockImplementation(() => void (view.entityId = null));
+    const run = scene.run as unknown as FloorRun & {
+      containerView: typeof view;
+      equipment?: unknown;
+      events: Emitter;
+      init(): void;
+      toggleChest(id: string): void;
+      showNotification(message: string, color: string): void;
+    };
+    run.containerView = view;
+    run.time = { delayedCall: vi.fn(), now: 1000 };
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    /** The open bars still up (FS-MQYEX R22). */
+    const bars = () =>
+      scene.stage.made.filter((m) => m.kind === "graphics" && (m as { name?: string }).name === "open-bar" && !m.destroyed);
+    return { run, view, sent, notified, bars };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["coffer", "c1", "chest"],
+    ["satchel", "c1", "sack"],
+    ["bone heap", "p1", "drop_pile"],
+  ])("should close the %s on a state with the player's health lower, with no notice and nothing sent", (_face, id, kind) => {
+    const { run, view, sent, notified } = onStage();
+    run.handleGameStateUpdate(state(100, {}, { kind }));
+    run.toggleChest(id);
+    expect(view.open).toHaveBeenCalledWith(id, kind);
+    sent.mockClear();
+    notified.mockClear();
+
+    run.handleGameStateUpdate(state(90, {}, { kind }));
+
+    expect(view.isOpen).toBe(false);
+    expect(view.close).toHaveBeenCalledTimes(1);
+    expect(notified).not.toHaveBeenCalled();
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  it("should leave the view open through a parried strike that costs nothing, and through a heal", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(60));
+    run.toggleChest("c1");
+
+    run.handleGameStateUpdate(state(60, { parries: 1 }));
+    run.handleGameStateUpdate(state(80));
+    run.handleGameStateUpdate(state(80));
+
+    expect(view.isOpen).toBe(true);
+    expect(view.close).not.toHaveBeenCalled();
+  });
+
+  it("should open the view again at once on E, and close it each time a state costs health", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(95));
+    expect(view.isOpen).toBe(false);
+
+    // the container is open: no reach, no timed open, the view is up on the key
+    run.toggleChest("c1");
+    expect(view.open).toHaveBeenCalledTimes(2);
+    expect(view.isOpen).toBe(true);
+    // a burn's next tick
+    run.handleGameStateUpdate(state(90));
+    expect(view.isOpen).toBe(false);
+
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(90));
+    expect(view.isOpen).toBe(true);
+    expect(view.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("should close nothing on the first state of a start, whatever the health in it", () => {
+    const { run, view } = onStage();
+    view.open("c1");
+    run.handleGameStateUpdate(state(40));
+
+    expect(view.isOpen).toBe(true);
+  });
+
+  it.each(["shutdown", "destroy"])("should close nothing on the first state after a %s and a new start (a reconnect), with the health lower than before it", (end) => {
+    const { run, view } = onStage();
+    run.init();
+    run.handleGameStateUpdate(state(100));
+    run.events.emit(end);
+
+    view.open("c1");
+    run.handleGameStateUpdate(state(60));
+    expect(view.isOpen).toBe(true);
+    // the same start's next state is judged
+    run.handleGameStateUpdate(state(50));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close the view once on a floor change with the health lower, and leave one opened on the new floor alone", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+
+    run.handleGameStateUpdate(state(80, {}, {}, 2));
+    expect(view.isOpen).toBe(false);
+    expect(view.close).toHaveBeenCalledTimes(1);
+
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(80, {}, {}, 2));
+    expect(view.isOpen).toBe(true);
+  });
+
+  it("should leave the view open when health fell only as far as max health did (gear taken off), and close it when it fell further", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100, { max_health: 100 }));
+    run.toggleChest("c1");
+
+    run.handleGameStateUpdate(state(80, { max_health: 80 }));
+    expect(view.isOpen).toBe(true);
+
+    // 10 health gone with 5 max health: a hit
+    run.handleGameStateUpdate(state(70, { max_health: 75 }));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close the view on a hit in the same state as gear coming off below full health: health is clamped, not lowered by as much", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(60, { max_health: 100 }));
+    run.toggleChest("c1");
+
+    // 20 max health gone, 10 health gone: the gear alone would have left 60
+    run.handleGameStateUpdate(state(50, { max_health: 80 }));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close nothing when no view is open: a hit, the killing hit, an escaped player, a state with no player", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.handleGameStateUpdate(state(90));
+    run.handleGameStateUpdate(state(0));
+    run.handleGameStateUpdate(state(0, { escape: true }));
+    run.handleGameStateUpdate({ ...state(0), current_player: null });
+
+    expect(view.close).not.toHaveBeenCalled();
+  });
+
+  it("should keep the last health seen through a state with no player", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate({ ...state(100), current_player: null });
+    expect(view.isOpen).toBe(true);
+
+    run.handleGameStateUpdate(state(90));
+    expect(view.isOpen).toBe(false);
+  });
+
+  it("should close the view on the killing hit", () => {
+    const { run, view } = onStage();
+    run.handleGameStateUpdate(state(10));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(0));
+
+    expect(view.isOpen).toBe(false);
+    expect(view.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("should leave the gear and bag overlay as it is", () => {
+    const { run, view } = onStage();
+    const overlay = {
+      sync: vi.fn(),
+      updateCharacter: vi.fn(),
+      setCharacterLevel: vi.fn(),
+      isOpen: () => true,
+      hide: vi.fn(),
+      release: vi.fn(),
+    };
+    run.equipment = overlay;
+    run.handleGameStateUpdate(state(100));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(state(90));
+
+    expect(view.isOpen).toBe(false);
+    expect(overlay.hide).not.toHaveBeenCalled();
+    expect(overlay.release).not.toHaveBeenCalled();
+  });
+
+  // The server cancels the timed open the hit landed on; the client only follows `timed_open`
+  // (FS-MQYEX R23, R26). The hit itself touches neither the open bar nor the pending reach.
+  describe("during a timed open (FS-MQYEX §D R22, R23, R26)", () => {
+    const shut = { is_open: false, items: [] };
+    /** The pile's view open, and a reach for the shut chest beside it that the server has answered. */
+    function midOpen() {
+      const stage = onStage();
+      stage.run.handleGameStateUpdate(state(100, {}, shut));
+      stage.run.toggleChest("p1");
+      stage.run.toggleChest("c1");
+      stage.run.handleGameStateUpdate(state(100, { timed_open: opening(0.3) }, shut));
+      expect(stage.view.entityId).toBe("p1");
+      expect(stage.bars()).toHaveLength(1);
+      return stage;
+    }
+
+    it("should close the view and leave the bar and the reach while the state still sends the timed open", () => {
+      const { run, view, bars } = midOpen();
+      run.handleGameStateUpdate(state(90, { timed_open: opening(0.33) }, shut));
+      expect(view.isOpen).toBe(false);
+      expect(bars()).toHaveLength(1);
+
+      // the reach is still pending: the container opening opens its view
+      run.handleGameStateUpdate(state(90));
+      expect(view.open).toHaveBeenLastCalledWith("c1", "chest");
+      expect(view.isOpen).toBe(true);
+      expect(bars()).toHaveLength(0);
+    });
+
+    it("should follow the server's cancel as before: the bar gone and the reach given up, by the state and not by the hit", () => {
+      const { run, view, bars, notified } = midOpen();
+      run.handleGameStateUpdate(state(90, {}, shut));
+      expect(view.isOpen).toBe(false);
+      expect(bars()).toHaveLength(0);
+      expect(notified).not.toHaveBeenCalled();
+
+      // a teammate finishes later: no view opens
+      run.handleGameStateUpdate(state(90));
+      expect(view.isOpen).toBe(false);
+      expect(view.open).toHaveBeenCalledTimes(1);
+    });
+
+    it("should leave a view the same state opens for the reach: it was not open when the hit landed", () => {
+      const { run, view } = midOpen();
+      run.handleGameStateUpdate(state(90));
+
+      expect(view.entityId).toBe("c1");
+      // the next hit closes it
+      run.handleGameStateUpdate(state(85));
+      expect(view.isOpen).toBe(false);
+    });
+
+    it("should touch nothing with no view open: the bar and the reach go on", () => {
+      const stage = onStage();
+      const { run, view, bars } = stage;
+      run.handleGameStateUpdate(state(100, {}, shut));
+      run.toggleChest("c1");
+      run.handleGameStateUpdate(state(100, { timed_open: opening(0.3) }, shut));
+      run.handleGameStateUpdate(state(90, { timed_open: opening(0.33) }, shut));
+
+      expect(view.close).not.toHaveBeenCalled();
+      expect(bars()).toHaveLength(1);
+      run.handleGameStateUpdate(state(90));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+  });
+});
+
+// The hurt flash reads the same record of the player's own health as the container view's hit
+// (FS-KYPQ9 §G.1; FS-1D6BX §Change E2): it flashes on any fall in health, gear coming off too.
+describe("BarrowspireScene the local player's hurt flash (FS-KYPQ9 §G.1; I-1D6BX-5)", () => {
+  const state = (health: number, max?: number): GameState => {
+    const base = floorState(1);
+    return {
+      ...base,
+      current_player: { ...player("me", "Aldric", 150, { current_health: health }), ...(max === undefined ? {} : { max_health: max }) },
+    } as GameState;
+  };
+
+  function onStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run } = sceneOnStage();
+    const hits = { play: vi.fn(), clearAll: vi.fn() };
+    const scene = run as unknown as FloorRun & { hits: typeof hits; player?: unknown };
+    scene.hits = hits;
+    /** How many times the flash played on the local player's own body. */
+    const flashes = () => hits.play.mock.calls.filter(([target]) => target !== undefined && target === scene.player).length;
+    return { run: scene, flashes };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should not flash on the first state of a start, whatever the health in it", () => {
+    const { run, flashes } = onStage();
+    run.handleGameStateUpdate(state(40, 100));
+
+    expect(run.player).toBeDefined();
+    expect(flashes()).toBe(0);
+  });
+
+  it.each([
+    ["a hit", [100, 100], [90, 100], 1],
+    ["the same health", [100, 100], [100, 100], 0],
+    ["a heal", [60, 100], [80, 100], 0],
+    ["gear off, health down with max health", [100, 100], [80, 80], 1],
+    ["gear off below the new max health, health unchanged", [60, 100], [60, 80], 0],
+  ])("should flash %s: %j → %j", (_what, [h0, m0], [h1, m1], times) => {
+    const { run, flashes } = onStage();
+    run.handleGameStateUpdate(state(h0, m0));
+    run.handleGameStateUpdate(state(h1, m1));
+
+    expect(flashes()).toBe(times);
   });
 });
 
@@ -5714,7 +6553,10 @@ describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edg
 });
 
 const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
-const { RegionGrid } = await import("@/render/world/dungeon");
+const await_dungeon = await import("@/render/world/dungeon");
+const await_walls = await import("@/render/world/walls");
+const await_bake = await import("@/render/world/bake");
+const { RegionGrid } = await_dungeon;
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
 const { GROUND_DEPTH, GROUND_MARGIN, GroundLayer } = await import("@/render/world/scene");
@@ -5814,26 +6656,34 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
   });
 
-  it("should paint the ground in chunks no larger than 2048 px, nothing on a void cell", () => {
+  it("should paint the ground in chunks no larger than 2048 px, under every tile of every walkable cell and no tile of a wall cell or the void (FS-XK2B6 §E)", () => {
     const { stage, stamped } = dungeonStage();
     const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
     expect(rts.length).toBeGreaterThan(1);
     for (const rt of rts) expect(Math.max(rt.args[2] as number, rt.args[3] as number)).toBeLessThanOrEqual(CHUNK_MAX);
     // each stamp back to the world tile it was laid for: the frame's top-left plus its anchor
     const sheet = manifest.sheets.ground_flags;
-    let stamps = 0;
+    const tiles = new Set<string>();
+    const offFloor: string[] = [];
     for (const rt of rts)
       for (const [, , x, y] of stamped.get(rt) ?? []) {
         const sx = (rt.args[0] as number) + (x as number) + sheet.anchor.x * sheet.frameWidth;
         const sy = (rt.args[1] as number) + (y as number) + sheet.anchor.y * sheet.frameHeight;
-        expect(grid.hasGround(screenToWorld(sx, sy))).toBe(true);
-        stamps++;
+        const at = screenToWorld(sx, sy);
+        const { cx, cy } = grid.cellOf(at);
+        if (!grid.walkable(cx, cy)) offFloor.push(`${cx},${cy}`);
+        tiles.add(`${Math.floor(at.x / 40)},${Math.floor(at.y / 40)}`);
       }
-    // every ground cell's four tiles, at least once
-    let cells = 0;
+    // no piece laid by a point on a wall cell or the void
+    expect(offFloor).toEqual([]);
+    // and every walkable cell's four tiles, each once
+    const walkable = new Set<string>();
     for (let cx = 0; cx < grid.cols; cx++)
-      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 1, y: cy * 80 + 1 })) cells++;
-    expect(stamps).toBeGreaterThanOrEqual(cells * 4);
+      for (let cy = 0; cy < grid.rows; cy++) {
+        if (!grid.walkable(cx, cy)) continue;
+        for (const [tx, ty] of [[0, 0], [1, 0], [0, 1], [1, 1]]) walkable.add(`${cx * 2 + tx},${cy * 2 + ty}`);
+      }
+    expect([...tiles].sort()).toEqual([...walkable].sort());
   });
 
   it("should leave void to the camera's background, the darkest ink", () => {
@@ -5940,21 +6790,24 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
   });
 
-  it("should make no ground texture for a chunk no walkable or shell cell falls in (review M4)", () => {
+  it("should make no ground texture for a chunk no walkable cell falls in (review M4, FS-XK2B6 §E)", () => {
     const { stage, stamped } = dungeonStage();
     const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
     // every texture made is painted, and the floor's empty chunks have none
     for (const rt of rts) expect((stamped.get(rt) ?? []).length).toBeGreaterThan(0);
     expect(rts.length).toBeLessThan(chunks.rects.length);
-    // each chunk a ground cell's diamond falls in has its texture
+    // each chunk a walkable cell's diamond falls in has its texture
     const made = new Set(rts.map((rt) => `${rt.args[0]},${rt.args[1]}`));
     for (let cx = 0; cx < grid.cols; cx++)
       for (let cy = 0; cy < grid.rows; cy++) {
-        if (!grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) continue;
+        if (!grid.walkable(cx, cy)) continue;
         const c = await_iso.worldToScreen(cx * 80 + 40, cy * 80 + 40);
         const r = chunks.rects[chunks.indexAt(c)];
         expect(made.has(`${r.x},${r.y}`)).toBe(true);
       }
+    // the count on the sample floor, pinned: 65 of its 128 chunks (71 while the shell had ground),
+    // so a chunk only wall cells fall in has none
+    expect([rts.length, chunks.rects.length]).toEqual([65, 128]);
   });
 
   it("should paint a dungeon floor's ground once as it is built, and not again as the party leaves it (review L13)", () => {
@@ -5972,7 +6825,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     }
   });
 
-  it("should lay the placeholder floor without its art under ground cells only, void left to the background (review L13)", () => {
+  it("should lay the placeholder floor without its art under walkable cells only, wall cells and void left to the background (review L13, FS-XK2B6 §E)", () => {
     const scene = sceneOnStage();
     const run = scene.run as unknown as DungeonRun;
     run.worldLook = WORLD_THEMES.tower;
@@ -5986,7 +6839,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(stone).toHaveLength(1);
     let cells = 0;
     for (let cx = 0; cx < grid.cols; cx++)
-      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) cells++;
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.walkable(cx, cy)) cells++;
     expect(stone[0].calls.filter((c) => c === "fillRect")).toHaveLength(cells);
   });
 
@@ -6017,6 +6870,100 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     // some of the floor's wall lights were lit along the way, never all of them at once
     expect(lit).toBeGreaterThan(0);
     expect(walls.filter(shownNow).length).toBeLessThan(walls.length);
+  });
+
+  describe("its walls on their wall edges (FS-XK2B6 §A–§D)", () => {
+    const { wallPlan, dungeonWalls } = await_dungeon;
+    const { thicknessPx } = await_walls;
+    const { BAKE } = await_bake;
+    type Point = { x: number; y: number };
+    const { worldToScreen, worldDepth, boxFaces, WALL_HEIGHT } = await_iso;
+    type EdgedRun = DungeonRun & {
+      currentFloorLook(): { seed: number; walls: import("@/render/world/walls").WallSheets };
+      occluders: { size: number; items: { sprite: Made }[] };
+      dungeon: { lights: { kind: string; region: number; light: { at?: Point } }[] };
+    };
+    /** The floor's walls as the plan cuts them, in the look the staged floor has. */
+    const planned = (run: EdgedRun) => {
+      const look = run.currentFloorLook();
+      const plan = wallPlan(dungeonMap.walls!, grid, thicknessPx(look.walls));
+      return { plan, look, ...dungeonWalls(plan, grid, look.seed, look.walls) };
+    };
+    const screenKey = (p: Point) => {
+      const s = worldToScreen(p.x, p.y);
+      return `${s.x},${s.y}`;
+    };
+    const placeOf = (m: Made) => `${m.args[0]},${m.args[1]}`;
+
+    it("should stand a sprite for every piece and post of the wall plan where it stands, sorted by the point the plan names, the back ones among the occluders", () => {
+      const { run, stage } = dungeonStage();
+      const { pieces, posts } = planned(run as EdgedRun);
+      const walls = drawn(stage.made, "tower_wall_");
+      const stood = drawn(stage.made, "tower_post_");
+      expect(walls.map(placeOf).sort()).toEqual(pieces.map((p) => screenKey(p.at)).sort());
+      expect(stood.map(placeOf).sort()).toEqual(posts.map((p) => screenKey(p.at)).sort());
+      const depthAt = new Map(pieces.map((p) => [screenKey(p.at), worldDepth(p.depthAt.x, p.depthAt.y)]));
+      for (const m of walls) expect(m.depth).toBe(depthAt.get(placeOf(m)));
+      // none through a wall cell's middle: every piece is half a thickness from a cell line
+      for (const p of pieces) expect([p.at.x % 80, p.at.y % 80]).not.toContain(40);
+      // every full-height piece and post fades over the player, and no cut-away one
+      const tall = [...pieces, ...posts].filter((p) => p.height === "back");
+      const fading = new Set((run as EdgedRun).occluders.items.map((i) => i.sprite.calls));
+      for (const m of [...walls, ...stood]) expect(fading.has(m.calls)).toBe(String(m.args[3]).includes("_back"));
+      expect([...walls, ...stood].filter((m) => fading.has(m.calls))).toHaveLength(tall.length);
+    });
+
+    it("should queue a wall light where its piece stands, for the region its edge faces: only a room's", () => {
+      const { run } = dungeonStage();
+      const { plan, look } = planned(run as EdgedRun);
+      const lights = (run as EdgedRun).dungeon.lights.filter((l) => l.kind === "sconce");
+      const want: { at: Point; region: number }[] = [];
+      for (const edge of plan.runs)
+        for (const p of dungeonWalls({ edges: [], runs: [edge], posts: [] }, grid, look.seed, look.walls).pieces) {
+          if (!p.sheet.includes("sconce")) continue;
+          const { cx, cy } = grid.cellOf(p.at);
+          // the cell the edge faces: one step off the wall cell, away from the side it lies on
+          const [dx, dy] = { north: [0, 1], south: [0, -1], west: [1, 0], east: [-1, 0] }[edge.wallSide];
+          expect(grid.kind(cx + dx, cy + dy)).toBe("room");
+          expect(edge.height).toBe("back");
+          want.push({ at: p.at, region: grid.region(cx + dx, cy + dy) });
+        }
+      expect(want.length).toBeGreaterThan(0);
+      const key = (l: { at?: Point; region: number }) => `${l.at!.x},${l.at!.y}:${l.region}`;
+      expect(lights.map((l) => key({ at: l.light.at, region: l.region })).sort()).toEqual(want.map(key).sort());
+    });
+
+    it("should stand a placeholder block on every edge without the wall art, as thick as the material and as tall as its run, and one at every post", () => {
+      const scene = sceneOnStage();
+      const run = scene.run as unknown as EdgedRun;
+      run.worldLook = WORLD_THEMES.tower;
+      run.groundLayer = undefined;
+      const camera = run.cameras as { main: Record<string, unknown> };
+      Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+      useGameStore.getState().receiveFloorMap(dungeonMap as never);
+      (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.call(run, dungeonState());
+      const { pieces, posts, look } = planned(run);
+      const thick = thicknessPx(look.walls);
+      const low = (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+      const tops = (p: { height: string }, x: number, y: number, w: number, h: number) =>
+        JSON.stringify(boxFaces(x, y, w, h, p.height === "back" ? WALL_HEIGHT : low).top);
+      const want = [
+        ...pieces.map((p) =>
+          p.axis === "x" ? tops(p, p.at.x - 20, p.at.y - thick / 2, 40, thick) : tops(p, p.at.x - thick / 2, p.at.y - 20, thick, 40),
+        ),
+        ...posts.map((p) => tops(p, p.at.x - thick / 2, p.at.y - thick / 2, thick, thick)),
+      ];
+      // an upright block: three filled faces, the top the last
+      const blocks = scene.stage.made.filter((m) => m.kind === "graphics" && m.calls.filter((c) => c === "fillPoints").length === 3);
+      expect(blocks.map((m) => JSON.stringify(m.last.fillPoints[0])).sort()).toEqual([...want].sort());
+      // sorted as the baked pieces are (ADR-0074)
+      const depthAt = new Map(pieces.map((p, i) => [want[i], worldDepth(p.depthAt.x, p.depthAt.y)]));
+      for (const m of blocks) {
+        const depth = depthAt.get(JSON.stringify(m.last.fillPoints[0]));
+        if (depth !== undefined) expect(m.depth).toBe(depth);
+      }
+      expect(run.walls.size).toBe(dungeonMap.walls!.length);
+    });
   });
 
   describe("the fog of war (FS-SRA9J §B, §C)", () => {
@@ -6524,5 +7471,178 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         }
       });
     });
+  });
+});
+
+// FS-PQ2TW R5, R8; ADR-0073 Decision 4. I-PQ2TW-2: the switch's verdict reaches the run with its
+// start. A climb is not a world switch (ADR-0015) and keeps its own trigger.
+describe("BarrowspireScene arrival from its start (FS-PQ2TW R5–R8)", () => {
+  it.each([true, false])("should keep the arrival %s its start was handed, beside its session", (arrival) => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { arrival: boolean; sessionID?: string };
+
+    (scene.init as (data?: { sessionID?: string; arrival?: boolean }) => void)({ sessionID: "run-a", arrival });
+
+    expect(run.arrival).toBe(arrival);
+    expect(run.sessionID).toBe("run-a");
+  });
+
+  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as { arrival: boolean };
+
+    (scene.init as (data?: { arrival?: boolean }) => void)({ arrival: true });
+    scene.init();
+
+    expect(run.arrival).toBe(false);
+  });
+});
+
+// FS-PQ2TW §A R2, R5, R9; §B R11–R14; §C R19, R21, R22; FS-KE075 §H.41. I-PQ2TW-3: entering a run
+// plays the first floor's card; a return plays nothing.
+describe("BarrowspireScene arrival card (FS-PQ2TW §A–§C; I-PQ2TW-3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGameStore.setState({ floorMap: null });
+  });
+
+  type ArrivingRun = MapRun & { init(data?: object): void; create(): void; connectToServer(): void };
+
+  /** A run scene started by a world switch that told it an arrival, or a return. */
+  function startedAs(arrival: boolean) {
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as ArrivingRun;
+    const clock = { now: 0 };
+    run.time = { delayedCall: vi.fn(), get now() { return clock.now; } };
+    run.init({ sessionID: "run", arrival });
+    // the real state path, without the harness' map-first shim (FS-KE075 §H.41)
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    /** The words on screen now. */
+    const words = () =>
+      scene.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    /** Every card title ever drawn, gone or not. */
+    const titles = () => scene.texts().map((t) => String(t.content)).filter((t) => /Floor$/.test(t));
+    const veilFades = () =>
+      (run.tweens as { add: ReturnType<typeof vi.fn> }).add.mock.calls.filter(
+        ([t]) => t.targets === run.arrivalCard.parts[0] && t.alpha === 0,
+      ).length;
+    return { ...scene, run, clock, handle, words, titles, veilFades };
+  }
+
+  /** Runs `create` up to the run's connect, which stands in for everything create builds after. */
+  function createUpToConnect(run: ArrivingRun): void {
+    run.connectToServer = () => {
+      throw new Error("the rest of create");
+    };
+    expect(() => run.create()).toThrow("the rest of create");
+  }
+
+  it("should put the dark up first thing at create on an arrival, before anything of the floor (R11)", () => {
+    const { run, stage } = startedAs(true);
+
+    createUpToConnect(run);
+
+    expect(stage.made.map((m) => [m.kind, m.args])).toEqual([["rectangle", [0, 0, 800, 600, palette.inkDeep, 1]]]);
+    expect(stage.made[0].last.setDepth).toEqual([ARRIVAL_CARD.depth]);
+  });
+
+  it("should put no dark up at create on a return (R5)", () => {
+    const { run, stage } = startedAs(false);
+
+    createUpToConnect(run);
+
+    expect(stage.made).toEqual([]);
+  });
+
+  it("should play The First Floor at an arrival's first broadcast, over the dark from create (R2, R13, R19)", () => {
+    const { run, stage, words } = startedAs(true);
+    createUpToConnect(run);
+    expect(words()).toEqual([]);
+
+    run.handleGameStateUpdate(floorState(1));
+
+    expect(words()).toEqual(expect.arrayContaining(["The First Floor", "The barrow takes you in."]));
+    // one dark, whole: the card's own, standing where the dark from create stood
+    expect(stage.made.filter((m) => m.kind === "rectangle" && m.args[4] === palette.inkDeep && !m.destroyed)).toHaveLength(1);
+  });
+
+  it("should lift the dark on today's schedule when floor 1's map came first (R12)", () => {
+    const { run, veilFades } = startedAs(true);
+
+    run.handleGameStateUpdate(floorState(1));
+
+    expect(veilFades()).toBe(1);
+  });
+
+  it("should hold the dark until floor 1 is built from its map, when the map comes late (R12; FS-KE075 §H.41)", () => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run, handle, words, veilFades } = startedAs(true);
+    run.subscribeFloorMap();
+
+    handle(bare(floorState(1)));
+    expect(words()).toContain("The First Floor");
+    expect(run.walls.size).toBe(0);
+    expect(veilFades()).toBe(0);
+
+    useGameStore.getState().receiveFloorMap(mapOf(floorState(1)));
+    expect(run.walls.size).toBe(4);
+    expect(veilFades()).toBe(1);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("should play the arrival once, never again on its floor's next broadcasts", () => {
+    const { run, titles } = startedAs(true);
+
+    for (let i = 0; i < 3; i++) run.handleGameStateUpdate(floorState(1));
+
+    expect(titles()).toEqual(["The First Floor"]);
+  });
+
+  it("should give an arrival that lands above floor 1 that floor's climb card (R22)", () => {
+    const { run, words } = startedAs(true);
+
+    run.handleGameStateUpdate(floorState(2));
+
+    expect(words()).toEqual(expect.arrayContaining(["The Second Floor", "The dead walk heavier here."]));
+  });
+
+  it.each([
+    [1, "The Second Floor"],
+    [2, "The Third Floor"],
+    [3, undefined],
+  ])("should play nothing on a return to floor %i, and the next climb's card after it (R5)", (floor, next) => {
+    const { run, titles, words } = startedAs(false);
+
+    run.handleGameStateUpdate(floorState(floor));
+    run.handleGameStateUpdate(floorState(floor));
+
+    expect(titles()).toEqual([]);
+    expect(words()).not.toContain("The barrow takes you in.");
+    expect(run.arrivalCard.parts).toHaveLength(0);
+    if (!next) return;
+    run.handleGameStateUpdate(floorState(floor + 1));
+    expect(titles()).toEqual([next]);
+  });
+
+  it("should replace the arrival's card with the climb's when the party climbs under it (R9)", () => {
+    const { run, words } = startedAs(true);
+    run.handleGameStateUpdate(floorState(1));
+    expect(words()).toContain("The First Floor");
+
+    run.handleGameStateUpdate(floorState(2));
+
+    expect(words()).toContain("The Second Floor");
+    expect(words()).not.toContain("The First Floor");
+    expect(words()).not.toContain("The barrow takes you in.");
+  });
+
+  it("should apply the state under the card: the floor built, the player made (R14)", () => {
+    const { run } = startedAs(true);
+
+    run.handleGameStateUpdate(partyState());
+
+    expect(run.arrivalCard.parts.length).toBeGreaterThan(0);
+    expect(run.walls.size).toBe(4);
+    expect((run as unknown as { player?: unknown }).player).toBeDefined();
   });
 });

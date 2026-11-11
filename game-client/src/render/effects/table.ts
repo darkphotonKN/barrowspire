@@ -499,6 +499,42 @@ export const EFFECTS = {
     light: { color: "ember", radius: 120, intensity: { from: 0.8, to: 0 } },
   },
 
+  // ── Monsters: a Bone Archer's arrow (FS-B4SG9 §D R22) ──────────────────
+  /**
+   * What marks an arrow in flight as a hostile's: a dim glow of lifted oxblood riding on it,
+   * steady for the whole flight, and a few ember motes shed behind it that go with the
+   * arrow. From the ember and oxblood family only: never amber, never the party arrow's pale
+   * air-streak. No light: an arrow, not a flame, and several archers may loose at once.
+   * *Starting values.*
+   */
+  boneArrowTrail: {
+    // dies with the arrow, as the party arrow's does
+    timing: {
+      kind: "stream",
+      lifeMs: 220,
+      intervalMs: 40,
+      maxAlive: 12,
+      onRelease: "cut",
+    },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["oxbloodText"],
+      scale: still,
+      alpha: { from: 0.55, to: 0.55 },
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["ember", "oxbloodText"],
+      count: 2,
+      scale: still,
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 20, to: 160 },
+      angle: { from: -6, to: 6 },
+      accel: noAccel,
+    },
+  },
+
   // ── Hit, death, escape (§G) ─────────────────────────────────────────────
   /** Part of the way toward oxblood, easing back to untinted. Applied by the hit module. */
   hit: {

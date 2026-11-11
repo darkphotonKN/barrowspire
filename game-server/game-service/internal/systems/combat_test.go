@@ -986,3 +986,112 @@ func TestCombatSystem_TargetedCastAtNothingCostsNothing(t *testing.T) {
 	assert.Equal(t, 100, pool(attacker))
 	assert.Zero(t, cooldownOf(attacker, costed))
 }
+
+// flight is a projectile in the world with where it is and how it moves.
+type flight struct {
+	shot     *components.ProjectileComponent
+	at       *components.TransformComponent
+	velocity *components.VelocityComponent
+}
+
+// flights is every projectile in the world.
+func flights(em *ecs.EntityManager) []flight {
+	var out []flight
+	for _, e := range em.GetAllEntities() {
+		c, ok := e.GetComponent(ecs.ComponentTypeProjectile)
+		if !ok {
+			continue
+		}
+		tc, _ := e.GetComponent(ecs.ComponentTypeTransform)
+		vc, _ := e.GetComponent(ecs.ComponentTypeVelocity)
+		out = append(out, flight{c.(*components.ProjectileComponent), tc.(*components.TransformComponent), vc.(*components.VelocityComponent)})
+	}
+	return out
+}
+
+// A monster's shot is fired as one projectile from where the monster stands at
+// the aim, carrying the monster as it is then: its damage at level, physical,
+// the base crit chance, from a monster. FS-B4SG9 §A R9.
+func TestCombatSystem_MonsterShot_FiresOneProjectileWithTheMonstersSnapshot(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 100, 100)
+	intend(a, components.AttackIntent{Kind: components.AttackMonsterShot, TargetX: 400, TargetY: 500})
+
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	shots := flights(em)
+	require.Len(t, shots, 1)
+	arrow := shots[0]
+	assert.Equal(t, components.AttackSnapshot{
+		AttackerEntityID: a.ID,
+		DamageType:       components.DamagePhysical,
+		Power:            7,
+		Coefficient:      1,
+		CritChance:       BaseCritChance,
+		FromMonster:      true,
+	}, arrow.shot.Attack)
+	assert.Equal(t, a.ID, arrow.shot.OwnerEntityID)
+	assert.Equal(t, "bone_arrow", arrow.shot.ProjectileType)
+	assert.Equal(t, 420.0, arrow.shot.Speed)
+	assert.Equal(t, 8.0, arrow.shot.Radius)
+	assert.Equal(t, 850.0, arrow.shot.MaxDistance)
+	assert.Zero(t, arrow.shot.PierceLeft)
+
+	assert.Equal(t, 100.0, arrow.at.X)
+	assert.Equal(t, 100.0, arrow.at.Y)
+	// the aim is (300, 400) away: 420 px/s along (0.6, 0.8)
+	assert.InDelta(t, 252.0, arrow.velocity.VX, 1e-9)
+	assert.InDelta(t, 336.0, arrow.velocity.VY, 1e-9)
+}
+
+// The projectile is the monster's own shot, whatever its archetype: the type,
+// speed, radius and max flight come from its component. FS-B4SG9 §A R1, R9.
+func TestCombatSystem_MonsterShot_TakesItsProjectileFromTheMonster(t *testing.T) {
+	em := ecs.NewEntityManager()
+	spitter := ghoul(em, 100, 100, 100)
+	spitter.AddComponent(components.NewAttackIntentComponent())
+	m := monster(spitter)
+	m.ShotProjectileType, m.ShotSpeed, m.ShotRadius, m.ShotMaxFlight = "spit", 200, 5, 300
+	intend(spitter, components.AttackIntent{Kind: components.AttackMonsterShot, TargetX: 100, TargetY: 0})
+
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	shots := flights(em)
+	require.Len(t, shots, 1)
+	assert.Equal(t, "spit", shots[0].shot.ProjectileType)
+	assert.Equal(t, 200.0, shots[0].shot.Speed)
+	assert.Equal(t, 5.0, shots[0].shot.Radius)
+	assert.Equal(t, 300.0, shots[0].shot.MaxDistance)
+	assert.InDelta(t, 0.0, shots[0].velocity.VX, 1e-9)
+	assert.InDelta(t, -200.0, shots[0].velocity.VY, 1e-9)
+}
+
+// Only a monster with a shot fires one: the intent from a melee monster, or
+// from a delver, does nothing.
+func TestCombatSystem_MonsterShot_FromAnythingWithoutAShotFiresNothing(t *testing.T) {
+	em := ecs.NewEntityManager()
+	melee := ghoul(em, 100, 100, 100)
+	melee.AddComponent(components.NewAttackIntentComponent())
+	d := delver(em, 300, 100)
+	for _, e := range []*ecs.Entity{melee, d} {
+		intend(e, components.AttackIntent{Kind: components.AttackMonsterShot, TargetX: 200, TargetY: 100})
+	}
+
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.Empty(t, projectiles(em))
+}
+
+// A dead monster's queued shot is dropped: killed as its wind-up ends, it
+// looses nothing. FS-B4SG9 §A R12.
+func TestCombatSystem_MonsterShot_FromADeadMonsterIsDropped(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := archer(em, 100, 100)
+	intend(a, components.AttackIntent{Kind: components.AttackMonsterShot, TargetX: 400, TargetY: 100})
+	hc, _ := a.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 0
+
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.Empty(t, projectiles(em))
+}

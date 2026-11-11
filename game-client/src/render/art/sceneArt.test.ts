@@ -72,7 +72,7 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
     ["the hub", SCENE_ART.HubScene, ["folk-0"]],
     ["gentle_meadows", fieldArt("gentle_meadows"), ["wildlife-0", "wildlife-1"]],
     ["forlorn_forest", fieldArt("forlorn_forest"), ["fodder-0", "fodder-1"]],
-    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3"]],
+    ["the run", SCENE_ART.BarrowspireScene, ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3", "creatures-4"]],
     ["the main menu", SCENE_ART.MainMenuScene, []],
     ["character creation", SCENE_ART.CharacterCreationScene, []],
   ])("should hold the resident pages plus %s's own", (_scene, groups, own) => {
@@ -171,13 +171,14 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
  * - the run: ghoul, troll, Barrow Thrall and Spire Wraith on every floor (FS-M8CSE §D R18), the
  *   demon on the top one and by chance on any other
  *   (`internal/game/monster_population.go:129,145-147`), and the blood demon by chance on any
- *   floor (FS-VHGE7 §A, §C R30), and Daa'gon on a Master Spire's top floor (FS-M8CSE §E R24)
+ *   floor (FS-VHGE7 §A, §C R30), and Daa'gon on a Master Spire's top floor (FS-M8CSE §E R24);
+ *   the Bone Archer in place of some of floor 1's ghouls (FS-B4SG9 §B)
  */
 const MET = [
   { scene: "gentle_meadows", groups: fieldArt("gentle_meadows"), archetypes: ["boar"] },
   { scene: "forlorn_forest", groups: fieldArt("forlorn_forest"), archetypes: ["zombie", "ghost"] },
   { scene: "dev_test_room", groups: fieldArt("dev_test_room"), archetypes: ["troll", "demon"] },
-  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "barrow_thrall", "spire_wraith", "demon", "blood_demon", "daagon"] },
+  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "bone_archer", "barrow_thrall", "spire_wraith", "demon", "blood_demon", "daagon"] },
 ];
 
 /** The sheets of `sheets` the scene holding `groups` would draw as a placeholder. */

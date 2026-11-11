@@ -61,9 +61,9 @@ export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
  * A short trodden spur from each town building's door gap (FS-B0H2D R24) to the road in front:
  * as wide as the gap (a run door's width, FS-MMA2H R14), from its west jamb and its sill. Ground
  * paint only, telling a player the house is meant to be entered. In hub_map.go's order: the Inn,
- * the Quartermaster's store, the smithy. Kept by hand, since the golden records no south wall:
- * the store's and the smithy's gaps are centred, the Inn's stands at x 525–605, against its
- * partition (ADR-0073).
+ * the Quartermaster's store, the smithy. Kept by hand and held to the golden's door gaps by
+ * `hubKeepOut.test.ts`: the store's and the smithy's gaps are centred, the Inn's stands at
+ * x 525–605, against its partition (ADR-0073).
  */
 export const HUB_DOOR_SPURS: PathRect[] = [
   [525, 490, 80, 65],

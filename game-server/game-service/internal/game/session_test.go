@@ -287,9 +287,10 @@ func containerSession(t *testing.T, x, y float64) (*Session, uuid.UUID) {
 	return s, playerID
 }
 
-// A chest within reach opens on the first interaction and rolls 2 to 4 items
-// into itself. Opening it again keeps the same items: they are rolled once.
-// Out of reach, it is refused and stays closed and empty.
+// A chest within reach opens on the first interaction, through its timed open
+// (FS-MQYEX), and rolls 2 to 4 items into itself. Opening it again keeps the
+// same items: they are rolled once. Out of reach, it is refused, starts no
+// timed open, and stays closed and empty.
 func TestHandleInteractContainer(t *testing.T) {
 	const playerX, playerY = 500.0, 500.0
 	reach := constants.DefaultInteractableRange
@@ -320,10 +321,11 @@ func TestHandleInteractContainer(t *testing.T) {
 			require.False(t, openable.HasBeenOpened)
 			require.Empty(t, contents.ItemIDs)
 
-			err := s.handleInteract(playerID, chestID)
+			err := openThrough(t, s, playerID, chestID)
 
 			if tt.expectedOutOfRange {
 				assert.ErrorIs(t, err, ErrOutOfRange)
+				assert.Nil(t, timedOpenOf(delverEntity(t, s, playerID)), "a chest out of reach starts no timed open")
 				assert.False(t, openable.HasBeenOpened, "a chest out of reach must stay closed")
 				assert.Empty(t, contents.ItemIDs, "a chest out of reach must roll nothing")
 				return

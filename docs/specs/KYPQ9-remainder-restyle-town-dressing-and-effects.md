@@ -533,3 +533,5 @@ All commands run from `game-client/` with Node 22 on the path:
 - Real-time 3D, WebGL shaders, or dropping the bake for runtime effects (that would be an ADR, ADR-0020).
 - Client colliders for props (collision is server-authoritative).
 - Sound, a day/night cycle, a lore name for the hub.
+
+## Change: Arrival card → FS-PQ2TW

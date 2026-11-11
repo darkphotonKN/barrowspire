@@ -3,19 +3,14 @@
  * (addHubBuilding): 20 thick, the south wall cut in two around a door gap a run door wide
  * (FS-MMA2H R9). A test fixture only: the scene takes its walls from the server.
  *
- * The golden records each building's rect, partitions and furnishings but not its south wall, so
- * what is here is kept by hand: the gap's width (hub_map.go `hubDoorWidth`) and how far each gap
- * stands east of its wall's centre (`DoorShift`). Only the Inn's is off centre, flush against its
- * partition's east face (ADR-0073). `buildingLooks.test.ts` pins where each gap stands.
+ * Each gap is the golden's (`doorGap`, written by the server's golden test), never a number kept
+ * here: where the server moves or widens a gap, these walls follow, and whatever the client
+ * keeps by hand (HUB_DOOR_SPURS, the indoor dressing) is checked against the moved gap.
  */
 import type { TownBuilding } from "./hubTownGolden";
 
 /** hub_map.go `hubWallThickness`. */
 export const TOWN_WALL_THICK = 20;
-/** hub_map.go `hubDoorWidth`: a town door gap, and the gap in the Inn's partition. */
-export const TOWN_DOOR = 80;
-/** hub_map.go `DoorShift`, by building name: world px east of the south wall's centre. */
-const DOOR_SHIFT: Readonly<Record<string, number>> = { Inn: 15 };
 
 /** A door gap as the span along its south wall's line, and the y of its sill (the wall's outer face). */
 export interface TownDoorGap {
@@ -25,8 +20,8 @@ export interface TownDoorGap {
 }
 
 export function townDoorGap(b: TownBuilding): TownDoorGap {
-  const x0 = b.x + (b.w - TOWN_DOOR) / 2 + (DOOR_SHIFT[b.name] ?? 0);
-  return { x0, x1: x0 + TOWN_DOOR, sill: b.y + b.h };
+  const { x, y, w, h } = b.doorGap;
+  return { x0: x, x1: x + w, sill: y + h };
 }
 
 /** A building's five outer walls as [x, y, w, h]: north, west, east, then the south wall's two segments. */

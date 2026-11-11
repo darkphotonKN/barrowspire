@@ -59,6 +59,7 @@ server state and sends intents. ✅
 - [x] Floor transitions → FS-F6F88
 - [ ] Floor layout from the floor map → FS-KE075
 - [ ] Told when a guarded chest will not open → FS-KE075
+- [ ] Progress shown while a container opens → FS-MQYEX
 - [ ] Fog of war → FS-SRA9J
 - [ ] Minimap → FS-SRA9J
 - [x] Spectate living teammates after resolving → FS-QPDKN
@@ -107,6 +108,7 @@ server state and sends intents. ✅
 - [x] Container-open presentation → FS-2325V
 - [x] Distinct look per container kind → FS-1D6BX
 - [ ] Expanded baked enemy roster → FS-Q14EV
+- [ ] Ranged monsters drawn with their shots → FS-B4SG9
 - [x] Blood demon boss look → FS-VHGE7
 - [x] Demon fire claw look → FS-VHGE7
 - [x] Hub town props and dressing → FS-KYPQ9

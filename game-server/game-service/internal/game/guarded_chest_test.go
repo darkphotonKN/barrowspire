@@ -132,7 +132,9 @@ func refusalsTo(sent *recordingSender, player uuid.UUID) []string {
 // A guarded chest is refused, server-side, while any guard stands, wherever it
 // stands: in the room, or chased out of it. Once every guard lies dead, its
 // corpse still there or gone, it opens and rolls as any chest does. A chest
-// that waits on nobody opens at once. FS-KE075 §J R58–R60.
+// that waits on nobody opens with no refusal. A refused reach starts no timed
+// open; an allowed one opens through it. FS-KE075 §J R58–R60; FS-MQYEX
+// §Requirements 3, L6.
 func TestGuardedChest_OpensOnlyOnceEveryGuardIsDown(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -170,7 +172,7 @@ func TestGuardedChest_OpensOnlyOnceEveryGuardIsDown(t *testing.T) {
 			s, player, chest, guards, sent := guardedChest(t, tt.guards)
 			tt.fell(t, s, guards)
 
-			err := s.handleInteract(player, chest.ID)
+			err := openThrough(t, s, player, chest.ID)
 
 			if tt.opens {
 				require.NoError(t, err)
@@ -181,6 +183,7 @@ func TestGuardedChest_OpensOnlyOnceEveryGuardIsDown(t *testing.T) {
 				return
 			}
 			require.ErrorIs(t, err, ErrContainerGuarded)
+			assert.Nil(t, timedOpenOf(delverEntity(t, s, player)), "a refusal starts no timed open")
 			assert.False(t, openable(t, chest).IsOpen, "it stays shut")
 			assert.False(t, openable(t, chest).HasBeenOpened, "nothing is rolled")
 			assert.Empty(t, chestHolds(t, chest))
@@ -191,7 +194,8 @@ func TestGuardedChest_OpensOnlyOnceEveryGuardIsDown(t *testing.T) {
 }
 
 // A refusal holds nothing: once the last guard falls, by any member's hand, the
-// very next reach opens the chest, with no wait on a cooldown or an event.
+// very next reach opens the chest through its timed open, with no wait on a
+// cooldown or an event.
 // Out of reach it is still refused for the distance, not for its guards.
 // FS-KE075 §J R59, §Edge States "A guard dies while a delver reaches".
 func TestGuardedChest_TheNextReachAfterTheLastGuardFallsOpensIt(t *testing.T) {
@@ -201,7 +205,7 @@ func TestGuardedChest_TheNextReachAfterTheLastGuardFallsOpensIt(t *testing.T) {
 	require.ErrorIs(t, s.handleInteract(player, chest.ID), ErrContainerGuarded, "a refusal leaves the chest free to try again")
 
 	layDead(t, guards[0])
-	require.NoError(t, s.handleInteract(player, chest.ID))
+	require.NoError(t, openThrough(t, s, player, chest.ID))
 	assert.True(t, openable(t, chest).IsOpen)
 	assert.Equal(t, []string{RefusalContainerGuarded, RefusalContainerGuarded}, refusalsTo(sent, player))
 
@@ -212,6 +216,7 @@ func TestGuardedChest_TheNextReachAfterTheLastGuardFallsOpensIt(t *testing.T) {
 
 		require.ErrorIs(t, s.handleInteract(player, chest.ID), ErrOutOfRange)
 		assert.Empty(t, refusalsTo(sent, player))
+		assert.Nil(t, timedOpenOf(delverEntity(t, s, player)), "out of reach starts no timed open")
 	})
 }
 
@@ -389,7 +394,7 @@ func TestGuardedTreasureChest_OpensAsAChestOnFloorSix(t *testing.T) {
 	floor.AddComponent(components.NewFloorComponent(6, 10))
 	layDead(t, guards[0])
 
-	require.NoError(t, s.handleInteract(player, chest.ID))
+	require.NoError(t, openThrough(t, s, player, chest.ID))
 
 	held := chestHolds(t, chest)
 	assert.GreaterOrEqual(t, len(held), ChestMinItems)
