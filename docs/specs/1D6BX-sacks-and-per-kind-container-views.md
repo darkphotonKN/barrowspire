@@ -232,9 +232,11 @@ Derived here (the owner was silent; each overridable):
 - **E2: the client reads the hit from its own health in two states in a row**, the reading the
   hurt flash already makes, and keeps one record of it. *Reason:* the state carries no hit
   event, every landed hit costs at least 1 health (FS-MQYEX D4), and the state comes every tick.
-- **E3: health that fell no further than max health fell in the same state is not a hit.**
-  *Reason:* taking off gear that raised max health lowers health with it by the same amount; the
-  player did that in the gear overlay, beside the open view.
+- **E3: health that fell only to the new max health in the same state is not a hit.** A hit is
+  health below both the health before and the max health now.
+  *Reason:* taking off gear that raised max health clamps health to the new maximum and lowers it
+  no further (the server's gear system); the player did that in the gear overlay, beside the open
+  view. Health under the new maximum was lost to something else.
 - **E4: the hit is judged before the state's containers are read.** A view the same state opens
   for a pending reach was not open when the hit landed, and stays. *Reason:* FS-MQYEX R26 reads
   the open container first; that flow is left exactly as it is.
@@ -245,8 +247,8 @@ Derived here (the owner was silent; each overridable):
     lower than the state before it had, and the view is open, the view closes, whichever face it
     wears. Nothing is sent and no notice, sound or effect is added.
 20. **Only health lost to a hit.** A state with the health the same or higher closes nothing: a
-    parried strike, a heal, a potion. A state in which health fell by no more than `max_health`
-    fell closes nothing (E3); one in which it fell by more does.
+    parried strike, a heal, a potion. A state in which health fell only to the new
+    `max_health` closes nothing (E3); one in which it fell below it does.
 21. **Each time.** Every state that costs health closes an open view, so a view opened again
     under damage over time closes on the next state that costs health.
 22. **Two states of one start.** The first state after the scene starts is compared with nothing
@@ -271,7 +273,7 @@ scene's state handling:
 - [ ] After a hit closed it, E opens the view at once; the next state that costs health closes it again, and one that costs none leaves it open.
 - [ ] The first state of a start, with the health below max health, leaves an open view open; so does the first state after the scene restarts with the health lower than the last state before it.
 - [ ] A floor change with the health lower closes the view once, as a floor change does; a view opened on the new floor stays open through a state with that same health.
-- [ ] A state in which health and `max_health` fell by the same amount leaves the view open; one in which health fell by more closes it.
+- [ ] A state in which health fell to the new `max_health` (100/100 → 80/80) leaves the view open; one in which it fell below it closes it, also below full health (60/100 → 50/80).
 - [ ] With no view open, a state that costs health closes nothing: also when the hit kills the player, and when the state has the player escaped or carries no `current_player`.
 - [ ] A hit during a timed open leaves the open bar and the pending reach as the state has them: the bar stays while `timed_open` is sent and the view opens when the container does; with `timed_open` gone and the container shut the reach is given up as before.
 - [ ] A hit with the gear and bag overlay up leaves the overlay as it is.
@@ -287,7 +289,9 @@ health closes it with no notice, and E opens it again at once.
   nothing closes. Another player's health is never read.
 - **A state without `current_player`, or without `current_health`.** Nothing is judged and the
   last health seen is kept for the next state that has one.
-- **A hit and a gear change in one state.** Health fell by more than max health did: a hit (R20).
+- **A hit and a gear change in one state.** Health is below both the health before and the new
+  max health: a hit (R20, E3), also when health was under the old max and fell by less than max
+  health did (60/100 → 50/80).
 - **A hit on the state that opens the view** (a teammate finished the container on the tick the
   player was hit). The view opens and stays; the next hit closes it (E4).
 - **The view is open on one container while the player reaches for another.** The hit closes the
