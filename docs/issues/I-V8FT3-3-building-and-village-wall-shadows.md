@@ -13,6 +13,11 @@ Implements FS-V8FT3 §F
 A floor of buildings is rare (built only when dungeon generation fails twice, FS-KE075 §B R17), so
 its shadows are checked by test, not by play.
 
+FS-XK2B6 (walls on the cell boundary) changed a dungeon floor's walls only: a building's, the
+village's and a floor of buildings' walls are still cut along their rect's centreline by
+`planWalls` (FS-XK2B6 R22), so their feet are centred on it (FS-V8FT3 R13). `wallFeet` and
+`planWallShadows` take the material's thickness in world px (`thicknessPx(sheets)`).
+
 ## Files owned
 
 - `game-client/src/render/world/wallShadows.ts`, `wallShadows.test.ts` (the building rule)

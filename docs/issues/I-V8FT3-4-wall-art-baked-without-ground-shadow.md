@@ -11,6 +11,10 @@ Implements FS-V8FT3 §B
 **Lane: agent (AFK), with a look at the review sheets at the end (Nick).** Ships on one branch with
 I-V8FT3-2 and I-V8FT3-3: new art without the painted shadows leaves walls with none.
 
+FS-XK2B6 (walls on the cell boundary) baked nothing: the three groups are as main has them. A
+wall's thickness is `tools/bake/page/shadow.js` `WALL_FOOT`, which the models read and the client
+mirrors once (`BAKE.WALL_FOOT`, named by each `WallSheets`); this slice changes no thickness.
+
 Bake with `npm run bake`, commit the atlases and `manifest.json` with the catalogue change. This
 rewrites three atlas groups: `architecture`, `tower`, `building`. If another branch re-baked one of
 them, merge the models and the catalogue first and bake again; never resolve an atlas or the

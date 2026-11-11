@@ -16,7 +16,10 @@ Nothing. Look at it.
 
 ## Acceptance Criteria
 
-- [ ] On floor 1, along a wall running along world y: one even shadow, no stripes.
+- [ ] On floor 1, along a room's west wall (running along world y): one even shadow, no stripes;
+      along its south wall a short one; its north and east walls cast nothing onto the floor in
+      front of them (their shadows fall behind them, on void: FS-V8FT3 R23).
+- [ ] No shadow on the void past a wall, and none stopping short of a wall's face.
 - [ ] At an inside corner and at a post: no darker patch.
 - [ ] A chest or a brazier beside a wall: its shadow falls the same way as the wall's.
 - [ ] In the village: each house's shadow outside, even, unbroken past its door; inside a house,

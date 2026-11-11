@@ -1,6 +1,6 @@
 # FS-V8FT3: Wall shadow layer
 
-> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Wall shadow layer → FS-V8FT3`: [FS-2325V](2325V-pre-rendered-isometric-art.md) (timber wall pieces and posts, the bake's shadow catcher, the painted ground), [FS-8RBQY](8RBQY-tower-interior-run-look.md) (masonry partition walls and posts), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (exterior wall pieces, door heads, the two looks), [FS-KE075](KE075-floor-1-dungeon.md) (a dungeon floor's wall runs and chunked ground) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art; the bake's light), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (art authored in code), [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md) (two looks per building), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (colour by token: see R14) · Vocabulary: no new term; *wall run* as FS-KE075 §H.46 uses it
+> Status: work-order · SPECIFICATION.md: none. This is a change FS with no thin line of its own (`docs/specs/README.md`, The FS ledger). Each owning FS carries the stub `## Change: Wall shadow layer → FS-V8FT3`: [FS-2325V](2325V-pre-rendered-isometric-art.md) (timber wall pieces and posts, the bake's shadow catcher, the painted ground), [FS-8RBQY](8RBQY-tower-interior-run-look.md) (masonry partition walls and posts), [FS-9PN7X](9PN7X-building-exteriors-and-indoor-blackout.md) (exterior wall pieces, door heads, the two looks), [FS-KE075](KE075-floor-1-dungeon.md) (a dungeon floor's wall runs and chunked ground) · Related ADRs: [ADR-0020](../adr/0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md) (baked art; the bake's light), [ADR-0021](../adr/0021-characters-are-authored-in-code-not-sourced.md) (art authored in code), [ADR-0036](../adr/0036-buildings-have-an-exterior-and-an-interior.md) (two looks per building), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4; masks only through `maskInView`), [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (colour by token: see R14), [ADR-0074](../adr/0074-a-dungeon-wall-on-a-cell-edge-sorts-by-the-corner-of-its-footprint-away-from-the-cells-it-faces.md) (a dungeon piece's `depthAt` is not its back corner) · Builds on: [FS-XK2B6](XK2B6-walls-on-the-cell-boundary.md) (a dungeon floor's walls on the cell boundary; its §I.27 wall plan is what a dungeon floor casts from) · Vocabulary: no new term; *wall run* is, on a dungeon floor, an **edge run** ([`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) "Wall edge"), and elsewhere a wall as `planWalls` cuts it
 
 > Promoted `--from-thread` on 2026-11-11 from the locked scoping notes: the owner's approved
 > charter "牆影不疊深". Requirements marked **(charter default)** are that charter's, each with its
@@ -8,6 +8,17 @@
 > own; the ones the owner should look at are listed under "Left to the owner". Not challenged:
 > client presentation only, and the owner sees it in the browser before it ships. Code citations
 > are against the working tree at `ccea4130`.
+>
+> **Respecced 2026-11-12** (`write-a-spec`, no interview; the owner said "好" to resuming it) onto
+> [FS-XK2B6](XK2B6-walls-on-the-cell-boundary.md), walls on the cell boundary, which landed on
+> main with ADR-0074 while slices 2–4 were held. What changed: a dungeon floor's walls are the
+> edge runs and posts of `wallPlan`, so a run's foot is the strip from its edge to one thickness on
+> its wall cells' side (R13, R15, R16); a dungeon floor's ground lies under walkable cells only, so
+> a shadow shows only where it falls into a walkable cell (R23), and a north or an east wall's
+> shadow falls behind the wall, where almost none of it is left (Facts, Edge States); a wall's
+> thickness has one client source (R12, R13). The building rules (§F), the art (§B) and the paint
+> rules (§E R19–R22, R24) are unchanged. Code citations in the text changed by this respec are
+> against `75756076`.
 
 ## Summary
 
@@ -47,10 +58,15 @@ of a shipped FS. A slice that finds one of these unavoidable stops and escalates
   h / 2.83 tiles toward world -y (`shadowOf`), which is due screen-right. A back wall
   (`WALL_BACK = 3.6`) casts about 51 world px each way, 81 screen px; a front wall
   (`WALL_FRONT = 1.1`) about 15.5 world px, 25 screen px.
-- **What the client can read.** `src/render/world/bake.ts` mirrors `projection.js` and
-  `dimensions.js`, and `bake.test.ts` imports both and fails on drift. Both are dependency-free.
-  `baker.js` imports three.js, and wall thicknesses are private constants of the three model files,
-  so neither the light nor a wall's thickness can be read that way today.
+- **What the client can read.** `src/render/world/bake.ts` mirrors `projection.js`,
+  `dimensions.js` and, since slice 1, `shadow.js`, which holds the key light, the catcher's colour
+  and opacity, each material's wall foot (`WALL_FOOT`) and the post's (`POST_FOOT`); `bake.test.ts`
+  imports all three and fails on drift. All three are dependency-free; `baker.js` and the three
+  wall models read `shadow.js`. A material's sheets name their `BAKE.WALL_FOOT` entry
+  (`WallSheets.thickness`, `thicknessPx`): the one number the client holds for a wall's thickness,
+  read alike by a dungeon floor's wall plan, its pieces and posts, the fog's slabs and the shadow
+  feet. (Before slice 1 the light was a private constant of `baker.js` and each thickness of its
+  model file.)
 - **Two ways to drop a shadow in the bake.** A sheet with `shadow: false` hides the catcher and is
   framed by its models alone; its parts still shade one another. A mesh with `userData.noShadow`
   casts on nothing, its own piece's faces included (`prep`).
@@ -61,23 +77,48 @@ of a shipped FS. A slice that finds one of these unavoidable stops and escalates
   `post_{back,front}` and the roof pieces; `tower` holds `tower_wall_*`, `tower_post_*`, the tower
   ground, the perimeter, the dressing and the stairs; `building` holds `wall_exterior_*`,
   `tower_wall_exterior_*`, the four door heads, `tower_cap` and the gables.
-- **Where walls are drawn.** `planWalls` (`walls.ts`) cuts a wall into pieces and stands a post at
-  each end; `addWalls` and `addBuildings` (`scene.ts`) place them. A dungeon floor's walls are the
-  runs `wallRuns` gives (`dungeon.ts`), each piece's height from `wallRule`, pieces only between a
-  run's end posts. A village building, and a room on a floor of buildings, is drawn in two looks
+- **Where walls are drawn.** `planWalls` (`walls.ts`) cuts a wall into pieces along its rect's
+  centreline and stands a post at each end; `addWalls` and `addBuildings` (`scene.ts`) place them.
+  A dungeon floor's walls stand on its wall edges (FS-XK2B6): `wallPlan(walls, grid, thicknessPx)`
+  (`dungeon.ts`) gives its edge runs, each with its line, two ends (cell corners), wall side,
+  height and thickness, one height a run (`edgeHeight`), and a post at every corner a run ends at,
+  set half a thickness to the wall side where the walls' thicknesses cross; `dungeonWalls` cuts
+  each run into whole pieces, two per cell, each piece's centre half a thickness into its wall
+  cell, so its face stands on the edge. A dungeon piece's `depthAt` is not always its back corner
+  (ADR-0074): its footprint is `at`, `axis`, `keep` and the thickness. A village building, and a
+  room on a floor of buildings, is drawn in two looks
   (`planBuildings`, `buildingLooks.ts`): south and east walls full height from outside, cut away
   from inside. The Inn's partition is low masonry (`INTERIOR_PARTITION`). A wall of no house is
   drawn full height.
 - **The ground.** `GroundLayer` (`scene.ts`) paints into render textures once and skips a paint
   asked again with the same houses, look and seed. A dungeon floor's ground is 512 px chunks, a
-  chunk's texture made only when a tile falls in it (FS-KE075 §H.44: 71 of 128 chunks, 64.8 MiB on
-  floor 1's fixture); the hub's ground is one texture. A run's walls come once per floor, from the
-  floor map (FS-KE075 §H.43).
+  chunk's texture made only when a tile falls in it (FS-KE075 §H.44), and a ground piece is laid
+  only when the point it is placed by lies on a walkable cell (FS-XK2B6 §E): 65 of the sample
+  floor's 128 chunks have a texture (71 while the shell had ground). A wall cell beyond its walls
+  and the void are the camera's background, `palette.inkDeep`. A piece near a wall may reach a few
+  px past the edge (FS-XK2B6 Edge States). The hub's ground is one texture. A run's walls come once
+  per floor, from the floor map (FS-KE075 §H.43); each dungeon floor gets a new `GroundLayer`
+  (`fitFloor` refits on a new cell grid).
 - **The engine allows the flattening.** Phaser 4.2.1 `DynamicTexture.draw(entries, x, y, alpha)`:
   "The `alpha` and `tint` values are only used by Texture Frames. Game Objects use their own alpha".
   `stamp(key, frame, x, y, { alpha })` draws one texture frame at one alpha, and `erase` cuts a
   shape out (`GroundLayer.fadeEdge` uses it). So shapes drawn opaque into a scratch texture, then
-  that texture drawn once into the ground at 50%, darken each px once. No mask is needed.
+  that texture drawn once into the ground at 50%, darken each px once. No mask is needed. Read
+  again in the installed 4.2.1 on 2026-11-12: `stamp` pushes one command carrying its `alpha`
+  (default 1) and `blendMode` (default 0, normal), and both the WebGL handler
+  (`DynamicTextureHandler`) and the canvas path draw the frame at that alpha.
+  `TextureManager.addDynamicTexture(key, width, height, forceEven)` makes a scratch texture; its
+  `destroy` frees the key. A target reads what a command draws when its own `render()` runs, so a
+  scratch goes only after the ground has rendered.
+- **Where a dungeon wall's shadow falls.** The light throws toward world +x and −y. A back wall on
+  a room's west edge casts 50.9 px east across the room's floor; a cut-away wall on its south edge
+  15.5 px north into the room. A north wall's thickness lies north of the room's edge and its
+  shadow falls further north, at most 60.5 px (50.9 + the 9.6 px thickness) into an 80 px wall
+  cell; an east wall's lies east and casts further east, 25.1 px. Both land on their own wall
+  cells and the void, so in front of them a room's floor shows nothing. Only past a run's end can
+  one reach walkable floor: where the outline steps, the north wall's shadow runs 50.9 px past its
+  east end onto the cell beside it, which the shadow of the step's own west-facing wall already
+  covers. A post's shadow lies within its walls'.
 - **What is seen when.** From outside, a building's roof or cap covers its footprint and never
   fades (FS-9PN7X §B); from inside, the blackout covers everything outside the building (§D.1). A
   dungeon floor has no buildings (FS-KE075 §H.47).
@@ -138,9 +179,18 @@ of a shipped FS. A slice that finds one of these unavoidable stops and escalates
     `bake.test.ts` fails on drift, as for the wall heights. The values are today's: no pixel of any
     sheet changes from this (`npm run bake -- --check` passes with the module in place). No client
     source holds the light or the opacity as a number of its own.
-13. **The foot (spec).** A wall's shadow starts at the foot of the wall as drawn: its centreline,
-    as thick as the bake builds that material's piece; a post's foot is its square. Those sizes are
-    defined once in the bake and mirrored the same way.
+13. **The foot (spec, respecced 2026-11-12).** A wall's shadow starts at the ground the wall as
+    drawn stands on. A wall `planWalls` cuts stands on a strip centred on its rect's centreline, as
+    thick as the bake builds that material's piece. A dungeon floor's edge run stands on the strip
+    from its edge line to one thickness on its wall cells' side, from one end of the run to the
+    other (FS-XK2B6 R2, R27). A post's foot is its square, centred where it stands (on a dungeon
+    floor, where its walls' thicknesses cross). These sizes are defined once in the bake
+    (`shadow.js`) and mirrored once in `BAKE`; a wall's thickness is read through its material's
+    sheets (`WallSheets.thickness`), which name their `BAKE.WALL_FOOT` entry, so the wall plan, the
+    pieces, the fog and the shadow can never disagree on it. Reason: FS-XK2B6 R2 put a thickness
+    beside each material's sheets while slice 1 put the same number in `BAKE`; the bake owns it
+    (the art is rendered from the model that reads it), and the client keeps one mirror of it with
+    the other bake facts `bake.test.ts` holds equal.
 14. **Black, as the bake's (spec).** The shadow is the catcher's colour, black, at the catcher's
     opacity. It is carried in `BAKE` as a fact of the bake, not added to the palette. Reason: baked
     and painted shadows must be one colour, and `pitch` at 50% is lighter than black at 50%.
@@ -148,13 +198,16 @@ of a shipped FS. A slice that finds one of these unavoidable stops and escalates
 ### D. Shape
 
 15. **One shadow per run (charter default).** Each wall run casts one shape, never one per piece: on
-    a dungeon floor a run of `wallRuns` between its end posts, elsewhere a wall as `planWalls` cuts
-    it. Reason: a joint inside a run is then never painted twice. **(spec)** The shape is the ground
-    outline of the foot swept along the light to the wall's top: the convex hull of the foot and the
-    foot moved by R11's offset for its height. A run whose pieces differ in height casts one such
-    shape per stretch of equal height.
-16. A post casts the same way from its own foot and height.
-17. A wall that ends part-way along a tile casts to where it ends, as its last piece is trimmed.
+    a dungeon floor an edge run of `wallPlan` (FS-XK2B6 R3), from end to end; elsewhere a wall as
+    `planWalls` cuts it. Reason: a joint inside a run is then never painted twice. **(spec)** The
+    shape is the ground outline of the foot swept along the light to the wall's top: the convex
+    hull of the foot and the foot moved by R11's offset for its height. A run whose pieces differ in
+    height casts one such shape per stretch of equal height; a dungeon floor's edge run is one
+    height, so it casts one.
+16. A post casts the same way from its own foot and height: on a dungeon floor one post per corner
+    a run ends at, as tall as the tallest run ending there (FS-XK2B6 R4).
+17. A wall that ends part-way along a tile casts to where it ends, as its last piece is trimmed. (A
+    dungeon floor's runs are whole cells, never trimmed.)
 18. **Hard edges (charter default).** No blur, feather or gradient in v1. Reason: the owner will
     look and decide on softening.
 
@@ -174,8 +227,13 @@ of a shipped FS. A slice that finds one of these unavoidable stops and escalates
     ground already painted, without repainting its tiles (FS-KE075 §H.44's "painted once" holds).
     A ground that is repainted (another look, seed or set of houses) gets its shadows again; the
     same ground never gets them twice.
-23. **Only on ground (spec).** On a dungeon floor no shadow is painted on void, and a shadow never
-    makes a chunk's texture: the chunks that have one, and their memory, are as before.
+23. **Only on ground (spec, respecced 2026-11-12).** On a dungeon floor a shadow shows only where
+    it falls into a walkable cell: what falls on a wall cell or the void is cut at the walkable
+    cells' edge, since no ground lies there (FS-XK2B6 §E) and black at 50% would show on the
+    background. The cut is made in the scratch surface, before it is laid on the ground, so a
+    shadow over several walkable cells is still drawn as one shape, with no seam between cells. A
+    shadow never makes a chunk's texture: the chunks that have one, and their memory, are as
+    before.
 24. **Still, under everything (charter default).** A wall fading over the player does not fade its
     shadow. The fog, the light-map and the ground's tint lie over the shadows as over the ground.
     Reason: the shadow is ground now.
@@ -205,6 +263,9 @@ Decided here so the work can proceed, each cheap to change:
   could carry it instead (it already carries the tile), at the cost of a manifest field.
 - R14, the shadow is black, a fact of the bake rather than a palette token.
 - R5, door heads lose their baked shadow with the walls.
+- On a dungeon floor a room's north and east walls cast nothing onto the floor in front of them:
+  their shadows fall behind them, on void (Facts, R23). That is the light's direction and the
+  walls' new place, not a choice; the owner sees it at the browser check.
 - No contact shadow is added at a wall's foot. The painted shadow starts at the foot on the lee
   side; the lit side (south and west faces) has nothing on the ground, where today a soft fringe of
   a few px showed. Whether the look needs one is judged at the browser check.
@@ -252,12 +313,15 @@ Plan (pure, tested):
       `BAKE`'s light: 3.6 gives 50.9 world px each way (81.4 screen px, due right), 1.1 gives 15.5.
 - [ ] A run of n pieces of one height gives one shape, whatever n; a run of two heights gives one
       shape per stretch.
-- [ ] A shape is the convex hull of the foot and the foot moved by the offset; the foot is the
-      run's centreline between its ends, as thick as `BAKE` says for its material.
+- [ ] A shape is the convex hull of the foot and the foot moved by the offset.
+- [ ] A wall `planWalls` cuts stands on a foot centred on its centreline, between its ends, as
+      thick as its material's sheets say (`BAKE.WALL_FOOT`).
 - [ ] Every post of `planWalls` gives one shape from its square foot and its own height.
 - [ ] A wall 2.75 tiles long casts from a foot 2.75 tiles long.
-- [ ] A dungeon floor's shapes come from `wallRuns` and `wallRule`: none from a piece outside its
-      run's end posts.
+- [ ] A dungeon floor's shapes come from `wallPlan` and `dungeonWalls`: on the sample floor, exactly
+      one foot per edge run, the strip from its edge line to one thickness on its wall cells' side
+      between its two ends, and one square per post of the plan, where its walls' thicknesses
+      cross.
 - [ ] For a building: no exterior-look shape reaches inside the footprint and no interior-look
       shape reaches outside it; outside, the shape of a wall with a door gap is unbroken across the
       gap; inside, the gap casts nothing.
@@ -273,8 +337,11 @@ Paint:
 - [ ] A shape lying across two chunks is drawn into both from the same screen px.
 - [ ] Painting shadows does not clear a ground texture or stamp a ground tile; asking for the same
       walls' shadows again paints nothing; a ground repaint paints them once more.
-- [ ] On floor 1's fixture the chunks with a texture are the same 71 before and after, and no
-      shadow is painted in a void cell.
+- [ ] On the sample floor the chunks with a texture are the same 65 before and after, and no
+      shadow px is laid on a wall cell or the void: every px a shadow covers is in a walkable
+      cell.
+- [ ] Every shadow over walkable cells is laid whole: the cut takes only what lies on a wall cell
+      or the void.
 - [ ] A fading occluder changes no ground texture.
 - [ ] Without the wall sheets (placeholder walls) or without the ground's art, no wall shadow is
       painted and nothing fails.
@@ -285,7 +352,8 @@ Light:
       are each defined once under `tools/bake/page/` in a dependency-free module; `baker.js` and the
       wall models read them; `bake.test.ts` holds `BAKE` equal to them.
 - [ ] No source under `src/` holds 2.83, the shadow's 0.5 or a wall thickness as its own number
-      outside `BAKE`.
+      outside `BAKE`; each material's sheets name their `BAKE.WALL_FOOT` entry, and a test holds
+      each equal to `shadow.js` and each wall model building with it.
 
 Art:
 
@@ -300,7 +368,9 @@ Art:
 
 By eye (owner, browser, and the review sheets):
 
-- [ ] On floor 1, along a wall running along world y: one even shadow, no stripes.
+- [ ] On floor 1, along a room's west wall (running along world y): one even shadow, no stripes;
+      along its south wall a short one; its north and east walls cast nothing onto the floor in
+      front of them.
 - [ ] At an inside corner and at a post: no darker patch.
 - [ ] A chest or a brazier beside a wall: its shadow falls the same way as the wall's.
 - [ ] In the village: each house's shadow outside, even, unbroken past its door; inside a house,
@@ -314,13 +384,22 @@ By eye (owner, browser, and the review sheets):
 
 - **Between slices.** Client shadows with the old art darken every wall twice (baked and painted);
   new art without the client shadows leaves walls with none. Neither ships: the slices merge as one
-  branch.
+  branch. On a dungeon floor slice 2 alone shows it: where a west or a south wall's painted shadow
+  lies, the old baked strip under each piece is still in the sprite, so that floor is darkened
+  twice, and the stripes are still there under it.
 - **A baked shadow on a painted one.** A chest's, a door leaf's or a brazier's baked shadow lying
   in a wall's shadow adds to it, as it does today (R3).
-- **A shadow reaching void.** Cut off at the ground's edge (R23): a back wall's shadow falls north
-  and east, onto the shell behind the wall, and stops where the shell does.
+- **A shadow reaching void.** Cut at the walkable cells' edge (R23). On a dungeon floor there is no
+  shell ground any more (FS-XK2B6 §E): a north or an east wall's shadow falls behind the wall and
+  is cut whole, and a west wall's stops where its room or corridor ends, at the next wall cell.
+- **A ground piece past an edge.** A ground piece laid by a walkable cell may reach a few px past
+  the edge into a wall cell (FS-XK2B6 Edge States). The shadow is cut at the edge, so that sliver
+  carries none; it lies under the wall's own thickness, behind its face.
 - **A shadow falling under another wall.** Painted on the ground; the wall's sprite stands over it.
-- **A run one cell long.** A one-cell wall keeps its pieces (`withinPosts`), and casts as any run.
+- **A run one cell long.** Two pieces between two posts (FS-XK2B6), one shape as any run.
+- **A straight wall that changes height.** Two runs and a post on the wall's line between them
+  (FS-XK2B6 R4): a back run's shadow and a front run's meet under the post, which casts as the
+  taller; the overlap is opaque in the scratch, so it is no darker.
 - **Walls before ground, ground before walls.** The dungeon's ground is painted before its walls
   are built; the shadows are added when the walls are (R22). The hub and a floor of buildings paint
   the ground for their houses and add the shadows in the same step.
