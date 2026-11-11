@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
+import { HUD_DEPTH, MARKER_DEPTH } from "@/render/markers/markers";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { CardInk } from "@/render/effects/cardDust";
 import { ARRIVAL_CARD, ArrivalCard, CARD_LAYOUT, type ArrivalCardScene, type CardDustPlayer } from "./arrivalCard";
@@ -117,15 +118,23 @@ afterEach(() => {
 });
 
 describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
-  it("should name the climb's five timings and its depth, as they are today (R10, R15)", () => {
+  it("should name the climb's five timings, as they are today, and its depth (R10, R15)", () => {
     expect(ARRIVAL_CARD).toEqual({
-      depth: 950,
+      depth: 960,
       darkHoldMs: 250,
       cardFadeMs: 300,
       viewReturnMs: 900,
       cardHoldMs: 1400,
       cardLeaveMs: 600,
     });
+  });
+
+  // Phaser draws equal depths in the order they were made: a name plate made after the dark at the
+  // dark's own depth would stand over it, so the dark is over every marker, not level with one
+  it("should stand the dark over the world's markers and the card under the HUD (R11, R15)", () => {
+    expect(ARRIVAL_CARD.depth).toBeGreaterThan(MARKER_DEPTH.name);
+    expect(ARRIVAL_CARD.depth).toBeGreaterThan(MARKER_DEPTH.bar);
+    expect(ARRIVAL_CARD.depth + 1).toBeLessThan(HUD_DEPTH);
   });
 
   it("should put the dark over the whole view, over the world and under the HUD (R15)", () => {
