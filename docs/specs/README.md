@@ -7,7 +7,7 @@ Tier-2 detailed specs for our **two-tier spec system**.
 - **Tier 1 — `SPECIFICATION.md`** (thin, living, always-loaded): the current truth of what the system does. One line per capability, grouped by bounded context, each with a status checkbox and a pointer to its feature spec, e.g.
   `- [x] Drag-reorder in tree view → FS-0042`
   Hard budget ~200–300 lines. When a section bloats past budget, that signals a bounded context wants its own file — the spec does not grow. (In a multi-service repo, specs are per-service under `<service>/SPECIFICATION.md`; the feature specs in this folder are the shared, globally-identified work orders.)
-- **Tier 2 — feature specs (this folder)** (deep, write-once, loaded only when working that feature).
+- **Tier 2 — feature specs (this folder)** (deep, append-only, loaded only when working that feature).
 
 ## Thin line format (tier-1 authority)
 
@@ -23,6 +23,10 @@ A thin line is a **capability name and an address — nothing more.**
   headers (`### Planned`, `### Implemented`). Status lives in the checkbox only: `[x]`
   shipped, `[ ]` not.
 - Length guide: if the line wraps, it's carrying FS content.
+- **The splinter clause:** a line names a capability — what the system does, at the altitude
+  where any retuning or re-skinning leaves it true. Instances (a template, a theme, a locale) are
+  **content**; parameters and rates are **tuning**; neither is a line. **The test:** "if we
+  retune or re-skin this ten times, does the line survive?"
 
 ```
 GOOD  - [ ] Welcome splash for logged-out users → FS-0001
@@ -31,6 +35,10 @@ FAT   - [ ] Welcome splash (logged-out only): light white / dark-purple landing
         with a hero (logo + tagline), a feature-highlights row, and Sign up /
         Start creating / Log in CTAs; logged-in users skip it → FS-0001
         (every detail here belongs in FS-0001's scoping notes)
+SPLINTER - [ ] Retry delay rising with each attempt → FS-0003
+        (tuning or a behavior change on the owning retries capability)
+SPLINTER - [ ] Holiday banner look → FS-0004
+        (content under the system that owns looks)
 ```
 
 **Every writer of thin lines obeys this:** `scope-it` (at lock), `write-a-spec` (the stub line
@@ -65,6 +73,42 @@ the capability.
 
 > This is the **common** case, not an edge case. Every repo adopting this system on an existing
 > codebase hits it immediately — via `spec-bootstrap` if not via a deliberate retrofit.
+
+### Removal: strike, then delete
+
+Retiring a shipped capability is work like any other, so it gets a work order. At lock, strike
+the line and repoint it at the removal FS; the checkbox now tracks the *removal*:
+
+```
+- [ ] ~Board deletion~ → removed FS-B          (gone)
+- [ ] ~Board deletion~ → superseded by FS-C    (replaced; FS-C has its own line)
+```
+
+A removal FS names the FS it retires and carries **absence-shaped** acceptance criteria
+("no delete control renders", "`DELETE /boards/:id` → 404"). On ship the struck line is
+**deleted**, never checked: this file holds current truth, the FS pair is the permanent record.
+Behavior no live line claims (directly or via its FS's `§API surface`) is dead code, not a
+capability: delete it without ceremony.
+
+### The five-bin sorter (lock time)
+
+**The ownership check comes first: does a line already own this?** Search the thin specs of every
+service the work touches, by what the capability does rather than by this session's wording. Then
+each item lands in exactly one bin:
+
+| Bin | Test | Line | FS |
+|---|---|---|---|
+| **New capability** | no line owns it, and it passes the splinter test | new | new |
+| **Behavior change** | an owning FS's acceptance criteria change | unchanged | `## Change: <name>` appended to the **owning** FS |
+| **Tuning** | no acceptance criterion changes, and the owning FS names the tunable | unchanged | none |
+| **Content** | a data entry under an existing system | none | none |
+| **Removal** | the capability is retired | struck | removal FS (above) |
+
+Tuning is legal only when the owning FS names the tunable. If it doesn't, naming it is a behavior
+change; on an `FS-none` owner, the first tune births the FS and names it (see *The FS ledger*). An
+instance that needs behavior its system can't express isn't content either: it's a behavior change
+on that system, or a new capability if no system owns it. Either way the line names the system
+(`Export formats`), never the instance (`CSV export`); the instance is named in the FS body.
 
 ## Numbering & references
 
@@ -129,13 +173,43 @@ Every FS file carries a status in its header: `Status: draft | work-order | ship
 
 - **`draft`** — created by `scope-it` at lock time. Contains ONLY the header (number, name, thin-line backlink) and one section, `## Scoping notes (raw)`: the session residue (decisions + rationale, rejected alternatives, edge cases raised, constraints referenced, open questions). Not a template, not polished. Valid input for `write-a-spec` and humans; **not** a valid anchor for implementation.
 - **`work-order`** — produced by `write-a-spec`'s promotion: the full template (Summary / Requirements / User Stories / Acceptance Criteria / Edge States / Out of Scope), with the raw notes folded in or deleted. The only status `develop` and `spec-to-issues` accept.
-- **`shipped`** — frozen on merge (`spec-update` flips it alongside the checkbox). Supersede, never edit (see below).
+- **`shipped`** — frozen on merge (`spec-update` flips it alongside the checkbox). Append, never edit (see below).
 
-**One writer per document state:** `scope-it` creates drafts and writes only the notes section; `write-a-spec` owns promotion and all content thereafter; `spec-update` flips `shipped`. No other skill writes FS files.
+**One writer per document state:** `scope-it` creates drafts (a new FS, or a `draft` `## Change:` section on an existing one) and an `FS-none` owner's birth file, and writes only the notes and the `## As built` paragraph; `write-a-spec` owns promotion and all content thereafter; `spec-update` flips `shipped` (header or section) and writes a retired FS's `Superseded by:` header line. No other skill writes FS files.
 
-## Write-once rule
+## The FS ledger
 
-Feature specs are **work orders, not living documents**. Once the feature ships, the durable truth is the one line in `SPECIFICATION.md`; the FS file becomes a historical record, exactly like an ADR. **Never retro-edit a shipped FS** — write a new one that supersedes it, noting the superseding/superseded FS numbers in both.
+**One capability ↔ one FS, for life.** The FS is that capability's ledger: its original work order, then every design change since, in order. Lines are per-service facets of the capability: each service's line points at the same FS.
+
+The header `Status:` walks the lifecycle above once and stays `shipped`. Each later change appends its own section with its own status:
+
+```markdown
+## Change: <name>
+Status: draft | work-order | shipped
+Date: YYYY-MM-DD
+```
+
+- A `draft` section holds only its scoping notes. A `work-order` section carries the requirements, acceptance criteria, edge states, and out-of-scope for this change alone.
+- The line's checkbox stays `[x]` while a change is open: the capability still ships. In-flight state lives in the section's `Status:` and the tracker.
+- **A change spanning several capabilities gets its own change FS**, which has no thin line of its own. Each owning FS gets a one-line pointer stub and no status: `## Change: <name> → FS-XXXXX`.
+- **An `FS-none` owner has no ledger yet.** Its FS is born on first touch, with header `Status: shipped` (the as-built base). A behavior change becomes its first `## Change:` section. A first tune births it with a one-paragraph `## As built` section naming the tunable, then `Tunes FS-X` proceeds with the values-only check. A retrofit adding a distinct property still follows the two-line rule above.
+
+### Anchors
+
+| Anchor | Means | Valid when |
+|---|---|---|
+| `Implements FS-X §<section>` | builds the original work order | header is `work-order` |
+| `Implements FS-X §Change: <name>` | builds that change | that section is `work-order`; the header is ignored |
+| `Tunes FS-X` | changes values or data only | FS-X names the tunable; FS-X may be `shipped` |
+| `Content: FS-X` | adds a data entry under the system FS-X owns | FS-X may be `shipped` |
+
+### Supersession is for lines only
+
+A capability replaced: strike its line and add a new one. A capability removed: strike its line. Both follow *Removal* above. A design change within a capability is a `## Change:` section, never a new FS.
+
+## Write-once rule: never edit existing text
+
+Feature specs are **ledgers of work orders, not living documents**. Once the feature ships, the durable truth is the one line in `SPECIFICATION.md`; the FS file is its historical record. **Never edit existing text** — append a dated `## Change:` section. Only `Status:` lines move, and a section still in `draft` belongs to its writer until promotion.
 
 ## Division of checking labor
 
