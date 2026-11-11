@@ -75,8 +75,9 @@ var hubGates = []hubGate{
 // What stands inside a building, its furnishings here and its fixed residents in
 // hubFixedResidents, is placed in absolute world coordinates, not relative to
 // the building: moving a building means moving each of them with it. The client
-// mirrors all three by hand, held to hubTown.golden.json by
-// hub_town_golden_test.go (rewrite it with -update).
+// mirrors all three by hand, and its door spurs follow each door gap by hand,
+// all held to hubTown.golden.json by hub_town_golden_test.go (rewrite it with
+// -update).
 type hubBuilding struct {
 	Name       string
 	X, Y, W, H float64
@@ -266,7 +267,7 @@ func (s *Session) InitialHubMapObjects() {
 // client rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12.
 func (s *Session) addHubBuilding(building hubBuilding) {
 	houseID := uuid.New()
-	westOfDoor := (building.W-hubDoorWidth)/2 + building.DoorShift
+	westOfDoor := doorGapWest(building)
 	eastOfDoor := building.W - westOfDoor - hubDoorWidth
 	southY := building.Y + building.H - hubWallThickness
 
@@ -291,6 +292,12 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 	for _, wall := range walls {
 		CreateWallEntity(s.EntityManager, wall, houseID)
 	}
+}
+
+// doorGapWest is how far a building's door gap stands from its west edge:
+// centred in the south wall, then shifted as the building says.
+func doorGapWest(building hubBuilding) float64 {
+	return (building.W-hubDoorWidth)/2 + building.DoorShift
 }
 
 // partitionWalls is a building's partition as walled: north edge to south edge,
