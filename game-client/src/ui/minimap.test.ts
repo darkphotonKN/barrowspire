@@ -188,14 +188,16 @@ const inkAlpha = (colour: string) => {
   return colour === rgba(palette.inkDeep, a) ? a : NaN;
 };
 
-describe("minimapRect (§E.20, §E.21)", () => {
-  it("should hang 216 × 108 from 6 px under the floor indicator, its right edge on the column's", () => {
-    expect(minimapRect(1070, 98)).toEqual({ x: 854, y: 104, width: 216, height: 108 });
+// FS-56CKV §B.9 supersedes FS-SRA9J §E.20 in part: the minimap is the column's first part, its top
+// the column's top; the floor indicator stands `gap` under it
+describe("minimapRect (§E.20, §E.21; FS-56CKV §B.9)", () => {
+  it("should hang 216 × 108 from the column's top, its right edge on the column's", () => {
+    expect(minimapRect(1070, 44)).toEqual({ x: 854, y: 44, width: 216, height: 108 });
     expect(MINIMAP).toMatchObject({ width: 216, height: 108, gap: 6 });
   });
 
   it("should land on whole logical px, so its rim is crisp at any render scale", () => {
-    const r = minimapRect(1069.6, 97.4);
+    const r = minimapRect(1069.6, 43.6);
     for (const v of [r.x, r.y]) expect(Number.isInteger(v)).toBe(true);
   });
 });
@@ -269,12 +271,13 @@ describe("Minimap (§E.19–25)", () => {
 
   it("should stand every layer where it is placed, and move them without a redraw", () => {
     const { map, made, images, show } = mapped();
-    map.place(minimapRect(1070, 98));
+    // at the column's top (FS-56CKV §B.9)
+    map.place(minimapRect(1070, 44));
     show([IN_ROOM]);
     const redraws = map.redraws;
-    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(854, 104)));
-    map.place(minimapRect(1270, 98));
-    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(1054, 104)));
+    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(854, 44)));
+    map.place(minimapRect(1270, 44));
+    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(1054, 44)));
     expect(map.redraws).toBe(redraws);
   });
 
