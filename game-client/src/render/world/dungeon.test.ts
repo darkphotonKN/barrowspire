@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { FloorRegion, WallState } from "@/types/gameState";
 import { FIXTURE, GOLDEN, fixtureFrom, format } from "../../../tools/fixtures/dungeon-fixture.mjs";
+import * as shadow from "../../../tools/bake/page/shadow.js";
 import {
   RegionGrid,
   dressingRooms,
@@ -101,20 +102,20 @@ const wallCells = (walls: readonly WallState[]) =>
     return cells;
   });
 
-describe("a wall material's thickness (FS-XK2B6 §A.2)", () => {
-  /** The number a bake model declares, read from its source: the client's is a mirror of it. */
-  const baked = (model: string, name: string) => {
-    const source = readFileSync(new URL(`../../../tools/bake/page/models/${model}.js`, import.meta.url), "utf8");
-    return Number(new RegExp(`^const ${name} = ([\\d.]+);`, "m").exec(source)?.[1]);
-  };
+describe("a wall material's thickness (FS-XK2B6 §A.2, FS-V8FT3 §C R13)", () => {
+  /** A bake model's source: its wall's thickness is a name there, never a number of its own. */
+  const model = (name: string) =>
+    readFileSync(new URL(`../../../tools/bake/page/models/${name}.js`, import.meta.url), "utf8");
 
   it.each([
-    ["the tower's masonry", MASONRY_WALLS, 0.24, 9.6, "tower", "P_THICK"],
-    ["the timber wall", TIMBER_WALLS, 0.18, 7.2, "architecture", "THICK"],
-  ] as const)("%s is %s tile thick, %s world px, as its bake model is", (_name, sheets, tiles, px, model, constant) => {
+    ["the tower's masonry", MASONRY_WALLS, "masonry", 0.24, 9.6, "tower", "P_THICK"],
+    ["the timber wall", TIMBER_WALLS, "timber", 0.18, 7.2, "architecture", "THICK"],
+  ] as const)("%s is as thick as the bake builds it (tools/bake/page/shadow.js)", (_name, sheets, material, tiles, px, file, constant) => {
+    expect(sheets.thickness).toBe(shadow.WALL_FOOT[material]);
     expect(sheets.thickness).toBe(tiles);
     expect(thicknessPx(sheets)).toBeCloseTo(px, 9);
-    expect(baked(model, constant)).toBe(tiles);
+    // the model the sheets are rendered from builds its wall with that same number
+    expect(model(file)).toMatch(new RegExp(`^const ${constant} = WALL_FOOT\\.${material};`, "m"));
   });
 });
 

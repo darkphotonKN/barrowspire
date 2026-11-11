@@ -8,11 +8,12 @@ import { color, cssRgb, grey, mix, shade } from "../palette.js";
 import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../materials.js";
 import { part } from "./util.js";
 import { ROOF_RISE, WALL_BACK, WALL_FRONT } from "../dimensions.js";
+import { POST_FOOT, WALL_FOOT } from "../shadow.js";
 
 /** Wall and roof heights live in ../dimensions.js, which the client's parity test reads. */
 export { ROOF_RISE, WALL_BACK, WALL_FRONT };
-/** Wall thickness and the overlap that hides the seam between neighbouring pieces. */
-const THICK = 0.18;
+/** Wall thickness (../shadow.js) and the overlap that hides the seam between neighbouring pieces. */
+const THICK = WALL_FOOT.timber;
 const LENGTH = 1.024;
 
 /** Torch sconce flame position on a back wall, model space (for the manifest light). */
@@ -220,7 +221,7 @@ export function wallPiece(H, variant, axis, seed) {
 export function post(H) {
   const M = materials();
   const g = new THREE.Group();
-  g.add(part(new THREE.BoxGeometry(0.24, H + 0.12, 0.24), M.beam, { y: (H + 0.12) / 2 }));
+  g.add(part(new THREE.BoxGeometry(POST_FOOT, H + 0.12, POST_FOOT), M.beam, { y: (H + 0.12) / 2 }));
   g.add(part(new THREE.BoxGeometry(0.3, 0.08, 0.3), M.cap, { y: H + 0.16 }));
   return g;
 }

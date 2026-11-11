@@ -10,7 +10,9 @@
  * A scene draws both and shows one per building.
  */
 
-import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso";
+// by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure
+// (`wallShadows` plans a building's shadows from it)
+import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
 import { tileHash } from "./ground";

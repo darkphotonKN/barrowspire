@@ -179,6 +179,7 @@ import {
   planDressing,
   tileHash,
   footprintHitArea,
+  hasWallArt,
   housesFrom,
   insideHouse,
   paintDropPile,
@@ -201,6 +202,7 @@ import {
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
+import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
@@ -2701,8 +2703,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
       const houses = housesFrom(walls);
       // flagstone (or planks) under each house, painted into this floor's baked ground
-      // (FS-2325V §C.1, FS-8RBQY §C.3)
+      // (FS-2325V §C.1, FS-8RBQY §C.3), and the walls' shadows over it in the same step: those of
+      // the walls known now, as the floors are (FS-V8FT3 §F R29, Edge States)
       this.groundLayer?.paint(houses, { look: look.ground, seed: look.seed });
+      if (hasWallArt(this.art, look.walls))
+        this.groundLayer?.shade({ shapes: buildingWallShadows(walls, look.seed, look.walls), cuts: [] });
 
       houses.forEach((house, buildingIndex) => {
         const { x: minX, y: minY, width: bw, height: bh } = house;
@@ -3852,7 +3857,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * (`wallPlan`), each piece at its edge's height, the full pieces and posts fading over the
    * player like any occluder; a light only on a back edge facing a room. No building is drawn, no
    * blackout and no roof: every piece stands in its ground chunk, shown only near the camera
-   * (§H.45). The ground takes the floor's look and seed.
+   * (§H.45). The ground takes the floor's look and seed, and, under baked walls, the walls'
+   * shadows, painted flat into it where it lies (FS-V8FT3 §E): a wall sprite fading over the
+   * player leaves its shadow as it is.
    */
   private buildDungeonWalls(walls: readonly WallState[]): void {
     const dungeon = this.dungeon!;
@@ -3862,6 +3869,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = wallPlan(walls, dungeon.grid, thickness);
     const planned = dungeonWalls(plan, dungeon.grid, look.seed, look.walls);
     const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
+    // placeholder walls never had a shadow (FS-V8FT3 Out of Scope)
+    if (baked) this.groundLayer?.shade(dungeonShadows(planned, thickness, dungeon.grid));
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13), its
     // slabs and posts standing where the plan draws them (FS-XK2B6 §F)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;

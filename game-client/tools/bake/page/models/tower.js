@@ -7,8 +7,9 @@
 // Partition pieces stand in for today's timber `wall_*`/`post_*` (architecture.js) through the
 // same cutWall geometry, so each one carries the timber piece it replaces as an invisible frame
 // guide: the bake frames a sheet by its models' bounds, and the guide pins those bounds, so a
-// tower piece's frame size and anchor equal the timber piece's. Everything visible stays inside
-// the guide's bounds and its shadow's.
+// tower piece's frame size and anchor equal the timber piece's. A partition piece and post bake
+// no ground shadow (the client paints a wall's, FS-V8FT3 §B), so everything visible stays inside
+// the guide's own bounds.
 
 import * as THREE from "three";
 import { fbm, hash2, rng, smoothstep, vnoise, vnoise3 } from "../noise.js";
@@ -16,11 +17,12 @@ import { color, cssRgb, grey, mix, normalized, shade } from "../palette.js";
 import { canvasTexture, glow, materials, mkCanvas, pixelTexture, plain, textured } from "../materials.js";
 import { part, rod, scaled, V3 } from "./util.js";
 import { post, SCONCE_FLAME, wallPiece } from "./architecture.js";
+import { POST_FOOT, WALL_FOOT } from "../shadow.js";
 
 /** A piece is one tile along its axis plus the hair of overlap the timber pieces use. */
 const LENGTH = 1.024;
-/** Partition masonry depth: inside the timber cap's 0.26, which bounds the frame. */
-const P_THICK = 0.24;
+/** Partition masonry depth (../shadow.js): inside the timber cap's 0.26, which bounds the frame. */
+const P_THICK = WALL_FOOT.masonry;
 /** The outer wall: thicker and taller than a partition. */
 export const PERIMETER_BACK = 4.6;
 export const PERIMETER_FRONT = 0.78;
@@ -488,8 +490,10 @@ export function partitionWall(H, variant, axis, seed) {
     // a web draped in the top corner of the piece and a smaller one at its far end
     const big = new THREE.PlaneGeometry(0.62, 0.7);
     g.add(part(big, T.web, { x: -LENGTH / 2 + 0.31, y: H - 0.35, z: P_THICK / 2 + 0.005 }));
+    // turned a quarter, so it spans 0.36 along the piece: it ends at the piece's end, inside the
+    // frame guide (with no ground shadow, the guide alone frames the piece: FS-V8FT3 R7)
     const small = new THREE.PlaneGeometry(0.34, 0.36);
-    g.add(part(small, T.web, { x: LENGTH / 2 - 0.17, y: H - 0.2, z: P_THICK / 2 + 0.005, rz: -Math.PI / 2 }));
+    g.add(part(small, T.web, { x: LENGTH / 2 - 0.18, y: H - 0.2, z: P_THICK / 2 + 0.005, rz: -Math.PI / 2 }));
   }
   // the timber piece this one replaces, as the frame guide
   g.add(guide(wallPiece(H, "plain", "x", 1)));
@@ -503,7 +507,7 @@ export function partitionPost(H) {
   const g = new THREE.Group();
   const face = stoneMat(masonry(36, Math.round(PX * (H + 0.12)), { key: 5400, block: [36, 36], course: [24, 34], flaws: 0 }));
   // a 0.24 core to the ground (the timber post's footprint), the pier proper lifted a hair
-  g.add(part(new THREE.BoxGeometry(0.24, 0.05, 0.24), T.block, { y: 0.025 }));
+  g.add(part(new THREE.BoxGeometry(POST_FOOT, 0.05, POST_FOOT), T.block, { y: 0.025 }));
   g.add(part(new THREE.BoxGeometry(0.28, H + 0.08, 0.28), [face, face, T.cap, T.cap, face, face], { y: 0.04 + (H + 0.08) / 2 }));
   g.add(part(roughBox(0.3, 0.08, 0.3, 77, 0.06), T.cap, { y: H + 0.16 }));
   g.add(guide(post(H)));

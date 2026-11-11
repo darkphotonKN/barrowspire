@@ -715,3 +715,5 @@ themselves (this FS only avoids adding to them).
 ## Change: Arrival card → FS-PQ2TW
 
 ## Change: Walls on the cell boundary → FS-XK2B6
+
+## Change: Wall shadow layer → FS-V8FT3

@@ -155,6 +155,14 @@ function natureSheets() {
   ];
 }
 
+/**
+ * A wall's ground shadow is not in its sprite: the client paints wall shadows into the ground,
+ * flat, one per run, so a joint is never darkened twice (FS-V8FT3 §B R4, R5). Wall pieces, posts,
+ * exterior pieces and door heads of both materials bake without the catcher; their parts still
+ * shade one another (R6), and their frame is their models' own (R7).
+ */
+const PAINTED_SHADOW = { shadow: false };
+
 const WALL_LIGHTS = {
   back: {
     torch: { at: SCONCE_FLAME, radius: 220, color: "amber", flicker: 0.6 },
@@ -182,6 +190,7 @@ function architectureSheets() {
           animations: { variants: still(...[1, 6].map((seed) => () => wallPiece(H, variant, axis, seed + (H > 2 ? 0 : 2)))) },
           light: light && { ...light, at: onAxis(light.at, axis) },
           source: src("models/architecture.js", "wallPiece"),
+          ...PAINTED_SHADOW,
         });
       }
   for (const [height, H] of [
@@ -194,6 +203,7 @@ function architectureSheets() {
       kind: "prop",
       animations: { default: still(() => post(H)) },
       source: src("models/architecture.js", "post"),
+      ...PAINTED_SHADOW,
     });
   sheets.push({
     name: "roof_slope",
@@ -451,10 +461,10 @@ function towerSheets() {
           "models/tower.js",
           "partitionWall",
           { variants: still(...[1, 6].map((seed) => () => partitionWall(H, variant, axis, seed + (H > 2 ? 0 : 2)))) },
-          light ? { light: { ...light, at: onAxis(light.at, axis) } } : {},
+          light ? { light: { ...light, at: onAxis(light.at, axis) }, ...PAINTED_SHADOW } : PAINTED_SHADOW,
         );
       }
-    tower(`tower_post_${height}`, "models/tower.js", "partitionPost", { default: still(() => partitionPost(H)) });
+    tower(`tower_post_${height}`, "models/tower.js", "partitionPost", { default: still(() => partitionPost(H)) }, PAINTED_SHADOW);
   }
 
   for (const variant of ["plain", "slit"])
@@ -648,18 +658,25 @@ function buildingSheets() {
   for (const axis of ["x", "y"]) {
     for (const variant of ["plain", "brace", "window"])
       sheets.push(
-        sheet(`wall_exterior_${variant}_${axis}`, "timberExterior", {
-          variants: still(...[2, 7].map((seed) => () => timberExterior(variant, axis, seed))),
-        }),
+        sheet(
+          `wall_exterior_${variant}_${axis}`,
+          "timberExterior",
+          { variants: still(...[2, 7].map((seed) => () => timberExterior(variant, axis, seed))) },
+          PAINTED_SHADOW,
+        ),
       );
     for (const variant of ["plain", "pillar"])
       sheets.push(
-        sheet(`tower_wall_exterior_${variant}_${axis}`, "masonryExterior", {
-          variants: still(...[2, 7].map((seed) => () => masonryExterior(variant, axis, seed))),
-        }),
+        sheet(
+          `tower_wall_exterior_${variant}_${axis}`,
+          "masonryExterior",
+          { variants: still(...[2, 7].map((seed) => () => masonryExterior(variant, axis, seed))) },
+          PAINTED_SHADOW,
+        ),
       );
-    sheets.push(sheet(`door_head_${axis}`, "doorHead", { default: still(() => doorHead("timber", axis)) }));
-    sheets.push(sheet(`tower_door_head_${axis}`, "doorHead", { default: still(() => doorHead("masonry", axis)) }));
+    // the wall carried over a door gap: its shadow is the wall's, painted across the gap (R5)
+    sheets.push(sheet(`door_head_${axis}`, "doorHead", { default: still(() => doorHead("timber", axis)) }, PAINTED_SHADOW));
+    sheets.push(sheet(`tower_door_head_${axis}`, "doorHead", { default: still(() => doorHead("masonry", axis)) }, PAINTED_SHADOW));
   }
   // laid on the walls' copings, which carry their own shading: no ground shadow, like the roof
   sheets.push(sheet("tower_cap", "towerCap", { variants: still(...[0, 1, 2, 3].map((v) => () => towerCap(v))) }, { shadow: false }));

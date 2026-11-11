@@ -23,9 +23,9 @@
     },
     "architecture-0": {
       "image": "architecture-0.png",
-      "width": 2040,
-      "height": 440,
-      "sha256": "d082baf0e484c138f1a16405ed30d6f26461b25e259604895ecbbfc71cf7def1"
+      "width": 1768,
+      "height": 260,
+      "sha256": "97e8e9a9f157f14047ad09f253dc2564e7c85b95df334762bd98b28d7594ff58"
     },
     "blood_demon-0": {
       "image": "blood_demon-0.png",
@@ -71,9 +71,9 @@
     },
     "building-0": {
       "image": "building-0.png",
-      "width": 1996,
-      "height": 388,
-      "sha256": "45496bddf5a164059c0c0af3a0db7b08a04b41078bdb466bac3e2e5ac6c08af0"
+      "width": 1956,
+      "height": 208,
+      "sha256": "8eebf6bfb25a121d2260da358046d2ce554bf6a13a28eda2b66d36f53f821bb0"
     },
     "containers-0": {
       "image": "containers-0.png",
@@ -197,9 +197,9 @@
     },
     "tower-0": {
       "image": "tower-0.png",
-      "width": 2040,
-      "height": 636,
-      "sha256": "80637e1583b00fd71b9de943a7d397e09018256c6584f52218ff87a3621c3320"
+      "width": 1980,
+      "height": 460,
+      "sha256": "674f011e8942c397da6d3a3093621ca24dfb06c7e97fa35b375d9958e633bfce"
     },
     "town-0": {
       "image": "town-0.png",
@@ -296,11 +296,11 @@
             [
               {
                 "x": 142,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 198,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -360,12 +360,12 @@
           "frames": [
             [
               {
-                "x": 1812,
-                "y": 407
+                "x": 1786,
+                "y": 228
               },
               {
-                "x": 1874,
-                "y": 407
+                "x": 1848,
+                "y": 228
               }
             ]
           ]
@@ -482,11 +482,11 @@
             [
               {
                 "x": 366,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 423,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -26614,10 +26614,10 @@
     },
     "door_head_x": {
       "atlas": "building-0",
-      "frameWidth": 168,
+      "frameWidth": 84,
       "frameHeight": 193,
       "anchor": {
-        "x": 0.25,
+        "x": 0.5,
         "y": 0.8756476683937824
       },
       "directions": 1,
@@ -26640,10 +26640,10 @@
     },
     "door_head_y": {
       "atlas": "building-0",
-      "frameWidth": 168,
+      "frameWidth": 84,
       "frameHeight": 193,
       "anchor": {
-        "x": 0.25,
+        "x": 0.5,
         "y": 0.8756476683937824
       },
       "directions": 1,
@@ -26654,7 +26654,7 @@
           "frames": [
             [
               {
-                "x": 380,
+                "x": 296,
                 "y": 2
               }
             ]
@@ -30170,19 +30170,19 @@
             [
               {
                 "x": 480,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 546,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 612,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 678,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30213,19 +30213,19 @@
             [
               {
                 "x": 744,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 810,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 876,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 942,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30256,7 +30256,7 @@
             [
               {
                 "x": 1008,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30268,7 +30268,7 @@
             [
               {
                 "x": 1074,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30280,7 +30280,7 @@
             [
               {
                 "x": 1140,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30292,7 +30292,7 @@
             [
               {
                 "x": 1206,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30304,7 +30304,7 @@
             [
               {
                 "x": 1272,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30316,7 +30316,7 @@
             [
               {
                 "x": 1338,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30328,7 +30328,7 @@
             [
               {
                 "x": 1404,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30340,7 +30340,7 @@
             [
               {
                 "x": 1470,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -30730,19 +30730,19 @@
             [
               {
                 "x": 1536,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 1602,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 1668,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 1734,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -31708,11 +31708,11 @@
     },
     "post_back": {
       "atlas": "architecture-0",
-      "frameWidth": 117,
-      "frameHeight": 171,
+      "frameWidth": 32,
+      "frameHeight": 170,
       "anchor": {
-        "x": 0.13675213675213677,
-        "y": 0.935672514619883
+        "x": 0.5,
+        "y": 0.9411764705882353
       },
       "directions": 1,
       "animations": {
@@ -31722,8 +31722,8 @@
           "frames": [
             [
               {
-                "x": 278,
-                "y": 181
+                "x": 866,
+                "y": 2
               }
             ]
           ]
@@ -31734,11 +31734,11 @@
     },
     "post_front": {
       "atlas": "architecture-0",
-      "frameWidth": 61,
-      "frameHeight": 73,
+      "frameWidth": 32,
+      "frameHeight": 72,
       "anchor": {
-        "x": 0.26229508196721313,
-        "y": 0.8493150684931506
+        "x": 0.5,
+        "y": 0.8611111111111112
       },
       "directions": 1,
       "animations": {
@@ -31748,8 +31748,8 @@
           "frames": [
             [
               {
-                "x": 2,
-                "y": 360
+                "x": 330,
+                "y": 181
               }
             ]
           ]
@@ -31914,8 +31914,8 @@
           "frames": [
             [
               {
-                "x": 65,
-                "y": 360
+                "x": 364,
+                "y": 181
               }
             ]
           ]
@@ -31926,8 +31926,8 @@
           "frames": [
             [
               {
-                "x": 123,
-                "y": 360
+                "x": 422,
+                "y": 181
               }
             ]
           ]
@@ -31952,7 +31952,7 @@
           "frames": [
             [
               {
-                "x": 1709,
+                "x": 2,
                 "y": 181
               }
             ]
@@ -31964,7 +31964,7 @@
           "frames": [
             [
               {
-                "x": 1791,
+                "x": 84,
                 "y": 181
               }
             ]
@@ -31976,7 +31976,7 @@
           "frames": [
             [
               {
-                "x": 1873,
+                "x": 166,
                 "y": 181
               }
             ]
@@ -31988,7 +31988,7 @@
           "frames": [
             [
               {
-                "x": 1955,
+                "x": 248,
                 "y": 181
               }
             ]
@@ -32015,11 +32015,11 @@
             [
               {
                 "x": 254,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 310,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -32045,11 +32045,11 @@
             [
               {
                 "x": 2,
-                "y": 586
+                "y": 407
               },
               {
                 "x": 72,
-                "y": 586
+                "y": 407
               }
             ]
           ]
@@ -32472,20 +32472,20 @@
           "frames": [
             [
               {
-                "x": 1658,
-                "y": 206
+                "x": 1634,
+                "y": 2
               },
               {
-                "x": 1738,
-                "y": 206
+                "x": 1714,
+                "y": 2
               },
               {
-                "x": 1818,
-                "y": 206
+                "x": 1794,
+                "y": 2
               },
               {
-                "x": 1898,
-                "y": 206
+                "x": 1874,
+                "y": 2
               }
             ]
           ]
@@ -32496,10 +32496,10 @@
     },
     "tower_door_head_x": {
       "atlas": "building-0",
-      "frameWidth": 168,
+      "frameWidth": 84,
       "frameHeight": 193,
       "anchor": {
-        "x": 0.25,
+        "x": 0.5,
         "y": 0.8756476683937824
       },
       "directions": 1,
@@ -32510,7 +32510,7 @@
           "frames": [
             [
               {
-                "x": 550,
+                "x": 382,
                 "y": 2
               }
             ]
@@ -32522,10 +32522,10 @@
     },
     "tower_door_head_y": {
       "atlas": "building-0",
-      "frameWidth": 168,
+      "frameWidth": 84,
       "frameHeight": 193,
       "anchor": {
-        "x": 0.25,
+        "x": 0.5,
         "y": 0.8756476683937824
       },
       "directions": 1,
@@ -32536,7 +32536,7 @@
           "frames": [
             [
               {
-                "x": 720,
+                "x": 468,
                 "y": 2
               }
             ]
@@ -32700,12 +32700,12 @@
           "frames": [
             [
               {
-                "x": 1644,
-                "y": 407
+                "x": 1618,
+                "y": 228
               },
               {
-                "x": 1728,
-                "y": 407
+                "x": 1702,
+                "y": 228
               }
             ]
           ]
@@ -32730,12 +32730,12 @@
           "frames": [
             [
               {
-                "x": 1482,
-                "y": 407
+                "x": 1456,
+                "y": 228
               },
               {
-                "x": 1563,
-                "y": 407
+                "x": 1537,
+                "y": 228
               }
             ]
           ]
@@ -32786,8 +32786,8 @@
           "frames": [
             [
               {
-                "x": 1392,
-                "y": 407
+                "x": 1366,
+                "y": 228
               }
             ]
           ]
@@ -32798,11 +32798,11 @@
     },
     "tower_post_back": {
       "atlas": "tower-0",
-      "frameWidth": 117,
-      "frameHeight": 171,
+      "frameWidth": 32,
+      "frameHeight": 170,
       "anchor": {
-        "x": 0.13675213675213677,
-        "y": 0.935672514619883
+        "x": 0.5,
+        "y": 0.9411764705882353
       },
       "directions": 1,
       "animations": {
@@ -32812,8 +32812,8 @@
           "frames": [
             [
               {
-                "x": 554,
-                "y": 407
+                "x": 866,
+                "y": 228
               }
             ]
           ]
@@ -32824,11 +32824,11 @@
     },
     "tower_post_front": {
       "atlas": "tower-0",
-      "frameWidth": 61,
-      "frameHeight": 73,
+      "frameWidth": 32,
+      "frameHeight": 72,
       "anchor": {
-        "x": 0.26229508196721313,
-        "y": 0.8493150684931506
+        "x": 0.5,
+        "y": 0.8611111111111112
       },
       "directions": 1,
       "animations": {
@@ -32838,8 +32838,8 @@
           "frames": [
             [
               {
-                "x": 1329,
-                "y": 407
+                "x": 1332,
+                "y": 228
               }
             ]
           ]
@@ -32850,10 +32850,10 @@
     },
     "tower_wall_back_banner_x": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -32868,7 +32868,7 @@
                 "y": 2
               },
               {
-                "x": 1899,
+                "x": 1815,
                 "y": 2
               }
             ]
@@ -32880,10 +32880,40 @@
     },
     "tower_wall_back_banner_y": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1869,
+                "y": 2
+              },
+              {
+                "x": 1923,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/tower.js#partitionWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tower_wall_back_cobweb_x": {
+      "atlas": "tower-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -32898,37 +32928,7 @@
                 "y": 228
               },
               {
-                "x": 140,
-                "y": 228
-              }
-            ]
-          ]
-        }
-      },
-      "source": "authored: tools/bake/page/models/tower.js#partitionWall",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "tower_wall_back_cobweb_x": {
-      "atlas": "tower-0",
-      "frameWidth": 136,
-      "frameHeight": 177,
-      "anchor": {
-        "x": 0.19117647058823528,
-        "y": 0.9096045197740112
-      },
-      "directions": 1,
-      "animations": {
-        "variants": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 278,
-                "y": 228
-              },
-              {
-                "x": 416,
+                "x": 56,
                 "y": 228
               }
             ]
@@ -32940,10 +32940,10 @@
     },
     "tower_wall_back_cobweb_y": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -32954,11 +32954,11 @@
           "frames": [
             [
               {
-                "x": 554,
+                "x": 110,
                 "y": 228
               },
               {
-                "x": 692,
+                "x": 164,
                 "y": 228
               }
             ]
@@ -32970,10 +32970,10 @@
     },
     "tower_wall_back_pillar_x": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -32984,11 +32984,11 @@
           "frames": [
             [
               {
-                "x": 830,
+                "x": 218,
                 "y": 228
               },
               {
-                "x": 968,
+                "x": 272,
                 "y": 228
               }
             ]
@@ -33000,10 +33000,10 @@
     },
     "tower_wall_back_pillar_y": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33014,11 +33014,11 @@
           "frames": [
             [
               {
-                "x": 1106,
+                "x": 326,
                 "y": 228
               },
               {
-                "x": 1244,
+                "x": 380,
                 "y": 228
               }
             ]
@@ -33030,10 +33030,10 @@
     },
     "tower_wall_back_plain_x": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33044,11 +33044,11 @@
           "frames": [
             [
               {
-                "x": 1382,
+                "x": 434,
                 "y": 228
               },
               {
-                "x": 1520,
+                "x": 488,
                 "y": 228
               }
             ]
@@ -33060,10 +33060,10 @@
     },
     "tower_wall_back_plain_y": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33074,11 +33074,11 @@
           "frames": [
             [
               {
-                "x": 1658,
+                "x": 542,
                 "y": 228
               },
               {
-                "x": 1796,
+                "x": 596,
                 "y": 228
               }
             ]
@@ -33090,10 +33090,10 @@
     },
     "tower_wall_back_sconce_x": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33104,12 +33104,12 @@
           "frames": [
             [
               {
-                "x": 2,
-                "y": 407
+                "x": 650,
+                "y": 228
               },
               {
-                "x": 140,
-                "y": 407
+                "x": 704,
+                "y": 228
               }
             ]
           ]
@@ -33129,10 +33129,10 @@
     },
     "tower_wall_back_sconce_y": {
       "atlas": "tower-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33143,12 +33143,12 @@
           "frames": [
             [
               {
-                "x": 278,
-                "y": 407
+                "x": 758,
+                "y": 228
               },
               {
-                "x": 416,
-                "y": 407
+                "x": 812,
+                "y": 228
               }
             ]
           ]
@@ -33168,10 +33168,10 @@
     },
     "tower_wall_exterior_pillar_x": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33182,11 +33182,11 @@
           "frames": [
             [
               {
-                "x": 890,
+                "x": 554,
                 "y": 2
               },
               {
-                "x": 1028,
+                "x": 608,
                 "y": 2
               }
             ]
@@ -33198,10 +33198,10 @@
     },
     "tower_wall_exterior_pillar_y": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33212,11 +33212,11 @@
           "frames": [
             [
               {
-                "x": 1166,
+                "x": 662,
                 "y": 2
               },
               {
-                "x": 1304,
+                "x": 716,
                 "y": 2
               }
             ]
@@ -33228,10 +33228,10 @@
     },
     "tower_wall_exterior_plain_x": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33242,11 +33242,11 @@
           "frames": [
             [
               {
-                "x": 1442,
+                "x": 770,
                 "y": 2
               },
               {
-                "x": 1580,
+                "x": 824,
                 "y": 2
               }
             ]
@@ -33258,10 +33258,10 @@
     },
     "tower_wall_exterior_plain_y": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33272,11 +33272,11 @@
           "frames": [
             [
               {
-                "x": 1718,
+                "x": 878,
                 "y": 2
               },
               {
-                "x": 1856,
+                "x": 932,
                 "y": 2
               }
             ]
@@ -33288,10 +33288,10 @@
     },
     "tower_wall_front_pillar_x": {
       "atlas": "tower-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -33302,12 +33302,12 @@
           "frames": [
             [
               {
-                "x": 673,
-                "y": 407
+                "x": 900,
+                "y": 228
               },
               {
-                "x": 755,
-                "y": 407
+                "x": 954,
+                "y": 228
               }
             ]
           ]
@@ -33318,10 +33318,10 @@
     },
     "tower_wall_front_pillar_y": {
       "atlas": "tower-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -33332,12 +33332,12 @@
           "frames": [
             [
               {
-                "x": 837,
-                "y": 407
+                "x": 1008,
+                "y": 228
               },
               {
-                "x": 919,
-                "y": 407
+                "x": 1062,
+                "y": 228
               }
             ]
           ]
@@ -33348,10 +33348,10 @@
     },
     "tower_wall_front_plain_x": {
       "atlas": "tower-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -33362,12 +33362,12 @@
           "frames": [
             [
               {
-                "x": 1001,
-                "y": 407
+                "x": 1116,
+                "y": 228
               },
               {
-                "x": 1083,
-                "y": 407
+                "x": 1170,
+                "y": 228
               }
             ]
           ]
@@ -33378,10 +33378,10 @@
     },
     "tower_wall_front_plain_y": {
       "atlas": "tower-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -33392,12 +33392,12 @@
           "frames": [
             [
               {
-                "x": 1165,
-                "y": 407
+                "x": 1224,
+                "y": 228
               },
               {
-                "x": 1247,
-                "y": 407
+                "x": 1278,
+                "y": 228
               }
             ]
           ]
@@ -33614,10 +33614,10 @@
     },
     "wall_back_brace_x": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33632,7 +33632,7 @@
                 "y": 2
               },
               {
-                "x": 140,
+                "x": 56,
                 "y": 2
               }
             ]
@@ -33644,10 +33644,10 @@
     },
     "wall_back_brace_y": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33658,11 +33658,11 @@
           "frames": [
             [
               {
-                "x": 278,
+                "x": 110,
                 "y": 2
               },
               {
-                "x": 416,
+                "x": 164,
                 "y": 2
               }
             ]
@@ -33674,10 +33674,10 @@
     },
     "wall_back_plain_x": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33688,11 +33688,11 @@
           "frames": [
             [
               {
-                "x": 554,
+                "x": 218,
                 "y": 2
               },
               {
-                "x": 692,
+                "x": 272,
                 "y": 2
               }
             ]
@@ -33704,10 +33704,10 @@
     },
     "wall_back_plain_y": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33718,11 +33718,11 @@
           "frames": [
             [
               {
-                "x": 830,
+                "x": 326,
                 "y": 2
               },
               {
-                "x": 968,
+                "x": 380,
                 "y": 2
               }
             ]
@@ -33734,10 +33734,10 @@
     },
     "wall_back_torch_x": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33748,11 +33748,11 @@
           "frames": [
             [
               {
-                "x": 1106,
+                "x": 434,
                 "y": 2
               },
               {
-                "x": 1244,
+                "x": 488,
                 "y": 2
               }
             ]
@@ -33773,10 +33773,10 @@
     },
     "wall_back_torch_y": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33787,11 +33787,11 @@
           "frames": [
             [
               {
-                "x": 1382,
+                "x": 542,
                 "y": 2
               },
               {
-                "x": 1520,
+                "x": 596,
                 "y": 2
               }
             ]
@@ -33812,10 +33812,10 @@
     },
     "wall_back_window_x": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33826,11 +33826,11 @@
           "frames": [
             [
               {
-                "x": 1658,
+                "x": 650,
                 "y": 2
               },
               {
-                "x": 1796,
+                "x": 704,
                 "y": 2
               }
             ]
@@ -33851,10 +33851,10 @@
     },
     "wall_back_window_y": {
       "atlas": "architecture-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33865,12 +33865,12 @@
           "frames": [
             [
               {
-                "x": 2,
-                "y": 181
+                "x": 758,
+                "y": 2
               },
               {
-                "x": 140,
-                "y": 181
+                "x": 812,
+                "y": 2
               }
             ]
           ]
@@ -33890,10 +33890,10 @@
     },
     "wall_exterior_brace_x": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33904,12 +33904,12 @@
           "frames": [
             [
               {
-                "x": 2,
-                "y": 206
+                "x": 986,
+                "y": 2
               },
               {
-                "x": 140,
-                "y": 206
+                "x": 1040,
+                "y": 2
               }
             ]
           ]
@@ -33920,10 +33920,10 @@
     },
     "wall_exterior_brace_y": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33934,12 +33934,12 @@
           "frames": [
             [
               {
-                "x": 278,
-                "y": 206
+                "x": 1094,
+                "y": 2
               },
               {
-                "x": 416,
-                "y": 206
+                "x": 1148,
+                "y": 2
               }
             ]
           ]
@@ -33950,10 +33950,10 @@
     },
     "wall_exterior_plain_x": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33964,12 +33964,12 @@
           "frames": [
             [
               {
-                "x": 554,
-                "y": 206
+                "x": 1202,
+                "y": 2
               },
               {
-                "x": 692,
-                "y": 206
+                "x": 1256,
+                "y": 2
               }
             ]
           ]
@@ -33980,10 +33980,10 @@
     },
     "wall_exterior_plain_y": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -33994,12 +33994,12 @@
           "frames": [
             [
               {
-                "x": 830,
-                "y": 206
+                "x": 1310,
+                "y": 2
               },
               {
-                "x": 968,
-                "y": 206
+                "x": 1364,
+                "y": 2
               }
             ]
           ]
@@ -34010,10 +34010,10 @@
     },
     "wall_exterior_window_x": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -34024,12 +34024,12 @@
           "frames": [
             [
               {
-                "x": 1106,
-                "y": 206
+                "x": 1418,
+                "y": 2
               },
               {
-                "x": 1244,
-                "y": 206
+                "x": 1472,
+                "y": 2
               }
             ]
           ]
@@ -34040,10 +34040,10 @@
     },
     "wall_exterior_window_y": {
       "atlas": "building-0",
-      "frameWidth": 136,
+      "frameWidth": 52,
       "frameHeight": 177,
       "anchor": {
-        "x": 0.19117647058823528,
+        "x": 0.5,
         "y": 0.9096045197740112
       },
       "directions": 1,
@@ -34054,12 +34054,12 @@
           "frames": [
             [
               {
-                "x": 1382,
-                "y": 206
+                "x": 1526,
+                "y": 2
               },
               {
-                "x": 1520,
-                "y": 206
+                "x": 1580,
+                "y": 2
               }
             ]
           ]
@@ -34070,10 +34070,10 @@
     },
     "wall_front_brace_x": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -34084,12 +34084,12 @@
           "frames": [
             [
               {
-                "x": 725,
-                "y": 181
+                "x": 1116,
+                "y": 2
               },
               {
-                "x": 807,
-                "y": 181
+                "x": 1170,
+                "y": 2
               }
             ]
           ]
@@ -34100,10 +34100,10 @@
     },
     "wall_front_brace_y": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -34114,12 +34114,12 @@
           "frames": [
             [
               {
-                "x": 889,
-                "y": 181
+                "x": 1224,
+                "y": 2
               },
               {
-                "x": 971,
-                "y": 181
+                "x": 1278,
+                "y": 2
               }
             ]
           ]
@@ -34130,10 +34130,10 @@
     },
     "wall_front_plain_x": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -34144,12 +34144,12 @@
           "frames": [
             [
               {
-                "x": 1053,
-                "y": 181
+                "x": 1332,
+                "y": 2
               },
               {
-                "x": 1135,
-                "y": 181
+                "x": 1386,
+                "y": 2
               }
             ]
           ]
@@ -34160,10 +34160,10 @@
     },
     "wall_front_plain_y": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -34174,12 +34174,12 @@
           "frames": [
             [
               {
-                "x": 1217,
-                "y": 181
+                "x": 1440,
+                "y": 2
               },
               {
-                "x": 1299,
-                "y": 181
+                "x": 1494,
+                "y": 2
               }
             ]
           ]
@@ -34190,10 +34190,10 @@
     },
     "wall_front_torch_x": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 82,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.8048780487804879
       },
       "directions": 1,
@@ -34204,12 +34204,12 @@
           "frames": [
             [
               {
-                "x": 397,
-                "y": 181
+                "x": 900,
+                "y": 2
               },
               {
-                "x": 479,
-                "y": 181
+                "x": 954,
+                "y": 2
               }
             ]
           ]
@@ -34229,10 +34229,10 @@
     },
     "wall_front_torch_y": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 82,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.8048780487804879
       },
       "directions": 1,
@@ -34243,12 +34243,12 @@
           "frames": [
             [
               {
-                "x": 561,
-                "y": 181
+                "x": 1008,
+                "y": 2
               },
               {
-                "x": 643,
-                "y": 181
+                "x": 1062,
+                "y": 2
               }
             ]
           ]
@@ -34268,10 +34268,10 @@
     },
     "wall_front_window_x": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -34282,12 +34282,12 @@
           "frames": [
             [
               {
-                "x": 1381,
-                "y": 181
+                "x": 1548,
+                "y": 2
               },
               {
-                "x": 1463,
-                "y": 181
+                "x": 1602,
+                "y": 2
               }
             ]
           ]
@@ -34307,10 +34307,10 @@
     },
     "wall_front_window_y": {
       "atlas": "architecture-0",
-      "frameWidth": 80,
+      "frameWidth": 52,
       "frameHeight": 79,
       "anchor": {
-        "x": 0.325,
+        "x": 0.5,
         "y": 0.7974683544303798
       },
       "directions": 1,
@@ -34321,12 +34321,12 @@
           "frames": [
             [
               {
-                "x": 1545,
-                "y": 181
+                "x": 1656,
+                "y": 2
               },
               {
-                "x": 1627,
-                "y": 181
+                "x": 1710,
+                "y": 2
               }
             ]
           ]
