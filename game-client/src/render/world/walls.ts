@@ -84,8 +84,8 @@ export function heightOf(side: HouseSide | undefined): WallHeight {
 
 /**
  * How a wall decides each piece by where it stands, in place of the side of a house: its height,
- * and whether it may carry a light (the Inn's partition, `INTERIOR_PARTITION`; a dungeon floor's
- * fog reads its per-cell rule, FS-KE075 §H.46, until it follows the wall edges, FS-XK2B6 §F).
+ * and whether it may carry a light (the Inn's partition, `INTERIOR_PARTITION`). A dungeon floor's
+ * walls ask their edge instead (`edgeHeight`, FS-XK2B6 §B).
  */
 export interface PieceRule {
   height(at: Point): WallHeight;

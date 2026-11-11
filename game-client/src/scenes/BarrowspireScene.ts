@@ -186,7 +186,7 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
-import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan, wallRule, wallRuns } from "@/render/world/dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
@@ -3746,19 +3746,18 @@ export class BarrowspireScene extends Phaser.Scene {
     const look = this.currentFloorLook();
     this.groundLayer?.paint([], { look: look.ground, seed: look.seed });
     const thickness = thicknessPx(look.walls);
-    const planned = dungeonWalls(wallPlan(walls, dungeon.grid, thickness), dungeon.grid, look.seed, look.walls);
+    const plan = wallPlan(walls, dungeon.grid, thickness);
+    const planned = dungeonWalls(plan, dungeon.grid, look.seed, look.walls);
     const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
-    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13). Its
-    // slabs still stand on the cells' centrelines, by the per-cell rule, until they follow the
-    // wall edges (FS-XK2B6 §F)
+    // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13), its
+    // slabs and posts standing where the plan draws them (FS-XK2B6 §F)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
     const fog = new Fog(
       this,
       dungeon.grid,
-      wallRule(dungeon.grid),
       dungeon.chunks,
       () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
-      wallLayout(dungeon.grid, wallRuns(walls, dungeon.grid)),
+      wallLayout(dungeon.grid, plan),
     );
     dungeon.fog = fog;
     const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
