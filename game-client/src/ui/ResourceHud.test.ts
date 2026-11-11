@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type Phaser from "phaser";
-import { ResourceHud, resourceHudHeight } from "./ResourceHud";
+import { RESOURCE_HUD_AT, ResourceHud, resourceHudHeight } from "./ResourceHud";
 import type { HudBar } from "./resources";
 
 // The panel hangs from a fixed top edge and grows down, so whatever stands under it keeps its place.
 
-const TOP = 84;
+// The run's place: FS-56CKV §D.20 supersedes FS-8AY7S R20's "x 10, y 84" in part (now y 56).
+const TOP = 56;
 const X = 10;
+
+describe("ResourceHud's place in a run (FS-56CKV §D.20)", () => {
+  it("should stand the run's bars at the top left, at (10, 56), under the XP bar at y 16", () => {
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: X, y: TOP });
+  });
+
+  it("should keep a field's bars in its corner, at (10, 16) (§D.22)", () => {
+    expect(RESOURCE_HUD_AT.field).toEqual({ x: 10, y: 16 });
+  });
+});
 
 function fakeScene() {
   const rects: number[][] = [];

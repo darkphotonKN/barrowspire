@@ -423,3 +423,5 @@ No member / owner field.
   half of that unlinked Persistent-world line; the line is left for `spec-update` to decide.
 - **A SPECIFICATION.md for character-service** or adding it to the root service map (`/setup`).
 - **Leaderboards / stats by level**; stats-service and notification-service ignore the new fields.
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV

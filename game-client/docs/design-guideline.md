@@ -633,6 +633,39 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   damaged monster carries its bar, and carries it alone; elsewhere the bar sits under its plate.
   *(Added by [FS-48CTQ](../../docs/specs/48CTQ-monster-target-frame.md) §F, owner playtest
   2026-11-07; rim dropped and trough turned deep red on the owner's second look the same day.)*
+- **Minimap.** The run's top-right minimap (`src/ui/minimap.ts`) reads as candle-lit stone in the
+  HUD's own frame, which stays as it is: the `hudPanel` backing and its 1px brass rim, and nothing
+  drawn over the rim. Inside it, bottom to top: every region the party has seen, explored or
+  visible, in one dark stone (`minimapExplored`), the one it stands in no lighter, and its walls
+  drawn as a 1px line (`minimapEdge`), rooms' and corridors' alike, on every cell side that faces
+  shell or void; every opening a gap, never a line across a doorway, where two regions meet or
+  along a cell; a soft `inkDeep` vignette, strongest at the rim's inside
+  edge and nothing in the middle, painted as a canvas gradient so both renderers match (never the
+  WebGL-only `fillGradientStyle`); the switch, escape door and stairs as small glyphs (a lever, an
+  arch, a flight of steps) in the interactable amber on a dark 1px `markerStroke` ring, within 9 × 9
+  px on whole px; and the party's dots, each in a dark 1px ring, the player's own larger and on
+  top. No warm glow anywhere inside: amber there means a fixture. Each step of stone keeps 1.3:1
+  from the next, each glyph and dot 3:1 from its ring. Drawn in code from tokens, no baked art.
+  *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md), 2026-11-12; outer
+  outline only, on the owner's look the same day; one fill for every seen region, the owner's
+  "目前的區域不特別亮", the same day; walls are lines and openings are gaps, corridors lined as rooms
+  are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)*
+- **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
+  **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
+  drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole
+  px, the walls' line scaled exactly; its glyphs and dots at the normal minimap's size, drawn as it
+  draws them (9 × 9 glyphs on whole px; *amended 2026-11-12 by the owner's "smaller marks on the
+  1.5 map too, as big as on the big map": were 14 × 14, the dots 1.5 ×*); the lines under it move
+  down with it. The overlay is the
+  floor's map over the whole view, as Path of Exile 2 draws it: the world's own iso projection at
+  1/8, about the figure the camera follows and moving with it, with no backing, rim or vignette;
+  the seen regions in the minimap's one stone and the walls' 2px line, both at 40% so the game
+  shows through; the glyphs and dots at full strength and at the normal minimap's size (9 × 9
+  glyphs, each px on whole device px; *amended 2026-11-12 by the owner's "smaller marks on the
+  biggest map": was the enlarged map's 14 × 14*). It sits over the
+  world, the fog and the atmosphere, under the aim line, the floor veil and every piece of HUD, and
+  takes no input. The scale, the 40% and the line are starting values to tune by eye.
+  *(Added by [FS-1SEF0](../../docs/specs/1SEF0-minimap-modes-enlarged-and-overlay.md), 2026-11-12.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

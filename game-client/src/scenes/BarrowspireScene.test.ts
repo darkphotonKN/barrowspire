@@ -12,6 +12,12 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/render/viewport")>()),
   boundCamera: () => {},
   followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
+  // the stub camera keeps who hears its frames; a test sets a frame up by calling them
+  afterFrameSetUp: (cam: { frames?: Set<(scroll: { x: number; y: number }) => void> }, listener: (scroll: { x: number; y: number }) => void) => {
+    const frames = (cam.frames ??= new Set());
+    frames.add(listener);
+    return () => frames.delete(listener);
+  },
 }));
 
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
@@ -83,6 +89,13 @@ const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
 const await_minimap = await import("@/ui/minimap");
+const await_minimapMode = await import("@/ui/minimapMode");
+const await_topRightColumn = await import("@/ui/topRightColumn");
+const await_positionReadout = await import("@/ui/positionReadout");
+const await_progressHud = await import("@/ui/ProgressHud");
+const await_resourceHud = await import("@/ui/ResourceHud");
+const await_potions = await import("@/ui/potions");
+const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -715,10 +728,16 @@ function sceneOnStage() {
   };
   run.tweens = { add: vi.fn(), killTweensOf: vi.fn(), addCounter: vi.fn(finishAtOnce) };
   run.time = { delayedCall: vi.fn() };
-  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes
+  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes; and the
+  // minimap's vignette (FS-56CKV §A.2), a gradient painted once its key is asked for
   (run as unknown as { textures: unknown }).textures = {
+    exists: () => false,
     createCanvas: (_key: string, w: number, h: number) => ({
-      getContext: () => ({ createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }) }),
+      getContext: () => ({
+        createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+        createLinearGradient: () => ({ addColorStop: vi.fn() }),
+        fillRect: vi.fn(),
+      }),
       putData: vi.fn(),
       refresh: vi.fn(),
       setFilter: vi.fn(),
@@ -5391,35 +5410,137 @@ describe("the run's top-right HUD and the fullscreen button", () => {
   });
 });
 
-// FS-SRA9J §E.20–21 (I-SRA9J-3): the minimap hangs under the floor indicator in the same column,
-// 216 × 108, right-aligned at TOP_RIGHT_HUD's x, as FS-48CTQ's target frame test assumes.
-describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21)", () => {
-  const { MINIMAP, minimapRect } = await_minimap;
+// FS-SRA9J §E.20–21 (I-SRA9J-3), re-ordered by FS-56CKV §B.9 and §B.13 (which supersede §E.20 in
+// part): the minimap is the column's first part, 216 × 108 at its top, the floor indicator and
+// the escaped count under it, right-aligned at TOP_RIGHT_HUD's x, as FS-48CTQ's target frame test
+// assumes; with no minimap the two lines close up to the top.
+describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS-56CKV §B)", () => {
+  const { MINIMAP } = await_minimap;
   const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  const { topRightColumn } = await_topRightColumn;
   type Box = { x: number; y: number; width: number; height: number };
-  /** A 14 px HUD line in its 5 px padding (the escaped count, the floor indicator), at its largest. */
-  const LINE = { width: 160, height: 30 };
+  /** A 12 px HUD line in its 3 px padding (the escaped count, the floor indicator), at its largest. */
+  const LINE = { width: 160, height: 21 };
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
   it.each([1080, 1280])(
-    "should sit 6 px under the floor indicator, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
+    "should sit at the column's top with the floor indicator 6 px under it, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const escaped = { x: corner.x - LINE.width, y: corner.y, ...LINE };
-      const floor = { x: corner.x - LINE.width, y: escaped.y + LINE.height + 6, ...LINE };
-      const map = minimapRect(corner.x, floor.y + floor.height);
-      expect(map).toEqual({ x: corner.x - 216, y: floor.y + floor.height + 6, width: 216, height: 108 });
+      const column = (shown: boolean) => topRightColumn({ corner, minimap: shown ? MINIMAP : null, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const { minimap, floor: floorAt } = column(true);
+      const map = minimap!;
+      expect(map).toEqual({ x: corner.x - 216, y: 44, width: 216, height: 108 });
+      expect(floorAt.y).toBe(map.y + map.height + 6);
       expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
+      if (width === 1080) expect(map.x).toBeGreaterThanOrEqual(854);
       // the fullscreen button in the canvas's corner, however wide its icon; a top-centre notice
       // (20 px text in 10 px padding, centred on y 100) up to 600 px wide; either target frame
       const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
       const notice = { x: width / 2 - 300, y: 100 - 22, width: 600, height: 44 };
-      for (const other of [button, escaped, floor, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
-        expect(overlaps(map, other)).toBe(false);
+      const others = [button, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      // with the minimap and closed up without it: no part over another, nor over the rest
+      for (const shown of [true, false]) {
+        const c = column(shown);
+        const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+        const parts: Box[] = [...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped)];
+        for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+        for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
+      }
       expect(map.x).toBeGreaterThan(0);
       expect(map.y + map.height).toBeLessThan(720 / 2);
+    },
+  );
+
+  // FS-1SEF0 §B.12: the enlarged minimap, 324 × 162 at the same corner, and the lines under it
+  it.each([
+    [1080, 412],
+    [1280, 612],
+  ])(
+    "should keep the enlarged minimap and the lines under it clear of the fullscreen button, either target frame and a notice up to its clear width at logical width %i, %i px (FS-1SEF0 §B.12)",
+    (width, clearNotice) => {
+      const { minimapPanel } = await_minimap;
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const c = topRightColumn({ corner, minimap: minimapPanel("enlarged"), floorHeight: LINE.height, escapedHeight: LINE.height });
+      const map = c.minimap!;
+      expect(map).toEqual({ x: corner.x - 324, y: 44, width: 324, height: 162 });
+      if (width === 1080) {
+        expect(map.x).toBe(746);
+        expect(targetFrameRect(width / 2, TARGET_BOSS_FRAME).x + TARGET_BOSS_FRAME.width).toBe(729);
+      }
+      const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+      const parts: Box[] = [map, line(c.floor), line(c.escaped)];
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const notice = (w: number) => ({ x: width / 2 - w / 2, y: 100 - 22, width: w, height: 44 });
+      for (const part of parts)
+        for (const other of [button, notice(clearNotice), targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
+          expect(overlaps(part, other)).toBe(false);
+      // the clear width is the widest: 2 px more and the notice's right end lies over the map (Edge States)
+      expect(overlaps(map, notice(clearNotice + 2))).toBe(true);
+      for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
+    },
+  );
+});
+
+// FS-56CKV §D.20 (superseding FS-8AY7S R20's y 84 and FS-R82NV R34's run y 160 in part): with
+// the dev readout gone from the top left (§C), the run's top-left stack moves up into its place,
+// the XP bar at (10, 16); nothing at the top of a run may stand over it.
+describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
+  const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  const { topRightColumn } = await_topRightColumn;
+  const { positionReadoutPlace } = await_positionReadout;
+  const { PROGRESS_HUD_AT, PROGRESS_HUD_W, PROGRESS_HUD_H } = await_progressHud;
+  const { RESOURCE_HUD_W, resourceHudHeight } = await_resourceHud;
+  const { POTION_CELL_GAP, POTION_CELL_W } = await_potions;
+  const { PARTY_FRAMES_PLACEMENT, partyFramesFrame } = await_partyFramesLayout;
+  type Box = { x: number; y: number; width: number; height: number };
+  /** A 12 px HUD line in its 3 px padding, at its largest, as the top-right column's test takes it. */
+  const LINE = { width: 160, height: 21 };
+  /** The dev readout at its widest ("X: 5760 Y: 3840 | Outdoor", 10 px), generously. */
+  const READOUT = { width: 200, height: 13 };
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  /** The stack: the XP bar, the bars at their tallest, the potion cell beside them, four frames. */
+  function stack(): Box[] {
+    const xp = { ...PROGRESS_HUD_AT.run, width: PROGRESS_HUD_W, height: PROGRESS_HUD_H };
+    const bars = { ...RESOURCE_HUD_AT.run, width: RESOURCE_HUD_W, height: resourceHudHeight(2) };
+    const potion = { ...bars, x: bars.x + bars.width + POTION_CELL_GAP, width: POTION_CELL_W };
+    const { x, top } = PARTY_FRAMES_PLACEMENT.run;
+    return [xp, bars, potion, ...partyFramesFrame(4, x, top).map((f) => f.row)];
+  }
+
+  it("should stand the XP bar at (10, 16), the bars at (10, 56) and the frames from y 132", () => {
+    expect(PROGRESS_HUD_AT.run).toEqual({ x: 10, y: 16 });
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: 10, y: 56 });
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 132 });
+  });
+
+  it.each([1080, 1280])(
+    "should keep the stack inside the canvas and clear of the fullscreen button, either target frame, the top-right column and the dev readout at logical width %i",
+    (width) => {
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      const parts = stack();
+      // the minimap normal, enlarged (FS-1SEF0 §B), or none in the corner (no regions, the overlay)
+      for (const panel of [await_minimap.minimapPanel("normal"), await_minimap.minimapPanel("enlarged"), null]) {
+        const c = topRightColumn({ corner, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
+        const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+        const at = positionReadoutPlace(c.minimap, { right: corner.x, bottom: c.bottom });
+        const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
+        const others = [button, ...frames, ...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
+        for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+      }
+      for (const part of parts) {
+        expect(part.x).toBeGreaterThanOrEqual(10);
+        expect(part.y).toBeGreaterThanOrEqual(16);
+        expect(part.y + part.height).toBeLessThan(view.height);
+      }
     },
   );
 });
@@ -7261,13 +7382,16 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       interface MappedRun extends FoggedRun {
         dungeon?: FoggedRun["dungeon"] & { minimap?: Map };
         floorText?: object;
+        escapedCountText?: object;
+        positionReadout?: object;
         menu?: unknown;
         chatWindow?: { isTyping(): boolean };
-        minimapOn: boolean;
+        minimapMode: string;
         createUI(): void;
         relayoutHud(): void;
         bindRunInput(): void;
         resetRun(end: "shutdown" | "destroy"): void;
+        updateFloorIndicator(state: Pick<GameState, "floor">): void;
       }
       type Key = (event?: { repeat?: boolean }) => void;
       const { Exploration } = await_exploration;
@@ -7277,28 +7401,50 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         seen.see([at(2560, 3080)]);
         return grid.regions.filter((r) => seen.state(r.id) !== "unexplored").map((r) => [r.id, seen.state(r.id)]);
       })();
-      /** The floor indicator's box in the column: from y 71, 27 px tall, as a 14 px line is. */
-      const FLOOR_LINE = { y: 71, height: 27 };
+      /** The floor indicator's height: 21 px, as a 12 px line in 3 px padding is (FS-56CKV §B.10). */
+      const FLOOR_LINE = { height: 21 };
+      /** Where a column text was last stood: its x and its top (origin 1, 0). */
+      const standing = (text: object | undefined) => {
+        const { last } = text as Made;
+        return [last.setX?.[0], last.setY?.[0]];
+      };
 
       afterEach(() => {
         vi.restoreAllMocks();
         viewport.set({ width: 800, height: 600, renderScale: 1 });
       });
 
-      /** Floor 1 with the run's HUD up and its keys bound, then a broadcast with `party`. */
-      const mapped = (party: Partial<Party> = inRoom) => {
+      /** This browser's store for the minimap's mode (FS-1SEF0 §A.4): what it holds, and what was written. */
+      const browserStore = (held: string | null = null) => {
+        const store = { held, writes: [] as string[] };
+        const kv = {
+          getItem: (key: string) => (key === await_minimapMode.MINIMAP_MODE_KEY ? store.held : null),
+          setItem: (key: string, value: string) => {
+            if (key !== await_minimapMode.MINIMAP_MODE_KEY) return;
+            store.held = value;
+            store.writes.push(value);
+          },
+          removeItem: vi.fn(),
+        };
+        return Object.assign(store, { read: () => kv });
+      };
+
+      /** Floor 1 with the run's HUD up and its keys bound, then a broadcast with `party`; the mode kept in `store`. */
+      const mapped = (party: Partial<Party> = inRoom, store = browserStore()) => {
         const placed = vi.spyOn(Minimap.prototype, "place");
         const dots = vi.spyOn(Minimap.prototype, "party");
         const staged = stageIn(party);
         const run = staged.run as unknown as MappedRun;
         const keys: Record<string, Key> = {};
         Object.assign(run, {
+          minimapStore: store.read,
           input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) }, on: vi.fn() },
         });
         Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
         run.createUI();
         run.bindRunInput();
         Object.assign(run.floorText!, FLOOR_LINE);
+        Object.assign(run.escapedCountText!, FLOOR_LINE);
         const view = (width: number) => {
           viewport.set({ width, height: 720, renderScale: 1 });
           run.relayoutHud();
@@ -7308,40 +7454,157 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           staged.handle({ ...dungeonState(who), ...fields } as GameState);
         frame();
         const map = () => run.dungeon?.minimap;
-        return { ...staged, run, keys, view, frame, map, placed, dots };
+        /** M pressed until the minimap is in `mode` (FS-1SEF0 §A.2). */
+        const pressTo = (mode: string) => {
+          for (let i = 0; i < 3 && map()?.mode !== mode; i++) keys["keydown-M"]();
+          expect(map()?.mode).toBe(mode);
+        };
+        return { ...staged, run, keys, view, frame, map, placed, dots, store, pressTo };
       };
       const ally = (id: string, p: { x: number; y: number }, fields: { escape?: boolean; current_health?: number } = {}) => ({
         ...player(id, id, 0, fields),
         position: p,
       });
 
-      it("should show the minimap on floor 1 by default, 6 px under the floor indicator, right-aligned, and move it with the view", () => {
-        const { map, view, placed } = mapped();
+      // FS-56CKV §B.9 and §B.12 supersede §E.20 in part: the minimap at the column's top, the floor
+      // indicator 6 px under it, the escaped count 4 px under that
+      it("should show the minimap on floor 1 by default at the column's top, the floor indicator and the escaped count under it, right-aligned, and move them with the view", () => {
+        const { run, map, view, placed } = mapped();
         expect(map()).toBeDefined();
-        expect(map()!.shown).toBe(true);
-        const under = FLOOR_LINE.y + FLOOR_LINE.height;
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, under));
+        expect(map()!.mode).toBe("normal");
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44));
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 158 + 21 + 4]);
         view(1280);
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, under));
-        expect(minimapRect(1270, under)).toMatchObject({ x: 1054, y: under + 6 });
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
+        expect(minimapRect(1270, 44)).toMatchObject({ x: 1054, y: 44 });
+        expect(standing(run.floorText)).toEqual([1270, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1270, 183]);
+        // moved, so rasterised again at the render scale of now (FS-ZAJMH R5)
+        for (const text of [run.floorText, run.escapedCountText]) expect((text as Made).last.setResolution).toEqual([1]);
       });
 
-      it("should hide and show it on M, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats", () => {
-        const { run, keys, map } = mapped();
+      it("should draw the floor indicator and the escaped count at 12 px in 8 × 3 padding, their colours, backings and face unchanged (FS-56CKV §B.10)", () => {
+        const { run } = mapped();
+        const style = (text: object | undefined) => (text as Made).args[3];
+        const line = { fontFamily: CANVAS_FONT.body, fontSize: "12px", backgroundColor: toCss(palette.hudPanel), padding: { x: 8, y: 3 } };
+        expect(style(run.floorText)).toEqual({ ...line, color: toCss(palette.hudText) });
+        expect(style(run.escapedCountText)).toEqual({ ...line, color: toCss(palette.frameBright) });
+      });
+
+      // FS-1SEF0 §C.20, §D.21: the overlay leaves the corner to the two lines, as no minimap does
+      it("should close the column up in the overlay mode, and open it again on M back to normal (FS-1SEF0 §D.21; FS-56CKV §B.11)", () => {
+        const { run, keys, pressTo } = mapped();
+        pressTo("overlay");
+        expect(standing(run.floorText)).toEqual([1070, 44]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 44 + 21 + 4]);
         keys["keydown-M"]();
-        expect(map()!.shown).toBe(false);
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+      });
+
+      // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved down
+      it("should stand the enlarged minimap at the column's top and the floor indicator and the escaped count under it, at 1080 and 1280 (FS-1SEF0 §B.11)", () => {
+        const { run, view, placed, pressTo } = mapped();
+        const enlarged = await_minimap.minimapPanel("enlarged");
+        pressTo("enlarged");
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44, enlarged));
+        expect(standing(run.floorText)).toEqual([1070, 212]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 212 + 21 + 4]);
+        view(1280);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44, enlarged));
+        expect(standing(run.floorText)).toEqual([1270, 212]);
+        pressTo("normal");
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
+        expect(standing(run.floorText)).toEqual([1270, 158]);
+      });
+
+      it("should stand the escaped count where the floor indicator would while it has no label, and step it down once it has (FS-56CKV §B.11)", () => {
+        const { run, keys, pressTo } = mapped();
+        run.updateFloorIndicator({ floor: undefined });
+        expect((run.floorText as Made).shown).toBe(false);
+        expect(standing(run.escapedCountText)).toEqual([1070, 158]);
+        pressTo("overlay");
+        expect(standing(run.escapedCountText)).toEqual([1070, 44]);
         keys["keydown-M"]();
-        expect(map()!.shown).toBe(true);
+        run.updateFloorIndicator({ floor: 1 });
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+      });
+
+      it("should close the column up on a dungeon floor before its map is in, and open it once its minimap is built (FS-56CKV §B.11)", () => {
+        const { run, map, handle } = mapped();
+        // the party climbs to floor 2; its map has not come yet
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(map()).toBeUndefined();
+        expect(standing(run.floorText)).toEqual([1070, 44]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 69]);
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(map()).toBeDefined();
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+      });
+
+      it("should cycle it on M, normal, enlarged, overlay and round again, never off, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats (FS-1SEF0 §A.2)", () => {
+        const { run, keys, map, store } = mapped();
+        const modes: string[] = [];
+        for (let i = 0; i < 4; i++) {
+          keys["keydown-M"]();
+          modes.push(map()!.mode);
+        }
+        expect(modes).toEqual(["enlarged", "overlay", "normal", "enlarged"]);
+        expect(store.writes).toEqual(modes);
         keys["keydown-M"]({ repeat: true });
-        expect(map()!.shown).toBe(true);
+        expect(map()!.mode).toBe("enlarged");
         run.menu = {};
         keys["keydown-M"]();
-        expect(map()!.shown).toBe(true);
+        expect(map()!.mode).toBe("enlarged");
         run.menu = undefined;
         run.chatWindow = { isTyping: () => true };
         keys["keydown-M"]();
-        expect(map()!.shown).toBe(true);
+        expect(map()!.mode).toBe("enlarged");
         run.chatWindow = undefined;
+        expect(store.writes).toHaveLength(4);
+      });
+
+      it("should have no off step left: no minimapOn, and no switch on the minimap to hide it (FS-1SEF0 §A.7)", () => {
+        const { run, map } = mapped();
+        expect("minimapOn" in run).toBe(false);
+        expect("setShown" in map()!).toBe(false);
+        expect("shown" in map()!).toBe(false);
+      });
+
+      it("should change nothing on M where there is no minimap: a floor of buildings, a dungeon floor before its map (FS-1SEF0 §A.3)", () => {
+        const { run, keys, handle, store } = mapped();
+        useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+        handle(bare(floorState(2)));
+        keys["keydown-M"]();
+        handle({ ...dungeonState(inRoom), floor: 3 });
+        expect(run.dungeon?.minimap).toBeUndefined();
+        keys["keydown-M"]();
+        expect(store.writes).toEqual([]);
+        expect(run.minimapMode).toBe("normal");
+        expect(standing(run.floorText)).toEqual([1070, 44]);
+      });
+
+      it("should build the minimap in the mode this browser kept, and an old off or anything unknown as normal (FS-1SEF0 §A.4, §A.5)", () => {
+        const kept = mapped(inRoom, browserStore("overlay"));
+        expect(kept.map()!.mode).toBe("overlay");
+        expect(standing(kept.run.floorText)).toEqual([1070, 44]);
+        for (const held of ["off", "huge", null]) expect(mapped(inRoom, browserStore(held)).map()!.mode).toBe("normal");
+      });
+
+      it("should start at normal and still cycle where this browser's storage throws (FS-1SEF0 §A.5)", () => {
+        const blocked = Object.assign(browserStore(), {
+          read: () => {
+            throw new Error("SecurityError");
+          },
+        });
+        const { keys, map } = mapped(inRoom, blocked);
+        expect(map()!.mode).toBe("normal");
+        expect(() => keys["keydown-M"]()).not.toThrow();
+        expect(map()!.mode).toBe("enlarged");
       });
 
       it("should bind M as a keydown event, never a captured key, so a stop has no capture of it to hand back", () => {
@@ -7367,18 +7630,244 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(added).not.toContain(77);
       });
 
-      it("should keep M's choice for the run scene: across a floor change, and back on for the next run scene", () => {
-        const { run, keys, map, handle } = mapped();
+      it("should keep the mode across a floor change, and read it again from this browser for the next run scene (FS-1SEF0 §A.4, §A.6)", () => {
+        const { run, map, handle, store, pressTo } = mapped();
         const first = map()!;
-        keys["keydown-M"]();
-        // floor 2 laid out as floor 1 was: a new floor, a new minimap, still hidden
+        pressTo("overlay");
+        // floor 2 laid out as floor 1 was: a new floor, a new minimap, in the same mode
         useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
         handle({ ...dungeonState(inRoom), floor: 2 });
         expect(map()).toBeDefined();
         expect(map()).not.toBe(first);
-        expect(map()!.shown).toBe(false);
+        expect(map()!.mode).toBe("overlay");
+        expect(store.held).toBe("overlay");
         run.resetRun("shutdown");
-        expect(run.minimapOn).toBe(true);
+        store.held = "enlarged";
+        run.createUI();
+        expect(run.minimapMode).toBe("enlarged");
+      });
+
+      // FS-1SEF0 §C.14: the overlay stands about the figure the camera follows, each frame
+      describe("the map overlay (FS-1SEF0 §C, I-1SEF0-3)", () => {
+        type Followed = MappedRun & {
+          playerPos?: { x: number; y: number };
+          watchedPlayerId?: string;
+          otherPlayersPos: { set(id: string, at: { x: number; y: number }): unknown };
+          followMapOverlay(): void;
+          update(time: number, delta: number): void;
+        };
+
+        it("should follow the player's drawn position, and the watched teammate's while spectating, with the party's dots where their figures are drawn", () => {
+          const { run, pressTo } = mapped({
+            ...inRoom,
+            other_players: [ally("a", at(4000, 1200)), ally("dead", placedAt.lever, { current_health: 0 })] as GameState["other_players"],
+          });
+          const follow = vi.spyOn(Minimap.prototype, "follow");
+          const r = run as Followed;
+          pressTo("overlay");
+          r.playerPos = { x: 2570, y: 3090 };
+          r.otherPlayersPos.set("a", { x: 3990, y: 1205 });
+          r.followMapOverlay();
+          // the drawn positions, never the broadcast's; the dead have no dot
+          const drawn = { self: { x: 2570, y: 3090 }, allies: [{ x: 3990, y: 1205 }] };
+          expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 }, drawn);
+          r.watchedPlayerId = "a";
+          r.followMapOverlay();
+          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, drawn);
+        });
+
+        it("should stand it each frame after the figures moved, playing or watching, without redrawing its map", () => {
+          const { run, map, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          const redraws = map()!.redraws;
+          const order: string[] = [];
+          const up = { isDown: false };
+          const keys = { left: up, right: up, up, down: up };
+          Object.assign(run, {
+            cursors: keys,
+            wasd: keys,
+            kit: { follow: vi.fn(), guarding: false },
+            updateLighting: vi.fn(),
+            updateOtherPlayersSmooth: () => order.push("figures"),
+            checkBuildingStatus: vi.fn(),
+            sendMovementIntent: vi.fn(),
+            updateTargetFrame: vi.fn(),
+            followMapOverlay: () => order.push("overlay"),
+            playerPos: { x: 2560, y: 3080 },
+            targetPosition: { x: 2570, y: 3080 },
+          });
+          r.update(0, 16);
+          // watching: the player hidden, only the others move
+          const player = (run as unknown as { player: { visible: boolean } }).player;
+          expect(player.visible).toBe(true);
+          player.visible = false;
+          r.update(16, 16);
+          expect(order).toEqual(["figures", "overlay", "figures", "overlay"]);
+          expect(map()!.redraws).toBe(redraws);
+        });
+
+        // the owner, 2026-11-12: "全畫面地圖人物的座標會一直抖動". Played as the game plays it: the
+        // server's broadcasts at 30 Hz walking 200 world px a second, the scene at 60 fps easing
+        // the drawn position toward each. The camera's scroll moves the world and the overlay
+        // alike, so what the eye sees is where the dot and the map stand against the figure.
+        it("should keep the player's dot on the figure and slide the map one way under it as the player walks, and hold both still once stopped (§C.14, §C.19)", () => {
+          const { run, map, frame, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          const still = { isDown: false };
+          const keys = { left: still, right: still, up: still, down: still };
+          Object.assign(run, {
+            cursors: keys,
+            wasd: keys,
+            updateLighting: vi.fn(),
+            updateOtherPlayersSmooth: vi.fn(),
+            checkBuildingStatus: vi.fn(),
+            sendMovementIntent: vi.fn(),
+            updateTargetFrame: vi.fn(),
+          });
+          const layers = map() as unknown as { map: Made; dots: Made };
+          const figure = (run as unknown as { player: Made }).player;
+          const sample = () => {
+            const [fx, fy] = figure.last.setPosition as number[];
+            const [mx, my] = layers.map.last.setPosition as number[];
+            const [dx, dy] = layers.dots.last.setPosition as number[];
+            // the self's dot is drawn last, over the allies'
+            const [sx, sy] = layers.dots.last.fillCircle as number[];
+            // the figure's point as drawn, on whole px (zoom 1, scroll on whole px)
+            const f = at(Math.round(fx), Math.round(fy));
+            return { dot: at(dx + sx - f.x, dy + sy - f.y), map: at(mx - f.x, my - f.y) };
+          };
+          const at30Hz = (p: { x: number; y: number }) =>
+            frame({ current_player: { ...player("me", "Aldric", 0), position: p } as Party["current_player"] });
+          let server = at(2560, 3080);
+          let t = 0;
+          const tick = () => r.update((t += 1000 / 60), 1000 / 60);
+          // settled on the start
+          for (let i = 0; i < 120; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+          }
+          const walk: ReturnType<typeof sample>[] = [];
+          for (let i = 0; i < 60; i++) {
+            if (i % 2 === 0) at30Hz((server = at(server.x + 200 / 30, server.y)));
+            tick();
+            walk.push(sample());
+          }
+          // the dot lies on the figure, frame after frame, within the overlay's own whole px
+          for (const s of walk) {
+            expect(Math.abs(s.dot.x)).toBeLessThanOrEqual(0.5);
+            expect(Math.abs(s.dot.y)).toBeLessThanOrEqual(0.5);
+          }
+          // walking +x in the world is right and down on screen: the map slides left and up under
+          // the figure, at 1/8 of its pace, and never steps back
+          for (let i = 1; i < walk.length; i++) {
+            expect(walk[i].map.x).toBeLessThanOrEqual(walk[i - 1].map.x);
+            expect(walk[i].map.y).toBeLessThanOrEqual(walk[i - 1].map.y);
+          }
+          // stopped: the drawn position eases in, and then nothing in the overlay moves
+          for (let i = 0; i < 120; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+          }
+          const settled = sample();
+          const [redraws, dotRedraws] = [map()!.redraws, map()!.dotRedraws];
+          for (let i = 0; i < 30; i++) {
+            if (i % 2 === 0) at30Hz(server);
+            tick();
+            expect(sample()).toEqual(settled);
+          }
+          expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
+        });
+
+        // the owner, 2026-11-12, again: "還是有抖動感 可以加一些平滑效果嗎". At render scale 1.5 and 2
+        // the figure is drawn on whole backing px, finer than a logical px, so the overlay must
+        // stand on that grid too or the map steps back and forth under the figure.
+        it.each([1.5, 2])(
+          "should slide the map one way under the walking player and keep the dot on the figure's backing px at render scale %s (§C.14, §C.19)",
+          (rs) => {
+            const { run, map, frame, pressTo, view } = mapped();
+            const r = run as Followed;
+            pressTo("overlay");
+            viewport.set({ width: 1080, height: 720, renderScale: rs });
+            try {
+              const still = { isDown: false };
+              const keys = { left: still, right: still, up: still, down: still };
+              Object.assign(run, {
+                cursors: keys,
+                wasd: keys,
+                updateLighting: vi.fn(),
+                updateOtherPlayersSmooth: vi.fn(),
+                checkBuildingStatus: vi.fn(),
+                sendMovementIntent: vi.fn(),
+                updateTargetFrame: vi.fn(),
+              });
+              const layers = map() as unknown as { map: Made; dots: Made };
+              const figure = (run as unknown as { player: Made }).player;
+              const backing = (v: number) => Math.round(v * rs) / rs;
+              const sample = () => {
+                const [fx, fy] = figure.last.setPosition as number[];
+                const [mx, my] = layers.map.last.setPosition as number[];
+                const [dx, dy] = layers.dots.last.setPosition as number[];
+                const [sx, sy] = layers.dots.last.fillCircle as number[];
+                // the figure's point as drawn, on whole backing px (fullAuto, scroll on the 1/rs grid)
+                const f = at(backing(fx), backing(fy));
+                return { dot: at(dx + sx - f.x, dy + sy - f.y), map: at(mx - f.x, my - f.y) };
+              };
+              const at30Hz = (p: { x: number; y: number }) =>
+                frame({ current_player: { ...player("me", "Aldric", 0), position: p } as Party["current_player"] });
+              let server = at(2560, 3080);
+              let t = 0;
+              const tick = () => r.update((t += 1000 / 60), 1000 / 60);
+              for (let i = 0; i < 120; i++) {
+                if (i % 2 === 0) at30Hz(server);
+                tick();
+              }
+              const walk: ReturnType<typeof sample>[] = [];
+              for (let i = 0; i < 90; i++) {
+                if (i % 2 === 0) at30Hz((server = at(server.x + 200 / 30, server.y)));
+                tick();
+                walk.push(sample());
+              }
+              for (const s of walk) {
+                expect(s.dot.x).toBeCloseTo(0, 9);
+                expect(s.dot.y).toBeCloseTo(0, 9);
+              }
+              for (let i = 1; i < walk.length; i++) {
+                expect(walk[i].map.x).toBeLessThanOrEqual(walk[i - 1].map.x + 1e-9);
+                expect(walk[i].map.y).toBeLessThanOrEqual(walk[i - 1].map.y + 1e-9);
+              }
+            } finally {
+              view(1080);
+            }
+          },
+        );
+
+        // the owner, 2026-11-12: "最大的全螢幕還是會有震動感", "人在左右移動時地圖點位不是直線 會鋸齒狀上下移動".
+        // The figure dances a backing px each way on screen against the camera's floored scroll;
+        // the map, held against the screen from each frame's scroll, does not dance with it.
+        it("should hold the map against the screen from the main camera's frames, the dots left on the figure, and stop hearing them with the floor's minimap (§C.19)", () => {
+          const { run, map, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          r.playerPos = { x: 2570, y: 3090 };
+          r.followMapOverlay();
+          const layers = map() as unknown as { map: Made; dots: Made };
+          const stood = layers.map.last.setPosition as number[];
+          const cam = (run as unknown as { cameras: { main: { frames?: Set<(scroll: { x: number; y: number }) => void> } } }).cameras.main;
+          const frameAt = (x: number, y: number) => {
+            for (const listener of [...(cam.frames ?? [])]) listener({ x, y });
+          };
+          frameAt(1000, 800);
+          expect(layers.map.last.setPosition).toEqual(stood);
+          // the camera a px on: on screen the figure's point steps a px back; the map holds there
+          r.followMapOverlay();
+          frameAt(1001, 800);
+          expect(layers.map.last.setPosition).toEqual([stood[0] + 1, stood[1]]);
+          expect(layers.dots.last.setPosition).toEqual(stood);
+          map()!.destroy();
+          expect(cam.frames?.size).toBe(0);
+        });
       });
 
       it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
@@ -7436,7 +7925,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           other_players: [ally("a", placedAt.stairs)] as GameState["other_players"],
         });
         expect(map()).toBeDefined();
-        expect(map()!.shown).toBe(true);
+        expect(map()!.mode).toBe("normal");
         expect(dots).toHaveBeenLastCalledWith({ self: undefined, allies: [placedAt.stairs] });
         expect(map()!.content.regions.map((r) => r.id)).toContain(regionAt(grid, placedAt.stairs));
       });
@@ -7459,9 +7948,116 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           useGameStore.getState().receiveFloorMap(mapOf(floorState(floor)));
           handle(bare(floorState(floor)));
           expect(run.dungeon).toBeUndefined();
+          // no minimap: the column closes up to its top (FS-56CKV §B.11)
+          expect(standing(run.floorText)).toEqual([1070, 44]);
+          expect(standing(run.escapedCountText)).toEqual([1070, 69]);
         }
         expect(destroyed).toHaveBeenCalled();
         expect(shown).not.toHaveBeenCalled();
+      });
+
+      describe("the dev position readout (FS-56CKV §C, I-56CKV-3)", () => {
+        const { POSITION_READOUT } = await_positionReadout;
+        /** Where the readout was last stood, and on which corner of its box. */
+        const readoutAt = (run: MappedRun) => {
+          const { last } = run.positionReadout as Made;
+          return { at: last.setPosition, origin: last.setOrigin };
+        };
+        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 44 + 108 - 4], origin: [0, 1] });
+        /** Under the column closed up to its top: the floor indicator, the escaped count, then 4 px. */
+        const underColumn = (right: number, lines = 2) => ({ at: [right, 44 + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
+
+        afterEach(() => {
+          vi.unstubAllEnvs();
+        });
+
+        it("should draw it at 10 px in a HUD text token at a partial alpha, with no backing, over the minimap's depth (§C.15, §C.16)", () => {
+          const { run } = mapped();
+          const readout = run.positionReadout as Made;
+          expect(readout.args[3]).toEqual({ fontFamily: CANVAS_FONT.body, fontSize: "10px", color: toCss(palette.hudText) });
+          expect(readout.last.setAlpha).toEqual([POSITION_READOUT.alpha]);
+          expect(readout.last.setScrollFactor).toEqual([0]);
+          expect(readout.depth).toBeGreaterThan(await_minimap.MINIMAP.depth);
+        });
+
+        it("should stand it in the minimap's bottom-left corner, 4 px in, and follow the minimap on resize, re-crispened (§C.14, §C.19)", () => {
+          const { run, view } = mapped();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+          viewport.set({ width: 1280, height: 720, renderScale: 2 });
+          run.relayoutHud();
+          expect(readoutAt(run)).toEqual(inMinimap(1270));
+          expect((run.positionReadout as Made).last.setResolution).toEqual([2]);
+          view(1080);
+        });
+
+        it("should never stand it at the top left, in a run on a floor with a minimap or without one", () => {
+          const { run, handle } = mapped();
+          const left = () => (readoutAt(run).at![0] as number) < viewport.width / 2;
+          expect(left()).toBe(false);
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(left()).toBe(false);
+        });
+
+        it("should stand it 4 px under the column's last line, right-aligned, in the overlay mode, and back in the minimap on M (§C.18; FS-1SEF0 §D.22)", () => {
+          const { run, keys, pressTo } = mapped();
+          pressTo("overlay");
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          keys["keydown-M"]();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should stand it 4 px inside the enlarged minimap's bottom-left corner at its own 10 px (FS-1SEF0 §B.11)", () => {
+          const { run, pressTo } = mapped();
+          pressTo("enlarged");
+          expect(readoutAt(run)).toEqual({ at: [1070 - 324 + 4, 44 + 162 - 4], origin: [0, 1] });
+          expect((run.positionReadout as Made).args[3]).toMatchObject({ fontSize: "10px" });
+        });
+
+        it("should follow the column as the floor indicator's label goes and comes, with no minimap shown (§C.18)", () => {
+          const { run, pressTo } = mapped();
+          pressTo("overlay");
+          run.updateFloorIndicator({ floor: undefined });
+          expect(readoutAt(run)).toEqual(underColumn(1070, 1));
+          run.updateFloorIndicator({ floor: 1 });
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+        });
+
+        it("should stand it under the column on a floor without regions and on a dungeon floor before its map, and in the minimap once it is built (§C.18, §C.19)", () => {
+          const { run, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(run.dungeon).toBeUndefined();
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          // floor 3 laid out as floor 1: before its map, then with it
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(run.dungeon?.minimap).toBeDefined();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should refresh it every frame without redrawing either of the minimap's layers (§C.16, FS-SRA9J §E.23)", () => {
+          const { run, map } = mapped();
+          const [redraws, dotRedraws] = [map()!.redraws, map()!.dotRedraws];
+          Object.assign(run, { player: (run as { player?: object }).player ?? {} });
+          for (const x of [200, 240, 280]) {
+            Object.assign(run, { playerPos: { x, y: 180 } });
+            (run as unknown as { events: Emitter }).events.emit("update");
+            expect((run.positionReadout as Made).args[2]).toBe(`X: ${x} Y: 180`);
+          }
+          expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
+        });
+
+        it("should make none in a production build, and the column lays out without it (§C.19)", () => {
+          vi.stubEnv("NEXT_PUBLIC_SHOW_POSITION_READOUT", "false");
+          const { run, stage, pressTo } = mapped();
+          expect(run.positionReadout).toBeUndefined();
+          expect(stage.made.some((m) => m.kind === "text" && (m.args[3] as { fontSize?: string })?.fontSize === "10px")).toBe(false);
+          pressTo("overlay");
+          expect(standing(run.escapedCountText)).toEqual([1070, 69]);
+        });
       });
 
       it("should not exist in the hub or field scenes", () => {

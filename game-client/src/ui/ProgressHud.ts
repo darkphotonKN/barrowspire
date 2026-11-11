@@ -20,19 +20,20 @@ import {
 } from "./progress";
 
 export const PROGRESS_HUD_W = 180;
-/** Kept short: in the run the panel ends at y 78, above the notice band that starts there. */
+/** Kept short: in the run the panel ends at y 50, above the notice band that starts at y 78. */
 export const PROGRESS_HUD_H = 34;
 /**
- * Where each scene stands the bar, its top-left corner: the hub's in the corner's inset, the
- * run's under the position line and clear of the notice band (100 to 150) across the middle. In
- * the hub the party frames stand under it (FS-R82NV R34), in a run the resource bars do
- * (`RESOURCE_HUD_AT`) with the frames under them; a field has none.
+ * Where each scene stands the bar, its top-left corner: the hub's in the corner's inset; the
+ * run's as high as the hub's, at the run's x 10, in the place the dev position readout left
+ * (FS-56CKV §D.20), clear of the notice band (100 to 150) across the middle. In the hub the party
+ * frames stand under it (FS-R82NV R34), in a run the resource bars do (`RESOURCE_HUD_AT`) with
+ * the frames under them; a field has none.
  */
 export const PROGRESS_HUD_AT: Readonly<
   Record<"hub" | "run", { x: number; y: number }>
 > = {
   hub: { x: 16, y: 16 },
-  run: { x: 10, y: 44 },
+  run: { x: 10, y: 16 },
 };
 const HUD_DEPTH = 1000;
 const PAD = 10;

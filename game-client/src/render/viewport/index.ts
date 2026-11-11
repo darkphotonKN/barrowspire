@@ -21,6 +21,7 @@ export {
 export { anchorAt, relayoutOn, type Anchor, type Placement } from "./anchor";
 export {
   STAGE_WIDTH,
+  afterFrameSetUp,
   boundCamera,
   centreStage,
   releaseStage,

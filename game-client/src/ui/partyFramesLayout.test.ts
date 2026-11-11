@@ -539,8 +539,9 @@ describe("partyFramesFrame", () => {
     };
   };
 
+  // FS-56CKV §D.20 supersedes FS-R82NV R34's "run y 160" in part: the run's stack moved up 28 px
   it.each([
-    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 160 },
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 132 },
     { world: "field" as const, bars: RESOURCE_HUD_AT.field, top: 92 },
   ])(
     "in the $world, the frames stand 24 px below the bars at their tallest",
@@ -552,9 +553,19 @@ describe("partyFramesFrame", () => {
     },
   );
 
+  // FS-56CKV §D.20 supersedes FS-8AY7S R20's "x 10, y 84" in part: the run's XP bar at the top
+  // as the hub's (y 16, its x still 10), the bars under it at y 56; §D.22: the hub and the field
+  // unchanged
+  it("stands the run's XP bar at (10, 16), as high as the hub's, and the hub's at (16, 16) (FS-56CKV §D.20, §D.22)", () => {
+    expect(PROGRESS_HUD_AT.run).toEqual({ x: 10, y: 16 });
+    expect(PROGRESS_HUD_AT.run.y).toBe(PROGRESS_HUD_AT.hub.y);
+    expect(PROGRESS_HUD_AT.hub).toEqual({ x: 16, y: 16 });
+    expect(PARTY_FRAMES_PLACEMENT.hub).toEqual({ x: 16, top: 56 });
+  });
+
   it("stands the run's bars under the XP bar on one left edge, and the field's in the corner", () => {
     const xp = PROGRESS_HUD_AT.run;
-    expect(RESOURCE_HUD_AT.run).toEqual({ x: xp.x, y: 84 });
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: xp.x, y: 56 });
     expect(RESOURCE_HUD_AT.run.y).toBeGreaterThanOrEqual(xp.y + PROGRESS_HUD_H);
     expect(RESOURCE_HUD_W).toBe(PROGRESS_HUD_W);
     expect(RESOURCE_HUD_AT.field).toEqual({ x: 10, y: 16 });
