@@ -282,9 +282,10 @@ const BUTTON_W = 200;
 const BUTTON_H = 38;
 const BUTTON_GAP = 16;
 /**
- * Where the level and experience bar sit (FS-BDA7X req 42): top-left, under the position line,
- * and clear of the notice band (100–150) across the middle of the screen (`PROGRESS_HUD_AT`,
- * which the party frames stand under).
+ * Where the level and experience bar sit (FS-BDA7X req 42): top-left, at the top of the stack
+ * since the dev position readout left it (FS-56CKV §D.20), and clear of the notice band (100–150)
+ * across the middle of the screen (`PROGRESS_HUD_AT`, which the resource bars and the party
+ * frames stand under).
  */
 const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
 const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
