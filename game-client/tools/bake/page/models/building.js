@@ -24,13 +24,14 @@ import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../mater
 import { part } from "./util.js";
 import { ROOF_RISE, wallPiece, WALL_BACK } from "./architecture.js";
 import { DOOR_GAP } from "./interactables.js";
+import { WALL_FOOT } from "../shadow.js";
 import { masonry, PX, roughBox, stoneMat, towerMaterials } from "./tower.js";
 
 /** A piece is one tile along its axis plus the hair of overlap the timber pieces use. */
 const LENGTH = 1.024;
-/** Timber wall thickness, as architecture.js; the masonry partition's, as tower.js. */
-const THICK = 0.18;
-const P_THICK = 0.24;
+/** Timber wall thickness, as architecture.js; the masonry partition's, as tower.js (../shadow.js). */
+const THICK = WALL_FOOT.timber;
+const P_THICK = WALL_FOOT.masonry;
 /** How far exterior relief may stand proud of the centreline: inside the guide's cap (0.26). */
 const PROUD = 0.13;
 

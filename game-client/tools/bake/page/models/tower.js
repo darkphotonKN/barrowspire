@@ -16,11 +16,12 @@ import { color, cssRgb, grey, mix, normalized, shade } from "../palette.js";
 import { canvasTexture, glow, materials, mkCanvas, pixelTexture, plain, textured } from "../materials.js";
 import { part, rod, scaled, V3 } from "./util.js";
 import { post, SCONCE_FLAME, wallPiece } from "./architecture.js";
+import { POST_FOOT, WALL_FOOT } from "../shadow.js";
 
 /** A piece is one tile along its axis plus the hair of overlap the timber pieces use. */
 const LENGTH = 1.024;
-/** Partition masonry depth: inside the timber cap's 0.26, which bounds the frame. */
-const P_THICK = 0.24;
+/** Partition masonry depth (../shadow.js): inside the timber cap's 0.26, which bounds the frame. */
+const P_THICK = WALL_FOOT.masonry;
 /** The outer wall: thicker and taller than a partition. */
 export const PERIMETER_BACK = 4.6;
 export const PERIMETER_FRONT = 0.78;
@@ -503,7 +504,7 @@ export function partitionPost(H) {
   const g = new THREE.Group();
   const face = stoneMat(masonry(36, Math.round(PX * (H + 0.12)), { key: 5400, block: [36, 36], course: [24, 34], flaws: 0 }));
   // a 0.24 core to the ground (the timber post's footprint), the pier proper lifted a hair
-  g.add(part(new THREE.BoxGeometry(0.24, 0.05, 0.24), T.block, { y: 0.025 }));
+  g.add(part(new THREE.BoxGeometry(POST_FOOT, 0.05, POST_FOOT), T.block, { y: 0.025 }));
   g.add(part(new THREE.BoxGeometry(0.28, H + 0.08, 0.28), [face, face, T.cap, T.cap, face, face], { y: 0.04 + (H + 0.08) / 2 }));
   g.add(part(roughBox(0.3, 0.08, 0.3, 77, 0.06), T.cap, { y: H + 0.16 }));
   g.add(guide(post(H)));

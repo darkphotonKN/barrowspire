@@ -1,0 +1,131 @@
+/**
+ * The ground shadows of walls, as shapes (FS-V8FT3 §C, §D).
+ *
+ * A wall's sprite carries no ground shadow: the client paints one, flat, where the bake's key
+ * light would have thrown it, so it agrees with the baked shadows of the props beside it. This
+ * plans the shapes and paints nothing.
+ *
+ * A shadow is cast by a **foot**: the ground a stretch of wall, or a post, is drawn standing on,
+ * with how tall it stands. Nothing here reads a server wall rect or a cell: a foot comes from the
+ * pieces and posts as they are drawn (`planWalls`), so wherever a wall is drawn, its shadow starts
+ * there. One foot is one shape, and a run of pieces of one height is one foot, never one per piece.
+ */
+
+// by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
+import { WORLD_PX_PER_TILE, type Point } from "@/render/iso/projection";
+import { BAKE } from "./bake";
+import type { WallHeight, WallPiece, WallPost } from "./walls";
+
+/** The ground something that casts stands on: an axis-aligned rect in world px, and its height. */
+export interface WallFoot {
+  /** The rect's north-west corner. */
+  min: Point;
+  /** The rect's south-east corner. */
+  max: Point;
+  /** How tall the wall or post stands, in tile edges (`BAKE.WALL_BACK`, `BAKE.WALL_FRONT`). */
+  height: number;
+}
+
+/** What a wall is built of in the bake: it decides how thick its pieces stand. */
+export type WallMaterial = keyof typeof BAKE.WALL_FOOT;
+
+/** Walls as they are drawn: what of `planWalls`' pieces and posts a shadow is cast from. */
+export interface DrawnWalls {
+  pieces: readonly Pick<WallPiece, "axis" | "at" | "keep" | "height">[];
+  posts: readonly Pick<WallPost, "at" | "height">[];
+}
+
+const T = WORLD_PX_PER_TILE;
+/** Pieces closer than this, in world px, stand on one line and end to end. */
+const EPSILON = 1e-6;
+/** How tall a piece or post of each drawn height stands, in tile edges (R2). */
+const TALL: Record<WallHeight, number> = { back: BAKE.WALL_BACK, front: BAKE.WALL_FRONT };
+
+/**
+ * Where the bake's key light throws the shadow of a point `height` tile edges above the ground,
+ * as an offset in world px (R11).
+ */
+export function castOffset(height: number): Point {
+  const [lx, ly, lz] = BAKE.KEY_LIGHT;
+  return { x: ((height * -lx) / ly) * T, y: ((height * -lz) / ly) * T };
+}
+
+/**
+ * The shadow one foot casts (R15): the outline of the foot swept along the light to its top, which
+ * is the convex hull of the foot and the foot moved by the offset for its height. A closed polygon
+ * in world px, each corner once.
+ */
+export function castShadow(foot: WallFoot): Point[] {
+  const { min, max } = foot;
+  const d = castOffset(foot.height);
+  const rect = [min, { x: max.x, y: min.y }, max, { x: min.x, y: max.y }];
+  return hull([...rect, ...rect.map((p) => ({ x: p.x + d.x, y: p.y + d.y }))]);
+}
+
+/** The convex hull of some points (Andrew's monotone chain): its corners in order, none twice. */
+function hull(points: readonly Point[]): Point[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const turn = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const chain = (from: readonly Point[]) => {
+    const out: Point[] = [];
+    for (const p of from) {
+      while (out.length >= 2 && turn(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    return out.slice(0, -1);
+  };
+  return [...chain(sorted), ...chain(sorted.reverse())];
+}
+
+/**
+ * The feet drawn walls stand on (R13, R15–R17): one for every stretch of pieces that stand end to
+ * end on one line at one height, as long as the pieces are (a trimmed piece to where it ends) and
+ * as thick as the bake builds the material; then one square for every post, by its own height.
+ * Pieces across a gap, on two lines or of two heights are separate feet.
+ */
+export function wallFeet(walls: DrawnWalls, material: WallMaterial): WallFoot[] {
+  const spans = walls.pieces
+    .map((p) => {
+      const from = p.at[p.axis] - T / 2;
+      return { axis: p.axis, line: p.at[p.axis === "x" ? "y" : "x"], from, to: from + p.keep * T, height: p.height };
+    })
+    .sort((a, b) => {
+      if (a.axis !== b.axis) return a.axis < b.axis ? -1 : 1;
+      return Math.abs(a.line - b.line) > EPSILON ? a.line - b.line : a.from - b.from;
+    });
+  const stretches: typeof spans = [];
+  for (const s of spans) {
+    const last = stretches[stretches.length - 1];
+    const joins =
+      last !== undefined &&
+      last.axis === s.axis &&
+      last.height === s.height &&
+      Math.abs(last.line - s.line) <= EPSILON &&
+      s.from <= last.to + EPSILON;
+    if (joins) last.to = Math.max(last.to, s.to);
+    else stretches.push({ ...s });
+  }
+
+  const wall = (BAKE.WALL_FOOT[material] * T) / 2;
+  const post = (BAKE.POST_FOOT * T) / 2;
+  return [
+    ...stretches.map(({ axis, line, from, to, height }) =>
+      axis === "x"
+        ? { min: { x: from, y: line - wall }, max: { x: to, y: line + wall }, height: TALL[height] }
+        : { min: { x: line - wall, y: from }, max: { x: line + wall, y: to }, height: TALL[height] },
+    ),
+    ...walls.posts.map(({ at, height }) => ({
+      min: { x: at.x - post, y: at.y - post },
+      max: { x: at.x + post, y: at.y + post },
+      height: TALL[height],
+    })),
+  ];
+}
+
+/**
+ * The ground shadows of drawn walls: one shape per foot (`wallFeet`), so one per run of a height
+ * and one per post, each a closed polygon in world px (`castShadow`).
+ */
+export function planWallShadows(walls: DrawnWalls, material: WallMaterial): Point[][] {
+  return wallFeet(walls, material).map(castShadow);
+}

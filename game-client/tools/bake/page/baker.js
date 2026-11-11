@@ -12,9 +12,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { K1, SS, VIEW_DIR } from "./projection.js";
 import { color, mix, normalized } from "./palette.js";
 import { applyOpacity } from "./opacity.js";
+import { KEY_LIGHT, SHADOW_COLOR, SHADOW_OPACITY } from "./shadow.js";
 
-/** Key light direction (toward the light): from screen-left and above. */
-const LIGHT_DIR = new THREE.Vector3(-1, 2.83, 1).normalize();
+/** Key light direction (toward the light): from screen-left and above (./shadow.js). */
+const LIGHT_DIR = new THREE.Vector3(...KEY_LIGHT).normalize();
 
 export function createBaker() {
   const renderer = new THREE.WebGLRenderer({
@@ -60,7 +61,7 @@ export function createBaker() {
 
   const catcher = new THREE.Mesh(
     new THREE.PlaneGeometry(60, 60),
-    new THREE.ShadowMaterial({ opacity: 0.5 }),
+    new THREE.ShadowMaterial({ color: SHADOW_COLOR, opacity: SHADOW_OPACITY }),
   );
   catcher.rotation.x = -Math.PI / 2;
   catcher.position.y = 0.002;
