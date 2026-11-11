@@ -722,6 +722,50 @@ glowing share and its dimming, and now its flicker, as the record's data.
 | a glow's dimming to grey | 500 ms, even steps, 8 frames | 700 ms, holding then going (`Sine.easeIn`), 20 frames from 12 shades |
 | a glow's flicker | none | once or twice, between 15% and 70% of its dimming: a dip of 0.6 of its heat and back within 100 ms |
 
+**The owner's third tune of the ash, 2026-11-12.** Watching the larger flakes, he said: "灰盡碎屑稍微散遠
+一點 因為從左往右燒 所以灰燼可以稍微往左往上散": spread the flakes a little farther, and since the
+front burns from left to right, let the ash drift up and a little to the left, back over what has
+already burned, as if the burn's draught carries it. The flakes' heading is now centred 30° left
+of straight up instead of straight up, with the same spread of 30° either way about that centre,
+so a flake leaves somewhere between straight up and 60° left of up, never to the right of up. Left
+is the screen's left, always: the card never turns. They leave faster, 18–45 px/s instead of
+12–32, and slow less, a drag of 0.4 of their speed a second instead of 0.5; their life stays
+1000 ms, so they go about 1.5 times as far (the average flake about 26 px instead of about
+17, the farthest about 37 px instead of about 25). The sparks lean with them, by half: their
+heading is centred 15° left of up instead of straight up, their spread (25° either way) and speed
+(40–80 px/s) unchanged, so a spark leaves between 10° right of up and 40° left of it. In the same
+look he added "灰燼 碎屑的火星在稍微多一些" and, asked whether he meant the sparks, "余光": not more
+sparks (their density, 0.012, and cap, 40, are unchanged) but more of the flakes' own afterglow,
+the ember light left on the paper. More of the flake shapes glow, 0.85 of them instead of two
+thirds (20 of the 24 shapes instead of 16); the glow lasts 900 ms instead of 700, the same
+hold-then-go (`Sine.easeIn`), the same one or two flicker dips, the same 20 frames from 12 shades,
+so each frame holds a little longer; and the ember patch covers more of a glowing flake, about 1.5
+times its area today (about 14% of the flake's pixels at full heat instead of about 10%): its
+burnt edge starts 0.28 of the way from the flake's middle to its far side instead of 0.4, and
+deepens at the same rate. It is still `ember` only, still on one side, never round the whole
+outline (under half of it); a plain flake's grey burnt edge is unchanged. The front, the sizes,
+the flicker, the flutter, the sway, the sparks' count and the timing are unchanged. Two of
+R59's bounds move with his values: no flake starts faster than 45 px/s or more than 60° off
+straight up, no spark more than 40° off it. And the sparks no longer outpace every flake at
+leaving (the fastest flake, 45 px/s, now passes the slowest spark, 40): they still rise faster
+on average (60 px/s against about 31), which R64's "faster than any flake" now means. His values
+replace the starting values where R56, R59 and R64 stated them, and their criteria follow. A tune
+(`Tunes FS-PQ2TW`): R61 names the flakes' and the sparks' heading lean beside their spread as the
+record's data, and the glowing patch's size (where its burnt edge starts) beside its share and
+its dimming.
+
+| Value | Was | Now |
+|---|---|---|
+| a flake's heading, its centre | straight up | 30° left of straight up (screen-left) |
+| a flake's heading, its spread about that centre | 30° either way (30° left to 30° right of up) | 30° either way (straight up to 60° left of up) |
+| a flake's start speed | 12–32 px/s | 18–45 px/s |
+| a flake's drag | 0.5 of its speed a second | 0.4 of its speed a second |
+| how far a flake goes in its 1000 ms | about 17 px on average, at most about 25 | about 26 px on average, at most about 37 |
+| a spark's heading, its centre | straight up | 15° left of straight up (screen-left); spread (25° either way) and speed unchanged |
+| the share of flake shapes that glow | two thirds (16 of 24) | 0.85 (20 of 24) |
+| a glow's dimming to grey | 700 ms, holding then going (`Sine.easeIn`), 20 frames | 900 ms, the same ease, flicker and 20 frames |
+| a glowing flake's ember patch | its burnt edge from 0.4 of the way out, about 10% of its pixels hot | from 0.28 of the way out, about 14% of its pixels hot (about 1.5 times the area) |
+
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
@@ -753,13 +797,17 @@ glowing share and its dimming, and now its flicker, as the record's data.
       of 2026-11-12, "碎屑再大片一點"; was 1.5–8), drawn so that the smaller are more, the middle
       flake about 8 px, and no side under 3 view px unless the whole shard is. There is **no
       outline ring**: a flake's edge is the same paper as its body.
-    - **Colour.** A dark `slate` body with faint lighter mottling toward `slateLight`. About two
-      thirds of flakes (the owner's second tune of 2026-11-12, "再加一些快滅掉的火光"; was a third)
-      carry a small glowing `ember` patch on one edge, never round the whole outline, that dies
-      like an ember over its first 700 ms (was 500 ms): holding its heat, then going to ash
+    - **Colour.** A dark `slate` body with faint lighter mottling toward `slateLight`. About 0.85
+      of flakes (the owner's third tune of 2026-11-12, "灰燼 碎屑的火星在稍微多一些", "余光"; was two
+      thirds, and a third before his second tune, "再加一些快滅掉的火光") carry a glowing `ember` patch on one edge, never round the whole outline, that dies
+      like an ember over its first 900 ms (the owner's third tune of 2026-11-12, "余光"; was 700 ms,
+      and before that 500 ms), covering about 1.5 times the area it did before that tune: holding its heat, then going to ash
       grey, and flickering once or twice on the way, a quick dip and a recovery.
-    - **Motion: flutter, not spin.** Each rises at 12–32 px/s on a heading within 30° of
-      straight up, slowing a little as it goes (a drag of 0.5 of its speed a second). It turns
+    - **Motion: flutter, not spin.** Each rises at 18–45 px/s on a heading within 30° of
+      30° left of straight up, so between straight up and 60° left of it, drifting back over what
+      has burned (the owner's third tune of 2026-11-12, "往左往上散"; was 12–32 px/s within 30°
+      of straight up), slowing a little as it goes (a drag of 0.4 of its speed a second; was
+      0.5). It turns
       slowly, 20–70° a second either way, and turns over in depth: its scale on one axis swings
       through zero and back (edge-on, then its other face) once every 500–1300 ms, its own
       period and phase, so every flake goes edge-on at least once in its life. It sways gently
@@ -780,8 +828,10 @@ glowing share and its dimming, and now its flicker, as the record's data.
     only, no new colour (ADR-0013).
 59. **An exception to FS-KYPQ9 §B.6, §B.2's ceiling, §B.4 and §B.10, for the ash, and only
     these.** The ash is more than 12 particles (at most 300 flakes and 40 sparks); its debris
-    rises instead of falling or settling, and never sprays: no flake starts faster than 32 px/s
-    or more than 30° off straight up, no spark faster than 80 px/s or more than 25° off it. It
+    rises instead of falling or settling, and never sprays: no flake starts faster than 45 px/s
+    or more than 60° off straight up, and none heads right of it; no spark faster than 80 px/s or
+    more than 40° off it (the owner's third tune of 2026-11-12; was 32 px/s and 30° for a flake,
+    25° for a spark). It
     lasts 3000 ms (the owner's tune of 2026-11-12; was 2000 ms), past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
     other (§B.4's "no tween sets `scaleX` and `scaleY` to different values"): it is a turn in
     depth, never a squash, a stretch or a bounce; its scale never grows past its size and its
@@ -799,8 +849,9 @@ glowing share and its dimming, and now its flicker, as the record's data.
     view change or a scene's end (R9, R36, the resize edge state).
 61. **Its numbers are data.** The front's time and shape, the band; the flakes' density, cap,
     shapes, length and its bias toward the small, aspect, mottling, glowing share and its dimming
-    (and, since the owner's second tune of 2026-11-12, its flicker), speed, drag, heading spread, turn, flip, sway, life and alpha; the sparks' density, cap, size,
-    speed, drag, heading spread, life and flicker; the tokens and the easings are one typed record
+    (and, since the owner's second tune of 2026-11-12, its flicker), speed, drag, heading lean
+    (since his third tune) and spread, turn, flip, sway, life and alpha; the sparks' density, cap, size,
+    speed, drag, heading lean (since his third tune) and spread, life and flicker; the tokens and the easings are one typed record
     in `cardAsh.ts`, asserted by a vitest; a retune is an edit there.
 62. **The gallery shows all three.** A third replayable card, "Arrival card ash", beside "Arrival
     card dust" and "Arrival card smoke", on the one gallery card (R52), so a replay of any
@@ -813,7 +864,10 @@ glowing share and its dimming, and now its flicker, as the record's data.
     sprinkle of tiny ember sparks comes off it: 0.012 per view px² of ink, at most 40 for the
     whole card, from a second emitter, each let go from a start point on the strokes or the rule
     on the frame the front reaches it. A spark is 1–2 view px of `ember`, drawn additively so it
-    reads as light; it rises faster than any flake, 40–80 px/s within 25° of straight up, slowing
+    reads as light; it rises faster than the flakes, 40–80 px/s within 25° of 15° left of
+    straight up (the owner's third tune of 2026-11-12, "往左往上散"; was within 25° of straight up;
+    since that tune the fastest flake passes the slowest spark, and the sparks are faster on
+    average, 60 px/s against about 31), slowing
     a little (1.5 of its speed a second), flickers (its alpha beating at 6–14 Hz as it falls to
     0), and dies out within 300–600 ms of leaving. No warm light token outside the amber family
     exists (the guideline's torch warmth is `amber` and `ember`), so a spark brightens by its
@@ -827,12 +881,12 @@ glowing share and its dimming, and now its flicker, as the record's data.
 - [ ] The front advances from the left: the burned share of the ink only grows, and its burning band moves right on average; every stroke pixel is gone when the front has crossed. (R55)
 - [ ] The burning band is ember-tinted at its leading edge and slate at its trailing edge; pixels ahead of the front are as the card drew them. (R55, R58)
 - [ ] Every flake starts on a stroke pixel or the rule, never in a gap, and only once that pixel has burned out. (R56)
-- [ ] Flakes rise on average, starting at 12–32 px/s within 30° of up and slowing a little; each turns slowly, 20–70° a second; 0.1 per view px² of ink, at most 300, from one emitter, with no `explode` call. (R56, R59)
+- [ ] Flakes rise on average, starting at 18–45 px/s and slowing a little (a drag of 0.4), so they go about 1.5 times as far as at 12–32 px/s and 0.5; their mean heading leans about 30° left of up, none heads right of straight up or more than 60° left of it; each turns slowly, 20–70° a second; 0.1 per view px² of ink, at most 300, from one emitter, with no `explode` call. (R56, R59; the owner's third tune of 2026-11-12, was 12–32 px/s within 30° of up)
 - [ ] Each flake flips: its scale on one axis passes through edge-on (zero) and changes sign within its life, never growing past its size; the other axis keeps its size. (R56, R59)
 - [ ] No flake draws a closed outline ring: a plain flake's edge pixels are its body's colours, and a glowing flake's ember lies on one side, on less than half of its outline. (R56)
 - [ ] The flakes span a range of sizes (from about 3 to about 14 view px long, the middle one about 8, more of them small than large; no side under 3 view px unless the whole shard is) and of aspect ratios (some near 1, many longer than wide). (R56; the owner's second tune of 2026-11-12, was about 1.5 to about 8)
-- [ ] A flake's pixels are mixes of `slate`, `slateLight` and `ember`; about two thirds of flakes glow, and a glowing flake's patch dies to grey over its first 700 ms, its heat dipping and recovering once or twice before it goes; no other colour appears but the card's own ink. (R56, R58; the owner's second tune of 2026-11-12, was a third over 500 ms)
-- [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px of `ember`, additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of up (faster than any flake), flicker, and are gone within 600 ms. (R64, R59)
+- [ ] A flake's pixels are mixes of `slate`, `slateLight` and `ember`; 0.85 of the flake shapes glow, a glowing flake's patch covering about 14% of it at full heat (about 1.5 times the area before the owner's third tune), and dies to grey over its first 900 ms, its heat dipping and recovering once or twice before it goes; no other colour appears but the card's own ink. (R56, R58; the owner's third tune of 2026-11-12, "余光", was two thirds over 700 ms; his second, was a third over 500 ms)
+- [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px of `ember`, additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of a heading 15° left of up (faster than the flakes on average), flicker, and are gone within 600 ms. (R64, R59; the owner's third tune of 2026-11-12, was within 25° of straight up)
 - [ ] The front crosses in 2000 ms, linear, and the ash is gone at 3000 ms. (R55, R57)
 - [ ] With reduced motion, no burn and no flake are made and the card fades over 600 ms. (R60)
 - [ ] A failed read, no ink or no canvas texture: no burn, a fade, logged once. (R60)

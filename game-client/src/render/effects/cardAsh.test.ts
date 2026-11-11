@@ -205,14 +205,16 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
         aspect: { from: 1.1, to: 2.8 },
         mottle: 0.6,
         glow: {
-          share: 2 / 3,
-          ms: 700,
+          share: 0.85,
+          edgeFrom: 0.28,
+          ms: 900,
           steps: 20,
           shades: 12,
           flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
         },
-        speed: { from: 12, to: 32 },
-        drag: 0.5,
+        speed: { from: 18, to: 45 },
+        drag: 0.4,
+        leanLeftDeg: 30,
         spreadDeg: 30,
         spinDegPerS: { from: 20, to: 70 },
         flipMs: { from: 500, to: 1300 },
@@ -226,6 +228,7 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
         sizePx: { from: 1, to: 2 },
         speed: { from: 40, to: 80 },
         drag: 1.5,
+        leanLeftDeg: 15,
         spreadDeg: 25,
         flickerHz: { from: 6, to: 14 },
         blend: "ADD",
@@ -256,14 +259,19 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     expect([...new Set(own)].sort()).toEqual(["ember", "slate", "slateLight"]);
     // the exception, bounded: a few hundred flakes and a few tens of sparks, rising, never sprayed
     expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(300);
-    expect(CARD_ASH.flake.speed.to).toBeLessThanOrEqual(32);
-    expect(CARD_ASH.flake.spreadDeg).toBeLessThanOrEqual(30);
+    // the owner's third tune of 2026-11-12, "往左往上散": a flake at most 45 px/s and 60° off up,
+    // never right of it; a spark at most 40° off up (was 32 px/s and 30°, and 25°)
+    expect(CARD_ASH.flake.speed.to).toBeLessThanOrEqual(45);
+    expect(CARD_ASH.flake.leanLeftDeg + CARD_ASH.flake.spreadDeg).toBeLessThanOrEqual(60);
+    expect(CARD_ASH.flake.leanLeftDeg - CARD_ASH.flake.spreadDeg).toBeGreaterThanOrEqual(0);
     expect(CARD_ASH.spark.maxParticles).toBeLessThanOrEqual(40);
     expect(CARD_ASH.spark.speed.to).toBeLessThanOrEqual(80);
-    expect(CARD_ASH.spark.spreadDeg).toBeLessThanOrEqual(25);
+    expect(CARD_ASH.spark.leanLeftDeg + CARD_ASH.spark.spreadDeg).toBeLessThanOrEqual(40);
     expect(CARD_ASH.spark.lifeMs.to).toBeLessThanOrEqual(600);
-    // the sparks rise faster than any flake
-    expect(CARD_ASH.spark.speed.from).toBeGreaterThan(CARD_ASH.flake.speed.to);
+    // the sparks rise faster than the flakes on average (since the third tune the fastest flake,
+    // 45 px/s, passes the slowest spark, 40)
+    const mid = (r: { from: number; to: number }) => (r.from + r.to) / 2;
+    expect(mid(CARD_ASH.spark.speed)).toBeGreaterThan(mid(CARD_ASH.flake.speed));
     // the smallest flake still larger than the dust's motes (about 1.2 view px)
     expect(CARD_ASH.flake.lengthPx.from).toBeGreaterThan(1.2);
     // a flip only: the half-turn, edge-on to the other face, falls inside a flake's life
@@ -479,7 +487,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(emitter.calls.setScrollFactor).toEqual([[0]]);
       expect(config()).toMatchObject({
         lifespan: 1000,
-        speed: { min: 12, max: 32 },
+        speed: { min: 18, max: 45 },
         maxParticles: 300,
         emitting: false,
         scaleX: 1,
@@ -498,11 +506,11 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
           expect(sheet.frames.some((fr) => fr.name === f.frame)).toBe(true);
         }
       }
-      // slowing a little: a drag of 0.5 of its speed a second, never turning it back
+      // slowing a little: a drag of 0.4 of its speed a second (was 0.5), never turning it back
       const ax = config().accelerationX as { onUpdate(p: object, k: string, t: number, v: number): number };
       const ay = config().accelerationY as { onUpdate(p: object, k: string, t: number, v: number): number };
-      expect(ax.onUpdate({ velocityX: 10, velocityY: -20 }, "accelerationX", 0.5, 0)).toBeCloseTo(-5);
-      expect(ay.onUpdate({ velocityX: 10, velocityY: -20 }, "accelerationY", 0.5, 0)).toBeCloseTo(10);
+      expect(ax.onUpdate({ velocityX: 10, velocityY: -20 }, "accelerationX", 0.5, 0)).toBeCloseTo(-4);
+      expect(ay.onUpdate({ velocityX: 10, velocityY: -20 }, "accelerationY", 0.5, 0)).toBeCloseTo(8);
     });
 
     it("should let each go from a stroke pixel or the rule, only once that pixel has burned out", () => {
@@ -533,7 +541,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(calls.reduce((n, [count]) => n + count, 0)).toBe(want);
     });
 
-    it("should rise within 30° of straight up, turning slowly, 20–70° a second either way", () => {
+    it("should rise up and to the left, 30° left of up on average, never right of up nor past 60° left, turning slowly, 20–70° a second either way", () => {
       const { config } = flakes();
       const angle = config().angle as { onEmit(p: object, key: string): number };
       const rotate = config().rotate as {
@@ -541,12 +549,19 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         onUpdate(p: object, key: string, t: number, value: number): number;
       };
 
+      // the owner's third tune of 2026-11-12, "往左往上散": -90 is straight up, -180 screen-left
       const headings = Array.from({ length: 300 }, () => angle.onEmit({}, "angle"));
-      for (const deg of headings) expect(Math.abs(deg + 90)).toBeLessThanOrEqual(30);
-      expect(Math.min(...headings)).toBeLessThan(-110);
-      expect(Math.max(...headings)).toBeGreaterThan(-70);
-      // the mean heading is straight up: the ash rises on average
-      expect(headings.reduce((s, d) => s + d, 0) / headings.length).toBeCloseTo(-90, -1);
+      for (const deg of headings) {
+        // never right of straight up, never past 60° left of it
+        expect(deg).toBeLessThanOrEqual(-90 + 1e-9);
+        expect(deg).toBeGreaterThanOrEqual(-150 - 1e-9);
+      }
+      expect(Math.min(...headings)).toBeLessThan(-140);
+      expect(Math.max(...headings)).toBeGreaterThan(-100);
+      // the mean heading leans about 30° left of up: the ash drifts back over what has burned
+      const mean = headings.reduce((s, d) => s + d, 0) / headings.length;
+      expect(mean).toBeGreaterThan(-124);
+      expect(mean).toBeLessThan(-116);
 
       const turns = Array.from({ length: 200 }, () => {
         const p = {};
@@ -560,6 +575,33 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
       expect(turns.some((s) => s > 0)).toBe(true);
       expect(turns.some((s) => s < 0)).toBe(true);
+    });
+
+    it("should travel farther than before the third tune, about 1.5 times as far in its life", () => {
+      const { config } = flakes();
+      const { min, max } = config().speed as { min: number; max: number };
+      const ax = config().accelerationX as { onUpdate(p: object, k: string, t: number, v: number): number };
+      const ay = config().accelerationY as { onUpdate(p: object, k: string, t: number, v: number): number };
+      const life = config().lifespan as number;
+      /** How far a flake leaving straight up at `v` px/s goes in its life, stepped each ms. */
+      const travel = (v: number) => {
+        const p = { velocityX: 0, velocityY: -v };
+        let y = 0;
+        for (let ms = 0; ms < life; ms++) {
+          const a = ay.onUpdate(p, "accelerationY", ms / life, 0);
+          expect(ax.onUpdate(p, "accelerationX", ms / life, 0)).toBeCloseTo(0);
+          p.velocityY += a / 1000;
+          y += p.velocityY / 1000;
+        }
+        return -y;
+      };
+      const mean = Array.from({ length: 21 }, (_, k) => travel(min + ((max - min) * k) / 20)).reduce((s, d) => s + d) / 21;
+      // before: 12–32 px/s under a drag of 0.5 over 1 s, about 17.3 px on average, at most about 25.2
+      const before = (v: number) => (v * (1 - Math.exp(-0.5))) / 0.5;
+      const was = (before(12) + before(32)) / 2;
+      expect(mean / was).toBeGreaterThan(1.4);
+      expect(mean / was).toBeLessThan(1.65);
+      expect(travel(max)).toBeGreaterThan(before(32));
     });
 
     it("should flutter, not spin: each flake's scale on one axis swings through edge-on and over, never past its size", () => {
@@ -686,7 +728,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
     });
 
-    it("should be slate mottled toward slateLight, two thirds with an ember patch that dies to grey over its first 700 ms", () => {
+    it("should be slate mottled toward slateLight, 0.85 with an ember patch that dies to grey over its first 900 ms", () => {
       const all = shapes(2);
 
       for (const { frames } of all)
@@ -696,19 +738,31 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         const shades = new Set(frames[0].map((p) => p.c.join(",")));
         expect(shades.size).toBeGreaterThan(1);
       }
-      // the owner's second tune of 2026-11-12, "再加一些快滅掉的火光": two thirds, was a third
+      // the owner's third tune of 2026-11-12, "余光": 0.85, was two thirds (and a third before his second)
       const glowing = all.filter((s) => s.frames.length > 1);
-      expect(glowing).toHaveLength(16);
+      expect(glowing).toHaveLength(20);
       for (const { anim, frames } of glowing) {
-        // 20 frames over 700 ms (was 8 over 500), then held on the last
+        // 20 frames over 900 ms (was 700, and 8 over 500 before that), then held on the last
         expect(frames).toHaveLength(20);
-        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(700);
+        expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(900);
         expect(frames[0].some((p) => dist(p.c, EMBER) < 40)).toBe(true);
         expect(heat(frames.at(-1)!)).toBeLessThan(heat(frames[0]));
         // dimmed to grey: nothing ember-ish left
         for (const p of frames.at(-1)!) expect(offSegment(p.c, SLATE, SLATE_LIGHT)).toBeLessThan(3);
       }
       for (const { anim } of all.filter((s) => s.frames.length === 1)) expect(anim.frames).toHaveLength(1);
+    });
+
+    it("should cover about 1.5 times the area with its ember patch as before the third tune: about 14% of a glowing flake at full heat", () => {
+      const glowing = shapes(2).filter((s) => s.frames.length > 1);
+      const emberish = (c: number[]) => dist(c, EMBER) < Math.min(dist(c, SLATE), dist(c, SLATE_LIGHT));
+
+      // the owner's third tune of 2026-11-12, "余光": about 10% of its pixels hot before (measured
+      // on this sheet with the burnt edge from 0.4 of the way out), about 1.5 times that now
+      const shares = glowing.map(({ frames: [hot] }) => hot.filter((p) => emberish(p.c)).length / hot.length);
+      const mean = shares.reduce((s, v) => s + v, 0) / shares.length;
+      expect(mean).toBeGreaterThan(0.13);
+      expect(mean).toBeLessThan(0.19);
     });
 
     it("should die like an ember, not fade: a glowing flake's heat dips and recovers once or twice before it goes", () => {
@@ -822,7 +876,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
     });
 
-    it("should rise within 25° of up, slowing a little, and flicker as it dies out", () => {
+    it("should rise 15° left of up on average, within 25° of that, slowing a little, and flicker as it dies out", () => {
       const { sparkConfig } = sparks();
       const angle = sparkConfig().angle as { onEmit(p: object, key: string): number };
       const alpha = sparkConfig().alpha as {
@@ -831,7 +885,12 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       };
       const ay = sparkConfig().accelerationY as { onUpdate(p: object, k: string, t: number, v: number): number };
 
-      for (let n = 0; n < 200; n++) expect(Math.abs(angle.onEmit({}, "angle") + 90)).toBeLessThanOrEqual(25);
+      // the owner's third tune of 2026-11-12, "往左往上散": leaning 15° left of up, half the flakes' lean
+      const headings = Array.from({ length: 200 }, () => angle.onEmit({}, "angle"));
+      for (const deg of headings) expect(Math.abs(deg + 105)).toBeLessThanOrEqual(25 + 1e-9);
+      const mean = headings.reduce((s, d) => s + d, 0) / headings.length;
+      expect(mean).toBeGreaterThan(-109);
+      expect(mean).toBeLessThan(-101);
       expect(ay.onUpdate({ velocityX: 0, velocityY: -60 }, "accelerationY", 0.5, 0)).toBeCloseTo(90);
 
       for (let n = 0; n < 50; n++) {
