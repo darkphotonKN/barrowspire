@@ -84,6 +84,10 @@ const await_targetFrame = await import("@/ui/targetFrame");
 const await_minimap = await import("@/ui/minimap");
 const await_topRightColumn = await import("@/ui/topRightColumn");
 const await_positionReadout = await import("@/ui/positionReadout");
+const await_progressHud = await import("@/ui/ProgressHud");
+const await_resourceHud = await import("@/ui/ResourceHud");
+const await_potions = await import("@/ui/potions");
+const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -5332,6 +5336,65 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
       }
       expect(map.x).toBeGreaterThan(0);
       expect(map.y + map.height).toBeLessThan(720 / 2);
+    },
+  );
+});
+
+// FS-56CKV §D.20 (superseding FS-8AY7S R20's y 84 and FS-R82NV R34's run y 160 in part): with
+// the dev readout gone from the top left (§C), the run's top-left stack moves up into its place,
+// the XP bar at (10, 16); nothing at the top of a run may stand over it.
+describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
+  const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  const { topRightColumn } = await_topRightColumn;
+  const { positionReadoutPlace } = await_positionReadout;
+  const { PROGRESS_HUD_AT, PROGRESS_HUD_W, PROGRESS_HUD_H } = await_progressHud;
+  const { RESOURCE_HUD_W, resourceHudHeight } = await_resourceHud;
+  const { POTION_CELL_GAP, POTION_CELL_W } = await_potions;
+  const { PARTY_FRAMES_PLACEMENT, partyFramesFrame } = await_partyFramesLayout;
+  type Box = { x: number; y: number; width: number; height: number };
+  /** A 12 px HUD line in its 3 px padding, at its largest, as the top-right column's test takes it. */
+  const LINE = { width: 160, height: 21 };
+  /** The dev readout at its widest ("X: 5760 Y: 3840 | Outdoor", 10 px), generously. */
+  const READOUT = { width: 200, height: 13 };
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  /** The stack: the XP bar, the bars at their tallest, the potion cell beside them, four frames. */
+  function stack(): Box[] {
+    const xp = { ...PROGRESS_HUD_AT.run, width: PROGRESS_HUD_W, height: PROGRESS_HUD_H };
+    const bars = { ...RESOURCE_HUD_AT.run, width: RESOURCE_HUD_W, height: resourceHudHeight(2) };
+    const potion = { ...bars, x: bars.x + bars.width + POTION_CELL_GAP, width: POTION_CELL_W };
+    const { x, top } = PARTY_FRAMES_PLACEMENT.run;
+    return [xp, bars, potion, ...partyFramesFrame(4, x, top).map((f) => f.row)];
+  }
+
+  it("should stand the XP bar at (10, 16), the bars at (10, 56) and the frames from y 132", () => {
+    expect(PROGRESS_HUD_AT.run).toEqual({ x: 10, y: 16 });
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: 10, y: 56 });
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 132 });
+  });
+
+  it.each([1080, 1280])(
+    "should keep the stack inside the canvas and clear of the fullscreen button, either target frame, the top-right column and the dev readout at logical width %i",
+    (width) => {
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      const parts = stack();
+      for (const shown of [true, false]) {
+        const c = topRightColumn({ corner, minimap: shown, floorHeight: LINE.height, escapedHeight: LINE.height });
+        const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+        const at = positionReadoutPlace(shown ? c.minimap : null, { right: corner.x, bottom: c.bottom });
+        const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
+        const others = [button, ...frames, ...(shown ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
+        for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+      }
+      for (const part of parts) {
+        expect(part.x).toBeGreaterThanOrEqual(10);
+        expect(part.y).toBeGreaterThanOrEqual(16);
+        expect(part.y + part.height).toBeLessThan(view.height);
+      }
     },
   );
 });
