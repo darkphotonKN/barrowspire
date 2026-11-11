@@ -9,7 +9,7 @@
  *
  * **The look** (FS-56CKV §A; design-guideline "UI Chrome → Minimap"): candle-lit stone in the frame
  * as it was. Inside the rim, bottom to top: explored regions in dark stone and visible ones a step
- * lighter, each seen region outlined along its footprint; a soft `inkDeep` vignette strongest at
+ * lighter, the seen rooms outlined along their outer edge, never a corridor; a soft `inkDeep` vignette strongest at
  * the rim's inside edge; the switch, escape door and stairs as small amber glyphs on a dark ring;
  * the party's dots, each ringed. Nothing warm in the middle: amber in the HUD means "interactable".
  *
@@ -74,7 +74,7 @@ export const MINIMAP_VIGNETTE = {
 /** The one texture every minimap's vignette is an image of. */
 const VIGNETTE_TEXTURE = "minimapVignette";
 
-/** The outline round the shown floor's outer edge (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
+/** The outline along the seen rooms' outer edge (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
 export const MINIMAP_EDGE = { width: 1 } as const;
 
 /**
@@ -147,54 +147,76 @@ export function minimapContent(
   return { regions, fixtures: found };
 }
 
+/** A run of the rooms' outline (FS-56CKV §A.5), in cell units: its corner points, and whether its last point joins back to its first. */
+export interface OutlineRun {
+  points: Point[];
+  closed: boolean;
+}
+
 /**
- * The outer edge of the seen regions taken together (FS-56CKV §A.5), in cell units: every boundary
- * between a seen region's cell and a cell of no seen region (unexplored, or no region at all), as
- * closed loops of corner points, each side of the outline once. No line where two seen regions
- * meet, whatever their states, and none along a cell rect's side inside the shown floor.
+ * The seen rooms' outer edge (FS-56CKV §A.5), in cell units: every side of a seen room's cell that
+ * faces a cell of no seen region (unexplored, or no region at all). A corridor's sides get no line,
+ * and nor does a doorway onto a seen region, room or corridor, or a cell rect's side inside the
+ * shown floor. Each side once, joined into runs that turn every corner unbroken: a closed loop
+ * where a room's edge goes all the way round, an open run where it stops at a doorway.
  */
-export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): Point[][] {
+export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): OutlineRun[] {
   const ids = new Set(seen.map((r) => r.id));
   const shown = (cx: number, cy: number) => ids.has(grid.region(cx, cy));
-  // each unit side, directed clockwise round the shown cells (y down), by the corner it leaves
+  // each unit side, directed clockwise round the room (y down), by the corner it leaves
   const key = (p: Point) => `${p.x},${p.y}`;
   const out = new Map<string, Point[]>();
+  const into = new Map<string, number>();
   const side = (from: Point, to: Point) => {
     const k = key(from);
     if (!out.has(k)) out.set(k, []);
     out.get(k)!.push(to);
+    into.set(key(to), (into.get(key(to)) ?? 0) + 1);
   };
   for (const { id, cells } of seen)
     for (const { x, y, w, h } of cells)
       for (let cx = x; cx < x + w; cx++)
         for (let cy = y; cy < y + h; cy++) {
-          if (grid.region(cx, cy) !== id) continue;
+          if (grid.region(cx, cy) !== id || grid.kind(cx, cy) !== "room") continue;
           if (!shown(cx, cy - 1)) side({ x: cx, y: cy }, { x: cx + 1, y: cy });
           if (!shown(cx + 1, cy)) side({ x: cx + 1, y: cy }, { x: cx + 1, y: cy + 1 });
           if (!shown(cx, cy + 1)) side({ x: cx + 1, y: cy + 1 }, { x: cx, y: cy + 1 });
           if (!shown(cx - 1, cy)) side({ x: cx, y: cy + 1 }, { x: cx, y: cy });
         }
-  // every corner has as many sides in as out, so a walk from a corner always closes on it
-  const loops: Point[][] = [];
-  for (const [k, nexts] of out)
-    while (nexts.length > 0) {
-      const walk: Point[] = [];
-      let at = k;
-      do {
-        const [x, y] = at.split(",").map(Number);
-        walk.push({ x, y });
-        at = key(out.get(at)!.pop()!);
-      } while (at !== k);
-      // keep only the corners: a point where the line runs straight on is dropped
-      loops.push(
-        walk.filter((p, i) => {
-          const a = walk[(i + walk.length - 1) % walk.length];
-          const b = walk[(i + 1) % walk.length];
-          return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
-        }),
-      );
+  const point = (k: string): Point => {
+    const [x, y] = k.split(",").map(Number);
+    return { x, y };
+  };
+  /** From `from`, along unused sides until none leaves the corner reached. */
+  const walk = (from: string): Point[] => {
+    const points = [point(from)];
+    let at = from;
+    while ((out.get(at)?.length ?? 0) > 0) {
+      at = key(out.get(at)!.pop()!);
+      points.push(point(at));
     }
-  return loops;
+    return points;
+  };
+  const runs: OutlineRun[] = [];
+  // a room's edge stopping at a doorway: a run starts where more sides leave a corner than reach it,
+  // and ends where none is left to leave by
+  for (const [k, nexts] of out) {
+    let surplus = nexts.length - (into.get(k) ?? 0);
+    for (; surplus > 0 && nexts.length > 0; surplus--) runs.push({ points: walk(k), closed: false });
+  }
+  // every side left has as many in as out at each corner, so a walk from a corner closes on it
+  for (const [k, nexts] of out)
+    while (nexts.length > 0) runs.push({ points: walk(k).slice(0, -1), closed: true });
+  // keep only the corners, and an open run's ends: a point where the line runs straight on is dropped
+  return runs.map(({ points, closed }) => ({
+    closed,
+    points: points.filter((p, i) => {
+      if (!closed && (i === 0 || i === points.length - 1)) return true;
+      const a = points[(i + points.length - 1) % points.length];
+      const b = points[(i + 1) % points.length];
+      return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
+    }),
+  }));
 }
 
 /** Where the party's living, in-play members stand (§E.22): this client's player apart. */
@@ -406,7 +428,7 @@ export class Minimap {
     return [this.map, this.vignette, this.marks, this.dots];
   }
 
-  /** The panel, the seen regions' fills, then their outline (FS-56CKV §A.1, §A.4, §A.5). */
+  /** The panel, the seen regions' fills, then the rooms' outline (FS-56CKV §A.1, §A.4, §A.5). */
   private drawMap(content: MinimapContent): void {
     this.redraws++;
     const g = this.map;
@@ -439,19 +461,21 @@ export class Minimap {
           );
     }
 
-    // one line round the shown floor's outer edge, closed so no corner is left open (FS-56CKV §A.5)
-    const loops = regionOutline(this.grid, content.regions);
-    if (loops.length === 0) return;
+    // one line along the seen rooms' outer edge (FS-56CKV §A.5): a loop closed so no corner is left
+    // open, a run that stops at a doorway left open
+    const runs = regionOutline(this.grid, content.regions);
+    if (runs.length === 0) return;
     g.lineStyle(MINIMAP_EDGE.width, palette.minimapEdge, 1);
     g.beginPath();
-    for (const [first, ...rest] of loops) {
+    for (const { points, closed } of runs) {
+      const [first, ...rest] = points;
       const a = cellPoint(first);
       g.moveTo(a.x, a.y);
       for (const q of rest) {
         const b = cellPoint(q);
         g.lineTo(b.x, b.y);
       }
-      g.closePath();
+      if (closed) g.closePath();
     }
     g.strokePath();
   }

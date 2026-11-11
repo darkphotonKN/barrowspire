@@ -19,16 +19,29 @@
 > §E.23, story 4, the outline criterion and the doorway Edge State are corrected in place; each
 > says *(Amended 2026-11-12, outer outline only …)*.
 
+> **Amended 2026-11-12 (third)** by Nick, after the outer outline went in. He said
+> "小地圖還有路的地方可以不要匡起來嗎" (the places on the minimap that are corridors, "路", should not
+> be outlined either). So the line runs only along a **room's** outer edge: a seen room cell's side
+> that faces unexplored ground or the void. A corridor's sides get no line at all, explored or
+> visible, and where a room meets a seen region (a doorway onto a corridor, or another room) there
+> is no line, as before. The outline is therefore no longer always closed: where a room's edge stops
+> at a doorway it ends there, an open run of line; it stays unbroken round every corner it turns.
+> The fills, the vignette, the glyphs, the dots, the token and the 1.3:1 are unchanged. §A.5 is
+> replaced, and the Summary, §A.3, §E.23, story 4, the outline criterion and the doorway and corner
+> Edge States are corrected in place, and two Edge States are added; each says *(Amended
+> 2026-11-12, rooms only …)*.
+
 ## Summary
 
 In a run, the top-right minimap is drawn finer and in the game's own look: candle-lit at its
-edges, explored rooms in dark stone, the ones the party stands in a step lighter, the whole
-shown floor outlined once round its outer edge, and the switch, escape door and stairs as small drawn glyphs. It moves to the
+edges, explored rooms in dark stone, the ones the party stands in a step lighter, the seen
+rooms outlined along their outer edge only, never a corridor, and the switch, escape door and stairs as small drawn glyphs. It moves to the
 top of the top-right corner, with the floor indicator and the escaped count under it in smaller
 type. In dev builds the x/y position line moves into the minimap's bottom-left corner, small and
 dim, and the top-left HUD (XP bar, resource bars, party frames) moves up into the space it leaves.
 The minimap's frame, size and content are unchanged. *(Amended 2026-11-12, outer outline only; was: "each room and
-corridor outlined".)*
+corridor outlined".)* *(Amended 2026-11-12, rooms only; was: "the whole shown floor outlined once
+round its outer edge".)*
 
 Charter run "小地圖精緻化", 2026-11-12. The owner's words: "把右上角地圖有可能精緻一點嗎 配合遊戲主題
 然後地圖位置移動到逃離人數跟樓層資訊上方 字可以小一點"; "左上的x y點位移動到地圖匡內左下角 字可以小一點
@@ -99,26 +112,31 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
    edge alpha are named constants in `ui/minimap.ts`, so they can be tuned. **(charter default;
    derived here: an amber or torch-warm glow in the HUD would read as the interactable channel,
    and the gradient rule keeps the canvas fallback whole)**
-3. **Layer order inside the frame**, bottom to top: backing, region fills, the outer
+3. **Layer order inside the frame**, bottom to top: backing, region fills, the rooms'
    outline, vignette, fixture glyphs, party dots, then the readout (§C). The vignette dims the floor, never
    a glyph, a dot or the readout. **(derived here: what a player looks for is never dimmed)** *(Amended 2026-11-12, outer outline only; was:
-   "region edges".)*
+   "region edges".)* *(Amended 2026-11-12, rooms only; was: "the outer outline".)*
 4. **Explored regions a dark stone, visible ones a step lighter**, both from stone tokens (the
    `minimapExplored` and `minimapVisible` tokens may take new values). Measured as WCAG contrast
    ratios: the explored fill against the backing (`hudPanel`) ≥ 1.3:1, the visible fill against
    the explored ≥ 1.3:1, and the visible lighter. Still stone, never amber or the ally green,
    which the glyphs and dots keep. **(charter default; the ratios derived here so "a step" is
    testable)**
-5. **One thin line round the outer edge of what is shown**: 1 logical px along the outline of
-   the seen regions' footprints taken together (the union of every explored and visible region's
-   cells), where a seen cell meets an unexplored region or no region. No line where two seen
-   regions meet, whatever their states (room to corridor, explored to visible), and never along a
-   cell's rect inside the shown floor. Each stretch of the outline is drawn once, as closed loops
-   with no gap at a corner. The line keeps ≥ 1.3:1 against each fill it bounds, in its token
-   (`minimapEdge`). An unexplored region has no fill and no line, as today. **(owner, 2026-11-12,
-   on seeing each region outlined: "小地圖每個區塊不用匡起來", then "可以只匡最外邊嗎")** *(Amended 2026-11-12, outer outline only; was:
-   "Each seen region has a thin edge line" along its own footprint, a boundary two seen regions
-   share drawn once.)*
+5. **One thin line along the seen rooms' outer edge, and none on a corridor**: 1 logical px on
+   each side of a seen room's cell (`kind` "room", explored or visible) that faces a cell of no
+   seen region (an unexplored region, or no region at all). A corridor's sides (`kind`
+   "corridor") get no line, whatever its state and whatever it faces. No line where a seen room
+   meets another seen region, room or corridor, whatever their states (a doorway, explored to
+   visible), and never along a cell's rect inside the shown floor. Each stretch is drawn once, and
+   where the line turns a corner it runs on unbroken, no gap; where a room's edge stops at a
+   doorway the line ends there, so the outline is open runs of line as well as closed loops, and
+   an open run is never closed back on its start. The line keeps ≥ 1.3:1 against each fill it
+   bounds, in its token (`minimapEdge`). An unexplored region has no fill and no line, as today.
+   **(owner, 2026-11-12, on seeing the outer outline round corridors too:
+   "小地圖還有路的地方可以不要匡起來嗎")** *(Amended 2026-11-12, rooms only; was: "One thin line
+   round the outer edge of what is shown", the union of every seen region including corridors,
+   "as closed loops".)* *(Amended 2026-11-12, outer outline only; was: "Each seen region has a
+   thin edge line" along its own footprint, a boundary two seen regions share drawn once.)*
 6. **The switch, the escape door and the stairs as small drawn glyphs** in place of the squares:
    the switch a lever (a base and a slanted handle with a knob), the escape door an arch, the
    stairs a few steps. Each in the interactable channel (`palette.interactable`) on a dark
@@ -205,10 +223,11 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 
 23. **The design guideline's "UI Chrome" gains a "Minimap" bullet** naming this look in one
     paragraph (unchanged frame; candle vignette in `inkDeep`; dark-stone explored, lighter visible,
-    one outline round the shown floor; amber glyphs in a dark ring; dots in a dark ring; drawn in code), marked
+    the seen rooms' outer edge outlined, no corridor; amber glyphs in a dark ring; dots in a dark ring; drawn in code), marked
     "*(Added by FS-56CKV, 2026-11-12.)*", as the countdown and health-bar bullets are.
     **(derived here: a canvas look others will match belongs in the guideline, its single source
     of truth for appearance)** *(Amended 2026-11-12, outer outline only; was: "outlined regions".)*
+    *(Amended 2026-11-12, rooms only; was: "one outline round the shown floor".)*
 24. **No dev-gallery card.** The gallery tracks effects and item icons only; HUD chrome is not a
     tracked family, so none is added. **(charter default)**
 
@@ -217,7 +236,7 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 1. As a player, I want the minimap to look like part of the barrow, so that the HUD does not break the game's mood.
 2. As a player, I want the map's edges to fall into shadow like the rest of the screen, so that it reads candle-lit.
 3. As a player, I want rooms I have explored and rooms my party stands in to read apart at a glance, so that I know where we are.
-4. As a player, I want what I have seen outlined once round its outer edge, with no line between rooms and corridors, so that the map reads as one floor plan rather than boxes. *(Amended 2026-11-12, outer outline only; was: "each room and corridor outlined".)*
+4. As a player, I want the rooms I have seen outlined along their outer edge, with no line on a corridor or across a doorway, so that the map reads as one floor plan whose rooms stand out from the paths between them. *(Amended 2026-11-12, outer outline only; was: "each room and corridor outlined".)* *(Amended 2026-11-12, rooms only; was: "what I have seen outlined once round its outer edge".)*
 5. As a player, I want the stairs, the escape door and the switch drawn as what they are, so that I can tell them apart without guessing.
 6. As a player, I want my own dot a little larger than my party's, so that I find myself first.
 7. As a player, I want the minimap's frame to stay as it is, so that the change does not disturb what I already know.
@@ -244,7 +263,7 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 - [ ] The vignette is in `palette.inkDeep`, inside the rim, strongest at the inside edge and nothing at the middle; drawn once per minimap, not on a content change; never through `fillGradientStyle`; steps, if any, no wider than 2 px and no more than 0.08 alpha apart.
 - [ ] Draw order inside the frame: backing, fills, edges, vignette, glyphs; dots on their own layer above; the readout above both.
 - [ ] Explored fill vs backing ≥ 1.3:1, visible vs explored ≥ 1.3:1, visible the lighter; the edge line ≥ 1.3:1 against each fill it bounds (contrast ratios over the tokens, in a test).
-- [ ] The outline follows the outer edge of the seen regions together: on the fixture floor, no line between a region's own cells or between two seen regions (explored or visible), every boundary with unexplored ground or the void drawn exactly once, as closed loops with no gap at a corner. *(Amended 2026-11-12, outer outline only; was: "a boundary shared by two seen regions is drawn once".)*
+- [ ] The outline follows the seen rooms' outer edge only: on the fixture floor, no line on any side of a corridor (seen alone or beside a room), none across a doorway between a seen room and a seen corridor, none between a region's own cells or between two seen rooms; every side of a seen room's cell facing unexplored ground or the void drawn exactly once; no gap where the line turns a corner; open runs ending at a doorway stroked without `closePath`, closed loops with it. *(Amended 2026-11-12, outer outline only; was: "a boundary shared by two seen regions is drawn once".)* *(Amended 2026-11-12, rooms only; was: "the outer edge of the seen regions together … as closed loops".)*
 - [ ] The switch, escape door and stairs each draw a distinct glyph within 9 × 9 px and at least 7 px wide, in `interactable` on a 1 px `markerStroke` ring, centred on whole px where the mark sits today, only once their region is explored; ink vs ring ≥ 3:1.
 - [ ] Dots: ally r 2, self r 3, each in a 1 px `markerStroke` ring, self drawn last; ink vs ring ≥ 3:1.
 - [ ] Size, inset, projection and content unchanged: FS-SRA9J's `minimapRect` size, `minimapProjection` and `minimapContent` tests still pass as written; the redraw counts (§E.23) unchanged.
@@ -295,12 +314,21 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
   only ever stands in the column.
 - **Regions at the minimap's edge:** the vignette darkens fills and edges near the rim; the
   visible fill stays the lighter wherever both meet, since the vignette lies over both alike.
-- **Two seen regions sharing a doorway:** no line between them; the outline runs round the pair
-  as one shape. Where both are explored they read as one patch of stone, told apart once the
-  party stands in one (the visible fill). Accepted: the owner asked for the outer edge only.
-  *(Amended 2026-11-12, outer outline only; was: "the shared edge is drawn once".)*
-- **A seen region touching another only at a corner:** the outline passes through that corner
-  point twice, once for each, and stays closed. **(derived here)**
+- **A seen room and a seen corridor sharing a doorway:** no line across the doorway and none
+  along the corridor; the room's line ends at each side of the doorway, an open run. Where both
+  are explored they read as one patch of stone, the room told apart by its line. Accepted: the
+  owner asked for the rooms' outer edge only. *(Amended 2026-11-12, outer outline only; was: "the
+  shared edge is drawn once".)* *(Amended 2026-11-12, rooms only; was: "Two seen regions sharing
+  a doorway … the outline runs round the pair as one shape".)*
+- **A seen room beside an unexplored corridor:** the doorway faces unexplored ground, so the line
+  runs across it, closed; once the corridor is seen the line opens there. **(derived here, rooms
+  only, 2026-11-12: "unexplored ground" is what the room faces, whatever kind it would be)**
+- **Only corridors seen** (a corridor explored, its rooms not yet): its fill shows and no line at
+  all. Accepted: the owner asked for no line on a corridor. **(derived here, rooms only,
+  2026-11-12)**
+- **A seen room touching another only at a corner:** the line passes through that corner point
+  twice, once for each, unbroken. **(derived here)** *(Amended 2026-11-12, rooms only; was: "A
+  seen region … stays closed".)*
 - **Canvas renderer fallback:** the vignette is a canvas texture or fills, so it is the same.
 - **Party frames at their shortest or with no party:** placed by the same fixed top; nothing jumps.
 
