@@ -15,7 +15,20 @@ const INK = rgb(BARROW_HEX.vellum);
 const EMBER = rgb(BARROW_HEX.ember);
 const SLATE = rgb(BARROW_HEX.slate);
 const BRASS = rgb(BARROW_HEX.brass);
-const SLATE_LIGHT = rgb(BARROW_HEX.slateLight);
+const PITCH = rgb(BARROW_HEX.pitch);
+const ASH = rgb(BARROW_HEX.vellumFaint);
+const FIRE_CORE = rgb(BARROW_HEX.fireCore);
+const FIRE_HOT = rgb(BARROW_HEX.fireHot);
+const FIRE_DEEP = rgb(BARROW_HEX.fireDeep);
+/** Fire's ramp, hottest first, and the paper it burns on (the owner's tunes of 2026-11-12). */
+const FIRE = [FIRE_CORE, FIRE_HOT, EMBER, FIRE_DEEP];
+const PAPER = [PITCH, SLATE, ASH];
+/** How light a colour reads (Rec. 709 luma). */
+const lum = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+/** How hot a colour reads: its red over its blue, highest at fire's hottest, low on paper. */
+const temp = (c: number[]) => c[0] - c[2];
+/** How yellow a fire colour is: its green to its red, falling as it cools to red. */
+const yellow = (c: number[]) => c[1] / Math.max(1, c[0]);
 
 /** A text's canvas as a Phaser Text holds it, its ink in vellum from `rows` ('#' is ink). */
 function stubText(rows: string[], { x = 380, y = 270, resolution = 1 } = {}): InkText {
@@ -194,7 +207,8 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
       durationMs: 3000,
       ragged: 0.35,
       grainPx: 6,
-      band: { ember: 0.06, char: 0.08 },
+      // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): the band runs fire's ramp
+      band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
       flake: {
         lifeMs: 1000,
         // the owner's fourth tune of 2026-11-12, "灰燼 碎屑少２０％": a fifth fewer (was 300 and 0.1)
@@ -204,9 +218,14 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
         lengthPx: { from: 3, to: 14 },
         smallBias: 1.2,
         aspect: { from: 1.1, to: 2.8 },
+        // the owner's "灰燼碎屑再多一點燒焦感" (2026-11-12): a charred core, char blotches, a broken ash rim
         mottle: 0.6,
+        char: { core: 0.08, edge: 0.55, depthPx: 2 },
+        ash: { depthPx: 0.75, pale: 0.85, gap: 0.45 },
         glow: {
           share: 0.85,
+          seamPx: 0.75,
+          cools: [1, 0.6, 0.3],
           edgeFrom: 0.28,
           ms: 900,
           steps: 20,
@@ -232,9 +251,18 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
         leanLeftDeg: 15,
         spreadDeg: 25,
         flickerHz: { from: 6, to: 14 },
+        cools: [0, 0.45, 1],
         blend: "ADD",
       },
-      tint: { edge: "ember", char: "slate", flake: "slate", mottle: "slateLight", glow: "ember", spark: "ember" },
+      tint: {
+        band: ["fireCore", "fireHot", "ember", "fireDeep"],
+        char: "slate",
+        core: "pitch",
+        flake: "slate",
+        rim: "vellumFaint",
+        seam: ["fireHot", "ember", "fireDeep"],
+        spark: ["fireHot", "ember", "fireDeep"],
+      },
       rule: { tint: "brass", alpha: 0.6 },
       ease: { front: "Linear", flake: "Sine.easeIn", spark: "Quad.easeIn", glow: "Sine.easeIn" },
     });
@@ -249,15 +277,18 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     // §B.3: the easing allowlist
     for (const ease of Object.values(CARD_ASH.ease))
       expect(ease).toMatch(/^(Linear|(Sine|Quad|Cubic)\.ease(In|Out|InOut))$/);
-    // §B.7: BARROW keys only, at most 3 of its own, no amber, no oxblood; the rule is the card's own
-    const own = Object.values(CARD_ASH.tint);
+    // §B.7: BARROW keys only, no amber, no oxblood; the rule is the card's own
+    const own: string[] = Object.values(CARD_ASH.tint).flat();
     for (const c of [...own, CARD_ASH.rule.tint]) expect(c in BARROW_HEX).toBe(true);
-    expect(new Set(own).size).toBeLessThanOrEqual(3);
-    expect(own).not.toContain("amber");
-    expect(own).not.toContain("oxblood");
+    for (const never of ["amber", "amberBright", "oxblood"]) expect(own).not.toContain(never);
     expect(BARROW_HEX[CARD_ASH.rule.tint]).toBe(palette.frame);
-    // three of its own, the third the flakes' mottling: ember, slate, slateLight
-    expect([...new Set(own)].sort()).toEqual(["ember", "slate", "slateLight"]);
+    // R59's exception to §B.7's three, the owner's tunes of 2026-11-12 ("灰燼碎屑再多一點燒焦感",
+    // "火的顏色有辦法擬真一點嗎"): fire's ramp, the char, the char core and the ash
+    expect([...new Set(own)].sort()).toEqual(["ember", "fireCore", "fireDeep", "fireHot", "pitch", "slate", "vellumFaint"]);
+    // the ramps run hottest first, the band's from its pale core, the seam's and the sparks' from orange
+    expect(CARD_ASH.tint.band[0]).toBe("fireCore");
+    expect(CARD_ASH.tint.seam).toEqual(CARD_ASH.tint.band.slice(1));
+    expect(CARD_ASH.tint.spark).toEqual(CARD_ASH.tint.band.slice(1));
     // the exception, bounded: a few hundred flakes and a few tens of sparks, rising, never sprayed
     expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(240);
     // the owner's third tune of 2026-11-12, "往左往上散": a flake at most 45 px/s and 60° off up,
@@ -392,23 +423,49 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(Math.max(...standsFrom) - Math.min(...standsFrom)).toBeGreaterThanOrEqual(3);
     });
 
-    it("should tint its band ember at the leading edge, charring to slate behind; whatever it has not reached stays as drawn", () => {
+    it("should burn its band down fire's ramp, then char it to slate; whatever it has not reached stays as drawn", () => {
       const [mid] = at([0.5]);
 
       expect(mid.burning.length).toBeGreaterThan(10);
       const colours = mid.burning.map((i) => px(mid.data, i).c);
-      // every burning pixel lies on the way from its own ink (the text's, or the rule's) to ember, or
-      // from ember to char
+      // the owner's "火的顏色有辦法擬真一點嗎": every burning pixel lies on the way from its own ink
+      // (the text's, or the rule's) to fire's hottest, down the ramp, or from its last to the char
       for (const i of mid.burning) {
         const c = px(mid.data, i).c;
         const ink = px(mid.start, i).c;
-        expect(Math.min(offSegment(c, ink, EMBER), offSegment(c, EMBER, SLATE))).toBeLessThan(3);
+        const legs = [[ink, FIRE_CORE], [FIRE_CORE, FIRE_HOT], [FIRE_HOT, EMBER], [EMBER, FIRE_DEEP], [FIRE_DEEP, SLATE]];
+        expect(Math.min(...legs.map(([a, b]) => offSegment(c, a, b)))).toBeLessThan(3);
       }
-      // both ends of the band are there: an ember edge and a slate char
-      expect(colours.some((c) => dist(c, EMBER) < 30)).toBe(true);
-      expect(colours.some((c) => dist(c, SLATE) < 30)).toBe(true);
-      // nothing amber, nothing white
-      for (const c of colours) expect(dist(c, rgb(BARROW_HEX.amber))).toBeGreaterThan(30);
+      // every stop of the ramp is there, and the char
+      for (const stop of [...FIRE, SLATE]) expect(colours.some((c) => dist(c, stop) < 30)).toBe(true);
+    });
+
+    it("should be hottest at its leading edge: pale, then orange, then deep red, then the char, right to left", () => {
+      const stage = ashStage();
+      stage.ash.play(cardInk(stubText(Array(24).fill("#".repeat(300)))), 961, stage.gone);
+      stage.front().at(0.5);
+      const data = stage.burn().puts.at(-1)!;
+      const { width } = stage.burn();
+
+      // each burning pixel by the stop it is nearest, where it is near one: pale, orange (fire's hot
+      // and ember), deep red, char; each group's mean x
+      const stops = [...FIRE, SLATE];
+      const group = [0, 1, 1, 2, 3];
+      const xs = [0, 1, 2, 3].map(() => [] as number[]);
+      for (let i = 0; i < data.length / 4; i++) {
+        if (data[i * 4 + 3] === 0) continue;
+        const c = px(data, i).c;
+        if (dist(c, INK) === 0) continue;
+        const near = stops.map((stop) => dist(c, stop));
+        const n = near.indexOf(Math.min(...near));
+        if (near[n] < 20) xs[group[n]].push(i % width);
+      }
+      const mean = xs.map((x) => x.reduce((s, v) => s + v, 0) / x.length);
+      for (const x of xs) expect(x.length).toBeGreaterThan(5);
+      // the front moves right: its hottest leads, the char trails
+      for (let n = 1; n < mean.length; n++) expect(mean[n], `group ${n}`).toBeLessThan(mean[n - 1]);
+      // the pale core is thin: fewer pixels than the orange behind it
+      expect(xs[0].length).toBeLessThan(xs[1].length);
     });
   });
 
@@ -450,12 +507,14 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       return keys.map((key) => {
         const anim = stage.anims.get(key)!;
         const frames = anim.frames.map((f) => pixels(f.frame));
+        // the sheet's shades of the shape, laid left to right from its heat to none
+        const shades = [...new Set(anim.frames.map((f) => f.frame))].sort((a, b) => frameOf(a).x - frameOf(b).x).map(pixels);
         const first = frames[0];
         const xs = first.map((p) => p.x);
         const ys = first.map((p) => p.y);
         const w = (Math.max(...xs) - Math.min(...xs) + 1) / resolution;
         const h = (Math.max(...ys) - Math.min(...ys) + 1) / resolution;
-        return { key, anim, frames, length: Math.max(w, h), aspect: Math.max(w, h) / Math.min(w, h) };
+        return { key, anim, frames, shades, length: Math.max(w, h), aspect: Math.max(w, h) / Math.min(w, h) };
       });
     }
 
@@ -465,8 +524,19 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       return drawn.filter((p) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !at.has(`${p.x + dx},${p.y + dy}`)));
     }
 
-    /** How hot a frame of a flake is: its pixel nearest `ember`, as 255 less its distance. */
-    const heat = (drawn: { c: number[] }[]) => Math.max(...drawn.map((p) => 255 - dist(p.c, EMBER)));
+    /** The pixels of `drawn` by depth: its outline, the ring inside it, and all deeper. */
+    function rings<P extends { x: number; y: number }>(drawn: P[]) {
+      const edge = outline(drawn);
+      const rest = drawn.filter((p) => !edge.includes(p));
+      const second = outline(rest);
+      return { edge, second, deep: rest.filter((p) => !second.includes(p)) };
+    }
+    const meanLum = (ps: { c: number[] }[]) => ps.reduce((s, p) => s + lum(p.c), 0) / ps.length;
+
+    /** How hot a frame of a flake is: its hottest pixel (fire's red over its blue). */
+    const heat = (drawn: { c: number[] }[]) => Math.max(...drawn.map((p) => temp(p.c)));
+    /** Whether `c` reads as fire: nearer some stop of fire's ramp than any of the paper's colours. */
+    const fiery = (c: number[]) => Math.min(...FIRE.map((f) => dist(c, f))) < Math.min(...PAPER.map((f) => dist(c, f)));
 
     /** How far `c` lies from the triangle `a`, `b`, `e` in RGB (0 inside it): a mix of the three tokens. */
     function offMix(c: number[], a: number[], b: number[], e: number[]): number {
@@ -700,20 +770,24 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(fill.some((f) => Math.abs(f - 1) > 0.12)).toBe(true);
     });
 
-    it("should draw no closed outline ring: a plain flake's edge is its body, a glowing flake's ember on one side only", () => {
+    it("should draw no closed outline ring: its ash rim broken by char, a glowing flake's fire on one side only", () => {
       const all = shapes(2);
 
-      for (const { frames } of all) {
-        const [drawn] = frames;
-        const edge = outline(drawn);
-        const emberish = (c: number[]) => dist(c, EMBER) < Math.min(dist(c, SLATE), dist(c, SLATE_LIGHT));
-        if (!drawn.some((p) => emberish(p.c))) {
-          // a plain flake: its edge the same paper as its body, slate toward slateLight
-          for (const p of edge) expect(offSegment(p.c, SLATE, SLATE_LIGHT)).toBeLessThan(3);
-          continue;
+      for (const { frames, shades } of all) {
+        // its ash rim, cold: pale in places round its outline, char-dark in others
+        const cold = shades.at(-1)!;
+        const { edge, second } = rings(cold);
+        if (edge.length >= 8 && second.length > 0) {
+          const body = meanLum(second);
+          const pale = edge.filter((p) => lum(p.c) > body + 20);
+          const dark = edge.filter((p) => lum(p.c) <= body + 5);
+          expect(pale.length, "a pale ash rim").toBeGreaterThan(0);
+          expect(dark.length, "the char reaching the edge: the rim broken").toBeGreaterThan(0);
         }
-        if (edge.length < 8) continue; // a speck: too few edge pixels to have a side
-        const lit = edge.filter((p) => emberish(p.c));
+        const [drawn] = frames;
+        const lit = outline(drawn).filter((p) => fiery(p.c));
+        if (lit.length === 0 || outline(drawn).length < 8) continue; // plain, or a speck too small to have a side
+        expect(lit.length).toBeLessThan(outline(drawn).length / 2);
         expect(lit.length).toBeLessThan(edge.length / 2);
         // on one side: every lit edge pixel within a half-turn of the lit pixels' mean bearing
         const cx = drawn.reduce((s, p) => s + p.x, 0) / drawn.length;
@@ -729,12 +803,12 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       }
     });
 
-    it("should be slate mottled toward slateLight, 0.85 with an ember patch that dies to grey over its first 900 ms", () => {
+    it("should be charred paper, pitch, slate and ash, 0.85 with a glowing seam that dies to ash over its first 900 ms", () => {
       const all = shapes(2);
 
-      for (const { frames } of all)
-        for (const drawn of frames) for (const p of drawn) expect(offMix(p.c, SLATE, SLATE_LIGHT, EMBER)).toBeLessThan(3);
-      // mottled: a flake of any size shows more than one shade
+      // the owner's "灰燼碎屑再多一點燒焦感": cold, every pixel a mix of the char, the body and the ash
+      for (const { shades } of all) for (const p of shades.at(-1)!) expect(offMix(p.c, PITCH, SLATE, ASH)).toBeLessThan(3);
+      // blotched: a flake of any size shows more than one shade
       for (const { frames } of all.filter((s) => s.length >= 4)) {
         const shades = new Set(frames[0].map((p) => p.c.join(",")));
         expect(shades.size).toBeGreaterThan(1);
@@ -746,24 +820,88 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         // 20 frames over 900 ms (was 700, and 8 over 500 before that), then held on the last
         expect(frames).toHaveLength(20);
         expect((anim.frames.length / anim.frameRate) * 1000).toBeCloseTo(900);
-        expect(frames[0].some((p) => dist(p.c, EMBER) < 40)).toBe(true);
+        // hot at first: orange on its seam
+        expect(frames[0].some((p) => dist(p.c, FIRE_HOT) < 40)).toBe(true);
         expect(heat(frames.at(-1)!)).toBeLessThan(heat(frames[0]));
-        // dimmed to grey: nothing ember-ish left
-        for (const p of frames.at(-1)!) expect(offSegment(p.c, SLATE, SLATE_LIGHT)).toBeLessThan(3);
+        // gone to ash: nothing fiery left
+        for (const p of frames.at(-1)!) expect(offMix(p.c, PITCH, SLATE, ASH)).toBeLessThan(3);
       }
       for (const { anim } of all.filter((s) => s.frames.length === 1)) expect(anim.frames).toHaveLength(1);
     });
 
-    it("should cover about 1.5 times the area with its ember patch as before the third tune: about 14% of a glowing flake at full heat", () => {
+    it("should cover about 1.5 times the area with its glow as before the third tune: about 14% of a glowing flake at full heat", () => {
       const glowing = shapes(2).filter((s) => s.frames.length > 1);
-      const emberish = (c: number[]) => dist(c, EMBER) < Math.min(dist(c, SLATE), dist(c, SLATE_LIGHT));
 
       // the owner's third tune of 2026-11-12, "余光": about 10% of its pixels hot before (measured
       // on this sheet with the burnt edge from 0.4 of the way out), about 1.5 times that now
-      const shares = glowing.map(({ frames: [hot] }) => hot.filter((p) => emberish(p.c)).length / hot.length);
+      const shares = glowing.map(({ frames: [hot] }) => hot.filter((p) => fiery(p.c)).length / hot.length);
       const mean = shares.reduce((s, v) => s + v, 0) / shares.length;
       expect(mean).toBeGreaterThan(0.13);
       expect(mean).toBeLessThan(0.19);
+    });
+
+    it("should be charred through: its core the darkest, its torn edge lighter than its body, its blotches darker", () => {
+      // the owner's "灰燼碎屑再多一點燒焦感": a near-black core shading out to a pale ash rim
+      const large = shapes(2).filter((s) => s.length >= 6);
+      expect(large.length).toBeGreaterThan(5);
+
+      for (const { shades } of large) {
+        const cold = shades.at(-1)!;
+        const { edge, second, deep } = rings(cold);
+        if (deep.length === 0) continue;
+        // the core darker than the rim, and darker than the body round it
+        expect(meanLum(deep)).toBeLessThan(meanLum(edge) - 25);
+        expect(meanLum(deep)).toBeLessThan(meanLum(second));
+        // the rim lighter than the body
+        expect(meanLum(edge)).toBeGreaterThan(meanLum(second) + 10);
+        // the core charred: nearer the char's black than the body's slate
+        expect(deep.some((p) => dist(p.c, PITCH) < dist(p.c, SLATE))).toBe(true);
+      }
+      // blotched darker, not speckled lighter: in the body, the shades below its mean reach further
+      // from it than those above
+      const body = large.flatMap(({ shades }) => rings(shades.at(-1)!).second.map((p) => lum(p.c)));
+      const mean = body.reduce((s, v) => s + v, 0) / body.length;
+      expect(mean - Math.min(...body)).toBeGreaterThan(Math.max(...body) - mean - 25);
+    });
+
+    it("should glow along its torn edge, a seam on the edge band, never in its middle", () => {
+      const glowing = shapes(2).filter((s) => s.frames.length > 1);
+
+      for (const { shades } of glowing) {
+        const hot = shades[0];
+        const { edge, second } = rings(hot);
+        const lit = hot.filter((p) => fiery(p.c));
+        expect(lit.length).toBeGreaterThan(0);
+        // within a view px (two canvas px) of the edge: the outline or the ring inside it
+        for (const p of lit) expect(edge.includes(p) || second.includes(p), `${p.x},${p.y}`).toBe(true);
+        // and mostly on the very edge
+        expect(lit.filter((p) => edge.includes(p)).length).toBeGreaterThan(lit.length / 2);
+      }
+    });
+
+    it("should cool as fire does: its seam from orange through red to deep red, then ash", () => {
+      // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12)
+      const glowing = shapes(2).filter((s) => s.frames.length > 1);
+
+      for (const { shades } of glowing) {
+        // the seam's hottest pixel, followed through the shades, hottest first
+        const [hot] = shades;
+        const at = hot.reduce((a, b) => (temp(b.c) > temp(a.c) ? b : a));
+        const seam = shades.map((drawn) => drawn.find((p) => p.x === at.x && p.y === at.y)!.c);
+        expect(dist(seam[0], FIRE_HOT)).toBeLessThan(40);
+        // it passes deep red, and until then it only cools: no hotter, no yellower, than the shade before
+        const reddest = seam.map((c) => dist(c, FIRE_DEEP));
+        const m = reddest.indexOf(Math.min(...reddest));
+        expect(reddest[m]).toBeLessThan(25);
+        expect(m).toBeGreaterThan(seam.length / 2);
+        for (let n = 1; n <= m; n++) {
+          expect(temp(seam[n])).toBeLessThanOrEqual(temp(seam[n - 1]) + 1);
+          expect(yellow(seam[n])).toBeLessThanOrEqual(yellow(seam[n - 1]) + 0.01);
+        }
+        // then it goes to ash, its fire gone
+        for (let n = m + 1; n < seam.length; n++) expect(temp(seam[n])).toBeLessThan(temp(seam[n - 1]));
+        expect(offMix(seam.at(-1)!, PITCH, SLATE, ASH)).toBeLessThan(3);
+      }
     });
 
     it("should die like an ember, not fade: a glowing flake's heat dips and recovers once or twice before it goes", () => {
@@ -833,7 +971,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         emitting: false,
       });
       expect(sparkConfig().emitZone).toBeUndefined();
-      // its frames: 1–2 view px of ember, on the flakes' one sheet
+      // its frames: 1–2 view px, drawn in the hottest of its ramp, on the flakes' one sheet
       const sheet = canvases.find((c) => c.key === spark.args[2])!;
       const names = sparkConfig().frame as string[];
       expect(names.length).toBeGreaterThanOrEqual(2);
@@ -844,9 +982,37 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
         for (let y = f.y; y < f.y + f.h; y++)
           for (let x = f.x; x < f.x + f.w; x++) {
             const p = px(data, y * sheet.width + x);
-            if (p.a > 0) expect(dist(p.c, EMBER)).toBe(0);
+            if (p.a > 0) expect(dist(p.c, FIRE_HOT)).toBe(0);
           }
       }
+    });
+
+    it("should be born orange and cool to deep red as it fades, its tint filling its frame", () => {
+      // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): still additive
+      const { sparkConfig } = sparks();
+      const config = sparkConfig() as unknown as {
+        tintMode: number;
+        blendMode: string;
+        tint: { onEmit(p: object, key: string): number; onUpdate(p: object, key: string, t: number, value: number): number };
+      };
+
+      // Phaser's TintModes.FILL: the tint is its colour, its alpha kept
+      expect(config.tintMode).toBe(1);
+      expect(config.blendMode).toBe("ADD");
+      const p = { life: 450 };
+      const born = config.tint.onEmit(p, "tint");
+      expect(born).toBe(BARROW_HEX.fireHot);
+      const life = [born];
+      for (let t = 0.05; t <= 1.0001; t += 0.05) life.push(config.tint.onUpdate(p, "tint", Math.min(t, 1), life.at(-1)!));
+      expect(life.at(-1)).toBe(BARROW_HEX.fireDeep);
+      // only cooling: never hotter, never yellower, than a moment before
+      const cs = life.map(rgb);
+      for (let n = 1; n < cs.length; n++) {
+        expect(temp(cs[n])).toBeLessThanOrEqual(temp(cs[n - 1]));
+        expect(yellow(cs[n])).toBeLessThanOrEqual(yellow(cs[n - 1]) + 1e-9);
+      }
+      // it passes ember on the way
+      expect(cs.some((c) => dist(c, EMBER) < 15)).toBe(true);
     });
 
     it.each([
