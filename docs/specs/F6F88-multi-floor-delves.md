@@ -282,3 +282,5 @@ fields are the contract between the two halves:
 - **Timers, forced ascent or a vote.** The gather rule is the only trigger.
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Wider doors → FS-MMA2H
