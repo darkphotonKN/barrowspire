@@ -409,6 +409,107 @@ describe("the tower's own dead (FS-M8CSE §D R17, §H R37)", () => {
   });
 });
 
+describe("the Bone Archer (FS-B4SG9 §C R20–R21)", () => {
+  const SHEET = "creature_bone_archer_base";
+  const archer = (fields: Partial<MonsterState> = {}) =>
+    monster({ archetype: "bone_archer", name: "Bone Archer", ...fields });
+  const WEST = { x: -1, y: 0 };
+  const SOUTH_WEST = { x: -1, y: 1 };
+
+  it("should draw a bone_archer from its own baked sheet at fodder tier, not as the troll", () => {
+    expect(monsterLook("bone_archer")).toEqual({ sheet: SHEET, tier: "fodder" });
+    expect(monsterLook("bone_archer")).not.toBe(FALLBACK_LOOK);
+    expect(baked.has(SHEET)).toBe(true);
+  });
+
+  it("should stand in the fodder band as drawn", () => {
+    const scale = monsterScale(monsterLook("bone_archer"), baked);
+    const ratio =
+      (scale * baked.sheet(SHEET)!.crown!) /
+      baked.sheet(PLAYER_REFERENCE_SHEET)!.crown!;
+    expect(ratio).toBeGreaterThanOrEqual(SIZE_TIERS.fodder.min);
+    expect(ratio).toBeLessThanOrEqual(SIZE_TIERS.fodder.max);
+  });
+
+  it("should read Bone Archer on its plate", () => {
+    const { stage, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([archer({ level: 1 })]);
+    roster.update(FRAME);
+    expect(texts.map((t) => t.content)).toEqual(["Bone Archer · Lv 1"]);
+  });
+
+  it("should set an elite's prefix apart from Bone Archer", () => {
+    expect(
+      elitePlate(archer({ name: "Dread Bone Archer", level: 2, elite: true })),
+    ).toEqual({ prefix: "Dread", rest: "Bone Archer · Lv 2" });
+  });
+
+  it("should read as an elite as the other elites do: the prefix in the elite accent, the body under the elite wash", () => {
+    const { stage, sprites, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([archer({ name: "Dread Bone Archer", level: 2, elite: true })]);
+    roster.update(FRAME);
+    expect(texts.map((t) => [t.content, t.color])).toEqual([
+      ["Bone Archer · Lv 2", toCss(palette.markerHostile)],
+      ["Dread", toCss(palette.markerElite)],
+    ]);
+    expect(sprites[0].tint).toBe(palette.eliteTint);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_bone_archer_base\//);
+  });
+
+  it("should play the draw as the attack clip, in the facing the server sends", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([archer({ facing: WEST })]);
+    roster.update(FRAME);
+    roster.sync([archer({ action: "attack", facing: WEST })]);
+    roster.update(FRAME);
+    expect(sprites[0].plays.at(-1)).toEqual({ key: `${SHEET}/attack/4`, startFrame: 0 });
+  });
+
+  it("should play the draw once for a wind-up, however many ticks report it", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([archer({ facing: WEST })]);
+    for (let tick = 0; tick < 36; tick++) {
+      roster.sync([archer({ action: "attack", facing: WEST })]);
+      roster.update(FRAME);
+    }
+    expect(sprites[0].plays.filter((p) => p.key.includes("/attack/"))).toEqual([
+      { key: `${SHEET}/attack/4`, startFrame: 0 },
+    ]);
+  });
+
+  it("should follow a facing that turns during the draw, from the frame the draw has reached", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([archer({ action: "attack", facing: WEST })]);
+    roster.update(FRAME);
+    sprites[0].at(3);
+    roster.sync([archer({ action: "attack", facing: SOUTH_WEST })]);
+    roster.update(FRAME);
+    // the draw is the telegraph: it turns with the aim and is not drawn again from the nock
+    expect(sprites[0].plays.at(-1)).toEqual({ key: `${SHEET}/attack/3`, startFrame: 3 });
+    expect(sprites[0].anims.timeScale).toBe(1);
+  });
+
+  it("should draw afresh for the next arrow, after standing idle between the two", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    for (const action of ["attack", "idle", "attack"] as const) {
+      roster.sync([archer({ action, facing: WEST })]);
+      roster.update(FRAME);
+      sprites[0].at(6);
+    }
+    expect(sprites[0].plays).toEqual([
+      { key: `${SHEET}/attack/4`, startFrame: 0 },
+      { key: `${SHEET}/idle/4`, startFrame: 0 },
+      { key: `${SHEET}/attack/4`, startFrame: 0 },
+    ]);
+  });
+});
+
 describe("the boar and its elite (FS-X2F2H §H R61)", () => {
   const boar = (fields: Partial<MonsterState> = {}) =>
     monster({ archetype: "boar", name: "Boar", ...fields });

@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { CLASS_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
 import {
   arms,
   bareFeet,
@@ -58,7 +58,7 @@ import {
   tome,
 } from "./gear.js";
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
-import { barrowThrall, ghost, spireWraith, zombie } from "./forlorn.js";
+import { barrowThrall, fadingEyes, ghost, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 
 /**
@@ -138,6 +138,28 @@ export function archer() {
   belt(rig, F.leatherDark, M.brass, { pouch: true });
   cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
   quiver(rig, M, F);
+  bowInHand(rig, M, F);
+
+  const style = {
+    attack: "shot",
+    speed: 1.05,
+    hold: pose({
+      upperArmL: [0.02, 0, 0.04],
+      foreArmL: [-0.3, 0, 0],
+      handL: [-0.9, 0, 0],
+      foreArmR: [-0.1, 0, 0],
+    }),
+    walk: { arms: [0.7, 1], lean: 0.06 },
+  };
+  return { rig, style };
+}
+
+/**
+ * A longbow in the left hand with its live string (the delver archer's, and the Bone Archer's):
+ * while a clip draws (`fx.ik`), the right hand travels back along the arrow line and the string
+ * follows it (`fx.draw`), an arrow on it when nocked (`fx.arrow`).
+ */
+function bowInHand(rig, M, F) {
   const bowMount = inHand(rig, "L");
   const bow = longbow(rig, M, F);
   bowMount.add(bow.group);
@@ -173,19 +195,6 @@ export function archer() {
     tmp.applyMatrix4(inv);
     bow.update((p.fx.draw ?? 0) > 0.5 ? tmp.clone() : null, (p.fx.arrow ?? 0) > 0.5);
   });
-
-  const style = {
-    attack: "shot",
-    speed: 1.05,
-    hold: pose({
-      upperArmL: [0.02, 0, 0.04],
-      foreArmL: [-0.3, 0, 0],
-      handL: [-0.9, 0, 0],
-      foreArmR: [-0.1, 0, 0],
-    }),
-    walk: { arms: [0.7, 1], lean: 0.06 },
-  };
-  return { rig, style };
 }
 
 /**
@@ -352,8 +361,8 @@ export function mercenary() {
   return { rig, style };
 }
 
-/** A skull on the head bone, its jaw on the jaw bone, hostile red light in the sockets. */
-function skull(rig, boneMat, M) {
+/** A skull on the head bone, its jaw on the jaw bone, hostile red light (`eye`) in the sockets. */
+function skull(rig, boneMat, eye) {
   const H = rig.H;
   const [, hy, hz] = J(rig, "head");
   const r = rig.p.headR;
@@ -361,15 +370,19 @@ function skull(rig, boneMat, M) {
   attach(rig, "head", ellipsoid(r * 0.78 * H, r * 0.45 * H, r * 0.7 * H, 14), boneMat, [0, hy + 0.028, hz + 0.022]);
   for (const sx of [-1, 1]) {
     attach(rig, "head", ellipsoid(r * 0.3 * H, r * 0.26 * H, r * 0.2 * H, 10), materials().black, [sx * r * 0.36, hy + 0.052, hz + r * 0.86]);
-    attach(rig, "head", ellipsoid(r * 0.24 * H, r * 0.2 * H, r * 0.1 * H, 8), M.hostileEye, [sx * r * 0.36, hy + 0.052, hz + r * 0.97], { noShadow: true });
+    attach(rig, "head", ellipsoid(r * 0.24 * H, r * 0.2 * H, r * 0.1 * H, 8), eye, [sx * r * 0.36, hy + 0.052, hz + r * 0.97], { noShadow: true });
   }
   const [, jy, jz] = J(rig, "jaw");
   attach(rig, "jaw", ellipsoid(r * 0.62 * H, r * 0.26 * H, r * 0.62 * H, 12), boneMat, [0, jy - 0.012, jz + 0.012]);
   attach(rig, "jaw", ellipsoid(r * 0.45 * H, r * 0.2 * H, r * 0.4 * H, 10), materials().black, [0, jy - 0.002, jz + 0.02]);
 }
 
-export function ghoul() {
-  const M = materials();
+/**
+ * The ghoul's body, bare-handed: a hunched skeleton in grave rags, the skull's sockets lit with
+ * `eye`. Shared by the ghoul and the Bone Archer. `legacySkirt` keeps the ghoul's rags on the old
+ * weighting it was baked with (clearance.js MIRRORED_LEGACY); a new sheet never asks for it.
+ */
+function skeleton({ eye, legacySkirt = false }) {
   const F = fabrics();
   const rig = createRig(1.9, {
     hunch: 1,
@@ -395,14 +408,31 @@ export function ghoul() {
   boneLimbs(rig, F.bone);
   hands(rig, F.bone, { size: 0.82, claws: F.bone });
   bareFeet(rig, F.bone, { size: 0.8 });
-  skull(rig, F.bone, M);
-  skirt(rig, F.rag, { top: hy + 0.012, bottom: hy - 0.2, rTop: [0.074, 0.058], rBottom: [0.098, 0.084], legFollow: 0.5, panels: true, ragged: { teeth: 11, depth: 0.07, seed: 3 }, mirrored: true });
+  skull(rig, F.bone, eye(rig));
+  skirt(rig, F.rag, { top: hy + 0.012, bottom: hy - 0.2, rTop: [0.074, 0.058], rBottom: [0.098, 0.084], legFollow: 0.5, panels: true, ragged: { teeth: 11, depth: 0.07, seed: 3 }, mirrored: legacySkirt });
   cloak(rig, F.rag, { length: 0.34, spread: 0.85, flare: 0.2, back: 0.065, ragged: { teeth: 7, depth: 0.14, seed: 5 } });
+  return rig;
+}
+
+/** The ghoul's gait and its restless skull, which the Bone Archer keeps: a shambling limp. */
+const GHOUL_MOTION = {
+  speed: 0.8,
+  walk: { stride: 0.72, knee: 1.1, arms: [0.35, 0.35], lean: 0.06, twist: 1.5 },
+  // the right step drags
+  walkExtra: (i) => pose({ neck: [0.06 * Math.sin((i / 8) * Math.PI * 4), 0, 0.08 * Math.sin((i / 8) * Math.PI * 2)], shinR: [i >= 4 ? 0.12 : 0, 0, 0] }),
+  idle: { lean: 0.02 },
+  idleExtra: (i, ph) => pose({ neck: [0, 0.18 * Math.sin(ph), 0.1 * Math.sin(ph * 2)] }, {}, { jaw: 0.1 + 0.08 * Math.sin(ph * 2) }),
+};
+
+export function ghoul() {
+  const M = materials();
+  const F = fabrics();
+  const rig = skeleton({ eye: () => M.hostileEye, legacySkirt: true });
   inHand(rig, "R", { rx: 0.2 }).add(cleaver(rig, M, F));
 
   const style = {
     attack: "chop",
-    speed: 0.8,
+    ...GHOUL_MOTION,
     hold: pose({
       upperArmL: [-0.62, 0, 0.1],
       foreArmL: [-0.5, 0, 0],
@@ -412,14 +442,47 @@ export function ghoul() {
       handR: [0.25, 0, 0],
       neck: [-0.05, 0, 0],
     }),
-    walk: { stride: 0.72, knee: 1.1, arms: [0.35, 0.35], lean: 0.06, twist: 1.5 },
-    // a shambling limp: the right step drags
-    walkExtra: (i) => pose({ neck: [0.06 * Math.sin((i / 8) * Math.PI * 4), 0, 0.08 * Math.sin((i / 8) * Math.PI * 2)], shinR: [i >= 4 ? 0.12 : 0, 0, 0] }),
-    idle: { lean: 0.02 },
-    idleExtra: (i, ph) => pose({ neck: [0, 0.18 * Math.sin(ph), 0.1 * Math.sin(ph * 2)] }, {}, { jaw: 0.1 + 0.08 * Math.sin(ph * 2) }),
   };
   return { rig, style };
 }
+
+/**
+ * The Bone Archer (FS-B4SG9 §E R24): the ghoul's own skeleton, rags and hostile eyes, the cleaver
+ * gone and the delver archer's longbow in the left hand with its live string. Idle and walk carry
+ * the bow with nothing nocked; the attack is the shot (clips.js `boneShot`), a draw held for the
+ * server's wind-up; it dies as the ghoul does, bow in hand, the eyes out by the last frame.
+ */
+export function boneArcher() {
+  const M = materials();
+  const F = fabrics();
+  const rig = skeleton({ eye: fadingEyes });
+  bowInHand(rig, M, F);
+
+  const style = {
+    attack: "boneShot",
+    ...GHOUL_MOTION,
+    hold: BONE_ARCHER_CARRY,
+    deathExtra: (i) => pose({}, {}, { eyes: 1 - i / (ANIMATIONS.death.frames - 1) }),
+  };
+  return { rig, style };
+}
+
+/**
+ * How the Bone Archer carries the bow: low at the hip in the left hand, the stave stood up and
+ * leant a little out from the body, so it shows in all 8 facings (FS-B4SG9 R27) while its upper
+ * tip stays under the skull on screen: the sheet's crown, and so its size tier, stay the
+ * ghoul's fodder band (a higher or wider carry lifted the crown past a player's). The draw hand
+ * hangs empty, as the ghoul's off hand does.
+ */
+const BONE_ARCHER_CARRY = pose({
+  upperArmL: [-0.25, 0, 0.45],
+  foreArmL: [-0.35, 0, 0],
+  handL: [-0.85, 0.4, 0],
+  upperArmR: [-0.4, 0, -0.1],
+  foreArmR: [-0.55, 0, 0],
+  handR: [0.25, 0, 0],
+  neck: [-0.05, 0, 0],
+});
 
 /** A troll's head: a low skull, heavy brow, long ears, tusked jaw and small hostile-red eyes. */
 function trollHead(rig, mat, F, M) {
@@ -527,6 +590,8 @@ export const CAST = [
   { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
+  // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds
+  { sheet: "creature_bone_archer_base", group: "creatures", fn: "boneArcher", build: boneArcher },
   { sheet: "creature_demon_base", group: "boss", fn: "demon", module: "demon", build: demon, animations: DEMON_ANIMATIONS },
   // the blood demon (FS-VHGE7 §E R36, §F R42): the second boss, a variant on the demon rig, in a group of its own so most runs never load it
   { sheet: "creature_blood_demon_base", group: "blood_demon", fn: "bloodDemon", module: "demon", build: bloodDemon, animations: DEMON_ANIMATIONS },

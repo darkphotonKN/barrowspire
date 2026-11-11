@@ -282,6 +282,19 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Spire Wraith** — the Spire's bone-white recolour of the Forest's ghost: its own archetype in
   the Spire's standard mix, dropping on the ghoul row. A "ghost" is only ever the Forest's.
 
+### Ranged monsters (FS-B4SG9, locked, not built)
+
+- **Ranged monster** — a monster whose sheet carries a **shot**: it closes to its shooting range,
+  stands, winds up and looses a projectile, where every other monster walks into reach and strikes.
+  Which archetypes shoot is sheet data, never a check on the archetype.
+- **Bone Archer** — the first ranged monster (archetype `bone_archer`): the ghoul's skeleton holding
+  a bow, frailer than the ghoul, on floor 1 only. It takes the place of some of a floor's ghouls and
+  follows the ghoul's elite, experience and drop rules. The owner calls the ghoul "the skeleton";
+  in docs and code a **Ghoul** is the melee one and a **Bone Archer** the one with the bow.
+- **Line of sight** — a ranged monster's test before it shoots: a straight flight of its projectile
+  from where it stands to where its target stands crosses walkable ground only. It gates the shot,
+  never aggro, which stays distance-only (ADR-0062 Decision 6).
+
 ### Bosses (FS-77AB6, FS-VHGE7)
 
 - **Boss** — a monster spawned with `Boss: true`: never an elite, at most one of each kind a

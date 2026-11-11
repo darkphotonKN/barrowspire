@@ -107,6 +107,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Blood demon boss → FS-VHGE7
 - [x] Demon fire claw → FS-VHGE7
 - [ ] Monsters path around walls → FS-KE075
+- [ ] Monsters that shoot from range → FS-B4SG9
 - [x] Loot drops from slain monsters → FS-4R9M9
 
 ### Progression

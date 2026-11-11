@@ -185,6 +185,14 @@ var attackTable = map[components.AttackKind]attackSpec{
 		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
 		coefficient: 1, reach: math.Inf(1), parriable: true,
 	},
+	// a ranged monster's shot is its damage at level too, delivered as one
+	// projectile. The row has no projectile of its own: the type, speed, radius
+	// and max flight are the monster's, copied from its sheet (monsterShot).
+	// The MonsterAISystem paces it, as it does a strike (FS-B4SG9 §A R9).
+	components.AttackMonsterShot: {
+		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleNone,
+		coefficient: 1,
+	},
 	components.AttackSlash: {
 		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrength,
 		coefficient: 1.5, cooldown: 0.25, reach: slashRange, halfArc: slashHalfCone,
@@ -349,6 +357,13 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if intent.Kind == components.AttackMonsterStrike && intent.Coefficient > 0 {
 		// a demon's slam: its multiple of its level damage (FS-VHGE7 §B R16)
 		spec.coefficient = intent.Coefficient
+	}
+
+	if intent.Kind == components.AttackMonsterShot {
+		// the shot is the monster's own; anything without one fires nothing
+		if spec.projectile, ok = monsterShot(attacker); !ok {
+			return
+		}
 	}
 
 	tc, ok := attacker.GetComponent(ecs.ComponentTypeTransform)
@@ -570,6 +585,27 @@ func (s *CombatSystem) fire(attacker *ecs.Entity, at *components.TransformCompon
 		shot.AddComponent(components.NewVelocityComponent(math.Cos(angle)*p.speed, math.Sin(angle)*p.speed, p.speed))
 		shot.AddComponent(components.NewProjectileComponent(attack, p.speed, p.maxDistance, p.radius, p.kind))
 	}
+}
+
+// monsterShot is the one projectile a ranged monster's shot fires, read from
+// the shot on its component; false for anything that carries none (FS-B4SG9
+// §A R1, R9).
+func monsterShot(attacker *ecs.Entity) (projectileSpec, bool) {
+	mc, ok := attacker.GetComponent(ecs.ComponentTypeEnemy)
+	if !ok {
+		return projectileSpec{}, false
+	}
+	monster := mc.(*components.MonsterComponent)
+	if !shoots(monster) {
+		return projectileSpec{}, false
+	}
+	return projectileSpec{
+		kind:        monster.ShotProjectileType,
+		speed:       monster.ShotSpeed,
+		maxDistance: monster.ShotMaxFlight,
+		radius:      monster.ShotRadius,
+		spread:      []float64{0},
+	}, true
 }
 
 // startCharge sets a charge going from where the attacker stands toward the

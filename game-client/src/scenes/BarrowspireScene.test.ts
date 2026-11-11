@@ -5678,7 +5678,7 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
     run.preload();
 
-    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3"].map(atlasTextureKey));
+    expect(art.queued.sort()).toEqual(["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3", "creatures-4"].map(atlasTextureKey));
   });
 
   it("should show the torch bar over creatures and boss still downloading at 300 ms, gone before create, then fade the run in (FS-C4JWH §D R17, A1)", () => {

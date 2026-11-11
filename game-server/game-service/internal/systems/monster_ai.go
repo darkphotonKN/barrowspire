@@ -14,7 +14,9 @@ import (
 MonsterAISystem decides what each living monster does this tick: wander,
 chase, wind up or strike. FS-77AB6 §Requirements 26. A demon, with the claw
 on its sheet, picks between its two moves: the slam when it has cooled, the
-fire claw otherwise (FS-VHGE7 §B R18).
+fire claw otherwise (FS-VHGE7 §B R18). A ranged monster, with a shot on its
+sheet, chases until it is in its shooting range with line of sight, and
+shoots where the others strike (FS-B4SG9 §A R4–R6).
 
 It only sets a monster's velocity, facing and AI state. MovementSystem moves
 and collides it, exactly as it does a delver, and a strike is an attack intent
@@ -133,12 +135,16 @@ func (s *MonsterAISystem) think(
 		return
 	}
 
-	if distance(at, target.at) > monster.AttackRange {
+	// out of range, or a ranged monster with rock in its shot's flight: it
+	// walks, by path on a dungeon floor, which brings it round the corner
+	// (FS-B4SG9 §A R4)
+	if distance(at, target.at) > monster.AttackRange || !s.sees(monster, at, target.at) {
 		s.chase(monster, at, velocity, target)
 		return
 	}
 
-	// in range: stand and face it, and swing once the interval has elapsed
+	// in range and in sight: stand and face it, and swing once the interval
+	// has elapsed
 	velocity.VX, velocity.VY = 0, 0
 	face(monster, at, target.at)
 	if monster.AttackCooldown > 0 {
@@ -165,7 +171,8 @@ func claw(entity *ecs.Entity, monster *components.MonsterComponent, target quarr
 	strike(entity, components.AttackIntent{Kind: components.AttackMonsterStrike, TargetEntityID: target.id})
 }
 
-// strike hands a monster's landing strike to the CombatSystem.
+// strike hands a monster's landing strike, or its shot leaving, to the
+// CombatSystem.
 func strike(entity *ecs.Entity, intent components.AttackIntent) {
 	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
 	if !ok {
@@ -223,6 +230,11 @@ func (s *MonsterAISystem) target(monster *components.MonsterComponent, at *compo
 // windUp holds a monster still through its wind-up and, when it ends, strikes if
 // the target is still within range × 1.25; otherwise the swing whiffs. A
 // demon's wind-up strike is its slam (FS-VHGE7 §B R16).
+//
+// A ranged monster's wind-up is its draw: it keeps turning to face its target,
+// so the draw points where the shot will go, and when it ends it shoots at
+// where the target it has then stands, whatever the distance (FS-B4SG9 §A R7,
+// R8).
 func (s *MonsterAISystem) windUp(
 	deltaTime float64,
 	entity *ecs.Entity,
@@ -234,6 +246,10 @@ func (s *MonsterAISystem) windUp(
 ) {
 	velocity.VX, velocity.VY = 0, 0
 	monster.Action = components.MonsterActionAttack
+	ranged := shoots(monster)
+	if ranged && hunting {
+		face(monster, at, target.at)
+	}
 
 	monster.WindUpRemaining -= deltaTime
 	if monster.WindUpRemaining > 0 {
@@ -241,7 +257,18 @@ func (s *MonsterAISystem) windUp(
 	}
 	monster.WindUpRemaining = 0
 
-	if !hunting || distance(at, target.at) > monster.AttackRange*strikeReach {
+	if !hunting {
+		return
+	}
+	if ranged {
+		strike(entity, components.AttackIntent{
+			Kind:    components.AttackMonsterShot,
+			TargetX: target.at.X,
+			TargetY: target.at.Y,
+		})
+		return
+	}
+	if distance(at, target.at) > monster.AttackRange*strikeReach {
 		return
 	}
 	// a demon's slam hits at its multiple; every other strike at the row's 1
@@ -250,6 +277,25 @@ func (s *MonsterAISystem) windUp(
 		TargetEntityID: target.id,
 		Coefficient:    monster.SlamMultiplier,
 	})
+}
+
+// shoots reports whether a monster is a ranged one: its sheet carries a shot
+// (FS-B4SG9 §A R1).
+func shoots(monster *components.MonsterComponent) bool {
+	return monster.ShotProjectileType != ""
+}
+
+// sees reports whether a monster has line of sight to a point: the straight
+// flight of its shot from where it stands, at the shot's radius, crosses
+// walkable cells only. Bodies never block it. It gates the start of a ranged
+// monster's wind-up and nothing else: aggro, retaliation and the leash stay
+// distance-only (ADR-0062 Decision 6). A monster without a shot is never
+// tested, and with no grid sight always holds (FS-B4SG9 §A R5).
+func (s *MonsterAISystem) sees(monster *components.MonsterComponent, at, toward *components.TransformComponent) bool {
+	if !shoots(monster) || s.grid == nil {
+		return true
+	}
+	return s.grid.Clear(at.X, at.Y, toward.X, toward.Y, monster.ShotRadius)
 }
 
 // A strike lands on a target still within this multiple of the attack range
