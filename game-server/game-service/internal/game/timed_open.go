@@ -7,6 +7,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 )
 
 /**
@@ -20,6 +21,20 @@ import (
 // TimedOpenDuration is the seconds of simulation time a run's shut chest or
 // sack takes to open. FS-MQYEX's named tunable (D15).
 const TimedOpenDuration = 1.5
+
+/**
+* opensThroughTimedOpen is whether a reach for the target starts a timed open
+* rather than opening it: a shut chest or sack in a run (FS-MQYEX
+* §Requirements 1). A drop pile is never shut, and the hub and the fields have
+* no timed opens.
+**/
+func (s *Session) opensThroughTimedOpen(target *ecs.Entity) bool {
+	if s.worldType != types.WorldTypeRun || !target.HasComponent(ecs.ComponentTypeContainer) {
+		return false
+	}
+	oc, ok := target.GetComponent(ecs.ComponentTypeOpenable)
+	return ok && !oc.(*components.OpenableComponent).IsOpen
+}
 
 /**
 * openContainer opens the container, the one way a container opens: it shows
@@ -59,8 +74,10 @@ func (s *Session) openContainer(container *ecs.Entity, openable *components.Open
 * advanceTimedOpens is a run's timed opens on its tick, after the tick's
 * movement and combat: one its delver moved, was hit or left reach of is
 * cancelled, the rest count the tick, and one whose time has passed opens its
-* container (FS-MQYEX §Requirements 4–10). Nothing is sent, for a cancel
-* either: the next state shows the container open, or no timed open.
+* container (FS-MQYEX §Requirements 4–10). The first to finish on a container
+* opens it, rolled once, for every delver who was opening it: the others'
+* timed opens end on the same tick (§Requirements 16–17). Nothing is sent, for
+* a cancel either: the next state shows the container open, or no timed open.
 **/
 func (s *Session) advanceTimedOpens(deltaTime float64, entities []*ecs.Entity) {
 	for _, done := range systems.NewTimedOpenSystem(s.EntityManager).Update(deltaTime, entities) {

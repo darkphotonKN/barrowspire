@@ -1868,29 +1868,39 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		return ErrEntityNotFound
 	}
 
+	// a reach for a run's shut chest or sack starts a timed open, and several
+	// delvers may have one on the same container: it neither checks nor takes
+	// the per-container hold below, or a second delver's reach would be
+	// dropped without a reply (FS-MQYEX §Requirements 15)
+	startsTimedOpen := s.opensThroughTimedOpen(targetEntity)
+
 	// rate limiting cache
-	s.mu.Lock() // hold lock to prevent check then act races here
-	// check
-	_, exists := s.containerInteractedCache[targetEntityID]
-	if exists {
+	exists := false
+	if !startsTimedOpen {
+		s.mu.Lock() // hold lock to prevent check then act races here
+		// check
+		_, exists = s.containerInteractedCache[targetEntityID]
+		if exists {
+			s.mu.Unlock()
+			slog.Debug("Container entity still cached, not available for interaction", "targetEntityID", targetEntityID)
+			return fmt.Errorf("container targeted entityID %s was still cached and not available to be interacted", targetEntityID)
+		} else {
+			// act
+			s.containerInteractedCache[targetEntityID] = true
+		}
+		// release lock after act
 		s.mu.Unlock()
-		slog.Debug("Container entity still cached, not available for interaction", "targetEntityID", targetEntityID)
-		return fmt.Errorf("container targeted entityID %s was still cached and not available to be interacted", targetEntityID)
-	} else {
-		// act
-		s.containerInteractedCache[targetEntityID] = true
 	}
-	// release lock after act
-	s.mu.Unlock()
 
 	// a refused interaction must never keep the target reserved, or one bad
 	// click locks it for every delver for the rest of the run. Every exit
 	// releases it here unless a successful branch handed the release off to its
 	// own short cooldown timer (or to pickUpItem). The stairs keep no cooldown:
 	// one climb is guaranteed by the floor change request, so they never hand off.
+	// A reach that starts a timed open took no hold, and releases none.
 	releaseHandedOff := false
 	defer func() {
-		if releaseHandedOff {
+		if releaseHandedOff || startsTimedOpen {
 			return
 		}
 		s.mu.Lock()
@@ -2063,10 +2073,10 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			return ErrContainerGuarded
 		}
 
-		if s.worldType == types.WorldTypeRun && !containerOpenable.IsOpen {
+		if startsTimedOpen {
 			// a run's shut chest or sack opens through the delver's timed open:
 			// it stays shut and unrolled, and the tick opens it when the time
-			// has passed. The container is not held (FS-MQYEX §Requirements 2).
+			// has passed. The container is not held (FS-MQYEX §Requirements 2, 15).
 			// A reach for the one they are already opening changes nothing; for
 			// another, it takes the first one's place (§Requirements 12)
 			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, TimedOpenDuration)

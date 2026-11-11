@@ -22,7 +22,7 @@ type CompletedTimedOpen struct {
 
 /*
 TimedOpenSystem counts each delver's timed open, and cancels it.
-FS-MQYEX §Requirements 2, 4–13.
+FS-MQYEX §Requirements 2, 4–14, 16.
 
 A timed open starts at zero on the reach. Every tick from the one that applied
 the reach counts the tick's simulation time on it, and the first tick to find
@@ -35,6 +35,10 @@ A timed open is cancelled on the tick that finds its delver out of play, their
 body not where it stood at the reach, health lost to the tick's combat, or the
 container out of reach or gone. A cancel is judged before the timer's end,
 leaves the body silently and is reported to nobody; nothing else cancels.
+
+Any number of delvers may have a timed open on one container, each counted
+and cancelled on its own. The first to complete is the one reported, and every
+other timed open on that container ends on the same tick.
 */
 type TimedOpenSystem struct {
 	em *ecs.EntityManager
@@ -81,7 +85,8 @@ func (s *TimedOpenSystem) MarkHealth(entities []*ecs.Entity) {
 
 // Update is the tick on every timed open, after the tick's movement and
 // combat: a cancelled one leaves the body, the rest count the tick, and the
-// ones that completed on it are reported, in the order of entities.
+// ones that completed on it are reported, in the order of entities, one to a
+// container.
 func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity) []CompletedTimedOpen {
 	var completed []CompletedTimedOpen
 	for _, entity := range entities {
@@ -98,12 +103,37 @@ func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity) []Co
 		}
 		if open.Elapsed >= open.Duration-timedOpenEpsilon {
 			entity.RemoveComponent(ecs.ComponentTypeTimedOpen)
-			completed = append(completed, CompletedTimedOpen{DelverEntityID: entity.ID, ContainerID: open.ContainerID})
+			// two that complete on one tick open the container once: the
+			// first in the tick's order is the one reported (§Requirements 16)
+			if !completedOn(completed, open.ContainerID) {
+				completed = append(completed, CompletedTimedOpen{DelverEntityID: entity.ID, ContainerID: open.ContainerID})
+			}
 			continue
 		}
 		open.Elapsed += deltaTime
 	}
+	// the first to finish opens the container for all: every other timed open
+	// on it ends on this tick, wherever its body stood in the tick's order
+	// (§Requirements 16)
+	if len(completed) > 0 {
+		for _, entity := range entities {
+			oc, ok := entity.GetComponent(ecs.ComponentTypeTimedOpen)
+			if ok && completedOn(completed, oc.(*components.TimedOpenComponent).ContainerID) {
+				entity.RemoveComponent(ecs.ComponentTypeTimedOpen)
+			}
+		}
+	}
 	return completed
+}
+
+// completedOn is whether one of the completed timed opens was on the container.
+func completedOn(completed []CompletedTimedOpen, containerID uuid.UUID) bool {
+	for _, done := range completed {
+		if done.ContainerID == containerID {
+			return true
+		}
+	}
+	return false
 }
 
 // cancelled is whether the tick's movement and combat left the delver's timed
