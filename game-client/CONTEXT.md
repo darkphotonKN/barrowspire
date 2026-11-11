@@ -225,6 +225,15 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   waist up over the walk from the waist down, the legs facing the aim (for a melee swing, its
   target). Every playable class's sheet carries it; no creature's or resident's does (FS-HF0WW,
   FS-3V7GC).
+- **Run** (`run`): a playable class's looping clip while it moves, a jog keyed to the server's
+  move speed so it plays at about its own pace. Replaces the walk for the four classes; folk and
+  creatures still walk. Not the walk, which the class sheets keep for later use (FS-JS7C8).
+- **Backpedal** (`backpedal`): a playable class's looping clip while it moves away from where it
+  faces (more than 90° between its facing and its movement): the body toward the pointer, the
+  feet stepping back (FS-JS7C8).
+- **Pointer facing**: the 8-way facing of the world direction from the player's character to the
+  pointer. The local character faces it, moving or standing; it is sent up as `face` and other
+  players draw it. Presentation only: no aim, range or hit reads it (FS-JS7C8).
 - **Atlas group**: the atlas pages one group of sheets is packed onto, named by the manifest's
   atlas keys without the page number (`boss-0` and `boss-1` are the `boss` group). The unit the
   client loads and frees art by (FS-C4JWH).

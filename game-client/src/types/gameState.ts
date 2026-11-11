@@ -1,5 +1,7 @@
 // Game state types matching Go server structures
 
+import type { Facing8 } from "@/render/iso";
+
 // Matching Go uuid.UUID type
 export type UUID = string;
 
@@ -28,6 +30,12 @@ export interface PublicPlayerState {
   class: string;
   position: Position;
   direction: PlayerDirection;
+  /**
+   * The facing the player last sent (FS-JS7C8 §E R32): on `current_player` and every
+   * `other_players` entry, in every world; absent until they have sent one in this world. Another
+   * player's figure turns to it (R34); the own client ignores its echo and keeps the pointer's.
+   */
+  facing?: Facing8;
   escape: boolean;
   current_health?: number;
   max_health?: number;

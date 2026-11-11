@@ -653,6 +653,28 @@ func (s *Session) manageClientMessages() {
 					}
 				})
 
+			case constants.ActionFace:
+				// up to 10 a second, and nothing is ever sent back: every
+				// refusal is a Debug line (FS-JS7C8 §E R28, R31)
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Face ignored", "session_id", s.ID, "error", err)
+					continue
+				}
+				facePayload := parsedPayload.(types.PlayerFacePayload)
+
+				playerID, err := uuid.Parse(facePayload.PlayerID)
+				if err != nil {
+					slog.Debug("Face ignored", "session_id", s.ID, "player_id", facePayload.PlayerID, "error", err)
+					continue
+				}
+
+				s.queueIntent(func() {
+					if err := s.handleFace(playerID, facePayload.Facing); err != nil {
+						slog.Debug("Face ignored", "session_id", s.ID, "player_id", playerID, "error", err)
+					}
+				})
+
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
 					"message_action", msg.Message.Action,

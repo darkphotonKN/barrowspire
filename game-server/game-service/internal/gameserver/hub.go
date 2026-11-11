@@ -447,6 +447,9 @@ func (h *messageHub) Run(ctx context.Context) {
 			} else if constants.Action(clientPackage.Message.Action) == constants.ActionRenewToken {
 				// the token is a credential and is never logged (FS-ZPX58 R32)
 				slog.Debug("incoming renew_token")
+			} else if constants.Action(clientPackage.Message.Action) == constants.ActionFace {
+				// up to 10 a second per player: kept off the Info log (FS-JS7C8 R30)
+				slog.Debug("incoming message.", "message", clientPackage.Message)
 			} else {
 				slog.Info("incoming message.", "message", clientPackage.Message)
 			}
@@ -459,6 +462,7 @@ func (h *messageHub) Run(ctx context.Context) {
 				constants.ActionEquip:     true,
 				constants.ActionUnequip:   true,
 				constants.ActionCastSkill: true,
+				constants.ActionFace:      true,
 			}
 
 			messageAction := constants.Action(clientPackage.Message.Action)
@@ -470,6 +474,12 @@ func (h *messageHub) Run(ctx context.Context) {
 			if gameActions[messageAction] {
 				session, err := h.resolveGameSession(clientPackage.Conn)
 
+				if err != nil && messageAction == constants.ActionFace {
+					// a face from a player in no world is dropped, answered with
+					// nothing (FS-JS7C8 §E R31)
+					slog.Debug("Face dropped: not in a world", "error", err)
+					continue
+				}
 				if err != nil {
 					// Detail stays server-side. The client no longer supplies a
 					// session id and must not be handed one back in an error

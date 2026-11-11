@@ -54,6 +54,10 @@ type PublicPlayerState struct {
 	Experience  int64  `json:"experience"`
 	LevelFloor  int64  `json:"level_floor"`
 	NextLevelAt *int64 `json:"next_level_at,omitempty"`
+	// Facing is which of the 8 world-compass directions the player's character
+	// faces, as their client last sent it with face; absent until they have.
+	// Presentation only: no rule reads it. FS-JS7C8 §E R32, R35.
+	Facing string `json:"facing,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole

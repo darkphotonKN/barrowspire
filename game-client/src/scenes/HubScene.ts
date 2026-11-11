@@ -66,6 +66,8 @@ import { SCENE_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
+import { followPointer } from "@/render/art/pointerFacing";
+import { FaceSender, wireFacing } from "./faceWire";
 import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap, type LightSource } from "@/render/lighting";
 import { cursorCss, cursorSource } from "@/render/cursors";
@@ -557,6 +559,11 @@ interface PlayerView {
   pos: Point;
   /** One of eight world directions (FS-2325V §A.6). */
   facing: Facing8;
+  /**
+   * The facing another player last sent, as their entry carries it (FS-JS7C8 §E R34): a baked
+   * figure turns to it, or to their movement while there is none. Never the own body's echo.
+   */
+  wireFacing?: Facing8;
   walkPhase: number;
   moving: boolean;
   /**
@@ -614,6 +621,10 @@ export class HubScene extends Phaser.Scene {
   /** Everything the scene knows about one player, keyed by entity id. */
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
+  /** The pointer facing the own character turns to (FS-JS7C8 §D); one per visit. */
+  private pointerFacing?: (from: Point) => Facing8 | undefined;
+  /** The own facing, sent up for the others to see (FS-JS7C8 §E R28). The town has no holds. */
+  private readonly faceSender = new FaceSender((facing) => socketManager.sendMessage("face", { facing }));
   /** The sprite the camera is latched onto, so it is latched once per sprite, not per tick. */
   private followedSprite?: unknown;
 
@@ -854,6 +865,8 @@ export class HubScene extends Phaser.Scene {
       : undefined;
     if (!this.groundLayer) this.drawGround();
     this.bindInput();
+    // the own character turns to the pointer, moving or standing (FS-JS7C8 §D)
+    this.pointerFacing = followPointer(this);
     this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
@@ -1126,6 +1139,7 @@ export class HubScene extends Phaser.Scene {
     // the next visit rebuilds every sprite; the camera must latch onto the new body
     // whatever its entity id, so neither survives the visit
     this.selfEntityID = null;
+    this.pointerFacing = undefined;
     this.followedSprite = undefined;
     // the next visit steps into whatever gate it starts in
     this.atGate = undefined;
@@ -1389,7 +1403,7 @@ export class HubScene extends Phaser.Scene {
       this.placeMarker(npc.sprite, npc.name, npc.anim, npc.sigil);
     }
 
-    for (const view of this.views.values()) {
+    for (const [entityID, view] of this.views) {
       const { sprite, pos, target } = view;
 
       easeToward(pos, target);
@@ -1400,7 +1414,14 @@ export class HubScene extends Phaser.Scene {
       // drawn; the hub has no attacks and no deaths.
       if (view.anim.baked) {
         const body = sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+        // the own character turns to the pointer, anyone else to the facing they sent (FS-JS7C8
+        // §D, §E R34)
+        const self = entityID === this.selfEntityID;
+        const look = self ? this.pointerFacing?.(pos) : view.wireFacing;
+        view.anim.face(look);
         if (body) view.anim.show(body, view.anim.step(pos, time, delta, false));
+        // the own facing goes up for the others to see (R28)
+        if (self) this.faceSender.update(entityID, look ?? view.anim.facing, false, time);
         continue;
       }
 
@@ -3043,6 +3064,7 @@ export class HubScene extends Phaser.Scene {
     // origin.
     if (existing) {
       existing.target = { x: player.position.x, y: player.position.y };
+      existing.wireFacing = isSelf ? undefined : wireFacing(player);
       this.updateAppearance(existing, player);
       return;
     }
@@ -3086,6 +3108,7 @@ export class HubScene extends Phaser.Scene {
       pos,
       // faces the viewer, which the "down" texture shows
       facing: "se",
+      wireFacing: isSelf ? undefined : wireFacing(player),
       walkPhase: 0,
       moving: false,
       anim,

@@ -1,5 +1,6 @@
 import type { ChatChannel } from "@/stores/chatStore";
 import type { ItemState } from "@/types/gameState";
+import type { Facing8 } from "@/render/iso";
 /**
  * The session identity every game action carries. GameSessionManager builds it
  * once and merges it into each outgoing payload, so action payload types below
@@ -13,6 +14,10 @@ export interface PlayerSessionPayload {
 export interface MovePayload {
   vx: number;
   vy: number;
+}
+
+export interface FacePayload {
+  facing: Facing8;
 }
 
 export interface AttackPayload {
@@ -85,6 +90,12 @@ export interface EnterHubPayload {
 export interface ActionMap {
   enter_hub: EnterHubPayload;
   move: MovePayload;
+  /**
+   * The own character's 8-way facing (FS-JS7C8 §E R27, R28): sent on its first state in a world,
+   * then only on a change, at most once per 100 ms, never while a Shadow Shot hold is up. The
+   * server relays it as `facing` and answers nothing.
+   */
+  face: FacePayload;
   attack: AttackPayload;
   pickup: PickupPayload;
   use: UsePayload;

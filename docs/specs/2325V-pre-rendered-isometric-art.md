@@ -308,3 +308,5 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
 ## Change: Wider doors → FS-MMA2H
 
 ## Change: Wall shadow layer → FS-V8FT3
+
+## Change: Class run, backpedal and pointer facing → FS-JS7C8

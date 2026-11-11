@@ -20,6 +20,8 @@ import { fieldArt } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
+import { followPointer } from "@/render/art/pointerFacing";
+import { FaceSender, wireFacing } from "./faceWire";
 import { LightMap } from "@/render/lighting";
 import { FIELD_MARKER_OUTLINE, MARKER_DEPTH } from "@/render/markers";
 import {
@@ -142,6 +144,11 @@ interface PlayerView {
   pos: Point;
   target: Point;
   facing: Facing8;
+  /**
+   * The facing another player last sent, as their entry carries it (FS-JS7C8 §E R34): their
+   * figure turns to it, or to their movement while there is none. Never the own body's echo.
+   */
+  wireFacing?: Facing8;
   anim: CharacterAnimator;
   /** At 0 HP by the last state: drawn in the death pose, and snapped, not eased, when they rise. */
   fallen: boolean;
@@ -168,6 +175,10 @@ export class FieldScene extends Phaser.Scene {
   private lightMap?: LightMap;
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
+  /** The pointer facing the own character turns to (FS-JS7C8 §D); one per visit. */
+  private pointerFacing?: (from: Point) => Facing8 | undefined;
+  /** The own facing, sent up for the others to see (FS-JS7C8 §E R28, R29). */
+  private readonly faceSender = new FaceSender((facing) => socketManager.sendMessage("face", { facing }));
   private followedSprite?: unknown;
   /** Drawn once: a field's keep-out areas and entrance never move. */
   private groundDrawn = false;
@@ -256,6 +267,8 @@ export class FieldScene extends Phaser.Scene {
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
     this.bindInput();
+    // the own character turns to the pointer, moving or standing (FS-JS7C8 §D)
+    this.pointerFacing = followPointer(this);
 
     // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
     // (FS-X2F2H §Requirements 54, guideline "Lighting")
@@ -496,6 +509,7 @@ export class FieldScene extends Phaser.Scene {
     this.selfLevel = undefined;
     this.views.clear();
     this.selfEntityID = null;
+    this.pointerFacing = undefined;
     this.followedSprite = undefined;
     this.groundDrawn = false;
     this.obstaclesDrawn = false;
@@ -527,12 +541,18 @@ export class FieldScene extends Phaser.Scene {
     this.sendMovementIntent();
     this.fight?.update(delta);
     this.drainFallen(this.time.now);
-    for (const view of this.views.values()) {
+    for (const [entityID, view] of this.views) {
       view.pos.x = Phaser.Math.Linear(view.pos.x, view.target.x, POSITION_LERP);
       view.pos.y = Phaser.Math.Linear(view.pos.y, view.target.y, POSITION_LERP);
       standAt(view.sprite, view.pos, 1);
       const body = view.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
+      // the own character turns to the pointer, anyone else to the facing they sent (FS-JS7C8 §D, §E R34)
+      const self = entityID === this.selfEntityID;
+      const look = self ? this.pointerFacing?.(view.pos) : view.wireFacing;
+      view.anim.face(look);
       if (view.anim.baked && body) view.anim.show(body, view.anim.step(view.pos, time, delta, view.fallen));
+      // the own facing goes up; never the turn of a Shadow Shot hold, none while fallen (R28, R29)
+      if (self) this.faceSender.update(entityID, look ?? view.anim.facing, this.fight?.aiming === true || view.fallen, time);
       const s = worldToScreen(view.pos.x, view.pos.y);
       view.name.setPosition(s.x, s.y - (body?.displayHeight ?? 60) - NAME_GAP);
     }
@@ -872,6 +892,7 @@ export class FieldScene extends Phaser.Scene {
       // risen at the entrance: stand there at once rather than slide across the field
       if (existing.fallen && !fallen) existing.pos = { ...existing.target };
       existing.fallen = fallen;
+      existing.wireFacing = isSelf ? undefined : wireFacing(player);
       const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
       existing.facing = facingFrom(vx, vy, existing.facing);
       if (!existing.anim.baked) {
@@ -900,7 +921,16 @@ export class FieldScene extends Phaser.Scene {
     const pos = { x: player.position.x, y: player.position.y };
     const sprite = this.add.container(0, 0, [body]);
     standAt(sprite, pos, 1);
-    this.views.set(player.entity_id, { sprite, name, pos, target: { ...pos }, facing: "se", anim, fallen });
+    this.views.set(player.entity_id, {
+      sprite,
+      name,
+      pos,
+      target: { ...pos },
+      facing: "se",
+      wireFacing: isSelf ? undefined : wireFacing(player),
+      anim,
+      fallen,
+    });
   }
 
   /** A line said in passing, in the neutral HUD register. */

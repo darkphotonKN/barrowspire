@@ -92,6 +92,8 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Unsafe run finds lost on death → FS-18Z5F
 - [x] Drink an equipped health potion → FS-P9G8R
 - [ ] Timed container opening → FS-MQYEX
+- [ ] Attacking slows the attacker's movement → FS-JS7C8
+- [ ] Players' facing relayed in the state → FS-JS7C8
 
 ### Classes
 
