@@ -167,8 +167,8 @@ export const palette = {
   /**
    * The minimap's ground (FS-SRA9J §E.22, FS-56CKV §A.4–§A.5): an explored region in the walls'
    * dark stone, a visible one a step lighter in their lit stone, so the party's own regions stand
-   * out; each seen region outlined in that stone lifted toward vellum. Each step keeps 1.3:1 from
-   * the one under it (`minimap.test.ts`). Stone, not amber or the ally green: the minimap's glyphs
+   * out; the shown floor outlined once round its outer edge, never between two regions, in that
+   * stone lifted toward vellum. Each step keeps 1.3:1 from the one under it (`minimap.test.ts`). Stone, not amber or the ally green: the minimap's glyphs
    * and dots keep those channels. The edge is a token of its own: no stone token is lighter than
    * the visible fill by 1.3:1.
    */
