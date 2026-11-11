@@ -101,6 +101,11 @@ export type VariantTable = readonly (readonly [number, string])[];
 export interface WallSheets {
   /** Before every piece and post sheet name: `""` for timber, `"tower_"` for masonry. */
   prefix: string;
+  /**
+   * How thick the material's wall is, in tiles (FS-XK2B6 §A.2): the one place the client holds it.
+   * It mirrors the bake model the sheets are rendered from, which also makes the post that square.
+   */
+  thickness: number;
   /** Kinds a full-height piece may be. */
   back: VariantTable;
   /** Kinds a cut-away piece may be. */
@@ -129,6 +134,8 @@ const KINDS: VariantTable = [
 /** Timber-frame house walls, as the exterior world theme has always drawn them. */
 export const TIMBER_WALLS: WallSheets = {
   prefix: "",
+  // tools/bake/page/models/architecture.js `THICK`
+  thickness: 0.18,
   back: KINDS,
   front: KINDS,
   // the outward face: a shuttered or dark window, never a torch (FS-9PN7X §F.2)
@@ -146,6 +153,8 @@ export const TIMBER_WALLS: WallSheets = {
  */
 export const MASONRY_WALLS: WallSheets = {
   prefix: "tower_",
+  // tools/bake/page/models/tower.js `P_THICK`
+  thickness: 0.24,
   back: [
     [40, "plain"],
     [68, "pillar"],
@@ -164,6 +173,9 @@ export const MASONRY_WALLS: WallSheets = {
   cap: "tower_cap",
   lit: ["sconce"],
 };
+
+/** A material's wall thickness in world px: 9.6 for the tower's masonry, 7.2 for timber. */
+export const thicknessPx = (sheets: WallSheets): number => sheets.thickness * T;
 
 /** Cuts one wall rect into pieces along its centreline, trimmed at the far end if it must be. */
 export function cutWall(
