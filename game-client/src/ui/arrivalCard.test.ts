@@ -5,12 +5,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { HUD_DEPTH, MARKER_DEPTH } from "@/render/markers/markers";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import type { CardInk } from "@/render/effects/cardDust";
-import { ARRIVAL_CARD, ArrivalCard, CARD_LAYOUT, type ArrivalCardScene, type CardDustPlayer } from "./arrivalCard";
+import {
+  ARRIVAL_CARD,
+  ArrivalCard,
+  CARD_LAYOUT,
+  CARD_LEAVE,
+  type ArrivalCardScene,
+  type CardLeaveInk,
+  type CardLeavePlayer,
+} from "./arrivalCard";
 
 // FS-PQ2TW §B R10, R12, R14–R17; §E R37, R38; ADR-0073 Decisions 3, 6. I-PQ2TW-1: the arrival
 // card as one piece no scene owns, on a recording stand-in for the slice of a scene it draws with.
 // FS-PQ2TW §D R24, R29–R31, R35, R36. I-PQ2TW-5: the card leaves as dust, through a stand-in dust.
+// FS-PQ2TW §Change: Smoke, R41, R43, R50: or as smoke, behind one switch that picks dust.
 
 interface Part {
   kind: "rectangle" | "text" | "graphics";
@@ -28,18 +36,22 @@ interface Timer {
   removed: boolean;
 }
 
-/** A stand-in for the dust: whether it plays, and what it was asked. */
-function fakeDust(plays = true) {
-  const asked: { ink: CardInk; depth: number; gone: () => void }[] = [];
-  const dust = {
-    play: vi.fn((ink: CardInk, depth: number, gone: () => void): boolean => {
+/**
+ * A stand-in for a leave: whether it plays, and what it was asked. The dust leaves the letters to
+ * the card; the smoke takes them itself.
+ */
+function fakeLeave(plays = true, takesLetters = false) {
+  const asked: { ink: CardLeaveInk; depth: number; gone: () => void }[] = [];
+  const leave = {
+    play: vi.fn((ink: CardLeaveInk, depth: number, gone: () => void): boolean => {
       asked.push({ ink, depth, gone });
       return plays;
     }),
     stop: vi.fn(),
     forget: vi.fn(),
-  } satisfies CardDustPlayer;
-  return { dust, asked };
+    takesLetters,
+  } satisfies CardLeavePlayer;
+  return { leave, asked };
 }
 
 interface Tween {
@@ -103,12 +115,13 @@ function fakeScene() {
   return { scene, parts, tweens, timers, clock, events, last, standing, fades, cardTweens, leaves };
 }
 
-/** A card on a fresh stand-in, its dust declining unless told: the fade as today. */
+/** A card on a fresh stand-in, its dust declining unless told: the fade as today. Its smoke plays. */
 function cardOnStage(plays = false) {
   const stage = fakeScene();
-  const { dust, asked } = fakeDust(plays);
-  const card = new ArrivalCard(stage.scene, dust);
-  return { ...stage, card, dust, asked };
+  const { leave: dust, asked } = fakeLeave(plays);
+  const { leave: smoke, asked: smoked } = fakeLeave(true, true);
+  const card = new ArrivalCard(stage.scene, { dust, smoke });
+  return { ...stage, card, dust, asked, smoke, smoked };
 }
 
 const WORDS = { title: "The Second Floor", line: "The dead walk heavier here." };
@@ -585,6 +598,69 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
   });
 });
 
+describe("the card can leave as smoke instead (FS-PQ2TW §Change: Smoke, a trial alternate leave)", () => {
+  it("should pick the dust by its one switch, the game's leave until the owner says (R41)", () => {
+    expect(CARD_LEAVE).toBe("dust");
+    const { card, leaves, asked, smoked } = cardOnStage(true);
+    card.play(WORDS, { built: true });
+
+    leaves()[0].fn();
+
+    expect(asked).toHaveLength(1);
+    expect(smoked).toEqual([]);
+  });
+
+  it("should leave as smoke when a play names it, the letters handed over and left to it (R41, R43)", () => {
+    const { card, parts, leaves, asked, smoked, last, cardTweens } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "smoke");
+    const [, heading, rule, subtitle] = parts;
+
+    leaves()[0].fn();
+
+    expect(asked).toEqual([]);
+    expect(smoked).toHaveLength(1);
+    expect(smoked[0].ink.texts).toEqual([heading.obj, subtitle.obj]);
+    expect(smoked[0].ink.letters).toEqual([heading.obj, rule.obj, subtitle.obj]);
+    expect(smoked[0].depth).toBe(ARRIVAL_CARD.depth + 1);
+    // the smoke blurs and drifts them off itself: the card neither hides nor fades them
+    for (const part of [heading, rule, subtitle]) expect(last(part, "setVisible")).toBeUndefined();
+    expect(cardTweens(parts.slice(1), 0)).toEqual([]);
+  });
+
+  it("should take the card down once the smoke has gone", () => {
+    const { card, leaves, smoked, standing } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "smoke");
+    leaves()[0].fn();
+
+    smoked[0].gone();
+
+    expect(card.up).toBe(false);
+    expect(standing()).toHaveLength(0);
+  });
+
+  it("should take the smoke away when the next card starts, with the other leave (R9, R50)", () => {
+    const { card, leaves, smoke, dust } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "smoke");
+    leaves()[0].fn();
+
+    card.play(WORDS, { built: true });
+
+    expect(smoke.stop).toHaveBeenCalled();
+    expect(dust.stop).not.toHaveBeenCalled();
+  });
+
+  it("should let the smoke go with its scene, never asked to stop", () => {
+    const { card, leaves, events, smoke } = cardOnStage(true);
+    card.play(WORDS, { built: true }, "smoke");
+    leaves()[0].fn();
+
+    events.emit("shutdown");
+
+    expect(smoke.forget).toHaveBeenCalled();
+    expect(smoke.stop).not.toHaveBeenCalled();
+  });
+});
+
 describe("the card belongs to no scene (FS-PQ2TW R37, R38; ADR-0073 Decision 3)", () => {
   const source = (path: string) => readFileSync(join(process.cwd(), "src", path), "utf8");
 
@@ -599,9 +675,9 @@ describe("the card belongs to no scene (FS-PQ2TW R37, R38; ADR-0073 Decision 3)"
     );
   });
 
-  it("should play the run's climb through the piece, with the table's words, leaving as dust (R30)", () => {
+  it("should play the run's climb through the piece, with the table's words, and both leaves (R30, R41)", () => {
     const run = source("scenes/BarrowspireScene.ts");
-    expect(run).toMatch(/new ArrivalCard\(this, new CardDust\(this, \(\) => this\.art\)\)/);
+    expect(run).toMatch(/new ArrivalCard\(this, cardLeaves\(this, \(\) => this\.art\)\)/);
     expect(run).toMatch(/placeCard\(/);
     expect(run).not.toMatch(/\bfloorCard\(/);
   });

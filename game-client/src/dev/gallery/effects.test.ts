@@ -54,3 +54,14 @@ describe("effect cards", () => {
     );
   });
 });
+
+describe("the arrival card's two leaves (FS-PQ2TW §Change: Smoke, R52)", () => {
+  it("should show the dust and the smoke as two cards, each replayable, for the owner to compare", () => {
+    const leaves = EFFECT_CARDS.filter((c) => c.module === "cardDust" || c.module === "cardSmoke");
+    expect(leaves.map((c) => [c.module, c.name])).toEqual([
+      ["cardDust", "Arrival card dust"],
+      ["cardSmoke", "Arrival card smoke"],
+    ]);
+    for (const c of leaves) expect(c.demo).toBeTypeOf("function");
+  });
+});
