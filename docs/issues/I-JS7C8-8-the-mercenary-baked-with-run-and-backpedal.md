@@ -34,7 +34,7 @@ No hand-drawn or hand-edited pixels.
 
 ## Blocked By
 
-I-JS7C8-5 (the run and backpedal keys, the measured paces, the knight's approval)
+I-JS7C8-5 (the run and backpedal keys, the measured paces, the archer's approval)
 
 ## Spec Reference
 
