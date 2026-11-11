@@ -57,11 +57,11 @@ export const CARD_DUST = {
   density: 4,
   texture: "fx_dust",
   scale: { from: 0.15, to: 0.15 },
-  speed: { from: 50, to: 200 },
+  speed: { from: 30, to: 120 },
   lean: 0.2,
   // fast out, then slow
   drag: 1.8,
-  sway: { amplitude: { from: 3, to: 7 }, periodMs: { from: 700, to: 1200 } },
+  sway: { amplitude: { from: 2, to: 5 }, periodMs: { from: 700, to: 1200 } },
   // hudText, hudLabel
   tint: { from: "vellum", to: "vellumDark" },
   alpha: { from: 1, to: 0 },
