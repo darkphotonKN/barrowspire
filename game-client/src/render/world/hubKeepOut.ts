@@ -59,13 +59,16 @@ export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
 
 /**
  * A short trodden spur from each town building's door gap (FS-B0H2D R24) to the road in front:
- * as wide as the gap, from its sill. Ground paint only, telling a player the house is meant to be
- * entered. In hub_map.go's order: the Inn, the Quartermaster's store, the smithy.
+ * as wide as the gap (a run door's width, FS-MMA2H R14), from its west jamb and its sill. Ground
+ * paint only, telling a player the house is meant to be entered. In hub_map.go's order: the Inn,
+ * the Quartermaster's store, the smithy. Kept by hand, since the golden records no south wall:
+ * the store's and the smithy's gaps are centred, the Inn's stands at x 525–605, against its
+ * partition (ADR-0073).
  */
 export const HUB_DOOR_SPURS: PathRect[] = [
-  [525, 490, 50, 65],
-  [1255, 390, 50, 30],
-  [1605, 290, 50, 50],
+  [525, 490, 80, 65],
+  [1240, 390, 80, 30],
+  [1590, 290, 80, 50],
 ];
 
 /**
@@ -175,8 +178,8 @@ export const HUB_CARTS: PropSpot[] = [
  * third by the west yard, the last two south of the spawn, all where the fixed camera sees them.
  */
 export const HUB_CRATES: PropSpot[] = [
-  { sheet: "crate", at: { x: 1320, y: 470 }, r: 14 },
-  { sheet: "crate", at: { x: 1320, y: 505 }, r: 14 },
+  { sheet: "crate", at: { x: 1320, y: 484 }, r: 14 },
+  { sheet: "crate", at: { x: 1320, y: 519 }, r: 14 },
   { sheet: "crate", at: { x: 530, y: 730 }, r: 14 },
   { sheet: "crate", at: { x: 1050, y: 910 }, r: 14 },
   { sheet: "crate_stack", at: { x: 1110, y: 935 }, r: 14 },
@@ -213,7 +216,7 @@ export const HUB_DRESSING: PropSpot[] = [
   { sheet: "water_trough", at: { x: 790, y: 580 }, r: 20 },
   { sheet: "water_trough", at: { x: 310, y: 840 }, r: 20 },
   { sheet: "woodpile", at: { x: 660, y: 880 }, r: 24 },
-  { sheet: "sacks", at: { x: 610, y: 530 }, r: 12, index: GRAIN },
+  { sheet: "sacks", at: { x: 618, y: 530 }, r: 12, index: GRAIN },
   { sheet: "sacks", at: { x: 1125, y: 455 }, r: 12, index: GRAIN },
   { sheet: "sacks", at: { x: 600, y: 840 }, r: 12, index: GOODS },
   { sheet: "signpost", at: { x: 1085, y: 520 }, r: 10, tall: true },
