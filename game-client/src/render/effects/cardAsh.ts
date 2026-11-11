@@ -158,10 +158,11 @@ export interface CardAshRecord {
 
 /** The ash (R53–R64). Like the dust, not an `EFFECTS` entry: a view-space HUD effect, R59's exception. */
 export const CARD_ASH = {
-  frontMs: 2000,
-  // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": the front's 2000 ms and
-  // a flake's 500 (was 2700 with a 700 ms flake; before his seventh, 3000 with a 1000 ms flake)
-  durationMs: 2500,
+  // the owner's ninth tune of 2026-11-12, "圖片卡左到右的時間改1.5秒": 1500 ms (was 2000)
+  frontMs: 1500,
+  // the front's 1500 ms and a flake's 500 (was 2500 with a 2000 ms front; before his eighth,
+  // 2700 with a 700 ms flake; before his seventh, 3000 with a 1000 ms flake)
+  durationMs: 2000,
   ragged: 0.35,
   grainPx: 6,
   // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): fire runs a temperature ramp
