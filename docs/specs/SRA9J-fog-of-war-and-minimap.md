@@ -272,3 +272,5 @@ sight inside a region; exploration that survives a reconnect; marking treasure r
 on the minimap; a full-screen map; minimap zoom, rotation or click-to-ping; new art.
 
 ## Change: Walls on the cell boundary → FS-XK2B6
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV

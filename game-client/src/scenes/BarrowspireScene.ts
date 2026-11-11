@@ -78,7 +78,7 @@ import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
-import { showsPositionReadout } from "@/ui/positionReadout";
+import { POSITION_READOUT, positionReadoutPlace, showsPositionReadout } from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
 import { SettlementRecord } from "@/ui/SettlementRecord";
 import { settlementRecord } from "@/ui/settlement";
@@ -140,7 +140,9 @@ import {
 import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
-import { Minimap, minimapRect, type MinimapFixture } from "@/ui/minimap";
+import { Minimap, type MinimapFixture } from "@/ui/minimap";
+import { TOP_RIGHT_LINE, topRightColumn } from "@/ui/topRightColumn";
+import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
 import {
@@ -285,9 +287,10 @@ const BUTTON_W = 200;
 const BUTTON_H = 38;
 const BUTTON_GAP = 16;
 /**
- * Where the level and experience bar sit (FS-BDA7X req 42): top-left, under the position line,
- * and clear of the notice band (100–150) across the middle of the screen (`PROGRESS_HUD_AT`,
- * which the party frames stand under).
+ * Where the level and experience bar sit (FS-BDA7X req 42): top-left, at the top of the stack
+ * since the dev position readout left it (FS-56CKV §D.20), and clear of the notice band (100–150)
+ * across the middle of the screen (`PROGRESS_HUD_AT`, which the resource bars and the party
+ * frames stand under).
  */
 const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
 const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
@@ -305,7 +308,7 @@ const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
  */
 const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
 /**
- * The escaped count and the floor under it, at the top-right corner (FS-ZAJMH R12), stepped down
+ * The top-right column's corner (FS-ZAJMH R12; its order FS-56CKV §B, `topRightColumn`), stepped down
  * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05).
  */
 export const TOP_RIGHT_HUD: Placement = {
@@ -928,6 +931,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private previousSwitchActivated: boolean | null = null;
   private escapedPlayers: Set<string> = new Set();
   private escapedCountText?: Phaser.GameObjects.Text;
+  /** The dev position readout (FS-56CKV §C); none in a production build. */
+  private positionReadout?: Phaser.GameObjects.Text;
   /** "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor. */
   private floorText?: Phaser.GameObjects.Text;
   private shownFloorLabel: string | null = null;
@@ -1118,6 +1123,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
+    this.positionReadout = undefined;
     // the frame went down with the scene's objects; the next run's first state sets its floor's mode
     this.targetFrame = undefined;
     // the next run scene starts with the minimap up; it went down with the scene's objects
@@ -3203,9 +3209,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * is gone in moments and stays where it was said.
    */
   private relayoutHud(): void {
-    const corner = anchorAt(TOP_RIGHT_HUD);
-    this.escapedCountText?.setX(corner.x);
-    this.floorText?.setX(corner.x);
+    this.placeTopRightColumn();
     this.spectateHud?.watching.setX(viewport.centerX);
     this.spectateHud?.hint.setX(viewport.centerX);
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
@@ -3216,12 +3220,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.settlementRecord?.relayout(this.recordAnchor());
     this.arrivalCard.relayout();
     this.targetFrame?.relayout();
-    this.dungeon?.minimap?.place(this.minimapPlace());
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
     crispen([
       ...(this.targetFrame?.texts() ?? []),
       this.escapedCountText,
       this.floorText,
+      this.positionReadout,
       this.spectateHud?.watching,
       this.spectateHud?.hint,
       this.controlsPanel,
@@ -3826,6 +3830,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.fog?.destroy();
     this.dungeon?.minimap?.destroy();
     this.dungeon = undefined;
+    this.placeTopRightColumn();
   }
 
   /**
@@ -3889,25 +3894,43 @@ export class BarrowspireScene extends Phaser.Scene {
     // every region unexplored until the party is placed in it, this same broadcast (§B.6)
     fog.show((id) => dungeon.seen.state(id));
     // the floor's minimap, drawn from the same exploration (§E.23)
-    dungeon.minimap = new Minimap({ graphics: () => this.add.graphics() }, dungeon.grid);
-    dungeon.minimap.place(this.minimapPlace());
+    dungeon.minimap = new Minimap(
+      { graphics: () => this.add.graphics(), canvasImage: (...image) => canvasImage(this, ...image) },
+      dungeon.grid,
+    );
     dungeon.minimap.setShown(this.minimapOn);
+    this.placeTopRightColumn();
   }
 
   /**
-   * Where the minimap stands (FS-SRA9J §E.20): right-aligned on the top-right column, 6 px under the
-   * floor indicator, which stands under the escaped count.
+   * The top-right column from its anchor (FS-56CKV §B, superseding FS-SRA9J §E.20 in part): the
+   * minimap at the top when one is shown, the floor indicator under it, the escaped count under
+   * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
+   * dev readout goes with it (§C.14, §C.18): in the minimap's bottom-left corner, else under the
+   * column's last line.
    */
-  private minimapPlace(): { x: number; y: number } {
-    const corner = anchorAt(TOP_RIGHT_HUD);
+  private placeTopRightColumn(): void {
+    const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
-    return minimapRect(corner.x, floor ? floor.y + floor.height : corner.y);
+    const shown = !!minimap?.shown;
+    const column = topRightColumn({
+      corner: anchorAt(TOP_RIGHT_HUD),
+      minimap: shown,
+      floorHeight: floor?.visible ? floor.height : null,
+      escapedHeight: this.escapedCountText?.height ?? 0,
+    });
+    minimap?.place(column.minimap);
+    floor?.setX(column.floor.x).setY(column.floor.y);
+    this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
+    const readout = positionReadoutPlace(shown ? column.minimap : null, { right: column.escaped.x, bottom: column.bottom });
+    this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
   }
 
   /** M (FS-SRA9J §E.19): the minimap down or up for the rest of the run scene, this floor's and the next. */
   private toggleMinimap(): void {
     this.minimapOn = !this.minimapOn;
     this.dungeon?.minimap?.setShown(this.minimapOn);
+    this.placeTopRightColumn();
   }
 
   /**
@@ -4184,6 +4207,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.shownFloorLabel = label;
     this.floorText.setText(label ?? "");
     this.floorText.setVisible(label !== null);
+    this.placeTopRightColumn();
   }
 
   /**
@@ -4811,7 +4835,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // a developer aid, left out of production builds
     if (showsPositionReadout()) this.createPositionReadout();
 
-    // Escaped players count (top-right)
+    // Escaped players count (top-right), last in the column (FS-56CKV §B.9)
     const corner = anchorAt(TOP_RIGHT_HUD);
     this.escapedCountText = this.add.text(
       corner.x,
@@ -4819,33 +4843,34 @@ export class BarrowspireScene extends Phaser.Scene {
       "Escaped: 0",
       {
         fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
+        fontSize: TOP_RIGHT_LINE.fontSize,
         color: toCss(palette.frameBright),
         backgroundColor: toCss(palette.hudPanel),
-        padding: { x: 10, y: 5 },
+        padding: { ...TOP_RIGHT_LINE.padding },
       },
     );
     this.escapedCountText.setOrigin(1, 0); // right-aligned
     this.escapedCountText.setScrollFactor(0);
     this.escapedCountText.setDepth(1000);
 
-    // The party's floor (FS-F6F88 req 29): neutral HUD, under the escaped count
+    // The party's floor (FS-F6F88 req 29): neutral HUD, under the minimap (FS-56CKV §B.9)
     this.floorText = this.add.text(
       corner.x,
-      this.escapedCountText.y + this.escapedCountText.height + 6,
+      corner.y,
       "",
       {
         fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
+        fontSize: TOP_RIGHT_LINE.fontSize,
         color: toCss(palette.hudText),
         backgroundColor: toCss(palette.hudPanel),
-        padding: { x: 10, y: 5 },
+        padding: { ...TOP_RIGHT_LINE.padding },
       },
     );
     this.floorText.setOrigin(1, 0);
     this.floorText.setScrollFactor(0);
     this.floorText.setDepth(1000);
     this.floorText.setVisible(false);
+    this.placeTopRightColumn();
 
     // The target frame (FS-48CTQ §C, §E.14): top centre, hidden until a frame floor names a monster
     this.targetFrame = new TargetFrame(
@@ -4883,17 +4908,20 @@ export class BarrowspireScene extends Phaser.Scene {
     this.targetFrame.update(deltaMs, target, covered);
   }
 
-  /** The debug position line (top-left): the player's x/y, refreshed every frame. */
+  /**
+   * The dev position readout (FS-56CKV §C): the player's x/y, refreshed every frame; small and dim
+   * with no backing, over the minimap's layers. `placeTopRightColumn` stands it, with the column.
+   */
   private createPositionReadout(): void {
-    const posText = this.add.text(10, 10, "", {
+    const posText = this.add.text(0, 0, "", {
       fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.hudText),
-      backgroundColor: toCss(palette.hudPanel),
-      padding: { x: 10, y: 5 },
+      fontSize: POSITION_READOUT.fontSize,
+      color: toCss(POSITION_READOUT.colour),
     });
+    posText.setAlpha(POSITION_READOUT.alpha);
     posText.setScrollFactor(0);
-    posText.setDepth(1000);
+    posText.setDepth(POSITION_READOUT.depth);
+    this.positionReadout = posText;
 
     // 每幀更新座標 — scene events outlive a shutdown, so the listener goes with it
     const showPosition = () => {

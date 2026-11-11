@@ -7,14 +7,24 @@
  * no monster, no container or drop pile, no room role (roles are not on the wire). Colours are
  * tokens only (ADR-0013).
  *
- * **Two layers, each redrawn only when it changes** (§E.23). The map (backing, regions, marks) is
- * keyed by every region's state and the marks found; the party's dots, which move all the time,
- * are a layer of their own keyed by their whole-px places. Both are drawn about the panel's own
- * top-left and stood where it is placed, so a re-layout moves them without a redraw.
+ * **The look** (FS-56CKV §A; design-guideline "UI Chrome → Minimap"): candle-lit stone in the frame
+ * as it was. Inside the rim, bottom to top: explored regions in dark stone and visible ones a step
+ * lighter, each seen region outlined along its footprint; a soft `inkDeep` vignette strongest at
+ * the rim's inside edge; the switch, escape door and stairs as small amber glyphs on a dark ring;
+ * the party's dots, each ringed. Nothing warm in the middle: amber in the HUD means "interactable".
+ *
+ * **Layers, each redrawn only when it changes** (§E.23). The map (backing, region fills and edges)
+ * and the marks (the glyphs) are keyed by every region's state and the marks found; the vignette,
+ * which shows nothing that changes, is one canvas texture's image made once per minimap, between
+ * them; the party's dots, which move all the time, are a layer of their own keyed by their
+ * whole-px places. All are drawn about the panel's own top-left and stood where it is placed, so a
+ * re-layout moves them without a redraw. Made in that order at one depth, they draw in it.
  *
  * **Pixel rounding** is the viewport's (ADR-0057: every object renders `fullAuto`); the panel stands
- * on whole logical px and the dots are seated on them, so the rim and the dots stay crisp at render
- * scales 1, 1.5 and 2. Everything is fitted inside the panel, so no mask is needed.
+ * on whole logical px and the glyphs and dots are seated on them, so the rim, the glyphs and the
+ * dots stay crisp at render scales 1, 1.5 and 2. Everything is kept inside the rim, so no mask is
+ * needed. The vignette is a canvas gradient, never Phaser's WebGL-only `fillGradientStyle`, so it
+ * looks the same under both renderers.
  *
  * Draws through {@link MinimapStage}, the narrow slice of Phaser it needs. Pure otherwise.
  */
@@ -24,13 +34,13 @@ import { projectedBounds, worldToScreen, type Point, type Rect } from "@/render/
 import type { RegionGrid } from "@/render/world/dungeon";
 import { regionAt, type ExplorationState } from "@/render/world/exploration";
 import type { FloorRegion } from "@/types/gameState";
-import { palette } from "@/utils/canvasPalette";
+import { palette, rgba } from "@/utils/canvasPalette";
 
 export const MINIMAP = {
   /** The panel, in logical px (§E.21). */
   width: 216,
   height: 108,
-  /** From the floor indicator's bottom to the panel's top (§E.20). */
+  /** From the panel's bottom to the floor indicator's top under it (FS-56CKV §B.9). */
   gap: 6,
   /** From the rim to the floor's fit, each side. */
   inset: 4,
@@ -38,18 +48,47 @@ export const MINIMAP = {
   depth: 1000,
 } as const;
 
-/** The panel's backing and rim: the target frame's (FS-48CTQ), the HUD's look. */
+/** The panel's backing and rim: the target frame's (FS-48CTQ), the HUD's look; unchanged (FS-56CKV §A.1). */
 const PANEL = { alpha: 0.85, rim: 1, rimAlpha: 0.6 } as const;
-/** Dot radii, logical px: the local player's larger, so it reads apart from the allies' (§E.22). */
+/** Dot radii, logical px: the local player's larger, so it reads apart from the allies' (§E.22, FS-56CKV §A.7). */
 const DOT = { self: 3, ally: 2, outline: 1 } as const;
-/** A found fixture's mark: its half-size, logical px. */
-const MARK = 2;
 
-/** Where the minimap stands (§E.20): its right edge on the column's, its top `gap` under the floor indicator. */
-export function minimapRect(right: number, floorBottom: number): Rect {
+/**
+ * The candle-lit vignette round the rim's inside edge (FS-56CKV §A.2), in `palette.inkDeep`, the
+ * game vignette's ink. Tunable: how far in it reaches, its alpha at the edge, and its ease in, as
+ * [fraction of the reach, fraction of the edge alpha] stops. No stop pair may fall faster than
+ * 0.08 alpha a logical px.
+ */
+export const MINIMAP_VIGNETTE = {
+  /** From the rim's inside edge toward the middle, logical px. */
+  reach: 18,
+  /** At the rim's inside edge. */
+  edgeAlpha: 0.6,
+  ease: [
+    [0, 1],
+    [0.4, 0.4],
+    [1, 0],
+  ],
+} as const;
+
+/** The one texture every minimap's vignette is an image of. */
+const VIGNETTE_TEXTURE = "minimapVignette";
+
+/** Each seen region's outline (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
+export const MINIMAP_EDGE = { width: 1 } as const;
+
+/**
+ * A found fixture's glyph (FS-56CKV §A.6): its ink a 7 × 7 px shape in `palette.interactable`, on a
+ * 1 px `palette.markerStroke` ring round the shape, the whole a `box` px square seated on the px
+ * where the old 4 px mark was centred.
+ */
+export const MINIMAP_GLYPH = { ink: 7, ring: 1, box: 9 } as const;
+
+/** Where the minimap stands (§E.20, FS-56CKV §B.9): its right edge on the column's, its top the column's top. */
+export function minimapRect(right: number, top: number): Rect {
   return {
     x: Math.round(right) - MINIMAP.width,
-    y: Math.round(floorBottom) + MINIMAP.gap,
+    y: Math.round(top),
     width: MINIMAP.width,
     height: MINIMAP.height,
   };
@@ -108,21 +147,68 @@ export function minimapContent(
   return { regions, fixtures: found };
 }
 
+/** A straight run of cell boundary, in cell units: along a row's or a column's grid line. */
+export interface RegionEdge {
+  from: Point;
+  to: Point;
+}
+
+/**
+ * The outline of the seen regions' footprints (FS-56CKV §A.5), in cell units: every boundary
+ * between a region's cell and a cell not of that region, joined into straight runs. Never along a
+ * cell rect's side inside its own region, so a room never reads as a grid; a boundary between two
+ * seen regions comes once.
+ */
+export function regionEdges(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): RegionEdge[] {
+  const ids = new Set(seen.map((r) => r.id));
+  // unit boundaries: a row line's by its y, each running x..x+1; a column line's by its x, y..y+1
+  const rows = new Map<number, Set<number>>();
+  const cols = new Map<number, Set<number>>();
+  const add = (lines: Map<number, Set<number>>, line: number, at: number) => {
+    if (!lines.has(line)) lines.set(line, new Set());
+    lines.get(line)!.add(at);
+  };
+  for (const { id, cells } of seen) {
+    // a boundary shared with another seen region is the lower id's to draw
+    const bounds = (cx: number, cy: number) => {
+      const other = grid.region(cx, cy);
+      return other !== id && (!ids.has(other) || id < other);
+    };
+    for (const { x, y, w, h } of cells)
+      for (let cx = x; cx < x + w; cx++)
+        for (let cy = y; cy < y + h; cy++) {
+          if (grid.region(cx, cy) !== id) continue;
+          if (bounds(cx, cy - 1)) add(rows, cy, cx);
+          if (bounds(cx, cy + 1)) add(rows, cy + 1, cx);
+          if (bounds(cx - 1, cy)) add(cols, cx, cy);
+          if (bounds(cx + 1, cy)) add(cols, cx + 1, cy);
+        }
+  }
+  const edges: RegionEdge[] = [];
+  const join = (lines: Map<number, Set<number>>, edge: (line: number, a: number, b: number) => RegionEdge) => {
+    for (const line of [...lines.keys()].sort((a, b) => a - b)) {
+      const units = [...lines.get(line)!].sort((a, b) => a - b);
+      let start = units[0];
+      for (let i = 1; i <= units.length; i++)
+        if (i === units.length || units[i] !== units[i - 1] + 1) {
+          edges.push(edge(line, start, units[i - 1] + 1));
+          start = units[i];
+        }
+    }
+  };
+  join(rows, (y, a, b) => ({ from: { x: a, y }, to: { x: b, y } }));
+  join(cols, (x, a, b) => ({ from: { x, y: a }, to: { x, y: b } }));
+  return edges;
+}
+
 /** Where the party's living, in-play members stand (§E.22): this client's player apart. */
 export interface MinimapParty {
   self?: Point;
   allies: readonly Point[];
 }
 
-/** What of a Phaser Graphics the minimap draws with. */
-export interface MinimapGraphics {
-  clear(): unknown;
-  fillStyle(color: number, alpha?: number): unknown;
-  fillRect(x: number, y: number, w: number, h: number): unknown;
-  fillPoints(points: Point[], closeShape?: boolean): unknown;
-  fillCircle(x: number, y: number, radius: number): unknown;
-  lineStyle(width: number, color: number, alpha?: number): unknown;
-  strokeRect(x: number, y: number, w: number, h: number): unknown;
+/** What of a Phaser game object the minimap stands, shows and hides: a Graphics, or the vignette's image. */
+export interface MinimapLayer {
   setPosition(x: number, y: number): unknown;
   setDepth(depth: number): unknown;
   setScrollFactor(factor: number): unknown;
@@ -130,9 +216,102 @@ export interface MinimapGraphics {
   destroy(): void;
 }
 
-/** What the minimap asks of the scene: `this.add.graphics`, in effect. */
+/** What of a Phaser Graphics the minimap draws with. */
+export interface MinimapGraphics extends MinimapLayer {
+  clear(): unknown;
+  fillStyle(color: number, alpha?: number): unknown;
+  fillRect(x: number, y: number, w: number, h: number): unknown;
+  fillPoints(points: Point[], closeShape?: boolean): unknown;
+  fillCircle(x: number, y: number, radius: number): unknown;
+  lineStyle(width: number, color: number, alpha?: number): unknown;
+  strokeRect(x: number, y: number, w: number, h: number): unknown;
+  beginPath(): unknown;
+  moveTo(x: number, y: number): unknown;
+  lineTo(x: number, y: number): unknown;
+  strokePath(): unknown;
+}
+
+/** Paints a canvas texture `width` × `height` px. */
+export type CanvasPaint = (ctx: CanvasRenderingContext2D, width: number, height: number) => void;
+
+/** What the minimap asks of the scene: `this.add.graphics`, and an image of a canvas texture. */
 export interface MinimapStage {
   graphics(): MinimapGraphics;
+  /** An image of the canvas texture `key`, `width` × `height` logical px, its origin its top-left; `paint` paints the texture if it is not yet. */
+  canvasImage(key: string, width: number, height: number, paint: CanvasPaint): MinimapLayer;
+}
+
+/**
+ * The vignette (FS-56CKV §A.2): a band in from each side of the rim's inside edge, each a linear
+ * gradient of `inkDeep` from its edge alpha to nothing at its reach; where two bands meet in a
+ * corner they compound, as a candle's shadow does. Nothing is painted on or outside the rim.
+ */
+const paintVignette: CanvasPaint = (ctx, w, h) => {
+  const { reach, edgeAlpha, ease } = MINIMAP_VIGNETTE;
+  const r = PANEL.rim;
+  const bands: [from: Point, to: Point, rect: [number, number, number, number]][] = [
+    [{ x: r, y: r }, { x: r, y: r + reach }, [r, r, w - r * 2, reach]],
+    [{ x: r, y: h - r }, { x: r, y: h - r - reach }, [r, h - r - reach, w - r * 2, reach]],
+    [{ x: r, y: r }, { x: r + reach, y: r }, [r, r, reach, h - r * 2]],
+    [{ x: w - r, y: r }, { x: w - r - reach, y: r }, [w - r - reach, r, reach, h - r * 2]],
+  ];
+  for (const [from, to, rect] of bands) {
+    const gradient = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+    for (const [at, k] of ease) gradient.addColorStop(at, rgba(palette.inkDeep, edgeAlpha * k));
+    ctx.fillStyle = gradient;
+    ctx.fillRect(...rect);
+  }
+};
+
+interface PxRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Each glyph, a row per string (FS-56CKV §A.6): `#` inked, `o` the shape's own dark, in the ring's ink. */
+const GLYPH_ART: Record<MinimapFixture["kind"], readonly string[]> = {
+  // a lever: a base, a pivot, a slanted handle with a knob at its end
+  switch: [".....##", ".....##", "....#..", "...#...", "..###..", "#######", "#######"],
+  // an arch over a dark doorway
+  "escape-door": ["..###..", ".#####.", "##ooo##", "##ooo##", "##ooo##", "##ooo##", "##ooo##"],
+  // a flight of three steps rising to the right
+  stairs: [".....##", ".....##", "...####", "...####", ".######", ".######", "#######"],
+};
+
+/**
+ * A glyph's ink as a rect per run of inked px, along each row and down each column, and its ring as
+ * each grown by the ring's width, with the shape's dark. Every two touching px of one ink lie inside
+ * one rect, so no seam opens between rects where an edge falls between device px (render scale 1.5
+ * under the canvas renderer).
+ */
+function glyphRects(art: readonly string[]): { ink: PxRect[]; ring: PxRect[] } {
+  const runs = (of: RegExp) => {
+    const columns = Array.from(art[0], (_, x) => art.map((row) => row[x]).join(""));
+    return [
+      ...art.flatMap((row, y) => [...row.matchAll(of)].map((run) => ({ x: run.index, y, w: run[0].length, h: 1 }))),
+      ...columns.flatMap((col, x) => [...col.matchAll(of)].map((run) => ({ x, y: run.index, w: 1, h: run[0].length }))),
+    ];
+  };
+  const ink = runs(/#+/g);
+  const g = MINIMAP_GLYPH.ring;
+  return { ink, ring: [...ink.map((r) => ({ x: r.x - g, y: r.y - g, w: r.w + g * 2, h: r.h + g * 2 })), ...runs(/o+/g)] };
+}
+
+const GLYPHS = Object.fromEntries(
+  Object.entries(GLYPH_ART).map(([kind, art]) => [kind, glyphRects(art)]),
+) as Record<MinimapFixture["kind"], ReturnType<typeof glyphRects>>;
+
+/** From a glyph's seat px to its box's top-left and its far side: the box sits on the seat px's middle. */
+const GLYPH_BEFORE = (MINIMAP_GLYPH.box - 1) / 2;
+const GLYPH_AFTER = MINIMAP_GLYPH.box - GLYPH_BEFORE;
+
+/** A projected point seated on a whole px, kept so that `before` px left of and above it and `after` px right of and below it stay inside the rim. */
+function seat(m: Point, before: number, after: number): Point {
+  const clamp = (v: number, size: number) =>
+    Math.min(Math.max(Math.round(v), PANEL.rim + before), size - PANEL.rim - after);
+  return { x: clamp(m.x, MINIMAP.width), y: clamp(m.y, MINIMAP.height) };
 }
 
 const contentKey = (c: MinimapContent) =>
@@ -142,11 +321,13 @@ const contentKey = (c: MinimapContent) =>
   ].join("|");
 
 export class Minimap {
-  /** Times the map layer was drawn (§E.23). */
+  /** Times the map layer was drawn (§E.23); the marks are drawn with it. */
   redraws = 0;
   /** Times the dot layer was drawn. */
   dotRedraws = 0;
   private readonly map: MinimapGraphics;
+  private readonly vignette: MinimapLayer;
+  private readonly marks: MinimapGraphics;
   private readonly dots: MinimapGraphics;
   private readonly project: (p: Point) => Point;
   private shownContent: MinimapContent = { regions: [], fixtures: [] };
@@ -158,7 +339,10 @@ export class Minimap {
     stage: MinimapStage,
     private readonly grid: RegionGrid,
   ) {
+    // made bottom to top: one depth draws in the order its objects were made (FS-56CKV §A.3)
     this.map = stage.graphics();
+    this.vignette = stage.canvasImage(VIGNETTE_TEXTURE, MINIMAP.width, MINIMAP.height, paintVignette);
+    this.marks = stage.graphics();
     this.dots = stage.graphics();
     this.project = minimapProjection(grid);
     for (const layer of this.layers()) {
@@ -177,7 +361,7 @@ export class Minimap {
     return this.on;
   }
 
-  /** Stands both layers at the panel's top-left (§E.20); nothing is redrawn. */
+  /** Stands every layer at the panel's top-left (§E.20); nothing is redrawn. */
   place(rect: Pick<Rect, "x" | "y">): void {
     for (const layer of this.layers()) layer.setPosition(rect.x, rect.y);
   }
@@ -190,16 +374,17 @@ export class Minimap {
     this.drawn = key;
     this.shownContent = content;
     this.drawMap(content);
+    this.drawMarks(content.fixtures);
   }
 
   /** The party's places now; the dots are redrawn only if one moved a whole px. */
   party(party: MinimapParty): void {
-    const seat = (p: Point) => {
-      const m = this.project(p);
-      return { x: Math.round(m.x), y: Math.round(m.y) };
+    const at = (p: Point, radius: number) => {
+      const reach = radius + DOT.outline;
+      return seat(this.project(p), reach, reach);
     };
-    const allies = party.allies.map(seat);
-    const self = party.self ? seat(party.self) : undefined;
+    const allies = party.allies.map((p) => at(p, DOT.ally));
+    const self = party.self ? at(party.self, DOT.self) : undefined;
     const key = [...allies, ...(self ? [self] : [])].map((p) => `${p.x},${p.y}`).join(";") + (self ? "s" : "");
     if (key === this.dotsDrawn) return;
     this.dotsDrawn = key;
@@ -220,10 +405,11 @@ export class Minimap {
     for (const layer of this.layers()) layer.destroy();
   }
 
-  private layers(): MinimapGraphics[] {
-    return [this.map, this.dots];
+  private layers(): MinimapLayer[] {
+    return [this.map, this.vignette, this.marks, this.dots];
   }
 
+  /** The panel, the seen regions' fills, then their outline (FS-56CKV §A.1, §A.4, §A.5). */
   private drawMap(content: MinimapContent): void {
     this.redraws++;
     const g = this.map;
@@ -234,6 +420,7 @@ export class Minimap {
     g.strokeRect(0, 0, MINIMAP.width, MINIMAP.height);
 
     const c = this.grid.cell;
+    const cellPoint = (p: Point) => this.project({ x: p.x * c, y: p.y * c });
     for (const [state, colour] of [
       ["explored", palette.minimapExplored],
       ["visible", palette.minimapVisible],
@@ -246,22 +433,42 @@ export class Minimap {
         for (const { x, y, w, h } of r.cells)
           g.fillPoints(
             [
-              this.project({ x: x * c, y: y * c }),
-              this.project({ x: (x + w) * c, y: y * c }),
-              this.project({ x: (x + w) * c, y: (y + h) * c }),
-              this.project({ x: x * c, y: (y + h) * c }),
+              cellPoint({ x, y }),
+              cellPoint({ x: x + w, y }),
+              cellPoint({ x: x + w, y: y + h }),
+              cellPoint({ x, y: y + h }),
             ],
             true,
           );
     }
 
-    for (const f of content.fixtures) {
-      const m = this.project(f.at);
-      const p = { x: Math.round(m.x), y: Math.round(m.y) };
+    const edges = regionEdges(this.grid, content.regions);
+    if (edges.length === 0) return;
+    g.lineStyle(MINIMAP_EDGE.width, palette.minimapEdge, 1);
+    g.beginPath();
+    for (const { from, to } of edges) {
+      const a = cellPoint(from);
+      const b = cellPoint(to);
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+    }
+    g.strokePath();
+  }
+
+  /** Each found fixture's glyph, its ring first and its ink over it (FS-56CKV §A.6). */
+  private drawMarks(fixtures: readonly MinimapFixture[]): void {
+    const g = this.marks;
+    g.clear();
+    for (const f of fixtures) {
+      const p = seat(this.project(f.at), GLYPH_BEFORE, GLYPH_AFTER);
+      // the ink's 7 × 7 box, a ring's width in from the glyph's
+      const ox = p.x - GLYPH_BEFORE + MINIMAP_GLYPH.ring;
+      const oy = p.y - GLYPH_BEFORE + MINIMAP_GLYPH.ring;
+      const { ring, ink } = GLYPHS[f.kind];
       g.fillStyle(palette.markerStroke, 1);
-      g.fillRect(p.x - MARK - 1, p.y - MARK - 1, MARK * 2 + 2, MARK * 2 + 2);
+      for (const r of ring) g.fillRect(ox + r.x, oy + r.y, r.w, r.h);
       g.fillStyle(palette.interactable, 1);
-      g.fillRect(p.x - MARK, p.y - MARK, MARK * 2, MARK * 2);
+      for (const r of ink) g.fillRect(ox + r.x, oy + r.y, r.w, r.h);
     }
   }
 

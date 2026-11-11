@@ -286,3 +286,5 @@ fields are the contract between the two halves:
 ## Change: Wider doors → FS-MMA2H
 
 ## Change: Arrival card → FS-PQ2TW
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV

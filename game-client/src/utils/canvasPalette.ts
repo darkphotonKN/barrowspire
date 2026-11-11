@@ -165,12 +165,16 @@ export const palette = {
   xpFill: BARROW_HEX.brassBright,
   xpTrack: BARROW_HEX.charcoal,
   /**
-   * The minimap's ground (FS-SRA9J §E.22): an explored region in the walls' lit stone, a visible
-   * one lifted toward vellum, so the party's own regions stand out. Stone, not amber or the ally
-   * green: the minimap's marks and dots keep those channels.
+   * The minimap's ground (FS-SRA9J §E.22, FS-56CKV §A.4–§A.5): an explored region in the walls'
+   * dark stone, a visible one a step lighter in their lit stone, so the party's own regions stand
+   * out; each seen region outlined in that stone lifted toward vellum. Each step keeps 1.3:1 from
+   * the one under it (`minimap.test.ts`). Stone, not amber or the ally green: the minimap's glyphs
+   * and dots keep those channels. The edge is a token of its own: no stone token is lighter than
+   * the visible fill by 1.3:1.
    */
-  minimapExplored: BARROW_HEX.slateLight,
-  minimapVisible: tint(BARROW_HEX.slateLight, 0.4),
+  minimapExplored: BARROW_HEX.slate,
+  minimapVisible: BARROW_HEX.slateLight,
+  minimapEdge: tint(BARROW_HEX.slateLight, 0.3),
   levelUp: BARROW_HEX.brassBright,
   /**
    * The resource bars (FS-8AY7S req 23), on a dark track in a brass rim. Health is the oxblood

@@ -1,7 +1,8 @@
 /**
  * The brushes the container view's faces are painted with (FS-2325V §D.6, FS-1D6BX R17): a
  * canvas texture made once per key, rounded polygons, and deterministic noise, so every client
- * paints the same leather, wood and bone. Phaser-free apart from the scene the texture lands in.
+ * paints the same leather, wood and bone; and an image of such a texture (the minimap's vignette,
+ * FS-56CKV). Phaser-free apart from the scene the texture lands in.
  */
 
 import type Phaser from "phaser";
@@ -20,6 +21,21 @@ export function paint(
   if (!texture) return;
   draw(texture.getContext(), w, h);
   texture.refresh();
+}
+
+/**
+ * An image of the canvas texture `key`, its origin its top-left; `draw` paints the texture only the
+ * first time the key is asked for (the minimap's vignette, FS-56CKV §A.2).
+ */
+export function canvasImage(
+  scene: Phaser.Scene,
+  key: string,
+  w: number,
+  h: number,
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+): Phaser.GameObjects.Image {
+  if (!scene.textures.exists(key)) paint(scene, key, w, h, draw);
+  return scene.add.image(0, 0, key).setOrigin(0);
 }
 
 /** A closed polygon with rounded corners. */

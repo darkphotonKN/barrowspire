@@ -83,6 +83,12 @@ const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
 const await_minimap = await import("@/ui/minimap");
+const await_topRightColumn = await import("@/ui/topRightColumn");
+const await_positionReadout = await import("@/ui/positionReadout");
+const await_progressHud = await import("@/ui/ProgressHud");
+const await_resourceHud = await import("@/ui/ResourceHud");
+const await_potions = await import("@/ui/potions");
+const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
@@ -715,10 +721,16 @@ function sceneOnStage() {
   };
   run.tweens = { add: vi.fn(), killTweensOf: vi.fn(), addCounter: vi.fn(finishAtOnce) };
   run.time = { delayedCall: vi.fn() };
-  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes
+  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes; and the
+  // minimap's vignette (FS-56CKV §A.2), a gradient painted once its key is asked for
   (run as unknown as { textures: unknown }).textures = {
+    exists: () => false,
     createCanvas: (_key: string, w: number, h: number) => ({
-      getContext: () => ({ createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }) }),
+      getContext: () => ({
+        createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+        createLinearGradient: () => ({ addColorStop: vi.fn() }),
+        fillRect: vi.fn(),
+      }),
       putData: vi.fn(),
       refresh: vi.fn(),
       setFilter: vi.fn(),
@@ -5391,35 +5403,105 @@ describe("the run's top-right HUD and the fullscreen button", () => {
   });
 });
 
-// FS-SRA9J §E.20–21 (I-SRA9J-3): the minimap hangs under the floor indicator in the same column,
-// 216 × 108, right-aligned at TOP_RIGHT_HUD's x, as FS-48CTQ's target frame test assumes.
-describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21)", () => {
-  const { MINIMAP, minimapRect } = await_minimap;
+// FS-SRA9J §E.20–21 (I-SRA9J-3), re-ordered by FS-56CKV §B.9 and §B.13 (which supersede §E.20 in
+// part): the minimap is the column's first part, 216 × 108 at its top, the floor indicator and
+// the escaped count under it, right-aligned at TOP_RIGHT_HUD's x, as FS-48CTQ's target frame test
+// assumes; with no minimap the two lines close up to the top.
+describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS-56CKV §B)", () => {
+  const { MINIMAP } = await_minimap;
   const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  const { topRightColumn } = await_topRightColumn;
   type Box = { x: number; y: number; width: number; height: number };
-  /** A 14 px HUD line in its 5 px padding (the escaped count, the floor indicator), at its largest. */
-  const LINE = { width: 160, height: 30 };
+  /** A 12 px HUD line in its 3 px padding (the escaped count, the floor indicator), at its largest. */
+  const LINE = { width: 160, height: 21 };
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
   it.each([1080, 1280])(
-    "should sit 6 px under the floor indicator, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
+    "should sit at the column's top with the floor indicator 6 px under it, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const escaped = { x: corner.x - LINE.width, y: corner.y, ...LINE };
-      const floor = { x: corner.x - LINE.width, y: escaped.y + LINE.height + 6, ...LINE };
-      const map = minimapRect(corner.x, floor.y + floor.height);
-      expect(map).toEqual({ x: corner.x - 216, y: floor.y + floor.height + 6, width: 216, height: 108 });
+      const column = (minimap: boolean) => topRightColumn({ corner, minimap, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const { minimap: map, floor: floorAt } = column(true);
+      expect(map).toEqual({ x: corner.x - 216, y: 44, width: 216, height: 108 });
+      expect(floorAt.y).toBe(map.y + map.height + 6);
       expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
+      if (width === 1080) expect(map.x).toBeGreaterThanOrEqual(854);
       // the fullscreen button in the canvas's corner, however wide its icon; a top-centre notice
       // (20 px text in 10 px padding, centred on y 100) up to 600 px wide; either target frame
       const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
       const notice = { x: width / 2 - 300, y: 100 - 22, width: 600, height: 44 };
-      for (const other of [button, escaped, floor, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
-        expect(overlaps(map, other)).toBe(false);
+      const others = [button, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      // with the minimap and closed up without it: no part over another, nor over the rest
+      for (const shown of [true, false]) {
+        const c = column(shown);
+        const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+        const parts: Box[] = [...(shown ? [c.minimap] : []), line(c.floor), line(c.escaped)];
+        for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+        for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
+      }
       expect(map.x).toBeGreaterThan(0);
       expect(map.y + map.height).toBeLessThan(720 / 2);
+    },
+  );
+});
+
+// FS-56CKV §D.20 (superseding FS-8AY7S R20's y 84 and FS-R82NV R34's run y 160 in part): with
+// the dev readout gone from the top left (§C), the run's top-left stack moves up into its place,
+// the XP bar at (10, 16); nothing at the top of a run may stand over it.
+describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
+  const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
+  const { topRightColumn } = await_topRightColumn;
+  const { positionReadoutPlace } = await_positionReadout;
+  const { PROGRESS_HUD_AT, PROGRESS_HUD_W, PROGRESS_HUD_H } = await_progressHud;
+  const { RESOURCE_HUD_W, resourceHudHeight } = await_resourceHud;
+  const { POTION_CELL_GAP, POTION_CELL_W } = await_potions;
+  const { PARTY_FRAMES_PLACEMENT, partyFramesFrame } = await_partyFramesLayout;
+  type Box = { x: number; y: number; width: number; height: number };
+  /** A 12 px HUD line in its 3 px padding, at its largest, as the top-right column's test takes it. */
+  const LINE = { width: 160, height: 21 };
+  /** The dev readout at its widest ("X: 5760 Y: 3840 | Outdoor", 10 px), generously. */
+  const READOUT = { width: 200, height: 13 };
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  /** The stack: the XP bar, the bars at their tallest, the potion cell beside them, four frames. */
+  function stack(): Box[] {
+    const xp = { ...PROGRESS_HUD_AT.run, width: PROGRESS_HUD_W, height: PROGRESS_HUD_H };
+    const bars = { ...RESOURCE_HUD_AT.run, width: RESOURCE_HUD_W, height: resourceHudHeight(2) };
+    const potion = { ...bars, x: bars.x + bars.width + POTION_CELL_GAP, width: POTION_CELL_W };
+    const { x, top } = PARTY_FRAMES_PLACEMENT.run;
+    return [xp, bars, potion, ...partyFramesFrame(4, x, top).map((f) => f.row)];
+  }
+
+  it("should stand the XP bar at (10, 16), the bars at (10, 56) and the frames from y 132", () => {
+    expect(PROGRESS_HUD_AT.run).toEqual({ x: 10, y: 16 });
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: 10, y: 56 });
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 132 });
+  });
+
+  it.each([1080, 1280])(
+    "should keep the stack inside the canvas and clear of the fullscreen button, either target frame, the top-right column and the dev readout at logical width %i",
+    (width) => {
+      const view = { width, height: 720 };
+      const corner = anchorAt(TOP_RIGHT_HUD, view);
+      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      const parts = stack();
+      for (const shown of [true, false]) {
+        const c = topRightColumn({ corner, minimap: shown, floorHeight: LINE.height, escapedHeight: LINE.height });
+        const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
+        const at = positionReadoutPlace(shown ? c.minimap : null, { right: corner.x, bottom: c.bottom });
+        const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
+        const others = [button, ...frames, ...(shown ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
+        for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+      }
+      for (const part of parts) {
+        expect(part.x).toBeGreaterThanOrEqual(10);
+        expect(part.y).toBeGreaterThanOrEqual(16);
+        expect(part.y + part.height).toBeLessThan(view.height);
+      }
     },
   );
 });
@@ -7261,6 +7343,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       interface MappedRun extends FoggedRun {
         dungeon?: FoggedRun["dungeon"] & { minimap?: Map };
         floorText?: object;
+        escapedCountText?: object;
+        positionReadout?: object;
         menu?: unknown;
         chatWindow?: { isTyping(): boolean };
         minimapOn: boolean;
@@ -7268,6 +7352,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         relayoutHud(): void;
         bindRunInput(): void;
         resetRun(end: "shutdown" | "destroy"): void;
+        updateFloorIndicator(state: Pick<GameState, "floor">): void;
       }
       type Key = (event?: { repeat?: boolean }) => void;
       const { Exploration } = await_exploration;
@@ -7277,8 +7362,13 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         seen.see([at(2560, 3080)]);
         return grid.regions.filter((r) => seen.state(r.id) !== "unexplored").map((r) => [r.id, seen.state(r.id)]);
       })();
-      /** The floor indicator's box in the column: from y 71, 27 px tall, as a 14 px line is. */
-      const FLOOR_LINE = { y: 71, height: 27 };
+      /** The floor indicator's height: 21 px, as a 12 px line in 3 px padding is (FS-56CKV §B.10). */
+      const FLOOR_LINE = { height: 21 };
+      /** Where a column text was last stood: its x and its top (origin 1, 0). */
+      const standing = (text: object | undefined) => {
+        const { last } = text as Made;
+        return [last.setX?.[0], last.setY?.[0]];
+      };
 
       afterEach(() => {
         vi.restoreAllMocks();
@@ -7299,6 +7389,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         run.createUI();
         run.bindRunInput();
         Object.assign(run.floorText!, FLOOR_LINE);
+        Object.assign(run.escapedCountText!, FLOOR_LINE);
         const view = (width: number) => {
           viewport.set({ width, height: 720, renderScale: 1 });
           run.relayoutHud();
@@ -7315,15 +7406,68 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         position: p,
       });
 
-      it("should show the minimap on floor 1 by default, 6 px under the floor indicator, right-aligned, and move it with the view", () => {
-        const { map, view, placed } = mapped();
+      // FS-56CKV §B.9 and §B.12 supersede §E.20 in part: the minimap at the column's top, the floor
+      // indicator 6 px under it, the escaped count 4 px under that
+      it("should show the minimap on floor 1 by default at the column's top, the floor indicator and the escaped count under it, right-aligned, and move them with the view", () => {
+        const { run, map, view, placed } = mapped();
         expect(map()).toBeDefined();
         expect(map()!.shown).toBe(true);
-        const under = FLOOR_LINE.y + FLOOR_LINE.height;
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, under));
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44));
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 158 + 21 + 4]);
         view(1280);
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, under));
-        expect(minimapRect(1270, under)).toMatchObject({ x: 1054, y: under + 6 });
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
+        expect(minimapRect(1270, 44)).toMatchObject({ x: 1054, y: 44 });
+        expect(standing(run.floorText)).toEqual([1270, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1270, 183]);
+        // moved, so rasterised again at the render scale of now (FS-ZAJMH R5)
+        for (const text of [run.floorText, run.escapedCountText]) expect((text as Made).last.setResolution).toEqual([1]);
+      });
+
+      it("should draw the floor indicator and the escaped count at 12 px in 8 × 3 padding, their colours, backings and face unchanged (FS-56CKV §B.10)", () => {
+        const { run } = mapped();
+        const style = (text: object | undefined) => (text as Made).args[3];
+        const line = { fontFamily: CANVAS_FONT.body, fontSize: "12px", backgroundColor: toCss(palette.hudPanel), padding: { x: 8, y: 3 } };
+        expect(style(run.floorText)).toEqual({ ...line, color: toCss(palette.hudText) });
+        expect(style(run.escapedCountText)).toEqual({ ...line, color: toCss(palette.frameBright) });
+      });
+
+      it("should close the column up while M hides the minimap, and open it again on M (FS-56CKV §B.11)", () => {
+        const { run, keys, map } = mapped();
+        keys["keydown-M"]();
+        expect(map()!.shown).toBe(false);
+        expect(standing(run.floorText)).toEqual([1070, 44]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 44 + 21 + 4]);
+        keys["keydown-M"]();
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+      });
+
+      it("should stand the escaped count where the floor indicator would while it has no label, and step it down once it has (FS-56CKV §B.11)", () => {
+        const { run, keys } = mapped();
+        run.updateFloorIndicator({ floor: undefined });
+        expect((run.floorText as Made).shown).toBe(false);
+        expect(standing(run.escapedCountText)).toEqual([1070, 158]);
+        keys["keydown-M"]();
+        expect(standing(run.escapedCountText)).toEqual([1070, 44]);
+        keys["keydown-M"]();
+        run.updateFloorIndicator({ floor: 1 });
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+      });
+
+      it("should close the column up on a dungeon floor before its map is in, and open it once its minimap is built (FS-56CKV §B.11)", () => {
+        const { run, map, handle } = mapped();
+        // the party climbs to floor 2; its map has not come yet
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(map()).toBeUndefined();
+        expect(standing(run.floorText)).toEqual([1070, 44]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 69]);
+        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        handle({ ...dungeonState(inRoom), floor: 2 });
+        expect(map()).toBeDefined();
+        expect(standing(run.floorText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
       });
 
       it("should hide and show it on M, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats", () => {
@@ -7459,9 +7603,109 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           useGameStore.getState().receiveFloorMap(mapOf(floorState(floor)));
           handle(bare(floorState(floor)));
           expect(run.dungeon).toBeUndefined();
+          // no minimap: the column closes up to its top (FS-56CKV §B.11)
+          expect(standing(run.floorText)).toEqual([1070, 44]);
+          expect(standing(run.escapedCountText)).toEqual([1070, 69]);
         }
         expect(destroyed).toHaveBeenCalled();
         expect(shown).not.toHaveBeenCalled();
+      });
+
+      describe("the dev position readout (FS-56CKV §C, I-56CKV-3)", () => {
+        const { POSITION_READOUT } = await_positionReadout;
+        /** Where the readout was last stood, and on which corner of its box. */
+        const readoutAt = (run: MappedRun) => {
+          const { last } = run.positionReadout as Made;
+          return { at: last.setPosition, origin: last.setOrigin };
+        };
+        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 44 + 108 - 4], origin: [0, 1] });
+        /** Under the column closed up to its top: the floor indicator, the escaped count, then 4 px. */
+        const underColumn = (right: number, lines = 2) => ({ at: [right, 44 + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
+
+        afterEach(() => {
+          vi.unstubAllEnvs();
+        });
+
+        it("should draw it at 10 px in a HUD text token at a partial alpha, with no backing, over the minimap's depth (§C.15, §C.16)", () => {
+          const { run } = mapped();
+          const readout = run.positionReadout as Made;
+          expect(readout.args[3]).toEqual({ fontFamily: CANVAS_FONT.body, fontSize: "10px", color: toCss(palette.hudText) });
+          expect(readout.last.setAlpha).toEqual([POSITION_READOUT.alpha]);
+          expect(readout.last.setScrollFactor).toEqual([0]);
+          expect(readout.depth).toBeGreaterThan(await_minimap.MINIMAP.depth);
+        });
+
+        it("should stand it in the minimap's bottom-left corner, 4 px in, and follow the minimap on resize, re-crispened (§C.14, §C.19)", () => {
+          const { run, view } = mapped();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+          viewport.set({ width: 1280, height: 720, renderScale: 2 });
+          run.relayoutHud();
+          expect(readoutAt(run)).toEqual(inMinimap(1270));
+          expect((run.positionReadout as Made).last.setResolution).toEqual([2]);
+          view(1080);
+        });
+
+        it("should never stand it at the top left, in a run on a floor with a minimap or without one", () => {
+          const { run, handle } = mapped();
+          const left = () => (readoutAt(run).at![0] as number) < viewport.width / 2;
+          expect(left()).toBe(false);
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(left()).toBe(false);
+        });
+
+        it("should stand it 4 px under the column's last line, right-aligned, while M hides the minimap, and back in the minimap on M (§C.18)", () => {
+          const { run, keys } = mapped();
+          keys["keydown-M"]();
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          keys["keydown-M"]();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should follow the column as the floor indicator's label goes and comes, with no minimap shown (§C.18)", () => {
+          const { run, keys } = mapped();
+          keys["keydown-M"]();
+          run.updateFloorIndicator({ floor: undefined });
+          expect(readoutAt(run)).toEqual(underColumn(1070, 1));
+          run.updateFloorIndicator({ floor: 1 });
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+        });
+
+        it("should stand it under the column on a floor without regions and on a dungeon floor before its map, and in the minimap once it is built (§C.18, §C.19)", () => {
+          const { run, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(run.dungeon).toBeUndefined();
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          // floor 3 laid out as floor 1: before its map, then with it
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(readoutAt(run)).toEqual(underColumn(1070));
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(run.dungeon?.minimap).toBeDefined();
+          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        });
+
+        it("should refresh it every frame without redrawing either of the minimap's layers (§C.16, FS-SRA9J §E.23)", () => {
+          const { run, map } = mapped();
+          const [redraws, dotRedraws] = [map()!.redraws, map()!.dotRedraws];
+          Object.assign(run, { player: (run as { player?: object }).player ?? {} });
+          for (const x of [200, 240, 280]) {
+            Object.assign(run, { playerPos: { x, y: 180 } });
+            (run as unknown as { events: Emitter }).events.emit("update");
+            expect((run.positionReadout as Made).args[2]).toBe(`X: ${x} Y: 180`);
+          }
+          expect([map()!.redraws, map()!.dotRedraws]).toEqual([redraws, dotRedraws]);
+        });
+
+        it("should make none in a production build, and the column lays out without it (§C.19)", () => {
+          vi.stubEnv("NEXT_PUBLIC_SHOW_POSITION_READOUT", "false");
+          const { run, keys, stage } = mapped();
+          expect(run.positionReadout).toBeUndefined();
+          expect(stage.made.some((m) => m.kind === "text" && (m.args[3] as { fontSize?: string })?.fontSize === "10px")).toBe(false);
+          keys["keydown-M"]();
+          expect(standing(run.escapedCountText)).toEqual([1070, 69]);
+        });
       });
 
       it("should not exist in the hub or field scenes", () => {

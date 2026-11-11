@@ -355,3 +355,5 @@ changes.
 - Retuning `triple_arrow` beyond moving its cost to stamina.
 - Any HUD in the hub; the class-select screen.
 - Resource numbers on the card (the cost or the pool is not printed on it).
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV
