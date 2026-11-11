@@ -246,7 +246,11 @@ const PLAYER_FOOTPRINT_RADIUS = 20;
  * (2000), which still have the last word while it is up.
  */
 const RESOLVED_CARD_DEPTH = 1500;
-/** Screen y of the spectate HUD (req 9): top centre, between the position line and the escaped count. */
+/**
+ * Screen y of the spectate HUD (req 9): top centre, between the top-left stack (the XP bar from
+ * y 16) and the top-right column (the minimap, the floor indicator, the escaped count, in that
+ * order, FS-56CKV §B); the dev position readout left the top edge for the minimap's corner (§C).
+ */
 const SPECTATE_HUD_Y = 10;
 /**
  * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, in the HUD band (1000) with
