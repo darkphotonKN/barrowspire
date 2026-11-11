@@ -964,8 +964,11 @@ func TestMonsterAISystem_Ranged_HitFromBeyondAggro_WalksToRange(t *testing.T) {
 // skirmish ticks a run's systems in their order (monster AI, movement,
 // projectiles, combat) for n ticks. FS-77AB6 §Requirements 27.
 func skirmish(em *ecs.EntityManager, n int) {
-	ai := NewMonsterAISystem(firstRoll, nil)
-	move := NewMovementSystem()
+	skirmishOn(em, NewMonsterAISystem(firstRoll, nil), NewMovementSystem(), n)
+}
+
+// skirmishOn is skirmish on a floor: its monster AI and its movement system.
+func skirmishOn(em *ecs.EntityManager, ai *MonsterAISystem, move *MovementSystem, n int) {
 	shots := NewProjectileSystem(em, PlayerDamageOff)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
 	for range n {
