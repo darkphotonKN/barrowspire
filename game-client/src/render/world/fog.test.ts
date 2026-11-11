@@ -309,6 +309,33 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
   });
 });
 
+describe("a floor's wall layout, as the fog sees it (FS-KE075 §H.46)", () => {
+  // room A's shell: corners at cells (0, 0), (5, 0), (0, 4), (5, 4), each the end of two runs
+  const grid = floor(8, 6, [room(A, 1, 1, 4, 3)]);
+  const layout = wallLayout(grid, shellWalls(grid));
+  const LEFT = false;
+  const RIGHT = true;
+
+  it("stands a slab on both halves of a cell in the middle of a run", () => {
+    expect([layout.axis(2, 0, LEFT), layout.axis(2, 0, RIGHT)]).toEqual(["x", "x"]);
+    expect([layout.axis(0, 2, LEFT), layout.axis(0, 2, RIGHT)]).toEqual(["y", "y"]);
+  });
+
+  it("stands no slab past the post on a run's end cell: only the half the run's pieces are drawn on", () => {
+    // on screen a cell's left half holds its low-x and its high-y half: at the north-west corner
+    // the x run leaves the post on the right half and the y run on the left; at the north-east
+    // both leave it on the left half, and nothing stands on the right
+    expect([layout.axis(0, 0, LEFT), layout.axis(0, 0, RIGHT)]).toEqual(["y", "x"]);
+    expect([layout.axis(5, 0, LEFT), layout.axis(5, 0, RIGHT)]).toEqual(["x", undefined]);
+    expect([layout.axis(0, 4, LEFT), layout.axis(0, 4, RIGHT)]).toEqual([undefined, "x"]);
+    expect([layout.axis(5, 4, LEFT), layout.axis(5, 4, RIGHT)]).toEqual(["x", "y"]);
+  });
+
+  it("keeps the post at each end cell", () => {
+    for (const [cx, cy] of [[0, 0], [5, 0], [0, 4], [5, 4]]) expect(layout.post(cx, cy)).toBe(true);
+  });
+});
+
 /** A canvas texture as the fog paints it: the alphas it was last given, and how often. */
 class FakeCanvas {
   puts = 0;
