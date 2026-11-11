@@ -553,18 +553,18 @@ describe("the minimap's look (FS-56CKV §A)", () => {
     });
   });
 
-  describe("the rooms' outline (§A.5)", () => {
+  describe("the walls' outline: walls are lines, openings are gaps (§A.5)", () => {
     /** Corridor 36: two cell rects (9 × 2 and 4 × 1 under it), and room 20, which it opens on. */
     const CORRIDOR = 36;
     const NEXT_DOOR = 20;
-    const regionOf = (id: number) => grid.regions.find((r) => r.id === id)!;
     type Outline = ReturnType<typeof regionOutline>;
+    const regionOf = (id: number, on: RegionGrid = grid) => on.regions.find((r) => r.id === id)!;
     /** A run's sides: a closed loop's last point back to its first, an open run's not. */
     const sides = (runs: Outline) =>
       runs.flatMap(({ points, closed }) =>
         (closed ? points : points.slice(0, -1)).map((from, i) => ({ from, to: points[(i + 1) % points.length] })),
       );
-    /** Every unit cell boundary the runs cover, as a key; a boundary covered twice counts twice. */
+    /** Every unit cell side the runs cover, as a key ("h" a side along x at its left end, "v" along y at its top end); one covered twice counts twice. */
     const unitEdges = (runs: Outline) => {
       const units: string[] = [];
       for (const { from, to } of sides(runs)) {
@@ -579,36 +579,51 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       }
       return units;
     };
-    /** Each boundary between a cell of one of the regions `ids` and a cell of none of them, rooms' and corridors' alike. */
-    const boundary = (ids: number[]) => {
-      const shown = new Set(ids);
+    /** Each side of a cell of the regions `ids` that faces a cell that is not walkable (shell, void or off the grid): the walls to line. */
+    const walls = (ids: number[], on: RegionGrid = grid) => {
       const units = new Set<string>();
       for (const id of ids)
-        for (const { x, y, w, h } of regionOf(id).cells)
+        for (const { x, y, w, h } of regionOf(id, on).cells)
           for (let cx = x; cx < x + w; cx++)
             for (let cy = y; cy < y + h; cy++) {
-              if (grid.region(cx, cy) !== id) continue;
-              if (!shown.has(grid.region(cx, cy - 1))) units.add(`h${cx},${cy}`);
-              if (!shown.has(grid.region(cx, cy + 1))) units.add(`h${cx},${cy + 1}`);
-              if (!shown.has(grid.region(cx - 1, cy))) units.add(`v${cx},${cy}`);
-              if (!shown.has(grid.region(cx + 1, cy))) units.add(`v${cx + 1},${cy}`);
+              if (on.region(cx, cy) !== id) continue;
+              if (!on.walkable(cx, cy - 1)) units.add(`h${cx},${cy}`);
+              if (!on.walkable(cx, cy + 1)) units.add(`h${cx},${cy + 1}`);
+              if (!on.walkable(cx - 1, cy)) units.add(`v${cx},${cy}`);
+              if (!on.walkable(cx + 1, cy)) units.add(`v${cx + 1},${cy}`);
             }
       return units;
     };
-    /** What is outlined when the regions `ids` are seen: the seen rooms' sides facing a cell of no region (shell or void), never a doorway or a corridor's side. */
-    const expected = (ids: number[]) =>
-      new Set(
-        ids
-          .filter((id) => regionOf(id).kind === "room")
-          .flatMap((id) => [...boundary([id])])
-          .filter((u) => {
-            const [x, y] = u.slice(1).split(",").map(Number);
-            const [a, b] = u[0] === "h" ? [grid.region(x, y - 1), grid.region(x, y)] : [grid.region(x - 1, y), grid.region(x, y)];
-            return a === 0 || b === 0;
-          }),
-      );
-    /** The boundaries between two regions' cells: a doorway, where they meet. */
-    const between = (a: number, b: number) => [...boundary([a])].filter((u) => boundary([b]).has(u));
+    /** Every side between two walkable cells of the floor, whatever their regions: where no line may lie. */
+    const openings = (on: RegionGrid = grid) => {
+      const units = new Set<string>();
+      for (let cx = 0; cx < on.cols; cx++)
+        for (let cy = 0; cy < on.rows; cy++) {
+          if (!on.walkable(cx, cy)) continue;
+          if (on.walkable(cx + 1, cy)) units.add(`v${cx + 1},${cy}`);
+          if (on.walkable(cx, cy + 1)) units.add(`h${cx},${cy + 1}`);
+        }
+      return units;
+    };
+    /** The sides between a cell of region `a` and a cell of region `b`: where they meet. */
+    const between = (a: number, b: number, on: RegionGrid = grid) => {
+      const units: string[] = [];
+      for (const { x, y, w, h } of regionOf(a, on).cells)
+        for (let cx = x; cx < x + w; cx++)
+          for (let cy = y; cy < y + h; cy++) {
+            if (on.region(cx, cy) !== a) continue;
+            if (on.region(cx, cy - 1) === b) units.push(`h${cx},${cy}`);
+            if (on.region(cx, cy + 1) === b) units.push(`h${cx},${cy + 1}`);
+            if (on.region(cx - 1, cy) === b) units.push(`v${cx},${cy}`);
+            if (on.region(cx + 1, cy) === b) units.push(`v${cx + 1},${cy}`);
+          }
+      return units;
+    };
+    /** The corner points a unit side runs between. */
+    const ends = (u: string) => {
+      const [x, y] = u.slice(1).split(",").map(Number);
+      return u[0] === "h" ? [`${x},${y}`, `${x + 1},${y}`] : [`${x},${y}`, `${x},${y + 1}`];
+    };
     /** The line runs on unbroken: a turn at every point it passes, and no run ending where another starts. */
     const unbroken = (runs: Outline) => {
       for (const { points, closed } of runs) {
@@ -629,59 +644,115 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       const starts = new Set(open.map((r) => key(r.points[0])));
       for (const r of open) expect(starts.has(key(r.points.at(-1)!))).toBe(false);
     };
+    /** The outline of the regions `ids` seen, checked: exactly their walls, each once, none on an opening, unbroken; its runs and its unit sides. */
+    const outlined = (ids: number[], on: RegionGrid = grid) => {
+      const runs = regionOutline(on, ids.map((id) => regionOf(id, on)));
+      unbroken(runs);
+      const units = unitEdges(runs);
+      expect(units).toHaveLength(new Set(units).size);
+      expect(new Set(units)).toEqual(walls(ids, on));
+      const open = openings(on);
+      for (const u of units) expect(open.has(u)).toBe(false);
+      return { runs, units };
+    };
 
-    it("should draw no line on a corridor's sides, seen alone", () => {
+    it("should line a corridor's walls, seen alone, as a room's are, and leave a gap at each mouth onto an unexplored room", () => {
       expect(regionOf(CORRIDOR).kind).toBe("corridor");
       expect(regionOf(CORRIDOR).cells.length).toBeGreaterThan(1);
-      expect(regionOutline(grid, [regionOf(CORRIDOR)])).toEqual([]);
-      const corridors = grid.regions.filter((r) => r.kind === "corridor");
+      const { runs, units } = outlined([CORRIDOR]);
+      expect(units.length).toBeGreaterThan(0);
+      // its mouths onto rooms 20, 21 and 22, none of them seen: gaps, so the line is open runs
+      const mouths = grid.regions.filter((r) => r.kind === "room").flatMap((r) => between(CORRIDOR, r.id));
+      expect(mouths.length).toBeGreaterThan(0);
+      for (const u of mouths) expect(units).not.toContain(u);
+      expect(runs.every((r) => !r.closed)).toBe(true);
+      // every corridor of the floor seen at once: each lined along its walls
+      const corridors = grid.regions.filter((r) => r.kind === "corridor").map((r) => r.id);
       expect(corridors.length).toBeGreaterThan(1);
-      expect(regionOutline(grid, corridors)).toEqual([]);
+      expect(outlined(corridors).units.length).toBe(walls(corridors).size);
     });
 
-    it("should leave a gap at a seen room's doorway onto an unexplored corridor, its walls drawn as open runs with no gap at a corner", () => {
+    it("should line a room's walls and leave a gap at its doorway onto an unexplored corridor", () => {
       expect(regionOf(NEXT_DOOR).kind).toBe("room");
       const doorway = between(NEXT_DOOR, CORRIDOR);
       expect(doorway.length).toBeGreaterThan(0);
       // the room seen alone: the corridor beyond is unexplored, and the doorway still opens
-      const runs = regionOutline(grid, [regionOf(NEXT_DOOR)]);
-      const units = unitEdges(runs);
+      const { runs, units } = outlined([NEXT_DOOR]);
       for (const u of doorway) expect(units).not.toContain(u);
       expect(runs.length).toBeGreaterThan(0);
       for (const r of runs) expect(r.closed).toBe(false);
-      unbroken(runs);
-      expect(units).toHaveLength(new Set(units).size);
-      expect(new Set(units)).toEqual(expected([NEXT_DOOR]));
-      // the same line whether or not the corridor beyond is seen
-      expect(new Set(unitEdges(regionOutline(grid, [regionOf(NEXT_DOOR), regionOf(CORRIDOR)])))).toEqual(new Set(units));
     });
 
-    it("should draw no line across a doorway between a seen room and a seen corridor, nor on the corridor, the room's edge ending there", () => {
-      const doorway = between(CORRIDOR, NEXT_DOOR);
-      expect(doorway.length).toBeGreaterThan(0);
-      const runs = regionOutline(grid, [regionOf(CORRIDOR), regionOf(NEXT_DOOR)]);
-      const units = unitEdges(runs);
+    it("should draw no line across a doorway onto a seen corridor, the room's wall running on into the corridor's", () => {
+      const doorway = between(NEXT_DOOR, CORRIDOR);
+      const { runs, units } = outlined([NEXT_DOOR, CORRIDOR]);
       for (const u of doorway) expect(units).not.toContain(u);
-      for (const u of boundary([CORRIDOR])) if (!doorway.includes(u)) expect(units).not.toContain(u);
-      expect(units).toHaveLength(new Set(units).size);
-      expect(new Set(units)).toEqual(expected([CORRIDOR, NEXT_DOOR]));
-      // the room's edge stops at the doorway: an open run, never closed back on its start
-      expect(runs.some((r) => !r.closed)).toBe(true);
-      unbroken(runs);
+      // the corridor's walls are lined beside the room's
+      for (const u of walls([CORRIDOR])) expect(units).toContain(u);
+      // no run ends at the doorway's sides: the line turns there from the room's wall into the corridor's
+      const atDoorway = new Set(doorway.flatMap(ends));
+      for (const r of runs.filter((r) => !r.closed))
+        for (const p of [r.points[0], r.points.at(-1)!]) expect(atDoorway.has(`${p.x},${p.y}`)).toBe(false);
     });
 
-    it("should outline every seen room of the whole fixture floor, no corridor, each side once and no gap at a corner", () => {
-      const all = grid.regions;
-      const runs = regionOutline(grid, all);
+    it("should draw no line where a corridor meets another corridor or a room another room, seen or not", () => {
+      // a room with a corridor out of it that meets a second corridor, and a second room under it
+      const small = new RegionGrid({
+        width: 120,
+        height: 90,
+        cell_size: 10,
+        regions: [
+          { id: 1, kind: "room", cells: [{ x: 1, y: 1, w: 4, h: 4 }] },
+          { id: 2, kind: "corridor", cells: [{ x: 5, y: 2, w: 3, h: 1 }] },
+          { id: 3, kind: "corridor", cells: [{ x: 8, y: 2, w: 1, h: 5 }] },
+          { id: 4, kind: "room", cells: [{ x: 1, y: 5, w: 4, h: 2 }] },
+        ],
+      } as DungeonMap);
+      const corridorToCorridor = between(2, 3, small);
+      const roomToRoom = between(1, 4, small);
+      expect(corridorToCorridor).toEqual(["v8,2"]);
+      expect(roomToRoom).toHaveLength(4);
+      // every region seen: the walls of the whole, closed, no line where two meet
+      const all = outlined([1, 2, 3, 4], small);
+      for (const u of [...corridorToCorridor, ...roomToRoom, ...between(1, 2, small)]) expect(all.units).not.toContain(u);
+      expect(all.runs.every((r) => r.closed)).toBe(true);
+      // the first corridor seen alone: a gap onto the room and onto the corridor beyond, both unexplored
+      const alone = outlined([2], small);
+      expect(alone.units.sort()).toEqual(["h5,2", "h5,3", "h6,2", "h6,3", "h7,2", "h7,3"]);
+      // the second corridor seen alone: a gap where the first meets it
+      expect(outlined([3], small).units).not.toContain("v8,2");
+      // the top room seen alone: a gap onto the room under it and onto its corridor
+      const room = outlined([1], small).units;
+      for (const u of [...roomToRoom, ...between(1, 2, small)]) expect(room).not.toContain(u);
+    });
+
+    it("should line every shown cell side facing a cell that is not walkable on the whole fixture floor, none missing, and none between two walkable cells", () => {
+      const all = grid.regions.map((r) => r.id);
+      const want = walls(all);
+      // the fixture floor's walls, counted apart from the minimap: 766 unit sides
+      expect(want.size).toBe(766);
+      const { runs, units } = outlined(all);
+      // covered: every wall side once, none missing, none extra
+      expect(units).toHaveLength(766);
+      expect([...want].filter((u) => !units.includes(u))).toEqual([]);
+      // no run on any of the floor's openings
+      const open = openings();
+      expect(open.size).toBeGreaterThan(0);
+      expect(units.filter((u) => open.has(u))).toEqual([]);
+      // every opening joins two shown regions, so the walls of the whole floor close
       expect(runs.length).toBeGreaterThan(0);
-      unbroken(runs);
-      const units = unitEdges(runs);
-      expect(units).toHaveLength(new Set(units).size);
-      expect(new Set(units)).toEqual(expected(all.map((r) => r.id)));
-      // no line between two seen rooms either
-      const rooms = all.filter((r) => r.kind === "room");
-      for (const a of rooms)
-        for (const b of rooms) if (a.id < b.id) for (const u of between(a.id, b.id)) expect(units).not.toContain(u);
+      expect(runs.every((r) => r.closed)).toBe(true);
+    });
+
+    it("should line only the shown regions' walls with a few shown, open where they meet the unexplored", () => {
+      // room 20 and the corridor it opens on, the room beyond that corridor, and a corridor apart from them
+      const apart = grid.regions.find(
+        (r) => r.kind === "corridor" && r.id !== CORRIDOR && between(r.id, NEXT_DOOR).length === 0 && between(r.id, 21).length === 0,
+      )!;
+      const few = [NEXT_DOOR, CORRIDOR, 21, apart.id];
+      const { runs, units } = outlined(few);
+      expect(units.length).toBe(walls(few).size);
+      expect(runs.some((r) => !r.closed)).toBe(true);
     });
 
     it("should draw nothing for no seen region", () => {
@@ -706,7 +777,7 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       const p = (q: { x: number; y: number }) => Object.values(project({ x: q.x * c, y: q.y * c }));
       const path = drawn.slice(drawn.findIndex((d) => d.name === "beginPath") + 1, -1);
       const runs = regionOutline(grid, map.content.regions);
-      // the explored room opens on a seen corridor: its edge stops at the doorway
+      // the corridor opens on rooms not yet seen: its walls stop at their doorways
       expect(runs.some((r) => !r.closed)).toBe(true);
       const want = runs.flatMap(({ points, closed }) => [
         { name: "moveTo", args: p(points[0]) },
@@ -715,9 +786,7 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       ]);
       expect(want.length).toBeGreaterThan(0);
       expect(path).toEqual(want);
-      const units = unitEdges(runs);
-      const shownIds = map.content.regions.map((r) => r.id);
-      expect(new Set(units)).toEqual(expected(shownIds));
+      expect(new Set(unitEdges(runs))).toEqual(walls(map.content.regions.map((r) => r.id)));
     });
 
     it("should keep the edge line 1.3:1 against the one fill it bounds", () => {
