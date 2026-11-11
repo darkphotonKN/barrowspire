@@ -1,6 +1,6 @@
 ---
 id: I-B4SG9-8
-status: open
+status: done
 implements: FS-B4SG9
 blocked_by: [I-B4SG9-7]
 labels: [ready-for-agent]
@@ -40,3 +40,5 @@ I-B4SG9-7
 
 FS-B4SG9 §Acceptance Criteria "In play (HITL, on floor 1)"; §Open questions 1–2; user stories 2–8,
 10, 13.
+
+**Owner check, 2026-11-11.** Nick played floor 1 on the local branch `play/floor1-fixes` (this branch merged with the wall-corner and coffer fixes) and reported "看過了沒問題". He gave one verdict for the whole check, not one per line, so the boxes above are left as written. Parry and Gravewarden's Oath against an arrow stay as the code has them (not parried; reflected), as he was told on the same day and did not change.
