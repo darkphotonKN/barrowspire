@@ -31,13 +31,13 @@ const wall = (
   height,
 });
 
-/** AddBuilding's run house: 300×200, walls 20 thick, a 50-wide door gap in the south wall. */
+/** AddBuilding's run house: 300×200, walls 20 thick, an 80-wide door gap in the south wall. */
 const runHouse = (bx: number, by: number) => [
   wall(bx, by, 300, 20, "h"),
   wall(bx, by, 20, 200, "h"),
   wall(bx + 280, by, 20, 200, "h"),
-  wall(bx, by + 180, 125, 20, "h"),
-  wall(bx + 175, by + 180, 125, 20, "h"),
+  wall(bx, by + 180, 110, 20, "h"),
+  wall(bx + 190, by + 180, 110, 20, "h"),
 ];
 
 describe("sideOf / heightOf", () => {
@@ -134,8 +134,8 @@ describe("planWalls", () => {
     expect(at(390, 70)).toBe("post_back"); // NE: north (back) meets east (front)
     expect(at(110, 250)).toBe("post_back"); // SW: west (back) meets south (front)
     expect(at(390, 250)).toBe("post_front"); // SE: east + south, both cut away
-    expect(at(215, 250)).toBe("post_front"); // door jambs
-    expect(at(285, 250)).toBe("post_front");
+    expect(at(200, 250)).toBe("post_front"); // door jambs
+    expect(at(300, 250)).toBe("post_front");
   });
 
   it("should name the server wall every piece and post belongs to, so they go with it", () => {
@@ -168,13 +168,13 @@ describe("planWalls", () => {
 describe("planWalls with masonry sheets (FS-8RBQY §B.2)", () => {
   /** The server's three rooms (small, medium, large), walls 20 thick, door gap in the south. */
   const room = (bx: number, by: number, bw: number, bh: number, id: string) => {
-    const gap = (bw - 50) / 2;
+    const gap = (bw - 80) / 2;
     return [
       wall(bx, by, bw, 20, id),
       wall(bx, by, 20, bh, id),
       wall(bx + bw - 20, by, 20, bh, id),
       wall(bx, by + bh - 20, gap, 20, id),
-      wall(bx + gap + 50, by + bh - 20, gap, 20, id),
+      wall(bx + gap + 80, by + bh - 20, gap, 20, id),
     ];
   };
   const floor = [

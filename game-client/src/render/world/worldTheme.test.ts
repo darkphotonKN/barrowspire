@@ -69,15 +69,15 @@ describe("the tower's fixed lights on the server's largest floor", () => {
     width,
     height,
   });
-  /** `AddBuilding`'s walls: 20 thick, a 50-wide door gap centred in the south wall. */
+  /** `AddBuilding`'s walls: 20 thick, an 80-wide door gap centred in the south wall. */
   const room = (bx: number, by: number, bw: number, bh: number, id: string) => {
-    const gap = (bw - 50) / 2;
+    const gap = (bw - 80) / 2;
     return [
       wall(bx, by, bw, 20, id),
       wall(bx, by, 20, bh, id),
       wall(bx + bw - 20, by, 20, bh, id),
       wall(bx, by + bh - 20, gap, 20, id),
-      wall(bx + gap + 50, by + bh - 20, gap, 20, id),
+      wall(bx + gap + 80, by + bh - 20, gap, 20, id),
     ];
   };
   /** The three rooms every floor builds (300×200, 400×300, 500×400), laid out several ways. */
