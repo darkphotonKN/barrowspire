@@ -2865,17 +2865,8 @@ func (s *Session) sendRefusalToPlayer(playerID uuid.UUID, action, userMessage, r
 * checks if a target is within 2d cartesian coordinates range of another.
 **/
 func (s *Session) calcWithinDistance(x, y, xTarget, yTarget float64) bool {
-	// calculate range via range provided by interactable
-	xDiff := math.Pow(x-xTarget, 2)
-	yDiff := math.Pow(y-yTarget, 2)
-	distanceBetween := math.Sqrt(xDiff + yDiff)
-
-	// too far
-	if distanceBetween > constants.DefaultInteractableRange {
-		return false
-	}
-
-	return true
+	// the one measure, shared with a timed open's staying in reach (FS-MQYEX D5)
+	return systems.WithinInteractRange(x, y, xTarget, yTarget)
 }
 
 /**

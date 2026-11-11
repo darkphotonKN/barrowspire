@@ -180,7 +180,13 @@ func withinInteractRange(a, b *ecs.Entity) bool {
 		return false
 	}
 	from, to := ac.(*components.TransformComponent), bc.(*components.TransformComponent)
-	// the reach's own sum, so the two agree to the last bit at the edge
-	distance := math.Sqrt(math.Pow(from.X-to.X, 2) + math.Pow(from.Y-to.Y, 2))
+	return WithinInteractRange(from.X, from.Y, to.X, to.Y)
+}
+
+// WithinInteractRange is whether two places are within the interact range of
+// each other: the one measure for starting a reach and for staying in it
+// (FS-MQYEX D5).
+func WithinInteractRange(x, y, xTarget, yTarget float64) bool {
+	distance := math.Sqrt(math.Pow(x-xTarget, 2) + math.Pow(y-yTarget, 2))
 	return distance <= constants.DefaultInteractableRange
 }
