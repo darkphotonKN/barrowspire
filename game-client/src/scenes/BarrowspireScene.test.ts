@@ -6704,18 +6704,23 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           update(time: number, delta: number): void;
         };
 
-        it("should follow the player's drawn position, and the watched teammate's while spectating", () => {
-          const { run, pressTo } = mapped();
+        it("should follow the player's drawn position, and the watched teammate's while spectating, with the party's dots where their figures are drawn", () => {
+          const { run, pressTo } = mapped({
+            ...inRoom,
+            other_players: [ally("a", at(4000, 1200)), ally("dead", placedAt.lever, { current_health: 0 })] as GameState["other_players"],
+          });
           const follow = vi.spyOn(Minimap.prototype, "follow");
           const r = run as Followed;
           pressTo("overlay");
           r.playerPos = { x: 2570, y: 3090 };
+          r.otherPlayersPos.set("a", { x: 3990, y: 1205 });
           r.followMapOverlay();
-          expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 });
+          // the drawn positions, never the broadcast's; the dead have no dot
+          const drawn = { self: { x: 2570, y: 3090 }, allies: [{ x: 3990, y: 1205 }] };
+          expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 }, drawn);
           r.watchedPlayerId = "a";
-          r.otherPlayersPos.set("a", { x: 4000, y: 1200 });
           r.followMapOverlay();
-          expect(follow).toHaveBeenLastCalledWith({ x: 4000, y: 1200 });
+          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, drawn);
         });
 
         it("should stand it each frame after the figures moved, playing or watching, without redrawing its map", () => {

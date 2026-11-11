@@ -455,7 +455,10 @@ export class Minimap {
   private readonly dots: MinimapGraphics;
   private drawing: Drawing;
   private shownContent: MinimapContent = { regions: [], fixtures: [] };
+  /** The party's places from the last broadcast: the panel modes' dots. */
   private shownParty?: MinimapParty;
+  /** Where the party's figures were last drawn, given with the focus: the overlay's dots. */
+  private drawnParty?: MinimapParty;
   /** The figure the overlay was last stood about, in world px. */
   private focus?: Point;
   private drawn?: string;
@@ -507,17 +510,24 @@ export class Minimap {
   }
 
   /**
-   * The figure the camera follows is at world point `focus` now (FS-1SEF0 §C.14, §C.19). While it
-   * is the overlay, its layers stand in the world, on whole px, so the figure's own point on the
-   * overlay lies on the figure: a world point p draws at (1 − scale)·iso(focus) + scale·iso(p),
-   * which is iso(focus) at p = focus. A move, never a redraw.
+   * The figure the camera follows is at world point `focus` now, and the party's figures are drawn
+   * at `drawn` (FS-1SEF0 §C.14, §C.19). While it is the overlay, its layers stand in the world so
+   * the figure's own point on the overlay lies on the figure: a world point p draws at about
+   * (1 − scale)·iso(focus) + scale·iso(p). The layers stand at the figure's whole px less its
+   * point's whole px on the overlay, each rounded once, so the map slides one way under a walking
+   * figure; and the overlay's dots are placed from these same drawn positions, never a broadcast's,
+   * so a figure's dot lies on it frame after frame. A move, never a redraw of the map; the dots
+   * redrawn only when one moves a whole px.
    */
-  follow(focus: Point): void {
+  follow(focus: Point, drawn?: MinimapParty): void {
     this.focus = focus;
+    if (drawn) this.drawnParty = drawn;
     if (this.drawing.panel) return;
     const s = worldToScreen(focus.x, focus.y);
-    const k = 1 - MINIMAP_OVERLAY.scale;
-    for (const layer of this.drawnLayers()) layer.setPosition(Math.round(s.x * k), Math.round(s.y * k));
+    const k = MINIMAP_OVERLAY.scale;
+    for (const layer of this.drawnLayers())
+      layer.setPosition(Math.round(s.x) - Math.round(s.x * k), Math.round(s.y) - Math.round(s.y * k));
+    if (drawn) this.drawDots(drawn);
   }
 
   /** The party's exploration and the floor's fixtures now; the map is redrawn only if what it shows changed. */
@@ -531,9 +541,23 @@ export class Minimap {
     this.drawMarks(content.fixtures);
   }
 
-  /** The party's places now; the dots are redrawn only if one moved a whole px. */
+  /**
+   * The party's places from this broadcast; the dots are redrawn only if one moved a whole px. The
+   * overlay, once followed, places its dots where the figures are drawn instead ({@link follow}).
+   */
   party(party: MinimapParty): void {
     this.shownParty = party;
+    const shown = this.partyShown;
+    if (shown) this.drawDots(shown);
+  }
+
+  /** Whose places the dots show: the broadcast's in a panel, the drawn figures' in the overlay once followed. */
+  private get partyShown(): MinimapParty | undefined {
+    return this.drawing.panel ? this.shownParty : (this.drawnParty ?? this.shownParty);
+  }
+
+  /** The dots at `party`'s places, at the look in force, unless none has moved a whole px. */
+  private drawDots(party: MinimapParty): void {
     const { marks: k, project, panel } = this.drawing;
     const at = (p: Point, radius: number) => {
       const reach = (radius + DOT.outline) * k;
@@ -591,7 +615,8 @@ export class Minimap {
     this.drawMap(this.shownContent);
     this.drawMarks(this.shownContent.fixtures);
     this.dotsDrawn = undefined;
-    if (this.shownParty) this.party(this.shownParty);
+    const party = this.partyShown;
+    if (party) this.drawDots(party);
   }
 
   /**

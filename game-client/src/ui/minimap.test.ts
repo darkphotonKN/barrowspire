@@ -1113,10 +1113,12 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
       map.follow(f);
       const iso = worldToScreen(f.x, f.y);
       for (const g of made) {
-        expect(g.position).toEqual(at(Math.round(iso.x * 0.875), Math.round(iso.y * 0.875)));
-        // where the figure's own point lands, in the world, against where the figure stands
-        expect(Math.abs(g.position.x + iso.x * 0.125 - iso.x)).toBeLessThanOrEqual(0.5);
-        expect(Math.abs(g.position.y + iso.y * 0.125 - iso.y)).toBeLessThanOrEqual(0.5);
+        // the figure's whole px less its point's whole px on the overlay, each rounded once
+        expect(g.position).toEqual(at(Math.round(iso.x) - Math.round(iso.x * 0.125), Math.round(iso.y) - Math.round(iso.y * 0.125)));
+        // where the figure's own point lands, in the world, against where the figure stands: within
+        // the 1 px of the whole-px placement (the acceptance criterion's bound)
+        expect(Math.abs(g.position.x + iso.x * 0.125 - iso.x)).toBeLessThanOrEqual(1);
+        expect(Math.abs(g.position.y + iso.y * 0.125 - iso.y)).toBeLessThanOrEqual(1);
       }
     }
     expect([map.redraws, map.dotRedraws]).toEqual([redraws, dotRedraws]);
@@ -1164,7 +1166,7 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     for (const g of on.made) expect(g.position).toEqual(at(0, 0));
     on.map.setMode("overlay");
     const iso = worldToScreen(IN_ROOM.x, IN_ROOM.y);
-    for (const g of on.made) expect(g.position).toEqual(at(Math.round(iso.x * 0.875), Math.round(iso.y * 0.875)));
+    for (const g of on.made) expect(g.position).toEqual(at(Math.round(iso.x) - Math.round(iso.x * 0.125), Math.round(iso.y) - Math.round(iso.y * 0.125)));
   });
 
   it("should redraw the map only when a region is first seen or a fixture found, and the dots only when one moves a whole px at its scale (§C.19)", () => {
