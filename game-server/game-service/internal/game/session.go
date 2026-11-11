@@ -853,8 +853,23 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
 	impacts := projectileSys.Update(deltaTime, entities)
 
+	// only a run has timed opens (FS-MQYEX §Requirements 1). They note the
+	// health their delvers take into the combat, so a hit that costs any is
+	// known after it (§Requirements 7)
+	timedOpens := s.worldType == types.WorldTypeRun
+	if timedOpens {
+		systems.NewTimedOpenSystem(s.EntityManager).MarkHealth(entities)
+	}
+
 	// combat
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
+
+	// timed opens count the tick, after its movement and combat and before a
+	// kill's heal can hide the combat's hit: each is cancelled or, its time
+	// passed, opens its container (FS-MQYEX §Requirements 4–10)
+	if timedOpens {
+		s.advanceTimedOpens(deltaTime, entities)
+	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters
 	if s.hasMonsters() {
@@ -868,12 +883,6 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.restockFieldChests(deltaTime, entities)
 		// the dev test room's chests and enemies come back (FS-BDRTJ R13, R16)
 		s.tickDevTestRoom(deltaTime)
-	}
-
-	// timed opens count the tick, after its movement and combat; only a run
-	// has them (FS-MQYEX §Requirements 1, 4)
-	if s.worldType == types.WorldTypeRun {
-		s.advanceTimedOpens(deltaTime, entities)
 	}
 
 	// interaction
@@ -2057,8 +2066,10 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		if s.worldType == types.WorldTypeRun && !containerOpenable.IsOpen {
 			// a run's shut chest or sack opens through the delver's timed open:
 			// it stays shut and unrolled, and the tick opens it when the time
-			// has passed. The container is not held (FS-MQYEX §Requirements 2)
-			systems.NewTimedOpenSystem().Start(playerEntity, targetEntityID, TimedOpenDuration)
+			// has passed. The container is not held (FS-MQYEX §Requirements 2).
+			// A reach for the one they are already opening changes nothing; for
+			// another, it takes the first one's place (§Requirements 12)
+			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, TimedOpenDuration)
 		} else {
 			if err := s.openContainer(targetEntity, containerOpenable); err != nil {
 				return err

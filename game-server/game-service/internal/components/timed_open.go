@@ -18,6 +18,9 @@ type TimedOpenComponent struct {
 	Duration float64
 	// FromX, FromY is where the body stood at the reach.
 	FromX, FromY float64
+	// HealthBeforeCombat is the health the delver took into the last combat
+	// the timed open saw: less than it afterwards is a hit that cost health.
+	HealthBeforeCombat int
 }
 
 func (o *TimedOpenComponent) Type() ecs.ComponentType {
