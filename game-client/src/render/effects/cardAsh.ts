@@ -160,16 +160,17 @@ export interface CardAshRecord {
 /** The ash (R53–R64). Like the dust, not an `EFFECTS` entry: a view-space HUD effect, R59's exception. */
 export const CARD_ASH = {
   frontMs: 2000,
-  // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": the front's 2000 ms and a
-  // flake's 700 (was 3000, with a 1000 ms flake)
-  durationMs: 2700,
+  // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": the front's 2000 ms and
+  // a flake's 500 (was 2700 with a 700 ms flake; before his seventh, 3000 with a 1000 ms flake)
+  durationMs: 2500,
   ragged: 0.35,
   grainPx: 6,
   // the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): fire runs a temperature ramp
   band: { ember: 0.06, char: 0.08, stops: [0.1, 0.35, 0.65, 1] },
   flake: {
-    // the owner's seventh tune of 2026-11-12, "灰燼碎屑消失的快一點": 30% sooner (was 1000)
-    lifeMs: 700,
+    // the owner's eighth tune of 2026-11-12, "灰燼碎屑消失速度在加快一些": about 30% sooner
+    // again (was 700; before his seventh, "灰燼碎屑消失的快一點", 1000)
+    lifeMs: 500,
     // the owner's sixth tune of 2026-11-12, "灰燼碎屑少一點": a fifth fewer again (was 240 and
     // 0.08; before his fourth, "灰燼 碎屑少２０％", 300 and 0.1)
     maxParticles: 192,
@@ -187,8 +188,9 @@ export const CARD_ASH = {
       seamPx: 0.75,
       cools: [1, 0.6, 0.3],
       edgeFrom: 0.28,
-      // the seventh tune: 30% sooner, still out before its flake (was 900)
-      ms: 630,
+      // the eighth tune: about 30% sooner again, still out before its flake (was 630; before
+      // the seventh, 900)
+      ms: 450,
       steps: 20,
       shades: 12,
       flicker: { count: { from: 1, to: 2 }, depth: 0.6, ms: 100, within: { from: 0.15, to: 0.7 } },
@@ -887,11 +889,19 @@ export class CardAsh {
     if (held) return held;
     const f = CARD_ASH.flake;
     const side = () => (this.random() < 0.5 ? -1 : 1);
+    const angle = this.random() * 360;
+    const spin = side() * pick(f.spinDegPerS, this.random);
+    const flipRate = (2 * Math.PI) / pick(f.flipMs, this.random);
+    // edge-on (a zero of the cosine, at π/2 + kπ) inside its life: since the owner's eighth tune
+    // of 2026-11-12 a slow flip's half-turn (up to 650 ms) outlasts a 500 ms life, so it is set
+    // going at most a life's turn short of edge-on, on either face; a flip that turns a half or
+    // more in a life starts anywhere, as before
+    const short = this.random() * Math.min(Math.PI, flipRate * f.lifeMs);
     const made: Flutter = {
-      angle: this.random() * 360,
-      spin: side() * pick(f.spinDegPerS, this.random),
-      flipRate: (2 * Math.PI) / pick(f.flipMs, this.random),
-      flipPhase: this.random() * 2 * Math.PI,
+      angle,
+      spin,
+      flipRate,
+      flipPhase: Math.PI / 2 - short + (side() < 0 ? 0 : Math.PI),
       swayAmp: side() * pick(f.sway.amplitude, this.random),
       swayRate: (2 * Math.PI) / pick(f.sway.periodMs, this.random),
       swayOn: 0,
@@ -903,7 +913,7 @@ export class CardAsh {
   /**
    * The flakes (R56): rising within the spread of their lean, up and to the left, and slowing a little, turning slowly,
    * turning over in depth (the scale across them swinging through zero, edge-on, and back), swaying
-   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 630 ms.
+   * sideways, and fading. Each takes one shape's anim: still, or a glow dying over 450 ms.
    */
   private flakeConfig(anims: string[], resolution: number): EmitterConfig {
     const f = CARD_ASH.flake;
