@@ -13,6 +13,14 @@ describe("placeCard (FS-PQ2TW R19, R23)", () => {
         expect(placeCard({ world: "run", floor, top })).toEqual(floorCard({ floor, top }));
   });
 
+  // I-PQ2TW-3: the owner's own line for floor 1 (R19), whatever the run's height (R21)
+  it.each([false, true])("should give floor 1 its own words, on the top floor %s", (top) => {
+    expect(placeCard({ world: "run", floor: 1, top })).toEqual({
+      title: "The First Floor",
+      line: "The barrow takes you in.",
+    });
+  });
+
   it("should name the town by the screen's word for the hub", () => {
     expect(placeCard({ world: "hub" })).toEqual({
       title: "The Town",
@@ -41,7 +49,7 @@ describe("placeCard (FS-PQ2TW R19, R23)", () => {
   });
 
   it("should speak in the lore voice, never the sci-fi register", () => {
-    const all = [PLACE_CARDS.hub, ...Object.values(PLACE_CARDS.field)];
+    const all = [PLACE_CARDS.hub, ...Object.values(PLACE_CARDS.field), PLACE_CARDS.firstFloor];
     for (const { title, line } of all)
       expect(`${title} ${line}`).not.toMatch(/sector|level|deploy|extraction|operator|uplink|void/i);
   });

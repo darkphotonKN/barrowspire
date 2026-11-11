@@ -316,12 +316,137 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
     expect(events.listenerCount("shutdown") + events.listenerCount("destroy")).toBe(0);
   });
 
+  it("should count a replaced card's dark from the new card, as today", () => {
+    const { card, parts, clock, cardTweens } = cardOnStage();
+    card.play(WORDS, { built: true });
+    clock.now = 1000;
+
+    card.play(WORDS, { built: false });
+
+    expect(cardTweens(parts.slice(5), 1)).toEqual([expect.objectContaining({ delay: 250 })]);
+  });
+
   it("should take no input (R14)", () => {
     const { card, parts } = cardOnStage();
     card.play(WORDS, { built: true });
 
     const called = parts.flatMap((p) => p.calls.map(([method]) => method));
     expect(called.filter((m) => /interactive|^on$|^once$/i.test(m))).toEqual([]);
+  });
+});
+
+// FS-PQ2TW §B R11, R13. I-PQ2TW-3: a run's arrival is dark from create, before its floor (and so
+// its words) is known; the card comes at the first broadcast.
+describe("the dark before the words (FS-PQ2TW R11, R13)", () => {
+  it("should cover the whole view with the dark alone, over the world and under the HUD", () => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    const { card, parts, tweens, timers, last } = cardOnStage();
+
+    card.dark();
+
+    expect(parts.map((p) => p.kind)).toEqual(["rectangle"]);
+    expect(parts[0].args).toEqual([0, 0, 800, 600, palette.inkDeep, 1]);
+    expect(last(parts[0], "setScrollFactor")).toEqual([0]);
+    expect(last(parts[0], "setDepth")).toEqual([ARRIVAL_CARD.depth]);
+    expect(card.up).toBe(true);
+    // it holds: nothing fades, nothing leaves
+    expect(tweens).toEqual([]);
+    expect(timers).toEqual([]);
+  });
+
+  it("should not lift the dark alone when told the place is built: it waits for its words", () => {
+    const { card, tweens } = cardOnStage();
+    card.dark();
+
+    card.built();
+
+    expect(tweens).toEqual([]);
+    expect(card.up).toBe(true);
+  });
+
+  it("should keep the dark up when the words come, and draw the card over it", () => {
+    const { card, parts, standing } = cardOnStage();
+    card.dark();
+
+    card.play(WORDS, { built: false });
+
+    expect(standing().map((p) => p.kind)).toEqual(["rectangle", "text", "graphics", "text"]);
+    expect(standing()[1].args[2]).toBe(WORDS.title);
+    // the dark that stands is whole: none of it was faded on the way
+    expect(parts.filter((p) => p.kind === "rectangle").every((p) => !p.calls.some(([m]) => m === "setAlpha"))).toBe(true);
+  });
+
+  it("should fade the card in at once over a dark already held long enough", () => {
+    const { card, clock, standing, cardTweens, fades, leaves } = cardOnStage();
+    clock.now = 1000;
+    card.dark();
+    clock.now = 1400;
+
+    card.play(WORDS, { built: true });
+
+    const [veil, ...words] = standing();
+    expect(cardTweens(words, 1)).toEqual([expect.objectContaining({ duration: 300, delay: 0 })]);
+    // the view comes back once the card is in
+    expect(fades(veil)).toEqual([expect.objectContaining({ duration: 900, delay: 300 })]);
+    expect(leaves().map((t) => t.delay)).toEqual([300 + 1400]);
+  });
+
+  it("should count the dark hold from the dark, not from the words", () => {
+    const { card, clock, standing, cardTweens } = cardOnStage();
+    clock.now = 1000;
+    card.dark();
+    clock.now = 1100;
+
+    card.play(WORDS, { built: false });
+
+    expect(cardTweens(standing().slice(1), 1)).toEqual([expect.objectContaining({ delay: 150 })]);
+  });
+
+  it("should hold the dark for a place still unbuilt, then lift less the time waited (R12)", () => {
+    const { card, clock, standing, fades, leaves } = cardOnStage();
+    card.dark();
+    clock.now = 100;
+    card.play(WORDS, { built: false });
+    const [veil] = standing();
+    clock.now = 300;
+    expect(fades(veil)).toHaveLength(0);
+
+    card.built();
+
+    // the card is in at 100 + 150 + 300 = 550: 250 left of it at 300
+    expect(fades(veil)).toEqual([expect.objectContaining({ delay: 250 })]);
+    expect(leaves().map((t) => t.delay)).toEqual([250 + 1400]);
+  });
+
+  it("should re-cover the view on a view change while the dark is alone (R16)", () => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    const { card, parts, last } = cardOnStage();
+    card.dark();
+
+    viewport.set({ width: 1000, height: 700, renderScale: 1 });
+    card.relayout();
+
+    expect(last(parts[0], "setSize")).toEqual([1000, 700]);
+  });
+
+  it.each(["shutdown", "destroy"] as const)("should let the dark go with its scene on a %s", (end) => {
+    const { card, events, tweens } = cardOnStage();
+    card.dark();
+
+    events.emit(end);
+
+    expect(card.up).toBe(false);
+    expect(events.listenerCount("shutdown") + events.listenerCount("destroy")).toBe(0);
+    card.relayout();
+    expect(tweens).toEqual([]);
+  });
+
+  it("should leave one teardown at a time across a dark and its card", () => {
+    const { card, events } = cardOnStage();
+    card.dark();
+    card.play(WORDS, { built: true });
+
+    expect([events.listenerCount("shutdown"), events.listenerCount("destroy")]).toEqual([1, 1]);
   });
 });
 
