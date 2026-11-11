@@ -479,3 +479,5 @@ the cost of the stats and notification side effects above.
 - Renaming backend "delver" identifiers.
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Arrival card → FS-PQ2TW
