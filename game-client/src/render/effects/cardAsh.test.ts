@@ -197,8 +197,9 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
       band: { ember: 0.06, char: 0.08 },
       flake: {
         lifeMs: 1000,
-        maxParticles: 300,
-        density: 0.1,
+        // the owner's fourth tune of 2026-11-12, "灰燼 碎屑少２０％": a fifth fewer (was 300 and 0.1)
+        maxParticles: 240,
+        density: 0.08,
         shapes: 24,
         lengthPx: { from: 3, to: 14 },
         smallBias: 1.2,
@@ -258,7 +259,7 @@ describe("the ash's numbers (FS-PQ2TW R55–R59, R61)", () => {
     // three of its own, the third the flakes' mottling: ember, slate, slateLight
     expect([...new Set(own)].sort()).toEqual(["ember", "slate", "slateLight"]);
     // the exception, bounded: a few hundred flakes and a few tens of sparks, rising, never sprayed
-    expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(300);
+    expect(CARD_ASH.flake.maxParticles).toBeLessThanOrEqual(240);
     // the owner's third tune of 2026-11-12, "往左往上散": a flake at most 45 px/s and 60° off up,
     // never right of it; a spark at most 40° off up (was 32 px/s and 30°, and 25°)
     expect(CARD_ASH.flake.speed.to).toBeLessThanOrEqual(45);
@@ -488,7 +489,7 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(config()).toMatchObject({
         lifespan: 1000,
         speed: { min: 18, max: 45 },
-        maxParticles: 300,
+        maxParticles: 240,
         emitting: false,
         scaleX: 1,
         alpha: { start: 1, end: 0, ease: "Sine.easeIn" },
@@ -530,9 +531,9 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
 
     it.each([
       ["a little ink", ["####", "####"], 3],
-      ["a card's worth", Array(6).fill("#".repeat(40)), 26],
-      ["far more than the cap", Array(60).fill("#".repeat(400)), 300],
-    ])("should make 0.1 flakes per view px² of ink from %s, at most 300", (_, rows, want) => {
+      ["a card's worth", Array(6).fill("#".repeat(40)), 21],
+      ["far more than the cap", Array(60).fill("#".repeat(400)), 240],
+    ])("should make 0.08 flakes per view px² of ink from %s, at most 240 (the owner's fourth tune, 20% fewer)", (_, rows, want) => {
       const stage = ashStage();
       stage.ash.play(cardInk(stubText(rows)), 961, stage.gone);
       stage.front().at(1);
