@@ -5,14 +5,23 @@ import {
   ATTACKS,
   CLASS_ANIMATIONS,
   MERC_ANIMATIONS,
+  RUN_ANIMATIONS,
+  RUNNING_CLASS_ANIMATIONS,
+  WALK_ATTACK_CYCLES,
+  backpedalCycle,
   clipsFor,
   idleCycle,
   layerPoses,
   parryClip,
   pose,
+  runCycle,
   walkCycle,
   withWalkAttack,
 } from "./clips.js";
+import { createRig, jointAt as J } from "./rig.js";
+import { boots, legs } from "./anatomy.js";
+import { GROUND_EPS, WORLD_PX_PER_UNIT, footing, measurePace } from "./pace.js";
+import { BACKPEDAL_PACE, RUN_PACE } from "../../../../src/render/art/animationSelect";
 
 const style = {
   attack: "slash",
@@ -74,7 +83,7 @@ describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
 
   it("is added to any clip set by one rule, from that set's own attack", () => {
     const slow = withWalkAttack({ ...ANIMATIONS, attack: { frames: 5, fps: 10, loop: false } });
-    expect(slow.walk_attack).toEqual({ frames: 10, fps: 20, loop: false, boxed: true });
+    expect(slow.walk_attack).toEqual({ frames: 10, fps: 20, loop: false, boxed: true, cycles: WALK_ATTACK_CYCLES });
     expect(slow.idle).toBe(ANIMATIONS.idle);
   });
 
@@ -187,5 +196,166 @@ describe("the Bone Archer's shot (FS-B4SG9 §E R26)", () => {
     const frames = clipsFor({ attack: "boneShot", hold: pose({}) }).attack;
     expect(frames).toHaveLength(ANIMATIONS.attack.frames);
     expect(frames.map((p) => p.fx)).toEqual(keys.map((p) => p.fx));
+  });
+});
+
+describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
+  /**
+   * The archer's lower body, as cast.js builds it: the rig at its height and build, its legs
+   * under the tunic and its boots, which carry the soles every clip is grounded on.
+   */
+  function archerLegs() {
+    const rig = createRig(1.96, { shoulderW: 1.0, torsoW: 0.98 });
+    const [, hy] = J(rig, "hips");
+    const tunic = { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] };
+    legs(rig, new THREE.MeshBasicMaterial(), { under: tunic });
+    boots(rig, new THREE.MeshBasicMaterial(), { top: 0.21 });
+    return rig;
+  }
+  // the archer's style as cast.js keys it, simplified to what the clips read
+  const archer = {
+    attack: "shot",
+    hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
+    walk: { arms: [0.7, 1], lean: 0.06 },
+  };
+  const plain = { attack: "slash", hold: pose() };
+  const rig = archerLegs();
+  const run = runCycle(plain);
+  const back = backpedalCycle(plain);
+  const { run: RUN, backpedal: BACK } = RUN_ANIMATIONS;
+
+  /** Pearson correlation of two equal-length series. */
+  const corr = (a, b) => {
+    const m = (x) => x.reduce((s, v) => s + v, 0) / x.length;
+    const [ma, mb] = [m(a), m(b)];
+    const cov = a.reduce((s, v, i) => s + (v - ma) * (b[i] - mb), 0);
+    const sd = (x, mx) => Math.sqrt(x.reduce((s, v) => s + (v - mx) ** 2, 0));
+    return cov / (sd(a, ma) * sd(b, mb));
+  };
+  const rx = (frames, bone) => frames.map((p) => (p.b[bone] ?? [0, 0, 0])[0]);
+  /** A pose's yaw of the chest in the model: the pelvis, spine and chest turns summed. */
+  const chestYaw = (p) => ["hips", "spine", "chest"].reduce((s, b) => s + (p.b[b] ?? [0, 0, 0])[1], 0);
+
+  it("are two 8-frame loops, on a class sheet that opts in, with walk_attack's legs over one walk cycle", () => {
+    for (const spec of [RUN, BACK]) expect([spec.frames, spec.loop]).toEqual([8, true]);
+    expect(Object.keys(RUNNING_CLASS_ANIMATIONS)).toEqual(["idle", "walk", "attack", "death", "run", "backpedal", "walk_attack"]);
+    const wa = RUNNING_CLASS_ANIMATIONS.walk_attack;
+    expect(wa.cycles).toBe(1);
+    expect(wa.frames / wa.fps).toBeCloseTo(RUNNING_CLASS_ANIMATIONS.attack.frames / RUNNING_CLASS_ANIMATIONS.attack.fps, 9);
+    // the sheets that do not run keep today's two cycles
+    expect(CLASS_ANIMATIONS.walk_attack.cycles).toBe(2);
+    expect(MERC_ANIMATIONS.walk_attack.cycles).toBe(2);
+    expect(Object.keys(CLASS_ANIMATIONS)).not.toContain("run");
+  });
+
+  it("walks walk_attack's legs over one cycle on a running sheet: half way through, the walk is half way round", () => {
+    const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack;
+    const walk = walkCycle(archer);
+    frames[7].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[4].b.thighR[j], 9));
+    frames[0].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[0].b.thighR[j], 9));
+  });
+
+  it("are made by clipsFor for a sheet that asks for them, the hold carried as the walk carries it", () => {
+    const clips = clipsFor(archer, RUNNING_CLASS_ANIMATIONS);
+    expect(clips.run).toHaveLength(8);
+    expect(clips.backpedal).toHaveLength(8);
+    // the bow hand keeps its grip turn through the run
+    for (const p of clips.run) expect(p.b.handL[0]).toBeCloseTo(-0.9 + (runCycle({ hold: pose() })[0].b.handL ?? [0])[0], 9);
+    expect(clipsFor(archer).run).toBeUndefined();
+  });
+
+  it("the run: each step has a flight frame, both soles off the ground", () => {
+    for (const half of [[0, 1, 2, 3], [4, 5, 6, 7]]) {
+      const flights = half.filter((f) => {
+        const { L, R } = footing(rig, run, f);
+        return Math.min(L.y, R.y) > 0.02;
+      });
+      expect(flights.length, `step ${half}`).toBeGreaterThanOrEqual(1);
+    }
+    // and a foot is planted in every other key
+    const planted = [0, 1, 2, 3, 4, 5, 6, 7].filter((f) => {
+      const { L, R } = footing(rig, run, f);
+      return Math.min(L.y, R.y) < GROUND_EPS;
+    });
+    expect(planted.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("the run: the arms swing against the legs, the right arm forward with the left leg", () => {
+    expect(corr(rx(run, "upperArmR"), rx(run, "thighR"))).toBeLessThan(-0.8);
+    expect(corr(rx(run, "upperArmL"), rx(run, "thighL"))).toBeLessThan(-0.8);
+    expect(corr(rx(run, "upperArmR"), rx(run, "thighL"))).toBeGreaterThan(0.8);
+  });
+
+  it("the run: the upper body turns against the hips with the stride", () => {
+    const hips = run.map((p) => p.b.hips[1]);
+    const upper = run.map((p) => p.b.spine[1] + p.b.chest[1]);
+    expect(corr(hips, upper)).toBeLessThan(-0.8);
+    // the shoulders turn with the arms: the right one forward (+y turns the right side, -x,
+    // forward) as the right arm swings forward (-rx)
+    expect(corr(run.map(chestYaw), rx(run, "upperArmR"))).toBeLessThan(-0.8);
+  });
+
+  it("the run: the pelvis rises and falls once per step, highest in the flight", () => {
+    const heights = [0, 1, 2, 3, 4, 5, 6, 7].map((f) => footing(rig, run, f).hips.y);
+    const peaks = heights.filter((h, i) => h > heights[(i + 7) % 8] && h >= heights[(i + 1) % 8]);
+    const dips = heights.filter((h, i) => h < heights[(i + 7) % 8] && h <= heights[(i + 1) % 8]);
+    expect([peaks.length, dips.length]).toEqual([2, 2]);
+    // a jog's bounce: visible, never a hop (H = 1.96 world units)
+    const bounce = Math.max(...heights) - Math.min(...heights);
+    expect(bounce).toBeGreaterThan(0.02 * rig.H);
+    expect(bounce).toBeLessThan(0.07 * rig.H);
+  });
+
+  it("the run: the head holds steady, its turn and roll within a small band and its height no bobbier than the pelvis", () => {
+    const yaw = [];
+    const roll = [];
+    const head = [];
+    const hips = [];
+    for (let f = 0; f < 8; f += 0.25) {
+      const at = footing(rig, run, f);
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(at.head);
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(at.head);
+      yaw.push(Math.atan2(fwd.x, fwd.z));
+      roll.push(Math.atan2(up.x, up.y));
+      head.push(new THREE.Vector3().setFromMatrixPosition(at.head).y);
+      hips.push(at.hips.y);
+    }
+    const range = (x) => Math.max(...x) - Math.min(...x);
+    expect(range(yaw)).toBeLessThan(0.08);
+    expect(range(roll)).toBeLessThan(0.06);
+    expect(range(head)).toBeLessThanOrEqual(range(hips) * 1.1);
+  });
+
+  it("the run: a jog's pace, within 180–220 world px/s, and RUN_PACE is that measure", () => {
+    const pace = measurePace(rig, run, RUN.fps);
+    expect(pace).toBeGreaterThanOrEqual(180);
+    expect(pace).toBeLessThanOrEqual(220);
+    expect(Math.abs(RUN_PACE - pace)).toBeLessThan(1);
+    // so at the server's 200 px/s the run plays within 0.9–1.1x
+    expect(200 / RUN_PACE).toBeGreaterThanOrEqual(0.9);
+    expect(200 / RUN_PACE).toBeLessThanOrEqual(1.1);
+  });
+
+  it("the backpedal: the feet step backward toe first under an upper body held to the facing", () => {
+    // the body goes backward: the planted foot slides forward under it
+    const pace = measurePace(rig, back, BACK.fps);
+    expect(pace).toBeLessThan(0);
+    expect(-pace).toBeGreaterThanOrEqual(150);
+    expect(-pace).toBeLessThanOrEqual(220);
+    expect(Math.abs(BACKPEDAL_PACE + pace)).toBeLessThan(1);
+    // the chest stays turned to the facing, never to the movement
+    for (const p of back) expect(Math.abs(chestYaw(p))).toBeLessThan(0.15);
+    // a foot lands behind the body, its toes down first
+    const landing = footing(rig, back, 0);
+    const lead = landing.R.y < landing.L.y ? "R" : "L";
+    expect(landing[`ankle${lead}`].z).toBeLessThan(landing.hips.z);
+    expect(back[0].b[`thigh${lead}`][0] + back[0].b[`shin${lead}`][0] + back[0].b[`foot${lead}`][0]).toBeGreaterThan(0.1);
+  });
+
+  it("measures the walk near WALK_PACE's 74 world px/s, so the run and backpedal are measured as the walk was", () => {
+    const pace = measurePace(rig, walkCycle(archer), ANIMATIONS.walk.fps);
+    expect(pace).toBeGreaterThan(74 * 0.9);
+    expect(pace).toBeLessThan(74 * 1.15);
+    expect(WORLD_PX_PER_UNIT).toBe(40);
   });
 });
