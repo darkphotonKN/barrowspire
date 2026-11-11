@@ -5814,26 +5814,34 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
   });
 
-  it("should paint the ground in chunks no larger than 2048 px, nothing on a void cell", () => {
+  it("should paint the ground in chunks no larger than 2048 px, under every tile of every walkable cell and no tile of a wall cell or the void (FS-XK2B6 §E)", () => {
     const { stage, stamped } = dungeonStage();
     const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
     expect(rts.length).toBeGreaterThan(1);
     for (const rt of rts) expect(Math.max(rt.args[2] as number, rt.args[3] as number)).toBeLessThanOrEqual(CHUNK_MAX);
     // each stamp back to the world tile it was laid for: the frame's top-left plus its anchor
     const sheet = manifest.sheets.ground_flags;
-    let stamps = 0;
+    const tiles = new Set<string>();
+    const offFloor: string[] = [];
     for (const rt of rts)
       for (const [, , x, y] of stamped.get(rt) ?? []) {
         const sx = (rt.args[0] as number) + (x as number) + sheet.anchor.x * sheet.frameWidth;
         const sy = (rt.args[1] as number) + (y as number) + sheet.anchor.y * sheet.frameHeight;
-        expect(grid.hasGround(screenToWorld(sx, sy))).toBe(true);
-        stamps++;
+        const at = screenToWorld(sx, sy);
+        const { cx, cy } = grid.cellOf(at);
+        if (!grid.walkable(cx, cy)) offFloor.push(`${cx},${cy}`);
+        tiles.add(`${Math.floor(at.x / 40)},${Math.floor(at.y / 40)}`);
       }
-    // every ground cell's four tiles, at least once
-    let cells = 0;
+    // no piece laid by a point on a wall cell or the void
+    expect(offFloor).toEqual([]);
+    // and every walkable cell's four tiles, each once
+    const walkable = new Set<string>();
     for (let cx = 0; cx < grid.cols; cx++)
-      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 1, y: cy * 80 + 1 })) cells++;
-    expect(stamps).toBeGreaterThanOrEqual(cells * 4);
+      for (let cy = 0; cy < grid.rows; cy++) {
+        if (!grid.walkable(cx, cy)) continue;
+        for (const [tx, ty] of [[0, 0], [1, 0], [0, 1], [1, 1]]) walkable.add(`${cx * 2 + tx},${cy * 2 + ty}`);
+      }
+    expect([...tiles].sort()).toEqual([...walkable].sort());
   });
 
   it("should leave void to the camera's background, the darkest ink", () => {
@@ -5940,21 +5948,24 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(camera.main.setBackgroundColor).toHaveBeenLastCalledWith(palette.mapEdge);
   });
 
-  it("should make no ground texture for a chunk no walkable or shell cell falls in (review M4)", () => {
+  it("should make no ground texture for a chunk no walkable cell falls in (review M4, FS-XK2B6 §E)", () => {
     const { stage, stamped } = dungeonStage();
     const rts = stage.made.filter((m) => m.kind === "renderTexture" && m.depth === GROUND_DEPTH);
     // every texture made is painted, and the floor's empty chunks have none
     for (const rt of rts) expect((stamped.get(rt) ?? []).length).toBeGreaterThan(0);
     expect(rts.length).toBeLessThan(chunks.rects.length);
-    // each chunk a ground cell's diamond falls in has its texture
+    // each chunk a walkable cell's diamond falls in has its texture
     const made = new Set(rts.map((rt) => `${rt.args[0]},${rt.args[1]}`));
     for (let cx = 0; cx < grid.cols; cx++)
       for (let cy = 0; cy < grid.rows; cy++) {
-        if (!grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) continue;
+        if (!grid.walkable(cx, cy)) continue;
         const c = await_iso.worldToScreen(cx * 80 + 40, cy * 80 + 40);
         const r = chunks.rects[chunks.indexAt(c)];
         expect(made.has(`${r.x},${r.y}`)).toBe(true);
       }
+    // the count on the sample floor, pinned: 65 of its 128 chunks (71 while the shell had ground),
+    // so a chunk only wall cells fall in has none
+    expect([rts.length, chunks.rects.length]).toEqual([65, 128]);
   });
 
   it("should paint a dungeon floor's ground once as it is built, and not again as the party leaves it (review L13)", () => {
@@ -5972,7 +5983,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     }
   });
 
-  it("should lay the placeholder floor without its art under ground cells only, void left to the background (review L13)", () => {
+  it("should lay the placeholder floor without its art under walkable cells only, wall cells and void left to the background (review L13, FS-XK2B6 §E)", () => {
     const scene = sceneOnStage();
     const run = scene.run as unknown as DungeonRun;
     run.worldLook = WORLD_THEMES.tower;
@@ -5986,7 +5997,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(stone).toHaveLength(1);
     let cells = 0;
     for (let cx = 0; cx < grid.cols; cx++)
-      for (let cy = 0; cy < grid.rows; cy++) if (grid.hasGround({ x: cx * 80 + 40, y: cy * 80 + 40 })) cells++;
+      for (let cy = 0; cy < grid.rows; cy++) if (grid.walkable(cx, cy)) cells++;
     expect(stone[0].calls.filter((c) => c === "fillRect")).toHaveLength(cells);
   });
 

@@ -109,13 +109,17 @@ describe("wall lights on a dungeon floor (FS-KE075 §H.47)", () => {
   });
 });
 
+/** Whether a cell is a shell cell: not walkable, and 8-adjacent to a walkable one (FS-KE075 R7). */
+const isShell = (grid: RegionGrid, cx: number, cy: number) =>
+  !grid.walkable(cx, cy) &&
+  [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => grid.walkable(cx + dx, cy + dy)));
+
 /**
  * A hand-made floor's walls as the server sends them (levelgen merge.go `mergeCells`): its shell
  * cells, each row split into runs, a run identical to one in the row above extending that rect.
  */
 function serverWalls(grid: RegionGrid): WallState[] {
-  const shell = (cx: number, cy: number) =>
-    !grid.walkable(cx, cy) && grid.hasGround({ x: (cx + 0.5) * CELL, y: (cy + 0.5) * CELL });
+  const shell = (cx: number, cy: number) => isShell(grid, cx, cy);
   const rects: { x: number; y: number; w: number; h: number }[] = [];
   let open: typeof rects = [];
   for (let cy = 0; cy <= grid.rows; cy++) {
@@ -690,14 +694,16 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
   });
 });
 
-describe("where a dungeon floor has ground (FS-KE075 §H.44)", () => {
+describe("where a dungeon floor has ground (FS-XK2B6 §E)", () => {
   // a room 2×2 at (3, 3): its shell is the ring around it, diagonals included
   const grid = floor(8, 8, [room(1, 3, 3, 2, 2)]);
 
   it.each([
     ["a walkable cell", true, mid(3, 3)],
-    ["a shell cell beside it", true, mid(2, 3)],
-    ["a shell cell on its diagonal", true, mid(5, 5)],
+    ["a walkable cell, just inside its edge", true, { x: 3 * CELL + 1, y: 5 * CELL - 1 }],
+    ["a wall cell beside it", false, mid(2, 3)],
+    ["a wall cell beside it, just past the edge", false, { x: 3 * CELL - 1, y: 3 * CELL + 1 }],
+    ["a wall cell on its diagonal", false, mid(5, 5)],
     ["a void cell", false, mid(1, 1)],
     ["off the floor", false, { x: -40, y: 200 }],
   ] as const)("%s: %s", (_name, ground, at) => {

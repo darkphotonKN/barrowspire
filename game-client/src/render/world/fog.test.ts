@@ -24,12 +24,17 @@ const region = (kind: FloorRegion["kind"]) => (id: number, x: number, y: number,
 const room = region("room");
 const corridor = region("corridor");
 
+/** Whether a cell is a shell cell: not walkable, and 8-adjacent to a walkable one (FS-KE075 R7). */
+const isShell = (grid: RegionGrid, cx: number, cy: number) =>
+  !grid.walkable(cx, cy) &&
+  [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => grid.walkable(cx + dx, cy + dy)));
+
 /**
  * A floor's walls as the server lays them (levelgen `mergeWalls`): the shell's cells, each row cut
  * into runs, a run the same as the one above it carried on down; then cut into runs as the scene cuts them.
  */
 function shellWalls(grid: RegionGrid): WallState[] {
-  const shell = (cx: number, cy: number) => !grid.walkable(cx, cy) && grid.hasGround(mid(cx, cy));
+  const shell = (cx: number, cy: number) => isShell(grid, cx, cy);
   const rects: { x: number; y: number; w: number; h: number }[] = [];
   let open: { x: number; y: number; w: number; h: number }[] = [];
   for (let cy = 0; cy <= grid.rows; cy++) {
@@ -511,7 +516,7 @@ describe("the fog layer (FS-SRA9J §C.13)", () => {
     for (let cy = 0; cy < grid.rows; cy++)
       for (let cx = 0; cx < grid.cols; cx++) {
         if (grid.walkable(cx, cy)) expect(fogAt(shapes, onScreen(cx, cy))).toEqual([]);
-        else if (grid.hasGround(mid(cx, cy))) expect(fogAt(shapes, onScreen(cx, cy, HEIGHTS.front / 2))).toEqual([]);
+        else if (isShell(grid, cx, cy)) expect(fogAt(shapes, onScreen(cx, cy, HEIGHTS.front / 2))).toEqual([]);
       }
   });
 
