@@ -400,14 +400,16 @@ describe("Minimap (§E.19–25)", () => {
     expect(dots.drawn().filter((c) => c.name === "fillCircle")).toEqual([]);
   });
 
-  it("should hide and show every layer together, and go with destroy", () => {
+  it("should start normal, hold a panel in the corner in normal and enlarged and none in the overlay, and go with destroy (FS-1SEF0 §A.1, §C.20)", () => {
     const { map, made, images } = mapped();
     const layers = [...made, ...images];
-    map.setShown(false);
-    expect(layers.map((g) => g.visible)).toEqual(Array(4).fill(false));
-    expect(map.shown).toBe(false);
-    map.setShown(true);
-    expect(layers.map((g) => g.visible)).toEqual(Array(4).fill(true));
+    expect(map.mode).toBe("normal");
+    expect(map.panel).toEqual({ width: 216, height: 108 });
+    map.setMode("overlay");
+    expect(map.mode).toBe("overlay");
+    expect(map.panel).toBeNull();
+    map.setMode("normal");
+    expect(map.panel).toEqual({ width: 216, height: 108 });
     map.destroy();
     expect(layers.every((g) => g.destroyed)).toBe(true);
   });
