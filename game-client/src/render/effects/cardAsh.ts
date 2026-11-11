@@ -131,8 +131,9 @@ export const CARD_ASH = {
   band: { ember: 0.06, char: 0.08 },
   flake: {
     lifeMs: 1000,
-    maxParticles: 300,
-    density: 0.1,
+    // the owner's fourth tune of 2026-11-12, "灰燼 碎屑少２０％": a fifth fewer (was 300 and 0.1)
+    maxParticles: 240,
+    density: 0.08,
     shapes: 24,
     lengthPx: { from: 3, to: 14 },
     smallBias: 1.2,
