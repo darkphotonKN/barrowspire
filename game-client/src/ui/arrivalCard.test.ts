@@ -118,13 +118,13 @@ afterEach(() => {
 });
 
 describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
-  it("should name the climb's five timings, as they are today, and its depth (R10, R15)", () => {
+  it("should name the climb's five timings, today's but the 3000 ms hold the owner tuned, and its depth (R10, R15)", () => {
     expect(ARRIVAL_CARD).toEqual({
       depth: 960,
       darkHoldMs: 250,
       cardFadeMs: 300,
       viewReturnMs: 900,
-      cardHoldMs: 1400,
+      cardHoldMs: 3000,
       cardLeaveMs: 600,
     });
   });
@@ -200,7 +200,7 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
     card.play(WORDS, { built: true });
 
     expect(fades(parts[0])).toEqual([expect.objectContaining({ duration: 900, delay: 550 })]);
-    expect(leaves().map((t) => t.delay)).toEqual([550 + 1400]);
+    expect(leaves().map((t) => t.delay)).toEqual([550 + 3000]);
   });
 
   it("should hold the dark until told the place is built, then lift less the time waited (R12)", () => {
@@ -214,7 +214,7 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
     card.built();
 
     expect(fades(parts[0])).toEqual([expect.objectContaining({ duration: 900, delay: 450 })]);
-    expect(leaves().map((t) => t.delay)).toEqual([450 + 1400]);
+    expect(leaves().map((t) => t.delay)).toEqual([450 + 3000]);
   });
 
   it("should lift at once, the card's hold still whole, when the place was slow to build (R12)", () => {
@@ -225,7 +225,7 @@ describe("ArrivalCard (FS-PQ2TW §B, §E)", () => {
     card.built();
 
     expect(fades(parts[0])).toEqual([expect.objectContaining({ delay: 0 })]);
-    expect(leaves().map((t) => t.delay)).toEqual([1400]);
+    expect(leaves().map((t) => t.delay)).toEqual([3000]);
   });
 
   it("should lift once, however often the place says it is built", () => {
@@ -427,7 +427,7 @@ describe("the dark before the words (FS-PQ2TW R11, R13)", () => {
     expect(cardTweens(words, 1)).toEqual([expect.objectContaining({ duration: 300, delay: 0 })]);
     // the view comes back once the card is in
     expect(fades(veil)).toEqual([expect.objectContaining({ duration: 900, delay: 300 })]);
-    expect(leaves().map((t) => t.delay)).toEqual([300 + 1400]);
+    expect(leaves().map((t) => t.delay)).toEqual([300 + 3000]);
   });
 
   it("should count the dark hold from the dark, not from the words", () => {
@@ -454,7 +454,7 @@ describe("the dark before the words (FS-PQ2TW R11, R13)", () => {
 
     // the card is in at 100 + 150 + 300 = 550: 250 left of it at 300
     expect(fades(veil)).toEqual([expect.objectContaining({ delay: 250 })]);
-    expect(leaves().map((t) => t.delay)).toEqual([250 + 1400]);
+    expect(leaves().map((t) => t.delay)).toEqual([250 + 3000]);
   });
 
   it("should re-cover the view on a view change while the dark is alone (R16)", () => {
