@@ -1,6 +1,6 @@
 ---
 id: I-1SEF0-3
-status: open
+status: done
 implements: FS-1SEF0
 blocked_by: [I-1SEF0-2]
 labels: [ready-for-agent]
@@ -24,12 +24,12 @@ figure's point on it lies on the figure; its map is redrawn only when the conten
 
 ## Acceptance Criteria
 
-- [ ] FS-1SEF0 §Acceptance Criteria, the overlay items: its look, depth and input; its placement
+- [x] FS-1SEF0 §Acceptance Criteria, the overlay items: its look, depth and input; its placement
       formula for the player and a watched teammate; its cost (redraws counted while walking, a
       frame-time measurement reported); rebuilt in mode after a floor change.
-- [ ] The guideline's "Map overlay" bullet and `CONTEXT.md`'s terms; no gallery card.
-- [ ] Headless captures of each mode at 1080 × 720 and 1280 × 720, looked at.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] The guideline's "Map overlay" bullet and `CONTEXT.md`'s terms; no gallery card.
+- [x] Headless captures of each mode at 1080 × 720 and 1280 × 720, looked at.
+- [x] Typecheck, lint and the full vitest suite pass.
 
 ## Blocked By
 

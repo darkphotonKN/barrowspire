@@ -360,8 +360,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   on a floor change. Presentation only, never a visibility rule: the server sends what interest
   allows (ADR-0060). On a dungeon floor it takes the place of the indoor blackout.
 - **Minimap**: the top-right HUD map of a dungeon floor: explored regions, the party, and the
-  switch, escape door and stairs once their region is explored. Toggled with M. Not on floors
-  without regions.
+  switch, escape door and stairs once their region is explored. M steps it through its modes,
+  normal, enlarged and the map overlay, and the browser remembers the mode (FS-1SEF0); nothing
+  hides it. Not on floors without regions.
+- **Map overlay** (FS-1SEF0): the minimap's third mode, the floor's map drawn see-through over the
+  whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
+  map while it is up.
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether

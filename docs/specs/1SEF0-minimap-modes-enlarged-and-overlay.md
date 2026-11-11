@@ -54,8 +54,8 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
   (`ui/positionReadout.ts`) stands 4 px inside the shown minimap's bottom-left, else 4 px under the
   column's last line, right-aligned.
 - **What else is at the top** (logical px): the fullscreen button in the canvas's corner, above
-  y 44; the target frame 260 × 46 at y 10, centred (`ui/targetFrame.ts`), the boss's 378 × 64,
-  x 351–729 at width 1080; a notice, 20 px text in 20 × 10 padding centred on (width/2, 100), so
+  y 44; the target frame 260 × 46 at y 10, centred (`ui/targetFrame.ts`), the boss's 378 × 54,
+  ending at y 64, x 351–729 at width 1080 *(Corrected 2026-11-12, I-1SEF0-3's capture: was "378 × 64")*; a notice, 20 px text in 20 × 10 padding centred on (width/2, 100), so
   y 78–122, its width its text's (no wrap), at depth 2000 over the HUD; the climb's floor card about
   the view's middle at depth 950–951. The world arrival card (FS-PQ2TW, branch
   `feat/world-arrival-card`, not on this branch) centres 0.3 of the view's height above its middle,

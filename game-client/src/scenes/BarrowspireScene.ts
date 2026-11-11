@@ -3850,6 +3850,19 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The map overlay on the figure the camera follows (FS-1SEF0 §C.14, §C.19): the player, or the
+   * teammate a resolved player watches. A move of its layers, never a redraw; each frame, after
+   * the figures have moved. In a panel mode the minimap only notes where the figure is.
+   */
+  private followMapOverlay(): void {
+    const minimap = this.dungeon?.minimap;
+    if (!minimap) return;
+    const watched = this.watchedPlayerId === undefined ? undefined : this.otherPlayersPos.get(this.watchedPlayerId);
+    const focus = watched ?? this.playerPos;
+    if (focus) minimap.follow({ x: focus.x, y: focus.y });
+  }
+
+  /**
    * The minimap from this broadcast (FS-SRA9J §E.22–§E.24): the regions explored and visible, the
    * switch, escape door and stairs in them, and the living, in-play members' dots, this client's
    * player apart; a dead or escaped player watching keeps it, their own dot gone. Each layer
@@ -5604,6 +5617,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms
       this.updateOtherPlayersSmooth(time, delta);
+      this.followMapOverlay();
       this.checkBuildingStatus();
       this.updateTargetFrame(delta);
       return;
@@ -5709,6 +5723,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     this.updateOtherPlayersSmooth(time, delta);
+    // the map overlay on the figure just drawn (FS-1SEF0 §C.14)
+    this.followMapOverlay();
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
