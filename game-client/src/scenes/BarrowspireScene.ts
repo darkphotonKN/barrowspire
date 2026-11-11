@@ -25,6 +25,7 @@ import {
   ProjectileState,
 } from "@/types/gameState";
 import { ABILITY_COPY } from "@/ui/abilityCopy";
+import { ArrivalCard } from "@/ui/arrivalCard";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
@@ -32,7 +33,6 @@ import { apiClient } from "@/utils/api";
 import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
-  floorCard,
   floorLabel,
   interactNotice,
   isTopFloor,
@@ -40,6 +40,7 @@ import {
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
+import { placeCard } from "@/ui/placeCard";
 import {
   FALL_CONFIRM,
   nextWatched,
@@ -358,20 +359,6 @@ interface MenuState {
   resolved: boolean;
 }
 
-/**
- * The climb's dark and floor card (FS-F6F88 req 32): over the world and its atmosphere (~900),
- * under the HUD (1000) and notices (2000).
- */
-const FLOOR_VEIL_DEPTH = 950;
-/** How long the view stays dark before the card rises, in ms. */
-const FLOOR_DARK_HOLD_MS = 250;
-/** The card's fade, in ms; it leaves at twice this. */
-const FLOOR_CARD_FADE_MS = 300;
-/** The dark lifting off the new floor, in ms. */
-const FLOOR_VIEW_RETURN_MS = 900;
-/** How long the card holds once up, in ms. */
-const FLOOR_CARD_HOLD_MS = 1400;
-
 /** Health the server already sends, run out: a player's death clip plays on it. */
 const isDead = (player?: { current_health?: number } | null) =>
   player?.current_health !== undefined && player.current_health <= 0;
@@ -684,8 +671,6 @@ export class BarrowspireScene extends Phaser.Scene {
   /** Asks for a floor's map while a snapshot's floor has none (FS-KE075 §H.41). */
   private readonly mapWait = new FloorMapWait();
   private floorMapUnsubscribe?: () => void;
-  /** Lifts a climb's veil once the new floor's map is built (FS-KE075 §H.41); none otherwise. */
-  private veilRelease?: () => void;
 
   // 建築
   private buildings: Building[] = [];
@@ -919,8 +904,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * of a start, so a reconnect builds the party's floor directly with no transition (req 32).
    */
   private lastFloor?: number;
-  /** The dark and the floor card a climb comes back up through; gone once it has faded. */
-  private floorVeil: Phaser.GameObjects.GameObject[] = [];
+  /**
+   * The arrival card a climb comes back up through (FS-PQ2TW R37): the shared piece's, told when
+   * the new floor is built from its map (FS-KE075 §H.41). It lets its own card go at a scene end.
+   */
+  private readonly arrivalCard = new ArrivalCard(this);
 
   constructor() {
     super({ key: "BarrowspireScene" });
@@ -1102,8 +1090,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.markers = "overhead";
     this.shownFloorLabel = null;
     this.lastFloor = undefined;
-    this.floorVeil = [];
-    this.veilRelease = undefined;
     // the next run is sized and built from its own map
     this.mapWidth = 0;
     this.mapHeight = 0;
@@ -3126,7 +3112,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
-    this.relayoutFloorVeil();
+    this.arrivalCard.relayout();
     this.targetFrame?.relayout();
     this.dungeon?.minimap?.place(this.minimapPlace());
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
@@ -3646,9 +3632,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
     if (climb) {
       this.settlePlayers();
-      this.playFloorTransition(state);
+      this.playFloorCard(state);
     }
-    if (building) this.veilRelease?.();
+    if (building) this.arrivalCard.built();
   }
 
   /** This run's floor map as the store holds it, or none: another run's is not ours to build. */
@@ -3679,7 +3665,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.buildDressing(state);
     this.stampLights(state.floor);
     this.explore(state);
-    this.veilRelease?.();
+    this.arrivalCard.built();
   }
 
   /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
@@ -4061,83 +4047,16 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** The climb's dark and its card, over the whole view and about its centre again (FS-ZAJMH R13). */
-  private relayoutFloorVeil(): void {
-    const [veil, ...card] = this.floorVeil;
-    if (!veil?.active) return;
-    (veil as Phaser.GameObjects.Rectangle).setSize(viewport.width, viewport.height);
-    for (const obj of card) (obj as Phaser.GameObjects.Text | Phaser.GameObjects.Graphics).setX(viewport.centerX);
-    crispen(card);
-  }
-
   /**
-   * The climb's transition (FS-F6F88 req 32): the view drops to dark over the floor just built,
-   * then comes back up with the floor card. Presentation only: state has already applied and
-   * keeps applying under it. It sits below the HUD, so the floor indicator and the new floor's
-   * notices stay readable through it.
+   * The climb's floor card (FS-F6F88 req 32), played through the shared arrival card: the view
+   * drops to dark over the floor just built and comes back up with the floor's words, held dark
+   * until the floor is built from its map (FS-KE075 §H.41).
    */
-  private playFloorTransition(state: ClientGameState): void {
+  private playFloorCard(state: ClientGameState): void {
     if (state.floor === undefined) return;
-    this.floorVeil.forEach((obj) => obj.destroy());
-
-    const { title, line } = floorCard({ floor: state.floor, top: isTopFloor(state) });
-    const veil = this.add.rectangle(0, 0, viewport.width, viewport.height, palette.inkDeep, 1);
-    veil.setOrigin(0, 0).setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH);
-
-    const heading = this.add.text(viewport.centerX, viewport.centerY - 14, title, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "26px",
-      color: toCss(palette.hudText),
-      letterSpacing: 4,
+    this.arrivalCard.play(placeCard({ world: "run", floor: state.floor, top: isTopFloor(state) }), {
+      built: this.builtFloor === state.floor,
     });
-    const rule = this.add.graphics();
-    rule.lineStyle(1, palette.frame, 0.6);
-    rule.lineBetween(-90, viewport.centerY + 8, 90, viewport.centerY + 8);
-    rule.setX(viewport.centerX);
-    const subtitle = this.add.text(viewport.centerX, viewport.centerY + 26, line, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "15px",
-      fontStyle: "italic",
-      color: toCss(palette.hudLabel),
-    });
-    const card = [heading, rule, subtitle];
-    heading.setOrigin(0.5);
-    subtitle.setOrigin(0.5);
-    card.forEach((obj) => obj.setScrollFactor(0).setDepth(FLOOR_VEIL_DEPTH + 1).setAlpha(0));
-    this.floorVeil = [veil, ...card];
-
-    this.tweens.add({
-      targets: card,
-      alpha: 1,
-      duration: FLOOR_CARD_FADE_MS,
-      delay: FLOOR_DARK_HOLD_MS,
-    });
-    // the view comes back up only over a built floor: a climb whose map has not come keeps the
-    // dark until it is built, then lifts as it would have, less the time already waited (§H.41)
-    const shownAt = this.time.now;
-    const lift = () => {
-      this.veilRelease = undefined;
-      const waited = this.time.now - shownAt || 0;
-      const hold = Math.max(0, FLOOR_DARK_HOLD_MS + FLOOR_CARD_FADE_MS - waited);
-      this.tweens.add({
-        targets: veil,
-        alpha: 0,
-        duration: FLOOR_VIEW_RETURN_MS,
-        delay: hold,
-      });
-      this.tweens.add({
-        targets: card,
-        alpha: 0,
-        duration: FLOOR_CARD_FADE_MS * 2,
-        delay: hold + FLOOR_CARD_HOLD_MS,
-        onComplete: () => {
-          this.floorVeil.forEach((obj) => obj.destroy());
-          this.floorVeil = [];
-        },
-      });
-    };
-    if (this.builtFloor === state.floor) lift();
-    else this.veilRelease = lift;
   }
 
   /** "Floor N" from the broadcast, redrawn only when it changes; hidden without floors. */
@@ -4842,7 +4761,7 @@ export class BarrowspireScene extends Phaser.Scene {
         lastHit: this.lastHit.current(this.time.now),
       });
     }
-    const covered = this.spectateHud !== undefined || this.floorVeil.length > 0;
+    const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
   }
 
