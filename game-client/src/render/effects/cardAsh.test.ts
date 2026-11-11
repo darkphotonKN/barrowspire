@@ -181,6 +181,32 @@ function ashStage({ reduced = false, canvases: canMake = true } = {}) {
   return { scene, made, canvases, tweens, timers, anims, logger, ash, gone, emitters, images, config, sparkConfig, burn, front };
 }
 
+type Op = { onEmit?(p: object, key: string): number; onUpdate?(p: object, key: string, t: number, value: number): number };
+
+/**
+ * Fires `p` as Phaser 4.2.1 fires a particle (`Particle.fire`): each op's onEmit in the engine's
+ * order, lifespan, scaleX, scaleY, rotate, the heading, alpha, tint. The emitter fires a dead
+ * particle again from its pool (`ParticleEmitter.emitParticle`: `dead.pop()`), so a reused one is
+ * the same object fired twice. Returns what each op gave.
+ */
+function fire(config: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig, p: object): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of ["lifespan", "scaleX", "scaleY", "rotate", "angle", "alpha", "tint"]) {
+    const op = (config as Record<string, unknown>)[key] as Op | undefined;
+    if (op && typeof op === "object" && op.onEmit) out[key] = op.onEmit(p, key);
+  }
+  return out;
+}
+
+/** Lives `p` from `from` to `to` of its life as the engine updates it (`Particle.update`): each op's onUpdate a step. */
+function live(config: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig, p: object, values: Record<string, number>, from = 0, to = 1): void {
+  for (let t = from + 0.02; t <= to + 1e-4; t += 0.02)
+    for (const key of ["x", "scaleY", "rotate", "alpha", "tint"]) {
+      const op = (config as Record<string, unknown>)[key] as Op | undefined;
+      if (op && typeof op === "object" && op.onUpdate) values[key] = op.onUpdate(p, key, Math.min(t, 1), values[key] ?? 0);
+    }
+}
+
 /** The card's three pieces as the ash takes them: they can be hidden. */
 const letters = () => [0, 1, 2].map(() => ({ setVisible: vi.fn() }));
 
@@ -722,6 +748,28 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(config().scaleX).toBe(1);
     });
 
+    it("should pick a reused flake's flutter afresh: fired again from the pool, it takes nothing of its last life and does not jump (R56)", () => {
+      const { config } = flakes();
+
+      let jumps = 0;
+      for (let n = 0; n < 20; n++) {
+        const p: Record<string | symbol, unknown> = { velocityX: 0, velocityY: -30 };
+        const first = fire(config(), p);
+        live(config(), p, { x: 0 });
+        // dead, and fired again: the engine's pool hands back the same object
+        const again = fire(config(), p);
+
+        // a turn, a turning over and a sway of its own
+        expect(again.rotate, `flake ${n}`).not.toBe(first.rotate);
+        expect(again.scaleY, `flake ${n}`).not.toBe(first.scaleY);
+        // its first frame sways it by a frame's worth (at most 4 px × 2π/900 ms × 10 ms), never by
+        // what its last life had swayed it
+        const x = (config().x as Op).onUpdate!(p, "x", 0.02, 0);
+        if (Math.abs(x) > 0.3) jumps++;
+      }
+      expect(jumps).toBe(0);
+    });
+
     it("should sway gently sideways as it rises, at most 4 px off its path", () => {
       const { config } = flakes();
       const angle = config().angle as { onEmit(p: object, key: string): number };
@@ -1051,6 +1099,21 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
       expect(calls.reduce((n, [count]) => n + count, 0)).toBe(want);
     });
 
+    it("should pick a reused spark's flicker afresh: fired again from the pool, it takes nothing of its last life (R64)", () => {
+      const { sparkConfig } = sparks();
+
+      for (let n = 0; n < 20; n++) {
+        const p = { lifeT: 0, life: 450 };
+        const first = fire(sparkConfig(), p);
+        live(sparkConfig(), p, { alpha: first.alpha, tint: first.tint });
+        const again = fire(sparkConfig(), p);
+
+        // its light beats from a phase of its own: born at another brightness under the same fall
+        expect(again.alpha, `spark ${n}`).not.toBe(first.alpha);
+        expect(again.tint).toBe(BARROW_HEX.fireHot);
+      }
+    });
+
     it("should let each go off the front, from ink the front has reached", () => {
       const { emitted } = sparks(stubText(Array(20).fill("#".repeat(60))));
 
@@ -1157,8 +1220,8 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(burns.map((c) => c.removed)).toEqual([true, false]);
   });
 
-  it("should let go of the ash without touching the scene once it has ended", () => {
-    const { ash, gone, made, timers, front } = ashStage();
+  it("should let go of the ash without touching the scene once it has ended, but take its burn texture out of the game's (R60)", () => {
+    const { ash, gone, made, timers, front, burn, canvases } = ashStage();
     ash.play(cardInk(), 961, gone);
 
     ash.forget();
@@ -1167,6 +1230,10 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(made.some((m) => m.destroyed)).toBe(false);
     expect(timers[0].removed).toBe(false);
     expect(front().stopped).toBe(false);
+    // the TextureManager is the game's and outlives the scene: a burn ended mid-way by the scene's
+    // end leaves no `cardAsh-burn-<n>` behind; the flakes' sheet is kept for the next card
+    expect(burn().removed).toBe(true);
+    expect(canvases.filter((c) => c.frames.length > 0).every((c) => !c.removed)).toBe(true);
   });
 
   it("should not burn and touch no letter under reduced motion, and log nothing (R60)", () => {
