@@ -26,9 +26,6 @@ export interface WallFoot {
   height: number;
 }
 
-/** What a wall is built of in the bake: it decides how thick its pieces stand. */
-export type WallMaterial = keyof typeof BAKE.WALL_FOOT;
-
 /** Walls as they are drawn: what of `planWalls`' pieces and posts a shadow is cast from. */
 export interface DrawnWalls {
   pieces: readonly Pick<WallPiece, "axis" | "at" | "keep" | "height">[];
@@ -80,10 +77,12 @@ function hull(points: readonly Point[]): Point[] {
 /**
  * The feet drawn walls stand on (R13, R15–R17): one for every stretch of pieces that stand end to
  * end on one line at one height, as long as the pieces are (a trimmed piece to where it ends) and
- * as thick as the bake builds the material; then one square for every post, by its own height.
- * Pieces across a gap, on two lines or of two heights are separate feet.
+ * `thickness` thick, centred on the pieces' line; then one square for every post, by its own
+ * height. Pieces across a gap, on two lines or of two heights are separate feet. `thickness` is
+ * the material's, in world px (`thicknessPx`): on a dungeon floor, where a piece's centre is half
+ * a thickness into its wall cell, a run's foot is the strip from its edge to one thickness behind.
  */
-export function wallFeet(walls: DrawnWalls, material: WallMaterial): WallFoot[] {
+export function wallFeet(walls: DrawnWalls, thickness: number): WallFoot[] {
   const spans = walls.pieces
     .map((p) => {
       const from = p.at[p.axis] - T / 2;
@@ -106,7 +105,7 @@ export function wallFeet(walls: DrawnWalls, material: WallMaterial): WallFoot[] 
     else stretches.push({ ...s });
   }
 
-  const wall = (BAKE.WALL_FOOT[material] * T) / 2;
+  const wall = thickness / 2;
   const post = (BAKE.POST_FOOT * T) / 2;
   return [
     ...stretches.map(({ axis, line, from, to, height }) =>
@@ -126,6 +125,6 @@ export function wallFeet(walls: DrawnWalls, material: WallMaterial): WallFoot[] 
  * The ground shadows of drawn walls: one shape per foot (`wallFeet`), so one per run of a height
  * and one per post, each a closed polygon in world px (`castShadow`).
  */
-export function planWallShadows(walls: DrawnWalls, material: WallMaterial): Point[][] {
-  return wallFeet(walls, material).map(castShadow);
+export function planWallShadows(walls: DrawnWalls, thickness: number): Point[][] {
+  return wallFeet(walls, thickness).map(castShadow);
 }

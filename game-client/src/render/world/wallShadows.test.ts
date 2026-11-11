@@ -4,10 +4,13 @@ import { BAKE } from "./bake";
 import type { FloorRegion, WallState } from "@/types/gameState";
 import { RegionGrid, dungeonWalls, wallPlan, type DungeonMap, type EdgeRun } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
-import { MASONRY_WALLS, TIMBER_WALLS, planWalls, wallward, type WallHeight, type WallPiece } from "./walls";
+import { MASONRY_WALLS, TIMBER_WALLS, planWalls, thicknessPx, wallward, type WallHeight, type WallPiece } from "./walls";
 import { castOffset, castShadow, planWallShadows, wallFeet, type WallFoot } from "./wallShadows";
 
 const T = WORLD_PX_PER_TILE;
+/** How thick each material's wall stands, world px: as its sheets say. */
+const TIMBER = thicknessPx(TIMBER_WALLS);
+const MASONRY = thicknessPx(MASONRY_WALLS);
 
 /** A polygon's corners in a fixed order, rounded, so two outlines of one shape compare equal. */
 const corners = (shape: readonly Point[]) =>
@@ -100,8 +103,8 @@ describe("the feet of a wall's pieces (FS-V8FT3 §C R13, §D R15, R17)", () => {
     // a wall of no house along world x, 20 thick: its pieces stand on y = 110
     const { pieces } = planWalls([wall(40, 100, n * T, 20)], 1);
     expect(pieces).toHaveLength(n);
-    const feet = wallFeet({ pieces, posts: [] }, "timber");
-    const half = (BAKE.WALL_FOOT.timber * T) / 2;
+    const feet = wallFeet({ pieces, posts: [] }, TIMBER);
+    const half = TIMBER / 2;
     expect(feet).toEqual([
       { min: { x: 40, y: 110 - half }, max: { x: 40 + n * T, y: 110 + half }, height: BAKE.WALL_BACK },
     ]);
@@ -109,15 +112,15 @@ describe("the feet of a wall's pieces (FS-V8FT3 §C R13, §D R15, R17)", () => {
 
   it("should stand a run along world y on its drawn line, as thick as its material", () => {
     const { pieces } = planWalls([wall(100, 40, 20, 4 * T)], 1, MASONRY_WALLS);
-    const half = (BAKE.WALL_FOOT.masonry * T) / 2;
-    expect(wallFeet({ pieces, posts: [] }, "masonry")).toEqual([
+    const half = MASONRY / 2;
+    expect(wallFeet({ pieces, posts: [] }, MASONRY)).toEqual([
       { min: { x: 110 - half, y: 40 }, max: { x: 110 + half, y: 40 + 4 * T }, height: BAKE.WALL_BACK },
     ]);
   });
 
   it("should cast a wall 2.75 tiles long from a foot 2.75 tiles long", () => {
     const { pieces } = planWalls([wall(0, 0, 2.75 * T, 20)], 1);
-    const [foot] = wallFeet({ pieces, posts: [] }, "timber");
+    const [foot] = wallFeet({ pieces, posts: [] }, TIMBER);
     expect(foot.min.x).toBe(0);
     expect(foot.max.x).toBeCloseTo(2.75 * T, 9);
   });
@@ -127,7 +130,7 @@ describe("the feet of a wall's pieces (FS-V8FT3 §C R13, §D R15, R17)", () => {
     // tiles 0-1 full height, 2-4 cut away, 5 full height again
     const heights: WallHeight[] = ["back", "back", "front", "front", "front", "back"];
     const mixed: WallPiece[] = pieces.map((p, k) => ({ ...p, height: heights[k] }));
-    const feet = wallFeet({ pieces: mixed, posts: [] }, "timber");
+    const feet = wallFeet({ pieces: mixed, posts: [] }, TIMBER);
     expect(feet.map((f) => [f.min.x, f.max.x, f.height])).toEqual([
       [0, 2 * T, BAKE.WALL_BACK],
       [2 * T, 5 * T, BAKE.WALL_FRONT],
@@ -138,7 +141,7 @@ describe("the feet of a wall's pieces (FS-V8FT3 §C R13, §D R15, R17)", () => {
   it("should not join pieces across a gap, nor pieces of two lines", () => {
     // a south wall with a door gap, and a second wall one tile south of it
     const { pieces } = planWalls([wall(0, 0, 2 * T, 20), wall(4 * T, 0, 2 * T, 20), wall(0, T, 6 * T, 20)], 1);
-    const feet = wallFeet({ pieces, posts: [] }, "timber");
+    const feet = wallFeet({ pieces, posts: [] }, TIMBER);
     expect(feet.map((f) => [f.min.x, f.max.x, (f.min.y + f.max.y) / 2])).toEqual([
       [0, 2 * T, 10],
       [4 * T, 6 * T, 10],
@@ -150,8 +153,8 @@ describe("the feet of a wall's pieces (FS-V8FT3 §C R13, §D R15, R17)", () => {
     const { pieces } = planWalls([wall(40, 100, 3 * T, 20)], 1);
     // the same run drawn 17 px south and 9 px east of the rect's centreline
     const moved = pieces.map((p) => ({ ...p, at: { x: p.at.x + 9, y: p.at.y + 17 } }));
-    const [was] = wallFeet({ pieces, posts: [] }, "timber");
-    const [now] = wallFeet({ pieces: moved, posts: [] }, "timber");
+    const [was] = wallFeet({ pieces, posts: [] }, TIMBER);
+    const [now] = wallFeet({ pieces: moved, posts: [] }, TIMBER);
     expect(now.min).toEqual({ x: was.min.x + 9, y: was.min.y + 17 });
     expect(now.max).toEqual({ x: was.max.x + 9, y: was.max.y + 17 });
   });
@@ -165,7 +168,7 @@ describe("the feet of a wall's posts (FS-V8FT3 §D R16)", () => {
       1,
     );
     expect(plan.posts).toHaveLength(4);
-    const feet = wallFeet({ pieces: [], posts: plan.posts }, "timber");
+    const feet = wallFeet({ pieces: [], posts: plan.posts }, TIMBER);
     const half = (BAKE.POST_FOOT * T) / 2;
     expect(feet).toEqual(
       plan.posts.map((p) => ({
@@ -181,11 +184,11 @@ describe("the feet of a wall's posts (FS-V8FT3 §D R16)", () => {
 describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
   it("should cast one hull per run of a three-piece back wall, 50.9 px along +x and -y, and one per post", () => {
     const plan = planWalls([wall(40, 100, 3 * T, 20)], 1, TIMBER_WALLS);
-    const shapes = planWallShadows(plan, "timber");
+    const shapes = planWallShadows(plan, TIMBER);
     expect(shapes).toHaveLength(1 + plan.posts.length);
-    expect(shapes.map(corners)).toEqual(wallFeet(plan, "timber").map((f) => corners(castShadow(f))));
+    expect(shapes.map(corners)).toEqual(wallFeet(plan, TIMBER).map((f) => corners(castShadow(f))));
     const run = shapes[0];
-    const half = (BAKE.WALL_FOOT.timber * T) / 2;
+    const half = TIMBER / 2;
     expect(Math.max(...run.map((p) => p.x)) - (40 + 3 * T)).toBeCloseTo(50.9, 1);
     expect(110 - half - Math.min(...run.map((p) => p.y))).toBeCloseTo(50.9, 1);
   });
@@ -201,10 +204,10 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
       wall(6 * CELL, 2 * CELL, CELL, 4 * CELL),
       wall(1 * CELL, 6 * CELL, 6 * CELL, CELL),
     ];
-    const THICK = BAKE.WALL_FOOT.masonry * T;
+    const THICK = MASONRY;
     const plan = wallPlan(walls, grid, THICK);
     const drawn = dungeonWalls(plan, grid, 1, MASONRY_WALLS);
-    const feet = wallFeet(drawn, "masonry");
+    const feet = wallFeet(drawn, MASONRY);
 
     /**
      * A run's foot (FS-XK2B6 §I.27): the strip from its edge line to one thickness on its wall
@@ -228,7 +231,7 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
       expect(plan.posts).toHaveLength(4);
       expect(drawn.pieces).toHaveLength(4 * 4 * 2);
       expect(runsOf(feet)).toHaveLength(4);
-      expect(planWallShadows(drawn, "masonry")).toHaveLength(8);
+      expect(planWallShadows(drawn, MASONRY)).toHaveLength(8);
     });
 
     it("should stand each run's foot on its edge, one thickness into its wall cells, from end to end", () => {
@@ -262,7 +265,7 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
           .sort(),
       );
       // the masonry post's foot is exactly where its two walls' feet cross
-      expect(BAKE.POST_FOOT).toBe(BAKE.WALL_FOOT.masonry);
+      expect(BAKE.POST_FOOT * T).toBeCloseTo(MASONRY, 9);
     });
 
     describe("the sample floor (dungeon.fixture.json)", () => {
@@ -270,7 +273,7 @@ describe("a plan's wall shadows (FS-V8FT3 §D)", () => {
       const floor = new RegionGrid(sample);
       const samplePlan = wallPlan(sample.walls, floor, THICK);
       const sampleDrawn = dungeonWalls(samplePlan, floor, 7, MASONRY_WALLS);
-      const sampleFeet = wallFeet(sampleDrawn, "masonry");
+      const sampleFeet = wallFeet(sampleDrawn, MASONRY);
 
       it("should give every edge run exactly one foot, its strip, and every post one", () => {
         expect(runsOf(sampleFeet).map(key).sort()).toEqual(samplePlan.runs.map(stripOf).map(key).sort());

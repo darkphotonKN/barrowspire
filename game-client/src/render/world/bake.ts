@@ -30,7 +30,10 @@ export const BAKE = {
   SHADOW_COLOR: 0,
   /** How dark a baked ground shadow is: the catcher's opacity. */
   SHADOW_OPACITY: 0.5,
-  /** How thick a wall piece stands on the ground, by material, in tile edges. */
+  /**
+   * How thick a wall piece stands on the ground, by material, in tile edges: the one place the
+   * client holds it. A material's sheets name their entry (`WallSheets.thickness`).
+   */
   WALL_FOOT: { timber: 0.18, masonry: 0.24 },
   /** The side of a corner post's square foot, in tile edges. */
   POST_FOOT: 0.24,
