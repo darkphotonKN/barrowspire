@@ -3098,7 +3098,7 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
     serverDoors: Map<string, { sprite?: Made }>;
     checkBuildingStatus(): void;
   }
-  // room r1 spans x 100–340, y 100–300 in 20 px walls, a 50 px door gap in its south wall, as the
+  // room r1 spans x 100–340, y 100–300 in 20 px walls, an 80 px door gap in its south wall, as the
   // server builds a room (`AddBuilding`); room r2 stands beside it, and a wall of no room in the halls
   const IN_ROOM = at(220, 200);
   const IN_HALL = at(220, 420);
@@ -3106,13 +3106,13 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
   // nearer the viewer than every room's footprint: nothing of them can cover the player
   const IN_FRONT = at(400, 800);
   const room = (id: string, x: number, prefix: string) => {
-    const side = (240 - 50) / 2;
+    const side = (240 - 80) / 2;
     return [
       { entity_id: `${prefix}n`, house_id: id, position: at(x, 100), width: 240, height: 20 },
       { entity_id: `${prefix}w`, house_id: id, position: at(x, 100), width: 20, height: 200 },
       { entity_id: `${prefix}e`, house_id: id, position: at(x + 220, 100), width: 20, height: 200 },
       { entity_id: `${prefix}sl`, house_id: id, position: at(x, 280), width: side, height: 20 },
-      { entity_id: `${prefix}sr`, house_id: id, position: at(x + side + 50, 280), width: side, height: 20 },
+      { entity_id: `${prefix}sr`, house_id: id, position: at(x + side + 80, 280), width: side, height: 20 },
     ];
   };
   const HALL_WALL = { entity_id: "hall", house_id: "", position: at(100, 500), width: 300, height: 20 };
@@ -3123,8 +3123,8 @@ describe("BarrowspireScene Spire closed rooms: exteriors, caps, room doors and t
       ...floorState(floor),
       walls: [...room(`r1_${floor}`, x, `a${floor}`), ...room(`r2_${floor}`, x + 400, `b${floor}`), HALL_WALL],
       doors: [
-        { entity_id: `d1_${floor}`, position: at(x + 95, 280), width: 50, height: 20, is_open: open },
-        { entity_id: `d2_${floor}`, position: at(x + 495, 280), width: 50, height: 20, is_open: false },
+        { entity_id: `d1_${floor}`, position: at(x + 80, 280), width: 80, height: 20, is_open: open },
+        { entity_id: `d2_${floor}`, position: at(x + 480, 280), width: 80, height: 20, is_open: false },
       ],
     } as GameState;
   };

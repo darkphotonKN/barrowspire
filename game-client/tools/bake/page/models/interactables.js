@@ -9,7 +9,15 @@ import { glow, materials, pixelTexture, plain, textured } from "../materials.js"
 import { joint, part, scaled, V3 } from "./util.js";
 
 const DOOR_H = 2.4;
-const DOOR_W = 0.84;
+/** A door gap: 80 world px of a 40 px tile, two tiles (game-service `runDoorWidth`, FS-MMA2H). */
+export const DOOR_GAP = 80 / 40;
+/** The oak frame's posts, and the clearance the frame leaves to the wall's jamb on each side. */
+const FRAME = 0.1;
+const CLEAR = 0.105;
+/** The leaf: what the gap leaves inside the frame, 63.6 world px. One leaf, hinged at its west end. */
+const DOOR_W = DOOR_GAP - 2 * (FRAME + CLEAR);
+/** A plank's width, about: a wider leaf has more planks, not wider ones. */
+const PLANK = 0.17;
 
 function padlock(M, open) {
   const g = new THREE.Group();
@@ -31,14 +39,14 @@ export function door(state, axis) {
   const M = materials();
   const g = new THREE.Group();
   for (const sx of [-1, 1])
-    g.add(part(new THREE.BoxGeometry(0.1, DOOR_H + 0.1, 0.24), M.beam, { x: sx * (DOOR_W / 2 + 0.05), y: (DOOR_H + 0.1) / 2 }));
+    g.add(part(new THREE.BoxGeometry(FRAME, DOOR_H + 0.1, 0.24), M.beam, { x: sx * (DOOR_W / 2 + FRAME / 2), y: (DOOR_H + 0.1) / 2 }));
   g.add(part(new THREE.BoxGeometry(DOOR_W + 0.3, 0.14, 0.26), M.beam, { y: DOOR_H + 0.12 }));
   g.add(part(new THREE.BoxGeometry(DOOR_W + 0.2, 0.05, 0.3), M.stone, { y: 0.025 }));
 
   const hinge = joint(g, -DOOR_W / 2, 0, 0);
   const leaf = new THREE.Group();
   hinge.add(leaf);
-  const planks = 5;
+  const planks = Math.round(DOOR_W / PLANK);
   const pw = DOOR_W / planks;
   const R = rng(axis === "x" ? 31 : 37);
   for (let i = 0; i < planks; i++)

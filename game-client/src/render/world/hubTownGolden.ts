@@ -5,8 +5,9 @@
  *
  * `hubTown.golden.json` is written by the Go test that holds hub_map.go to it
  * (internal/game/hub_town_golden_test.go, `-update` to rewrite) and is never hand-edited. The
- * client's own copies of the town (HUB_FURNISHINGS, HUB_FIXED_RESIDENTS) are held to it by
- * `hubInteriors.test.ts`, and the test suites build their walls from it, so a server change to
+ * client's own copies of the town are held to it (HUB_FURNISHINGS and HUB_FIXED_RESIDENTS by
+ * `hubInteriors.test.ts`, HUB_DOOR_SPURS by `hubKeepOut.test.ts`), and the test suites build
+ * their walls from it, door gaps included, so a server change to
  * the town fails one side or the other until both agree.
  *
  * Pure data, no Phaser. Read by tests; the scene takes its walls from the server.
@@ -23,6 +24,11 @@ export interface TownRect {
 
 export interface TownBuilding extends TownRect {
   name: string;
+  /**
+   * The gap in its south wall as the server cuts it: the south wall's own rect between its two
+   * segments. Centred, save the Inn's, which stands against its partition (ADR-0073).
+   */
+  doorGap: TownRect;
   /**
    * The wall dividing its rooms as walled: its segments either side of the door gap, each
    * reaching the footprint's edge end on. Empty for a one-room building.

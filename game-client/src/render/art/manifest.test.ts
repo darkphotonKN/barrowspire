@@ -1731,13 +1731,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
 
     it.each(HEADS)(
-      "%s closes a door gap from the door's lintel to the wall top: as tall above the ground as a back wall, wider than one tile",
+      "%s closes an 80 px door gap from the door's lintel to the wall top: as tall above the ground as a back wall, two tiles wide (FS-MMA2H R17, R18)",
       (name) => {
         const s = sheet(name);
         const back = sheet(`${name.startsWith("tower_") ? "tower_" : ""}wall_back_plain_${name.slice(-1)}`);
         expect(Object.keys(s.animations)).toEqual(["default"]);
-        expect(Math.abs(above(s) - above(back))).toBeLessThanOrEqual(3);
-        expect(s.frameWidth).toBeGreaterThan(back.frameWidth);
+        // a tile longer than a wall piece: half a tile more to each side of its anchor, so on
+        // screen it reaches that much further across and its far top corner that much further up
+        const half = worldToScreen((80 - WORLD_PX_PER_TILE) / 2, 0);
+        expect(Math.abs(above(s) - half.y - above(back))).toBeLessThanOrEqual(3);
+        expect(Math.abs(s.frameWidth - 2 * half.x - back.frameWidth)).toBeLessThanOrEqual(3);
       },
     );
 

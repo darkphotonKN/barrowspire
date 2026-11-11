@@ -31,13 +31,13 @@ const wall = (
   height,
 });
 
-/** AddBuilding's run house: 300×200, walls 20 thick, a 50-wide door gap in the south wall. */
+/** AddBuilding's run house: 300×200, walls 20 thick, an 80-wide door gap in the south wall. */
 const runHouse = (bx: number, by: number) => [
   wall(bx, by, 300, 20, "h"),
   wall(bx, by, 20, 200, "h"),
   wall(bx + 280, by, 20, 200, "h"),
-  wall(bx, by + 180, 125, 20, "h"),
-  wall(bx + 175, by + 180, 125, 20, "h"),
+  wall(bx, by + 180, 110, 20, "h"),
+  wall(bx + 190, by + 180, 110, 20, "h"),
 ];
 
 describe("sideOf / heightOf", () => {
@@ -134,8 +134,8 @@ describe("planWalls", () => {
     expect(at(390, 70)).toBe("post_back"); // NE: north (back) meets east (front)
     expect(at(110, 250)).toBe("post_back"); // SW: west (back) meets south (front)
     expect(at(390, 250)).toBe("post_front"); // SE: east + south, both cut away
-    expect(at(215, 250)).toBe("post_front"); // door jambs
-    expect(at(285, 250)).toBe("post_front");
+    expect(at(200, 250)).toBe("post_front"); // door jambs
+    expect(at(300, 250)).toBe("post_front");
   });
 
   it("should name the server wall every piece and post belongs to, so they go with it", () => {
@@ -168,13 +168,13 @@ describe("planWalls", () => {
 describe("planWalls with masonry sheets (FS-8RBQY §B.2)", () => {
   /** The server's three rooms (small, medium, large), walls 20 thick, door gap in the south. */
   const room = (bx: number, by: number, bw: number, bh: number, id: string) => {
-    const gap = (bw - 50) / 2;
+    const gap = (bw - 80) / 2;
     return [
       wall(bx, by, bw, 20, id),
       wall(bx, by, 20, bh, id),
       wall(bx + bw - 20, by, 20, bh, id),
       wall(bx, by + bh - 20, gap, 20, id),
-      wall(bx + gap + 50, by + bh - 20, gap, 20, id),
+      wall(bx + gap + 80, by + bh - 20, gap, 20, id),
     ];
   };
   const floor = [
@@ -378,7 +378,7 @@ describe("unlitSheets (the Inn's walls: lit only by its hearth, candelabra and l
 
 describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", () => {
   // the Inn's partition inside the room, either side of its door gap
-  const partition = [wall(505, 70, 20, 175, "inn"), wall(505, 295, 20, 175, "inn")];
+  const partition = [wall(505, 70, 20, 160, "inn"), wall(505, 310, 20, 160, "inn")];
 
   it("should cut it low, in masonry, with no sconce: the camera sees over it into both rooms", () => {
     const { pieces, posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
@@ -393,7 +393,7 @@ describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", 
   it("should post both jambs of its door gap", () => {
     const { posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
     const ys = posts.map((p) => p.at.y).sort((a, b) => a - b);
-    // each segment's ends, inset by half its thickness: the gap's jambs at 235 and 305
-    expect(ys).toEqual([80, 235, 305, 460]);
+    // each segment's ends, inset by half its thickness: the gap's jambs at 220 and 320
+    expect(ys).toEqual([80, 220, 320, 460]);
   });
 });

@@ -165,13 +165,13 @@ const wall = (x: number, y: number, width: number, height: number, house_id?: st
   width,
   height,
 });
-/** A 300 × 200 building, walls 20 thick, a centred 50 door gap in the south wall. */
+/** A 300 × 200 building, walls 20 thick, a centred 80 door gap in the south wall. */
 const HOUSE = [
   wall(100, 60, 300, 20, "h"),
   wall(100, 60, 20, 200, "h"),
   wall(380, 60, 20, 200, "h"),
-  wall(100, 240, 125, 20, "h"),
-  wall(275, 240, 125, 20, "h"),
+  wall(100, 240, 110, 20, "h"),
+  wall(290, 240, 110, 20, "h"),
 ];
 
 describe("addBuildings (FS-9PN7X §B)", () => {
@@ -217,7 +217,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
     const at = worldToScreen(250, 250);
     for (const door of [...doorsIn(b.exterior), ...doorsIn(b.interior)]) {
       expect(recOf(door).args.slice(0, 2)).toEqual([at.x, at.y]);
-      expect(recOf(door).depth).toBe(worldDepth(225, 240, 1));
+      expect(recOf(door).depth).toBe(worldDepth(210, 240, 1));
     }
     // the shut door is seen from outside, so it covers the player; the open one never does
     expect(b.cover.map((c) => c.part)).toContain(doorsIn(b.exterior)[0]);
@@ -241,7 +241,7 @@ describe("addBuildings (FS-9PN7X §B)", () => {
       // standing in the gap and sorted like the door below it
       const at = worldToScreen(250, 250);
       expect(recOf(heads[0]).args.slice(0, 2)).toEqual([at.x, at.y]);
-      expect(recOf(heads[0]).depth).toBe(worldDepth(225, 240, 1));
+      expect(recOf(heads[0]).depth).toBe(worldDepth(210, 240, 1));
       // seen from outside only: it covers the player, and the interior look has none
       expect(b.cover.map((c) => c.part)).toContain(heads[0]);
       expect([...b.shared, ...b.interior].map(sheetOf)).not.toContain("door_head_x");
@@ -342,7 +342,7 @@ describe("addBuildings without art (FS-9PN7X §B.7)", () => {
     const heads = made.filter(
       (m) =>
         m.kind === "graphics" &&
-        (m.calls.fillRect ?? []).some(([x, y, w, h]) => x === 225 && y === 240 && w === 50 && h === 20) &&
+        (m.calls.fillRect ?? []).some(([x, y, w, h]) => x === 210 && y === 240 && w === 80 && h === 20) &&
         (m.calls.fillStyle ?? []).every(([c]) => c === PLACEHOLDER_STONE.top),
     );
     expect(heads).toHaveLength(1);

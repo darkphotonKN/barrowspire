@@ -91,6 +91,7 @@ const { useMailboxStore } = await import("@/stores/mailboxStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
+const { townOutline } = await import("@/render/world/hubTown.fixture");
 const interiors = await import("@/render/world/hubInteriors");
 const walls_ = await import("@/render/world/walls");
 const { sceneSystems } = await import("./sceneEnd.standin");
@@ -2561,16 +2562,10 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     width,
     height,
   });
-  const BUILDING_WALLS = BUILDINGS.flatMap(([id, x, y, w, h]) => {
-    const side = (w - 50) / 2;
-    return [
-      wall(`${id}-n`, id, x, y, w, 20),
-      wall(`${id}-w`, id, x, y, 20, h),
-      wall(`${id}-e`, id, x + w - 20, y, 20, h),
-      wall(`${id}-sw`, id, x, y + h - 20, side, 20),
-      wall(`${id}-se`, id, x + side + 50, y + h - 20, side, 20),
-    ];
-  });
+  const SIDES = ["n", "w", "e", "sw", "se"];
+  const BUILDING_WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, w, h], k) => wall(`${IDS[i]}-${SIDES[k]}`, IDS[i], x, y, w, h)),
+  );
   const PARTITION_WALLS = PARTITIONS.map(([house, x, y, w, h], i) => wall(`p${i}`, house, x, y, w, h));
   const FURNISHING_WALLS = FURNISHINGS.map(([house, x, y, w, h], i) => wall(`f${i}`, house, x, y, w, h));
   const TOWN = [...BUILDING_WALLS, ...PARTITION_WALLS, ...FURNISHING_WALLS];
@@ -2695,8 +2690,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     const walls = call[2] as { entity_id: string; position: { x: number; y: number }; width: number; height: number }[];
     // each segment trimmed to the inner faces of the north and south walls, the door gap between
     expect(walls.map((w) => [w.entity_id, w.position.x, w.position.y, w.width, w.height])).toEqual([
-      ["p0", 505, 70, 20, 175],
-      ["p1", 505, 295, 20, 175],
+      ["p0", 505, 70, 20, 160],
+      ["p1", 505, 310, 20, 160],
     ]);
     expect(call[4]).toBe(walls_.MASONRY_WALLS);
     expect(call[5]).toBe(walls_.INTERIOR_PARTITION);
@@ -2727,8 +2722,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     town(BARE);
     const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
     const inside: [string, number, number, number, number][] = [
-      ["inn", 505, 70, 20, 175],
-      ["inn", 505, 295, 20, 175],
+      ["inn", 505, 70, 20, 160],
+      ["inn", 505, 310, 20, 160],
     ];
     for (const r of inside) {
       const mine = blocks.filter((c) => sameRect(c, r));

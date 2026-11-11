@@ -432,3 +432,5 @@ today.
 - **A debug flag or URL switch** to force the inside state in production code.
 - **New colour tokens.** Canvas tokens only (ADR-0013).
 - **Sourced or stock art.** Everything is authored in code and baked through the existing tool.
+
+## Change: Wider doors → FS-MMA2H

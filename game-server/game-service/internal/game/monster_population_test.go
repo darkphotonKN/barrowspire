@@ -157,7 +157,7 @@ func TestNewRun_PlacesMonstersOnOpenGroundAwayFromDelvers(t *testing.T) {
 // The building footprint is kept out whole, so no monster starts shut inside.
 func TestMapKeepOut_CoversTheWholeBuilding(t *testing.T) {
 	s := rosterOnRun(t, 1)
-	s.AddBuilding(400, 300, 300, 200, 20, 50)
+	s.AddBuilding(400, 300, 300, 200, 20, runDoorWidth)
 
 	keepOut := mapKeepOut(s.EntityManager.GetAllEntities())
 

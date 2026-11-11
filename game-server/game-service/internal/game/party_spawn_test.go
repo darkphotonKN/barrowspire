@@ -202,7 +202,7 @@ func TestGatherParty_SameSeed_PlacesPartyAndMonstersIdentically(t *testing.T) {
 	place := func(seed uint64) (party, monsters []point) {
 		s := rosterOnRun(t, seed, delverAt{level: 1, x: 100, y: 100}, delverAt{level: 1, x: 1300, y: 860}, delverAt{level: 1})
 		// a fixed layout: only the spawn source decides where things stand
-		s.AddBuilding(400, 300, 300, 200, 20, 50)
+		s.AddBuilding(400, 300, 300, 200, 20, runDoorWidth)
 		s.objectOccupiedPlaceAreas = []PlaceArea{{X: 400, Y: 300, W: 300, H: 200}}
 
 		s.gatherParty(0)

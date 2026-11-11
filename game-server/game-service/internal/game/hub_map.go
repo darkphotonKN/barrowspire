@@ -75,8 +75,9 @@ var hubGates = []hubGate{
 // What stands inside a building, its furnishings here and its fixed residents in
 // hubFixedResidents, is placed in absolute world coordinates, not relative to
 // the building: moving a building means moving each of them with it. The client
-// mirrors all three by hand, held to hubTown.golden.json by
-// hub_town_golden_test.go (rewrite it with -update).
+// mirrors all three by hand, and its door spurs follow each door gap by hand,
+// all held to hubTown.golden.json by hub_town_golden_test.go (rewrite it with
+// -update).
 type hubBuilding struct {
 	Name       string
 	X, Y, W, H float64
@@ -94,6 +95,10 @@ type hubBuilding struct {
 // from a furnishing (clear of every edge). X is its west face.
 type hubPartition struct {
 	X float64
+	// The building's street door stands against this wall's east face, its
+	// west jamb flush with it, instead of centred in the south wall: for a
+	// partition that a centred gap would have standing in it (ADR-0073).
+	DoorOnEastFace bool
 }
 
 // hubFurnishing is a keep-out inside a town building that a piece of furniture
@@ -127,11 +132,13 @@ var hubBuildings = []hubBuilding{
 	// the largest, filling the north-west, west of the walk to the Spire and
 	// above the Forest trail. A partition parts the great hall (west) from the
 	// taproom (east), its door at the middle of the Inn's depth. The street door opens
-	// into the taproom: the counter runs north-south by its east wall, the
+	// into the taproom, 15 px east of centre (x 525 to 605): centred, a gap a
+	// run door wide would have the partition standing in it (ADR-0073). The
+	// counter runs north-south by its east wall, the
 	// Alewife behind it, its two tables between the door and the bar. Through
 	// the partition, the long table runs north-south down the great hall, five
 	// places a side, the hearth built into the north wall at its head (R18)
-	{Name: "Inn", X: 230, Y: 50, W: 640, H: 440, Partition: &hubPartition{X: 505}, Furnishings: []hubFurnishing{
+	{Name: "Inn", X: 230, Y: 50, W: 640, H: 440, Partition: &hubPartition{X: 505, DoorOnEastFace: true}, Furnishings: []hubFurnishing{
 		{Kind: "long_table", X: 352, Y: 175, W: 50, H: 240},
 		{Kind: "hall_hearth", X: 300, Y: 70, W: 144, H: 48},
 		{Kind: "counter", X: 715, Y: 190, W: 25, H: 140},
@@ -152,8 +159,9 @@ var hubBuildings = []hubBuilding{
 
 const hubWallThickness = 20
 
-// hubDoorWidth is a town building's door gap: a run house's door width.
-const hubDoorWidth = 50
+// hubDoorWidth is a town building's door gap, in its south wall and in its
+// partition: a run house's door width. FS-MMA2H §Requirements 2.
+const hubDoorWidth = runDoorWidth
 
 // hubResident is an ambient NPC and the quarter they keep to.
 //
@@ -253,14 +261,15 @@ func (s *Session) InitialHubMapObjects() {
 // addHubBuilding walls a town building in, leaving a door gap in its south wall,
 // divides it with its partition, and stands its furnishings inside.
 //
-// The same cut AddBuilding makes for a run house, a run door wide and centred,
-// but with nothing hung in it: a town building is a shop, so there is nothing to
-// open, lock or sync, and the hub keeps no Door component at all. Every wall,
+// The same cut AddBuilding makes for a run house, a run door wide, centred
+// unless the building's partition takes it, but with nothing hung in it: a
+// town building is a shop, so there is nothing to open, lock or sync, and the hub keeps no Door component at all. Every wall,
 // partition and furnishings included, carries the building's house id, so the
 // client rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12.
 func (s *Session) addHubBuilding(building hubBuilding) {
 	houseID := uuid.New()
-	sideOfDoor := (building.W - hubDoorWidth) / 2
+	westOfDoor := doorGapWest(building)
+	eastOfDoor := building.W - westOfDoor - hubDoorWidth
 	southY := building.Y + building.H - hubWallThickness
 
 	walls := []WallConfig{
@@ -271,8 +280,8 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 		// east
 		{X: building.X + building.W - hubWallThickness, Y: building.Y, Width: hubWallThickness, Height: building.H},
 		// south, either side of the door gap
-		{X: building.X, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
-		{X: building.X + sideOfDoor + hubDoorWidth, Y: southY, Width: sideOfDoor, Height: hubWallThickness},
+		{X: building.X, Y: southY, Width: westOfDoor, Height: hubWallThickness},
+		{X: building.X + westOfDoor + hubDoorWidth, Y: southY, Width: eastOfDoor, Height: hubWallThickness},
 	}
 
 	walls = append(walls, partitionWalls(building)...)
@@ -284,6 +293,16 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 	for _, wall := range walls {
 		CreateWallEntity(s.EntityManager, wall, houseID)
 	}
+}
+
+// doorGapWest is how far a building's door gap stands from its west edge:
+// centred in the south wall, unless its partition takes the door against its
+// east face.
+func doorGapWest(building hubBuilding) float64 {
+	if p := building.Partition; p != nil && p.DoorOnEastFace {
+		return p.X + hubWallThickness - building.X
+	}
+	return (building.W - hubDoorWidth) / 2
 }
 
 // partitionWalls is a building's partition as walled: north edge to south edge,
