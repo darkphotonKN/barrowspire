@@ -133,11 +133,11 @@ describe("the dust's start points (FS-PQ2TW R25)", () => {
 });
 
 describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
-  it("should be one typed record, as the owner tuned it the fourth time on 2026-11-12", () => {
+  it("should be one typed record, as the owner tuned it the fifth time on 2026-11-12, a trial", () => {
     expect(CARD_DUST).toEqual({
       durationMs: 1800,
-      maxParticles: 3000,
-      density: 2,
+      maxParticles: 6000,
+      density: 4,
       texture: "fx_dust",
       scale: { from: 0.15, to: 0.15 },
       speed: { from: 50, to: 200 },
@@ -166,7 +166,7 @@ describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
     expect(colours).not.toContain("amber");
     expect(colours).not.toContain("oxblood");
     // the exception, bounded: a drift, not a burst
-    expect(CARD_DUST.maxParticles).toBeLessThanOrEqual(3000);
+    expect(CARD_DUST.maxParticles).toBeLessThanOrEqual(6000);
     expect(CARD_DUST.speed.from).toBeLessThanOrEqual(CARD_DUST.speed.to);
     expect(CARD_DUST.speed.to).toBeLessThanOrEqual(200);
     expect(CARD_DUST.drag).toBeGreaterThan(0);
@@ -244,7 +244,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
       frame: ["fx_dust/idle/0/0"],
       lifespan: 1800,
       speed: { min: 50, max: 200 },
-      maxParticles: 3000,
+      maxParticles: 6000,
       emitting: false,
       scale: { start: 0.15, end: 0.15, ease: "Sine.easeIn" },
       alpha: { start: 1, end: 0, ease: "Sine.easeIn" },
@@ -258,11 +258,11 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     const { dust, gone, emitters, config } = dustStage();
     dust.play(cardInk(), 951, gone);
 
-    // 8 view px² of glyph and 20 px of rule: two motes per px² of ink, under the cap
-    expect(emitters()[0].calls.emitParticle).toEqual([56]);
+    // 8 view px² of glyph and 20 px of rule: four motes per px² of ink, under the cap
+    expect(emitters()[0].calls.emitParticle).toEqual([112]);
     const zone = config().emitZone as { type: string; source: { getRandomPoint(p: { x: number; y: number }): void } };
     expect(zone.type).toBe("random");
-    for (let n = 0; n < 56; n++) {
+    for (let n = 0; n < 112; n++) {
       const p = { x: 0, y: 0 };
       zone.source.getRandomPoint(p);
       const onGlyph = p.x >= 400 && p.x < 404 && p.y >= 280 && p.y < 282;
@@ -271,13 +271,13 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     }
   });
 
-  it("should make at most 3000 motes, however much ink there is (R32)", () => {
+  it("should make at most 6000 motes, however much ink there is (R32)", () => {
     const { dust, gone, emitters } = dustStage();
     const big = stubText(Array(40).fill("#".repeat(300)), { x: 250, y: 260 });
 
     dust.play(cardInk(big), 951, gone);
 
-    expect(emitters()[0].calls.emitParticle).toEqual([3000]);
+    expect(emitters()[0].calls.emitParticle).toEqual([6000]);
   });
 
   it.each([
@@ -291,9 +291,9 @@ describe("CardDust (FS-PQ2TW §D)", () => {
 
     const [emitted] = emitters()[0].calls.emitParticle as [number];
     const ink = rows.length * rows[0].length + 20;
-    // two motes per view px² of ink (glyph and the 20 px rule), capped
-    expect(emitted).toBe(Math.min(2 * ink, 3000));
-    expect(config().maxParticles).toBeLessThanOrEqual(3000);
+    // four motes per view px² of ink (glyph and the 20 px rule), capped
+    expect(emitted).toBe(Math.min(4 * ink, 6000));
+    expect(config().maxParticles).toBeLessThanOrEqual(6000);
     expect((config().speed as { min: number; max: number }).min).toBeGreaterThanOrEqual(50);
     expect((config().speed as { min: number; max: number }).max).toBeLessThanOrEqual(200);
     expect(config().lifespan).toBeLessThanOrEqual(1800);
