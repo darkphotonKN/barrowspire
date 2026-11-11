@@ -115,6 +115,7 @@ and the two are not required to agree (ADR-0025).
 | **Stone** | slate `#3a3d42`, `#54585f` |
 | **Earth / barrow** | browns `#5a4632`, `#3e2f22` |
 | **Torch warmth** (the only real light) | amber `#e8a14d`, ember `#c2611f` |
+| **Fire's ramp** (fire effects only) | fireCore `#f5d98f`, fireHot `#ea7f26`, ember, fireDeep `#8a2913`, hottest first |
 | **Arcane / Lich corruption** | sickly green `#6f8f4a`, necrotic teal `#4a6b6f` |
 | **Umbra / shadow magic** | dusk violet `#3f3452`, lifted `#7d6c99` |
 | **Blood / danger** | oxblood `#6e1f1f` |
@@ -127,6 +128,9 @@ dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, 
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
 One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
+
+**Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
+interactable, which stays amber, and never stands in for a light source's colour.
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel

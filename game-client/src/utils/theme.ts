@@ -39,6 +39,11 @@ export const BARROW = {
   amber: "#e8a14d",
   amberBright: "#f2b866",
   ember: "#c2611f",
+  // Fire's temperature ramp around `ember`, hottest first (FS-PQ2TW, the owner's "火的顏色有辦法擬真一點嗎"):
+  // fire effects only, never an interactable (that is amber).
+  fireCore: "#f5d98f",
+  fireHot: "#ea7f26",
+  fireDeep: "#8a2913",
 
   // Arcane / Lich corruption — sickly green, necrotic blue-green
   arcane: "#6f8f4a",
@@ -110,6 +115,9 @@ export const BARROW_HEX = {
   amber: 0xe8a14d,
   amberBright: 0xf2b866,
   ember: 0xc2611f,
+  fireCore: 0xf5d98f,
+  fireHot: 0xea7f26,
+  fireDeep: 0x8a2913,
   arcane: 0x6f8f4a,
   arcaneDeep: 0x3c5a36,
   necrotic: 0x688b8f,
