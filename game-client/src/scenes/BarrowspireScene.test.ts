@@ -714,10 +714,16 @@ function sceneOnStage() {
   };
   run.tweens = { add: vi.fn(), killTweensOf: vi.fn(), addCounter: vi.fn(finishAtOnce) };
   run.time = { delayedCall: vi.fn() };
-  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes
+  // the fog of war's canvas textures (FS-SRA9J §C.13): each one paints, refreshes and goes; and the
+  // minimap's vignette (FS-56CKV §A.2), a gradient painted once its key is asked for
   (run as unknown as { textures: unknown }).textures = {
+    exists: () => false,
     createCanvas: (_key: string, w: number, h: number) => ({
-      getContext: () => ({ createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }) }),
+      getContext: () => ({
+        createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+        createLinearGradient: () => ({ addColorStop: vi.fn() }),
+        fillRect: vi.fn(),
+      }),
       putData: vi.fn(),
       refresh: vi.fn(),
       setFilter: vi.fn(),

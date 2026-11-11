@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
+import { contrastRatio, relativeLuminance } from "@/render/lighting/lighting";
 import { RegionGrid, type DungeonMap } from "@/render/world/dungeon";
 import fixture from "@/render/world/dungeon.fixture.json";
 import { Exploration, regionAt, type ExplorationState } from "@/render/world/exploration";
-import { palette } from "@/utils/canvasPalette";
+import { palette, rgba } from "@/utils/canvasPalette";
 import {
   MINIMAP,
+  MINIMAP_EDGE,
+  MINIMAP_GLYPH,
+  MINIMAP_VIGNETTE,
   Minimap,
   minimapContent,
   minimapProjection,
   minimapRect,
+  regionEdges,
   type MinimapFixture,
   type MinimapStage,
 } from "./minimap";
 
 // FS-SRA9J §E.19–25 (I-SRA9J-3): the top-right iso minimap of a dungeon floor.
+// FS-56CKV §A (I-56CKV-1): its look, candle-lit stone in its unchanged frame.
 
 const grid = new RegionGrid(fixture as DungeonMap);
 const at = (x: number, y: number) => ({ x, y });
@@ -65,6 +71,10 @@ function fakeGraphics() {
     fillCircle: record("fillCircle"),
     lineStyle: record("lineStyle"),
     strokeRect: record("strokeRect"),
+    beginPath: record("beginPath"),
+    moveTo: record("moveTo"),
+    lineTo: record("lineTo"),
+    strokePath: record("strokePath"),
     setPosition: (x: number, y: number) => ((g.position = at(x, y)), g),
     setDepth: (d: number) => ((g.depth = d), g),
     setScrollFactor: (f: number) => ((g.scrollFactor = f), g),
@@ -75,30 +85,108 @@ function fakeGraphics() {
   });
 }
 
+/** A 2D canvas context as far as a canvas texture is painted: its gradients and the rects filled. */
+function fakeContext() {
+  type Gradient = { from: { x: number; y: number }; to: { x: number; y: number }; stops: [number, string][] };
+  const gradients: Gradient[] = [];
+  const rects: { x: number; y: number; w: number; h: number; fill: unknown }[] = [];
+  const calls: string[] = [];
+  const ctx = {
+    fillStyle: undefined as unknown,
+    createLinearGradient: (x0: number, y0: number, x1: number, y1: number) => {
+      calls.push("createLinearGradient");
+      const grad: Gradient & { addColorStop(at: number, colour: string): void } = {
+        from: at(x0, y0),
+        to: at(x1, y1),
+        stops: [],
+        addColorStop: (offset, colour) => void grad.stops.push([offset, colour]),
+      };
+      gradients.push(grad);
+      return grad;
+    },
+    fillRect: (x: number, y: number, w: number, h: number) => {
+      calls.push("fillRect");
+      rects.push({ x, y, w, h, fill: ctx.fillStyle });
+    },
+  };
+  return { ctx, gradients, rects, calls };
+}
+
+/** A camera-fixed image of a canvas texture, as the stage makes it. */
+function fakeImage(key: string, width: number, height: number) {
+  const g = fakeGraphics();
+  return Object.assign(g, { key, width, height });
+}
+
 function fakeStage() {
   const made: ReturnType<typeof fakeGraphics>[] = [];
+  const images: ReturnType<typeof fakeImage>[] = [];
+  const painted: ReturnType<typeof fakeContext>[] = [];
+  /** What the stage made, in the order it made it: the order Phaser draws a depth's objects in. */
+  const order: string[] = [];
   const stage: MinimapStage = {
     graphics: () => {
       const g = fakeGraphics();
       made.push(g);
+      order.push(`graphics${made.length - 1}`);
       return g;
     },
+    canvasImage: (key, width, height, paint) => {
+      const c = fakeContext();
+      paint(c.ctx as unknown as CanvasRenderingContext2D, width, height);
+      painted.push(c);
+      const image = fakeImage(key, width, height);
+      images.push(image);
+      order.push("image");
+      return image;
+    },
   };
-  return { stage, made };
+  return { stage, made, images, painted, order };
 }
 
-/** A minimap over the fixture floor, with the party's exploration of it. */
-function mapped() {
-  const { stage, made } = fakeStage();
-  const map = new Minimap(stage, grid);
-  const seen = new Exploration(grid);
+/** A minimap over `on` (the fixture floor by default), with the party's exploration of it. */
+function mapped(on: RegionGrid = grid) {
+  const { stage, made, images, painted, order } = fakeStage();
+  const map = new Minimap(stage, on);
+  const seen = new Exploration(on);
   const show = (positions: { x: number; y: number }[], fixtures = FIXTURES) => {
     seen.see(positions);
     map.show((id) => seen.state(id), fixtures);
   };
-  const [panel, dots] = made;
-  return { map, seen, show, panel, dots, made };
+  const [panel, marks, dots] = made;
+  return { map, seen, show, panel, marks, dots, made, images, painted, order };
 }
+
+type Call = { name: string; args: unknown[] };
+/** The whole px a run of `fillRect` calls covers, as "x,y" keys. */
+function pixels(calls: Call[]): Set<string> {
+  const px = new Set<string>();
+  for (const { args } of calls) {
+    const [x, y, w, h] = args as number[];
+    for (let i = x; i < x + w; i++) for (let j = y; j < y + h; j++) px.add(`${i},${j}`);
+  }
+  return px;
+}
+/** The fillRect calls made in each colour, in a layer's last draw. */
+function rectsByColour(drawn: Call[]): Map<number, Call[]> {
+  const by = new Map<number, Call[]>();
+  let colour = -1;
+  for (const c of drawn) {
+    if (c.name === "fillStyle") colour = c.args[0] as number;
+    if (c.name === "fillRect") by.set(colour, [...(by.get(colour) ?? []), c]);
+  }
+  return by;
+}
+const bounds = (px: Set<string>) => {
+  const xs = [...px].map((k) => Number(k.split(",")[0]));
+  const ys = [...px].map((k) => Number(k.split(",")[1]));
+  return { x: Math.min(...xs), y: Math.min(...ys), right: Math.max(...xs) + 1, bottom: Math.max(...ys) + 1 };
+};
+/** The alpha of an `rgba(…)` stop, if it is the ink's. */
+const inkAlpha = (colour: string) => {
+  const a = Number(/,\s*([\d.]+)\)$/.exec(colour)?.[1]);
+  return colour === rgba(palette.inkDeep, a) ? a : NaN;
+};
 
 describe("minimapRect (§E.20, §E.21)", () => {
   it("should hang 216 × 108 from 6 px under the floor indicator, its right edge on the column's", () => {
@@ -171,21 +259,22 @@ describe("minimapContent (§E.22)", () => {
 });
 
 describe("Minimap (§E.19–25)", () => {
-  it("should be HUD: camera-fixed at the HUD's depth, a map layer and a separate dot layer", () => {
-    const { made } = mapped();
-    expect(made).toHaveLength(2);
-    for (const g of made) expect([g.scrollFactor, g.depth]).toEqual([0, MINIMAP.depth]);
+  it("should be HUD: camera-fixed at the HUD's depth, the map, the vignette, the marks and a separate dot layer", () => {
+    const { made, images } = mapped();
+    expect(made).toHaveLength(3);
+    expect(images).toHaveLength(1);
+    for (const g of [...made, ...images]) expect([g.scrollFactor, g.depth]).toEqual([0, MINIMAP.depth]);
     expect(MINIMAP.depth).toBe(1000);
   });
 
-  it("should stand both layers where it is placed, and move them without a redraw", () => {
-    const { map, made, show } = mapped();
+  it("should stand every layer where it is placed, and move them without a redraw", () => {
+    const { map, made, images, show } = mapped();
     map.place(minimapRect(1070, 98));
     show([IN_ROOM]);
     const redraws = map.redraws;
-    expect(made.map((g) => g.position)).toEqual([at(854, 104), at(854, 104)]);
+    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(854, 104)));
     map.place(minimapRect(1270, 98));
-    expect(made.map((g) => g.position)).toEqual([at(1054, 104), at(1054, 104)]);
+    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(1054, 104)));
     expect(map.redraws).toBe(redraws);
   });
 
@@ -229,13 +318,13 @@ describe("Minimap (§E.19–25)", () => {
   });
 
   it("should mark the switch, escape door and stairs in the amber interactable channel once found", () => {
-    const { map, panel, show } = mapped();
+    const { map, marks, show } = mapped();
     show([IN_ROOM]);
     expect(map.content.fixtures).toEqual([]);
-    expect(panel.drawn().some((c) => c.name === "fillStyle" && c.args[0] === palette.interactable)).toBe(false);
+    expect(marks.drawn().some((c) => c.name === "fillStyle" && c.args[0] === palette.interactable)).toBe(false);
     show([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
     expect(map.content.fixtures).toEqual(FIXTURES);
-    expect(panel.drawn().filter((c) => c.name === "fillStyle" && c.args[0] === palette.interactable)).toHaveLength(3);
+    expect(marks.drawn().filter((c) => c.name === "fillStyle" && c.args[0] === palette.interactable)).toHaveLength(3);
   });
 
   it("should redraw the map only when a region's state or a found fixture changes (§E.23)", () => {
@@ -291,14 +380,343 @@ describe("Minimap (§E.19–25)", () => {
     expect(dots.drawn().filter((c) => c.name === "fillCircle")).toEqual([]);
   });
 
-  it("should hide and show both layers together, and go with destroy", () => {
-    const { map, made } = mapped();
+  it("should hide and show every layer together, and go with destroy", () => {
+    const { map, made, images } = mapped();
+    const layers = [...made, ...images];
     map.setShown(false);
-    expect(made.map((g) => g.visible)).toEqual([false, false]);
+    expect(layers.map((g) => g.visible)).toEqual(Array(4).fill(false));
     expect(map.shown).toBe(false);
     map.setShown(true);
-    expect(made.map((g) => g.visible)).toEqual([true, true]);
+    expect(layers.map((g) => g.visible)).toEqual(Array(4).fill(true));
     map.destroy();
-    expect(made.every((g) => g.destroyed)).toBe(true);
+    expect(layers.every((g) => g.destroyed)).toBe(true);
+  });
+});
+
+describe("the minimap's look (FS-56CKV §A)", () => {
+  /** Every fixture found, room 1 left explored, the region around the switch visible, two dots. */
+  const lit = (on = mapped()) => {
+    on.show([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
+    on.show([FIXTURES[0].at]);
+    on.map.party({ self: FIXTURES[0].at, allies: [IN_ROOM] });
+    return on;
+  };
+  /** Within the rim's inside edge: clear of the 1 px rim on every side. */
+  const insideRim = (x: number, y: number, pad = 0) =>
+    x - pad >= 1 && x + pad <= MINIMAP.width - 1 && y - pad >= 1 && y + pad <= MINIMAP.height - 1;
+
+  describe("the frame (§A.1)", () => {
+    it("should draw the backing and rim with today's calls and values, first", () => {
+      const { panel } = lit();
+      expect(panel.drawn().slice(0, 4)).toEqual([
+        { name: "fillStyle", args: [palette.hudPanel, 0.85] },
+        { name: "fillRect", args: [0, 0, 216, 108] },
+        { name: "lineStyle", args: [1, palette.frame, 0.6] },
+        { name: "strokeRect", args: [0, 0, 216, 108] },
+      ]);
+    });
+
+    it("should draw nothing over the rim: every layer keeps inside its inside edge", () => {
+      const { panel, marks, dots, painted } = lit();
+      // the map layer after its rim: region fills and edges (a 1 px line reaches half a px out)
+      for (const c of panel.drawn().slice(4)) {
+        if (c.name === "fillPoints") for (const p of c.args[0] as { x: number; y: number }[]) expect(insideRim(p.x, p.y)).toBe(true);
+        if (c.name === "moveTo" || c.name === "lineTo") expect(insideRim(c.args[0] as number, c.args[1] as number, 0.5)).toBe(true);
+        expect(["fillRect", "strokeRect", "fillCircle"]).not.toContain(c.name);
+      }
+      for (const c of marks.drawn().filter((c) => c.name === "fillRect")) {
+        const [x, y, w, h] = c.args as number[];
+        expect(insideRim(x, y) && insideRim(x + w, y + h)).toBe(true);
+      }
+      for (const c of dots.drawn().filter((c) => c.name === "fillCircle")) {
+        const [x, y, r] = c.args as number[];
+        expect(insideRim(x, y, r)).toBe(true);
+      }
+      for (const r of painted[0].rects) expect(insideRim(r.x, r.y) && insideRim(r.x + r.w, r.y + r.h)).toBe(true);
+    });
+
+    it("should keep a mark and a dot at the floor's very edge clear of the rim", () => {
+      // one region in the corner cell of a 2 × 2 floor: its diamond's top vertex on the inset
+      const corner = new RegionGrid({
+        width: 160,
+        height: 160,
+        cell_size: 80,
+        regions: [{ id: 1, kind: "room", cells: [{ x: 0, y: 0, w: 1, h: 1 }] }],
+        walls: [],
+      } as unknown as DungeonMap);
+      const on = mapped(corner);
+      const edge = at(1, 1);
+      on.show([edge], [{ kind: "stairs", at: edge }]);
+      on.map.party({ self: edge, allies: [edge] });
+      expect(on.map.content.fixtures).toHaveLength(1);
+      for (const c of on.marks.drawn().filter((c) => c.name === "fillRect")) {
+        const [x, y, w, h] = c.args as number[];
+        expect(insideRim(x, y) && insideRim(x + w, y + h)).toBe(true);
+      }
+      for (const c of on.dots.drawn().filter((c) => c.name === "fillCircle")) {
+        const [x, y, r] = c.args as number[];
+        expect(insideRim(x, y, r)).toBe(true);
+      }
+    });
+  });
+
+  describe("the vignette (§A.2, §A.8)", () => {
+    it("should be one canvas texture's image the size of the panel, made once per minimap and never on a content change", () => {
+      const on = lit();
+      expect(on.images).toHaveLength(1);
+      expect([on.images[0].width, on.images[0].height]).toEqual([MINIMAP.width, MINIMAP.height]);
+      expect(on.painted).toHaveLength(1);
+      on.show([ELSEWHERE]);
+      expect(on.map.redraws).toBeGreaterThan(1);
+      expect(on.images).toHaveLength(1);
+      expect(on.painted).toHaveLength(1);
+    });
+
+    it("should be in inkDeep, strongest at the rim's inside edge and easing to nothing at its reach", () => {
+      const { painted } = lit();
+      const { gradients, rects } = painted[0];
+      // one band in from each side, each a gradient filled over it
+      expect(gradients).toHaveLength(4);
+      expect(rects).toHaveLength(4);
+      for (const [i, g] of gradients.entries()) {
+        expect(rects[i].fill).toBe(g);
+        const alphas = g.stops.map(([, c]) => inkAlpha(c));
+        for (const a of alphas) expect(Number.isNaN(a)).toBe(false);
+        expect(g.stops[0]).toEqual([0, rgba(palette.inkDeep, MINIMAP_VIGNETTE.edgeAlpha)]);
+        expect(g.stops.at(-1)).toEqual([1, rgba(palette.inkDeep, 0)]);
+        for (let s = 1; s < alphas.length; s++) expect(alphas[s]).toBeLessThanOrEqual(alphas[s - 1]);
+        // from the rim's inside edge, in by its reach
+        const onEdge = g.from.x === 1 || g.from.x === MINIMAP.width - 1 || g.from.y === 1 || g.from.y === MINIMAP.height - 1;
+        expect(onEdge).toBe(true);
+        expect(Math.hypot(g.to.x - g.from.x, g.to.y - g.from.y)).toBe(MINIMAP_VIGNETTE.reach);
+        expect(insideRim(g.to.x, g.to.y)).toBe(true);
+      }
+      // nothing at the middle: no band reaches the panel's centre
+      const mid = at(MINIMAP.width / 2, MINIMAP.height / 2);
+      for (const r of rects) expect(mid.x > r.x && mid.x < r.x + r.w && mid.y > r.y && mid.y < r.y + r.h).toBe(false);
+      expect(MINIMAP_VIGNETTE.reach * 2).toBeLessThan(MINIMAP.height - 2);
+    });
+
+    it("should be smooth: no more than 0.08 alpha a logical px between its stops, and never a WebGL-only gradient fill", () => {
+      const { painted, made } = lit();
+      const [{ stops }] = painted[0].gradients;
+      for (let s = 1; s < stops.length; s++) {
+        const px = (stops[s][0] - stops[s - 1][0]) * MINIMAP_VIGNETTE.reach;
+        const da = inkAlpha(stops[s - 1][1]) - inkAlpha(stops[s][1]);
+        expect(da / px).toBeLessThanOrEqual(0.08);
+      }
+      for (const g of made) expect(g.calls.some((c) => c.name === "fillGradientStyle")).toBe(false);
+    });
+  });
+
+  describe("the draw order (§A.3)", () => {
+    it("should stand backing, fills, edges, then the vignette, the glyphs, and the dots on top", () => {
+      const { order, panel } = lit();
+      // made in the order Phaser draws one depth's objects in: map, vignette, marks, dots
+      expect(order).toEqual(["graphics0", "image", "graphics1", "graphics2"]);
+      const names = panel.drawn().map((c) => c.name);
+      const lastFill = names.lastIndexOf("fillPoints");
+      const firstEdge = names.indexOf("moveTo");
+      expect(names.indexOf("strokeRect")).toBeLessThan(names.indexOf("fillPoints"));
+      expect(lastFill).toBeLessThan(firstEdge);
+      expect(names.at(-1)).toBe("strokePath");
+    });
+  });
+
+  describe("the region fills (§A.4)", () => {
+    it("should be dark stone over the backing, the visible a step lighter, by WCAG ratio", () => {
+      expect(contrastRatio(palette.minimapExplored, palette.hudPanel)).toBeGreaterThanOrEqual(1.3);
+      expect(contrastRatio(palette.minimapVisible, palette.minimapExplored)).toBeGreaterThanOrEqual(1.3);
+      expect(relativeLuminance(palette.minimapVisible)).toBeGreaterThan(relativeLuminance(palette.minimapExplored));
+      // stone: never the interactable amber or the ally green the glyphs and dots carry
+      for (const fill of [palette.minimapExplored, palette.minimapVisible])
+        expect([palette.interactable, palette.markerAlly, palette.markerSelf]).not.toContain(fill);
+    });
+  });
+
+  describe("the region edges (§A.5)", () => {
+    /** Corridor 36: two cell rects (9 × 2 and 4 × 1 under it), and room-adjacent region 20. */
+    const CORRIDOR = 36;
+    const NEXT_DOOR = 20;
+    const regionOf = (id: number) => grid.regions.find((r) => r.id === id)!;
+    /** Every unit cell boundary a segment covers, as a key; a boundary covered twice counts twice. */
+    const unitEdges = (segments: ReturnType<typeof regionEdges>) => {
+      const units: string[] = [];
+      for (const { from, to } of segments) {
+        expect(from.x === to.x || from.y === to.y).toBe(true);
+        const n = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+        const dx = Math.sign(to.x - from.x);
+        const dy = Math.sign(to.y - from.y);
+        for (let i = 0; i < n; i++) {
+          const a = at(from.x + dx * i, from.y + dy * i);
+          units.push(dx !== 0 ? `h${Math.min(a.x, a.x + dx)},${a.y}` : `v${a.x},${Math.min(a.y, a.y + dy)}`);
+        }
+      }
+      return units;
+    };
+    /** What a footprint's outline must cover: each boundary between a seen cell and a cell not of its region. */
+    const expected = (ids: number[]) => {
+      const units = new Set<string>();
+      for (const id of ids)
+        for (const { x, y, w, h } of regionOf(id).cells)
+          for (let cx = x; cx < x + w; cx++)
+            for (let cy = y; cy < y + h; cy++) {
+              if (grid.region(cx, cy) !== id) continue;
+              if (grid.region(cx, cy - 1) !== id) units.add(`h${cx},${cy}`);
+              if (grid.region(cx, cy + 1) !== id) units.add(`h${cx},${cy + 1}`);
+              if (grid.region(cx - 1, cy) !== id) units.add(`v${cx},${cy}`);
+              if (grid.region(cx + 1, cy) !== id) units.add(`v${cx + 1},${cy}`);
+            }
+      return units;
+    };
+
+    it("should follow a region's footprint outline: no edge between its own cell rects", () => {
+      expect(regionOf(CORRIDOR).cells.length).toBeGreaterThan(1);
+      const units = unitEdges(regionEdges(grid, [regionOf(CORRIDOR)]));
+      expect(new Set(units)).toEqual(expected([CORRIDOR]));
+      // the seam between its two rects (row 19, x 10–13) is inside the footprint: no line on it
+      for (let cx = 10; cx < 14; cx++) expect(units).not.toContain(`h${cx},19`);
+    });
+
+    it("should draw a boundary shared by two seen regions once", () => {
+      const shared = [...expected([CORRIDOR])].filter((u) => expected([NEXT_DOOR]).has(u));
+      expect(shared.length).toBeGreaterThan(0);
+      const units = unitEdges(regionEdges(grid, [regionOf(CORRIDOR), regionOf(NEXT_DOOR)]));
+      expect(units).toHaveLength(new Set(units).size);
+      expect(new Set(units)).toEqual(new Set([...expected([CORRIDOR]), ...expected([NEXT_DOOR])]));
+    });
+
+    it("should draw no edge for an unexplored region", () => {
+      expect(regionEdges(grid, [])).toEqual([]);
+    });
+
+    it("should stroke the seen regions' edges in one 1 px path of the edge token, each segment projected", () => {
+      const { map, panel, show } = mapped();
+      show([IN_ROOM]);
+      const drawn = panel.drawn();
+      expect(drawn.filter((c) => c.name === "lineStyle").at(-1)).toEqual({
+        name: "lineStyle",
+        args: [MINIMAP_EDGE.width, palette.minimapEdge, 1],
+      });
+      expect(MINIMAP_EDGE.width).toBe(1);
+      expect(drawn.filter((c) => c.name === "strokePath")).toHaveLength(1);
+      const segments = regionEdges(grid, map.content.regions);
+      const project = minimapProjection(grid);
+      const c = grid.cell;
+      expect(drawn.filter((c) => c.name === "moveTo").map((m) => m.args)).toEqual(
+        segments.map(({ from }) => Object.values(project({ x: from.x * c, y: from.y * c }))),
+      );
+      expect(drawn.filter((c) => c.name === "lineTo").map((m) => m.args)).toEqual(
+        segments.map(({ to }) => Object.values(project({ x: to.x * c, y: to.y * c }))),
+      );
+    });
+
+    it("should keep the edge line 1.3:1 against each fill it bounds", () => {
+      expect(contrastRatio(palette.minimapEdge, palette.minimapExplored)).toBeGreaterThanOrEqual(1.3);
+      expect(contrastRatio(palette.minimapEdge, palette.minimapVisible)).toBeGreaterThanOrEqual(1.3);
+    });
+  });
+
+  describe("the fixture glyphs (§A.6)", () => {
+    /** The glyph drawn for one fixture alone, found: its ring's px and its ink's px, and where it seats. */
+    const glyph = (f: MinimapFixture) => {
+      const { marks, show } = mapped();
+      show([f.at], [f]);
+      const drawn = marks.drawn();
+      const by = rectsByColour(drawn);
+      const m = minimapProjection(grid)(f.at);
+      return {
+        drawn,
+        ring: pixels(by.get(palette.markerStroke) ?? []),
+        ink: pixels(by.get(palette.interactable) ?? []),
+        seat: at(Math.round(m.x), Math.round(m.y)),
+      };
+    };
+
+    it("should draw the switch, escape door and stairs as three distinct glyphs in interactable on a markerStroke ring", () => {
+      const drawn = FIXTURES.map(glyph);
+      const shapes = drawn.map(({ ink, seat }) =>
+        [...ink].map((k) => k.split(",").map(Number)).map(([x, y]) => `${x - seat.x},${y - seat.y}`).sort().join(";"),
+      );
+      expect(new Set(shapes).size).toBe(3);
+      for (const g of drawn) {
+        expect(g.ink.size).toBeGreaterThan(0);
+        // the ring first, the ink over it
+        const styles = g.drawn.filter((c) => c.name === "fillStyle").map((c) => c.args);
+        expect(styles).toEqual([
+          [palette.markerStroke, 1],
+          [palette.interactable, 1],
+        ]);
+      }
+    });
+
+    it("should seat each glyph on whole px, centred where the mark sits, within 9 × 9 and at least 7 px wide", () => {
+      for (const f of FIXTURES) {
+        const { drawn, ink, ring, seat } = glyph(f);
+        for (const c of drawn.filter((c) => c.name === "fillRect"))
+          for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
+        const all = bounds(new Set([...ink, ...ring]));
+        expect(all.right - all.x).toBeLessThanOrEqual(MINIMAP_GLYPH.box);
+        expect(all.bottom - all.y).toBeLessThanOrEqual(MINIMAP_GLYPH.box);
+        expect(MINIMAP_GLYPH.box).toBe(9);
+        const inked = bounds(ink);
+        expect(inked.right - inked.x).toBeGreaterThanOrEqual(7);
+        // the glyph's middle on the seat's px, where today's 4 px mark was centred
+        expect(Math.abs((all.x + all.right) / 2 - (seat.x + 0.5))).toBeLessThanOrEqual(0.5);
+        expect(Math.abs((all.y + all.bottom) / 2 - (seat.y + 0.5))).toBeLessThanOrEqual(0.5);
+      }
+    });
+
+    it("should ring each glyph's shape 1 px round: every px next to the ink is ring, and the ring only that or the shape's own dark", () => {
+      for (const f of FIXTURES) {
+        const { ink, ring } = glyph(f);
+        const near = new Set<string>();
+        for (const k of ink) {
+          const [x, y] = k.split(",").map(Number);
+          for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) near.add(`${x + dx},${y + dy}`);
+        }
+        for (const k of near) if (!ink.has(k)) expect(ring.has(k)).toBe(true);
+        // past the ring, dark only inside the ink's own box: a doorway, never a wider halo
+        const box = bounds(ink);
+        for (const k of ring) {
+          const [x, y] = k.split(",").map(Number);
+          expect(near.has(k) || (x >= box.x && x < box.right && y >= box.y && y < box.bottom)).toBe(true);
+        }
+      }
+    });
+
+    it("should draw the escape door's doorway dark, not the ground showing through the arch", () => {
+      const door = FIXTURES[1];
+      const { ring, seat } = glyph(door);
+      // the doorway's middle column, under the arch's crown
+      for (let y = seat.y; y <= seat.y + 3; y++) expect(ring.has(`${seat.x},${y}`)).toBe(true);
+    });
+
+    it("should keep the glyph's ink 3:1 against its ring", () => {
+      expect(contrastRatio(palette.interactable, palette.markerStroke)).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe("the party dots (§A.7)", () => {
+    it("should ring each dot 1 px in markerStroke, the ally r 2, the player's own r 3 and drawn last", () => {
+      const { map, dots } = mapped();
+      map.party({ self: IN_ROOM, allies: [at(3000, 900)] });
+      const drawn = dots.drawn().filter((c) => c.name === "fillStyle" || c.name === "fillCircle");
+      expect(drawn.map((c) => (c.name === "fillStyle" ? c.args : c.args[2]))).toEqual([
+        [palette.markerStroke, 1],
+        3,
+        [palette.markerAlly, 1],
+        2,
+        [palette.markerStroke, 1],
+        4,
+        [palette.markerSelf, 1],
+        3,
+      ]);
+    });
+
+    it("should keep each dot's ink 3:1 against its ring", () => {
+      expect(contrastRatio(palette.markerAlly, palette.markerStroke)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(palette.markerSelf, palette.markerStroke)).toBeGreaterThanOrEqual(3);
+    });
   });
 });
