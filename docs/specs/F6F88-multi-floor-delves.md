@@ -282,3 +282,5 @@ fields are the contract between the two halves:
 - **Timers, forced ascent or a vote.** The gather rule is the only trigger.
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV

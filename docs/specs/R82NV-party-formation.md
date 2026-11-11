@@ -325,3 +325,5 @@ slice as with chat); the client side is agent lane.
 - Inviting by clicking a visible player, friends lists, offline invites, guilds.
 - Spawning the arrival beside the leader (normal spawn point for now).
 - Whisper (FS-KCQ06), which will reuse the presence index.
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV

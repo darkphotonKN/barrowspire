@@ -270,3 +270,5 @@ Fog or a minimap on floors 2–3, the hub or the field worlds; server-side fog o
 the server sends by what a player may see (ADR-0063, ADR-0060 Decision 7); anti-cheat; line of
 sight inside a region; exploration that survives a reconnect; marking treasure rooms or monsters
 on the minimap; a full-screen map; minimap zoom, rotation or click-to-ping; new art.
+
+## Change: Minimap look and the run HUD's layout → FS-56CKV
