@@ -9,6 +9,8 @@ import {
   HUB_SPIRE_FACADE,
   HUB_WASHING_LINE,
 } from "@/render/world/hubKeepOut";
+import { BAKE } from "@/render/world/bake";
+import { castOffset } from "@/render/world/wallShadows";
 import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
@@ -1814,5 +1816,60 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         expect(above(s)).toBeLessThan(above(back) + (0.7 + 0.1) * VPX + 16);
       },
     );
+  });
+
+  describe("a wall's ground shadow is painted by the client, not baked (FS-V8FT3 §B)", () => {
+    type Sheet = {
+      frameWidth: number;
+      anchor: { x: number; y: number };
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+    const AXES = ["x", "y"];
+    const each = (prefix: string, variants: string[]) =>
+      variants.flatMap((v) => AXES.map((a) => `${prefix}_${v}_${a}`));
+    /** R4 and R5: wall pieces and posts of both materials, exterior pieces and door heads. */
+    const SHADOWLESS = [
+      ...each("wall_back", ["plain", "brace", "window", "torch"]),
+      ...each("wall_front", ["plain", "brace", "window", "torch"]),
+      "post_back",
+      "post_front",
+      ...each("tower_wall_back", ["plain", "pillar", "sconce", "banner", "cobweb"]),
+      ...each("tower_wall_front", ["plain", "pillar"]),
+      "tower_post_back",
+      "tower_post_front",
+      ...each("wall_exterior", ["plain", "brace", "window"]),
+      ...each("tower_wall_exterior", ["plain", "pillar"]),
+      ...AXES.map((a) => `door_head_${a}`),
+      ...AXES.map((a) => `tower_door_head_${a}`),
+    ];
+    /** Things that keep their baked shadow (R3): a door leaf, a chest. */
+    const SHADOWED = ["door_x", "door_y", "chest"];
+
+    // The light throws a shadow due screen-right, so a baked ground shadow widens a sheet's frame
+    // on the right of its anchor only: the shortest piece named (a front wall, 1.1 tall) by about
+    // 25 px. A piece is about as wide either side of its origin, give or take its relief.
+    const shortest = castOffset(BAKE.WALL_FRONT);
+    const cast = worldToScreen(shortest.x, shortest.y).x;
+    const RELIEF = 6;
+    const lean = (s: Sheet) => {
+      const left = s.anchor.x * s.frameWidth;
+      return s.frameWidth - left - left;
+    };
+
+    it("measures a shadow wider than a piece's relief", () => {
+      expect(cast).toBeGreaterThan(4 * RELIEF);
+    });
+
+    it.each(SHADOWLESS)(
+      "%s is baked with no ground shadow: it reaches no further right of its anchor than left",
+      (name) => {
+        expect(sheet(name), name).toBeDefined();
+        expect(lean(sheet(name))).toBeLessThanOrEqual(RELIEF);
+      },
+    );
+
+    it.each(SHADOWED)("%s keeps its baked shadow, falling screen-right", (name) => {
+      expect(lean(sheet(name))).toBeGreaterThan(RELIEF);
+    });
   });
 });
