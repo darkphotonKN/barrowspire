@@ -281,19 +281,33 @@ const rgb = (token: Token) => {
   return [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff] as const;
 };
 
-/**
- * The colour at `x` along a ramp of `colours` placed at `at` (rising or falling), held at its ends:
- * how a fire's colour runs with its heat (the owner's "火的顏色有辦法擬真一點嗎").
- */
-function ramp(colours: readonly (readonly number[])[], at: readonly number[], x: number): number[] {
-  const rising = at[0] <= at[at.length - 1];
-  const cs = rising ? colours : [...colours].reverse();
-  const ps = rising ? at : [...at].reverse();
-  if (x <= ps[0]) return [...cs[0]];
-  for (let n = 1; n < ps.length; n++)
-    if (x <= ps[n]) return mix(cs[n - 1], cs[n], (x - ps[n - 1]) / (ps[n] - ps[n - 1] || 1));
-  return [...cs[cs.length - 1]];
+/** `a` mixed `k` of the way to `b`, written into `out`: no array made, for the burn's every pixel. */
+function mixInto(out: number[], a: readonly number[], b: readonly number[], k: number): number[] {
+  out[0] = a[0] + (b[0] - a[0]) * k;
+  out[1] = a[1] + (b[1] - a[1]) * k;
+  out[2] = a[2] + (b[2] - a[2]) * k;
+  return out;
 }
+
+/**
+ * The colour at `x` along a ramp of `colours` placed at `at` (rising or falling), held at its ends,
+ * written into `out`: how a fire's colour runs with its heat (the owner's "火的顏色有辦法擬真一點嗎").
+ */
+function rampInto(out: number[], colours: readonly (readonly number[])[], at: readonly number[], x: number): number[] {
+  const last = at.length - 1;
+  // the ramp walked in rising order, whichever way it was given
+  const nth = at[0] <= at[last] ? (n: number) => n : (n: number) => last - n;
+  if (x <= at[nth(0)]) return mixInto(out, colours[nth(0)], colours[nth(0)], 0);
+  for (let n = 1; n <= last; n++) {
+    const lo = nth(n - 1);
+    const hi = nth(n);
+    if (x <= at[hi]) return mixInto(out, colours[lo], colours[hi], (x - at[lo]) / (at[hi] - at[lo] || 1));
+  }
+  return mixInto(out, colours[nth(last)], colours[nth(last)], 0);
+}
+
+/** `rampInto` a new colour. */
+const ramp = (colours: readonly (readonly number[])[], at: readonly number[], x: number) => rampInto([0, 0, 0], colours, at, x);
 
 /** Where a text lies, in view px, and how its canvas maps onto it. */
 function placeOf(text: InkText) {
@@ -847,6 +861,9 @@ export class CardAsh {
     let goneTo = 0;
     let released = 0;
     let sparked = 0;
+    // one colour and one ink, rewritten for each burning pixel: no array made per pixel per frame
+    const colour = [0, 0, 0];
+    const drawn = [0, 0, 0];
     return (v: number) => {
       const q = v * (1 + width);
       const behind = q - width;
@@ -859,12 +876,13 @@ export class CardAsh {
         // its fire, hottest at the leading edge: from its ink to the ramp's hottest stop, then down
         // the ramp; then its char, from the ramp's last stop
         const x = k / edgeShare;
-        const colour =
-          k >= edgeShare
-            ? mix(deep, char, (k - edgeShare) / (1 - edgeShare))
-            : x < stops[0]
-              ? mix([src[o], src[o + 1], src[o + 2]], fire[0], x / stops[0])
-              : ramp(fire, stops, x);
+        if (k >= edgeShare) mixInto(colour, deep, char, (k - edgeShare) / (1 - edgeShare));
+        else if (x < stops[0]) {
+          drawn[0] = src[o];
+          drawn[1] = src[o + 1];
+          drawn[2] = src[o + 2];
+          mixInto(colour, drawn, fire[0], x / stops[0]);
+        } else rampInto(colour, fire, stops, x);
         out[o] = colour[0];
         out[o + 1] = colour[1];
         out[o + 2] = colour[2];
