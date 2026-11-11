@@ -31,17 +31,34 @@
 > Edge States are corrected in place, and two Edge States are added; each says *(Amended
 > 2026-11-12, rooms only …)*.
 
+> **Amended 2026-11-12 (fourth)** by Nick, after looking in the browser with the rooms-only outline
+> in. He said "小地圖似乎還是一樣 房間中有路的地方要留缺口不要包起來 ... 像poe2那樣": the rooms still
+> read closed; wherever a path leaves a room, its outline must have a gap, as on Path of Exile 2's
+> map, where walls are lines and every opening shows as an opening. So the derived edge state of the
+> third amendment ("the doorway faces unexplored ground, so the line runs across it, closed; once
+> the corridor is seen the line opens there") is overruled: **a seen room's outline has a gap at
+> every doorway, whether or not the region beyond it has been seen.** A doorway is a side of a room's
+> cell that faces a cell of another region, of any kind and in any exploration state; a room's side
+> facing a cell that is not walkable (shell or void) gets the line. The line is now the room's
+> walls, not the edge of what is seen. This shows where an unexplored corridor leaves a seen room,
+> and that is deliberate: the gap tells the player a way out exists there, though not where it
+> leads; the corridor itself stays unfilled and unlined until seen. The fills, the vignette, the
+> glyphs, the dots, the frame, the layout, the token and the 1.3:1 are unchanged. §A.5 is replaced,
+> and the Summary, the outline criterion and the doorway Edge States are corrected in place, and
+> one Edge State is added; each says *(Amended 2026-11-12, gap at every doorway …)*.
+
 ## Summary
 
 In a run, the top-right minimap is drawn finer and in the game's own look: candle-lit at its
 edges, explored rooms in dark stone, the ones the party stands in a step lighter, the seen
-rooms outlined along their outer edge only, never a corridor, and the switch, escape door and stairs as small drawn glyphs. It moves to the
+rooms outlined along their walls only, open at every doorway, never a corridor, and the switch, escape door and stairs as small drawn glyphs. It moves to the
 top of the top-right corner, with the floor indicator and the escaped count under it in smaller
 type. In dev builds the x/y position line moves into the minimap's bottom-left corner, small and
 dim, and the top-left HUD (XP bar, resource bars, party frames) moves up into the space it leaves.
 The minimap's frame, size and content are unchanged. *(Amended 2026-11-12, outer outline only; was: "each room and
 corridor outlined".)* *(Amended 2026-11-12, rooms only; was: "the whole shown floor outlined once
-round its outer edge".)*
+round its outer edge".)* *(Amended 2026-11-12, gap at every doorway; was: "the seen
+rooms outlined along their outer edge only, never a corridor".)*
 
 Charter run "小地圖精緻化", 2026-11-12. The owner's words: "把右上角地圖有可能精緻一點嗎 配合遊戲主題
 然後地圖位置移動到逃離人數跟樓層資訊上方 字可以小一點"; "左上的x y點位移動到地圖匡內左下角 字可以小一點
@@ -122,21 +139,28 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
    the explored ≥ 1.3:1, and the visible lighter. Still stone, never amber or the ally green,
    which the glyphs and dots keep. **(charter default; the ratios derived here so "a step" is
    testable)**
-5. **One thin line along the seen rooms' outer edge, and none on a corridor**: 1 logical px on
-   each side of a seen room's cell (`kind` "room", explored or visible) that faces a cell of no
-   seen region (an unexplored region, or no region at all). A corridor's sides (`kind`
-   "corridor") get no line, whatever its state and whatever it faces. No line where a seen room
-   meets another seen region, room or corridor, whatever their states (a doorway, explored to
-   visible), and never along a cell's rect inside the shown floor. Each stretch is drawn once, and
-   where the line turns a corner it runs on unbroken, no gap; where a room's edge stops at a
-   doorway the line ends there, so the outline is open runs of line as well as closed loops, and
-   an open run is never closed back on its start. The line keeps ≥ 1.3:1 against each fill it
-   bounds, in its token (`minimapEdge`). An unexplored region has no fill and no line, as today.
-   **(owner, 2026-11-12, on seeing the outer outline round corridors too:
-   "小地圖還有路的地方可以不要匡起來嗎")** *(Amended 2026-11-12, rooms only; was: "One thin line
-   round the outer edge of what is shown", the union of every seen region including corridors,
-   "as closed loops".)* *(Amended 2026-11-12, outer outline only; was: "Each seen region has a
-   thin edge line" along its own footprint, a boundary two seen regions share drawn once.)*
+5. **One thin line along the seen rooms' walls, a gap at every doorway, and none on a corridor**:
+   1 logical px on each side of a seen room's cell (`kind` "room", explored or visible) that faces
+   a cell that is not walkable (a shell or void cell, or off the grid: no region at all). A side
+   that faces a cell of another region is a doorway, and gets no line, whatever that region's kind
+   (room or corridor) and whatever its state (explored, visible or unexplored): a room's outline is
+   open wherever a path leaves it, as on Path of Exile 2's map, whether or not the party has seen
+   the path. A corridor's sides (`kind` "corridor") get no line, whatever its state and whatever it
+   faces, and never a line along a cell's rect inside a region. Each stretch is drawn once, and
+   where the line turns a corner it runs on unbroken, no gap; where a room's wall stops at a doorway
+   the line ends there, so the outline is open runs of line, and closed loops only round a room
+   with no doorway; an open run is never closed back on its start. The line keeps ≥ 1.3:1 against
+   each fill it bounds, in its token (`minimapEdge`). An unexplored region has no fill and no line,
+   as today; only the gap in a seen room's line shows where it opens. Showing that gap before the
+   corridor beyond is seen is a deliberate owner choice: it tells the player a way out exists
+   there. **(owner, 2026-11-12, on seeing the rooms still closed: "小地圖似乎還是一樣
+   房間中有路的地方要留缺口不要包起來 ... 像poe2那樣")** *(Amended 2026-11-12, gap at every doorway;
+   was: "One thin line along the seen rooms' outer edge", on each side "that faces a cell of no
+   seen region (an unexplored region, or no region at all)", no line only "where a seen room meets
+   another seen region".)* *(Amended 2026-11-12, rooms only; was: "One thin line round the outer
+   edge of what is shown", the union of every seen region including corridors, "as closed
+   loops".)* *(Amended 2026-11-12, outer outline only; was: "Each seen region has a thin edge line"
+   along its own footprint, a boundary two seen regions share drawn once.)*
 6. **The switch, the escape door and the stairs as small drawn glyphs** in place of the squares:
    the switch a lever (a base and a slanted handle with a knob), the escape door an arch, the
    stairs a few steps. Each in the interactable channel (`palette.interactable`) on a dark
@@ -263,7 +287,7 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 - [ ] The vignette is in `palette.inkDeep`, inside the rim, strongest at the inside edge and nothing at the middle; drawn once per minimap, not on a content change; never through `fillGradientStyle`; steps, if any, no wider than 2 px and no more than 0.08 alpha apart.
 - [ ] Draw order inside the frame: backing, fills, edges, vignette, glyphs; dots on their own layer above; the readout above both.
 - [ ] Explored fill vs backing ≥ 1.3:1, visible vs explored ≥ 1.3:1, visible the lighter; the edge line ≥ 1.3:1 against each fill it bounds (contrast ratios over the tokens, in a test).
-- [ ] The outline follows the seen rooms' outer edge only: on the fixture floor, no line on any side of a corridor (seen alone or beside a room), none across a doorway between a seen room and a seen corridor, none between a region's own cells or between two seen rooms; every side of a seen room's cell facing unexplored ground or the void drawn exactly once; no gap where the line turns a corner; open runs ending at a doorway stroked without `closePath`, closed loops with it. *(Amended 2026-11-12, outer outline only; was: "a boundary shared by two seen regions is drawn once".)* *(Amended 2026-11-12, rooms only; was: "the outer edge of the seen regions together … as closed loops".)*
+- [ ] The outline follows the seen rooms' walls only: on the fixture floor, no line on any side of a corridor (seen alone or beside a room), none across a doorway, whatever the region beyond it and whether or not it is seen (a seen room beside an unexplored corridor leaves a gap there), none between a region's own cells or between two rooms; every side of a seen room's cell facing a cell that is not walkable drawn exactly once; no gap where the line turns a corner; open runs ending at a doorway stroked without `closePath`, closed loops with it. *(Amended 2026-11-12, gap at every doorway; was: "none across a doorway between a seen room and a seen corridor", and each side "facing unexplored ground or the void" drawn.)* *(Amended 2026-11-12, outer outline only; was: "a boundary shared by two seen regions is drawn once".)* *(Amended 2026-11-12, rooms only; was: "the outer edge of the seen regions together … as closed loops".)*
 - [ ] The switch, escape door and stairs each draw a distinct glyph within 9 × 9 px and at least 7 px wide, in `interactable` on a 1 px `markerStroke` ring, centred on whole px where the mark sits today, only once their region is explored; ink vs ring ≥ 3:1.
 - [ ] Dots: ally r 2, self r 3, each in a 1 px `markerStroke` ring, self drawn last; ink vs ring ≥ 3:1.
 - [ ] Size, inset, projection and content unchanged: FS-SRA9J's `minimapRect` size, `minimapProjection` and `minimapContent` tests still pass as written; the redraw counts (§E.23) unchanged.
@@ -320,9 +344,14 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
   owner asked for the rooms' outer edge only. *(Amended 2026-11-12, outer outline only; was: "the
   shared edge is drawn once".)* *(Amended 2026-11-12, rooms only; was: "Two seen regions sharing
   a doorway … the outline runs round the pair as one shape".)*
-- **A seen room beside an unexplored corridor:** the doorway faces unexplored ground, so the line
-  runs across it, closed; once the corridor is seen the line opens there. **(derived here, rooms
-  only, 2026-11-12: "unexplored ground" is what the room faces, whatever kind it would be)**
+- **A seen room beside an unexplored corridor:** the line stops at the doorway, a gap, just as
+  where the corridor is seen; the corridor beyond has no fill and no line until it is seen. The
+  gap tells the player a way out exists there, before they have seen where it goes: a deliberate
+  owner choice. **(owner, 2026-11-12: "房間中有路的地方要留缺口不要包起來 ... 像poe2那樣")**
+  *(Amended 2026-11-12, gap at every doorway; was: "the doorway faces unexplored ground, so the
+  line runs across it, closed; once the corridor is seen the line opens there", derived here.)*
+- **A seen room with no doorway** (none on today's floors): its line is one closed loop.
+  **(derived here, gap at every doorway, 2026-11-12)**
 - **Only corridors seen** (a corridor explored, its rooms not yet): its fill shows and no line at
   all. Accepted: the owner asked for no line on a corridor. **(derived here, rooms only,
   2026-11-12)**

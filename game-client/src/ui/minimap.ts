@@ -9,7 +9,7 @@
  *
  * **The look** (FS-56CKV §A; design-guideline "UI Chrome → Minimap"): candle-lit stone in the frame
  * as it was. Inside the rim, bottom to top: explored regions in dark stone and visible ones a step
- * lighter, the seen rooms outlined along their outer edge, never a corridor; a soft `inkDeep` vignette strongest at
+ * lighter, the seen rooms outlined along their walls, open at every doorway, never a corridor; a soft `inkDeep` vignette strongest at
  * the rim's inside edge; the switch, escape door and stairs as small amber glyphs on a dark ring;
  * the party's dots, each ringed. Nothing warm in the middle: amber in the HUD means "interactable".
  *
@@ -74,7 +74,7 @@ export const MINIMAP_VIGNETTE = {
 /** The one texture every minimap's vignette is an image of. */
 const VIGNETTE_TEXTURE = "minimapVignette";
 
-/** The outline along the seen rooms' outer edge (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
+/** The outline along the seen rooms' walls (FS-56CKV §A.5): its width, logical px, in `palette.minimapEdge`. */
 export const MINIMAP_EDGE = { width: 1 } as const;
 
 /**
@@ -154,15 +154,16 @@ export interface OutlineRun {
 }
 
 /**
- * The seen rooms' outer edge (FS-56CKV §A.5), in cell units: every side of a seen room's cell that
- * faces a cell of no seen region (unexplored, or no region at all). A corridor's sides get no line,
- * and nor does a doorway onto a seen region, room or corridor, or a cell rect's side inside the
- * shown floor. Each side once, joined into runs that turn every corner unbroken: a closed loop
- * where a room's edge goes all the way round, an open run where it stops at a doorway.
+ * The seen rooms' walls (FS-56CKV §A.5), in cell units: every side of a seen room's cell that faces
+ * a cell of no region (shell or void, or off the grid), from the whole floor's regions in `grid`. A
+ * side facing a cell of another region is a doorway and gets no line, whatever that region's kind
+ * and whether or not it is seen; a corridor's sides get no line, nor a cell rect's side inside a
+ * region. Each side once, joined into runs that turn every corner unbroken: a closed loop where a
+ * room's wall goes all the way round, an open run where it stops at a doorway.
  */
 export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapContent["regions"][number], "id" | "cells">[]): OutlineRun[] {
-  const ids = new Set(seen.map((r) => r.id));
-  const shown = (cx: number, cy: number) => ids.has(grid.region(cx, cy));
+  // walkable: in a region of the floor, seen or not, so a doorway opens before the path beyond is seen
+  const walkable = (cx: number, cy: number) => grid.region(cx, cy) !== 0;
   // each unit side, directed clockwise round the room (y down), by the corner it leaves
   const key = (p: Point) => `${p.x},${p.y}`;
   const out = new Map<string, Point[]>();
@@ -178,10 +179,10 @@ export function regionOutline(grid: RegionGrid, seen: readonly Pick<MinimapConte
       for (let cx = x; cx < x + w; cx++)
         for (let cy = y; cy < y + h; cy++) {
           if (grid.region(cx, cy) !== id || grid.kind(cx, cy) !== "room") continue;
-          if (!shown(cx, cy - 1)) side({ x: cx, y: cy }, { x: cx + 1, y: cy });
-          if (!shown(cx + 1, cy)) side({ x: cx + 1, y: cy }, { x: cx + 1, y: cy + 1 });
-          if (!shown(cx, cy + 1)) side({ x: cx + 1, y: cy + 1 }, { x: cx, y: cy + 1 });
-          if (!shown(cx - 1, cy)) side({ x: cx, y: cy + 1 }, { x: cx, y: cy });
+          if (!walkable(cx, cy - 1)) side({ x: cx, y: cy }, { x: cx + 1, y: cy });
+          if (!walkable(cx + 1, cy)) side({ x: cx + 1, y: cy }, { x: cx + 1, y: cy + 1 });
+          if (!walkable(cx, cy + 1)) side({ x: cx + 1, y: cy + 1 }, { x: cx, y: cy + 1 });
+          if (!walkable(cx - 1, cy)) side({ x: cx, y: cy + 1 }, { x: cx, y: cy });
         }
   const point = (k: string): Point => {
     const [x, y] = k.split(",").map(Number);
@@ -461,7 +462,7 @@ export class Minimap {
           );
     }
 
-    // one line along the seen rooms' outer edge (FS-56CKV §A.5): a loop closed so no corner is left
+    // one line along the seen rooms' walls (FS-56CKV §A.5): a loop closed so no corner is left
     // open, a run that stops at a doorway left open
     const runs = regionOutline(this.grid, content.regions);
     if (runs.length === 0) return;
