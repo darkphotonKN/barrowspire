@@ -2461,6 +2461,39 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
       expect(view.setItems).toHaveBeenCalledWith([blade]);
     });
 
+    it("should give up the reach once the player walks off, so another's opening it later shows no coffer", () => {
+      // the server drops an interact sent too soon after another without a word, so no refusal
+      // ends that reach: walking away does
+      const { run, scene, view } = reached();
+      const walker = scene as unknown as {
+        player?: unknown;
+        playerPos?: { x: number; y: number };
+        checkChestDistance(): void;
+      };
+      walker.player = {};
+      walker.playerPos = at(150, 150);
+      walker.checkChestDistance();
+      run.handleGameStateUpdate(withKind("chest"));
+      walker.playerPos = at(600, 600);
+      walker.checkChestDistance();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should keep the reach while the player stays by the chest", () => {
+      const { run, scene, view } = reached();
+      const walker = scene as unknown as {
+        player?: unknown;
+        playerPos?: { x: number; y: number };
+        checkChestDistance(): void;
+      };
+      walker.player = {};
+      walker.playerPos = at(150, 150);
+      walker.checkChestDistance();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+    });
+
     it("should never open the coffer for a refused reach, even once another opens the chest", () => {
       const { run, scene, view } = reached();
       scene.chestRefused();
