@@ -170,7 +170,7 @@ func fixtureFloor(em *ecs.EntityManager, rng *rand.Rand, w, h float64, buildings
 	for range buildings {
 		bw, bh := 200+rng.Float64()*300, 150+rng.Float64()*250
 		bx, by := rng.Float64()*(w-bw), rng.Float64()*(h-bh)
-		const thick, doorW = 20.0, 50.0
+		const thick, doorW = 20.0, 80.0
 		off := (bw - doorW) / 2
 		addWall(em, bx, by, bw, thick)
 		addWall(em, bx, by, thick, bh)
