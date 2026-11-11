@@ -70,6 +70,9 @@ import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFall
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
 import { boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { ArrivalCard } from "@/ui/arrivalCard";
+import { placeCard } from "@/ui/placeCard";
+import { CardDust } from "@/render/effects/cardDust";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
@@ -153,10 +156,10 @@ export class FieldScene extends Phaser.Scene {
   private field: FieldId = "gentle_meadows";
   /**
    * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
-   * handed over in the start data. A start with no verdict is no arrival. Read only by the card's
-   * slice to come (I-PQ2TW-4), hence not private yet.
+   * handed over in the start data. A start with no verdict is no arrival. An arrival plays the
+   * field's card from `create`; a return plays nothing.
    */
-  arrival = false;
+  private arrival = false;
   /** How this field is drawn, by its id (FS-X2F2H §Requirements 54). */
   private look: FieldLook = MEADOWS_LOOK;
   private size = FIELD_SIZE.gentle_meadows;
@@ -208,6 +211,11 @@ export class FieldScene extends Phaser.Scene {
   private selfAt?: Point;
   private selfLevel?: number;
   private unsubscribeState?: () => void;
+  /**
+   * The field's arrival card (FS-PQ2TW R37): the shared piece's, told once the field's first state
+   * is drawn, and leaves as dust (FS-PQ2TW §D). It lets its own card go at a scene end.
+   */
+  private readonly arrivalCard = new ArrivalCard(this, new CardDust(this, () => this.art));
 
   constructor() {
     super({ key: "FieldScene" });
@@ -231,6 +239,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   create(): void {
+    // an arrival is dark before anything of the field is made: the world's fade-in opens on the
+    // dark, and the field's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
+    if (this.arrival) this.arrivalCard.play(placeCard({ world: "field", field: this.field }), { built: false });
     this.look = fieldLook(this.field);
     this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
     const { width, height } = this.size;
@@ -287,6 +298,7 @@ export class FieldScene extends Phaser.Scene {
    * Phaser's resize itself.
    */
   private relayoutHud(): void {
+    this.arrivalCard.relayout();
     this.abilityHud?.relayout();
     this.satchel?.relayout();
     this.invitePrompt?.relayout();
@@ -615,6 +627,8 @@ export class FieldScene extends Phaser.Scene {
     this.lastState = state;
     this.showClassHud(state);
     this.partyFrames?.show(state);
+    // the field is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
+    this.arrivalCard.built();
   }
 
   /**

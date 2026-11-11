@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { WorldEnteredPayload } from "@/assets/types/client";
+import { WorldType, type WorldEnteredPayload } from "@/assets/types/client";
 import { keptPlaces } from "./arrival";
 import { WORLD_SCENES, sceneFor, switchWorld } from "./worldRouting";
 
@@ -129,5 +131,32 @@ describe("switchWorld hands the scene its arrival (FS-PQ2TW R5–R8)", () => {
     expect(scenes.data.BarrowspireScene).toMatchObject({ sessionID: "run-a", arrival: true });
     switchWorld(scenes, town, places);
     expect(scenes.data.HubScene).toMatchObject({ arrival: true });
+  });
+});
+
+// FS-PQ2TW R39; ADR-0073 Consequences: a world added later cannot come without the card. Every
+// world scene builds the shared piece with its dust, hands it the start's verdict, tells it when its
+// place is built and keeps it on the view. The main menu is not a world: it has no place to arrive in.
+describe("every world scene hands its arrival to the shared card (FS-PQ2TW R39)", () => {
+  const NOT_A_WORLD = "MainMenuScene";
+  const worlds = WORLD_SCENES.filter((key) => key !== NOT_A_WORLD);
+  const source = (key: string) => readFileSync(join(process.cwd(), "src", "scenes", `${key}.ts`), "utf8");
+
+  it("should walk every scene a world is drawn by", () => {
+    expect(worlds).toEqual(expect.arrayContaining(Object.values(WorldType).map(sceneFor)));
+  });
+
+  it.each(worlds)("%s should play its arrival through the shared card, leaving as dust", (key) => {
+    const scene = source(key);
+    // the start's verdict, decided at the switch (R8)
+    expect(scene).toMatch(/this\.arrival = data\?\.arrival \?\? false/);
+    // the shared piece, with its dust: one without CardDust never breaks to dust (R30, R37)
+    expect(scene).toMatch(/new ArrivalCard\(this, new CardDust\(this, \(\) => this\.art\)\)/);
+    // dark from create on an arrival (R11), with the table's words (R23)
+    expect(scene).toMatch(/if \(this\.arrival\) this\.arrivalCard\.(play|dark)\(/);
+    expect(scene).toMatch(/\bplaceCard\(/);
+    // the dark lifts once the place is built (R12), and follows the view (R16)
+    expect(scene).toMatch(/this\.arrivalCard\.built\(\)/);
+    expect(scene).toMatch(/this\.arrivalCard\.relayout\(\)/);
   });
 });

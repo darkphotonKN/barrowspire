@@ -19,19 +19,21 @@ import type { CardWords } from "./placeCard";
 
 /**
  * The card's depth and its five timings, in ms (R10, R15). The dark sits at `depth`, over the
- * world and its atmosphere (~900) and under the HUD (1000) and notices (2000), the same in every
- * world scene; the card one above it.
+ * world, its atmosphere (~900) and its markers (950, 951), and under the HUD (1000) and notices
+ * (2000), the same in every world scene; the card one above it. Over the markers, not level with
+ * them: Phaser draws equal depths in the order they were made, and a name plate made after the
+ * dark would stand on it.
  */
 export const ARRIVAL_CARD = {
-  depth: 950,
+  depth: 960,
   /** How long the view stays dark before the card rises. */
   darkHoldMs: 250,
   /** The card's fade in. */
   cardFadeMs: 300,
   /** The dark lifting off the place. */
   viewReturnMs: 900,
-  /** How long the card holds once the view starts back. */
-  cardHoldMs: 1400,
+  /** How long the card holds, fully shown, once the view starts back (the owner's 3 s, 2026-11-12). */
+  cardHoldMs: 3000,
   /** The card's leaving. */
   cardLeaveMs: 600,
 } as const;

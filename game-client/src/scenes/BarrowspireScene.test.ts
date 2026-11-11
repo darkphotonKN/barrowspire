@@ -75,6 +75,7 @@ const { MonsterRoster } = await import("@/render/creatures");
 const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
+const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
 const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
@@ -7542,7 +7543,7 @@ describe("BarrowspireScene arrival card (FS-PQ2TW §A–§C; I-PQ2TW-3)", () => 
     createUpToConnect(run);
 
     expect(stage.made.map((m) => [m.kind, m.args])).toEqual([["rectangle", [0, 0, 800, 600, palette.inkDeep, 1]]]);
-    expect(stage.made[0].last.setDepth).toEqual([950]);
+    expect(stage.made[0].last.setDepth).toEqual([ARRIVAL_CARD.depth]);
   });
 
   it("should put no dark up at create on a return (R5)", () => {
