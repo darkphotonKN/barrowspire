@@ -106,6 +106,12 @@ export const EFFECT_CARDS: EffectCard[] = [
     },
   },
   {
+    module: "boneArrow",
+    name: "Bone arrow (hostile)",
+    // a Bone Archer's shot as a run flies it: the flight only, it has no release (FS-B4SG9 §D R22)
+    demo: (s) => s.fly("bone_arrow"),
+  },
+  {
     module: "charge",
     name: "Warrior charge dust",
     demo: (s) => {
