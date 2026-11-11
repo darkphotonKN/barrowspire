@@ -5714,7 +5714,10 @@ describe("BarrowspireScene a run that ends while its art downloads (FS-C4JWH Edg
 });
 
 const fixture = (await import("@/render/world/dungeon.fixture.json")).default;
-const { RegionGrid } = await import("@/render/world/dungeon");
+const await_dungeon = await import("@/render/world/dungeon");
+const await_walls = await import("@/render/world/walls");
+const await_bake = await import("@/render/world/bake");
+const { RegionGrid } = await_dungeon;
 const { ChunkGrid, CHUNK_MAX, DUNGEON_CHUNK } = await import("@/render/world/chunks");
 const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
 const { GROUND_DEPTH, GROUND_MARGIN, GroundLayer } = await import("@/render/world/scene");
@@ -6028,6 +6031,100 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     // some of the floor's wall lights were lit along the way, never all of them at once
     expect(lit).toBeGreaterThan(0);
     expect(walls.filter(shownNow).length).toBeLessThan(walls.length);
+  });
+
+  describe("its walls on their wall edges (FS-XK2B6 §A–§D)", () => {
+    const { wallPlan, dungeonWalls } = await_dungeon;
+    const { thicknessPx } = await_walls;
+    const { BAKE } = await_bake;
+    type Point = { x: number; y: number };
+    const { worldToScreen, worldDepth, boxFaces, WALL_HEIGHT } = await_iso;
+    type EdgedRun = DungeonRun & {
+      currentFloorLook(): { seed: number; walls: import("@/render/world/walls").WallSheets };
+      occluders: { size: number; items: { sprite: Made }[] };
+      dungeon: { lights: { kind: string; region: number; light: { at?: Point } }[] };
+    };
+    /** The floor's walls as the plan cuts them, in the look the staged floor has. */
+    const planned = (run: EdgedRun) => {
+      const look = run.currentFloorLook();
+      const plan = wallPlan(dungeonMap.walls!, grid, thicknessPx(look.walls));
+      return { plan, look, ...dungeonWalls(plan, grid, look.seed, look.walls) };
+    };
+    const screenKey = (p: Point) => {
+      const s = worldToScreen(p.x, p.y);
+      return `${s.x},${s.y}`;
+    };
+    const placeOf = (m: Made) => `${m.args[0]},${m.args[1]}`;
+
+    it("should stand a sprite for every piece and post of the wall plan where it stands, sorted by the point the plan names, the back ones among the occluders", () => {
+      const { run, stage } = dungeonStage();
+      const { pieces, posts } = planned(run as EdgedRun);
+      const walls = drawn(stage.made, "tower_wall_");
+      const stood = drawn(stage.made, "tower_post_");
+      expect(walls.map(placeOf).sort()).toEqual(pieces.map((p) => screenKey(p.at)).sort());
+      expect(stood.map(placeOf).sort()).toEqual(posts.map((p) => screenKey(p.at)).sort());
+      const depthAt = new Map(pieces.map((p) => [screenKey(p.at), worldDepth(p.depthAt.x, p.depthAt.y)]));
+      for (const m of walls) expect(m.depth).toBe(depthAt.get(placeOf(m)));
+      // none through a wall cell's middle: every piece is half a thickness from a cell line
+      for (const p of pieces) expect([p.at.x % 80, p.at.y % 80]).not.toContain(40);
+      // every full-height piece and post fades over the player, and no cut-away one
+      const tall = [...pieces, ...posts].filter((p) => p.height === "back");
+      const fading = new Set((run as EdgedRun).occluders.items.map((i) => i.sprite.calls));
+      for (const m of [...walls, ...stood]) expect(fading.has(m.calls)).toBe(String(m.args[3]).includes("_back"));
+      expect([...walls, ...stood].filter((m) => fading.has(m.calls))).toHaveLength(tall.length);
+    });
+
+    it("should queue a wall light where its piece stands, for the region its edge faces: only a room's", () => {
+      const { run } = dungeonStage();
+      const { plan, look } = planned(run as EdgedRun);
+      const lights = (run as EdgedRun).dungeon.lights.filter((l) => l.kind === "sconce");
+      const want: { at: Point; region: number }[] = [];
+      for (const edge of plan.runs)
+        for (const p of dungeonWalls({ edges: [], runs: [edge], posts: [] }, grid, look.seed, look.walls).pieces) {
+          if (!p.sheet.includes("sconce")) continue;
+          const { cx, cy } = grid.cellOf(p.at);
+          // the cell the edge faces: one step off the wall cell, away from the side it lies on
+          const [dx, dy] = { north: [0, 1], south: [0, -1], west: [1, 0], east: [-1, 0] }[edge.wallSide];
+          expect(grid.kind(cx + dx, cy + dy)).toBe("room");
+          expect(edge.height).toBe("back");
+          want.push({ at: p.at, region: grid.region(cx + dx, cy + dy) });
+        }
+      expect(want.length).toBeGreaterThan(0);
+      const key = (l: { at?: Point; region: number }) => `${l.at!.x},${l.at!.y}:${l.region}`;
+      expect(lights.map((l) => key({ at: l.light.at, region: l.region })).sort()).toEqual(want.map(key).sort());
+    });
+
+    it("should stand a placeholder block on every edge without the wall art, as thick as the material and as tall as its run, and one at every post", () => {
+      const scene = sceneOnStage();
+      const run = scene.run as unknown as EdgedRun;
+      run.worldLook = WORLD_THEMES.tower;
+      run.groundLayer = undefined;
+      const camera = run.cameras as { main: Record<string, unknown> };
+      Object.assign(camera.main, { scrollX: 0, scrollY: 0, displayWidth: 1280, displayHeight: 720, setBackgroundColor: vi.fn() });
+      useGameStore.getState().receiveFloorMap(dungeonMap as never);
+      (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.call(run, dungeonState());
+      const { pieces, posts, look } = planned(run);
+      const thick = thicknessPx(look.walls);
+      const low = (WALL_HEIGHT * BAKE.WALL_FRONT) / BAKE.WALL_BACK;
+      const tops = (p: { height: string }, x: number, y: number, w: number, h: number) =>
+        JSON.stringify(boxFaces(x, y, w, h, p.height === "back" ? WALL_HEIGHT : low).top);
+      const want = [
+        ...pieces.map((p) =>
+          p.axis === "x" ? tops(p, p.at.x - 20, p.at.y - thick / 2, 40, thick) : tops(p, p.at.x - thick / 2, p.at.y - 20, thick, 40),
+        ),
+        ...posts.map((p) => tops(p, p.at.x - thick / 2, p.at.y - thick / 2, thick, thick)),
+      ];
+      // an upright block: three filled faces, the top the last
+      const blocks = scene.stage.made.filter((m) => m.kind === "graphics" && m.calls.filter((c) => c === "fillPoints").length === 3);
+      expect(blocks.map((m) => JSON.stringify(m.last.fillPoints[0])).sort()).toEqual([...want].sort());
+      // sorted as the baked pieces are (ADR-0074)
+      const depthAt = new Map(pieces.map((p, i) => [want[i], worldDepth(p.depthAt.x, p.depthAt.y)]));
+      for (const m of blocks) {
+        const depth = depthAt.get(JSON.stringify(m.last.fillPoints[0]));
+        if (depth !== undefined) expect(m.depth).toBe(depth);
+      }
+      expect(run.walls.size).toBe(dungeonMap.walls!.length);
+    });
   });
 
   describe("the fog of war (FS-SRA9J §B, §C)", () => {

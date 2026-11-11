@@ -5,6 +5,7 @@ import { FIXTURE, GOLDEN, fixtureFrom, format } from "../../../tools/fixtures/du
 import {
   RegionGrid,
   dressingRooms,
+  dungeonWalls,
   edgeHeight,
   edgeLit,
   isDungeon,
@@ -170,25 +171,20 @@ const wallCells = (walls: readonly WallState[]) =>
   });
 
 describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
-  it("cuts a room's side along world y as one run from corner to corner, as its side along x is", () => {
+  it("makes a room's side along world y one run from corner to corner, as its side along x is", () => {
     // a room 4×4 at (2, 2): the server merges its west and east sides into 1×4 rects that stop a
     // cell short of the corners, which its north and south rows take whole
     const grid = floor(10, 10, [room(1, 2, 2, 4, 4)]);
-    const { pieces, posts } = planWalls(wallRuns(serverWalls(grid), grid), 1, MASONRY_WALLS, wallRule(grid));
-    const along = (axis: WallAxis, fixed: "x" | "y", at: number, run: "x" | "y") =>
-      pieces
-        .filter((p) => p.axis === axis && p.at[fixed] === at)
-        .map((p) => p.at[run])
-        .sort((a, b) => a - b);
-    const tiles = (from: number, to: number) => Array.from({ length: (to - from) / 40 }, (_, k) => from + 20 + k * 40);
-    // the north side: from the corner post in cell 1 to the one in cell 6, and no further, so
-    // nothing sticks out past a corner; the west and east sides the same, along y
-    expect(along("x", "y", 1.5 * CELL, "x")).toEqual(tiles(1.5 * CELL, 6.5 * CELL));
-    expect(along("y", "x", 1.5 * CELL, "y")).toEqual(tiles(1.5 * CELL, 6.5 * CELL));
-    expect(along("y", "x", 6.5 * CELL, "y")).toEqual(tiles(1.5 * CELL, 6.5 * CELL));
-    // a post at each corner and nowhere along a side
-    expect(new Set(posts.map((p) => `${p.at.x / CELL - 0.5},${p.at.y / CELL - 0.5}`))).toEqual(
-      new Set(["1,1", "6,1", "1,6", "6,6"]),
+    const runs = wallRuns(serverWalls(grid), grid).map((r) => [r.position.x / CELL, r.position.y / CELL, r.width / CELL, r.height / CELL]);
+    // each side from the corner's cell to the next corner's, and no further
+    expect(runs).toHaveLength(4);
+    expect(runs).toEqual(
+      expect.arrayContaining([
+        [1, 1, 6, 1],
+        [1, 6, 6, 1],
+        [1, 1, 1, 6],
+        [6, 1, 1, 6],
+      ]),
     );
   });
 
@@ -240,20 +236,6 @@ describe("a dungeon floor's wall runs (FS-KE075 §H.46)", () => {
         expect(stray).toEqual([]);
       },
     );
-
-    it("stands every piece of a run between the run's two end posts, none sticking out past one", () => {
-      const stubs = wallRuns(walls, golden)
-        .filter((run) => run.width !== run.height)
-        .flatMap((run) => {
-          const axis = run.width > run.height ? "x" : "y";
-          const from = run.position[axis] + CELL / 2;
-          const to = run.position[axis] + (axis === "x" ? run.width : run.height) - CELL / 2;
-          return planWalls([run], 1, MASONRY_WALLS, wallRule(golden))
-            .pieces.filter((p) => p.at[axis] < from || p.at[axis] > to)
-            .map((p) => `${p.axis}@${p.at.x},${p.at.y}`);
-        });
-      expect(stubs).toEqual([]);
-    });
 
     it("leaves no wall cell without a piece", () => {
       expect(wallCells(walls).filter((key) => !axes.has(key))).toEqual([]);
@@ -319,22 +301,35 @@ const edgeKey = (e: WallEdge) => `${e.cx},${e.cy},${e.wallSide}`;
 const at = (x: number, y: number) => ({ x, y });
 
 describe("a wall edge's height (FS-XK2B6 §B.8)", () => {
-  // a room over rows 1–2 and a corridor under rows 4–5, the wall row 3 between them
-  const grid = floor(10, 8, [room(1, 1, 1, 6, 2), corridor(2, 1, 4, 6, 2)]);
+  // a room 4×4 at (2, 2), alone: no wall cell of it has a region on another side
+  const alone = floor(10, 10, [room(1, 2, 2, 4, 4)]);
 
   it.each([
-    ["south of the cell it faces", "south", "front"],
-    ["east of the cell it faces", "east", "front"],
-    ["north of the cell it faces", "north", "back"],
-    ["west of the cell it faces", "west", "back"],
-  ] as const)("an edge whose wall cell lies %s is %s", (_name, wallSide, height) => {
-    expect(edgeHeight({ cx: 3, cy: 3, wallSide }, grid)).toBe(height);
+    ["south of the cell it faces", { cx: 3, cy: 6, wallSide: "south" }, "front"],
+    ["east of the cell it faces", { cx: 6, cy: 3, wallSide: "east" }, "front"],
+    ["north of the cell it faces", { cx: 3, cy: 1, wallSide: "north" }, "back"],
+    ["west of the cell it faces", { cx: 1, cy: 3, wallSide: "west" }, "back"],
+  ] as const)("an edge whose wall cell lies %s is %s", (_name, edge, height) => {
+    expect(edgeHeight(edge, alone)).toBe(height);
   });
 
-  it("gives a wall cell with walkable cells north and south a front edge north and a back edge south", () => {
-    // the cell lies south of the room it faces across its north edge, north of the corridor
+  it("draws both edges of a wall cell with walkable cells north and south front: nothing behind it is hidden (ruling E1)", () => {
+    // a room over rows 1–2 and a corridor under rows 4–5, the wall row 3 between them: the cell
+    // lies south of the room it faces across its north edge, and north of the corridor
+    const grid = floor(10, 8, [room(1, 1, 1, 6, 2), corridor(2, 1, 4, 6, 2)]);
     expect(edgeHeight({ cx: 3, cy: 3, wallSide: "south" }, grid)).toBe("front");
-    expect(edgeHeight({ cx: 3, cy: 3, wallSide: "north" }, grid)).toBe("back");
+    expect(edgeHeight({ cx: 3, cy: 3, wallSide: "north" }, grid)).toBe("front");
+  });
+
+  it.each([
+    // a room 4×4 at (1, 1); a corridor leaving its east side at row 2, another its south side at column 2
+    ["a corridor's north edge on the cell east of the room: a walkable cell west of it", { cx: 5, cy: 1, wallSide: "north" }, "front"],
+    ["the same wall one cell on: nothing north or west of it", { cx: 6, cy: 1, wallSide: "north" }, "back"],
+    ["a corridor's west edge on the cell south of the room: a walkable cell north of it", { cx: 1, cy: 5, wallSide: "west" }, "front"],
+    ["the same wall one cell on", { cx: 1, cy: 6, wallSide: "west" }, "back"],
+  ] as const)("where the outline steps, %s: %s (ruling E1)", (_name, edge, height) => {
+    const grid = floor(12, 10, [room(1, 1, 1, 4, 4), corridor(2, 5, 2, 5, 1), corridor(3, 2, 5, 1, 4)]);
+    expect(edgeHeight(edge, grid)).toBe(height);
   });
 });
 
@@ -351,6 +346,12 @@ describe("whether a wall edge may carry a light (FS-XK2B6 §D.13)", () => {
     ["a corridor's south edge (front)", false, { cx: 9, cy: 5, wallSide: "south" }],
   ] as const)("%s: %s", (_name, lit, edge) => {
     expect(edgeLit(edge, grid)).toBe(lit);
+  });
+
+  it("lets no light stand on a room's north edge drawn front for the corridor behind it (ruling E1)", () => {
+    // a corridor over rows 1–2 and a room under rows 4–5: row 3 faces the room across its south edge
+    const between = floor(10, 8, [corridor(2, 1, 1, 6, 2), room(1, 1, 4, 6, 2)]);
+    expect(edgeLit({ cx: 3, cy: 3, wallSide: "north" }, between)).toBe(false);
   });
 });
 
@@ -401,10 +402,11 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
     expect(above.to).toEqual(at(5 * CELL, 2 * CELL));
     expect(below.from).toEqual(at(5 * CELL, 3 * CELL));
     expect(below.from.y - above.to.y).toBe(80);
-    // the jambs: the room's east wall meets the corridor's north wall, and its south wall
+    // the jambs: the room's east wall meets the corridor's north wall, and its south wall. The
+    // corridor's north wall is front over its first cell, which stands east of the room (ruling E1)
     expect(plan.posts.find((p) => p.corner.x === 5 * CELL && p.corner.y === 2 * CELL)).toMatchObject({
       at: at(5 * CELL + HALF, 2 * CELL - HALF),
-      height: "back",
+      height: "front",
     });
     expect(plan.posts.find((p) => p.corner.x === 5 * CELL && p.corner.y === 3 * CELL)).toMatchObject({
       at: at(5 * CELL + HALF, 3 * CELL + HALF),
@@ -412,7 +414,27 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
     });
   });
 
-  it("gives a wall cell between a room and a corridor a wall on each of its two edges, each its own height", () => {
+  it("ends a run where a straight wall changes height, under a post on the wall's line (ruling E1)", () => {
+    // a room 4×4 at (1, 1), a corridor one cell wide leaving its east side at row 2: the corridor's
+    // north wall is front on the cell east of the room, back from there on
+    const plan = planOf(floor(12, 6, [room(1, 1, 1, 4, 4), corridor(2, 5, 2, 5, 1)]));
+    expect(shape(runOn(plan, "north", 2 * CELL, 5 * CELL)!)).toMatchObject({
+      from: at(5 * CELL, 2 * CELL),
+      to: at(6 * CELL, 2 * CELL),
+      height: "front",
+    });
+    expect(shape(runOn(plan, "north", 2 * CELL, 6 * CELL)!)).toMatchObject({
+      from: at(6 * CELL, 2 * CELL),
+      to: at(10 * CELL, 2 * CELL),
+      height: "back",
+    });
+    // half a thickness north of the line, on the corner along it; as tall as the taller wall
+    expect(plan.posts.filter((p) => p.corner.x === 6 * CELL && p.corner.y === 2 * CELL)).toEqual([
+      expect.objectContaining({ at: at(6 * CELL, 2 * CELL - HALF), height: "back" }),
+    ]);
+  });
+
+  it("gives a wall cell between a room and a corridor a wall on each of its two edges, both front (ruling E1)", () => {
     // a room over rows 1–2 and a corridor under rows 4–5: every cell of row 3 has a walkable cell north and south
     const plan = planOf(floor(10, 8, [room(1, 1, 1, 6, 2), corridor(2, 1, 4, 6, 2)]));
     expect(shape(runOn(plan, "south", 3 * CELL, 3 * CELL)!)).toMatchObject({
@@ -423,7 +445,7 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
     expect(shape(runOn(plan, "north", 4 * CELL, 3 * CELL)!)).toMatchObject({
       from: at(1 * CELL, 4 * CELL),
       to: at(7 * CELL, 4 * CELL),
-      height: "back",
+      height: "front",
     });
   });
 
@@ -442,9 +464,10 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
     const here = at(2 * CELL, 2 * CELL);
     const ending = plan.runs.filter((r) => [r.from, r.to].some((end) => end.x === here.x && end.y === here.y));
     expect(ending).toHaveLength(4);
-    // walls lie on both sides of the corner along each axis, so the post stands on it
+    // walls lie on both sides of the corner along each axis, so the post stands on it; both wall
+    // cells stand in front of a room, so all four walls are front (ruling E1) and the post with them
     expect(plan.posts.filter((p) => p.corner.x === here.x && p.corner.y === here.y)).toEqual([
-      expect.objectContaining({ at: here, height: "back" }),
+      expect.objectContaining({ at: here, height: "front" }),
     ]);
   });
 
@@ -514,27 +537,33 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
       }
     });
 
-    it("ends a run only where the next cell along shows no such edge", () => {
-      const edges = new Set(plan.edges.map(edgeKey));
+    /** The height of the edge of a kind a cell shows, if it shows one. */
+    const heightAt = (cx: number, cy: number, wallSide: EdgeSide) =>
+      plan.edges.some((e) => edgeKey(e) === `${cx},${cy},${wallSide}`) ? edgeHeight({ cx, cy, wallSide }, grid) : undefined;
+
+    it("ends a run only where the next cell along shows no such edge, or shows it at the other height", () => {
       for (const run of plan.runs) {
         const own = edgesOf(run);
         const [cx, cy] = own[0].split(",").map(Number);
         const [ex, ey] = own[own.length - 1].split(",").map(Number);
         const [dx, dy] = run.axis === "x" ? [1, 0] : [0, 1];
-        expect(edges.has(`${cx - dx},${cy - dy},${run.wallSide}`)).toBe(false);
-        expect(edges.has(`${ex + dx},${ey + dy},${run.wallSide}`)).toBe(false);
+        expect(heightAt(cx - dx, cy - dy, run.wallSide)).not.toBe(run.height);
+        expect(heightAt(ex + dx, ey + dy, run.wallSide)).not.toBe(run.height);
       }
     });
 
-    it("makes a run front when its wall cells lie south or east of the cells it faces, back otherwise", () => {
-      for (const run of plan.runs) expect(run.height).toBe(run.wallSide === "south" || run.wallSide === "east" ? "front" : "back");
+    it("makes an edge front when its wall cell lies south or east of the cell it faces, or has a walkable cell north or west of it; back otherwise (ruling E1)", () => {
       for (const edge of plan.edges) {
         const run = plan.runs.find((r) => edgesOf(r).includes(edgeKey(edge)))!;
+        const low =
+          edge.wallSide === "south" || edge.wallSide === "east" || grid.walkable(edge.cx, edge.cy - 1) || grid.walkable(edge.cx - 1, edge.cy);
+        expect(edgeHeight(edge, grid)).toBe(low ? "front" : "back");
         expect(run.height).toBe(edgeHeight(edge, grid));
       }
+      expect(new Set(plan.runs.map((r) => r.height))).toEqual(new Set(["front", "back"]));
     });
 
-    it("has 7 wall cells with walkable cells on opposite sides, all north and south: front on the north edge, back on the south", () => {
+    it("has 7 wall cells with walkable cells on opposite sides, all north and south: front on both edges", () => {
       const twoSided = cells.filter((key) => {
         const sides = sidesOf(key);
         return (sides.includes("north") && sides.includes("south")) || (sides.includes("west") && sides.includes("east"));
@@ -545,38 +574,58 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
         expect(sidesOf(key)).toEqual(expect.arrayContaining(["north", "south"]));
         // its north edge is on the line over it, its south edge on the line under it
         expect(runOn(plan, "south", cy * CELL, cx * CELL)?.height).toBe("front");
-        expect(runOn(plan, "north", (cy + 1) * CELL, cx * CELL)?.height).toBe("back");
+        expect(runOn(plan, "north", (cy + 1) * CELL, cx * CELL)?.height).toBe("front");
       }
     });
 
-    it("has 58 wall cells carrying a front edge and a back edge at once", () => {
+    it("has 58 wall cells in front of one region and behind another, every wall on them front; no cell carries a front wall and a back wall", () => {
       const heights = new Map<string, Set<string>>();
+      const sides = new Map<string, Set<boolean>>();
       for (const run of plan.runs)
         for (const key of edgesOf(run)) {
           const cell = key.split(",").slice(0, 2).join(",");
           heights.set(cell, (heights.get(cell) ?? new Set()).add(run.height));
+          sides.set(cell, (sides.get(cell) ?? new Set()).add(run.wallSide === "south" || run.wallSide === "east"));
         }
-      expect([...heights.values()].filter((h) => h.size === 2)).toHaveLength(58);
+      const both = [...sides].filter(([, s]) => s.size === 2).map(([cell]) => cell);
+      expect(both).toHaveLength(58);
+      for (const cell of both) expect([...heights.get(cell)!]).toEqual(["front"]);
+      expect([...heights.values()].filter((h) => h.size === 2)).toEqual([]);
     });
 
-    it("stands one post at every run end and nowhere else: the corners where the walkable outline turns", () => {
+    /** The grid corners where the walkable outline turns: of the four cells round it, one or three are walkable. */
+    const turns = new Set<string>();
+    for (let vx = 0; vx <= grid.cols; vx++)
+      for (let vy = 0; vy <= grid.rows; vy++) {
+        const round = [grid.walkable(vx - 1, vy - 1), grid.walkable(vx, vy - 1), grid.walkable(vx - 1, vy), grid.walkable(vx, vy)];
+        const n = round.filter(Boolean).length;
+        if (n === 1 || n === 3) turns.add(`${vx * CELL},${vy * CELL}`);
+      }
+    /** The grid corners between two edges of one line and side that differ in height. */
+    const steps = new Set<string>();
+    for (const e of plan.edges) {
+      const [dx, dy] = e.wallSide === "north" || e.wallSide === "south" ? [1, 0] : [0, 1];
+      const next = heightAt(e.cx + dx, e.cy + dy, e.wallSide);
+      if (next === undefined || next === edgeHeight(e, grid)) continue;
+      // the corner the two edges share: the line's end of the first cell
+      const line = e.wallSide === "south" ? e.cy : e.wallSide === "north" ? e.cy + 1 : e.wallSide === "east" ? e.cx : e.cx + 1;
+      steps.add(dx ? `${(e.cx + 1) * CELL},${line * CELL}` : `${line * CELL},${(e.cy + 1) * CELL}`);
+    }
+
+    it("stands one post at every run end and nowhere else: where the walkable outline turns, and where a straight wall changes height", () => {
       const ends = new Set(plan.runs.flatMap((r) => [r.from, r.to]).map((p) => `${p.x},${p.y}`));
       const corners = plan.posts.map((p) => `${p.corner.x},${p.corner.y}`);
       expect(new Set(corners).size).toBe(corners.length);
       expect(new Set(corners)).toEqual(ends);
-      // a grid corner where the outline turns: of the four cells round it, one or three are walkable
-      const turns = new Set<string>();
-      for (let vx = 0; vx <= grid.cols; vx++)
-        for (let vy = 0; vy <= grid.rows; vy++) {
-          const round = [grid.walkable(vx - 1, vy - 1), grid.walkable(vx, vy - 1), grid.walkable(vx - 1, vy), grid.walkable(vx, vy)];
-          const n = round.filter(Boolean).length;
-          if (n === 1 || n === 3) turns.add(`${vx * CELL},${vy * CELL}`);
-        }
-      expect(ends).toEqual(turns);
+      expect(ends).toEqual(new Set([...turns, ...steps]));
+      expect(steps.size).toBeGreaterThan(0);
+      // never at a turn: the two cells such a corner lies between face the same way
+      for (const key of steps) expect(turns.has(key)).toBe(false);
     });
 
     it("sets each post half a thickness to the wall side of its corner on each axis, where the two walls' thicknesses cross", () => {
       for (const post of plan.posts) {
+        if (!turns.has(`${post.corner.x},${post.corner.y}`)) continue;
         const vx = post.corner.x / CELL;
         const vy = post.corner.y / CELL;
         const round = [
@@ -593,6 +642,21 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
         expect(isWall.has(`${into.cx},${into.cy}`)).toBe(true);
         expect(post.at.x).toBeCloseTo(post.corner.x + (into.cx === vx ? HALF : -HALF), 9);
         expect(post.at.y).toBeCloseTo(post.corner.y + (into.cy === vy ? HALF : -HALF), 9);
+      }
+    });
+
+    it("sets a post where a straight wall changes height on the wall's line: half a thickness to the wall side across it", () => {
+      for (const post of plan.posts) {
+        if (turns.has(`${post.corner.x},${post.corner.y}`)) continue;
+        const ending = plan.runs.filter((r) => [r.from, r.to].some((end) => end.x === post.corner.x && end.y === post.corner.y));
+        expect(ending).toHaveLength(2);
+        const [one, other] = ending;
+        expect([one.wallSide, one.axis]).toEqual([other.wallSide, other.axis]);
+        expect(new Set(ending.map((r) => r.height))).toEqual(new Set(["front", "back"]));
+        const out = one.wallSide === "north" || one.wallSide === "west" ? -HALF : HALF;
+        expect(post.at.x).toBeCloseTo(post.corner.x + (one.axis === "y" ? out : 0), 9);
+        expect(post.at.y).toBeCloseTo(post.corner.y + (one.axis === "x" ? out : 0), 9);
+        expect(post.height).toBe("back");
       }
     });
 
@@ -691,6 +755,81 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
         );
       }
     });
+  });
+});
+
+describe("a dungeon floor's walls drawn on their edges (FS-XK2B6 §A–§D)", () => {
+  const grid = new RegionGrid(fixture as DungeonMap);
+  const walls = (fixture as { walls: WallState[] }).walls;
+  const plan = wallPlan(walls, grid, THICK);
+  const { pieces, posts } = dungeonWalls(plan, grid, 41, MASONRY_WALLS);
+  /** Each run with the pieces cut from it. */
+  const byRun = plan.runs.map((run) => ({ run, own: dungeonWalls({ edges: [], runs: [run], posts: [] }, grid, 41, MASONRY_WALLS).pieces }));
+  const across = (axis: WallAxis) => (axis === "x" ? "y" : "x");
+
+  it("cuts every run into two whole pieces per cell, none past a run's end, no two of the floor at one place", () => {
+    expect(pieces).toHaveLength(2 * 766);
+    expect(byRun.flatMap(({ own }) => own)).toEqual(pieces);
+    for (const { run, own } of byRun) {
+      expect(own).toHaveLength((2 * (run.to[run.axis] - run.from[run.axis])) / CELL);
+      own.forEach((p, k) => {
+        expect([p.keep, p.axis, p.height, p.wallId]).toEqual([1, run.axis, run.height, run.wallId]);
+        expect(p.at[run.axis]).toBe(run.from[run.axis] + 20 + 40 * k);
+        expect(p.at[run.axis]).toBeLessThan(run.to[run.axis]);
+      });
+    }
+    expect(new Set(pieces.map((p) => `${p.at.x},${p.at.y}`)).size).toBe(pieces.length);
+  });
+
+  it("centres every piece half a thickness from its edge, in the wall cell its edge is on; none on a cell's centreline", () => {
+    const edges = new Set(plan.edges.map(edgeKey));
+    for (const { run, own } of byRun)
+      for (const p of own) {
+        const line = run.from[across(run.axis)];
+        const out = run.wallSide === "south" || run.wallSide === "east" ? 1 : -1;
+        expect(p.at[across(run.axis)]).toBeCloseTo(line + out * HALF, 9);
+        const { cx, cy } = grid.cellOf(p.at);
+        expect(grid.walkable(cx, cy)).toBe(false);
+        expect(edges.has(`${cx},${cy},${run.wallSide}`)).toBe(true);
+        expect(p.at[across(run.axis)] % CELL).not.toBe(CELL / 2);
+      }
+  });
+
+  it("draws a lit kind only on a back edge facing a room, and some there", () => {
+    let sconces = 0;
+    for (const { run, own } of byRun)
+      for (const p of own) {
+        if (!p.sheet.includes("sconce")) continue;
+        sconces++;
+        expect(p.sheet).toMatch(/^tower_wall_back_sconce_[xy]$/);
+        expect(edgeLit({ ...grid.cellOf(p.at), wallSide: run.wallSide }, grid)).toBe(true);
+      }
+    expect(sconces).toBeGreaterThan(0);
+    // a back edge that may hold none has no sconce, and every other kind
+    const dark = byRun.filter(({ run }) => run.height === "back").flatMap(({ run, own }) => own.filter((p) => !edgeLit({ ...grid.cellOf(p.at), wallSide: run.wallSide }, grid)));
+    expect(dark.length).toBeGreaterThan(0);
+    expect(new Set(dark.map((p) => p.sheet.split("_")[3]))).toEqual(new Set(["plain", "pillar", "banner", "cobweb"]));
+  });
+
+  it("stands a post for every post of the plan, where the plan says, in the sheet of its height", () => {
+    expect(posts).toEqual(plan.posts.map(({ wallId, at: place, height }) => ({ wallId, at: place, height, sheet: `tower_post_${height}` })));
+  });
+
+  it("sorts a body pressed against any wall, anywhere along any piece, behind the piece when the wall cell lies south or east of the edge and in front of it otherwise (ADR-0074)", () => {
+    const key = (p: { x: number; y: number }) => p.x + p.y;
+    for (const { run, own } of byRun) {
+      const behind = run.wallSide === "south" || run.wallSide === "east";
+      // a body of radius 20 against the wall's face, on the walkable side of the line
+      const line = run.from[across(run.axis)] + (behind ? -20 : 20);
+      for (const p of own)
+        for (const d of [-20, -10, 0, 10, 19.9]) {
+          const body = run.axis === "x" ? { x: p.at.x + d, y: line } : { x: line, y: p.at.y + d };
+          const { cx, cy } = grid.cellOf(body);
+          expect(grid.walkable(cx, cy)).toBe(true);
+          expect(key(body) < key(p.depthAt)).toBe(behind);
+          expect(key(body)).not.toBe(key(p.depthAt));
+        }
+    }
   });
 });
 
