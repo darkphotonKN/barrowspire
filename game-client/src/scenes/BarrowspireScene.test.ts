@@ -2395,6 +2395,7 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
 
     expect(scene.getNearbyChest()?.entityId).toBe("c1");
     scene.toggleChest("c1");
+    run.handleGameStateUpdate(withKind("sack", true));
     expect(view.open).toHaveBeenCalledWith("c1", "sack");
     vi.restoreAllMocks();
   });
@@ -2411,8 +2412,61 @@ describe("BarrowspireScene sacks (FS-1D6BX §Requirements 12, 13, D2, D3)", () =
     run.handleGameStateUpdate(withKind(kind));
 
     scene.toggleChest("c1");
+    run.handleGameStateUpdate(withKind(kind, true));
     expect(view.open).toHaveBeenCalledWith("c1", opensAs);
     vi.restoreAllMocks();
+  });
+
+  // The coffer waits for the server: a shut container shows nothing until a state says it opened,
+  // so a refused reach (a guarded chest) never flashes the coffer open and shut (FS-KE075 §J R60).
+  describe("reaching for a shut container (FS-KE075 §J R60)", () => {
+    const blade = { entity_id: "i1", name: "Blade" };
+    function reached(is_open = false) {
+      vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const { run } = onStage();
+      const view = { entityId: null as string | null, open: vi.fn(), close: vi.fn(), setItems: vi.fn() };
+      view.open.mockImplementation((id: string) => void (view.entityId = id));
+      const scene = run as unknown as {
+        containerView: typeof view;
+        toggleChest(id: string): void;
+        chestRefused(): void;
+      };
+      scene.containerView = view;
+      run.handleGameStateUpdate(withKind("chest", is_open, is_open ? [blade] : []));
+      scene.toggleChest("c1");
+      return { run, scene, view };
+    }
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should not open the coffer before the server says the chest opened", () => {
+      const { run, view } = reached();
+      expect(view.open).not.toHaveBeenCalled();
+      run.handleGameStateUpdate(withKind("chest"));
+      expect(view.open).not.toHaveBeenCalled();
+    });
+
+    it("should open the coffer with its contents on the state that shows the chest open", () => {
+      const { run, view } = reached();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).toHaveBeenCalledTimes(1);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should open at once a container the server already shows open", () => {
+      const { view } = reached(true);
+      expect(view.open).toHaveBeenCalledWith("c1", "chest");
+      expect(view.setItems).toHaveBeenCalledWith([blade]);
+    });
+
+    it("should never open the coffer for a refused reach, even once another opens the chest", () => {
+      const { run, scene, view } = reached();
+      scene.chestRefused();
+      run.handleGameStateUpdate(withKind("chest", true, [blade]));
+      expect(view.open).not.toHaveBeenCalled();
+    });
   });
 
   it("should draw a kind it does not know as a chest", () => {
@@ -5594,8 +5648,8 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
   });
 });
 
-// A floor-1 chest whose guards still stand is refused by the server: the coffer the E key opened
-// at once closes again, and the notice says only that it will not open (FS-KE075 §J R60).
+// A floor-1 chest whose guards still stand is refused by the server: the coffer never opened (it
+// waits for the server), and the notice says only that it will not open (FS-KE075 §J R60).
 describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -5614,28 +5668,37 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       connectToServer(): void;
       showNotification(message: string, color: string): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
+      reaching?: string;
     };
     run.init({ sessionID: "run-a" });
-    run.containerView = { entityId: "chest-1", close: vi.fn() };
+    run.containerView = { entityId: null, close: vi.fn() };
+    run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
     run.connectToServer();
     return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
   }
 
-  it("should close the coffer it opened and say it will not open", () => {
+  it("should give up the reach and say it will not open", () => {
     const { run, notified, reply } = connected();
     reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
 
-    expect(run.containerView.close).toHaveBeenCalledTimes(1);
+    expect(run.reaching).toBeUndefined();
     expect(notified).toHaveBeenCalledTimes(1);
     expect(notified.mock.calls[0][0]).toBe("It will not open.");
   });
 
-  it("should leave the coffer open on any other reply", () => {
+  it("should give up the reach on a chest out of reach too", () => {
     const { run, reply } = connected();
     reply({ success: false, message: "too far away to interact" });
+
+    expect(run.reaching).toBeUndefined();
+  });
+
+  it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {
+    const { run, reply } = connected();
     reply({ success: false, message: "" });
 
+    expect(run.reaching).toBe("chest-1");
     expect(run.containerView.close).not.toHaveBeenCalled();
   });
 });
