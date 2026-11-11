@@ -3,7 +3,7 @@ id: I-1SEF0-2
 status: open
 implements: FS-1SEF0
 blocked_by: [I-1SEF0-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-1SEF0 slice 2: the enlarged minimap, 324 × 162, drawn at its size with no blur, the column moving down with it (game-client)"
 ---
 Implements FS-1SEF0 §B, §D

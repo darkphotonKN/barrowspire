@@ -14,7 +14,7 @@ export const TOP_RIGHT_LINE = { fontSize: "12px", padding: { x: 8, y: 3 }, gap: 
 export interface TopRightColumnParts {
   /** The column's top-right corner. */
   corner: Point;
-  /** Whether a minimap is shown: built for this floor and not hidden with M. */
+  /** Whether a minimap is shown in the corner: built for this floor and not the map overlay (FS-1SEF0 §D.21). */
   minimap: boolean;
   /** The floor indicator's height, or null while it is hidden (no label). */
   floorHeight: number | null;

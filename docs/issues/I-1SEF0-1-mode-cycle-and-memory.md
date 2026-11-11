@@ -1,6 +1,6 @@
 ---
 id: I-1SEF0-1
-status: open
+status: done
 implements: FS-1SEF0
 blocked_by: []
 labels: [ready-for-agent]
@@ -27,12 +27,12 @@ The off step, `minimapOn` and the minimap's hide switch go.
 
 ## Acceptance Criteria
 
-- [ ] FS-1SEF0 §Acceptance Criteria: the M cycle and its guards; M inert with no minimap; the
+- [x] FS-1SEF0 §Acceptance Criteria: the M cycle and its guards; M inert with no minimap; the
       stored mode (read, write, unknown, `off`, throwing storage); no `minimapOn` or hide switch;
       the column and readout in the overlay mode as for "no minimap shown".
-- [ ] FS-56CKV's and FS-SRA9J's tests that pressed M to hide the minimap are rewritten to the
+- [x] FS-56CKV's and FS-SRA9J's tests that pressed M to hide the minimap are rewritten to the
       overlay mode, each citing FS-1SEF0.
-- [ ] Typecheck, lint and `npx vitest run --maxWorkers=4 --minWorkers=1` pass.
+- [x] Typecheck, lint and `npx vitest run --maxWorkers=4 --minWorkers=1` pass.
 
 ## Blocked By
 

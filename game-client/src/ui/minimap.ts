@@ -36,6 +36,7 @@ import type { RegionGrid } from "@/render/world/dungeon";
 import { regionAt, type ExplorationState } from "@/render/world/exploration";
 import type { FloorRegion } from "@/types/gameState";
 import { palette, rgba } from "@/utils/canvasPalette";
+import type { MinimapMode } from "./minimapMode";
 
 export const MINIMAP = {
   /** The panel, in logical px (§E.21). */
@@ -356,7 +357,7 @@ export class Minimap {
   private shownContent: MinimapContent = { regions: [], fixtures: [] };
   private drawn?: string;
   private dotsDrawn?: string;
-  private on = true;
+  private shownMode: MinimapMode = "normal";
 
   constructor(
     stage: MinimapStage,
@@ -379,9 +380,14 @@ export class Minimap {
     return this.shownContent;
   }
 
-  /** Whether it is up (M, §E.19). */
-  get shown(): boolean {
-    return this.on;
+  /** How it is shown (FS-1SEF0 §A): M steps it through normal, enlarged and the overlay. */
+  get mode(): MinimapMode {
+    return this.shownMode;
+  }
+
+  /** The panel it holds in the top-right corner, or none while it is the overlay (FS-1SEF0 §C.20). */
+  get panel(): { width: number; height: number } | null {
+    return this.shownMode === "overlay" ? null : { width: MINIMAP.width, height: MINIMAP.height };
   }
 
   /** Stands every layer at the panel's top-left (§E.20); nothing is redrawn. */
@@ -419,9 +425,10 @@ export class Minimap {
     if (self) this.dot(self, DOT.self, palette.markerSelf);
   }
 
-  setShown(on: boolean): void {
-    this.on = on;
-    for (const layer of this.layers()) layer.setVisible(on);
+  /** Shown as `mode` from now (FS-1SEF0 §A). */
+  setMode(mode: MinimapMode): void {
+    this.shownMode = mode;
+    for (const layer of this.layers()) layer.setVisible(mode !== "overlay");
   }
 
   destroy(): void {
