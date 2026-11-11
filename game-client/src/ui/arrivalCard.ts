@@ -2,7 +2,8 @@
  * The arrival card (FS-PQ2TW §B, §E; ADR-0073 Decision 3): the view goes dark, the place's name
  * rises over a rule and one line, the view comes back up, and the card leaves. One piece plays it
  * for every scene and belongs to none: a scene hands it the card's words and tells it one thing,
- * that its place is built. The dark, the card, its timing, its leaving and its teardown are here.
+ * that its place is built; a scene whose words come later (a run's floor) first puts up the dark
+ * alone. The dark, the card, its timing, its leaving and its teardown are here.
  * It leaves as dust off its letters (§D), or, where the dust plays nothing, fades.
  *
  * Presentation only (R14, Decision 6): state keeps applying under it, it sits below the HUD so
@@ -80,6 +81,8 @@ export class ArrivalCard {
   private leaving?: { remove(dispatchCallback?: boolean): void };
   /** Whether the card is in the air as dust. */
   private dusting = false;
+  /** When the dark went up alone, waiting for its words (R13); none once a card is drawn on it. */
+  private darkSince?: number;
 
   /**
    * @param dust how the card breaks to dust as it leaves
@@ -98,17 +101,34 @@ export class ArrivalCard {
   }
 
   /**
-   * Plays the card with `words`, in place of any card still up (R9). The view comes back up only
-   * over a built place: with `built` false the dark holds until `built()` is called, then lifts
-   * as it would have, less the time already waited (R12, FS-KE075 §H.41).
+   * The dark alone, before the place's words are known (R11, R13): a run is dark from `create`,
+   * and its floor, and so its card, comes with the first broadcast. It holds, whatever is built,
+   * until `play` draws the card on it; that card's dark hold is counted from now.
+   */
+  dark(): void {
+    this.remove();
+    this.parts = [this.veil()];
+    this.cancelSceneEnd = onSceneEnd(this.scene, () => this.forget());
+    this.darkSince = this.scene.time.now;
+  }
+
+  /**
+   * Plays the card with `words`, in place of any card still up (R9), or on the dark that waited
+   * for it. The view comes back up only over a built place: with `built` false the dark holds
+   * until `built()` is called, then lifts as it would have, less the time already waited (R12,
+   * FS-KE075 §H.41).
    */
   play(words: CardWords, place: { built: boolean }): void {
+    const shownAt = this.scene.time.now;
+    // a dark already up alone counts toward the dark hold (R13); over a card it replaces, the
+    // dark starts now
+    const darkened = shownAt - (this.darkSince ?? shownAt) || 0;
+    const rise = Math.max(0, ARRIVAL_CARD.darkHoldMs - darkened);
     this.remove();
     const { scene, view } = this;
     const { centerX, centerY } = view;
 
-    const veil = scene.add.rectangle(0, 0, view.width, view.height, palette.inkDeep, 1);
-    veil.setOrigin(0, 0).setScrollFactor(0).setDepth(ARRIVAL_CARD.depth);
+    const veil = this.veil();
 
     const heading = scene.add.text(centerX, centerY + HEADING_DY, words.title, {
       fontFamily: CANVAS_FONT.body,
@@ -138,13 +158,13 @@ export class ArrivalCard {
       targets: card,
       alpha: 1,
       duration: ARRIVAL_CARD.cardFadeMs,
-      delay: ARRIVAL_CARD.darkHoldMs,
+      delay: rise,
     });
-    const shownAt = scene.time.now;
     this.lift = () => {
       this.lift = undefined;
+      // the view comes back once the card is in
       const waited = scene.time.now - shownAt || 0;
-      const hold = Math.max(0, ARRIVAL_CARD.darkHoldMs + ARRIVAL_CARD.cardFadeMs - waited);
+      const hold = Math.max(0, rise + ARRIVAL_CARD.cardFadeMs - waited);
       scene.tweens.add({
         targets: veil,
         alpha: 0,
@@ -159,7 +179,17 @@ export class ArrivalCard {
     if (place.built) this.lift();
   }
 
-  /** The scene's place is built: a dark that was holding for it lifts. Nothing otherwise. */
+  /** The dark over the whole view, over the world and under the card and the HUD (R15). */
+  private veil(): Phaser.GameObjects.Rectangle {
+    const { view } = this;
+    const veil = this.scene.add.rectangle(0, 0, view.width, view.height, palette.inkDeep, 1);
+    return veil.setOrigin(0, 0).setScrollFactor(0).setDepth(ARRIVAL_CARD.depth);
+  }
+
+  /**
+   * The scene's place is built: a dark that was holding for it lifts. Nothing otherwise: a dark
+   * still waiting for its words holds for them.
+   */
   built(): void {
     this.lift?.();
   }
@@ -224,5 +254,6 @@ export class ArrivalCard {
     this.lift = undefined;
     this.leaving = undefined;
     this.dusting = false;
+    this.darkSince = undefined;
   }
 }
