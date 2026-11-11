@@ -37,7 +37,7 @@ import type { ChunkVisibility, Toggle } from "./chunks";
 import type { RegionGrid, WallPlan } from "./dungeon";
 import type { ExplorationState } from "./exploration";
 import { FEATHER, fieldWindow, fogField, type FieldShape, type FieldWindow } from "./fogField";
-import type { WallAxis, WallHeight } from "./walls";
+import { intoWall, wallward, type WallAxis, type WallHeight } from "./walls";
 
 /** A veil: the share of `palette.inkDeep` laid over a region's ground, and its walls' multiply tint. */
 export interface Veil {
@@ -195,19 +195,17 @@ export function wallLayout(grid: RegionGrid, plan: Pick<WallPlan, "runs" | "post
 
   for (const run of plan.runs) {
     const across = run.axis === "x" ? "y" : "x";
-    // towards the wall cells: world +x and +y run towards the camera
-    const out = run.wallSide === "south" || run.wallSide === "east" ? 1 : -1;
     const line = run.from[across];
-    const centre = line + (out * run.thickness) / 2;
     // the wall cells' lane: past the line when they lie south or east of it, before it otherwise
-    const lane = line / c - (out > 0 ? 0 : 1);
+    const lane = line / c - (wallward(run.wallSide) > 0 ? 0 : 1);
     // a wall cell's north side (its cells south of the line) and east side (west of it) are its right half's
     const right = run.wallSide === "south" || run.wallSide === "west";
     for (let at = run.from[run.axis]; at < run.to[run.axis]; at += c) {
       const k = Math.round(at / c);
       const [cx, cy] = run.axis === "x" ? [k, lane] : [lane, k];
       const mid = at + c / 2;
-      const foot = run.axis === "x" ? worldToScreen(mid, centre) : worldToScreen(centre, mid);
+      const centre = intoWall(run.axis === "x" ? { x: mid, y: line } : { x: line, y: mid }, [run.wallSide], run.thickness);
+      const foot = worldToScreen(centre.x, centre.y);
       add(slabs, key(cx, cy, right), { axis: run.axis, foot, height: run.height });
     }
   }
