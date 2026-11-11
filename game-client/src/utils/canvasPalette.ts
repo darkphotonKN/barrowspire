@@ -227,11 +227,8 @@ export const palette = {
   torch: BARROW_HEX.amber,
   torchCore: BARROW_HEX.amberBright,
   ember: BARROW_HEX.ember,
-  /**
-   * Fire's temperature ramp, hottest first: white-yellow core, orange, `ember`, deep red, then
-   * char. For fire effects only (a burn, an ember, a spark); never marks an interactable.
-   */
-  fire: { core: BARROW_HEX.fireCore, hot: BARROW_HEX.fireHot, ember: BARROW_HEX.ember, deep: BARROW_HEX.fireDeep },
+  // Fire's ramp is not here: fire effects read its tokens by name in their own records
+  // (CARD_ASH.tint), and nothing the palette colours is fire (theme.test.ts).
 
   // -- Ink. Outlines and the deepest shadow. Matches the DOM base so the
   //    canvas and the page agree on what "dark" means.
