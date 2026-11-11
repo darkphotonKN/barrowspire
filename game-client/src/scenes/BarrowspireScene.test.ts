@@ -6949,6 +6949,37 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       }
     });
 
+    it("should carry no wall shadow onto the next floor of buildings of the same size: its tiles painted once, its own shadows laid once (Edge States, A new floor)", () => {
+      type Laying = { draw(pieces: unknown): void; layShadows(): void };
+      const draws = vi.spyOn(GroundLayer.prototype as unknown as Laying, "draw");
+      const lays = vi.spyOn(GroundLayer.prototype as unknown as Laying, "layShadows");
+      const shade = vi.spyOn(GroundLayer.prototype, "shade");
+      try {
+        const { run } = buildingsStage();
+        const ground = (run as unknown as { groundLayer?: unknown }).groundLayer;
+        expect(ground).toBeDefined();
+        draws.mockClear();
+        lays.mockClear();
+        shade.mockClear();
+        // the climb to floor 3, a floor of buildings the same size: the ground is kept
+        const next = floorState(3);
+        useGameStore.getState().receiveFloorMap(mapOf(next));
+        run.handleGameStateUpdate(bare(next));
+        expect((run as unknown as { groundLayer?: unknown }).groundLayer).toBe(ground);
+        expect(shade).toHaveBeenCalledTimes(1);
+        // floor 3's tiles once, and floor 3's shadows once over them: none of floor 2's on the way
+        expect(draws).toHaveBeenCalledTimes(1);
+        expect(lays).toHaveBeenCalledTimes(1);
+        expect(lays.mock.instances[0]).toBe(ground);
+        expect(draws.mock.invocationCallOrder[0]).toBeLessThan(lays.mock.invocationCallOrder[0]);
+        expect(shade.mock.invocationCallOrder[0]).toBeLessThan(lays.mock.invocationCallOrder[0]);
+      } finally {
+        draws.mockRestore();
+        lays.mockRestore();
+        shade.mockRestore();
+      }
+    });
+
     it("should hand the ground no wall shadow without the wall art: placeholder walls never had one", () => {
       const shade = vi.spyOn(GroundLayer.prototype, "shade");
       // each missing sheet is reported once; not under test here

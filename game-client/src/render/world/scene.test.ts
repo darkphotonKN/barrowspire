@@ -759,6 +759,26 @@ describe("GroundLayer's wall shadows (FS-V8FT3 §E R19–R23)", () => {
     expect(laid.map((s) => s.key)).toEqual(scratches.map((s) => s.key));
   });
 
+  it("should lay no shadow it was told to forget: the next paint lays none, and new shadows go over it without a repaint", () => {
+    const { scene, rts, scratches } = groundStage();
+    const ground = new GroundLayer(scene, art, world);
+    ground.shade({ shapes: [square(middleOf(inner), 30)], cuts: [] });
+    expect(scratches).toHaveLength(1);
+    // the walls they fell from are gone (a climb that keeps the ground): forgetting repaints nothing
+    const cleared = rtOf(rts, inner).cleared;
+    ground.unshade();
+    expect(rtOf(rts, inner).cleared).toBe(cleared);
+    expect(scratches).toHaveLength(1);
+    // the next floor's ground: its tiles, and none of the old shadows over them
+    ground.paint([], { look: TOWER_GROUND, seed: 9 });
+    expect(rtOf(rts, inner).cleared).toBe(cleared + 1);
+    expect(scratches).toHaveLength(1);
+    // its own shadows, laid over the ground as painted, with no second repaint
+    ground.shade({ shapes: [square(middleOf(inner), 50)], cuts: [] });
+    expect(rtOf(rts, inner).cleared).toBe(cleared + 1);
+    expect(scratches).toHaveLength(2);
+  });
+
   it("should repaint the ground before laying other shadows over shadows already laid", () => {
     const { scene, rts, scratches } = groundStage();
     const ground = new GroundLayer(scene, art, world);
