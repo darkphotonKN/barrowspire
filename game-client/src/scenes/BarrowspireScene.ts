@@ -179,6 +179,7 @@ import {
   TRAIL_BED_DEPTH,
   TrailSet,
   type BuildingPart,
+  type BuiltBuilding,
   type Cover,
   type Figure,
   type Occupant,
@@ -2676,7 +2677,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     // a hall wall drawn while the player is in a room takes the hide rule on the next frame
     if (loose.length > 0) this.view?.invalidate();
-    this.drawRooms(walls, changed);
+    const rooms = this.drawRooms(walls, changed);
 
     // 從牆壁反推建築範圍，按 house_id 分組建立屋頂 + 地板（只做一次）
     if (!this.serverBuildingsCreated && walls.length > 0) {
@@ -2685,10 +2686,11 @@ export class BarrowspireScene extends Phaser.Scene {
       const houses = housesFrom(walls);
       // flagstone (or planks) under each house, painted into this floor's baked ground
       // (FS-2325V §C.1, FS-8RBQY §C.3), and the walls' shadows over it in the same step: those of
-      // the walls known now, as the floors are (FS-V8FT3 §F R29, Edge States)
+      // the walls known now, as the floors are, cast from the rooms and halls' walls just drawn
+      // (FS-V8FT3 §F R29, Edge States)
       this.groundLayer?.paint(houses, { look: look.ground, seed: look.seed });
       if (hasWallArt(this.art, look.walls))
-        this.groundLayer?.shade({ shapes: buildingWallShadows(walls, look.seed, look.walls), cuts: [] });
+        this.groundLayer?.shade({ shapes: buildingWallShadows(rooms, baked), cuts: [] });
 
       houses.forEach((house, buildingIndex) => {
         const { x: minX, y: minY, width: bw, height: bh } = house;
@@ -2778,9 +2780,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * parts are torn down whole and redrawn from its walls as they stand now; none of them fades
    * (§E.4). Its walls' lights are the room's own, lit only from inside (§D.6). A room's gap holds
    * its server door (`updateDoors`), so it draws no door of its own, only the head over it.
+   * Returns the rooms drawn.
    */
-  private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): void {
-    if (changed.size === 0) return;
+  private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): BuiltBuilding[] {
+    const drawn: BuiltBuilding[] = [];
+    if (changed.size === 0) return drawn;
     const look = this.currentFloorLook();
     const view = this.buildingView();
     for (const id of changed) {
@@ -2793,7 +2797,9 @@ export class BarrowspireScene extends Phaser.Scene {
       const [built] = addBuildings(this, this.art, own, look.seed, { sheets: look.walls });
       built.lights.forEach(({ source }) => this.queueLight("sconce", source, { room: id }));
       view.set(built);
+      drawn.push(built);
     }
+    return drawn;
   }
 
   /**

@@ -100,6 +100,8 @@ import {
   slabCover,
   tileHash,
   worldSeed,
+  type BuiltBuilding,
+  type BuiltWalls,
   type Cover,
   type Figure,
   type Occupant,
@@ -159,9 +161,6 @@ const HUB_ONE_SHOTS = ["queue_status", "world_handoff", "world_handoff_failed", 
 import {
   INTERIOR_PARTITION,
   MASONRY_WALLS,
-  TIMBER_WALLS,
-  planWalls,
-  thicknessPx,
   trimCrop,
   type WallSheets,
 } from "@/render/world/walls";
@@ -2294,7 +2293,7 @@ export class HubScene extends Phaser.Scene {
     const houses = housesFrom(all);
     const { building: walls, partitions, furnishings } = splitFurnishings(all);
     const seed = worldSeed("hub");
-    this.drawLooseWalls(walls.filter((w) => !w.house_id), seed);
+    const loose = this.drawLooseWalls(walls.filter((w) => !w.house_id), seed);
 
     // each house's walls in the sheets its look names (the Inn's carry no light of their own)
     const bySheets = new Map<WallSheets, WallState[]>();
@@ -2302,9 +2301,11 @@ export class HubScene extends Phaser.Scene {
       const { sheets } = townHouseLook(house);
       bySheets.set(sheets, [...(bySheets.get(sheets) ?? []), ...walls.filter((w) => w.house_id === house.id)]);
     }
-    const buildings = [...bySheets].flatMap(([sheets, own]) =>
-      addBuildings(this, this.art, own, seed, { doors: doorGaps, style: TIMBER_PLACEHOLDER, sheets }),
-    );
+    const drawn = [...bySheets].map(([sheets, own]) => ({
+      sheets,
+      buildings: addBuildings(this, this.art, own, seed, { doors: doorGaps, style: TIMBER_PLACEHOLDER, sheets }),
+    }));
+    const buildings = drawn.flatMap((d) => d.buildings);
     for (const { house, lights } of buildings)
       for (const { source } of lights) {
         // a house's wall flames are its own: lit, halo and all, only from inside (§D.6)
@@ -2318,13 +2319,6 @@ export class HubScene extends Phaser.Scene {
     // ridge pieces sorted by their own footprints (FS-2325V §C.3) closed at both
     // ends by gables (ADR-0036), or without art a placeholder roof on a plane
     // lifted to the wall tops. Either covers the player from outside (§E.1).
-    // The walls' shadows go over the floors in the same step (FS-V8FT3 §F).
-    const trimmed = partitions.flatMap((wall) => {
-      const house = houses.find((h) => h.id === wall.house_id);
-      return house ? [{ house, wall: partitionInside(wall, house) }] : [];
-    });
-    this.groundLayer?.paint(houses);
-    this.groundLayer?.shade(this.wallShadows(walls.filter((w) => !w.house_id), bySheets, trimmed, seed));
     for (const house of houses) {
       const roof = addRoof(this, this.art, house);
       const own = walls.find((w) => w.house_id === house.id);
@@ -2341,7 +2335,15 @@ export class HubScene extends Phaser.Scene {
       this.roofs.push({ house, baked: false, parts: [slab, ...gables] });
     }
     const interiors = new Map<House, Interior>(houses.map((house) => [house, { house, parts: [], lights: [] }]));
-    this.partition(trimmed, seed, interiors);
+    const trimmed = partitions.flatMap((wall) => {
+      const house = houses.find((h) => h.id === wall.house_id);
+      return house ? [{ house, wall: partitionInside(wall, house) }] : [];
+    });
+    const partition = this.partition(trimmed, seed, interiors);
+    // the houses' floors, and the walls' shadows over them in the same step, from the walls as
+    // they were just drawn (FS-V8FT3 §F)
+    this.groundLayer?.paint(houses);
+    this.groundLayer?.shade(this.wallShadows(loose, drawn, partition, trimmed));
     this.furnish(houses, furnishings, interiors);
     // the dark outside whichever house the player stands in, as tall as the walls drawn (FS-9PN7X §D.2)
     const baked = this.art.available && this.art.has("wall_back_plain_x");
@@ -2367,22 +2369,24 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * Walls belonging to no house, as baked pieces or placeholder blocks: they keep the occluder
-   * fade (FS-9PN7X §E.4) and hide by footprint while the player is indoors (§C.1).
+   * fade (FS-9PN7X §E.4) and hide by footprint while the player is indoors (§C.1). The baked
+   * pieces as drawn, or null for none or for placeholders.
    */
-  private drawLooseWalls(walls: WallState[], seed: number): void {
-    if (walls.length === 0) return;
+  private drawLooseWalls(walls: WallState[], seed: number): BuiltWalls | null {
+    if (walls.length === 0) return null;
     const at = (w: WallState) => ({ x: w.position.x + w.width / 2, y: w.position.y + w.height / 2 });
     const baked = addWalls(this, this.art, walls, seed);
     if (baked) {
       this.occluders.add(baked.tall);
       baked.lights.forEach(({ source }) => this.lightMap?.add(source));
       for (const w of walls) this.looseWalls.push({ parts: baked.byWall.get(w.entity_id) ?? [], at: at(w) });
-      return;
+      return baked;
     }
     for (const w of walls) {
       const parts = addUprightBlock(this, w.position.x, w.position.y, w.width, w.height, TIMBER_PLACEHOLDER);
       this.looseWalls.push({ parts, at: at(w) });
     }
+    return null;
   }
 
   /**
@@ -2464,26 +2468,26 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The walls' shadows the hub's ground carries (FS-V8FT3 §F), of the walls drawn baked only:
-   * placeholder walls never had one. A wall of no house as drawn, full height (R28); each house by
-   * the look each side of its outline is seen in, in its look's sheets (R26, R27); a partition low,
-   * inside its house (R25). The hub's ground lies everywhere, so nothing is cut from them.
+   * The walls' shadows the hub's ground carries (FS-V8FT3 §F), cast from the walls as they were
+   * drawn, of those drawn baked only: placeholder walls never had one. A wall of no house as drawn,
+   * full height (R28); each house by the look each side of its outline is seen in, in its look's
+   * sheets (R26, R27); a partition as drawn, low, inside its house (R25). The hub's ground lies
+   * everywhere, so nothing is cut from them.
    */
   private wallShadows(
-    loose: readonly WallState[],
-    bySheets: ReadonlyMap<WallSheets, readonly WallState[]>,
+    loose: BuiltWalls | null,
+    drawn: readonly { sheets: WallSheets; buildings: readonly BuiltBuilding[] }[],
+    partition: BuiltWalls | null,
     partitions: readonly { house: House; wall: WallState }[],
-    seed: number,
   ): GroundShadows {
-    const shapes: Point[][] = [];
-    // in the sheets each is drawn in: the street's walls timber (drawLooseWalls), each house its look's
-    for (const [sheets, own] of [[TIMBER_WALLS, loose] as const, ...bySheets])
-      if (hasWallArt(this.art, sheets)) shapes.push(...buildingWallShadows(own, seed, sheets));
-    if (hasWallArt(this.art, MASONRY_WALLS))
+    const baked = drawn.filter(({ sheets }) => hasWallArt(this.art, sheets)).flatMap((d) => d.buildings);
+    const shapes = buildingWallShadows(baked, loose);
+    if (partition)
       for (const house of new Set(partitions.map((p) => p.house))) {
-        const own = partitions.filter((p) => p.house === house).map((p) => p.wall);
-        const plan = planWalls(own, seed, MASONRY_WALLS, INTERIOR_PARTITION);
-        shapes.push(...shadowsWithin(plan, thicknessPx(MASONRY_WALLS), house));
+        const own = new Set(partitions.filter((p) => p.house === house).map((p) => p.wall.entity_id));
+        const { pieces, posts } = partition.plan;
+        const plan = { pieces: pieces.filter((p) => own.has(p.wallId)), posts: posts.filter((p) => own.has(p.wallId)) };
+        shapes.push(...shadowsWithin(plan, partition.thickness, house));
       }
     return { shapes, cuts: [] };
   }
@@ -2493,10 +2497,15 @@ export class HubScene extends Phaser.Scene {
    * segment trimmed to inside the walls (`partitionInside`), cut in the tower's low masonry pieces
    * with posts at both jambs of its door gap and no light, or without that art a low stone
    * placeholder block. Never a building wall: it has no exterior look, and joins its house's
-   * interior, hidden under the roof.
+   * interior, hidden under the roof. The baked pieces as drawn, or null for none or for
+   * placeholders.
    */
-  private partition(inside: readonly { house: House; wall: WallState }[], seed: number, interiors: Map<House, Interior>): void {
-    if (inside.length === 0) return;
+  private partition(
+    inside: readonly { house: House; wall: WallState }[],
+    seed: number,
+    interiors: Map<House, Interior>,
+  ): BuiltWalls | null {
+    if (inside.length === 0) return null;
     const baked = addWalls(this, this.art, inside.map((p) => p.wall), seed, MASONRY_WALLS, INTERIOR_PARTITION);
     for (const { house, wall } of inside) {
       const interior = interiors.get(house)!;
@@ -2507,6 +2516,7 @@ export class HubScene extends Phaser.Scene {
       const { x, y } = wall.position;
       interior.parts.push(...addUprightBlock(this, x, y, wall.width, wall.height, PLACEHOLDER_STONE, PARTITION_PLACEHOLDER_HEIGHT));
     }
+    return baked;
   }
 
   /**
