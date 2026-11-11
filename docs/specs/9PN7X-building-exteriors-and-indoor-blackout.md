@@ -434,3 +434,5 @@ today.
 - **Sourced or stock art.** Everything is authored in code and baked through the existing tool.
 
 ## Change: Wider doors → FS-MMA2H
+
+## Change: Wall shadow layer → FS-V8FT3

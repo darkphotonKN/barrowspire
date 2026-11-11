@@ -9,7 +9,9 @@
 // An exterior wall piece stands on exactly the footprint of the back piece of its type
 // (architecture.js `wallPiece`, tower.js `partitionWall`), so the client cuts it with the same
 // cutWall geometry. Like the tower's partition pieces, each carries the timber back piece as an
-// invisible frame guide, which pins its frame size and anchor to the back piece's. The camera
+// invisible frame guide, which pins its frame size and anchor to the back piece's; it bakes no
+// ground shadow (the client paints a wall's, FS-V8FT3 §B), so its relief stays inside the
+// guide's own bounds. The camera
 // sees a piece's +z face (a south wall's outside; an east wall's once turned to the y axis), so
 // that face is the building's outward surface: weathered, framed or coursed, never dressed with
 // a sconce, banner, cobweb or torch, and never lit. Nothing here declares a light.
@@ -24,13 +26,14 @@ import { canvasTexture, materials, mkCanvas, pixelTexture, TONE } from "../mater
 import { part } from "./util.js";
 import { ROOF_RISE, wallPiece, WALL_BACK } from "./architecture.js";
 import { DOOR_GAP } from "./interactables.js";
+import { WALL_FOOT } from "../shadow.js";
 import { masonry, PX, roughBox, stoneMat, towerMaterials } from "./tower.js";
 
 /** A piece is one tile along its axis plus the hair of overlap the timber pieces use. */
 const LENGTH = 1.024;
-/** Timber wall thickness, as architecture.js; the masonry partition's, as tower.js. */
-const THICK = 0.18;
-const P_THICK = 0.24;
+/** Timber wall thickness, as architecture.js; the masonry partition's, as tower.js (../shadow.js). */
+const THICK = WALL_FOOT.timber;
+const P_THICK = WALL_FOOT.masonry;
 /** How far exterior relief may stand proud of the centreline: inside the guide's cap (0.26). */
 const PROUD = 0.13;
 
@@ -467,6 +470,9 @@ export function doorHead(type, axis) {
     for (let x = -GAP_W / 2 + 0.125; x < GAP_W / 2; x += 0.25)
       g.add(part(roughBox(0.12, 0.14, 0.05, 89 + Math.round(x * 8), 0.05), T.blockLight, { x, y: H - 0.17, z: P_THICK / 2 + 0.006 }));
   }
+  // the gap's foot on the ground, as deep as the cap, as a frame guide: the anchor is the origin
+  // on the ground, and with no ground shadow (FS-V8FT3 R5) nothing else frames the head down to it
+  g.add(guide(new THREE.Mesh(new THREE.BoxGeometry(GAP_W, 0.01, 0.26))));
   if (axis === "y") g.rotation.y = Math.PI / 2;
   return g;
 }

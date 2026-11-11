@@ -367,3 +367,5 @@ outdoor look is kept, untouched, as the exterior theme for a future outdoor plac
 - New `BARROW` tokens.
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Wall shadow layer → FS-V8FT3

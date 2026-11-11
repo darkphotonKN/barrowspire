@@ -64,15 +64,28 @@ import type { DressingPiece } from "./runDressing";
 import {
   TIMBER_WALLS,
   planWalls,
+  thicknessPx,
   trimCrop,
   type PieceRule,
   type WallPiece,
   type WallPost,
   type WallSheets,
 } from "./walls";
+import type { DrawnBuilding, DrawnWallSet, GroundShadows } from "./wallShadows";
 
 /** Below every world object: the ground is flat and everything stands on it. */
 export const GROUND_DEPTH = -1;
+
+/**
+ * The key of the scratch texture a chunk's wall shadows are drawn into (FS-V8FT3 §E): one at a
+ * time, destroyed before the next is made.
+ */
+const SHADOW_SCRATCH = "ground-wall-shadows";
+
+/** Whether two rects overlap by more than an edge. */
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
 /** Screen px of ground drawn past the projected map, for tiles and decals that overhang it. */
 export const GROUND_MARGIN = 48;
 
@@ -164,6 +177,9 @@ export class GroundLayer {
   private tint?: number;
   /** What was painted last, so the same paint asked again is not redrawn (FS-KE075 §H.44). */
   private painted?: { houses: readonly House[]; look: GroundLook; seed?: number };
+  /** The walls' shadows this ground carries (FS-V8FT3 §E), and whether they lie on it now. */
+  private shadows?: GroundShadows;
+  private shaded = false;
   /** Each chunk, to show and hide as the camera passes (FS-KE075 §H.45). */
   readonly chunks: readonly GroundChunk[];
 
@@ -251,7 +267,92 @@ export class GroundLayer {
     this.draw(planGroundLayer({ ...plan, houses, look, seed }));
     // Phaser 4 buffers a render texture's drawing until render()
     for (const { rt } of this.parts) rt?.render();
+    // the tiles are new: the walls' shadows go over them once more (FS-V8FT3 R22)
+    this.shaded = false;
+    if (this.shadows) this.layShadows();
     if (fadeEdge) this.fadeEdge();
+  }
+
+  /**
+   * Lays the walls' shadows over the ground already painted (FS-V8FT3 §E), without repainting a
+   * tile: the same shadows asked again are already there. Other shadows over shadows already laid
+   * repaint the ground first, so no px is darkened twice. A repaint lays them again.
+   */
+  shade(shadows: GroundShadows): void {
+    if (shadows === this.shadows && this.shaded) return;
+    const laid = this.shaded;
+    this.shadows = shadows;
+    if (!laid) {
+      this.layShadows();
+      return;
+    }
+    const houses = this.painted?.houses ?? [];
+    this.painted = undefined;
+    this.paint(houses);
+  }
+
+  /**
+   * Forgets the walls' shadows this ground holds, repainting nothing: their walls are gone (a climb
+   * to a floor of the same size keeps the ground, FS-V8FT3 Edge States "A new floor"). Those laid
+   * stay until the next paint, which lays none of them; the next `shade` lays its own over it.
+   */
+  unshade(): void {
+    this.shadows = undefined;
+    this.shaded = false;
+  }
+
+  /**
+   * The shadows into every chunk that has a texture and a shadow falling in it (R19–R23): all its
+   * shapes drawn opaque, in the bake's shadow colour, into one scratch the chunk's size, the cuts
+   * (ground no shadow may lie on) erased from it, and the scratch laid on the chunk once, at the
+   * catcher's opacity, so a px under any number of shadows is darkened once. Each shape is drawn
+   * from the ground's corner, so a shadow across two chunks lands on the same screen px in both.
+   * The scratch goes once the chunk has rendered, and the shapes' graphics after the last: nothing
+   * is kept, and no chunk's texture is made for a shadow.
+   */
+  private layShadows(): void {
+    const shadows = this.shadows;
+    this.shaded = true;
+    if (!shadows || shadows.shapes.length === 0) return;
+    const onGround = (p: Point) => {
+      const s = worldToScreen(p.x, p.y);
+      return { x: s.x - this.origin.x, y: s.y - this.origin.y };
+    };
+    const shapes = shadows.shapes.map((shape) => shape.map(onGround));
+    const spans = shapes.map(spanOf);
+    const ink = this.scene.make.graphics({}, false);
+    ink.fillStyle(BAKE.SHADOW_COLOR, 1);
+    for (const shape of shapes) ink.fillPoints(shape as Phaser.Math.Vector2[], true);
+    // the ground no shadow may lie on: only the alpha erases, the colour is never seen
+    const cut = shadows.cuts.length > 0 ? this.scene.make.graphics({}, false) : undefined;
+    cut?.fillStyle(BAKE.SHADOW_COLOR, 1);
+    for (const { x, y, width, height } of shadows.cuts) {
+      const corners = [
+        { x, y },
+        { x: x + width, y },
+        { x: x + width, y: y + height },
+        { x, y: y + height },
+      ].map(onGround);
+      cut?.fillPoints(corners as Phaser.Math.Vector2[], true);
+    }
+    for (const { rect, rt } of this.parts) {
+      if (!rt) continue;
+      const dx = rect.x - this.origin.x;
+      const dy = rect.y - this.origin.y;
+      const chunk = { x: dx, y: dy, width: rect.width, height: rect.height };
+      if (!spans.some((span) => overlaps(span, chunk))) continue;
+      const scratch = this.scene.textures.addDynamicTexture(SHADOW_SCRATCH, rect.width, rect.height, false);
+      if (!scratch) continue;
+      scratch.draw(ink, -dx, -dy);
+      if (cut) scratch.erase(cut, -dx, -dy);
+      scratch.render();
+      rt.stamp(SHADOW_SCRATCH, undefined, 0, 0, { alpha: BAKE.SHADOW_OPACITY, originX: 0, originY: 0 });
+      // drawn before the scratch goes: the stamp reads it when the chunk renders
+      rt.render();
+      scratch.destroy();
+    }
+    ink.destroy();
+    cut?.destroy();
   }
 
   /**
@@ -409,7 +510,12 @@ export function addDressing(
   return built;
 }
 
-export interface BuiltWalls {
+export interface BuiltWalls extends DrawnWallSet {
+  /**
+   * The pieces and posts the sprites stand by, as planned: what the walls' ground shadows are cast
+   * from (FS-V8FT3 §D), so they fall from the walls as drawn.
+   */
+  plan: { pieces: readonly WallPiece[]; posts: readonly WallPost[] };
   /** Every piece and post, by the server wall it belongs to. */
   byWall: Map<string, Phaser.GameObjects.Sprite[]>;
   /** Every piece and post with the world point it stands on (a dungeon floor's chunks, §H.45). */
@@ -440,7 +546,11 @@ export function addWalls(
   return addWallPieces(scene, art, planWalls(walls, seed, sheets, rule), seed, sheets);
 }
 
-const hasWallArt = (art: ArtLibrary, sheets: WallSheets): boolean =>
+/**
+ * Whether a material's walls are drawn baked: a manifest, and its pieces' sheets. Without, they
+ * are placeholder blocks, which cast no ground shadow (FS-V8FT3 Out of Scope).
+ */
+export const hasWallArt = (art: ArtLibrary, sheets: WallSheets): boolean =>
   art.available && art.has(`${sheets.prefix}wall_back_plain_x`);
 
 /**
@@ -457,7 +567,14 @@ export function addWallPieces(
   sheets: WallSheets,
 ): BuiltWalls | null {
   if (!hasWallArt(art, sheets)) return null;
-  const built: BuiltWalls = { byWall: new Map(), standing: [], tall: [], lights: [] };
+  const built: BuiltWalls = {
+    plan: { pieces, posts },
+    thickness: thicknessPx(sheets),
+    byWall: new Map(),
+    standing: [],
+    tall: [],
+    lights: [],
+  };
   const keep = (wallId: string, sprite: Phaser.GameObjects.Sprite, at: Point) => {
     const list = built.byWall.get(wallId);
     if (list) list.push(sprite);
@@ -595,8 +712,13 @@ export interface BuiltParts {
   cover: Cover[];
 }
 
-/** One building drawn in both its looks (ADR-0036, FS-9PN7X §B): a scene shows one at a time. */
-export interface BuiltBuilding {
+/**
+ * One building drawn in both its looks (ADR-0036, FS-9PN7X §B): a scene shows one at a time. It
+ * carries what it was drawn from (`DrawnBuilding`): the plan its wall sprites stand by, the door
+ * gaps its heads close and its material's `thickness`, which its ground shadows are cast from
+ * (FS-V8FT3 §F). That thickness is the drawn piece's, not `wall`, the server rects'.
+ */
+export interface BuiltBuilding extends DrawnBuilding {
   house: House;
   /** Standing in both looks: the north and west walls and the posts already full height. */
   shared: BuildingPart[];
@@ -762,6 +884,9 @@ export function addBuildings(
   return planBuildings(walls, seed, sheets).map((plan) => {
     const own = walls.filter((w) => w.house_id === plan.house.id);
     const built: BuiltBuilding = {
+      plan,
+      gaps: heads.filter((g) => g.houseId === plan.house.id),
+      thickness: thicknessPx(sheets),
       house: plan.house,
       shared: [],
       interior: [],
@@ -831,7 +956,7 @@ export function addBuildings(
       exterior.cover.push(...shut.cover);
       interior.parts.push(...addGapDoor(scene, art, gapDoor(gap, true), sheets, logger).parts);
     }
-    for (const gap of heads.filter((g) => g.houseId === plan.house.id)) {
+    for (const gap of built.gaps) {
       const head = addDoorHead(scene, art, doorHead(gap, sheets), sheets, style, logger);
       exterior.parts.push(...head.parts);
       exterior.cover.push(...head.cover);

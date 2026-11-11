@@ -17,6 +17,7 @@
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
 import { TILE_WIDTH, WORLD_PX_PER_TILE, type Point } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
+import { BAKE } from "./bake";
 import { tileHash } from "./ground";
 import { axisOf, housesFrom, type House } from "./houses";
 
@@ -101,8 +102,10 @@ export interface WallSheets {
   /** Before every piece and post sheet name: `""` for timber, `"tower_"` for masonry. */
   prefix: string;
   /**
-   * How thick the material's wall is, in tiles (FS-XK2B6 §A.2): the one place the client holds it.
-   * It mirrors the bake model the sheets are rendered from, which also makes the post that square.
+   * How thick the material's wall is, in tiles (FS-XK2B6 §A.2): what every drawing of the wall
+   * reads, its pieces, posts, fog slabs and shadow feet. The number is the bake's, which builds the
+   * model the sheets are rendered from (`tools/bake/page/shadow.js` `WALL_FOOT`); the client holds
+   * it once, in `BAKE.WALL_FOOT`, and a material names its entry there.
    */
   thickness: number;
   /** Kinds a full-height piece may be. */
@@ -133,8 +136,7 @@ const KINDS: VariantTable = [
 /** Timber-frame house walls, as the exterior world theme has always drawn them. */
 export const TIMBER_WALLS: WallSheets = {
   prefix: "",
-  // tools/bake/page/models/architecture.js `THICK`
-  thickness: 0.18,
+  thickness: BAKE.WALL_FOOT.timber,
   back: KINDS,
   front: KINDS,
   // the outward face: a shuttered or dark window, never a torch (FS-9PN7X §F.2)
@@ -152,8 +154,7 @@ export const TIMBER_WALLS: WallSheets = {
  */
 export const MASONRY_WALLS: WallSheets = {
   prefix: "tower_",
-  // tools/bake/page/models/tower.js `P_THICK`
-  thickness: 0.24,
+  thickness: BAKE.WALL_FOOT.masonry,
   back: [
     [40, "plain"],
     [68, "pillar"],

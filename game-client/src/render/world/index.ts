@@ -118,6 +118,7 @@ export {
   addWallPieces,
   addWalls,
   coverOf,
+  hasWallArt,
   showLook,
   showState,
   slabCover,

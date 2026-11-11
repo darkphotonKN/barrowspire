@@ -179,6 +179,7 @@ import {
   planDressing,
   tileHash,
   footprintHitArea,
+  hasWallArt,
   housesFrom,
   insideHouse,
   paintDropPile,
@@ -188,6 +189,7 @@ import {
   TRAIL_BED_DEPTH,
   TrailSet,
   type BuildingPart,
+  type BuiltBuilding,
   type Cover,
   type Figure,
   type Occupant,
@@ -201,6 +203,7 @@ import {
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
+import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
@@ -689,10 +692,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private mapWidth = 0;
   private mapHeight = 0;
   /**
-   * The size the camera, physics and ground were fitted to, and the dungeon cells the ground was
-   * painted under (none on a floor of buildings); none before the first map.
+   * The size the camera, physics and ground were fitted to, the dungeon cells the ground was
+   * painted under (none on a floor of buildings), and the floor it was last fitted for; none before
+   * the first map.
    */
-  private fittedTo?: { width: number; height: number; cells?: RegionGrid };
+  private fittedTo?: { width: number; height: number; cells?: RegionGrid; floor: number };
   /** The dungeon floor being drawn (FS-KE075 §H.44–§H.47); none on a floor of buildings. */
   private dungeon?: DungeonFloor;
   /** The floor whose map is built (FS-KE075 §H.43): none until one is, and none after a teardown. */
@@ -2693,7 +2697,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
     // a hall wall drawn while the player is in a room takes the hide rule on the next frame
     if (loose.length > 0) this.view?.invalidate();
-    this.drawRooms(walls, changed);
+    const rooms = this.drawRooms(walls, changed);
 
     // 從牆壁反推建築範圍，按 house_id 分組建立屋頂 + 地板（只做一次）
     if (!this.serverBuildingsCreated && walls.length > 0) {
@@ -2701,8 +2705,12 @@ export class BarrowspireScene extends Phaser.Scene {
 
       const houses = housesFrom(walls);
       // flagstone (or planks) under each house, painted into this floor's baked ground
-      // (FS-2325V §C.1, FS-8RBQY §C.3)
+      // (FS-2325V §C.1, FS-8RBQY §C.3), and the walls' shadows over it in the same step: those of
+      // the walls known now, as the floors are, cast from the rooms and halls' walls just drawn
+      // (FS-V8FT3 §F R29, Edge States)
       this.groundLayer?.paint(houses, { look: look.ground, seed: look.seed });
+      if (hasWallArt(this.art, look.walls))
+        this.groundLayer?.shade({ shapes: buildingWallShadows(rooms, baked), cuts: [] });
 
       houses.forEach((house, buildingIndex) => {
         const { x: minX, y: minY, width: bw, height: bh } = house;
@@ -2792,9 +2800,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * parts are torn down whole and redrawn from its walls as they stand now; none of them fades
    * (§E.4). Its walls' lights are the room's own, lit only from inside (§D.6). A room's gap holds
    * its server door (`updateDoors`), so it draws no door of its own, only the head over it.
+   * Returns the rooms drawn.
    */
-  private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): void {
-    if (changed.size === 0) return;
+  private drawRooms(walls: readonly WallState[], changed: ReadonlySet<string>): BuiltBuilding[] {
+    const drawn: BuiltBuilding[] = [];
+    if (changed.size === 0) return drawn;
     const look = this.currentFloorLook();
     const view = this.buildingView();
     for (const id of changed) {
@@ -2807,7 +2817,9 @@ export class BarrowspireScene extends Phaser.Scene {
       const [built] = addBuildings(this, this.art, own, look.seed, { sheets: look.walls });
       built.lights.forEach(({ source }) => this.queueLight("sconce", source, { room: id }));
       view.set(built);
+      drawn.push(built);
     }
+    return drawn;
   }
 
   /**
@@ -3852,7 +3864,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * (`wallPlan`), each piece at its edge's height, the full pieces and posts fading over the
    * player like any occluder; a light only on a back edge facing a room. No building is drawn, no
    * blackout and no roof: every piece stands in its ground chunk, shown only near the camera
-   * (§H.45). The ground takes the floor's look and seed.
+   * (§H.45). The ground takes the floor's look and seed, and, under baked walls, the walls'
+   * shadows, painted flat into it where it lies (FS-V8FT3 §E): a wall sprite fading over the
+   * player leaves its shadow as it is.
    */
   private buildDungeonWalls(walls: readonly WallState[]): void {
     const dungeon = this.dungeon!;
@@ -3862,6 +3876,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = wallPlan(walls, dungeon.grid, thickness);
     const planned = dungeonWalls(plan, dungeon.grid, look.seed, look.walls);
     const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
+    // placeholder walls never had a shadow (FS-V8FT3 Out of Scope)
+    if (baked) this.groundLayer?.shade(dungeonShadows(planned, thickness, dungeon.grid));
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13), its
     // slabs and posts standing where the plan draws them (FS-XK2B6 §F)
     const back = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
@@ -4079,15 +4095,23 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Sizes the run to its floor (FS-KE075 §H.42): the camera and the (vestigial, collision-free)
    * physics world in projected space, the map a diamond clamped by its bounding box plus a margin
-   * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits.
+   * of dark (FS-2325V §A.3, §A.7), and the ground under it. Only a change of size refits; a new
+   * floor of the same size keeps the ground, but not the walls' shadows of the floor left (FS-V8FT3
+   * Edge States, "A new floor"), so its paint lays none of them under the new floor's.
    */
   private fitFloor(map: FloorMap): void {
     this.enterDungeon(map);
-    const { width, height } = map;
+    const { width, height, floor } = map;
     const cells = this.dungeon?.grid;
     const before = this.fittedTo;
-    if (before?.width === width && before.height === height && before.cells === cells) return;
-    this.fittedTo = { width, height, cells };
+    if (before?.width === width && before.height === height && before.cells === cells) {
+      if (before.floor !== floor) {
+        this.groundLayer?.unshade();
+        this.fittedTo = { ...before, floor };
+      }
+      return;
+    }
+    this.fittedTo = { width, height, cells, floor };
     this.mapWidth = width;
     this.mapHeight = height;
     const bounds = projectedBounds(width, height, CAMERA_MARGIN);
