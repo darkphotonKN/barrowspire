@@ -602,11 +602,10 @@ describe("the card leaves as dust (FS-PQ2TW §D)", () => {
   });
 });
 
-describe("the card leaves as smoke in the game (FS-PQ2TW §Change: Smoke, a trial alternate leave; the owner's pick, 2026-11-12)", () => {
-  it("should pick the smoke by its one switch, the game's leave since the owner's pick (R41)", () => {
-    expect(CARD_LEAVE).toBe("smoke");
+describe("the card can leave as smoke, an alternate since the owner's ash pick (FS-PQ2TW §Change: Smoke, a trial alternate leave)", () => {
+  it("should leave as smoke only when a play names it, the smoke kept as an alternate (R41)", () => {
     const { card, leaves, asked, smoked, ashed } = cardOnStage(true);
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "smoke");
 
     leaves()[0].fn();
 
@@ -679,12 +678,23 @@ describe("the card leaves as smoke in the game (FS-PQ2TW §Change: Smoke, a tria
   });
 });
 
-describe("the card can leave as ash instead (FS-PQ2TW §Change: Ash, a trial alternate leave)", () => {
-  it("should keep the smoke as the game's leave, and hand every scene the ash with the others (R53)", () => {
-    expect(CARD_LEAVE).toBe("smoke");
+describe("the card leaves as ash in the game (FS-PQ2TW §Change: Ash, a trial alternate leave; the owner's second pick, 2026-11-12)", () => {
+  it("should make the ash the game's leave, and hand every scene the ash with the others (R41, R53)", () => {
+    expect(CARD_LEAVE).toBe("ash");
     const leaves = cardLeaves({} as never, () => undefined);
     expect(Object.keys(leaves).sort()).toEqual(["ash", "dust", "smoke"]);
     expect(leaves.ash).toBeInstanceOf(CardAsh);
+  });
+
+  it("should leave as ash when a scene's play names no leave (R41, R53)", () => {
+    const { card, leaves, asked, smoked, ashed } = cardOnStage(true);
+    card.play(WORDS, { built: true });
+
+    leaves()[0].fn();
+
+    expect(ashed).toHaveLength(1);
+    expect(asked).toEqual([]);
+    expect(smoked).toEqual([]);
   });
 
   it("should leave as ash when a play names it, the letters handed over and left to it (R53, R55)", () => {
@@ -716,7 +726,7 @@ describe("the card can leave as ash instead (FS-PQ2TW §Change: Ash, a trial alt
 
     card.play(WORDS, { built: true }, "ash");
     leaves()[1].fn();
-    card.play(WORDS, { built: true });
+    card.play(WORDS, { built: true }, "dust");
 
     expect(ash.stop).toHaveBeenCalled();
     expect(dust.stop).not.toHaveBeenCalled();
