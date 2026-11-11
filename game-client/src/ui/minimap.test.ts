@@ -150,10 +150,10 @@ function fakeStage() {
   return { stage, made, images, painted, order };
 }
 
-/** A minimap over `on` (the fixture floor by default), with the party's exploration of it. */
-function mapped(on: RegionGrid = grid) {
+/** A minimap over `on` (the fixture floor by default), with the party's exploration of it; at `renderScale` if given. */
+function mapped(on: RegionGrid = grid, renderScale?: number) {
   const { stage, made, images, painted, order } = fakeStage();
-  const map = new Minimap(stage, on);
+  const map = renderScale === undefined ? new Minimap(stage, on) : new Minimap(stage, on, () => renderScale);
   const seen = new Exploration(on);
   const show = (positions: { x: number; y: number }[], fixtures = FIXTURES) => {
     seen.see(positions);
@@ -1031,8 +1031,8 @@ describe("the enlarged minimap (FS-1SEF0 §B)", () => {
 // world-space, 1/8 of the world's projection about the followed figure, see-through, moved each
 // frame and never repainted for it.
 describe("the map overlay (FS-1SEF0 §C)", () => {
-  const overlaid = () => {
-    const on = mapped();
+  const overlaid = (renderScale?: number) => {
+    const on = mapped(grid, renderScale);
     on.show([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
     on.map.party({ self: IN_ROOM, allies: [FIXTURES[0].at] });
     on.map.setMode("overlay");
@@ -1159,6 +1159,52 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     const p = minimapProjection(grid)(broadcast);
     expect(selfDot().slice(0, 2)).toEqual([Math.round(p.x), Math.round(p.y)]);
   });
+
+  // the owner, 2026-11-12, again: "還是有抖動感 可以加一些平滑效果嗎". At render scale 1.5 or 2 the
+  // figure stands on whole backing px, finer than the logical px the overlay stood on, so the map
+  // stepped back and forth under it by a backing px or more (measured in headless Chrome: 46 of
+  // 141 walking frames at 2, 70 at 1.5). Stood on whole backing px, as every object rounds
+  // (ADR-0057), the map slides one way under the figure in backing-px steps and the dot stays on it.
+  it.each([
+    [1, "world +x (right and down)", at(1, 0)],
+    [1.5, "world +x (right and down)", at(1, 0)],
+    [1.5, "screen right", at(Math.SQRT1_2, -Math.SQRT1_2)],
+    [2, "world +x (right and down)", at(1, 0)],
+    [2, "screen right", at(Math.SQRT1_2, -Math.SQRT1_2)],
+  ])(
+    "should stand on whole backing px at render scale %s, walking %s, so the map never steps back under the figure and the self's dot lies on the figure's backing px (§C.14, §C.19)",
+    (rs, _, way) => {
+      const { map, made, dots } = overlaid(rs);
+      const selfDot = () => dots.drawn().filter((c) => c.name === "fillCircle").at(-1)!.args as number[];
+      const backing = (v: number) => Math.round(v * rs) / rs;
+      const [dx, dy] = [Math.sign(way.x - way.y), Math.sign(way.x + way.y)];
+      let prev: { x: number; y: number } | undefined;
+      for (let i = 0; i < 300; i++) {
+        // eased steps of every size, under a backing px and over it
+        const d = i * 0.83 + (i % 3) * 0.29;
+        const f = at(IN_ROOM.x + way.x * d, IN_ROOM.y + way.y * d);
+        map.follow(f, { self: f, allies: [FIXTURES[0].at] });
+        const iso = worldToScreen(f.x, f.y);
+        // the figure as drawn: its point on whole backing px (fullAuto, scroll on the 1/rs grid)
+        const figure = at(backing(iso.x), backing(iso.y));
+        for (const g of made) {
+          expect(Math.abs(g.position.x * rs - Math.round(g.position.x * rs))).toBeLessThan(1e-9);
+          expect(Math.abs(g.position.y * rs - Math.round(g.position.y * rs))).toBeLessThan(1e-9);
+        }
+        const [layer] = made;
+        const off = at(layer.position.x - figure.x, layer.position.y - figure.y);
+        if (prev) {
+          // the map slides against the walk, at 1/8 of it, and never back
+          expect((off.x - prev.x) * dx).toBeLessThanOrEqual(1e-9);
+          expect((off.y - prev.y) * dy).toBeLessThanOrEqual(1e-9);
+        }
+        prev = off;
+        const [sx, sy] = selfDot();
+        expect(layer.position.x + sx).toBeCloseTo(figure.x, 9);
+        expect(layer.position.y + sy).toBeCloseTo(figure.y, 9);
+      }
+    },
+  );
 
   it("should stand where the figure was last followed as soon as it becomes the overlay", () => {
     const on = mapped();

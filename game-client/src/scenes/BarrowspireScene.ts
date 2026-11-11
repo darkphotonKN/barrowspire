@@ -3909,6 +3909,7 @@ export class BarrowspireScene extends Phaser.Scene {
     dungeon.minimap = new Minimap(
       { graphics: () => this.add.graphics(), canvasImage: (...image) => canvasImage(this, ...image) },
       dungeon.grid,
+      () => viewport.renderScale,
     );
     dungeon.minimap.setMode(this.minimapMode);
     this.placeTopRightColumn();

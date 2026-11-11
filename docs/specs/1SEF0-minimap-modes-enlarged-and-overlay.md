@@ -173,10 +173,20 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
     movement reach the game exactly as with no overlay. **(charter default)**
 19. **Move it, do not repaint it.** Its map and marks are drawn once per content change (a region
     first seen, a fixture found) and on entering the mode, about the floor's own origin; following
-    the player is a change of the layers' position only, on whole logical px. The dots are redrawn
-    only when one moves a whole px at the overlay's scale. Per frame with no change of content the
-    overlay draws nothing anew. **(owner's brief; derived here: the whole-px position keeps a still
-    frame still, FS-ZAJMH R4)**
+    the player is a change of the layers' position only, on whole **backing** px: the figure's
+    whole backing px less its point's whole backing px on the overlay, at the render scale of now,
+    the grid every figure is drawn on (ADR-0057). So the map slides one way under a walking figure
+    in steps of one backing px, never back, and the dots, placed from the figures' drawn positions
+    and seated on the same grid, lie on their figures. The dots are redrawn only when one moves a
+    whole backing px. Per frame with no change of content the overlay draws nothing anew. **(owner's
+    brief; derived here: the whole-px position keeps a still frame still, FS-ZAJMH R4; owner,
+    2026-11-12: "全畫面地圖人物的座標會一直抖動", then "還是有抖動感 可以加一些平滑效果嗎": on whole
+    logical px the map stepped back and forth under the figure at render scale 1.5 and 2, which
+    draw the figure on a finer grid. Measured in headless Chrome with the real camera, walking at
+    200 world px a second: easing the overlay's centre (100 ms) added lag and kept the back-steps;
+    sub-px placement glides, but a Graphics is never rounded, so every line edge blends a little
+    differently each frame; whole backing px measured as even as sub-px against the figure with
+    every line on the grid)**
 20. **While the overlay is up the corner holds no map**: the top-right minimap is not shown, the
     column closes up (§D). **(charter default)**
 
@@ -241,7 +251,7 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 - [ ] Enlarged column at 1080 and 1280: the floor indicator's top 6 px under the map (y 212), the escaped count 4 px under it, the readout 4 px inside the map's bottom-left at 10 px; none overlaps the fullscreen button, either target frame or the top-left stack; the enlarged map's left edge at 746 at 1080, right of the boss frame's 729; a notice clear up to 412 px wide at 1080 and 612 px at 1280.
 - [ ] Overlay: no backing, rim or vignette drawn; the fill and the walls' line at alpha 0.4, the line 2 px; glyphs and dots as enlarged, at alpha 1; layers at scroll factor 1 and depth 920; none interactive.
 - [ ] Overlay placement: for a focus at world point f, a world point p draws at `worldToScreen(f) + 0.125·(worldToScreen(p) − worldToScreen(f))` minus the camera's scroll, within 1 px (the whole-px placement); the focus is the player, or the watched teammate while spectating.
-- [ ] Overlay cost: as the player walks with no new region seen, the map and marks are not redrawn (counted) and the per-frame work is the layers' position; the dots redraw only when one moves a whole overlay px; a frame-time measurement with the overlay up is reported against normal.
+- [ ] Overlay cost: as the player walks with no new region seen, the map and marks are not redrawn (counted) and the per-frame work is the layers' position; the dots redraw only when one moves a whole backing px; at render scale 1, 1.5 and 2, walking, the map never steps back under the figure's whole backing px and the self's dot lies on it; a frame-time measurement with the overlay up is reported against normal.
 - [ ] With the overlay up the corner shows no map; the floor indicator at y 44, the escaped count under it, the readout 4 px under the column's last line, right-aligned.
 - [ ] Every mode is rebuilt in the mode in force after a floor change; a resize re-lays the column; the overlay needs no re-layout on resize.
 - [ ] No raw colour literal added; the token fence passes.
@@ -260,9 +270,10 @@ Verified 2026-11-12 on `feat/run-minimap-look` at 708af7c1; client paths under `
 - **Spectating with the overlay:** it is about the watched teammate, as the camera is; the dead
   player's own dot is gone, as on the minimap (FS-SRA9J §E.24). Tab to the next teammate moves the
   overlay with the camera.
-- **The followed figure's dot and its sprite:** the dot is drawn at the broadcast's position, the
-  sprite eases toward it (lerp 0.3), so between broadcasts the dot may stand a px or two ahead of
-  the figure's feet. Accepted: at 1/8 the gap is under 2 px.
+- **The followed figure's dot and its sprite:** on the overlay the dots are drawn where the
+  figures are drawn (their eased positions, given with the focus each frame), never at the
+  broadcast's, which leads the eased sprite; so the followed figure's dot lies on its whole
+  backing px (§C.19). The panel modes keep the broadcast's places.
 - **The camera at the floor's edge:** the overlay is about the figure, not the view's middle, so it
   stays on the figure wherever the camera stops.
 - **Arriving on a floor with the overlay mode:** until the floor's map is in there is no overlay and

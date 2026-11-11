@@ -425,10 +425,11 @@ function drawingFor(mode: MinimapMode, grid: RegionGrid): Drawing {
 
 /**
  * A projected point seated on a whole px, kept so that `before` px left of and above it and `after`
- * px right of and below it stay inside the rim; with no panel (the overlay), only seated.
+ * px right of and below it stay inside the rim; with no panel (the overlay), only seated, on the
+ * grid of `perPx` px to a logical px (the render scale, for the overlay's dots).
  */
-function seat(m: Point, before: number, after: number, panel: MinimapPanel | null): Point {
-  if (!panel) return { x: Math.round(m.x), y: Math.round(m.y) };
+function seat(m: Point, before: number, after: number, panel: MinimapPanel | null, perPx = 1): Point {
+  if (!panel) return { x: Math.round(m.x * perPx) / perPx, y: Math.round(m.y * perPx) / perPx };
   const inside = rimInside(panel);
   // whole px at both bounds too, since a scaled dot's reach is not always whole
   const clamp = (v: number, size: number) =>
@@ -465,9 +466,14 @@ export class Minimap {
   private dotsDrawn?: string;
   private shownMode: MinimapMode = "normal";
 
+  /**
+   * `renderScale` reads the backing px per logical px now (`viewport.renderScale`), the grid the
+   * overlay stands on, as every figure is drawn on it (ADR-0057).
+   */
   constructor(
     stage: MinimapStage,
     private readonly grid: RegionGrid,
+    private readonly renderScale: () => number = () => 1,
   ) {
     // made bottom to top: one depth draws in the order its objects were made (FS-56CKV §A.3)
     this.map = stage.graphics();
@@ -513,11 +519,12 @@ export class Minimap {
    * The figure the camera follows is at world point `focus` now, and the party's figures are drawn
    * at `drawn` (FS-1SEF0 §C.14, §C.19). While it is the overlay, its layers stand in the world so
    * the figure's own point on the overlay lies on the figure: a world point p draws at about
-   * (1 − scale)·iso(focus) + scale·iso(p). The layers stand at the figure's whole px less its
-   * point's whole px on the overlay, each rounded once, so the map slides one way under a walking
-   * figure; and the overlay's dots are placed from these same drawn positions, never a broadcast's,
-   * so a figure's dot lies on it frame after frame. A move, never a redraw of the map; the dots
-   * redrawn only when one moves a whole px.
+   * (1 − scale)·iso(focus) + scale·iso(p). The layers stand at the figure's whole backing px less
+   * its point's whole backing px on the overlay, each rounded once on the grid the figure is drawn
+   * on (the render scale's, ADR-0057), so the map slides one way under a walking figure in steps of
+   * a backing px, never back; and the overlay's dots are placed from these same drawn positions,
+   * never a broadcast's, seated on that grid too, so a figure's dot lies on it frame after frame.
+   * A move, never a redraw of the map; the dots redrawn only when one moves a whole backing px.
    */
   follow(focus: Point, drawn?: MinimapParty): void {
     this.focus = focus;
@@ -525,9 +532,15 @@ export class Minimap {
     if (this.drawing.panel) return;
     const s = worldToScreen(focus.x, focus.y);
     const k = MINIMAP_OVERLAY.scale;
-    for (const layer of this.drawnLayers())
-      layer.setPosition(Math.round(s.x) - Math.round(s.x * k), Math.round(s.y) - Math.round(s.y * k));
+    const r = this.perPx();
+    const stand = (v: number) => (Math.round(v * r) - Math.round(v * k * r)) / r;
+    for (const layer of this.drawnLayers()) layer.setPosition(stand(s.x), stand(s.y));
     if (drawn) this.drawDots(drawn);
+  }
+
+  /** Backing px per logical px now: the overlay's grid. */
+  private perPx(): number {
+    return this.renderScale() || 1;
   }
 
   /** The party's exploration and the floor's fixtures now; the map is redrawn only if what it shows changed. */
@@ -556,12 +569,16 @@ export class Minimap {
     return this.drawing.panel ? this.shownParty : (this.drawnParty ?? this.shownParty);
   }
 
-  /** The dots at `party`'s places, at the look in force, unless none has moved a whole px. */
+  /**
+   * The dots at `party`'s places, at the look in force, unless none has moved a whole px: a panel's
+   * logical px, or the overlay's backing px, where the figures stand.
+   */
   private drawDots(party: MinimapParty): void {
     const { marks: k, project, panel } = this.drawing;
+    const perPx = panel ? 1 : this.perPx();
     const at = (p: Point, radius: number) => {
       const reach = (radius + DOT.outline) * k;
-      return seat(project(p), reach, reach, panel);
+      return seat(project(p), reach, reach, panel, perPx);
     };
     const allies = party.allies.map((p) => at(p, DOT.ally));
     const self = party.self ? at(party.self, DOT.self) : undefined;
