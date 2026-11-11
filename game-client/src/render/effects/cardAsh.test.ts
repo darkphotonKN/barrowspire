@@ -1279,6 +1279,16 @@ describe("CardAsh (FS-PQ2TW §Change: Ash)", () => {
     expect(logger.warn).toHaveBeenCalledOnce();
   });
 
+  it("should read each text's canvas once a play, for its strokes and its burning image alike", () => {
+    const { ash, gone } = ashStage();
+    const text = stubText(Array(6).fill("#".repeat(40)));
+    const read = vi.spyOn(text.context, "getImageData");
+
+    expect(ash.play(cardInk(text), 961, gone)).toBe(true);
+
+    expect(read).toHaveBeenCalledOnce();
+  });
+
   it("should play nothing, logged, from texts that drew no ink (R60)", () => {
     const { ash, gone, made, logger } = ashStage();
 

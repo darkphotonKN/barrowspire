@@ -18,6 +18,8 @@ const HELPERS = new Set([
   "flights",
   "projectile",
   "sourceScan",
+  // what the arrival card's three leaves share (FS-PQ2TW): it plays nothing of its own
+  "cardLeaveCore",
 ]);
 
 const modules = readdirSync(EFFECTS_DIR)
