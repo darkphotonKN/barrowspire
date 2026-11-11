@@ -6,32 +6,39 @@
 import type { Point } from "@/render/iso/projection";
 import type { ClientGameState } from "@/types/gameState";
 
+/** The server's interact range, in world px: farther than this from a container is out of reach. */
+const INTERACT_RANGE = 60;
+
 /** What the states have shown of a pending reach. */
 export interface ReachSeen {
-  /** Where the server had the player when they reached; unset when no state had placed them. */
+  /**
+   * Where the first state to show the player's own timed open on the container reached for had
+   * them: the place a later state is judged against. Unset until a state has shown it.
+   */
   from?: Point;
-  /** A state has shown the player's own timed open on the container reached for. */
-  timed: boolean;
 }
 
-/** A reach as it is made: the player where `state` has them, and no timed open shown yet. */
-export function reachMade(state: ClientGameState | undefined): ReachSeen {
-  const from = state?.current_player?.position;
-  return { from: from && { x: from.x, y: from.y }, timed: false };
+/** A reach as it is made: no state has answered it yet. */
+export function reachMade(): ReachSeen {
+  return {};
 }
 
 /**
  * What `state` leaves of a pending reach for the shut container `entityId`, or undefined when it
- * gives the reach up: the container has left the state, the player's own position has changed, or
- * a state showed their timed open on it and this one shows none. A reach no state has answered is
- * kept: the reply is still on its way. Call it once the state's open containers are read, so a
- * state that shows the container open opens its view first.
+ * gives the reach up. Always: the container has left the state, or the player is out of reach of
+ * it. Once a state has shown their timed open on it: this one shows none, or has them somewhere
+ * other than where that first state did. Before that no change of position is judged: the reply
+ * is still on its way. Call it once the state's open containers are read, so a state that shows
+ * the container open opens its view first.
  */
 export function reachAfter(entityId: string, seen: ReachSeen, state: ClientGameState): ReachSeen | undefined {
-  if (!state.containers?.some((c) => c.entity_id === entityId)) return undefined;
+  const container = state.containers?.find((c) => c.entity_id === entityId);
+  if (!container) return undefined;
   const me = state.current_player;
-  if (seen.from && me && (me.position.x !== seen.from.x || me.position.y !== seen.from.y)) return undefined;
+  if (me && Math.hypot(me.position.x - container.position.x, me.position.y - container.position.y) > INTERACT_RANGE)
+    return undefined;
   const timed = me?.timed_open?.entity_id === entityId;
-  if (seen.timed && !timed) return undefined;
-  return { ...seen, timed };
+  if (!seen.from) return me && timed ? { from: { x: me.position.x, y: me.position.y } } : seen;
+  if (!me || !timed) return undefined;
+  return me.position.x === seen.from.x && me.position.y === seen.from.y ? seen : undefined;
 }

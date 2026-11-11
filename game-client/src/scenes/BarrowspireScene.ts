@@ -793,10 +793,11 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private reaching?: string;
   /**
-   * What the states have shown of that reach: it is given up when the player's own position
-   * changes, and when their timed open on it is gone with it still shut (FS-MQYEX R26).
+   * What the states have shown of that reach: once one shows the player's timed open on it, the
+   * reach is given up when their position changes from that state's, and when the timed open is
+   * gone with the container still shut (FS-MQYEX R26).
    */
-  private reachSeen: ReachSeen = reachMade(undefined);
+  private reachSeen: ReachSeen = reachMade();
   /**
    * The player's own timed open as the last state carried it, when that state arrived, and the
    * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
@@ -2935,7 +2936,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // shows it open, so nothing opens only to close again (FS-KE075 §J R60)
     if (!container?.is_open) {
       this.reaching = entityId;
-      this.reachSeen = reachMade(this.lastGameState);
+      this.reachSeen = reachMade();
       return;
     }
     // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
@@ -3685,7 +3686,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Update containers from server
     this.updateContainers(state.containers || []);
     // an open container has opened its view: what is still reached for is kept or given up
-    // (FS-MQYEX R26). Walking off ends a reach the server never answered (FS-KE075 §J R60)
+    // (FS-MQYEX R26). Walking out of reach ends a reach the server never answered (FS-KE075 §J R60)
     this.settleReach(state);
     // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
     this.showTimedOpen(state);
