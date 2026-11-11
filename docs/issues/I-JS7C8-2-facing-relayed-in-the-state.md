@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-2
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: []
 labels: [ready-for-agent]
@@ -27,16 +27,18 @@ Implements FS-JS7C8 §E (R27, R30–R33, R35), §Wire, §Acceptance Criteria "Fa
 
 ## Acceptance Criteria
 
-- [ ] `{"action":"face","payload":{"player_id":…,"facing":"nw"}}` sets that player's facing; the
+- [x] `{"action":"face","payload":{"player_id":…,"facing":"nw"}}` sets that player's facing; the
       next state shows `"facing":"nw"` on their `current_player` and on their entry in every other
       recipient's `other_players`.
-- [ ] Works in the town, a field world and a run.
-- [ ] An unknown facing (`"up"`, `""`, a number) is ignored and logged at Debug; the stored facing is unchanged.
-- [ ] Before any `face`, `facing` is absent from the JSON.
-- [ ] `face` is not logged at Info by the hub.
-- [ ] No reader of facing outside the serializer (review grep).
-- [ ] No change under `common/api/proto`, `api-gateway`, migrations or `game-client/src/api/generated`.
-- [ ] `go test ./...` and `golangci-lint run` green in `game-server/game-service`.
+- [x] Works in the town, a field world and a run.
+- [x] An unknown facing (`"up"`, `""`, a number) is ignored and logged at Debug; the stored facing is unchanged.
+- [x] Before any `face`, `facing` is absent from the JSON.
+- [x] `face` is not logged at Info by the hub.
+- [x] No reader of facing outside the serializer (review grep).
+- [x] No change under `common/api/proto`, `api-gateway`, migrations or `game-client/src/api/generated`.
+- [x] `go test ./...` and `golangci-lint run` green in `game-server/game-service`. (`golangci-lint`
+      clean on this diff, `--new-from-rev`; its older findings in `cmd/server/main.go` and
+      `hub_town_golden_test.go` are not this slice's.)
 
 ## Blocked By
 
@@ -62,3 +64,19 @@ FS-JS7C8 §E R27, R30–R33, R35; Facts 4–5; Edge States "Dead", "World switch
 - RED: a session that receives `face nw` from a player broadcasts a state whose entry for them
   carries `facing: "nw"`.
 - GREEN: parse, route, store, serialize.
+
+## Done
+
+`constants.ActionFace`; `types.PlayerFacePayload` (`player_id` and `facing` both required strings, so a
+number or a missing facing fails the parse); the message hub routes `face` with the other in-game
+actions, logs it at Debug, and drops one from a player in no world with a Debug line and no refusal.
+The session ignores every refusal at Debug and sends nothing back; `handleFace`
+(`internal/game/facing.go`) takes only the 8 names (`components.Facing`), only from a delver in play
+with a body here, and keeps it in a `FacingComponent` added on the first face, so a new body (world
+switch, reconnect, handoff) starts without one. The serializer's `facingOf` fills
+`PublicPlayerState.Facing` (`facing,omitempty`). Review grep: `ComponentTypeFacing` is written only by
+`handleFace` and read only by the serializer. No proto, gateway, OpenAPI, generated client or
+migration change.
+
+Wire for the client: send `{"action":"face","payload":{"player_id":"<member id>","facing":"nw"}}`;
+read `current_player.facing` and `other_players[].facing` (string, absent until sent).

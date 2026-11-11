@@ -213,7 +213,7 @@ func (m *Message) ParsePayload() (interface{}, error) {
 
 	switch action {
 	case constants.ActionMove, constants.ActionInteract, constants.ActionAttack,
-		constants.ActionEquip, constants.ActionUnequip, constants.ActionCastSkill:
+		constants.ActionEquip, constants.ActionUnequip, constants.ActionCastSkill, constants.ActionFace:
 		playerID, err = m.requireString("player_id")
 		if err != nil {
 			return nil, fmt.Errorf("parsing %s payload: %w", action, err)
@@ -303,6 +303,18 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		slog.Debug("payload of action cast_skill", "payload", parsedPayload)
 
 		return parsedPayload, nil
+
+	case constants.ActionFace:
+		// which of the 8 names it is, the session judges (FS-JS7C8 §E R31)
+		facing, err := m.requireString("facing")
+		if err != nil {
+			return nil, fmt.Errorf("parsing face payload: %w", err)
+		}
+
+		return PlayerFacePayload{
+			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
+			Facing:               facing,
+		}, nil
 	default:
 		return nil, fmt.Errorf("no matching action %q: %w", m.Action, ErrInvalidPayload)
 	}
@@ -313,6 +325,14 @@ func (m *Message) ParsePayload() (interface{}, error) {
 **/
 type PlayerSessionPayload struct {
 	PlayerID string `json:"player_id"`
+}
+
+// PlayerFacePayload is a face: the facing the client names for its sender's
+// character, one of the 8 world-compass names if the client plays fair.
+// FS-JS7C8 §E R27.
+type PlayerFacePayload struct {
+	PlayerSessionPayload
+	Facing string `json:"facing"`
 }
 
 type PlayerSessionMovePayload struct {

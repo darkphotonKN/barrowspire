@@ -62,6 +62,7 @@ const (
 	ComponentTypeAttackIntent ComponentType = "AttackIntent"
 	ComponentTypeCooldown     ComponentType = "Cooldown"
 	ComponentTypeAttackSlow   ComponentType = "AttackSlow"
+	ComponentTypeFacing       ComponentType = "Facing"
 
 	ComponentTypeGearBonus ComponentType = "GearBonus"
 	ComponentTypeFrenzy    ComponentType = "Frenzy"
