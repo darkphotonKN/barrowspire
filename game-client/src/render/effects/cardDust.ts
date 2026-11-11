@@ -1,7 +1,7 @@
 /**
  * The arrival card's leaving as dust (FS-PQ2TW §D R24–R36): when the card's hold ends, its heading,
- * rule and subtitle break into motes that rise from the strokes of the letters themselves, drift
- * outward and a little upward, fast and then slow, sway gently as they slow, darken and fade.
+ * rule and subtitle break into motes that rise from the strokes of the letters themselves, scatter
+ * every way and a little upward, fast and then slow, sway gently as they slow, darken and fade.
  *
  * The strokes are read from each text's own rendered canvas (a Phaser `Text` draws to a 2D canvas
  * of its own, at its resolution: `Text.canvas`, `Text.context`), and from the rule's line. Never
@@ -15,7 +15,7 @@ import { BARROW_HEX } from "@/utils/theme";
 import { prefersReducedMotion } from "./mist";
 import type { Easing, FxTexture, Range, Token } from "./table";
 
-/** The dust's numbers (R34), as the owner tuned them twice on 2026-11-12; a retune is an edit here. */
+/** The dust's numbers (R34), as the owner tuned them three times on 2026-11-12; a retune is an edit here. */
 export interface CardDustRecord {
   /** Every mote's life, and the dust's: one fixed duration (FS-KYPQ9 §B.2; past its 1200 ms, R33). */
   durationMs: number;
@@ -28,7 +28,7 @@ export interface CardDustRecord {
   scale: Range;
   /** View px/s at the start, picked per mote; the top is the cap that keeps it dust (R26). */
   speed: Range;
-  /** How far up each mote's heading is pulled off straight outward, 0..1 (R26). */
+  /** How far up each mote's random heading is pulled, 0..1 (R26). */
   lean: number;
   /** How fast a mote slows, per second: its speed falls by this share of itself (R26). */
   drag: number;
@@ -46,7 +46,7 @@ export interface CardDustRecord {
 
 /**
  * The dust (FS-PQ2TW §D). Not an `EFFECTS` entry: it is a view-space HUD effect with no world
- * position, and its count, outward drift and length are the one named exception to FS-KYPQ9
+ * position, and its count, scatter and length are the one named exception to FS-KYPQ9
  * §B.6 and §B.2's ceiling (R33), so the table's rules hold unchanged for every effect there. Its
  * own rule test is beside it.
  */
@@ -56,11 +56,11 @@ export const CARD_DUST = {
   density: 2,
   texture: "fx_dust",
   scale: { from: 0.15, to: 0.15 },
-  speed: { from: 40, to: 160 },
-  lean: 0.7,
+  speed: { from: 80, to: 320 },
+  lean: 0.2,
   // fast out, then slow
-  drag: 2,
-  sway: { amplitude: { from: 1.5, to: 4 }, periodMs: { from: 700, to: 1200 } },
+  drag: 1.6,
+  sway: { amplitude: { from: 4, to: 10 }, periodMs: { from: 700, to: 1200 } },
   // hudText, hudLabel
   tint: { from: "vellum", to: "vellumDark" },
   alpha: { from: 1, to: 0 },
@@ -158,15 +158,13 @@ function firstAbove(upTo: Float64Array, v: number): number {
 }
 
 /**
- * A mote's heading in screen degrees (0 east, 90 down): away from the card's `centre`, pulled up
- * by `lean`. A mote at the centre itself rises straight up.
+ * A mote's heading in screen degrees (0 east, 90 down): drawn at `u` (0..1) of the full turn, any
+ * way at all, inward over the card too, then pulled up by `lean`. Under 1, a mote drawn downward
+ * still goes down.
  */
-export function driftAngle(at: Point, centre: Point, lean: number): number {
-  const dx = at.x - centre.x;
-  const dy = at.y - centre.y;
-  const len = Math.hypot(dx, dy);
-  const out = len > 0 ? { x: dx / len, y: dy / len } : { x: 0, y: 0 };
-  return (Math.atan2(out.y - lean, out.x) * 180) / Math.PI;
+export function scatterAngle(u: number, lean: number): number {
+  const rad = u * 2 * Math.PI;
+  return (Math.atan2(Math.sin(rad) - lean, Math.cos(rad)) * 180) / Math.PI;
 }
 
 /**
@@ -189,7 +187,7 @@ export interface Sway {
   onY: number;
 }
 
-/** A mote's sway, picked from `CARD_DUST.sway`, across a heading of `headingDeg` (`driftAngle`'s). */
+/** A mote's sway, picked from `CARD_DUST.sway`, across a heading of `headingDeg` (`scatterAngle`'s). */
 export function swayFor(headingDeg: number, random: () => number): Sway {
   const { amplitude, periodMs } = CARD_DUST.sway;
   const rad = (headingDeg * Math.PI) / 180;
@@ -295,7 +293,6 @@ export class CardDust {
     const d = CARD_DUST;
     const area = cells.reduce((sum, c) => sum + c.w * c.h, 0);
     const points = seedPoints(cells, Math.min(d.maxParticles, Math.ceil(area * d.density)), this.random);
-    const centre = middle(cells);
     let next = 0;
     const slow = (key: "velocityX" | "velocityY") => ({
       onUpdate: (p: Phaser.GameObjects.Particles.Particle) => -p[key] * d.drag,
@@ -320,7 +317,7 @@ export class CardDust {
       angle: {
         onEmit: (p) => {
           if (!p) return -90;
-          const heading = driftAngle(p, centre, d.lean);
+          const heading = scatterAngle(this.random(), d.lean);
           (p as Swaying)[SWAY] = swayFor(heading, this.random);
           return heading;
         },
@@ -409,19 +406,4 @@ export class CardDust {
     this.warned.add(what);
     this.logger.warn(message, context);
   }
-}
-
-/** The middle of the cells' bounds: the card's centre, as its ink lies. */
-function middle(cells: readonly InkCell[]): Point {
-  let left = Infinity;
-  let top = Infinity;
-  let right = -Infinity;
-  let bottom = -Infinity;
-  for (const c of cells) {
-    left = Math.min(left, c.x);
-    top = Math.min(top, c.y);
-    right = Math.max(right, c.x + c.w);
-    bottom = Math.max(bottom, c.y + c.h);
-  }
-  return { x: (left + right) / 2, y: (top + bottom) / 2 };
 }
