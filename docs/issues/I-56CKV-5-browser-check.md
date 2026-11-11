@@ -26,8 +26,9 @@ Implements FS-56CKV §Acceptance Criteria (whole FS), §User Stories 1–23
   the corner, x/y under them; the XP bar, bars and party frames at the very top left.
 - A production build: no x/y anywhere; the top-left stack at the top.
 - In a party: the frames clear of the chat window.
-- Owner question to answer here if not before: is x/y under the top-right lines right on a floor
-  with no minimap (FS-56CKV §C.18)?
+- Owner question, answered 2026-11-12 (not asked again): x/y under the top-right lines on a floor
+  with no minimap (FS-56CKV §C.18). Nick said "好" to "沒有小地圖時，座標放在右上那一欄文字的下方，可以嗎？";
+  recorded in FS-56CKV's amendment of 2026-11-12. Check only that it stands there.
 
 ## Acceptance Criteria
 

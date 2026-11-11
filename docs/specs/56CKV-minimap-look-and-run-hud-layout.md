@@ -2,6 +2,13 @@
 
 > Status: work-order · SPECIFICATION.md: none (a change FS has no thin line; owners [FS-SRA9J](SRA9J-fog-of-war-and-minimap.md) "Minimap", [FS-F6F88](F6F88-multi-floor-delves.md) "Floor transitions" (the floor indicator, req 29), [FS-BDA7X](BDA7X-character-leveling.md) "Character level and experience display" (req 42), [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) "Health and class resource bars on the HUD" (R20), [FS-R82NV](R82NV-party-formation.md) "Party frames" (R34) each carry a stub) · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4, `fullAuto` rounding), [ADR-0063](../adr/0063-fog-of-war-is-client-presentation-shared-by-the-party.md) (fog and minimap are presentation; unchanged here) · Supersedes in part: FS-SRA9J §E.20 (the minimap's place) and §E.22 (how its content is drawn, not what it is); FS-8AY7S's AC "the top left, at x 10, y 84" (now y 56); FS-R82NV R34's "run y 160" (now 132) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Minimap**, **Region**
 
+> **Amended 2026-11-12** by Nick, after slices I-56CKV-1 and I-56CKV-2 and before I-56CKV-3: one
+> owner confirmation, documentation only. Asked "沒有小地圖時，座標放在右上那一欄文字的下方，可以嗎？",
+> he answered "好": where no minimap is shown, the dev readout stands 4 px under the top-right
+> column's last line, right-aligned, in its new look. §C.18 and the Edge State "the readout without
+> a minimap" are corrected in place; each says *(Amended 2026-11-12 …)*. The browser check
+> (I-56CKV-5) no longer asks it.
+
 ## Summary
 
 In a run, the top-right minimap is drawn finer and in the game's own look: candle-lit at its
@@ -157,7 +164,8 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
 18. **Where no minimap is shown** (the cases of §B.11), it stands in the top-right column, 4 px
     under the column's last line, right-aligned, in the same look. **(charter default, adapted:
     the locked decision kept it at the top left as today, which would cover the XP bar at y 16;
-    see Edge States, "the readout without a minimap". Owner to confirm.)**
+    see Edge States, "the readout without a minimap". Confirmed by the owner, 2026-11-12: "好".)**
+    *(Amended 2026-11-12; was: "Owner to confirm.")*
 19. **Still dev builds only** (`showsPositionReadout`, unchanged); a production build draws no
     readout and keeps nothing for it. It follows the minimap on resize, on M, and on a floor
     change, re-crispened when it moves. **(charter default)**
@@ -254,12 +262,14 @@ Verified 2026-11-12 on main 28a7a377; client paths under `game-client/src/`.
   are. The readout still reads this client's own position, as today.
 - **Floor indicator not yet labelled:** the escaped count takes its place under the minimap or at
   the top; it moves down once when the label arrives.
-- **The readout without a minimap (decision adapted, escalated):** the locked decision kept the
+- **The readout without a minimap (decision adapted, confirmed by the owner 2026-11-12):** the locked decision kept the
   readout at the top left where there is no minimap, as today. With the XP bar at y 16 it would
   cover the bar on every floor without regions, so it stands under the top-right column instead
   (§C.18). Rejected: keeping the stack at y 44 where there is no minimap (the HUD would jump from
   floor to floor and differ from production) and squeezing the readout above the XP bar (16 px of
-  room for a 13 px line at the canvas edge). Owner to confirm.
+  room for a 13 px line at the canvas edge). Confirmed by the owner, 2026-11-12 ("好" to
+  "沒有小地圖時，座標放在右上那一欄文字的下方，可以嗎？"). *(Amended 2026-11-12; was: "decision adapted,
+  escalated" and "Owner to confirm.")*
 - **The readout over a lit ground** (no minimap, no backing): it may read less well over a bright
   patch of floor. Accepted for a dev aid; the run's floors are dark at the screen's edge.
 - **A later floor whose diamond reaches the bottom-left corner:** the readout would cover a little

@@ -41,9 +41,9 @@ Production builds still create none.
 
 ## Spec Reference
 
-FS-56CKV §C.14–§C.19; User Stories 16–19. §C.18 is a charter default awaiting the owner's
-confirmation (FS-56CKV Edge States, "the readout without a minimap"); if he answers otherwise
-before this slice starts, the FS gets a dated amendment first.
+FS-56CKV §C.14–§C.19; User Stories 16–19. §C.18 was a charter default awaiting the owner's
+confirmation (FS-56CKV Edge States, "the readout without a minimap"); the owner confirmed it on
+2026-11-12 ("好"), recorded in the FS's amendment of that date.
 
 ## TDD Approach
 
