@@ -133,17 +133,17 @@ describe("the dust's start points (FS-PQ2TW R25)", () => {
 });
 
 describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
-  it("should be one typed record, as the owner tuned it the fifth time on 2026-11-12, a trial", () => {
+  it("should be one typed record, as the owner tuned it the sixth time on 2026-11-12 (the fifth tune's 6000 a trial)", () => {
     expect(CARD_DUST).toEqual({
       durationMs: 1800,
       maxParticles: 6000,
       density: 4,
       texture: "fx_dust",
       scale: { from: 0.15, to: 0.15 },
-      speed: { from: 50, to: 200 },
+      speed: { from: 30, to: 120 },
       lean: 0.2,
       drag: 1.8,
-      sway: { amplitude: { from: 3, to: 7 }, periodMs: { from: 700, to: 1200 } },
+      sway: { amplitude: { from: 2, to: 5 }, periodMs: { from: 700, to: 1200 } },
       tint: { from: "vellum", to: "vellumDark" },
       alpha: { from: 1, to: 0 },
       ease: "Sine.easeIn",
@@ -168,11 +168,11 @@ describe("the dust's numbers (FS-PQ2TW R26–R28, R32–R34)", () => {
     // the exception, bounded: a drift, not a burst
     expect(CARD_DUST.maxParticles).toBeLessThanOrEqual(6000);
     expect(CARD_DUST.speed.from).toBeLessThanOrEqual(CARD_DUST.speed.to);
-    expect(CARD_DUST.speed.to).toBeLessThanOrEqual(200);
+    expect(CARD_DUST.speed.to).toBeLessThanOrEqual(120);
     expect(CARD_DUST.drag).toBeGreaterThan(0);
     // a gentle sway: a few px, slow, never more than the slowest mote's own drift could carry
     expect(CARD_DUST.sway.amplitude.from).toBeGreaterThan(0);
-    expect(CARD_DUST.sway.amplitude.to).toBeLessThanOrEqual(7);
+    expect(CARD_DUST.sway.amplitude.to).toBeLessThanOrEqual(5);
     expect(CARD_DUST.sway.periodMs.from).toBeGreaterThanOrEqual(500);
     expect(CARD_DUST.sway.periodMs.to).toBeLessThan(CARD_DUST.durationMs);
   });
@@ -243,7 +243,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     expect(config()).toMatchObject({
       frame: ["fx_dust/idle/0/0"],
       lifespan: 1800,
-      speed: { min: 50, max: 200 },
+      speed: { min: 30, max: 120 },
       maxParticles: 6000,
       emitting: false,
       scale: { start: 0.15, end: 0.15, ease: "Sine.easeIn" },
@@ -294,13 +294,13 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     // four motes per view px² of ink (glyph and the 20 px rule), capped
     expect(emitted).toBe(Math.min(4 * ink, 6000));
     expect(config().maxParticles).toBeLessThanOrEqual(6000);
-    expect((config().speed as { min: number; max: number }).min).toBeGreaterThanOrEqual(50);
-    expect((config().speed as { min: number; max: number }).max).toBeLessThanOrEqual(200);
+    expect((config().speed as { min: number; max: number }).min).toBeGreaterThanOrEqual(30);
+    expect((config().speed as { min: number; max: number }).max).toBeLessThanOrEqual(120);
     expect(config().lifespan).toBeLessThanOrEqual(1800);
     expect((config().scale as { start: number; end: number }).end).toBeLessThanOrEqual(0.15);
   });
 
-  it("should scatter a card's motes every way, inward too, never faster than 200 px/s at the start (R26)", () => {
+  it("should scatter a card's motes every way, inward too, never faster than 120 px/s at the start (R26)", () => {
     const { dust, gone, config } = dustStage();
     dust.play(cardInk(), 951, gone);
     const angle = config().angle as { onEmit: (p: { x: number; y: number }) => number };
@@ -314,7 +314,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
       }),
     );
     expect(quadrants).toEqual(new Set(["right-down", "left-down", "left-up", "right-up"]));
-    expect((config().speed as { max: number }).max).toBeLessThanOrEqual(200);
+    expect((config().speed as { max: number }).max).toBeLessThanOrEqual(120);
   });
 
   it("should slow every mote as it drifts (R26)", () => {
@@ -336,7 +336,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     expect(speeds.at(-1)!).toBeLessThan(50 / 2);
   });
 
-  describe("each mote's sway (R26, the owner's second, third and fourth tunes)", () => {
+  describe("each mote's sway (R26, the owner's second, third, fourth and sixth tunes)", () => {
     type Op = {
       onEmit?: (p: object, key: string, value?: number) => number;
       onUpdate?: (p: object, key: string, t: number, value: number) => number;
@@ -409,7 +409,7 @@ describe("CardDust (FS-PQ2TW §D)", () => {
     it("should barely sway a mote while it is still fast off the letters", () => {
       for (const path of flights()) {
         const early = path.filter((s) => s.t <= 0.05);
-        // under 15% of the widest sway (7 px since the fourth tune: under 1.05 px)
+        // under 15% of the widest sway (5 px since the sixth tune: under 0.75 px)
         for (const s of early) expect(Math.abs(s.side)).toBeLessThan(CARD_DUST.sway.amplitude.to * 0.15);
       }
     });
