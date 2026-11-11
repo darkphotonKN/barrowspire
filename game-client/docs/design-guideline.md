@@ -631,8 +631,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   2026-11-07; rim dropped and trough turned deep red on the owner's second look the same day.)*
 - **Minimap.** The run's top-right minimap (`src/ui/minimap.ts`) reads as candle-lit stone in the
   HUD's own frame, which stays as it is: the `hudPanel` backing and its 1px brass rim, and nothing
-  drawn over the rim. Inside it, bottom to top: explored regions in dark stone
-  (`minimapExplored`) and the ones the party stands in a step lighter (`minimapVisible`), and the seen
+  drawn over the rim. Inside it, bottom to top: every region the party has seen, explored or
+  visible, in one dark stone (`minimapExplored`), the one it stands in no lighter, and the seen
   rooms outlined by a 1px line (`minimapEdge`) along their outer edge only, never on a corridor,
   across a doorway, between two regions or along a cell; a soft `inkDeep` vignette, strongest at the rim's inside
   edge and nothing in the middle, painted as a canvas gradient so both renderers match (never the
@@ -642,7 +642,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   top. No warm glow anywhere inside: amber there means a fixture. Each step of stone keeps 1.3:1
   from the next, each glyph and dot 3:1 from its ring. Drawn in code from tokens, no baked art.
   *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md), 2026-11-12; outer
-  outline only, on the owner's look the same day.)*
+  outline only, on the owner's look the same day; one fill for every seen region, the owner's
+  "目前的區域不特別亮", the same day.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

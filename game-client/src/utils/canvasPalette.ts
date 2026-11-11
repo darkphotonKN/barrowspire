@@ -165,15 +165,14 @@ export const palette = {
   xpFill: BARROW_HEX.brassBright,
   xpTrack: BARROW_HEX.charcoal,
   /**
-   * The minimap's ground (FS-SRA9J §E.22, FS-56CKV §A.4–§A.5): an explored region in the walls'
-   * dark stone, a visible one a step lighter in their lit stone, so the party's own regions stand
-   * out; the shown floor outlined once round its outer edge, never between two regions, in that
-   * stone lifted toward vellum. Each step keeps 1.3:1 from the one under it (`minimap.test.ts`). Stone, not amber or the ally green: the minimap's glyphs
-   * and dots keep those channels. The edge is a token of its own: no stone token is lighter than
-   * the visible fill by 1.3:1.
+   * The minimap's ground (FS-SRA9J §E.22, FS-56CKV §A.4–§A.5): every seen region, explored or
+   * visible, in the walls' dark stone, one fill, so the region the party stands in is not lit up;
+   * the seen rooms' walls outlined in the walls' lit stone lifted toward vellum. Fill over the
+   * backing and line over the fill each keep 1.3:1 (`minimap.test.ts`). Stone, not amber or the
+   * ally green: the minimap's glyphs and dots keep those channels. The edge is a token of its own,
+   * kept from when it had to clear a lighter fill too.
    */
   minimapExplored: BARROW_HEX.slate,
-  minimapVisible: BARROW_HEX.slateLight,
   minimapEdge: tint(BARROW_HEX.slateLight, 0.3),
   levelUp: BARROW_HEX.brassBright,
   /**
