@@ -18,8 +18,8 @@ import (
 * room and along the corridors, the floor's total held to
 * [DungeonMonstersMin, DungeonMonstersMax]. The mix, levels and elite chance
 * are the floor's own (rollMonster); only the treasure guards are always
-* elite. On floor 1, Bone Archers take some ghouls' places in the ordinary
-* rooms and one in each hall pack (FS-B4SG9 §B).
+* elite. On every dungeon floor, Bone Archers take some ghouls' places in the
+* ordinary rooms and one in each hall pack (FS-B4SG9 §B).
 *
 * Every monster stands on walkable cells of its region, off doorways, by the
 * same spacing and delver exclusion as on any floor (spawnArea.valid).
@@ -117,9 +117,9 @@ func (d *dungeonFloor) isHall(room int) bool {
 * HallPackRadius of the troll. It tries a few troll spots and keeps the first
 * that fits the whole pack, else the one that fitted the most; a member that
 * fits nowhere is skipped and the floor total tops up (FS-KE075 §Edge States
-* "A pack does not fit in its hall"). Members are placed in order, so on floor
-* 1 the first ghouls, the Bone Archers, are the last a short pack loses
-* (FS-B4SG9 §B R16).
+* "A pack does not fit in its hall"). Members are placed in order, so the
+* first ghouls, the Bone Archers, are the last a short pack loses (FS-B4SG9 §B
+* R16).
 **/
 func (p *dungeonPopulation) hallPack(room int) {
 	region := p.floor.roomRegion(room)
@@ -127,7 +127,7 @@ func (p *dungeonPopulation) hallPack(room int) {
 	ghouls := make([]MonsterConfig, HallPackGhoulsMin+p.rng.IntN(HallPackGhoulsMax-HallPackGhoulsMin+1))
 	for i := range ghouls {
 		archetype := components.MonsterArchetypeGhoul
-		if p.hasBoneArchers() && i < HallPackBoneArchers {
+		if i < HallPackBoneArchers {
 			archetype = components.MonsterArchetypeBoneArcher
 		}
 		ghouls[i] = p.rollAs(archetype, eliteChance(p.depth))
@@ -203,23 +203,16 @@ func (p *dungeonPopulation) treasureGuards(room int) {
 }
 
 /**
-* single places one rolled monster in room; false when it found no spot. On
-* floor 1 a roll that comes up a ghoul is a Bone Archer instead at
-* BoneArcherRoomShare, on a draw of its own (FS-B4SG9 §B R15); every other
-* floor draws exactly as rollMonster does.
+* single places one rolled monster in room; false when it found no spot. A
+* roll that comes up a ghoul is a Bone Archer instead at BoneArcherRoomShare,
+* on a draw of its own, on every dungeon floor (FS-B4SG9 §B R14–R15).
 **/
 func (p *dungeonPopulation) single(room int) bool {
 	archetype := rollArchetype(p.rng, p.depth)
-	if p.hasBoneArchers() && archetype == components.MonsterArchetypeGhoul && p.rng.Float64() < BoneArcherRoomShare {
+	if archetype == components.MonsterArchetypeGhoul && p.rng.Float64() < BoneArcherRoomShare {
 		archetype = components.MonsterArchetypeBoneArcher
 	}
 	return p.placeIn(p.floor.roomRegion(room), p.rollAs(archetype, eliteChance(p.depth)), spawnRoom, room)
-}
-
-// hasBoneArchers is whether this floor places Bone Archers: floor 1 only, and
-// every Spire floor is a dungeon, so it is a depth test (FS-B4SG9 §B R14).
-func (p *dungeonPopulation) hasBoneArchers() bool {
-	return p.depth == firstFloor
 }
 
 // corridors places the corridors' rolled monsters, one per segment at most,
