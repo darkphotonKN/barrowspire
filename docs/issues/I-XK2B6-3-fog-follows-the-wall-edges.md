@@ -34,6 +34,10 @@ bordering a region stays unveiled (R19). One veil per px, the soft edges, the fa
 clearance and the tint rule are unchanged (R20). The fog is still painted into canvas textures; no
 mask is added (ADR-0057).
 
+*(Amended 2026-11-12 for the owner's ruling E4, FS-XK2B6 R18: a slab stands over its edge's height
+by its wall's top face and a post by its cap, worked out from the wall's thickness and the cap's
+size, in place of `FOG.headroom` and the 14 px `FOG.post`.)*
+
 If the partition cannot hold this without a redesign of `fogShapes`, stop and escalate with what
 it does allow.
 

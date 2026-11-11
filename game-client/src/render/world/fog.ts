@@ -29,15 +29,16 @@
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
-import { worldToScreen, type Point, type Rect } from "@/render/iso/projection";
+import { WORLD_PX_PER_TILE, worldToScreen, type Point, type Rect } from "@/render/iso/projection";
 import { mix, palette } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
+import { BAKE } from "./bake";
 import { BLACKOUT } from "./blackout";
 import type { ChunkVisibility, Toggle } from "./chunks";
 import type { RegionGrid, WallPlan } from "./dungeon";
 import type { ExplorationState } from "./exploration";
 import { FEATHER, fieldWindow, fogField, type FieldShape, type FieldWindow } from "./fogField";
-import type { WallAxis, WallHeight } from "./walls";
+import { intoWall, wallward, type WallAxis, type WallHeight } from "./walls";
 
 /** A veil: the share of `palette.inkDeep` laid over a region's ground, and its walls' multiply tint. */
 export interface Veil {
@@ -46,6 +47,21 @@ export interface Veil {
 }
 
 const veil = (alpha: number): Veil => ({ alpha, tint: mix(TINT_IDENTITY, palette.inkDeep, alpha) });
+
+/**
+ * Screen px the back edge of a level top face stands over its middle on one screen column: the
+ * point `half` world px back along each axis (FS-XK2B6 R18, the owner's ruling E4 of 2026-11-12).
+ * A drawn wall's top face over its centre line, `half` its thickness; a post's cap over its middle,
+ * `half` its side. The fog stands clear over what is drawn to this and no higher, so it is worked
+ * out from the sizes the pieces are drawn with, never a px literal.
+ */
+const topFace = (half: number): number => worldToScreen(half, half).y;
+
+/**
+ * A post's cap as the bake builds it (`tools/bake/page/models/architecture.js` `post`, `tower.js`
+ * `partitionPost`), in tiles: its top over the wall top (the beam 0.12, the cap 0.08) and its side.
+ */
+const POST_CAP = { rise: 0.2, side: 0.3 } as const;
 
 export const FOG = {
   /**
@@ -92,14 +108,11 @@ export const FOG = {
    * wall keeps it too.
    */
   reach: 20,
-  /** Screen px a drawn wall's slab stands clear over its wall top: its top face and cap. */
-  headroom: 6,
   /**
-   * Screen px a corner post stands clear over its wall top: its beam 0.12 tile over the wall, its
-   * cap 0.08 more and the cap's top face behind it (`tools/bake/page/models/architecture.js`
-   * `post`), about 13 px at `BAKE.VPX`.
+   * Screen px a corner post stands clear over its wall top (FS-XK2B6 R18, ruling E4): its cap's top
+   * (`POST_CAP`) and that top face's back corner, peaked over its middle, about 12.6 px.
    */
-  post: 14,
+  post: POST_CAP.rise * BAKE.VPX + topFace((POST_CAP.side * WORLD_PX_PER_TILE) / 2),
   /** Screen px either side of a post's centre it covers: its cap, 0.3 tile square, on the diamond. */
   postHalf: 10,
 } as const;
@@ -151,6 +164,8 @@ export interface WallSlab {
   /** A screen point of its centre line at its foot: half its thickness from its edge, in its wall cell. */
   foot: Point;
   height: WallHeight;
+  /** Its wall's thickness, world px: half of it is how far back its top face reaches ({@link topFace}). */
+  thickness: number;
 }
 
 /** A post where edge runs end, as the half that claims it leaves it clear (FS-XK2B6 §F.18). */
@@ -195,20 +210,18 @@ export function wallLayout(grid: RegionGrid, plan: Pick<WallPlan, "runs" | "post
 
   for (const run of plan.runs) {
     const across = run.axis === "x" ? "y" : "x";
-    // towards the wall cells: world +x and +y run towards the camera
-    const out = run.wallSide === "south" || run.wallSide === "east" ? 1 : -1;
     const line = run.from[across];
-    const centre = line + (out * run.thickness) / 2;
     // the wall cells' lane: past the line when they lie south or east of it, before it otherwise
-    const lane = line / c - (out > 0 ? 0 : 1);
+    const lane = line / c - (wallward(run.wallSide) > 0 ? 0 : 1);
     // a wall cell's north side (its cells south of the line) and east side (west of it) are its right half's
     const right = run.wallSide === "south" || run.wallSide === "west";
     for (let at = run.from[run.axis]; at < run.to[run.axis]; at += c) {
       const k = Math.round(at / c);
       const [cx, cy] = run.axis === "x" ? [k, lane] : [lane, k];
       const mid = at + c / 2;
-      const foot = run.axis === "x" ? worldToScreen(mid, centre) : worldToScreen(centre, mid);
-      add(slabs, key(cx, cy, right), { axis: run.axis, foot, height: run.height });
+      const centre = intoWall(run.axis === "x" ? { x: mid, y: line } : { x: line, y: mid }, [run.wallSide], run.thickness);
+      const foot = worldToScreen(centre.x, centre.y);
+      add(slabs, key(cx, cy, right), { axis: run.axis, foot, height: run.height, thickness: run.thickness });
     }
   }
 
@@ -277,7 +290,8 @@ function feetOn(grid: RegionGrid, cx: number, cy: number): Point[] {
  * What stands up is cut to what is there, so the fog leaves clear only what stands in front of it:
  * - **a drawn wall** (FS-XK2B6 §F) claims a slab over each of its wall cell's edges that is a side
  *   of the half: the wall's centre line, half its thickness from the edge, raised to its height
- *   plus {@link FOG}`.headroom`, one line of a family across the whole half; and each post the half
+ *   and its top face ({@link topFace}), one line of a family across the whole half, so the line
+ *   is the top face's back edge and nothing over it is left clear; and each post the half
  *   claims (`wallLayout`), raised {@link FOG}`.post` over its wall top, peaked over its middle as
  *   its cap is and {@link FOG}`.postHalf` px either side of it. The strip is cut at a post's middle
  *   and either side of it, so in each part a post is one line of a family;
@@ -489,7 +503,9 @@ function halfOf(
     equiv: VEIL[s],
     right,
     y,
-    slabs: walls.slabs(cx, cy, right).map(({ axis, foot, height }) => ({ axis, top: raised(foot, heights[height] + FOG.headroom) })),
+    slabs: walls
+      .slabs(cx, cy, right)
+      .map(({ axis, foot, height, thickness }) => ({ axis, top: raised(foot, heights[height] + topFace(thickness / 2)) })),
     posts: walls.posts(cx, cy, right).map(({ foot, height }) => raised(foot, heights[height] + FOG.post)),
   };
 }

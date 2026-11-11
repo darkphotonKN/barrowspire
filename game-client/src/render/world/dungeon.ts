@@ -11,7 +11,7 @@
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Point, Rect } from "@/render/iso/projection";
 import type { FloorMap, FloorRegion, WallState } from "@/types/gameState";
-import { planEdgeWalls, type WallAxis, type WallHeight, type WallPiece, type WallPost, type WallSheets } from "./walls";
+import { intoWall, planEdgeWalls, TOWARDS_WALL, type WallAxis, type WallHeight, type WallPiece, type WallPost, type WallSheets } from "./walls";
 
 /** A floor map that carries a cell grid and its regions. */
 export type DungeonMap = Pick<FloorMap, "width" | "height"> & {
@@ -117,14 +117,6 @@ export interface WallEdge {
   /** The side of the edge the wall cell lies on; the walkable cell it faces lies on the other. */
   wallSide: EdgeSide;
 }
-
-/** One cell's step from an edge towards its wall cell. */
-const TOWARDS_WALL: Record<EdgeSide, readonly [dx: number, dy: number]> = {
-  north: [0, -1],
-  south: [0, 1],
-  west: [-1, 0],
-  east: [1, 0],
-};
 
 /**
  * The height of the wall on a wall edge (FS-XK2B6 §B.8): **front** (cut away, low) when the edge
@@ -292,17 +284,11 @@ function postsOf(runs: readonly EdgeRun[]): EdgePost[] {
       met.runs.push(run);
     }
   return [...meeting.values()].map(({ corner, runs: ending }) => {
-    // half a thickness towards every side a wall ending here lies on: opposite sides cancel
-    let [x, y] = [0, 0];
-    for (const side of new Set(ending.map((r) => r.wallSide))) {
-      x += TOWARDS_WALL[side][0];
-      y += TOWARDS_WALL[side][1];
-    }
-    const half = ending[0].thickness / 2;
     return {
       wallId: ending[0].wallId,
       corner,
-      at: { x: corner.x + x * half, y: corner.y + y * half },
+      // half a thickness towards every side a wall ending here lies on: opposite sides cancel
+      at: intoWall(corner, ending.map((r) => r.wallSide), ending[0].thickness),
       height: ending.some((r) => r.height === "back") ? "back" : "front",
     };
   });

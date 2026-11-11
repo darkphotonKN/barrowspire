@@ -36,12 +36,20 @@ from `tools/bake/page/models/{tower,architecture}.js`; do not edit those files.
       188 west, 188 east of their wall cell), and none where no wall cell and walkable cell share
       a side.
 - [ ] Every edge is in exactly one run; every run is a whole number of cells long, on one cell
-      line, all its edges facing the same way.
-- [ ] A run whose wall cells lie south or east of the cells it faces is front; any other is back.
-      A wall cell with walkable cells north and south (7 on the fixture) has a front edge north
-      and a back edge south.
+      line, all its edges facing the same way and one height. *(Amended by the owner's ruling
+      E1 of 2026-11-11: a run also ends where its height changes.)*
+- [ ] An edge whose wall cell lies south or east of the cell it faces is front; one whose wall
+      cell lies north or west of it is front when that wall cell has a walkable cell directly
+      north or west of it, back otherwise. A wall cell with walkable cells north and south (7 on
+      the fixture) has a front edge on each side. *(Amended by the owner's ruling E1 of
+      2026-11-11, FS-XK2B6 R8; this criterion first gave only south and east runs front, and the
+      7 cells a front north edge and a back south edge.)*
 - [ ] One post per run end, one per corner however many runs meet there, half a thickness to the
-      wall side of the cell corner on each axis; back when any run ending at it is back.
+      wall side of the cell corner on each axis; back when any run ending at it is back. Where a
+      straight wall changes height, the post stands on the wall's line: half a thickness to the
+      wall side across it, on the corner along it. *(Amended 2026-11-12 for the owner's ruling E1
+      of 2026-11-11, FS-XK2B6 R4: a run also ends where its height changes, so a post stands
+      where no outline turns.)*
 - [ ] Either side of every doorway the two runs end 80 px apart; across every corridor cell the
       two facing walls are the corridor's walkable width apart.
 - [ ] A wall cell with no walkable cell directly beside it is in no run.

@@ -355,6 +355,37 @@ export interface EdgeLine {
   thickness: number;
 }
 
+/** One cell's step across a wall edge towards its wall cells, by the side they lie on. */
+export const TOWARDS_WALL: Readonly<Record<HouseSide, readonly [dx: number, dy: number]>> = {
+  north: [0, -1],
+  south: [0, 1],
+  west: [-1, 0],
+  east: [1, 0],
+};
+
+/** Which way across an edge its wall cells lie: +1 south or east of it (world +x and +y run towards the camera), -1 north or west. */
+export function wallward(wallSide: HouseSide): 1 | -1 {
+  const [dx, dy] = TOWARDS_WALL[wallSide];
+  return dx + dy > 0 ? 1 : -1;
+}
+
+/**
+ * Where a wall on an edge stands (FS-XK2B6 §A.2): a point on the edge moved half the wall's
+ * thickness across it into its wall cells, towards each of `wallSides`. The one place this is
+ * worked out: a piece's centre, a post's place and the fog's slabs all read it. For a post where
+ * walls on several sides end, it moves along each axis; towards opposite sides the moves cancel,
+ * so a post where a straight wall changes height stays on the wall's line.
+ */
+export function intoWall(p: Point, wallSides: Iterable<HouseSide>, thickness: number): Point {
+  let [x, y] = [0, 0];
+  for (const side of new Set(wallSides)) {
+    x += TOWARDS_WALL[side][0];
+    y += TOWARDS_WALL[side][1];
+  }
+  const half = thickness / 2;
+  return { x: p.x + x * half, y: p.y + y * half };
+}
+
 /**
  * Walls drawn on their edges (a dungeon floor, FS-XK2B6 §A–§D): each run's pieces lie end to end
  * along its line, none trimmed and none past its two ends, each piece's centre half a thickness
@@ -376,15 +407,13 @@ export function planEdgeWalls<R extends EdgeLine>(
   for (const run of plan.runs) {
     const { axis, wallSide } = run;
     const across = axis === "x" ? "y" : "x";
-    // towards the wall cells: world +x and +y run towards the camera
-    const out = wallSide === "south" || wallSide === "east" ? 1 : -1;
-    const centre = run.from[across] + (out * run.thickness) / 2;
+    const out = wallward(wallSide);
+    const place = (a: number, b: number): Point => (axis === "x" ? { x: a, y: b } : { x: b, y: a });
     const count = Math.round((run.to[axis] - run.from[axis]) / T);
     for (let k = 0; k < count; k++) {
       const along = run.from[axis] + (k + 0.5) * T;
-      const place = (a: number, b: number): Point => (axis === "x" ? { x: a, y: b } : { x: b, y: a });
-      const at = place(along, centre);
-      const depthAt = place(along + (out * T) / 2, centre + (out * run.thickness) / 2);
+      const at = intoWall(place(along, run.from[across]), [wallSide], run.thickness);
+      const depthAt = place(along + (out * T) / 2, at[across] + (out * run.thickness) / 2);
       pieces.push(pieceAt(run.wallId, axis, at, 1, depthAt, seed, lookOf(sheets, run.height, lit(run, at))));
     }
   }

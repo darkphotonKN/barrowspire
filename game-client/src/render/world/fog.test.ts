@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FloorRegion, WallState } from "@/types/gameState";
-import { screenToWorld, worldToScreen, type Point } from "@/render/iso/projection";
+import { WORLD_PX_PER_TILE, screenToWorld, worldToScreen, type Point } from "@/render/iso/projection";
+import { BAKE } from "./bake";
 import { ChunkGrid, ChunkVisibility } from "./chunks";
 import { RegionGrid, dungeonWalls, edgeHeight, wallPlan, type EdgeSide, type WallPlan } from "./dungeon";
 import { Exploration, type ExplorationState } from "./exploration";
@@ -83,6 +84,47 @@ const lifted = (x: number, y: number, up = 0) => {
   return { x: s.x, y: s.y - up };
 };
 
+/**
+ * A post's cap as the bake builds it (`tools/bake/page/models/architecture.js` `post`, `tower.js`
+ * `partitionPost`), screen px over its wall top and world px across: its pier reaches 0.12 tile
+ * over the wall top, the cap 0.08 more, and the cap is 0.3 tile square.
+ */
+const CAP = { beam: 0.12 * BAKE.VPX, top: 0.2 * BAKE.VPX, side: 0.3 * WORLD_PX_PER_TILE };
+
+/**
+ * The top of a post's cap on screen, `dx` screen px from its middle (|dx| up to 0.8 · its side):
+ * its top face's outline, peaked over its middle, where the face's back corner stands.
+ */
+function capTop(post: { at: Point; height: keyof FogHeights }, dx: number, heights: FogHeights = HEIGHTS): Point {
+  const foot = worldToScreen(post.at.x, post.at.y);
+  return { x: foot.x + dx, y: foot.y - heights[post.height] - CAP.top - 0.4 * CAP.side + 0.5 * Math.abs(dx) };
+}
+
+/** The outline on screen of a box standing on a world footprint (its corners), from `from` px up to `to`. */
+function silhouette(footprint: readonly Point[], from: number, to: number): Point[] {
+  const points = footprint.flatMap((p) => [lifted(p.x, p.y, from), lifted(p.x, p.y, to)]);
+  // the convex hull, by the monotone chain
+  const sorted = [...points].sort((p, q) => p.x - q.x || p.y - q.y);
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: Point[]) => {
+    const out: Point[] = [];
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+/** The four corners of a world footprint `along` by `across` about `at`, `along` lying on `axis`. */
+function footprint(at: Point, axis: "x" | "y", along: number, across: number): Point[] {
+  const u = along / 2;
+  const v = across / 2;
+  return [[-u, -v], [u, -v], [u, v], [-u, v]].map(([du, dv]) => (axis === "x" ? { x: at.x + du, y: at.y + dv } : { x: at.x + dv, y: at.y + du }));
+}
+
 /** The middle of cell (cx, cy), world px. */
 const mid = (cx: number, cy: number) => ({ x: (cx + 0.5) * CELL, y: (cy + 0.5) * CELL });
 /** The middle of cell (cx, cy) on screen, raised by `up` px. */
@@ -146,8 +188,9 @@ describe("the fog over each region (FS-SRA9J §C.8–§C.10)", () => {
     const grid = walk();
     const shapes = fogOf(grid, states({}));
     // cell middles no wall stands in front of: a low wall on a region's south or east edge covers
-    // its floor up to about 54 px in, and a corner post the middles on its screen column above it
-    // (FS-XK2B6 ruling E2)
+    // its floor up to about 54 px in by its 43 px height, and a corner post the middles on its
+    // screen column above it (FS-XK2B6 ruling E2, its measure as corrected 2026-11-12: its "about
+    // 44" was taken from the wall's camera-side face)
     for (const [cx, cy] of [[2, 2], [3, 3], [7, 2], [12, 1], [13, 3]]) expect(fogAt(shapes, onScreen(cx, cy))).toEqual([DARK]);
   });
 
@@ -228,29 +271,24 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
   const GIRTH = FOG.girth;
 
   /**
-   * Each drawn wall piece and post on screen (FS-XK2B6 §A, as I-XK2B6-2 draws them): a piece's
-   * centreline from end to end, raised to its height and a few px for its top (FS-SRA9J §C.13,
-   * `FOG.headroom`); a post's cap, 0.3 tile square (9.6 px either
-   * side of it on screen), from its foot to its top. Every wall bordering a region is drawn,
-   * whatever its state (owner playtest 2026-11-06). A post stands at a cell corner, on the same
-   * screen column as the cells' middles above it, so it stands in front of floor there.
+   * Each drawn wall piece and post on screen (FS-XK2B6 §A, as I-XK2B6-2 draws them), measured by
+   * its own size and nothing the fog keeps: a piece as the box it is, a tile long, its material's
+   * thickness through, its height up, so its top is its top face; a post as its pier, its
+   * material's thickness square, up to its beam, and its cap (`CAP`) over that. Every wall
+   * bordering a region is drawn, whatever its state (owner playtest 2026-11-06). A post stands at
+   * a cell corner, on the same screen column as the cells' middles above it, so it stands in
+   * front of floor there.
    */
   function drawnSlabs(grid: RegionGrid, walls: readonly WallState[], heights: FogHeights) {
     const { pieces, posts } = dungeonWalls(planOf(grid, walls), grid, 1, MASONRY_WALLS);
-    const CAP = 9.6;
     return [
-      ...pieces.map((p) => {
-        const h = heights[p.height] + FOG.headroom;
-        const half = CELL / 4;
-        const [a, b] = (p.axis === "x" ? [[p.at.x - half, p.at.y], [p.at.x + half, p.at.y]] : [[p.at.x, p.at.y - half], [p.at.x, p.at.y + half]]).map(([x, y]) =>
-          worldToScreen(x, y),
-        );
-        return [a, b, { x: b.x, y: b.y - h }, { x: a.x, y: a.y - h }];
-      }),
-      ...posts.map((post) => {
-        const foot = worldToScreen(post.at.x, post.at.y);
-        const top = foot.y - heights[post.height] - FOG.post;
-        return [{ x: foot.x - CAP, y: foot.y }, { x: foot.x + CAP, y: foot.y }, { x: foot.x + CAP, y: top }, { x: foot.x - CAP, y: top }];
+      ...pieces.map((p) => silhouette(footprint(p.at, p.axis, CELL / 2, THICK), 0, heights[p.height])),
+      ...posts.flatMap((post) => {
+        const wall = heights[post.height];
+        return [
+          silhouette(footprint(post.at, "x", THICK, THICK), 0, wall + CAP.beam),
+          silhouette(footprint(post.at, "x", CAP.side, CAP.side), wall + CAP.beam, wall + CAP.top),
+        ];
       }),
     ];
   }
@@ -308,10 +346,13 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
     const shapes = fogOf(grid, states({ [C]: "visible" }));
     const slabs = drawnSlabs(grid, shellWalls(grid), HEIGHTS);
     // its front row down its middle: veiled, or behind its own low south wall, which now stands on
-    // its edge and covers its floor up to about 54 px in (FS-XK2B6 ruling E2); veiled past that
+    // its edge and, by its 43 px height, covers its floor up to about 54 px in (FS-XK2B6 ruling E2,
+    // its measure as corrected); veiled past that, right up to the wall's top face (ruling E4):
+    // fy 0.3 is 56 px in, a hair over that face
     for (const fy of [0.1, 0.3, 0.5, 0.7, 0.9]) {
       const p = worldToScreen(4.55 * CELL, (4 + fy) * CELL);
-      if (fy < 0.3) expect(fogAt(shapes, p)).toEqual([DARK]);
+      expect(slabs.some((q) => inside(p, q))).toBe(fy > 0.3);
+      if (fy <= 0.3) expect(fogAt(shapes, p)).toEqual([DARK]);
       else expect(fogAt(shapes, p).join() === String(DARK) || slabs.some((q) => inside(p, q))).toBe(true);
     }
     // and its next row all over: points off the seams between strips
@@ -329,8 +370,9 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
     const shapes = fogOf(grid, state, walls);
     const slabs = drawnSlabs(grid, walls, HEIGHTS);
     let fogged = 0;
-    // across the corridor: its low east wall, on its edge, covers about 54 px of its 80 (FS-XK2B6
-    // ruling E2), so the points by its west wall are the ones the fog must cover
+    // across the corridor: its low east wall, on its edge, covers about 54 px of its 80 by its
+    // 43 px height (FS-XK2B6 ruling E2, its measure as corrected), so the points by its west wall
+    // are the ones the fog must cover
     for (const cy of [0, 1, 2])
       for (const [fx, fy] of [[0.55, 0.5], [0.2, 0.75], [0.75, 0.2], [0.1, 0.5]]) {
         const p = worldToScreen((4 + fx) * CELL, (cy + fy) * CELL);
@@ -352,9 +394,21 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
       const shapes = fogOf(grid, state);
       for (const post of plan.posts)
         for (const dx of [-7, -3, 0, 3, 7]) {
-          const top = lifted(post.at.x, post.at.y, HEIGHTS[post.height] + 10);
-          expect(fogAt(shapes, { x: top.x + dx, y: top.y })).toEqual([]);
+          // a hair under its cap's top
+          const top = capTop(post, dx);
+          expect(fogAt(shapes, { x: top.x, y: top.y + 0.3 })).toEqual([]);
         }
+    }
+  });
+
+  it("leaves nothing clear over a post's cap: the fog stands on its cap's top, no higher (FS-XK2B6 ruling E4)", () => {
+    // room A's shell, with floor round it far enough that each post's cap stands over the floor's
+    // fog, not off its top
+    const grid = floor(10, 8, [room(A, 3, 3, 4, 3)]);
+    const shapes = fogOf(grid, states({}));
+    for (const post of planOf(grid).posts) {
+      const top = capTop(post, 0);
+      expect(fogAt(shapes, { x: top.x, y: top.y - 0.5 })).not.toEqual([]);
     }
   });
 });
@@ -412,7 +466,7 @@ describe("a floor's wall layout, as the fog sees it (FS-XK2B6 §F)", () => {
     it("stands a slab on each wall cell's south side, on the half that side bounds, and none through its middle", () => {
       for (let cx = 1; cx <= 4; cx++) {
         expect(layout.slabs(cx, 0, LEFT)).toEqual([
-          { axis: "x", height: "back", foot: worldToScreen((cx + 0.5) * CELL, CELL - HALF) },
+          { axis: "x", height: "back", thickness: THICK, foot: worldToScreen((cx + 0.5) * CELL, CELL - HALF) },
         ]);
         expect(layout.slabs(cx, 0, RIGHT)).toEqual([]);
       }
@@ -472,9 +526,10 @@ describe("a floor's wall layout, as the fog sees it (FS-XK2B6 §F)", () => {
           for (const q of standing(p.at, p.axis, CELL / 2, THICK, HEIGHTS[p.height])) if (at(q).length) veiled.push(`piece ${p.at.x},${p.at.y}`);
         for (const post of posts) {
           const top = HEIGHTS[post.height];
+          // its cap's top, a hair under it
           const cap = [-7, -3, 0, 3, 7].map((dx) => {
-            const c = lifted(post.at.x, post.at.y, top + 10);
-            return { x: c.x + dx, y: c.y };
+            const c = capTop(post, dx);
+            return { x: c.x, y: c.y + 0.3 };
           });
           for (const q of [...standing(post.at, "x", THICK, THICK, top), ...cap]) if (at(q).length) veiled.push(`post ${post.at.x},${post.at.y}`);
         }

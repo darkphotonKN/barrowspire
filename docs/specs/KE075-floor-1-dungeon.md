@@ -441,10 +441,13 @@ the contract between the two halves.
     north or south of it, along y when one lies directly west or east; a run is a line of cells
     facing the same way, reaching one cell on at each end into the wall it meets, so a corner's
     cell is in both its runs and its post stands at the corner. Runs of one cell are dropped; a
-    wall cell no run reaches stands alone as a one-cell wall. (`dungeon.ts` `wallRuns`) **(derived
-    here, floor1/y-walls diagnose 2026-11-06)** A run's pieces stand only between its two end
+    wall cell no run reaches stands alone as a one-cell wall. (These run rules, and `dungeon.ts`
+    `wallRuns` that held them, are gone on a dungeon floor: its walls are edge runs of FS-XK2B6,
+    R3, R26.) **(derived here, floor1/y-walls diagnose 2026-11-06)** A run's pieces stand only between its two end
     posts: the half cell of each run past the post at a corner's centre is not drawn, so where a
-    wall along x meets one along y nothing sticks out of the corner (`walls.ts` `betweenPosts`).
+    wall along x meets one along y nothing sticks out of the corner. This now holds by
+    construction, not by a rule that drops pieces: a run ends at the cell corner where its post
+    stands, so no piece lies past a post (FS-XK2B6 R25, R26).
     **(derived here, floor1/corner-stubs diagnose 2026-11-11)**
 47. **A dungeon floor has no buildings.** No building exterior, roof or stone cap, no silhouette,
     no indoor blackout and no client perimeter wall: the shell walls are the floor's edge. Run
