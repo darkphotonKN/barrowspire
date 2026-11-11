@@ -200,7 +200,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   "tile" is a drawing unit, never a game unit.
 - **Footprint**: the patch of ground an object occupies in world space. Draw order sorts by
   footprint (`x + y`) and clicks hit-test against it. A sprite's pixel bounds are taller than its
-  footprint and are used for neither. A living monster is also hit over its **body column**.
+  footprint and are used for neither. A living monster is also hit over its **body column**. Not
+  a **wall foot**, which is only what a wall's ground shadow is cast from.
 - **Body column**: the screen-space column a living monster's body is drawn in, from its feet up
   to its crown and 0.4 of a crown either side (half its length for a quadruped). The pointer hovers
   and strikes a monster on its footprint or its body column (FS-48CTQ §C.5). It is a box, not the
@@ -342,6 +343,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   straight line of wall edges facing the same way and drawn at one height, from one corner of the
   walkable outline to the next, or to where the wall changes height. A building's wall is still
   cut along its rect's centreline (**Wall piece**).
+- **Wall foot** (short **foot**; `WallFoot`, `BAKE.WALL_FOOT`, `BAKE.POST_FOOT`): the strip of
+  ground a wall stands on as drawn, which its ground shadow is cast from (FS-V8FT3 §C R13): one
+  thickness deep, the material's (`WallSheets.thickness`), not the server rect's; as long as a
+  stretch of the wall's pieces standing end to end at one height, so one foot for a whole run,
+  never one per piece; with how tall that stretch stands. A building's wall's foot is centred on
+  its rect's centreline; a dungeon floor's edge run's is the strip from its **wall edge** to one
+  thickness on its wall cells' side. A post's foot is its own square. Not a **footprint**: a
+  footprint is one object's patch of ground, read for draw order and clicks; a foot joins a run's
+  pieces and is read for nothing but casting its shadow. Never a figure's feet (the point a
+  sprite stands on).
 - **Partition wall**: a server wall as the tower theme draws it: masonry, cut into wall pieces
   with the same geometry and cut-away rule as a house wall. It is a server wall, with collision.
 - **Perimeter wall**: the tower's outer wall, drawn by the client alone around the outside of the
