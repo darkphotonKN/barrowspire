@@ -146,3 +146,46 @@ describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
     expect(frames[4].b.thighL).not.toEqual(keys[2].b.thighL);
   });
 });
+
+describe("the Bone Archer's shot (FS-B4SG9 §E R26)", () => {
+  const keys = ATTACKS.boneShot();
+  const drawn = (p) => (p.fx.draw ?? 0) > 0.5;
+  const arrow = (p) => (p.fx.arrow ?? 0) > 0.5;
+
+  it("is one key per frame of the standard attack, which lasts the 0.6 s wind-up within a frame", () => {
+    const { frames, fps } = ANIMATIONS.attack;
+    expect(keys).toHaveLength(frames);
+    expect(Math.abs(frames / fps - 0.6)).toBeLessThanOrEqual(1 / fps);
+  });
+
+  it("raises the bow with nothing nocked, then nocks before it draws", () => {
+    expect(arrow(keys[0])).toBe(false);
+    expect(drawn(keys[0])).toBe(false);
+    const nocked = keys.findIndex(arrow);
+    const pulled = keys.findIndex(drawn);
+    expect(nocked).toBeGreaterThan(0);
+    expect(pulled).toBeGreaterThanOrEqual(nocked);
+  });
+
+  it("pulls the string to the hand with the arrow showing, further each frame, to the full draw", () => {
+    const pull = keys.filter(drawn);
+    expect(pull.length).toBeGreaterThanOrEqual(3);
+    for (const p of pull) expect(arrow(p)).toBe(true);
+    for (let i = 1; i < pull.length; i++) expect(pull[i].fx.ik).toBeGreaterThanOrEqual(pull[i - 1].fx.ik);
+    expect(pull.at(-1).fx.ik).toBeGreaterThanOrEqual(1);
+  });
+
+  it("looses on its last frame: the full draw is held until then, and the arrow is gone after", () => {
+    const last = keys.length - 1;
+    expect(drawn(keys[last - 1])).toBe(true);
+    expect(arrow(keys[last - 1])).toBe(true);
+    expect(drawn(keys[last])).toBe(false);
+    expect(arrow(keys[last])).toBe(false);
+  });
+
+  it("is made by clipsFor for a style that asks for it", () => {
+    const frames = clipsFor({ attack: "boneShot", hold: pose({}) }).attack;
+    expect(frames).toHaveLength(ANIMATIONS.attack.frames);
+    expect(frames.map((p) => p.fx)).toEqual(keys.map((p) => p.fx));
+  });
+});
