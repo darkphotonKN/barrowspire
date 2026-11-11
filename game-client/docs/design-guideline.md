@@ -644,7 +644,9 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   floor's map over the whole view, as Path of Exile 2 draws it: the world's own iso projection at
   1/8, about the figure the camera follows and moving with it, with no backing, rim or vignette;
   the seen regions in the minimap's one stone and the walls' 2px line, both at 40% so the game
-  shows through; the glyphs and dots as in the enlarged map, at full strength. It sits over the
+  shows through; the glyphs and dots at full strength and at the normal minimap's size (9 × 9
+  glyphs, each px on whole device px; *amended 2026-11-12 by the owner's "smaller marks on the
+  biggest map": was the enlarged map's 14 × 14*). It sits over the
   world, the fog and the atmosphere, under the aim line, the floor veil and every piece of HUD, and
   takes no input. The scale, the 40% and the line are starting values to tune by eye.
   *(Added by [FS-1SEF0](../../docs/specs/1SEF0-minimap-modes-enlarged-and-overlay.md), 2026-11-12.)*
