@@ -6,13 +6,21 @@ import { canvasImage } from "./paintKit";
 
 /** A scene whose texture manager keeps what is made, as Phaser's does, and whose images record their origin. */
 function fakeScene() {
-  const textures = new Map<string, { refresh: () => void }>();
+  const textures = new Map<
+    string,
+    { refresh: () => void; getSourceImage: () => { width: number; height: number } }
+  >();
   const images: { key: string; origin?: number }[] = [];
   const scene = {
     textures: {
       exists: (key: string) => textures.has(key),
-      createCanvas: (key: string) => {
-        const texture = { getContext: () => ({}), refresh: vi.fn() };
+      get: (key: string) => textures.get(key),
+      createCanvas: (key: string, width: number, height: number) => {
+        const texture = {
+          getContext: () => ({}),
+          refresh: vi.fn(),
+          getSourceImage: () => ({ width, height }),
+        };
         textures.set(key, texture);
         return texture;
       },
@@ -54,5 +62,14 @@ describe("canvasImage", () => {
       expect.objectContaining({ key: "k", origin: 0 }),
       expect.objectContaining({ key: "k", origin: 0 }),
     ]);
+  });
+
+  it("should refuse a key already painted at another size, rather than hand back the old texture", () => {
+    const { scene } = fakeScene();
+    const paint = vi.fn();
+    canvasImage(scene, "k", 216, 108, paint);
+    expect(() => canvasImage(scene, "k", 200, 108, paint)).toThrow(/"k".*216x108.*200x108/);
+    expect(() => canvasImage(scene, "k", 216, 100, paint)).toThrow(/"k"/);
+    expect(paint).toHaveBeenCalledTimes(1);
   });
 });
