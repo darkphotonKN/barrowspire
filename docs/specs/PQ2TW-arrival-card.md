@@ -681,6 +681,21 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 | a flake's motion | a steady 12–32 px/s, spinning 90–270°/s | 12–32 px/s, slowing (drag 0.5/s); turning slowly, 20–70°/s; flipping over on one axis every 500–1300 ms; swaying 1.5–4 px |
 | sparks | none | at most 40 ember sparks of 1–2 view px, 0.012 per view px² of ink, off the front, at 40–80 px/s, flickering, each gone within 300–600 ms |
 
+**The owner's tune of the ash, 2026-11-12.** With the ash the game's leave, he said: "灰燼燒的速度稍微
+慢一點" (the ash should burn a little slower), then "左到右的速度拉長一點" (draw the left-to-right out
+a little longer), and gave the number: "2" (two seconds). The front's crossing goes from 1000 to
+2000 ms, the same `Linear` ease, the same ragged edge and grain, the same band widths. The ash's
+one fixed duration goes from 2000 to 3000 ms, so the last flakes, let go as the front finishes,
+still live their 1000 ms. Flakes and sparks are otherwise unchanged. His values replace the
+starting values where R55, R57 and R59 stated them, and R57's criterion follows; R59's exception
+past §B.2's 1200 ms ceiling now covers 3000 ms. A tune (`Tunes FS-PQ2TW`): R61 names the front's
+time and the duration as the record's data.
+
+| Value | Was | Now |
+|---|---|---|
+| the front's crossing, left to right | 1000 ms | 2000 ms |
+| the ash's one fixed duration | 2000 ms | 3000 ms |
+
 ### Requirements
 
 53. **Three leaves, one switch.** The card's switch (R41) takes a third value, **ash**; it is
@@ -696,8 +711,8 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 55. **The burn, per pixel.** When the hold ends, the card's letters and rule are replaced, in
     their exact place, by one image of them that burns. Each pixel of it carries a fixed
     threshold: how far along it lies from the left edge, made ragged by smooth noise (and a
-    little grain, so the edge crumbles). A front sweeps that threshold from 0 past 1 over 1000 ms,
-    linear. Each frame, a pixel the front has not reached is **whole**, drawn as the card drew
+    little grain, so the edge crumbles). A front sweeps that threshold from 0 past 1 over 2000 ms
+    (the owner's tune of 2026-11-12, "左到右的速度拉長一點"; was 1000 ms), linear. Each frame, a pixel the front has not reached is **whole**, drawn as the card drew
     it; a pixel within the band behind the front is **burning**: tinted `ember` at the band's
     leading edge, charring to `slate` toward its trailing edge; a pixel past the band is **gone**.
     The band is 0.06 of ember and 0.08 of char, in threshold units. When the front has crossed,
@@ -725,8 +740,9 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 
     **(the owner's "larger than the dust's motes, dark grey ... rise slowly ... and fade", and
     his look of 2026-11-12, "燒掉後的質感很差 不夠高級"; the numbers, the spec's.)**
-57. **About 2 seconds.** The front takes 1000 ms and a flake lives 1000 ms; a spark is gone
-    within 600 ms of the front's passing. The ash is gone by 2000 ms, one fixed duration.
+57. **About 3 seconds.** The front takes 2000 ms and a flake lives 1000 ms; a spark is gone
+    within 600 ms of the front's passing. The ash is gone by 3000 ms, one fixed duration (the
+    owner's tune of 2026-11-12; was about 2 seconds: 1000 ms, then 2000 ms).
 58. **Colour.** `ember` for the burning edge, the flakes' glowing patches and the sparks;
     `slate` for the char and the flakes' bodies; `slateLight` for the flakes' mottling and the
     grey a patch dims to (each flake pixel a mix of these three); the card's own ink (its texts'
@@ -737,7 +753,7 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
     these.** The ash is more than 12 particles (at most 300 flakes and 40 sparks); its debris
     rises instead of falling or settling, and never sprays: no flake starts faster than 32 px/s
     or more than 30° off straight up, no spark faster than 80 px/s or more than 25° off it. It
-    lasts 2000 ms, past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
+    lasts 3000 ms (the owner's tune of 2026-11-12; was 2000 ms), past §B.2's 1200 ms. A flake's flip sets its scale on one axis apart from the
     other (§B.4's "no tween sets `scaleX` and `scaleY` to different values"): it is a turn in
     depth, never a squash, a stretch or a bounce; its scale never grows past its size and its
     size never changes otherwise. Its textures are drawn at runtime from tokens, not baked: the
@@ -788,7 +804,7 @@ embers) is added, and R57–R61 and the criteria follow them. No smoke wisp is a
 - [ ] The flakes span a range of sizes (from about 1.5 to about 8 view px long, most of them small) and of aspect ratios (some near 1, many longer than wide). (R56)
 - [ ] A flake's pixels are mixes of `slate`, `slateLight` and `ember`; about a third of flakes glow, and a glowing flake's patch dims to grey over its first 500 ms; no other colour appears but the card's own ink. (R56, R58)
 - [ ] Sparks are few (0.012 per view px² of ink, at most 40), 1–2 view px of `ember`, additive, leave from the strokes as the front reaches them, rise at 40–80 px/s within 25° of up (faster than any flake), flicker, and are gone within 600 ms. (R64, R59)
-- [ ] The ash is gone at 2000 ms. (R57)
+- [ ] The front crosses in 2000 ms, linear, and the ash is gone at 3000 ms. (R55, R57)
 - [ ] With reduced motion, no burn and no flake are made and the card fades over 600 ms. (R60)
 - [ ] A failed read, no ink or no canvas texture: no burn, a fade, logged once. (R60)
 - [ ] A stop or a new card takes the image, its texture, its flakes, its sparks and its front away at once. (R60)
