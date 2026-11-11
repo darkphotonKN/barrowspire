@@ -273,6 +273,58 @@ describe("CharacterMotion", () => {
     expect(motion.step({ x: 0, y: 0 }, 650, FRAME, false).animation).toBe("parry");
   });
 
+  describe("a facing to turn to (FS-JS7C8 §D)", () => {
+    it("should turn its idle to the facing given while standing", () => {
+      const motion = new CharacterMotion("se");
+      motion.face("w");
+      expect(motion.step({ x: 0, y: 0 }, 0, FRAME, false)).toMatchObject({ animation: "idle", facing: "w" });
+    });
+
+    it("should keep that facing once it is let go, as a standing turn", () => {
+      const motion = new CharacterMotion("se");
+      motion.face("nw");
+      motion.step({ x: 0, y: 0 }, 0, FRAME, false);
+      motion.face(undefined);
+      expect(motion.step({ x: 0, y: 0 }, FRAME, FRAME, false)).toMatchObject({ animation: "idle", facing: "nw" });
+    });
+
+    it("should backpedal turned to the facing while moving away from it, on a sheet with both clips", () => {
+      const motion = new CharacterMotion("se", 500, { run: true, backpedal: true });
+      motion.face("n");
+      expect(walk(motion, { x: 0, y: 200 }, 500)).toMatchObject({ animation: "backpedal", facing: "n" });
+    });
+
+    it("should run turned to the facing while moving toward it, on a sheet with run", () => {
+      const motion = new CharacterMotion("se", 500, { run: true, backpedal: true });
+      motion.face("e");
+      expect(walk(motion, { x: 200, y: 0 }, 500)).toMatchObject({ animation: "run", facing: "e" });
+    });
+
+    it("should walk turned to its movement, as today, on a sheet without run", () => {
+      const motion = new CharacterMotion("se");
+      motion.face("n");
+      const choice = walk(motion, { x: 0, y: 200 }, 500);
+      expect(choice).toMatchObject({ animation: "walk", facing: "s" });
+      expect(choice.timeScale).toBeCloseTo(200 / 74, 1);
+    });
+
+    it("should still attack toward the aim, then turn back to the facing", () => {
+      const motion = new CharacterMotion("se", 500);
+      motion.face("w");
+      motion.attack(0, { x: 0, y: -40 });
+      expect(motion.step({ x: 0, y: 0 }, 0, FRAME, false)).toMatchObject({ animation: "attack", facing: "n" });
+      expect(motion.step({ x: 0, y: 0 }, 500, FRAME, false)).toMatchObject({ animation: "idle", facing: "w" });
+    });
+
+    it("should die facing where it fell, whatever the facing", () => {
+      const motion = new CharacterMotion("se");
+      motion.face("n");
+      motion.step({ x: 0, y: 0 }, 0, FRAME, false);
+      motion.face("s");
+      expect(motion.step({ x: 0, y: 0 }, FRAME, FRAME, true)).toMatchObject({ animation: "death", facing: "n" });
+    });
+  });
+
   it("should die facing where it fell, whatever it was doing", () => {
     const motion = new CharacterMotion();
     walk(motion, { x: 200, y: 0 }, 300);
@@ -624,6 +676,75 @@ describe("CharacterAnimator", () => {
         pos.x += (450 * FRAME) / 1000;
         expect(motion.step(pos, t, FRAME, false).animation).toBe("attack");
       }
+    });
+  });
+
+  describe("run and backpedal (FS-JS7C8 §A, §B)", () => {
+    /** The test manifest with the knight re-baked: `run`, and `backpedal` unless told not to. */
+    function rebaked(withBackpedal = true) {
+      const m = manifest();
+      m.sheets.char_knight_base.animations.run = clip(10, true, 8);
+      if (withBackpedal) m.sheets.char_knight_base.animations.backpedal = clip(10, true, 8);
+      return new ArtLibrary(m, quiet);
+    }
+
+    /** Walks `anim` along `v` (world px/s) for 300 ms, facing `facing`. */
+    function moving(anim: CharacterAnimator, facing: "n" | "e" | "s" | "w", v: { x: number; y: number }) {
+      anim.face(facing);
+      const pos = { x: 0, y: 0 };
+      let choice = anim.step(pos, 0, FRAME, false);
+      for (let t = FRAME; t <= 300; t += FRAME) {
+        pos.x += (v.x * FRAME) / 1000;
+        pos.y += (v.y * FRAME) / 1000;
+        choice = anim.step(pos, t, FRAME, false);
+      }
+      return choice;
+    }
+
+    it("should backpedal turned to the facing on a sheet that carries both clips", () => {
+      const anim = new CharacterAnimator(rebaked(), "warrior");
+      expect(moving(anim, "n", { x: 0, y: 200 })).toMatchObject({ animation: "backpedal", facing: "n" });
+    });
+
+    it("should run turned to the facing within 90° of its movement", () => {
+      const anim = new CharacterAnimator(rebaked(), "warrior");
+      expect(moving(anim, "n", { x: 200, y: 0 })).toMatchObject({ animation: "run", facing: "n" });
+    });
+
+    it("should run turned to its movement over 90° on a sheet with run but no backpedal (R11)", () => {
+      const anim = new CharacterAnimator(rebaked(false), "warrior");
+      expect(moving(anim, "n", { x: 0, y: 200 })).toMatchObject({ animation: "run", facing: "s" });
+    });
+
+    it("should walk turned to its movement on a sheet without run, as today", () => {
+      const anim = new CharacterAnimator(art(), "warrior");
+      expect(moving(anim, "n", { x: 0, y: 200 })).toMatchObject({ animation: "walk", facing: "s" });
+    });
+
+    it("should never run a palette variant that the sheet lacks (hub folk)", () => {
+      const anim = new CharacterAnimator(rebaked(), { sheet: "folk_resident_trousers", variant: "slate" });
+      expect(moving(anim, "n", { x: 0, y: 200 }).animation).toBe("walk");
+    });
+
+    it("should keep the frame index when run swaps to backpedal and back (R13)", () => {
+      const sprite = fakeSprite();
+      const anim = new CharacterAnimator(rebaked(), "warrior");
+      anim.show(sprite, { animation: "run", facing: "n", direction: 6, timeScale: 1 });
+      sprite.at(5);
+      anim.show(sprite, { animation: "backpedal", facing: "n", direction: 6, timeScale: 1 });
+      expect(sprite.plays[1]).toEqual({ key: "char_knight_base/backpedal/6", startFrame: 5 });
+      sprite.at(2);
+      anim.show(sprite, { animation: "run", facing: "ne", direction: 7, timeScale: 1 });
+      expect(sprite.plays[2]).toEqual({ key: "char_knight_base/run/7", startFrame: 2 });
+    });
+
+    it("should still start a run from its first frame out of a walk or an idle", () => {
+      const sprite = fakeSprite();
+      const anim = new CharacterAnimator(rebaked(), "warrior");
+      anim.show(sprite, { animation: "idle", facing: "n", direction: 6, timeScale: 1 });
+      sprite.at(3);
+      anim.show(sprite, { animation: "run", facing: "n", direction: 6, timeScale: 1 });
+      expect(sprite.plays[1]).toEqual({ key: "char_knight_base/run/6", startFrame: 0 });
     });
   });
 
