@@ -3,6 +3,7 @@ import { contrastRatio } from "@/render/lighting/lighting";
 import { RegionGrid, type DungeonMap } from "@/render/world/dungeon";
 import fixture from "@/render/world/dungeon.fixture.json";
 import { Exploration, regionAt, type ExplorationState } from "@/render/world/exploration";
+import { worldToScreen } from "@/render/iso/projection";
 import { palette, rgba } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import {
@@ -10,6 +11,7 @@ import {
   MINIMAP_EDGE,
   MINIMAP_ENLARGED,
   MINIMAP_GLYPH,
+  MINIMAP_OVERLAY,
   MINIMAP_VIGNETTE,
   Minimap,
   minimapContent,
@@ -1022,5 +1024,128 @@ describe("the enlarged minimap (FS-1SEF0 §B)", () => {
     expect([map.redraws, map.dotRedraws]).toEqual([before[0] + 1, before[1] + 1]);
     map.setMode("normal");
     expect([map.redraws, map.dotRedraws]).toEqual([before[0] + 2, before[1] + 2]);
+  });
+});
+
+// FS-1SEF0 §C (I-1SEF0-3): the map overlay, the floor over the whole view as in Path of Exile 2:
+// world-space, 1/8 of the world's projection about the followed figure, see-through, moved each
+// frame and never repainted for it.
+describe("the map overlay (FS-1SEF0 §C)", () => {
+  const overlaid = () => {
+    const on = mapped();
+    on.show([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
+    on.map.party({ self: IN_ROOM, allies: [FIXTURES[0].at] });
+    on.map.setMode("overlay");
+    return on;
+  };
+
+  it("should hold its look as named values: 1/8 of the world's projection, 40%, a 2 px line, depth 920 (§C.15–§C.17)", () => {
+    expect(MINIMAP_OVERLAY).toEqual({ scale: 0.125, alpha: 0.4, edge: 2, depth: 920 });
+    // over the dust and vignette (905), under the aim line (940), the floor veil (950) and the HUD
+    expect(MINIMAP_OVERLAY.depth).toBeGreaterThan(905);
+    expect(MINIMAP_OVERLAY.depth).toBeLessThan(940);
+  });
+
+  it("should hold no panel in the corner and draw no backing, rim or vignette (§C.13, §C.20)", () => {
+    const { map, panel, images } = overlaid();
+    expect(map.panel).toBeNull();
+    const names = panel.drawn().map((c) => c.name);
+    expect(names).not.toContain("fillRect");
+    expect(names).not.toContain("strokeRect");
+    expect(panel.drawn().some((c) => c.name === "fillStyle" && c.args[0] === palette.hudPanel)).toBe(false);
+    expect(images.map((i) => i.visible)).toEqual([false, false]);
+  });
+
+  it("should draw the seen regions and their walls at 40%, the line 2 px, in the minimap's tokens (§C.16)", () => {
+    const { panel } = overlaid();
+    const styles = panel.drawn().filter((c) => c.name === "fillStyle" || c.name === "lineStyle").map((c) => [c.name, ...c.args]);
+    expect(styles).toEqual([
+      ["fillStyle", palette.minimapExplored, 0.4],
+      ["lineStyle", 2, palette.minimapEdge, 0.4],
+    ]);
+  });
+
+  it("should project the floor at 1/8 of the world's own projection, about the world's origin (§C.14, §C.15)", () => {
+    const { panel } = overlaid();
+    const fills = panel.drawn().filter((c) => c.name === "fillPoints");
+    expect(fills.length).toBeGreaterThan(0);
+    // floor 1's whole diamond is 960 × 480 at this scale
+    const corner = (x: number, y: number) => {
+      const s = worldToScreen(x, y);
+      return at(s.x * 0.125, s.y * 0.125);
+    };
+    const pts = fills.flatMap((c) => c.args[0] as { x: number; y: number }[]);
+    for (const p of pts) {
+      expect(p.x).toBeGreaterThanOrEqual(corner(0, 3840).x - 1e-9);
+      expect(p.x).toBeLessThanOrEqual(corner(5760, 0).x + 1e-9);
+      expect(p.y).toBeGreaterThanOrEqual(-1e-9);
+      expect(p.y).toBeLessThanOrEqual(corner(5760, 3840).y + 1e-9);
+    }
+    expect(corner(5760, 0).x - corner(0, 3840).x).toBe(960);
+    expect(corner(5760, 3840).y).toBe(480);
+    // room 1's first cell, exactly where the world puts it, scaled
+    const c = grid.cell;
+    const room = grid.regions.find((r) => r.id === ROOM)!.cells[0];
+    expect(pts).toContainEqual(corner(room.x * c, room.y * c));
+  });
+
+  it("should draw the glyphs and dots as the enlarged map does, at full opacity (§C.16)", () => {
+    const { marks, dots } = overlaid();
+    for (const c of marks.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
+    for (const c of marks.drawn().filter((c) => c.name === "fillRect")) for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
+    const ink = pixels(rectsByColour(marks.drawn()).get(palette.interactable) ?? []);
+    expect(ink.size).toBeGreaterThan(0);
+    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4.5, 3, 6, 4.5]);
+    for (const c of dots.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
+  });
+
+  it("should be in the world, not the HUD: scroll factor 1 at depth 920, back to the HUD in a panel mode", () => {
+    const { map, made } = overlaid();
+    for (const g of made) expect([g.scrollFactor, g.depth, g.visible]).toEqual([1, 920, true]);
+    map.setMode("normal");
+    for (const g of made) expect([g.scrollFactor, g.depth]).toEqual([0, MINIMAP.depth]);
+  });
+
+  it("should stand so the followed figure's point on it lies on the figure, on whole px, and move without a redraw (§C.14, §C.19)", () => {
+    const { map, made } = overlaid();
+    const [redraws, dotRedraws] = [map.redraws, map.dotRedraws];
+    for (const f of [IN_ROOM, at(IN_ROOM.x + 13, IN_ROOM.y - 7), at(4000, 1200)]) {
+      map.follow(f);
+      const iso = worldToScreen(f.x, f.y);
+      for (const g of made) {
+        expect(g.position).toEqual(at(Math.round(iso.x * 0.875), Math.round(iso.y * 0.875)));
+        // where the figure's own point lands, in the world, against where the figure stands
+        expect(Math.abs(g.position.x + iso.x * 0.125 - iso.x)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(g.position.y + iso.y * 0.125 - iso.y)).toBeLessThanOrEqual(0.5);
+      }
+    }
+    expect([map.redraws, map.dotRedraws]).toEqual([redraws, dotRedraws]);
+    // a placing in the corner does not move it while it is the overlay
+    map.place({ x: 746, y: 44 });
+    for (const g of made) expect(g.position).not.toEqual(at(746, 44));
+  });
+
+  it("should stand where the figure was last followed as soon as it becomes the overlay", () => {
+    const on = mapped();
+    on.map.follow(IN_ROOM);
+    for (const g of on.made) expect(g.position).toEqual(at(0, 0));
+    on.map.setMode("overlay");
+    const iso = worldToScreen(IN_ROOM.x, IN_ROOM.y);
+    for (const g of on.made) expect(g.position).toEqual(at(Math.round(iso.x * 0.875), Math.round(iso.y * 0.875)));
+  });
+
+  it("should redraw the map only when a region is first seen or a fixture found, and the dots only when one moves a whole px at its scale (§C.19)", () => {
+    const { map, show } = overlaid();
+    const once = map.redraws;
+    show([IN_ROOM]);
+    expect(map.redraws).toBe(once);
+    show([ELSEWHERE]);
+    expect(map.redraws).toBe(once + 1);
+    const dots = map.dotRedraws;
+    // 2 world px is under an overlay px; 40 is more
+    map.party({ self: at(IN_ROOM.x + 2, IN_ROOM.y), allies: [FIXTURES[0].at] });
+    expect(map.dotRedraws).toBe(dots);
+    map.party({ self: at(IN_ROOM.x + 40, IN_ROOM.y), allies: [FIXTURES[0].at] });
+    expect(map.dotRedraws).toBe(dots + 1);
   });
 });

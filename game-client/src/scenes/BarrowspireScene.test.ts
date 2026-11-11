@@ -6694,6 +6694,62 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(run.minimapMode).toBe("enlarged");
       });
 
+      // FS-1SEF0 §C.14: the overlay stands about the figure the camera follows, each frame
+      describe("the map overlay (FS-1SEF0 §C, I-1SEF0-3)", () => {
+        type Followed = MappedRun & {
+          playerPos?: { x: number; y: number };
+          watchedPlayerId?: string;
+          otherPlayersPos: { set(id: string, at: { x: number; y: number }): unknown };
+          followMapOverlay(): void;
+          update(time: number, delta: number): void;
+        };
+
+        it("should follow the player's drawn position, and the watched teammate's while spectating", () => {
+          const { run, pressTo } = mapped();
+          const follow = vi.spyOn(Minimap.prototype, "follow");
+          const r = run as Followed;
+          pressTo("overlay");
+          r.playerPos = { x: 2570, y: 3090 };
+          r.followMapOverlay();
+          expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 });
+          r.watchedPlayerId = "a";
+          r.otherPlayersPos.set("a", { x: 4000, y: 1200 });
+          r.followMapOverlay();
+          expect(follow).toHaveBeenLastCalledWith({ x: 4000, y: 1200 });
+        });
+
+        it("should stand it each frame after the figures moved, playing or watching, without redrawing its map", () => {
+          const { run, map, pressTo } = mapped();
+          const r = run as Followed;
+          pressTo("overlay");
+          const redraws = map()!.redraws;
+          const order: string[] = [];
+          const up = { isDown: false };
+          const keys = { left: up, right: up, up, down: up };
+          Object.assign(run, {
+            cursors: keys,
+            wasd: keys,
+            kit: { follow: vi.fn(), guarding: false },
+            updateLighting: vi.fn(),
+            updateOtherPlayersSmooth: () => order.push("figures"),
+            checkBuildingStatus: vi.fn(),
+            sendMovementIntent: vi.fn(),
+            updateTargetFrame: vi.fn(),
+            followMapOverlay: () => order.push("overlay"),
+            playerPos: { x: 2560, y: 3080 },
+            targetPosition: { x: 2570, y: 3080 },
+          });
+          r.update(0, 16);
+          // watching: the player hidden, only the others move
+          const player = (run as unknown as { player: { visible: boolean } }).player;
+          expect(player.visible).toBe(true);
+          player.visible = false;
+          r.update(16, 16);
+          expect(order).toEqual(["figures", "overlay", "figures", "overlay"]);
+          expect(map()!.redraws).toBe(redraws);
+        });
+      });
+
       it("should rebuild it on a floor change, the new floor unexplored, and take the old one down", () => {
         const { map, handle } = mapped({ current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
         const first = map()!;
