@@ -8,13 +8,14 @@
  * tokens only (ADR-0013).
  *
  * **The look** (FS-56CKV §A; design-guideline "UI Chrome → Minimap"): candle-lit stone in the frame
- * as it was. Inside the rim, bottom to top: explored regions in dark stone and visible ones a step
- * lighter, the seen rooms outlined along their walls, open at every doorway, never a corridor; a soft `inkDeep` vignette strongest at
+ * as it was. Inside the rim, bottom to top: every seen region, explored or visible, in one dark stone
+ * (the one the party stands in no lighter), the seen rooms outlined along their walls, open at every doorway, never a corridor; a soft `inkDeep` vignette strongest at
  * the rim's inside edge; the switch, escape door and stairs as small amber glyphs on a dark ring;
  * the party's dots, each ringed. Nothing warm in the middle: amber in the HUD means "interactable".
  *
  * **Layers, each redrawn only when it changes** (§E.23). The map (backing, region fills and edges)
- * and the marks (the glyphs) are keyed by every region's state and the marks found; the vignette,
+ * and the marks (the glyphs) are keyed by which regions are seen and the marks found, not by which
+ * seen region is visible, since nothing they draw tells the two apart; the vignette,
  * which shows nothing that changes, is one canvas texture's image made once per minimap, between
  * them; the party's dots, which move all the time, are a layer of their own keyed by their
  * whole-px places. All are drawn about the panel's own top-left and stood where it is placed, so a
@@ -334,9 +335,10 @@ function seat(m: Point, before: number, after: number): Point {
   return { x: clamp(m.x, MINIMAP.width), y: clamp(m.y, MINIMAP.height) };
 }
 
+/** What the map layer draws: the seen regions, either state alike (FS-56CKV §A.4), and the fixtures found. */
 const contentKey = (c: MinimapContent) =>
   [
-    c.regions.map((r) => `${r.id}${r.state[0]}`).join(","),
+    c.regions.map((r) => r.id).join(","),
     c.fixtures.map((f) => `${f.kind}@${f.at.x},${f.at.y}`).join(","),
   ].join("|");
 
@@ -371,7 +373,7 @@ export class Minimap {
     }
   }
 
-  /** What the map layer shows now. */
+  /** What the map layer shows now, each seen region with its state, though both are drawn alike. */
   get content(): MinimapContent {
     return this.shownContent;
   }
@@ -389,10 +391,10 @@ export class Minimap {
   /** The party's exploration and the floor's fixtures now; the map is redrawn only if what it shows changed. */
   show(state: (region: number) => ExplorationState, fixtures: readonly MinimapFixture[]): void {
     const content = minimapContent(this.grid, state, fixtures);
+    this.shownContent = content;
     const key = contentKey(content);
     if (key === this.drawn) return;
     this.drawn = key;
-    this.shownContent = content;
     this.drawMap(content);
     this.drawMarks(content.fixtures);
   }
@@ -429,7 +431,7 @@ export class Minimap {
     return [this.map, this.vignette, this.marks, this.dots];
   }
 
-  /** The panel, the seen regions' fills, then the rooms' outline (FS-56CKV §A.1, §A.4, §A.5). */
+  /** The panel, the seen regions' one fill, then the rooms' outline (FS-56CKV §A.1, §A.4, §A.5). */
   private drawMap(content: MinimapContent): void {
     this.redraws++;
     const g = this.map;
@@ -441,26 +443,20 @@ export class Minimap {
 
     const c = this.grid.cell;
     const cellPoint = (p: Point) => this.project({ x: p.x * c, y: p.y * c });
-    for (const [state, colour] of [
-      ["explored", palette.minimapExplored],
-      ["visible", palette.minimapVisible],
-    ] as const) {
-      const regions = content.regions.filter((r) => r.state === state);
-      if (regions.length === 0) continue;
-      g.fillStyle(colour, 1);
-      // each cell rect's footprint, projected: a parallelogram, as the floor lies on screen
-      for (const r of regions)
-        for (const { x, y, w, h } of r.cells)
-          g.fillPoints(
-            [
-              cellPoint({ x, y }),
-              cellPoint({ x: x + w, y }),
-              cellPoint({ x: x + w, y: y + h }),
-              cellPoint({ x, y: y + h }),
-            ],
-            true,
-          );
-    }
+    // every seen region alike, explored or visible: the one the party stands in is not lit up
+    if (content.regions.length > 0) g.fillStyle(palette.minimapExplored, 1);
+    // each cell rect's footprint, projected: a parallelogram, as the floor lies on screen
+    for (const r of content.regions)
+      for (const { x, y, w, h } of r.cells)
+        g.fillPoints(
+          [
+            cellPoint({ x, y }),
+            cellPoint({ x: x + w, y }),
+            cellPoint({ x: x + w, y: y + h }),
+            cellPoint({ x, y: y + h }),
+          ],
+          true,
+        );
 
     // one line along the seen rooms' walls (FS-56CKV §A.5): a loop closed so no corner is left
     // open, a run that stops at a doorway left open
