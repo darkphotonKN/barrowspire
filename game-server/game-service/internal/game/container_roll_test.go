@@ -252,7 +252,7 @@ func TestOpenSack_EmptyRollLeavesItOpenedAndEmpty(t *testing.T) {
 		sackID := s.AddContainer(505, 500, components.ContainerKindSack)
 		sack, _ := s.EntityManager.GetEntity(sackID)
 
-		require.NoError(t, s.handleInteract(player, sackID))
+		require.NoError(t, openThrough(t, s, player, sackID))
 
 		assert.True(t, openable(t, sack).IsOpen)
 		assert.True(t, openable(t, sack).HasBeenOpened)
@@ -278,7 +278,7 @@ func TestOpenSack_RunRollsOneItemOnce(t *testing.T) {
 	sackID := s.AddContainer(505, 500, components.ContainerKindSack)
 	sack, _ := s.EntityManager.GetEntity(sackID)
 
-	require.NoError(t, s.handleInteract(player, sackID))
+	require.NoError(t, openThrough(t, s, player, sackID))
 	held := chestHolds(t, sack)
 	require.Len(t, held, 1)
 

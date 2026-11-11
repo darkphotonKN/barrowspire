@@ -61,6 +61,7 @@ func TestHallChest_WaitsOnTheHallsBoneArcher(t *testing.T) {
 	assert.Equal(t, []string{RefusalContainerGuarded}, refusalsTo(sent, player))
 
 	layDead(t, archer)
-	require.NoError(t, s.handleInteract(player, chest.ID), "seed %d: every guard is down", seed)
+	// with every guard down the reach starts a timed open, and the chest opens when it ends (FS-MQYEX)
+	require.NoError(t, openThrough(t, s, player, chest.ID), "seed %d: every guard is down", seed)
 	assert.True(t, openable(t, chest).IsOpen)
 }
