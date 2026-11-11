@@ -286,6 +286,16 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(corr(rx(run, "upperArmR"), rx(run, "thighL"))).toBeGreaterThan(0.8);
   });
 
+  it("keeps a class's own arm on its own side all the way round: the bow arm's short swing and near-straight elbow in every frame", () => {
+    const bow = { hold: pose(), run: { arms: [0.5, 1], elbow: [0.25, 1] }, backpedal: { arms: [0.5, 1], elbow: [0.3, 1] } };
+    for (const clip of [runCycle(bow), backpedalCycle(bow)])
+      for (const p of clip) {
+        expect(Math.abs(p.b.upperArmL[0])).toBeLessThanOrEqual(0.26);
+        expect(p.b.foreArmL[0]).toBeGreaterThan(-0.5);
+        expect(p.b.foreArmR[0]).toBeLessThan(-1);
+      }
+  });
+
   it("the run: the upper body turns against the hips with the stride", () => {
     const hips = run.map((p) => p.b.hips[1]);
     const upper = run.map((p) => p.b.spine[1] + p.b.chest[1]);
