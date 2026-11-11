@@ -7,6 +7,7 @@
 > anyone. The decisions were not challenged (no `challenge-me` pass).
 >
 > **Markers.** **(charter default: …)** is a locked decision of the charter, with its reason.
+> **(owner decision YYYY-MM-DD: …)** is a later call of the owner's, recorded where it applies.
 > **(derived here: …)** is a rule this FS had to add to make a locked decision buildable; each is
 > a named tunable or a small rule the owner may revise. **[open]** is a call left to the owner
 > (§Open questions); the FS states what the code does today and no slice changes it.
@@ -59,10 +60,26 @@ the only archetype with one in v1, and it lives on floor 1 only.
    | Shot: projectile type | `bone_arrow` | derived here: so the client can draw a hostile arrow apart from a party archer's (§D R22) |
    | Shot: speed | 420 px/s | charter default |
    | Shot: radius | 8 px | derived here: the delver arrow's |
-   | Shot: max flight | 700 px | derived here: a delver fleeing straight from 320 px at 200 px/s is caught after 611 px, so running straight away does not dodge |
+   | Shot: max flight | 850 px | owner decision 2026-11-11 ("弓手的箭最大飛行距離 照你建議"): the smallest multiple of 50 px at which a delver at the base 200 px/s, running straight away from 320 px from the first tick of the draw, is hit. Derivation and its limit below |
    | Damage type | physical | derived here: as every monster strike (FS-77AB6 R19) |
 
    Level, the level curve and the 5% base crit are FS-77AB6's (R5, R20, R21), unchanged.
+
+   **Max flight, derived by test.** The rule is R8's "strafing dodges it, running straight away
+   does not", and it holds from the start of the draw, not only from the release. At 30 ticks a
+   second the wind-up's clock sums tick lengths and runs one tick over 0.6 s, so the draw lasts
+   19 ticks (0.633 s) and the arrow leaves on the 20th tick. A delver who starts 320 px away and
+   runs straight away at 200 px/s through all 20 is 453 px away when it leaves. The arrow (radius
+   8) closes on their body (radius 20) at 220 px/s and reaches them on its 59th tick, after
+   **826 px of flight**, 847 px from the archer. 800 px ends the arrow one tick short; 850 px is
+   the next multiple of 50. This replaces the first value, 700 px, which was derived from a
+   delver who starts to run on the release tick (caught after 611 px) and so let one who ran
+   from the start of the draw get away.
+
+   **This holds at the base move speed only, and is left as it is.** A delver with move-speed
+   gear (up to +30%, 260 px/s) can still outrun an arrow by running straight away from the start
+   of the draw: by the same arithmetic they are 493 px away at release, the arrow closes at
+   160 px/s and would need about 1 220 px of flight. No rule and no number is changed for them.
 3. **Elites, experience and loot follow the ghoul's rules. No new rule.** **(charter default)**
    A Bone Archer rolls elite at the floor's elite chance with the same prefixes and multipliers
    (FS-77AB6 R23), so "Dread Bone Archer" exists. It has its own experience row, base 10, and its
@@ -261,8 +278,9 @@ the only archetype with one in v1, and it lives on floor 1 only.
       formula (the archer's damage at level, mitigated by the delver's defense); nothing else
       reduces their health.
 - [ ] A delver who strafes across the line at 200 px/s from 320 px is not hit; a delver who runs
-      straight away from 320 px at 200 px/s is hit.
-- [ ] An arrow stops at a wall and at 700 px of flight; it passes through a monster, a corpse and
+      straight away from 320 px at 200 px/s is hit, whether they start to run as the arrow leaves
+      or on the first tick of the draw.
+- [ ] An arrow stops at a wall and at 850 px of flight; it passes through a monster, a corpse and
       a delver out of play; a second delver standing in the line is the one hit.
 - [ ] In range with rock between: it starts no wind-up and walks its path until the straight
       flight is clear, then stands and shoots.
@@ -327,6 +345,9 @@ the only archetype with one in v1, and it lives on floor 1 only.
   not consumed: it shoots as soon as it next stands in range and in sight.
 - **Target swaps during a wind-up.** If its target is gone and the AI has taken another by the
   time the wind-up ends, the arrow goes at the one it has then.
+- **Target running straight away with move-speed gear.** Above the base 200 px/s the max flight
+  is not guaranteed to catch them: at the +30% cap (260 px/s) a delver who runs from the start
+  of the draw outruns the arrow. Left as it is (R2).
 - **Another delver in the line.** They take the arrow.
 - **A pack between archer and target.** The arrow passes through the monsters.
 - **Archer dies with an arrow in flight.** The arrow resolves with its snapshot (FS-77AB6 R9).
