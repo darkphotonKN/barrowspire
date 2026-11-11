@@ -402,7 +402,9 @@ describe("the fog over what lies behind a visible region (FS-SRA9J §C.8, §C.13
   });
 
   it("leaves nothing clear over a post's cap: the fog stands on its cap's top, no higher (FS-XK2B6 ruling E4)", () => {
-    const grid = floor(8, 6, [room(A, 1, 1, 4, 3)]);
+    // room A's shell, with floor round it far enough that each post's cap stands over the floor's
+    // fog, not off its top
+    const grid = floor(10, 8, [room(A, 3, 3, 4, 3)]);
     const shapes = fogOf(grid, states({}));
     for (const post of planOf(grid).posts) {
       const top = capTop(post, 0);
