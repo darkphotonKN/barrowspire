@@ -141,6 +141,14 @@ import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
+import {
+  browserMinimapStore,
+  nextMinimapMode,
+  readMinimapMode,
+  rememberMinimapMode,
+  type MinimapMode,
+  type MinimapModeStore,
+} from "@/ui/minimapMode";
 import { TOP_RIGHT_LINE, topRightColumn } from "@/ui/topRightColumn";
 import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
@@ -918,8 +926,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private markers: MarkerMode = "overhead";
   /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
   private targetFrame?: TargetFrame;
-  /** Whether the minimap is up (FS-SRA9J §E.19): on each time a run scene starts, M toggles it. */
-  private minimapOn = true;
+  /** How the minimap is shown (FS-1SEF0 §A): this browser's choice, read as the run's HUD is made; M steps it. */
+  private minimapMode: MinimapMode = "normal";
+  /** Where this browser keeps the minimap's mode (FS-1SEF0 §A.4). */
+  private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
   /** The boss engaged with the party, latched across broadcasts (FS-48CTQ §D.10). */
@@ -1130,8 +1140,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.positionReadout = undefined;
     // the frame went down with the scene's objects; the next run's first state sets its floor's mode
     this.targetFrame = undefined;
-    // the next run scene starts with the minimap up; it went down with the scene's objects
-    this.minimapOn = true;
     this.lastHit.clear();
     this.bosses.clear();
     this.markers = "overhead";
@@ -3345,13 +3353,13 @@ export class BarrowspireScene extends Phaser.Scene {
       this.toggleControlsPanel();
     });
 
-    // M hides and shows the minimap for the rest of the run scene (FS-SRA9J §E.19). An event, never
+    // M steps the minimap through its modes (FS-1SEF0 §A.2; FS-SRA9J §E.19's key). An event, never
     // an added key: nothing is captured, so the letter types in any field and a stop has nothing
     // of it to hand back (`handBackKeyboard`). While chat has focus the field stops every key
     // before Phaser's window listener and the keyboard is off; the check stands in case either moves.
     this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
       if (this.menu || event?.repeat || this.chatWindow?.isTyping()) return;
-      this.toggleMinimap();
+      this.cycleMinimap();
     });
 
     // 1 drinks a health potion (FS-P9G8R R27, R28). An event, never a JustDown poll: the menu polls
@@ -3902,7 +3910,7 @@ export class BarrowspireScene extends Phaser.Scene {
       { graphics: () => this.add.graphics(), canvasImage: (...image) => canvasImage(this, ...image) },
       dungeon.grid,
     );
-    dungeon.minimap.setShown(this.minimapOn);
+    dungeon.minimap.setMode(this.minimapMode);
     this.placeTopRightColumn();
   }
 
@@ -3916,25 +3924,44 @@ export class BarrowspireScene extends Phaser.Scene {
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
-    const shown = !!minimap?.shown;
     const column = topRightColumn({
       corner: anchorAt(TOP_RIGHT_HUD),
-      minimap: shown,
+      minimap: minimap?.panel ?? null,
       floorHeight: floor?.visible ? floor.height : null,
       escapedHeight: this.escapedCountText?.height ?? 0,
     });
-    minimap?.place(column.minimap);
+    if (column.minimap) minimap?.place(column.minimap);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
-    const readout = positionReadoutPlace(shown ? column.minimap : null, { right: column.escaped.x, bottom: column.bottom });
+    const readout = positionReadoutPlace(column.minimap, { right: column.escaped.x, bottom: column.bottom });
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
   }
 
-  /** M (FS-SRA9J §E.19): the minimap down or up for the rest of the run scene, this floor's and the next. */
-  private toggleMinimap(): void {
-    this.minimapOn = !this.minimapOn;
-    this.dungeon?.minimap?.setShown(this.minimapOn);
+  /**
+   * M (FS-1SEF0 §A.2, superseding FS-SRA9J §E.19 in part): the minimap's next mode, kept in this
+   * browser for this floor, the next and the next run. Only where a minimap is up (§A.3): elsewhere
+   * the key changes nothing it cannot show.
+   */
+  private cycleMinimap(): void {
+    const minimap = this.dungeon?.minimap;
+    if (!minimap) return;
+    this.minimapMode = nextMinimapMode(this.minimapMode);
+    rememberMinimapMode(this.minimapStore, this.minimapMode);
+    minimap.setMode(this.minimapMode);
     this.placeTopRightColumn();
+  }
+
+  /**
+   * The map overlay on the figure the camera follows (FS-1SEF0 §C.14, §C.19): the player, or the
+   * teammate a resolved player watches. A move of its layers, never a redraw; each frame, after
+   * the figures have moved. In a panel mode the minimap only notes where the figure is.
+   */
+  private followMapOverlay(): void {
+    const minimap = this.dungeon?.minimap;
+    if (!minimap) return;
+    const watched = this.watchedPlayerId === undefined ? undefined : this.otherPlayersPos.get(this.watchedPlayerId);
+    const focus = watched ?? this.playerPos;
+    if (focus) minimap.follow({ x: focus.x, y: focus.y });
   }
 
   /**
@@ -4836,6 +4863,9 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   private createUI(): void {
+    // the minimap's mode this browser kept, for this run's floors (FS-1SEF0 §A.4)
+    this.minimapMode = readMinimapMode(this.minimapStore);
+    this.dungeon?.minimap?.setMode(this.minimapMode);
     // a developer aid, left out of production builds
     if (showsPositionReadout()) this.createPositionReadout();
 
@@ -5624,6 +5654,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms
       this.updateOtherPlayersSmooth(time, delta);
+      this.followMapOverlay();
       this.checkBuildingStatus();
       this.updateTargetFrame(delta);
       return;
@@ -5729,6 +5760,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     this.updateOtherPlayersSmooth(time, delta);
+    // the map overlay on the figure just drawn (FS-1SEF0 §C.14)
+    this.followMapOverlay();
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();

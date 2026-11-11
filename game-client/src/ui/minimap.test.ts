@@ -3,15 +3,19 @@ import { contrastRatio } from "@/render/lighting/lighting";
 import { RegionGrid, type DungeonMap } from "@/render/world/dungeon";
 import fixture from "@/render/world/dungeon.fixture.json";
 import { Exploration, regionAt, type ExplorationState } from "@/render/world/exploration";
+import { worldToScreen } from "@/render/iso/projection";
 import { palette, rgba } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import {
   MINIMAP,
   MINIMAP_EDGE,
+  MINIMAP_ENLARGED,
   MINIMAP_GLYPH,
+  MINIMAP_OVERLAY,
   MINIMAP_VIGNETTE,
   Minimap,
   minimapContent,
+  minimapPanel,
   minimapProjection,
   minimapRect,
   regionOutline,
@@ -266,7 +270,8 @@ describe("Minimap (§E.19–25)", () => {
   it("should be HUD: camera-fixed at the HUD's depth, the map, the vignette, the marks and a separate dot layer", () => {
     const { made, images } = mapped();
     expect(made).toHaveLength(3);
-    expect(images).toHaveLength(1);
+    // a vignette per panel size, normal and enlarged (FS-1SEF0 §B.9)
+    expect(images).toHaveLength(2);
     for (const g of [...made, ...images]) expect([g.scrollFactor, g.depth]).toEqual([0, MINIMAP.depth]);
     expect(MINIMAP.depth).toBe(1000);
   });
@@ -277,9 +282,9 @@ describe("Minimap (§E.19–25)", () => {
     map.place(minimapRect(1070, 44));
     show([IN_ROOM]);
     const redraws = map.redraws;
-    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(854, 44)));
+    expect([...made, ...images].map((g) => g.position)).toEqual(Array(5).fill(at(854, 44)));
     map.place(minimapRect(1270, 44));
-    expect([...made, ...images].map((g) => g.position)).toEqual(Array(4).fill(at(1054, 44)));
+    expect([...made, ...images].map((g) => g.position)).toEqual(Array(5).fill(at(1054, 44)));
     expect(map.redraws).toBe(redraws);
   });
 
@@ -400,14 +405,16 @@ describe("Minimap (§E.19–25)", () => {
     expect(dots.drawn().filter((c) => c.name === "fillCircle")).toEqual([]);
   });
 
-  it("should hide and show every layer together, and go with destroy", () => {
+  it("should start normal, hold a panel in the corner in normal and enlarged and none in the overlay, and go with destroy (FS-1SEF0 §A.1, §C.20)", () => {
     const { map, made, images } = mapped();
     const layers = [...made, ...images];
-    map.setShown(false);
-    expect(layers.map((g) => g.visible)).toEqual(Array(4).fill(false));
-    expect(map.shown).toBe(false);
-    map.setShown(true);
-    expect(layers.map((g) => g.visible)).toEqual(Array(4).fill(true));
+    expect(map.mode).toBe("normal");
+    expect(map.panel).toEqual({ width: 216, height: 108 });
+    map.setMode("overlay");
+    expect(map.mode).toBe("overlay");
+    expect(map.panel).toBeNull();
+    map.setMode("normal");
+    expect(map.panel).toEqual({ width: 216, height: 108 });
     map.destroy();
     expect(layers.every((g) => g.destroyed)).toBe(true);
   });
@@ -483,13 +490,15 @@ describe("the minimap's look (FS-56CKV §A)", () => {
   describe("the vignette (§A.2, §A.8)", () => {
     it("should be one canvas texture's image the size of the panel, made once per minimap and never on a content change", () => {
       const on = lit();
-      expect(on.images).toHaveLength(1);
+      // one per panel size, normal and enlarged (FS-1SEF0 §B.9), only the normal one shown
+      expect(on.images).toHaveLength(2);
       expect([on.images[0].width, on.images[0].height]).toEqual([MINIMAP.width, MINIMAP.height]);
-      expect(on.painted).toHaveLength(1);
+      expect(on.images.map((i) => i.visible)).toEqual([true, false]);
+      expect(on.painted).toHaveLength(2);
       on.show([ELSEWHERE]);
       expect(on.map.redraws).toBeGreaterThan(1);
-      expect(on.images).toHaveLength(1);
-      expect(on.painted).toHaveLength(1);
+      expect(on.images).toHaveLength(2);
+      expect(on.painted).toHaveLength(2);
     });
 
     it("should be in inkDeep, strongest at the rim's inside edge and easing to nothing at its reach", () => {
@@ -533,7 +542,8 @@ describe("the minimap's look (FS-56CKV §A)", () => {
     it("should stand backing, fills, the outer outline, then the vignette, the glyphs, and the dots on top", () => {
       const { order, panel } = lit();
       // made in the order Phaser draws one depth's objects in: map, vignette, marks, dots
-      expect(order).toEqual(["graphics0", "image", "graphics1", "graphics2"]);
+      // the vignette is one image per panel size, the enlarged one hidden until it is asked for (FS-1SEF0 §B.9)
+      expect(order).toEqual(["graphics0", "image", "image", "graphics1", "graphics2"]);
       const names = panel.drawn().map((c) => c.name);
       const lastFill = names.lastIndexOf("fillPoints");
       const firstEdge = names.indexOf("moveTo");
@@ -895,5 +905,247 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       expect(contrastRatio(palette.markerAlly, palette.markerStroke)).toBeGreaterThanOrEqual(3);
       expect(contrastRatio(palette.markerSelf, palette.markerStroke)).toBeGreaterThanOrEqual(3);
     });
+  });
+});
+
+// FS-1SEF0 §B (I-1SEF0-2): the enlarged minimap, 1.5 × in the same corner, drawn at its size so
+// nothing blurs: grid lengths rounded to whole px, lines and round shapes scaled exactly.
+describe("the enlarged minimap (FS-1SEF0 §B)", () => {
+  /** The same floor and party as the look's tests, in `mode`. */
+  const litIn = (mode: "normal" | "enlarged") => {
+    const on = mapped();
+    on.show([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
+    on.show([FIXTURES[0].at]);
+    on.map.party({ self: FIXTURES[0].at, allies: [IN_ROOM] });
+    on.map.setMode(mode);
+    return on;
+  };
+
+  it("should hold its look as named values: 1.5 ×, 324 × 162, inset 6, rim 2, the walls' line 1.5 (§B.8, §B.9)", () => {
+    expect(MINIMAP_ENLARGED.scale).toBe(1.5);
+    expect(minimapPanel("normal")).toEqual({ width: 216, height: 108, inset: 4, rim: 1, edge: 1, marks: 1 });
+    expect(minimapPanel("enlarged")).toEqual({ width: 324, height: 162, inset: 6, rim: 2, edge: 1.5, marks: 1.5 });
+    expect(minimapRect(1070, 44, minimapPanel("enlarged"))).toEqual({ x: 746, y: 44, width: 324, height: 162 });
+  });
+
+  it("should hold a 324 × 162 panel in the corner and draw its backing and a 2 px rim in today's tokens and alphas", () => {
+    const { map, panel } = litIn("enlarged");
+    expect(map.mode).toBe("enlarged");
+    expect(map.panel).toEqual({ width: 324, height: 162 });
+    expect(panel.drawn().slice(0, 4)).toEqual([
+      { name: "fillStyle", args: [palette.hudPanel, 0.85] },
+      { name: "fillRect", args: [0, 0, 324, 162] },
+      { name: "lineStyle", args: [2, palette.frame, 0.6] },
+      { name: "strokeRect", args: [0, 0, 324, 162] },
+    ]);
+    expect(panel.drawn().find((c) => c.name === "lineStyle" && c.args[1] === palette.minimapEdge)?.args).toEqual([1.5, palette.minimapEdge, 1]);
+  });
+
+  it("should fit the floor 1.5 × as large: every fill and outline point 1.5 × the normal map's", () => {
+    const points = (mode: "normal" | "enlarged") =>
+      litIn(mode)
+        .panel.drawn()
+        .flatMap((c) => (c.name === "fillPoints" ? (c.args[0] as { x: number; y: number }[]) : c.name === "moveTo" || c.name === "lineTo" ? [at(c.args[0] as number, c.args[1] as number)] : []));
+    const [normal, enlarged] = [points("normal"), points("enlarged")];
+    expect(enlarged).toHaveLength(normal.length);
+    expect(normal.length).toBeGreaterThan(0);
+    for (const [i, p] of normal.entries()) {
+      expect(enlarged[i].x).toBeCloseTo(p.x * 1.5, 9);
+      expect(enlarged[i].y).toBeCloseTo(p.y * 1.5, 9);
+    }
+  });
+
+  it("should draw each glyph 14 × 14 on whole px, the 1 × glyph scaled nearest-neighbour, inside the rim", () => {
+    for (const f of FIXTURES) {
+      const one = (mode: "normal" | "enlarged") => {
+        const { marks, show, map } = mapped();
+        show([f.at], [f]);
+        map.setMode(mode);
+        const drawn = marks.drawn();
+        for (const c of drawn.filter((c) => c.name === "fillRect")) for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
+        const by = rectsByColour(drawn);
+        return { ink: pixels(by.get(palette.interactable) ?? []), ring: pixels(by.get(palette.markerStroke) ?? []) };
+      };
+      const small = one("normal");
+      const big = one("enlarged");
+      const box = bounds(new Set([...big.ink, ...big.ring]));
+      expect([box.right - box.x, box.bottom - box.y]).toEqual([14, 14]);
+      expect(box.x).toBeGreaterThanOrEqual(1);
+      expect(box.right).toBeLessThanOrEqual(323);
+      // nearest-neighbour: each big px is ink exactly where the small px it falls in is
+      const sb = bounds(new Set([...small.ink, ...small.ring]));
+      const span = (i: number) => Math.round(1.5 * i);
+      for (let i = 0; i < 9; i++)
+        for (let j = 0; j < 9; j++) {
+          const inked = small.ink.has(`${sb.x + i},${sb.y + j}`);
+          for (let x = span(i); x < span(i + 1); x++)
+            for (let y = span(j); y < span(j + 1); y++) expect(big.ink.has(`${box.x + x},${box.y + y}`)).toBe(inked);
+        }
+    }
+  });
+
+  it("should draw the dots 1.5 ×: the ally r 3 and the player's own r 4.5, each in a 1.5 px ring, on whole px even held in at the rim", () => {
+    const { map, dots } = mapped();
+    map.setMode("enlarged");
+    map.party({ self: IN_ROOM, allies: [at(3000, 900)] });
+    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4.5, 3, 6, 4.5]);
+    // past the floor's top corner, where a dot is held inside the rim by its reach
+    map.party({ self: at(-400, -400), allies: [at(-400, -400)] });
+    for (const c of dots.drawn().filter((c) => c.name === "fillCircle")) {
+      const [x, y, r] = c.args as number[];
+      expect([Number.isInteger(x), Number.isInteger(y)]).toEqual([true, true]);
+      expect(x - r >= 1 && y - r >= 1 && x + r <= 323 && y + r <= 161).toBe(true);
+    }
+  });
+
+  it("should show the enlarged vignette in its place, painted at 324 × 162, reach 27, inside the rim", () => {
+    const { images, painted, map } = litIn("enlarged");
+    expect(images.map((i) => [i.width, i.height, i.visible])).toEqual([
+      [216, 108, false],
+      [324, 162, true],
+    ]);
+    const { gradients, rects } = painted[1];
+    expect(gradients).toHaveLength(4);
+    for (const g of gradients) {
+      expect(Math.hypot(g.to.x - g.from.x, g.to.y - g.from.y)).toBe(27);
+      expect(g.stops[0]).toEqual([0, rgba(palette.inkDeep, MINIMAP_VIGNETTE.edgeAlpha)]);
+    }
+    for (const r of rects) expect(r.x >= 1 && r.y >= 1 && r.x + r.w <= 323 && r.y + r.h <= 161).toBe(true);
+    map.setMode("normal");
+    expect(images.map((i) => i.visible)).toEqual([true, false]);
+  });
+
+  it("should redraw each layer once on a switch of size, and not when the mode is set again unchanged (§B.10)", () => {
+    const { map } = litIn("normal");
+    const before = [map.redraws, map.dotRedraws];
+    map.setMode("enlarged");
+    expect([map.redraws, map.dotRedraws]).toEqual([before[0] + 1, before[1] + 1]);
+    map.setMode("enlarged");
+    expect([map.redraws, map.dotRedraws]).toEqual([before[0] + 1, before[1] + 1]);
+    map.setMode("normal");
+    expect([map.redraws, map.dotRedraws]).toEqual([before[0] + 2, before[1] + 2]);
+  });
+});
+
+// FS-1SEF0 §C (I-1SEF0-3): the map overlay, the floor over the whole view as in Path of Exile 2:
+// world-space, 1/8 of the world's projection about the followed figure, see-through, moved each
+// frame and never repainted for it.
+describe("the map overlay (FS-1SEF0 §C)", () => {
+  const overlaid = () => {
+    const on = mapped();
+    on.show([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
+    on.map.party({ self: IN_ROOM, allies: [FIXTURES[0].at] });
+    on.map.setMode("overlay");
+    return on;
+  };
+
+  it("should hold its look as named values: 1/8 of the world's projection, 40%, a 2 px line, depth 920 (§C.15–§C.17)", () => {
+    expect(MINIMAP_OVERLAY).toEqual({ scale: 0.125, alpha: 0.4, edge: 2, depth: 920 });
+    // over the dust and vignette (905), under the aim line (940), the floor veil (950) and the HUD
+    expect(MINIMAP_OVERLAY.depth).toBeGreaterThan(905);
+    expect(MINIMAP_OVERLAY.depth).toBeLessThan(940);
+  });
+
+  it("should hold no panel in the corner and draw no backing, rim or vignette (§C.13, §C.20)", () => {
+    const { map, panel, images } = overlaid();
+    expect(map.panel).toBeNull();
+    const names = panel.drawn().map((c) => c.name);
+    expect(names).not.toContain("fillRect");
+    expect(names).not.toContain("strokeRect");
+    expect(panel.drawn().some((c) => c.name === "fillStyle" && c.args[0] === palette.hudPanel)).toBe(false);
+    expect(images.map((i) => i.visible)).toEqual([false, false]);
+  });
+
+  it("should draw the seen regions and their walls at 40%, the line 2 px, in the minimap's tokens (§C.16)", () => {
+    const { panel } = overlaid();
+    const styles = panel.drawn().filter((c) => c.name === "fillStyle" || c.name === "lineStyle").map((c) => [c.name, ...c.args]);
+    expect(styles).toEqual([
+      ["fillStyle", palette.minimapExplored, 0.4],
+      ["lineStyle", 2, palette.minimapEdge, 0.4],
+    ]);
+  });
+
+  it("should project the floor at 1/8 of the world's own projection, about the world's origin (§C.14, §C.15)", () => {
+    const { panel } = overlaid();
+    const fills = panel.drawn().filter((c) => c.name === "fillPoints");
+    expect(fills.length).toBeGreaterThan(0);
+    // floor 1's whole diamond is 960 × 480 at this scale
+    const corner = (x: number, y: number) => {
+      const s = worldToScreen(x, y);
+      return at(s.x * 0.125, s.y * 0.125);
+    };
+    const pts = fills.flatMap((c) => c.args[0] as { x: number; y: number }[]);
+    for (const p of pts) {
+      expect(p.x).toBeGreaterThanOrEqual(corner(0, 3840).x - 1e-9);
+      expect(p.x).toBeLessThanOrEqual(corner(5760, 0).x + 1e-9);
+      expect(p.y).toBeGreaterThanOrEqual(-1e-9);
+      expect(p.y).toBeLessThanOrEqual(corner(5760, 3840).y + 1e-9);
+    }
+    expect(corner(5760, 0).x - corner(0, 3840).x).toBe(960);
+    expect(corner(5760, 3840).y).toBe(480);
+    // room 1's first cell, exactly where the world puts it, scaled
+    const c = grid.cell;
+    const room = grid.regions.find((r) => r.id === ROOM)!.cells[0];
+    expect(pts).toContainEqual(corner(room.x * c, room.y * c));
+  });
+
+  it("should draw the glyphs and dots as the enlarged map does, at full opacity (§C.16)", () => {
+    const { marks, dots } = overlaid();
+    for (const c of marks.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
+    for (const c of marks.drawn().filter((c) => c.name === "fillRect")) for (const v of c.args) expect(Number.isInteger(v)).toBe(true);
+    const ink = pixels(rectsByColour(marks.drawn()).get(palette.interactable) ?? []);
+    expect(ink.size).toBeGreaterThan(0);
+    expect(dots.drawn().filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4.5, 3, 6, 4.5]);
+    for (const c of dots.drawn().filter((c) => c.name === "fillStyle")) expect(c.args[1]).toBe(1);
+  });
+
+  it("should be in the world, not the HUD: scroll factor 1 at depth 920, back to the HUD in a panel mode", () => {
+    const { map, made } = overlaid();
+    for (const g of made) expect([g.scrollFactor, g.depth, g.visible]).toEqual([1, 920, true]);
+    map.setMode("normal");
+    for (const g of made) expect([g.scrollFactor, g.depth]).toEqual([0, MINIMAP.depth]);
+  });
+
+  it("should stand so the followed figure's point on it lies on the figure, on whole px, and move without a redraw (§C.14, §C.19)", () => {
+    const { map, made } = overlaid();
+    const [redraws, dotRedraws] = [map.redraws, map.dotRedraws];
+    for (const f of [IN_ROOM, at(IN_ROOM.x + 13, IN_ROOM.y - 7), at(4000, 1200)]) {
+      map.follow(f);
+      const iso = worldToScreen(f.x, f.y);
+      for (const g of made) {
+        expect(g.position).toEqual(at(Math.round(iso.x * 0.875), Math.round(iso.y * 0.875)));
+        // where the figure's own point lands, in the world, against where the figure stands
+        expect(Math.abs(g.position.x + iso.x * 0.125 - iso.x)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(g.position.y + iso.y * 0.125 - iso.y)).toBeLessThanOrEqual(0.5);
+      }
+    }
+    expect([map.redraws, map.dotRedraws]).toEqual([redraws, dotRedraws]);
+    // a placing in the corner does not move it while it is the overlay
+    map.place({ x: 746, y: 44 });
+    for (const g of made) expect(g.position).not.toEqual(at(746, 44));
+  });
+
+  it("should stand where the figure was last followed as soon as it becomes the overlay", () => {
+    const on = mapped();
+    on.map.follow(IN_ROOM);
+    for (const g of on.made) expect(g.position).toEqual(at(0, 0));
+    on.map.setMode("overlay");
+    const iso = worldToScreen(IN_ROOM.x, IN_ROOM.y);
+    for (const g of on.made) expect(g.position).toEqual(at(Math.round(iso.x * 0.875), Math.round(iso.y * 0.875)));
+  });
+
+  it("should redraw the map only when a region is first seen or a fixture found, and the dots only when one moves a whole px at its scale (§C.19)", () => {
+    const { map, show } = overlaid();
+    const once = map.redraws;
+    show([IN_ROOM]);
+    expect(map.redraws).toBe(once);
+    show([ELSEWHERE]);
+    expect(map.redraws).toBe(once + 1);
+    const dots = map.dotRedraws;
+    // 2 world px is under an overlay px; 40 is more
+    map.party({ self: at(IN_ROOM.x + 2, IN_ROOM.y), allies: [FIXTURES[0].at] });
+    expect(map.dotRedraws).toBe(dots);
+    map.party({ self: at(IN_ROOM.x + 40, IN_ROOM.y), allies: [FIXTURES[0].at] });
+    expect(map.dotRedraws).toBe(dots + 1);
   });
 });

@@ -451,3 +451,5 @@ pings or monsters on the minimap; the switch's on/off state on its glyph; fog of
 fullscreen button and the `TOP_RIGHT_HUD` anchor; the target frame, notices and spectate HUD; the
 readout's content or its build switch; a dev-gallery family for HUD chrome; any server, proto or
 gateway change.
+
+## Change: Minimap modes: enlarged and overlay → FS-1SEF0

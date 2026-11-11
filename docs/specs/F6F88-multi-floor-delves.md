@@ -288,3 +288,5 @@ fields are the contract between the two halves:
 ## Change: Arrival card → FS-PQ2TW
 
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
+
+## Change: Minimap modes: enlarged and overlay → FS-1SEF0

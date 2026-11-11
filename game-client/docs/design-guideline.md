@@ -646,6 +646,18 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   outline only, on the owner's look the same day; one fill for every seen region, the owner's
   "目前的區域不特別亮", the same day; walls are lines and openings are gaps, corridors lined as rooms
   are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)*
+- **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
+  **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
+  drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole
+  px, each glyph's px drawn as the whole-px span it scales to (nearest neighbour, 14 × 14), the
+  walls' line and the dots scaled exactly; the lines under it move down with it. The overlay is the
+  floor's map over the whole view, as Path of Exile 2 draws it: the world's own iso projection at
+  1/8, about the figure the camera follows and moving with it, with no backing, rim or vignette;
+  the seen regions in the minimap's one stone and the walls' 2px line, both at 40% so the game
+  shows through; the glyphs and dots as in the enlarged map, at full strength. It sits over the
+  world, the fog and the atmosphere, under the aim line, the floor veil and every piece of HUD, and
+  takes no input. The scale, the 40% and the line are starting values to tune by eye.
+  *(Added by [FS-1SEF0](../../docs/specs/1SEF0-minimap-modes-enlarged-and-overlay.md), 2026-11-12.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
