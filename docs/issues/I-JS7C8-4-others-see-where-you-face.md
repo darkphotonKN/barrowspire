@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-4
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: [I-JS7C8-2, I-JS7C8-3]
 labels: [ready-for-agent]
@@ -24,12 +24,12 @@ Implements FS-JS7C8 §E (R28, R29, R32, R34), §A (R6), §Acceptance Criteria "F
 
 ## Acceptance Criteria
 
-- [ ] Turning the pointer across three facings inside 100 ms sends at most two `face` messages, the second the latest facing.
-- [ ] Entering a world sends `face` once on the first state.
-- [ ] No `face` is sent while a Shadow Shot hold is up; the first change after release is sent.
-- [ ] Another player whose entry carries `facing: "w"` stands turned `w`; with no `facing`, their movement facing as today.
-- [ ] The local player's figure never turns to its own echoed `facing`.
-- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `tsc` and the lint are green.
+- [x] Turning the pointer across three facings inside 100 ms sends at most two `face` messages, the second the latest facing. *(faceWire.test.ts: facings at 0, 30, 60 ms send at 0 and at 100 ms with the 60 ms one)*
+- [x] Entering a world sends `face` once on the first state. *(faceWire.test.ts: a body's first facing at once, a new body's again; the first-frame send in BarrowspireScene/FieldScene/HubScene.test.ts)*
+- [x] No `face` is sent while a Shadow Shot hold is up; the first change after release is sent. *(faceWire.test.ts; the hold tests in BarrowspireScene/FieldScene.test.ts; the town has no hold)*
+- [x] Another player whose entry carries `facing: "w"` stands turned `w`; with no `facing`, their movement facing as today. *(the other-player tests in the three scene suites: told `face("w")`, then `face(undefined)`; seen in a browser at I-JS7C8-9)*
+- [x] The local player's figure never turns to its own echoed `facing`. *(BarrowspireScene.test.ts echo test; placePlayer keeps no wireFacing for the own body in FieldScene/HubScene.test.ts)*
+- [x] `npx vitest run --maxWorkers=4 --minWorkers=1`, `tsc` and the lint are green.
 
 ## Blocked By
 
