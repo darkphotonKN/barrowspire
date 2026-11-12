@@ -20,6 +20,12 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
   },
 }));
 
+// The shared title drawing, watched: the run's windows title themselves through it (FS-3EBCA R20).
+vi.mock("@/ui/panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/ui/panelFrame")>();
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
+
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
 // on the same emitter Phaser builds them from.
 vi.mock("phaser", async () => {
@@ -4197,6 +4203,30 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     run.endRun();
     press(keys.esc);
     expect(run.menu).toBeUndefined();
+  });
+
+  // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"
+  // (FS-3EBCA R20, R22). I-3EBCA-9.
+  it("should title the controls panel CONTROLS with the shared title drawing, across its top", async () => {
+    const { drawPanelTitle } = await import("@/ui/panelFrame");
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { run } = menuOnStage();
+    run.toggleControlsPanel();
+    expect(title).toHaveBeenCalledTimes(1);
+    const [, panel, words] = title.mock.calls[0];
+    expect(words).toBe("CONTROLS");
+    expect(panel.width).toBe(260);
+    expect(panel.x).toBe(-130);
+  });
+
+  // FS-3EBCA R23 (owner 2026-11-12: "menu目前沒標題也加上"): the run's menu reads MENU.
+  it("should title the run's menu and its Fall confirm MENU", () => {
+    const { keys, press, labels } = menuOnStage();
+    press(keys.esc);
+    expect(labels()).toContain("MENU");
+    press(keys.one);
+    expect(labels().filter((l) => l === "MENU")).toHaveLength(1);
   });
 
   it("should list ESC as the menu in the controls panel", () => {

@@ -10,7 +10,7 @@ import {
   type PartyPanelDeps,
 } from "./PartyPanel";
 import { partyCommands } from "./partyCommands";
-import { drawPanelFrame } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle } from "./panelFrame";
 import { GEAR_OVERLAY_DEPTH } from "./GearOverlay";
 import { MENU_DEPTH } from "./menuPanel";
 
@@ -18,7 +18,7 @@ import { MENU_DEPTH } from "./menuPanel";
 // 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
 vi.mock("./panelFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("./panelFrame")>();
-  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame) };
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame), drawPanelTitle: vi.fn(real.drawPanelTitle) };
 });
 import type { PartyInviteFieldHandle } from "./partyInviteField";
 import {
@@ -213,10 +213,10 @@ describe("PartyPanel (FS-R82NV R28: T toggles it)", () => {
       expect(env.panel.isOpen()).toBe(false);
       env.pressT();
       expect(env.panel.isOpen()).toBe(true);
-      expect(env.find("Party")).toBeDefined();
+      expect(env.find("PARTY")).toBeDefined();
       env.pressT();
       expect(env.panel.isOpen()).toBe(false);
-      expect(env.find("Party")).toBeUndefined();
+      expect(env.find("PARTY")).toBeUndefined();
     },
   );
 
@@ -267,7 +267,7 @@ describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
     const env = setup();
     env.pressT();
     env.store.getState().apply(update(ALLY));
-    expect(env.find("Party (2/4)")).toBeDefined();
+    expect(env.find("PARTY (2/4)")).toBeDefined();
     expect(env.find("Aldric")).toBeDefined();
     expect(env.find("Wren")).toBeDefined();
     expect(
@@ -646,5 +646,21 @@ describe("PartyPanel clears the letter panel as it opens (FS-R82NV § Change C9)
     env.pressT();
     expect(opening).toHaveBeenCalledTimes(2);
     expect(env.panel.isOpen()).toBe(false);
+  });
+});
+
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// the party panel's title through the shared drawing, centred, in capitals (FS-3EBCA R20, R22). I-3EBCA-9.
+describe("PartyPanel's title, shared (FS-3EBCA R20, R22)", () => {
+  it("should draw its title with the one title drawing, over the whole panel", () => {
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const env = setup();
+    env.store.getState().apply(update(ME));
+    env.pressT();
+    const [, panel, words] = title.mock.calls.at(-1)!;
+    expect(panel).toMatchObject({ x: partyPanelLeft(1080), y: partyPanelTop(720), width: PARTY_PANEL_W });
+    expect(words).toBe("Party (2/4)");
+    expect(env.find("PARTY (2/4)")).toBeDefined();
   });
 });

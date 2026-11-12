@@ -19,6 +19,13 @@ import { LetterPanel } from "./LetterPanel";
 import { envelopeFrame, letterPanelFrame } from "./letterPanelLayout";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
+import { drawPanelTitle } from "./panelFrame";
+
+// The shared title drawing, watched (FS-3EBCA R20).
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
 
 // FS-1GZGD R33, R35–R37, R39, R40; A5. I-1GZGD-6 and -7: the envelope and the letter panel as a scene draws them,
 // on a recording stand-in for the Phaser scene.
@@ -664,6 +671,23 @@ describe("MailboxEnvelope (FS-1GZGD § Change C1–C3)", () => {
     expect(shown()).toContain("Mailbox");
     plate.handlers.pointerout();
     expect(shown()).not.toContain("Mailbox");
+  });
+});
+
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// the letter panel's MAILBOX through the shared title drawing (FS-3EBCA R20, R22). I-3EBCA-9.
+describe("LetterPanel's title, shared (FS-3EBCA R20, R22)", () => {
+  it("should title the open panel MAILBOX with the one title drawing, across the whole panel, once", () => {
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { scene, store, shown } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const panel = letterPanelFrame(viewport, 0).panel;
+    const [, at, words] = title.mock.calls.at(-1)!;
+    expect(at).toMatchObject({ x: panel.x, y: panel.y, width: panel.width });
+    expect(words).toBe("MAILBOX");
+    expect(shown().filter((t) => t === "MAILBOX")).toHaveLength(1);
   });
 });
 
