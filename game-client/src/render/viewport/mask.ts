@@ -33,8 +33,9 @@
  * `style`) is drawn through the context instead, whose framebuffer is the camera's own, in backing
  * px, with the main camera's origin (the first correction) and its filter camera scrolled as its
  * scroll factor says (the second bug's fix for it: Phaser's `focusFiltersOnCamera` copies the
- * camera's scroll whatever the factor, so the focus is wrapped to scroll it by the factor). An
- * Image keeps its own focus: its width is its frame's, in texture px, and loses nothing.
+ * camera's scroll whatever the factor, so the focus is wrapped to scroll it by the factor). A Text
+ * is what carries a text style with a numeric `resolution`. An Image keeps its own focus: its
+ * width is its frame's, in texture px, and loses nothing.
  *
  * No Phaser import: it reads only what a game object and a camera carry.
  */
@@ -111,7 +112,7 @@ export function maskInView(
       target.setMask(shape.createGeometryMask());
     return undefined;
   }
-  if (target.style !== undefined) {
+  if (isText(target)) {
     focusTextOnContext(target, camera);
   } else if (target.filtersFocusContext === true) {
     const fixed = target.scrollFactorX === 0 && target.scrollFactorY === 0;
@@ -120,6 +121,12 @@ export function maskInView(
     else target.filterCamera?.setOrigin(camera.originX, camera.originY);
   }
   return target.filters.external.addMask(source, invert, camera);
+}
+
+/** A Text: what carries a text style, its `resolution` a number (Phaser's `TextStyle`). */
+function isText(target: Maskable): boolean {
+  const style = target.style as { resolution?: unknown } | null | undefined;
+  return typeof style === "object" && style !== null && typeof style.resolution === "number";
 }
 
 /**
