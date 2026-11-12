@@ -163,7 +163,9 @@ function deepestCarry(rig, gear, frames) {
  * its weapon's rest in the idle and the walk: `point` down and forward (a blade's tip toward the
  * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
  * `low` names the arm that pumps only to the lower chest ({@link SCEPTRE_RUN_PEAK}): the wizard's
- * sceptre arm.
+ * sceptre arm. `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
+ * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度":
+ * the knight's 5° below to 12° above and the mercenary's 8° below to 10° above, each raised about 15°).
  */
 const CLASSES = [
   {
@@ -174,6 +176,7 @@ const CLASSES = [
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
     rest: "point",
+    runBlade: [8, 27],
   },
   {
     name: "mercenary",
@@ -182,6 +185,7 @@ const CLASSES = [
     sheet: MERCENARY_SHEET,
     pump: ["L", "R"],
     rest: "point",
+    runBlade: [6, 25],
   },
   {
     name: "wizard",
@@ -206,7 +210,7 @@ describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward 
   });
 });
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, low, rest }) => {
+describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, low, rest, runBlade }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -267,14 +271,15 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
   // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高",
   // then, of the held keys' fist turned over: "跑步時武器是不是拿反了", then of the low carry baked:
   // "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂" and, of the sceptre,
-  // "只是要合理的位置 但跑步時為什麼手會擺到肩膀"
+  // "只是要合理的位置 但跑步時為什麼手會擺到肩膀", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度"
   it(
     rest === "point"
-      ? `carries the blade about level on every sample (RUN_BLADE_ELEV, ${RUN_BLADE_ELEV?.join(" to ")}° from level), its tip ahead of the hand and the body, never over the head`
+      ? `carries the blade a little above level on every sample (RUN_BLADE_ELEV, ${RUN_BLADE_ELEV?.join(" to ")}° from level; the ${name}'s ${runBlade?.join(" to ")}°), its tip ahead of the hand and the body, never over the head`
       : `carries the sceptre reasonably upright on every sample (SCEPTRE_RUN_TILT, ${SCEPTRE_RUN_TILT?.join("–")}° off vertical), the orb above the hand and ahead of it, clear of the robe`,
     () => {
       const gear = GEAR[name](rig);
       const tip = gear.weapon.at(-1);
+      if (rest === "point") expect(RUN_BLADE_ELEV[0], "the band's foot, above level").toBeGreaterThanOrEqual(5);
       for (const f of SAMPLES) {
         pose8(f);
         const [hand, t, hips, head] = [at(rig, "handR"), world(tip), at(rig, "hips"), at(rig, "head")];
@@ -283,9 +288,13 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
         if (rest === "point") {
           expect(elev, `blade @${f}`).toBeGreaterThanOrEqual(RUN_BLADE_ELEV[0]);
           expect(elev, `blade @${f}`).toBeLessThanOrEqual(RUN_BLADE_ELEV[1]);
+          expect(elev, `the ${name}'s blade @${f}`).toBeGreaterThanOrEqual(runBlade[0]);
+          expect(elev, `the ${name}'s blade @${f}`).toBeLessThanOrEqual(runBlade[1]);
           expect(t.z - hips.z, `tip ahead of the body @${f}`).toBeGreaterThan(0);
-          // never back up to the old upright carry, its tip over the crown
-          expect(t.y, `tip under the head @${f}`).toBeLessThan(head.y);
+          // never back up to the old upright carry, its tip over the crown (the top of the head as
+          // \`inside\` models it: its centre 0.048 H over the head bone, its half height 1.05 headR)
+          const crown = head.y + (0.048 + 1.05 * rig.p.headR) * rig.H;
+          expect(t.y, `tip under the crown @${f}`).toBeLessThan(crown);
         } else {
           expect(90 - elev, `sceptre off vertical @${f}`).toBeGreaterThanOrEqual(SCEPTRE_RUN_TILT[0]);
           expect(90 - elev, `sceptre off vertical @${f}`).toBeLessThanOrEqual(SCEPTRE_RUN_TILT[1]);
