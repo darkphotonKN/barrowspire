@@ -4,7 +4,8 @@ import { FullscreenButtonPlace } from "@/render/viewport/fullscreenButton";
 import { MINIMAP, minimapPanel, type MinimapStage } from "./minimap";
 import { MINIMAP_MODE_KEY } from "./minimapMode";
 import { TOP_RIGHT_HUD } from "./topRightColumn";
-import { WorldMinimapController, bindMinimapKey } from "./worldMinimapController";
+import type { ModeIconStage } from "./minimapModeIcon";
+import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "./worldMinimapController";
 
 // FS-P0HSP §E, §F, §G (review round 1): the town's and a field's minimap on the HUD, one
 // controller for both scenes: the stored mode read as the map is built, M's guards and cycle,
@@ -43,6 +44,24 @@ function modeStore(held: string | null = null) {
     removeItem: () => {},
   });
   return { store, reach };
+}
+
+/** The icon's own stage: its glyph, its hint's ground and its hint, recorded apart from the map's layers. */
+function iconStage() {
+  const made: { destroyed: boolean }[] = [];
+  const make = (extra: object = {}) => {
+    const d = { destroyed: false, width: 74, height: 15, ...extra };
+    made.push(d);
+    const self: Record<string, unknown> = new Proxy(d as unknown as Record<string, unknown>, {
+      get: (t, key) => {
+        if (key in t) return t[key as string];
+        if (key === "destroy") return () => void (d.destroyed = true);
+        return () => self;
+      },
+    });
+    return self;
+  };
+  return { stage: { graphics: () => make(), text: () => make() } as unknown as ModeIconStage, made };
 }
 
 const TOWN = { width: 2000, height: 1000 };
@@ -232,5 +251,135 @@ describe("bindMinimapKey (FS-P0HSP §F.33)", () => {
     owned.now = false;
     press();
     expect(minimap.map.mode).toBe("enlarged");
+  });
+});
+
+// FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
+// 模式(M)"): the town's and a field's icon, built with the map, a press doing what M does
+describe("WorldMinimapController's map mode icon (FS-56CKV §Change: Map mode icon)", () => {
+  function withIcon(held: string | null = null, owned = { now: false }) {
+    const { stage, layers } = fakeStage();
+    const icon = iconStage();
+    const { store, reach } = modeStore(held);
+    const button = new FullscreenButtonPlace();
+    const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, button, icon: { stage: icon.stage, blocked: () => owned.now } });
+    return { minimap, layers, store, owned, icon };
+  }
+
+  it("should build the icon with the map on its own stage, leaving the map's layers as they were", () => {
+    const { layers, icon } = withIcon();
+    // one minimap: map, two vignettes, marks, dots
+    expect(layers).toHaveLength(5);
+    expect(icon.made.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [1080, null, { x: 858, y: 105 }],
+    [1280, null, { x: 1058, y: 105 }],
+    [1080, "enlarged", { x: 750, y: 159 }],
+    [1280, "enlarged", { x: 950, y: 159 }],
+    [1080, "overlay", { x: 1039, y: 12 }],
+    [1280, "overlay", { x: 1239, y: 12 }],
+  ])("should stand the icon at width %i, kept mode %s: the map's bottom-left, or beside the button in the overlay (D2, D3)", (width, held, at) => {
+    viewport.set({ width, height: 720, renderScale: 1 });
+    const { minimap } = withIcon(held);
+    expect(minimap.modeIcon?.shownAt?.box).toEqual({ ...at, width: 9, height: 9 });
+  });
+
+  it("should step the mode on a press on the icon as M does, written on the run's one key, and re-lay the corner (D6)", () => {
+    const { minimap, store } = withIcon();
+    expect(minimap.pointerDown(862, 109)).toBe(true);
+    expect(minimap.map.mode).toBe("enlarged");
+    expect(store.writes).toEqual([[MINIMAP_MODE_KEY, "enlarged"]]);
+    expect(minimap.modeIcon?.shownAt?.box).toMatchObject({ x: 750, y: 159 });
+    expect(minimap.pointerDown(754, 163)).toBe(true);
+    expect(minimap.map.mode).toBe("overlay");
+  });
+
+  it("should take a press while the keys are owned and do nothing with it, M's guards (D6)", () => {
+    const owned = { now: true };
+    const { minimap, store } = withIcon(null, owned);
+    expect(minimap.pointerDown(862, 109)).toBe(true);
+    expect(minimap.map.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+  });
+
+  it("should leave a press outside the icon to the world, and cover nothing there (D5)", () => {
+    const { minimap } = withIcon();
+    expect(minimap.covers(862, 109)).toBe(true);
+    expect(minimap.covers(900, 60)).toBe(false);
+    expect(minimap.pointerDown(900, 60)).toBe(false);
+    expect(minimap.map.mode).toBe("normal");
+  });
+
+  it("should light the icon under the pointer, and dim it as the pointer leaves (D7)", () => {
+    const { minimap } = withIcon();
+    minimap.pointerMove(862, 109);
+    expect(minimap.modeIcon?.hovered).toBe(true);
+    minimap.pointerOut();
+    expect(minimap.modeIcon?.hovered).toBe(false);
+  });
+
+  it("should take the icon with it when it goes (D4)", () => {
+    const { minimap, icon } = withIcon();
+    minimap.destroy();
+    expect(icon.made.every((m) => m.destroyed)).toBe(true);
+    expect(minimap.covers(862, 109)).toBe(false);
+  });
+
+  it("should take no press and build no icon with no icon stage, as before", () => {
+    const { minimap } = controller();
+    expect(minimap.modeIcon).toBeUndefined();
+    expect(minimap.pointerDown(862, 109)).toBe(false);
+  });
+});
+
+describe("bindMinimapPointer (FS-56CKV §Change: Map mode icon, D5–D7)", () => {
+  function bound(covered = { now: false }) {
+    const on: Record<string, (pointer?: { x: number; y: number; button?: number }) => void> = {};
+    const input = { on: (name: string, fn: (pointer?: { x: number; y: number; button?: number }) => void) => void (on[name] = fn) };
+    let built: WorldMinimapController | undefined;
+    const { stage } = fakeStage();
+    const icon = iconStage();
+    const { store, reach } = modeStore();
+    const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, button: new FullscreenButtonPlace(), icon: { stage: icon.stage, blocked: () => false } });
+    bindMinimapPointer(input, () => built, (x, y) => covered.now && x > 0 && y > 0);
+    return { on, minimap, store, covered, build: () => void (built = minimap) };
+  }
+
+  it("should hear the pointer's moves, presses and leaving the canvas", () => {
+    const { on } = bound();
+    expect(Object.keys(on).sort()).toEqual(["gameout", "pointerdown", "pointermove"]);
+  });
+
+  it("should do nothing before the map is built, and throw nothing", () => {
+    const { on, store } = bound();
+    expect(() => on.pointerdown!({ x: 862, y: 109, button: 0 })).not.toThrow();
+    expect(store.writes).toEqual([]);
+  });
+
+  it("should step the map on a primary press on the icon, in logical units, and not on another button", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const { on, build, minimap } = bound();
+    build();
+    on.pointerdown!({ x: 862 * 2, y: 109 * 2, button: 2 });
+    expect(minimap.map.mode).toBe("normal");
+    on.pointerdown!({ x: 862 * 2, y: 109 * 2, button: 0 });
+    expect(minimap.map.mode).toBe("enlarged");
+  });
+
+  it("should leave a press and a hover to a panel that covers the icon (the open gear overlay)", () => {
+    const covered = { now: true };
+    const { on, build, minimap } = bound(covered);
+    build();
+    on.pointermove!({ x: 862, y: 109 });
+    expect(minimap.modeIcon?.hovered).toBe(false);
+    on.pointerdown!({ x: 862, y: 109, button: 0 });
+    expect(minimap.map.mode).toBe("normal");
+    covered.now = false;
+    on.pointermove!({ x: 862, y: 109 });
+    expect(minimap.modeIcon?.hovered).toBe(true);
+    on.gameout!();
+    expect(minimap.modeIcon?.hovered).toBe(false);
   });
 });

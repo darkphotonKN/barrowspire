@@ -76,11 +76,12 @@ describe("the position readout's look and place (FS-56CKV §C)", () => {
     }
   });
 
-  it("should stand inside a shown minimap, its left and bottom edges 4 px in from the panel's (§C.14)", () => {
+  // FS-56CKV §Change: Map mode icon, D8: out of the icon's way, in the map's top-right corner
+  it("should stand inside a shown minimap, its right and top edges 4 px in from the panel's (§Change: Map mode icon, D8)", () => {
     expect(positionReadoutPlace(minimapRect(1070, 44), { right: 1070, bottom: 204 })).toEqual({
-      x: 858,
-      y: 148,
-      origin: { x: 0, y: 1 },
+      x: 1066,
+      y: 48,
+      origin: { x: 1, y: 0 },
     });
   });
 
@@ -92,44 +93,47 @@ describe("the position readout's look and place (FS-56CKV §C)", () => {
     const place = positionReadoutPlace(null, { right: 1069.6, bottom: 91.6 });
     expect([place.x, place.y]).toEqual([1070, 96]);
     const inside = positionReadoutPlace({ x: 853.6, y: 43.6, width: 216, height: 108 }, { right: 0, bottom: 0 });
-    expect([inside.x, inside.y]).toEqual([858, 148]);
+    expect([inside.x, inside.y]).toEqual([1066, 48]);
   });
 
-  it("should lie, at its widest text, below floor 1's diamond's lower-left edge, so it covers no floor (§C.17)", () => {
+  // §Change: Map mode icon, D8: the diamond is symmetric about its centre, so the panel's top-right
+  // corner is as empty as its bottom-left, where the readout stood before (§C.17)
+  it("should lie, at its widest text, above floor 1's diamond's upper-right edge, so it covers no floor (§C.17; §Change: Map mode icon, D8)", () => {
     const grid = new RegionGrid(fixture as DungeonMap);
     const project = minimapProjection(grid);
     const [w, h] = [grid.cols * grid.cell, grid.rows * grid.cell];
     const corners = [project({ x: 0, y: 0 }), project({ x: w, y: 0 }), project({ x: w, y: h }), project({ x: 0, y: h })];
-    const left = corners.reduce((a, b) => (b.x < a.x ? b : a));
-    const bottom = corners.reduce((a, b) => (b.y > a.y ? b : a));
-    // the Facts: the left vertex at (8, 44), the bottom at (128, 104)
-    expect([left, bottom].map((p) => [Math.round(p.x), Math.round(p.y)])).toEqual([[8, 44], [128, 104]]);
-    // the readout in the panel's own px: its bottom-left at its place less the panel's top-left
+    const top = corners.reduce((a, b) => (b.y < a.y ? b : a));
+    const right = corners.reduce((a, b) => (b.x > a.x ? b : a));
+    // the top vertex at (88, 4), the right at (208, 64): the left (8, 44) and bottom (128, 104) turned about the middle
+    expect([top, right].map((p) => [Math.round(p.x), Math.round(p.y)])).toEqual([[88, 4], [208, 64]]);
+    // the readout in the panel's own px: its top-right at its place less the panel's top-left
     const panel = minimapRect(MINIMAP.width, 0);
     const at = positionReadoutPlace(panel, { right: 0, bottom: 0 });
     const box = boxOf(WIDEST);
-    const [x0, x1, top] = [at.x - panel.x, at.x - panel.x + box.width, at.y - panel.y - box.height];
-    // the edge's y over the box's span; the box's top is below it all the way across
-    const edgeY = (x: number) => left.y + ((x - left.x) * (bottom.y - left.y)) / (bottom.x - left.x);
-    expect(x1).toBeLessThan(bottom.x);
-    expect(top).toBeGreaterThan(Math.max(edgeY(x0), edgeY(x1)));
+    const [x0, x1, bottom] = [at.x - panel.x - box.width, at.x - panel.x, at.y - panel.y + box.height];
+    // the edge's y over the box's span; the box's bottom is above it all the way across
+    const edgeY = (x: number) => top.y + ((x - top.x) * (right.y - top.y)) / (right.x - top.x);
+    expect(x0).toBeGreaterThan(top.x);
+    expect(x1).toBeLessThanOrEqual(panel.width);
+    expect(bottom).toBeLessThan(Math.min(edgeY(x0), edgeY(x1)));
   });
 
   // FS-1SEF0 §B.11: in the enlarged minimap's corner, at its own 10 px, it still covers no floor
-  it("should lie below floor 1's diamond's lower-left edge in the enlarged minimap too (FS-1SEF0 §B.11)", () => {
+  it("should lie above floor 1's diamond's upper-right edge in the enlarged minimap too (FS-1SEF0 §B.11; §Change: Map mode icon, D8)", () => {
     const grid = new RegionGrid(fixture as DungeonMap);
     const look = minimapPanel("enlarged");
     const project = minimapProjection(grid, look);
-    const [w, h] = [grid.cols * grid.cell, grid.rows * grid.cell];
-    const left = project({ x: 0, y: h });
-    const bottom = project({ x: w, y: h });
+    const [w] = [grid.cols * grid.cell];
+    const top = project({ x: 0, y: 0 });
+    const right = project({ x: w, y: 0 });
     const panel = minimapRect(look.width, 0, look);
     const at = positionReadoutPlace(panel, { right: 0, bottom: 0 });
-    expect([at.x, at.y]).toEqual([4, 158]);
+    expect([at.x, at.y]).toEqual([320, 4]);
     const box = boxOf(WIDEST);
-    const [x0, x1, top] = [at.x - panel.x, at.x - panel.x + box.width, at.y - panel.y - box.height];
-    const edgeY = (x: number) => left.y + ((x - left.x) * (bottom.y - left.y)) / (bottom.x - left.x);
-    expect(x1).toBeLessThan(bottom.x);
-    expect(top).toBeGreaterThan(Math.max(edgeY(x0), edgeY(x1)));
+    const [x0, x1, bottom] = [at.x - panel.x - box.width, at.x - panel.x, at.y - panel.y + box.height];
+    const edgeY = (x: number) => top.y + ((x - top.x) * (right.y - top.y)) / (right.x - top.x);
+    expect(x0).toBeGreaterThan(top.x);
+    expect(bottom).toBeLessThan(Math.min(edgeY(x0), edgeY(x1)));
   });
 });

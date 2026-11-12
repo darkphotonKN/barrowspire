@@ -1,7 +1,8 @@
 /**
  * The run's dev position readout (FS-56CKV §C): the player's x/y, a developer aid, never player
- * HUD. Small and dim with no backing, in the minimap's bottom-left corner where one is shown, else
- * under the top-right column. The scene makes and refreshes the text; this holds its look, where
+ * HUD. Small and dim with no backing, in the minimap's top-right corner where one is shown, out of
+ * the map mode icon's way in the bottom-left (FS-56CKV §Change: Map mode icon, D8), else under the
+ * top-right column. The scene makes and refreshes the text; this holds its look, where
  * it stands, and whether it is made at all.
  */
 
@@ -11,7 +12,7 @@ import { MINIMAP } from "./minimap";
 
 /**
  * Its look and place (§C.14–§C.16, §C.18): 10 px in `hudText` at a partial alpha, no backing, its
- * ink 3:1 or better over the vignetted backing; its left and bottom edges `inset` px inside the
+ * ink 3:1 or better over the vignetted backing; its right and top edges `inset` px inside the
  * minimap's panel, or its top `gap` px under the column's last line; drawn over both minimap layers.
  */
 export const POSITION_READOUT = {
@@ -29,16 +30,18 @@ export interface PositionReadoutPlace extends Point {
 }
 
 /**
- * Where the readout stands (§C.14, §C.18), on whole logical px: its bottom-left `inset` px inside
- * the shown minimap's bottom-left corner; with no minimap shown (null), its top-right `gap` px
- * under the column's last line, on the column's right edge.
+ * Where the readout stands (§C.18; §Change: Map mode icon, D8, replacing §C.14's bottom-left), on
+ * whole logical px: its top-right `inset` px inside the shown minimap's top-right corner, which the
+ * floor's diamond leaves as empty as the bottom-left, being symmetric about its centre; with no
+ * minimap shown (null), its top-right `gap` px under the column's last line, on the column's right
+ * edge.
  */
 export function positionReadoutPlace(minimap: Rect | null, column: { right: number; bottom: number }): PositionReadoutPlace {
   if (minimap)
     return {
-      x: Math.round(minimap.x) + POSITION_READOUT.inset,
-      y: Math.round(minimap.y + minimap.height) - POSITION_READOUT.inset,
-      origin: { x: 0, y: 1 },
+      x: Math.round(minimap.x + minimap.width) - POSITION_READOUT.inset,
+      y: Math.round(minimap.y) + POSITION_READOUT.inset,
+      origin: { x: 1, y: 0 },
     };
   return { x: Math.round(column.right), y: Math.round(column.bottom) + POSITION_READOUT.gap, origin: { x: 1, y: 0 } };
 }

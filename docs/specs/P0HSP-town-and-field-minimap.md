@@ -408,3 +408,5 @@ for M; the run's minimap, its look and its modes (unchanged); the invite prompts
 place; any server, proto, gateway, OpenAPI or database change.
 
 ## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
+
+## Change: Map mode icon → FS-56CKV

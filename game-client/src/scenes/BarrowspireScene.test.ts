@@ -7818,13 +7818,24 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         const staged = stageIn(party);
         const run = staged.run as unknown as MappedRun;
         const keys: Record<string, Key> = {};
+        /** The scene's own pointer listeners, by event, as Phaser calls them. */
+        const pointers: Record<string, (pointer?: object) => void> = {};
         const button = new FullscreenButtonPlace();
         Object.assign(run, {
           minimapStore: store.read,
           fullscreenButton: button,
-          input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) }, on: vi.fn() },
+          input: {
+            setDefaultCursor: vi.fn(),
+            keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) },
+            on: (event: string, fn: (pointer?: object) => void) => (pointers[event] = fn),
+          },
         });
-        Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+        // the satchel shut: it takes no press and lights nothing (the scene's pointer listeners reach it)
+        Object.assign((run as unknown as { containerView: object }).containerView, {
+          relayout: vi.fn(),
+          pointerDown: vi.fn(() => false),
+          pointerMove: vi.fn(),
+        });
         run.createUI();
         run.bindRunInput();
         Object.assign(run.floorText!, FLOOR_LINE);
@@ -7843,7 +7854,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           for (let i = 0; i < 3 && map()?.mode !== mode; i++) keys["keydown-M"]();
           expect(map()?.mode).toBe(mode);
         };
-        return { ...staged, run, keys, view, frame, map, placed, dots, store, pressTo, button };
+        return { ...staged, run, keys, pointers, view, frame, map, placed, dots, store, pressTo, button };
       };
       const ally = (id: string, p: { x: number; y: number }, fields: { escape?: boolean; current_health?: number } = {}) => ({
         ...player(id, id, 0, fields),
@@ -8087,6 +8098,113 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         store.held = "enlarged";
         run.createUI();
         expect(run.minimapMode).toBe("enlarged");
+      });
+
+      // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或
+      // 是模式(M)"): the icon in the map's bottom-left, a press doing what M does
+      describe("the map mode icon (FS-56CKV §Change: Map mode icon; I-56CKV-8)", () => {
+        type IconRun = MappedRun & { combat: { cast: (...args: unknown[]) => void } };
+        type Icon = { shownAt: { box: { x: number; y: number; width: number; height: number } } | null; hovered: boolean };
+        const iconOf = (run: MappedRun) => (run.dungeon as { modeIcon?: Icon } | undefined)?.modeIcon;
+        /** A press at logical (x, y), render scale 1: the primary button unless `button` says. */
+        const pointerAt = (x: number, y: number, button = 0) => ({
+          x,
+          y,
+          button,
+          worldX: x,
+          worldY: y,
+          leftButtonDown: () => button === 0,
+          rightButtonDown: () => button === 2,
+        });
+
+        it.each([
+          [1080, "normal", { x: 858, y: 105 }],
+          [1280, "normal", { x: 1058, y: 105 }],
+          [1080, "enlarged", { x: 750, y: 159 }],
+          [1280, "enlarged", { x: 950, y: 159 }],
+          [1080, "overlay", { x: 1039, y: 12 }],
+          [1280, "overlay", { x: 1239, y: 12 }],
+        ])("should stand its 9 × 9 box at width %i in the %s mode: the map's bottom-left, or beside the button in the overlay (D2, D3)", (width, mode, at) => {
+          const { run, view, pressTo } = mapped();
+          view(width);
+          pressTo(mode);
+          expect(iconOf(run)?.shownAt?.box).toEqual({ ...at, width: 9, height: 9 });
+        });
+
+        it("should step the mode on a press in its hit area as M does, written to this browser, never an attack (D6)", () => {
+          const { run, pointers, map, store } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(map()!.mode).toBe("enlarged");
+          expect(store.writes).toEqual(["enlarged"]);
+          // the corner re-laid as on M: the icon in the enlarged map's bottom-left
+          expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 750, y: 159 });
+          pointers.pointerdown(pointerAt(754, 163));
+          pointers.pointerdown(pointerAt(1043, 16));
+          expect(map()!.mode).toBe("normal");
+          expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+          // a right press on it is its too: no class ability at the corner, and no step
+          pointers.pointerdown(pointerAt(862, 109, 2));
+          expect(map()!.mode).toBe("normal");
+          expect(cast).not.toHaveBeenCalled();
+        });
+
+        it("should do nothing with a press while the menu is open or chat is typing, M's guards (D6)", () => {
+          const { run, pointers, map, store } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          run.menu = {};
+          pointers.pointerdown(pointerAt(862, 109));
+          run.menu = undefined;
+          run.chatWindow = { isTyping: () => true, covers: () => false } as MappedRun["chatWindow"];
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(map()!.mode).toBe("normal");
+          expect(store.writes).toEqual([]);
+          expect(cast).not.toHaveBeenCalled();
+        });
+
+        it("should leave a press 1 px outside its hit area to the game, the map's own ground included (D5)", () => {
+          const { run, pointers, map } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          // the hit area x 856–869, y 103–116
+          pointers.pointerdown(pointerAt(855, 109));
+          pointers.pointerdown(pointerAt(862, 117));
+          expect(map()!.mode).toBe("normal");
+          expect(cast).toHaveBeenCalledTimes(2);
+        });
+
+        it("should light up under the pointer and go dark as it leaves, or leaves the canvas (D7)", () => {
+          const { run, pointers } = mapped();
+          pointers.pointermove(pointerAt(862, 109));
+          expect(iconOf(run)?.hovered).toBe(true);
+          pointers.pointermove(pointerAt(900, 109));
+          expect(iconOf(run)?.hovered).toBe(false);
+          pointers.pointermove(pointerAt(862, 109));
+          pointers.gameout();
+          expect(iconOf(run)?.hovered).toBe(false);
+        });
+
+        it("should be gone with its floor, and none on a floor without regions or before a floor's map (D4)", () => {
+          const { run, handle, pointers, store } = mapped();
+          const first = iconOf(run) as unknown as { covers(x: number, y: number): boolean };
+          expect(first.covers(862, 109)).toBe(true);
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(run.dungeon).toBeUndefined();
+          expect(first.covers(862, 109)).toBe(false);
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(store.writes).toEqual([]);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(iconOf(run)).toBeUndefined();
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 858, y: 105 });
+        });
+
+        it("should follow the corner on resize (D2)", () => {
+          const { run, view } = mapped();
+          view(1280);
+          expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 1058, y: 105 });
+        });
       });
 
       // FS-1SEF0 §C.14: the overlay stands about the figure the camera follows, each frame
@@ -8405,7 +8523,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           const { last } = run.positionReadout as Made;
           return { at: last.setPosition, origin: last.setOrigin };
         };
-        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 10 + 108 - 4], origin: [0, 1] });
+        // in the map's top-right corner, out of the map mode icon's way (FS-56CKV §Change: Map mode icon, D8)
+        const inMinimap = (right: number) => ({ at: [right - 4, 10 + 4], origin: [1, 0] });
         /** Under the column closed up to its top: the floor indicator, the escaped count, then 4 px. */
         const underColumn = (right: number, lines = 2) => ({ at: [right, 44 + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
 
@@ -8422,7 +8541,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(readout.depth).toBeGreaterThan(await_minimap.MINIMAP.depth);
         });
 
-        it("should stand it in the minimap's bottom-left corner, 4 px in, and follow the minimap on resize, re-crispened (§C.14, §C.19)", () => {
+        it("should stand it in the minimap's top-right corner, 4 px in, and follow the minimap on resize, re-crispened (§C.14, §C.19; §Change: Map mode icon, D8)", () => {
           const { run, view } = mapped();
           expect(readoutAt(run)).toEqual(inMinimap(1070));
           viewport.set({ width: 1280, height: 720, renderScale: 2 });
@@ -8450,10 +8569,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         });
 
         // the enlarged map at the very top, y 10 (FS-56CKV §Change C3, C5 as amended 2026-11-12)
-        it("should stand it 4 px inside the enlarged minimap's bottom-left corner at its own 10 px (FS-1SEF0 §B.11; FS-56CKV §Change C5)", () => {
+        it("should stand it 4 px inside the enlarged minimap's top-right corner at its own 10 px (FS-1SEF0 §B.11; FS-56CKV §Change C5; §Change: Map mode icon, D8)", () => {
           const { run, pressTo } = mapped();
           pressTo("enlarged");
-          expect(readoutAt(run)).toEqual({ at: [1070 - 324 + 4, 10 + 162 - 4], origin: [0, 1] });
+          expect(readoutAt(run)).toEqual({ at: [1070 - 4, 10 + 4], origin: [1, 0] });
           expect((run.positionReadout as Made).args[3]).toMatchObject({ fontSize: "10px" });
         });
 

@@ -82,6 +82,7 @@ import { FieldChartKeeper } from "@/ui/fieldChartKeeper";
 import { fieldMap } from "@/ui/fieldMap";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
+import type { ModeIconStage } from "@/ui/minimapModeIcon";
 import { canvasImage } from "@/ui/paintKit";
 import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
@@ -247,6 +248,8 @@ export class FieldScene extends Phaser.Scene {
   private minimap?: WorldMinimapController;
   /** What the field's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
+  /** The map mode icon's own stage, its glyph and hint (FS-56CKV §Change: Map mode icon): the scene's graphics and text. */
+  private modeIconStage?: ModeIconStage;
   /**
    * This visit's charted ground (FS-P0HSP §D), the player's own, read at the first state for the
    * active character then, and when its map redraws and its browser write are due.
@@ -342,6 +345,11 @@ export class FieldScene extends Phaser.Scene {
       graphics: () => this.add.graphics(),
       canvasImage: (...image) => canvasImage(this, ...image),
       frames: (listener) => afterFrameSetUp(this.cameras.main, listener),
+    };
+    // the map mode icon's, apart from the map's layers (FS-56CKV §Change: Map mode icon)
+    this.modeIconStage = {
+      graphics: () => this.add.graphics(),
+      text: (words, style) => this.add.text(0, 0, words, style),
     };
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
@@ -615,7 +623,11 @@ export class FieldScene extends Phaser.Scene {
       // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
       this.satchel?.pointerMove(at.x, at.y);
+      // the map mode icon lit under the pointer, unless a panel lies over it (FS-56CKV §Change: Map mode icon, D7)
+      if (this.panelTakes(at.x, at.y)) this.minimap?.pointerOut();
+      else this.minimap?.pointerMove(at.x, at.y);
     });
+    this.input.on("gameout", () => this.minimap?.pointerOut());
   }
 
   /**
@@ -624,8 +636,21 @@ export class FieldScene extends Phaser.Scene {
    * band attacks as with it closed (FS-HRH2J R8).
    */
   private takesPointer(x: number, y: number, primary: boolean): boolean {
-    // the open menu's rows take their own presses; nothing in the world answers one (FS-G4VMQ R5)
+    // the open menu's rows take their own presses; nothing in the world answers one (FS-G4VMQ R5),
+    // nor the map mode icon, whose guards the menu is one of
     if (this.menu) return true;
+    if (this.panelTakes(x, y)) return true;
+    // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
+    if (this.minimap?.pointerDown(x, y, primary)) return true;
+    return this.satchel?.pointerDown(x, y, primary) ?? false;
+  }
+
+  /**
+   * Whether a press at (x, y), logical units, is the corner row's or a HUD panel's: the overlay's,
+   * the chat window's, the party panel's or a prompt's. Neither the world nor the map mode icon
+   * answers it.
+   */
+  private panelTakes(x: number, y: number): boolean {
     // a press on the corner row is the row's (FS-3EBCA R10)
     if (this.corner?.covers(x, y)) return true;
     if (this.equipment?.covers(x, y)) return true;
@@ -634,8 +659,7 @@ export class FieldScene extends Phaser.Scene {
     // and one on the open party panel is the panel's (FS-R82NV R28)
     if (this.partyPanel?.covers(x, y)) return true;
     // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-    if (this.invitePrompt?.covers(x, y)) return true;
-    return this.satchel?.pointerDown(x, y, primary) ?? false;
+    return this.invitePrompt?.covers(x, y) ?? false;
   }
 
   /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
@@ -674,6 +698,7 @@ export class FieldScene extends Phaser.Scene {
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
+    this.modeIconStage = undefined;
     this.charting = undefined;
     this.mapField = { walls: [], gates: [] };
     this.abilityHud = undefined;
@@ -839,6 +864,8 @@ export class FieldScene extends Phaser.Scene {
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
         button: this.fullscreenButton,
+        // a press on its map mode icon is M's, under M's guard in a field: chat typing (FS-56CKV §Change: Map mode icon, D6)
+        icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => !!this.chatWindow?.isTyping() },
       });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
       const owner = useGameStore.getState().activeCharacterId;
