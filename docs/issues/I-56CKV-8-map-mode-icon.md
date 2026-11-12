@@ -32,8 +32,8 @@ bottom-right corner is too small on floor 1).
 
 ## Acceptance Criteria
 
-- [ ] FS-56CKV §Change: Map mode icon, every Acceptance Criterion but the browser check.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] FS-56CKV §Change: Map mode icon, every Acceptance Criterion but the browser check.
+- [x] Typecheck, lint and the full vitest suite pass.
 - [ ] **Owner browser check (Nick):** a run's floor 1, the town and a field, at 1080 and 1280 wide,
       each mode: the icon's glyph and place (bottom-left of the map; beside the fullscreen button
       in the overlay), the hint on hover, a click stepping the mode as M does, the readout in the
@@ -53,3 +53,20 @@ FS-56CKV §Change: Map mode icon, D1–D9.
   area and glyph; the hint's words, place and look; a press = M with each scene's guards and the
   stored key, never an attack; the readout's top-right.
 - GREEN: `minimapModeIcon.ts`, the corner's place, the scenes' routing, the readout's corner.
+
+## Status
+
+Code in, 2026-11-12; awaiting the owner's browser check (the one open box). `ui/minimapModeIcon.ts`
+(new: `MINIMAP_MODE_ICON`, `MINIMAP_MODE_HINT`, `minimapModeIconPlace`, `MinimapModeIcon`),
+`ui/topRightColumn.ts` (`topRightCorner` hands the icon's place; `cornerMinimap` passes the overlay
+as itself, so the corner tells it from no map), `ui/positionReadout.ts` (top-right),
+`ui/minimap.ts` (`glyphRects` exported), `ui/itemTip.ts` (`paintTipGround` shared with the hint),
+`ui/worldMinimapController.ts` (the icon, `covers`/`pointerMove`/`pointerOut`/`pointerDown`,
+`bindMinimapPointer`), `scenes/BarrowspireScene.ts` (icon with the floor's minimap; `panelTakes`
+before the icon in the press chain; hover and `gameout`), `scenes/HubScene.ts` (pointer bound,
+the gear overlay keeps its presses), `scenes/FieldScene.ts` (`takesPointer` asks the icon after the
+panels). Layout at 1080: normal box x 858–867 y 105–114, enlarged x 750–759 y 159–168, overlay
+x 1039–1048 y 12–21; at 1280 x 200 more. Hint "Map mode (M)", right edge 6 px left of the map (or
+of the icon in the overlay). Seen red first: 51 failing at the test commit (the module missing,
+the icon absent in each scene, the readout in the bottom-left), plus two harness gaps fixed in the
+same commit. Suite 7408 passed; tsc and lint clean.
