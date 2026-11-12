@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIELD_CHART, FieldChart } from "./fieldChart";
+import { FIELD_CHART, FieldChart, fieldChartKey, readFieldChart, writeFieldChart } from "./fieldChart";
 
 // FS-P0HSP §D.21–§D.24, §D.28 (I-P0HSP-4): a field's charted ground, round the player as they walk.
 
@@ -88,5 +88,105 @@ describe("FieldChart (FS-P0HSP §D)", () => {
       expect(r.x + r.width).toBeLessThanOrEqual(900);
       expect(r.y + r.height).toBeLessThanOrEqual(600);
     }
+  });
+});
+
+// FS-P0HSP §D.25–§D.27 (I-P0HSP-5): charted ground kept per character and field in this browser.
+describe("the stored chart (FS-P0HSP §D.25–§D.27)", () => {
+  /** A browser store in memory, and what was written to it. */
+  function fakeStore(over: Partial<{ getItem: () => string | null; setItem: () => void }> = {}) {
+    const held = new Map<string, string>();
+    const writes: string[] = [];
+    const store = {
+      getItem: (k: string) => held.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        writes.push(k);
+        held.set(k, v);
+      },
+      removeItem: (k: string) => void held.delete(k),
+      ...over,
+    };
+    return { held, writes, reach: () => store };
+  }
+  const MEADOWS = { width: 2000, height: 1000 };
+
+  it("should key a chart by character and field (§D.25)", () => {
+    expect(fieldChartKey("char-a", "forlorn_forest")).toBe("barrowspire_field_chart:char-a:forlorn_forest");
+  });
+
+  it("should write {v, cell, cols, rows, bits} with the bits base64, row by row, lowest bit first (§D.25)", () => {
+    const { held, reach } = fakeStore();
+    const chart = new FieldChart({ width: 120, height: 80 });
+    chart.chartAround({ x: 20, y: 20 });
+    writeFieldChart(reach, "a", "dev_test_room", chart);
+    const value = JSON.parse(held.get(fieldChartKey("a", "dev_test_room"))!);
+    expect(value).toEqual({ v: 1, cell: 40, cols: 3, rows: 2, bits: expect.any(String) });
+    const bytes = Uint8Array.from(atob(value.bits), (c) => c.charCodeAt(0));
+    expect([...bytes]).toEqual([...chart.bits]);
+  });
+
+  it("should read back for the same character in the same field, and not for another character or field (§D.25, §D.27)", () => {
+    const { reach } = fakeStore();
+    const chart = new FieldChart(FOREST);
+    chart.chartAround({ x: 600, y: 600 });
+    writeFieldChart(reach, "a", "forlorn_forest", chart);
+    expect(chartedOf(readFieldChart(reach, "a", "forlorn_forest", FOREST))).toEqual(chartedOf(chart));
+    expect(chartedOf(readFieldChart(reach, "b", "forlorn_forest", FOREST)).size).toBe(0);
+    expect(chartedOf(readFieldChart(reach, "a", "gentle_meadows", MEADOWS)).size).toBe(0);
+  });
+
+  it("should union what it writes with what is stored, so two tabs never lose each other's ground (§D.25)", () => {
+    const { reach } = fakeStore();
+    const one = new FieldChart(FOREST);
+    one.chartAround({ x: 600, y: 600 });
+    writeFieldChart(reach, "a", "forlorn_forest", one);
+    const two = new FieldChart(FOREST);
+    two.chartAround({ x: 2500, y: 1500 });
+    writeFieldChart(reach, "a", "forlorn_forest", two);
+    const both = new Set([...within({ x: 600, y: 600 }), ...within({ x: 2500, y: 1500 })]);
+    expect(chartedOf(readFieldChart(reach, "a", "forlorn_forest", FOREST))).toEqual(both);
+    // and the writer's own chart takes the other tab's ground in
+    expect(chartedOf(two)).toEqual(both);
+  });
+
+  it.each([
+    ["cols", { v: 1, cell: 40, cols: 78, rows: 25 }],
+    ["rows", { v: 1, cell: 40, cols: 50, rows: 24 }],
+    ["cell", { v: 1, cell: 80, cols: 50, rows: 25 }],
+    ["v", { v: 2, cell: 40, cols: 50, rows: 25 }],
+  ])("should drop a stored chart whose %s does not fit the field now, and start empty (§D.25)", (_what, shape) => {
+    const { held, reach } = fakeStore();
+    const bits = btoa(String.fromCharCode(...new Uint8Array(Math.ceil((50 * 25) / 8)).fill(255)));
+    held.set(fieldChartKey("a", "gentle_meadows"), JSON.stringify({ ...shape, bits }));
+    expect(chartedOf(readFieldChart(reach, "a", "gentle_meadows", MEADOWS)).size).toBe(0);
+  });
+
+  it.each([
+    ["an unparsable value", () => fakeStore({ getItem: () => "{not json" }).reach],
+    ["bits that are not base64", () => fakeStore({ getItem: () => JSON.stringify({ v: 1, cell: 40, cols: 50, rows: 25, bits: "%%%" }) }).reach],
+    ["a throwing read", () => fakeStore({ getItem: () => { throw new Error("blocked"); } }).reach],
+    ["no store", () => () => null],
+    ["a store that throws to reach", () => () => { throw new Error("SecurityError"); }],
+  ])("should start empty and throw nothing on %s (§D.26)", (_what, reach) => {
+    expect(() => readFieldChart(reach(), "a", "gentle_meadows", MEADOWS)).not.toThrow();
+    expect(chartedOf(readFieldChart(reach(), "a", "gentle_meadows", MEADOWS)).size).toBe(0);
+  });
+
+  it("should keep the chart and throw nothing where the write throws (storage full or blocked) (§D.26)", () => {
+    const { reach } = fakeStore({ setItem: () => { throw new Error("QuotaExceededError"); } });
+    const chart = new FieldChart(FOREST);
+    chart.chartAround({ x: 600, y: 600 });
+    const before = chartedOf(chart);
+    expect(() => writeFieldChart(reach, "a", "forlorn_forest", chart)).not.toThrow();
+    expect(chartedOf(chart)).toEqual(before);
+  });
+
+  it("should keep nothing and read nothing with no active character (§D.26)", () => {
+    const { writes, reach } = fakeStore();
+    const chart = new FieldChart(FOREST);
+    chart.chartAround({ x: 600, y: 600 });
+    writeFieldChart(reach, null, "forlorn_forest", chart);
+    expect(writes).toEqual([]);
+    expect(chartedOf(readFieldChart(reach, null, "forlorn_forest", FOREST)).size).toBe(0);
   });
 });

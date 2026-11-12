@@ -1522,3 +1522,114 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(map()).toBeUndefined();
   });
 });
+
+const { useGameStore } = await import("@/stores/gameStore");
+
+// FS-P0HSP §D.25–§D.27 (I-P0HSP-5): the field scene keeps its charted ground in this browser.
+describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)", () => {
+  const WALLS = FOREST_WALLS.map((r, i) => ({ entity_id: `s${i}`, house_id: `s${i}`, position: { x: r.x, y: r.y }, width: r.width, height: r.height }));
+  const GATE = { entity_id: "road", destination: "hub", position: FOREST_GATE, range: 80 };
+  const any: unknown = new Proxy(() => any, { get: (_t, k) => (k === "then" ? undefined : any), apply: () => any });
+  /** One browser's store, shared across visits. */
+  function browser() {
+    const held = new Map<string, string>();
+    const writes: string[] = [];
+    const reach = () => ({
+      getItem: (k: string) => held.get(k) ?? null,
+      setItem: (k: string, v: string) => void (writes.push(k), held.set(k, v)),
+      removeItem: (k: string) => void held.delete(k),
+    });
+    return { held, writes, reach };
+  }
+  /** A visit to the Forest as `character`, on `store`. */
+  function visit(store: ReturnType<typeof browser>, character: string | null) {
+    useGameStore.setState({ activeCharacterId: character });
+    const stage = fieldOnStage();
+    const field = stage.field as unknown as FieldUnderTest & Record<string, unknown>;
+    const clock = { now: 0 };
+    Object.assign(field, {
+      field: "forlorn_forest",
+      size: FOREST_SIZE,
+      time: { delayedCall: vi.fn(), get now() { return clock.now; } },
+      minimapStage: { graphics: () => any, canvasImage: () => any },
+      showClassHud: vi.fn(),
+      chartStore: store.reach,
+      minimapStore: () => null,
+    });
+    const render = (position: { x: number; y: number }) =>
+      field.renderState({ world_type: "field", current_player: { id: "self", entity_id: "me", position }, other_players: [], walls: WALLS, gates: [GATE] });
+    const chart = () => field.chart as { charted(cx: number, cy: number): boolean } | undefined;
+    const cellAt = (p: { x: number; y: number }) => chart()!.charted(Math.floor(p.x / FIELD_CHART.cell), Math.floor(p.y / FIELD_CHART.cell));
+    const frame = (ms: number) => {
+      clock.now += ms;
+      (field as unknown as { update(t: number, d: number): void }).update(clock.now, ms);
+    };
+    return { field, clock, render, chart, cellAt, frame };
+  }
+
+  afterEach(() => {
+    useGameStore.setState({ activeCharacterId: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should show a field walked before as it was left: a second visit starts with the first's ground (§D.25)", () => {
+    const store = browser();
+    const first = visit(store, "char-a");
+    first.render({ x: 600, y: 600 });
+    first.field.release("shutdown");
+    const second = visit(store, "char-a");
+    second.render({ x: 2900, y: 1480 });
+    expect(second.cellAt({ x: 600, y: 600 })).toBe(true);
+    expect(second.cellAt({ x: 2900, y: 1480 })).toBe(true);
+  });
+
+  it("should keep two characters' ground apart (§D.25)", () => {
+    const store = browser();
+    const a = visit(store, "char-a");
+    a.render({ x: 600, y: 600 });
+    a.field.release("shutdown");
+    const b = visit(store, "char-b");
+    b.render({ x: 2900, y: 1480 });
+    expect(b.cellAt({ x: 600, y: 600 })).toBe(false);
+    b.field.release("shutdown");
+    const again = visit(store, "char-a");
+    again.render({ x: 2900, y: 1480 });
+    expect(again.cellAt({ x: 600, y: 600 })).toBe(true);
+  });
+
+  it("should write at most once every 2 s while new ground is charted, and once more as the scene ends (§D.25)", () => {
+    const store = browser();
+    const v = visit(store, "char-a");
+    let x = 200;
+    v.render({ x, y: 1000 });
+    // 5 s walking at 400 px a second, a state every 33 ms, a frame every 16 / 17 ms
+    for (let t = 0; t < 5000; t += 33) {
+      x += (400 * 33) / 1000;
+      v.frame(16);
+      v.frame(17);
+      v.render({ x, y: 1000 });
+    }
+    expect(store.writes.length).toBeGreaterThanOrEqual(2);
+    expect(store.writes.length).toBeLessThanOrEqual(3);
+    // standing still: nothing new, nothing written
+    const written = store.writes.length;
+    v.frame(3000);
+    v.frame(3000);
+    expect(store.writes.length).toBeLessThanOrEqual(written + 1);
+    const settled = store.writes.length;
+    v.frame(3000);
+    expect(store.writes.length).toBe(settled);
+    v.render({ x: 2900, y: 1480 });
+    v.field.release("destroy");
+    expect(store.writes.length).toBe(settled + 1);
+  });
+
+  it("should keep nothing with no active character, and still chart the visit (§D.26)", () => {
+    const store = browser();
+    const v = visit(store, null);
+    v.render({ x: 600, y: 600 });
+    expect(v.cellAt({ x: 600, y: 600 })).toBe(true);
+    v.field.release("shutdown");
+    expect(store.writes).toEqual([]);
+  });
+});
