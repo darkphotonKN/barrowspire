@@ -15,11 +15,11 @@ import {
   legsInGarments,
   mirroredGarment,
   outside,
+  seenThroughCloth,
   throughCloth,
   wallAlong,
 } from "./clearance.js";
-import { K1, VIEW_DIR } from "../projection.js";
-import { FACINGS, yawFor } from "../facing.js";
+import { K1 } from "../projection.js";
 
 const mat = () => new THREE.MeshBasicMaterial();
 
@@ -374,70 +374,6 @@ describe("a leg is measured through the cloth where the cloth hangs (FS-HF0WW §
     }
   });
 });
-
-/**
- * The leg vertices the bake's camera sees through the cloth, per pose: in any of the 8 facings, a
- * leg vertex no other part of the figure hides from the camera that is either
- *  - a thigh or knee vertex (by its bind height: from 0.06 H under the knee up to the hip joint
- *    less 0.03 H) lying outside the cloth hanging round it (on the level ray from the pelvis out
- *    through it, cloth before it and none beyond: {@link throughCloth} above 0), so a knee out
- *    through a robe counts, and a knee under a short hem, a heel kicked up under a lifted hem (no
- *    cloth round it at its height) or a thigh seen through a split front (cloth beyond it) does not;
- *  - or a vertex of the thigh's root (above that), which the torso, the garment's top and the belt
- *    over it always hide.
- */
-function seenThroughCloth(rig, poses) {
-  const fit = legsInGarments(rig);
-  const [, ty] = J(rig, "thighL");
-  const [, ky] = J(rig, "shinL");
-  const zoneOf = (y) => (y > ty - 0.03 ? "waist" : y > ky + 0.06 ? "thigh" : y > ky - 0.06 ? "knee" : "shin");
-  const occluders = [];
-  rig.root.traverse((o) => o.isMesh && occluders.push(o));
-  const world = (m) => {
-    const pos = m.geometry.attributes.position;
-    const v = new THREE.Vector3();
-    return Array.from({ length: pos.count }, (_, i) => (m.isSkinnedMesh ? m.getVertexPosition(i, v) : v.fromBufferAttribute(pos, i)).applyMatrix4(m.matrixWorld).clone());
-  };
-  const out = [];
-  for (const p of poses) {
-    p.apply();
-    rig.root.updateMatrixWorld(true);
-    const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
-    const covers = fit.covers.map((m) => {
-      const { rows, cols } = m.geometry.userData.tube;
-      const P = world(m);
-      return { rings: Array.from({ length: rows }, (_, r) => P.slice(r * cols, (r + 1) * cols)) };
-    });
-    const tris = [];
-    for (const m of occluders) {
-      const P = world(m);
-      const idx = m.geometry.index;
-      for (let i = 0; i < idx.count; i += 3) tris.push([P[idx.getX(i)], P[idx.getX(i + 1)], P[idx.getX(i + 2)]]);
-    }
-    const candidates = [];
-    for (const leg of fit.legs) {
-      const bind = leg.geometry.attributes.position;
-      world(leg).forEach((v, i) => {
-        const zone = zoneOf(bind.getY(i) / rig.H);
-        if (zone === "waist" || (zone !== "shin" && throughCloth(covers, axis, v) > 0)) candidates.push(v);
-      });
-    }
-    let seen = 0;
-    for (const facing of FACINGS) {
-      // the camera's direction in model space: the view turned back by the facing's yaw
-      const yaw = -yawFor(facing);
-      const d = new THREE.Vector3(VIEW_DIR[0] * Math.cos(yaw) + VIEW_DIR[2] * Math.sin(yaw), VIEW_DIR[1], -VIEW_DIR[0] * Math.sin(yaw) + VIEW_DIR[2] * Math.cos(yaw)).normalize();
-      const ray = new THREE.Ray();
-      const hit = new THREE.Vector3();
-      for (const v of candidates) {
-        ray.set(v, d);
-        if (!tris.some(([a, b, c]) => ray.intersectTriangle(a, b, c, false, hit) && hit.distanceTo(v) > 1e-4)) seen++;
-      }
-    }
-    out.push({ anim: p.anim, i: p.i, seen });
-  }
-  return out;
-}
 
 /**
  * How far a panel worn over a garment (the mage's scapular over her gown) lies above it, least over

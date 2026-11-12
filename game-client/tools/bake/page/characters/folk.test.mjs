@@ -22,7 +22,7 @@ vi.mock("../palette.js", () => ({ cssRgb: () => "", mix: () => [0, 0, 0], shade:
 
 const { FOLK } = await import("./folk.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, clearanceLimit, legClearance, mirroredGarment } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, clearanceLimit, legClearance, mirroredGarment, seenThroughCloth } = await import("./clearance.js");
 
 /** The furthest any clip of a sheet shows a leg outside its clothes (1x px), and where. */
 const worst = (clips) => Object.entries(clips ?? {}).reduce((w, [anim, c]) => (c.px > w.px ? { anim, ...c } : w), { anim: null, px: 0, frame: 0 });
@@ -47,6 +47,22 @@ describe("the hub folk's legs stay under their clothes (FS-HF0WW § Change: The 
     expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
     expect(clearanceError(sheet, clips, { mirrored: mirroredGarment(rig), known: new Map(), legacy: new Set() })).toBeNull();
     expect(clearanceError(sheet, clips, { mirrored: mirroredGarment(rig) })).toBeNull();
+  });
+
+  // round 2 (2026-11-12, the owner: "NPC 腿部重繪 還是有一點破圖 尤其是npc quartermaster"): the guard
+  // passed the quartermaster at 0.66 px, while from behind the camera saw his breeches' thigh roots
+  // come up through his shirt at the hips, round the pale seat of the shirt below the belt, and in
+  // the walk his leading thigh through the apron's side edge
+  it.each(FOLK.map((f) => [f.sheet, f]))("the camera sees no hip, thigh or knee of %s through its clothes in any facing, through idle and walk in every palette", (sheet, f) => {
+    const { rig, poses } = characterPoses(f);
+    const seen = seenThroughCloth(rig, poses);
+    if (sheet === "folk_resident_skirt") {
+      // no legs under her kirtle, only boots: nothing to see through it
+      expect(seen).toBeNull();
+      return;
+    }
+    const worst = seen.reduce((m, p) => (p.seen > m.seen ? p : m), { seen: 0 });
+    expect(worst.seen, `${sheet} ${worst.anim} frame ${worst.i}`).toBe(0);
   });
 
   it("leaves only the monsters on the legacy lists", () => {
