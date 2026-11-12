@@ -281,13 +281,17 @@ lit) while the player stands inside.
   `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
   arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
   past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
-  head steady and looking ahead; a weapon in a pumping hand stays low in a normal grip, a blade
-  held forward along the forearm and a little down, its point ahead of the hand, a sceptre up
-  from the fist with the orb above the hand and under the shoulder), played turned to the way the
-  character moves, and
+  head steady and looking ahead; a weapon in a pumping hand is held in a normal grip, a blade
+  forward along the forearm about level, its point ahead of the hand and under the head, a
+  sceptre reasonably upright from a hand that pumps only to the lower chest, 15-40° off vertical;
+  at the front of the pump the weapon hand swings in across the front of the torso, a blade a
+  little across the body, as a runner's arm crosses), played turned to the way the character
+  moves, and
   `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
   than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
-  no crouch, the feet stepping back). A class with `run` walks the legs of each over 0.75 walk
+  no crouch, the feet stepping back, the cloak carried out behind the heels). No leg or boot ever
+  shows through a cloak or a garment, and a quiver rides over the cloak, never sunk into it
+  (FS-HF0WW). A class with `run` walks the legs of each over 0.75 walk
   cycles, so neither outpaces the slowed ground; no sheet carries a standalone backpedal
   (FS-JS7C8, the archer first). A class's attack moves the whole body: a wind-up opposite the
   strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
@@ -313,7 +317,8 @@ lit) while the player stands inside.
   leather that carries the figure. A deep cowl, closed over the crown, hides most of the
   face in shadow down to the mouth. Its crown draws back into one long, full point that droops
   like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
-  ragged cloak hangs over the buff leather, with a quiver on the back. *(Amended at the owner's
+  ragged cloak hangs over the buff leather, with a quiver strapped over it on the back, near
+  upright (about 17° off the spine), its fletching over the right shoulder. *(Amended at the owner's
   pick, 2026-11-04.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted

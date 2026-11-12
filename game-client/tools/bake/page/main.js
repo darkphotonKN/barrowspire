@@ -9,7 +9,7 @@ import { CATALOGUE, ICON_SIZE } from "./catalogue.js";
 import { TILE_H, TILE_W } from "./projection.js";
 import { FACINGS, yawFor } from "./facing.js";
 import { cssRgb } from "./palette.js";
-import { clearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
+import { clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
 import { characterPoses } from "./characters/poses.js";
 
 let baker = null;
@@ -121,6 +121,13 @@ function bakeCharacterSheet(sheet) {
   // the guard: no clip may show a leg outside its garment by a baked px (characters/clearance.js)
   const error = clearanceError(sheet.name, legClearance(rig, poses), { scale, mirrored: mirroredGarment(rig) });
   if (error) throw new Error(error);
+  // and a playable class (the trimmed sheets) may not show a leg or a boot out through its cloak by
+  // a baked px (the same file); the creatures' rag cloaks are held to it once each is re-baked
+  // (today the ghost's attack reads 8.95 px), so their pixels do not move here
+  if (sheet.trim) {
+    const cloakError = cloakClearanceError(sheet.name, cloakClearance(rig, poses), { scale });
+    if (cloakError) throw new Error(cloakError);
+  }
   const out = baker.bakeCharacter(
     rig.root,
     poses.map((p) => p.apply),

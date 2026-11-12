@@ -7,7 +7,22 @@ import { ATTACKS, ATTACK_TURN_LIMIT, RUN_ANIMATIONS, add, applyPose, clipsFor, g
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { footing, measurePace } from "./pace.js";
-import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_SHEET, MERCENARY_STYLE, SCEPTRE_TILT, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
+import {
+  KNIGHT_BUILD,
+  KNIGHT_SHEET,
+  KNIGHT_STYLE,
+  MERCENARY_BUILD,
+  MERCENARY_SHEET,
+  MERCENARY_STYLE,
+  RUN_BLADE_ELEV,
+  RUN_CROSS_REACH,
+  SCEPTRE_RUN_PEAK,
+  SCEPTRE_RUN_TILT,
+  SCEPTRE_TILT,
+  WIZARD_BUILD,
+  WIZARD_SHEET,
+  WIZARD_STYLE,
+} from "./classStyles.js";
 import { MERC_ANIMATIONS, parryClip } from "./clips.js";
 
 const DEG = 180 / Math.PI;
@@ -147,6 +162,8 @@ function deepestCarry(rig, gear, frames) {
  * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands) and
  * its weapon's rest in the idle and the walk: `point` down and forward (a blade's tip toward the
  * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
+ * `low` names the arm that pumps only to the lower chest ({@link SCEPTRE_RUN_PEAK}): the wizard's
+ * sceptre arm.
  */
 const CLASSES = [
   {
@@ -172,6 +189,7 @@ const CLASSES = [
     style: WIZARD_STYLE,
     sheet: WIZARD_SHEET,
     pump: ["L", "R"],
+    low: "R",
     rest: "upright",
   },
 ];
@@ -188,7 +206,7 @@ describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward 
   });
 });
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, rest }) => {
+describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, low, rest }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -214,7 +232,7 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
     }
   });
 
-  it("pumps its arms with the elbows bent about 90°, each hand to chest height and back past the hip", () => {
+  it(`pumps its arms with the elbows bent about 90°, each ${low ? "free " : ""}hand to chest height and back past the hip`, () => {
     for (const s of pump) {
       const samples = SAMPLES.map((f) => {
         pose8(f);
@@ -228,35 +246,111 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
       });
       const front = samples.reduce((a, b) => (b.hand.z - b.hips.z > a.hand.z - a.hips.z ? b : a));
       const back = samples.reduce((a, b) => (b.hand.z - b.hips.z < a.hand.z - a.hips.z ? b : a));
-      expect(front.hand.y, `${s} front`).toBeGreaterThan(front.chest.y);
-      expect(front.hand.y, `${s} front`).toBeLessThan(front.shoulder.y);
+      // the wizard's sceptre arm pumps only to the lower chest (its own test below)
+      if (s !== low) {
+        expect(front.hand.y, `${s} front`).toBeGreaterThan(front.chest.y);
+        expect(front.hand.y, `${s} front`).toBeLessThan(front.shoulder.y);
+      }
       expect((back.hips.z - back.hand.z) / rig.H, `${s} back`).toBeGreaterThanOrEqual(0.06);
     }
   });
 
+  // owner, 2026-11-12, of the sceptre in the run: "只是要合理的位置 但跑步時為什麼手會擺到肩膀"
+  if (low)
+    it(`pumps the sceptre hand only to the lower chest, peaking at SCEPTRE_RUN_PEAK (${SCEPTRE_RUN_PEAK} H)`, () => {
+      expect(SCEPTRE_RUN_PEAK).toBeGreaterThanOrEqual(0.6);
+      expect(SCEPTRE_RUN_PEAK).toBeLessThanOrEqual(0.62);
+      const peak = Math.max(...SAMPLES.map((f) => (pose8(f), at(rig, `hand${low}`).y / rig.H)));
+      expect(Math.abs(peak - SCEPTRE_RUN_PEAK), `the sceptre hand's peak ${peak.toFixed(3)} H`).toBeLessThanOrEqual(0.01);
+    });
+
   // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高",
-  // then, of the held keys' fist turned over: "跑步時武器是不是拿反了"
+  // then, of the held keys' fist turned over: "跑步時武器是不是拿反了", then of the low carry baked:
+  // "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂" and, of the sceptre,
+  // "只是要合理的位置 但跑步時為什麼手會擺到肩膀"
   it(
     rest === "point"
-      ? "carries the blade forward and down or about level on every sample, its tip ahead of the hand, under the shoulder and never behind the body"
-      : "carries the sceptre up by its shaft on every sample, the orb above the hand and under the shoulder, ahead of the hand",
+      ? `carries the blade about level on every sample (RUN_BLADE_ELEV, ${RUN_BLADE_ELEV?.join(" to ")}° from level), its tip ahead of the hand and the body, never over the head`
+      : `carries the sceptre reasonably upright on every sample (SCEPTRE_RUN_TILT, ${SCEPTRE_RUN_TILT?.join("–")}° off vertical), the orb above the hand and ahead of it, clear of the robe`,
     () => {
-      const tip = GEAR[name](rig).weapon.at(-1);
+      const gear = GEAR[name](rig);
+      const tip = gear.weapon.at(-1);
       for (const f of SAMPLES) {
         pose8(f);
-        const [hand, t, shoulder, hips] = [at(rig, "handR"), world(tip), at(rig, "upperArmR"), at(rig, "hips")];
+        const [hand, t, hips, head] = [at(rig, "handR"), world(tip), at(rig, "hips"), at(rig, "head")];
         const d = t.clone().sub(hand);
         const elev = Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
         if (rest === "point") {
-          expect(elev, `blade @${f}`).toBeGreaterThanOrEqual(-45);
-          expect(elev, `blade @${f}`).toBeLessThanOrEqual(5);
+          expect(elev, `blade @${f}`).toBeGreaterThanOrEqual(RUN_BLADE_ELEV[0]);
+          expect(elev, `blade @${f}`).toBeLessThanOrEqual(RUN_BLADE_ELEV[1]);
           expect(t.z - hips.z, `tip ahead of the body @${f}`).toBeGreaterThan(0);
-        } else expect(elev, `orb over the hand @${f}`).toBeGreaterThan(0);
+          // never back up to the old upright carry, its tip over the crown
+          expect(t.y, `tip under the head @${f}`).toBeLessThan(head.y);
+        } else {
+          expect(90 - elev, `sceptre off vertical @${f}`).toBeGreaterThanOrEqual(SCEPTRE_RUN_TILT[0]);
+          expect(90 - elev, `sceptre off vertical @${f}`).toBeLessThanOrEqual(SCEPTRE_RUN_TILT[1]);
+          for (const m of gear.weapon) expect(outsideRobe(rig, world(m)), `@${f}: the sceptre into the robe`).toBeGreaterThan(0);
+        }
         expect(d.z, `tip ahead of the hand @${f}`).toBeGreaterThan(0);
-        expect(t.y, `tip under the shoulder @${f}`).toBeLessThan(shoulder.y);
       }
     },
   );
+
+  // owner, 2026-11-12: "武器可以往內側擺動一些"
+  it(`swings the weapon hand in toward the midline at the front of the pump (RUN_CROSS_REACH, ${RUN_CROSS_REACH?.join("–")} H), across the front of the torso, and back out to the side behind${rest === "point" ? ", the blade angled across the body" : ""}`, () => {
+    const tip = GEAR[name](rig).weapon.at(-1);
+    const samples = SAMPLES.map((f) => {
+      pose8(f);
+      const [hand, hips, t] = [at(rig, "handR"), at(rig, "hips"), world(tip)];
+      const d = t.clone().sub(hand);
+      // the right hand's distance out from the midline (the character's right is -x)
+      return { lat: (hips.x - hand.x) / rig.H, fz: hand.z - hips.z, across: Math.atan2(d.x, d.z) * DEG };
+    });
+    const front = samples.reduce((a, b) => (b.fz > a.fz ? b : a));
+    const back = samples.reduce((a, b) => (b.fz < a.fz ? b : a));
+    expect(back.lat - front.lat, "the hand's reach in, front against back").toBeGreaterThanOrEqual(RUN_CROSS_REACH[0]);
+    expect(back.lat - front.lat, "the hand's reach in, front against back").toBeLessThanOrEqual(RUN_CROSS_REACH[1]);
+    // in front of the torso: inside the chest's half width (anatomy.js `torso`)
+    expect(front.lat, "the hand before the torso").toBeLessThan(0.112 * rig.p.torsoW);
+    if (rest === "point") {
+      expect(front.across, "the blade across the body at the front").toBeGreaterThanOrEqual(5);
+      expect(front.across, "the blade across the body at the front").toBeLessThanOrEqual(30);
+    }
+  });
+
+  it("keeps the weapon clear of the free arm on every sample", () => {
+    const gear = GEAR[name](rig);
+    const reach = 0.06 * rig.p.armR;
+    for (const f of SAMPLES) {
+      pose8(f);
+      const chain = ["upperArmL", "foreArmL", "handL"].map((b) => at(rig, b));
+      const seg = chain.slice(1).map((p, i) => new THREE.Line3(chain[i], p));
+      for (const m of gear.weapon) {
+        const w = world(m);
+        const near = Math.min(...seg.map((l) => l.closestPointToPoint(w, true, new THREE.Vector3()).distanceTo(w)));
+        expect(near / rig.H, `@${f}: the weapon into the free arm`).toBeGreaterThan(reach);
+      }
+    }
+  });
+
+  if (name === "knight")
+    it("keeps the blade off the shield on every sample: never through its face", () => {
+      const gear = GEAR.knight(rig);
+      const shield = gear.other[0].parent;
+      const inv = new THREE.Matrix4();
+      // the kite shield's outline in its own frame (H): width along y, its long axis along z, its face the x = 0 plane
+      const within = (p) => Math.abs(p.y) <= 0.115 && p.z >= -0.27 && p.z <= 0.145;
+      for (const f of SAMPLES) {
+        pose8(f);
+        inv.copy(shield.matrixWorld).invert();
+        const pts = gear.weapon.map((m) => world(m).applyMatrix4(inv).divideScalar(rig.H));
+        pts.forEach((p, i) => {
+          if (within(p)) expect(Math.abs(p.x), `@${f}: blade point ${i} in the shield`).toBeGreaterThan(0.02);
+          const q = pts[i + 1];
+          if (q && Math.sign(p.x) !== Math.sign(q.x)) expect(within(p.clone().lerp(q, p.x / (p.x - q.x))), `@${f}: the blade through the shield`).toBe(false);
+        });
+      }
+    });
 
   it("turns the shoulders 6.5–10° against the hips, and keeps the shared legs key for key", () => {
     const yaw = (l, r) => {

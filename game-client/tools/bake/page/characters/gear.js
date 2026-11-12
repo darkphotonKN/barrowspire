@@ -234,11 +234,14 @@ export function longbow(rig, M, F) {
   return { group: g, update };
 }
 
-/** A quiver of arrows riding the back, its mouth over the right shoulder. */
-export function quiver(rig, M, F) {
+/**
+ * A quiver of arrows riding the back, its mouth over the right shoulder, placed by `o`
+ * (classStyles.js ARCHER_QUIVER: `tilt` degrees off the spine, `at`, `rx`).
+ */
+export function quiver(rig, M, F, o) {
   const H = rig.H;
   const [, cy] = J(rig, "chest");
-  const g = mount(rig, "chest", [-0.03, cy + 0.03, -0.1 * rig.p.torsoD], { rz: 0.5, rx: -0.12 });
+  const g = mount(rig, "chest", [o.at[0], cy + o.at[1], o.at[2] * rig.p.torsoD], { rz: (o.tilt * Math.PI) / 180, rx: o.rx });
   const body = new THREE.CylinderGeometry(0.032 * H, 0.026 * H, 0.26 * H, 12, 1, true);
   g.add(new THREE.Mesh(body, F.leatherDouble));
   g.add(placed(new THREE.TorusGeometry(0.032 * H, 0.005 * H, 5, 14), M.brass, 0, 0.13 * H, 0, Math.PI / 2));

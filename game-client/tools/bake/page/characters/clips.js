@@ -50,12 +50,15 @@ export const RUN_WALK_ATTACK_CYCLES = 0.75;
 export const BACKPEDAL_ATTACK_CYCLES = 0.75;
 
 /**
- * The cloth's drag while `backpedal_attack` steps back (simulateSprings, rig heights per second,
- * in walks): backward, and held to half a walk. At the legs' full pace the drag swings a cloak
- * forward through the legs, while a cloak on a back that moves backward presses against it and
- * hangs.
+ * How `backpedal_attack` carries its cloth (simulateSprings, rig heights per second, in walks):
+ * out behind, as half a walk would. The body steps back, but each heel stepping back under the hem
+ * kicks the cloth out ahead of it (owner 2026-11-12: "騎士後退攻擊 腳會穿過斗篷", "弓箭手後退攻擊
+ * 腳跟處也會穿過斗篷"): dragged backward at half a walk (-0.5), the cloth pressed forward against the
+ * legs and the heels came out through the knight's cloak by 18.8 px and the archer's by 10.5
+ * (clearance.js `cloakClearance`); carried out from +0.3 neither does. Half a walk hangs it as a
+ * slow walk does, heavy, never flung.
  */
-export const BACKPEDAL_ATTACK_SPEED = -0.5;
+export const BACKPEDAL_ATTACK_SPEED = 0.5;
 
 /**
  * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
@@ -328,14 +331,17 @@ function steadyNeck(...chain) {
  * arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm near
  * straight and its swing short so the bow hangs along the side. `style.run.wrist` (per arm, 0 by
  * default) is how much of the arm's pump the wrist takes back, so a weapon in that hand turns less
- * than the forearm through the swing (1 would hold its angle to the chest). `style.run.hold`, when
+ * than the forearm through the swing (1 would hold its angle to the chest). `style.run.cross` (per
+ * arm, rad, 0 by default) turns the upper arm in about its length toward the front of the pump and
+ * back out behind, so with the elbow bent the hand crosses in toward the midline, a runner's arm
+ * swinging across the body (FS-JS7C8 R2, owner 2026-11-12: "武器可以往內側擺動一些"). `style.run.hold`, when
  * a class gives one, carries the weapon in the run in place of `style.hold` (the idle's carry
  * hangs the arm at the side, which the pump would add to: a sword or sceptre arm then pumps from
  * the shoulder like a free arm, its wrist setting the weapon's angle). `style.runExtra(i)` adds a
  * class's own.
  */
 export function runCycle(style) {
-  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], wrist: [0, 0], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
+  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], wrist: [0, 0], cross: [0, 0], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
   const half = [0, 1, 2, 3].map((i) => {
     const c = swing(i);
     const hipsY = 0.12 * c * r.twist;
@@ -366,11 +372,13 @@ export function runCycle(style) {
     const c = swing(i);
     const pumpR = (RUN_ARM + 0.1) * c * r.arms[1];
     const pumpL = -(RUN_ARM + 0.1) * c * r.arms[0];
+    // how far forward each arm has swung: 1 at the front of its pump, 0 at the back
+    const [frontL, frontR] = [(1 + c) / 2, (1 - c) / 2];
     return pose({
-      upperArmR: [RUN_ARM * c * r.arms[1], 0, 0],
+      upperArmR: [RUN_ARM * c * r.arms[1], r.cross[1] * frontR, 0],
       foreArmR: [RUN_ELBOW * r.elbow[1] + 0.1 * c * r.arms[1], 0, 0],
       handR: [-pumpR * r.wrist[1], 0, 0],
-      upperArmL: [-RUN_ARM * c * r.arms[0], 0, 0],
+      upperArmL: [-RUN_ARM * c * r.arms[0], -r.cross[0] * frontL, 0],
       foreArmL: [RUN_ELBOW * r.elbow[0] - 0.1 * c * r.arms[0], 0, 0],
       handL: [-pumpL * r.wrist[0], 0, 0],
     });

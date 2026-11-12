@@ -475,10 +475,11 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     const wa = RUNNING_CLASS_ANIMATIONS.walk_attack;
     expect(wa.cycles).toBe(0.75);
     expect(wa.frames / wa.fps).toBeCloseTo(attack.frames / attack.fps, 9);
-    // the backward step at walk_attack's cycles (R10); its cloth dragged backward, never flung
+    // the backward step at walk_attack's cycles (R10); its cloth carried out behind the stepping
+    // heels as by half a walk, never pressed back into them (owner 2026-11-12: "騎士後退攻擊 腳會穿過斗篷")
     expect(BACKPEDAL_ATTACK_CYCLES).toBe(RUN_WALK_ATTACK_CYCLES);
-    expect(BACKPEDAL_ATTACK_SPEED).toBe(-0.5);
-    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75, speed: -0.5 });
+    expect(BACKPEDAL_ATTACK_SPEED).toBe(0.5);
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75, speed: 0.5 });
     // whole keys of the walk: 6 of its 8, a step and a half
     expect(wa.cycles * 8).toBe(6);
     expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack.cycles * 8).toBe(6);

@@ -323,6 +323,77 @@ export function legClearance(rig, poses) {
 }
 
 /**
+ * The rig's cloaks (meshes anatomy.js `cloak` tags) and what hangs under them, the legs and the
+ * boots (leg meshes, and any rigid mesh riding a shin or a foot), or null when it has no cloak:
+ * `measure()` gives, for the current pose, each leg and boot vertex's distance out through a cloak
+ * ({@link throughCloth} against the cloak's rings, along the level ray from the pelvis), or null
+ * where no cloak hangs round it. A cloak is open at the front, so a leg ahead of it meets none.
+ */
+export function legsInCloaks(rig) {
+  const cloaks = [];
+  const lower = [];
+  const boneOf = (o) => {
+    for (let p = o.parent; p; p = p.parent) if (p.isBone) return p.name;
+    return "";
+  };
+  rig.root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.isSkinnedMesh && o.userData.cloak) cloaks.push(o);
+    else if (o.isSkinnedMesh && o.userData.leg) lower.push(o);
+    else if (!o.isSkinnedMesh && /^(shin|foot|metatarsal)[LR]$/.test(boneOf(o))) lower.push(o);
+  });
+  if (!cloaks.length || !lower.length) return null;
+  const at = (m, i, v) => (m.isSkinnedMesh ? m.getVertexPosition(i, v) : v.fromBufferAttribute(m.geometry.attributes.position, i)).applyMatrix4(m.matrixWorld);
+  return {
+    measure() {
+      rig.root.updateMatrixWorld(true);
+      const covers = cloaks.map((m) => {
+        const { rows, cols } = m.geometry.userData.tube;
+        return { rings: Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, j) => at(m, r * cols + j, new THREE.Vector3()))) };
+      });
+      const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
+      const out = [];
+      const v = new THREE.Vector3();
+      for (const m of lower) for (let i = 0; i < m.geometry.attributes.position.count; i++) out.push(throughCloth(covers, axis, at(m, i, v)));
+      return out;
+    },
+  };
+}
+
+/**
+ * Runs every baked pose of a sheet (as {@link legClearance}) and returns, per clip, the furthest
+ * any leg or boot lies out through a cloak (1x px, model space) and the frame where it does; null
+ * when the rig has no cloak. A death is not held to it ({@link UNGUARDED}).
+ */
+export function cloakClearance(rig, poses) {
+  const fit = legsInCloaks(rig);
+  if (!fit) return null;
+  const clips = {};
+  for (const p of poses) {
+    if (UNGUARDED.some((a) => p.anim === a || p.anim.startsWith(`${a}_`))) continue;
+    p.apply();
+    const px = worstOutside(fit.measure());
+    const c = (clips[p.anim] ??= { px: 0, frame: 0 });
+    if (px > c.px) Object.assign(c, { px, frame: p.i });
+  }
+  return clips;
+}
+
+/**
+ * The cloak guard's verdict for a sheet: an error naming each clip that shows a leg or a boot out
+ * through its cloak by more than CLEARANCE_PX baked px ({@link clearanceLimit}), or null.
+ */
+export function cloakClearanceError(name, clips, { scale = 1, limit = clearanceLimit(scale) } = {}) {
+  const bad = Object.entries(clips ?? {}).filter(([, c]) => c.px > limit);
+  if (!bad.length) return null;
+  return (
+    `bake: ${name}: a leg or boot shows through the cloak, more than ${+limit.toFixed(3)} px outside it ` +
+    `(1x px; ${CLEARANCE_PX} baked px at ${scale}x) (characters/clearance.js): ` +
+    bad.map(([anim, c]) => `${anim} frame ${c.frame} by ${c.px.toFixed(2)} px`).join(", ")
+  );
+}
+
+/**
  * The guard's verdict for a sheet: an error naming each clip that shows a leg through, or null.
  * The limit is CLEARANCE_PX baked px for a sheet baked at `scale` ({@link clearanceLimit}). A
  * sheet on `known` (KNOWN_CLIPPING) passes while it clips up to its ceiling and fails once it

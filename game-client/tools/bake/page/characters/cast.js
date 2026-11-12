@@ -61,6 +61,9 @@ import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { barrowThrall, fadingEyes, ghost, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 import {
+  ARCHER_BUILD,
+  ARCHER_QUIVER,
+  ARCHER_STYLE,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
   KNIGHT_STYLE,
@@ -114,9 +117,9 @@ export function knight() {
 export function archer() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.96, { shoulderW: 1.0, torsoW: 0.98 });
+  const rig = createRig(...ARCHER_BUILD);
   rig.hooks = [];
-  cloakBones(rig, { length: 0.56, drag: 0.36 });
+  cloakBones(rig, { length: 0.56, drag: 0.36, strap: ARCHER_QUIVER.strap });
   skirtBones(rig, { stiffness: 55 });
   const [, hy] = J(rig, "hips");
   const [, fy] = J(rig, "foreArmL");
@@ -137,26 +140,10 @@ export function archer() {
   skirt(rig, F.buff, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 });
   belt(rig, F.leatherDark, M.brass, { pouch: true });
   cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
-  quiver(rig, M, F);
+  quiver(rig, M, F, ARCHER_QUIVER);
   bowInHand(rig, M, F);
 
-  const style = {
-    attack: "shot",
-    speed: 1.05,
-    hold: pose({
-      upperArmL: [0.02, 0, 0.04],
-      foreArmL: [-0.3, 0, 0],
-      handL: [-0.9, 0, 0],
-      foreArmR: [-0.1, 0, 0],
-    }),
-    walk: { arms: [0.7, 1], lean: 0.06 },
-    // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
-    // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-    // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle).
-    // In absolute terms the jog's (a 0.25 rad swing, a 0.34 rad elbow) under the fast run's
-    // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps
-    run: { arms: [0.3, 1], elbow: [0.215, 1] },
-  };
+  const style = ARCHER_STYLE;
   return { rig, style };
 }
 
@@ -226,13 +213,14 @@ export function wizard() {
   // the gown's rig (FS-HF0WW § Change: The guard measures a leg through the cloth; the owner,
   // 2026-11-12: "法師跑步會輕微破圖 膝蓋處會凸出衣服"): the thigh carries the cloth over the knee it
   // bends, handing it to the panels from 0.05 H under the knee, so the run's leading knee stays in
-  const robe = { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02, kneeCover: 0.05 };
+  // 64 columns, so the scapular's 10 lie on them one for one (anatomy.js `overSkirt`)
+  const robe = { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 64, trail: 0.02, kneeCover: 0.05 };
   skirt(rig, F.robe, robe);
   for (const arc of panels) {
     overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012, waist });
     // cut on the gown's rig, so it moves with it and the black gown never comes out through it
     // (the owner, 2026-11-12: "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉")
-    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, segs: 16, over: robe });
+    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, over: robe });
   }
   bust(rig, F.scapular);
   hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });

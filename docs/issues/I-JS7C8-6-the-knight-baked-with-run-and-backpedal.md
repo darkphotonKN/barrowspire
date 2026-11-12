@@ -105,3 +105,13 @@ Only the knight's page and the manifest changed in its bake commit; every other 
 −1.1 % RGBA against the 1.5x bake before (44.89 MB); crown 80 (was 83: the old carry's raised blade no longer over his head).
 
 The contact sheets (idle, walk, run with the old, held and new keys side by side, attack, walk_attack and backpedal_attack old beside new, 8 facings) and an animated preview are in the session scratchpad `carry-final/knight/`.
+
+## Re-built (2026-11-12, agent): the blade about level and swung in, the cloak off his legs; waiting on the owner's contact sheet
+
+Re-baked once (FS-JS7C8 R2, R10; FS-HF0WW § Change: The guard measures a leg through the cloth R29-R30; owner 2026-11-12: "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些", "騎士後退攻擊 腳會穿過斗篷"): in the run the blade 5° below to 12° above level (was 11-34° below), its point ahead of the hand and under the head; at the front of the pump the sword hand comes 0.07 H in toward the midline (was 0.026), the blade 19° across the body, clear of the shield. `backpedal_attack` carries the cloak out behind (+0.5 walks): his calves and boots were 18.8 px through it (653 vertex-facings in view); his standing attack carries it the same way (`KNIGHT_ATTACK_CLOTH`): 7.6 px on its last key before. The bake now guards the classes' cloaks; every clip reads 0 but the walk (0.21 px, under the limit). Only the knight's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| knight sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 3108 × 3648 | 45.35 MB | 7,363,119 | 512 | 276 × 228 |
+
++2.2 % RGBA against the bake before (44.39 MB); crown 80 as before. Old beside new (run, attack, backpedal_attack, 8 facings), an animated preview and the heel and cloak at 4× (backpedal_attack and attack, back and side facings) are in the session scratchpad `wizard-run-staff/knight/`.

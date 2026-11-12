@@ -153,3 +153,13 @@ once, with I-JS7C8-13's fast run:
 −7.7 % RGBA against main (R39 estimated +47 % at 2x), −51.0 % against this slice's 2x bake. One
 page, so the resident-page tests (`sceneArt.test.ts`, `evict.test.ts`, the scene art-loading
 tests: the 33 failures) pass again. All atlases 771.00 → 727.80 MB.
+
+## Re-built (2026-11-12, agent): the cloak off her heels, the quiver over her cloak; waiting on the owner's contact sheet
+
+Re-baked once (FS-JS7C8 R10; FS-HF0WW § Change: The guard measures a leg through the cloth R29, R30, R32; owner 2026-11-12: "弓箭手後退攻擊 腳跟處也會穿過斗篷", "弓箭手背後的箭袋 底部會吃進斗篷裏 可以擺正一點", "目前我知道跑步跟平常站立時都會吃進斗篷"): `backpedal_attack` carries her cloak out behind (+0.5 walks), her heels no longer through it (10.5 px before, 268 vertex-facings in view). The quiver hangs 17° off the spine (`QUIVER_TILT`, was 29), seated further out, its foot tipped out, the cloak's top held by its strap: no point of the case is inside the cloak on any frame of any clip (its foot was 5.5 px inside in the idle and 21.1 in the run, hidden in the back and side facings; 10.2 the walk, 17.8 the death), the fletching over the right shoulder. Her run, walk and attack are otherwise as baked. Only the archer's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| archer sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 2532 × 4060 | 41.12 MB | 5,791,984 | 512 | 252 × 225 |
+
+−0.9 % RGBA against the bake before (41.50 MB); crown 78 as before. Old beside new (run, idle, walk, backpedal_attack, 8 facings), an animated preview, the heel and cloak in backpedal_attack at 4× and the quiver in the idle and the run at 4× are in the session scratchpad `wizard-run-staff/archer/`.

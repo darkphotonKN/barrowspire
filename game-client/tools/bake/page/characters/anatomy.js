@@ -597,8 +597,14 @@ export const OVER_CLEAR = 0.002;
 /**
  * A panel worn over another `skirt` (`o.over`, that garment's options: the mage's scapular over her
  * gown): cut on the garment beneath's own rig, so the two move as one cloth and the one beneath
- * never shows through it, however far a stride or a run's drag swings them. Its rings are the
- * garment beneath's, ring for ring (the same heights, centres and trail), each `rTop - over.rTop`
+ * never shows through it, however far a stride or a run's drag swings them. Its columns are the
+ * garment beneath's, column for column: its arc is snapped to that garment's columns (`over.segs`
+ * round the full turn) and cut one column per column, so each face lies over the face beneath it
+ * (`segs` cuts it across its own arc instead, the cut before 2026-11-12).
+ * Cut finer or across its own angles, the panel's vertices followed the skin's turn from one thigh
+ * to the other behind the knee while the coarser face beneath cut straight across it, and the
+ * panel dipped under the gown in the run (owner 2026-11-12: "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點").
+ * Its rings are the garment beneath's, ring for ring (the same heights, centres and trail), each `rTop - over.rTop`
  * out from it at the top easing to `rBottom - over.rBottom` at the hem, and OVER_CLEAR more; its skin weights are the
  * garment beneath's at the same ring. Two layers skinned apart (each its own `legFollow` and panel
  * weight) and cut on rings at other heights part under a stride: the one that follows the legs
@@ -619,10 +625,14 @@ function overSkirt(rig, mat, o) {
   const lift = o.bottom - u.bottom;
   const under = skirtWeights(rig, u);
   if (u.panels && (u.panelWeight ?? 0.5) > 0) pushPanels(rig, o.bottom);
+  // the garment beneath's columns (rig.js tubeGeometry: a closed tube's column j at 2πj/segs)
+  // (`o.segs` cuts it across its own arc instead, as before 2026-11-12)
+  const step = (Math.PI * 2) / (u.segs ?? 28);
+  const arc = o.segs ? o.arc : o.arc.map((a) => Math.round(a / step) * step);
   const mesh = skinTube(rig, cps, mat, {
-    segs: o.segs ?? 28,
+    segs: o.segs ?? Math.round((arc[1] - arc[0]) / step),
     steps: 4,
-    arc: o.arc,
+    arc,
     weight: under,
     drop: (t) => (t >= 1 ? -lift : 0),
     caps: false,
@@ -682,7 +692,10 @@ function skirtWeights(rig, o) {
 
 /**
  * Adds a cloak's bone chain (cloak0..cloak3) down the back, each a spring. Call before any
- * skinned mesh is built.
+ * skinned mesh is built. `strap` (per bone from the top, 1 free) holds the cloak's top to the back
+ * under something strapped over it (the archer's quiver): that bone's drag and fling scale by it,
+ * its stiffness by its inverse (at most 5x), so the cloth under the strap stays on the back and
+ * the rest swings from there.
  */
 export function cloakBones(rig, o = {}) {
   const [, ny] = J(rig, "neck");
@@ -692,17 +705,19 @@ export function cloakBones(rig, o = {}) {
   rig.addBone("cloak0", "chest", 0, ny - 0.02 - cy, -back);
   const seg = len / 4;
   for (let i = 1; i <= 3; i++) rig.addBone(`cloak${i}`, `cloak${i - 1}`, 0, -seg, -0.004);
-  for (let i = 0; i <= 3; i++)
+  for (let i = 0; i <= 3; i++) {
+    const held = o.strap?.[i] ?? 1;
     spring(rig, `cloak${i}`, {
-      stiffness: 70 - i * 12,
+      stiffness: (70 - i * 12) / Math.max(held, 0.2),
       damping: 8,
-      drag: (o.drag ?? 0.32) * (0.5 + i * 0.35),
-      inertia: 0.8 + i * 0.25,
+      drag: (o.drag ?? 0.32) * (0.5 + i * 0.35) * held,
+      inertia: (0.8 + i * 0.25) * held,
       limit: 1.0,
       gravity: i === 0 ? 0.25 : 0.85,
       drape: -0.3,
       axes: "xz",
     });
+  }
 }
 
 /** The cloak sheet: an open tube behind the shoulders, weighted down the cloak chain. */
@@ -744,7 +759,10 @@ export function cloak(rig, mat, o = {}) {
         return ((t - 0.75) / 0.25) * o.ragged.depth * (0.2 + hash2(j, 7, o.ragged.seed ?? 2));
       }
     : undefined;
-  return skinTube(rig, cps, mat, { segs: 22, steps: 4, arc, caps: false, drop, uv: 4, ground: false });
+  const mesh = skinTube(rig, cps, mat, { segs: 22, steps: 4, arc, caps: false, drop, uv: 4, ground: false });
+  // a cloak no leg or boot may come out through (clearance.js `cloakClearance`)
+  mesh.userData.cloak = true;
+  return mesh;
 }
 
 /** A hood with an open face, a short capelet over the shoulders, and a tail down the back. */
