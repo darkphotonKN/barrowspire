@@ -1,6 +1,6 @@
 ---
 id: I-29KSH-10
-status: in-progress
+status: done
 implements: FS-29KSH
 blocked_by: []
 labels: [ready-for-agent]
@@ -41,3 +41,9 @@ order. ADR-0079.
   run; `SocketManager.test.ts` reads every outgoing message off the wire.
 - GREEN: the hub stamps the player on the routed package; the session reads it; `encode` stops
   merging the member id.
+
+**Built 2026-11-12** on `fix/server-owned-player-id`: game-service `go test ./...`, `go vet` and
+`golangci-lint --new-from-rev` on the touched packages green; the new acting-player tests green
+three times over and under `-race`; the whole client vitest (7200), `npx tsc --noEmit -p .` and
+`npm run lint` green. Not merged or deployed; deploy game-service first. The live two-browser
+check is the owner's.
