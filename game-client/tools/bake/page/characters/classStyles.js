@@ -20,11 +20,13 @@ import { RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose } from "./clips
  * ({@link WALK_WRIST}), so the sceptre sways a little with the step instead of swinging upright.
  *
  * In the run (then "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些"
- * and, of the sceptre, "只是要合理的位置 但跑步時為什麼手會擺到肩膀") the knight's and the mercenary's
- * sword arm pumps about the chest like a free arm (RUN_ARM, RUN_ELBOW). The wrist holds a blade
- * forward along the forearm, about level ({@link RUN_BLADE}, {@link MERC_RUN_BLADE}), taking back
- * most of the arm's pump ({@link RUN_WRIST}): the point ahead of the hand and under the head, 5–8°
- * below level to 10–12° above it ({@link RUN_BLADE_ELEV}), lowest as the arm swings back. At the front of the pump the
+ * and, of the sceptre, "只是要合理的位置 但跑步時為什麼手會擺到肩膀", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度")
+ * the knight's and the mercenary's sword arm pumps about the chest like a free arm (RUN_ARM,
+ * RUN_ELBOW). The wrist holds a blade forward along the forearm, a little above level
+ * ({@link RUN_BLADE}, {@link MERC_RUN_BLADE}), taking back most of the arm's pump
+ * ({@link RUN_WRIST}): the point ahead of the hand and never over the crown, the knight's 9–26°
+ * above level, the mercenary's 7–24° ({@link RUN_BLADE_ELEV}; each raised about 15° from 5–8° below
+ * to 10–12° above), lowest as the arm swings back. At the front of the pump the
  * upper arm turns in ({@link RUN_CROSS}, clips.js `run.cross`), so the hand crosses in toward the
  * midline before the torso, about 0.07 H ({@link RUN_CROSS_REACH}), the blade angled about 19°
  * across the body, and goes back out to the side behind.
@@ -45,12 +47,12 @@ const REST_BLADE = [0.95, 0, 0];
 export const SCEPTRE_TILT = 40;
 const REST_SCEPTRE = [-0.68, -0.25, 0];
 const WALK_WRIST = [0, 0.7];
-const RUN_BLADE = [1.2, 0, 0];
+const RUN_BLADE = [0.95, 0, 0];
 /** The mercenary's: his curved blade's point rises about 6° off its line, so his wrist sets it a little lower. */
-const MERC_RUN_BLADE = [1.35, 0, 0];
+const MERC_RUN_BLADE = [1.1, 0, 0];
 const RUN_WRIST = [0, 0.85];
-/** The band a blade keeps in the run, degrees from level (+ up): about level, never back up to the old upright carry. */
-export const RUN_BLADE_ELEV = [-10, 20];
+/** The band a blade keeps in the run, degrees from level (+ up): a little above level, never back up to the old upright carry (was −10 to 20). */
+export const RUN_BLADE_ELEV = [5, 35];
 /** The weapon arm's turn in at the front of the run's pump (rad, the upper arm's twist; 0 at the back of the pump). */
 const RUN_CROSS = 0.3;
 /** How far in toward the midline the weapon hand comes at the front of the pump against the back (H). */
