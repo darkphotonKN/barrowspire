@@ -275,7 +275,7 @@ lit) while the player stands inside.
   arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
   past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
   head steady and looking ahead; a weapon in a pumping hand is held in a normal grip, a blade
-  forward along the forearm a little above level, its point ahead of the hand and never over the head, a
+  forward along the forearm raised above level, its point ahead of the hand, never through or behind the head, a
   sceptre reasonably upright from a hand that pumps only to the lower chest, 15-40° off vertical;
   at the front of the pump the weapon hand swings in across the front of the torso, a blade a
   little across the body, as a runner's arm crosses), played turned to the way the character
