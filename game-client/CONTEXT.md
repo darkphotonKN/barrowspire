@@ -406,9 +406,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   map while it is up.
 - **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
   can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
-  Spire gate), a teleport mark (a gate to another area), the stash chest, a bag (the
-  Quartermaster) and a scroll (the Elder); in a field the teleport mark of its road home. Never a
-  label, a monster or another player. Once FS-P0HSP ships the town and every field have a minimap.
+  Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the
+  Quartermaster), never the Elder, who only tells a story; in a field the teleport mark of its
+  road home. Never a label, a monster or another player. Once FS-P0HSP ships the town and every field have a minimap.
 - **Charted ground** (FS-P0HSP): the part of a field the character has walked near, which that
   field's minimap shows; the rest is **uncharted** and shown as nothing. Charting is the field's
   minimap fog: on the minimap only, never on the screen, the character's own (not the party's),

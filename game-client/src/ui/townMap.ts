@@ -21,23 +21,31 @@ export interface TownState {
   npcs?: readonly Pick<NPCState, "function" | "position">[];
 }
 
-/** A function NPC's glyph (§C.14): the Quartermaster's bag, the Elder's scroll, a lozenge for any other. */
-const NPC_MARK: Record<string, MapMarkKind> = { storekeeper: "bag", storyteller: "scroll" };
+/**
+ * A function NPC's glyph (§C.14): the Quartermaster's bag; none for the Elder, who only tells a
+ * story (Nick, 2026-11-12: "只是講故事的 NPC 不需要在地圖上標"); a lozenge for any other.
+ */
+const NPC_MARK = new Map<string, MapMarkKind | null>([
+  ["storekeeper", "bag"],
+  ["storyteller", null],
+]);
 
 /**
  * The town's marks (§C.14, §C.15), in {@link WORLD_MARKS}' order: a tower at the Spire's gate, a
  * teleport mark at every other gate given (the build's own, `gatesInThisBuild`), a chest at the
- * stash chest, and each function NPC's glyph where they stand. An ambient resident, a building,
- * the mailbox, the market and the dressing are not marked.
+ * stash chest, and each function NPC's glyph where they stand. An ambient resident, the Elder, a
+ * building, the mailbox, the market and the dressing are not marked.
  */
 function townMarks(town: TownState): MinimapMark[] {
   const at = (p: { x: number; y: number }) => ({ x: p.x, y: p.y });
   const marks: MinimapMark[] = [
     ...(town.gates ?? []).map((g) => ({ kind: g.destination === "spire" ? ("tower" as const) : ("teleport" as const), at: at(g.position) })),
     { kind: "chest", at: at(HUB_STASH_CHEST.at) },
-    ...(town.npcs ?? [])
-      .filter((n) => n.function !== "")
-      .map((n) => ({ kind: NPC_MARK[n.function] ?? ("lozenge" as const), at: at(n.position) })),
+    ...(town.npcs ?? []).flatMap((n) => {
+      if (n.function === "") return [];
+      const kind = NPC_MARK.has(n.function) ? NPC_MARK.get(n.function) : "lozenge";
+      return kind ? [{ kind, at: at(n.position) }] : [];
+    }),
   ];
   const order = (k: MapMarkKind) => (WORLD_MARKS as readonly string[]).indexOf(k);
   return marks.map((m, i) => ({ m, i })).sort((a, b) => order(a.m.kind) - order(b.m.kind) || a.i - b.i).map(({ m }) => m);

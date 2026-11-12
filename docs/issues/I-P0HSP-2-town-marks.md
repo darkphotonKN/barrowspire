@@ -60,3 +60,7 @@ build's gates (`gatesInThisBuild`), the function NPCs and `HUB_STASH_CHEST`, in 
 The side-by-side seating (`spreadSeats`, `WorldMinimap` only) landed with slice 1's view split;
 its tests here were seen red with it switched off. The chest's art has a blank top row, so its ring
 is 9 × 8 inside its 9 × 9 box: the owner's look (I-P0HSP-6) judges it.
+
+Amended 2026-11-12 (review round 1): the Elder's scroll withdrawn by the owner ("只是講故事的 NPC
+不需要在地圖上標"); a storyteller maps to no mark, not the lozenge, and the scroll glyph is gone. The
+town now has five glyphs (FS-P0HSP §C.14, §C.17 as edited).

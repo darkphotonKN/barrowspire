@@ -208,10 +208,11 @@ export interface MinimapFixture {
 /**
  * A map mark's glyph (CONTEXT.md "Map mark"): the run's three fixtures, and the town's and the
  * fields' (FS-P0HSP §C.14): a tower for the Spire's gate, a teleport mark for a gate to another
- * area, a chest for the stash, a bag for the Quartermaster, a scroll for the Elder and a lozenge
- * for any other function NPC, in that order where marks stand side by side (§C.19).
+ * area, a chest for the stash, a bag for the Quartermaster and a lozenge for any other function
+ * NPC but the Elder, who only tells a story and is not marked; in that order where marks stand
+ * side by side (§C.19).
  */
-export const WORLD_MARKS = ["tower", "teleport", "chest", "bag", "scroll", "lozenge"] as const;
+export const WORLD_MARKS = ["tower", "teleport", "chest", "bag", "lozenge"] as const;
 export type MapMarkKind = MinimapFixture["kind"] | (typeof WORLD_MARKS)[number];
 
 /** A map mark: its glyph and where it stands, world px. */
@@ -443,8 +444,6 @@ const GLYPH_ART: Record<MapMarkKind, readonly string[]> = {
   chest: [".......", ".#####.", "#######", "#ooooo#", "###o###", "#######", "#######"],
   // a sack tied at its neck
   bag: ["..#.#..", "...#...", "..###..", ".#####.", "#######", "#######", ".#####."],
-  // a scroll rolled at both ends, lines written on it
-  scroll: ["#######", ".#ooo#.", ".#####.", ".#ooo#.", ".#####.", ".#ooo#.", "#######"],
   // FS-MRZH7's sigil shape
   lozenge: ["...#...", "..###..", ".#####.", "#######", ".#####.", "..###..", "...#..."],
 };
