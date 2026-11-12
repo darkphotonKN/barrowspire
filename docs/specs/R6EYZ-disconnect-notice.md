@@ -10,6 +10,14 @@ reconnect). Decisions are marked **[charter]** (the owner's approved charter), *
 by what the code does, read on main 321d2b23), or **[fix in client]** (the charter's "if the
 menu's flow cannot reconnect cleanly, fix that within the client").
 
+Amended in place 2026-11-12 (still a work-order): the notice wears the shared window frame and
+title every other window wears, the owner's "menu跟道具欄跟角色欄的ui調整成跟party一樣外框" (the
+menu, inventory and character panels take the party panel's frame), "每個ui視窗的標題都不同位置
+都統一放在中間的樣式好了 大小顏色也一樣" (every window's title sits somewhere different; put them all
+in one centred style, one size and colour) and "全大寫也統一" (all capitals too). The notice was
+built before the shared `panelFrame` and `drawPanelTitle` existed; R8 and R9 now say it draws
+through them (FS-3EBCA R20–R24, its title style), with no × (R13: its button is its one way out).
+
 **Lane.** game-client only (the agent lane). No server, proto, gateway or manifest change.
 
 **Words.** A **lost connection** and the **disconnect notice** are in game-client `CONTEXT.md`.
@@ -61,15 +69,23 @@ any visit. While the server cannot be reached the menu says so and offers a reco
    never after the player left /game: the watch on the socket is bound to the game and let go with
    it. **[charter]**
 7. **One at a time.** A lost connection while the notice is up raises nothing more. **[charter]**
-8. **What it says.** Title **"Disconnected"**, one line **"The connection to the server was
-   lost."**, one button **"Return to menu"**. **[charter]**
+8. **What it says.** Title **"Disconnected"** (shown **DISCONNECTED**: every window's title is in
+   capitals, R9), one line **"The connection to the server was lost."**, one button **"Return to
+   menu"**. **[charter; owner 2026-11-12: "全大寫也統一"]**
 9. **How it looks** (design guideline "Panels in the world"; game palette, tokens only). The
-   carved panel (`carvedPanel`: dark vellum on carved stone, brass rule and studs), centred in the
-   view, about 380 × 170. The title in `hudText` at 18 px and the line in `hudLabel` at 14 px, both
-   the body serif, centred. The button brass-outlined (`frame`) with its label in the
+   shared window frame every panel over the world wears (`panelFrame`'s `drawPanelFrame`: the
+   carved ground, dark vellum on carved stone, brass rule and studs), centred in the view, about
+   380 × 170, drawn **without its ×** (`drawPanelFrame(…, { close: false })`; R13: the button is
+   its one way out; every other window, untold, keeps its ×). The title through the shared title
+   drawing (`drawPanelTitle`, FS-3EBCA R20, R21): in capitals, centred across the panel, 14 px
+   below its top, 14 px `frameBright` in the body serif, letter-spacing 4. The line in `hudLabel` at
+   14 px, the body serif, centred, under the title band (`PANEL_TITLE_BAND`), where it already
+   stood: neither it nor the button moves (FS-3EBCA R24). The button brass-outlined (`frame`) with its label in the
    interactable amber (`interactable`), its outline brightening (`frameBright`) under the pointer,
    with the hand cursor. Behind the panel, the whole view dimmed with `inkDeep` at 0.6. Laid out
-   again, still centred, when the logical view changes (FS-ZAJMH R13). **[charter]**
+   again, still centred, when the logical view changes (FS-ZAJMH R13). **[charter; owner
+   2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框", "每個ui視窗的標題都不同位置
+   都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"]**
 10. **The world takes no input.** While the notice is up every world scene that is running is
     paused: no keys, clicks or wheel reach it and it does not update, though it is still drawn
     under the dim. A world scene that comes up while the notice is up is paused as it comes. The
@@ -147,7 +163,8 @@ any visit. While the server cannot be reached the menu says so and offers a reco
 - [ ] A lost connection with a world scene starting or running raises the notice; with only the menu, character creation, boot or preload up, it does not.
 - [ ] A second lost connection while the notice is up raises no second one.
 - [ ] After the game's watch is let go (leaving /game), a lost connection raises nothing.
-- [ ] The notice shows "Disconnected", "The connection to the server was lost." and "Return to menu", centred in the view at 1080 and 1280 wide, laid out again on a view change.
+- [ ] The notice shows "DISCONNECTED", "The connection to the server was lost." and "Return to menu", centred in the view at 1080 and 1280 wide, laid out again on a view change.
+- [ ] The notice draws its frame through `drawPanelFrame` told `{ close: false }` (no ×) and its title through `drawPanelTitle`; its line stands under the title band; every other window's frame still draws its ×.
 - [ ] While up: every running world scene is paused, one that comes up later is paused too; the DOM layer is hidden and a focused field blurred; the layer comes back when the notice goes.
 - [ ] Return to menu takes the notice down, stops every world scene and menu started, running or paused, starts the main menu, and closes no socket.
 - [ ] No key, outside click or timer takes the notice down.
