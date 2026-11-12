@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import { createRig, jointAt as J } from "./rig.js";
-import { UNDER_CLEAR, belt, legs, skirt, skirtBones, torso } from "./anatomy.js";
-import { applyPose, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS } from "./clips.js";
+import { UNDER_CLEAR, belt, boots, legs, sash, skirt, skirtBones, torso } from "./anatomy.js";
+import { applyPose, clipsFor, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS, RUNNING_CLASS_ANIMATIONS } from "./clips.js";
+import { KNIGHT_BUILD, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_STYLE } from "./classStyles.js";
 import {
   CLEARANCE_PX,
   KNOWN_CLIPPING,
@@ -297,5 +298,65 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
     // 3.5 1x px on this figure), from no more than a couple of px outside it
     expect(most * K1).toBeGreaterThan(1);
     expect(most * K1).toBeLessThan(UNDER_CLEAR * H * K1 + 2);
+  });
+});
+
+/**
+ * The three classes' long garments as cast.js cuts them (the knight's hauberk to the knee, open
+ * at the front; the wizard's robe to the ankle with its scapular panels and girdle; the
+ * mercenary's coat skirts to mid-thigh, split at the front), each on its class's rig and style
+ * (classStyles.js), posed through a sheet's clips with its springs as the bake page runs them
+ * (page/main.js `characterPoses`).
+ */
+function dressed(cls) {
+  const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
+  const [build, style] = { knight: [KNIGHT_BUILD, KNIGHT_STYLE], wizard: [WIZARD_BUILD, WIZARD_STYLE], mercenary: [MERCENARY_BUILD, MERCENARY_STYLE] }[cls];
+  const rig = createRig(...build);
+  rig.hooks = [];
+  skirtBones(rig, cls === "wizard" ? { stiffness: 38, drag: 0.28 } : { stiffness: 55 });
+  const [, hy] = J(rig, "hips");
+  const [, ky] = J(rig, "shinL");
+  if (cls === "knight") {
+    const hauberk = { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112] };
+    torso(rig, mat());
+    legs(rig, mat(), { under: hauberk });
+    boots(rig, mat(), { top: 0.1 });
+    skirt(rig, mat(), { ...hauberk, legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
+    belt(rig, mat(), mat(), { r: [0.106, 0.086], dy: 0.03 });
+  } else if (cls === "wizard") {
+    const gownCut = { top: hy - 0.005, bottom: 0.016, rTop: [0.108, 0.08], rBottom: [0.155, 0.138] };
+    torso(rig, mat(), { waist: 0.76, neckW: 0.85 });
+    legs(rig, mat(), { under: gownCut });
+    boots(rig, mat(), { top: 0.08 });
+    skirt(rig, mat(), { ...gownCut, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+    for (const arc of [[Math.PI / 2 - 0.5, Math.PI / 2 + 0.5], [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5]])
+      skirt(rig, mat(), { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+    belt(rig, mat(), mat(), { r: [0.056, 0.064], dy: 0.07, pouch: true });
+  } else {
+    const coat = { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112] };
+    torso(rig, mat());
+    legs(rig, mat(), { under: coat });
+    boots(rig, mat(), { top: 0.22 });
+    skirt(rig, mat(), { ...coat, legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
+    sash(rig, mat(), { side: "R", depth: 0.045 });
+  }
+  const clips = clipsFor(style, RUNNING_CLASS_ANIMATIONS);
+  const posesOf = (anim) => {
+    const spec = RUNNING_CLASS_ANIMATIONS[anim];
+    const frames = clips[anim];
+    const carried = spec.speed ?? (anim === "walk" || anim === "walk_attack" ? 1 : 0);
+    const springs = simulateSprings(rig, frames, { ...spec, speed: carried * (style.speed ?? 1), calm: anim.endsWith("attack") ? 0.25 : 1 });
+    return frames.map((p, i) => ({ anim, i, apply: () => (applyPose(rig, p, springs[i]), groundPose(rig)) }));
+  };
+  return { rig, posesOf };
+}
+
+describe("a leg is measured through the cloth where the cloth hangs (FS-HF0WW § Change: The guard measures a leg through the cloth)", () => {
+  it.each(["knight", "wizard", "mercenary"])("passes the %s's garment through the fast run, the walk and both attacks on the move at 1.5x", (cls) => {
+    const { rig, posesOf } = dressed(cls);
+    for (const anim of ["run", "walk", "walk_attack", "backpedal_attack"]) {
+      const clips = legClearance(rig, posesOf(anim));
+      expect(clips[anim]?.px ?? 0, `${cls} ${anim} frame ${clips[anim]?.frame}`).toBeLessThanOrEqual(clearanceLimit(1.5));
+    }
   });
 });

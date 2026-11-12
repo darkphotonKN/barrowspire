@@ -271,3 +271,56 @@ and at 2x on his Retina screen said: 「感覺可以」.
   are). The bust portrait reads the frame's own px and no scale.
 - **Suite.** The resident-page tests that failed with the archer on two pages (33) pass again;
   the whole client vitest, typecheck and lint pass; `npm run bake -- --check` reports no changes.
+
+## Change: The guard measures a leg through the cloth
+Status: work-order
+Date: 2026-11-12
+
+> Written `--from-thread` on 2026-11-12 during FS-JS7C8's class re-bakes (I-JS7C8-6..8). The
+> guard (§C R19) refused the shared fast run on the three long garments: the knight's hauberk
+> 13.02 px, the wizard's robe 6.27, the mercenary's coat 2.66 (limit 2/3 px at 1.5x). Told so, the
+> owner chose to change the garment rig ("改衣服的骨架", 2026-11-12) so the hems follow the legs.
+> Before changing it, each flagged leg vertex was checked a second way, along a level ray from the
+> pelvis out through it against the garment's triangles as they hang: of the run's flagged
+> vertices, almost all lie under cloth (the ray meets the cloth beyond them) or below the hem
+> (the ray meets no cloth: a kicked heel under a lifted hem, seen beneath it, not through it).
+> What truly crosses the cloth goes 0.41 px past it at most (the robe), 0.10 (the hauberk), none
+> (the coat), under the limit, with today's garments. The over-count is the guard's: it cuts each
+> band of rings square to the axis between their centres, and a hem tilted by a stride or a heel
+> reads a leg under it as out. So the fix is the measure, not the cloth: the garments keep their
+> rig, look and swing, which the owner's words were after ("no leg through it", the cloth still
+> hanging as cloth). Anchored here: §C owns the guard and R19 its measure.
+
+### Requirements
+
+22. The guard keeps its ring measure (R19) as the first pass. A leg vertex it puts outside the cloth
+    is measured again along the level ray from the pelvis's vertical axis out through the vertex,
+    against every cover's surface (its quads between consecutive rings) as posed:
+    - cloth beyond the vertex: it lies under the cloth (inside);
+    - cloth only between the axis and the vertex: it is through the cloth, by its distance past
+      the outermost crossing;
+    - no cloth on the ray: no cloth covers it (below the hem, in an opening), as R19's null.
+    The limit, the death's exemption, `KNOWN_CLIPPING` and `MIRRORED_LEGACY` are unchanged.
+23. No garment, rig or clip changes for this; the guard only gates, so no sheet's bytes move by it.
+
+### Acceptance Criteria
+
+- [ ] The knight's hauberk, the wizard's robe and the mercenary's coat, each on its class's rig and
+      style, pass the guard at 1.5x through `run`, `walk`, `walk_attack` and `backpedal_attack`
+      (seen red: 12.71, 6.27, 2.04 px on the run).
+- [ ] The existing guard tests still hold: a garment skinned to the opposite thigh fails, the
+      thighs wider than a tunic's top fail at rest, a belt is cover, a death is exempt.
+- [ ] A full bake passes with every `KNOWN_CLIPPING` sheet still past the limit and under its
+      ceiling; `npm run bake -- --check` reports no changes.
+
+### Edge States
+
+- **A heel under a lifted hem** is uncovered, not through: the owner judges it on the contact
+  sheet like any leg below a hem.
+- **A ray that grazes the cloth's edge** (the open front's split) may miss it; the vertex then
+  counts as uncovered, as an opening always has.
+
+### Out of Scope
+
+- Changing any garment's skinning or the skirt panels (the owner's "改衣服的骨架" is not needed
+  for the guard; reopened if the contact sheet shows a leg through the cloth).
