@@ -9,6 +9,10 @@
 >
 > **Edited in place on 2026-11-12 (owner change, still a work-order).** Requirement numbers are
 > kept: a requirement the change retires reads *Removed*, and the new ones are R45–R48.
+>
+> **Edited in place again on 2026-11-12 (the backward step's legs, still a work-order):** R8, R10,
+> R43 and their acceptance criteria now build `backpedal_attack`'s legs from `walk_attack`'s; see
+> *Owner change, 2026-11-12: the backward step from the forward walk*.
 
 ## Owner change, 2026-11-12
 
@@ -41,6 +45,23 @@ The owner's finding on the archer's bow draw the same day ("射出弓箭時人�
 拉弓讓手臂過度伸到背後", and the diagnosis "應該是左手拿弓的位置太靠近左側導致右手拉弓時伸到左手破圖")
 is a change to the archer's attack clip, which FS-2325V owns: see its
 `## Change: The archer's draw stays on the aim line`. This FS only bakes it with the archer (R48).
+
+## Owner change, 2026-11-12: the backward step from the forward walk
+
+Slice 12's first bake stepped `backpedal_attack` on legs re-keyed for the owner's earlier word the
+same day ("後退的動作感覺不太流暢 後退像是在走路沒有後退的感覺"): a crouched backward gait
+(`BACK_STEP`), the knees bent all round (at least 0.3 rad), the pelvis held below the walk's,
+toe-first landings behind the body and steps about half the walk's, at 1.25 cycles. After playing
+it, the owner said (2026-11-12):
+
+> "後退姿勢重做 攻擊時的往前走動很好 後退不用特別有微蹲的感覺 用往前的這個姿勢做後退"
+
+Redo the backward step. The forward walk while attacking (`walk_attack`) is very good. The
+backward step should not have the slight crouch; build it from that same forward posture.
+
+So `backpedal_attack`'s legs are `walk_attack`'s legs run backward in time (R8), at the same leg
+pace rule (R10). The crouched gait and its requirements (`BACK_STEP`; knees at least 0.3 rad all
+round; the pelvis below the walk's; steps shorter than the walk's; the 1.25 cycles) are retired.
 
 ## Summary
 
@@ -138,9 +159,15 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
    waist up over the backpedal's legs from the waist down, composed the way `walk_attack` is (the
    same layered blend, `layerPoses`): it lasts exactly as long as `attack` (14 frames at 24 fps,
    each attack key held two frames), plays once, is `boxed` like `walk_attack`, and is baked in the
-   8 directions with the class's sheet. The backpedal legs are an 8-frame cycle hand-keyed on the
-   shared rig: the feet stepping backward, toe first, a short flight (slice 5's
-   `backpedalCycle`). **(charter default)** No class sheet carries a standalone `backpedal` clip.
+   8 directions with the class's sheet. **(owner, 2026-11-12: "用往前的這個姿勢做後退")** The
+   backpedal legs are the class's walk leg cycle (`walkCycle`, the legs `walk_attack` steps)
+   run backward in time: key k of the backward cycle is walk key −k (mod 8), sampled the same
+   way, so the stance, the pelvis height and bob, the knee bend and the stride are the walk's,
+   with no crouch; only the direction of travel is reversed (the planted foot slides forward
+   under the body). Key 0 is the walk's key 0, so both clips open on the same leg pose and a swap
+   at the swing's start shows no jump. *Retired 2026-11-12: slice 5's hand-keyed cycle with a
+   short flight, and the crouched re-key that replaced it the same day (`BACK_STEP`).*
+   **(charter default)** No class sheet carries a standalone `backpedal` clip.
    Reason: with facing from movement (§D) a figure that is not attacking never moves away from its
    facing, so the clip would never play; dropping it saves its 64 frames per class.
 9. **(owner, 2026-11-12)** An attacking class figure that moves, whose sheet carries
@@ -148,14 +175,20 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
    swing is turned to: its aim, as `walk_attack` turns today) and its drawn movement is **over
    90°**; at 90° or less it plays `walk_attack`. Either is turned to the attack's facing and plays
    at its authored rate, as `walk_attack` does.
-10. **(charter default)** `backpedal_attack` walks its legs over **0.625** backpedal cycles (5 of
-    the cycle's 8 keys) across the 0.583 s swing: 0.625 × 73.5 ≈ 46 px, about 79 px/s of leg pace
-    against the 90 px/s the slowed body moves (0.45 × 200). Reason: the owner's "too fast" (R21)
-    as one rule for both attack-on-the-move clips: the legs never outrun the ground. 0.75 cycles
-    (6 keys) would be 94 px/s, faster than the ground; 0.625 is the nearest whole-key count under
-    it. The backpedal legs' measured pace (pace.js, Fact 10) stays within 150–220; the bake
-    measures it and derives the clip's leg pace from it, never guessed. The owner tunes the cycle
-    count at the contact sheet.
+10. **(charter default, 2026-11-12)** `backpedal_attack` walks its legs over
+    `BACKPEDAL_ATTACK_CYCLES` = **0.75** backward walk cycles (6 of the cycle's 8 keys, a step and
+    a half), the same as `walk_attack` (R21), across the 0.583 s swing. Its legs are the walk's,
+    so their measured pace (pace.js) is the walk's backward: about 79.7 world px/s at the walk's
+    10 fps, one cycle 0.8 s and about 63.8 px; 0.75 cycles is about 47.8 px, about 82 px/s of leg
+    pace (76 by `WALK_PACE`) against the 90 px/s the slowed body moves (0.45 × 200). Reason: the
+    owner's "too fast" (R21) as one rule for both attack-on-the-move clips: the legs never outrun
+    the ground; 0.75 already meets it, so the start value stands (one whole cycle would be about
+    109 px/s). The bake measures the pace and derives the clip's leg pace from it, never guessed.
+    The cloth's drag on the backward step stays the slice's backward value (−0.5 walk speeds,
+    `BACKPEDAL_ATTACK_SPEED`), so a cloak presses against the back rather than flinging forward
+    through the legs. The owner tunes the cycle count at the contact sheet. *Retired 2026-11-12:
+    0.625 cycles of slice 5's legs, 1.25 of the crouched re-key, and the backpedal legs' own pace
+    band (150–220).*
 11. **(charter default)** A sheet that carries `walk_attack` but not `backpedal_attack` plays
     `walk_attack` at any angle (today's look, FS-HF0WW R15's accepted moonwalk). Reason: the
     classes bake one at a time.
@@ -264,8 +297,9 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
     slow (§C.15–20), each with its own tests; the removal (R47) shown absence-first: `face` is
     refused as an unknown action and no player entry in the state carries `facing`.
 43. Bake: clip tests on the rig for the run's flight phase, opposite swing and pace band; the
-    backpedal legs' pace band; `walk_attack` and `backpedal_attack` each lasting exactly as long as
-    `attack`, their legs' pace at most 90 px/s.
+    backpedal legs being the walk's run backward (the same poses in reverse order, the same pelvis
+    height and stride, the pace the walk's negated); `walk_attack` and `backpedal_attack` each
+    lasting exactly as long as `attack`, their legs' pace at most 90 px/s.
 44. In the browser, two players in one run and in the town: the run, the slowed walk while
     attacking, the backward step while attacking away from the aim, and each seeing the other
     turned to their movement.
@@ -330,10 +364,11 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
       and `backpedal_attack` (14 frames at 24 fps, once), 8 directions, at the class's scale and
       trimmed; `walk` and `walk_attack` are still there; no class sheet carries `backpedal`.
 - [ ] Bake tests show the run's flight phase (a frame with both feet off the ground), its arms
-      swinging opposite its legs, and its pace within 180–220; the backpedal legs' pace within
-      150–220.
+      swinging opposite its legs, and its pace within 180–220; the backpedal legs are the walk's
+      run backward: the same leg poses in reverse order, the same pelvis height and stride (no
+      crouch), the walk's pace negated.
 - [ ] `walk_attack` and `backpedal_attack` each last exactly as long as `attack`; on a sheet with
-      `run`, `walk_attack`'s legs walk 0.75 walk cycles and `backpedal_attack`'s 0.625 backpedal
+      `run`, `walk_attack`'s legs walk 0.75 walk cycles and `backpedal_attack`'s 0.75 backward walk
       cycles, each a leg pace of at most 90 px/s.
 - [ ] A class figure moving at 200 px/s and not attacking plays `run` turned to its movement at a
       time scale within 0.9–1.1.
@@ -383,8 +418,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
   under a body turned to the target, at the slowed speed (owner 2026-11-12; replaces FS-HF0WW
   R15's accepted moonwalk on a sheet that carries it).
 - **Repeated swings.** Each new swing starts its clip, legs included, at frame 0. At one whole walk
-  cycle the legs ended where they began; at 0.75 (0.625) cycles a swing thrown the moment the last
-  ends jumps the legs back by a quarter (three eighths) of a cycle. Accepted for v1; judged at the
+  cycle the legs ended where they began; at 0.75 cycles (both clips) a swing thrown the moment
+  the last ends jumps the legs back by a quarter of a cycle. Accepted for v1; judged at the
   browser check (R10, R21 are the tunables).
 - **Latency.** The client starts its swing on the click; the server's slow starts on the resolved
   tick. For that gap the legs may show slower than the ground; at the end the run may show for a
@@ -443,6 +478,6 @@ and the state's `facing` field that R27–R32 once specified are removed by the 
    load class groups per class present (an ADR-0059 change).
 3. **Others' attacks:** should an ally's attack be relayed so others see them slow to
    `walk_attack` or step back in `backpedal_attack`, rather than a slow-motion run?
-4. **The attack legs' cycles** (R21: `walk_attack` 0.75, R10: `backpedal_attack` 0.625) are
+4. **The attack legs' cycles** (R21: `walk_attack` 0.75, R10: `backpedal_attack` 0.75) are
    charter defaults; the owner tunes them at the archer's contact sheet, and judges the leg jump on
    a repeated swing (Edge States).

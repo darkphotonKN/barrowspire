@@ -175,7 +175,7 @@ function characterPoses(sheet) {
     // walk_attack and backpedal_attack (a class's attack on the move) carry their cloth with the
     // legs and calm the shot's fling like the attack; the walk_attack's cloth walks like the walk,
     // a run or backpedal_attack names how fast it carries the cloth (characters/clips.js
-    // RUN_ANIMATIONS, BACKPEDAL_LEGS), in walks
+    // RUN_ANIMATIONS, BACKPEDAL_ATTACK_SPEED), in walks
     const carried = spec.speed ?? (anim === "walk" || anim === "walk_attack" ? 1 : 0);
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,

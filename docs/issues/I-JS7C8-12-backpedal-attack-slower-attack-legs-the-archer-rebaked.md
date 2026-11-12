@@ -110,3 +110,26 @@ Leg paces (pace.js on the archer's rig): walk_attack 0.75 walk cycles, about 76 
 at 18 fps, 30.7 px a cycle), about 66 px/s. The backpedal legs were re-keyed on the owner's word
 (2026-11-12, "後退像是在走路沒有後退的感覺"): see the clips.js `BACK_STEP` note; their shorter
 steps take 1.25 cycles rather than R10's 0.625 to stay near the ground's 90 px/s.
+
+## Backward step from the forward walk (2026-11-12, agent)
+
+The owner, after playing the crouched backward step: "後退姿勢重做 攻擊時的往前走動很好 後退不用特別有微蹲的感覺
+用往前的這個姿勢做後退". FS-JS7C8 R8/R10 now take `backpedal_attack`'s legs from the walk run
+backward in time (`backpedalCycle`: key k is walk key −k), 0.75 cycles like `walk_attack`, the
+cloth drag kept at −0.5 (`BACKPEDAL_ATTACK_SPEED`). `BACK_STEP`, `BACKPEDAL_LEGS` and the archer's
+`style.backpedal` are gone. No other clip or the draw changed.
+
+Leg paces (pace.js on the archer's rig, the walk's 10 fps): the walk 79.7 world px/s, the
+backward legs −79.7, one cycle 63.8 px each; across the 0.583 s swing at 0.75 cycles
+`walk_attack` 82.0 px/s (76.1 by `WALK_PACE`) and `backpedal_attack` 82.0, both under 90.
+
+| archer sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main | 1 | 2924 × 3844 | 44.96 MB | 6,289,416 | 336 | 326 × 288 |
+| crouched bake | 2 | 4088 × 4088 + 4088 × 1060 | 84.18 MB | 7,264,452 + 2,212,006 | 512 | 332 × 300 |
+| this bake | 2 | 4092 × 3760 + 4088 × 1416 | 84.70 MB | 6,557,998 + 2,992,142 | 512 | 332 × 300 |
+
++88.4% RGBA against main (+0.6%, +0.52 MB, against the crouched bake); trimmed frames 68.15 MB
+(the crouched 67.67: only `backpedal_attack` grew, 16.37 → 16.85 MB, the walk's longer stride).
+The atlas is committed; the resident-page tests still fail on the second page (33, the owner's
+VRAM choice pending).
