@@ -3,12 +3,14 @@ import * as THREE from "three";
 import {
   ANIMATIONS,
   ATTACKS,
+  BACKPEDAL_LEGS,
   CLASS_ANIMATIONS,
   MERC_ANIMATIONS,
   RUN_ANIMATIONS,
   RUNNING_CLASS_ANIMATIONS,
   WALK_ATTACK_CYCLES,
   applyPose,
+  backpedalAttackClip,
   backpedalCycle,
   clipsFor,
   idleCycle,
@@ -16,6 +18,7 @@ import {
   parryClip,
   pose,
   runCycle,
+  sample,
   walkCycle,
   withWalkAttack,
 } from "./clips.js";
@@ -23,7 +26,7 @@ import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { drawGrip, solveDraw } from "./draw.js";
 import { GROUND_EPS, WORLD_PX_PER_UNIT, footing, measurePace } from "./pace.js";
-import { BACKPEDAL_PACE, RUN_PACE } from "../../../../src/render/art/animationSelect";
+import { RUN_PACE, WALK_PACE } from "../../../../src/render/art/animationSelect";
 
 const style = {
   attack: "slash",
@@ -324,6 +327,13 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     const at = archerBow();
     clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `walk_attack frame ${i}`));
   });
+
+  it("holds on every frame of backpedal_attack, the shot's upper body over the backpedal's legs (FS-JS7C8 R8)", () => {
+    const at = archerBow();
+    const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).backpedal_attack;
+    expect(frames).toHaveLength(14);
+    frames.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `backpedal_attack frame ${i}`));
+  });
 });
 
 describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
@@ -344,12 +354,15 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     attack: "shot",
     hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
     walk: { arms: [0.7, 1], lean: 0.06 },
+    run: { arms: [0.5, 1], elbow: [0.25, 1] },
+    backpedal: { arms: [0.5, 1], elbow: [0.3, 1] },
   };
   const plain = { attack: "slash", hold: pose() };
   const rig = archerLegs();
   const run = runCycle(plain);
   const back = backpedalCycle(plain);
-  const { run: RUN, backpedal: BACK } = RUN_ANIMATIONS;
+  const { run: RUN } = RUN_ANIMATIONS;
+  const BACK = BACKPEDAL_LEGS;
 
   /** Pearson correlation of two equal-length series. */
   const corr = (a, b) => {
@@ -363,29 +376,75 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
   /** A pose's yaw of the chest in the model: the pelvis, spine and chest turns summed. */
   const chestYaw = (p) => ["hips", "spine", "chest"].reduce((s, b) => s + (p.b[b] ?? [0, 0, 0])[1], 0);
 
-  it("are two 8-frame loops, on a class sheet that opts in, with walk_attack's legs over one walk cycle", () => {
+  it("are two 8-frame loops; a class sheet that opts in carries the run, walk_attack with its legs over 0.75 walk cycles and backpedal_attack over 0.625 backpedal cycles, and no standalone backpedal", () => {
     for (const spec of [RUN, BACK]) expect([spec.frames, spec.loop]).toEqual([8, true]);
-    expect(Object.keys(RUNNING_CLASS_ANIMATIONS)).toEqual(["idle", "walk", "attack", "death", "run", "backpedal", "walk_attack"]);
+    expect(Object.keys(RUNNING_CLASS_ANIMATIONS)).toEqual(["idle", "walk", "attack", "death", "run", "walk_attack", "backpedal_attack"]);
+    const { attack } = RUNNING_CLASS_ANIMATIONS;
     const wa = RUNNING_CLASS_ANIMATIONS.walk_attack;
-    expect(wa.cycles).toBe(1);
-    expect(wa.frames / wa.fps).toBeCloseTo(RUNNING_CLASS_ANIMATIONS.attack.frames / RUNNING_CLASS_ANIMATIONS.attack.fps, 9);
+    expect(wa.cycles).toBe(0.75);
+    expect(wa.frames / wa.fps).toBeCloseTo(attack.frames / attack.fps, 9);
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.625, speed: BACK.speed });
+    // whole keys of each cycle: 6 of the walk's 8, 5 of the backpedal's 8
+    expect(wa.cycles * 8).toBe(6);
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack.cycles * BACK.frames).toBe(5);
     // the sheets that do not run keep today's two cycles
     expect(CLASS_ANIMATIONS.walk_attack.cycles).toBe(2);
     expect(MERC_ANIMATIONS.walk_attack.cycles).toBe(2);
     expect(Object.keys(CLASS_ANIMATIONS)).not.toContain("run");
   });
 
-  it("walks walk_attack's legs over one cycle on a running sheet: half way through, the walk is half way round", () => {
+  it("walks walk_attack's legs over 0.75 cycles on a running sheet: half way through, the walk is at its key 3", () => {
     const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack;
     const walk = walkCycle(archer);
-    frames[7].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[4].b.thighR[j], 9));
+    frames[7].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[3].b.thighR[j], 9));
     frames[0].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[0].b.thighR[j], 9));
+  });
+
+  it("backpedal_attack: the attack's keys from the waist up, each held two frames, over the backpedal's legs stepping 0.625 cycles across it", () => {
+    const spec = RUNNING_CLASS_ANIMATIONS.backpedal_attack;
+    const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).backpedal_attack;
+    const keys = ATTACKS.shot();
+    const legs = backpedalCycle(archer);
+    expect(frames).toHaveLength(spec.frames);
+    frames.forEach((p, i) => {
+      const key = keys[Math.floor(i / 2)];
+      for (const bone of ["chest", "neck", "upperArmL", "foreArmL", "handL", "upperArmR", "foreArmR"])
+        if (key.b[bone]) expect(p.b[bone], `${bone} @${i}`).toEqual(key.b[bone]);
+      expect(p.fx).toEqual(key.fx);
+      const step = sample(legs, (i * spec.cycles * legs.length) / spec.frames, true);
+      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR"]) expect(p.b[bone], `${bone} @${i}`).toEqual(step.b[bone]);
+      // the legs' footing, never the attack's lunge
+      expect(p.body.z ?? 0).toBe(0);
+    });
+    frames[0].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(legs[0].b.thighR[j], 9));
+    // it lasts exactly as long as the attack, or it is refused
+    expect(() => backpedalAttackClip(archer, { ...spec, frames: 12 }, RUNNING_CLASS_ANIMATIONS.attack)).toThrow(/backpedal_attack lasts/);
+  });
+
+  it("attacking on the move never walks the legs faster than the slowed ground: each clip's leg pace at most 90 world px/s (0.45 × 200)", () => {
+    const { attack } = RUNNING_CLASS_ANIMATIONS;
+    const swing = attack.frames / attack.fps;
+    /** The leg pace of `cycles` cycles of a looping clip measured at `pace` (px/s at `fps`) across the swing. */
+    const legPace = (pace, frames, fps, cycles) => (Math.abs(pace) * (frames / fps) * cycles) / swing;
+    const walkMeasured = measurePace(rig, walkCycle(archer), ANIMATIONS.walk.fps);
+    const backMeasured = measurePace(rig, backpedalCycle(archer), BACK.fps);
+    const wa = RUNNING_CLASS_ANIMATIONS.walk_attack;
+    const ba = RUNNING_CLASS_ANIMATIONS.backpedal_attack;
+    const paces = {
+      walkAttackByWalkPace: legPace(WALK_PACE, 8, ANIMATIONS.walk.fps, wa.cycles),
+      walkAttack: legPace(walkMeasured, 8, ANIMATIONS.walk.fps, wa.cycles),
+      backpedalAttack: legPace(backMeasured, BACK.frames, BACK.fps, ba.cycles),
+    };
+    for (const [name, pace] of Object.entries(paces)) expect(pace, name).toBeLessThanOrEqual(90);
+    // and not far under it: the legs still walk (R21's "about 25% slower", R10's 0.625)
+    for (const [name, pace] of Object.entries(paces)) expect(pace, name).toBeGreaterThan(60);
   });
 
   it("are made by clipsFor for a sheet that asks for them, the hold carried as the walk carries it", () => {
     const clips = clipsFor(archer, RUNNING_CLASS_ANIMATIONS);
     expect(clips.run).toHaveLength(8);
-    expect(clips.backpedal).toHaveLength(8);
+    expect(clips.backpedal_attack).toHaveLength(14);
+    expect(clips.backpedal).toBeUndefined();
     // the bow hand keeps its grip turn through the run
     for (const p of clips.run) expect(p.b.handL[0]).toBeCloseTo(-0.9 + (runCycle({ hold: pose() })[0].b.handL ?? [0])[0], 9);
     expect(clipsFor(archer).run).toBeUndefined();
@@ -479,7 +538,8 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(pace).toBeLessThan(0);
     expect(-pace).toBeGreaterThanOrEqual(150);
     expect(-pace).toBeLessThanOrEqual(220);
-    expect(Math.abs(BACKPEDAL_PACE + pace)).toBeLessThan(1);
+    // BACKPEDAL_LEGS.pace is that measure: the bake's own record of it (the client plays no backpedal)
+    expect(Math.abs(BACK.pace + pace)).toBeLessThan(1);
     // the chest stays turned to the facing, never to the movement
     for (const p of back) expect(Math.abs(chestYaw(p))).toBeLessThan(0.15);
     // a foot lands behind the body, its toes down first
