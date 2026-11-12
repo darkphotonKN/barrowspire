@@ -296,8 +296,9 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **Transport:** native `WebSocket`; URL **hardcoded** `ws://localhost:5668/game/ws`; auth via
   query `?token=<jwt>&name=<name>` (the token current at each open); server close `4001` →
   renew once and reconnect, else clear auth + `/login` (FS-ZPX58).
-- **Envelope (send):** `{action, payload, seq}`; SocketManager auto-injects `session_id`
-  (gameStore) and `player_id` (authStore) into every payload.
+- **Envelope (send):** `{action, payload, seq}`; the payload carries only the action's own
+  fields: no `session_id`, no sender `player_id` (the server takes both from the connection;
+  FS-29KSH R16, §Change: The acting player is the connection's; ADR-0079).
 - **SENDS:** `find_game`, `move {vx,vy}`, `attack {enemy_entity_id}`, `interact {entity_id}`
   (doors/switches/escape/chests/item-pickup), `equip`/`unequip {item_entity_id}`. Declared but
   unused: `pickup`, `use`, `chat`.

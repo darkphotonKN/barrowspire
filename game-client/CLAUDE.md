@@ -165,7 +165,7 @@ Every other Phaser scene (HubScene, BarrowspireScene, the HUD) uses the **game p
 
 ## Key Conventions
 
-- WebSocket: `SocketManager` singleton, auto-injects `session_id` and `player_id`
+- WebSocket: `SocketManager` singleton; payloads carry only their own fields, never `session_id` or the sender's `player_id`: the server takes both from the connection (FS-29KSH R16, ADR-0079)
 - Auth: Zustand persisted to localStorage, JWT tokens
 - API: `apiClient` at `http://localhost:7114`
 - Game state: Server-authoritative, client does optimistic updates with `lootedAt` pending pattern
