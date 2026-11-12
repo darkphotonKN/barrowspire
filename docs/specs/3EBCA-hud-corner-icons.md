@@ -38,7 +38,10 @@ Party icon open the party panel over either or both, which it is drawn above (R8
 other panels; since the letter panel is full-screen, opening it closes the other windows, opening
 another window closes it, opening the menu closes every window too, and while the menu is open
 nothing else can be pressed): §D (R15–R19), with R6–R9 and R11 edited in place; FS-1GZGD § Change
-C1, C4; FS-R82NV § Change C8, C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Change C4.
+C1, C4; FS-R82NV § Change C8, C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Change C4. And, the
+same day: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣" (every window's title sits somewhere different; put them all in one style,
+centred, the same size and colour), "menu目前沒標題也加上" (the menu has no title now; give it one) and
+"全大寫也統一" (all capitals too, uniformly): §E (R20–R24), this FS owning the shared frame's title.
 
 Each requirement below is a **charter default** (the locked
 decisions, approved by the owner) or says **derived here** and why. Recorded without adversarial
@@ -219,6 +222,43 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
     together (FS-HRH2J § Change C9); for R15 and R17 they are the inventory: the envelope and the
     menu close them together. **(derived here: the pairing opens and closes as one)**
 
+### §E. One title for every window (owner, 2026-11-12)
+
+**(owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "menu目前沒標題也加上", "全大寫也統一")**
+
+20. **One title drawing.** Every in-game window's title is drawn by one shared drawing beside the
+    shared frame (`panelFrame`'s `drawPanelTitle`), so a later window takes it by calling it:
+    centred across the panel, its top 14 px below the panel's top edge, in the body face at 14 px,
+    `palette.frameBright`, letter-spacing 4: the inventory's and the character panel's heading as
+    it stood, the style three of the five titled windows already wore. The words are uppercased by
+    the drawing itself, so no caller can forget. **(owner: "都統一放在中間的樣式", "大小顏色也一樣",
+    "全大寫也統一"; the style derived here: the most common one, the gear overlay's)**
+21. **Clear of the ×.** The title stays centred between the panel's edges; the × keeps its place at
+    the top right (R82NV § Change C1), and the title's band (its top 14 px down, its foot by 40 px:
+    `PANEL_TITLE_BAND`, below the × box's foot at 36) is the title's alone. No title is as wide as
+    its panel less both × margins. **(derived here)**
+22. **Which windows, and where their titles were.** The party panel ("Party" or "Party (n/m)",
+    15 px, left at the inner edge, now "PARTY" or "PARTY (n/m)" centred at 14 px); the inventory,
+    the character panel and the stash (already centred at 14 px in this style, unchanged); the
+    letter panel ("MAILBOX" at 12 px `hudLabel`, letter-spacing 2, left at the header, now centred
+    in this style); the run's controls panel (H: "CONTROLS" centred at 16 px, letter-spacing 5, a
+    few px higher, now this style); the settlement record ("Escaped the barrow", "Fallen in the
+    barrow" or "Out of the delve" in the blackletter at 30 px `hudText`, now in this style and in
+    capitals; the guideline permits the blackletter there but does not require it). The town's,
+    the field's and the run's ESC menu and the run's Fall confirm, which had no title, take
+    **MENU** (R23). Not windows, so not titled here: the chest's satchel (no title), the NPC
+    dialogue card (the speaker's name plate), the party invite prompt and the ready check (a
+    question, no title), the arrival card, the run's resolved card and the field's fallen card
+    (notices that fade or wait, not windows a player opens). **(derived here: what is opened and
+    closed over the world, with a heading)**
+23. **The menu's title.** The ESC menu (town, field, run) and the run's Fall confirm (whose copy
+    line is not a heading) read **MENU** in the title band; the rows, the copy line and their keys
+    keep their order and gaps, moved down by the band, the box growing by as much; the width and
+    the centre in the popup band are as before. **(owner: "menu目前沒標題也加上"; the word derived
+    here: the corner icon's and the key help's name for it, in capitals like the other titles)**
+24. **Contents move only as needed.** Under every other title nothing moves: each already began
+    below the band. **(derived here)**
+
 ## User Stories
 
 1. As a player, I want an icon for my inventory (gear slots and bag) and one for my character's stats in the corner, so that I can open either without knowing its key.
@@ -241,6 +281,7 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
 18. As a player in town, I want the envelope to open my letters whatever window is open, closing it, so that the full-screen letter panel never fails to open.
 19. As a player reading my letters, I want I, C, T or their icons to open their window and put the letters away, so that I never have to close one to reach the other.
 20. As a player, I want the menu to stand alone, closing every window as it opens and letting nothing else answer while it is up, so that what I press while it is open is the menu's.
+21. As a player, I want every window's title in the same place, size, colour and case, so that the windows read as one set.
 
 ## Acceptance Criteria
 
@@ -259,6 +300,7 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
 - [ ] While the menu is open no corner icon, no I, B, C or T, no envelope and no press under it answers, and the chat input takes no focus, in every world; Esc, its × and its rows still do.
 - [ ] Esc, I, B, T and M behave as before (Esc's new order and the field's menu are FS-R82NV's and FS-G4VMQ's changes); C toggles the character panel.
 - [ ] In a run and a field the ability card's bottom-right corner stands at (width − 16, 650); the dead spectator's leave button is centred at (width − 116, 631); neither overlaps the row; both follow a view-size change.
+- [ ] The party panel, the inventory, the character panel, the stash, the letter panel, the run's controls panel, the settlement record and every ESC menu (and the Fall confirm) draw their title through `drawPanelTitle`: centred, 14 px below the panel's top, 14 px `frameBright`, letter-spacing 4, in capitals; the menus read MENU, their rows moved down by the title band.
 - [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
 
 ## Edge States

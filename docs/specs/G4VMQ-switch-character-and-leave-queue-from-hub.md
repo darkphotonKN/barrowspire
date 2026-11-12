@@ -430,7 +430,10 @@ C2. **The ×.** An × stands at the menu's top right in the party panel's look a
     cancel row's action (Back, or the Fall confirm's way back), or closing the menu. **(owner:
     "跟party一樣外框", the party panel's frame carrying its ×)**
 C3. **Inside unchanged.** The rows, the copy line, the keys, the width, the height and the place
-    in the popup band are as before. **(owner, as relayed: contents and layout stay)**
+    in the popup band are as before. **(owner, as relayed: contents and layout stay)** Amended the
+    same day by the owner, "menu目前沒標題也加上" (the menu has no title; give it one): the menu and the
+    Fall confirm take the title MENU in the shared title band, their rows and copy line moved down
+    by the band and the box taller by as much (FS-3EBCA R20–R23).
 
 ### Acceptance Criteria
 

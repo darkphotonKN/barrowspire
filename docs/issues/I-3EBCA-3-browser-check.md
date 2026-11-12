@@ -2,7 +2,7 @@
 id: I-3EBCA-3
 status: open
 implements: FS-3EBCA
-blocked_by: [I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6, I-3EBCA-7, I-3EBCA-8]
+blocked_by: [I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6, I-3EBCA-7, I-3EBCA-8, I-3EBCA-9]
 labels: [blocked]
 title: "FS-3EBCA slice 3: Nick's browser check of the corner icons and the panel controls (HITL)"
 ---
@@ -35,6 +35,10 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
   first. While the menu is open nothing else answers: no icon (the gear included), no I, B, C, T or
   M, no envelope, no Travel, Leave or prompt button, no chat tab or input, no attack; its ×, Back
   and Esc close it (FS-3EBCA R17, R18).
+- Every window's title (party panel, inventory, character, stash, mailbox, the run's H controls,
+  the settlement record, every ESC menu and the Fall confirm) is centred at its top, in one size,
+  colour and capitals; the menu reads MENU (FS-3EBCA §E). Look at: the settlement record's verdict
+  is no longer the 30 px blackletter.
 - Town: the envelope opens the letters with the inventory, the character panel, the stash or the
   party panel open, closing them; with the letters open, I, B, C, T and their icons open their
   window and put the letters away (FS-3EBCA R15, R16).
@@ -59,7 +63,7 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
 
 ## Blocked By
 
-I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6, I-3EBCA-7, I-3EBCA-8
+I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6, I-3EBCA-7, I-3EBCA-8, I-3EBCA-9
 
 ## Spec Reference
 
