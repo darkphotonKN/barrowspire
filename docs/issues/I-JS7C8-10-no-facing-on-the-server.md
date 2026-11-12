@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-10
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: [I-JS7C8-11]
 labels: [ready-for-agent]
@@ -30,14 +30,34 @@ Remove everything I-JS7C8-2 added for facing, so no dead wire stays:
 
 ## Acceptance Criteria
 
-- [ ] `{"action":"face","payload":{"player_id":…,"facing":"nw"}}` is refused by the hub as an
+- [x] `{"action":"face","payload":{"player_id":…,"facing":"nw"}}` is refused by the hub as an
       unknown action, in the town, a field world and a run.
-- [ ] No `current_player` or `other_players` entry in the state JSON carries `facing`.
-- [ ] No facing constant, payload, component, component type, handler or serializer field
+- [x] No `current_player` or `other_players` entry in the state JSON carries `facing`.
+- [x] No facing constant, payload, component, component type, handler or serializer field
       remains (`git grep -n -i facing` in `game-server/game-service` shows only what main has).
-- [ ] The attack slow (I-JS7C8-1) and its tests are unchanged and green.
-- [ ] No change under `common/api/proto`, `api-gateway`, migrations or `game-client/src/api/generated`.
+- [x] The attack slow (I-JS7C8-1) and its tests are unchanged and green.
+- [x] No change under `common/api/proto`, `api-gateway`, migrations or `game-client/src/api/generated`.
 - [ ] `go test ./...` and `golangci-lint run` green in `game-server/game-service`.
+
+## Outcome (2026-11-12)
+
+Done after I-JS7C8-11: tests `1007bd2f` (seen red: the hub routed `face` and answered nothing, every
+state carried `facing`, the body kept a Facing component, `PublicPlayerState` had `Facing`, `face`
+parsed), change `27990007`.
+
+- refused: `internal/gameserver/no_facing_test.go` (an "Unknown action" refusal, nothing routed to
+  the world, a player in a world or in none); the hub refuses before any world lookup, so the town,
+  a field and a run are alike there; `internal/game/no_facing_test.go` shows a `face` that reaches
+  a world anyway changes nothing in the town, a field and a run;
+- no `facing` in any entry: `internal/game/no_facing_test.go`, `internal/serializer/no_facing_test.go`;
+- grep: `git grep -n -i facing` in `game-server/game-service`, test files aside, matches the merge
+  base line for line (20 lines, none of them this slice's); the remaining test mentions are the
+  absence tests;
+- attack slow: `attack_slow_test.go` (internal/game and internal/systems) unchanged and green;
+- no change under `common/api/proto`, `api-gateway`, migrations or `game-client/src/api/generated`;
+- `go test ./...` and `go vet ./...` green. `golangci-lint run` is **not** green, but only for 8
+  findings in files this branch never touches (`auth/middleware.go` 2, `cmd/server/main.go` 5,
+  `internal/game/hub_town_golden_test.go` 1); none in a file of this slice. That box stays open.
 
 ## Blocked By
 
