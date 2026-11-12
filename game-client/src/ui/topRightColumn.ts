@@ -1,7 +1,8 @@
 /**
  * The top-right column, its pure half (FS-56CKV §B): the minimap first when one is shown, then the
  * floor indicator, then the escaped count, each right-aligned on the corner's x. Where a part is
- * not shown the parts under it close up. The minimap, normal or enlarged, stands at the very top
+ * not shown the parts under it close up (the floor indicator hidden while the map name names the
+ * floor, FS-56CKV §Change: Map name, E9; the scene says so with a null `floorHeight`). The minimap, normal or enlarged, stands at the very top
  * of the corner with the fullscreen button at its left; in the overlay and with no minimap the
  * button keeps the corner and the column starts under it (FS-56CKV §Change: Minimap at the top,
  * fullscreen button beside it, as amended 2026-11-12). The scene places what this returns, the

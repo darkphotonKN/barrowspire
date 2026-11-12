@@ -676,9 +676,15 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   `hudPanel` plate at 0.75, padded 4 × 2, square-cornered as the column's lines are: 4px inside the
   normal map's top-right corner, right-aligned; left of the fullscreen button, centred on it, with
   the map enlarged; left of the map mode icon in the overlay. It hides while a target frame or the
-  town's queue line stands over it, and the dev position readout now stands under the column's
-  last line in every mode. *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
+  town's queue line stands over it. *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
   §Change: Map name, the owner's "小地圖右上角顯示目前地圖的名字" and "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊",
+  2026-11-12.)* In a run the name says the floor, so the column's "Floor N" line is not drawn
+  under a map that names it; it shows only where no map does (a floor of buildings, a floor whose
+  map is not yet in). The dev position readout wears the name's plate in 10px vellum: 4px inside
+  the normal map's bottom-right corner, right-aligned; left of the name, on its line, with the map
+  enlarged (hidden while a target frame stands over it); under the column's last line in the
+  overlay and with no map. *(Amended by FS-56CKV §Change: Map name, the owner's "地城樓層顯示兩次
+  拿掉下面的", "有小地圖時 x y座標不是要顯示在地圖框框內右下角嗎" and "2倍地圖時座標顯示在地區名稱左邊",
   2026-11-12.)*
 - **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
   **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,

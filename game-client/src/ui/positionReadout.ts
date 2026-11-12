@@ -1,25 +1,33 @@
 /**
  * The run's dev position readout (FS-56CKV §C): the player's x/y, a developer aid, never player
- * HUD. Small and dim with no backing, under the top-right column in every mode: the minimap's
- * top-right is the map name's (FS-56CKV §Change: Map name, E8, replacing §Change: Map mode icon,
- * D8's corner inside the map). The scene makes and refreshes the text; this holds its look, where
- * it stands, and whether it is made at all.
+ * HUD. Small vellum on the map name's faint plate (FS-56CKV §Change: Map name, E8 as amended
+ * 2026-11-12): inside the normal map's bottom-right ("有小地圖時 x y座標不是要顯示在地圖框框內右下角嗎"),
+ * left of the map name with the map enlarged ("2倍地圖時座標顯示在地區名稱左邊", E11), under the
+ * top-right column in the overlay and with no map. The scene makes and refreshes the text; this
+ * holds its look, where it stands, when it gives way, and whether it is made at all.
  */
 
-import type { Point } from "@/render/iso/projection";
+import type { Point, Rect } from "@/render/iso/projection";
+import { FULLSCREEN_BUTTON, type FullscreenButtonSpot } from "@/render/viewport/fullscreenButton";
 import { palette } from "@/utils/canvasPalette";
 import { MINIMAP } from "./minimap";
+import { MINIMAP_NAME } from "./minimapName";
 
 /**
- * Its look and place (§C.15, §C.16, §C.18): 10 px in `hudText` at a partial alpha, no backing, its
- * ink 3:1 or better over the vignetted backing; its top `gap` px under the column's last line; drawn
- * over both minimap layers.
+ * Its look and place (§C.15, §C.16, §C.18; §Change: Map name, E8, E11): 10 px `hudText` at full
+ * ink on the map name's plate (`hudPanel` at 0.75, padded 4 × 2), its ink 4.5:1 or better over the
+ * plate; `inset` px inside the normal map's bottom-right, `beside` px left of the enlarged map's
+ * name, or `gap` px under the column's last line; drawn over both minimap layers.
  */
 export const POSITION_READOUT = {
   fontSize: "10px",
   colour: palette.hudText,
-  alpha: 0.6,
+  plate: MINIMAP_NAME.plate,
+  plateAlpha: MINIMAP_NAME.plateAlpha,
+  padding: MINIMAP_NAME.padding,
+  inset: MINIMAP.inset,
   gap: 4,
+  beside: MINIMAP.gap,
   depth: MINIMAP.depth + 1,
 } as const;
 
@@ -28,12 +36,45 @@ export interface PositionReadoutPlace extends Point {
   origin: Point;
 }
 
+/** What of the top-right corner the readout stands by. */
+export interface ReadoutCorner {
+  /** The minimap's panel where one is in the corner, normal or enlarged; null in the overlay or with none. */
+  minimap: Rect | null;
+  /** Whether that panel is the enlarged map. */
+  enlarged: boolean;
+  /** The map name's plate where it stands now, or null where the floor has none. */
+  name: Rect | null;
+  /** Where the fullscreen button stands. */
+  button: FullscreenButtonSpot;
+  /** The column's right edge and its last line's bottom. */
+  column: { right: number; bottom: number };
+}
+
 /**
- * Where the readout stands (§C.18; §Change: Map name, E8), on whole logical px: its top-right `gap`
- * px under the column's last line, on the column's right edge, with a minimap shown or none.
+ * Where the readout stands, on whole logical px (§C.18; §Change: Map name, E8, E11): its plate's
+ * bottom-right `inset` px inside the normal map's; with the map enlarged, right-aligned `beside` px
+ * left of the name's plate (of the button where there is no name), its middle on the button's, as
+ * the name's is; otherwise its top-right `gap` px under the column's last line.
  */
-export function positionReadoutPlace(column: { right: number; bottom: number }): PositionReadoutPlace {
-  return { x: Math.round(column.right), y: Math.round(column.bottom) + POSITION_READOUT.gap, origin: { x: 1, y: 0 } };
+export function positionReadoutPlace(corner: ReadoutCorner, view: { width: number }): PositionReadoutPlace {
+  const { minimap: map, enlarged, name, button, column } = corner;
+  const { inset, gap, beside } = POSITION_READOUT;
+  if (map && enlarged) {
+    const left = name ? name.x : Math.round(view.width - button.right - FULLSCREEN_BUTTON.height);
+    return { x: left - beside, y: button.top + FULLSCREEN_BUTTON.height / 2, origin: { x: 1, y: 0.5 } };
+  }
+  if (map) return { x: Math.round(map.x + map.width) - inset, y: Math.round(map.y + map.height) - inset, origin: { x: 1, y: 1 } };
+  return { x: Math.round(column.right), y: Math.round(column.bottom) + gap, origin: { x: 1, y: 0 } };
+}
+
+/** The readout's box at `at` for a text of `size`. */
+export function positionReadoutBox(at: PositionReadoutPlace, size: { width: number; height: number }): Rect {
+  return { x: at.x - at.origin.x * size.width, y: at.y - at.origin.y * size.height, width: size.width, height: size.height };
+}
+
+/** Whether the readout's box meets one of `covers`, what stands at the top centre now: it is hidden while it does (E11, as the name's E7). */
+export function readoutGivesWay(box: Rect, covers: readonly (Rect | null | undefined)[]): boolean {
+  return covers.some((r) => !!r && box.x < r.x + r.width && r.x < box.x + box.width && box.y < r.y + r.height && r.y < box.y + box.height);
 }
 
 /**

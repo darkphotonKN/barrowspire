@@ -36,6 +36,10 @@ where they would meet. The dev readout moves under the column's last line in eve
       left of the fullscreen button enlarged; left of the map mode icon in the overlay) and look;
       the dev readout under the column; with the map enlarged at 1080, a hovered monster or a boss
       hiding the name while its frame is up. And: did "兩倍地圖時" mean the overlay too?
+      *(Answered 2026-11-12: "目前這樣", the overlay keeps it. Re-check after the amendment
+      below: no "Floor N" under the map in any mode on floor 1, the line back on a floor of
+      buildings; the readout inside the normal map's bottom-right, left of the name with the map
+      enlarged (hidden with it under a frame at 1080), under the column in the overlay.)*
 
 ## Blocked By
 
@@ -43,7 +47,7 @@ None
 
 ## Spec Reference
 
-FS-56CKV §Change: Map name, E1–E10.
+FS-56CKV §Change: Map name, E1–E11 (E8, E9 amended and E11 added 2026-11-12).
 
 ## TDD Approach
 
@@ -65,3 +69,14 @@ Layout at 1080: normal, the plate's top-right at (1066, 14); enlarged, its right
 y 20; overlay, right edge 1033, middle y 16; at 1280 each x 200 more. Readout: 4 px under the
 escaped count (y 174 normal, 228 enlarged, 94 overlay/no map at 1080). Seen red first: 37 failing
 and the new module missing at the test commit. Suite 7486 passed; tsc and lint clean.
+
+Amended 2026-11-12 (owner, after a first look: "目前這樣", "地城樓層顯示兩次 拿掉下面的",
+"有小地圖時 x y座標不是要顯示在地圖框框內右下角嗎", "2倍地圖時座標顯示在地區名稱左邊"): the floor line
+is hidden while the map name names the floor (`floor.ts` `showsFloorLine`, the scene's
+`placeTopRightColumn`), the escaped count in its place (y 124 normal, 178 enlarged, 44 overlay, at
+1080 and 1280); it still shows at y 44 on a floor without regions and before a dungeon floor's
+map is in. The readout wears the name's plate (10 px vellum, full ink, `hudPanel` 0.75, 4 × 2):
+normal, its bottom-right at (1066, 114) / (1266, 114); enlarged, its right edge 6 px left of the
+name's plate, middle y 20, hidden while a shown target frame meets it; overlay and no map, 4 px
+under the column's last line (y 69 overlay on floor 1, 94 on a floor without regions). Code in,
+awaiting the re-check above.

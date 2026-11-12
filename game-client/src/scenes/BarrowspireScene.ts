@@ -37,6 +37,7 @@ import {
   floorLabel,
   interactNotice,
   isTopFloor,
+  showsFloorLine,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
@@ -78,7 +79,14 @@ import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
-import { POSITION_READOUT, positionReadoutPlace, showsPositionReadout } from "@/ui/positionReadout";
+import {
+  POSITION_READOUT,
+  positionReadoutBox,
+  positionReadoutPlace,
+  readoutGivesWay,
+  showsPositionReadout,
+  type PositionReadoutPlace,
+} from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
 import { SettlementRecord } from "@/ui/SettlementRecord";
 import { settlementRecord } from "@/ui/settlement";
@@ -88,6 +96,7 @@ import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
   palette,
+  rgba,
   shade,
   tint,
   toCss,
@@ -106,6 +115,7 @@ import {
   worldToScreen,
   type Facing8,
   type Point,
+  type Rect,
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
@@ -953,9 +963,16 @@ export class BarrowspireScene extends Phaser.Scene {
   private escapedCountText?: Phaser.GameObjects.Text;
   /** The dev position readout (FS-56CKV §C); none in a production build. */
   private positionReadout?: Phaser.GameObjects.Text;
-  /** "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor. */
+  /** Where the readout stands now, and what at the top centre it gives way to (FS-56CKV §Change: Map name, E11). */
+  private readoutPlace?: PositionReadoutPlace;
+  private readoutCovers: readonly (Rect | null | undefined)[] = [];
+  /**
+   * "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor, and wherever the
+   * minimap's name already names the floor (FS-56CKV §Change: Map name, E9).
+   */
   private floorText?: Phaser.GameObjects.Text;
-  private shownFloorLabel: string | null = null;
+  /** The floor the floor line says, none while it has no label. */
+  private shownFloor: number | undefined;
   /**
    * The floor the last broadcast stood on (FS-F6F88 req 28). Undefined until the first broadcast
    * of a start, so a reconnect builds the party's floor directly with no transition (req 32).
@@ -1151,7 +1168,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.lastHit.clear();
     this.bosses.clear();
     this.markers = "overhead";
-    this.shownFloorLabel = null;
+    this.shownFloor = undefined;
+    this.readoutPlace = undefined;
+    this.readoutCovers = [];
     this.lastFloor = undefined;
     // the next run is sized and built from its own map
     this.mapWidth = 0;
@@ -3970,9 +3989,10 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The top-right column from its anchor (FS-56CKV §B, superseding FS-SRA9J §E.20 in part): the
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
-   * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
-   * dev readout goes with it (§C.18): under the column's last line in every mode, the minimap's
-   * top-right being the map name's (§Change: Map name, E8). The minimap, normal or enlarged, stands
+   * that; where no minimap is shown, or the floor indicator has no label or the map name already
+   * names the floor (§Change: Map name, E9), the rest closes up. The dev readout goes with it: in
+   * the normal map's bottom-right, left of the enlarged map's name, under the column's last line
+   * in the overlay and with no map (§C.18; §Change: Map name, E8, E11). The minimap, normal or enlarged, stands
    * at the very top with the fullscreen button at its left; in the overlay and with no minimap the button keeps the corner and the
    * column starts under it (§Change: Minimap at the top, fullscreen button beside it, as amended
    * 2026-11-12). The map mode icon goes with the map, or beside the button with the overlay up
@@ -3981,6 +4001,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
+    // said once: the floor line goes while the map name names its floor (§Change: Map name, E9)
+    const named = this.dungeon?.mapName ? this.dungeon.floor : undefined;
+    floor?.setVisible(showsFloorLine(this.shownFloor, named));
     const column = topRightColumn({
       view: viewport,
       minimap: cornerMinimap(minimap),
@@ -3993,8 +4016,28 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.mapName?.place(column.name);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
-    const readout = positionReadoutPlace({ right: column.escaped.x, bottom: column.bottom });
+    // in the normal map's bottom-right, left of the enlarged map's name, else under the column (E8, E11)
+    const readout = positionReadoutPlace(
+      {
+        minimap: column.minimap,
+        enlarged: minimap?.mode === "enlarged",
+        name: this.dungeon?.mapName?.box ?? null,
+        button: column.button,
+        column: { right: column.escaped.x, bottom: column.bottom },
+      },
+      viewport,
+    );
+    this.readoutPlace = readout;
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
+    this.showReadout();
+  }
+
+  /** The readout shown unless its plate meets what stands at the top centre now (§Change: Map name, E11). */
+  private showReadout(): void {
+    const text = this.positionReadout;
+    if (!text || !this.readoutPlace) return;
+    const shown = !readoutGivesWay(positionReadoutBox(this.readoutPlace, text), this.readoutCovers);
+    if (shown !== text.visible) text.setVisible(shown);
   }
 
   /**
@@ -4308,13 +4351,14 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** "Floor N" from the broadcast, redrawn only when it changes; hidden without floors. */
+  /**
+   * "Floor N" from the broadcast, redrawn only when it changes; hidden without floors, and while the
+   * map name names the floor (`placeTopRightColumn`, FS-56CKV §Change: Map name, E9).
+   */
   private updateFloorIndicator(state: ClientGameState): void {
-    const label = floorLabel(state);
-    if (!this.floorText || label === this.shownFloorLabel) return;
-    this.shownFloorLabel = label;
-    this.floorText.setText(label ?? "");
-    this.floorText.setVisible(label !== null);
+    if (!this.floorText || state.floor === this.shownFloor) return;
+    this.shownFloor = state.floor;
+    this.floorText.setText(floorLabel(state) ?? "");
     this.placeTopRightColumn();
   }
 
@@ -5017,8 +5061,12 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
-    // the map name beside the enlarged map gives way to the frame where they meet (FS-56CKV §Change: Map name, E7)
-    this.dungeon?.mapName?.giveWay([this.targetFrame.shownRect()]);
+    // the map name beside the enlarged map gives way to the frame where they meet (FS-56CKV §Change:
+    // Map name, E7), and the readout left of it too (E11)
+    const covers = [this.targetFrame.shownRect()];
+    this.dungeon?.mapName?.giveWay(covers);
+    this.readoutCovers = covers;
+    this.showReadout();
   }
 
   /**
@@ -5030,8 +5078,9 @@ export class BarrowspireScene extends Phaser.Scene {
       fontFamily: CANVAS_FONT.body,
       fontSize: POSITION_READOUT.fontSize,
       color: toCss(POSITION_READOUT.colour),
+      backgroundColor: rgba(POSITION_READOUT.plate, POSITION_READOUT.plateAlpha),
+      padding: { ...POSITION_READOUT.padding },
     });
-    posText.setAlpha(POSITION_READOUT.alpha);
     posText.setScrollFactor(0);
     posText.setDepth(POSITION_READOUT.depth);
     this.positionReadout = posText;

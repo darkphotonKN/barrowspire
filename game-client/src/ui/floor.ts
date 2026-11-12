@@ -12,6 +12,16 @@ export function floorLabel(state: Pick<ClientGameState, "floor">): string | null
 }
 
 /**
+ * Whether the top-right column's floor line shows (FS-56CKV §Change: Map name, E9 as amended
+ * 2026-11-12, owner: "地城樓層顯示兩次 拿掉下面的"): there is a floor, and the minimap's name does
+ * not already name it. `named` is the floor the map name names, none while no name is up (a floor
+ * without regions, a dungeon floor before its map is in).
+ */
+export function showsFloorLine(floor: number | undefined, named: number | undefined): boolean {
+  return floor !== undefined && floor !== named;
+}
+
+/**
  * Whether the party climbed between two broadcasts (FS-F6F88 req 28): the floor went up. With no
  * previous floor (the first broadcast after a connect or reconnect) the incoming floor is the
  * baseline, built directly with no transition (req 32).
