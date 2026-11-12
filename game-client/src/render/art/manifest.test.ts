@@ -319,8 +319,36 @@ describe("validateManifest", () => {
       expect(fixture().sheets.door).not.toHaveProperty("scale");
     });
 
-    it.each([0, -2, 1.5, "2", 5, null])("rejects a scale of %s", (scale) => {
+    it.each([0, -2, 0.5, 1.25, 2.5, 3.5, "2", 5, null])("rejects a scale of %s", (scale) => {
       rejects(withScale(scale), /door.*scale/);
+    });
+
+    describe("at 1.5 (ADR-0076, FS-HF0WW § Change: Class sheets at 1.5x R29)", () => {
+      // a 48 x 72 frame: 32 x 48 screen px at 1.5, 24 x 36 at 2, 16 x 24 at 3, 12 x 18 at 4
+      const whole = { frameWidth: 48, frameHeight: 72 };
+
+      it("accepts 1, 1.5, 2, 3 and 4 on a frame that is a whole number of screen px at each", () => {
+        for (const scale of [1, 1.5, 2, 3, 4]) {
+          const m = fixture();
+          withScale(scale, whole)(m);
+          const result = validateManifest(m);
+          expect(result.ok ? [] : result.errors, String(scale)).toEqual([]);
+        }
+      });
+
+      it("rejects a frame that is not a whole number of screen px at 1.5 (the door's 50 x 70)", () => {
+        rejects(withScale(1.5), /door.*multiples of scale/);
+        rejects(withScale(1.5, { frameWidth: 48, frameHeight: 70 }), /door.*multiples of scale/);
+      });
+
+      it("judges the crown and length in screen px at 1.5", () => {
+        // the anchor at 0.9 of 72 px is 64.8 px, 43 screen px at 1.5
+        const m = fixture();
+        withScale(1.5, { ...whole, crown: 43 })(m);
+        expect(validateManifest(m).ok).toBe(true);
+        rejects(withScale(1.5, { ...whole, crown: 44 }), /door.*crown/);
+        rejects(withScale(1.5, { ...whole, length: 33 }), /door.*length/);
+      });
     });
 
     it("rejects a frame that is not a whole number of screen px", () => {
@@ -400,6 +428,15 @@ describe("validateManifest", () => {
       accepts(trimmed(undefined, { scale: 2 }));
       for (const bad of [{ ...cut, x: 11 }, { ...cut, y: 21 }, { ...cut, w: 29 }, { ...cut, h: 45 }])
         rejects(trimmed([bad, cut], { scale: 2 }), /locked: frame 0\/0 trim must be on whole screen px/);
+    });
+
+    it("at 1.5 accepts a cut on two screen px (3 sheet px) and rejects one off them (ADR-0076 Decision 3)", () => {
+      // the door at 48 x 72 and 1.5 is 32 x 48 screen px; the cut (9, 18) 30 x 45 is (6, 12) 20 x 30
+      const at1p5 = { scale: 1.5, frameWidth: 48, frameHeight: 72 };
+      const third = { x: 9, y: 18, w: 30, h: 45 };
+      accepts(trimmed([third, third], at1p5));
+      for (const bad of [{ ...third, x: 10 }, { ...third, y: 20 }, { ...third, w: 32 }, { ...third, h: 44 }])
+        rejects(trimmed([bad, third], at1p5), /locked: frame 0\/0 trim must be on whole screen px/);
     });
 
     it("judges a frame against its atlas by the cut it holds, not the whole frame", () => {
@@ -1248,6 +1285,24 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(sheet.animations, name).toHaveProperty("idle");
     });
 
+    it("bakes the archer at 1.5x on one page of its own group, the other classes still at 2x until their re-bakes (FS-HF0WW § Change: Class sheets at 1.5x R34, R35)", () => {
+      const scales = Object.fromEntries(
+        Object.entries(baked.sheets as Record<string, { scale?: number }>)
+          .filter(([, sheet]) => sheet.scale !== undefined)
+          .map(([name, sheet]) => [name, sheet.scale]),
+      );
+      expect(scales).toEqual({
+        char_archer_base: 1.5,
+        char_knight_base: 2,
+        char_mercenary_base: 2,
+        char_wizard_base: 2,
+      });
+      const archer = baked.sheets.char_archer_base as { atlas: string; animations: Record<string, { atlas?: string }> };
+      expect(archer.atlas).toBe("archer-0");
+      for (const [name, a] of Object.entries(archer.animations)) expect(a.atlas, name).toBeUndefined();
+      expect(Object.keys(baked.atlases).filter((k) => k.startsWith("archer-"))).toEqual(["archer-0"]);
+    });
+
     it("trims the four classes' frames, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
       const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
         .filter(([, sheet]) => sheet.trimmed)
@@ -1262,7 +1317,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
 
     it("gives the archer a run: 8 frames, looping, in the 8 facings, at its scale and trimmed (FS-JS7C8 R1)", () => {
       const sheet = baked.sheets.char_archer_base;
-      expect(sheet.scale).toBe(2);
+      expect(sheet.scale).toBe(1.5);
       expect(sheet.trimmed).toBe(true);
       const a = sheet.animations.run;
       expect(a).toBeDefined();
@@ -1539,8 +1594,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
 
     it("writes a per-animation atlas only on the boss's spilled animations, never on existing sheets", () => {
-      // FS-HF0WW: the 2x archer is too big for one page, so it spills too, in its own group
-      const spills = [...ROSTER.map(([n]) => n), "char_archer_base"];
+      // the 1.5x archer is one page again (FS-HF0WW § Change: Class sheets at 1.5x R34)
+      const spills = ROSTER.map(([n]) => n);
       for (const [name, sheet] of Object.entries(baked.sheets) as [
         string,
         RosterSheet,
