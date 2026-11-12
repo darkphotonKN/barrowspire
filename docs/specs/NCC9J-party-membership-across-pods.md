@@ -475,9 +475,16 @@ C9. **The roster shows the character that is in the party.** Every connection st
     seconds: a `party_update` with reason `sync`, as R6's arrival read sends, carrying
     `locked: true` while their party's run is under way on this pod; a player in no party is sent
     the update listing nobody. The card whose character name is the player's own member name
-    shows a small mark: a party glyph and "IN A PARTY", in the menu's Bone & Soot. *Charter
+    shows a small mark: a party glyph and "IN A PARTY", in the menu's Bone & Soot. The mark is a
+    soot plate centred across the card in its top band, its top 2 px below the card's and its
+    foot at the name's box (14 px down), the glyph (two linked rings) left of the words; the
+    rings' centres and the words' ink stand on the plate's one midline, the ink measured in the
+    words' own font, not their text box's middle. *Charter
     default: the roster read is a plain read of the party (`partystore` Peek): it refreshes
-    nobody's record, so C8's expiry holds.*
+    nobody's record, so C8's expiry holds. The mark's place, owner 2026-11-12: "派對選角色畫面的
+    無限符號跟in party文字 對齊一下中線 然後位置放在正中間" (on the roster, align the infinity-like glyph and
+    the "in party" words on one midline, and put the mark in the middle), replacing its first
+    place in the card's top right, left of the delete cross.*
 C10. **Choosing the same character stays in the party.** Entering as the character the party
     holds for the player (by name; character names are unique) is no switch, whatever the
     connection: they arrive as R6 shows them, still a member.

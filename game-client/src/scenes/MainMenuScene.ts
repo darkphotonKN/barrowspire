@@ -6,6 +6,8 @@ import { useAuthStore } from "@/stores/authStore";
 import {
   ROSTER_PARTY_MARK,
   SWITCH_CANCEL_LABEL,
+  inkMiddle,
+  partyMarkLayout,
   SWITCH_LEAVE_LABEL,
   entryChoice,
   inPartyAs,
@@ -75,12 +77,22 @@ const PORTRAIT = { width: 44, height: 56 };
 /** The primary button: wide enough for its label at the button's letter-spacing. */
 const ENTER_BUTTON = { width: 280, height: 50 };
 /**
- * The mark on the card of the character the party holds this player as (FS-NCC9J §Change:
- * Changing character leaves the party, C9): a small soot plate in the card's top right, left of
- * the delete cross, with a glyph of two linked rings and the words. Card-local px: its right edge
- * from the card's right, its top, its height.
+ * How far below a Text's top its ink is middled (`inkMiddle`), from the font's ascent Phaser draws
+ * the line at and the ink the canvas measures for its words in its own font; the box's middle
+ * where either is missing (a stand-in, a canvas without ink bounds).
  */
-const PARTY_MARK = { rightInset: 26, top: 3, height: 12, ring: 2.5 };
+function inkMiddleOf(words: Phaser.GameObjects.Text): number {
+  const ascent = words.getTextMetrics?.()?.ascent;
+  const measured = words.context?.measureText?.(words.text);
+  const ink =
+    measured &&
+    Number.isFinite(measured.actualBoundingBoxAscent) &&
+    Number.isFinite(measured.actualBoundingBoxDescent)
+      ? { ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent }
+      : undefined;
+  return inkMiddle(ascent ?? 0, ascent === undefined ? undefined : ink, words.height);
+}
+
 /** The confirm before entering as another character than the party's (C11). */
 const SWITCH_CONFIRM = { width: 360, height: 150, button: { width: 130, height: 32 } };
 
@@ -492,7 +504,7 @@ export class MainMenuScene extends Phaser.Scene {
           color: toCss(ui.label),
           letterSpacing: 1,
         })
-        .setOrigin(1, 0.5)
+        .setOrigin(0, 0)
         .setVisible(false);
 
       const cardObj = {
@@ -875,15 +887,16 @@ export class MainMenuScene extends Phaser.Scene {
       card.glow?.setPosition(panelX + 36, y + cardH / 2 + 4).setAlpha(isSelected ? 1 : 0.55);
 
       card.inParty = inPartyAs(char, party, selfId);
-      this.drawPartyMark(card, x + cardW, y);
+      this.drawPartyMark(card, { x, y, width: cardW });
     });
 
     this.updateSidebarScrollPosition(maskY, maskH, panelX + panelW - 6, totalHeight);
   }
 
   /**
-   * The party's mark on a card whose right edge is at right and top at top, or none (C9): two
-   * linked iron rings and "IN A PARTY" on a soot plate with an iron hairline.
+   * The party's mark on a card, or none (C9): two linked iron rings and "IN A PARTY" on a soot
+   * plate with an iron hairline, centred across the card in its top band, the rings on the words'
+   * ink midline (owner 2026-11-12: "無限符號跟in party文字 對齊一下中線 然後位置放在正中間"; `partyMarkLayout`).
    */
   private drawPartyMark(
     card: {
@@ -891,29 +904,22 @@ export class MainMenuScene extends Phaser.Scene {
       partyMarkBg: Phaser.GameObjects.Graphics;
       partyMarkText: Phaser.GameObjects.Text;
     },
-    right: number,
-    top: number,
+    at: { x: number; y: number; width: number },
   ): void {
     const g = card.partyMarkBg;
     g.clear();
-    card.partyMarkText.setVisible(card.inParty);
+    const words = card.partyMarkText;
+    words.setVisible(card.inParty);
     if (!card.inParty) return;
 
-    const plateRight = right - PARTY_MARK.rightInset;
-    const midY = top + PARTY_MARK.top + PARTY_MARK.height / 2;
-    const textRight = plateRight - 5;
-    card.partyMarkText.setPosition(textRight, midY);
-    const textLeft = textRight - card.partyMarkText.width;
-    const r = PARTY_MARK.ring;
-    const plateLeft = textLeft - 4 - r * 4 - 4;
-
+    const { plate, rings, text } = partyMarkLayout(at, { width: words.width, inkMiddle: inkMiddleOf(words) });
+    words.setPosition(text.x, text.y);
     g.fillStyle(ui.well, 0.85);
-    g.fillRoundedRect(plateLeft, top + PARTY_MARK.top, plateRight - plateLeft, PARTY_MARK.height, 3);
+    g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 3);
     g.lineStyle(1, ui.frame, 0.7);
-    g.strokeRoundedRect(plateLeft, top + PARTY_MARK.top, plateRight - plateLeft, PARTY_MARK.height, 3);
+    g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 3);
     g.lineStyle(1, ui.frameBright, 0.95);
-    g.strokeCircle(textLeft - 4 - r * 3, midY, r);
-    g.strokeCircle(textLeft - 4 - r, midY, r);
+    for (const ring of rings) g.strokeCircle(ring.x, ring.y, ring.r);
   }
 
   /**
