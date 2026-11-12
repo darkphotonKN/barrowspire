@@ -12,6 +12,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { K1, SS, VIEW_DIR } from "./projection.js";
 import { color, mix, normalized } from "./palette.js";
 import { applyOpacity } from "./opacity.js";
+import { frameBox } from "./frameBox.js";
 
 /** Key light direction (toward the light): from screen-left and above. */
 const LIGHT_DIR = new THREE.Vector3(-1, 2.83, 1).normalize();
@@ -165,10 +166,7 @@ export function createBaker() {
       b = b ? union(b, ob) : ob;
       return obj;
     });
-    const ax = Math.ceil((-b.minX + pad) * K1);
-    const ay = Math.ceil((b.maxY + pad) * K1);
-    const w1 = ax + Math.ceil((b.maxX + pad) * K1);
-    const h1 = ay + Math.ceil((-b.minY + pad) * K1);
+    const { ax, ay, w1, h1 } = frameBox(b, { pad });
     camera.left = -ax / K1;
     camera.right = camera.left + w1 / K1;
     camera.top = ay / K1;
@@ -294,10 +292,7 @@ export function createBaker() {
         }
       }
     }
-    const ax = Math.ceil((-b.minX + pad) * K1);
-    const ay = Math.ceil((b.maxY + pad) * K1);
-    const w1 = ax + Math.ceil((b.maxX + pad) * K1);
-    const h1 = ay + Math.ceil((-b.minY + pad) * K1);
+    const { ax, ay, w1, h1, frameWidth: fw, frameHeight: fh, anchorPx } = frameBox(b, { pad, scale });
     if (fit.minX * K1 < -ax || fit.maxX * K1 > w1 - ax || fit.maxY * K1 > ay || fit.minY * K1 < ay - h1)
       throw new Error(`bake: a pose that may not size the frame falls outside it (${JSON.stringify(fit)})`);
     camera.left = -ax / K1;
@@ -311,8 +306,6 @@ export function createBaker() {
     // pass 2: render every pose from every facing. At `scale` > 1 the camera frames the same
     // world box, rendered `scale` times larger (SS × scale, box-filtered by SS to scale×), so the
     // frame is exactly `scale` times the 1× frame and the anchor lands on the same world point.
-    const fw = w1 * scale;
-    const fh = h1 * scale;
     const frames = poses.map((apply) => {
       root.rotation.y = 0;
       apply();
@@ -327,7 +320,7 @@ export function createBaker() {
     });
     scene.remove(root);
     disposeGeometry(root);
-    return { frames, frameWidth: fw, frameHeight: fh, anchorPx: [ax * scale, ay * scale] };
+    return { frames, frameWidth: fw, frameHeight: fh, anchorPx };
   }
 
   function info() {
