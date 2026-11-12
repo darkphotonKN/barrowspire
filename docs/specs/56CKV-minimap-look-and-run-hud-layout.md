@@ -455,3 +455,106 @@ gateway change.
 ## Change: Minimap modes: enlarged and overlay → FS-1SEF0
 
 ## Change: Minimap in the town and the fields → FS-P0HSP
+
+## Change: Minimap at the top, fullscreen button beside it
+Status: work-order
+Date: 2026-11-12
+
+Owner layout change for the top-right corner (Nick, 2026-11-12): "地圖移動到最上面 全螢幕按鈕移動到地圖左側
+地圖變2倍蛇才移動到右上角" (move the minimap to the very top; move the fullscreen button to the
+minimap's left side; only when the map is enlarged does the button move to the top-right corner),
+then, the same day, "其他文字也要跟著往上移動" (the other text must move up too). The enlarged mode is
+1.5 × in code (FS-1SEF0 §B); "2倍" is read as the enlarged mode. Written `--from-thread` from the
+coordinator's charter defaults; no interview, no `challenge-me` pass. Each requirement says
+**owner**, **charter default** or **derived here**.
+
+**Why here.** §B owns the top-right column's order and corner; the column's other modes (FS-1SEF0
+§B.8, §D.21) and the town's and fields' corner (FS-P0HSP §G.35) all stand on `TOP_RIGHT_HUD` from
+§B.9, and the button's corner is FS-ZAJMH R18. One layout, so one change, here; FS-ZAJMH, FS-1SEF0
+and FS-P0HSP carry pointer stubs. No thin line changes.
+
+### Requirements
+
+C1. **Normal mode: the minimap at the very top.** In every world with a minimap (a run's dungeon
+    floor, the town, a field), while the minimap is shown in its normal mode, its top is the view's
+    top inset, **y 10**, and its right edge on `TOP_RIGHT_HUD`'s x (10 px in from the right) as
+    before: the column's corner is `TOP_RIGHT_EDGE` (top-right, dx −10, dy 10), with no band left
+    above the map for the button. **(owner: "地圖移動到最上面"; derived here: 10 is the column's own
+    inset from the right edge and the target frame's top, FS-48CTQ §E.14, so the corner's inset is
+    the same both ways)**
+C2. **Normal mode: the fullscreen button to the minimap's left.** Its top on the minimap's top
+    (y 10), its right edge `MINIMAP.gap` (6 px) left of the minimap's left edge: at logical width
+    1080 the map spans x 854–1070 and the button x 828–848, at 1280 x 1054–1270 and 1028–1048;
+    20 × 20 as today. It follows the minimap on resize and on M. **(owner: "全螢幕按鈕移動到地圖左側";
+    derived here: top-aligned, and the gap the column keeps under the map)**
+C3. **Enlarged mode: the button back in the corner, the enlarged map under it**, as today: the
+    button 6 px in from the top and right (FS-ZAJMH R18), the 324 × 162 map's top at y 44
+    (`TOP_RIGHT_HUD`, FS-1SEF0 §B.8). **(owner: "地圖變2倍蛇才移動到右上角")**
+C4. **The overlay, and wherever no minimap is shown, keep the button in the corner**: the map
+    overlay (FS-1SEF0 §C.20), a run's floor without regions, a dungeon floor before its map is in,
+    the town or a field before its first state, and every scene with no minimap (the menus). The
+    column then starts at y 44 under it as today (§B.11, FS-1SEF0 §D.21). The button stays
+    clickable over the overlay as today. **(charter default)**
+C5. **Everything under the minimap follows its bottom edge**, in every mode and world: in a run the
+    floor indicator 6 px under the map's bottom, the escaped count 4 px under that, the dev readout
+    inside the map's bottom-left (§C.14) or 4 px under the column's last line (§C.18). With the
+    normal map at y 10 the floor indicator's top is y 124 (was 158) and the escaped count's 149
+    (was 183), at 1080 and 1280; enlarged, unchanged (212, 237). The town and the fields stand
+    nothing under their minimap (FS-P0HSP §G.36), so only the map moves there. **(owner:
+    "其他文字也要跟著往上移動")**
+C6. **One rule, decided once.** Where the button stands is decided with the column's layout, from
+    the minimap's mode and size, and handed to the button (DOM over the canvas, FS-ZAJMH R18) in
+    logical units from the canvas's top and right edges, so it lands where the canvas draws the map
+    at every fit and render scale. A scene that handed it a place takes it back when it ends (a
+    floor change, leaving the run, the town or the field, the page unmounting), and the button goes
+    back to the corner; a later scene's place is never undone by an earlier scene's end. **(derived
+    here)**
+C7. **Clearances hold at 1080 and 1280** (§B.13, FS-1SEF0 §B.12, FS-P0HSP §G.37), with the button
+    beside the normal map: it overlaps neither the map, either target frame, a 600 px top-centre
+    notice in a run, the hub's queue line, its arrival card nor the party panel, and nothing else in
+    the column overlaps it. **(derived here)**
+C8. **The button's own look and behaviour are unchanged**: its size, palette (ADR-0025), fade,
+    names, focus and the presses it keeps from the game (FS-ZAJMH R18–R23). Tokens only; no new art.
+    **(charter default)**
+
+### Acceptance Criteria
+
+- [ ] Run, normal, at logical widths 1080 and 1280: the minimap at (width − 226, 10) 216 × 108; the
+      button's top 10 and its right edge 6 px left of the map's left (x 848 at 1080, 1048 at 1280);
+      the floor indicator's top at the map's bottom + 6 (124), the escaped count's 4 px under it.
+- [ ] Run, enlarged, at 1080 and 1280: the button in the corner (6 from the top and right); the map
+      at (width − 334, 44) 324 × 162; the floor indicator at 212.
+- [ ] Run, overlay and a floor without regions: the button in the corner, the floor indicator at 44.
+- [ ] Pressing M in a run moves the button: normal → enlarged to the corner, overlay stays there,
+      back to normal beside the map again; the column's lines move with the map each time.
+- [ ] Town and field, normal at 1080 and 1280: the map's top at 10, right edge on width − 10, the
+      button beside it as in a run; enlarged, the map at 44 and the button in the corner; overlay,
+      the button in the corner; M moves it each step.
+- [ ] A scene's end hands the corner back; an earlier scene's end does not move a later scene's
+      button.
+- [ ] The button renders at its handed place, in logical units times the canvas's CSS scale; with
+      nothing handed, in the corner as today.
+- [ ] Clearances of C7 at 1080 and 1280.
+- [ ] Typecheck, lint and the full vitest suite pass.
+- [ ] Nick's browser check: a run's floor 1, the town and a field, 1080 and 1280 wide, windowed and
+      fullscreen, M through all three modes.
+
+### Edge States
+
+- **M pressed:** the button jumps between the map's left and the corner at once, with the map; no
+  tween. Accepted: the map itself jumps.
+- **A floor change in a run:** the minimap is destroyed and rebuilt; the button goes to the corner
+  while no map is up and back beside the map once it is built, as the column closes up and opens.
+- **A floor without regions** (floors 2–3, the dev test room): the button in the corner throughout.
+- **Leaving for the town or a field, or back:** the leaving scene takes its place back; the next
+  scene hands its own once its minimap is built, the corner meanwhile.
+- **Fullscreen:** the place is in logical units, so the button stays beside the map in either state.
+- **Hover:** the button is still faded until hovered; beside the map it sits over the world, as it
+  sat over it in the corner.
+- **The invite prompts and the ready check in the town** stand from y 92, under the button's foot
+  (y 30); they still draw over the map's left at 1080 (FS-P0HSP §G.38).
+
+### Out of Scope
+
+The button's look, size, behaviour or key; the minimap's look, size or modes; the top-left stack;
+the target frame and notices; any server change.

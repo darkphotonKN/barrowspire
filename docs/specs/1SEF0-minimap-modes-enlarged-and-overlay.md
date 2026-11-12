@@ -364,3 +364,5 @@ an overlay on floors without regions, in the hub or the field worlds; the minima
 dev-gallery family for HUD chrome; any server, proto or gateway change.
 
 ## Change: Minimap in the town and the fields → FS-P0HSP
+
+## Change: Minimap at the top, fullscreen button beside it → FS-56CKV

@@ -406,3 +406,5 @@ machine; a way to clear charted ground; marks for the Inn, the Smithy, the mailb
 marketplace; new colour tokens or baked art; zoom, pings or click-to-travel; a keybinding setting
 for M; the run's minimap, its look and its modes (unchanged); the invite prompts' and ready check's
 place; any server, proto, gateway, OpenAPI or database change.
+
+## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
