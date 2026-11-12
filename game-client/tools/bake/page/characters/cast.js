@@ -152,7 +152,7 @@ export function archer() {
     walk: { arms: [0.7, 1], lean: 0.06 },
     // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
     // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-    // measured on
+    // measured on (`backpedal` scales the backpedal legs under backpedal_attack and for pace.js)
     run: { arms: [0.5, 1], elbow: [0.25, 1] },
     backpedal: { arms: [0.5, 1], elbow: [0.3, 1] },
   };
@@ -572,7 +572,8 @@ export const CAST = [
   // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
   // trimmed to its pixels (lib/trim.mjs)
   { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
-  // the archer runs and backpedals (FS-JS7C8: the first class re-baked, the owner's 2026-11-12 pick)
+  // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
+  // the first class re-baked, the owner's 2026-11-12 pick)
   { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },

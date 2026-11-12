@@ -1,5 +1,5 @@
 // Hand-keyed clips on the shared rig (ADR-0021 §3, FS-2325V §E.1–E.2): idle, walk, a class
-// attack and death, a class's run and backpedal (FS-JS7C8), plus spring-lagged secondary motion
+// attack and death, a class's run and its attack over the backpedal's legs (FS-JS7C8), plus spring-lagged secondary motion
 // for cloaks, robes and beards.
 //
 // A pose is { b: { bone: [rx, ry, rz] }, body: { rx, rz, x, y, z }, fx: { … } }. Bone angles are
@@ -33,36 +33,62 @@ export const WALK_ATTACK_CYCLES = 2;
 
 /**
  * The same on a sheet that carries `run` (FS-JS7C8 R21, tuning FS-HF0WW): its class runs, and
- * attacking slows it to about 90 world px/s (the server's attack slow, 0.45 × 200), over which
- * one walk cycle (about 59 px) fits the 0.58 s swing, so the legs walk near their own pace.
+ * attacking slows it to about 90 world px/s (the server's attack slow, 0.45 × 200). Over the
+ * 0.58 s swing 0.75 walk cycles (6 of the walk's 8 keys, a step and a half) walk the legs at
+ * about 76 px/s by WALK_PACE (82 by pace.js), under the ground's 90: the owner's "走的動畫可以再
+ * 放慢一些腳步的播放" (one cycle was about 101).
  */
-export const RUN_WALK_ATTACK_CYCLES = 1;
+export const RUN_WALK_ATTACK_CYCLES = 0.75;
+
+/**
+ * The backpedal's legs (FS-JS7C8 §B, `backpedalCycle`): an 8-frame cycle, the feet stepping
+ * backward, measured at 18 fps on the rig (pace.js) at `pace` world px/s backward, the bake's own
+ * record of it (no sheet plays the cycle by itself: it is `backpedal_attack`'s legs).
+ * `speed` is the cloth's drag while the body steps back (simulateSprings, rig heights per second),
+ * held to a quarter of the pace: at its full pace the drag swings a cloak forward through the
+ * legs, while a cloak on a back that moves backward presses against it and hangs.
+ */
+export const BACKPEDAL_LEGS = { frames: 8, fps: 18, loop: true, pace: 69, speed: -0.5 };
+
+/**
+ * How many backpedal cycles the legs of `backpedal_attack` step across the swing (FS-JS7C8 R10):
+ * 1.25 cycles (10 keys) of the re-keyed legs (2026-11-12), each about 30.7 px (69 × 8 / 18), so
+ * about 66 px/s of leg pace against the 90 the slowed body moves, never over it. Their steps are
+ * about half the walk's, so the charter's 0.625 cycles would leave the legs at about 33 px/s, the
+ * feet sliding under the body; 1.5 would be 79 px/s at a shuffling three steps a swing.
+ */
+export const BACKPEDAL_ATTACK_CYCLES = 1.25;
 
 /**
  * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
  * walk from the waist down, played while a class attacks on the move. It lasts exactly as long as
  * `specs.attack` (twice its frames at twice its fps: 14 at 24 for the 7 at 12), so the client's
  * attack window times it unchanged. The upper body steps through the attack's own keys, each held
- * two frames, just as the attack plays them; the legs walk `cycles` walk cycles across it (one on
+ * two frames, just as the attack plays them; the legs walk `cycles` walk cycles across it (0.75 on
  * a sheet that runs, else two). It is `boxed`: drawn in the frame the other clips set, never
  * widening it, so the sheet keeps its frame box (the bake fails if it would clip).
+ *
+ * A sheet that runs also gets `backpedal_attack` (FS-JS7C8 §B R8): the same attack over the
+ * backpedal's legs, played when the class moves more than 90° from its aim while attacking, as
+ * long, `boxed` too, its legs stepping {@link BACKPEDAL_ATTACK_CYCLES} cycles back.
  */
 export function withWalkAttack(specs) {
   const cycles = specs.run ? RUN_WALK_ATTACK_CYCLES : WALK_ATTACK_CYCLES;
-  return { ...specs, walk_attack: { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true, cycles } };
+  const swing = { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true };
+  return {
+    ...specs,
+    walk_attack: { ...swing, cycles },
+    ...(specs.run ? { backpedal_attack: { ...swing, cycles: BACKPEDAL_ATTACK_CYCLES, speed: BACKPEDAL_LEGS.speed } } : {}),
+  };
 }
 
 /**
- * A playable class's run and backpedal (FS-JS7C8 §A, §B), each 8 frames looping, at the fps that
- * puts its measured pace (pace.js) in its band: the run's 180–220 world px/s, the backpedal's
- * 150–220. `speed` is how fast the clip carries the body, in rig heights per second (the walk is
- * 1), for the cloth's drag (simulateSprings). The backpedal's is backward, and held to a
- * quarter of its pace: at its full pace the drag swings a cloak forward through the legs, while a
- * cloak on a back that moves backward presses against it and hangs.
+ * A playable class's run (FS-JS7C8 §A): 8 frames looping, at the fps that puts its measured pace
+ * (pace.js) in the run's 180–220 world px/s. `speed` is how fast the clip carries the body, in rig
+ * heights per second (the walk is 1), for the cloth's drag (simulateSprings).
  */
 export const RUN_ANIMATIONS = {
   run: { frames: 8, fps: 14, loop: true, speed: 2.5 },
-  backpedal: { frames: 8, fps: 18, loop: true, speed: -0.5 },
 };
 
 /**
@@ -72,8 +98,9 @@ export const RUN_ANIMATIONS = {
 export const CLASS_ANIMATIONS = withWalkAttack(ANIMATIONS);
 
 /**
- * A class sheet re-baked with the run and the backpedal (FS-JS7C8 R36: one class at a time, the
- * archer first): a class's clips, those two, and `walk_attack` walking its legs over one cycle.
+ * A class sheet re-baked with the run (FS-JS7C8 R36: one class at a time, the archer first): a
+ * class's clips, the run, `walk_attack` walking its legs over 0.75 cycles and `backpedal_attack`.
+ * No standalone backpedal: a class not attacking always faces where it runs (R8, R45).
  */
 export const RUNNING_CLASS_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, ...RUN_ANIMATIONS });
 
@@ -288,24 +315,30 @@ export function runCycle(style) {
 }
 
 /**
- * One step of the backpedal, right foot planted: it lands behind the body on its toes, rolls
- * under it, and leaves the ground in front, toes last; then a short flight. The left leg swings
- * back beneath, the knee folded, and reaches back to land toes down. A short stride at a quick
- * cadence.
+ * The backpedal's legs (owner 2026-11-12: "後退的動作感覺不太流暢 後退像是在走路沒有後退的感覺"),
+ * keyed from where each ankle should be against the hip over the cycle, solved on the leg's two
+ * bones and rounded. Each foot spends six of the eight keys down, so both are down at each change
+ * of feet and there is no flight: it lands behind the body on the ball of the foot (key 0), rolls
+ * down to the heel as the body passes back over it (1, 2), stands flat under it (3), lifts the
+ * heel as it comes out in front (4) and pushes off its toe (5); then the swing lifts it heel first
+ * and carries it back low (6, 7) to land behind again. The knees stay bent all round and the
+ * pelvis low, the planted feet mostly behind it so the body leans over the front of its feet,
+ * against the travel. Steps are about half the walk's: a longer stride carries the leading thigh
+ * out through the tunic's front (the leg-clearance guard, characters/clearance.js). Columns are keys 0–3; the right leg plays
+ * keys 0–3 of the cycle and the left keys 4–7, so the mirror (frames 4–7) swaps them.
  */
 const BACK_STEP = {
-  thighR: [0.25, -0.08, -0.32, -0.3],
-  shinR: [0.3, 0.45, 0.25, 0.45],
-  footR: [-0.2, -0.22, 0.37, 0.35],
-  thighL: [-0.15, 0.05, 0.22, 0.32],
-  shinL: [0.9, 1, 0.75, 0.4],
-  footL: [-0.15, -0.35, -0.37, -0.27],
-  lift: [0, 0, 0.012, 0.03],
+  thighR: [0.28, 0.1, -0.07, -0.25],
+  shinR: [0.41, 0.52, 0.62, 0.74],
+  footR: [-0.4, -0.53, -0.55, -0.49],
+  thighL: [-0.45, -0.63, -0.49, -0.05],
+  shinL: [0.9, 0.98, 1.34, 0.92],
+  footL: [-0.33, -0.05, -0.46, -0.52],
 };
 
 /**
- * The 8-frame backpedal for a style (FS-JS7C8 R8): the upper body held to the facing, leaning a
- * little into it, the feet stepping backward. The arms swing short against the legs; the pelvis
+ * The 8-frame backpedal for a style (FS-JS7C8 R8), `backpedal_attack`'s legs: the upper body
+ * held to the facing, leaning a little into it, the feet stepping backward ({@link BACK_STEP}). The arms swing short against the legs; the pelvis
  * barely turns and the chest takes that turn back, so the shoulders stay square to the facing.
  * `style.backpedal` scales it (stride, knee, arms, elbow bend per arm, lean);
  * `style.backpedalExtra(i)` adds a class's own.
@@ -319,21 +352,18 @@ export function backpedalCycle(style) {
     const c = -swing(i);
     const hipsY = 0.05 * c;
     const leg = (name, k) => [BACK_STEP[name][i] * k, 0, 0];
-    return pose(
-      {
-        thighR: leg("thighR", r.stride),
-        thighL: leg("thighL", r.stride),
-        shinR: leg("shinR", r.knee),
-        shinL: leg("shinL", r.knee),
-        footR: [BACK_STEP.footR[i] + BACK_STEP.thighR[i] * (1 - r.stride) + BACK_STEP.shinR[i] * (1 - r.knee), 0, 0],
-        footL: [BACK_STEP.footL[i] + BACK_STEP.thighL[i] * (1 - r.stride) + BACK_STEP.shinL[i] * (1 - r.knee), 0, 0],
-        hips: [0, hipsY, 0],
-        spine: [r.lean * 0.5, -hipsY * 0.5, 0],
-        chest: [r.lean * 0.5, -hipsY * 0.5, 0],
-        neck: [-r.lean * 0.85, 0, 0],
-      },
-      { y: BACK_STEP.lift[i] },
-    );
+    return pose({
+      thighR: leg("thighR", r.stride),
+      thighL: leg("thighL", r.stride),
+      shinR: leg("shinR", r.knee),
+      shinL: leg("shinL", r.knee),
+      footR: [BACK_STEP.footR[i] + BACK_STEP.thighR[i] * (1 - r.stride) + BACK_STEP.shinR[i] * (1 - r.knee), 0, 0],
+      footL: [BACK_STEP.footL[i] + BACK_STEP.thighL[i] * (1 - r.stride) + BACK_STEP.shinL[i] * (1 - r.knee), 0, 0],
+      hips: [0, hipsY, 0],
+      spine: [r.lean * 0.5, -hipsY * 0.5, 0],
+      chest: [r.lean * 0.5, -hipsY * 0.5, 0],
+      neck: [-r.lean * 0.85, 0, 0],
+    });
   });
   // the arms after the mirror, so each keeps its own swing and bend
   const arms = (i) => {
@@ -578,25 +608,41 @@ export function layerPoses(upper, lower) {
 }
 
 /**
- * The attack over the walk (`walk_attack`): `spec`'s frames span exactly the attack clip's
- * duration (`attackSpec`). The upper body is the attack key showing at that moment, as the
- * attack clip itself would show it (an in-between would be a pose the attack never draws, and
- * its bow sweeps wider than the frame); the legs walk `spec.cycles` cycles over the same span
- * ({@link WALK_ATTACK_CYCLES} when the spec names none), sampled between the walk's keys.
+ * The attack from the waist up over a leg cycle from the waist down: `spec`'s frames span exactly
+ * the attack clip's duration (`attackSpec`), or `name` is refused. The upper body is the attack
+ * key showing at that moment, as the attack clip itself would show it (an in-between would be a
+ * pose the attack never draws, and its bow sweeps wider than the frame); the legs step `cycles` of
+ * `legs` (a looping cycle) over the same span, sampled between its keys.
  */
-export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
+function attackOverLegs(name, style, spec, attackSpec, legs, cycles) {
   const attack = ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
-  const walk = walkCycle(style);
   const duration = spec.frames / spec.fps;
   if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
-    throw new Error(`clips: walk_attack lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
-  const stride = ((spec.cycles ?? WALK_ATTACK_CYCLES) * walk.length) / spec.frames;
+    throw new Error(`clips: ${name} lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
+  const stride = (cycles * legs.length) / spec.frames;
   return Array.from({ length: spec.frames }, (_, i) =>
     layerPoses(
       attack[Math.min(attack.length - 1, Math.floor((i * attackSpec.fps) / spec.fps + 1e-9))],
-      sample(walk, (i * stride) % walk.length, true),
+      sample(legs, (i * stride) % legs.length, true),
     ),
   );
+}
+
+/**
+ * The attack over the walk (`walk_attack`): the legs walk `spec.cycles` cycles
+ * ({@link WALK_ATTACK_CYCLES} when the spec names none).
+ */
+export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
+  return attackOverLegs("walk_attack", style, spec, attackSpec, walkCycle(style), spec.cycles ?? WALK_ATTACK_CYCLES);
+}
+
+/**
+ * The attack over the backpedal's legs (`backpedal_attack`, FS-JS7C8 §B R8), composed exactly as
+ * {@link walkAttackClip}: the legs step `spec.cycles` backpedal cycles
+ * ({@link BACKPEDAL_ATTACK_CYCLES} when the spec names none).
+ */
+export function backpedalAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
+  return attackOverLegs("backpedal_attack", style, spec, attackSpec, backpedalCycle(style), spec.cycles ?? BACKPEDAL_ATTACK_CYCLES);
 }
 
 // --- parry ---------------------------------------------------------------------------------
@@ -655,11 +701,11 @@ export function clipsFor(style, specs = ANIMATIONS) {
     idle: () => idleCycle(style, specs.idle.frames),
     walk: () => walkCycle(style),
     run: () => runCycle(style),
-    backpedal: () => backpedalCycle(style),
     attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
     walk_attack: () => walkAttackClip(style, specs.walk_attack, specs.attack),
+    backpedal_attack: () => backpedalAttackClip(style, specs.backpedal_attack, specs.attack),
   };
   const own = style.clips ?? {};
   return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));

@@ -260,9 +260,14 @@ lit) while the player stands inside.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
   The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
   `run` (a jog: arms against legs, the chest turning against the hips, a bounce with a flight in
-  each step, the head steady) and `backpedal` (the feet stepping back under a body turned to the
-  pointer); a class with `run` walks its `walk_attack` legs over one walk cycle (FS-JS7C8, the
-  archer first). Folk and creatures keep idle and walk.
+  each step, the head steady), played turned to the way the character moves, and
+  `backpedal_attack` (the attack over legs stepping backward, played while attacking more than
+  90° away from the aim: each foot lands behind the body on its toes and rolls to the heel, the
+  front foot pushes off its toe, the knees stay bent and the body leans over the front of its
+  feet, short steps, never a flight). A class with `run` walks its `walk_attack` legs over 0.75
+  walk cycles and steps its `backpedal_attack` legs over 1.25 backpedal cycles, so neither
+  outpaces the slowed ground; no sheet carries a standalone backpedal (FS-JS7C8, the archer
+  first). Folk and creatures keep idle and walk.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The

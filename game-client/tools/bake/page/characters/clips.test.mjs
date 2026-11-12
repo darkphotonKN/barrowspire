@@ -376,17 +376,17 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
   /** A pose's yaw of the chest in the model: the pelvis, spine and chest turns summed. */
   const chestYaw = (p) => ["hips", "spine", "chest"].reduce((s, b) => s + (p.b[b] ?? [0, 0, 0])[1], 0);
 
-  it("are two 8-frame loops; a class sheet that opts in carries the run, walk_attack with its legs over 0.75 walk cycles and backpedal_attack over one backpedal cycle, and no standalone backpedal", () => {
+  it("are two 8-frame loops; a class sheet that opts in carries the run, walk_attack with its legs over 0.75 walk cycles and backpedal_attack over 1.25 backpedal cycles, and no standalone backpedal", () => {
     for (const spec of [RUN, BACK]) expect([spec.frames, spec.loop]).toEqual([8, true]);
     expect(Object.keys(RUNNING_CLASS_ANIMATIONS)).toEqual(["idle", "walk", "attack", "death", "run", "walk_attack", "backpedal_attack"]);
     const { attack } = RUNNING_CLASS_ANIMATIONS;
     const wa = RUNNING_CLASS_ANIMATIONS.walk_attack;
     expect(wa.cycles).toBe(0.75);
     expect(wa.frames / wa.fps).toBeCloseTo(attack.frames / attack.fps, 9);
-    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 1, speed: BACK.speed });
-    // whole keys of each cycle: 6 of the walk's 8, all 8 of the backpedal's (its shorter steps)
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 1.25, speed: BACK.speed });
+    // whole keys of each cycle: 6 of the walk's 8, 10 of the backpedal's (its short steps)
     expect(wa.cycles * 8).toBe(6);
-    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack.cycles * BACK.frames).toBe(8);
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack.cycles * BACK.frames).toBe(10);
     // the sheets that do not run keep today's two cycles
     expect(CLASS_ANIMATIONS.walk_attack.cycles).toBe(2);
     expect(MERC_ANIMATIONS.walk_attack.cycles).toBe(2);
@@ -400,7 +400,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     frames[0].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[0].b.thighR[j], 9));
   });
 
-  it("backpedal_attack: the attack's keys from the waist up, each held two frames, over the backpedal's legs stepping one cycle across it", () => {
+  it("backpedal_attack: the attack's keys from the waist up, each held two frames, over the backpedal's legs stepping 1.25 cycles across it", () => {
     const spec = RUNNING_CLASS_ANIMATIONS.backpedal_attack;
     const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).backpedal_attack;
     const keys = ATTACKS.shot();
@@ -437,7 +437,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
       backpedalAttack: legPace(backMeasured, BACK.frames, BACK.fps, ba.cycles),
     };
     for (const [name, pace] of Object.entries(paces)) expect(pace, name).toBeLessThanOrEqual(90);
-    // and not far under it: the legs still walk (R21's "about 25% slower", the backpedal legs' one cycle)
+    // and not far under it: the legs still walk (R21's "about 25% slower", the backpedal legs' 1.25 cycles)
     for (const [name, pace] of Object.entries(paces)) expect(pace, name).toBeGreaterThan(60);
   });
 
@@ -604,7 +604,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
         if (!gait[k][s].planted || gait[next(k)][s].planted) continue;
         pushes++;
         const foot = gait[k][s];
-        expect(foot.z, `${s} leaves the ground in front of the pelvis @${k}`).toBeGreaterThan(0.1);
+        expect(foot.z, `${s} leaves the ground in front of the pelvis @${k}`).toBeGreaterThan(0.03);
         expect(foot.heel - foot.toe, `${s} heel up as it pushes @${k}`).toBeGreaterThan(0.02);
       }
     expect(pushes).toBe(2);
@@ -637,7 +637,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
       const down = ["L", "R"].filter((s) => g[s].planted);
       return -down.reduce((sum, s) => sum + g[s].z, 0) / down.length;
     });
-    expect(ahead.reduce((a, b) => a + b) / ahead.length).toBeGreaterThan(0.02);
+    expect(ahead.reduce((a, b) => a + b) / ahead.length).toBeGreaterThan(0.015);
   });
 
   it("the backpedal legs: steps shorter than the walk's, and the cycle loops without a pop", () => {

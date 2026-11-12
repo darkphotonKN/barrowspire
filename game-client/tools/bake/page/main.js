@@ -172,15 +172,16 @@ function characterPoses(sheet) {
   for (const [anim, spec] of Object.entries(specs)) {
     const frames = clips[anim];
     if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
-    // walk_attack (a class's attack on the move) walks its cloth like the walk and calms the
-    // shot's fling like the attack; a run or backpedal names how fast it carries the cloth
-    // (characters/clips.js RUN_ANIMATIONS), in walks
+    // walk_attack and backpedal_attack (a class's attack on the move) carry their cloth with the
+    // legs and calm the shot's fling like the attack; the walk_attack's cloth walks like the walk,
+    // a run or backpedal_attack names how fast it carries the cloth (characters/clips.js
+    // RUN_ANIMATIONS, BACKPEDAL_LEGS), in walks
     const carried = spec.speed ?? (anim === "walk" || anim === "walk_attack" ? 1 : 0);
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,
       speed: carried * (style.speed ?? 1),
       settle: anim === "death",
-      calm: anim === "attack" || anim === "parry" || anim === "walk_attack" ? 0.25 : 1,
+      calm: anim === "attack" || anim === "parry" || anim === "walk_attack" || anim === "backpedal_attack" ? 0.25 : 1,
     });
   }
   // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
