@@ -5,6 +5,7 @@
  * own; `MailboxEnvelope` and `LetterPanel` draw into these rects.
  */
 
+import { frameClose } from "./panelFrame";
 import {
   CORNER_ICON_H,
   CORNER_ICON_W,
@@ -39,7 +40,6 @@ export const PANEL_H = 500;
 const PAD = 20;
 /** The header band: the panel's caption and its ×. */
 const HEADER_H = 30;
-const CLOSE_SIZE = 24;
 const LIST_W = 260;
 /** The gap between the list and the letter, a faint rule down its middle. */
 const GUTTER = 28;
@@ -106,12 +106,9 @@ export function letterPanelFrame(
     width: PANEL_W - PAD * 2,
     height: HEADER_H,
   };
-  const close: Rect = {
-    x: panel.x + PANEL_W - PAD - CLOSE_SIZE,
-    y: top,
-    width: CLOSE_SIZE,
-    height: CLOSE_SIZE,
-  };
+  // the shared frame's ×, every window's place for it (FS-1GZGD § Change C5; owner 2026-11-12:
+  // "mailbox的x關閉按鈕好像位置跟其他的不太一樣")
+  const close: Rect = frameClose(panel);
   const contentY = top + HEADER_H + 8;
   const contentH = panel.y + PANEL_H - PAD - contentY;
   const list: Rect = {

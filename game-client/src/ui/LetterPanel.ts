@@ -10,7 +10,7 @@
  * and not pressable while the claim is in flight, then gone, the slots dimmed under a "Taken" wax
  * stamp. A refused Take's line (a full stash, a seal that would not break) sits over the button.
  *
- * In-world panel on the game palette (`carvedPanel`, ADR-0025). It reads the mailbox store and
+ * In-world panel on the game palette, in every window's frame and × (`drawPanelFrame`, ADR-0025). It reads the mailbox store and
  * decides nothing: the words and the order are `@/mailbox/mailbox`'s, the geometry
  * `letterPanelLayout`'s. Esc is the scene's (the hub's one Esc key); × closes too.
  */
@@ -35,8 +35,7 @@ import { iconSheet } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
 import type { MailboxState } from "@/stores/mailboxStore";
 import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
-import { carvedPanel } from "./carvedPanel";
-import { drawPanelTitle } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { itemTipRow } from "./gearOverlayLayout";
 import { itemShine, strokeWellOutline } from "./itemShine";
 import { buildItemTip, rarityEdge, topTier, type ItemTip } from "./itemTip";
@@ -254,24 +253,19 @@ export class LetterPanel {
     const g = this.keep(
       this.scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH),
     );
-    const { panel, close, list, detail: right } = frame;
-    carvedPanel(g, panel.x, panel.y, panel.width, panel.height);
+    const { panel, list, detail: right } = frame;
+    // every window's frame and × (FS-1GZGD § Change C5; FS-3EBCA R25): the × at the shared place,
+    // amber, brighter under the pointer
+    const { glyph } = drawPanelFrame(this.scene, g, panel);
+    const x = this.keep(glyph.setScrollFactor(0).setDepth(PANEL_DEPTH))
+      .setInteractive({ useHandCursor: true });
+    x.on("pointerdown", () => this.deps.store.getState().closePanel());
+    x.on("pointerover", () => lightClose(x, true));
+    x.on("pointerout", () => lightClose(x, false));
     // the windows' one title, centred (FS-3EBCA R20, R22)
     this.keep(
       drawPanelTitle(this.scene, panel, "MAILBOX").setScrollFactor(0).setDepth(PANEL_DEPTH),
     );
-    // amber, as everything that can be pressed is; brighter under the pointer
-    const x = this.text(
-      close.x + close.width / 2,
-      close.y + close.height / 2,
-      "×",
-      style(palette.interactable, 22),
-    )
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    x.on("pointerdown", () => this.deps.store.getState().closePanel());
-    x.on("pointerover", () => x.setColor(toCss(palette.interactableBright)));
-    x.on("pointerout", () => x.setColor(toCss(palette.interactable)));
     // the gutter between the list and the letter
     const gutter = (list.x + list.width + right.x) / 2;
     g.lineStyle(1, palette.frame, 0.3);

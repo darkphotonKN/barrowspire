@@ -3,15 +3,16 @@
  * (owner 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"): the carved ground with its double
  * brass rule and corner studs (`carvedPanel`), and an × at its top right in the party panel's look
  * and place (FS-R82NV § Change C1). The party panel, the ESC menu's chrome (`showMenuPanel`,
- * FS-G4VMQ § Change: The menu wears the party panel's frame) and the gear overlay's inventory and
- * character panel (FS-HRH2J § Change C16) call it; none copies it.
+ * FS-G4VMQ § Change: The menu wears the party panel's frame), the gear overlay's inventory and
+ * character panel (FS-HRH2J § Change C16) and the letter panel (FS-1GZGD § Change C5) call it;
+ * none copies it.
  *
  * Every window's title is drawn here too (`drawPanelTitle`, FS-3EBCA R20): one place, size,
  * colour and case, so a later window takes it by calling it.
  *
  * It draws only. What a press on the × does, and how it is hit, is each caller's: the party panel
- * makes the glyph interactive, the menu hangs a camera-fixed hit over it, the gear overlay
- * hit-tests it by hand with its other presses.
+ * makes the glyph interactive, as the letter panel does, the menu hangs a camera-fixed hit over
+ * it, the gear overlay hit-tests it by hand with its other presses.
  */
 
 import type Phaser from "phaser";

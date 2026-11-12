@@ -1504,6 +1504,10 @@ while the menu is open nothing else can be pressed). C1 is edited in place and C
 letter panel owns the keys" no longer holds for I, B, C and T (FS-3EBCA R16). The rules for every
 world are FS-3EBCA §D.
 
+Amended again the same day, by the owner: "mailbox的x關閉按鈕好像位置跟其他的不太一樣" (the mailbox's ×
+close button seems to sit differently from the others'): C5 added; R36's panel keeps its size,
+place and contents.
+
 ### Requirements
 
 C1. **The envelope toggles.** With the letter panel open, a press on the envelope closes it, as
@@ -1528,6 +1532,14 @@ C4. **The letter panel is full-screen, so it stands alone.** Opening it first cl
     panel open closes the letter panel first (FS-3EBCA R16); the letter panel no longer refuses
     them. Opening the ESC menu closes it too, and while the menu is open the envelope opens
     nothing (FS-3EBCA R17, R18). `E` stays dropped under it (R40). **(owner, 2026-11-12, above)**
+C5. **The letter panel wears every window's frame and ×.** It is drawn by the shared frame
+    drawing (`drawPanelFrame`, FS-3EBCA R25), as the party panel, the menu and the inventory and
+    character panel are: the same carved ground, and its × at the shared place, a 24 × 24 box
+    12 px in from the panel's top and right edges (it stood 20 px in), in the same glyph, amber
+    and brighter under the pointer. A press on it closes the panel, as before; Esc as before (R40).
+    Its title stays the shared one (FS-3EBCA R22); nothing else in it moves: the list and the
+    letter already begin below the title band. **(owner, 2026-11-12: "mailbox的x關閉按鈕好像位置跟其他的不太一樣";
+    the shared frame derived here: the × is the frame's, so the panel takes the frame)**
 
 ### Acceptance Criteria
 
@@ -1538,6 +1550,7 @@ C4. **The letter panel is full-screen, so it stands alone.** Opening it first cl
 - [ ] At 1080 × 720 the envelope's plate is (742, 658, 58, 46) and at 1280 × 720 (942, 658, 58, 46); its seal, count and pulse are unchanged.
 - [ ] Under the pointer the envelope shows "Mailbox"; the label goes when the pointer leaves.
 - [ ] Esc and the × still close the panel.
+- [ ] The letter panel draws its frame through `drawPanelFrame`, and its one × stands at `frameClose(panel)`: (924, 122, 24, 24) at 1080 × 720.
 
 ### Edge States
 
@@ -1552,4 +1565,4 @@ C4. **The letter panel is full-screen, so it stands alone.** Opening it first cl
 
 - A key for the mailbox.
 - The mailbox outside the town (D11); the greyed icon there is FS-3EBCA's.
-- Any change to the letter panel's contents, the seal, or the summary's fetches.
+- Any change to the letter panel's contents (its frame and × are C5's), the seal, or the summary's fetches.

@@ -42,7 +42,9 @@ C1, C4; FS-R82NV § Change C8, C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Chang
 same day: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣" (every window's title sits somewhere different; put them all in one style,
 centred, the same size and colour), "menu目前沒標題也加上" (the menu has no title now; give it one) and
 "全大寫也統一" (all capitals too, uniformly): §E (R20–R24), this FS owning the shared frame's title.
-And, the same day: "menu無法再按一次icon關閉" (with the menu open, pressing its icon again does not
+And, the same day: "mailbox的x關閉按鈕好像位置跟其他的不太一樣" (the mailbox's × close button seems to sit
+differently from the others'): §F (R25), every window in the one frame, the letter panel joining
+it (FS-1GZGD § Change C5). And, the same day: "menu無法再按一次icon關閉" (with the menu open, pressing its icon again does not
 close it): the Menu icon is a switch, the one corner icon the open menu lets through (R6, R18,
 edited in place).
 
@@ -269,6 +271,16 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
     here: the corner icon's and the key help's name for it, in capitals like the other titles)**
 24. **Contents move only as needed.** Under every other title nothing moves: each already began
     below the band. **(derived here)**
+
+### §F. One frame for every window (owner, 2026-11-12)
+
+25. **One frame drawing.** Every in-game window that opens over the world wears the party panel's
+    frame by calling the shared drawing (`panelFrame`'s `drawPanelFrame`), never a copy: the
+    carved ground, and its × a 24 × 24 box 12 px in from the panel's top and right edges, the ×
+    glyph amber and brighter under the pointer. The party panel, the ESC menu (and the Fall
+    confirm), the inventory and the character panel already did; the letter panel now does too
+    (FS-1GZGD § Change C5), its × moving from 20 px in to the shared place. **(owner, 2026-11-12:
+    "menu跟道具欄跟角色欄的ui調整成跟party一樣外框", then "mailbox的x關閉按鈕好像位置跟其他的不太一樣")**
 
 ## User Stories
 
