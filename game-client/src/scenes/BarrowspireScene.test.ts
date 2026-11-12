@@ -103,6 +103,7 @@ const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interac
 const { useGameStore } = await import("@/stores/gameStore");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
+const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { readdirSync } = await import("node:fs");
@@ -4712,6 +4713,31 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     press({ x: left.x + left.w / 2, y: left.y + left.h / 2 }, 0);
     expect(run.equipment?.isOpen()).toBe(false);
     expect(stageSends()).toEqual(before);
+  });
+
+  // FS-3EBCA R1, R7, R11 (the owner's decision of 2026-11-12: the row of five, the row answering
+  // while the inventory is open). I-3EBCA-5.
+  it("should open the inventory on the Inventory icon and the character panel on the Character icon, the row answering while the inventory is open (FS-3EBCA R7, R11)", () => {
+    const { run, stage } = overlayOnStage();
+    (run as unknown as { mountCorner(): void }).mountCorner();
+    const plate = (icon: "inventory" | "character" | "menu") => {
+      const f = cornerIconFrame(icon, viewport);
+      return stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    };
+    plate("inventory").handlers.pointerdown();
+    expect(run.equipment?.equipKey()).toBe(true);
+    // the inventory is open over the run: the row still answers
+    plate("character").handlers.pointerdown();
+    expect(run.equipment?.isOpen()).toBe(true);
+    plate("inventory").handlers.pointerdown();
+    expect(run.equipment?.equipKey()).toBe(false);
+    expect(run.equipment?.isOpen()).toBe(true);
+    plate("character").handlers.pointerdown();
+    expect(run.equipment?.isOpen()).toBe(false);
+    plate("inventory").handlers.pointerdown();
+    plate("menu").handlers.pointerdown();
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(run.menu).toBeUndefined();
   });
 
   it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
