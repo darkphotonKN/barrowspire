@@ -73,10 +73,21 @@ export const SCEPTRE_RUN_TILT = [15, 40];
 export const KNIGHT_BUILD = [2.0, { shoulderW: 1.1, torsoW: 1.06 }];
 
 /**
- * The knight re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 6, FS-HF0WW
- * § Change: Class sheets at 1.5x R35).
+ * How the knight's standing attack carries his cloak (simulateSprings, in walks, as
+ * BACKPEDAL_ATTACK_SPEED): out behind as by half a walk. The slash's stance sets his right foot
+ * back under the cloak as the cut settles, and hanging still the cloak let his calf and boot through
+ * it by 7.6 px on the last key (clearance.js `cloakClearance`); half a walk holds it off the heel.
  */
-export const KNIGHT_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
+export const KNIGHT_ATTACK_CLOTH = 0.5;
+
+/**
+ * The knight re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 6, FS-HF0WW
+ * § Change: Class sheets at 1.5x R35), his attack's cloth carried by KNIGHT_ATTACK_CLOTH.
+ */
+export const KNIGHT_SHEET = {
+  animations: { ...RUNNING_CLASS_ANIMATIONS, attack: { ...RUNNING_CLASS_ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH } },
+  scale: 1.5,
+};
 
 export const KNIGHT_STYLE = {
   attack: "slash",
