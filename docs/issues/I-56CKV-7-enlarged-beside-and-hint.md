@@ -29,10 +29,10 @@ tokens only.
 
 ## Acceptance Criteria
 
-- [ ] FS-56CKV §Change: Minimap at the top, fullscreen button beside it, every Acceptance Criterion
+- [x] FS-56CKV §Change: Minimap at the top, fullscreen button beside it, every Acceptance Criterion
       marked *(Amended 2026-11-12, enlarged beside)* or *(Amended 2026-11-12, hint)* but the
       browser check.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] Typecheck, lint and the full vitest suite pass.
 - [ ] **Owner browser check (Nick):** a run's floor 1, the town and a field, at 1080 and 1280 wide,
       windowed and fullscreen, M through normal, enlarged and the overlay: the enlarged map at the
       very top with the button at its left and the floor line right under the map; the button in
@@ -55,3 +55,21 @@ amended 2026-11-12.
   corner only for the overlay; the button renders its hint, its side by its place, and the CSS keeps
   it hidden until hover or focus, with no pointer events.
 - GREEN: the corner beside the map in both modes; the hint's words, side and rule.
+
+## Status
+
+Code in, 2026-11-12; awaiting the owner's browser check (the one open box). `ui/topRightColumn.ts`
+(`topRightCorner`: the map beside the button in normal and enlarged, the corner only for the
+overlay and no map), `render/viewport/fullscreenButton.ts` (`fullscreenHintSide`),
+`components/fullscreen.ts` (`fullscreenLabel` gains `hint`), `components/FullscreenButton.tsx` (the
+hint span, no `title`), `app/globals.css` (`.fullscreen-hint`). Layout: enlarged at 1080 the map
+x 746–1070 y 10–172, the button x 720–740 y 10–30, the floor indicator at 178, the escaped count
+at 203; at 1280 the map x 946–1270, the button x 920–940, the same ys. Acceptance walk:
+`topRightColumn.test.ts`, `BarrowspireScene.test.ts` (the column's enlarged clearance test, the
+enlarged layout, M, the dev readout in the enlarged map), `worldMinimapController.test.ts`,
+`HubScene.test.ts`, `FieldScene.test.ts`, `fullscreenButton.test.ts`, `FullscreenButton.test.ts`,
+`fullscreen.test.ts`. Seen red first: 29 failing at the test commit; one more expectation (the dev
+readout inside the enlarged map, y 202 -> 168) went red with the code and was moved with it. Hint
+look matched: the canvas item tip (`ui/itemTip.ts`), the game's only existing hover tip; no
+"Character (I)"-style corner hint exists on any branch yet. Known: at 1080 enlarged the button lies
+over the boss target frame's last 9 px (C7). Suite 7337 passed; tsc and lint clean.

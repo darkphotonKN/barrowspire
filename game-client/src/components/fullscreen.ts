@@ -134,13 +134,15 @@ export function fullscreenOf(
 }
 
 /**
- * The button's accessible name in each state (R18), also its hover tip. The button itself shows
- * only its icon (asked 2026-11-05), so this is the only place the words live.
+ * The button's words in each state: its accessible name (R18) and the hint it shows on hover and
+ * keyboard focus (FS-56CKV §Change C9; Nick, 2026-11-12: "hover時也有要提示文字"). The button itself
+ * shows only its icon (asked 2026-11-05), so this is the only place the words live. The hint names
+ * no key: the game binds none to fullscreen (R22).
  */
-export function fullscreenLabel(active: boolean): { name: string } {
+export function fullscreenLabel(active: boolean): { name: string; hint: string } {
   return active
-    ? { name: "縮小 / exit fullscreen" }
-    : { name: "全螢幕 / enter fullscreen" };
+    ? { name: "縮小 / exit fullscreen", hint: "Exit fullscreen" }
+    : { name: "全螢幕 / enter fullscreen", hint: "Fullscreen" };
 }
 
 /** What of the button the keeping listens on. An `HTMLElement` is one. */

@@ -62,9 +62,9 @@ export class WorldMinimapController {
   }
 
   /**
-   * At the top of the top-right column, right-aligned on its x (§G.35): normal at the very top with
-   * the fullscreen button at its left, enlarged under the button in its corner; in overlay mode the
-   * corner holds only the button (FS-56CKV §Change C1–C4). Nothing stands under it (§G.36).
+   * At the top of the top-right column, right-aligned on its x (§G.35): normal or enlarged at the
+   * very top with the fullscreen button at its left; in overlay mode the corner holds only the
+   * button (FS-56CKV §Change C1–C4, as amended 2026-11-12). Nothing stands under it (§G.36).
    */
   place(): void {
     const panel = this.map.panel;

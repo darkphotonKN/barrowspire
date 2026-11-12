@@ -33,6 +33,17 @@ export const FULLSCREEN_CORNER: FullscreenButtonSpot = {
   right: FULLSCREEN_BUTTON.inset,
 };
 
+/** Which side of the button its hover hint stands on (FS-56CKV §Change C9). */
+export type FullscreenHintSide = "below" | "left";
+
+/**
+ * The hint's side for the button at `spot`, so it stays on screen and never under the map: below
+ * the button in the canvas's corner, to its left where it stands beside the minimap.
+ */
+export function fullscreenHintSide(spot: FullscreenButtonSpot): FullscreenHintSide {
+  return spot.top === FULLSCREEN_CORNER.top && spot.right === FULLSCREEN_CORNER.right ? "below" : "left";
+}
+
 /**
  * Where the button stands now, handed it by the scene that lays out the top-right column
  * (FS-56CKV §Change C6), and heard by the button. The scene that handed the last place owns it;

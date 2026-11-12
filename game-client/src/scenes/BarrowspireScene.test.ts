@@ -8283,10 +8283,11 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(readoutAt(run)).toEqual(inMinimap(1070));
         });
 
-        it("should stand it 4 px inside the enlarged minimap's bottom-left corner at its own 10 px (FS-1SEF0 §B.11)", () => {
+        // the enlarged map at the very top, y 10 (FS-56CKV §Change C3, C5 as amended 2026-11-12)
+        it("should stand it 4 px inside the enlarged minimap's bottom-left corner at its own 10 px (FS-1SEF0 §B.11; FS-56CKV §Change C5)", () => {
           const { run, pressTo } = mapped();
           pressTo("enlarged");
-          expect(readoutAt(run)).toEqual({ at: [1070 - 324 + 4, 44 + 162 - 4], origin: [0, 1] });
+          expect(readoutAt(run)).toEqual({ at: [1070 - 324 + 4, 10 + 162 - 4], origin: [0, 1] });
           expect((run.positionReadout as Made).args[3]).toMatchObject({ fontSize: "10px" });
         });
 

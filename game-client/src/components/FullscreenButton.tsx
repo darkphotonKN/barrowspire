@@ -17,6 +17,7 @@ import {
 import {
   FULLSCREEN_BUTTON,
   fullscreenButtonPlace,
+  fullscreenHintSide,
   type FullscreenButtonPlace,
   type FullscreenButtonSpot,
 } from "@/render/viewport/fullscreenButton";
@@ -55,7 +56,9 @@ const footprint = (spot: FullscreenButtonSpot) =>
  * step (R20). Where the browser has Keyboard Lock, the fullscreen it enters gives Esc to the game
  * and a held Esc leaves (R21 as amended, A16). Nothing is rendered where there is no fullscreen to offer (R23); there is no key
  * for it (R22). It stands where the scene's top-right column hands it: the canvas's corner, or the
- * normal minimap's left (FS-56CKV §Change: Minimap at the top, fullscreen button beside it).
+ * minimap's left (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). Hovered or
+ * keyboard-focused it shows its hint, below it in the corner and to its left beside the map, in
+ * place of the browser's own tooltip (§Change C9).
  */
 export default function FullscreenButton({ frame, doc, keyboard, place = fullscreenButtonPlace }: Props) {
   const fullscreen = useMemo(
@@ -104,10 +107,12 @@ export default function FullscreenButton({ frame, doc, keyboard, place = fullscr
       className="fullscreen-button"
       style={footprint(spot)}
       aria-label={label.name}
-      title={label.name}
       onClick={onClick}
     >
       <Icon className="fullscreen-button-icon" aria-hidden="true" />
+      <span className="fullscreen-hint" data-side={fullscreenHintSide(spot)} aria-hidden="true">
+        {label.hint}
+      </span>
     </button>
   );
 }

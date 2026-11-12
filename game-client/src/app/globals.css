@@ -821,7 +821,7 @@ body:has(.game-page) {
   top: calc(var(--fullscreen-top) * var(--fullscreen-unit));
   right: calc(var(--fullscreen-right) * var(--fullscreen-unit));
   z-index: 2;
-  /* a square around the icon: no words on the button, its name is the tooltip (asked 2026-11-05) */
+  /* a square around the icon: no words on the button (asked 2026-11-05); its hint names it */
   width: calc(var(--fullscreen-height) * var(--fullscreen-unit));
   height: calc(var(--fullscreen-height) * var(--fullscreen-unit));
   padding: 0;
@@ -853,6 +853,44 @@ body:has(.game-page) {
   width: calc(12 * var(--fullscreen-unit));
   height: calc(12 * var(--fullscreen-unit));
   flex: none;
+}
+
+/* The button's hint (FS-56CKV §Change C9; Nick, 2026-11-12: "hover時也有要提示文字"): one line,
+   shown only while the button is hovered or keyboard-focused. The canvas item tip's look (FS-4R9M9
+   R59: a near-opaque dark ground, a faint hairline, a 6 px corner, vellum text) in the button's
+   web tokens (ADR-0025), at the top-right column's line size and padding (FS-56CKV §B.10), in
+   logical units like the button. It takes no pointer events, so it never covers or takes a press
+   from the button or the game. Below the button in the corner, to its left beside the minimap,
+   so it stays on screen and off the map. */
+.fullscreen-hint {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: calc(3 * var(--fullscreen-unit)) calc(8 * var(--fullscreen-unit));
+  font-family: var(--font-body);
+  font-size: calc(12 * var(--fullscreen-unit));
+  line-height: 1.2;
+  color: var(--color-text);
+  background: var(--color-bg-dropdown);
+  border: 1px solid var(--color-border);
+  border-radius: calc(6 * var(--fullscreen-unit));
+}
+
+.fullscreen-hint[data-side="below"] {
+  top: calc(100% + 4 * var(--fullscreen-unit));
+  right: 0;
+}
+
+.fullscreen-hint[data-side="left"] {
+  right: calc(100% + 6 * var(--fullscreen-unit));
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.fullscreen-button:hover .fullscreen-hint,
+.fullscreen-button:focus-visible .fullscreen-hint {
+  visibility: visible;
 }
 
 @media (prefers-reduced-transparency: reduce) {

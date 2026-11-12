@@ -1,10 +1,11 @@
 /**
  * The top-right column, its pure half (FS-56CKV §B): the minimap first when one is shown, then the
  * floor indicator, then the escaped count, each right-aligned on the corner's x. Where a part is
- * not shown the parts under it close up. The normal minimap stands at the very top of the corner
- * with the fullscreen button at its left; enlarged, in the overlay and with no minimap the button
- * keeps the corner and the column starts under it (FS-56CKV §Change: Minimap at the top,
- * fullscreen button beside it). The scene places what this returns, the button's place included.
+ * not shown the parts under it close up. The minimap, normal or enlarged, stands at the very top
+ * of the corner with the fullscreen button at its left; in the overlay and with no minimap the
+ * button keeps the corner and the column starts under it (FS-56CKV §Change: Minimap at the top,
+ * fullscreen button beside it, as amended 2026-11-12). The scene places what this returns, the
+ * button's place included.
  * The town and the fields stand their minimap at the same corner (FS-P0HSP §G.35).
  */
 
@@ -19,15 +20,15 @@ import { MINIMAP, minimapRect, type MinimapPanel } from "./minimap";
 import type { MinimapMode } from "./minimapMode";
 
 /**
- * The column's corner where the normal minimap holds the very top (FS-56CKV §Change C1): 10 px in
- * from the right and from the top, the target frame's top inset (FS-48CTQ §E.14).
+ * The column's corner where the minimap, normal or enlarged, holds the very top (FS-56CKV §Change
+ * C1, C3): 10 px in from the right and from the top, the target frame's top inset (FS-48CTQ §E.14).
  */
 export const TOP_RIGHT_EDGE: Placement = { anchor: "top-right", dx: -10, dy: 10 };
 
 /**
  * The column's corner under the fullscreen button in its corner (FS-ZAJMH R12, R18; its order
  * FS-56CKV §B, `topRightColumn`), stepped down clear of the button (Nick, 2026-11-05): where the
- * enlarged minimap stands, and the lines with no minimap in the corner. The run's, the town's and
+ * lines stand with no minimap in the corner (no map, or the overlay). The run's, the town's and
  * the fields' (FS-P0HSP §G.35).
  */
 export const TOP_RIGHT_HUD: Placement = {
@@ -58,12 +59,12 @@ export interface TopRightCorner {
 }
 
 /**
- * The corner's head (FS-56CKV §Change C1–C4): the normal minimap at the very top with the button
- * `MINIMAP.gap` px to its left, top-aligned; otherwise the button in its corner and the enlarged
- * minimap, or nothing, under it.
+ * The corner's head (FS-56CKV §Change C1–C4): the minimap, normal or enlarged, at the very top with
+ * the button `MINIMAP.gap` px to its left, top-aligned; otherwise the button in its corner and
+ * nothing under it (Nick, 2026-11-12: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側").
  */
 export function topRightCorner(view: ViewSize, minimap: CornerMinimap | null): TopRightCorner {
-  const beside = minimap?.mode === "normal";
+  const beside = minimap !== null && minimap.mode !== "overlay";
   const corner = anchorAt(beside ? TOP_RIGHT_EDGE : TOP_RIGHT_HUD, view);
   const map = minimap ? minimapRect(corner.x, corner.y, minimap) : null;
   return {
