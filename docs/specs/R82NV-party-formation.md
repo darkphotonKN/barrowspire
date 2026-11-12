@@ -327,3 +327,23 @@ slice as with chat); the client side is agent lane.
 - Whisper (FS-KCQ06), which will reuse the presence index.
 
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
+
+## Change: The party panel closes on its × and stands nearer the middle
+Status: draft
+Date: 2026-11-12
+
+### Scoping notes (raw)
+
+Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). Owner:
+"組隊ui增加右上角x關閉 然後移動到中間一點" (add an × at the party panel's top right that closes it, and
+move it nearer the middle).
+
+- An × at the panel's top right closes it, in the letter panel's close look (FS-1GZGD R36/R40:
+  "×" in amber, brighter under the pointer).
+- Esc closes it too, consistent with the mailbox: one press closes one thing.
+- Place: centred across the view; its top edge at about 18% of the view's height (named values).
+  Not dead centre: that would cover the player, whom the camera keeps at the centre.
+- The DOM invite field and its Invite button move with it. The invite prompts and the ready check
+  stay where they are.
+- It follows view resizes (FS-ZAJMH R13).
+- The corner row's Party icon (FS-3EBCA) toggles it as T does.

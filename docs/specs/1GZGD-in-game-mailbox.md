@@ -1485,3 +1485,22 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
 - *(Added 2026-11-04, A9:)* a configurable claim cap or pool size; queueing claims over the cap
   instead of answering 503; a gateway retry of a missed deadline; fixing the six other services
   that accept an empty JWT secret (a follow-up in "Before GKE").
+
+## Change: The envelope toggles the letter panel and stands in the corner row
+Status: draft
+Date: 2026-11-12
+
+### Scoping notes (raw)
+
+Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). Owner: "信箱ui可以透過再按一次信箱關閉"
+(the letter panel can be closed by pressing the envelope again), "mail沒有快捷鍵 所以就顯示mail就好"
+(the mailbox has no key, so its hover text is just "Mail").
+
+- With the letter panel open, a press on the envelope closes it: the envelope toggles. Esc and
+  the × still close it (R40).
+- The envelope becomes the corner row's Mail icon (FS-3EBCA): town only, the row's leftmost slot,
+  left of Character and Party. Its plate, lines, seal, count and pulse are unchanged; only its
+  place moves.
+- Its hover text reads "Mail". This is the owner's word and overrides, for this one label, the
+  vocabulary rule that the screen never says "mail" (`game-client/CONTEXT.md` § Mailbox terms);
+  the panel still says MAILBOX.

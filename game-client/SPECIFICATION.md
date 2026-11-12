@@ -130,6 +130,10 @@ server state and sends intents. ✅
 - [ ] Canvas that resizes with the window → FS-ZAJMH
 - [ ] Fullscreen and windowed play → FS-ZAJMH
 
+### HUD
+
+- [ ] Panel shortcut icons on the HUD → FS-3EBCA
+
 ### Hub
 
 - [x] Hub scene → FS-29KSH
