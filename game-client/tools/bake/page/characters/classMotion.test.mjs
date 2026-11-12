@@ -3,7 +3,7 @@
 // attack of FS-2325V § Change: The class attacks move with weight and cut deep.
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { ATTACKS, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
+import { ATTACKS, ATTACK_TURN_LIMIT, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { footing, measurePace } from "./pace.js";
@@ -321,7 +321,7 @@ describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idl
 
   // owner, 2026-11-12, of the wizard's held keys: "法師走路時武器可以垂一點 現在手垂下來了 但是武器卻還是拿得很直"
   if (rest === "upright")
-    it(`lets the sceptre lean with the relaxed hand in the idle and the walk: ${SCEPTRE_TILT}° off vertical, 30–45° on every key, the orb forward and out a little and under the shoulder, the foot of the shaft back by the heel, clear of the robe`, () => {
+    it(`lets the sceptre lean with the relaxed hand in the idle and the walk: ${SCEPTRE_TILT}° off vertical, 30–45° on every key, the orb forward and out a little and under the shoulder, the foot of the shaft back toward the heel, clear of the robe`, () => {
       const [butt, tip] = [gear.weapon[0], gear.weapon.at(-1)];
       const walk = clipsFor(style, sheet.animations).walk;
       const tilts = [];
@@ -338,7 +338,9 @@ describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idl
           // the right hand: out is -x
           expect((hand.x - t.x) / rig.H, `${anim} orb out @${i}`).toBeGreaterThanOrEqual(0.01);
           expect(t.y, `${anim} orb under the shoulder @${i}`).toBeLessThan(at(rig, "upperArmR").y);
-          expect(b.z, `${anim} the shaft's foot behind the hand @${i}`).toBeLessThan(hand.z);
+          // the grip, 0.06 H up the shaft from its foot (gear.js `sceptre`, butt −0.06 to the orb's top 0.29)
+          const grip = b.clone().lerp(t, 0.06 / 0.35);
+          expect(b.z, `${anim} the shaft's foot behind the grip @${i}`).toBeLessThan(grip.z);
           for (const m of gear.weapon) expect(outsideRobe(rig, world(m)), `${anim} @${i}: the sceptre into the robe`).toBeGreaterThan(0);
         });
       expect(Math.abs(tilts.reduce((a, b) => a + b) / tilts.length - SCEPTRE_TILT), "the mean tilt").toBeLessThanOrEqual(3);
@@ -397,6 +399,35 @@ describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
     expect(d.head, `${anim}: into the head`).toBeLessThan(0);
+  });
+});
+
+/**
+ * How far the weapon turns between two poses (degrees): the angle between its line, pommel to tip
+ * (`gear.weapon`), in one and in the other.
+ */
+function turnOf(rig, gear, a, b) {
+  const line = (p) => (posed(rig, p), world(gear.weapon.at(-1)).sub(world(gear.weapon[0])));
+  return line(a).angleTo(line(b)) * DEG;
+}
+
+// with the carry lowered (owner 2026-11-12: "站立時武器應該可以放下手微微下垂"), the blade turned
+// about 150° from the idle into the attack's first key and 99° from its last key back
+describe.each(CLASSES)("the $name's attack starts from the carry and settles back to it (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep)", ({ name, build, style, sheet }) => {
+  const rig = rigOf(build);
+  const gear = GEAR[name](rig);
+  const clips = clipsFor(style, sheet.animations);
+  const [carry, keys] = [clips.idle[0], clips.attack];
+
+  it(`turns the weapon at most ATTACK_TURN_LIMIT (${ATTACK_TURN_LIMIT}°) a frame from the carry into the wind-up and from the follow-through back to the carry`, () => {
+    const steps = [
+      ["carry → key 0", carry, keys[0]],
+      ["key 0 → key 1", keys[0], keys[1]],
+      ["key 4 → key 5", keys[4], keys[5]],
+      ["key 5 → key 6", keys[5], keys[6]],
+      ["key 6 → carry", keys[6], carry],
+    ];
+    for (const [step, a, b] of steps) expect(turnOf(rig, gear, a, b), `${name} ${step}`).toBeLessThanOrEqual(ATTACK_TURN_LIMIT);
   });
 });
 
