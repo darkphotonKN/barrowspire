@@ -23,6 +23,12 @@ import {
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
 import { onSceneEnd } from "./sceneEnd";
+import {
+  ENTER_LABEL,
+  menuConnectionView,
+  reconnectOnArrival,
+  type MenuPress,
+} from "./menuConnection";
 import { forgetPlace } from "@/components/arrival";
 import {
   LOGICAL_HEIGHT,
@@ -57,11 +63,7 @@ const HERO_SCALE = 1.3;
 const CARD_XP_BAR = { left: 64, y: 56, rightMargin: 12, height: 4 };
 /** A roster card's head-and-shoulders window. */
 const PORTRAIT = { width: 44, height: 56 };
-/**
- * The primary button takes the player into the town (the hub), not into a delve: the Spire's door
- * starts those. Wide enough for its label at the button's letter-spacing.
- */
-const ENTER_LABEL = "ENTER THE TOWN";
+/** The primary button: wide enough for its label at the button's letter-spacing. */
 const ENTER_BUTTON = { width: 280, height: 50 };
 
 export class MainMenuScene extends Phaser.Scene {
@@ -69,7 +71,8 @@ export class MainMenuScene extends Phaser.Scene {
   private buttonBg?: Phaser.GameObjects.Graphics;
   private startButtonText?: Phaser.GameObjects.Text;
   private connectionStatusText?: Phaser.GameObjects.Text;
-  private isConnected: boolean = false;
+  /** What the primary button does now, by the socket's status (FS-R6EYZ R15). */
+  private press: MenuPress = null;
   private art?: ArtLibrary;
   private centerFigure?: MenuFigure;
   private centerFigureClass?: string;
@@ -203,17 +206,17 @@ export class MainMenuScene extends Phaser.Scene {
     const hitArea = this.add.rectangle(titleX, btnY + btnH / 2, btnW, btnH, ui.well, 0);
 
     hitArea.on("pointerover", () => {
-      if (this.isConnected) this.drawDelveButton("hover");
+      if (this.press) this.drawDelveButton("hover");
     });
 
     hitArea.on("pointerout", () => {
-      if (this.isConnected) this.drawDelveButton("idle");
+      if (this.press) this.drawDelveButton("idle");
     });
 
     hitArea.on("pointerdown", () => {
-      if (this.isConnected) {
-        this.handleStartGame();
-      }
+      if (this.press === "enter") this.handleStartGame();
+      // down: the menu's own reconnect (FS-R6EYZ R15, R16)
+      else if (this.press === "reconnect") socketManager.reconnectFromMenu();
     });
 
     this.drawDelveButton("disabled");
@@ -242,6 +245,9 @@ export class MainMenuScene extends Phaser.Scene {
 
     handleStatus(socketManager.getConnectionStatus());
     this.unsubscribeConnectionStatus = socketManager.onConnectionStatusChange(handleStatus);
+    // come back to with the socket down (the disconnect notice, a boot that could not reach the
+    // server): reconnect now; the status says how it goes (FS-R6EYZ R14)
+    reconnectOnArrival(socketManager);
 
     // Queue Notification Listeners
     socketManager.setOnMessageError((info) => {
@@ -842,28 +848,16 @@ export class MainMenuScene extends Phaser.Scene {
   ): void {
     if (!this.sys?.settings?.active) return;
 
-    this.isConnected = status === "connected";
+    const view = menuConnectionView(status);
+    this.press = view.press;
 
     if (this.startButtonText && this.connectionStatusText) {
-      if (status === "connected") {
-        hitArea.setInteractive({ useHandCursor: true });
-        this.startButtonText.setText(ENTER_LABEL);
-        this.connectionStatusText.setText("The way is open // Server connected");
-        this.connectionStatusText.setColor(toCss(ui.label));
-        this.drawDelveButton("idle");
-      } else if (status === "connecting") {
-        hitArea.disableInteractive();
-        this.startButtonText.setText("CONNECTING...");
-        this.connectionStatusText.setText("Kindling torch // Connecting to game server...");
-        this.connectionStatusText.setColor(toCss(ui.text));
-        this.drawDelveButton("disabled");
-      } else {
-        hitArea.disableInteractive();
-        this.startButtonText.setText("LOST");
-        this.connectionStatusText.setText("The torch gutters // Connection lost");
-        this.connectionStatusText.setColor(toCss(ui.danger));
-        this.drawDelveButton("disabled");
-      }
+      if (view.press) hitArea.setInteractive({ useHandCursor: true });
+      else hitArea.disableInteractive();
+      this.startButtonText.setText(view.label);
+      this.connectionStatusText.setText(view.line);
+      this.connectionStatusText.setColor(toCss(ui[view.tone]));
+      this.drawDelveButton(view.press ? "idle" : "disabled");
     }
   }
 

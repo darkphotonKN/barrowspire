@@ -10,6 +10,8 @@ import { PreloadScene } from "@/scenes/PreloadScene";
 import { BootScene } from "@/scenes/BootScene";
 import { HubScene } from "@/scenes/HubScene";
 import { FieldScene } from "@/scenes/FieldScene";
+import { DisconnectNoticeScene } from "@/scenes/DisconnectNoticeScene";
+import { watchConnectionLoss } from "./disconnectNotice";
 import { switchWorld } from "./worldRouting";
 import { arrivals } from "./arrival";
 import { WorldEnteredPayload } from "@/assets/types/client";
@@ -44,6 +46,7 @@ export default function PhaserGame() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const unbindRef = useRef<(() => void) | null>(null);
   const releaseFocusRef = useRef<(() => void) | null>(null);
+  const unwatchLossRef = useRef<(() => void) | null>(null);
 
   const initGame = useCallback(() => {
     if (gameRef.current || !containerRef.current || !frameRef.current) return;
@@ -99,6 +102,8 @@ export default function PhaserGame() {
         HubScene,
         BarrowspireScene,
         FieldScene,
+        // last, so drawn over every world: the disconnect notice (FS-R6EYZ R11)
+        DisconnectNoticeScene,
       ],
     };
 
@@ -130,6 +135,10 @@ export default function PhaserGame() {
     // (FS-PQ2TW R8).
     const enterWorld = (payload: WorldEnteredPayload) =>
       switchWorld(game.scene, payload, arrivals);
+
+    // A lost connection while the player is in a world raises the disconnect notice; the watch is
+    // this game's, let go with it, so a close after leaving /game raises nothing (FS-R6EYZ R6).
+    unwatchLossRef.current = watchConnectionLoss(socketManager, game.scene);
 
     socketManager.on("world_entered", (payload: WorldEnteredPayload) => {
       if (!payload?.world_type) return;
@@ -167,6 +176,8 @@ export default function PhaserGame() {
       unbindRef.current = null;
       releaseFocusRef.current?.();
       releaseFocusRef.current = null;
+      unwatchLossRef.current?.();
+      unwatchLossRef.current = null;
       if (gameRef.current) {
         // the keyboard goes back to the page now, not on the destroy's next frame (releaseGame.ts)
         releaseGame(gameRef.current, socketManager);
