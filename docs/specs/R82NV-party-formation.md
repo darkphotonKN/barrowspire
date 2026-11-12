@@ -327,3 +327,75 @@ slice as with chat); the client side is agent lane.
 - Whisper (FS-KCQ06), which will reuse the presence index.
 
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
+
+## Change: The party panel closes on its × and stands nearer the middle
+Status: work-order
+Date: 2026-11-12
+
+Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). Owner:
+"組隊ui增加右上角x關閉 然後移動到中間一點" (add an × at the party panel's top right that closes it, and
+move it nearer the middle). Made alongside [FS-3EBCA](3EBCA-hud-corner-icons.md), whose Party icon
+toggles the panel as T does. R28's place ("right of the party frames", `PARTY_PANEL_X` 280, y 56,
+also restated in R34's amendment) is replaced by C3; R28's T rule and R29–R31 stand. The text
+above is not edited; where this section and it disagree, this section wins.
+
+### Requirements
+
+C1. **An × closes the panel.** At the panel's top right, in its title row: "×" at 22 px in
+    `palette.interactable`, `palette.interactableBright` under the pointer, a hand cursor, centred
+    in a 24 × 24 box whose right edge is the panel's inner edge (12 px in) and whose top is the
+    title row's. A press closes the panel. The letter panel's close look (FS-1GZGD R36, R40),
+    reused. **(charter default: owner, "右上角x關閉"; the look: the letter panel's)**
+C2. **Esc closes it**, as it closes the letter panel: one press closes one thing. The order, which
+    extends FS-HRH2J R5's: in the town, a dialogue's own Esc first (unchanged), then the letter
+    panel, then the gear overlay, then the party panel, and only then does Esc open the ESC menu;
+    in a run, the gear overlay, then the party panel, then the run's ESC menu; in a field, as in
+    the town: the gear overlay, then the party panel, then the field's ESC menu (FS-G4VMQ
+    § Change: The ESC menu in a field world). The corner row's Menu icon is one Esc press
+    (FS-3EBCA R6). Esc in the invite field still only lets go of the field.
+    **(charter default: "consistent with the mailbox"; the order derived here: what is drawn on
+    top goes first, and the gear overlay is drawn over the panel)**
+C3. **Its place: centred across, nearer the middle.** The panel's left edge is
+    `round((view width − 300) / 2)` and its top edge `round(0.18 × view height)`, 130 at 720:
+    named `PARTY_PANEL_TOP_SHARE`. At 1080 the panel spans x 390–690, at 1280 x 490–790. Its width
+    and what it holds are unchanged. **(charter default: owner, "移動到中間一點"; about 18%, since
+    dead centre would cover the player the camera keeps there)**
+C4. **The DOM invite field and its Invite button move with it**, inside the panel as before.
+    **(charter default)**
+C5. **It follows the view.** When the view's size changes, an open panel, its × and its invite
+    field are placed again by C3 (FS-ZAJMH R13). **(charter default)**
+C6. **The invite prompts and the ready check stay where they are**: top centre at y 92. While the
+    panel is open they still step right of it, 12 px clear of its right edge (their existing rule),
+    now the centred panel's edge: x 702 at 1080, 802 at 1280. **(charter default: "stay where they
+    are"; derived here: the step-aside rule reads the panel's edge, so it follows the panel)**
+C7. **A press on the open panel stays the panel's** wherever it now stands (R28's `covers`): it
+    is never an attack, a cast or a hold, and it keeps the invite field's focus.
+
+### Acceptance Criteria
+
+- [ ] The open panel shows "×" at its top right; a press on it closes the panel; it brightens under the pointer.
+- [ ] Esc closes the open panel in the town, a field and a run; in the town with the letter panel or the gear overlay also open, the first Esc closes that one and the second the party panel; with the party panel open, Esc does not open the ESC menu.
+- [ ] At 1080 × 720 the panel's frame is (390, 130, 300, h) and at 1280 × 720 (490, 130, 300, h); the invite field and its button sit inside it.
+- [ ] A view-size change while the panel is open re-places the panel, its × and the invite field.
+- [ ] With the panel open, the invite prompts and the ready check stand at x 702 (1080) and do not overlap the panel; with it shut they are centred as before.
+- [ ] T still toggles the panel under its existing rule.
+
+### Edge States
+
+- **Panel and letter panel both open (town):** the letter panel is drawn over it and the invite
+  field hides (the scene's `blocked`); Esc closes the letter panel first.
+- **Panel and gear overlay both open:** the overlay is drawn over the panel; Esc closes the
+  overlay first.
+- **A full party of four:** the panel grows down to about y 414 and may cover the player's head at
+  the view's centre; it is still a top-half panel, and the player can close it with ×, Esc, T or
+  the Party icon.
+- **A press on × while the invite field has focus:** the panel closes and the field hides with it.
+- **In a run:** a prompt stepped right of the open panel (x 702–1002 at 1080) overlaps the
+  top-right minimap (from x 854) more than it did at x 592; both stay drawn in the HUD band. Left
+  to the owner's look (FS-3EBCA's browser check).
+
+### Out of Scope
+
+- Dragging or remembering the panel's place.
+- Moving the invite prompts or the ready check themselves.
+- Any change to what the panel holds or to the party protocol.

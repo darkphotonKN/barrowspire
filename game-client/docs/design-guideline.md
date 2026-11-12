@@ -716,7 +716,16 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   stacks under it follow its bottom; enlarged, as the overlay or with no map, the button keeps the
   corner and the column starts under it. *(Amended by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
   §Change: Minimap at the top, fullscreen button beside it, the owner's "地圖移動到最上面
-  全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", 2026-11-12.)*
+  全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", 2026-11-12.)* A **map mode icon** sits 4px inside the map's
+  bottom-left corner, normal and enlarged, and beside the fullscreen button while the map overlay
+  is up: a 9 × 9 tile built as a map mark is, two nested squares in the interactable amber on the
+  dark `markerStroke` ring, `interactableBright` under the pointer, drawn in code from tokens. A
+  press does what M does. Hovered, it shows "Map mode (M)" beside the map, never over it, on the
+  canvas item tip's ground (`tipGround`'s dark fill, faint brass hairline, 6px corner) in vellum
+  12px body type, the fullscreen button's hint in the game palette. The dev position readout moves
+  to the map's top-right corner, which the floor's diamond leaves as empty as the bottom-left.
+  *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md) §Change: Map mode
+  icon, the owner's "右上角地圖左下角多加小icon hover顯示可以切換大小或是模式(M)", 2026-11-12.)*
 - **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
   **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
   drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole
@@ -751,6 +760,14 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   all, not even a line, where it is uncharted. The screen is never fogged in the town or a field.
   The party's dots as in a run; no monsters, no other players, no labels, no roads.
   *(Added by [FS-P0HSP](../../docs/specs/P0HSP-town-and-field-minimap.md), 2026-11-12.)*
+- **Corner row.** The panel icons in the bottom-right corner of every world (`src/ui/HudCorner.ts`):
+  from the right Menu (a gear), Character (a bust), Party (two busts) and Mailbox (the envelope), each
+  a 58 × 46 carved plate at the envelope's 0.85, 8 px apart, 16 px in from the corner. Their lines
+  are the interactable amber, brighter under the pointer; a greyed icon (Mail outside the town)
+  is `hudFaint` and never brightens, since an amber thing the player cannot act on is a defect.
+  Under the pointer a 12 px vellum label on the HUD panel names the icon and its key. Drawn in
+  code from tokens, no baked art. The ability card stands directly above the row.
+  *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-12.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

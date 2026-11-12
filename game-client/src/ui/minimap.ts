@@ -420,7 +420,8 @@ const vignettePainter = (panel: MinimapPanel): CanvasPaint => (ctx, w, h) => {
   }
 };
 
-interface PxRect {
+/** A rect in a glyph's own px. */
+export interface PxRect {
   x: number;
   y: number;
   w: number;
@@ -452,9 +453,10 @@ const GLYPH_ART: Record<MapMarkKind, readonly string[]> = {
  * A glyph's ink as a rect per run of inked px, along each row and down each column, and its ring as
  * each grown by the ring's width, with the shape's dark. Every two touching px of one ink lie inside
  * one rect, so no seam opens between rects where an edge falls between device px (render scale 1.5
- * under the canvas renderer).
+ * under the canvas renderer). The map mode icon is built the same way (FS-56CKV §Change: Map mode
+ * icon, D1).
  */
-function glyphRects(art: readonly string[]): { ink: PxRect[]; ring: PxRect[] } {
+export function glyphRects(art: readonly string[]): { ink: PxRect[]; ring: PxRect[] } {
   const runs = (of: RegExp) => {
     const columns = Array.from(art[0], (_, x) => art.map((row) => row[x]).join(""));
     return [

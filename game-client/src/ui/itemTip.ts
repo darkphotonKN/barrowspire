@@ -239,25 +239,47 @@ export function tipGround(
   top?: TopTier,
 ): Phaser.GameObjects.Graphics {
   const bg = scene.add.graphics();
-  if (top) strokeHalo(bg, width, height, top);
-  bg.fillStyle(palette.mapEdge, 0.97);
-  bg.fillRoundedRect(0, 0, width, height, CORNER);
-  if (top) {
-    // inset by half its width, so the whole stroke lands on whole pixels inside the tip
-    const inset = top.border / 2;
-    bg.lineStyle(top.border, top.color, 1);
-    bg.strokeRoundedRect(
-      inset,
-      inset,
-      width - top.border,
-      height - top.border,
-      CORNER - inset,
-    );
-  } else {
-    bg.lineStyle(1, palette.frame, 0.5);
-    bg.strokeRoundedRect(0, 0, width, height, CORNER);
+  if (!top) {
+    paintTipGround(bg, width, height);
+    return bg;
   }
+  strokeHalo(bg, width, height, top);
+  bg.fillStyle(palette.mapEdge, TIP_GROUND_ALPHA);
+  bg.fillRoundedRect(0, 0, width, height, CORNER);
+  // inset by half its width, so the whole stroke lands on whole pixels inside the tip
+  const inset = top.border / 2;
+  bg.lineStyle(top.border, top.color, 1);
+  bg.strokeRoundedRect(
+    inset,
+    inset,
+    width - top.border,
+    height - top.border,
+    CORNER - inset,
+  );
   return bg;
+}
+
+/** The tip's dark ground's alpha. */
+const TIP_GROUND_ALPHA = 0.97;
+
+/** What of a Graphics a plain tip's ground is drawn with. */
+export interface TipGroundGraphics {
+  fillStyle(color: number, alpha?: number): unknown;
+  fillRoundedRect(x: number, y: number, width: number, height: number, radius?: number): unknown;
+  lineStyle(lineWidth: number, color: number, alpha?: number): unknown;
+  strokeRoundedRect(x: number, y: number, width: number, height: number, radius?: number): unknown;
+}
+
+/**
+ * A plain tip's ground drawn into `g`, `width × height` from 0, 0: the dark fill and the faint
+ * brass hairline in the 6 px corner. Every canvas hover tip wears it: the item tip below the top
+ * tiers, and the map mode icon's hint (FS-56CKV §Change: Map mode icon, D7).
+ */
+export function paintTipGround(g: TipGroundGraphics, width: number, height: number): void {
+  g.fillStyle(palette.mapEdge, TIP_GROUND_ALPHA);
+  g.fillRoundedRect(0, 0, width, height, CORNER);
+  g.lineStyle(1, palette.frame, 0.5);
+  g.strokeRoundedRect(0, 0, width, height, CORNER);
 }
 
 /** Concentric 2 px rounded strokes outside the tip's bounds, abutting and fading outward. */

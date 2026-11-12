@@ -61,6 +61,7 @@ const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
+const hudCorner = await import("@/ui/hudCornerLayout");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
@@ -1121,6 +1122,22 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     });
   });
 
+  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false });
+    field.renderState(archerState);
+    const { ABILITY_CARD_PLACE } = hudCorner;
+    expect((field as unknown as { abilityHud: { place: unknown } }).abilityHud.place).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should take a press on the corner row as the row's, never an attack (FS-3EBCA R10)", () => {
+    const { field } = kitOnStage({ lockedOut: false });
+    const f = field as unknown as { corner: unknown; takesPointer(x: number, y: number, p: boolean): boolean };
+    f.corner = { covers: (x: number, y: number) => x > 1000 && y > 650 };
+    expect(f.takesPointer(1030, 680, true)).toBe(true);
+  });
+
   it("should grey the card while the ability lockout runs", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
     const card = vi
@@ -1515,6 +1532,8 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
       size: FOREST_SIZE,
       time: { delayedCall: vi.fn(), get now() { return clock.now; } },
       minimapStage: { graphics: () => layer(layers), canvasImage: () => layer(layers) },
+      // the map mode icon's own objects, kept apart from the map's layers (FS-56CKV §Change: Map mode icon)
+      modeIconStage: { graphics: () => layer([]), text: () => layer([]) },
       showClassHud: vi.fn(),
     });
     const store = { held: null as string | null, writes: [] as string[] };
@@ -1553,6 +1572,44 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     viewport.set({ width: 800, height: 600, renderScale: 1 });
     usePartyStore.setState({ party: null });
     vi.restoreAllMocks();
+  });
+
+  // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
+  // 模式(M)"): a press on the icon is M's, never an attack
+  it("should step the mode on a press on the map mode icon as M does, never an attack, and do nothing with one while chat is typing (FS-56CKV §Change: Map mode icon, D5, D6)", () => {
+    const { field, render, map, store } = forestWithMap();
+    const takes = (x: number, y: number, primary = true) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, primary);
+    expect(takes(862, 109)).toBe(false);
+    render({ x: 2900, y: 1480 });
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    // a right press on it is its too: no class ability at the corner, and no step
+    expect(takes(754, 163, false)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    expect(takes(754, 163)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    expect(store.writes).toEqual(["enlarged"]);
+    // off the icon, the field's as before
+    expect(takes(745, 163)).toBe(false);
+  });
+
+  // integration of the map mode icon (D5, D6) with FS-3EBCA R10 and FS-G4VMQ § Change C4: a press on
+  // the corner row is the row's, and while the ESC menu is up the icon, M's, answers nothing
+  it("should leave a press on the corner row to the row, and step nothing on the icon while the ESC menu is up (FS-3EBCA R10; FS-G4VMQ § Change C4; D5, D6)", () => {
+    const { field, render, map, store } = forestWithMap();
+    const takes = (x: number, y: number) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, true);
+    render({ x: 2900, y: 1480 });
+    field.corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
+    expect(takes(862, 109)).toBe(true);
+    field.corner = undefined;
+    field.menu = {};
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+    field.menu = undefined;
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
   });
 
   it("should build the map with the field's first state, at the column's top, the arrival charted at once (§G.35; Edge States)", () => {
@@ -1661,6 +1718,20 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     pressM();
     expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
     expect(map()!.mode).toBe("normal");
+  });
+
+  // integration of FS-P0HSP §F.33 with FS-G4VMQ § Change C4: a field now has an ESC menu, and
+  // while it is up it owns the keys, M with them, as the town's menu does
+  it("should not step M while the field's ESC menu is open (§F.33; FS-G4VMQ § Change C4)", () => {
+    const { field, render, map, pressM, store } = forestWithMap();
+    render({ x: 600, y: 600 });
+    field.menu = {};
+    pressM();
+    expect(store.writes).toEqual([]);
+    expect(map()!.mode).toBe("normal");
+    field.menu = undefined;
+    pressM();
+    expect(store.writes).toEqual(["enlarged"]);
   });
 
   it("should build the map in the mode this browser kept (§F.32)", () => {
@@ -1788,5 +1859,167 @@ describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)",
     expect(v.cellAt({ x: 600, y: 600 })).toBe(true);
     v.field.release("shutdown");
     expect(store.writes).toEqual([]);
+  });
+});
+
+// FS-R82NV § Change C2: in a field one Esc closes the gear overlay, then the party panel. I-R82NV-13.
+describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
+  function keyed() {
+    const keys = new Map<string, () => void>();
+    const field = new FieldScene() as unknown as {
+      input: unknown;
+      equipment?: unknown;
+      partyPanel?: unknown;
+      bindHudKeys(): void;
+    };
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+    };
+    let gear = true;
+    let party = true;
+    field.equipment = {
+      isOpen: () => gear,
+      hide: () => {
+        const was = gear;
+        gear = false;
+        return was;
+      },
+    };
+    field.partyPanel = {
+      isOpen: () => party,
+      close: () => {
+        const was = party;
+        party = false;
+        return was;
+      },
+    };
+    field.bindHudKeys();
+    return { esc: () => keys.get("keydown-ESC")!(), open: () => ({ gear, party }) };
+  }
+
+  it("should close the gear overlay first, then the party panel", () => {
+    const f = keyed();
+    f.esc();
+    expect(f.open()).toEqual({ gear: false, party: true });
+    f.esc();
+    expect(f.open()).toEqual({ gear: false, party: false });
+  });
+});
+
+// FS-G4VMQ § Change: The ESC menu in a field world (owner 2026-11-12: "目前野外按esc沒反應
+// 野外按esc跟村莊一樣行為"). I-G4VMQ-5.
+describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
+  type Menued = FieldUnderTest & {
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    input: unknown;
+    bindHudKeys(): void;
+    takesPointer(x: number, y: number, primary: boolean): boolean;
+    sendMovementIntent(): void;
+    cursors?: unknown;
+    wasd?: unknown;
+  };
+
+  function menuedField() {
+    const env = fieldOnStage();
+    const field = env.field as Menued;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const labels: string[] = [];
+    const picks = new Map<string, () => void>();
+    field.add = new Proxy(
+      {},
+      {
+        get: (_t, key) =>
+          key === "text"
+            ? (_x: number, _y: number, content: string) => {
+                labels.push(content);
+                return any;
+              }
+            : () => any,
+      },
+    );
+    const keys = new Map<string, () => void>();
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const state = { gear: false, party: false };
+    field.equipment = {
+      isOpen: () => state.gear,
+      hide: () => ((state.gear = false), true),
+      toggle: () => void (state.gear = !state.gear),
+      equipKey: () => false,
+    };
+    field.partyPanel = {
+      isOpen: () => state.party,
+      close: () => ((state.party = false), true),
+      relayout: vi.fn(),
+      destroy: vi.fn(),
+    };
+    field.bindHudKeys();
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    return { ...env, field, labels, key, state, picks };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should open the town's menu on ESC with nothing open, and close it on a second ESC (C1, C2)", () => {
+    const { field, labels, key } = menuedField();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+    expect(labels).toContain("Change character  [1]");
+    expect(labels).toContain("Back  [Esc]");
+    key("ESC");
+    expect(field.menu).toBeUndefined();
+  });
+
+  it("should close the gear overlay, then the party panel, before the menu opens (C1)", () => {
+    const { field, key, state } = menuedField();
+    state.gear = true;
+    state.party = true;
+    key("ESC");
+    expect(state.gear).toBe(false);
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(state.party).toBe(false);
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should leave for the roster on Change character: one leave_hub, then MainMenuScene on world_left (C3)", () => {
+    const { field, key, send, reply } = menuedField();
+    key("ESC");
+    key("ONE");
+    key("ONE");
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toHaveLength(1);
+    reply("world_left", {});
+    expect(field.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should stay in the field and say why when the server refuses the leave (C3)", () => {
+    const { field, key, send, labels } = menuedField();
+    const onError = vi.mocked(socketManager.onError);
+    key("ESC");
+    key("ENTER");
+    const refused = onError.mock.calls.find(([a]) => a === ActionType.LeaveHub)?.[1];
+    refused?.({ action: ActionType.LeaveHub, error: "x", message: "You are not in the hub." });
+    expect(field.scene.start).not.toHaveBeenCalled();
+    expect(labels).toContain("You are not in the hub.");
+    key("ENTER");
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toHaveLength(2);
+  });
+
+  it("should own the keys and presses while open: no gear overlay, no attack (C4)", () => {
+    const { field, key, state } = menuedField();
+    key("ESC");
+    key("I");
+    expect(state.gear).toBe(false);
+    expect(field.takesPointer(400, 300, true)).toBe(true);
   });
 });

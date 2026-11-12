@@ -8,7 +8,7 @@ import type { WorldType } from "@/assets/types/client";
 import { partyLocked, type PartyInvitePayload } from "@/stores/partyStore";
 import { COUNTDOWN_BAR_H, countdownBarRect } from "./countdownBar";
 import { NO_NAME, PARTY_NOTICE_COPY } from "./partyNotice";
-import { PARTY_PANEL_W, PARTY_PANEL_X, type Rect } from "./partyPanelLayout";
+import { PARTY_PANEL_W, partyPanelLeft, type Rect } from "./partyPanelLayout";
 
 /** R32's line: the leader (a blank name reads "Someone"), and the party's members over its cap ("(2/4)"). */
 export function invitePromptText(
@@ -83,8 +83,8 @@ export interface InvitePromptFrame {
 export interface InvitePromptPlacement {
   canvasWidth: number;
   /**
-   * Whether the party panel is open. It stands at x 280–580 from y 56 down, across the top
-   * centre, so while it is open the prompts step right of it rather than under it.
+   * Whether the party panel is open. It stands centred across the top half from y 130 down
+   * (FS-R82NV § Change C3), so while it is open the prompts step right of it rather than under it.
    */
   panelOpen: boolean;
   /** Whether each prompt carries a note row under its buttons (Accept greyed, FS-NCC9J R24). */
@@ -107,7 +107,7 @@ export function invitePromptFrames(
   const height = INVITE_PROMPT_H + (note ? NOTE_H : 0);
   const centred = Math.round((canvasWidth - INVITE_PROMPT_W) / 2);
   const x = panelOpen
-    ? Math.max(centred, PARTY_PANEL_X + PARTY_PANEL_W + PANEL_GAP)
+    ? Math.max(centred, partyPanelLeft(canvasWidth) + PARTY_PANEL_W + PANEL_GAP)
     : centred;
   const inner = { x: x + PAD, width: INVITE_PROMPT_W - PAD * 2 };
   // the nth prompt, with the gap under it, ends at INVITE_PROMPT_Y + n * (height + STACK_GAP)

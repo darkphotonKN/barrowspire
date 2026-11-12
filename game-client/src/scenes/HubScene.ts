@@ -29,6 +29,9 @@ import { BARROW_HEX } from "@/utils/theme";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { escapeStep } from "@/ui/escapeOrder";
+import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
+import { HudCorner } from "@/ui/HudCorner";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
@@ -168,9 +171,10 @@ import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render
 import { afterFrameSetUp, boundCamera, crispen, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
+import type { ModeIconStage } from "@/ui/minimapModeIcon";
 import { canvasImage } from "@/ui/paintKit";
 import { TownPlan } from "@/ui/townMap";
-import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
+import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
 
@@ -319,28 +323,7 @@ function queueLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
   };
 }
 
-/** One line of the hub's ESC menu (FS-G4VMQ §Requirements 3). */
-export interface HubMenuChoice {
-  id: "change" | "leave" | "back";
-  label: string;
-  /** Amber for a thing the player can do, the cancel register for going back. */
-  register: "actionable" | "cancel";
-}
-
-/**
- * What the ESC menu offers, from the scene's state at the moment it opens: the way to the main
- * menu and the way back into the hub always; leaving the queue only while there is a queue to
- * leave. The menu never names the hub ("hub" has no lore name), so it names what changes, the
- * character, not where the player goes.
- */
-export function hubMenuChoices(state: { queued: boolean }): HubMenuChoice[] {
-  const choices: HubMenuChoice[] = [
-    { id: "change", label: "Change character", register: "actionable" },
-  ];
-  if (state.queued) choices.push({ id: "leave", label: "Leave the queue", register: "actionable" });
-  choices.push({ id: "back", label: "Back  [Esc]", register: "cancel" });
-  return choices;
-}
+export { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 
 /** What the hub knows that a dialogue reads: at opening, and live while it is up. */
 interface HubState {
@@ -738,10 +721,17 @@ export class HubScene extends Phaser.Scene {
   private readonly townPlan = new TownPlan(HUB_SIZE);
   /** What the town's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
+  /** The map mode icon's own stage, its glyph and hint (FS-56CKV §Change: Map mode icon): the scene's graphics and text. */
+  private modeIconStage?: ModeIconStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
   private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
+  /**
+   * The corner row (FS-3EBCA): Menu, Character and Party, the Mailbox's slot left to the
+   * envelope. Each press is the key's own path: one Esc, I, T.
+   */
+  private corner?: HudCorner;
   /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
   private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
@@ -883,6 +873,7 @@ export class HubScene extends Phaser.Scene {
     if (!this.groundLayer) this.drawGround();
     this.bindInput();
     this.bindMinimapKey();
+    this.bindMinimapPointer();
     this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
@@ -930,6 +921,15 @@ export class HubScene extends Phaser.Scene {
       () => this.characterLevel,
     );
     this.watchGoldTakes();
+    this.corner = new HudCorner(this, {
+      icons: [
+        { icon: "menu", press: () => this.pressEscape() },
+        { icon: "character", press: () => this.toggleGear() },
+        { icon: "party", press: () => this.partyPanel?.toggle() },
+      ],
+      // the open gear overlay's right panel covers the row: a press there is the overlay's
+      covered: (x, y) => this.gear?.covers(x, y) ?? false,
+    });
 
     // the town's minimap, built with the first state that carries the walls (FS-P0HSP §A.1); as
     // the overlay, held against the screen from the main camera's frames (FS-1SEF0 §C.19)
@@ -937,6 +937,11 @@ export class HubScene extends Phaser.Scene {
       graphics: () => this.add.graphics(),
       canvasImage: (...image) => canvasImage(this, ...image),
       frames: (listener) => afterFrameSetUp(this.cameras.main, listener),
+    };
+    // the map mode icon's, apart from the map's layers (FS-56CKV §Change: Map mode icon)
+    this.modeIconStage = {
+      graphics: () => this.add.graphics(),
+      text: (words, style) => this.add.text(0, 0, words, style),
     };
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
@@ -959,7 +964,7 @@ export class HubScene extends Phaser.Scene {
   /**
    * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
    * its anchor, open panels included, their state untouched. The level bar, the chat window and
-   * the party frames and panel keep to the left, which a width change does not move; the gear
+   * the party frames keep to the left, which a width change does not move; the gear
    * overlay follows Phaser's resize itself.
    */
   private relayoutHud(): void {
@@ -968,6 +973,9 @@ export class HubScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
+    this.corner?.relayout();
+    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
+    this.partyPanel?.relayout();
     this.dialogueChoices?.relayout();
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     if (this.queuePanel?.active) {
@@ -1156,9 +1164,12 @@ export class HubScene extends Phaser.Scene {
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
+    this.modeIconStage = undefined;
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
+    this.corner?.destroy();
+    this.corner = undefined;
     this.unsubscribeGoldTaken?.();
     this.unsubscribeGoldTaken = undefined;
     this.queuePanel = undefined;
@@ -2063,6 +2074,8 @@ export class HubScene extends Phaser.Scene {
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
         button: this.fullscreenButton,
+        // a press on its map mode icon is M's, under M's guards (FS-56CKV §Change: Map mode icon, D6)
+        icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
@@ -2075,10 +2088,24 @@ export class HubScene extends Phaser.Scene {
    * owns the keys; the rest of M's guards are the minimap's own.
    */
   private bindMinimapKey(): void {
-    bindMinimapKey(
-      this.input.keyboard ?? undefined,
-      () => !!this.chatWindow?.isTyping() || !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen(),
+    bindMinimapKey(this.input.keyboard ?? undefined, () => this.minimapKeysOwned(), () => this.minimap);
+  }
+
+  /** M's guards in the town (FS-P0HSP §F.33): chat typing, or the menu, a dialogue card or the letter panel owning the keys. */
+  private minimapKeysOwned(): boolean {
+    return !!this.chatWindow?.isTyping() || !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen();
+  }
+
+  /**
+   * The map mode icon's pointer (FS-56CKV §Change: Map mode icon, D5–D7): lit under it, a press on
+   * it M's. A press or hover over the open gear overlay is the overlay's, and one on the corner row
+   * the row's (FS-3EBCA R10); the letter panel open is one of M's guards already.
+   */
+  private bindMinimapPointer(): void {
+    bindMinimapPointer(
+      this.input,
       () => this.minimap,
+      (x, y) => !!this.gear?.covers(x, y) || !!this.corner?.covers(x, y),
     );
   }
 
@@ -2901,32 +2928,44 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * ESC, read once a frame on the one ESC key the hub binds (FS-G4VMQ §Requirements 1, 2, 20).
-   * One press closes one thing (FS-HRH2J R5): while a dialogue is open the key is the
-   * dialogue's, read in offerConversation, so this does not touch it; then an open letter panel
-   * closes (FS-1GZGD R40), then an open gear overlay; otherwise ESC opens the menu, and pressed
-   * again closes it.
+   * While a dialogue is open the key is the dialogue's, read in offerConversation, so this does
+   * not touch it. Otherwise one press is `pressEscape`'s; with the menu open Enter is its first
+   * choice and a number that choice.
    */
   private offerMenu(): void {
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
-
-    if (this.mailbox?.isOpen()) {
-      if (esc) this.mailbox.close();
+    if (esc || this.mailbox?.isOpen() || !this.menu) {
+      if (esc) this.pressEscape();
       return;
     }
 
-    if (!this.menu) {
-      if (esc && !this.gear?.hide()) this.openMenu();
-      return;
-    }
-
-    // open: Esc closes, Enter is the first choice, a number is that choice. Every key is
-    // read each frame, so a press never lingers to answer the next one.
+    // open: Enter is the first choice, a number is that choice. Every key is read each frame, so
+    // a press never lingers to answer the next one.
     const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-    if (esc) this.closeMenu();
-    else if (confirm) this.menuChoices?.confirm();
+    if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+  }
+
+  /**
+   * One Esc press (FS-R82NV § Change C2; FS-HRH2J R5; FS-1GZGD R40): the one thing on top closes,
+   * the letter panel, the menu, the gear overlay, then the party panel; with nothing open the menu
+   * opens (`escapeStep`). A dialogue keeps its own Esc.
+   */
+  private pressEscape(): void {
+    if (this.dialogue) return;
+    const step = escapeStep({
+      letter: this.mailbox?.isOpen() ?? false,
+      menu: !!this.menu,
+      gear: this.gear?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+    });
+    if (step === "letter") this.mailbox?.close();
+    else if (step === "close-menu") this.closeMenu();
+    else if (step === "gear") this.gear?.hide();
+    else if (step === "party") this.partyPanel?.close();
+    else this.openMenu();
   }
 
   /**
@@ -2936,7 +2975,12 @@ export class HubScene extends Phaser.Scene {
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (!pressed || this.menu || this.dialogue || this.mailbox?.isOpen()) return;
+    if (pressed) this.toggleGear();
+  }
+
+  /** I, B or the corner row's Character icon (FS-3EBCA R7): the overlay, under the same owners. */
+  private toggleGear(): void {
+    if (this.menu || this.dialogue || this.mailbox?.isOpen()) return;
     this.gear?.toggle();
   }
 

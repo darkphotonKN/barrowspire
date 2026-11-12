@@ -160,7 +160,9 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   "inbox" or "email" (the account's email is a different thing on the web pages). Maps to
   notification-service's Mailbox and `/api/mail/*`.
 - **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
-  in Phaser with a small **wax seal**. Not an emoji and not a Heroicon (the HUD is canvas).
+  in Phaser with a small **wax seal**, the **corner row**'s Mail icon. Not an emoji and not a
+  Heroicon (the HUD is canvas). Its hover label reads "Mailbox" (FS-1GZGD § Change, 2026-11-12);
+  outside the town the row shows it greyed, "Mailbox · town only".
 - **Wax seal** (on the envelope) — the indicator: lit, with a count, while any letter is unread
   or still holds unclaimed enclosures; dark only when everything is read and claimed. The
   **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
@@ -424,12 +426,15 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   explored; not on floors without regions. In the **town** (FS-P0HSP): the whole town from the
   first moment, its buildings solid with their doors open, its edge open at each road, its **map
   marks**. In a **field world**: its **charted ground** only. Everywhere the party's dots, never a
-  monster, another player or a label. M steps it through its modes, normal, enlarged and the map
-  overlay, and the browser remembers the mode, one for every world (FS-1SEF0, FS-P0HSP); nothing
+  monster, another player or a label. M, or a press on its **map mode icon**, steps it through its
+  modes, normal, enlarged and the map overlay, and the browser remembers the mode, one for every world (FS-1SEF0, FS-P0HSP); nothing
   hides it.
 - **Map overlay** (FS-1SEF0): the minimap's third mode, the floor's map drawn see-through over the
   whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
   map while it is up.
+- **Map mode icon** (FS-56CKV §Change: Map mode icon): the small amber glyph in the minimap's
+  bottom-left corner (beside the fullscreen button while the map overlay is up) that does what M
+  does: a press steps the minimap to its next mode. Hovered, it says "Map mode (M)".
 - **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
   can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
   Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the
@@ -496,8 +501,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Unsafe find** (marking): the border and tip note on an item picked up in this run, which
   is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
+- **Corner row** (FS-3EBCA): the row of drawn panel icons in the bottom-right corner of every
+  world, from the right **Menu** (a gear: one Esc press), **Character** (the gear and bag
+  overlay), **Party** (the party panel) and the **Mailbox** icon (the envelope; greyed outside the
+  town). Each
+  names itself and its key under the pointer. "Character" is the screen's name for the gear and
+  bag overlay's icon only; the overlay keeps its own titles. Not the party frames, not the
+  minimap's column.
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
-  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S).
+  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S),
+  standing directly above the **corner row** (FS-3EBCA).
   Never in the hub. The ability itself is game-service's term
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
