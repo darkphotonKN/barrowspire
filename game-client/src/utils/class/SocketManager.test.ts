@@ -1348,3 +1348,75 @@ describe("SocketManager round 2: late opens and disposal (FS-ZPX58 L-a, L-b)", (
     expect(env.arrival.refused).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The server takes who acts from the connection, never from the payload (FS-29KSH §Change: The
+ * acting player is the connection's). Every client is told the others' ids, so a player_id on
+ * the wire would only be one more field for a modified client to forge: none is sent, on any
+ * action, whoever is signed in.
+ */
+describe("SocketManager wire: no player_id (FS-29KSH §Change: The acting player is the connection's)", () => {
+  const ME = "11111111-1111-4111-8111-111111111111";
+  const samples: Record<string, Record<string, unknown>> = {
+    enter_hub: { characterId: "c-1", class: "mage", className: "mage", characterName: "Wren", username: "Wren" },
+    move: { vx: 1, vy: 0 },
+    attack: { enemy_entity_id: "m-1" },
+    pickup: { itemId: "i-1" },
+    use: { itemId: "i-1" },
+    chat: { channel: "area", text: "well met" },
+    find_game: {},
+    interact: { entity_id: "e-1" },
+    equip: { item_entity_id: "i-1" },
+    unequip: { item_entity_id: "i-1" },
+    cast_skill: { skill_id: "dash", target_x: 10, target_y: 20 },
+    leave_run: {},
+    leave_queue: {},
+    leave_hub: {},
+    start_solo: {},
+    forfeit_run: {},
+    request_floor_map: {},
+    enter_field: { field: "meadows" },
+    leave_field: {},
+    drink_potion: {},
+    renew_token: { token: "jwt-2" },
+    party_create: {},
+    party_invite: { name: "Kaelen" },
+    party_kick: { target_id: "p-2" },
+    party_transfer: { target_id: "p-2" },
+    party_leave: {},
+    party_accept: { invite_id: "inv-1" },
+    party_decline: { invite_id: "inv-1" },
+    party_travel: {},
+    party_enter: {},
+    party_ready: { check_id: "chk-1", accept: true },
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ memberInfo: { id: ME, email_verified: false } });
+  });
+  afterEach(() => {
+    useAuthStore.setState({ memberInfo: null });
+  });
+
+  it.each(Object.keys(samples))("sends %s with its own fields and no player_id", (action) => {
+    const { manager, old } = setup();
+
+    manager.sendMessage(action as never, samples[action] as never);
+
+    const sent = old.sent.map((raw) => JSON.parse(raw));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].action).toBe(action);
+    expect(sent[0].payload).toEqual(samples[action]);
+    expect(sent[0].payload).not.toHaveProperty("player_id");
+  });
+
+  it("sends the renewed token with no player_id", () => {
+    const { manager, old } = setup();
+
+    manager.renewToken("jwt-2");
+
+    const sent = old.sent.map((raw) => JSON.parse(raw));
+    expect(sent.map((m) => m.action)).toEqual(["renew_token"]);
+    expect(sent[0].payload).not.toHaveProperty("player_id");
+  });
+});

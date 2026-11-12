@@ -60,11 +60,11 @@ func TestHostileFrame_OnlyTheDirectionOrTheAimSurvivesTheParse(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"action":"move","payload":{"player_id":"p","vx":1,"vy":0,`+extras+`}}`), &move))
 	parsed, err := move.ParsePayload()
 	require.NoError(t, err)
-	assert.Equal(t, PlayerSessionMovePayload{PlayerSessionPayload: PlayerSessionPayload{PlayerID: "p"}, Vx: 1, Vy: 0}, parsed)
+	assert.Equal(t, PlayerSessionMovePayload{Vx: 1, Vy: 0}, parsed)
 
 	var cast Message
 	require.NoError(t, json.Unmarshal([]byte(`{"action":"cast_skill","payload":{"player_id":"p","skill_id":"dash","target_x":10,"target_y":20,`+extras+`}}`), &cast))
 	parsed, err = cast.ParsePayload()
 	require.NoError(t, err)
-	assert.Equal(t, PlayerCastSkillPayload{PlayerSessionPayload: PlayerSessionPayload{PlayerID: "p"}, SkillID: "dash", TargetX: 10, TargetY: 20}, parsed)
+	assert.Equal(t, PlayerCastSkillPayload{SkillID: "dash", TargetX: 10, TargetY: 20}, parsed)
 }

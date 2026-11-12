@@ -428,3 +428,75 @@ Not this feature's work, recorded so it is not lost:
   `SPECIFICATION.md` service map. Pre-existing drift, unrelated to this feature.
 
 ## Change: Arrival card → FS-PQ2TW
+
+## Change: The acting player is the connection's
+Status: work-order
+Date: 2026-11-12
+
+Owner decision (Nick, 2026-11-12: "前端不傳player id 由後端自己取得", the client must not send
+the player id; the server takes it itself). It lands here because it is R16's move made for the
+second field: R16 took `session_id` off inbound messages so the hub routes on the server's own
+record of the player; this takes `player_id` off them, so the world acts for that same record.
+`drink_potion` already works this way (FS-P9G8R §Requirements 2) and is not changed. The lasting
+rule is [ADR-0079](../adr/0079-the-acting-player-of-an-inbound-message-is-the-connections.md).
+
+Why: the game socket is authenticated once, at the handshake, and the message hub knows each
+connection's player. But for `move`, `interact`, `attack`, `cast_skill`, `equip` and `unequip`
+the world acted for the `player_id` read from the payload, and every client is told the ids of
+the other players in its world (`other_players[].id`). A modified client could move, dash,
+attack, pick up for, or equip and unequip another player in its world.
+
+### Requirements
+
+37. **Who acts is the connection's player.** For every in-world action (`move`, `interact`,
+    `attack`, `cast_skill`, `equip`, `unequip`) the world acts for the player the message hub
+    holds for the connection the message came in on: the same record R16 routes on. The hub
+    hands that player to the world with the message; nothing in the message can set it.
+38. **The payload's `player_id` is never read.** `ParsePayload` neither requires nor reads it,
+    and no handler compares it, logs it as an identity, or falls back to it. A message that still
+    carries one, from an older client, is handled exactly as one without it: the field is ignored.
+39. **A refusal answers the connection's player.** An unparseable payload, an invalid target and
+    a refused action are answered to the player who sent the message, never to a player a
+    payload names.
+40. **The client sends no `player_id`.** `SocketManager` no longer adds the signed-in member's
+    id to outgoing payloads, and no outgoing payload type carries the sender's id. A field that
+    names someone *else* (a party kick's or transfer's `target_id`, an invite's `name`) is a
+    target, not the sender, and is unchanged.
+41. **Nothing else changes.** `drink_potion`, `forfeit_run`, `leave_run` and the other hub-loop
+    actions already take the player from the connection and are unchanged. The handshake, the
+    handoff's `session_id` and every outbound message (state broadcasts keep each player's `id`)
+    are unchanged.
+
+### Acceptance Criteria
+
+- [ ] On A's connection, `move`, `interact`, `attack`, `cast_skill`, `equip` and `unequip` carrying B's `player_id` and aimed at B's own target never act for B.
+- [ ] The same six actions with no `player_id` at all act for A.
+- [ ] A refused `move`, `interact` or `attack` carrying B's `player_id` is answered on A's connection, and B is told nothing.
+- [ ] `ParsePayload` reads no `player_id`; a payload missing it parses.
+- [ ] `drink_potion` is unchanged: the drinker is still the connection's player.
+- [ ] No outgoing client message, for any action in `ActionMap` and for `renew_token`, carries `player_id`.
+- [ ] `go test ./...`, `go vet` and `golangci-lint` on the touched packages are green in game-service; the whole client vitest, `npx tsc --noEmit -p .` and `npm run lint` are green in game-client.
+
+### Edge States
+
+- **An old client** sends `player_id` on every message: the server ignores it (R38). An old client
+  against the new server works unchanged.
+- **A new client against an old server**: the old server requires `player_id` on the six actions
+  and refuses every one of them as unparseable. See *Deploy order*.
+- **A connection with no player, or a player in no world**: refused by routing as before (R16);
+  nothing reaches a world.
+- **A player whose body is not in the world the message reached**: the world's own lookup refuses
+  it, as for any action from a player with no body there.
+
+### Deploy order
+
+**Deploy game-service before the client.** The new server accepts old clients (it ignores the
+field); a new client against an old server breaks every in-world action, because the old server
+still needs `player_id`. Roll out game-service on every pod first, then the client.
+
+### Out of Scope
+
+- Proto, api-gateway, OpenAPI, the database and every other service.
+- Renaming `party_kick` / `party_transfer`'s `target_id` to the FS-R82NV name `player_id`: it is
+  a target, and the server reads `target_id`.
+- Any other outbound field.

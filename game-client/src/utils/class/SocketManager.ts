@@ -11,7 +11,6 @@ import { GameStateLogger } from "@/utils/gameStateLogger";
 import type { RenewOutcome } from "@/utils/sessionRenewal";
 import { travelArrival } from "@/ui/travelArrival";
 import { useGameStore } from "@/stores/gameStore";
-import { useAuthStore } from "@/stores/authStore";
 import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
 import {
   isPartyInvite,
@@ -771,9 +770,10 @@ export class SocketManager {
   }
 
   /**
-   * One outgoing message as it goes on the wire, with player_id injected. The world a message
-   * belongs to is NOT sent: the server routes on its own record of the player (FS-29KSH
-   * §Requirements 16).
+   * One outgoing message as it goes on the wire: the action's own fields and nothing more. Neither
+   * who sends it nor the world it belongs to is sent: the server takes both from its own record
+   * of the connection's player (FS-29KSH §Requirements 16, §Change: The acting player is the
+   * connection's R40; ADR-0079).
    */
   private encode<T extends keyof ActionMap>(
     action: T,
@@ -781,7 +781,7 @@ export class SocketManager {
   ): string {
     const message: ClientMessage<T> = {
       action,
-      payload: { ...payload, player_id: useAuthStore.getState().memberInfo?.id },
+      payload,
       seq: ++this.seq,
     };
     return JSON.stringify(message);
