@@ -3895,7 +3895,10 @@ describe("HubScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
 
 const { MINIMAP: TOWN_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
 const { TOP_RIGHT_HUD } = await import("@/ui/topRightColumn");
-const { anchorAt } = await import("@/render/viewport");
+const { FULLSCREEN_BUTTON, anchorAt } = await import("@/render/viewport");
+const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
+/** The fullscreen button in the canvas's corner (FS-ZAJMH R18). */
+const BUTTON_CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
 
 // FS-P0HSP §A, §B, §E, §G (I-P0HSP-1): the town's minimap at the top of the top-right column.
 describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
@@ -4004,21 +4007,30 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     expect(layers).toHaveLength(5);
   });
 
-  it.each([1080, 1280])("should stand at the column's top at logical width %i: right edge on TOP_RIGHT_HUD's x, top at y 44 (§G.35)", (width) => {
-    viewport.set({ width, height: 720, renderScale: 1 });
-    const { render, layers } = townWithMap();
-    render();
-    const corner = anchorAt(TOP_RIGHT_HUD);
-    expect(corner).toEqual({ x: width - 10, y: 44 });
-    for (const l of layers) expect({ x: l.x, y: l.y }).toEqual({ x: corner.x - TOWN_MINIMAP.width, y: 44 });
-  });
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1, C2, C5 (owner 2026-11-12:
+  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側", "其他文字也要跟著往上移動"): nothing stands under the
+  // town's map (FS-P0HSP §G.36), so only the map and the button move
+  it.each([1080, 1280])(
+    "should stand at the very top at logical width %i: right edge on TOP_RIGHT_HUD's x, top at y 10, the fullscreen button 6 px to its left on its top (§G.35; FS-56CKV §Change C1, C2)",
+    (width) => {
+      viewport.set({ width, height: 720, renderScale: 1 });
+      const { hub, render, layers } = townWithMap();
+      const button = new FullscreenButtonPlace();
+      hub.fullscreenButton = button;
+      render();
+      const corner = anchorAt(TOP_RIGHT_HUD);
+      expect(corner.x).toBe(width - 10);
+      for (const l of layers) expect({ x: l.x, y: l.y }).toEqual({ x: corner.x - TOWN_MINIMAP.width, y: 10 });
+      expect(button.current).toEqual({ top: 10, right: width - (corner.x - TOWN_MINIMAP.width - TOWN_MINIMAP.gap) });
+    },
+  );
 
   it("should follow its corner when the view changes (§G.35)", () => {
     const { hub, render, layers } = townWithMap();
     render();
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
     hub.relayoutHud();
-    for (const l of layers) expect(l.x).toBe(1270 - TOWN_MINIMAP.width);
+    for (const l of layers) expect([l.x, l.y]).toEqual([1270 - TOWN_MINIMAP.width, 10]);
   });
 
   it("should redraw the map on a change of the town only, never as the player walks (§A.4)", () => {
@@ -4118,8 +4130,14 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
   ])("should keep clear of the HUD around it at logical width %i (§G.37)", (width, notice) => {
     const corner = anchorAt(TOP_RIGHT_HUD, { width, height: 720 });
     const left = corner.x - TOWN_MINIMAP.width;
-    // the fullscreen button's foot above the map's top
+    // the enlarged map under the fullscreen button's foot in the corner (FS-56CKV §Change C3)
     expect(corner.y).toBeGreaterThanOrEqual(26);
+    // the button beside the normal map (§Change C2, C7): its foot at y 30, above the notice band
+    // (a 14 px line in 8 px padding centred on y 72) and the arrival card; its left edge right of
+    // the arrival card's widest line and the party panel
+    const buttonLeft = left - TOWN_MINIMAP.gap - FULLSCREEN_BUTTON.height;
+    expect(10 + FULLSCREEN_BUTTON.height).toBeLessThan(72 - 15);
+    expect(720).toBeLessThan(buttonLeft);
     // a notice centred on the view, on y 72, ends at the map's left edge
     expect(width / 2 + notice / 2).toBeLessThanOrEqual(left);
     // the arrival card's widest line (x 360–720) and the party panel (x 280–580) left of the map
@@ -4172,6 +4190,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     });
     hub.views = new Map([["me", { pos: { ...AWAY } }]]);
     const store = { held, writes: [] as string[] };
+    const button = new FullscreenButtonPlace();
+    hub.fullscreenButton = button;
     hub.minimapStore = () => ({
       getItem: () => store.held,
       setItem: (_key: string, value: string) => void store.writes.push(value),
@@ -4191,7 +4211,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
         npcs: [],
       });
     const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
-    return { ...stage, hub, layers, store, pressM, render, map };
+    return { ...stage, hub, layers, store, pressM, render, map, button };
   }
 
   beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
@@ -4244,6 +4264,33 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     expect(map()!.mode).toBe("enlarged");
     // the enlarged panel at the column's top, right-aligned
     expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 44]);
+  });
+
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C2–C4 (owner 2026-11-12:
+  // "地圖變2倍蛇才移動到右上角")
+  it.each([1080, 1280])("should move the fullscreen button on M: to the corner enlarged, there for the overlay, beside the map back at normal, at width %i (FS-56CKV §Change C2–C4)", (width) => {
+    viewport.set({ width, height: 720, renderScale: 1 });
+    const { pressM, render, layers, button } = townWithModes();
+    render();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    pressM();
+    expect(button.current).toEqual(BUTTON_CORNER);
+    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 44]);
+    pressM();
+    expect(button.current).toEqual(BUTTON_CORNER);
+    pressM();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 216, 10]);
+  });
+
+  it("should hand the button's corner back when the visit ends (FS-56CKV §Change C6)", () => {
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const { hub, render, button } = townWithModes();
+    render();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    (hub as unknown as { release(end: string): void }).release("destroy");
+    expect(button.current).toEqual(BUTTON_CORNER);
   });
 
   it("should leave the corner empty as the overlay, and stand it about the player each frame (§F.31, §G.35)", () => {

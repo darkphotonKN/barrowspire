@@ -1,6 +1,7 @@
 import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { FullscreenButtonPlace } from "@/render/viewport/fullscreenButton";
 import FullscreenButton from "./FullscreenButton";
 import type { FullscreenDocument } from "./fullscreen";
 
@@ -14,6 +15,15 @@ const docWith = (api: Partial<FullscreenDocument>): FullscreenDocument => ({
 const render = (doc: FullscreenDocument) =>
   renderToStaticMarkup(
     createElement(FullscreenButton, { frame: createRef<HTMLElement>(), doc }),
+  );
+
+const renderAt = (place: FullscreenButtonPlace) =>
+  renderToStaticMarkup(
+    createElement(FullscreenButton, {
+      frame: createRef<HTMLElement>(),
+      doc: docWith({ fullscreenEnabled: true }),
+      place,
+    }),
   );
 
 // FS-ZAJMH §E R18, R23
@@ -34,6 +44,23 @@ describe("FullscreenButton", () => {
     expect(html).toContain('aria-label="全螢幕 / enter fullscreen"');
     expect(html).toContain('title="全螢幕 / enter fullscreen"');
     expect(visibleText(html)).toBe("");
+  });
+
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C2, C6: the place the
+  // scene handed, in logical units the CSS multiplies by the canvas's scale; the corner by default
+  it("should stand in the canvas's corner while nothing has been handed", () => {
+    const html = renderAt(new FullscreenButtonPlace());
+    expect(html).toContain("--fullscreen-top:6");
+    expect(html).toContain("--fullscreen-right:6");
+  });
+
+  it("should stand at the place the scene handed it, beside the minimap", () => {
+    const place = new FullscreenButtonPlace();
+    place.hand({}, { top: 10, right: 232 });
+    const html = renderAt(place);
+    expect(html).toContain("--fullscreen-top:10");
+    expect(html).toContain("--fullscreen-right:232");
+    expect(html).toContain("--fullscreen-height:20");
   });
 
   it("should read 縮小 while fullscreen, named for leaving it", () => {

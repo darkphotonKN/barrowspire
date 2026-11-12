@@ -63,6 +63,7 @@ vi.mock("phaser", async () => {
 const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_HUD } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { FULLSCREEN_BUTTON, anchorAt, viewport } = await import("@/render/viewport");
+const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
 const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeScene");
@@ -5430,30 +5431,40 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
   const LINE = { width: 160, height: 21 };
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  /** The fullscreen button at the place the column hands it, its square 20 px (FS-ZAJMH R18; FS-56CKV §Change C2). */
+  const buttonAt = (width: number, spot: { top: number; right: number }): Box => ({
+    x: width - spot.right - FULLSCREEN_BUTTON.height,
+    y: spot.top,
+    width: FULLSCREEN_BUTTON.height,
+    height: FULLSCREEN_BUTTON.height,
+  });
 
   it.each([1080, 1280])(
-    "should sit at the column's top with the floor indicator 6 px under it, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
+    "should sit at the very top with the button at its left and the floor indicator 6 px under it, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i (FS-56CKV §Change C1, C2, C7)",
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const column = (shown: boolean) => topRightColumn({ corner, minimap: shown ? MINIMAP : null, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const column = (shown: boolean) =>
+        topRightColumn({ view, minimap: shown ? { ...MINIMAP, mode: "normal" } : null, floorHeight: LINE.height, escapedHeight: LINE.height });
       const { minimap, floor: floorAt } = column(true);
       const map = minimap!;
-      expect(map).toEqual({ x: corner.x - 216, y: 44, width: 216, height: 108 });
+      expect(map).toEqual({ x: corner.x - 216, y: 10, width: 216, height: 108 });
       expect(floorAt.y).toBe(map.y + map.height + 6);
       expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
       if (width === 1080) expect(map.x).toBeGreaterThanOrEqual(854);
-      // the fullscreen button in the canvas's corner, however wide its icon; a top-centre notice
-      // (20 px text in 10 px padding, centred on y 100) up to 600 px wide; either target frame
-      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      // the fullscreen button where the column hands it; a top-centre notice (20 px text in 10 px
+      // padding, centred on y 100) up to 600 px wide; either target frame
       const notice = { x: width / 2 - 300, y: 100 - 22, width: 600, height: 44 };
-      const others = [button, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
       // with the minimap and closed up without it: no part over another, nor over the rest
       for (const shown of [true, false]) {
         const c = column(shown);
+        const button = buttonAt(width, c.button);
+        const others = [button, notice, ...frames];
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
         const parts: Box[] = [...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped)];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+        for (const other of [notice, ...frames]) expect(overlaps(button, other)).toBe(false);
         for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
       }
       expect(map.x).toBeGreaterThan(0);
@@ -5471,7 +5482,7 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
       const { minimapPanel } = await_minimap;
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const c = topRightColumn({ corner, minimap: minimapPanel("enlarged"), floorHeight: LINE.height, escapedHeight: LINE.height });
+      const c = topRightColumn({ view, minimap: { ...minimapPanel("enlarged"), mode: "enlarged" }, floorHeight: LINE.height, escapedHeight: LINE.height });
       const map = c.minimap!;
       expect(map).toEqual({ x: corner.x - 324, y: 44, width: 324, height: 162 });
       if (width === 1080) {
@@ -5480,6 +5491,8 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
       }
       const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
       const parts: Box[] = [map, line(c.floor), line(c.escaped)];
+      // the button back in the corner, however wide its icon (FS-56CKV §Change C3)
+      expect(c.button).toEqual({ top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset });
       const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
       const notice = (w: number) => ({ x: width / 2 - w / 2, y: 100 - 22, width: w, height: 44 });
       for (const part of parts)
@@ -5535,12 +5548,19 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
       const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
       const parts = stack();
       // the minimap normal, enlarged (FS-1SEF0 §B), or none in the corner (no regions, the overlay)
-      for (const panel of [await_minimap.minimapPanel("normal"), await_minimap.minimapPanel("enlarged"), null]) {
-        const c = topRightColumn({ corner, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const panels = [
+        { ...await_minimap.minimapPanel("normal"), mode: "normal" as const },
+        { ...await_minimap.minimapPanel("enlarged"), mode: "enlarged" as const },
+        null,
+      ];
+      for (const panel of panels) {
+        const c = topRightColumn({ view, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
         const at = positionReadoutPlace(c.minimap, { right: corner.x, bottom: c.bottom });
         const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
-        const others = [button, ...frames, ...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
+        // the button where the column hands it (FS-56CKV §Change C2), or in the corner
+        const handed = { x: width - c.button.right - FULLSCREEN_BUTTON.height, y: c.button.top, width: FULLSCREEN_BUTTON.height, height: FULLSCREEN_BUTTON.height };
+        const others = [button, handed, ...frames, ...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
       }
       for (const part of parts) {
@@ -7622,8 +7642,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         const staged = stageIn(party);
         const run = staged.run as unknown as MappedRun;
         const keys: Record<string, Key> = {};
+        const button = new FullscreenButtonPlace();
         Object.assign(run, {
           minimapStore: store.read,
+          fullscreenButton: button,
           input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) }, on: vi.fn() },
         });
         Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
@@ -7645,7 +7667,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           for (let i = 0; i < 3 && map()?.mode !== mode; i++) keys["keydown-M"]();
           expect(map()?.mode).toBe(mode);
         };
-        return { ...staged, run, keys, view, frame, map, placed, dots, store, pressTo };
+        return { ...staged, run, keys, view, frame, map, placed, dots, store, pressTo, button };
       };
       const ally = (id: string, p: { x: number; y: number }, fields: { escape?: boolean; current_health?: number } = {}) => ({
         ...player(id, id, 0, fields),
@@ -7658,14 +7680,14 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         const { run, map, view, placed } = mapped();
         expect(map()).toBeDefined();
         expect(map()!.mode).toBe("normal");
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44));
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 158 + 21 + 4]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 10));
+        expect(standing(run.floorText)).toEqual([1070, 124]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 124 + 21 + 4]);
         view(1280);
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
-        expect(minimapRect(1270, 44)).toMatchObject({ x: 1054, y: 44 });
-        expect(standing(run.floorText)).toEqual([1270, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1270, 183]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10));
+        expect(minimapRect(1270, 10)).toMatchObject({ x: 1054, y: 10 });
+        expect(standing(run.floorText)).toEqual([1270, 124]);
+        expect(standing(run.escapedCountText)).toEqual([1270, 149]);
         // moved, so rasterised again at the render scale of now (FS-ZAJMH R5)
         for (const text of [run.floorText, run.escapedCountText]) expect((text as Made).last.setResolution).toEqual([1]);
       });
@@ -7685,8 +7707,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(standing(run.floorText)).toEqual([1070, 44]);
         expect(standing(run.escapedCountText)).toEqual([1070, 44 + 21 + 4]);
         keys["keydown-M"]();
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+        expect(standing(run.floorText)).toEqual([1070, 124]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 149]);
       });
 
       // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved down
@@ -7701,21 +7723,73 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44, enlarged));
         expect(standing(run.floorText)).toEqual([1270, 212]);
         pressTo("normal");
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
-        expect(standing(run.floorText)).toEqual([1270, 158]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10));
+        expect(standing(run.floorText)).toEqual([1270, 124]);
+      });
+
+      // FS-56CKV §Change: Minimap at the top, fullscreen button beside it (owner 2026-11-12: "地圖移動到
+      // 最上面 全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", "其他文字也要跟著往上移動")
+      describe("the minimap at the very top, the fullscreen button beside it (FS-56CKV §Change C1–C6; I-56CKV-6)", () => {
+        const CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
+
+        it.each([1080, 1280])(
+          "should stand the normal map at y 10, the button 6 px to its left on its top, and the floor indicator at the map's bottom + 6, at logical width %i (§Change C1, C2, C5)",
+          (width) => {
+            const { run, view, placed, button } = mapped();
+            view(width);
+            const map = minimapRect(width - 10, 10);
+            expect(placed).toHaveBeenLastCalledWith(map);
+            expect(button.current).toEqual({ top: map.y, right: width - (map.x - 6) });
+            expect(standing(run.floorText)).toEqual([width - 10, map.y + map.height + 6]);
+            expect(standing(run.escapedCountText)).toEqual([width - 10, map.y + map.height + 6 + 21 + 4]);
+          },
+        );
+
+        it.each([1080, 1280])("should move the button on M: to the corner enlarged, there for the overlay, beside the map back at normal, the lines with the map each time, at width %i (§Change C2–C5)", (width) => {
+          const { run, view, keys, button } = mapped();
+          view(width);
+          keys["keydown-M"]();
+          expect(button.current).toEqual(CORNER);
+          expect(standing(run.floorText)).toEqual([width - 10, 44 + 162 + 6]);
+          keys["keydown-M"]();
+          expect(button.current).toEqual(CORNER);
+          expect(standing(run.floorText)).toEqual([width - 10, 44]);
+          keys["keydown-M"]();
+          expect(button.current).toEqual({ top: 10, right: 232 });
+          expect(standing(run.floorText)).toEqual([width - 10, 124]);
+        });
+
+        it("should keep the button in the corner on a floor without regions and before a floor's map is in, and beside the map once it is built (§Change C4)", () => {
+          const { button, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(button.current).toEqual(CORNER);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(button.current).toEqual(CORNER);
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(button.current).toEqual({ top: 10, right: 232 });
+        });
+
+        it("should hand the corner back when the run ends (§Change C6)", () => {
+          const { run, button } = mapped();
+          expect(button.current).toEqual({ top: 10, right: 232 });
+          run.resetRun("shutdown");
+          expect(button.current).toEqual(CORNER);
+        });
       });
 
       it("should stand the escaped count where the floor indicator would while it has no label, and step it down once it has (FS-56CKV §B.11)", () => {
         const { run, keys, pressTo } = mapped();
         run.updateFloorIndicator({ floor: undefined });
         expect((run.floorText as Made).shown).toBe(false);
-        expect(standing(run.escapedCountText)).toEqual([1070, 158]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 124]);
         pressTo("overlay");
         expect(standing(run.escapedCountText)).toEqual([1070, 44]);
         keys["keydown-M"]();
         run.updateFloorIndicator({ floor: 1 });
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+        expect(standing(run.floorText)).toEqual([1070, 124]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 149]);
       });
 
       it("should close the column up on a dungeon floor before its map is in, and open it once its minimap is built (FS-56CKV §B.11)", () => {
@@ -7728,8 +7802,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
         handle({ ...dungeonState(inRoom), floor: 2 });
         expect(map()).toBeDefined();
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+        expect(standing(run.floorText)).toEqual([1070, 124]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 149]);
       });
 
       it("should cycle it on M, normal, enlarged, overlay and round again, never off, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats (FS-1SEF0 §A.2)", () => {
@@ -8149,7 +8223,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           const { last } = run.positionReadout as Made;
           return { at: last.setPosition, origin: last.setOrigin };
         };
-        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 44 + 108 - 4], origin: [0, 1] });
+        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 10 + 108 - 4], origin: [0, 1] });
         /** Under the column closed up to its top: the floor indicator, the escaped count, then 4 px. */
         const underColumn = (right: number, lines = 2) => ({ at: [right, 44 + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
 
