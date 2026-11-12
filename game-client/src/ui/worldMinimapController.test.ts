@@ -48,7 +48,7 @@ function modeStore(held: string | null = null) {
 
 /** The icon's own stage: its glyph, its hint's ground and its hint, recorded apart from the map's layers. */
 function iconStage() {
-  const made: { destroyed: boolean }[] = [];
+  const made: { destroyed: boolean; words?: string; x?: number; y?: number; visible?: boolean }[] = [];
   const make = (extra: object = {}) => {
     const d = { destroyed: false, width: 74, height: 15, ...extra };
     made.push(d);
@@ -56,12 +56,14 @@ function iconStage() {
       get: (t, key) => {
         if (key in t) return t[key as string];
         if (key === "destroy") return () => void (d.destroyed = true);
+        if (key === "setPosition") return (x: number, y: number) => (Object.assign(d, { x, y }), self);
+        if (key === "setVisible") return (v: boolean) => (Object.assign(d, { visible: v }), self);
         return () => self;
       },
     });
     return self;
   };
-  return { stage: { graphics: () => make(), text: () => make() } as unknown as ModeIconStage, made };
+  return { stage: { graphics: () => make(), text: (words: string) => make({ words }) } as unknown as ModeIconStage, made };
 }
 
 const TOWN = { width: 2000, height: 1000 };
@@ -381,5 +383,74 @@ describe("bindMinimapPointer (FS-56CKV §Change: Map mode icon, D5–D7)", () =>
     expect(minimap.modeIcon?.hovered).toBe(true);
     on.gameout!();
     expect(minimap.modeIcon?.hovered).toBe(false);
+  });
+});
+
+// FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
+// "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the town's and a field's name, built with the map
+describe("WorldMinimapController's map name (FS-56CKV §Change: Map name)", () => {
+  function withName(held: string | null = null) {
+    const { stage } = fakeStage();
+    const icon = iconStage();
+    const { reach } = modeStore(held);
+    const minimap = new WorldMinimapController({
+      stage,
+      world: TOWN,
+      store: reach,
+      button: new FullscreenButtonPlace(),
+      icon: { stage: icon.stage, blocked: () => false },
+      name: "Gentle Meadows",
+    });
+    const text = () => icon.made.find((m) => m.words === "Gentle Meadows");
+    return { minimap, icon, text };
+  }
+
+  it("should make the name's text with the map, on the icon's stage, in the words it was handed (E1, E6)", () => {
+    const { minimap, text } = withName();
+    expect(text()).toBeDefined();
+    expect(minimap.mapName?.words).toBe("Gentle Meadows");
+  });
+
+  it.each([
+    [1080, null, { x: 1066 - 74, y: 14 }],
+    [1280, null, { x: 1266 - 74, y: 14 }],
+    [1080, "enlarged", { x: 714 - 74, y: 13 }],
+    [1280, "enlarged", { x: 914 - 74, y: 13 }],
+    [1080, "overlay", { x: 1033 - 74, y: 9 }],
+    [1280, "overlay", { x: 1233 - 74, y: 9 }],
+  ])("should stand it at width %i, kept mode %s: inside the map's top-right, left of the button enlarged, left of the icon in the overlay (E3–E5)", (width, held, at) => {
+    viewport.set({ width, height: 720, renderScale: 1 });
+    // the stand-in text is 74 × 15
+    const { text } = withName(held);
+    expect(text()).toMatchObject({ ...at, visible: true });
+  });
+
+  it("should move it with the mode on M (E3–E5)", () => {
+    const { minimap, text } = withName();
+    minimap.cycle();
+    expect(text()).toMatchObject({ x: 714 - 74, y: 13 });
+    minimap.cycle();
+    expect(text()).toMatchObject({ x: 1033 - 74, y: 9 });
+  });
+
+  it("should give way where its plate meets what the scene hands it, and show again once that goes (E7)", () => {
+    const { minimap, text } = withName("enlarged");
+    minimap.giveWay([{ x: 600, y: 20, width: 120, height: 17 }]);
+    expect(text()!.visible).toBe(false);
+    minimap.giveWay([]);
+    expect(text()!.visible).toBe(true);
+  });
+
+  it("should take the name with it when it goes", () => {
+    const { minimap, text } = withName();
+    minimap.destroy();
+    expect(text()!.destroyed).toBe(true);
+  });
+
+  it("should build no name without words or without an icon stage", () => {
+    const icon = iconStage();
+    const parts = { stage: fakeStage().stage, world: TOWN, store: modeStore().reach, button: new FullscreenButtonPlace() };
+    expect(new WorldMinimapController({ ...parts, icon: { stage: icon.stage, blocked: () => false } }).mapName).toBeUndefined();
+    expect(new WorldMinimapController({ ...parts, name: "Gentle Meadows" }).mapName).toBeUndefined();
   });
 });
