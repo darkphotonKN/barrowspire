@@ -32,6 +32,12 @@
 > **Edited in place a sixth time on 2026-11-12 (the run's weapon a little higher and swung in, the
 > sceptre arm's lower pump, the backward step's cloth, still a work-order):** R2, R10, R43 and the
 > run's acceptance criteria; see *Owner change, 2026-11-12: the weapon a little higher, swung in*.
+>
+> **Edited in place a seventh time on 2026-11-12 (the run blade raised, values only):** R2 and the
+> run's acceptance line; see *Owner change, 2026-11-12: the blade raised in the run*.
+>
+> **Edited in place an eighth time on 2026-11-12 (the run blade raised again, values and the head
+> check):** R2 and the run's acceptance line; see *Owner change, 2026-11-12: the blade raised again*.
 
 ## Owner change, 2026-11-12
 
@@ -208,6 +214,33 @@ the head" is held as "never over the crown": the point stays under the top of th
 0.91 H against the crown at 0.914), well under the old upright carry's 0.93 and 1.01 H. The blade
 then lies 22-23° across the body at the front of the pump (was 18-19°), inside R2's 5-30°.
 
+## Owner change, 2026-11-12: the blade raised again
+
+Shown the knight's and the mercenary's runs re-baked with the blade raised, the owner said:
+
+> "戰士 傭兵 跑步時提劍的角度再提升15度"
+
+In the run, raise the warrior's (the knight's) and the mercenary's blade by another 15 degrees.
+
+A tune of R2's values (Tunes FS-JS7C8 R2 `RUN_BLADE_ELEV`), by the wrist alone as before
+(`RUN_BLADE` 0.95 → 0.68 rad, `MERC_RUN_BLADE` 1.1 → 0.82): the knight's blade from 9-26° above
+level to 24-41°, the mercenary's from 7-24° to 22-39°, and the band from 5-35° to 20-50° above
+level, its top still well short of the old upright carry's 74-85°. The grip, the pump, the swing in
+(`RUN_CROSS`, `RUN_WRIST`) and every other class and clip are unchanged; the blade now lies about
+28° across the body at the front of the pump (was 22-23°), inside R2's 5-30°.
+
+Raised this far, the point rises past the crown (the top of the head, which the run's bob carries
+from 0.90 to 0.95 H), so "never over the crown" is retired for two checks. The point stays under a
+named ceiling a little above it, `RUN_TIP_CEIL` 1.03 H: the knight's at most 0.995 H (under his
+helm's point at 1.017), the mercenary's 1.022 (over his bare crown by at most 0.08 H). And the blade
+never passes through the head or behind it, measured against the meshes the head bone carries (the
+head; the knight's coif and nasal helm; the mercenary's hair and beard) in all 8 baked facings: no
+segment of the blade crosses them, and wherever the head stands between a point of the blade and
+the camera, that point is ahead of the face and the view is from behind him. Only the back view
+(nw) has any: there the head hides part of the blade held before his chest, at least 0.19 H ahead of
+his face, as it hides the hand that holds it (it did so before the raise too); in the other seven
+facings the head hides none of it.
+
 ## Summary
 
 The four playable classes run instead of speed-walking: a new `run` clip, a fast run on the shared rig,
@@ -327,14 +360,19 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
      behind the hand, the sceptre's head forward and down"; for the sceptre's rest: "held up beside
      the leg (at least 45° above level)".*
      **(owner, 2026-11-12: "只是要合理的位置 但跑步時為什麼手會擺到肩膀", "目前跑步時 武器擺動位置有點不自然
-     跑的時候可以高一點 有點過垂 武器可以往內側擺動一些", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度";
-     edited a seventh time, values only)** In the run a blade is held a little above level,
-     `RUN_BLADE_ELEV` 5° to 35° above level on every sample (the knight's 8-27°, 9-26° on the rig;
-     the mercenary's 6-25°, 7-24° on the rig; each raised about 15° from 5° below to 12° above and 8°
-     below to 10° above), its point ahead of the hand and the body and never over the crown; never
-     back up to the old upright carry. *Replaces: "about level, `RUN_BLADE_ELEV` 10° below to 20°
-     above level on every sample (the knight's 5° below to 12° above, the mercenary's 8° below to
-     10° above), its point ahead of the hand and the body and under the head".* The wizard's sceptre arm
+     跑的時候可以高一點 有點過垂 武器可以往內側擺動一些", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
+     then "戰士 傭兵 跑步時提劍的角度再提升15度"; edited a seventh and an eighth time)** In the run a
+     blade is held raised above level, `RUN_BLADE_ELEV` 20° to 50° above level on every sample (the
+     knight's 23-42°, 24-41° on the rig; the mercenary's 21-40°, 22-39° on the rig; raised about 15°
+     from 9-26° and 7-24°), its point ahead of the hand and the body and under `RUN_TIP_CEIL` 1.03 H
+     (0.995 and 1.022 H on the rigs), the blade never through the head nor behind it in any of the 8
+     facings (the head may hide a point of it only from behind him, the point ahead of his face);
+     never back up to the old upright carry. *Replaces: "a little above level, `RUN_BLADE_ELEV` 5° to
+     35° above level on every sample (the knight's 8-27°, 9-26° on the rig; the mercenary's 6-25°,
+     7-24° on the rig), its point ahead of the hand and the body and never over the crown"; and before
+     it "about level, `RUN_BLADE_ELEV` 10° below to 20° above level on every sample (the knight's 5°
+     below to 12° above, the mercenary's 8° below to 10° above), its point ahead of the hand and the
+     body and under the head".* The wizard's sceptre arm
      pumps smaller about a centre drawn back (`SCEPTRE_RUN_ARM` 0.76, `SCEPTRE_RUN_BACK` 0.25 rad),
      its hand peaking at the lower chest (`SCEPTRE_RUN_PEAK` 0.61 H, ±0.01; was 0.70, by the
      shoulder); her tome arm keeps the chest-high pump; the sceptre stands reasonably upright,
@@ -342,8 +380,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
      fist, ahead of it and of her face, clear of the head and the robe. At the front of the pump
      each weapon arm turns in about its length (`RUN_CROSS` 0.3 rad, clips.js `run.cross`), so the
      weapon hand comes in toward the midline by `RUN_CROSS_REACH` 0.05-0.08 H against the back of the
-     pump (0.07 on the rig; was 0.026), before the torso, a blade angled 5-30° across the body (22-23°
-     on the rig with the blade raised; was 18-19°), and goes back out to the side behind; the weapon clear of the free arm, and the
+     pump (0.07 on the rig; was 0.026), before the torso, a blade angled 5-30° across the body (about 28°
+     on the rig with the blade raised again; 22-23° before, 18-19° before that), and goes back out to the side behind; the weapon clear of the free arm, and the
      knight's blade never through his shield. The shoulders, the lean, the legs, the bob, the
      cadence, the pace, the free arms, the rest carry and the attacks are unchanged. *Replaces, for
      the run: "a blade ... 45° below level to 5° above, its point ahead of the hand, under the
@@ -601,8 +639,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
       behind the hip at the back, the shoulders turning 6.5–10° against the hips, the head looking
       ahead, its legs key for key slice 5's; the knight's, the wizard's and the mercenary's weapon
       in a normal grip on every key of the idle, the walk and the run (the fist never turned over on
-      the forearm); in the run a blade 5° to 35° above level (the knight's 8-27°, the mercenary's
-      6-25°) with its tip ahead of the hand, ahead of the body and never over the crown, the sceptre 15-40° off vertical, its orb above the hand,
+      the forearm); in the run a blade 20° to 50° above level (the knight's 23-42°, the mercenary's
+      21-40°) with its tip ahead of the hand, ahead of the body and under 1.03 H, the blade never through the head nor behind it in any facing, the sceptre 15-40° off vertical, its orb above the hand,
       ahead of it and clear of the robe, each weapon hand 0.05-0.08 H in toward the midline at the
       front of the pump against the back, before the torso, a blade 5-30° across the body there,
       the weapon clear of the free arm and the knight's blade never through his shield; at rest the weapon arm hanging (elbow 5–30°, hand under the pelvis bone

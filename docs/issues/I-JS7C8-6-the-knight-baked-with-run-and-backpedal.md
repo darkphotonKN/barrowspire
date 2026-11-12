@@ -125,3 +125,13 @@ Re-baked once (Tunes FS-JS7C8 R2 `RUN_BLADE_ELEV`; owner 2026-11-12: "騎士跟�
 | this re-bake (1.5x) | 1 | 2992 × 3792 | 45.38 MB | 7,345,414 | 512 | 276 × 228 |
 
 +0.1 % RGBA against the bake before (45.35 MB); crown 80 as before. The run old over new in 8 facings and an animated preview are in the session scratchpad `run-blade-up/`.
+
+## Re-built (2026-11-12, agent): the run blade raised about 15° again; waiting on the owner's contact sheet
+
+Re-baked once (Tunes FS-JS7C8 R2 `RUN_BLADE_ELEV`; owner 2026-11-12: "戰士 傭兵 跑步時提劍的角度再提升15度"): in the run the blade 24° to 41° above level (was 9° to 26°; `RUN_BLADE` 0.95 → 0.68 rad), in the normal grip, its point ahead of the hand and the body, at most 0.995 H, under `RUN_TIP_CEIL` 1.03 H and under his helm's point (it now rises past the crown, so "never over the crown" is retired); the blade never crosses his head, coif or helm, and the head hides part of it only in the back view (nw), at least 0.19 H ahead of his face, as it did before the raise; clear of the shield, the free arm and the torso; the swing in unchanged (the blade 28° across the body at the front, was 23°). The leg and cloak guards pass every clip. Only the knight's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| knight sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 3716 × 3056 | 45.42 MB | 7,352,010 | 512 | 276 × 228 |
+
++0.1 % RGBA against the bake before (45.38 MB); crown 80 as before. The run old over new in 8 facings and an animated preview are in the session scratchpad `run-blade-up-2/`.
