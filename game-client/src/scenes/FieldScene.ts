@@ -150,7 +150,13 @@ interface PlayerView {
 export class FieldScene extends Phaser.Scene {
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd?: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
-  private lastSent = { vx: 0, vy: 0 };
+  /**
+   * The last move this visit sent, which the field body walks; none yet at a start. The body may
+   * be walking already: the server routes a move by the player's record, which the world left
+   * moves here before the client hears of it, so that world's last move may walk the field body.
+   * The first frame sends whatever the keys say.
+   */
+  private lastSent?: { vx: number; vy: number };
 
   private field: FieldId = "gentle_meadows";
   /**
@@ -229,6 +235,8 @@ export class FieldScene extends Phaser.Scene {
   init(data?: { field?: FieldId; arrival?: boolean }): void {
     this.field = data?.field ?? "gentle_meadows";
     this.arrival = data?.arrival ?? false;
+    // what the body walks is not known at a start: the first frame says (reported 2026-11-12)
+    this.lastSent = undefined;
   }
 
   preload(): void {
@@ -508,7 +516,6 @@ export class FieldScene extends Phaser.Scene {
     this.fight?.release();
     this.fight = undefined;
     this.lightMap = undefined;
-    this.lastSent = { vx: 0, vy: 0 };
     // a destroyed game took its input manager, the cursor and the captures with it
     if (end === "shutdown") this.handBackInput();
   }
@@ -559,7 +566,7 @@ export class FieldScene extends Phaser.Scene {
     };
   }
 
-  /** Velocity, sent only when it changes. */
+  /** Velocity, sent only when it changes, and always on a visit's first frame ({@link lastSent}). */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
     // the fallen do not walk; the server would refuse it
@@ -572,7 +579,7 @@ export class FieldScene extends Phaser.Scene {
     const aiming = this.fight?.aiming === true;
     const vx = aiming ? 0 : (right ? 1 : 0) - (left ? 1 : 0);
     const vy = aiming ? 0 : (down ? 1 : 0) - (up ? 1 : 0);
-    if (vx === this.lastSent.vx && vy === this.lastSent.vy) return;
+    if (vx === this.lastSent?.vx && vy === this.lastSent?.vy) return;
     this.lastSent = { vx, vy };
     socketManager.sendMessage(ActionType.Move, { vx, vy });
   }
