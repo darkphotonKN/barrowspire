@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { EventEmitter } from "eventemitter3";
+import type Phaser from "phaser";
+import { worldToScreen } from "@/render/iso/projection";
 import { contrastRatio } from "@/render/lighting/lighting";
+import { createPartyStore } from "@/stores/partyStore";
+import { PartyInvitePrompt } from "./PartyInvitePrompt";
 import { palette } from "@/utils/canvasPalette";
 import {
   MINIMAP,
   MINIMAP_EDGE,
+  MINIMAP_OVERLAY,
   WORLD_MARKS,
   WorldMinimap,
   minimapPanel,
@@ -290,5 +296,90 @@ describe("WorldMinimap marks (FS-P0HSP §C)", () => {
     const apart = marked(SPREAD);
     const alone = SPREAD.map((m) => marked([m])[0]);
     apart.forEach((b, i) => expect([b.x, b.y]).toEqual([alone[i].x, alone[i].y]));
+  });
+});
+
+// FS-P0HSP §F.31, §F.34, §G.38 (I-P0HSP-3): the run's modes in the town, and what lies over the map.
+describe("WorldMinimap modes (FS-P0HSP §F)", () => {
+  it("should hold the enlarged 324 × 162 panel and none as the overlay, at depth 920 in the world (§F.31, §F.34)", () => {
+    const { stage, made } = fakeStage();
+    const map = new WorldMinimap(stage, TOWN);
+    map.show(picture());
+    map.setMode("enlarged");
+    expect(map.panel).toEqual({ width: 324, height: 162 });
+    map.setMode("overlay");
+    expect(map.panel).toBeNull();
+    for (const g of made) expect([g.depth, g.scrollFactor]).toEqual([MINIMAP_OVERLAY.depth, 1]);
+    expect(MINIMAP_OVERLAY.depth).toBe(920);
+  });
+
+  it("should stand the overlay so the player's point on it lies on the player, at 1/8 about them (§F.31; FS-1SEF0 §C.14)", () => {
+    const { stage, made } = fakeStage();
+    const map = new WorldMinimap(stage, TOWN);
+    map.show(picture());
+    map.setMode("overlay");
+    const focus = { x: 1180, y: 600 };
+    map.follow(focus, { self: focus, allies: [] });
+    const s = worldToScreen(focus.x, focus.y);
+    const stand = (v: number) => Math.round(v) - Math.round(v * MINIMAP_OVERLAY.scale);
+    expect(made[0].position).toEqual({ x: stand(s.x), y: stand(s.y) });
+    // the town at 1/8: 300 × 150 logical px
+    const ground = made[0].drawn().find((c) => c.name === "fillPoints")!.args[0] as { x: number; y: number }[];
+    const xs = ground.map((p) => p.x);
+    const ys = ground.map((p) => p.y);
+    expect([Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]).toEqual([300, 150]);
+  });
+
+  it("should lie under an invite prompt drawn after it, at the one HUD depth (§G.38)", () => {
+    const order: { what: string; depth: number }[] = [];
+    const layer = (what: string) => {
+      const entry = { what, depth: 0 };
+      order.push(entry);
+      const self: Record<string, unknown> = new Proxy(
+        {},
+        {
+          get: (_t, key) =>
+            key === "setDepth"
+              ? (d: number) => ((entry.depth = d), self)
+              : key === "then"
+                ? undefined
+                : () => self,
+        },
+      );
+      return self;
+    };
+    const stage: MinimapStage = {
+      graphics: () => layer("map") as never,
+      canvasImage: () => layer("map") as never,
+    };
+    const map = new WorldMinimap(stage, TOWN);
+    map.show(picture());
+    const scene = {
+      events: new EventEmitter(),
+      cameras: { main: { width: 1080, height: 720 } },
+      add: { graphics: () => layer("prompt"), text: () => layer("prompt") },
+    } as unknown as Phaser.Scene;
+    const store = createPartyStore({ selfId: () => "me", now: () => 0 });
+    new PartyInvitePrompt(scene, {
+      store,
+      commands: { accept: () => {}, decline: () => {} },
+      hidden: () => false,
+      world: () => "hub",
+      floor: () => undefined,
+    });
+    store.getState().receiveInvite({
+      invite_id: "a",
+      party_id: "party-a",
+      party_pod_addr: "10.0.0.7:5660",
+      leader_name: "Wren",
+      member_count: 2,
+      size: 4,
+      expires_at: "2026-11-01T05:01:00Z",
+    });
+    const lastMap = order.map((o) => o.what).lastIndexOf("map");
+    const firstPrompt = order.findIndex((o) => o.what === "prompt");
+    expect(firstPrompt).toBeGreaterThan(lastMap);
+    // one depth: Phaser draws a depth's objects in the order they were made
+    expect(new Set(order.map((o) => o.depth))).toEqual(new Set([MINIMAP.depth]));
   });
 });

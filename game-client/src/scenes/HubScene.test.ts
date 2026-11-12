@@ -4111,3 +4111,161 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     expect(720).toBeLessThan(left);
   });
 });
+
+// FS-P0HSP §F, §G (I-P0HSP-3): M steps the town's minimap through the run's three modes.
+describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
+  function layer() {
+    const l = { x: 0, y: 0, depth: 0, visible: true, destroyed: false, scrollFactor: 0 };
+    const self: Record<string, unknown> = new Proxy(l as Record<string, unknown>, {
+      get: (t, key) => {
+        if (key in t) return t[key as string];
+        if (key === "setPosition") return (x: number, y: number) => ((l.x = x), (l.y = y), self);
+        if (key === "setDepth") return (d: number) => ((l.depth = d), self);
+        if (key === "setScrollFactor") return (f: number) => ((l.scrollFactor = f), self);
+        if (key === "setVisible") return (v: boolean) => ((l.visible = v), self);
+        if (key === "destroy") return () => void (l.destroyed = true);
+        return () => self;
+      },
+    });
+    return { l, self };
+  }
+  const WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, width, height], j) => ({
+      entity_id: `h${i}-${j}`,
+      house_id: `h${i}`,
+      position: { x, y },
+      width,
+      height,
+    })),
+  );
+
+  function townWithModes(held: string | null = null) {
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MenuHub & Record<string, unknown> & { relayoutHud(): void };
+    const layers: ReturnType<typeof layer>["l"][] = [];
+    const make = () => {
+      const { l, self } = layer();
+      layers.push(l);
+      return self;
+    };
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+      minimapStage: { graphics: make, canvasImage: make },
+    });
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const store = { held, writes: [] as string[] };
+    hub.minimapStore = () => ({
+      getItem: () => store.held,
+      setItem: (_key: string, value: string) => void store.writes.push(value),
+      removeItem: () => {},
+    });
+    const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
+    hub.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    (hub as unknown as { bindMinimapKey(): void }).bindMinimapKey();
+    const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
+    const render = (others: unknown[] = []) =>
+      hub.renderState({
+        world_type: "hub",
+        current_player: { id: "self", entity_id: "me", position: AWAY },
+        other_players: others,
+        walls: WALLS,
+        gates: HUB_GATES,
+        npcs: [],
+      });
+    const map = () => hub.townMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    return { ...stage, hub, layers, store, pressM, render, map };
+  }
+
+  beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should step normal, enlarged, overlay and round again on M, keeping each in this browser (§F.31, §F.32)", () => {
+    const { pressM, render, map, store } = townWithModes();
+    render();
+    expect(map()!.mode).toBe("normal");
+    pressM();
+    expect(map()!.mode).toBe("enlarged");
+    pressM();
+    expect(map()!.mode).toBe("overlay");
+    pressM();
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+  });
+
+  it("should change nothing on M before the map is built (§F.33)", () => {
+    const { pressM, store, map } = townWithModes();
+    pressM();
+    expect(map()).toBeUndefined();
+    expect(store.writes).toEqual([]);
+  });
+
+  type Arrange = (hub: Record<string, unknown>) => void;
+  const GUARDS: [string, Arrange, Partial<KeyboardEvent>][] = [
+    ["a held key's repeat", () => {}, { repeat: true }],
+    ["chat typing", (hub) => void (hub.chatWindow = { isTyping: () => true }), {}],
+    ["the menu panel up", (hub) => void (hub.menu = {}), {}],
+    ["a dialogue card up", (hub) => void (hub.dialogue = {}), {}],
+    ["the letter panel open", (hub) => void (hub.mailbox = { isOpen: () => true }), {}],
+  ];
+  it.each(GUARDS)("should change nothing on M with %s (§F.33)", (_what, arrange, event) => {
+    const { hub, pressM, render, map, store } = townWithModes();
+    render();
+    arrange(hub as Record<string, unknown>);
+    pressM(event);
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+  });
+
+  it("should build the map in the mode this browser kept, from a run or an earlier visit (§F.32)", () => {
+    const { render, map, layers } = townWithModes("enlarged");
+    render();
+    expect(map()!.mode).toBe("enlarged");
+    // the enlarged panel at the column's top, right-aligned
+    expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 44]);
+  });
+
+  it("should leave the corner empty as the overlay, and stand it about the player each frame (§F.31, §G.35)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "hub" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "hub" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { hub, pressM, render, map } = townWithModes("overlay");
+    render([{ id: "wren", entity_id: "e-wren", position: { x: 400, y: 300 } }]);
+    expect(map()!.panel).toBeNull();
+    const follow = vi.spyOn(map()!, "follow");
+    hub.selfEntityID = "me";
+    hub.views = new Map([
+      ["me", { pos: { x: 1010, y: 505 } }],
+      ["e-wren", { pos: { x: 410, y: 300 } }],
+    ]);
+    (hub as unknown as { followMapOverlay(): void }).followMapOverlay();
+    expect(follow).toHaveBeenCalledWith({ x: 1010, y: 505 }, { self: { x: 1010, y: 505 }, allies: [{ x: 410, y: 300 }] });
+    pressM();
+    expect(map()!.panel).toEqual({ width: 216, height: 108 });
+  });
+
+  it("should follow the overlay from update, after the figures are eased", () => {
+    const { hub } = townWithModes();
+    const order: string[] = [];
+    for (const step of ["offerMenu", "offerGear", "sendMovementIntent", "easeTowardServerPositions", "offerConversation", "updateBuildings", "hideWhoIsElsewhere", "showStashChest", "carryTheTorch", "followMapOverlay"])
+      hub[step] = () => void order.push(step);
+    hub.update(0, 16);
+    expect(order.indexOf("followMapOverlay")).toBeGreaterThan(order.indexOf("easeTowardServerPositions"));
+  });
+});
