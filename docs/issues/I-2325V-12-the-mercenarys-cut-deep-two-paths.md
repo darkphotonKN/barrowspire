@@ -26,3 +26,9 @@ arm swinging out against the cut instead of a shield; his parry unchanged (FS-MA
 ## Blocked By
 
 I-2325V-11 (the backhand specs)
+
+## Built (2026-11-12, agent)
+
+Keyed in `clips.js` (the knight's `slash`, the wizard's `cast`, the mercenary's own `cut`), tested in
+`classMotion.test.mjs` (seen red against today's keys first) and baked with the mercenary's FS-JS7C8 re-bake;
+the owner's approval rides on that slice's contact sheet.

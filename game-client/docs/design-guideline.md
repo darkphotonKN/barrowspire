@@ -56,8 +56,8 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   [ADR-0076](../../docs/adr/0076-a-sheet-may-be-baked-at-1-5x-its-frame-and-trim-on-a-two-screen-px-grid.md)):
   at 2x from a 4x render, drawn at half scale, sharp at render scale 2; or at 1.5x from a 3x
   render, drawn at two thirds, which costs a little over half the 2x memory and is a touch softer
-  at render scale 2 (sharper at 1.5, equal at 1). The playable classes move to 1.5x as each is
-  re-baked with its run (the archer today; the knight, wizard and mercenary are still at 2x;
+  at render scale 2 (sharper at 1.5, equal at 1). The playable classes moved to 1.5x as each was
+  re-baked with its run (all four: the archer first, then the wizard, the knight and the mercenary;
   FS-HF0WW, FS-3V7GC, FS-JS7C8): the owner judged the 1.5x archer by eye and took the memory.
   At 1.5x the frame, its anchor and every trimmed cut sit on two-screen-px steps, so they land on
   whole backing px at render scale 1, 1.5 and 2. Either way the sheet stands exactly as large as
@@ -273,7 +273,15 @@ lit) while the player stands inside.
   than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
   no crouch, the feet stepping back). A class with `run` walks the legs of each over 0.75 walk
   cycles, so neither outpaces the slowed ground; no sheet carries a standalone backpedal
-  (FS-JS7C8, the archer first). Folk and creatures keep idle and walk.
+  (FS-JS7C8, the archer first). A class's attack moves the whole body: a wind-up opposite the
+  strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
+  curve, fastest through the strike and eased at its ends, the weight onto the front foot, a
+  follow-through and a recover, still 7 keys at 12 fps with the strike at key 3. A slash is a
+  full diagonal from above the right shoulder to below the left hip; the knight cuts compact
+  behind a shield kept up before his chest, the mercenary wide, a drawing cut with his free hand
+  thrown out against it; the wizard thrusts her sceptre from the shoulder with her free hand
+  opening (FS-2325V § Change: The class attacks move with weight and cut deep). Folk and
+  creatures keep idle and walk.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
@@ -342,7 +350,10 @@ lit) while the player stands inside.
   leg may lie more than one baked px outside the cloth over it, from the garment's waistband to
   its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, two thirds of a px at
   1.5x, half a px at 2x (1x
-  px measured in model space, an upper bound on the screen). The bake checks every pose and
+  px measured in model space, an upper bound on the screen), measured through the cloth where it
+  hangs: a leg under a hem that a stride or a heel kick has tilted is under it, and a heel below a
+  lifted hem shows beneath it, not through it (FS-HF0WW § Change: The guard measures a leg through
+  the cloth). The bake checks every pose and
   fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
   give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt
   to the opposite thigh, kept only for the legacy sheets on the guard's `MIRRORED_LEGACY` list

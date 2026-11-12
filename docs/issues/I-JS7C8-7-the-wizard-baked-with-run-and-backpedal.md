@@ -72,3 +72,20 @@ FS-JS7C8 §A R1–R3, §B R8, R10, §C R21, §F R36–R40; Facts 9, 10. FS-HF0WW
 - `game-client/tools/bake/page/characters/cast.js` (+ `clips.js` only for a per-class style hook)
 - `game-client/public/art/wizard-*.png`, `game-client/public/art/manifest.json`
 - `game-client/src/render/art/manifest.test.ts` (the wizard carries the clips)
+
+## Built (2026-11-12, agent); waiting on the owner's contact sheet
+
+Baked once at 1.5x with `run`, `walk_attack` and `backpedal_attack` over 0.75 cycles and the cast (I-2325V-10): the sceptre drawn back by the right shoulder with the weight back, the pelvis turning in first, the thrust onto the front foot with the free hand opening out; both arms pump in the run (run.hold).
+The leg guard passes every clip once it measures a leg through the cloth where the cloth hangs
+(FS-HF0WW § Change: The guard measures a leg through the cloth; the garments are unchanged). Only
+the wizard's page and the manifest changed; every other atlas keeps its bytes; `npm run bake -- --check`
+reports no changes.
+
+| wizard sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main (2x) | 1 | 2720 × 3356 | 36.51 MB | 5,243,110 | 336 | 286 × 268 |
+| this bake (1.5x) | 1 | 2116 × 3872 | 32.77 MB | 4,860,635 | 512 | 222 × 192 (148 × 128 screen px) |
+
+−10.2 % RGBA (the 1.5x projection was about 39 MB); crown 75 as before. The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
+beside the new; walk_attack; backpedal_attack; death; 8 facings) are in the
+session scratchpad `classes-1p5x/wizard/`.

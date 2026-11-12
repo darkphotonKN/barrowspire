@@ -36,3 +36,9 @@ which carries the owner's contact-sheet approval. No hand-edited pixels.
 ## Blocked By
 
 None
+
+## Built (2026-11-12, agent)
+
+Keyed in `clips.js` (the knight's `slash`, the wizard's `cast`, the mercenary's own `cut`), tested in
+`classMotion.test.mjs` (seen red against today's keys first) and baked with the knight's FS-JS7C8 re-bake;
+the owner's approval rides on that slice's contact sheet.

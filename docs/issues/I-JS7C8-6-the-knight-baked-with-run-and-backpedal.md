@@ -74,3 +74,20 @@ FS-JS7C8 §A R1–R3, §B R8, R10, §C R21, §F R36–R40; Facts 9, 10. FS-HF0WW
 - `game-client/tools/bake/page/characters/cast.js` (+ `clips.js` only for a per-class style hook)
 - `game-client/public/art/knight-*.png`, `game-client/public/art/manifest.json`
 - `game-client/src/render/art/manifest.test.ts` (the knight carries the clips)
+
+## Built (2026-11-12, agent); waiting on the owner's contact sheet
+
+Baked once at 1.5x with `run`, `walk_attack` and `backpedal_attack` over 0.75 cycles and the slash (I-2325V-11): wound up high over the right shoulder with the weight back, the pelvis turning in first, cut down across the front onto the front foot and through to low past the left hip, the shield kept up before the chest; the sword arm pumps in the run, the shield arm carries the shield (run.hold, arms 0.3, elbow 0.2).
+The leg guard passes every clip once it measures a leg through the cloth where the cloth hangs
+(FS-HF0WW § Change: The guard measures a leg through the cloth; the garments are unchanged). Only
+the knight's page and the manifest changed; every other atlas keeps its bytes; `npm run bake -- --check`
+reports no changes.
+
+| knight sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main (2x) | 1 | 3396 × 3532 | 47.98 MB | 7,983,741 | 336 | 320 × 292 |
+| this bake (1.5x) | 1 | 2828 × 3968 | 44.89 MB | 7,235,301 | 512 | 276 × 228 (184 × 152 screen px) |
+
+−6.4 % RGBA (R39 estimated about +47 % at 2x; the 1.5x projection was about 51 MB); crown 83 as before. The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
+beside the new, the 7 keys stacked to show the blade's path; walk_attack; backpedal_attack; death; 8 facings) are in the
+session scratchpad `classes-1p5x/knight/`.

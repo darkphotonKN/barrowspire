@@ -324,3 +324,13 @@ Date: 2026-11-12
 
 - Changing any garment's skinning or the skirt panels (the owner's "改衣服的骨架" is not needed
   for the guard; reopened if the contact sheet shows a leg through the cloth).
+
+### Verification (2026-11-12, branch `feat/run-sheets-1p5x`)
+
+- **Unit.** The three garments on their classes' rigs pass at 1.5x through `run`, `walk`,
+  `walk_attack` and `backpedal_attack` (the run read 12.71 / 6.27 / 2.04 px before); the earlier
+  guard tests hold.
+- **Bake.** The wizard, the knight and the mercenary re-baked at 1.5x with the run: the guard
+  reads the wizard's run at 0.41 px, every other class clip at 0; every `KNOWN_CLIPPING` sheet
+  still clips past the limit and under its ceiling; `npm run bake -- --check` reports no changes.
+

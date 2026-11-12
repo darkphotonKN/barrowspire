@@ -73,3 +73,20 @@ FS-JS7C8 §A R1–R3, §B R8, R10, §C R21, §F R36–R40; Facts 9, 10. FS-HF0WW
 - `game-client/tools/bake/page/characters/cast.js` (+ `clips.js` only for a per-class style hook)
 - `game-client/public/art/mercenary-*.png`, `game-client/public/art/manifest.json`
 - `game-client/src/render/art/manifest.test.ts` (the mercenary carries the clips)
+
+## Built (2026-11-12, agent); waiting on the owner's contact sheet
+
+Baked once at 1.5x with `run`, `walk_attack` and `backpedal_attack` over 0.75 cycles and the cut (I-2325V-12): wider and lighter than the knight's, a drawing cut from high over the right shoulder to low past the left hip, the free hand thrown out and back, a flick back to his guard; the parry unchanged; both arms pump in the run (run.hold).
+The leg guard passes every clip once it measures a leg through the cloth where the cloth hangs
+(FS-HF0WW § Change: The guard measures a leg through the cloth; the garments are unchanged). Only
+the mercenary's page and the manifest changed; every other atlas keeps its bytes; `npm run bake -- --check`
+reports no changes.
+
+| mercenary sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main (2x) | 1 | 3460 × 3424 | 47.39 MB | 6,466,152 | 368 | 322 × 292 |
+| this bake (1.5x) | 1 | 2808 × 4080 | 45.83 MB | 6,037,846 | 544 | 297 × 261 (198 × 174 screen px) |
+
+−3.3 % RGBA (the 1.5x projection was about 50 MB); crown 92 (was 93). The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
+beside the new, the 7 keys stacked to show the blade's path; walk_attack; backpedal_attack; death; 8 facings) are in the
+session scratchpad `classes-1p5x/mercenary/`.
