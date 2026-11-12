@@ -19,6 +19,14 @@
 > arms pumping, its legs as baked; see *Owner change, 2026-11-12: a fast run from the waist up*.
 > The class sheets' scale moves to 1.5 (FS-HF0WW `## Change: Class sheets at 1.5x`), so R1's "at
 > 2x" and R39's figures read at the class's scale.
+>
+> **Edited in place a fourth time on 2026-11-12 (the weapon carried low, still a work-order):** R2,
+> R43 and the run's acceptance criteria now carry the knight's, the wizard's and the mercenary's
+> weapon low, at rest and in the run; see *Owner change, 2026-11-12: the weapon carried low*.
+>
+> **Edited in place a fifth time on 2026-11-12 (the run's bob, still a work-order):** R2, R3 and the
+> run's acceptance criteria now soften the run's flight, the archer first; see *Owner change,
+> 2026-11-12: a softer bob, the archer first*.
 
 ## Owner change, 2026-11-12
 
@@ -87,6 +95,54 @@ jog and a sprint, and it gets there from the waist up only (R2). The legs, the s
 the flight and the pelvis's bob stay as slice 5 keyed them, and `RUN_PACE` stays their measure
 (R3). The archer is baked once with this and the move to 1.5x (FS-HF0WW `## Change: Class sheets
 at 1.5x`, I-HF0WW-8); the other classes take the same run in their own slices.
+
+## Owner change, 2026-11-12: the weapon carried low
+
+After playing the knight, the wizard and the mercenary at 1.5x with the fast run, the owner said,
+in order:
+
+> "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高"
+> "站立時武器應該可以放下手微微下垂 跑步時也不用太高"
+> "跑步時應該會在胸口附近擺動"
+
+The way they hold their weapons looks odd: the weapon sits too high, and when the arms swing it is
+raised too high. Standing, the weapon arm should come down, the hand hanging a little; in the run
+the weapon need not be high either. In the run the arms should swing about the chest.
+
+Measured on the baked keys (the weapon's tip, model space, the class's height H = 1): the
+**idle** (and the walk, which shares its carry) held the weapon arm bent and forward with the
+blade or the sceptre standing 74–85° above level, its tip at 0.93 H on the knight, 1.02 H on the
+mercenary (over his crown) and the orb at 0.88 H on the wizard; in the **run** the weapon hand
+pumps to chest height (0.70 H, under the shoulder at 0.74) and the wrist kept the weapon up, 22–81°
+above level, its tip at 0.96, 1.01 and 0.82 H. The hand's path is what the owner wants ("在胸口附近
+擺動"); the weapon standing up from it is what reads high.
+
+So the weapon is carried low (R2): at rest the weapon arm hangs at the side and the weapon points
+low; in the run the weapon arm keeps the chest-high pump and the weapon trails low from the hand.
+The free arms, the knight's shield, the legs, the lean, the pace and the attacks are unchanged.
+
+## Owner change, 2026-11-12: a softer bob, the archer first
+
+After playing the run, the owner said:
+
+> "跑步時好像有一種整個身體往下頓的感覺 不確定是不是上下起伏過高 我想減少這種感覺"
+> "跑步的部分先完成弓箭手我看過再補其他職業"
+
+In the run the whole body seems to drop with a thud at each step; perhaps the rise and fall is too
+high; reduce that feeling. Finish the run's part on the archer first; he looks at it before the
+other classes get it.
+
+Measured on the baked keys (the pelvis after grounding, H = the class's height): the run's pelvis
+sits 0.009, 0, 0.016 and 0.055 H over its lowest on keys 0–3 (contact, down, push, flight) and
+again on 4–7, on every class's rig alike (the legs are shared). The bob is 0.055 H (6.4 baked px
+at 1.5x), and the flight key is a one-frame spike: from it the body drops 0.046 H (5.3 px) onto the
+contact key in one frame, the thud. The flight's lift (`RUN_STEP.lift` 0.045) is nearly all of it.
+
+So the flight's lift is softened (R2): the pelvis rises and falls about half as far, lowest at
+mid-stance and highest in the flight, with no one-frame drop onto the contact. Only the lift moves;
+every leg pose stays the shared run's, so the stride, the cadence, the feet planted on the baked
+keys and `RUN_PACE` (R3) are as baked. The archer takes it first and is re-baked alone; the knight,
+the wizard and the mercenary take it with their weapon carry once the owner has seen the archer.
 
 ## Summary
 
@@ -180,6 +236,27 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
      10°, each way, against the hips' 6.9°);
    - a class's own arm style stays: the archer's bow arm keeps its short swing and near-straight
      elbow, so the bow hangs along the side and never sweeps across the body.
+   - **(owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高",
+     "站立時武器應該可以放下手微微下垂 跑步時也不用太高", "跑步時應該會在胸口附近擺動")** the
+     knight's, the wizard's and the mercenary's weapon is carried low **(charter defaults, judged
+     by the owner at the contact sheet)**. At rest (the idle, and the walk sharing its carry) the
+     weapon arm hangs at the side, the elbow a little bent (5–30°), the hand a little below the
+     waist (under the pelvis bone, by no more than 0.12 H); a blade points down and forward, its
+     tip toward the ground (15–60° below level); the wizard's sceptre is held up beside the leg
+     (at least 45° above level), its head under the shoulder. In the run the weapon arm pumps about
+     the chest like a free arm (the elbow and reach bands above), and the weapon is never raised
+     from the hand: its tip is level with the hand or below it at every moment of the cycle, a
+     blade trailing back and down behind the hand, the sceptre's head forward and down. The free
+     arms and the knight's shield are as before.
+   - **(owner, 2026-11-12: "跑步時好像有一種整個身體往下頓的感覺 不確定是不是上下起伏過高
+     我想減少這種感覺", "跑步的部分先完成弓箭手我看過再補其他職業")** the run's bob is soft
+     **(charter defaults, judged by the owner at the contact sheet)**: the flight's lift is a share
+     of the shared step's (`RUN_SOFT_LIFT`, a class's `style.run.lift`), so on the baked keys the
+     pelvis rises and falls 0.02–0.03 H in all (was 0.055), lowest at mid-stance (keys 1 and 5),
+     highest in the flight (keys 3 and 7), and drops no more than 0.02 H from one key to the next
+     (was 0.046, flight onto contact); each flight key still has both soles off the ground. Only
+     the lift moves: the leg poses are the shared run's key for key. The archer first; the other
+     classes take it after the owner has seen the archer's.
    Reason for the numbers: the coordinator's charter from the owner's words (a slight lean, about
    10°; elbows about 90°; hands to chest height, not chin, for "not a sprint").
    *Retired 2026-11-12: "a jog and not a sprint" (a charter default); the jog's 0.12 rad lean
@@ -190,7 +267,10 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
    at about its own pace at 200 px/s". Cadence (fps) and stride are the bake's choice inside that,
    judged by the owner at the contact sheet. Slice 5's run (Fact 10) stays as baked (owner change
    2026-11-12), its legs too after the upper body's change ("目前的腳步速度可以"): the lean moves no
-   foot, so `RUN_PACE` stays 194, re-measured.
+   foot, so `RUN_PACE` stays 194, re-measured. The softer bob (R2) moves no leg pose either, so the
+   feet on the baked keys and `RUN_PACE` stay; `measurePace` reads the archer's softened run at
+   about 181, the Catmull-Rom in-betweens near the landing touching down earlier under the lower
+   flight, which the bake never draws.
 4. A class that moves at a drawn speed of at least `MOVING_SPEED` and is not attacking plays `run`
    at `speed / RUN_PACE`, capped as the walk is, turned to its movement (§D), whenever its sheet
    carries `run`. A sheet without `run` (hub folk, monsters, a class not yet re-baked) walks as
@@ -346,7 +426,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
     slow (§C.15–20), each with its own tests; the removal (R47) shown absence-first: `face` is
     refused as an unknown action and no player entry in the state carries `facing`.
 43. Bake: clip tests on the rig for the run's flight phase, opposite swing and pace band, its
-    forward lean, elbow bend, hand reach and shoulder counter-turn (R2), and its legs unchanged; the
+    forward lean, elbow bend, hand reach and shoulder counter-turn (R2), the weapon carried low at
+    rest and in the run (R2), and its legs unchanged; the
     backpedal legs being the walk's run backward (the same poses in reverse order, the same pelvis
     height and stride, the pace the walk's negated); `walk_attack` and `backpedal_attack` each
     lasting exactly as long as `attack`, their legs' pace at most 90 px/s.
@@ -418,7 +499,13 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
       9–11° (8–12° in every sample), its pumping elbows at 80–100° in every frame, each hand
       above the chest bone and below the shoulder at the front of its swing and at least 0.06 H
       behind the hip at the back, the shoulders turning 6.5–10° against the hips, the head looking
-      ahead, its legs key for key slice 5's; the backpedal legs are the walk's
+      ahead, its legs key for key slice 5's; the knight's, the wizard's and the mercenary's weapon
+      tip never above the weapon hand in the run (a blade's behind it), and at rest the weapon arm
+      hanging (elbow 5–30°, hand under the pelvis bone by at most 0.12 H) with a blade pointing
+      15–60° below level and forward, the sceptre at least 45° up with its head under the shoulder;
+      the archer's run (then each class's) bobbing 0.02–0.03 H in all on its keys, lowest at
+      mid-stance, highest in the flight, no key-to-key drop over 0.02 H, its legs key for key the
+      shared run's; the backpedal legs are the walk's
       run backward: the same leg poses in reverse order, the same pelvis height and stride (no
       crouch), the walk's pace negated.
 - [ ] `walk_attack` and `backpedal_attack` each last exactly as long as `attack`; on a sheet with

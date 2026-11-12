@@ -271,11 +271,16 @@ lit) while the player stands inside.
 - **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
+  A weapon is carried low: standing, the weapon arm hangs at the side with the hand a little below
+  the waist, a blade pointing down and forward, a sceptre held up beside the leg with its head
+  under the shoulder (FS-JS7C8 R2).
   The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
   `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
   arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
   past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
-  head steady and looking ahead), played turned to the way the character moves, and
+  head steady and looking ahead; a weapon in a pumping hand is never raised from it, a blade
+  trailing back and down, a sceptre's head forward and down), played turned to the way the
+  character moves, and
   `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
   than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
   no crouch, the feet stepping back). A class with `run` walks the legs of each over 0.75 walk
