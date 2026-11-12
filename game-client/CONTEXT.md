@@ -226,8 +226,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   FS-3V7GC). On a sheet that runs, its legs never step faster than the slowed body moves
   (FS-JS7C8 R21). Moving more than 90° away from the aim, a class that carries it plays the
   backpedal-attack instead.
-- **Run** (`run`): a playable class's looping clip while it moves and is not attacking, a jog
-  keyed to the server's move speed so it plays at about its own pace, turned to its movement.
+- **Run** (`run`): a playable class's looping clip while it moves and is not attacking, a fast
+  run (short of a sprint, leaning forward, the arms pumping) keyed to the server's move speed so it plays at about its own pace, turned to its movement.
   Replaces the walk for the four classes; folk and creatures still walk. Not the walk, which the
   class sheets keep for later use (FS-JS7C8).
 - **Pace** (`WALK_PACE`, `RUN_PACE`; the backpedal legs' pace in the bake): the world px per

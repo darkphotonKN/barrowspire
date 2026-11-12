@@ -440,7 +440,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     attack: "shot",
     hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
     walk: { arms: [0.7, 1], lean: 0.06 },
-    run: { arms: [0.5, 1], elbow: [0.25, 1] },
+    run: { arms: [0.3, 1], elbow: [0.215, 1] },
   };
   const plain = { attack: "slash", hold: pose() };
   const rig = archerLegs();
@@ -620,7 +620,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
   });
 
   it("keeps a class's own arm on its own side all the way round: the bow arm's short swing and near-straight elbow in every frame", () => {
-    const bow = { hold: pose(), run: { arms: [0.5, 1], elbow: [0.25, 1] } };
+    const bow = { hold: pose(), run: archer.run };
     for (const clip of [runCycle(bow)])
       for (const p of clip) {
         expect(Math.abs(p.b.upperArmL[0])).toBeLessThanOrEqual(0.26);
@@ -669,7 +669,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(range(head)).toBeLessThanOrEqual(range(hips) * 1.1);
   });
 
-  it("the run: a jog's pace, within 180–220 world px/s, and RUN_PACE is that measure", () => {
+  it("the run: its pace within 180–220 world px/s, and RUN_PACE is that measure (the fast run's upper body moves no foot)", () => {
     const pace = measurePace(rig, run, RUN.fps);
     expect(pace).toBeGreaterThanOrEqual(180);
     expect(pace).toBeLessThanOrEqual(220);

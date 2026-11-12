@@ -259,8 +259,10 @@ lit) while the player stands inside.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
   The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
-  `run` (a jog: arms against legs, the chest turning against the hips, a bounce with a flight in
-  each step, the head steady), played turned to the way the character moves, and
+  `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
+  arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
+  past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
+  head steady and looking ahead), played turned to the way the character moves, and
   `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
   than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
   no crouch, the feet stepping back). A class with `run` walks the legs of each over 0.75 walk

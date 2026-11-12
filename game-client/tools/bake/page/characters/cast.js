@@ -152,8 +152,10 @@ export function archer() {
     walk: { arms: [0.7, 1], lean: 0.06 },
     // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
     // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-    // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle)
-    run: { arms: [0.5, 1], elbow: [0.25, 1] },
+    // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle).
+    // In absolute terms the jog's (a 0.25 rad swing, a 0.34 rad elbow) under the fast run's
+    // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps
+    run: { arms: [0.3, 1], elbow: [0.215, 1] },
   };
   return { rig, style };
 }
