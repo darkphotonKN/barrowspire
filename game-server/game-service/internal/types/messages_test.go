@@ -1,7 +1,6 @@
 package types
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -33,10 +32,6 @@ func TestParsePayload_MalformedPayload_ErrorsWithoutPanicking(t *testing.T) {
 		{"unequip, empty payload", constants.ActionUnequip, map[string]interface{}{}},
 		{"cast_skill, empty payload", constants.ActionCastSkill, map[string]interface{}{}},
 		{"cast_skill, no player_id", constants.ActionCastSkill, map[string]interface{}{"skill_id": "s1"}},
-		{"face, empty payload", constants.Action("face"), map[string]interface{}{}},
-		{"face, no player_id", constants.Action("face"), map[string]interface{}{"facing": "nw"}},
-		{"face, no facing", constants.Action("face"), map[string]interface{}{"player_id": "p1"}},
-		{"face, facing as a number", constants.Action("face"), map[string]interface{}{"player_id": "p1", "facing": 3.0}},
 	}
 
 	for _, tt := range tests {
@@ -154,16 +149,13 @@ func TestParsePayload_IgnoresSessionIDIfSent(t *testing.T) {
 	assert.IsType(t, PlayerSessionMovePayload{}, parsed)
 }
 
-// face carries its sender and the facing named, as the client sent it: which
-// of the 8 names it is, the session judges. FS-JS7C8 §E R27, R31.
-func TestParsePayload_Face_CarriesThePlayerAndTheFacing(t *testing.T) {
-	const playerID = "5f9d1a3e-0000-4000-8000-000000000001"
-	m := &Message{Action: "face", Payload: map[string]interface{}{"player_id": playerID, "facing": "nw"}}
+// face is no action: nothing about facing goes up, so it parses as any
+// unknown action does. FS-JS7C8 §E R47.
+func TestParsePayload_Face_IsAnUnknownAction(t *testing.T) {
+	m := &Message{Action: "face", Payload: map[string]interface{}{"player_id": "5f9d1a3e-0000-4000-8000-000000000001", "facing": "nw"}}
 
 	parsed, err := m.ParsePayload()
 
-	require.NoError(t, err)
-	raw, err := json.Marshal(parsed)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"player_id":"`+playerID+`","facing":"nw"}`, string(raw))
+	require.ErrorIs(t, err, ErrInvalidPayload)
+	assert.Nil(t, parsed)
 }

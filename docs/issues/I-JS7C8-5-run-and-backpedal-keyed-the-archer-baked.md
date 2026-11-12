@@ -1,12 +1,20 @@
 ---
 id: I-JS7C8-5
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: [I-JS7C8-3]
+superseded_by: [I-JS7C8-12]
 labels: [ready-for-agent]
 title: "FS-JS7C8 slice 5: run and backpedal keyed on the shared rig, the archer baked with them, the owner's contact-sheet approval (game-client)"
 ---
 Implements FS-JS7C8 §A (R1–R3, R5), §B (R8, R10), §C (R21), §F (R36–R41), §Acceptance Criteria "Run and backpedal" (sheet, bake and approval boxes), "Attack slow" (last box); Tunes FS-HF0WW `WALK_ATTACK_CYCLES` (R11)
+
+> **Closed 2026-11-12, partly superseded.** The agent's part is on the branch (verification
+> notes below). The owner then reviewed the archer in play rather than on the contact sheet and
+> changed FS-JS7C8: the run stays as baked; the standalone `backpedal` is not shipped
+> (`backpedal_attack` replaces it, R8), and `walk_attack`'s legs slow from one walk cycle to 0.75
+> (R21). **I-JS7C8-12** re-bakes the archer once with those and FS-2325V's draw change, and
+> carries the contact-sheet approval this slice ended on. Boxes below are left as they stood.
 
 **Lane: agent, then HITL.** The agent keys, bakes and measures; the slice ends at the owner's
 approval of the archer's contact sheet (ADR-0021 §5). No hand-drawn or hand-edited pixels.
@@ -47,7 +55,7 @@ approval of the archer's contact sheet (ADR-0021 §5). No hand-drawn or hand-edi
 - [ ] `RUN_PACE` / `BACKPEDAL_PACE` hold the measured values; at 200 px/s the archer's run plays at 0.9–1.1x.
 - [ ] `npm run bake -- --check` is clean; the other three classes' atlases are byte-identical.
 - [ ] Growth recorded (pages, dimensions, bytes, per cent).
-- [ ] **HITL:** the owner approves the archer's contact sheet (run, backpedal, `walk_attack`). Not merged before.
+- [ ] **HITL:** the owner approves the archer's contact sheet (run, backpedal, `walk_attack`). Not merged before. *(Moved to I-JS7C8-12, 2026-11-12.)*
 
 ## Blocked By
 

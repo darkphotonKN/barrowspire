@@ -310,3 +310,87 @@ skinned rig with shaped anatomy, generated materials and hand-keyed clips (§E).
 ## Change: Wall shadow layer → FS-V8FT3
 
 ## Change: Class run, backpedal and pointer facing → FS-JS7C8
+
+## Change: The archer's draw stays on the aim line
+Status: work-order
+Date: 2026-11-12
+
+> Written `--from-thread` by write-a-spec on 2026-11-12 (FS-JS7C8 charter "角色小跑步"). The
+> owner, after playing FS-JS7C8 slices 1–4: "射出弓箭時人物的手臂不自然 拉弓讓手臂過度伸到背後"
+> (when the archer shoots the arm looks unnatural: the draw takes the arm too far behind the
+> back), and the owner's diagnosis: "應該是左手拿弓的位置太靠近左側導致右手拉弓時伸到左手破圖"
+> (the left hand holding the bow sits too far to the left, so the right hand reaches across
+> toward it as it draws and the figure breaks). Requirements marked **(owner)** are those words;
+> **(charter default)** settles what they left open, with its reason. Every number is a starting
+> value. Anchored here because §E.2 owns each class's attack clip ("archer shot"); the pose gains
+> acceptance criteria it never had, so it is a behaviour change, not a tune (no tunable is named).
+
+### Facts
+
+1. The archer's attack is `ATTACKS.shot` (`game-client/tools/bake/page/characters/clips.js`):
+   7 keys over `BOW_STANCE` (hips −0.5, spine −0.25, chest −0.25 rad about y, so the left shoulder
+   leads) with the bow arm `bowArm(raise, ry)` = `upperArmL [0, ry, raise]` (ry −0.57, −0.4 on the
+   first key; raise 1.47 is level) and a straight `foreArmL`.
+2. The draw hand is solved, not keyed: the bow hook (`bowInHand`, `tools/bake/page/characters/cast.js`)
+   takes the arrow line from the bow's own frame (its string rest point toward its grip) and puts
+   the right hand `drawLen` × `fx.ik` back along it (`drawLen` = 0.36 rig heights; `ik` 0.5, 1,
+   1.02 while drawn and 1.3 on the loose), the elbow bending toward a pole behind and above. So
+   wherever the bow hand sits, the drawing hand follows the line back from it.
+3. The same upper body is drawn by `attack`, by `walk_attack` (FS-HF0WW, layered over the walk)
+   and by FS-JS7C8's `backpedal_attack`; the Shadow Shot release plays the archer's `attack`
+   (`src/render/combat/playerCombat.ts`); its hold stands in idle (FS-JTNPR R10) and draws nothing.
+4. The Bone Archer (FS-B4SG9) shares `BOW_STANCE`, `bowArm` and the bow hook, with its own keys
+   (`ATTACKS.boneShot`, `ik` up to 1.3).
+5. **Pre-existing.** The shot's keys, `BOW_STANCE`, `bowArm` and the bow hook are unchanged on
+   FS-JS7C8's branch against main (its bake diff does not touch them); they date from I-2325V-5
+   (2026-09-27) and were baked at 2x by FS-HF0WW. Main's archer draws the same way.
+
+### Requirements
+
+1. **(owner)** At the draw, the bow hand (left) is held forward on the aim line, in front of the
+   chest toward the aim, never out to the left side; the bow arm stays extended toward the aim.
+2. **(owner)** The drawing hand (right) pulls straight back along that line to an anchor by the
+   jaw or ear on the drawing side, and never crosses the body, the head or the bow arm.
+3. **(charter default)** At full draw the drawing elbow is at about shoulder height and in line
+   with the arrow, never swung behind the line of the back. Reason: the coordinator's reading of
+   the owner's "過度伸到背後"; it is how a drawn bow is held.
+4. **(charter default)** The loose and follow-through keep 1–3: the hand may open off the anchor,
+   never travel across the body or behind the back. Reason: the loose key (`ik` 1.3) carries the
+   hand furthest back.
+5. **(owner)** The pose holds in every one of the 8 baked facings, since one pose can read clear
+   in one facing and cross the body in another. The checks run on the 3D pose (one pose is baked
+   to all 8), and the owner judges all 8 on the contact sheet.
+6. It applies wherever the shot's upper body is drawn: `attack` (so the Shadow Shot release),
+   `walk_attack` and `backpedal_attack`.
+7. **(charter default)** The delver archer only. The Bone Archer's sheet keeps its bytes. Reason:
+   the finding names the player's archer, and the Bone Archer's sheet is a creature group with its
+   own review (FS-B4SG9). Whether it gets the same fix is the owner's call.
+8. **(owner)** The archer is re-baked once, with FS-JS7C8's archer re-bake (FS-JS7C8 R48), and its
+   contact sheet shows main's `attack` beside the new `attack`, `walk_attack` and
+   `backpedal_attack` for comparison. It ships on the owner's approval (§E.7, ADR-0021 §5).
+
+### Acceptance Criteria
+
+- [ ] A clip test on the archer's rig measures, on every drawn key of `shot` (`ik` > 0): the bow
+      hand ahead of the chest along the aim and near the aim line; the drawing hand on the arrow
+      line, ending by the jaw or ear on the drawing side; the drawing hand and forearm never
+      crossing the body's centre plane toward the bow side; the drawing elbow within a band of
+      shoulder height and not behind the back. Bands are starting values; today's values are
+      recorded first, so the change is seen as numbers.
+- [ ] The same test holds for every frame of `walk_attack` and `backpedal_attack` on the archer.
+- [ ] The bow arm still points along the facing at the draw; the bow and its string still draw.
+- [ ] The Bone Archer's atlas is byte-identical (`npm run bake -- --check`).
+- [ ] The contact sheet shows main's archer `attack` beside the new one, in 8 directions, and the
+      owner approves it.
+
+### Edge States
+
+- **A facing where the bow crosses the body when seen.** Two 3D poses that never intersect can
+  still overlap on screen in a facing where the bow arm points at the camera; that is depth, not a
+  crossing. The owner judges it on the contact sheet.
+- **The leg-clearance guard and the frame box.** A new bow-hand position must stay inside the
+  sheet's frame box (`boxed` clips may not widen it) and keep FS-HF0WW §C passing.
+
+### Out of Scope
+
+- The Bone Archer's shot (R7); any other class's attack; the bow model; the Shadow Shot hold pose.

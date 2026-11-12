@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
@@ -5402,91 +5403,41 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
   });
 });
 
-// FS-JS7C8 §D R22: the own character turns to the pointer facing each frame, before its clip is
-// chosen; no other body is told of it.
-describe("BarrowspireScene pointer facing (FS-JS7C8 §D)", () => {
-  it("should turn the own character to the pointer facing from where its body is drawn, before its step", () => {
-    const run = sceneOnStage().run as unknown as {
-      handleGameStateUpdate(state: GameState): void;
-      update(time: number, delta: number): void;
-      playerPos?: { x: number; y: number };
-    };
-    run.handleGameStateUpdate({
-      ...floorState(1),
-      current_player: player("me", "Aldric", 130),
-      other_players: [],
-    } as GameState);
-    const told: string[] = [];
-    const anim = {
-      baked: true,
-      guard: vi.fn(),
-      face: vi.fn(() => told.push("face")),
-      step: vi.fn(() => (told.push("step"), { animation: "idle", facing: "n", direction: 6, timeScale: 1 })),
-      show: vi.fn(),
-    };
-    const pointerFacing = vi.fn(() => "n");
-    const up = { isDown: false };
-    const keys = { left: up, right: up, up, down: up };
-    Object.assign(run, {
-      cursors: keys,
-      wasd: keys,
-      kit: { follow: vi.fn(), guarding: false },
-      updateLighting: vi.fn(),
-      updateOtherPlayersSmooth: vi.fn(),
-      checkBuildingStatus: vi.fn(),
-      sendMovementIntent: vi.fn(),
-      playerPos: { x: 130, y: 0 },
-      targetPosition: { x: 130, y: 0 },
-      playerAnim: anim,
-      pointerFacing,
-    });
-
-    run.update(0, 16);
-
-    expect(pointerFacing).toHaveBeenCalledWith(run.playerPos);
-    expect(anim.face).toHaveBeenCalledWith("n");
-    expect(told).toEqual(["face", "step"]);
-  });
-});
-
-// FS-JS7C8 §E R28, R29, R34: the own facing goes up as `face` (never while a Shadow Shot hold is
-// up), the own echo is never drawn, and another player is drawn turned to the facing their entry
-// carries, or to their movement with none.
-describe("BarrowspireScene facing on the wire (FS-JS7C8 §E; I-JS7C8-4)", () => {
+// FS-JS7C8 §D R22, §E R47: the own character and every other player face their drawn movement.
+// Nothing turns a figure from outside its own motion (the animator a scene drives is stepped and
+// shown, as on main), a `facing` on a state entry is never read, and nothing about facing is sent.
+describe("BarrowspireScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, §E R47)", () => {
   type Run = {
     handleGameStateUpdate(state: GameState): void;
     update(time: number, delta: number): void;
     updateOtherPlayersSmooth(time: number, delta: number): void;
     otherPlayersAnim: Map<string, unknown>;
+    playerPos?: { x: number; y: number };
   };
 
-  /** A baked animator's surface, recording what it is turned to. */
-  const animator = (facing = "se") => ({
+  /** A baked animator's surface as the scene drives it: stepped from the drawn motion and shown. */
+  const animator = () => ({
     baked: true,
-    facing,
+    facing: "se",
     guard: vi.fn(),
-    face: vi.fn(),
-    step: vi.fn(() => ({ animation: "idle", facing, direction: 0, timeScale: 1 })),
+    step: vi.fn(() => ({ animation: "run", facing: "e", direction: 0, timeScale: 1 })),
     show: vi.fn(),
   });
 
-  /** The run with this client's player in it, on their first state, ready to draw a frame. */
-  function ownFrame(opts: { pointer?: string; aiming?: boolean; echo?: string; dead?: boolean } = {}) {
+  it("should step the own character from where it is drawn, turn it by nothing else and send no face", () => {
     const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
     const run = sceneOnStage().run as unknown as Run;
-    const me = {
-      ...player("me", "Aldric", 130, opts.dead ? { current_health: 0 } : {}),
-      ...(opts.echo ? { facing: opts.echo } : {}),
-    };
+    // an echo of a facing on the own entry, as a server built from slice 2 would send
+    const me = { ...player("me", "Aldric", 130), facing: "w" };
     run.handleGameStateUpdate({ ...floorState(1), current_player: me, other_players: [] } as GameState);
-    const anim = animator("se");
+    const anim = animator();
     const up = { isDown: false };
     const keys = { left: up, right: up, up, down: up };
     Object.assign(run, {
       cursors: keys,
       wasd: keys,
       kit: { follow: vi.fn(), guarding: false },
-      combat: { aiming: opts.aiming ?? false, aimFrame: vi.fn() },
+      combat: { aiming: false, aimFrame: vi.fn() },
       updateLighting: vi.fn(),
       updateOtherPlayersSmooth: vi.fn(),
       checkBuildingStatus: vi.fn(),
@@ -5494,73 +5445,35 @@ describe("BarrowspireScene facing on the wire (FS-JS7C8 §E; I-JS7C8-4)", () => 
       playerPos: { x: 130, y: 0 },
       targetPosition: { x: 130, y: 0 },
       playerAnim: anim,
-      pointerFacing: vi.fn(() => opts.pointer),
     });
-    const faces = () => sent.mock.calls.filter(([action]) => action === "face").map(([, payload]) => payload);
-    return { run, anim, faces };
-  }
-
-  it("should send the pointer facing as face on the first state's frame", () => {
-    const { run, faces } = ownFrame({ pointer: "nw" });
-
-    run.update(0, 16);
-
-    expect(faces()).toEqual([{ facing: "nw" }]);
-  });
-
-  it("should send the facing the character stands in before the pointer first moves", () => {
-    const { run, faces } = ownFrame({ pointer: undefined });
-
-    run.update(0, 16);
-
-    expect(faces()).toEqual([{ facing: "se" }]);
-  });
-
-  it("should send nothing while a Shadow Shot hold is up", () => {
-    const { run, faces } = ownFrame({ pointer: "nw", aiming: true });
 
     run.update(0, 16);
     run.update(200, 16);
 
-    expect(faces()).toEqual([]);
+    expect(anim.step).toHaveBeenCalledWith(run.playerPos, 200, 16, false);
+    expect(sent.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
   });
 
-  it("should send nothing while the own body lies dead", () => {
-    const { run, faces } = ownFrame({ pointer: "nw", dead: true });
-
-    run.update(0, 16);
-
-    expect(faces()).toEqual([]);
-  });
-
-  it("should never turn the own character to its own echoed facing", () => {
-    const { run, anim } = ownFrame({ pointer: undefined, echo: "w" });
-
-    run.update(0, 16);
-
-    expect(anim.face).not.toHaveBeenCalledWith("w");
-  });
-
-  it("should turn another player to the facing their entry carries, and to their movement with none", () => {
+  it("should draw another player by their movement, never by a facing their entry carries", () => {
     vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
     const run = sceneOnStage().run as unknown as Run;
-    const state = (facing?: string) =>
-      ({
-        ...floorState(1),
-        current_player: player("me", "Aldric", 130),
-        other_players: [{ ...player("ally", "Wenna", 160), ...(facing ? { facing } : {}) }],
-      }) as GameState;
-    run.handleGameStateUpdate(state("w"));
-    const ally = animator("se");
+    run.handleGameStateUpdate({
+      ...floorState(1),
+      current_player: player("me", "Aldric", 130),
+      other_players: [{ ...player("ally", "Wenna", 160), facing: "w" }],
+    } as unknown as GameState);
+    const ally = animator();
     run.otherPlayersAnim.set("ally", ally);
 
     run.updateOtherPlayersSmooth(0, 16);
-    expect(ally.face).toHaveBeenLastCalledWith("w");
-    expect(ally.face.mock.invocationCallOrder[0]).toBeLessThan(ally.step.mock.invocationCallOrder[0]);
 
-    run.handleGameStateUpdate(state(undefined));
-    run.updateOtherPlayersSmooth(16, 16);
-    expect(ally.face).toHaveBeenLastCalledWith(undefined);
+    expect(ally.step).toHaveBeenCalledTimes(1);
+    expect(ally.show).toHaveBeenCalledTimes(1);
+  });
+
+  it("should leave no face sender behind (R47)", () => {
+    expect(existsSync(join(__dirname, "faceWire.ts"))).toBe(false);
+    expect(existsSync(join(__dirname, "faceWire.test.ts"))).toBe(false);
   });
 });
 

@@ -3,10 +3,17 @@ id: I-JS7C8-4
 status: done
 implements: FS-JS7C8
 blocked_by: [I-JS7C8-2, I-JS7C8-3]
+superseded_by: [I-JS7C8-11]
 labels: [ready-for-agent]
-title: "FS-JS7C8 slice 4: the client sends its facing, and other players are drawn facing where they face (game-client)"
+title: "SUPERSEDED (2026-11-12, by I-JS7C8-11) FS-JS7C8 slice 4: the client sends its facing, and other players are drawn facing where they face (game-client)"
 ---
 Implements FS-JS7C8 §E (R28, R29, R32, R34), §A (R6), §Acceptance Criteria "Facing" (client send and draw boxes)
+
+> **Superseded 2026-11-12.** The owner's change to FS-JS7C8: other players face their movement
+> as they always did, and nothing about facing is sent (R22, R47). The face sender, `facing` on
+> the player entry, `face` in `ActionMap` and others' turn to it are on `feat/run-class-run-face`
+> and must not reach main: **I-JS7C8-11** removes them. Kept `done` as the record of what was
+> built.
 
 **Lane: agent.** game-client only.
 

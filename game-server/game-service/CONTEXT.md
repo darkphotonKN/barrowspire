@@ -651,9 +651,6 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   casts resolves (every attack row a player casts, never the parry): their move speed times a
   factor, restored on the first tick after the window. Never slows a charge in flight. Not a
   cooldown: a cooldown gates the next cast, the attack slow paces the walk.
-- **Facing** (FS-JS7C8) — which of the 8 world-compass directions (`n` … `nw`) a player's character
-  faces, as their client last sent it with `face`. Stored and relayed in the state, never read by
-  any rule: aim, range and hits ignore it. Absent until the client sends one.
 
 ### Mailbox arrivals (FS-1GZGD amendment 2026-11-04, ADR-0045)
 

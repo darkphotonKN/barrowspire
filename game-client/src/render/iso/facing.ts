@@ -42,8 +42,9 @@ const UNIT: Record<Facing8, [number, number]> = {
 };
 
 /**
- * Whether a world motion runs more than 90° from a facing: moving backward from where the
- * character faces (FS-JS7C8 R9). Exactly 90° is not away, and standing still never is.
+ * Whether a world motion runs more than 90° from a facing: an attack on the move stepping back
+ * from the facing it is turned to, its aim (FS-JS7C8 R9). Exactly 90° is not away, and standing
+ * still never is.
  */
 export function movesAwayFrom(facing: Facing8, vx: number, vy: number): boolean {
   const [fx, fy] = UNIT[facing];

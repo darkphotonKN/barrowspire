@@ -1143,106 +1143,41 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
   });
 
-  // FS-JS7C8 §D R22: the own character turns to the pointer facing each frame; no one else does
-  it("should turn the own character, and no other, to the pointer facing from where it is drawn", () => {
-    const { field } = kitOnStage({ aiming: false });
+  // FS-JS7C8 §D R22, §E R47: every figure faces its drawn movement; nothing turns one from
+  // outside its own motion, a `facing` on a state entry is never read, and no `face` is sent
+  describe("facing from movement, nothing on the wire (FS-JS7C8 §D R22, §E R47)", () => {
+    /** A view whose baked animator is stepped and shown, as on main: nothing else turns it. */
     const view = (x: number) => ({
-      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => null },
+      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60, getBounds: () => ({ x: 0, y: 0, width: 40, height: 60 }) }) },
       name: { setPosition: vi.fn() },
       pos: { x, y: 0 },
       target: { x, y: 0 },
       facing: "se",
-      anim: { baked: true, face: vi.fn(), step: vi.fn(), show: vi.fn() },
-      fallen: false,
-    });
-    const me = view(100);
-    const them = view(300);
-    const pointerFacing = vi.fn(() => "w");
-    Object.assign(field, {
-      views: new Map([
-        ["me", me],
-        ["them", them],
-      ]),
-      selfEntityID: "me",
-      pointerFacing,
-    });
-
-    field.update(16, 16);
-
-    expect(pointerFacing).toHaveBeenCalledWith(me.pos);
-    expect(me.anim.face).toHaveBeenCalledWith("w");
-    expect(them.anim.face).not.toHaveBeenCalledWith("w");
-  });
-
-  // FS-JS7C8 §E R28, R29, R34 (I-JS7C8-4): the own facing goes up as `face`, never while a Shadow
-  // Shot hold is up; others are drawn turned to the facing their entry carries, the own echo never
-  describe("facing on the wire (FS-JS7C8 §E)", () => {
-    const view = (x: number, wireFacing?: string) => ({
-      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => null },
-      name: { setPosition: vi.fn() },
-      pos: { x, y: 0 },
-      target: { x, y: 0 },
-      facing: "se",
-      wireFacing,
-      anim: { baked: true, facing: "se", face: vi.fn(), step: vi.fn(), show: vi.fn() },
+      anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
       fallen: false,
     });
 
-    function onField(opts: { pointer?: string; aiming?: boolean; fallen?: boolean; them?: string }) {
-      const fight = { aiming: opts.aiming ?? false };
-      const { field, send } = kitOnStage(fight);
-      const me = { ...view(100), fallen: opts.fallen ?? false };
-      const them = view(300, opts.them);
+    it("should step the own body and every other from where it is drawn, and send no face", () => {
+      const { field, send } = kitOnStage({ aiming: false });
+      const me = view(100);
+      const them = view(300);
       Object.assign(field, {
         views: new Map([
           ["me", me],
           ["them", them],
         ]),
         selfEntityID: "me",
-        pointerFacing: vi.fn(() => opts.pointer),
       });
-      const faces = () => send.mock.calls.filter(([action]) => action === "face").map(([, payload]) => payload);
-      return { field, me, them, fight, faces };
-    }
-
-    it("should send the pointer facing as face on the first frame of the own body", () => {
-      const { field, faces } = onField({ pointer: "n" });
 
       field.update(16, 16);
-
-      expect(faces()).toEqual([{ facing: "n" }]);
-    });
-
-    it("should send nothing while a Shadow Shot hold is up, and the facing after its release", () => {
-      const { field, fight, faces } = onField({ pointer: "n", aiming: true });
-
-      field.update(16, 16);
-      expect(faces()).toEqual([]);
-
-      fight.aiming = false;
       field.update(300, 16);
-      expect(faces()).toEqual([{ facing: "n" }]);
+
+      expect(me.anim.step).toHaveBeenCalledWith(me.pos, 300, 16, false);
+      expect(them.anim.step).toHaveBeenCalledWith(them.pos, 300, 16, false);
+      expect(send.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
     });
 
-    it("should send nothing while the own body lies fallen", () => {
-      const { field, faces } = onField({ pointer: "n", fallen: true });
-
-      field.update(16, 16);
-
-      expect(faces()).toEqual([]);
-    });
-
-    it("should turn another player to the facing their entry carries, none when it carries none", () => {
-      const turned = onField({ them: "w" });
-      turned.field.update(16, 16);
-      expect(turned.them.anim.face).toHaveBeenLastCalledWith("w");
-
-      const unturned = onField({});
-      unturned.field.update(16, 16);
-      expect(unturned.them.anim.face).toHaveBeenLastCalledWith(undefined);
-    });
-
-    it("should keep another player's facing from their state, and never the own echo", () => {
+    it("should keep no facing from a state entry, the own echo or another's", () => {
       const { field } = kitOnStage({});
       const me = view(100);
       const them = view(300);
@@ -1253,21 +1188,19 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
         ]),
       });
       const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
-      const entry = (entity_id: string, facing?: string) => ({
+      const entry = (entity_id: string) => ({
         entity_id,
         position: { x: 1, y: 2 },
         direction: { vx: 0, vy: 0, speed: 0 },
         current_health: 100,
-        ...(facing ? { facing } : {}),
+        facing: "ne",
       });
 
-      place.call(field, entry("me", "w"), true);
-      place.call(field, entry("them", "ne"), false);
-      expect(me.wireFacing).toBeUndefined();
-      expect(them.wireFacing).toBe("ne");
-
+      place.call(field, entry("me"), true);
       place.call(field, entry("them"), false);
-      expect(them.wireFacing).toBeUndefined();
+
+      expect(Object.keys(me)).not.toContain("wireFacing");
+      expect(Object.keys(them)).not.toContain("wireFacing");
     });
   });
 

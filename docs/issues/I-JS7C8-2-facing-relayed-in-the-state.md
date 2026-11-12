@@ -3,10 +3,16 @@ id: I-JS7C8-2
 status: done
 implements: FS-JS7C8
 blocked_by: []
+superseded_by: [I-JS7C8-10]
 labels: [ready-for-agent]
-title: "FS-JS7C8 slice 2: a player's facing is taken by a face action and relayed in the state (game-service)"
+title: "SUPERSEDED (2026-11-12, by I-JS7C8-10) FS-JS7C8 slice 2: a player's facing is taken by a face action and relayed in the state (game-service)"
 ---
 Implements FS-JS7C8 §E (R27, R30–R33, R35), §Wire, §Acceptance Criteria "Facing" (server boxes)
+
+> **Superseded 2026-11-12.** The owner's change to FS-JS7C8 (a character faces where it runs,
+> never the pointer) leaves this slice's `face` action and `facing` relay with no reader, and
+> FS-JS7C8 R47 removes them. The code below is on `feat/run-class-run-face` and must not reach
+> main: **I-JS7C8-10** removes it. Kept `done` as the record of what was built.
 
 **Lane: agent, under the charter's bounds.** game-service is normally the human lane (root
 `CLAUDE.md`); the charter "角色小跑步" authorises this slice. JSON over the game WebSocket only.

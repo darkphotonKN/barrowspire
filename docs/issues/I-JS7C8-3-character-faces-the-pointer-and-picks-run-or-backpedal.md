@@ -3,10 +3,16 @@ id: I-JS7C8-3
 status: done
 implements: FS-JS7C8
 blocked_by: []
+superseded_by: [I-JS7C8-11]
 labels: [ready-for-agent]
-title: "FS-JS7C8 slice 3: the local character faces the pointer, and a moving class picks run or backpedal when its sheet has them (game-client)"
+title: "PARTLY SUPERSEDED (2026-11-12, by I-JS7C8-11) FS-JS7C8 slice 3: the local character faces the pointer, and a moving class picks run or backpedal when its sheet has them (game-client)"
 ---
 Implements FS-JS7C8 §A (R4, R5, R6, R7), §B (R9, R11, R13), §D (R22–R26), §Acceptance Criteria "Run and backpedal" (choice boxes), "Facing" (local boxes)
+
+> **Partly superseded 2026-11-12.** The owner's change to FS-JS7C8: the run stands (R4–R7), but
+> the pointer facing (§D R23, R25, R26) and the standalone backpedal choice (old R9, R11) go;
+> facing follows movement and the backward step plays only while attacking. **I-JS7C8-11** removes
+> the pointer facing and reworks the clip choice. Kept `done` as the record of what was built.
 
 **Lane: agent.** game-client only. Nothing is sent yet (slice 4). Until a class is baked with
 `run` (slice 5), every class walks as today, so the visible change of this slice is the local
