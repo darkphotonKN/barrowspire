@@ -95,6 +95,10 @@ const { townOutline } = await import("@/render/world/hubTown.fixture");
 const interiors = await import("@/render/world/hubInteriors");
 const walls_ = await import("@/render/world/walls");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { EventEmitter } = await import("eventemitter3");
+const { PartyPanel } = await import("@/ui/PartyPanel");
+const { createPartyStore } = await import("@/stores/partyStore");
+const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -1532,12 +1536,16 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     expect(hub.menu).toBeDefined();
   });
 
-  it("should close the gear overlay before the party panel", () => {
+  // the party panel is drawn over the gear overlay (FS-3EBCA R8; FS-R82NV § Change C2, C8)
+  it("should close the party panel, drawn over the gear overlay, before the overlay", () => {
     const { keys, press, party, gear } = withParty();
     gear.toggle();
+    gear.toggleCharacter();
+    press(keys.esc);
+    expect(party.open).toBe(false);
+    expect(gear.isOpen()).toBe(true);
     press(keys.esc);
     expect(gear.isOpen()).toBe(false);
-    expect(party.open).toBe(true);
   });
 
   it("should do on the Menu icon exactly what one ESC does: open, then close the menu", () => {
@@ -4037,5 +4045,92 @@ describe("HubScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
     hub.relayoutHud();
 
     expect(relayout).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
+ * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ */
+function partyPanelOn(refused: () => boolean) {
+  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const keyboard = new EventEmitter();
+  const scene = {
+    add: { graphics: () => any, text: () => any },
+    input: Object.assign(new EventEmitter(), { keyboard }),
+    events: new EventEmitter(),
+  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
+  const panel = new PartyPanel(scene, {
+    store: createPartyStore({ selfId: () => "me" }),
+    world: () => null,
+    selfId: () => "me",
+    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
+    makeField: () => ({
+      value: "",
+      setEnabled: vi.fn(),
+      moveTo: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      blur: vi.fn(),
+      destroy: vi.fn(),
+    }),
+    activeElement: () => null,
+    blocked: refused,
+  });
+  return { panel, pressT: () => keyboard.emit("keydown-T") };
+}
+
+// FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
+// inventory or the character panel open the party panel would not open). I-3EBCA-7.
+describe("HubScene the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
+  type Partied = { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
+  function partyInTown() {
+    const env = hubOnStage();
+    const hub = env.hub as unknown as typeof env.hub & Partied;
+    const party = partyPanelOn(() => hub.refusesParty());
+    hub.partyPanel = party.panel;
+    hub.mountCorner();
+    const f = cornerIconFrame("party", viewport);
+    const icon = () =>
+      env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    return { ...env, hub, party, pressIcon: () => icon().handlers.pointerdown() };
+  }
+
+  it.each([
+    ["the inventory", (gear: ReturnType<typeof fakeGear>) => gear.toggle()],
+    ["the character panel", (gear: ReturnType<typeof fakeGear>) => gear.toggleCharacter()],
+    [
+      "both panels",
+      (gear: ReturnType<typeof fakeGear>) => {
+        gear.toggle();
+        gear.toggleCharacter();
+      },
+    ],
+  ])("should open and close the party panel on T and on the Party icon with %s open", (_open, open) => {
+    const { gear, party, pressIcon } = partyInTown();
+    open(gear);
+    expect(gear.isOpen()).toBe(true);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(true);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(false);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(true);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
+    expect(gear.isOpen()).toBe(true);
+  });
+
+  it.each([
+    ["a dialogue", (hub: Record<string, unknown>) => void (hub.dialogue = {})],
+    ["the ESC menu", (hub: Record<string, unknown>) => void (hub.menu = {})],
+    ["the letter panel", (hub: Record<string, unknown>) => void (hub.mailbox = { isOpen: () => true, close: vi.fn() })],
+  ])("should still refuse T and the Party icon while %s owns the screen, the inventory open or not", (_owner, own) => {
+    const { hub, gear, party, pressIcon } = partyInTown();
+    gear.toggle();
+    own(hub as unknown as Record<string, unknown>);
+    party.pressT();
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
   });
 });

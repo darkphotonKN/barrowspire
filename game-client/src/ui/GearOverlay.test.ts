@@ -304,9 +304,10 @@ function overlayOnStage(
   gear: EquippedItems = worn(),
   world?: WorldType,
   renderScale = 1,
+  under?: (x: number, y: number) => boolean,
 ) {
   const s = recordingScene(1080, 720, renderScale);
-  const overlay = new GearOverlay(s.scene, s.art, world);
+  const overlay = new GearOverlay(s.scene, s.art, world, under);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
   overlay.onEquip = onEquip;
@@ -1831,5 +1832,52 @@ describe("GearOverlay in the party panel's frame (FS-HRH2J § Change C16)", () =
     frame.mockClear();
     overlay.openStash();
     expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(left), asFrame(right)]);
+  });
+});
+
+// FS-3EBCA R8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍"): the party panel opens over the open
+// inventory and character panel, and what lies under it is the party panel's, not the overlay's.
+describe("GearOverlay under the party panel (FS-3EBCA R8; FS-R82NV § Change C8)", () => {
+  /** A press, a hover or the wheel at a point the party panel covers. */
+  function shadowedOnStage(bag: ItemState[], shadowed: (x: number, y: number) => boolean) {
+    return overlayOnStage(bag, worn(), "field", 1, shadowed);
+  }
+
+  it("should not wear a bag item under the party panel on a right-press, nor show its tip", () => {
+    const shade = { on: true };
+    const env = shadowedOnStage([axe], () => shade.on);
+    env.move(...env.cell(0));
+    expect(env.shown()).not.toContain("axe");
+    env.press(...env.cell(0), 2);
+    expect(env.onEquip).not.toHaveBeenCalled();
+    // and with the party panel shut the same press wears it
+    shade.on = false;
+    env.move(...env.cell(0));
+    expect(env.shown()).toContain("axe");
+    env.press(...env.cell(0), 2);
+    expect(env.onEquip).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not take E for the item under the party panel", () => {
+    const env = shadowedOnStage([axe], () => true);
+    env.move(...env.cell(0));
+    env.overlay.handleEquipKey();
+    expect(env.onEquip).not.toHaveBeenCalled();
+  });
+
+  it("should leave the inventory open on a left-press at its × under the party panel", () => {
+    const right = overlayLayout(1080, 720).right;
+    const box = panelClose(right);
+    const env = shadowedOnStage([], () => true);
+    env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
+    expect(env.overlay.isInventoryOpen()).toBe(true);
+  });
+
+  it("should answer a point the party panel does not cover as before", () => {
+    const right = overlayLayout(1080, 720).right;
+    const box = panelClose(right);
+    const env = shadowedOnStage([], (x) => x < right.x);
+    env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
+    expect(env.overlay.isInventoryOpen()).toBe(false);
   });
 });
