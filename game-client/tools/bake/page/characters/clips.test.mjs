@@ -376,17 +376,17 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
   /** A pose's yaw of the chest in the model: the pelvis, spine and chest turns summed. */
   const chestYaw = (p) => ["hips", "spine", "chest"].reduce((s, b) => s + (p.b[b] ?? [0, 0, 0])[1], 0);
 
-  it("are two 8-frame loops; a class sheet that opts in carries the run, walk_attack with its legs over 0.75 walk cycles and backpedal_attack over 0.625 backpedal cycles, and no standalone backpedal", () => {
+  it("are two 8-frame loops; a class sheet that opts in carries the run, walk_attack with its legs over 0.75 walk cycles and backpedal_attack over one backpedal cycle, and no standalone backpedal", () => {
     for (const spec of [RUN, BACK]) expect([spec.frames, spec.loop]).toEqual([8, true]);
     expect(Object.keys(RUNNING_CLASS_ANIMATIONS)).toEqual(["idle", "walk", "attack", "death", "run", "walk_attack", "backpedal_attack"]);
     const { attack } = RUNNING_CLASS_ANIMATIONS;
     const wa = RUNNING_CLASS_ANIMATIONS.walk_attack;
     expect(wa.cycles).toBe(0.75);
     expect(wa.frames / wa.fps).toBeCloseTo(attack.frames / attack.fps, 9);
-    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.625, speed: BACK.speed });
-    // whole keys of each cycle: 6 of the walk's 8, 5 of the backpedal's 8
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack).toEqual({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 1, speed: BACK.speed });
+    // whole keys of each cycle: 6 of the walk's 8, all 8 of the backpedal's (its shorter steps)
     expect(wa.cycles * 8).toBe(6);
-    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack.cycles * BACK.frames).toBe(5);
+    expect(RUNNING_CLASS_ANIMATIONS.backpedal_attack.cycles * BACK.frames).toBe(8);
     // the sheets that do not run keep today's two cycles
     expect(CLASS_ANIMATIONS.walk_attack.cycles).toBe(2);
     expect(MERC_ANIMATIONS.walk_attack.cycles).toBe(2);
@@ -400,7 +400,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     frames[0].b.thighR.forEach((v, j) => expect(v).toBeCloseTo(walk[0].b.thighR[j], 9));
   });
 
-  it("backpedal_attack: the attack's keys from the waist up, each held two frames, over the backpedal's legs stepping 0.625 cycles across it", () => {
+  it("backpedal_attack: the attack's keys from the waist up, each held two frames, over the backpedal's legs stepping one cycle across it", () => {
     const spec = RUNNING_CLASS_ANIMATIONS.backpedal_attack;
     const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).backpedal_attack;
     const keys = ATTACKS.shot();
@@ -412,7 +412,8 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
         if (key.b[bone]) expect(p.b[bone], `${bone} @${i}`).toEqual(key.b[bone]);
       expect(p.fx).toEqual(key.fx);
       const step = sample(legs, (i * spec.cycles * legs.length) / spec.frames, true);
-      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR"]) expect(p.b[bone], `${bone} @${i}`).toEqual(step.b[bone]);
+      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR"])
+        p.b[bone].forEach((v, j) => expect(v, `${bone} @${i}`).toBeCloseTo(step.b[bone][j], 9));
       // the legs' footing, never the attack's lunge
       expect(p.body.z ?? 0).toBe(0);
     });
@@ -436,7 +437,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
       backpedalAttack: legPace(backMeasured, BACK.frames, BACK.fps, ba.cycles),
     };
     for (const [name, pace] of Object.entries(paces)) expect(pace, name).toBeLessThanOrEqual(90);
-    // and not far under it: the legs still walk (R21's "about 25% slower", R10's 0.625)
+    // and not far under it: the legs still walk (R21's "about 25% slower", the backpedal legs' one cycle)
     for (const [name, pace] of Object.entries(paces)) expect(pace, name).toBeGreaterThan(60);
   });
 
@@ -532,21 +533,120 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(200 / RUN_PACE).toBeLessThanOrEqual(1.1);
   });
 
-  it("the backpedal: the feet step backward toe first under an upper body held to the facing", () => {
+  it("the backpedal: the body goes backward, its pace the bake's record, under an upper body held to the facing", () => {
     // the body goes backward: the planted foot slides forward under it
     const pace = measurePace(rig, back, BACK.fps);
     expect(pace).toBeLessThan(0);
-    expect(-pace).toBeGreaterThanOrEqual(150);
-    expect(-pace).toBeLessThanOrEqual(220);
     // BACKPEDAL_LEGS.pace is that measure: the bake's own record of it (the client plays no backpedal)
     expect(Math.abs(BACK.pace + pace)).toBeLessThan(1);
     // the chest stays turned to the facing, never to the movement
     for (const p of back) expect(Math.abs(chestYaw(p))).toBeLessThan(0.15);
-    // a foot lands behind the body, its toes down first
-    const landing = footing(rig, back, 0);
-    const lead = landing.R.y < landing.L.y ? "R" : "L";
-    expect(landing[`ankle${lead}`].z).toBeLessThan(landing.hips.z);
-    expect(back[0].b[`thigh${lead}`][0] + back[0].b[`shin${lead}`][0] + back[0].b[`foot${lead}`][0]).toBeGreaterThan(0.1);
+  });
+
+  /**
+   * The backpedal legs sampled four times a key round one cycle, posed and grounded as the bake
+   * does: per sample each foot's planted state, ankle z against the pelvis, toe and heel heights
+   * (rig heights), and the pelvis height. The owner (2026-11-12): "後退的動作感覺不太流暢 後退像是
+   * 在走路沒有後退的感覺"; the charter default reads backward as a toe-first landing behind the body,
+   * a push off the front toe, bent knees, the body over the front of its feet, a low swing.
+   */
+  function backpedalGait(frames = back) {
+    const H = rig.H;
+    const at = [];
+    for (let k = 0; k < 32; k++) {
+      const f = footing(rig, frames, k / 4);
+      const foot = (s) => ({
+        planted: f[s].y < GROUND_EPS,
+        z: (f[`ankle${s}`].z - f.hips.z) / H,
+        toe: f[`toeHeel${s}`].toe / H,
+        heel: f[`toeHeel${s}`].heel / H,
+      });
+      at.push({ L: foot("L"), R: foot("R"), hips: f.hips.y / H, knees: [rig.bones.shinL.rotation.x, rig.bones.shinR.rotation.x] });
+    }
+    return at;
+  }
+  const next = (k) => (k + 1) % 32;
+  const prev = (k) => (k + 31) % 32;
+
+  it("the backpedal legs: never a flight, a foot always down, both down at each change of feet", () => {
+    const gait = backpedalGait();
+    for (const [k, g] of gait.entries()) expect(g.L.planted || g.R.planted, `sample ${k}`).toBe(true);
+    expect(gait.filter((g) => g.L.planted && g.R.planted).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("the backpedal legs: each foot lands behind the body on its toes, then rolls down to its heel", () => {
+    const gait = backpedalGait();
+    let landings = 0;
+    for (const s of ["L", "R"])
+      for (let k = 0; k < 32; k++) {
+        if (!gait[k][s].planted || gait[prev(k)][s].planted) continue;
+        landings++;
+        const foot = gait[k][s];
+        expect(foot.z, `${s} lands behind the pelvis @${k}`).toBeLessThan(-0.12);
+        expect(foot.heel - foot.toe, `${s} lands toe first @${k}`).toBeGreaterThan(0.02);
+        // the heel comes down while the foot is planted: a roll, never a stance on the toes
+        let j = k;
+        let heelDown = false;
+        while (gait[j][s].planted && !heelDown) {
+          heelDown = gait[j][s].heel < 0.004;
+          j = next(j);
+        }
+        expect(heelDown, `${s} rolls to its heel after the landing @${k}`).toBe(true);
+      }
+    expect(landings).toBe(2);
+  });
+
+  it("the backpedal legs: the front foot pushes off its toe, its heel lifting before it leaves the ground", () => {
+    const gait = backpedalGait();
+    let pushes = 0;
+    for (const s of ["L", "R"])
+      for (let k = 0; k < 32; k++) {
+        if (!gait[k][s].planted || gait[next(k)][s].planted) continue;
+        pushes++;
+        const foot = gait[k][s];
+        expect(foot.z, `${s} leaves the ground in front of the pelvis @${k}`).toBeGreaterThan(0.1);
+        expect(foot.heel - foot.toe, `${s} heel up as it pushes @${k}`).toBeGreaterThan(0.02);
+      }
+    expect(pushes).toBe(2);
+  });
+
+  it("the backpedal legs: the swing foot travels backward the whole way, low, heel leading up", () => {
+    const gait = backpedalGait();
+    for (const s of ["L", "R"])
+      for (let k = 0; k < 32; k++) {
+        const foot = gait[k][s];
+        if (foot.planted || gait[prev(k)][s].planted) continue;
+        expect(foot.z, `${s} swings back @${k}`).toBeLessThanOrEqual(gait[prev(k)][s].z + 0.005);
+        expect(foot.toe, `${s} toe low @${k}`).toBeLessThan(0.08);
+        expect(foot.heel, `${s} heel leading @${k}`).toBeGreaterThan(foot.toe);
+      }
+  });
+
+  it("the backpedal legs: the knees bent all the way round, the pelvis low with a small bob, the body forward of its feet", () => {
+    const gait = backpedalGait();
+    for (const [k, g] of gait.entries()) for (const knee of g.knees) expect(knee, `knee @${k}`).toBeGreaterThanOrEqual(0.3);
+    const hips = gait.map((g) => g.hips);
+    expect(Math.max(...hips) - Math.min(...hips)).toBeLessThan(0.015);
+    // lower than the walk's pelvis on average: the knees take the weight
+    const walk = walkCycle(plain);
+    const walkHips = [0, 1, 2, 3, 4, 5, 6, 7].map((f) => footing(rig, walk, f).hips.y / rig.H);
+    expect(hips.reduce((a, b) => a + b) / hips.length).toBeLessThan(walkHips.reduce((a, b) => a + b) / 8 - 0.01);
+    // the pelvis forward of the planted feet's centre, on average over the cycle (it leans into
+    // the facing, against the travel)
+    const ahead = gait.map((g) => {
+      const down = ["L", "R"].filter((s) => g[s].planted);
+      return -down.reduce((sum, s) => sum + g[s].z, 0) / down.length;
+    });
+    expect(ahead.reduce((a, b) => a + b) / ahead.length).toBeGreaterThan(0.02);
+  });
+
+  it("the backpedal legs: steps shorter than the walk's, and the cycle loops without a pop", () => {
+    const backCycle = (Math.abs(measurePace(rig, back, BACK.fps)) * BACK.frames) / BACK.fps;
+    const walkCycleLength = (measurePace(rig, walkCycle(plain), ANIMATIONS.walk.fps) * 8) / ANIMATIONS.walk.fps;
+    expect(backCycle).toBeLessThan(walkCycleLength * 0.85);
+    // no key jumps further than the swing needs, the last key into the first included
+    for (const bone of ["thighL", "thighR", "shinL", "shinR"])
+      for (let i = 0; i < 8; i++) expect(Math.abs(back[(i + 1) % 8].b[bone][0] - back[i].b[bone][0]), `${bone} ${i}→${(i + 1) % 8}`).toBeLessThanOrEqual(0.75);
   });
 
   it("measures the walk near WALK_PACE's 74 world px/s, so the run and backpedal are measured as the walk was", () => {
