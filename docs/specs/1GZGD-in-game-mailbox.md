@@ -1496,12 +1496,22 @@ Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核
 [FS-3EBCA](3EBCA-hud-corner-icons.md), which owns the corner row the envelope joins. R33, R36
 and R40 above are not edited; where this section and they disagree, this section wins.
 
+Amended the same day, before the browser check, by the owner: "信箱似乎也會卡住其他面板 但信箱是全畫面
+那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (the
+mailbox seems to block the other panels; since the letter panel is full-screen, opening it closes
+the other windows, opening another window closes it, opening the menu closes every window too, and
+while the menu is open nothing else can be pressed). C1 is edited in place and C4 added; R40's "the
+letter panel owns the keys" no longer holds for I, B, C and T (FS-3EBCA R16). The rules for every
+world are FS-3EBCA §D.
+
 ### Requirements
 
 C1. **The envelope toggles.** With the letter panel open, a press on the envelope closes it, as
     the × and Esc do (R40), whatever else is open. With it shut, a press opens it as before (R36),
-    and opens nothing while a dialogue, the ESC menu or the gear overlay owns the screen.
-    **(charter default: owner, "信箱ui可以透過再按一次信箱關閉")**
+    and opens nothing while a dialogue or the ESC menu owns the screen. The inventory, the
+    character panel and the party panel no longer refuse it: they close (C4).
+    **(charter default: owner, "信箱ui可以透過再按一次信箱關閉"; the gear overlay taken out of the
+    refusal, owner 2026-11-12: "開信箱時其他視窗會被關閉")**
 C2. **The envelope is the corner row's Mail icon.** It stands in the row's leftmost slot, left of
     Menu, Inventory, Character and Party (FS-3EBCA R1, R2): at 1080 × 720 its plate is (742, 658,
     58, 46) (808 before FS-3EBCA's fifth icon, the owner's decision of 2026-11-12), and it keeps that slot when the view's size changes. The mailbox stays town only (R33, D11);
@@ -1512,11 +1522,19 @@ C2. **The envelope is the corner row's Mail icon.** It stands in the row's leftm
 C3. **It names itself under the pointer**: "Mailbox", in the row's hover label (FS-3EBCA R5), and
     no key. The screen's word for it stays mailbox and letter (`game-client/CONTEXT.md` § Mailbox
     terms). **(owner: "mail沒有快捷鍵 所以就顯示mail就好", then "信箱hover改mailbox", 2026-11-12)**
+C4. **The letter panel is full-screen, so it stands alone.** Opening it first closes the inventory,
+    the character panel (the stash with the inventory, at the stash chest) and the party panel
+    (FS-3EBCA R15, R19). Opening any of them (I, B, C, T or their corner icons) with the letter
+    panel open closes the letter panel first (FS-3EBCA R16); the letter panel no longer refuses
+    them. Opening the ESC menu closes it too, and while the menu is open the envelope opens
+    nothing (FS-3EBCA R17, R18). `E` stays dropped under it (R40). **(owner, 2026-11-12, above)**
 
 ### Acceptance Criteria
 
 - [ ] With the letter panel open, a press on the envelope closes it; a second press opens it again.
-- [ ] With the panel shut, a press while a dialogue, the ESC menu or the gear overlay is open opens nothing.
+- [ ] With the panel shut, a press while a dialogue or the ESC menu is open opens nothing.
+- [ ] With the inventory, the character panel, the stash or the party panel open, a press on the envelope closes them and opens the letter panel.
+- [ ] With the letter panel open, I, B, C, T and the Inventory, Character and Party icons close it and open their window.
 - [ ] At 1080 × 720 the envelope's plate is (742, 658, 58, 46) and at 1280 × 720 (942, 658, 58, 46); its seal, count and pulse are unchanged.
 - [ ] Under the pointer the envelope shows "Mailbox"; the label goes when the pointer leaves.
 - [ ] Esc and the × still close the panel.
@@ -1526,8 +1544,8 @@ C3. **It names itself under the pointer**: "Mailbox", in the row's hover label (
 - **A press while the panel is still loading:** the panel is open as soon as it is asked for
   (`openPanel` sets it open at once), so a second press closes it and the late answer applies to
   nothing.
-- **A press on the envelope while the gear overlay is open:** the overlay's right panel covers the
-  row; nothing opens (FS-3EBCA R10).
+- **A press on the envelope while the gear overlay is open:** the overlay stops above the row
+  (FS-HRH2J § Change C12); the overlay closes and the letter panel opens (C4).
 - **Leaving the town with the panel open:** as before (R44): it closes with the town.
 
 ### Out of Scope
