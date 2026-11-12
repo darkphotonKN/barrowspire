@@ -223,20 +223,29 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Walk-attack** (`walk_attack`): a class's attack drawn while it moves: the attack from the
   waist up over the walk from the waist down, the legs facing the aim (for a melee swing, its
   target). Every playable class's sheet carries it; no creature's or resident's does (FS-HF0WW,
-  FS-3V7GC).
-- **Run** (`run`): a playable class's looping clip while it moves, a jog keyed to the server's
-  move speed so it plays at about its own pace. Replaces the walk for the four classes; folk and
-  creatures still walk. Not the walk, which the class sheets keep for later use (FS-JS7C8).
-- **Pace** (`WALK_PACE`, `RUN_PACE`, `BACKPEDAL_PACE`): the world px per second a looping clip
-  carries the body at 1x: the speed its planted foot slides back under the body, measured on the
-  rig by the bake's `pace.js`, never guessed. The client plays the clip at the drawn speed over
-  its pace, so planted feet stay planted (FS-JS7C8 R3, R10).
-- **Backpedal** (`backpedal`): a playable class's looping clip while it moves away from where it
-  faces (more than 90° between its facing and its movement): the body toward the pointer, the
-  feet stepping back (FS-JS7C8).
-- **Pointer facing**: the 8-way facing of the world direction from the player's character to the
-  pointer. The local character faces it, moving or standing; it is sent up as `face` and other
-  players draw it. Presentation only: no aim, range or hit reads it (FS-JS7C8).
+  FS-3V7GC). On a sheet that runs, its legs never step faster than the slowed body moves
+  (FS-JS7C8 R21). Moving more than 90° away from the aim, a class that carries it plays the
+  backpedal-attack instead.
+- **Run** (`run`): a playable class's looping clip while it moves and is not attacking, a jog
+  keyed to the server's move speed so it plays at about its own pace, turned to its movement.
+  Replaces the walk for the four classes; folk and creatures still walk. Not the walk, which the
+  class sheets keep for later use (FS-JS7C8).
+- **Pace** (`WALK_PACE`, `RUN_PACE`; the backpedal legs' pace in the bake): the world px per
+  second a looping clip carries the body at 1x: the speed its planted foot slides back under the
+  body, measured on the rig by the bake's `pace.js`, never guessed. The client plays a looping clip
+  at the drawn speed over its pace, so planted feet stay planted; the attack-on-the-move clips
+  play at their authored rate, their leg cycles chosen from the measured pace (FS-JS7C8 R3, R10,
+  R21).
+- **Backpedal-attack** (`backpedal_attack`): a playable class's attack drawn while it moves more
+  than 90° away from the attack's facing: the attack from the waist up over the backpedal legs
+  (the feet stepping backward) from the waist down, composed as the walk-attack is and lasting as
+  long as the attack. The only backward step: a class that is not attacking never steps back. The
+  backpedal legs are a bake-only cycle; no sheet carries a standalone `backpedal` (FS-JS7C8,
+  owner change 2026-11-12).
+- **Facing** (a character's): which of the 8 world directions its figure is turned to: its drawn
+  movement, kept while it stands; a swing turns it to its aim. Never the pointer, and never sent to
+  or received from the server: every client derives every figure's facing from the motion it
+  draws (FS-JS7C8 R22, owner change 2026-11-12). *Avoid*: "pointer facing" (retired).
 - **Atlas group**: the atlas pages one group of sheets is packed onto, named by the manifest's
   atlas keys without the page number (`boss-0` and `boss-1` are the `boss` group). The unit the
   client loads and frees art by (FS-C4JWH).
