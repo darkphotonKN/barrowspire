@@ -4130,8 +4130,12 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
   ])("should keep clear of the HUD around it at logical width %i (§G.37)", (width, notice) => {
     const corner = anchorAt(TOP_RIGHT_HUD, { width, height: 720 });
     const left = corner.x - TOWN_MINIMAP.width;
-    // the enlarged map under the fullscreen button's foot in the corner (FS-56CKV §Change C3)
-    expect(corner.y).toBeGreaterThanOrEqual(26);
+    // the button beside the enlarged map too (FS-56CKV §Change C3, C7 as amended 2026-11-12): its
+    // foot at y 30 above the notice band, its left edge (720 at 1080) never left of the arrival
+    // card's widest line's right end nor over the party panel
+    const enlargedButtonLeft = corner.x - 324 - TOWN_MINIMAP.gap - FULLSCREEN_BUTTON.height;
+    if (width === 1080) expect(enlargedButtonLeft).toBe(720);
+    expect(720).toBeLessThanOrEqual(enlargedButtonLeft);
     // the button beside the normal map (§Change C2, C7): its foot at y 30, above the notice band
     // (a 14 px line in 8 px padding centred on y 72) and the arrival card; its left edge right of
     // the arrival card's widest line and the party panel
@@ -4262,20 +4266,20 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     const { render, map, layers } = townWithModes("enlarged");
     render();
     expect(map()!.mode).toBe("enlarged");
-    // the enlarged panel at the column's top, right-aligned
-    expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 44]);
+    // the enlarged panel at the column's top, y 10, right-aligned (FS-56CKV §Change C3 as amended 2026-11-12)
+    expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 10]);
   });
 
-  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C2–C4 (owner 2026-11-12:
-  // "地圖變2倍蛇才移動到右上角")
-  it.each([1080, 1280])("should move the fullscreen button on M: to the corner enlarged, there for the overlay, beside the map back at normal, at width %i (FS-56CKV §Change C2–C4)", (width) => {
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C2–C4 (owner 2026-11-12,
+  // amended: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側", replacing "地圖變2倍蛇才移動到右上角")
+  it.each([1080, 1280])("should move the fullscreen button on M: beside the enlarged map at its left, to the corner for the overlay, beside the map back at normal, at width %i (FS-56CKV §Change C2–C4)", (width) => {
     viewport.set({ width, height: 720, renderScale: 1 });
     const { pressM, render, layers, button } = townWithModes();
     render();
     expect(button.current).toEqual({ top: 10, right: 232 });
     pressM();
-    expect(button.current).toEqual(BUTTON_CORNER);
-    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 44]);
+    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 10]);
+    expect(button.current).toEqual({ top: 10, right: 10 + 324 + 6 });
     pressM();
     expect(button.current).toEqual(BUTTON_CORNER);
     pressM();

@@ -43,18 +43,26 @@ describe("topRightColumn (FS-56CKV §B)", () => {
     expect(column.escaped.y).toBe(column.minimap!.y + column.minimap!.height + MINIMAP.gap);
   });
 
-  // §Change C3; FS-1SEF0 §B.11: the enlarged minimap under the button in the corner, the lines under it
+  // §Change C3, C5 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側"): the
+  // enlarged minimap at the very top too, the button at its left, the lines under it moved up
   it.each([
-    [1080, 1070],
-    [1280, 1270],
-  ])("should stand the enlarged minimap at y 44 under the button in the corner, and the lines under it, their gaps kept, at logical width %i (§Change C3)", (width, right) => {
-    const column = topRightColumn({ view: viewOf(width), minimap: ENLARGED, floorHeight: LINE_H, escapedHeight: LINE_H });
-    expect(column.button).toEqual(CORNER);
-    expect(column.minimap).toEqual({ x: right - 324, y: 44, width: 324, height: 162 });
-    expect(column.floor).toEqual({ x: right, y: 212 });
-    expect(column.escaped).toEqual({ x: right, y: 212 + LINE_H + 4 });
-    expect(column.bottom).toBe(212 + LINE_H + 4 + LINE_H);
-  });
+    [1080, 1070, 720],
+    [1280, 1270, 920],
+  ])(
+    "should stand the enlarged minimap at the very top, y 10, the button 6 px to its left on its top, and the lines under it from y 178, their gaps kept, at logical width %i (§Change C3, C5)",
+    (width, right, buttonLeft) => {
+      const column = topRightColumn({ view: viewOf(width), minimap: ENLARGED, floorHeight: LINE_H, escapedHeight: LINE_H });
+      expect(column.minimap).toEqual({ x: right - 324, y: 10, width: 324, height: 162 });
+      // the button's right edge 6 px left of the map's left, its top on the map's top
+      expect(column.button).toEqual({ top: 10, right: 10 + 324 + 6 });
+      expect(width - column.button.right - FULLSCREEN_BUTTON.height).toBe(buttonLeft);
+      expect(column.floor).toEqual({ x: right, y: 10 + 162 + 6 });
+      expect(column.floor.y).toBe(178);
+      expect(column.escaped).toEqual({ x: right, y: 178 + LINE_H + 4 });
+      expect(column.escaped.y).toBe(203);
+      expect(column.bottom).toBe(203 + LINE_H);
+    },
+  );
 
   // §Change C4; §B.11; FS-1SEF0 §D.21: no panel in the corner (no minimap, or the overlay)
   it.each([1080, 1280])(
@@ -70,6 +78,7 @@ describe("topRightColumn (FS-56CKV §B)", () => {
 
   it.each([
     [NORMAL, 124],
+    [ENLARGED, 178],
     [null, 44],
   ])("should stand the escaped count where the floor indicator would while it is hidden (minimap: %o)", (minimap, top) => {
     const column = topRightColumn({ view: viewOf(1080), minimap, floorHeight: null, escapedHeight: LINE_H });
@@ -108,8 +117,15 @@ describe("topRightCorner (FS-56CKV §Change: Minimap at the top, fullscreen butt
     expect(corner.right).toBe(width - 10);
   });
 
-  it.each([1080, 1280])("should keep the button in the corner for the enlarged map, the overlay and no map, at width %i", (width) => {
-    expect(topRightCorner(viewOf(width), ENLARGED)).toMatchObject({ button: CORNER, minimap: { y: 44 }, below: 212 });
+  it.each([1080, 1280])("should stand the enlarged map at y 10 with the button at its left too, at width %i (§Change C3)", (width) => {
+    const corner = topRightCorner(viewOf(width), ENLARGED);
+    expect(corner.minimap).toEqual({ x: width - 334, y: 10, width: 324, height: 162 });
+    // 10 + 324 + 6 in from the right edge
+    expect(corner.button).toEqual({ top: 10, right: 340 });
+    expect(corner.below).toBe(178);
+  });
+
+  it.each([1080, 1280])("should keep the button in the corner for the overlay and no map, at width %i (§Change C4)", (width) => {
     expect(topRightCorner(viewOf(width), null)).toEqual({ button: CORNER, minimap: null, below: 44, right: width - 10 });
     // a panel handed in the overlay's mode stands nothing in the corner beside the button
     expect(topRightCorner(viewOf(width), { ...MINIMAP, mode: "overlay" }).button).toEqual(CORNER);

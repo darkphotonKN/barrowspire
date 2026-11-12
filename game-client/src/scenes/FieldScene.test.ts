@@ -1452,9 +1452,11 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
       render({ x: 2900, y: 1480 });
       for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - FIELD_MINIMAP.width, 10]);
       expect(button.current).toEqual({ top: 10, right: 10 + FIELD_MINIMAP.width + FIELD_MINIMAP.gap });
+      // enlarged, at the very top too with the button at its left (§Change C3 as amended
+      // 2026-11-12: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側"); only the overlay hands it the corner
       pressM();
-      expect(button.current).toEqual(corner);
-      expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 44]);
+      expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 10]);
+      expect(button.current).toEqual({ top: 10, right: 10 + 324 + FIELD_MINIMAP.gap });
       pressM();
       expect(button.current).toEqual(corner);
       pressM();

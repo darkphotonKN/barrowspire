@@ -5472,32 +5472,42 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
     },
   );
 
-  // FS-1SEF0 §B.12: the enlarged minimap, 324 × 162 at the same corner, and the lines under it
+  // FS-1SEF0 §B.12: the enlarged minimap, 324 × 162 at the same corner, and the lines under it;
+  // FS-56CKV §Change C3, C7 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側"):
+  // at the very top, y 10, the button at its left
   it.each([
     [1080, 412],
     [1280, 612],
   ])(
-    "should keep the enlarged minimap and the lines under it clear of the fullscreen button, either target frame and a notice up to its clear width at logical width %i, %i px (FS-1SEF0 §B.12)",
+    "should stand the enlarged minimap at the very top with the button at its left, the map and the lines under it clear of the button, either target frame and a notice up to its clear width at logical width %i, %i px (FS-1SEF0 §B.12; FS-56CKV §Change C3, C7)",
     (width, clearNotice) => {
       const { minimapPanel } = await_minimap;
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
       const c = topRightColumn({ view, minimap: { ...minimapPanel("enlarged"), mode: "enlarged" }, floorHeight: LINE.height, escapedHeight: LINE.height });
       const map = c.minimap!;
-      expect(map).toEqual({ x: corner.x - 324, y: 44, width: 324, height: 162 });
+      expect(map).toEqual({ x: corner.x - 324, y: 10, width: 324, height: 162 });
       if (width === 1080) {
         expect(map.x).toBe(746);
         expect(targetFrameRect(width / 2, TARGET_BOSS_FRAME).x + TARGET_BOSS_FRAME.width).toBe(729);
       }
+      expect(c.floor.y).toBe(178);
       const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
       const parts: Box[] = [map, line(c.floor), line(c.escaped)];
-      // the button back in the corner, however wide its icon (FS-56CKV §Change C3)
-      expect(c.button).toEqual({ top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset });
-      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      // the button at the map's left, top-aligned, 6 px off (FS-56CKV §Change C3)
+      expect(c.button).toEqual({ top: 10, right: width - (map.x - 6) });
+      const button = buttonAt(width, c.button);
+      expect(button).toEqual({ x: map.x - 6 - 20, y: 10, width: 20, height: 20 });
       const notice = (w: number) => ({ x: width / 2 - w / 2, y: 100 - 22, width: w, height: 44 });
       for (const part of parts)
         for (const other of [button, notice(clearNotice), targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
           expect(overlaps(part, other)).toBe(false);
+      for (const other of [notice(clearNotice), targetFrameRect(width / 2, TARGET_FRAME)]) expect(overlaps(button, other)).toBe(false);
+      // the one clearance the owner's rule gives up (§Change C7, Edge States): at 1080 the button
+      // lies over the boss frame's last 9 px; at 1280 it is clear
+      const boss = targetFrameRect(width / 2, TARGET_BOSS_FRAME);
+      expect(overlaps(button, boss)).toBe(width === 1080);
+      if (width === 1080) expect(boss.x + boss.width - button.x).toBe(9);
       // the clear width is the widest: 2 px more and the notice's right end lies over the map (Edge States)
       expect(overlaps(map, notice(clearNotice + 2))).toBe(true);
       for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
@@ -7711,17 +7721,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(standing(run.escapedCountText)).toEqual([1070, 149]);
       });
 
-      // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved down
-      it("should stand the enlarged minimap at the column's top and the floor indicator and the escaped count under it, at 1080 and 1280 (FS-1SEF0 §B.11)", () => {
+      // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved
+      // down; at the very top, y 10, by FS-56CKV §Change C3, C5 as amended 2026-11-12
+      it("should stand the enlarged minimap at the column's top, y 10, and the floor indicator and the escaped count under it, at 1080 and 1280 (FS-1SEF0 §B.11; FS-56CKV §Change C3, C5)", () => {
         const { run, view, placed, pressTo } = mapped();
         const enlarged = await_minimap.minimapPanel("enlarged");
         pressTo("enlarged");
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44, enlarged));
-        expect(standing(run.floorText)).toEqual([1070, 212]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 212 + 21 + 4]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 10, enlarged));
+        expect(standing(run.floorText)).toEqual([1070, 178]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 178 + 21 + 4]);
         view(1280);
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44, enlarged));
-        expect(standing(run.floorText)).toEqual([1270, 212]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10, enlarged));
+        expect(standing(run.floorText)).toEqual([1270, 178]);
         pressTo("normal");
         expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10));
         expect(standing(run.floorText)).toEqual([1270, 124]);
@@ -7745,12 +7756,17 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           },
         );
 
-        it.each([1080, 1280])("should move the button on M: to the corner enlarged, there for the overlay, beside the map back at normal, the lines with the map each time, at width %i (§Change C2–C5)", (width) => {
-          const { run, view, keys, button } = mapped();
+        // §Change C3 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側")
+        it.each([1080, 1280])("should move the button on M: beside the enlarged map at its left, to the corner for the overlay, beside the map back at normal, the lines with the map each time, at width %i (§Change C2–C5)", (width) => {
+          const { run, view, keys, button, placed } = mapped();
           view(width);
           keys["keydown-M"]();
-          expect(button.current).toEqual(CORNER);
-          expect(standing(run.floorText)).toEqual([width - 10, 44 + 162 + 6]);
+          const enlarged = minimapRect(width - 10, 10, await_minimap.minimapPanel("enlarged"));
+          expect(enlarged).toEqual({ x: width - 334, y: 10, width: 324, height: 162 });
+          expect(placed).toHaveBeenLastCalledWith(enlarged);
+          expect(button.current).toEqual({ top: 10, right: 340 });
+          expect(standing(run.floorText)).toEqual([width - 10, 10 + 162 + 6]);
+          expect(standing(run.escapedCountText)).toEqual([width - 10, 178 + 21 + 4]);
           keys["keydown-M"]();
           expect(button.current).toEqual(CORNER);
           expect(standing(run.floorText)).toEqual([width - 10, 44]);

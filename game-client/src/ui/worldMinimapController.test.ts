@@ -65,11 +65,12 @@ afterEach(() => {
 });
 
 describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
-  it("should build the map in the mode this browser kept, at the column's top (§F.32, §G.35)", () => {
+  // the enlarged map at the very top, y 10 (FS-56CKV §Change C3 as amended 2026-11-12)
+  it("should build the map in the mode this browser kept, at the column's top (§F.32, §G.35; FS-56CKV §Change C3)", () => {
     const { minimap, layers } = controller("enlarged");
     expect(minimap.map.mode).toBe("enlarged");
     const corner = anchorAt(TOP_RIGHT_HUD);
-    for (const l of layers) expect([l.x, l.y]).toEqual([corner.x - minimapPanel("enlarged").width, 44]);
+    for (const l of layers) expect([l.x, l.y]).toEqual([corner.x - minimapPanel("enlarged").width, 10]);
   });
 
   it("should build the map normal where the browser kept nothing", () => {
@@ -115,12 +116,13 @@ describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
     },
   );
 
-  it.each([1080, 1280])("should hand the button the corner on M to enlarged, keep it there for the overlay, and beside the map again back at normal, at width %i (§Change C2–C4)", (width) => {
+  // §Change C3 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側")
+  it.each([1080, 1280])("should hand the button the enlarged map's left on M, the corner for the overlay, and the normal map's left again back at normal, at width %i (§Change C2–C4)", (width) => {
     viewport.set({ width, height: 720, renderScale: 1 });
     const { minimap, layers, button } = controller();
     minimap.cycle();
-    expect(button.current).toEqual(CORNER);
-    expect(layers[0].y).toBe(44);
+    for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - 324, 10]);
+    expect(button.current).toEqual({ top: 10, right: 10 + 324 + MINIMAP.gap });
     minimap.cycle();
     expect(button.current).toEqual(CORNER);
     minimap.cycle();
