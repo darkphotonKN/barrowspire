@@ -236,7 +236,20 @@ export function walkCycle(style) {
     });
   });
   const frames = [...half, ...half.map(mirror)];
-  return frames.map((p, i) => add(p, style.hold, style.walkExtra?.(i)));
+  const wrist = w.wrist ? wristOf(frames, w.wrist) : [];
+  return frames.map((p, i) => add(p, wrist[i], style.hold, style.walkExtra?.(i)));
+}
+
+/**
+ * The hands taking back part of the arms' swing (`wrist`, per arm [left, right], 0 by default), so
+ * something carried turns less than the forearm through the walk: each hand turns back by that
+ * share of its upper arm and forearm's pitch away from their mean over the cycle.
+ */
+function wristOf(frames, wrist) {
+  const pitch = (p, s) => (p.b[`upperArm${s}`]?.[0] ?? 0) + (p.b[`foreArm${s}`]?.[0] ?? 0);
+  const mean = (s) => frames.reduce((m, p) => m + pitch(p, s), 0) / frames.length;
+  const [mL, mR] = [mean("L"), mean("R")];
+  return frames.map((p) => pose({ handL: [-(pitch(p, "L") - mL) * wrist[0], 0, 0], handR: [-(pitch(p, "R") - mR) * wrist[1], 0, 0] }));
 }
 
 // --- the run and the backpedal's legs --------------------------------------------------------
