@@ -24,6 +24,7 @@ import {
   gearPanelLayout,
   listedMark,
   overlayLayout,
+  panelClose,
   stashPanelLayout,
   statsPanelArea,
 } from "./gearOverlayLayout";
@@ -175,6 +176,27 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     texts.push(t);
     const self: Record<string, unknown> = chain({
       destroy: () => void (t.destroyed = true),
+      setColor: (c: string) => ((t.color = c), self),
+    });
+    return self;
+  };
+  /** Every zone made, with its rect, whether it asked for the hand cursor, and whether it is gone. */
+  const zones: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    hand: boolean;
+    destroyed: boolean;
+  }[] = [];
+  const zone = (x: number, y: number, w: number, h: number) => {
+    const z = { x, y, w, h, hand: false, destroyed: false };
+    zones.push(z);
+    const self: Record<string, unknown> = chain({
+      setInteractive: (opts?: { useHandCursor?: boolean }) => (
+        (z.hand = opts?.useHandCursor ?? false), self
+      ),
+      destroy: () => void (z.destroyed = true),
     });
     return self;
   };
@@ -196,6 +218,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
       graphics,
       text,
       container,
+      zone,
       sprite: (x: number, y: number) => {
         const s = { x, y, alpha: 1, seq: seq++ };
         sprites.push(s);
@@ -247,6 +270,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     scale,
     events,
     texts,
+    zones,
     shown,
     fills,
     strokes,
@@ -1581,5 +1605,193 @@ describe("GearOverlay listed and settling items (FS-GTNP8)", () => {
     move(...cell(0));
     shift(true);
     expect(shown()).toContain(LISTED_NOTE);
+  });
+});
+
+// FS-HRH2J § Change: Character and inventory apart (owner 2026-11-12: "道具欄跟角色面板拆開顯示 角色面板維持快捷鍵C
+// 道具欄是I", "這兩個右上角都要多加X關閉按鈕"). I-3EBCA-4.
+describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § Change C1–C9, C14)", () => {
+  const ignis = { username: "Ignis", class: "mage", level: 3 };
+
+  function apartOnStage(bag: ItemState[] = [sword], gear = worn({ head: helm })) {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const onEquip = vi.fn();
+    const onMove = vi.fn();
+    overlay.onEquip = onEquip;
+    overlay.onMove = onMove;
+    overlay.updateCharacter(ignis);
+    overlay.updateInventory(bag);
+    overlay.updateEquipment(gear);
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const centre = (r: { x: number; y: number; w: number; h: number }) =>
+      [r.x + r.w / 2, r.y + r.h / 2] as const;
+    const closeOf = (panel: typeof left) => centre(panelClose(panel));
+    return { ...s, overlay, onEquip, onMove, left, right, centre, closeOf };
+  }
+
+  it("should open the inventory alone: the slots, the bag and its title, no stats (C1, C14)", () => {
+    const { overlay, shown, left, right } = apartOnStage();
+    overlay.show();
+    expect(shown()).toEqual(expect.arrayContaining(["INVENTORY", "BAG", "1 / 30"]));
+    expect(shown()).not.toContain("CHARACTER");
+    expect(shown()).not.toContain("Ignis");
+    expect(shown()).not.toContain("GEAR");
+    expect(overlay.isInventoryOpen()).toBe(true);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(overlay.covers(right.x + 10, right.y + 10)).toBe(true);
+    expect(overlay.covers(left.x + 10, left.y + 10)).toBe(false);
+  });
+
+  it("should open the character panel alone: the stats, no slots and no bag (C1)", () => {
+    const { overlay, shown, left, right } = apartOnStage();
+    overlay.toggleCharacter();
+    expect(shown()).toEqual(expect.arrayContaining(["CHARACTER", "Ignis", "FROM GEAR"]));
+    expect(shown()).not.toContain("INVENTORY");
+    expect(shown()).not.toContain("BAG");
+    expect(shown()).not.toContain("HEAD");
+    expect(overlay.isVisible()).toBe(true);
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(overlay.isCharacterOpen()).toBe(true);
+    expect(overlay.covers(left.x + 10, left.y + 10)).toBe(true);
+    expect(overlay.covers(right.x + 10, right.y + 10)).toBe(false);
+  });
+
+  it("should open either with the other, and close each on its own toggle, keeping its handlers until both are closed (C1)", () => {
+    const { overlay, shown, input } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    expect(shown()).toEqual(expect.arrayContaining(["INVENTORY", "CHARACTER", "Ignis", "BAG"]));
+    expect(input.listenerCount("pointerdown")).toBe(1);
+
+    overlay.toggle();
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(shown()).toContain("Ignis");
+    expect(shown()).not.toContain("BAG");
+    expect(input.listenerCount("pointerdown")).toBe(1);
+
+    overlay.toggleCharacter();
+    expect(overlay.isVisible()).toBe(false);
+    expect(shown()).not.toContain("Ignis");
+    expect(input.listenerCount("pointerdown")).toBe(0);
+  });
+
+  it("should close both on hide, as Esc and Q do (C3)", () => {
+    const { overlay, input, scale } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    overlay.hide();
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(input.listenerCount("pointerdown")).toBe(0);
+    expect(scale.listenerCount("resize")).toBe(0);
+  });
+
+  it("should draw an × at each open panel's top right, amber with a hand cursor, brighter under the pointer (C4)", () => {
+    const { overlay, texts, zones, move, left, right, closeOf } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    const crosses = () => texts.filter((t) => t.content === "×" && !t.destroyed);
+    expect(crosses()).toHaveLength(2);
+    for (const panel of [left, right]) {
+      const box = panelClose(panel);
+      expect(box).toEqual({ x: panel.x + panel.w - 14 - 24, y: panel.y + 10, w: 24, h: 24 });
+      expect(crosses().some((t) => t.x === box.x + 12 && t.y === box.y + 12 && t.size === 22)).toBe(true);
+      expect(zones.some((z) => !z.destroyed && z.hand && z.x === box.x && z.y === box.y)).toBe(true);
+    }
+    expect(crosses().every((t) => t.color === toCss(palette.interactable))).toBe(true);
+
+    move(...closeOf(right));
+    const lit = crosses().filter((t) => t.color === toCss(palette.interactableBright));
+    expect(lit).toHaveLength(1);
+    expect(lit[0].x).toBe(panelClose(right).x + 12);
+  });
+
+  it("should close only the inventory on its × and only the character panel on its own (C4)", () => {
+    const { overlay, press, left, right, closeOf, zones } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    press(...closeOf(right), 0);
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(overlay.isCharacterOpen()).toBe(true);
+    // the closed panel's × goes with it
+    expect(zones.filter((z) => !z.destroyed && z.x === panelClose(right).x)).toHaveLength(0);
+
+    overlay.show();
+    press(...closeOf(left), 0);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(overlay.isInventoryOpen()).toBe(true);
+
+    press(...closeOf(right), 0);
+    expect(overlay.isVisible()).toBe(false);
+    expect(zones.every((z) => z.destroyed)).toBe(true);
+  });
+
+  it("should take no right-press over the character panel as an equip, and no E while only it is open (C7)", () => {
+    const { overlay, onEquip, press, move, left } = apartOnStage();
+    overlay.toggleCharacter();
+    move(left.x + left.w / 2, left.y + left.h / 2);
+    press(left.x + left.w / 2, left.y + left.h / 2, 2);
+    overlay.handleEquipKey();
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
+  it("should still wear a hovered bag item on right-click and E with both open (§B R16 unchanged)", () => {
+    const { overlay, onEquip, press, move, right } = apartOnStage();
+    overlay.toggleCharacter();
+    overlay.show();
+    const cell = gearPanelLayout(right, 1).cells[0].rect;
+    move(cell.x + 4, cell.y + 4);
+    press(cell.x + 4, cell.y + 4, 2);
+    expect(onEquip).toHaveBeenCalledWith(sword, "weapon");
+  });
+
+  it("should close an open character panel as the stash opens, and refuse it while the stash is open (C9)", () => {
+    const { overlay, shown } = apartOnStage();
+    overlay.toggleCharacter();
+    overlay.openStash();
+    expect(overlay.isStashOpen()).toBe(true);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(shown()).toContain("STASH");
+    expect(shown()).not.toContain("CHARACTER");
+    expect(shown()).not.toContain("Ignis");
+
+    overlay.toggleCharacter();
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(shown()).not.toContain("Ignis");
+  });
+
+  it("should not open the stash over an open inventory, as before", () => {
+    const { overlay } = apartOnStage();
+    overlay.show();
+    overlay.openStash();
+    expect(overlay.isStashOpen()).toBe(false);
+  });
+
+  it("should end stash mode on either ×, the next open the inventory alone (C9, FS-VPD8Y R37)", () => {
+    for (const side of ["left", "right"] as const) {
+      const s = apartOnStage();
+      s.overlay.openStash();
+      s.press(...s.closeOf(s[side]), 0);
+      expect(s.overlay.isVisible()).toBe(false);
+      expect(s.overlay.isStashOpen()).toBe(false);
+      s.overlay.show();
+      expect(s.shown()).toContain("INVENTORY");
+      expect(s.shown()).not.toContain("STASH");
+      expect(s.shown()).not.toContain("Ignis");
+    }
+  });
+
+  it("should lay out both again on a resize, and close both when the scene shuts down", () => {
+    const { overlay, scale, events } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    scale.emit("resize");
+    const { left, right } = overlayLayout(1280, 720);
+    expect(overlay.covers(left.x + 2, left.y + 2)).toBe(true);
+    expect(overlay.covers(right.x + 2, right.y + 2)).toBe(true);
+    events.emit("shutdown");
+    expect(overlay.isVisible()).toBe(false);
   });
 });

@@ -708,6 +708,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     const stage = fieldOnStage();
     const field = stage.field as Hud;
     let visible = false;
+    let character = false;
     let hovered: "inventory" | "head" = "inventory";
     const panel = {
       onEquip: undefined as undefined | ((item: unknown, slot: string) => void),
@@ -718,8 +719,11 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       // the panels stand right of x 500; the clear band is left of it
       covers: (x: number) => x > 500,
       toggle: vi.fn(() => void (visible = !visible)),
-      hide: vi.fn(() => void (visible = false)),
-      isVisible: () => visible,
+      toggleCharacter: vi.fn(() => void (character = !character)),
+      hide: vi.fn(() => void ((visible = false), (character = false))),
+      isVisible: () => visible || character,
+      isInventoryOpen: () => visible,
+      isCharacterOpen: () => character,
       // the pointer over the first inventory row, or over the worn helm
       handleEquipKey: vi.fn((): void =>
         hovered === "inventory"
@@ -830,6 +834,55 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(field.equipment?.isOpen()).toBe(false);
   });
 
+  // FS-HRH2J § Change: Character and inventory apart (C2, C3, C5, C7). I-3EBCA-4.
+  it("should toggle the character panel alone on C, the inventory left as it is (§ Change C2)", () => {
+    const { field, panel, press } = hudOnStage();
+    field.renderState(carrying);
+    press("C");
+    expect(panel.toggleCharacter).toHaveBeenCalledTimes(1);
+    expect(panel.toggle).not.toHaveBeenCalled();
+    expect(panel.isCharacterOpen()).toBe(true);
+    expect(panel.isInventoryOpen()).toBe(false);
+    press("I");
+    expect(panel.isCharacterOpen()).toBe(true);
+    expect(panel.isInventoryOpen()).toBe(true);
+    press("C");
+    expect(panel.isCharacterOpen()).toBe(false);
+    expect(panel.isInventoryOpen()).toBe(true);
+  });
+
+  it("should end a Shadow Shot hold when C opens the character panel, not when it closes it (§ Change C5)", () => {
+    const { field, press } = hudOnStage();
+    const fight = { cancelAim: vi.fn() };
+    (field as unknown as { fight: typeof fight }).fight = fight;
+    press("C");
+    expect(fight.cancelAim).toHaveBeenCalledTimes(1);
+    press("C");
+    expect(fight.cancelAim).toHaveBeenCalledTimes(1);
+  });
+
+  it("should close both panels on one ESC and on Q (§ Change C3)", () => {
+    const { field, panel, press } = hudOnStage();
+    press("C");
+    press("I");
+    press("ESC");
+    expect(field.equipment?.isOpen()).toBe(false);
+    expect(field.menu).toBeUndefined();
+    press("C");
+    press("I");
+    press("Q");
+    expect(panel.isVisible()).toBe(false);
+  });
+
+  it("should reach for a pile on E while only the character panel is open (§ Change C7)", () => {
+    const { field, piles, panel, press } = hudOnStage();
+    field.renderState(carrying);
+    press("C");
+    press("E");
+    expect(panel.handleEquipKey).not.toHaveBeenCalled();
+    expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
+  });
+
   it("should still loot through the open satchel when the press is not over the overlay", () => {
     const { field } = hudOnStage();
     field.satchel = { pointerDown: vi.fn(() => true) };
@@ -931,6 +984,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       expect.arrayContaining([
         "keydown-I",
         "keydown-B",
+        "keydown-C",
         "keydown-E",
         "keydown-Q",
         "keydown-ESC",
@@ -1455,6 +1509,7 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
       isOpen: () => state.gear,
       hide: () => ((state.gear = false), true),
       toggle: () => void (state.gear = !state.gear),
+      toggleCharacter: () => void (state.gear = !state.gear),
       equipKey: () => false,
     };
     field.partyPanel = {
@@ -1523,6 +1578,7 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
     const { field, key, state } = menuedField();
     key("ESC");
     key("I");
+    key("C");
     expect(state.gear).toBe(false);
     expect(field.takesPointer(400, 300, true)).toBe(true);
   });

@@ -350,8 +350,17 @@ const AT_LEAVE = { x: 200, y: 556 };
 
 /** The hub's gear overlay as the scene drives it (FS-HRH2J §E): open or not, and what it was handed. */
 function fakeGear() {
-  const state = { open: false, stash: false };
+  const state = { open: false, stash: false, character: false };
   return {
+    /** The character panel (FS-HRH2J § Change C1). */
+    get character() {
+      return state.character;
+    },
+    toggleCharacter: vi.fn(() => {
+      if (state.stash) return false;
+      state.character = !state.character;
+      return state.character;
+    }),
     get open() {
       return state.open;
     },
@@ -363,15 +372,17 @@ function fakeGear() {
       state.stash = false;
     }),
     hide: vi.fn(() => {
-      const was = state.open;
+      const was = state.open || state.character;
       state.open = false;
+      state.character = false;
       state.stash = false;
       return was;
     }),
-    isOpen: () => state.open,
+    isOpen: () => state.open || state.character,
     /** Opened at the stash chest (FS-VPD8Y R34): only from closed. */
     openStash: vi.fn(() => {
       if (state.open) return false;
+      state.character = false;
       state.open = true;
       state.stash = true;
       return true;
@@ -695,11 +706,13 @@ function hubOnStage() {
     three: key(),
     i: key(),
     b: key(),
+    c: key(),
   };
   const gear = fakeGear();
   hub.add = stage.add;
   hub.gear = gear;
   hub.gearKeys = [keys.i, keys.b];
+  hub.characterKey = keys.c;
   hub.choiceKeys = [keys.one, keys.two, keys.three];
   hub.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
   hub.scene = { start: vi.fn() };
@@ -1494,7 +1507,7 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
 // FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
 // icon's toggle under I's guards. I-3EBCA-1.
 describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
-  type Pressing = { pressEscape(): void; toggleGear(): void; partyPanel?: unknown };
+  type Pressing = { pressEscape(): void; toggleGear(): void; toggleCharacter(): void; partyPanel?: unknown };
   function withParty(open = true) {
     const env = hubOnStage();
     const state = { open };
@@ -1551,6 +1564,17 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     hub.dialogue = {};
     pressing.toggleGear();
     expect(gear.isOpen()).toBe(false);
+  });
+
+  it("should toggle the character panel as C does, not while the menu or a dialogue is open (FS-HRH2J § Change C2)", () => {
+    const { hub, gear, pressing } = withParty(false);
+    pressing.toggleCharacter();
+    expect(gear.character).toBe(true);
+    pressing.toggleCharacter();
+    expect(gear.character).toBe(false);
+    hub.dialogue = {};
+    pressing.toggleCharacter();
+    expect(gear.character).toBe(false);
   });
 });
 
@@ -2326,6 +2350,66 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     press(keys.esc);
     hub.update(0, 16);
     expect(gear.open).toBe(false);
+  });
+
+  // FS-HRH2J § Change: Character and inventory apart (C2, C3, C7, C9). I-3EBCA-4.
+  it("should toggle the character panel alone on C, staying in the hub (§ Change C2)", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+    press(keys.c);
+    expect(gear.toggleCharacter).toHaveBeenCalledTimes(1);
+    expect(gear.toggle).not.toHaveBeenCalled();
+    expect(gear.character).toBe(true);
+    press(keys.i);
+    expect(gear.open).toBe(true);
+    expect(gear.character).toBe(true);
+    press(keys.c);
+    expect(gear.character).toBe(false);
+    expect(gear.open).toBe(true);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing on C while the ESC menu or a dialogue is open, the press spent (§ Change C2)", () => {
+    const { hub, keys, gear, press, talkTo } = hubOnStage();
+    press(keys.esc);
+    press(keys.c);
+    expect(gear.toggleCharacter).not.toHaveBeenCalled();
+    press(keys.esc);
+    talkTo("storekeeper");
+    hub.views = new Map();
+    hub.npcs = new Map();
+    press(keys.c);
+    expect(gear.toggleCharacter).not.toHaveBeenCalled();
+    press(keys.esc);
+    hub.update(0, 16);
+    expect(gear.character).toBe(false);
+  });
+
+  it("should close both panels on one ESC without opening the menu (§ Change C3)", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+    press(keys.c);
+    press(keys.i);
+    press(keys.esc);
+    expect(gear.isOpen()).toBe(false);
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should reach for the NPC beside the player on E while only the character panel is open (§ Change C7)", () => {
+    const { hub, keys, gear, press, answer } = hubOnStage();
+    press(keys.c);
+    gear.equipKey.mockImplementation(() => false);
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
+    hub.npcs = new Map([
+      [
+        "keeper",
+        {
+          state: { entity_id: "keeper", name: "Keeper", function: "storyteller", position: { x: 10, y: 0 } },
+          pos: { x: 10, y: 0 },
+        },
+      ],
+    ]);
+    answer(keys.e);
+    expect(hub.dialogue).toBeDefined();
   });
 
   it("should give E to the overlay while it is open, reaching for no one beside the player (R10)", () => {

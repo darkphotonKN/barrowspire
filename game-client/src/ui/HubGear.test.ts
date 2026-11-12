@@ -287,7 +287,10 @@ describe("backendSlot (FS-HRH2J R42)", () => {
 /** The overlay as the hub drives it: what it was handed, and its open state. */
 function fakePanel() {
   const panel = {
+    /** The inventory (the right panel) is open. */
     visible: false,
+    /** The character panel (the left) is open (FS-HRH2J § Change C1). */
+    character: false,
     /** Open at the stash chest: the left panel is the stash (FS-VPD8Y R35). */
     stashMode: false,
     stash: [] as ItemState[],
@@ -305,12 +308,18 @@ function fakePanel() {
       panel.visible = !panel.visible;
       panel.stashMode = false;
     }),
+    toggleCharacter: vi.fn(() => {
+      if (panel.stashMode) return;
+      panel.character = !panel.character;
+    }),
     hide: vi.fn(() => {
       panel.visible = false;
+      panel.character = false;
       panel.stashMode = false;
     }),
     openStash: vi.fn(() => {
       if (panel.visible) return;
+      panel.character = false;
       panel.visible = true;
       panel.stashMode = true;
       panel.stash = [];
@@ -319,7 +328,9 @@ function fakePanel() {
     updateStash: vi.fn((items: ItemState[]) => {
       panel.stash = [...items];
     }),
-    isVisible: () => panel.visible,
+    isVisible: () => panel.visible || panel.character,
+    isInventoryOpen: () => panel.visible,
+    isCharacterOpen: () => panel.character,
     /** The panels cover the left half of the screen, in this stand-in. */
     covers: (x: number) => panel.visible && x < 100,
     handleEquipKey: vi.fn(),
@@ -1255,4 +1266,83 @@ describe("HubGear with items on the Bazaar (FS-GTNP8 §D)", () => {
       expect(notice).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+// FS-HRH2J § Change: Character and inventory apart (C1, C7–C10). I-3EBCA-4.
+describe("HubGear, the character panel apart (FS-HRH2J § Change C1, C7–C10)", () => {
+  function withPurse(
+    instances: ItemInstance[] = [instance("sword"), instance("helm")],
+    loadout: Record<string, string> = { weaponId: "sword" },
+  ) {
+    const panel = fakePanel();
+    const api = fakeApi(instances, loadout);
+    const purse = { refresh: vi.fn(), forget: vi.fn() };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gear = new HubGear(panel, api, { notice: vi.fn() }, purse);
+    return { panel, api, gear, purse };
+  }
+
+  it("should open the character panel alone, loading what is worn for its From gear and reading no purse (C8, C10)", async () => {
+    const { gear, panel, api, purse } = withPurse();
+    expect(gear.toggleCharacter()).toBe(true);
+    expect(panel.toggleCharacter).toHaveBeenCalledTimes(1);
+    expect(panel.toggle).not.toHaveBeenCalled();
+    expect(gear.isOpen()).toBe(true);
+    await settle();
+    expect(api.getLoadout).toHaveBeenCalledTimes(1);
+    expect(panel.equipped.weapon?.entity_id).toBe("sword");
+    expect(purse.refresh).not.toHaveBeenCalled();
+
+    expect(gear.toggleCharacter()).toBe(false);
+    expect(gear.isOpen()).toBe(false);
+  });
+
+  it("should load nothing more when the character panel opens over an open inventory (C8)", async () => {
+    const { gear, api } = withPurse();
+    gear.toggle();
+    await settle();
+    gear.toggleCharacter();
+    await settle();
+    expect(api.getLoadout).toHaveBeenCalledTimes(1);
+  });
+
+  it("should load and read the purse when the inventory opens beside an open character panel, as every inventory open does (C8, C10)", async () => {
+    const { gear, api, purse } = withPurse();
+    gear.toggleCharacter();
+    await settle();
+    expect(gear.toggle()).toBe(true);
+    await settle();
+    expect(api.getLoadout).toHaveBeenCalledTimes(2);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    // closing the inventory with the character panel still up reads nothing
+    expect(gear.toggle()).toBe(false);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    expect(gear.isOpen()).toBe(true);
+  });
+
+  it("should give E to the overlay only while the inventory is open (C7)", () => {
+    const { gear, panel } = withPurse();
+    gear.toggleCharacter();
+    expect(gear.equipKey()).toBe(false);
+    expect(panel.handleEquipKey).not.toHaveBeenCalled();
+  });
+
+  it("should open the stash over a character panel alone, which closes, and refuse the character panel while the stash is open (C9)", () => {
+    const { gear, panel, purse } = withPurse();
+    gear.toggleCharacter();
+    expect(gear.openStash()).toBe(true);
+    expect(panel.character).toBe(false);
+    expect(gear.stashOpen()).toBe(true);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    expect(gear.toggleCharacter()).toBe(false);
+    expect(panel.character).toBe(false);
+  });
+
+  it("should close both on hide, saying it closed something (C3)", () => {
+    const { gear, panel } = withPurse();
+    gear.toggleCharacter();
+    expect(gear.hide()).toBe(true);
+    expect(panel.character).toBe(false);
+    expect(gear.hide()).toBe(false);
+  });
 });

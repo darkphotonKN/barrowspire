@@ -102,7 +102,7 @@ const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
-const { gearPanelLayout, overlayLayout } = await import("@/ui/gearOverlayLayout");
+const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { readdirSync } = await import("node:fs");
@@ -4571,7 +4571,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
 
   it("should show the player's class, name and health on the stats panel, live while open (FS-HRH2J R24–30)", () => {
     const { run, key, shown } = overlayOnStage();
-    key("I");
+    key("C");
     expect(shown("WARRIOR")).toBe(true);
     expect(shown("Aldric")).toBe(true);
     expect(shown("100 / 100")).toBe(true);
@@ -4651,11 +4651,66 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
   });
 
-  it("should list I / B for the overlay in the controls help (R11)", () => {
+  it("should list I / B for the inventory and C for the character panel in the controls help (R11; § Change C15)", () => {
     const { run, shown } = overlayOnStage();
     run.toggleControlsPanel();
     expect(shown("I / B")).toBe(true);
+    expect(shown("Inventory")).toBe(true);
+    expect(shown("C")).toBe(true);
+    expect(shown("Character")).toBe(true);
+    expect(shown("Gear and bag")).toBe(false);
     expect(shown("I")).toBe(false);
+  });
+
+  // FS-HRH2J § Change: Character and inventory apart (C1–C4, C14). I-3EBCA-4.
+  it("should open the inventory alone on I and the character panel alone on C (§ Change C1, C2, C14)", () => {
+    const { run, key, shown, stage } = overlayOnStage();
+    key("I");
+    expect(shown("INVENTORY")).toBe(true);
+    expect(shown("WARRIOR")).toBe(false);
+    key("C");
+    expect(shown("WARRIOR")).toBe(true);
+    key("I");
+    expect(run.equipment?.isOpen()).toBe(true);
+    expect(stage.texts().some((t) => t.content === "INVENTORY" && !t.destroyed)).toBe(false);
+    key("C");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should ignore C while the ESC menu is open (§ Change C2)", () => {
+    const { run, key, pressEsc } = overlayOnStage();
+    pressEsc();
+    key("C");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should close both panels on one ESC, the menu left closed, and on Q (§ Change C3)", () => {
+    const { run, key, pressEsc } = overlayOnStage();
+    key("I");
+    key("C");
+    pressEsc();
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(run.menu).toBeUndefined();
+    key("I");
+    key("C");
+    key("Q");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should close the inventory alone on its ×, sending no attack for the press (§ Change C4)", () => {
+    const { run, key, press, sent } = overlayOnStage("warrior", []);
+    key("I");
+    key("C");
+    const box = panelClose(layout.right);
+    const stageSends = () => sent.mock.calls.length;
+    const before = stageSends();
+    press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
+    expect(run.equipment?.isOpen()).toBe(true);
+    expect(stageSends()).toEqual(before);
+    const left = panelClose(layout.left);
+    press({ x: left.x + left.w / 2, y: left.y + left.h / 2 }, 0);
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(stageSends()).toEqual(before);
   });
 
   it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
@@ -4684,6 +4739,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     openMenu(): void;
     endRun(): void;
     toggleInventory(): void;
+    toggleCharacter(): void;
     aimFrame(): void;
     sendMovementIntent(vx: number, vy: number): void;
     handleGameStateUpdate(state: GameState): void;
@@ -4933,8 +4989,15 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     [
       "the equipment panel opening",
       (s) => {
-        s.run.equipment = { toggle: vi.fn(), isOpen: () => true };
+        s.run.equipment = { toggle: vi.fn(() => true), isOpen: () => true };
         s.run.toggleInventory();
+      },
+    ],
+    [
+      "the character panel opening (FS-HRH2J § Change C5)",
+      (s) => {
+        s.run.equipment = { toggleCharacter: vi.fn(() => true), isOpen: () => true };
+        s.run.toggleCharacter();
       },
     ],
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
