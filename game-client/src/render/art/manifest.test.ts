@@ -1233,10 +1233,10 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       char_knight_base: ["run", "walk_attack", "backpedal_attack"],
       char_archer_base: ["run", "walk_attack", "backpedal_attack"],
       char_wizard_base: ["run", "walk_attack", "backpedal_attack"],
-      char_mercenary_base: ["parry", "walk_attack"],
+      char_mercenary_base: ["parry", "run", "walk_attack", "backpedal_attack"],
     };
-    /** The class sheets re-baked with the run and the backward step, at 1.5x (FS-JS7C8 slices 12, 7, 6). */
-    const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base"];
+    /** The class sheets re-baked with the run and the backward step, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
+    const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
       const sheet = baked.sheets[name];
@@ -1288,7 +1288,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(sheet.animations, name).toHaveProperty("idle");
     });
 
-    it("bakes the archer, the wizard and the knight at 1.5x, each on one page of its own group, the mercenary still at 2x until its re-bake (FS-HF0WW § Change: Class sheets at 1.5x R34, R35)", () => {
+    it("bakes the four classes at 1.5x, each on one page of its own group (FS-HF0WW § Change: Class sheets at 1.5x R34, R35)", () => {
       const scales = Object.fromEntries(
         Object.entries(baked.sheets as Record<string, { scale?: number }>)
           .filter(([, sheet]) => sheet.scale !== undefined)
@@ -1297,10 +1297,10 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(scales).toEqual({
         char_archer_base: 1.5,
         char_knight_base: 1.5,
-        char_mercenary_base: 2,
+        char_mercenary_base: 1.5,
         char_wizard_base: 1.5,
       });
-      for (const group of ["archer", "wizard", "knight"]) {
+      for (const group of ["archer", "wizard", "knight", "mercenary"]) {
         const sheet = baked.sheets[`char_${group}_base`] as { atlas: string; animations: Record<string, { atlas?: string }> };
         expect(sheet.atlas, group).toBe(`${group}-0`);
         for (const [name, a] of Object.entries(sheet.animations)) expect(a.atlas, `${group} ${name}`).toBeUndefined();

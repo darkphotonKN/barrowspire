@@ -7,7 +7,8 @@ import { ATTACKS, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, ru
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { footing, measurePace } from "./pace.js";
-import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
+import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_SHEET, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
+import { MERC_ANIMATIONS, parryClip } from "./clips.js";
 
 const DEG = 180 / Math.PI;
 
@@ -36,6 +37,11 @@ const along = (from, to, n) => Array.from({ length: n + 1 }, (_, i) => [0, 0, fr
  * grip frame (local +z from the fist), pommel to tip, the last point its tip.
  */
 const GEAR = {
+  /** The mercenary's curved dueling sword (gear.js `curvedSword`: the pommel −0.046, the blade 0.045 to 0.505, its point 0.055 off straight). */
+  mercenary: (rig) => ({
+    weapon: riding(rig, "handR", gripAt(rig, "R"), {}, [[0, 0, -0.046], ...Array.from({ length: 11 }, (_, i) => [0, 0.055 * (i / 10) ** 1.6, 0.045 + 0.46 * (i / 10)])]),
+    other: [],
+  }),
   /**
    * The knight's longsword (gear.js `longsword`, pommel −0.05 to the point 0.45) and the kite
    * shield strapped to his left forearm (`kiteShield`: its outline in the forearm's frame, long
@@ -149,6 +155,13 @@ const CLASSES = [
     sheet: KNIGHT_SHEET,
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
+  },
+  {
+    name: "mercenary",
+    build: MERCENARY_BUILD,
+    style: MERCENARY_STYLE,
+    sheet: MERCENARY_SHEET,
+    pump: ["L", "R"],
   },
   {
     name: "wizard",
@@ -333,7 +346,10 @@ describe("the wizard's cast moves with weight (FS-2325V § Change: The class att
  * blade's point, keyed on the class's rig and style, cutting a full diagonal from above the
  * character's right shoulder to below its left hip (its left is +x), the strike in the middle.
  */
-describe.each([["knight", KNIGHT_BUILD, KNIGHT_STYLE, KNIGHT_SHEET]])("the %s's slash cuts deep, with weight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10)", (name, build, style, sheet) => {
+describe.each([
+  ["knight", KNIGHT_BUILD, KNIGHT_STYLE, KNIGHT_SHEET],
+  ["mercenary", MERCENARY_BUILD, MERCENARY_STYLE, MERCENARY_SHEET],
+])("the %s's slash cuts deep, with weight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10)", (name, build, style, sheet) => {
   const rig = rigOf(build);
   const gear = GEAR[name](rig);
   const point = gear.weapon.at(-1);
@@ -398,5 +414,42 @@ describe("the knight's shield guards through the cut (FS-2325V § Change: The cl
         expect(c.y, `${anim} @${i}: above the waist`).toBeGreaterThan(hips.y + 0.05);
         expect(c.z, `${anim} @${i}: before the chest`).toBeGreaterThan(chest.z + 0.05);
       });
+  });
+});
+
+describe("the mercenary cuts wider and lighter than the knight (FS-2325V § Change: The class attacks move with weight and cut deep R10)", () => {
+  const paths = Object.fromEntries(
+    [
+      ["knight", KNIGHT_BUILD, KNIGHT_STYLE, KNIGHT_SHEET],
+      ["mercenary", MERCENARY_BUILD, MERCENARY_STYLE, MERCENARY_SHEET],
+    ].map(([name, build, style, sheet]) => {
+      const rig = rigOf(build);
+      return [name, { rig, keys: clipsFor(style, sheet.animations).attack, path: attackPath(rig, GEAR[name](rig).weapon.at(-1), clipsFor(style, sheet.animations).attack) }];
+    }),
+  );
+  const length = (path) => path.slice(1).reduce((n, s, i) => n + s.tip.distanceTo(path[i].tip), 0);
+  const turn = (path) => Math.max(...path.map((s) => s.chest)) - Math.min(...path.map((s) => s.chest));
+
+  it("the knight's arcs shorter and lower, the mercenary's trunk turning further", () => {
+    expect(length(paths.knight.path)).toBeLessThan(length(paths.mercenary.path));
+    expect(Math.max(...paths.knight.path.map((s) => s.tip.y))).toBeLessThan(Math.max(...paths.mercenary.path.map((s) => s.tip.y)));
+    expect(turn(paths.knight.path)).toBeLessThan(turn(paths.mercenary.path));
+  });
+
+  it("throws the mercenary's free hand out and back against the cut at the strike and through it", () => {
+    const { rig, keys } = paths.mercenary;
+    for (const k of [3, 4]) {
+      posed(rig, keys[k]);
+      const [hand, shoulder, chest] = [at(rig, "handL"), at(rig, "upperArmL"), at(rig, "chest")].map((v) => v.divideScalar(rig.H));
+      expect(hand.x - shoulder.x, `key ${k}: out to his left`).toBeGreaterThanOrEqual(0.05);
+      expect(chest.z - hand.z, `key ${k}: back behind the chest`).toBeGreaterThanOrEqual(0.03);
+    }
+  });
+
+  it("keeps the mercenary's parry as it was: raised from his carry into his guard (FS-MAMHR §G.35)", () => {
+    expect(MERCENARY_SHEET.animations.parry).toEqual(MERC_ANIMATIONS.parry);
+    const frames = parryClip(MERCENARY_STYLE, MERC_ANIMATIONS.parry.frames);
+    for (const [bone, want] of Object.entries({ upperArmR: [-0.81, -0.54, -0.03], handR: [-0.06, 1.01, -0.8], foreArmR: [-1.37, 0, 0] }))
+      want.forEach((v, j) => expect(frames.at(-1).b[bone][j], bone).toBeCloseTo(v, 9));
   });
 });
