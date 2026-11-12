@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
 import { drawGrip, solveDraw } from "./draw.js";
 import {
   arms,
@@ -60,6 +60,17 @@ import {
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { barrowThrall, fadingEyes, ghost, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
+import {
+  KNIGHT_BUILD,
+  KNIGHT_SHEET,
+  KNIGHT_STYLE,
+  MERCENARY_BUILD,
+  MERCENARY_SHEET,
+  MERCENARY_STYLE,
+  WIZARD_BUILD,
+  WIZARD_SHEET,
+  WIZARD_STYLE,
+} from "./classStyles.js";
 
 /**
  * The Knight: the old guard of the barrow-watch. A conical nasal helm over a mail coif, the face
@@ -70,7 +81,7 @@ import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 export function knight() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(2.0, { shoulderW: 1.1, torsoW: 1.06 });
+  const rig = createRig(...KNIGHT_BUILD);
   rig.hooks = [];
   cloakBones(rig, { length: 0.64, drag: 0.34 });
   skirtBones(rig, { stiffness: 55 });
@@ -96,18 +107,7 @@ export function knight() {
   inHand(rig, "R").add(longsword(rig, M, F));
   kiteShield(rig, "L", F);
 
-  const style = {
-    attack: "slash",
-    speed: 1,
-    hold: pose({
-      upperArmL: [-0.38, -0.85, 0.12],
-      foreArmL: [-1.25, 0, 0],
-      upperArmR: [-0.12, 0, -0.04],
-      foreArmR: [-0.62, 0, 0],
-      handR: [-0.55, 0, 0],
-    }),
-    walk: { arms: [0.2, 0.55], lean: 0.05 },
-  };
+  const style = KNIGHT_STYLE;
   return { rig, style };
 }
 
@@ -196,7 +196,7 @@ function bowInHand(rig, M, F) {
 export function wizard() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 });
+  const rig = createRig(...WIZARD_BUILD);
   rig.hooks = [];
   skirtBones(rig, { stiffness: 38, drag: 0.28 });
   const [, hy] = J(rig, "hips");
@@ -241,18 +241,7 @@ export function wizard() {
     orbMat.emissiveIntensity = base * (p.fx.glow ?? 1);
   });
 
-  const style = {
-    attack: "cast",
-    speed: 0.9,
-    hold: pose({
-      upperArmR: [-0.28, 0, -0.08],
-      foreArmR: [-1.15, 0, 0],
-      handR: [-0.1, 0, 0],
-      foreArmL: [-0.15, 0, 0],
-    }),
-    walk: { arms: [0.8, 0.4], lean: 0.05, stride: 0.95 },
-    idleExtra: () => pose({}, {}, { glow: 1 }),
-  };
+  const style = WIZARD_STYLE;
   return { rig, style };
 }
 
@@ -268,7 +257,7 @@ export function wizard() {
  */
 export function mercenary() {
   const F = fabrics();
-  const rig = createRig(1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 });
+  const rig = createRig(...MERCENARY_BUILD);
   rig.hooks = [];
   skirtBones(rig, { stiffness: 55 });
   const [, hy] = J(rig, "hips");
@@ -309,43 +298,7 @@ export function mercenary() {
   scabbard(rig, "L", F);
   inHand(rig, "R").add(curvedSword(rig, F));
 
-  const style = {
-    attack: "slash",
-    speed: 1.08,
-    // a low guard: the blade forward and up, the free hand loose at the belt
-    hold: pose({
-      upperArmL: [-0.08, 0, 0.06],
-      foreArmL: [-0.42, 0, 0],
-      upperArmR: [-0.18, 0, -0.2],
-      foreArmR: [-0.7, 0, 0],
-      handR: [-0.4, -0.4, 0],
-    }),
-    walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
-    // the knight's cut, without a shield to hide behind: the free arm swings out for balance
-    attackExtra: pose({ upperArmL: [0.28, 0.85, 0.06], foreArmL: [0.62, 0, 0] }),
-    // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
-    // little lean back from the blow
-    guard: pose(
-      {
-        hips: [0, 0.12, 0],
-        spine: [-0.08, 0.08, 0],
-        chest: [-0.06, 0.12, 0],
-        neck: [0.06, -0.2, 0],
-        thighL: [-0.24, 0, 0.1],
-        shinL: [0.28, 0, 0],
-        footL: [-0.04, 0, 0],
-        thighR: [0.16, 0, -0.1],
-        shinR: [0.26, 0, 0],
-        footR: [-0.42, 0, 0],
-        upperArmR: [-0.81, -0.54, -0.03],
-        foreArmR: [-1.37, 0, 0],
-        handR: [-0.06, 1.01, -0.8],
-        upperArmL: [-0.4, 0, 0.2],
-        foreArmL: [-0.9, 0, 0],
-      },
-      { z: -0.01 },
-    ),
-  };
+  const style = MERCENARY_STYLE;
   return { rig, style };
 }
 
@@ -572,14 +525,14 @@ export const CAST = [
   // The four classes (FS-HF0WW, FS-3V7GC): each baked at 2× (twice the px per screen px, drawn at
   // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
   // trimmed to its pixels (lib/trim.mjs)
-  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, ...KNIGHT_SHEET, trim: true },
   // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
   // the first class re-baked, the owner's 2026-11-12 pick), baked at 1.5× (ADR-0076, the owner's
   // 「感覺可以」): each class moves to 1.5× when it is re-baked with the run (FS-HF0WW § Change:
   // Class sheets at 1.5x)
   { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5, trim: true },
-  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
-  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, ...WIZARD_SHEET, trim: true },
+  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, ...MERCENARY_SHEET, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds

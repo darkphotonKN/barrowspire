@@ -1228,14 +1228,17 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     /**
      * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), every
      * class's attack on the move (FS-HF0WW, FS-3V7GC), and a re-baked class's run and its attack
-     * over the backpedal's legs (FS-JS7C8 §A, §B: the archer first; no standalone backpedal).
+     * over the backpedal's legs (FS-JS7C8 §A, §B: the archer first, then the wizard; no
+     * standalone backpedal).
      */
     const OWN_CLIPS: Record<string, string[]> = {
-      char_knight_base: ["walk_attack"],
+      char_knight_base: ["run", "walk_attack", "backpedal_attack"],
       char_archer_base: ["run", "walk_attack", "backpedal_attack"],
-      char_wizard_base: ["walk_attack"],
-      char_mercenary_base: ["parry", "walk_attack"],
+      char_wizard_base: ["run", "walk_attack", "backpedal_attack"],
+      char_mercenary_base: ["parry", "run", "walk_attack", "backpedal_attack"],
     };
+    /** The class sheets re-baked with the run and the backward step, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
+    const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
       const sheet = baked.sheets[name];
@@ -1287,7 +1290,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           expect(sheet.animations, name).toHaveProperty("idle");
     });
 
-    it("bakes the archer at 1.5x on one page of its own group, the other classes still at 2x until their re-bakes (FS-HF0WW § Change: Class sheets at 1.5x R34, R35)", () => {
+    it("bakes the four classes at 1.5x, each on one page of its own group (FS-HF0WW § Change: Class sheets at 1.5x R34, R35)", () => {
       const scales = Object.fromEntries(
         Object.entries(baked.sheets as Record<string, { scale?: number }>)
           .filter(([, sheet]) => sheet.scale !== undefined)
@@ -1295,14 +1298,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       );
       expect(scales).toEqual({
         char_archer_base: 1.5,
-        char_knight_base: 2,
-        char_mercenary_base: 2,
-        char_wizard_base: 2,
+        char_knight_base: 1.5,
+        char_mercenary_base: 1.5,
+        char_wizard_base: 1.5,
       });
-      const archer = baked.sheets.char_archer_base as { atlas: string; animations: Record<string, { atlas?: string }> };
-      expect(archer.atlas).toBe("archer-0");
-      for (const [name, a] of Object.entries(archer.animations)) expect(a.atlas, name).toBeUndefined();
-      expect(Object.keys(baked.atlases).filter((k) => k.startsWith("archer-"))).toEqual(["archer-0"]);
+      for (const group of ["archer", "wizard", "knight", "mercenary"]) {
+        const sheet = baked.sheets[`char_${group}_base`] as { atlas: string; animations: Record<string, { atlas?: string }> };
+        expect(sheet.atlas, group).toBe(`${group}-0`);
+        for (const [name, a] of Object.entries(sheet.animations)) expect(a.atlas, `${group} ${name}`).toBeUndefined();
+        expect(Object.keys(baked.atlases).filter((k) => k.startsWith(`${group}-`))).toEqual([`${group}-0`]);
+      }
     });
 
     it("trims the four classes' frames, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
@@ -1317,8 +1322,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ]);
     });
 
-    it("gives the archer a run: 8 frames, looping, in the 8 facings, at its scale and trimmed (FS-JS7C8 R1)", () => {
-      const sheet = baked.sheets.char_archer_base;
+    it.each(RUNNING)("gives %s a run: 8 frames, looping, in the 8 facings, at 1.5x and trimmed (FS-JS7C8 R1)", (name) => {
+      const sheet = baked.sheets[name];
       expect(sheet.scale).toBe(1.5);
       expect(sheet.trimmed).toBe(true);
       const a = sheet.animations.run;
@@ -1328,8 +1333,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const dir of a.frames) expect(dir).toHaveLength(8);
     });
 
-    it("gives the archer backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", () => {
-      const sheet = baked.sheets.char_archer_base;
+    it.each(RUNNING)("gives %s backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", (name) => {
+      const sheet = baked.sheets[name];
       expect(sheet.animations).not.toHaveProperty("backpedal");
       const a = sheet.animations.backpedal_attack;
       const attack = sheet.animations.attack;

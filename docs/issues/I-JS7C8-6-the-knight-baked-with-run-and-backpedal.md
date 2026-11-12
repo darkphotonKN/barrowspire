@@ -2,11 +2,11 @@
 id: I-JS7C8-6
 status: open
 implements: FS-JS7C8
-blocked_by: [I-JS7C8-12, I-HF0WW-8]
+blocked_by: [I-JS7C8-12, I-HF0WW-8, I-2325V-11, I-2325V-13]
 labels: [ready-for-agent]
 title: "FS-JS7C8 slice 6: the knight baked with run, backpedal_attack and the slowed walk_attack, the owner's contact-sheet approval (game-client)"
 ---
-Implements FS-JS7C8 §A (R1–R3), §B (R8, R10), §C (R21), §F (R36–R40); Tunes FS-HF0WW `WALK_ATTACK_CYCLES` (R11)
+Implements FS-JS7C8 §A (R1–R3), §B (R8, R10), §C (R21), §F (R36–R40); Tunes FS-HF0WW `WALK_ATTACK_CYCLES` (R11); bakes FS-2325V §Change: The class attacks move with weight and cut deep (I-2325V-11, I-2325V-13)
 
 Owner, 2026-11-12, "那先做弓箭手的": the archer is baked first (slice 12), the knight here.
 
@@ -18,6 +18,10 @@ Owner, 2026-11-12, "那先做弓箭手的": the archer is baked first (slice 12)
 re-baked at `scale` 1.5 (was 2), one page, with the fast run of FS-JS7C8 R2 (I-JS7C8-13); blocked
 by the capability and the archer's 1.5x bake (I-HF0WW-8) as well.*
 
+*Reworked a third time 2026-11-12 (owner change to FS-2325V, `## Change: The class attacks move with
+weight and cut deep`): the knight is baked once with the forehand and backhand slashes (`backhand`, `walk_backhand`, `backpedal_backhand`) as well (I-2325V-11, I-2325V-13); the contact sheet shows
+the old `attack` beside the new. The stale "backpedal legs 150–220" band is gone (R10 retired it).*
+
 **Lane: agent, then HITL.** Ends at the owner's approval of the knight's contact sheet (ADR-0021 §5).
 No hand-drawn or hand-edited pixels.
 
@@ -26,16 +30,17 @@ No hand-drawn or hand-edited pixels.
 1. The knight's catalogue entry (`tools/bake/page/characters/cast.js`) opts in to the running
    class's specs from I-JS7C8-12: `run`, `walk_attack` over 0.75 walk cycles and
    `backpedal_attack` over 0.75 backward walk cycles, no `backpedal`, and `scale: 1.5` (was 2); with any per-class style the
-   knight needs for the run and the backpedal legs to read (garment, sword and shield carry, arm swing:
-   `style.run`, `style.backpedal`), keyed on the shared rig.
+   knight needs for the run and the backward step to read (garment, sword and shield carry, arm swing:
+   `style.run`, its `hold` for the run's carry), keyed on the shared rig.
 2. `npm run bake`; commit the knight's atlas pages and `manifest.json`. The contact sheet shows the
    knight's `walk`, `run`, `walk_attack`, `backpedal_attack` and `attack` in 8 directions.
 3. The fast run (FS-JS7C8 R2, I-JS7C8-13) is the shared `runCycle`; the knight's own arm style, if
    any (a shield or weapon carry), keeps the lean, the ~90° elbows and the hand reach of R2 and the
    run's legs as baked.
-4. Check the knight's measured paces: the run within 180–220 (R3), the backpedal legs within
-   150–220, and both attack-on-the-move clips' leg paces at most 90 px/s (R10, R21): if the
-   class's style moves them out, fix the keys, not the constants.
+4. Check the knight's measured paces: the run within 180–220 (R3), and both attack-on-the-move clips'
+   leg paces at most 90 px/s (R10, R21): if the class's style moves them out, fix the keys, not the
+   constants. (The backward step's legs are the walk run backward at 0.75 cycles; there is no
+   standalone backpedal and no backpedal pace band: R10 retired the 150–220 band on 2026-11-12.)
 5. Record the growth: pages and dimensions before and after, RGBA bytes before and after, per cent,
    against R39's estimate.
 
@@ -44,8 +49,8 @@ No hand-drawn or hand-edited pixels.
 - [ ] `char_knight_base` carries `run` (8, looping) and `backpedal_attack` (14 frames at 24 fps,
       once), 8 directions, scale 1.5, trimmed, and still `walk` and `walk_attack` (legs over 0.75
       walk cycles); no `backpedal`.
-- [ ] The knight's run pace is within 180–220, its backpedal legs' within 150–220, and its
-      `walk_attack` and `backpedal_attack` leg paces at most 90 px/s.
+- [ ] The knight's run pace is within 180–220, and its `walk_attack` and `backpedal_attack` leg
+      paces at most 90 px/s (the backward legs are the walk's run backward, R8, R10).
 - [ ] The leg-clearance guard (FS-HF0WW §C) passes for the new clips; none widens the frame box.
 - [ ] The fast run's bake tests (R2: lean, elbows, hand reach, counter-turn, legs as slice 5's)
       pass on the class's rig and style.
@@ -69,3 +74,20 @@ FS-JS7C8 §A R1–R3, §B R8, R10, §C R21, §F R36–R40; Facts 9, 10. FS-HF0WW
 - `game-client/tools/bake/page/characters/cast.js` (+ `clips.js` only for a per-class style hook)
 - `game-client/public/art/knight-*.png`, `game-client/public/art/manifest.json`
 - `game-client/src/render/art/manifest.test.ts` (the knight carries the clips)
+
+## Built (2026-11-12, agent); waiting on the owner's contact sheet
+
+Baked once at 1.5x with `run`, `walk_attack` and `backpedal_attack` over 0.75 cycles and the slash (I-2325V-11): wound up high over the right shoulder with the weight back, the pelvis turning in first, cut down across the front onto the front foot and through to low past the left hip, the shield kept up before the chest; the sword arm pumps in the run, the shield arm carries the shield (run.hold, arms 0.3, elbow 0.2).
+The leg guard passes every clip once it measures a leg through the cloth where the cloth hangs
+(FS-HF0WW § Change: The guard measures a leg through the cloth; the garments are unchanged). Only
+the knight's page and the manifest changed; every other atlas keeps its bytes; `npm run bake -- --check`
+reports no changes.
+
+| knight sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main (2x) | 1 | 3396 × 3532 | 47.98 MB | 7,983,741 | 336 | 320 × 292 |
+| this bake (1.5x) | 1 | 2828 × 3968 | 44.89 MB | 7,235,301 | 512 | 276 × 228 (184 × 152 screen px) |
+
+−6.4 % RGBA (R39 estimated about +47 % at 2x; the 1.5x projection was about 51 MB); crown 83 as before. The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
+beside the new, the 7 keys stacked to show the blade's path; walk_attack; backpedal_attack; death; 8 facings) are in the
+session scratchpad `classes-1p5x/knight/`.

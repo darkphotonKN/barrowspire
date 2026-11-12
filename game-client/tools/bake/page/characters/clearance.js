@@ -185,10 +185,16 @@ export function legsInGarments(rig) {
   return {
     covers,
     legs,
-    /** Per leg vertex, how far outside the cloth over it (model units), or null where none covers it. */
+    /**
+     * Per leg vertex, how far outside the cloth over it (model units), or null where none covers
+     * it. A vertex the rings put outside is measured again where the cloth really hangs
+     * ({@link throughCloth}): a hem swung out by a stride or lifted by a heel tilts its rings, and
+     * the cut square to their axis then reads a leg under the cloth, or under the hem, as out.
+     */
     measure() {
       rig.root.updateMatrixWorld(true);
       const now = covers.map(ringsNow);
+      const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
       const out = [];
       for (const leg of legs) {
         const n = leg.geometry.attributes.position.count;
@@ -199,12 +205,71 @@ export function legsInGarments(rig) {
             const o = outside(g.rings, g.mids, v);
             if (o !== null && (best === null || o < best)) best = o;
           }
+          if (best !== null && best > 0) best = throughCloth(now, axis, v);
           out.push(best);
         }
       }
       return out;
     },
   };
+}
+
+/**
+ * How far point `v` lies outside the cloth, measured along the level ray from the garments' axis
+ * (the pelvis, `axis`) out through it, against the covers' surfaces as they hang now (`covers`:
+ * each a { rings } of rings of THREE.Vector3, its quads between consecutive rings): negative (by
+ * how far the cloth lies beyond it) where cloth still lies beyond it, so it is under the cloth;
+ * the distance past the outermost cloth the ray crossed on its way out where none lies beyond, a
+ * leg through the cloth; null where the ray meets no cloth at all, a leg below the hem or in an
+ * opening, which no cloth covers.
+ */
+export function throughCloth(covers, axis, v) {
+  const dir = new THREE.Vector3(v.x - axis.x, 0, v.z - axis.z);
+  const dist = dir.length();
+  if (dist < 1e-9) return null;
+  dir.divideScalar(dist);
+  const from = new THREE.Vector3(axis.x, v.y, axis.z);
+  let before = -Infinity;
+  let beyond = Infinity;
+  const hit = (a, b, c) => {
+    const t = rayTriangle(from, dir, a, b, c);
+    if (t === null) return;
+    if (t > dist) beyond = Math.min(beyond, t);
+    else before = Math.max(before, t);
+  };
+  for (const { rings } of covers)
+    for (let r = 0; r + 1 < rings.length; r++)
+      for (let j = 0; j + 1 < rings[r].length; j++) {
+        hit(rings[r][j], rings[r][j + 1], rings[r + 1][j]);
+        hit(rings[r][j + 1], rings[r + 1][j + 1], rings[r + 1][j]);
+      }
+  if (beyond < Infinity) return dist - beyond;
+  if (before > -Infinity) return dist - before;
+  return null;
+}
+
+const _t1 = new THREE.Vector3();
+const _t2 = new THREE.Vector3();
+const _pv = new THREE.Vector3();
+const _tv = new THREE.Vector3();
+const _qv = new THREE.Vector3();
+
+/** Where a ray (origin `o`, unit `d`) meets triangle a, b, c from either side: its distance, or null (Möller–Trumbore). */
+function rayTriangle(o, d, a, b, c) {
+  _t1.subVectors(b, a);
+  _t2.subVectors(c, a);
+  _pv.crossVectors(d, _t2);
+  const det = _t1.dot(_pv);
+  if (Math.abs(det) < 1e-12) return null;
+  const inv = 1 / det;
+  _tv.subVectors(o, a);
+  const u = _tv.dot(_pv) * inv;
+  if (u < 0 || u > 1) return null;
+  _qv.crossVectors(_tv, _t1);
+  const w = d.dot(_qv) * inv;
+  if (w < 0 || u + w > 1) return null;
+  const t = _t2.dot(_qv) * inv;
+  return t > 0 ? t : null;
 }
 
 /** The furthest any leg vertex in `now` (from `measure`) lies outside the cloth, in 1x px (model space); 0 when none does. */
