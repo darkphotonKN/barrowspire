@@ -13,12 +13,24 @@
 //    half a texel outside the last opaque texel still takes some of it. The whole frame's quad
 //    covers that px, a quad cut flush to the pixels would not, and the sprite's soft edge would
 //    lose that half-texel of fringe. One texel of margin puts every such px inside the quad.
-//  - out to whole screen px (multiples of the sheet's `scale`), so the cut's corners sit on the
+//  - out to whole screen px (multiples of the sheet's `trimGrid`), so the cut's corners sit on the
 //    same screen px grid the whole frame's do. Phaser 4 rounds each corner of a sprite's quad to
 //    the backing px (`TransformerImage.run`, ADR-0057); where a screen px is a whole number of
 //    backing px (render scale 1 and 2, a sprite at its true size) the cut's corners then round
 //    exactly as the whole frame's, and the trimmed sprite draws the same px. Elsewhere it can land
 //    up to half a backing px off (ADR-0058, measured in FS-HF0WW).
+
+import { wholeStep } from "../page/step.mjs";
+
+/**
+ * The trim grid of a sheet baked at `scale`, in sheet px (ADR-0076 Decision 3): `wholeStep`
+ * screen px, so a cut's corners are whole sheet px and whole screen px. 1 at 1x, 2 at 2x; 3 at
+ * 1.5 (two screen px), which also lands every corner on whole backing px at render scale 1, 1.5
+ * and 2.
+ *
+ * @param {number} scale
+ */
+export const trimGrid = (scale) => scale * wholeStep(scale);
 
 /** Transparent px kept around each frame's pixels, for linear filtering (see above). */
 export const TRIM_MARGIN = 1;
@@ -31,7 +43,7 @@ export const TRIM_MARGIN = 1;
  * @param {Uint8Array | Buffer} px
  * @param {number} width
  * @param {number} height
- * @param {{ grid?: number, margin?: number }} [options] `grid`: the sheet's scale
+ * @param {{ grid?: number, margin?: number }} [options] `grid`: the sheet's {@link trimGrid}
  * @returns {{ x: number, y: number, w: number, h: number }} in frame px
  */
 export function trimRect(px, width, height, { grid = 1, margin = TRIM_MARGIN } = {}) {

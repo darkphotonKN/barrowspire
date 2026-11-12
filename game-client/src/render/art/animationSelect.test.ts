@@ -374,14 +374,23 @@ describe("the shipped character sheets", () => {
       if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
   });
 
-  it.each(CLASSES)(
-    "should bake %s at 2x, trimmed, frames twice a 1x sheet's px each way (FS-HF0WW, FS-3V7GC)",
-    (cls) => {
+  // the archer at 1.5x since its run re-bake, the other three at 2x until theirs (FS-HF0WW
+  // § Change: Class sheets at 1.5x R34, R35)
+  it.each([
+    ["warrior", 2],
+    ["mage", 2],
+    ["archer", 1.5],
+    ["mercenary", 2],
+  ] as const)(
+    "should bake %s at %sx, trimmed, its frame a whole number of screen px and its anchor on a whole px (FS-HF0WW, FS-3V7GC, ADR-0076)",
+    (cls, scale) => {
       const sheet = manifest.sheets[characterSheet(cls)];
-      expect(sheet.scale).toBe(2);
+      expect(sheet.scale).toBe(scale);
       expect(sheet.trimmed).toBe(true);
-      expect(sheet.frameWidth % 2).toBe(0);
-      expect(sheet.frameHeight % 2).toBe(0);
+      expect(Number.isInteger(sheet.frameWidth / scale)).toBe(true);
+      expect(Number.isInteger(sheet.frameHeight / scale)).toBe(true);
+      expect(sheet.anchor.x * sheet.frameWidth).toBeCloseTo(Math.round(sheet.anchor.x * sheet.frameWidth), 9);
+      expect(sheet.anchor.y * sheet.frameHeight).toBeCloseTo(Math.round(sheet.anchor.y * sheet.frameHeight), 9);
     },
   );
 

@@ -574,8 +574,10 @@ export const CAST = [
   // trimmed to its pixels (lib/trim.mjs)
   { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
   // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
-  // the first class re-baked, the owner's 2026-11-12 pick)
-  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 2, trim: true },
+  // the first class re-baked, the owner's 2026-11-12 pick), baked at 1.5× (ADR-0076, the owner's
+  // 「感覺可以」): each class moves to 1.5× when it is re-baked with the run (FS-HF0WW § Change:
+  // Class sheets at 1.5x)
+  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5, trim: true },
   { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },

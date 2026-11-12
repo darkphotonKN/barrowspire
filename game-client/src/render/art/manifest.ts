@@ -29,15 +29,16 @@
  * - A quadruped's `length` is measured the same way, side-on: screen px across its opaque idle
  *   silhouette in the facings that lay its body along the screen (ne, sw), the longest. Its size
  *   tier is taken by body length, not height (guideline "Size is a threat tier", FS-X2F2H R61).
- * - A sheet's `scale` (absent: 1) is how many of its px make one screen px: a sheet baked at 2x
- *   (FS-HF0WW) holds twice the detail each way and is drawn at half size
+ * - A sheet's `scale` (absent: 1) is how many of its px make one screen px: 1, 1.5, 2, 3 or 4
+ *   (ADR-0058, ADR-0076). A sheet baked at 2x (FS-HF0WW) holds twice the detail each way and is
+ *   drawn at half size, one at 1.5x two thirds
  *   ({@link sheetScale}), so it stands exactly as large as a 1x sheet. Its frame geometry
  *   (`frameWidth`, `frameHeight`, frame positions) is in its own px, as the atlas holds them; the
  *   anchor is a fraction, so it holds either way; `crown`, `length` and a light stay screen px.
  * - A `trimmed` sheet (FS-HF0WW) had each frame cut to the box that holds its pixels before
  *   packing, so its atlas stores no empty margin. Each frame then also records its `trim`: where
- *   the cut sits inside the sheet's `frameWidth` x `frameHeight`, in the sheet's px and on whole
- *   screen px (multiples of `scale`). The atlas holds the cut, `trim.w` x `trim.h`, at the frame's
+ *   the cut sits inside the sheet's `frameWidth` x `frameHeight`, in the sheet's px and on its
+ *   trim grid ({@link trimGrid}: whole screen px; two at 1.5). The atlas holds the cut, `trim.w` x `trim.h`, at the frame's
  *   (x, y). The client registers it as a trimmed frame of the whole frame's size (`phaser.ts`), so
  *   it draws, anchors and sizes as the whole frame would; anything else reading frames from the
  *   atlas must put the cut back at `trim.x`, `trim.y` itself.
@@ -127,9 +128,29 @@ export interface ArtLight {
 /** The most px per screen px a sheet may be baked at. */
 export const MAX_SHEET_SCALE = 4;
 
+/**
+ * Every `scale` a sheet may be baked at (ADR-0076 Decision 1): a whole number of halves up to 2, a
+ * whole number above it. Above render scale 2 (ADR-0056) a half step buys no detail.
+ */
+export const SHEET_SCALES: readonly number[] = [1, 1.5, 2, 3, MAX_SHEET_SCALE];
+
 /** A sheet's px per screen px: its `scale`, or 1. */
 export const sheetScale = (sheet: Pick<ArtSheet, "scale">): number =>
   sheet.scale ?? 1;
+
+/**
+ * The least whole number of screen px that is a whole number of the sheet's px (ADR-0076): 1 at a
+ * whole scale, 2 at 1.5. A frame px read from a screen px lies on multiples of it.
+ */
+export const screenStep = (sheet: Pick<ArtSheet, "scale">): number =>
+  Number.isInteger(sheetScale(sheet)) ? 1 : 2;
+
+/**
+ * A trimmed sheet's grid, in its own px: {@link screenStep} screen px (ADR-0076 Decision 3). 1 at
+ * 1x, 2 at 2x, 3 at 1.5x.
+ */
+export const trimGrid = (sheet: Pick<ArtSheet, "scale">): number =>
+  sheetScale(sheet) * screenStep(sheet);
 
 /** An sRGB colour, 0..255 per channel. */
 export interface ArtRgb {
@@ -144,7 +165,7 @@ export interface ArtSheet {
   frameWidth: number;
   frameHeight: number;
   /**
-   * The sheet's px per screen px, a whole number; absent is 1. Read it through
+   * The sheet's px per screen px, one of {@link SHEET_SCALES}; absent is 1. Read it through
    * {@link sheetScale}.
    */
   scale?: number;
@@ -305,10 +326,8 @@ function checkSheet(
       );
 
   const scale = sheet.scale !== undefined ? sheet.scale : 1;
-  if (!isPositiveInt(scale) || scale > MAX_SHEET_SCALE)
-    errors.push(
-      `${at}: scale must be a whole number from 1 to ${MAX_SHEET_SCALE}`,
-    );
+  if (!isSheetScale(scale))
+    errors.push(`${at}: scale must be one of ${SHEET_SCALES.join(", ")}`);
   else if (
     isPositiveInt(sheet.frameWidth) &&
     isPositiveInt(sheet.frameHeight) &&
@@ -391,9 +410,12 @@ function checkWalkAttack(at: string, animations: Json, errors: string[]) {
     );
 }
 
+const isSheetScale = (v: unknown): v is number =>
+  typeof v === "number" && SHEET_SCALES.includes(v);
+
 /** A sheet's scale while validating it: a bad one is reported once, and read here as 1. */
 const screenScale = (sheet: Json): number =>
-  isPositiveInt(sheet.scale) ? sheet.scale : 1;
+  isSheetScale(sheet.scale) ? sheet.scale : 1;
 
 /**
  * A crown is a whole number of screen px, above the anchor and no higher than the frame's top
@@ -489,8 +511,8 @@ function checkAnimation(
 }
 
 /**
- * A trimmed frame's cut: whole px, a non-empty rect inside the frame, on whole screen px
- * (multiples of the sheet's scale). Returns its size when it is sound, so the caller can check
+ * A trimmed frame's cut: whole px, a non-empty rect inside the frame, on the sheet's trim grid
+ * (whole screen px: multiples of {@link trimGrid}, 3 px at 1.5). Returns its size when it is sound, so the caller can check
  * the cut against the atlas.
  */
 function checkTrim(
@@ -514,10 +536,10 @@ function checkTrim(
     (trim.x + trim.w > fw || trim.y + trim.h > fh)
   )
     return void errors.push(`${at} must lie inside the frame`);
-  const scale = screenScale(sheet);
-  if ([trim.x, trim.y, trim.w, trim.h].some((v) => v % scale !== 0))
+  const grid = trimGrid({ scale: screenScale(sheet) });
+  if ([trim.x, trim.y, trim.w, trim.h].some((v) => v % grid !== 0))
     return void errors.push(
-      `${at} must be on whole screen px (multiples of scale)`,
+      `${at} must be on whole screen px (multiples of ${grid} px)`,
     );
   return { w: trim.w, h: trim.h };
 }
