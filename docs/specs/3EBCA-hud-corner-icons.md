@@ -1,16 +1,18 @@
 # FS-3EBCA: Panel shortcut icons on the HUD
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### HUD" → "Panel shortcut icons on the HUD" → this FS · Owners carrying a stub: [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) (R29, the ability card's place), [FS-QPDKN](QPDKN-resolved-delver-spectate-and-leave.md) (req 10, the dead spectator's leave button), [FS-HRH2J](HRH2J-gear-and-stats-overlay.md) (R4, a new way to open the overlay) · Changes made alongside: [FS-1GZGD](1GZGD-in-game-mailbox.md) § Change: The envelope toggles the letter panel and stands in the corner row; [FS-R82NV](R82NV-party-formation.md) § Change: The party panel closes on its × and stands nearer the middle; [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) § Change: The ESC menu in a field world · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the HUD is on the game palette) · Builds on: [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) R12–R15 (anchors, re-layout, logical units) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Corner row**
+> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### HUD" → "Panel shortcut icons on the HUD" → this FS · Owners carrying a stub: [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) (R29, the ability card's place), [FS-QPDKN](QPDKN-resolved-delver-spectate-and-leave.md) (req 10, the dead spectator's leave button), [FS-HRH2J](HRH2J-gear-and-stats-overlay.md) (R4, a new way to open the overlay) · Changes made alongside: [FS-HRH2J](HRH2J-gear-and-stats-overlay.md) § Change: Character and inventory apart; [FS-1GZGD](1GZGD-in-game-mailbox.md) § Change: The envelope toggles the letter panel and stands in the corner row; [FS-R82NV](R82NV-party-formation.md) § Change: The party panel closes on its × and stands nearer the middle; [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) § Change: The ESC menu in a field world · Related ADRs: [ADR-0013](../adr/0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md) (tokens only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the HUD is on the game palette) · Builds on: [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) R12–R15 (anchors, re-layout, logical units) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) **Corner row**
 
 ## Summary
 
 A row of small drawn icons stands in the bottom-right corner of the screen in every world, from
-the right: **Menu** (a gear), which does what Esc does; **Character**, which opens the gear and
-bag overlay; **Party**, which opens the party panel; and **Mail**, the mailbox's envelope in the
-town, a greyed envelope that cannot be pressed anywhere else. A press on an icon opens its panel,
-and a second press closes it; the keys stay as they are (Esc, I or B, T). Under the pointer an
-icon brightens and names itself and its key. In a run and a field the ability card and the dead
-spectator's leave button stand just above the row, right-aligned with it.
+the right: **Menu** (a gear), which does what Esc does; **Inventory** (a bag), which opens the
+inventory (the gear slots, the bag and the gold); **Character** (a bust), which opens the
+character panel (the stats); **Party**, which opens the party panel; and **Mail**, the mailbox's
+envelope in the town, a greyed envelope that cannot be pressed anywhere else. A press on an icon
+opens its panel, and a second press closes it; the keys are Esc, I or B, C and T. Under the
+pointer an icon brightens and names itself and its key. The open inventory and character panel
+stop above the row, so it stays pressable under them. In a run and a field the ability card and
+the dead spectator's leave button stand just above the row, right-aligned with it.
 
 Charter run "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). The owner's words:
 "右下角新增組隊的icon", "道具欄也在右下角顯示icon 快捷鍵用I", "道具欄名稱改成角色英文",
@@ -18,7 +20,17 @@ Charter run "右下角圖示與面板操作", approved by the owner 2026-11-12 (
 "esc的icon也加入 一般是齒輪嗎 會用setting嗎", "進入攻擊地圖這些也都可以開 所以在村莊以外的地圖
 除了email都一樣顯示在右下角吧", then "野外 email也不用消失 就顯示灰色表示不能按", and
 "村莊以外會顯示右鍵的技能 就放在icon上方的位置". (His "目前野外按esc沒反應 野外按esc跟村莊一樣行為" is
-FS-G4VMQ § Change: The ESC menu in a field world.) Each requirement below is a **charter default** (the locked
+FS-G4VMQ § Change: The ESC menu in a field world.)
+
+**The owner's decision on the overlay split, 2026-11-12**, settling what this FS first left out
+(raised from R11 and Out of Scope): "道具欄跟角色面板拆開顯示 角色面板維持快捷鍵C 道具欄是I 右下角也多做一個道具欄
+然後這兩個右上角都要多加X關閉按鈕", then "裝備欄一般不是跟著道具欄嗎" (the gear slots belong with the
+inventory), and "選單快捷鍵是esc". The split itself, its keys, its × and the shortened panels are
+FS-HRH2J § Change: Character and inventory apart; this FS takes the fifth icon, the row's new
+order and labels, and the row answering under the open overlay (R1–R3, R5, R7, R11, R12, edited
+in place on this work order).
+
+Each requirement below is a **charter default** (the locked
 decisions, approved by the owner) or says **derived here** and why. Recorded without adversarial
 review: no `challenge-me` pass.
 
@@ -42,7 +54,10 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
   placed by `anchorAt` and re-placed by each scene's `relayoutHud` (FS-ZAJMH R12–R13).
 - **The gear overlay** (`ui/GearOverlay.ts`, `ui/gearOverlayLayout.ts`) is at depth 1100; its
   right panel spans from 8 px off the right edge across to the clear band, and from 4% to 98% of
-  the view's height (`TOP_GAP` 0.04, `HEIGHT` 0.94). Its hint line is at the panel's foot.
+  the view's height (`TOP_GAP` 0.04, `HEIGHT` 0.94). Its hint line is at the panel's foot. Both
+  panels open and close together, on one open state (`GearOverlay` `visible`) that the hub's
+  `HubGear` and the run's and field's `EquipmentHud` drive. (Before FS-HRH2J § Change: Character
+  and inventory apart, which makes them two panels that stop 70 px above the bottom.)
 - **The keys:** the hub reads I and B once a frame (`offerGear`), dropped while the ESC menu, a
   dialogue or the letter panel is open; a run toggles the overlay on I or B unless its ESC menu is
   open, and the overlay's opening ends a Shadow Shot hold (`toggleInventory`); a field toggles it
@@ -65,21 +80,25 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 
 ### §A. The row
 
-1. **Which icons, in what order.** From the right edge leftward: **Menu**, **Character**,
-   **Party**, **Mail**. Every world (the town, a field, a run) shows all four in the same places,
-   so none ever shifts between worlds. In the town Mail is the mailbox's envelope (FS-1GZGD
+1. **Which icons, in what order.** From the right edge leftward: **Menu**, **Inventory**,
+   **Character**, **Party**, **Mail**. Every world (the town, a field, a run) shows all five in the
+   same places, so none ever shifts between worlds. In the town Mail is the mailbox's envelope (FS-1GZGD
    § Change); elsewhere it is a greyed envelope (R8). **(charter default; owner, 2026-11-12:
-   "esc的icon也加入", "在村莊以外的地圖 除了email都一樣顯示在右下角吧", "野外 email也不用消失")**
+   "esc的icon也加入", "在村莊以外的地圖 除了email都一樣顯示在右下角吧", "野外 email也不用消失"; the Inventory icon and its place,
+   owner 2026-11-12: "右下角也多做一個道具欄", the row's order as relayed: Menu (Esc), Inventory (I),
+   Character (C), Party (T), Mailbox)**
 2. **Where.** Each icon is a 58 × 46 plate, the envelope's size; the row's right and bottom edges
    stand 16 px in from the view's, the envelope's margin; 8 px between plates. At 1080 × 720:
-   Menu x 1006–1064, Character x 940–998, Party x 874–932, Mail x 808–866, all y 658–704. Placed
+   Menu x 1006–1064, Inventory x 940–998, Character x 874–932, Party x 808–866, Mail x 742–800,
+   all y 658–704; at 1280 each 200 px further right. Placed
    by the bottom-right anchor and re-placed whenever the view's size changes (FS-ZAJMH R12, R13).
    These are named constants in one pure layout module. **(derived here: the envelope's plate and
    margin keep the row one family with it and leave the envelope's look untouched)**
 3. **How each is drawn.** Each plate as the envelope's: `carvedPanel` at opacity 0.85, and on it a
    line glyph 1.5 px wide in `palette.interactable` at 0.85, in `palette.interactableBright` at 1
    under the pointer, with a hand cursor. **Menu** is a gear: a toothed ring round a small hub.
-   **Character** is a bust: a head over the curve of the shoulders. **Party** is two busts, one
+   **Inventory** is a bag: a rounded pouch under a gathered neck tied with a cord, a flap across
+   its top. **Character** is a bust: a head over the curve of the shoulders. **Party** is two busts, one
    stepped behind and above the other, the front one drawn over it. Drawn in code from palette
    tokens; no baked art, no emoji, no texture file. **(charter default: "same drawn style as
    today's envelope"; owner: "一般是齒輪嗎"; the glyphs derived here)**
@@ -87,14 +106,15 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
    (1100), the letter panel (1800) and every popup. **(derived here: nothing that opens over the
    world is drawn under an icon)**
 5. **Hover text.** Under the pointer an icon shows its name and key in a small label above it:
-   "Menu (Esc)", "Character (I)", "Party (T)", "Mailbox" (it has no key), and the greyed Mail
+   "Menu (Esc)", "Inventory (I)", "Character (C)", "Party (T)", "Mailbox" (it has no key), and the greyed Mail
    "Mailbox · town only". 12 px, `palette.hudText` on `palette.hudPanel` at 0.85, padding 6 × 3, its
    bottom 6 px above the plate, centred on the plate but kept at least 8 px inside the view's
    right edge. It goes when the pointer leaves. **(charter default: the words; "道具欄名稱改成角色英文"
    names the bag's icon Character, in English; "mail沒有快捷鍵 所以就顯示mail就好", then "信箱hover改mailbox" (2026-11-12): "Mailbox", the name the
    panel and the vocabulary already use; "Menu", since Esc
    opens a game menu and no settings panel exists (§Facts; owner: "會用setting嗎"); "town only"
-   derived here, the terse voice; the label's look derived here, the HUD's text on its panel)**
+   derived here, the terse voice; the label's look derived here, the HUD's text on its panel;
+   "Inventory (I)" and "Character (C)" as relayed from the owner's decision, 2026-11-12)**
 
 ### §B. Presses
 
@@ -103,14 +123,15 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
    ESC menu, and does nothing while a dialogue is open; in a run likewise with the run's menu, and
    after the run's end it only closes what is open. **(owner: "esc的icon也加入"; charter: "clicking
    it toggles the same thing Esc does")**
-7. **Character** toggles the gear and bag overlay exactly as I does in that world, under the same
-   guards: in the town not while the ESC menu, a dialogue or the letter panel is open; in a run or
-   a field not while its ESC menu is open. Opening it ends a Shadow Shot hold, as I does.
-   **(charter default)**
+7. **Inventory** toggles the inventory exactly as I does in that world, and **Character** the
+   character panel exactly as C does (FS-HRH2J § Change C2), under the same guards: in the town
+   not while the ESC menu, a dialogue or the letter panel is open; in a run or a field not while
+   its ESC menu is open. Opening either ends a Shadow Shot hold, as its key does. **(charter
+   default; the two icons, owner 2026-11-12)**
 8. **Party** toggles the party panel as T does, under the scene's same `blocked` rule (in the
    town: a dialogue, the ESC menu, the gear overlay or the letter panel; in a run: the ESC menu,
    the run's end, the gear overlay or an open container; in a field: the ESC menu or the gear
-   overlay). A text field holding focus does not stop a press: a press is not typing. **(charter
+   overlay; "the gear overlay" being the inventory or the character panel, FS-HRH2J § Change C11). A text field holding focus does not stop a press: a press is not typing. **(charter
    default; derived here: the T rule's text-focus clause exists so a typed T stays a letter)**
 9. **Mail** in the town toggles the letter panel (FS-1GZGD § Change). **Outside the town, in a
    field and in a run alike, Mail is greyed**: its envelope lines and its dark seal in
@@ -120,14 +141,15 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
    derived here; never amber, since an amber thing the player cannot act on is a defect)**
 10. **A press on an icon is the icon's alone**: in a run or a field it never attacks, casts or
     starts a Shadow Shot hold, as a press on any other HUD piece. **(derived here)**
-11. **Under the open gear overlay the row is the overlay's.** The overlay's right panel covers the
-    row while it is open (§Facts); a press there is the overlay's (FS-HRH2J R8), so no icon
-    answers it, whichever lies under it. I, B and Esc close the overlay, as its hint says.
-    **(derived here: the alternative, an invisible icon closing the overlay from under its hint
-    line, is a press on the panel doing something the panel does not show. Raised to the owner:
-    the Character icon cannot be pressed to close the overlay it opened.)**
-12. **The keys do not change.** Esc, I and B, T and M keep their meaning; Mail has no key.
-    **(charter default)**
+11. **The row answers under the open overlay.** The inventory and the character panel stop above
+    the row (FS-HRH2J § Change C12), so the row stays drawn and pressable while either is open,
+    each icon under its own rule: Menu does one Esc (which closes the overlay, R6), Inventory and
+    Character toggle their panels (R7); Party and Mail keep their owners' guard, which the open
+    overlay holds (R8, R9; FS-1GZGD). **(owner, 2026-11-12, as relayed: shorten the inventory "so
+    the row stays visible and clickable while it is open"; replaces this requirement's first
+    version, under which the panel covered the row and no icon answered)**
+12. **The keys.** Esc, I and B, T and M keep their meaning; C, new, opens the character panel
+    (FS-HRH2J § Change C2); Mail has no key. **(charter default; C, owner 2026-11-12)**
 
 ### §C. The corner in a run and a field
 
@@ -142,7 +164,7 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 
 ## User Stories
 
-1. As a player, I want an icon for my character's gear and bag in the corner, so that I can open it without knowing the key.
+1. As a player, I want an icon for my inventory (gear slots and bag) and one for my character's stats in the corner, so that I can open either without knowing its key.
 2. As a player, I want an icon for my party in the corner, so that I can open the party panel without knowing the key.
 3. As a player, I want a gear icon that does what Esc does, so that I can reach the game's menu with the mouse.
 4. As a player in the town, I want the mailbox's envelope beside them, so that all the panels I open live in one corner.
@@ -158,33 +180,37 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 14. As a player typing in chat, I want a press on Party to open the panel, so that a focused field never makes an icon dead.
 15. As a player, I want the icons to look like the envelope, amber because I can press them, so that the HUD reads as one set.
 16. As a player who resizes the window, I want the icons and the card above them to keep to the corner, so that nothing ends up off-screen.
+17. As a player with my inventory open, I want the corner icons still in view and pressable, so that I can close it or open my stats with the mouse.
 
 ## Acceptance Criteria
 
-- [ ] At 1080 × 720 the row's rects are Menu (1006, 658, 58, 46), Character (940, 658, 58, 46), Party (874, 658, 58, 46) and Mail (808, 658, 58, 46); at 1280 each is 200 px further right; the town, a field and a run draw them at the same rects.
+- [ ] At 1080 × 720 the row's rects are Menu (1006, 658, 58, 46), Inventory (940, 658, 58, 46), Character (874, 658, 58, 46), Party (808, 658, 58, 46) and Mail (742, 658, 58, 46); at 1280 each is 200 px further right; the town, a field and a run draw them at the same rects.
 - [ ] Each live icon is drawn on a carved plate at depth 1000 with its glyph in `interactable`, brightening to `interactableBright` under the pointer; the greyed Mail is drawn in `hudFaint` and never brightens; no raw colour literal (the lint fence passes).
-- [ ] Under the pointer each icon shows "Menu (Esc)", "Character (I)", "Party (T)", "Mailbox" or, greyed, "Mailbox · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
+- [ ] Under the pointer each icon shows "Menu (Esc)", "Inventory (I)", "Character (C)", "Party (T)", "Mailbox" or, greyed, "Mailbox · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
 - [ ] A press on Menu does what one Esc press does in the town, a field and a run (closes the one thing on top, else opens or closes the ESC menu).
-- [ ] A press on Character toggles the gear overlay in every world, under the same guards as I there, and ends a Shadow Shot hold on opening.
+- [ ] A press on Inventory toggles the inventory and one on Character the character panel in every world, under the same guards as I and C there, and ends a Shadow Shot hold on opening.
 - [ ] A press on Party toggles the party panel in every world, refused while the scene's `blocked` holds, accepted while a text field has focus.
 - [ ] A press on the greyed Mail in a field or a run does nothing.
 - [ ] A press on an icon in a run or a field sends no attack, cast or hold.
-- [ ] While the gear overlay is open, a press at an icon's place opens and closes nothing.
-- [ ] Esc, I, B, T and M behave as before (Esc's new order and the field's menu are FS-R82NV's and FS-G4VMQ's changes).
+- [ ] While the inventory or the character panel is open the row stays drawn and answers: Inventory and Character close their panels on a second press, Menu does one Esc; Party and Mail keep their owners' guards.
+- [ ] Esc, I, B, T and M behave as before (Esc's new order and the field's menu are FS-R82NV's and FS-G4VMQ's changes); C toggles the character panel.
 - [ ] In a run and a field the ability card's bottom-right corner stands at (width − 16, 650); the dead spectator's leave button is centred at (width − 116, 631); neither overlaps the row; both follow a view-size change.
 - [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
 
 ## Edge States
 
-- **A dialogue open (town):** Menu, Character and Party do nothing (the dialogue keeps Esc,
+- **A dialogue open (town):** Menu, Inventory, Character and Party do nothing (the dialogue keeps Esc,
   FS-G4VMQ R2); Mail opens nothing.
-- **The ESC menu open:** Menu closes it, as Esc does; Character, Party and Mail open nothing.
-- **The letter panel open (town):** Menu closes it (one Esc); Mail closes it; Character and Party
-  open nothing.
-- **The gear overlay open:** its right panel covers the row; no icon answers (R11). Closing it
-  shows the row again.
-- **The run has ended:** Menu only closes what is open; Party opens nothing; Character toggles as
-  I does.
+- **The ESC menu open:** Menu closes it, as Esc does; Inventory, Character, Party and Mail open
+  nothing.
+- **The letter panel open (town):** Menu closes it (one Esc); Mail closes it; Inventory, Character
+  and Party open nothing.
+- **The inventory or the character panel open:** the row stays in view above them and answers
+  (R11); a press on Menu closes both panels, as one Esc does.
+- **The stash open (town):** Inventory closes the stash with the inventory, as I does; Character
+  does nothing (FS-HRH2J § Change C9).
+- **The run has ended:** Menu only closes what is open; Party opens nothing; Inventory and
+  Character toggle as I and C do.
 - **Spectating, dead:** the row stays; the leave button stands above it, the card down (R14).
 - **No class card (a class with no row):** the row is unchanged; the space above it stays empty.
 - **A resize while hovered:** the row and an open label move with the corner.
@@ -192,19 +218,14 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 
 ## Out of Scope
 
-- New keys, rebinding, a key for the mailbox, or a settings panel.
-- Badges or counts on Character, Party or Menu (the envelope's seal is FS-1GZGD's, town only).
+- Other new keys (C is FS-HRH2J § Change C2's), rebinding, a key for the mailbox, or a settings panel.
+- Badges or counts on Inventory, Character, Party or Menu (the envelope's seal is FS-1GZGD's, town only).
 - The mailbox itself outside the town: its fetches, its seal and its panel stay town only
   (FS-1GZGD D11); only a greyed icon stands in its place.
-- Shortening the gear overlay's right panel or drawing the row over it (R11; raised to the owner).
-- Renaming the gear overlay's own panel titles; the dev gallery (HUD chrome is not a tracked
+- Drawing the row over the overlay's panels (they stop above it instead, FS-HRH2J § Change C12).
+- The dev gallery (HUD chrome is not a tracked
   family, FS-1819Q).
 - Any server, proto or gateway change.
-- **Splitting the gear overlay into a Character panel (C) and an Inventory panel (I)**, asked by
-  the owner on 2026-11-12 ("道具欄跟角色面板拆開顯示 角色面板維持快捷鍵C 道具欄是I 右下角也多做一個道具欄
-  然後這兩個右上角都要多加X關閉按鈕") with a fifth icon, the row then reading Menu, Inventory (I),
-  Character (C), Party (T), Mailbox. Not built here: it changes FS-HRH2J's overlay beyond a
-  layout (one open state for both panels shared by its three drivers, the paper doll and the bag
-  sized as one panel, the stash mode that takes the left panel, FS-VPD8Y R35), and was raised to
-  the owner for a decision. Until then the row is Menu, Character (I, the whole overlay), Party,
-  Mailbox.
+- The split itself (its keys, its ×, stash mode, the panels' extent and titles): FS-HRH2J § Change:
+  Character and inventory apart. First recorded here as out of scope and raised to the owner;
+  settled 2026-11-12 (Summary).

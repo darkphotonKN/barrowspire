@@ -290,3 +290,123 @@ default: small and testable; no human-lane split)**. Everything else is game-cli
 - The matchmaker / match queue (FS-K2HKP).
 
 ## Change: Panel shortcut icons on the HUD → FS-3EBCA
+
+## Change: Character and inventory apart
+Status: work-order
+Date: 2026-11-12
+
+The owner's decision of 2026-11-12, settling what FS-3EBCA's charter run raised (FS-3EBCA Out of
+Scope, before this change): "道具欄跟角色面板拆開顯示 角色面板維持快捷鍵C 道具欄是I 右下角也多做一個道具欄
+然後這兩個右上角都要多加X關閉按鈕", then "裝備欄一般不是跟著道具欄嗎" (the gear slots belong with the
+inventory, Diablo / Path of Exile style), and "選單快捷鍵是esc". The two panels of §A become two
+panels that open apart: the **inventory** (the right panel as it is: the ten gear slots, the bag,
+the purse line, FS-7TGZ3) on I or B, and the **character panel** (the left panel, §C's stats) on C.
+Each has an × at its top right. Both stop 70 px above the view's bottom, so the corner row
+(FS-3EBCA) stays visible and pressable under them. Each line says **owner** (his words above) or
+**derived here** and why. Recorded without adversarial review: no `challenge-me` pass.
+
+Replaces, for this change: R1 ("Both open and close together; neither is shown alone"), R2's "about
+95% of the screen's height", R4's "`I` and `B` both toggle the overlay", R10 while only the
+character panel is open, and R11's list. Amends FS-VPD8Y R35 and R37 (stash mode) and FS-7TGZ3 R8
+(which opens read the purse); each carries a stub pointing here.
+
+### Requirements
+
+C1. **Two panels, opened apart.** The inventory (right) and the character panel (left) each open
+    and close on their own: either may be open alone, or both. What each shows, and how, is
+    unchanged (§B, §C, FS-7TGZ3, FS-VPD8Y §F). **(owner: "道具欄跟角色面板拆開顯示", "裝備欄一般不是跟著道具欄嗎")**
+C2. **Keys.** `I` and `B` toggle the inventory only; `C` toggles the character panel only; in the
+    hub, a run and a field world alike. `C` is refused exactly where `I` is (R6; the town's letter
+    panel, FS-1GZGD R40; a run's or a field's ESC menu, FS-G4VMQ R5), and a focused text field
+    keeps its letters, as it keeps I. **(owner: "角色面板維持快捷鍵C 道具欄是I"; the guards derived
+    here: the same owners own the keys)**
+C3. **Esc and Q close both.** In the Esc order (FS-R82NV § Change C2) the overlay's step closes
+    whichever of the two panels are open, together, in one press, before anything under them and
+    before the menu opens. `Q`, where it closes the overlay (run, field), closes both too.
+    **(owner: "選單快捷鍵是esc"; derived here: the order keeps its one step for the overlay)**
+C4. **The ×.** Each panel has an × at its top right, in the party and letter panels' look: 22 px,
+    `palette.interactable`, `palette.interactableBright` under the pointer, a hand cursor, in a
+    24 × 24 box whose right edge stands 14 px (the panel padding) in from the panel's and whose top
+    stands 10 px below the panel's, level with the title. A left press there closes that panel
+    alone. A press on the × is the panel's (R8): never an attack, a cast or a hold. In stash mode
+    either × closes the overlay (C9). **(owner: "這兩個右上角都要多加X關閉按鈕"; the look derived
+    here: the × the other world panels already wear, FS-R82NV § Change C1)**
+C5. **Opening either ends a Shadow Shot hold** (R9, FS-JTNPR R15). **(derived here: R9's reason,
+    a panel opening over the world, holds for both)**
+C6. **R8 per panel.** A press over an open panel is the overlay's; with one panel open, the other
+    side of the screen answers as with the overlay closed. **(derived here)**
+C7. **E.** `E` is the inventory's while it is open (R10). With only the character panel open, `E`
+    reaches the world as with nothing open (the hub's NPCs and stash chest, a run's doors, switches
+    and chests, a field's piles): the character panel holds nothing to wear. **(derived here: R10
+    keeps E for wearing what is hovered, and the character panel hovers nothing to wear)**
+C8. **The character panel alone in the hub.** Opening it with the inventory closed loads the
+    loadout as an inventory open does (R41), so its "From gear" (R29) shows what is worn; its other
+    rows still read the hub's state (R24). It reads no purse (C10). Opening the inventory while the
+    character panel is open loads as any inventory open does. **(derived here: R29 needs what is
+    worn, which the hub holds only from REST)**
+C9. **Stash mode.** `E` at the stash chest opens the stash (left) beside the inventory (right), as
+    FS-VPD8Y R35 says; a character panel open at that moment closes, since the stash takes the left
+    side. While the stash is open `C` does nothing. Closing the inventory by any path (`I`, `B`,
+    `Esc`, either ×) ends stash mode (FS-VPD8Y R37), and the next `I` opens the inventory alone.
+    **(owner, 2026-11-12, as relayed: at the stash chest stash and inventory as today, the character
+    panel not shown there; `C` doing nothing derived here: the left side is the stash's until it
+    closes)**
+C10. **Which opens read the purse.** Each inventory open reads the purse, in every world, stash
+    mode included (FS-7TGZ3 R8); a character panel open reads none. **(derived here: the purse line
+    is the inventory's)**
+C11. **Where "the gear overlay is open" is asked, either panel counts.** Every rule that names the
+    open overlay (the town's chat input, T, the envelope and the invite prompts; a run's T; a
+    field's chat input and T; FS-3EBCA R8) reads it as "the inventory or the character panel is
+    open". **(derived here: those rules keep one thing over the world at a time, and either panel
+    is such a thing)**
+C12. **The panels stop above the corner row.** Both panels' bottom edge stands 70 px above the
+    view's bottom (FS-3EBCA's `CORNER_ROW_CLEARANCE`: the row's margin 16, its plate 46 and its gap
+    8, the line the ability card already keeps, FS-3EBCA R13); their top stays at 4% of the height,
+    and they still mirror each other. At 1080 × 720: left (8, 29, 391, 621), right (681, 29, 391,
+    621); at 1280 × 720 each is 465 wide, the right at x 807. **(owner, as relayed: shorten the
+    inventory so the row stays visible and clickable while it is open; the left panel shortened
+    too, derived here, to keep R2's mirror)**
+C13. **The contents keep their order and stay whole.** Gear slots, the bag's 30 cells, the purse
+    line and the hint keep their order and their gaps; the cell is the largest whole size at which
+    the doll and all 30 base cells fit the shorter panel (44 px cells, 51 px slots at 720 tall; 50
+    and 58 before). The stash's 6 × 10 still shows whole (50 px cells at 720 tall). **(owner, as
+    relayed: "keep its contents' layout readable"; the sizes derived here)**
+C14. **Titles.** The right panel's title reads **INVENTORY**, the name its key, its corner icon
+    (FS-3EBCA) and its hover label use; the left keeps **CHARACTER**, and **STASH** in stash mode.
+    **(derived here: the panel, its icon and its key name one thing; R13's slots and "BAG" keep
+    their words)**
+C15. **The controls help** (the run's H panel, and the web page's controls list) names `I / B`
+    "Inventory" and `C` "Character", in place of `I / B` "Gear and bag" (R11). **(derived here)**
+
+### Acceptance Criteria
+
+- [ ] `I` and `B` open and close the inventory alone, and `C` the character panel alone, in the hub, a run and a field; each opens with or without the other; `C` is refused where `I` is.
+- [ ] One `Esc` closes both open panels together, before the menu opens; `Q` closes both in a run and a field.
+- [ ] Each panel has an × at its top right; a left press on it closes that panel alone and is never an attack or a cast.
+- [ ] Opening either panel ends a Shadow Shot hold.
+- [ ] With only the character panel open, `E` reaches the world (an NPC, the stash chest, a door, a pile); with the inventory open, `E` wears or takes off what is hovered, as before.
+- [ ] In the hub, opening the character panel alone loads the loadout (its "From gear" shows what is worn) and reads no purse; each inventory open reads the purse.
+- [ ] At the stash chest, the stash and the inventory open, and an open character panel closes; `C` does nothing while the stash is open; closing the inventory ends stash mode.
+- [ ] Equip, unequip and stash moves behave as before (hover + right-click or `E`).
+- [ ] At 1080 × 720 the panels are (8, 29, 391, 621) and (681, 29, 391, 621), at 1280 × 720 465 wide; no panel covers the corner row; the 30 bag cells show whole without scrolling (44 px), the stash's 60 too.
+- [ ] The right panel's title reads INVENTORY; the run's H panel lists `I / B` Inventory and `C` Character.
+- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
+
+### Edge States
+
+- **Both open, one closed by its ×:** the other stays open, unchanged; the overlay's handlers stay
+  until both are closed.
+- **Only the character panel open, a press on the right side:** the world's, as with the overlay
+  closed (C6); in a run it attacks.
+- **Hub load fails with only the character panel open:** the stats rows show; "From gear" reads
+  "Nothing worn" until a later open loads. No status line is drawn (it is the bag's).
+- **World switch or resize with either open:** as R2 and "World switch while open": both laid out
+  again, or both closed.
+- **A small window:** the rows and the bag scroll inside the shorter panels as R23 and "Small
+  window" say.
+
+### Out of Scope
+
+- Drag, a separate equipment panel, or moving the gear slots out of the inventory.
+- A key or icon for the stash; a stash panel opened without the inventory.
+- Moving or resizing either panel by hand (parked, "draggable windows").
