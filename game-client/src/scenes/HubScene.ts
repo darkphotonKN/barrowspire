@@ -863,14 +863,19 @@ export class HubScene extends Phaser.Scene {
     // does, and the wheel and presses under it are its own (FS-1GZGD R40)
     this.chatWindow = mountChatWindow(
       this,
-      () => !this.dialogue && !this.menu && !this.gear?.isOpen() && !this.mailbox?.isOpen(),
+      () => this.mayChat(),
       {
         keepsDraft: () => !!this.mailbox?.isOpen(),
         coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
       },
     );
-    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
-    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
+    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change
+    // C8), and closing the letter panel as it opens (§ Change C9)
+    this.partyPanel = mountPartyPanel(
+      this,
+      () => this.refusesParty(),
+      () => this.closeLetter(),
+    );
     // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
     // (FS-R82NV R32, R33)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
@@ -879,12 +884,14 @@ export class HubScene extends Phaser.Scene {
     // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
     // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
-    // envelope opens nothing while a dialogue, the menu or the gear overlay is up
+    // envelope opens nothing while a dialogue or the menu is up, and closes the other windows as it
+    // opens the letter panel (FS-1GZGD § Change C4)
     this.mailbox = mountMailbox(
       this,
       this.art,
-      () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen(),
+      () => this.refusesLetter(),
       () => this.characterLevel,
+      () => this.clearForLetter(),
     );
     this.watchGoldTakes();
     this.mountCorner();
@@ -897,13 +904,13 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The corner row (FS-3EBCA): each press the key's own path, one Esc, I or B, C, T; the
-   * mailbox's envelope stands beside it, mounted with the mailbox.
+   * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
+   * path, I or B, C, T; the mailbox's envelope stands beside it, mounted with the mailbox.
    */
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.pressEscape() },
+        { icon: "menu", press: () => this.pressMenuIcon() },
         { icon: "inventory", press: () => this.toggleGear() },
         { icon: "character", press: () => this.toggleCharacter() },
         { icon: "party", press: () => this.partyPanel?.toggle() },
@@ -912,12 +919,49 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): a dialogue, the
-   * menu or the letter panel owns the screen. The inventory and the character panel do not: the
-   * party panel opens over them (FS-R82NV § Change C8).
+   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): a dialogue or the
+   * menu owns the screen. The inventory and the character panel do not: the party panel opens over
+   * them (FS-R82NV § Change C8); nor the letter panel, which closes as it opens (§ Change C9).
    */
   private refusesParty(): boolean {
-    return !!this.dialogue || !!this.menu || !!this.mailbox?.isOpen();
+    return !!this.dialogue || !!this.menu;
+  }
+
+  /**
+   * Whether the envelope is refused now (FS-1GZGD § Change C1): a dialogue or the menu owns the
+   * screen. The windows do not: they close as the letter panel opens (`clearForLetter`).
+   */
+  private refusesLetter(): boolean {
+    return !!this.dialogue || !!this.menu;
+  }
+
+  /**
+   * The letter panel is full-screen, so it stands alone (FS-3EBCA R15, R19): the inventory and the
+   * character panel (the stash with them) and the party panel close as it opens.
+   */
+  private clearForLetter(): void {
+    this.gear?.hide();
+    this.partyPanel?.close();
+  }
+
+  /** A window opening closes the letter panel first (FS-3EBCA R16). */
+  private closeLetter(): void {
+    if (this.mailbox?.isOpen()) this.mailbox.close();
+  }
+
+  /** The menu opens over no window (FS-3EBCA R17): the letter panel, the party panel and the overlay go. */
+  private closeWindows(): void {
+    this.closeLetter();
+    this.partyPanel?.close();
+    this.gear?.hide();
+  }
+
+  /**
+   * Whether the chat input may take focus (FS-WJGFJ R27): not while a dialogue, the menu (FS-3EBCA
+   * R18), the gear overlay or the letter panel is up.
+   */
+  private mayChat(): boolean {
+    return !this.dialogue && !this.menu && !this.gear?.isOpen() && !this.mailbox?.isOpen();
   }
 
   /** What the server sent while the hub loaded, to the listeners create has made, in order. */
@@ -2876,10 +2920,19 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
+   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
+   * it opens. Nothing while a dialogue keeps Esc, nor while the menu is open: it owns the screen.
+   */
+  private pressMenuIcon(): void {
+    if (this.dialogue || this.menu) return;
+    this.openMenu();
+  }
+
+  /**
    * I or B opens or closes the inventory over the live hub (FS-HRH2J R4, R40), and C the character
-   * panel (§ Change: Character and inventory apart, C2). While the menu, a dialogue or the letter
-   * panel is open they own the keyboard (R6, FS-1GZGD R40): the press is read and dropped, so it
-   * does not open a panel the moment they close.
+   * panel (§ Change: Character and inventory apart, C2). While the menu or a dialogue is open they
+   * own the keyboard (R6): the press is read and dropped, so it does not open a panel the moment
+   * they close. An open letter panel closes as either opens (FS-3EBCA R16).
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
@@ -2887,20 +2940,22 @@ export class HubScene extends Phaser.Scene {
     if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.toggleCharacter();
   }
 
-  /** Whether the menu, a dialogue or the letter panel owns the keys: no panel opens or closes. */
+  /** Whether the menu or a dialogue owns the keys: no panel opens or closes. */
   private gearRefused(): boolean {
-    return !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen();
+    return !!this.menu || !!this.dialogue;
   }
 
-  /** I, B or the corner row's icon (FS-3EBCA R7): the inventory, under the same owners. */
+  /** I, B or the corner row's icon (FS-3EBCA R7, R16): the inventory, under the same owners. */
   private toggleGear(): void {
     if (this.gearRefused()) return;
+    this.closeLetter();
     this.gear?.toggle();
   }
 
   /** C or the corner row's Character icon (FS-HRH2J § Change C2): the character panel, under I's owners. */
   private toggleCharacter(): void {
     if (this.gearRefused()) return;
+    this.closeLetter();
     this.gear?.toggleCharacter();
   }
 
@@ -2943,8 +2998,10 @@ export class HubScene extends Phaser.Scene {
    * The hub's ESC menu: a way to the main menu, a way back (FS-G4VMQ §Requirements 3, 4). Built
    * from the scene's state as it opens, so what it offers is hubMenuChoices' rule, not the
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
+   * Every window closes as it opens (FS-3EBCA R17).
    */
   private openMenu(): void {
+    this.closeWindows();
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.leaveQueue(),

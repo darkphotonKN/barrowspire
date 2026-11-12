@@ -24,8 +24,13 @@ import { CORNER_LABEL } from "./hudCornerLayout";
 
 export interface MailboxEnvelopeDeps {
   store: StoreApi<MailboxState>;
-  /** Whether a dialogue, a menu or an overlay owns the screen now: a press then opens nothing. */
+  /** Whether a dialogue or the menu owns the screen now: a press then opens nothing. */
   blocked: () => boolean;
+  /**
+   * Closes the other windows just before the panel opens: the letter panel is full-screen, so it
+   * stands alone (FS-1GZGD § Change C4; FS-3EBCA R15).
+   */
+  opening?: () => void;
 }
 
 const HUD_DEPTH = 1000;
@@ -162,11 +167,15 @@ export class MailboxEnvelope {
     this.zone.destroy();
   }
 
-  /** A press toggles the letter panel (§ Change C1): an open one always closes. */
+  /**
+   * A press toggles the letter panel (§ Change C1): an open one always closes; a shut one opens
+   * unless refused, the other windows closing first (C4).
+   */
   private press(): void {
     const mailbox = this.deps.store.getState();
     if (mailbox.panelOpen) return mailbox.closePanel();
     if (this.deps.blocked()) return;
+    this.deps.opening?.();
     void mailbox.openPanel();
   }
 
