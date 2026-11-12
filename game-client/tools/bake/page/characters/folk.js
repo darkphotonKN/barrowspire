@@ -93,13 +93,14 @@ export function resident(build, palettes) {
   if (skirted) {
     // no legs under the kirtle, only boots: a stride can never poke through the cloth
     boots(rig, F.leatherDark, { top: 0.12 });
-    use("cloth", skirt(rig, P.cloth, { top: hy + 0.03, bottom: 0.022, rTop: [0.11, 0.088], rBottom: [0.15, 0.13], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 30, mirrored: true }));
+    use("cloth", skirt(rig, P.cloth, { top: hy + 0.03, bottom: 0.022, rTop: [0.11, 0.088], rBottom: [0.15, 0.13], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 30 }));
     use("under", shawl(rig, P.under));
     belt(rig, F.linen, F.linen, { r: [0.1, 0.08], dy: 0.05 });
   } else {
-    use("under", legs(rig, P.under));
+    const tunic = { top: hy + 0.02, bottom: hy - 0.15, rTop: [0.1, 0.078], rBottom: [0.116, 0.098] };
+    use("under", legs(rig, P.under, { under: tunic }));
     boots(rig, F.leather, { top: 0.11 });
-    use("cloth", skirt(rig, P.cloth, { top: hy + 0.02, bottom: hy - 0.15, rTop: [0.1, 0.078], rBottom: [0.116, 0.098], legFollow: 0.7, panels: true, panelWeight: 0.3, mirrored: true }));
+    use("cloth", skirt(rig, P.cloth, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 }));
     belt(rig, F.leatherDark, M.iron, { pouch: true });
   }
 
@@ -125,15 +126,16 @@ export function spirewarden() {
   torso(rig, F.mail);
   neck(rig, F.skin);
   arms(rig, F.mail);
-  legs(rig, F.breeches);
+  // the hauberk hangs to the knee
+  const hauberk = { top: hy + 0.02, bottom: ky + 0.01, rTop: [0.1, 0.08], rBottom: [0.12, 0.104] };
+  legs(rig, F.breeches, { under: hauberk });
   hands(rig, F.leatherDark);
   boots(rig, F.leatherDark, { top: 0.2 });
   head(rig, F.skin);
   face(rig, F.face, F.browDark);
   hood(rig, F.wardWool);
   for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.03, [0.036, 0.034], F.leatherDark);
-  // the hauberk hangs to the knee
-  skirt(rig, F.mail, { top: hy + 0.02, bottom: ky + 0.01, rTop: [0.1, 0.08], rBottom: [0.12, 0.104], legFollow: 0.8, segs: 24, mirrored: true });
+  skirt(rig, F.mail, { ...hauberk, legFollow: 0.8, segs: 24 });
   belt(rig, F.leatherDark, F.blackIron, { r: [0.106, 0.086], dy: 0.03 });
   keyRing(rig, F, "L");
   cloak(rig, F.wardWool, { length: 0.62, spread: 1.5, flare: 1.2 });
@@ -168,6 +170,9 @@ export function quartermaster() {
   torso(rig, F.shirt);
   neck(rig, F.skin);
   arms(rig, F.shirt, { sleeve: (t) => 1 + 0.25 * THREE.MathUtils.smoothstep(t, 0.3, 0.5) * (1 - THREE.MathUtils.smoothstep(t, 0.55, 0.7)) });
+  // his thighs are not drawn in under the apron (legs({ under })): it covers only their front, and
+  // drawing them in would slim the breeches it leaves bare at the sides and back; skinned to its
+  // own thighs, the apron keeps them under it as it is
   legs(rig, F.breeches);
   hands(rig, F.skin);
   boots(rig, F.leatherDark, { top: 0.1 });
@@ -178,7 +183,7 @@ export function quartermaster() {
   // the apron: pale tanned leather, a bib over the chest and a long panel to the shin; the dark
   // ledger reads against it
   overTorso(rig, F.apron, { from: hy, arc: FRONT, pad: 0.014 });
-  skirt(rig, F.apron, { top: hy + 0.01, bottom: ky - 0.06, rTop: [0.118, 0.1], rBottom: [0.13, 0.116], arc: FRONT, panels: true, legFollow: 0.4, segs: 12, mirrored: true });
+  skirt(rig, F.apron, { top: hy + 0.01, bottom: ky - 0.06, rTop: [0.118, 0.1], rBottom: [0.13, 0.116], arc: FRONT, panels: true, legFollow: 0.4, segs: 12 });
   belt(rig, F.leatherDark, M.brass, { r: [0.12, 0.104], dy: 0.03, pouch: true });
   keyRing(rig, F, "R");
   // upright on the raised forearm, on its outer side, so it stands in front of the body

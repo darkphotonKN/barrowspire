@@ -53,9 +53,8 @@ export const KNOWN_CLIPPING = new Map([
   ["creature_troll_base", 10], // 9.42
   ["creature_zombie_base", 6.5], // 5.94
   ["creature_ghost_base", 7], // 6.50
-  ["folk_resident_trousers", 5], // 4.64
-  ["folk_spirewarden", 9.5], // 9.03
-  ["folk_quartermaster", 9], // 8.28
+  // the hub folk left it on 2026-11-12, re-baked on the garment weighting (FS-HF0WW § Change: The
+  // folk's legs stay under their clothes)
 ]);
 
 /**
@@ -67,7 +66,6 @@ export const MIRRORED_LEGACY = new Set([
   ...KNOWN_CLIPPING.keys(),
   "creature_ghoul_base",
   "creature_demon_base",
-  "folk_resident_skirt",
 ]);
 
 /** Whether any garment on the rig was made with `skirt({ mirrored: true })` (anatomy.js). */
