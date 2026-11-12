@@ -2,9 +2,11 @@
  * A field's **charted ground** (FS-P0HSP §D; CONTEXT.md "Charted ground"): the field's minimap fog,
  * on the minimap only and never on the screen, the character's own. The field is a grid of
  * {@link FIELD_CHART}.cell world px cells; a cell is charted once its centre lies within
- * {@link FIELD_CHART}.radius world px of the local player. Pure, no Phaser.
+ * {@link FIELD_CHART}.radius world px of the local player. Kept per character and field in this
+ * browser (ADR-0078), every read and write guarded. Pure, no Phaser.
  */
 
+import type { KeyValueStore } from "@/characters/roster";
 import type { Point } from "@/render/iso/projection";
 import type { WorldRect, WorldSize } from "./worldMap";
 
@@ -124,5 +126,76 @@ export class FieldChart {
     }
     done.push(...open.values());
     return done;
+  }
+}
+
+/** The store, reached lazily: reaching `window.localStorage` may itself throw, and the server render has none. */
+export type FieldChartStore = () => KeyValueStore | null;
+
+/** This browser's `localStorage`, or none while Next renders on the server. */
+export const browserFieldChartStore: FieldChartStore = () => (typeof window === "undefined" ? null : window.localStorage);
+
+/** Where this browser keeps a character's charted ground in a field (FS-P0HSP §D.25). */
+export const fieldChartKey = (characterId: string, fieldId: string) => `barrowspire_field_chart:${characterId}:${fieldId}`;
+
+/** The stored format's version (§D.25). */
+const FORMAT = 1;
+
+const toBase64 = (bits: Uint8Array) => {
+  let binary = "";
+  for (const b of bits) binary += String.fromCharCode(b);
+  return btoa(binary);
+};
+
+/** The stored bits for a field of `cols` × `rows`, or none where the value does not fit it now. */
+function storedBits(raw: string | null, cols: number, rows: number): Uint8Array | null {
+  if (raw === null) return null;
+  const value = JSON.parse(raw) as { v?: unknown; cell?: unknown; cols?: unknown; rows?: unknown; bits?: unknown };
+  if (value.v !== FORMAT || value.cell !== FIELD_CHART.cell || value.cols !== cols || value.rows !== rows) return null;
+  if (typeof value.bits !== "string") return null;
+  const bits = Uint8Array.from(atob(value.bits), (c) => c.charCodeAt(0));
+  return bits.length === Math.ceil((cols * rows) / 8) ? bits : null;
+}
+
+/**
+ * The character's charted ground in this field, as this browser kept it (§D.25), else none: no
+ * active character, no store, a store that throws, a value that does not parse, or one whose
+ * version, cell, columns or rows do not fit the field now (a resized field) all start uncharted,
+ * and nothing throws (§D.26).
+ */
+export function readFieldChart(store: FieldChartStore, characterId: string | null, fieldId: string, size: WorldSize): FieldChart {
+  const chart = new FieldChart(size);
+  if (!characterId) return chart;
+  try {
+    const bits = storedBits(store()?.getItem(fieldChartKey(characterId, fieldId)) ?? null, chart.cols, chart.rows);
+    if (bits) chart.union(bits);
+  } catch {
+    // unreadable: charting lives for this visit only
+  }
+  return chart;
+}
+
+/**
+ * Keeps `chart` in this browser for the character in this field (§D.25): unioned with what is
+ * stored at this moment, so two tabs on one character never lose each other's ground, the chart
+ * taking the stored ground in too. With no active character nothing is kept; a store that is
+ * missing, blocked or full keeps nothing, and nothing throws (§D.26).
+ */
+export function writeFieldChart(store: FieldChartStore, characterId: string | null, fieldId: string, chart: FieldChart): void {
+  if (!characterId) return;
+  try {
+    const kv = store();
+    if (!kv) return;
+    const key = fieldChartKey(characterId, fieldId);
+    let stored: Uint8Array | null = null;
+    try {
+      stored = storedBits(kv.getItem(key), chart.cols, chart.rows);
+    } catch {
+      // a stored value that does not parse is written over
+    }
+    if (stored) chart.union(stored);
+    kv.setItem(key, JSON.stringify({ v: FORMAT, cell: FIELD_CHART.cell, cols: chart.cols, rows: chart.rows, bits: toBase64(chart.bits) }));
+  } catch {
+    // a blocked or full store keeps nothing: the ground lives for this visit
   }
 }

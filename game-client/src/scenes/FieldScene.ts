@@ -71,7 +71,15 @@ import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
 import { afterFrameSetUp, anchorAt, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 import { usePartyStore } from "@/stores/partyStore";
-import { FieldChart, FIELD_CHART } from "@/ui/fieldChart";
+import { useGameStore } from "@/stores/gameStore";
+import {
+  FIELD_CHART,
+  browserFieldChartStore,
+  readFieldChart,
+  writeFieldChart,
+  type FieldChart,
+  type FieldChartStore,
+} from "@/ui/fieldChart";
 import { fieldMap } from "@/ui/fieldMap";
 import { WorldMinimap, minimapRect, type MinimapStage } from "@/ui/minimap";
 import {
@@ -225,8 +233,14 @@ export class FieldScene extends Phaser.Scene {
   private fieldMinimap?: WorldMinimap;
   /** What the field's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
-  /** This visit's charted ground (FS-P0HSP §D): the player's own, made at the first state. */
+  /** This visit's charted ground (FS-P0HSP §D): the player's own, read at the first state. */
   private chart?: FieldChart;
+  /** Where this browser keeps charted ground (ADR-0078). */
+  private readonly chartStore: FieldChartStore = browserFieldChartStore;
+  /** Whose ground it is: the active character as the map was built, for this whole visit. */
+  private chartOwner: string | null = null;
+  /** The chart's version last written to this browser, and when (the scene's clock). */
+  private chartSaved?: { version: number; at: number };
   /** The field's walls and gates as last sent: what its map is built from with the chart. */
   private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
   /** What the map last drew (the chart's version, the walls' count), and when (the scene's clock): a redraw waits {@link FIELD_CHART}.redraw. */
@@ -533,10 +547,14 @@ export class FieldScene extends Phaser.Scene {
     this.invitePrompt = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
+    // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
+    this.saveFieldChart(true);
     this.fieldMinimap?.destroy();
     this.fieldMinimap = undefined;
     this.minimapStage = undefined;
     this.chart = undefined;
+    this.chartSaved = undefined;
+    this.chartOwner = null;
     this.mapDrawn = undefined;
     this.mapField = { walls: [], gates: [] };
     this.mapAllies = [];
@@ -576,6 +594,7 @@ export class FieldScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.sendMovementIntent();
     this.drawFieldMap();
+    this.saveFieldChart();
     this.fight?.update(delta);
     this.drainFallen(this.time.now);
     for (const view of this.views.values()) {
@@ -694,7 +713,10 @@ export class FieldScene extends Phaser.Scene {
     if (!this.fieldMinimap) {
       if (!this.minimapStage) return;
       this.fieldMinimap = new WorldMinimap(this.minimapStage, this.size, () => viewport.renderScale);
-      this.chart = new FieldChart(this.size);
+      // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
+      this.chartOwner = useGameStore.getState().activeCharacterId;
+      this.chart = readFieldChart(this.chartStore, this.chartOwner, this.field, this.size);
+      this.chartSaved = { version: this.chart.version, at: this.time.now };
       // the mode this browser kept, in a run, the town or another field (FS-P0HSP §F.32)
       this.minimapMode = readMinimapMode(this.minimapStore);
       this.fieldMinimap.setMode(this.minimapMode);
@@ -704,6 +726,7 @@ export class FieldScene extends Phaser.Scene {
     if (me) this.chart?.chartAround(me.position);
     this.mapField = { walls: state.walls ?? this.mapField.walls, gates: state.gates ?? this.mapField.gates };
     this.drawFieldMap();
+    this.saveFieldChart();
     const members = usePartyStore.getState().party?.members.map((m) => m.player_id) ?? [];
     this.fieldMinimap.party(partyOnMap(state, members));
     this.mapAllies = (state.other_players ?? []).filter((p) => members.includes(p.id)).map((p) => p.entity_id);
@@ -727,6 +750,23 @@ export class FieldScene extends Phaser.Scene {
     if (drawn && now - drawn.at < FIELD_CHART.redraw) return;
     this.mapDrawn = { version, walls, at: now };
     map.show(fieldMap(chart, this.mapField, this.size));
+  }
+
+  /**
+   * The charted ground kept in this browser (FS-P0HSP §D.25, ADR-0078): written, unioned with what
+   * is stored, no sooner than {@link FIELD_CHART}.save since the last write and only while new
+   * ground has been charted; at the scene's end (`final`) whenever anything is unwritten. A number
+   * compare while nothing is new.
+   */
+  private saveFieldChart(final = false): void {
+    const chart = this.chart;
+    const saved = this.chartSaved;
+    if (!chart || !saved || chart.version === saved.version) return;
+    // the scene's clock is gone with a destroyed game: the last write asks it nothing
+    const now = final ? saved.at : this.time.now;
+    if (!final && now - saved.at < FIELD_CHART.save) return;
+    writeFieldChart(this.chartStore, this.chartOwner, this.field, chart);
+    this.chartSaved = { version: chart.version, at: now };
   }
 
   /** The field's minimap at the top of the top-right column, right-aligned on its x (FS-P0HSP §G.35). */

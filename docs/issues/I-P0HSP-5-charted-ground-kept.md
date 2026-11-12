@@ -1,9 +1,9 @@
 ---
 id: I-P0HSP-5
-status: open
+status: done
 implements: FS-P0HSP
 blocked_by: [I-P0HSP-4]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-P0HSP slice 5: charted ground kept per character and field in the browser; the guideline and CONTEXT (game-client)"
 ---
 Implements FS-P0HSP §D, §H
@@ -30,13 +30,13 @@ nothing thrown. Then the guideline and CONTEXT say what the town's and fields' m
 
 ## Acceptance Criteria
 
-- [ ] FS-P0HSP §Acceptance Criteria: the stored chart (key, format, union, cadence, scene end, read at
+- [x] FS-P0HSP §Acceptance Criteria: the stored chart (key, format, union, cadence, scene end, read at
       start, every failure kept to the visit, nothing thrown) (`fieldChart.test.ts` with a fake store).
-- [ ] Two characters and two fields kept apart; a second visit shows the first's ground (scene test).
-- [ ] The guideline bullet and the CONTEXT entry; no gallery card.
-- [ ] Headless captures of the Forest part-charted at 1080 × 720 and 1280 × 720, render scales 1
+- [x] Two characters and two fields kept apart; a second visit shows the first's ground (scene test).
+- [x] The guideline bullet and the CONTEXT entry; no gallery card.
+- [x] Headless captures of the Forest part-charted at 1080 × 720 and 1280 × 720, render scales 1
       and 2, looked at by eye.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] Typecheck, lint and the full vitest suite pass.
 
 ## Blocked By
 
@@ -52,3 +52,18 @@ FS-P0HSP §D.25–§D.27, §H.39–§H.41; User Stories 13, 14, 24.
   in the Meadows; a stored value with `cols` 78 for a field now 80 wide reads as empty; a store whose
   `setItem` throws leaves the chart intact and throws nothing.
 - GREEN: the read, the unioning write, then the scene's cadence and scene-end write.
+
+## Status
+
+Done 2026-11-12. Decision recorded first as ADR-0078 (linked from the FS). `ui/fieldChart.ts`:
+`fieldChartKey`, `readFieldChart`, `writeFieldChart` (`{"v":1,"cell":40,"cols","rows","bits"}`,
+bits base64 row by row, lowest bit first; the write unions with the stored value and takes it into
+the live chart; every reach, read, parse and write guarded; no active character keeps nothing).
+`FieldScene` reads at the first state for the active character and field (the owner fixed for the
+visit), writes at most every 2 s while new ground is charted (a number compare otherwise) and once
+more in `release` on shutdown or destroy, never asking a destroyed scene's clock. Guideline "Town
+and field minimap" bullet after "Map overlay"; `CONTEXT.md` "Minimap" names the town and the
+fields, "Charted ground" points at ADR-0078; no gallery card (HUD chrome is not a tracked family).
+Captures (headless stand-in, not the live scene: the Forest's fixture walls walked part-way from the
+road home, the real FieldChart, fieldMap and WorldMinimap) in the session scratchpad
+`hub-minimap/forest-{normal,enlarged,overlay}-{1080,1280}x720-x{1,2}.png`, looked at.
