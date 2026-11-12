@@ -7,7 +7,7 @@
 import type { OpenReadyCheck, ReadyCheckState } from "@/stores/partyStore";
 import { COUNTDOWN_BAR_H, countdownBarRect } from "./countdownBar";
 import { NO_NAME } from "./partyNotice";
-import { PARTY_PANEL_W, PARTY_PANEL_X, type Rect } from "./partyPanelLayout";
+import { PARTY_PANEL_W, partyPanelLeft, type Rect } from "./partyPanelLayout";
 import { INVITE_PROMPT_Y } from "./partyInvitePromptLayout";
 
 export const READY_LABEL = { accept: "Accept", decline: "Decline" } as const;
@@ -123,7 +123,7 @@ export function readyCheckFrame(
 ): ReadyCheckFrame {
   const centred = Math.round((canvasWidth - READY_CHECK_W) / 2);
   const x = panelOpen
-    ? Math.max(centred, PARTY_PANEL_X + PARTY_PANEL_W + PANEL_GAP)
+    ? Math.max(centred, partyPanelLeft(canvasWidth) + PARTY_PANEL_W + PANEL_GAP)
     : centred;
   const y = READY_CHECK_Y;
   const inner = { x: x + PAD, width: READY_CHECK_W - PAD * 2 };

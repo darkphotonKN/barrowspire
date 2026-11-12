@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OpenReadyCheck } from "@/stores/partyStore";
-import { PARTY_PANEL_W, PARTY_PANEL_X } from "./partyPanelLayout";
+import { PARTY_PANEL_W, partyPanelLeft } from "./partyPanelLayout";
 import {
   READY_CHECK_W,
   READY_CHECK_Y,
@@ -148,8 +148,17 @@ describe("readyCheckFrame (FS-BJNYC R23: where the popup sits)", () => {
 
   it("should step right of the open party panel", () => {
     const f = readyCheckFrame(2, { canvasWidth: 1080, panelOpen: true });
-    expect(f.panel.x).toBeGreaterThan(PARTY_PANEL_X + PARTY_PANEL_W);
+    expect(f.panel.x).toBeGreaterThan(partyPanelLeft(1080) + PARTY_PANEL_W);
   });
+
+  it.each([1080, 1280])(
+    "should step 12 px right of the centred party panel in a %i-wide view, at y 92 (FS-R82NV § Change C6)",
+    (width) => {
+      const f = readyCheckFrame(2, { canvasWidth: width, panelOpen: true });
+      expect(f.panel.x).toBe(partyPanelLeft(width) + PARTY_PANEL_W + 12);
+      expect(f.panel.y).toBe(92);
+    },
+  );
 });
 
 // FS-B3NDZ §Requirements 1, 2, 9, 10. I-B3NDZ-1: the countdown bar along the popup's foot.

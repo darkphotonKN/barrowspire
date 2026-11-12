@@ -665,3 +665,5 @@ inbound action.
   2026-11-03, charter addendum.)*
 - **Waiting for settlement through another mechanism** (polling items-service for IN_RUN gear,
   for instance). The settling key is the one signal. *(Added 2026-11-03, charter addendum.)*
+
+## Change: Panel shortcut icons on the HUD → FS-3EBCA

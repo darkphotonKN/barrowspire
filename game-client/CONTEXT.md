@@ -160,7 +160,9 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   "inbox" or "email" (the account's email is a different thing on the web pages). Maps to
   notification-service's Mailbox and `/api/mail/*`.
 - **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
-  in Phaser with a small **wax seal**. Not an emoji and not a Heroicon (the HUD is canvas).
+  in Phaser with a small **wax seal**, the **corner row**'s Mail icon. Not an emoji and not a
+  Heroicon (the HUD is canvas). Its hover label reads "Mailbox" (FS-1GZGD § Change, 2026-11-12);
+  outside the town the row shows it greyed, "Mailbox · town only".
 - **Wax seal** (on the envelope) — the indicator: lit, with a count, while any letter is unread
   or still holds unclaimed enclosures; dark only when everything is read and claimed. The
   **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
@@ -496,8 +498,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Unsafe find** (marking): the border and tip note on an item picked up in this run, which
   is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
+- **Corner row** (FS-3EBCA): the row of drawn panel icons in the bottom-right corner of every
+  world, from the right **Menu** (a gear: one Esc press), **Character** (the gear and bag
+  overlay), **Party** (the party panel) and the **Mailbox** icon (the envelope; greyed outside the
+  town). Each
+  names itself and its key under the pointer. "Character" is the screen's name for the gear and
+  bag overlay's icon only; the overlay keeps its own titles. Not the party frames, not the
+  minimap's column.
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
-  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S).
+  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S),
+  standing directly above the **corner row** (FS-3EBCA).
   Never in the hub. The ability itself is game-service's term
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the

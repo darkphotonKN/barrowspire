@@ -481,3 +481,5 @@ the cost of the stats and notification side effects above.
 ## Change: Spire height and the climb → FS-M8CSE
 
 ## Change: Arrival card → FS-PQ2TW
+
+## Change: The ESC menu in a field world → FS-G4VMQ

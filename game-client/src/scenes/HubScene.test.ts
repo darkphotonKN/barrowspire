@@ -1494,6 +1494,69 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   });
 });
 
+// FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
+// icon's toggle under I's guards. I-3EBCA-1.
+describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
+  type Pressing = { pressEscape(): void; toggleGear(): void; partyPanel?: unknown };
+  function withParty(open = true) {
+    const env = hubOnStage();
+    const state = { open };
+    (env.hub as unknown as Pressing).partyPanel = {
+      isOpen: () => state.open,
+      close: () => {
+        const was = state.open;
+        state.open = false;
+        return was;
+      },
+      destroy: vi.fn(),
+    };
+    return { ...env, party: state, pressing: env.hub as unknown as Pressing };
+  }
+
+  it("should close an open party panel on ESC before it opens the menu", () => {
+    const { hub, keys, press, party } = withParty();
+    press(keys.esc);
+    expect(party.open).toBe(false);
+    expect(hub.menu).toBeUndefined();
+    press(keys.esc);
+    expect(hub.menu).toBeDefined();
+  });
+
+  it("should close the gear overlay before the party panel", () => {
+    const { keys, press, party, gear } = withParty();
+    gear.toggle();
+    press(keys.esc);
+    expect(gear.isOpen()).toBe(false);
+    expect(party.open).toBe(true);
+  });
+
+  it("should do on the Menu icon exactly what one ESC does: open, then close the menu", () => {
+    const { hub, pressing } = withParty(false);
+    pressing.pressEscape();
+    expect(hub.menu).toBeDefined();
+    pressing.pressEscape();
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should do nothing on the Menu icon while a dialogue is open", () => {
+    const { hub, pressing } = withParty(false);
+    hub.dialogue = {};
+    pressing.pressEscape();
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should toggle the gear overlay on the Character icon, not while the menu or a dialogue is open", () => {
+    const { hub, gear, pressing } = withParty(false);
+    pressing.toggleGear();
+    expect(gear.isOpen()).toBe(true);
+    pressing.toggleGear();
+    expect(gear.isOpen()).toBe(false);
+    hub.dialogue = {};
+    pressing.toggleGear();
+    expect(gear.isOpen()).toBe(false);
+  });
+});
+
 describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 26)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

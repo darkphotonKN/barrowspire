@@ -357,3 +357,5 @@ changes.
 - Resource numbers on the card (the cost or the pool is not printed on it).
 
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
+
+## Change: Panel shortcut icons on the HUD → FS-3EBCA

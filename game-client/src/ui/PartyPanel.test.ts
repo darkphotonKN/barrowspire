@@ -10,8 +10,8 @@ import type { PartyInviteFieldHandle } from "./partyInviteField";
 import {
   PARTY_HINT,
   PARTY_PANEL_W,
-  PARTY_PANEL_X,
-  PARTY_PANEL_Y,
+  partyPanelLeft,
+  partyPanelTop,
   type FocusedElement,
 } from "./partyPanelLayout";
 
@@ -24,6 +24,9 @@ interface FakeText {
   destroyed: boolean;
   interactive: boolean;
   onPress?: () => void;
+  onOver?: () => void;
+  colour?: string;
+  at?: { x: number; y: number };
 }
 
 function fakeScene() {
@@ -49,8 +52,9 @@ function fakeScene() {
     self.destroy = () => undefined;
     return self;
   };
-  const text = (_x: number, _y: number, content: string) => {
+  const text = (x: number, y: number, content: string) => {
     const t: FakeText = {
+      at: { x, y },
       content,
       alpha: 1,
       destroyed: false,
@@ -65,8 +69,10 @@ function fakeScene() {
       setInteractive: () => ((t.interactive = true), self),
       on: (event: string, cb: () => void) => {
         if (event === "pointerdown") t.onPress = cb;
+        if (event === "pointerover") t.onOver = cb;
         return self;
       },
+      setColor: (c: string) => ((t.colour = c), self),
       width: content.length * 7,
       height: 18,
       setPosition: () => self,
@@ -91,6 +97,7 @@ function fakeField() {
     enabled: true,
     shown: false,
     destroyed: false,
+    at: undefined as { x: number; y: number } | undefined,
     submit: (_v: string) => undefined as void,
   };
   const handle: PartyInviteFieldHandle = {
@@ -101,7 +108,7 @@ function fakeField() {
       field.value = v;
     },
     setEnabled: (e) => void (field.enabled = e),
-    moveTo: () => undefined,
+    moveTo: (r) => void (field.at = r),
     show: () => void (field.shown = true),
     hide: () => void (field.shown = false),
     blur: () => undefined,
@@ -472,19 +479,83 @@ describe("PartyPanel at a render scale (FS-ZAJMH R15: Phaser's pointer.x/y are b
       env.handle.blur = blur;
       env.pressT();
       // near the panel's right edge: its backing px, read as logical units, lie past it
+      const left = partyPanelLeft(1080);
+      const top = partyPanelTop(720);
       const onPanel = {
-        x: PARTY_PANEL_X + PARTY_PANEL_W - 10,
-        y: PARTY_PANEL_Y + 20,
+        x: left + PARTY_PANEL_W - 10,
+        y: top + 20,
       };
       expect(env.panel.covers(onPanel.x, onPanel.y)).toBe(true);
       expect(env.panel.covers(onPanel.x * rs, onPanel.y * rs)).toBe(false);
       env.input.emit("pointerdown", { x: onPanel.x * rs, y: onPanel.y * rs });
       expect(blur).not.toHaveBeenCalled();
-      // left of the panel: its backing px, read as logical units, lie on it
-      const offPanel = { x: PARTY_PANEL_X - 60, y: PARTY_PANEL_Y + 20 };
+      // above and left of the centred panel: its backing px, read as logical units, lie on it
+      const offPanel = { x: left - 90, y: top - 30 };
       expect(env.panel.covers(offPanel.x * rs, offPanel.y * rs)).toBe(true);
       env.input.emit("pointerdown", { x: offPanel.x * rs, y: offPanel.y * rs });
       expect(blur).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+// FS-R82NV § Change: The party panel closes on its × and stands nearer the middle. I-R82NV-13.
+describe("PartyPanel (FS-R82NV § Change C1: the × closes it)", () => {
+  it("should draw an amber × at the panel's top right, and close the panel on a press", () => {
+    const env = setup();
+    env.pressT();
+    const x = env.find("×")!;
+    expect(x.interactive).toBe(true);
+    expect(x.at).toEqual({ x: partyPanelLeft(1080) + 300 - 12 - 12, y: partyPanelTop(720) + 12 + 12 });
+    x.onPress?.();
+    expect(env.panel.isOpen()).toBe(false);
+    expect(env.find("×")).toBeUndefined();
+  });
+
+  it("should brighten the × under the pointer", () => {
+    const env = setup();
+    env.pressT();
+    const x = env.find("×")!;
+    const before = x.colour;
+    x.onOver?.();
+    expect(x.colour).toBeDefined();
+    expect(x.colour).not.toBe(before);
+  });
+});
+
+describe("PartyPanel (FS-R82NV § Change C2: Esc closes it; FS-3EBCA R8: the Party icon toggles it)", () => {
+  it("should report whether close() closed anything", () => {
+    const env = setup();
+    expect(env.panel.close()).toBe(false);
+    env.pressT();
+    expect(env.panel.close()).toBe(true);
+    expect(env.panel.isOpen()).toBe(false);
+  });
+
+  it("should toggle on toggle() unless something else owns the screen, a focused text field or not", () => {
+    const env = setup({ active: { tagName: "INPUT", type: "text" } });
+    env.panel.toggle();
+    expect(env.panel.isOpen()).toBe(true);
+    env.panel.toggle();
+    expect(env.panel.isOpen()).toBe(false);
+    env.state.blocked = true;
+    env.panel.toggle();
+    expect(env.panel.isOpen()).toBe(false);
+  });
+});
+
+describe("PartyPanel (FS-R82NV § Change C3–C5: centred, following the view)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should move the open panel and its invite field when the view widens", () => {
+    const env = setup();
+    env.pressT();
+    expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(true);
+    const fieldAt = env.field.at!.x;
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.panel.relayout();
+    expect(env.panel.covers(partyPanelLeft(1280) + 5, partyPanelTop(720) + 5)).toBe(true);
+    expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(false);
+    expect(env.field.at!.x).toBe(fieldAt + 100);
+    expect(env.find("×")!.at!.x).toBe(partyPanelLeft(1280) + 300 - 24);
+  });
 });

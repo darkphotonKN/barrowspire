@@ -288,3 +288,5 @@ default: small and testable; no human-lane split)**. Everything else is game-cli
   id), or making him the stash keeper.
 - Pausing or slowing the game while the overlay is open.
 - The matchmaker / match queue (FS-K2HKP).
+
+## Change: Panel shortcut icons on the HUD → FS-3EBCA

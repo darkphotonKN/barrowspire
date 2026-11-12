@@ -5,7 +5,10 @@ import {
   isTextEntry,
   mayTogglePartyPanel,
   partyClassLabel,
+  PARTY_PANEL_TOP_SHARE,
+  PARTY_PANEL_W,
   partyPanelFrame,
+  partyPanelLeft,
   partyPanelTitle,
   partyWhereLabel,
 } from "./partyPanelLayout";
@@ -166,5 +169,52 @@ describe("partyPanelFrame (FS-R82NV R28–R30)", () => {
       expect(rows[i].row.y).toBeGreaterThanOrEqual(
         rows[i - 1].row.y + rows[i - 1].row.height,
       );
+  });
+});
+
+// FS-R82NV § Change: The party panel closes on its × and stands nearer the middle (C1, C3, C4).
+describe("partyPanelFrame (FS-R82NV § Change C3: centred, its top at 18% of the view)", () => {
+  const within = (
+    inner: { x: number; y: number; width: number; height: number },
+    outer: { x: number; y: number; width: number; height: number },
+  ) =>
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height;
+
+  it.each([
+    [1080, 390],
+    [1280, 490],
+  ])("should centre the panel across a %i-wide view, its top at 130", (width, x) => {
+    const { panel } = partyPanelFrame(partyActions(party(2), ME, "hub"), {
+      width,
+      height: 720,
+    });
+    expect(panel.x).toBe(x);
+    expect(panel.y).toBe(130);
+    expect(panel.width).toBe(PARTY_PANEL_W);
+    expect(partyPanelLeft(width)).toBe(x);
+    expect(PARTY_PANEL_TOP_SHARE).toBe(0.18);
+  });
+
+  it("should keep the invite field and its button inside the moved panel (C4)", () => {
+    const frame = partyPanelFrame(partyActions(null, ME, "hub"), {
+      width: 1280,
+      height: 720,
+    });
+    expect(within(frame.inviteField, frame.panel)).toBe(true);
+    expect(within(frame.inviteButton, frame.panel)).toBe(true);
+  });
+
+  it("should put a 24 x 24 close box at the panel's top right, in the title row (C1)", () => {
+    const frame = partyPanelFrame(partyActions(party(2), ME, "hub"), {
+      width: 1080,
+      height: 720,
+    });
+    const { close, panel, title } = frame;
+    expect(close).toEqual({ x: 390 + 300 - 12 - 24, y: 130 + 12, width: 24, height: 24 });
+    expect(close.y).toBe(title.y);
+    expect(within(close, panel)).toBe(true);
   });
 });

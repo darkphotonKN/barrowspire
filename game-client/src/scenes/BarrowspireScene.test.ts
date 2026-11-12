@@ -83,6 +83,7 @@ const { MonsterRoster } = await import("@/render/creatures");
 const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
+const { ABILITY_CARD_PLACE } = await import("@/ui/hudCornerLayout");
 const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
@@ -2194,6 +2195,31 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     expect(text("Dash")).toBeUndefined();
   });
 
+  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+    const { run, carded } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    expect((carded.abilityHud as unknown as { place: unknown }).place).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should stand the dead spectator's leave button above the corner row (FS-3EBCA R14)", () => {
+    const { run, live } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    // Watch the delve: the card goes down and the button takes its corner (FS-QPDKN req 7, 10)
+    (run as unknown as { startWatching(): void }).startWatching();
+    const labels = live().filter((m) => m.args[2] === "LEAVE THE BARROW");
+    expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 116, viewport.height - 89]);
+  });
+
+  it("should send no attack or cast for a press on the corner row (FS-3EBCA R10)", () => {
+    const { run, carded, sent, rightClick } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    carded.bindRunInput();
+    (run as unknown as { corner: unknown }).corner = { covers: () => true };
+    sent.mockClear();
+    rightClick();
+    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(false);
+  });
+
   it("should never be up with the leave button", () => {
     const { run, carded, text } = cardOnStage();
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
@@ -4100,6 +4126,24 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(option("back")).toBeDefined();
     expect(labels()).toContain("Fall where you stand  [1]");
     expect(labels()).toContain("Back  [Esc]");
+  });
+
+  it("should close an open party panel on ESC before it opens the menu (FS-R82NV § Change C2)", () => {
+    const { run, keys, press } = menuOnStage();
+    let open = true;
+    (run as unknown as { partyPanel: unknown }).partyPanel = {
+      isOpen: () => open,
+      close: () => {
+        const was = open;
+        open = false;
+        return was;
+      },
+    };
+    press(keys.esc);
+    expect(open).toBe(false);
+    expect(run.menu).toBeUndefined();
+    press(keys.esc);
+    expect(run.menu).toBeDefined();
   });
 
   it("should close the menu on a second ESC, and on Back, taking its hit areas with it", () => {
