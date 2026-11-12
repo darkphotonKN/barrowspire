@@ -66,6 +66,9 @@ const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { EventEmitter } = await import("eventemitter3");
+const { PartyPanel } = await import("@/ui/PartyPanel");
+const { createPartyStore } = await import("@/stores/partyStore");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
@@ -1927,7 +1930,8 @@ describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)",
   });
 });
 
-// FS-R82NV § Change C2: in a field one Esc closes the gear overlay, then the party panel. I-R82NV-13.
+// FS-R82NV § Change C2: in a field one Esc closes one thing. I-R82NV-13. The party panel is drawn
+// over the gear overlay, so it goes first (FS-3EBCA R8; FS-R82NV § Change C8). I-3EBCA-7.
 describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
   function keyed() {
     const keys = new Map<string, () => void>();
@@ -1963,10 +1967,10 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
     return { esc: () => keys.get("keydown-ESC")!(), open: () => ({ gear, party }) };
   }
 
-  it("should close the gear overlay first, then the party panel", () => {
+  it("should close the party panel first, drawn over the gear overlay, then the overlay", () => {
     const f = keyed();
     f.esc();
-    expect(f.open()).toEqual({ gear: false, party: true });
+    expect(f.open()).toEqual({ gear: true, party: false });
     f.esc();
     expect(f.open()).toEqual({ gear: false, party: false });
   });
@@ -2044,15 +2048,17 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
     expect(field.menu).toBeUndefined();
   });
 
-  it("should close the gear overlay, then the party panel, before the menu opens (C1)", () => {
+  // the party panel is drawn over the gear overlay, so it goes first (FS-R82NV § Change C2, C8)
+  it("should close the party panel, then the gear overlay, before the menu opens (C1)", () => {
     const { field, key, state } = menuedField();
     state.gear = true;
     state.party = true;
     key("ESC");
-    expect(state.gear).toBe(false);
+    expect(state.party).toBe(false);
+    expect(state.gear).toBe(true);
     expect(field.menu).toBeUndefined();
     key("ESC");
-    expect(state.party).toBe(false);
+    expect(state.gear).toBe(false);
     expect(field.menu).toBeUndefined();
     key("ESC");
     expect(field.menu).toBeDefined();
@@ -2088,5 +2094,100 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
     key("C");
     expect(state.gear).toBe(false);
     expect(field.takesPointer(400, 300, true)).toBe(true);
+  });
+});
+
+/**
+ * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
+ * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ */
+function partyPanelOn(refused: () => boolean) {
+  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const keyboard = new EventEmitter();
+  const scene = {
+    add: { graphics: () => any, text: () => any },
+    input: Object.assign(new EventEmitter(), { keyboard }),
+    events: new EventEmitter(),
+  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
+  const panel = new PartyPanel(scene, {
+    store: createPartyStore({ selfId: () => "me" }),
+    world: () => null,
+    selfId: () => "me",
+    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
+    makeField: () => ({
+      value: "",
+      setEnabled: vi.fn(),
+      moveTo: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      blur: vi.fn(),
+      destroy: vi.fn(),
+    }),
+    activeElement: () => null,
+    blocked: refused,
+  });
+  return { panel, pressT: () => keyboard.emit("keydown-T") };
+}
+
+// FS-3EBCA R8 and FS-R82NV § Change C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
+// inventory or the character panel open the party panel would not open). I-3EBCA-7.
+describe("FieldScene the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
+  type Partied = {
+    add: unknown;
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    refusesParty(): boolean;
+    mountCorner(): void;
+  };
+
+  function partyInField() {
+    const field = new FieldScene() as unknown as Partied;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const zones: { args: unknown[]; handlers: Record<string, () => void> }[] = [];
+    const zone = (...args: unknown[]) => {
+      const z = { args, handlers: {} as Record<string, () => void> };
+      zones.push(z);
+      const self: unknown = new Proxy(() => self, {
+        get: (_t, prop) =>
+          prop === "on" ? (event: string, fn: () => void) => ((z.handlers[event] = fn), self) : () => self,
+      });
+      return self;
+    };
+    field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
+    const gear = { inventory: false, character: false };
+    field.equipment = { isOpen: () => gear.inventory || gear.character };
+    const party = partyPanelOn(() => field.refusesParty());
+    field.partyPanel = party.panel;
+    field.mountCorner();
+    const f = hudCorner.cornerIconFrame("party", viewport);
+    const pressIcon = () => zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
+    return { field, gear, party, pressIcon };
+  }
+
+  it.each([
+    ["the inventory", { inventory: true, character: false }],
+    ["the character panel", { inventory: false, character: true }],
+    ["both panels", { inventory: true, character: true }],
+  ])("should open and close the party panel on T and on the Party icon with %s open", (_open, open) => {
+    const { gear, party, pressIcon } = partyInField();
+    Object.assign(gear, open);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(true);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(false);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(true);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
+  });
+
+  it("should still refuse T and the Party icon while the ESC menu is open", () => {
+    const { field, gear, party, pressIcon } = partyInField();
+    gear.inventory = true;
+    field.menu = {};
+    party.pressT();
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
   });
 });

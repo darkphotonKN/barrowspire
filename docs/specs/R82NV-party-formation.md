@@ -339,6 +339,10 @@ toggles the panel as T does. R28's place ("right of the party frames", `PARTY_PA
 also restated in R34's amendment) is replaced by C3; R28's T rule and R29–R31 stand. The text
 above is not edited; where this section and it disagree, this section wins.
 
+Amended the same day, before the browser check, by the owner's finding "開道具欄跟角色欄時開不了隊伍"
+(with the inventory or the character panel open, the party panel cannot be opened): C8, and C2's
+order with it. FS-3EBCA R8 takes the overlay out of T's and the Party icon's rule.
+
 ### Requirements
 
 C1. **An × closes the panel.** At the panel's top right, in its title row: "×" at 22 px in
@@ -348,13 +352,14 @@ C1. **An × closes the panel.** At the panel's top right, in its title row: "×"
     reused. **(charter default: owner, "右上角x關閉"; the look: the letter panel's)**
 C2. **Esc closes it**, as it closes the letter panel: one press closes one thing. The order, which
     extends FS-HRH2J R5's: in the town, a dialogue's own Esc first (unchanged), then the letter
-    panel, then the gear overlay, then the party panel, and only then does Esc open the ESC menu;
-    in a run, the gear overlay, then the party panel, then the run's ESC menu; in a field, as in
-    the town: the gear overlay, then the party panel, then the field's ESC menu (FS-G4VMQ
+    panel, then the party panel, then the gear overlay, and only then does Esc open the ESC menu;
+    in a run, the party panel, then the gear overlay, then the run's ESC menu; in a field, as in
+    the town: the party panel, then the gear overlay, then the field's ESC menu (FS-G4VMQ
     § Change: The ESC menu in a field world). The corner row's Menu icon is one Esc press
     (FS-3EBCA R6). Esc in the invite field still only lets go of the field.
     **(charter default: "consistent with the mailbox"; the order derived here: what is drawn on
-    top goes first, and the gear overlay is drawn over the panel)**
+    top goes first, and the party panel is drawn over the gear overlay (C8); it first put the
+    overlay first, when the overlay was drawn over the panel)**
 C3. **Its place: centred across, nearer the middle.** The panel's left edge is
     `round((view width − 300) / 2)` and its top edge `round(0.18 × view height)`, 130 at 720:
     named `PARTY_PANEL_TOP_SHARE`. At 1080 the panel spans x 390–690, at 1280 x 490–790. Its width
@@ -370,6 +375,17 @@ C6. **The invite prompts and the ready check stay where they are**: top centre a
     are"; derived here: the step-aside rule reads the panel's edge, so it follows the panel)**
 C7. **A press on the open panel stays the panel's** wherever it now stands (R28's `covers`): it
     is never an attack, a cast or a hold, and it keeps the invite field's focus.
+C8. **It opens over the inventory and the character panel.** T and the Party icon open and close
+    the panel whether or not the inventory, the character panel or both are open, in the town, a
+    field and a run (FS-3EBCA R8); the dialogue, the ESC menu, the letter panel, the run's end and
+    an open container still refuse them. The panel is drawn above the overlay's panels and their
+    × (depth 1110, over the overlay's 1100–1103, under the letter panel and the menu), overlapping
+    their inner edges a little at its centred place (C3). Its invite field shows and takes typing
+    over them, and keys typed into it (I, B, C, T, E, Q) reach none of the scene's keys, as
+    anywhere. A press, the pointer or the wheel at a point the panel covers is the panel's: the
+    overlay underneath wears, takes off, closes or scrolls nothing there and shows no hover or
+    tip. **(owner, 2026-11-12: "開道具欄跟角色欄時開不了隊伍"; the depth, the press rule and the Esc
+    order (C2) derived here: the panel opened last over the overlay is the one on top)**
 
 ### Acceptance Criteria
 
@@ -379,13 +395,14 @@ C7. **A press on the open panel stays the panel's** wherever it now stands (R28'
 - [ ] A view-size change while the panel is open re-places the panel, its × and the invite field.
 - [ ] With the panel open, the invite prompts and the ready check stand at x 702 (1080) and do not overlap the panel; with it shut they are centred as before.
 - [ ] T still toggles the panel under its existing rule.
+- [ ] With the inventory, the character panel or both open, T and the Party icon open and close the panel in the town, a field and a run; it is drawn above them; the first Esc closes it and the second the overlay; its invite field takes typing; a press on it does nothing in the overlay underneath.
 
 ### Edge States
 
 - **Panel and letter panel both open (town):** the letter panel is drawn over it and the invite
   field hides (the scene's `blocked`); Esc closes the letter panel first.
-- **Panel and gear overlay both open:** the overlay is drawn over the panel; Esc closes the
-  overlay first.
+- **Panel and gear overlay both open:** the panel is drawn over the overlay, whichever opened
+  first; Esc closes the panel first, then the overlay (C2, C8).
 - **A full party of four:** the panel grows down to about y 414 and may cover the player's head at
   the view's centre; it is still a top-half panel, and the player can close it with ×, Esc, T or
   the Party icon.

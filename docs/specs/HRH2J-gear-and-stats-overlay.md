@@ -357,7 +357,8 @@ C11. **Where "the gear overlay is open" is asked, either panel counts.** Every r
     open overlay (the town's chat input, T, the envelope and the invite prompts; a run's T; a
     field's chat input and T; FS-3EBCA R8) reads it as "the inventory or the character panel is
     open". **(derived here: those rules keep one thing over the world at a time, and either panel
-    is such a thing)**
+    is such a thing)** T and the Party icon no longer name it: the party panel opens over either
+    panel (FS-3EBCA R8; FS-R82NV § Change C8; owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍").
 C12. **The panels stop above the corner row.** Both panels' bottom edge stands 70 px above the
     view's bottom (FS-3EBCA's `CORNER_ROW_CLEARANCE`: the row's margin 16, its plate 46 and its gap
     8, the line the ability card already keeps, FS-3EBCA R13); their top stays at 4% of the height,

@@ -5,8 +5,9 @@
  * beside it, both live in the town and a field and greyed in a run, FS-NCC9J R23), Kick and Transfer on each other member for the leader,
  * Leave for any member, and a reserved slot for the loot rule (FS-V780R). Actions the server would refuse are greyed by role and by lock (`partyActions`).
  *
- * A carved panel on the game palette at the HUD's depth, centred across the view with its top at
- * 18% of its height, and an × at its top right that closes it, as Esc does (FS-R82NV § Change:
+ * A carved panel on the game palette above the gear overlay's panels (`PARTY_PANEL_DEPTH`, so it
+ * opens over the inventory and the character panel, FS-R82NV § Change C8), centred across the
+ * view with its top at 18% of its height, and an × at its top right that closes it, as Esc does (FS-R82NV § Change:
  * The party panel closes on its × and stands nearer the middle). The open state lives in the
  * store, so walking into a field with the panel open finds it open there; the scene only mounts
  * it, and asks it to `relayout` when the view's size changes.
@@ -59,7 +60,10 @@ export interface PartyPanelDeps {
   makeField: PartyInviteFieldFactory;
   /** The element holding keyboard focus: T is a letter while it takes typing (R28). */
   activeElement: () => FocusedElement | null;
-  /** Whether a dialogue, a menu or an overlay owns the keys now. */
+  /**
+   * Whether a dialogue, a menu or the letter panel owns the keys now. Not the inventory or the
+   * character panel: the panel opens over them (FS-3EBCA R8).
+   */
   blocked: () => boolean;
 }
 
@@ -83,6 +87,12 @@ export function mountPartyPanel(
 }
 
 const HUD_DEPTH = 1000;
+/**
+ * The open panel's depth (FS-R82NV § Change C8): over the gear overlay's panels, their contents
+ * and their × (GEAR_OVERLAY_DEPTH 1100 to 1103), under the run's resolved card (1500), the letter
+ * panel (1800) and the menu (2000).
+ */
+export const PARTY_PANEL_DEPTH = 1110;
 const FONT_PX = 14;
 const SMALL_PX = 12;
 const TITLE_PX = 15;
@@ -101,7 +111,7 @@ const within = (r: Rect, x: number, y: number) =>
 /**
  * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
  * inert when not (amber means interactable, never otherwise). The party frames' Travel button is
- * drawn by it too (FS-NCC9J R28). Returns the label, for the caller to take down.
+ * drawn by it too (FS-NCC9J R28), in the HUD band. Returns the label, for the caller to take down.
  */
 export function drawHudButton(
   scene: Phaser.Scene,
@@ -110,6 +120,7 @@ export function drawHudButton(
   label: string,
   enabled: boolean,
   press: () => void,
+  depth = HUD_DEPTH,
 ): Phaser.GameObjects.Text {
   g.lineStyle(1, palette.frame, enabled ? 0.8 : 0.3);
   g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
@@ -121,7 +132,7 @@ export function drawHudButton(
       style(enabled ? palette.interactable : palette.hudFaint, SMALL_PX),
     )
     .setScrollFactor(0)
-    .setDepth(HUD_DEPTH)
+    .setDepth(depth)
     .setOrigin(0.5, 0.5);
   if (!enabled) return t.setAlpha(GREYED_ALPHA);
   return t.setInteractive({ useHandCursor: true }).on("pointerdown", press);
@@ -271,7 +282,7 @@ export class PartyPanel {
     const t = this.scene.add
       .text(x, y, content, style(colour, px))
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH);
+      .setDepth(PARTY_PANEL_DEPTH);
     this.texts.push(t);
     return t;
   }
@@ -284,7 +295,9 @@ export class PartyPanel {
     enabled: boolean,
     press: () => void,
   ): void {
-    this.texts.push(drawHudButton(this.scene, g, r, label, enabled, press));
+    this.texts.push(
+      drawHudButton(this.scene, g, r, label, enabled, press, PARTY_PANEL_DEPTH),
+    );
   }
 
   /**
@@ -293,7 +306,9 @@ export class PartyPanel {
    */
   private drawFrame(g: Phaser.GameObjects.Graphics, panel: Rect): void {
     const { glyph: x } = drawPanelFrame(this.scene, g, panel);
-    x.setScrollFactor(0).setDepth(HUD_DEPTH).setInteractive({ useHandCursor: true });
+    x.setScrollFactor(0)
+      .setDepth(PARTY_PANEL_DEPTH)
+      .setInteractive({ useHandCursor: true });
     this.texts.push(x);
     x.on("pointerdown", () => this.close());
     x.on("pointerover", () => lightClose(x, true));
@@ -317,7 +332,10 @@ export class PartyPanel {
       return;
     }
 
-    const g = this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
+    const g = this.scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(PARTY_PANEL_DEPTH);
     this.graphics = g;
     const { panel, title } = frame;
     this.drawFrame(g, panel);

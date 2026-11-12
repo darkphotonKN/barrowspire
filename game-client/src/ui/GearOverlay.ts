@@ -261,11 +261,17 @@ export class GearOverlay implements HudPanel, PurseShelf {
     height: number;
   };
 
-  /** `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37). */
+  /**
+   * `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37).
+   * `under` says whether a logical point lies under a panel drawn over the overlay (the party
+   * panel, FS-R82NV § Change C8): a press, the pointer or the wheel there is that panel's, not the
+   * overlay's.
+   */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly world?: WorldType,
+    private readonly under: (x: number, y: number) => boolean = () => false,
   ) {}
 
   // ── HudPanel ─────────────────────────────────────────────────────────────
@@ -1092,8 +1098,18 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   /** The pointer in logical units: Phaser's `pointer.x/y` are backing px (FS-ZAJMH R15). */
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    this.pointer = viewport.toLogical(pointer);
+    this.pointer = this.ownPoint(pointer);
     this.updateHover();
+  }
+
+  /**
+   * Where the pointer stands on the overlay, in logical units (Phaser's pointer.x/y are backing
+   * px, FS-ZAJMH R15): off every panel while a panel drawn over the overlay covers it, so nothing
+   * there hovers, lights or answers (FS-R82NV § Change C8).
+   */
+  private ownPoint(pointer: Phaser.Input.Pointer): { x: number; y: number } {
+    const at = viewport.toLogical(pointer);
+    return this.under(at.x, at.y) ? { x: -1, y: -1 } : at;
   }
 
   /**
@@ -1102,7 +1118,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
    * does nothing (R18).
    */
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    this.pointer = viewport.toLogical(pointer);
+    this.pointer = this.ownPoint(pointer);
     this.updateHover();
     if (pointer.button === 0) {
       const mark = this.closeAt(this.pointer.x, this.pointer.y);
@@ -1123,7 +1139,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     dy: number,
   ): void {
     const step = Math.sign(dy);
-    const at = viewport.toLogical(pointer);
+    const at = this.ownPoint(pointer);
     const scrolls = (g: ItemGrid | undefined): g is ItemGrid =>
       g !== undefined && g.visibleRows < g.rows && inRect(g.grid, at.x, at.y);
     /** A grid's first row a step on, kept so its last row stays in view. */

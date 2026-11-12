@@ -3203,8 +3203,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen);
-    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(this, () => !!this.menu || this.runEnded || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
+    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
@@ -3291,6 +3291,15 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): the menu, the run's
+   * end or an open container owns the screen. The inventory and the character panel do not: the
+   * party panel opens over them (FS-R82NV § Change C8).
+   */
+  private refusesParty(): boolean {
+    return !!this.menu || this.runEnded || !!this.containerView?.isOpen;
+  }
+
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
   private openHeldMessages(): void {
     this.held?.replay(this.oneShots ?? {});
@@ -3351,7 +3360,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-18Z5F R36). Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    const overlay = new GearOverlay(this, this.art, WorldType.Run);
+    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
+    const overlay = new GearOverlay(this, this.art, WorldType.Run, (x, y) => this.partyPanel?.covers(x, y) ?? false);
     return new EquipmentHud(
       overlay,
       {
@@ -5531,8 +5541,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * One ESC press (FS-R82NV § Change C2; FS-HRH2J R5): one press closes one thing, the open menu,
-   * then the gear and bag overlay, then the party panel (`escapeStep`); with nothing open the
-   * menu opens. Once the run has ended there is no menu to open or close.
+   * then the party panel, drawn over the overlay (§ Change C8), then the gear and bag overlay
+   * (`escapeStep`); with nothing open the menu opens. Once the run has ended there is no menu to
+   * open or close.
    */
   private pressEscape(): void {
     const step = escapeStep({

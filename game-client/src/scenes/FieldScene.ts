@@ -356,13 +356,22 @@ export class FieldScene extends Phaser.Scene {
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
     this.chatWindow = mountChatWindow(this, () => !this.menu && !this.equipment?.isOpen());
-    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(this, () => !!this.menu || !!this.equipment?.isOpen());
+    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
-    // the corner row, each press the key's own path; the Mailbox greyed, it is the town's (FS-3EBCA)
+    this.mountCorner();
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
+
+    // a stop, or the game's destroy mid-field (the page unmounts), which skips SHUTDOWN
+    onSceneEnd(this, (end) => this.release(end));
+  }
+
+  /** The corner row, each press the key's own path; the Mailbox greyed, it is the town's (FS-3EBCA). */
+  private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
         { icon: "menu", press: () => this.pressEscape() },
@@ -372,11 +381,15 @@ export class FieldScene extends Phaser.Scene {
         { icon: "mail", greyed: true },
       ],
     });
-    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
-    relayoutOn(this, () => this.relayoutHud());
+  }
 
-    // a stop, or the game's destroy mid-field (the page unmounts), which skips SHUTDOWN
-    onSceneEnd(this, (end) => this.release(end));
+  /**
+   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): the menu owns the
+   * screen. The inventory and the character panel do not: the party panel opens over them
+   * (FS-R82NV § Change C8).
+   */
+  private refusesParty(): boolean {
+    return !!this.menu;
   }
 
   /**
@@ -509,7 +522,8 @@ export class FieldScene extends Phaser.Scene {
    * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    const overlay = new GearOverlay(this, this.art, WorldType.Field);
+    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
+    const overlay = new GearOverlay(this, this.art, WorldType.Field, (x, y) => this.partyPanel?.covers(x, y) ?? false);
     return new EquipmentHud(
       overlay,
       {
@@ -542,8 +556,8 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * One Esc press (FS-R82NV § Change C2): one press closes one thing, the gear overlay, then the
-   * party panel (`escapeStep`).
+   * One Esc press (FS-R82NV § Change C2): one press closes one thing, the party panel, drawn over
+   * the gear overlay (§ Change C8), then the overlay (`escapeStep`).
    */
   private pressEscape(): void {
     const step = escapeStep({

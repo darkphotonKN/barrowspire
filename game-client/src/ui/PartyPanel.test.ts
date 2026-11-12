@@ -4,9 +4,15 @@ import { viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import type { WorldType } from "@/assets/types/client";
 import { createPartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
-import { PartyPanel, type PartyPanelDeps } from "./PartyPanel";
+import {
+  PARTY_PANEL_DEPTH,
+  PartyPanel,
+  type PartyPanelDeps,
+} from "./PartyPanel";
 import { partyCommands } from "./partyCommands";
 import { drawPanelFrame } from "./panelFrame";
+import { GEAR_OVERLAY_DEPTH } from "./GearOverlay";
+import { MENU_DEPTH } from "./menuPanel";
 
 // The party panel's frame is one drawing, which this surface must call, not copy (owner
 // 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
@@ -39,13 +45,14 @@ interface FakeText {
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  /** Every depth the panel set on what it drew, in order. */
+  const depths: number[] = [];
   const keyboard = new EventEmitter();
   const input = Object.assign(new EventEmitter(), { keyboard });
   const graphics = () => {
     const self: Record<string, unknown> = {};
     for (const m of [
       "setScrollFactor",
-      "setDepth",
       "clear",
       "fillStyle",
       "lineStyle",
@@ -57,6 +64,7 @@ function fakeScene() {
       "fillCircle",
     ])
       self[m] = () => self;
+    self.setDepth = (d: number) => (depths.push(d), self);
     self.destroy = () => undefined;
     return self;
   };
@@ -71,7 +79,7 @@ function fakeScene() {
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
-      setDepth: () => self,
+      setDepth: (d: number) => (depths.push(d), self),
       setOrigin: () => self,
       setAlpha: (a: number) => ((t.alpha = a), self),
       setInteractive: () => ((t.interactive = true), self),
@@ -96,7 +104,7 @@ function fakeScene() {
   } as unknown as Phaser.Scene;
   const live = () => texts.filter((t) => !t.destroyed);
   const find = (content: string) => live().find((t) => t.content === content);
-  return { scene, keyboard, events, input, live, find };
+  return { scene, keyboard, events, input, live, find, depths };
 }
 
 function fakeField() {
@@ -579,5 +587,35 @@ describe("PartyPanel's frame, shared (FS-R82NV § Change C1; FS-G4VMQ § Change 
     expect(panel.x).toBe(partyPanelLeft(1080));
     expect(panel.y).toBe(partyPanelTop(720));
     expect(panel.width).toBe(PARTY_PANEL_W);
+  });
+});
+
+// FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍"): the
+// party panel opens over the inventory and the character panel and is drawn above them.
+describe("PartyPanel over the inventory and the character panel (FS-3EBCA R8; FS-R82NV § Change C8)", () => {
+  it("should draw everything of the open panel above the gear overlay's panels and their ×, under the menu", () => {
+    const env = setup({ world: "field" });
+    env.store.getState().apply(update(ME));
+    env.depths.length = 0;
+    env.pressT();
+    // the graphics and every text it drew
+    expect(env.depths.length).toBeGreaterThanOrEqual(env.live().length + 1);
+    // the overlay draws its panels at GEAR_OVERLAY_DEPTH and up to + 3 (the × zones)
+    for (const d of env.depths) {
+      expect(d).toBe(PARTY_PANEL_DEPTH);
+    }
+    expect(PARTY_PANEL_DEPTH).toBeGreaterThan(GEAR_OVERLAY_DEPTH + 3);
+    expect(PARTY_PANEL_DEPTH).toBeLessThan(MENU_DEPTH);
+  });
+
+  it("should show the invite field, and still keep T a letter while it holds focus", () => {
+    // the scene's rule no longer names the overlay: an open overlay leaves `blocked` false
+    const env = setup({ world: "field" });
+    env.pressT();
+    env.frame();
+    expect(env.field.shown).toBe(true);
+    env.state.active = { tagName: "INPUT", type: "text" };
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(true);
   });
 });

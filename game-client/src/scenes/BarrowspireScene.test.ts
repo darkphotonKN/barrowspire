@@ -109,6 +109,8 @@ const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOv
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
+const { PartyPanel } = await import("@/ui/PartyPanel");
+const { createPartyStore } = await import("@/stores/partyStore");
 const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
@@ -1107,6 +1109,38 @@ function partyState(
     current_player: me,
     other_players: [ally],
   } as GameState;
+}
+
+/**
+ * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
+ * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ */
+function partyPanelOn(refused: () => boolean) {
+  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const keyboard = new EventEmitter();
+  const scene = {
+    add: { graphics: () => any, text: () => any },
+    input: Object.assign(new EventEmitter(), { keyboard }),
+    events: new EventEmitter(),
+  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
+  const panel = new PartyPanel(scene, {
+    store: createPartyStore({ selfId: () => "me" }),
+    world: () => null,
+    selfId: () => "me",
+    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
+    makeField: () => ({
+      value: "",
+      setEnabled: vi.fn(),
+      moveTo: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      blur: vi.fn(),
+      destroy: vi.fn(),
+    }),
+    activeElement: () => null,
+    blocked: refused,
+  });
+  return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
 
 function onStage() {
@@ -4780,6 +4814,78 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     plate("menu").handlers.pointerdown();
     expect(run.equipment?.isOpen()).toBe(false);
     expect(run.menu).toBeUndefined();
+  });
+
+  // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
+  // inventory or the character panel open the party panel would not open). I-3EBCA-7.
+  describe("the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
+    function partyOverOverlay() {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Overlaid & { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
+      const party = partyPanelOn(() => run.refusesParty());
+      run.partyPanel = party.panel;
+      run.mountCorner();
+      const f = cornerIconFrame("party", viewport);
+      const icon = () =>
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+      return { ...env, party, pressIcon: () => icon().handlers.pointerdown() };
+    }
+
+    it.each([
+      ["the inventory", ["I"]],
+      ["the character panel", ["C"]],
+      ["both panels", ["I", "C"]],
+    ] as const)("should open and close the party panel on T and on the Party icon with %s open", (_open, keys) => {
+      const { run, key, party, pressIcon } = partyOverOverlay();
+      keys.forEach(key);
+      expect(run.equipment?.isOpen()).toBe(true);
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(false);
+      pressIcon();
+      expect(party.panel.isOpen()).toBe(true);
+      pressIcon();
+      expect(party.panel.isOpen()).toBe(false);
+      // the overlay stays as it was
+      expect(run.equipment?.isOpen()).toBe(true);
+    });
+
+    it("should still refuse T while the ESC menu is open", () => {
+      const { run, party, pressEsc } = partyOverOverlay();
+      pressEsc();
+      expect(run.menu).toBeDefined();
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(false);
+    });
+
+    it("should close the party panel, drawn over the overlay, on the first ESC, and the overlay on the second", () => {
+      const { run, key, party, pressEsc } = partyOverOverlay();
+      key("I");
+      key("C");
+      party.pressT();
+      pressEsc();
+      expect(party.panel.isOpen()).toBe(false);
+      expect(run.equipment?.isOpen()).toBe(true);
+      pressEsc();
+      expect(run.equipment?.isOpen()).toBe(false);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should keep a press on the party panel from the overlay under it: no equip for a bag item there", () => {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Overlaid & { partyPanel?: unknown };
+      const covered = { on: true };
+      run.partyPanel = { covers: () => covered.on, isOpen: () => true };
+      env.key("I");
+      const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
+      const at = { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 };
+      env.press(at, 2);
+      expect(env.sentOf(ActionType.Equip)).toHaveLength(0);
+      covered.on = false;
+      env.press(at, 2);
+      expect(env.sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+    });
   });
 
   it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
