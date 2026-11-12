@@ -12,6 +12,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -91,11 +92,12 @@ type partyKeeper interface {
 	// whether the party cache knows the player as a party member: read on the loop, no Redis call
 	// (FS-BJNYC R1)
 	inParty(playerID uuid.UUID) bool
-	// a character switch: refused while the player's party is in its run here, and once leave_hub
-	// is accepted, the player out of their party as party_leave would take them (FS-NCC9J
-	// §Change: Changing character leaves the party)
+	// a character switch (FS-NCC9J §Change: Changing character leaves the party): who the cache
+	// holds the player as, whether their party's run under way here refuses it, and, once another
+	// character is seated, the player out of their party as party_leave would take them
+	cachedMember(playerID uuid.UUID) (partystore.Member, bool)
 	switchLocked(ctx context.Context, playerID uuid.UUID) bool
-	leftForRoster(ctx context.Context, player *types.Player, conn *websocket.Conn)
+	switched(ctx context.Context, playerID uuid.UUID, conn *websocket.Conn, character types.CharacterInPlay, byRecord bool)
 	// a random match about to start here: every matched player, local and on other pods, makes one
 	// matched party first, off the loop; formed is handed the outcome back on the loop, and answers
 	// with the run it created, if any (FS-988SM R3, R3a, R8, R9)
@@ -139,7 +141,8 @@ type SessionManager interface {
 	DrinkPotion(player *types.Player)
 	LeaveHub(ctx context.Context, player *types.Player) error
 	GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool)
-	EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error)
+	// enter_hub: admit is told the resolved character before it is seated, and may refuse it
+	EnterHubAdmitting(ctx context.Context, conn *websocket.Conn, characterID string, admit func(types.CharacterInPlay) error) (*game.Session, error)
 	PlayerByID(playerID uuid.UUID) (*types.Player, bool)
 	JoinHub(conn *websocket.Conn, character types.CharacterInPlay) (*game.Session, error)
 	GetMatchedChan(ctx context.Context) chan matchmaker.MatchStart
@@ -174,7 +177,7 @@ var (
 	// change while queued. FS-K2HKP §Requirements 7a.
 	errCharacterSwitchWhileQueued = errors.New("character switch while queued")
 	// the player's party is in its run on this pod (FS-NCC9J §Change: Changing character leaves
-	// the party, C7)
+	// the party, C12)
 	errCharacterSwitchPartyInRun = errors.New("character switch while the party's run is under way")
 )
 
@@ -228,9 +231,6 @@ func leaveHubRefusal(err error) string {
 		return "Leave the queue first."
 	case errors.Is(err, errLeaveHubInRun):
 		return "You are in a delve."
-	case errors.Is(err, errLeaveHubPartyInRun):
-		// the party lock's own words (FS-NCC9J R9)
-		return "Not while delving."
 	default:
 		return "You are not in the hub."
 	}
@@ -282,20 +282,30 @@ func (h *messageHub) enterHub(loopCtx context.Context, clientPackage types.Clien
 	defer cancel()
 
 	characterID, _ := clientPackage.Message.Payload["characterId"].(string)
-	switching := from.to(characterID)
+
+	// told the character once it is resolved, before it is seated: another character while their
+	// party's run is under way here is refused, as party_leave is there (FS-NCC9J §Change:
+	// Changing character leaves the party, C12)
+	var entering types.CharacterInPlay
+	admit := func(character types.CharacterInPlay) error {
+		entering = character
+		if from.locked && from.to(character) == switchYes {
+			return errCharacterSwitchPartyInRun
+		}
+		return nil
+	}
 
 	var reply types.Message
-	var hub *game.Session
-	var err error
-	if switching && from.locked {
-		// their party is in its run here: no switch, as no party_leave (C7, C4)
-		err = errCharacterSwitchPartyInRun
-	} else {
-		hub, err = h.sessionManager.EnterHub(ctx, clientPackage.Conn, characterID)
-	}
-	if err == nil && switching {
-		// another character seated: out of the party, as leave_hub takes them, on the loop (C7)
-		h.jobs.post(loopCtx, func() { h.party.leftForRoster(loopCtx, &from.player, clientPackage.Conn) })
+	hub, err := h.sessionManager.EnterHubAdmitting(ctx, clientPackage.Conn, characterID, admit)
+	if err == nil {
+		// another character seated, or one the loop could not judge: the party record decides,
+		// on the loop (C7, C10, C13)
+		if verdict := from.to(entering); verdict != switchNo {
+			playerID := from.player.ID
+			h.jobs.post(loopCtx, func() {
+				h.party.switched(loopCtx, playerID, clientPackage.Conn, entering, verdict == switchYes)
+			})
+		}
 	}
 	if err != nil {
 		slog.Warn("Could not place player in the hub", "error", err)
@@ -316,11 +326,14 @@ func (h *messageHub) enterHub(loopCtx context.Context, clientPackage types.Clien
 }
 
 // characterSwitch is what enter_hub needs to know, read on the loop, to tell a character switch:
-// the player and the character on their record, and whether their party's run, under way here,
-// holds them to it. FS-NCC9J §Change: Changing character leaves the party, C7.
+// the player and the character on their record, the name and class their party holds for them
+// when this pod's cache holds the party, and whether their party's run, under way here, holds
+// them to it. FS-NCC9J §Change: Changing character leaves the party, C7, C12, C13.
 type characterSwitch struct {
-	player types.Player
-	locked bool
+	player  types.Player
+	member  partystore.Member
+	inParty bool
+	locked  bool
 }
 
 // characterSwitchOf reads, on the loop, who asks in on clientPackage's connection and as whom.
@@ -329,19 +342,29 @@ func (h *messageHub) characterSwitchOf(ctx context.Context, clientPackage types.
 	if !exists {
 		return characterSwitch{}
 	}
-	return characterSwitch{player: *player, locked: h.party.switchLocked(ctx, player.ID)}
+	member, inParty := h.party.cachedMember(player.ID)
+	return characterSwitch{player: *player, member: member, inParty: inParty, locked: h.party.switchLocked(ctx, player.ID)}
 }
 
-// to reports whether entering as characterID changes character: a player with a character on
-// record asking in as another. A player with none on record (a fresh connection) is choosing,
-// not changing.
-func (c characterSwitch) to(characterID string) bool {
+// to reports whether entering as character changes character. The party's record of them decides
+// when the cache holds it: the character it holds stays, another is a switch (C10, C13); else the
+// player's record: another character than the one on it is a switch (C7). A player with neither
+// is not known until their party is read from Redis.
+func (c characterSwitch) to(character types.CharacterInPlay) switchVerdict {
+	if c.inParty {
+		if sameCharacter(c.member, character) {
+			return switchNo
+		}
+		return switchYes
+	}
 	current := c.player.Character.ID
 	if current == uuid.Nil {
-		return false
+		return switchUnknown
 	}
-	id, err := uuid.Parse(characterID)
-	return err == nil && id != current
+	if character.ID == current {
+		return switchNo
+	}
+	return switchYes
 }
 
 // worldEnteredMessage tells a client which world it is now in. Every transition
@@ -803,19 +826,13 @@ func (h *messageHub) Run(ctx context.Context) {
 
 			// A hub member leaving for the roster: body gone, record in no world,
 			// so a refresh lands on the roster. FS-G4VMQ §Requirements 23–24.
-			// It is changing character, so it is leaving their party too, and
-			// refused, as party_leave is, while the party is in its run here.
-			// FS-NCC9J §Change: Changing character leaves the party.
+			// Their party keeps them: the roster is not the switch, choosing
+			// another character there is. FS-NCC9J §Change: Changing character
+			// leaves the party, C8.
 			case constants.ActionLeaveHub:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
 				if !exists {
 					slog.Debug("leave_hub from a connection with no player")
-					continue
-				}
-
-				if h.party.switchLocked(ctx, player.ID) {
-					slog.Warn("Refusing leave_hub", "player_id", player.ID, "error", errLeaveHubPartyInRun)
-					h.refuse(clientPackage.Conn, clientPackage.Message.Action, leaveHubRefusal(errLeaveHubPartyInRun))
 					continue
 				}
 
@@ -827,7 +844,6 @@ func (h *messageHub) Run(ctx context.Context) {
 					h.refuse(clientPackage.Conn, clientPackage.Message.Action, leaveHubRefusal(err))
 					continue
 				}
-				h.party.leftForRoster(ctx, player, clientPackage.Conn)
 
 				slog.Info("Delver left the hub for the roster", "player_id", player.ID)
 				if err := h.sender.SendMessageToConn(clientPackage.Conn, types.Message{

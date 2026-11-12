@@ -1641,7 +1641,7 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
     expect(usePartyStore.getState().invites).toHaveLength(1);
   };
 
-  it("should let go of every invite prompt on world_left, as the server spent them with the switch (FS-NCC9J §Change: Changing character leaves the party, C2)", () => {
+  it("should let go of every invite prompt on world_left, as the roster cannot answer them (FS-NCC9J §Change: Changing character leaves the party, C8)", () => {
     const { keys, press, option, reply } = queuedHubOnStage();
     inviteWaiting();
     press(keys.esc);

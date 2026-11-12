@@ -34,6 +34,9 @@ type partyDirectory interface {
 	// everyone this pod holds, seated in any world, and the connection each is seated on: whose
 	// parties the cache keeps and whose screens it reconciles (R4, R6)
 	SeatedConns() map[uuid.UUID]*websocket.Conn
+	// everyone connected here and seated in no world, on the roster, with their connection: who
+	// is sent their party there (FS-NCC9J §Change: Changing character leaves the party, C9)
+	RosterConns() map[uuid.UUID]*websocket.Conn
 	// whether a player is inside a run: inviting and creating there are refused locked, an
 	// invite to them in_run, accepting there locked (R10, R14, R15)
 	InRun(playerID uuid.UUID) bool
@@ -58,6 +61,9 @@ type partyStore interface {
 	// every invite to a player, read without changing it: spent as they change character
 	// (FS-NCC9J §Change: Changing character leaves the party, C2)
 	InvitesTo(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error)
+	// the party a player is in, read without keeping anything: what the roster is sent, and what
+	// a player whose record is gone is compared by (C9, C13)
+	Peek(ctx context.Context, playerID uuid.UUID) (partystore.Party, bool, error)
 	// what the party cache reads with: the registry hands the store to it
 	partyReader
 	// what the server reads as a player enters the hub, to let one joining their leader past the
@@ -149,6 +155,9 @@ type partyRegistry struct {
 	// matched party members whose removal on leaving the run Redis failed, tried again each tick
 	// until the script answers; true while a try is under way (FS-988SM R17)
 	leaving map[matchedLeave]bool
+	// each connection standing on the roster, and what it was last sent of its party (FS-NCC9J
+	// §Change: Changing character leaves the party, C9)
+	roster map[uuid.UUID]rosterShown
 	// where gear read off the loop for a party entry comes back to it
 	jobs loopJobs
 
@@ -169,6 +178,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		entryReads:  make(map[uuid.UUID]struct{}),
 		partyRuns:   make(map[uuid.UUID]partyRun),
 		leaving:     make(map[matchedLeave]bool),
+		roster:      make(map[uuid.UUID]rosterShown),
 		jobs:        jobs,
 		done:        make(chan struct{}),
 	}
@@ -909,106 +919,6 @@ func (r *partyRegistry) declined(ctx context.Context, declinerID uuid.UUID, res 
 	r.announce(ctx, updateOf(res.Party, constants.PartyUpdateInviteEnded, declinerID))
 }
 
-// switchLocked reports whether a player standing outside any run may not change character because
-// their party is in its run on this pod, where party_leave is refused locked (FS-BJNYC R19). A
-// player inside the run is left to leave_hub's own refusal. Read on the loop from the cache and
-// this pod's record of the run, no Redis call. FS-NCC9J §Change: Changing character leaves the
-// party, C4.
-func (r *partyRegistry) switchLocked(ctx context.Context, playerID uuid.UUID) bool {
-	if r.closed || r.directory.InRun(playerID) {
-		return false
-	}
-	p, in := r.cache.partyOf(playerID)
-	return in && r.locked(ctx, p)
-}
-
-// leftForRoster takes a player whose leave_hub was just accepted, gone back to the roster to
-// change character, out of their party as party_leave would (C1): their party's open ready check is
-// cancelled left, naming them (C3; FS-BJNYC R10), and the removal script runs; and every invite to
-// them is spent as their decline (C2). Nothing is refused to them: a removal or decline Redis could
-// not make is logged, and their record, refreshed by no pod now, removes them when it expires (C6).
-// FS-NCC9J §Change: Changing character leaves the party.
-func (r *partyRegistry) leftForRoster(ctx context.Context, player *types.Player, conn *websocket.Conn) {
-	if r.closed || r.cfg.store == nil {
-		return
-	}
-	if p, in := r.cache.partyOf(player.ID); in {
-		if check := r.checks[p.ID]; check != nil && !check.starting {
-			if m := check.member(player.ID); m != nil {
-				r.cancelCheck(check, constants.ReadyCheckReasonLeft, []string{m.name})
-			}
-		}
-		r.removeForRoster(ctx, conn, partystore.RemoveArgs{PartyID: p.ID, PlayerID: player.ID})
-	}
-	r.spendInvitesTo(ctx, player.ID)
-}
-
-// removeForRoster runs the removal script for a player gone to the roster. The others are told as
-// for party_leave (left, then who leads if the lead passed); the leaver, in no world now, where an
-// update by player id finds nobody, is sent their last update on the connection they left on.
-func (r *partyRegistry) removeForRoster(ctx context.Context, conn *websocket.Conn, args partystore.RemoveArgs) {
-	onRunner(ctx, r.run,
-		func(c context.Context) (partystore.RemoveResult, error) { return r.cfg.store.Remove(c, args) },
-		func(res partystore.RemoveResult, err error) {
-			if err != nil {
-				slog.Warn("party member not removed on changing character, left to their record's expiry", "party_id", args.PartyID, "player_id", args.PlayerID, "error", err)
-				return
-			}
-			if res.Refusal != "" {
-				slog.Debug("party member already gone on changing character", "party_id", args.PartyID, "player_id", args.PlayerID, "refusal", res.Refusal)
-				return
-			}
-			slog.Info("Party member left on changing character", "party_id", args.PartyID, "player_id", args.PlayerID, "ended", res.Ended)
-			leaver := args.PlayerID
-			final := partyUpdate{party: res.Party, reason: constants.PartyUpdateLeft, subject: leaver, to: leaver, final: true}
-			if res.Ended {
-				r.cache.drop(args.PartyID)
-				final = partyUpdate{party: partystore.Party{ID: args.PartyID, Leader: leaver}, reason: constants.PartyUpdateLeft, subject: leaver, to: leaver, ended: true}
-			} else {
-				r.cache.put(res.Party)
-				items := []partyUpdate{updateOf(res.Party, constants.PartyUpdateLeft, leaver)}
-				if res.Succeeded {
-					items = append(items, updateOf(res.Party, constants.PartyUpdateLeader, res.Party.Leader))
-				}
-				r.announce(ctx, items...)
-			}
-			if err := r.sender.SendMessageToConn(conn, r.updateMessage(final, r.presentHere(), nil)); err != nil {
-				slog.Debug("last party update not delivered to a player gone to the roster", "player_id", leaver, "error", err)
-			}
-		},
-	)
-}
-
-// spendInvitesTo spends every open invite to playerID as their decline, read off the loop; one
-// lapsed or answered meanwhile is refused by the script and ignored.
-func (r *partyRegistry) spendInvitesTo(ctx context.Context, playerID uuid.UUID) {
-	onRunner(ctx, r.run,
-		func(c context.Context) ([]uuid.UUID, error) { return r.cfg.store.InvitesTo(c, playerID) },
-		func(ids []uuid.UUID, err error) {
-			if err != nil {
-				slog.Warn("invites to a player changing character not read, left to lapse", "player_id", playerID, "error", err)
-				return
-			}
-			for _, inviteID := range ids {
-				args := partystore.DeclineArgs{InviteID: inviteID, DeclinerID: playerID, Now: r.cfg.now()}
-				onRunner(ctx, r.run,
-					func(c context.Context) (partystore.DeclineResult, error) { return r.cfg.store.Decline(c, args) },
-					func(res partystore.DeclineResult, err error) {
-						if err != nil {
-							slog.Warn("invite to a player changing character not spent, left to lapse", "player_id", playerID, "invite_id", inviteID, "error", err)
-							return
-						}
-						if res.Refusal != "" {
-							return
-						}
-						r.declined(ctx, playerID, res)
-					},
-				)
-			}
-		},
-	)
-}
-
 // ticks is when the hub's loop should call tick.
 func (r *partyRegistry) ticks() <-chan time.Time {
 	return r.cfg.ticks
@@ -1025,6 +935,7 @@ func (r *partyRegistry) tick(ctx context.Context) {
 	r.cache.tick(ctx)
 	r.tickChecks(ctx)
 	r.retryLeaves(ctx)
+	r.tickRoster(ctx)
 }
 
 // letters is where letters from other pods wait for the hub's loop.
