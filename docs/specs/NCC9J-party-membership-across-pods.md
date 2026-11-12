@@ -420,3 +420,30 @@ C6. A removal or decline Redis cannot make is logged and left: the switch still 
   then another character chosen): the hub re-seats them as it (FS-BDA7X R5) and the party keeps
   them. Not the Esc menu's path; left for the owner.
 - Any change to how a dropped connection or the reconnect grace treats a party (R17, FS-MCYWK).
+
+*(Amended 2026-11-12, same day, before any of this shipped; owner: "但在塔裡有機會進到選角色的頁面嗎"
+(can a player in the tower ever reach the character roster?). Read from the code, not guessed:
+a member held in a run (dropped within the grace, or on a second tab) reconnects in place and is
+announced the run their record names; while their body is in that run, in play or resolved, an
+`enter_hub` as another character is refused (FS-BDA7X R7, "You cannot change character during a
+delve.") and `leave_hub` is refused ("You are in a delve."), so no other character is ever seated
+while the old one is held. A resolved delver whose drop was their leave (FS-QPDKN R25, FS-GV8WN §F
+R17) is already home in the town, and the main menu (a reload, a second tab, a disconnect notice)
+lets them ask in as anyone: that is an `enter_hub` as another character with no `leave_hub`, which
+this section's Out of Scope had left to the owner. It is now in scope:)*
+
+C7. **An `enter_hub` as a character other than the one on the player's record is a character
+    switch too.** Accepted, it takes them out of their party exactly as C1–C3 (the switch then
+    seats the new character, FS-BDA7X R5). While their party's run is under way on this pod and
+    they stand outside it, it is refused "You cannot change character during a delve." and they
+    stay as they were, in the party, as C4. The same character entered again is no switch. A
+    member held in a run is never seated as another character at all (above); that is pinned by a
+    test, not changed. A player whose record is gone (their grace ran out in play, so the run
+    settled them as dead and they left it, and a matched party with it, FS-988SM R11) connects
+    fresh with no character on record, so their first entry is no switch: a party their record
+    no longer names a character for keeps them until they leave it or its run ends, as before.
+
+- [ ] An `enter_hub` as another character leaves the party; as the same one it does not; back in
+      the town while the party's run is under way it is refused. (C7)
+- [ ] A member held in a run, back within the grace or on a second tab, is announced the run and
+      refused another character. (C7)
