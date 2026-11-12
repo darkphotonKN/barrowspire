@@ -436,6 +436,11 @@ export interface PartyState {
   dismissInvite: (inviteId: string) => void;
   /** Lets go of every invite whose countdown has run out. */
   expireInvites: () => void;
+  /**
+   * Lets go of every invite: the player changed character, and the server spent each invite to
+   * them as they did (FS-NCC9J §Change: Changing character leaves the party, C2).
+   */
+  forgetInvites: () => void;
   /** Whole seconds left on an invite's countdown, by the store's own clock: the one clock (R14). */
   secondsLeft: (invite: PendingInvite) => number;
   /** How full an invite's countdown bar is now, 1 to 0, by the store's own clock (FS-B3NDZ R6). */
@@ -554,6 +559,7 @@ export function createPartyStore({
         const live = state.invites.filter((i) => inviteSecondsLeft(i, at) > 0);
         return live.length === state.invites.length ? state : { invites: live };
       }),
+    forgetInvites: () => set((state) => (state.invites.length === 0 ? state : { invites: [] })),
     secondsLeft: (invite) => inviteSecondsLeft(invite, now()),
     inviteFraction: (invite) => inviteFraction(invite, now()),
     receiveNotice: (notice) => {
