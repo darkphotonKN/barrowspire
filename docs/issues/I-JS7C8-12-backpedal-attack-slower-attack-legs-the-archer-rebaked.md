@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-12
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: [I-2325V-8]
 labels: [ready-for-agent]
@@ -137,3 +137,19 @@ VRAM choice pending).
 ## Owner approval
 
 2026-11-12: the owner approved the archer's contact sheet with the walk-run-backward `backpedal_attack` ("角色目前可以"). Still open: the VRAM choice. The archer is on two pages (84.7 MB RGBA, +88% over main), and the resident-page tests that name 17 pages fail until that choice is made.
+
+## VRAM gate closed (2026-11-12, agent)
+
+The owner's choice: the class sheets at 1.5x (ADR-0076, FS-HF0WW `## Change: Class sheets at
+1.5x`; 「感覺可以」 after the spike's side-by-side). The archer was re-baked at 1.5 in I-HF0WW-8,
+once, with I-JS7C8-13's fast run:
+
+| archer sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main (2x) | 1 | 2924 × 3844 | 44.96 MB | 6,289,416 | 336 | 326 × 288 |
+| this slice (2x) | 2 | 4092 × 3760 + 4088 × 1416 | 84.70 MB | 6,557,998 + 2,992,142 | 512 | 332 × 300 |
+| final (1.5x) | 1 | 3820 × 2716 | 41.50 MB | 5,749,502 | 512 | 252 × 225 (168 × 150 screen px) |
+
+−7.7 % RGBA against main (R39 estimated +47 % at 2x), −51.0 % against this slice's 2x bake. One
+page, so the resident-page tests (`sceneArt.test.ts`, `evict.test.ts`, the scene art-loading
+tests: the 33 failures) pass again. All atlases 771.00 → 727.80 MB.

@@ -203,23 +203,23 @@ and at 2x on his Retina screen said: 「感覺可以」.
 
 ### Acceptance Criteria
 
-- [ ] The validator accepts `scale` 1, 1.5, 2, 3 and 4 and refuses 1.25, 2.5, 3.5, 0.5 and 5; at
+- [x] The validator accepts `scale` 1, 1.5, 2, 3 and 4 and refuses 1.25, 2.5, 3.5, 0.5 and 5; at
       1.5 it refuses a frame size that is not a whole number of screen px and a `trim` off the
       3-sheet-px grid (`manifest.test.ts`).
-- [ ] The baker's frame box at 1.5: frame and anchor whole px, each side of the anchor a multiple
+- [x] The baker's frame box at 1.5: frame and anchor whole px, each side of the anchor a multiple
       of two 1x px, the frame exactly 1.5 times the 1x box; at 1 and 2 the box is unchanged
       (`frameBox` tests).
-- [ ] `trimRect` at grid 3: offset and size multiples of 3, lossless round trip (`trim.test.mjs`).
-- [ ] `downscale(…, 1.5)` equals a hand-computed area filter (`downscale.test.mjs`).
-- [ ] At `artScale` 2/3: the display size, the markers' rise, the arcade body (60×60) and the menu
+- [x] `trimRect` at grid 3: offset and size multiples of 3, lossless round trip (`trim.test.mjs`).
+- [x] `downscale(…, 1.5)` equals a hand-computed area filter (`downscale.test.mjs`).
+- [x] At `artScale` 2/3: the display size, the markers' rise, the arcade body (60×60) and the menu
       figure's scale are the 1x sheet's; the roster portrait's crop is whole frame px with the
       44×56 window (`character.test.ts`, `markers.test.ts`, `BarrowspireScene.test.ts`,
       `menuFigure.test.ts`).
-- [ ] The archer's manifest entry has `scale: 1.5`, `trimmed: true`, its clips, one atlas page; no
+- [x] The archer's manifest entry has `scale: 1.5`, `trimmed: true`, its clips, one atlas page; no
       other atlas changes bytes.
-- [ ] Memory recorded (§ Verification); `npm run bake -- --check` reports no changes; typecheck,
+- [x] Memory recorded (§ Verification); `npm run bake -- --check` reports no changes; typecheck,
       the full vitest suite and lint pass.
-- [ ] Guideline and `CONTEXT.md` updated.
+- [x] Guideline and `CONTEXT.md` updated.
 
 ### Edge States
 
@@ -244,3 +244,30 @@ and at 2x on his Retina screen said: 「感覺可以」.
 - Any fractional scale other than 1.5.
 - Re-baking the knight, wizard or mercenary here (FS-JS7C8 slices 6–8 do it at 1.5).
 - Changing the render-scale cap or the groups' residency (ADR-0056, ADR-0059).
+
+### Verification (2026-11-12, branch `feat/run-sheets-1p5x`, I-HF0WW-8)
+
+- **Bake.** The archer re-baked at 1.5 with every clip (and FS-JS7C8's fast run, I-JS7C8-13):
+  252×225 frames (168×150 screen px; the 2x bake's 332×300 was 166×150, the frame box grown by one
+  1x px on each side of the anchor's x), anchor (105, 171) px, fraction (0.4167, 0.76), crown 78,
+  512 frames, trimmed. The leg-clearance guard passes at 1.5 (2/3 1x px). Only `archer-0.png`
+  and `manifest.json` changed; `archer-1.png` is gone; every other atlas keeps its bytes.
+- **Texture memory** (decoded, width × height × 4, from the manifest):
+
+  | archer sheet | pages | page px | RGBA | PNG bytes |
+  |---|---|---|---|---|
+  | main (2x, 336 frames) | 1 | 2924 × 3844 | 44.96 MB | 6,289,416 |
+  | I-JS7C8-12 (2x, 512 frames) | 2 | 4092 × 3760 + 4088 × 1416 | 84.70 MB | 6,557,998 + 2,992,142 |
+  | this bake (1.5x, 512 frames) | 1 | 3820 × 2716 | 41.50 MB | 5,749,502 |
+
+  −51.0 % against the 2x bake, −7.7 % against main's 2x archer without the new clips; the trimmed
+  frames alone hold 39.31 MB. The four class groups: 216.58 → 173.38 MB (knight 47.98, wizard
+  36.51, mercenary 47.39, all still 2x). All atlases: 771.00 → 727.80 MB.
+- **Readers at 1.5** (unit tests): `artScale` 2/3, `dress` sizes a 246×216 frame to 164×144
+  screen px and composes the menu hero's 1.3; `markerBase` seats the markers where a 1x sheet's
+  sit; `keepBodySize` keeps the 60×60 body; `MenuFigure` keeps its size at 1, 1.3 and 1.5, and the
+  roster portrait's crop is whole frame px (it was 70.5, 31.5 on a synthetic sheet with an odd
+  crown and anchor; the shipped archer's anchor (70, 114) and crown 78 land on the grid as they
+  are). The bust portrait reads the frame's own px and no scale.
+- **Suite.** The resident-page tests that failed with the archer on two pages (33) pass again;
+  the whole client vitest, typecheck and lint pass; `npm run bake -- --check` reports no changes.

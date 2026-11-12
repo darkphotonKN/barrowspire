@@ -1,6 +1,6 @@
 ---
 id: I-HF0WW-8
-status: open
+status: done
 implements: FS-HF0WW
 blocked_by: [I-JS7C8-13]
 labels: [ready-for-agent]
@@ -33,19 +33,19 @@ I-JS7C8-13's fast run (the owner's run notes of 2026-11-12), so it is blocked by
 
 ## Acceptance Criteria
 
-- [ ] Validator: accepts 1, 1.5, 2, 3, 4; refuses 1.25, 2.5, 3.5, 0.5, 5; at 1.5 refuses a frame
+- [x] Validator: accepts 1, 1.5, 2, 3, 4; refuses 1.25, 2.5, 3.5, 0.5, 5; at 1.5 refuses a frame
       not a whole number of screen px and a trim off the 3-sheet-px grid.
-- [ ] `frameBox`: at 1.5 the frame and anchor are whole px, each side of the anchor a multiple of
+- [x] `frameBox`: at 1.5 the frame and anchor are whole px, each side of the anchor a multiple of
       two 1x px, the frame exactly 1.5 times the 1x box; at 1 and 2 unchanged.
-- [ ] `trimRect` at grid `trimGrid(1.5)` = 3: offset and size multiples of 3; lossless.
-- [ ] `downscale(px, w, h, 1.5)` equals a hand-computed area filter.
-- [ ] `sheetScale` readers at 1.5: `artScale` 2/3, `dress` sizes, markers' rise, the arcade body's
+- [x] `trimRect` at grid `trimGrid(1.5)` = 3: offset and size multiples of 3; lossless.
+- [x] `downscale(px, w, h, 1.5)` equals a hand-computed area filter.
+- [x] `sheetScale` readers at 1.5: `artScale` 2/3, `dress` sizes, markers' rise, the arcade body's
       60×60, the menu figure's scale, the roster portrait's crop whole frame px in its 44×56 window.
-- [ ] The archer: `scale: 1.5`, trimmed, every clip, one page; every other atlas keeps its bytes;
+- [x] The archer: `scale: 1.5`, trimmed, every clip, one page; every other atlas keeps its bytes;
       `npm run bake -- --check` clean.
-- [ ] The resident-page tests that failed with the archer on two pages pass; the whole vitest suite
+- [x] The resident-page tests that failed with the archer on two pages pass; the whole vitest suite
       is green; typecheck and lint pass.
-- [ ] Memory recorded; guideline and `CONTEXT.md` updated.
+- [x] Memory recorded; guideline and `CONTEXT.md` updated.
 
 ## Blocked By
 
@@ -62,3 +62,11 @@ FS-HF0WW §Change: Class sheets at 1.5x R29–R38, its acceptance criteria and e
 - `game-client/src/render/art/manifest.ts` (+ test), `menuFigure.ts` (+ test), the readers' tests
 - `game-client/public/art/archer-*.png`, `game-client/public/art/manifest.json`
 - `game-client/docs/design-guideline.md`, `game-client/CONTEXT.md`
+
+## Done (2026-11-12, agent)
+
+Measured figures in FS-HF0WW § Change: Class sheets at 1.5x § Verification: the archer at 1.5x,
+252×225 frames, one page 3820×2716, 41.50 MB RGBA, PNG 5.75 MB (was two pages, 84.70 MB); all
+atlases 771.00 → 727.80 MB; only the archer's page and the manifest changed. Contact sheet and an
+animated preview of every clip in 8 facings, and the old run beside the new, written to the
+session scratchpad (`archer-1p5x-final/`) for the owner (I-JS7C8-13's approval).
