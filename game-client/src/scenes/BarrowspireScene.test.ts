@@ -3759,7 +3759,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   it("should open the record at once on settlement, with what was carried, lost and earned", () => {
     const { run, shown } = settlingOnStage();
     run.showSettlement(settlement());
-    for (const line of ["Escaped the barrow", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
+    for (const line of ["ESCAPED THE BARROW", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
       expect(shown()).toContain(line);
     expect(shown()).toContain("Experience +40 · Level 2");
     expect(shown()).toContain("Slain 3 · 1:20 in the delve");
@@ -3818,7 +3818,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect((hit("settlement")!.args as number[])[0]).toBe(400);
     expect(hit("watch-the-delve")).toBeDefined();
     expect(hit("leave-the-barrow")).toBeDefined();
-    expect(shown()).toContain("Fallen in the barrow");
+    expect(shown()).toContain("FALLEN IN THE BARROW");
   });
 
   it("should close from its Close button and reopen from the Settlement button", () => {
