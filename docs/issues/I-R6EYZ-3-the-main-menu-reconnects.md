@@ -1,6 +1,6 @@
 ---
 id: I-R6EYZ-3
-status: open
+status: done
 implements: FS-R6EYZ
 blocked_by: [I-R6EYZ-1]
 labels: [ready-for-agent]
@@ -23,10 +23,10 @@ Implements FS-R6EYZ §C (R14–R17)
 
 ## Acceptance Criteria
 
-- [ ] The menu coming up with the socket disconnected or in error reconnects once; open or connecting, it does nothing.
-- [ ] While down the primary button reads "RECONNECT" and pressing it reconnects; connected it reads "ENTER THE TOWN" and enters; connecting it reads "CONNECTING..." and does nothing.
-- [ ] The menu's reconnect goes to `serverAddr` without `redirected=1`; if that closes unopened and is not the default, one more at `DEFAULT_SERVER_ADDR`, then `serverAddr`; at the default already, no second try.
-- [ ] Whole client suite, `tsc --noEmit -p .` and lint green.
+- [x] The menu coming up with the socket disconnected or in error reconnects once; open or connecting, it does nothing.
+- [x] While down the primary button reads "RECONNECT" and pressing it reconnects; connected it reads "ENTER THE TOWN" and enters; connecting it reads "CONNECTING..." and does nothing.
+- [x] The menu's reconnect goes to `serverAddr` without `redirected=1`; if that closes unopened and is not the default, one more at `DEFAULT_SERVER_ADDR`, then `serverAddr`; at the default already, no second try.
+- [x] Whole client suite, `tsc --noEmit -p .` and lint green.
 
 ## Blocked By
 

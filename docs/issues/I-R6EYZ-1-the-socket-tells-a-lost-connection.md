@@ -1,6 +1,6 @@
 ---
 id: I-R6EYZ-1
-status: open
+status: done
 implements: FS-R6EYZ
 blocked_by: []
 labels: [ready-for-agent]
@@ -20,16 +20,16 @@ connection forgets `handoffSessionId`.
 
 ## Acceptance Criteria
 
-- [ ] An ordinary close of the open game socket (`1006`, `1001`, `1012`, a server's `1000`) tells the listeners once; a removed listener is not told.
-- [ ] A socket that never opened and closes tells them.
-- [ ] `disconnect()` followed by the browser's close tells nothing.
-- [ ] A `4001` close tells nothing, with a renewer and without one.
-- [ ] A redirect: the landing socket's close tells nothing; the redirected socket closing unopened tells nothing; the default-address try closing unopened too tells them.
-- [ ] A promoted handoff: the old socket's close tells nothing.
-- [ ] A close while a run handoff or a hub handoff is pending tells nothing; a failed handoff's reconnect that then closes tells them.
-- [ ] After a lost connection, a `world_handoff` to the run last handed off to is followed.
-- [ ] The status still goes `disconnected`.
-- [ ] Whole client suite, `tsc --noEmit -p .` and lint green.
+- [x] An ordinary close of the open game socket (`1006`, `1001`, `1012`, a server's `1000`) tells the listeners once; a removed listener is not told.
+- [x] A socket that never opened and closes tells them.
+- [x] `disconnect()` followed by the browser's close tells nothing.
+- [x] A `4001` close tells nothing, with a renewer and without one.
+- [x] A redirect: the landing socket's close tells nothing; the redirected socket closing unopened tells nothing; the default-address try closing unopened too tells them.
+- [x] A promoted handoff: the old socket's close tells nothing.
+- [x] A close while a run handoff or a hub handoff is pending tells nothing; a failed handoff's reconnect that then closes tells them.
+- [x] After a lost connection, a `world_handoff` to the run last handed off to is followed.
+- [x] The status still goes `disconnected`.
+- [x] Whole client suite, `tsc --noEmit -p .` and lint green.
 
 ## Blocked By
 

@@ -1,6 +1,6 @@
 ---
 id: I-R6EYZ-2
-status: open
+status: done
 implements: FS-R6EYZ
 blocked_by: [I-R6EYZ-1]
 labels: [ready-for-agent]
@@ -27,15 +27,15 @@ Implements FS-R6EYZ §B (R6–R13)
 
 ## Acceptance Criteria
 
-- [ ] A lost connection with a world scene starting or running raises the notice; with only the menu, character creation, boot or preload up, it does not.
-- [ ] A second lost connection while the notice is up raises no second one.
-- [ ] After the game's watch is let go, a lost connection raises nothing.
-- [ ] The notice shows "Disconnected", "The connection to the server was lost." and "Return to menu", centred at 1080 and 1280 wide, and is laid out again on a view change.
-- [ ] While up: every running world scene is paused, one that comes up later too; the DOM layer is hidden and a focused field blurred; the layer comes back when the notice goes.
-- [ ] Return to menu takes the notice down, stops every world scene and menu started, running or paused, starts the main menu, and closes no socket.
-- [ ] No key, outside click or timer takes the notice down.
-- [ ] Tokens only (the lint fence), the body serif, the carved panel.
-- [ ] Whole client suite, `tsc --noEmit -p .` and lint green.
+- [x] A lost connection with a world scene starting or running raises the notice; with only the menu, character creation, boot or preload up, it does not.
+- [x] A second lost connection while the notice is up raises no second one.
+- [x] After the game's watch is let go, a lost connection raises nothing.
+- [x] The notice shows "Disconnected", "The connection to the server was lost." and "Return to menu", centred at 1080 and 1280 wide, and is laid out again on a view change.
+- [x] While up: every running world scene is paused, one that comes up later too; the DOM layer is hidden and a focused field blurred; the layer comes back when the notice goes.
+- [x] Return to menu takes the notice down, stops every world scene and menu started, running or paused, starts the main menu, and closes no socket.
+- [x] No key, outside click or timer takes the notice down.
+- [x] Tokens only (the lint fence), the body serif, the carved panel.
+- [x] Whole client suite, `tsc --noEmit -p .` and lint green.
 
 ## Blocked By
 
