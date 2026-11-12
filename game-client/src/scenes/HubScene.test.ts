@@ -4623,6 +4623,18 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(store.writes).toEqual([]);
     });
 
+    // integration of FS-R82NV § Change C8 with D5: the party panel is drawn over the overlay and
+    // the row, so a press or hover on it is the panel's alone
+    it("should leave a press on the open party panel to the panel, never stepping the mode (FS-R82NV § Change C8; D5)", () => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      (hub as Record<string, unknown>).partyPanel = { covers: () => true, isOpen: () => true };
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual([]);
+    });
+
     it("should have no icon before the map is built, and take no press for it (D4)", () => {
       const { hub, map, store, pointers } = townWithModes();
       (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
