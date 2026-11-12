@@ -1843,10 +1843,21 @@ func (s *Session) handleMove(playerID uuid.UUID, vx, vy float64) error {
 	component := playerVelocityComponent.(*components.VelocityComponent)
 
 	// update velocity values
-	component.VX = vx
-	component.VY = vy
+	component.VX, component.VY = unitIntent(vx, vy)
 
 	return nil
+}
+
+// unitIntent is a move intent no longer than one, so no input walks faster
+// than the delver's speed: two keys held (vx and vy of ±1 both) walk a
+// diagonal at that speed, not √2 of it, and a longer intent is cut to length.
+// A shorter one is kept as sent.
+func unitIntent(vx, vy float64) (float64, float64) {
+	length := math.Hypot(vx, vy)
+	if length <= 1 {
+		return vx, vy
+	}
+	return vx / length, vy / length
 }
 
 /**
