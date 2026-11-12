@@ -1,6 +1,6 @@
 ---
 id: I-56CKV-6
-status: in-progress
+status: done
 implements: FS-56CKV
 blocked_by: []
 labels: [ready-for-agent]
@@ -31,7 +31,7 @@ column's layout; a scene's end hands the corner back.
 - [x] FS-56CKV §Change: Minimap at the top, fullscreen button beside it, every Acceptance Criterion
       but the browser check.
 - [x] Typecheck, lint and the full vitest suite pass.
-- [ ] **Owner browser check (Nick):** a run's floor 1, the town and a field, at 1080 and 1280 wide,
+- [x] **Owner browser check (Nick):** a run's floor 1, the town and a field, at 1080 and 1280 wide,
       windowed and fullscreen, M through normal, enlarged and the overlay: the map at the very top
       with the button at its left in normal; the button in the corner, the map under it, enlarged;
       the button in the corner over the overlay; the floor line and the escaped count right under
@@ -67,3 +67,7 @@ field (`HubScene.test.ts`, `FieldScene.test.ts`, `worldMinimapController.test.ts
 ownership (`fullscreenButton.test.ts`, the run's and the hub's hand-back tests); the button's CSS
 place (`FullscreenButton.test.ts`); clearances (the run's column and top-left stack tests, the hub's
 §G.37 test). Seen red first: 114 failing at 38f8e1af. Suite 7326 passed; tsc and lint clean.
+
+## Owner approval
+
+2026-11-12: the owner checked the minimap at the top with the fullscreen button beside it and approved it ("小地圖可以").

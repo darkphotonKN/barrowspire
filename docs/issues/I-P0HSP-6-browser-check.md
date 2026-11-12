@@ -1,6 +1,6 @@
 ---
 id: I-P0HSP-6
-status: open
+status: done
 implements: FS-P0HSP
 blocked_by: [I-P0HSP-1, I-P0HSP-2, I-P0HSP-3, I-P0HSP-4, I-P0HSP-5]
 labels: [blocked]
@@ -32,8 +32,12 @@ Implements FS-P0HSP §Acceptance Criteria (whole FS), §User Stories 1–29
 
 ## Acceptance Criteria
 
-- [ ] Nick's look passes, or each finding is written back as an FS amendment or a new issue.
+- [x] Nick's look passes, or each finding is written back as an FS amendment or a new issue.
 
 ## Blocked By
 
 I-P0HSP-1, I-P0HSP-2, I-P0HSP-3, I-P0HSP-4, I-P0HSP-5
+
+## Owner approval
+
+2026-11-12: the owner checked the town and field minimap in the browser and approved it ("小地圖可以").
