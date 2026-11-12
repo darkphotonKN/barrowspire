@@ -7,7 +7,7 @@ import { ATTACKS, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, ru
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { footing, measurePace } from "./pace.js";
-import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_SHEET, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
+import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_SHEET, MERCENARY_STYLE, SCEPTRE_TILT, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
 import { MERC_ANIMATIONS, parryClip } from "./clips.js";
 
 const DEG = 180 / Math.PI;
@@ -144,10 +144,9 @@ function deepestCarry(rig, gear, frames) {
 }
 
 /**
- * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands),
- * whether its weapon is a blade that trails behind the hand in the run, and the weapon's rest in
- * the idle: `point` down and forward (a blade's tip toward the ground) or `upright` (the sceptre
- * held low beside the leg, its head up).
+ * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands) and
+ * its weapon's rest in the idle and the walk: `point` down and forward (a blade's tip toward the
+ * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
  */
 const CLASSES = [
   {
@@ -157,7 +156,6 @@ const CLASSES = [
     sheet: KNIGHT_SHEET,
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
-    trails: true,
     rest: "point",
   },
   {
@@ -166,7 +164,6 @@ const CLASSES = [
     style: MERCENARY_STYLE,
     sheet: MERCENARY_SHEET,
     pump: ["L", "R"],
-    trails: true,
     rest: "point",
   },
   {
@@ -175,7 +172,6 @@ const CLASSES = [
     style: WIZARD_STYLE,
     sheet: WIZARD_SHEET,
     pump: ["L", "R"],
-    trails: false,
     rest: "upright",
   },
 ];
@@ -192,7 +188,7 @@ describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward 
   });
 });
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, trails }) => {
+describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, rest }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -238,16 +234,29 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
     }
   });
 
-  // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高"
-  it(`carries the weapon low on every sample: its tip never above the hand${trails ? ", a blade's trailing behind it" : ""}`, () => {
-    const tip = GEAR[name](rig).weapon.at(-1);
-    for (const f of SAMPLES) {
-      pose8(f);
-      const [hand, t] = [at(rig, "handR"), world(tip)];
-      expect((t.y - hand.y) / rig.H, `tip over the hand @${f}`).toBeLessThanOrEqual(0);
-      if (trails) expect((t.z - hand.z) / rig.H, `tip ahead of the hand @${f}`).toBeLessThanOrEqual(0);
-    }
-  });
+  // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高",
+  // then, of the held keys' fist turned over: "跑步時武器是不是拿反了"
+  it(
+    rest === "point"
+      ? "carries the blade forward and down or about level on every sample, its tip ahead of the hand, under the shoulder and never behind the body"
+      : "carries the sceptre up by its shaft on every sample, the orb above the hand and under the shoulder, ahead of the hand",
+    () => {
+      const tip = GEAR[name](rig).weapon.at(-1);
+      for (const f of SAMPLES) {
+        pose8(f);
+        const [hand, t, shoulder, hips] = [at(rig, "handR"), world(tip), at(rig, "upperArmR"), at(rig, "hips")];
+        const d = t.clone().sub(hand);
+        const elev = Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+        if (rest === "point") {
+          expect(elev, `blade @${f}`).toBeGreaterThanOrEqual(-45);
+          expect(elev, `blade @${f}`).toBeLessThanOrEqual(5);
+          expect(t.z - hips.z, `tip ahead of the body @${f}`).toBeGreaterThan(0);
+        } else expect(elev, `orb over the hand @${f}`).toBeGreaterThan(0);
+        expect(d.z, `tip ahead of the hand @${f}`).toBeGreaterThan(0);
+        expect(t.y, `tip under the shoulder @${f}`).toBeLessThan(shoulder.y);
+      }
+    },
+  );
 
   it("turns the shoulders 6.5–10° against the hips, and keeps the shared legs key for key", () => {
     const yaw = (l, r) => {
@@ -292,7 +301,7 @@ describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idl
     });
   });
 
-  it(rest === "point" ? "points the blade down and forward, its tip toward the ground" : "holds the sceptre low and upright, its head under the shoulder", () => {
+  it(rest === "point" ? "points the blade down and forward, its tip toward the ground" : "holds the sceptre up beside the leg, its head under the shoulder", () => {
     const tip = gear.weapon.at(-1);
     idle.forEach((p, i) => {
       posed(rig, p);
@@ -310,6 +319,31 @@ describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idl
     });
   });
 
+  // owner, 2026-11-12, of the wizard's held keys: "法師走路時武器可以垂一點 現在手垂下來了 但是武器卻還是拿得很直"
+  if (rest === "upright")
+    it(`lets the sceptre lean with the relaxed hand in the idle and the walk: ${SCEPTRE_TILT}° off vertical, 30–45° on every key, the orb forward and out a little and under the shoulder, the foot of the shaft back by the heel, clear of the robe`, () => {
+      const [butt, tip] = [gear.weapon[0], gear.weapon.at(-1)];
+      const walk = clipsFor(style, sheet.animations).walk;
+      const tilts = [];
+      for (const [anim, keys] of [["idle", idle], ["walk", walk]])
+        keys.forEach((p, i) => {
+          posed(rig, p);
+          const [hand, t, b] = [at(rig, "handR"), world(tip), world(butt)];
+          const d = t.clone().sub(hand);
+          const tilt = 90 - Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+          tilts.push(tilt);
+          expect(tilt, `${anim} tilt @${i}`).toBeGreaterThanOrEqual(30);
+          expect(tilt, `${anim} tilt @${i}`).toBeLessThanOrEqual(45);
+          expect(d.z, `${anim} orb forward @${i}`).toBeGreaterThan(0);
+          // the right hand: out is -x
+          expect((hand.x - t.x) / rig.H, `${anim} orb out @${i}`).toBeGreaterThanOrEqual(0.01);
+          expect(t.y, `${anim} orb under the shoulder @${i}`).toBeLessThan(at(rig, "upperArmR").y);
+          expect(b.z, `${anim} the shaft's foot behind the hand @${i}`).toBeLessThan(hand.z);
+          for (const m of gear.weapon) expect(outsideRobe(rig, world(m)), `${anim} @${i}: the sceptre into the robe`).toBeGreaterThan(0);
+        });
+      expect(Math.abs(tilts.reduce((a, b) => a + b) / tilts.length - SCEPTRE_TILT), "the mean tilt").toBeLessThanOrEqual(3);
+    });
+
   if (name === "knight")
     it("rests the shield before him, lowered: its centre under the chest bone", () => {
       idle.forEach((p, i) => {
@@ -317,6 +351,40 @@ describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idl
         expect(world(gear.other[0]).y, `shield @${i}`).toBeLessThan(at(rig, "chest").y);
       });
     });
+});
+
+/**
+ * How far a world point lies outside the mage's robe as cast.js cuts it (H; negative inside): the
+ * gown with the scapular over it (anatomy.js `skirt`, `overSkirt`), read in the pelvis's bind
+ * space, an ellipse at each height from the gown's top to its hem, its centre trailing back
+ * toward the hem.
+ */
+function outsideRobe(rig, w) {
+  const [, hy] = J(rig, "hips");
+  const [top, bottom] = [hy - 0.005, 0.016];
+  const b = inBind(rig, "hips", w);
+  if (b.y > top || b.y < bottom) return Infinity;
+  const t = (top - b.y) / (top - bottom);
+  const [rx, rz] = [0.116 + (0.162 - 0.116) * t, 0.088 + (0.148 - 0.088) * t];
+  const z = -0.02 * t * t;
+  return (Math.hypot(b.x / rx, (b.z - z) / rz) - 1) * Math.min(rx, rz);
+}
+
+// owner, 2026-11-12, of the held run keys' fist turned over (hand [0.7, π, 0]): "跑步時武器是不是拿反了"
+describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turned over in the hand (FS-JS7C8 R2)", ({ name, build, style, sheet }) => {
+  const rig = rigOf(build);
+  const clips = clipsFor(style, sheet.animations);
+
+  it.each(["idle", "walk", "run"])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
+    clips[anim].forEach((p, i) => {
+      posed(rig, p);
+      // the knuckles' axis (the hand's +x, about which the wrist cocks) in the forearm's frame: a
+      // fist rolled over on the forearm turns it about
+      const x = new THREE.Vector3(1, 0, 0).transformDirection(rig.bones.handR.matrixWorld);
+      const fore = new THREE.Matrix4().extractRotation(rig.bones.foreArmR.matrixWorld).invert();
+      expect(x.applyMatrix4(fore).x, `${name} ${anim} @${i}`).toBeGreaterThan(0);
+    });
+  });
 });
 
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
