@@ -334,3 +334,114 @@ Date: 2026-11-12
   reads the wizard's run at 0.41 px, every other class clip at 0; every `KNOWN_CLIPPING` sheet
   still clips past the limit and under its ceiling; `npm run bake -- --check` reports no changes.
 
+
+## Change: The folk's legs stay under their clothes
+Status: work-order
+Date: 2026-11-12
+
+> Written `--from-thread` by write-a-spec on 2026-11-12 (charter "NPC 腿部重繪", approved by the
+> owner: 「核准」). The owner: "npc的模組也要重繪一次 大腿都還是套用以前的模組 腿都超出衣服了" (the NPCs'
+> models need redrawing too: their thighs still use the old rig, and their legs poke out of their
+> clothes). Requirements marked **(owner)** are those words; **(charter default)** settles what
+> they left open. Anchored here: this FS owns "Legs stay inside garments", and R18 and R20 are what
+> left the hub folk (FS-2325V §G) on the old weighting and on `KNOWN_CLIPPING`. A behaviour change,
+> not a tune: four sheets leave the legacy lists and gain the guard's acceptance criteria.
+
+### Facts this change rests on
+
+- The hub's folk are four sheets baked by `tools/bake/page/characters/folk.js`, all 1x, idle and
+  walk only (`FOLK_ANIMATIONS`), on one atlas page `folk-0` (2036×2816, 22.93 MB RGBA, PNG
+  2,640,989 B):
+  - `folk_resident_trousers` (palettes rust, slate): the Cottar, the Woodcutter, the Drover, the
+    Gravedigger, the Smith, and the Elder (the storyteller, `FUNCTION_NPC_SHEETS`), and the
+    fallback for any appearance the client cannot resolve;
+  - `folk_resident_skirt` (green, flax): the Herbwife, the Bellringer, the Alewife, the Pilgrim;
+  - `folk_quartermaster`: the Quartermaster (the storekeeper);
+  - `folk_spirewarden`: baked, drawn by no NPC today (no function maps to it).
+  (`game-server/game-service/internal/game/hub_map.go` `hubNPCs`, `hubResidents`,
+  `hubFixedResidents`; `game-client/src/render/art/hubFolk.ts`.)
+- All four build their garment with `skirt({ mirrored: true })`: each half of the hem skinned to
+  the opposite thigh (R18), and none of the rest of R16. None draws its thighs in under it.
+- Posed as the bake poses them, the guard (R19, R22) reads, worst per sheet (1x px; limit 1): the
+  trousered resident 4.42 (walk frame 0; 1.50 at rest), the spirewarden 8.70 (walk frame 1; 1.60
+  at rest), the quartermaster 8.25 (walk frame 0; 0 at rest). The skirted resident has no legs
+  under her kirtle, only boots, so the guard has nothing to measure; she is on `MIRRORED_LEGACY`
+  alone.
+- The quartermaster's apron is an open panel over the front of the legs only (`arc: FRONT`).
+  `legs({ under })` draws a thigh in wherever it lies past the garment's wall, all round, not only
+  under the cloth: on him that slims the bare breeches at the sides and back by up to 4.6 1x px.
+
+### Requirements
+
+40. **(owner)** The hub folk's legs stay under their clothes: the four folk sheets are rebuilt on
+    R16's garment weighting (no `mirrored`), so each half of a hem follows the thigh on its own
+    side, the follow builds from under the waistband, and swaying panels are pushed out by the
+    legs.
+41. **(owner: 「大腿都還是套用以前的模組」; charter default for the how)** Where a garment covers the
+    thighs all round (the trousered resident's tunic, the spirewarden's hauberk), the thighs are
+    drawn in under it as the classes' are (`legs(rig, mat, { under })`, the one `UNDER_CLEAR`,
+    R17, FS-3V7GC R10), given the garment's own `skirt` options. The quartermaster's thighs are
+    not: his apron covers only their front, and drawing them in would slim the breeches it leaves
+    bare; the weighting of R40 alone keeps them under it. The skirted resident has no thighs to
+    draw in.
+42. **(charter default)** All four pass the guard at 1x with no exemption, in every pose of idle
+    and walk and in every palette variant: they leave `KNOWN_CLIPPING` (the trousered resident,
+    the spirewarden, the quartermaster) and `MIRRORED_LEGACY` (all four). Both lists keep only the
+    monsters (troll, zombie, ghost; ghoul, demon) and still only shrink (R20).
+43. **(charter default)** The look is unchanged but for the legs: each folk keeps its costume,
+    colours, proportions, garment cut (every `skirt` option but `mirrored`), clips (idle and walk),
+    palettes and 1x scale. Only how the cloth follows the legs, and the thighs under the cloth,
+    change.
+44. **(charter default)** Re-baked by the bake tool: only the folk's atlas page(s) and their
+    manifest entries change; every other atlas keeps its bytes; `npm run bake -- --check` reports
+    no changes after.
+45. **(charter default)** The owner approves each sheet on a contact sheet (ADR-0021 §5, FS-2325V
+    §G.5): old beside new, idle and walk, 8 facings, with an animated preview.
+
+### Acceptance Criteria
+
+- [ ] Each of the four folk sheets, built by `folk.js` and posed as the bake poses it, asks for no
+      `mirrored` garment and is on neither legacy list (seen red: all four mirrored and listed).
+- [ ] Through idle and walk in every palette, no leg of the trousered resident, the spirewarden or
+      the quartermaster lies more than 1 px outside the cloth over it, and the guard passes each
+      sheet with empty legacy lists (seen red: 4.42, 8.70, 8.25 px).
+- [ ] `KNOWN_CLIPPING` holds only the troll, the zombie and the ghost; `MIRRORED_LEGACY` only those
+      and the ghoul and the demon.
+- [ ] The bake passes the guard on the folk; only `folk-*` pages and the folk entries in
+      `manifest.json` change; `npm run bake -- --check` reports no changes.
+- [ ] A contact sheet per folk sheet, old beside new, idle and walk, 8 facings, and an animated
+      preview; the owner approves each.
+
+### Edge States
+
+- **A hem swung by a stride** is under the cloth if the cloth lies beyond the leg (R22); the owner
+  judges what the contact sheet shows.
+- **The tunic's and the hauberk's hems.** The thighs drawn in under a hem narrow back to the leg
+  as built between the last ring over the hem and the first under it (R17); in a walk the hem can
+  lift over that taper. Judged on the contact sheet.
+- **The kirtle.** The skirted resident's kirtle now sways with the leg on its own side and its
+  panels are pushed out by the legs below the knee, as the wizard's robe; her boots are not
+  measured (no guard on footwear).
+- **A leg still out after R40–R41** that only a garment change would fix: not decided here; it is
+  reported to the owner (the charter's escalation).
+
+### Out of Scope
+
+- The monsters on the legacy lists (troll, zombie, ghost, ghoul, demon).
+- Any new clip, palette, scale or costume; the game server; game logic; which NPC uses which
+  sheet.
+
+### Verification (2026-11-12, branch `feat/world-folk-legs`, I-HF0WW-9)
+
+- **Unit.** `characters/folk.test.mjs` poses each folk sheet as the bake does (`characters/poses.js`):
+  the guard's worst, 1x px, before → after: the trousered resident 4.42 → 0, the spirewarden
+  8.70 → 0, the quartermaster 8.25 → 0.66; the skirted resident has no legs to measure. None asks
+  for `mirrored`; `KNOWN_CLIPPING` keeps the troll, the zombie and the ghost, `MIRRORED_LEGACY`
+  those and the ghoul and the demon.
+- **Bake.** Only `folk-0` and the folk entries of `manifest.json` changed: 2036×2816 → 2036×2840,
+  22.93 → 23.13 MB RGBA, PNG 2,640,989 → 2,654,316 B. The skirted resident's frame grew 73×88 →
+  78×91 (her kirtle now swings out with her stride); every other folk frame box, anchor and crown
+  is unchanged. `npm run bake -- --check` reports no changes.
+- **Awaiting the owner:** a contact sheet per folk sheet (old above new, idle and walk, 8 facings)
+  and an animated preview. The skirted resident's kirtle visibly swings wider in the walk than
+  before (R43): kept or reverted on his word.

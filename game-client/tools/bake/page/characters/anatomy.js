@@ -122,10 +122,12 @@ export function arms(rig, mat, o = {}) {
 
 /**
  * Both legs, hip to ankle, each one continuous tube. `o.under` is the garment the thighs are worn
- * under (the options its `skirt` takes, the four classes): every part of a thigh that would show
- * outside it is drawn in to UNDER_CLEAR inside its wall (`underGarment`), so the thighs no longer
- * show as dark wedges at the sides of the waist. Without it (folk, creatures) the legs are as they
- * always were.
+ * under (the options its `skirt` takes: the four classes, the trousered resident, the
+ * spirewarden): every part of a thigh that would show outside it is drawn in to UNDER_CLEAR inside
+ * its wall (`underGarment`), so the thighs no longer show as dark wedges at the sides of the waist.
+ * It draws a thigh in all round, so a garment open over most of the leg (the quartermaster's
+ * apron) goes without it, or the thigh it leaves bare would slim. Without it (the quartermaster,
+ * creatures) the legs are as they always were.
  */
 export function legs(rig, mat, o = {}) {
   const lr = rig.p.limbR * (o.r ?? 1);
