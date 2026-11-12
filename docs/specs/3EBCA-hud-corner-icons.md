@@ -87,11 +87,12 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
    (1100), the letter panel (1800) and every popup. **(derived here: nothing that opens over the
    world is drawn under an icon)**
 5. **Hover text.** Under the pointer an icon shows its name and key in a small label above it:
-   "Menu (Esc)", "Character (I)", "Party (T)", "Mail" (Mail has no key), and the greyed Mail
-   "Mail · town only". 12 px, `palette.hudText` on `palette.hudPanel` at 0.85, padding 6 × 3, its
+   "Menu (Esc)", "Character (I)", "Party (T)", "Mailbox" (it has no key), and the greyed Mail
+   "Mailbox · town only". 12 px, `palette.hudText` on `palette.hudPanel` at 0.85, padding 6 × 3, its
    bottom 6 px above the plate, centred on the plate but kept at least 8 px inside the view's
    right edge. It goes when the pointer leaves. **(charter default: the words; "道具欄名稱改成角色英文"
-   names the bag's icon Character, in English; "mail沒有快捷鍵 所以就顯示mail就好"; "Menu", since Esc
+   names the bag's icon Character, in English; "mail沒有快捷鍵 所以就顯示mail就好", then "信箱hover改mailbox" (2026-11-12): "Mailbox", the name the
+   panel and the vocabulary already use; "Menu", since Esc
    opens a game menu and no settings panel exists (§Facts; owner: "會用setting嗎"); "town only"
    derived here, the terse voice; the label's look derived here, the HUD's text on its panel)**
 
@@ -162,7 +163,7 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 
 - [ ] At 1080 × 720 the row's rects are Menu (1006, 658, 58, 46), Character (940, 658, 58, 46), Party (874, 658, 58, 46) and Mail (808, 658, 58, 46); at 1280 each is 200 px further right; the town, a field and a run draw them at the same rects.
 - [ ] Each live icon is drawn on a carved plate at depth 1000 with its glyph in `interactable`, brightening to `interactableBright` under the pointer; the greyed Mail is drawn in `hudFaint` and never brightens; no raw colour literal (the lint fence passes).
-- [ ] Under the pointer each icon shows "Menu (Esc)", "Character (I)", "Party (T)", "Mail" or, greyed, "Mail · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
+- [ ] Under the pointer each icon shows "Menu (Esc)", "Character (I)", "Party (T)", "Mailbox" or, greyed, "Mailbox · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
 - [ ] A press on Menu does what one Esc press does in the town, a field and a run (closes the one thing on top, else opens or closes the ESC menu).
 - [ ] A press on Character toggles the gear overlay in every world, under the same guards as I there, and ends a Shadow Shot hold on opening.
 - [ ] A press on Party toggles the party panel in every world, refused while the scene's `blocked` holds, accepted while a text field has focus.
@@ -199,3 +200,11 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 - Renaming the gear overlay's own panel titles; the dev gallery (HUD chrome is not a tracked
   family, FS-1819Q).
 - Any server, proto or gateway change.
+- **Splitting the gear overlay into a Character panel (C) and an Inventory panel (I)**, asked by
+  the owner on 2026-11-12 ("道具欄跟角色面板拆開顯示 角色面板維持快捷鍵C 道具欄是I 右下角也多做一個道具欄
+  然後這兩個右上角都要多加X關閉按鈕") with a fifth icon, the row then reading Menu, Inventory (I),
+  Character (C), Party (T), Mailbox. Not built here: it changes FS-HRH2J's overlay beyond a
+  layout (one open state for both panels shared by its three drivers, the paper doll and the bag
+  sized as one panel, the stash mode that takes the left panel, FS-VPD8Y R35), and was raised to
+  the owner for a decision. Until then the row is Menu, Character (I, the whole overlay), Party,
+  Mailbox.

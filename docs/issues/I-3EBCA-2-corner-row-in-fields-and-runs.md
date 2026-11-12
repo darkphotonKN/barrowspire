@@ -16,7 +16,7 @@ spectator's leave button stand 70 px up, right-aligned with the row.
 
 ## Acceptance Criteria
 
-- [ ] FS-3EBCA acceptance criteria for fields and runs: same rects, greyed Mail inert with "Mail · town only", presses, no attack under an icon, the card and button places.
+- [ ] FS-3EBCA acceptance criteria for fields and runs: same rects, greyed Mail inert with "Mailbox · town only", presses, no attack under an icon, the card and button places.
 - [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By

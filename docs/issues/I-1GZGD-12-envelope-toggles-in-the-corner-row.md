@@ -4,14 +4,14 @@ status: open
 implements: FS-1GZGD
 blocked_by: [I-3EBCA-1]
 labels: [ready-for-agent]
-title: "FS-1GZGD change slice: the envelope toggles the letter panel, stands in the corner row's Mail slot and names itself \"Mail\" (game-client)"
+title: "FS-1GZGD change slice: the envelope toggles the letter panel, stands in the corner row's Mail slot and names itself \"Mailbox\" (game-client)"
 ---
 Implements FS-1GZGD §Change: The envelope toggles the letter panel and stands in the corner row
 
 ## What to Build
 
 `envelopeFrame` returns the corner row's Mail slot; a press on the envelope with the panel open
-closes it; under the pointer it shows the row's "Mail" label.
+closes it; under the pointer it shows the row's "Mailbox" label.
 
 ## Acceptance Criteria
 

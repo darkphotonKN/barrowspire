@@ -18,7 +18,7 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
 
 - Town, field and run, 1080 and 1280 wide, windowed and fullscreen: the four icons bottom right
   (gear, bust, two busts, envelope), the same places in every world; each brightens and names
-  itself under the pointer; the envelope greyed outside the town, "Mail · town only", inert.
+  itself under the pointer; the envelope greyed outside the town, "Mailbox · town only", inert.
 - Each icon toggles its panel; a second press closes it; I, B, T, M and Esc as before.
 - The gear icon does what Esc does: in the town and a field the menu (Change character, Back),
   in a run the run's menu.

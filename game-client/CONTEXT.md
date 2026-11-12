@@ -161,9 +161,8 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   notification-service's Mailbox and `/api/mail/*`.
 - **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
   in Phaser with a small **wax seal**, the **corner row**'s Mail icon. Not an emoji and not a
-  Heroicon (the HUD is canvas). Its hover label reads "Mail", the owner's word (FS-1GZGD § Change,
-  2026-11-12) and the one place the screen says "mail"; outside the town the row shows it
-  greyed, "Mail · town only".
+  Heroicon (the HUD is canvas). Its hover label reads "Mailbox" (FS-1GZGD § Change, 2026-11-12);
+  outside the town the row shows it greyed, "Mailbox · town only".
 - **Wax seal** (on the envelope) — the indicator: lit, with a count, while any letter is unread
   or still holds unclaimed enclosures; dark only when everything is read and claimed. The
   **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
@@ -461,7 +460,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 
 - **Corner row** (FS-3EBCA): the row of drawn panel icons in the bottom-right corner of every
   world, from the right **Menu** (a gear: one Esc press), **Character** (the gear and bag
-  overlay), **Party** (the party panel) and **Mail** (the envelope; greyed outside the town). Each
+  overlay), **Party** (the party panel) and the **Mailbox** icon (the envelope; greyed outside the
+  town). Each
   names itself and its key under the pointer. "Character" is the screen's name for the gear and
   bag overlay's icon only; the overlay keeps its own titles. Not the party frames, not the
   minimap's column.

@@ -1509,17 +1509,16 @@ C2. **The envelope is the corner row's Mail icon.** It stands in the row's leftm
     (FS-3EBCA R9; owner, "野外 email也不用消失 就顯示灰色表示不能按"), and nothing of the mailbox is
     fetched there. Its plate, lines, seal, count and pulse are drawn exactly as before; only its
     place moves. **(charter default)**
-C3. **It names itself under the pointer**: "Mail", in the row's hover label (FS-3EBCA R5). The
-    owner's word, and the one place the screen says "mail": the panel's caption stays "MAILBOX",
-    and every other word for it stays mailbox and letter (`game-client/CONTEXT.md` § Mailbox
-    terms). **(charter default: owner, "mail沒有快捷鍵 所以就顯示mail就好")**
+C3. **It names itself under the pointer**: "Mailbox", in the row's hover label (FS-3EBCA R5), and
+    no key. The screen's word for it stays mailbox and letter (`game-client/CONTEXT.md` § Mailbox
+    terms). **(owner: "mail沒有快捷鍵 所以就顯示mail就好", then "信箱hover改mailbox", 2026-11-12)**
 
 ### Acceptance Criteria
 
 - [ ] With the letter panel open, a press on the envelope closes it; a second press opens it again.
 - [ ] With the panel shut, a press while a dialogue, the ESC menu or the gear overlay is open opens nothing.
 - [ ] At 1080 × 720 the envelope's plate is (808, 658, 58, 46) and at 1280 × 720 (1008, 658, 58, 46); its seal, count and pulse are unchanged.
-- [ ] Under the pointer the envelope shows "Mail"; the label goes when the pointer leaves.
+- [ ] Under the pointer the envelope shows "Mailbox"; the label goes when the pointer leaves.
 - [ ] Esc and the × still close the panel.
 
 ### Edge States

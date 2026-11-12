@@ -1,6 +1,6 @@
 ---
 id: I-R82NV-13
-status: open
+status: done
 implements: FS-R82NV
 blocked_by: []
 labels: [ready-for-agent]
@@ -17,9 +17,9 @@ prompts and the ready check step right of the panel's new right edge.
 
 ## Acceptance Criteria
 
-- [ ] FS-R82NV § Change acceptance criteria, all six (the field's menu after the panel: I-G4VMQ-5).
-- [ ] The tests that pinned `PARTY_PANEL_X` 280 / y 56 are rewritten to the centred place, each citing this change.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-R82NV § Change acceptance criteria, all six (the field's menu after the panel: I-G4VMQ-5).
+- [x] The tests that pinned `PARTY_PANEL_X` 280 / y 56 are rewritten to the centred place, each citing this change.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 
