@@ -597,6 +597,18 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(clipsFor(archer).run).toBeUndefined();
   });
 
+  it("carries a class's run.hold in the run in place of its hold: the walk's carry stays the walk's", () => {
+    const hold = pose({ upperArmR: [-0.28, 0, -0.08], foreArmR: [-1.15, 0, 0] });
+    const carry = pose({ upperArmR: [0, 0, -0.06], handR: [-0.6, 0, 0] });
+    const bare = runCycle({ hold: pose() });
+    runCycle({ hold, run: { hold: carry } }).forEach((p, i) => {
+      for (const [bone, v] of Object.entries(carry.b)) v.forEach((x, j) => expect(p.b[bone][j], `${bone} @${i}`).toBeCloseTo((bare[i].b[bone]?.[j] ?? 0) + x, 9));
+      expect(p.b.foreArmR, `foreArmR @${i}`).toEqual(bare[i].b.foreArmR);
+    });
+    // the walk keeps the hold
+    expect(walkCycle({ hold, run: { hold: carry } })[0].b.foreArmR[0]).toBeLessThan(-1.15);
+  });
+
   it("the run: each step has a flight frame, both soles off the ground", () => {
     for (const half of [[0, 1, 2, 3], [4, 5, 6, 7]]) {
       const flights = half.filter((f) => {
