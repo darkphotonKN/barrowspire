@@ -432,3 +432,5 @@ specified in Requirements.
 - **Not "the second AoE":** the wizard's `triple_fireball` is a 3-projectile spread, and the knight's
   basic slash is already a 120° cone. The riposte stands apart by width, reach, damage, and being
   earned.
+
+## Change: The class attacks move with weight and cut deep → FS-2325V

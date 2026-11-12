@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BARROW_HEX } from "@/utils/theme";
-import { toCss } from "@/utils/canvasPalette";
+import { palette, toCss } from "@/utils/canvasPalette";
+import { viewport } from "@/render/viewport";
 import {
+  MENU_BLOCKER_DEPTH,
   MENU_DEPTH,
   MENU_LINE,
   MENU_PAD,
@@ -12,6 +14,14 @@ import {
   type MenuStage,
   type MenuTones,
 } from "./menuPanel";
+import { PANEL_TITLE_BAND, drawPanelFrame, drawPanelTitle, frameClose } from "./panelFrame";
+
+// The party panel's frame is one drawing, which this surface must call, not copy (owner
+// 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame), drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
 
 /** A scene object as the stand-in stage made it: what kind, with what, and whether it is gone. */
 interface Made {
@@ -66,6 +76,17 @@ function recordingStage() {
         if (prop === "setName") return setter("name");
         if (prop === "setScrollFactor") return setter("scrollFactor");
         if (prop === "setColor") return setter("color");
+        if (prop === "setInteractive")
+          return (...args: unknown[]) => {
+            target.interactive = true;
+            target.interactiveArgs = args;
+            return proxy;
+          };
+        if (prop === "setSize")
+          return (width: number, height: number) => {
+            target.size = [width, height];
+            return proxy;
+          };
         if (prop === "setPosition")
           return (x: number, y: number) => {
             target.x = x;
@@ -179,7 +200,14 @@ describe("showMenuPanel", () => {
     { id: "back", label: "Back  [Esc]", register: "cancel" },
   ];
 
-  function shown(spec: { line?: string; enabled?: Record<string, () => boolean>; withBack?: boolean } = {}) {
+  function shown(
+    spec: {
+      line?: string;
+      enabled?: Record<string, () => boolean>;
+      withBack?: boolean;
+      through?: (x: number, y: number) => boolean;
+    } = {},
+  ) {
     const stage = recordingStage();
     const fall = vi.fn();
     const leave = vi.fn();
@@ -194,8 +222,13 @@ describe("showMenuPanel", () => {
       origin: ORIGIN,
       hit: HIT,
       tones: TONES,
+      through: spec.through,
     });
-    const labels = () => stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    // the rows' labels, the frame's × and the title aside
+    const labels = () =>
+      stage.made
+        .filter((m) => m.kind === "text" && !m.destroyed && m.args[2] !== "×" && m.args[2] !== "MENU")
+        .map((m) => String(m.args[2]));
     return { ...stage, ...panel, container: panel.container as unknown as Made, fall, leave, back, close, labels };
   }
 
@@ -243,9 +276,10 @@ describe("showMenuPanel", () => {
     expect(lined.labels()[0]).toBe("The barrow keeps its dead. Fall?");
     const rowY = (s: ReturnType<typeof shown>, name: string) =>
       (s.container.children.find((c) => c.name === name) as Made & { y: number }).y;
-    const height = (rows: number, line: number) => MENU_PAD * 2 + line + rows * MENU_ROW;
-    expect(rowY(bare, "menu-fall-label")).toBe(-height(3, 0) / 2 + MENU_PAD + MENU_ROW / 2);
-    expect(rowY(lined, "menu-fall-label")).toBe(-height(3, MENU_LINE) / 2 + MENU_PAD + MENU_LINE + MENU_ROW / 2);
+    // the title's band over them (FS-3EBCA R23)
+    const height = (rows: number, line: number) => PANEL_TITLE_BAND + MENU_PAD + line + rows * MENU_ROW;
+    expect(rowY(bare, "menu-fall-label")).toBe(-height(3, 0) / 2 + PANEL_TITLE_BAND + MENU_ROW / 2);
+    expect(rowY(lined, "menu-fall-label")).toBe(-height(3, MENU_LINE) / 2 + PANEL_TITLE_BAND + MENU_LINE + MENU_ROW / 2);
     expect(bare.find("menu-line")).toBeUndefined();
   });
 
@@ -310,6 +344,136 @@ describe("showMenuPanel", () => {
   it("should take every hit down with the container", () => {
     const { container, find } = shown();
     (container as unknown as { destroy(): void }).destroy();
-    for (const id of ["fall", "leave", "back"]) expect(find(`menu-${id}`)).toBeUndefined();
+    for (const id of ["fall", "leave", "back", "close"]) expect(find(`menu-${id}`)).toBeUndefined();
+  });
+
+  // FS-G4VMQ § Change: The menu wears the party panel's frame (C1–C3). I-3EBCA-6.
+  it("should draw its box with the party panel's frame drawing, centred on the origin, the rows unchanged (C1, C3)", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const { labels } = shown();
+    const height = PANEL_TITLE_BAND + MENU_PAD + choices.length * MENU_ROW;
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(frame.mock.calls[0][2]).toEqual({ x: -160, y: -height / 2, width: 320, height });
+    expect(labels()).toEqual(["Fall where you stand  [1]", "Leave the barrow  [2]", "Back  [Esc]"]);
+  });
+
+  it("should close on its × as Esc does: through the cancel row, camera-fixed over the box (C2)", () => {
+    const { find, made, back, container, moveTo } = shown();
+    const height = PANEL_TITLE_BAND + MENU_PAD + choices.length * MENU_ROW;
+    const box = frameClose({ x: -160, y: -height / 2, width: 320 });
+    const glyph = made.find((m) => m.kind === "text" && m.args[2] === "×")!;
+    expect(container.children).toContain(glyph);
+    const hit = find("menu-close") as Made & { x: number; y: number };
+    expect(hit.kind).toBe("rectangle");
+    expect(hit.scrollFactor).toBe(0);
+    expect([hit.x, hit.y]).toEqual([ORIGIN.x + box.x + box.width / 2, ORIGIN.y + box.y + box.height / 2]);
+    hit.handlers.pointerover();
+    expect(glyph.color).toBe(toCss(palette.interactableBright));
+    hit.handlers.pointerup();
+    expect(back).toHaveBeenCalledTimes(1);
+    moveTo({ x: ORIGIN.x + 50, y: ORIGIN.y });
+    expect(hit.x).toBe(ORIGIN.x + 50 + box.x + box.width / 2);
+  });
+
+  // FS-3EBCA R20, R23 (owner 2026-11-12: "menu目前沒標題也加上", "每個ui視窗的標題都不同位置
+  // 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"). I-3EBCA-9.
+  it("should title the menu MENU with the shared title drawing, in its box, over the rows (R20, R23)", () => {
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { container, made } = shown({ line: "The barrow keeps its dead. Fall?" });
+    const height = PANEL_TITLE_BAND + MENU_PAD + MENU_LINE + choices.length * MENU_ROW;
+    expect(title).toHaveBeenCalledTimes(1);
+    expect(title.mock.calls[0][1]).toEqual({ x: -160, y: -height / 2, width: 320, height });
+    expect(title.mock.calls[0][2]).toBe("MENU");
+    const drawn = made.find((m) => m.kind === "text" && m.args[2] === "MENU")!;
+    expect(container.children).toContain(drawn);
+  });
+
+  // FS-3EBCA R18 (owner 2026-11-12: "menu開啟時其他都不能按"): while the menu is open only its rows,
+  // its × and its keys answer; nothing drawn under it takes a press or a hover.
+  describe("the open menu is modal (FS-3EBCA R18)", () => {
+    afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+    it("should hang a camera-fixed blocker over the whole view, under its rows and × and over the HUD and every panel", () => {
+      const { find } = shown();
+      const blocker = find("menu-blocker") as Made & { interactive?: boolean };
+      expect(blocker?.kind).toBe("zone");
+      expect(blocker.args.slice(0, 4)).toEqual([0, 0, 1080, 720]);
+      expect(blocker.scrollFactor).toBe(0);
+      expect(blocker.interactive).toBe(true);
+      expect(blocker.depth).toBe(MENU_BLOCKER_DEPTH);
+      // under the box (2000) and its hits (2001), over the letter panel (1800) and the HUD (1000)
+      expect(MENU_BLOCKER_DEPTH).toBeLessThan(MENU_DEPTH);
+      expect(MENU_BLOCKER_DEPTH).toBeGreaterThan(1800);
+      expect(find("menu-back")!.depth).toBeGreaterThan(MENU_BLOCKER_DEPTH);
+      expect(find("menu-close")!.depth).toBeGreaterThan(MENU_BLOCKER_DEPTH);
+    });
+
+    it("should stop a press on it there: no scene-wide listener hears it (the world, the chat window)", () => {
+      const { find } = shown();
+      const stopPropagation = vi.fn();
+      const down = find("menu-blocker")!.handlers.pointerdown as unknown as (...a: unknown[]) => void;
+      down({ x: 10, y: 10 }, 10, 10, { stopPropagation });
+      expect(stopPropagation).toHaveBeenCalledTimes(1);
+      // and a call with no event (a stand-in) does not throw
+      expect(() => down()).not.toThrow();
+    });
+
+    // FS-3EBCA R18 (owner 2026-11-12: "menu無法再按一次icon關閉"): the Menu icon's plate is left to the
+    // icon, so a press there closes the menu and a hover there brightens it; nothing else gets through.
+    describe("the point it lets through (the Menu icon's plate)", () => {
+      const PLATE = { x: 1006, y: 658, width: 58, height: 46 };
+      const onPlate = (x: number, y: number) =>
+        x >= PLATE.x && x <= PLATE.x + PLATE.width && y >= PLATE.y && y <= PLATE.y + PLATE.height;
+      type HitTest = (area: unknown, x: number, y: number, object: unknown) => boolean;
+      const hitTestOf = (blocker: Made) => {
+        const args = (blocker as Made & { interactiveArgs?: unknown[] }).interactiveArgs ?? [];
+        const test = args.find((a) => typeof a === "function") as HitTest | undefined;
+        expect(test, "the blocker's own hit test").toBeTypeOf("function");
+        return (x: number, y: number) => test!({}, x, y, blocker);
+      };
+
+      it("should take every point of the view but the plate it is told to let through", () => {
+        const takes = hitTestOf(shown({ through: onPlate }).find("menu-blocker")!);
+        expect(takes(10, 10)).toBe(true);
+        expect(takes(540, 360)).toBe(true);
+        // the plate's centre and its corners go to the icon under it
+        expect(takes(PLATE.x + 29, PLATE.y + 23)).toBe(false);
+        expect(takes(PLATE.x, PLATE.y)).toBe(false);
+        expect(takes(PLATE.x + PLATE.width, PLATE.y + PLATE.height)).toBe(false);
+        // a press beside the plate (the gap to Inventory, above it, the Inventory plate) is still the blocker's
+        expect(takes(PLATE.x - 4, PLATE.y + 23)).toBe(true);
+        expect(takes(PLATE.x + 29, PLATE.y - 2)).toBe(true);
+        expect(takes(969, 681)).toBe(true);
+        // off the view is no one's
+        expect(takes(-1, 10)).toBe(false);
+        expect(takes(1080, 10)).toBe(false);
+        expect(takes(10, 720)).toBe(false);
+      });
+
+      it("should take the whole view when told to let nothing through", () => {
+        const takes = hitTestOf(shown().find("menu-blocker")!);
+        expect(takes(PLATE.x + 29, PLATE.y + 23)).toBe(true);
+      });
+
+      it("should follow the view when it changes", () => {
+        const { find, moveTo } = shown({ through: onPlate });
+        viewport.set({ width: 1280, height: 720, renderScale: 1 });
+        moveTo({ x: 640, y: 360 });
+        const takes = hitTestOf(find("menu-blocker")!);
+        expect(takes(1200, 10)).toBe(true);
+        expect(takes(1280, 10)).toBe(false);
+      });
+    });
+
+    it("should cover the new view when it changes, and go down with the menu", () => {
+      const { find, moveTo, container } = shown();
+      viewport.set({ width: 1280, height: 720, renderScale: 1 });
+      moveTo({ x: 640, y: 360 });
+      expect((find("menu-blocker") as Made & { size?: number[] }).size).toEqual([1280, 720]);
+      (container as unknown as { destroy(): void }).destroy();
+      expect(find("menu-blocker")).toBeUndefined();
+    });
   });
 });

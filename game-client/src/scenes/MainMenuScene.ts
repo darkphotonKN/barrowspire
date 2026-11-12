@@ -1,6 +1,17 @@
 import { ActionType } from "@/assets/types/client";
 import { socketManager, ConnectionStatus } from "@/utils/class/SocketManager";
 import { useGameStore } from "@/stores/gameStore";
+import { usePartyStore } from "@/stores/partyStore";
+import { useAuthStore } from "@/stores/authStore";
+import {
+  ROSTER_PARTY_MARK,
+  SWITCH_CANCEL_LABEL,
+  inkMiddle,
+  partyMarkLayout,
+  SWITCH_LEAVE_LABEL,
+  entryChoice,
+  inPartyAs,
+} from "@/characters/rosterParty";
 import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
 import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
@@ -23,6 +34,12 @@ import {
 import { drawXpBar } from "@/ui/ProgressHud";
 import { atCap, characterProgress, xpFraction } from "@/ui/progress";
 import { onSceneEnd } from "./sceneEnd";
+import {
+  ENTER_LABEL,
+  menuConnectionView,
+  reconnectOnArrival,
+  type MenuPress,
+} from "./menuConnection";
 import { forgetPlace } from "@/components/arrival";
 import {
   LOGICAL_HEIGHT,
@@ -57,19 +74,35 @@ const HERO_SCALE = 1.3;
 const CARD_XP_BAR = { left: 64, y: 56, rightMargin: 12, height: 4 };
 /** A roster card's head-and-shoulders window. */
 const PORTRAIT = { width: 44, height: 56 };
-/**
- * The primary button takes the player into the town (the hub), not into a delve: the Spire's door
- * starts those. Wide enough for its label at the button's letter-spacing.
- */
-const ENTER_LABEL = "ENTER THE TOWN";
+/** The primary button: wide enough for its label at the button's letter-spacing. */
 const ENTER_BUTTON = { width: 280, height: 50 };
+/**
+ * How far below a Text's top its ink is middled (`inkMiddle`), from the font's ascent Phaser draws
+ * the line at and the ink the canvas measures for its words in its own font; the box's middle
+ * where either is missing (a stand-in, a canvas without ink bounds).
+ */
+function inkMiddleOf(words: Phaser.GameObjects.Text): number {
+  const ascent = words.getTextMetrics?.()?.ascent;
+  const measured = words.context?.measureText?.(words.text);
+  const ink =
+    measured &&
+    Number.isFinite(measured.actualBoundingBoxAscent) &&
+    Number.isFinite(measured.actualBoundingBoxDescent)
+      ? { ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent }
+      : undefined;
+  return inkMiddle(ascent ?? 0, ascent === undefined ? undefined : ink, words.height);
+}
+
+/** The confirm before entering as another character than the party's (C11). */
+const SWITCH_CONFIRM = { width: 360, height: 150, button: { width: 130, height: 32 } };
 
 export class MainMenuScene extends Phaser.Scene {
   private unsubscribeConnectionStatus?: () => void;
   private buttonBg?: Phaser.GameObjects.Graphics;
   private startButtonText?: Phaser.GameObjects.Text;
   private connectionStatusText?: Phaser.GameObjects.Text;
-  private isConnected: boolean = false;
+  /** What the primary button does now, by the socket's status (FS-R6EYZ R15). */
+  private press: MenuPress = null;
   private art?: ArtLibrary;
   private centerFigure?: MenuFigure;
   private centerFigureClass?: string;
@@ -79,6 +112,14 @@ export class MainMenuScene extends Phaser.Scene {
   private queuePeopleText?: Phaser.GameObjects.Text;
   private queueOverlay?: Phaser.GameObjects.Rectangle;
   private queuePopupContainer?: Phaser.GameObjects.Container;
+  private unsubscribeParty?: () => void;
+  /** The confirm before a character switch, while it is up (C11). */
+  private switchConfirm?: {
+    overlay: Phaser.GameObjects.Rectangle;
+    container: Phaser.GameObjects.Container;
+    leave: () => void;
+    cancel: () => void;
+  };
 
   private heroSidebarCards: {
     index: number;
@@ -92,6 +133,10 @@ export class MainMenuScene extends Phaser.Scene {
     hitArea: Phaser.GameObjects.Rectangle;
     deleteBtn?: Phaser.GameObjects.Text;
     deleteHit?: Phaser.GameObjects.Rectangle;
+    /** The party holds this player as this character: its card is marked (C9). */
+    inParty: boolean;
+    partyMarkBg: Phaser.GameObjects.Graphics;
+    partyMarkText: Phaser.GameObjects.Text;
   }[] = [];
 
   private centerHeroContainer?: Phaser.GameObjects.Container;
@@ -203,17 +248,17 @@ export class MainMenuScene extends Phaser.Scene {
     const hitArea = this.add.rectangle(titleX, btnY + btnH / 2, btnW, btnH, ui.well, 0);
 
     hitArea.on("pointerover", () => {
-      if (this.isConnected) this.drawDelveButton("hover");
+      if (this.press) this.drawDelveButton("hover");
     });
 
     hitArea.on("pointerout", () => {
-      if (this.isConnected) this.drawDelveButton("idle");
+      if (this.press) this.drawDelveButton("idle");
     });
 
     hitArea.on("pointerdown", () => {
-      if (this.isConnected) {
-        this.handleStartGame();
-      }
+      if (this.press === "enter") this.handleStartGame();
+      // down: the menu's own reconnect (FS-R6EYZ R15, R16)
+      else if (this.press === "reconnect") socketManager.reconnectFromMenu();
     });
 
     this.drawDelveButton("disabled");
@@ -242,6 +287,9 @@ export class MainMenuScene extends Phaser.Scene {
 
     handleStatus(socketManager.getConnectionStatus());
     this.unsubscribeConnectionStatus = socketManager.onConnectionStatusChange(handleStatus);
+    // come back to with the socket down (the disconnect notice, a boot that could not reach the
+    // server): reconnect now; the status says how it goes (FS-R6EYZ R14)
+    reconnectOnArrival(socketManager);
 
     // Queue Notification Listeners
     socketManager.setOnMessageError((info) => {
@@ -295,6 +343,12 @@ export class MainMenuScene extends Phaser.Scene {
       this.refreshHeroSidebar();
     });
     this.loadRoster();
+
+    // the party the roster is sent marks its character's card (FS-NCC9J §Change: Changing
+    // character leaves the party, C9)
+    this.unsubscribeParty = usePartyStore.subscribe((state, prev) => {
+      if (state.party !== prev.party && this.sys?.settings?.active) this.refreshHeroSidebar();
+    });
 
     this.listenForEnd();
   }
@@ -441,6 +495,18 @@ export class MainMenuScene extends Phaser.Scene {
       const deleteHit = this.add.rectangle(panelX + panelW - 28, y + 24, 22, 22, ui.well, 0);
       deleteHit.setVisible(false);
 
+      // The party's mark, laid out and shown by refreshHeroSidebar (C9).
+      const partyMarkBg = this.add.graphics();
+      const partyMarkText = this.add
+        .text(0, 0, ROSTER_PARTY_MARK, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "9px",
+          color: toCss(ui.label),
+          letterSpacing: 1,
+        })
+        .setOrigin(0, 0)
+        .setVisible(false);
+
       const cardObj = {
         index: i,
         characterId: char.id,
@@ -454,11 +520,22 @@ export class MainMenuScene extends Phaser.Scene {
         hitArea,
         deleteBtn: deleteText,
         deleteHit,
+        inParty: false,
+        partyMarkBg,
+        partyMarkText,
       };
 
       this.sidebarCardsContainer.add([bg, glow]);
       if (avatar) this.sidebarCardsContainer.add(avatar.container);
-      this.sidebarCardsContainer.add([nameText, classText, hitArea, deleteText, deleteHit]);
+      this.sidebarCardsContainer.add([
+        nameText,
+        classText,
+        partyMarkBg,
+        partyMarkText,
+        hitArea,
+        deleteText,
+        deleteHit,
+      ]);
       this.heroSidebarCards.push(cardObj);
 
       hitArea.on("pointerup", (pointer: Phaser.Input.Pointer) => {
@@ -712,6 +789,8 @@ export class MainMenuScene extends Phaser.Scene {
     const store = useGameStore.getState();
     const activeId = store.activeCharacterId;
     const characters = store.characters;
+    const party = usePartyStore.getState().party;
+    const selfId = useAuthStore.getState().memberInfo?.id;
 
     this.refreshCenterHeroShowcase();
 
@@ -806,9 +885,121 @@ export class MainMenuScene extends Phaser.Scene {
       );
       // Every portrait stands in a little torchlight; the chosen hero's burns brighter.
       card.glow?.setPosition(panelX + 36, y + cardH / 2 + 4).setAlpha(isSelected ? 1 : 0.55);
+
+      card.inParty = inPartyAs(char, party, selfId);
+      this.drawPartyMark(card, { x, y, width: cardW });
     });
 
     this.updateSidebarScrollPosition(maskY, maskH, panelX + panelW - 6, totalHeight);
+  }
+
+  /**
+   * The party's mark on a card, or none (C9): two linked iron rings and "IN A PARTY" on a soot
+   * plate with an iron hairline, centred across the card in its top band, the rings on the words'
+   * ink midline (owner 2026-11-12: "無限符號跟in party文字 對齊一下中線 然後位置放在正中間"; `partyMarkLayout`).
+   */
+  private drawPartyMark(
+    card: {
+      inParty: boolean;
+      partyMarkBg: Phaser.GameObjects.Graphics;
+      partyMarkText: Phaser.GameObjects.Text;
+    },
+    at: { x: number; y: number; width: number },
+  ): void {
+    const g = card.partyMarkBg;
+    g.clear();
+    const words = card.partyMarkText;
+    words.setVisible(card.inParty);
+    if (!card.inParty) return;
+
+    const { plate, rings, text } = partyMarkLayout(at, { width: words.width, inkMiddle: inkMiddleOf(words) });
+    words.setPosition(text.x, text.y);
+    g.fillStyle(ui.well, 0.85);
+    g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 3);
+    g.lineStyle(1, ui.frame, 0.7);
+    g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 3);
+    g.lineStyle(1, ui.frameBright, 0.95);
+    for (const ring of rings) g.strokeCircle(ring.x, ring.y, ring.r);
+  }
+
+  /**
+   * Before entering as another character than the one the party holds this player as (C11):
+   * "Entering as <name> will leave your party." with LEAVE PARTY and CANCEL over a soot veil that
+   * takes every click. Cancel closes it and sends nothing; Leave party sends `enter_hub`, which the
+   * server makes the switch (C7): the new character seated, the player out of their party as
+   * `party_leave` takes them. No `party_leave` is sent first: from the roster no pod may hold the
+   * party in its cache, where `party_leave` would be refused.
+   */
+  private showSwitchConfirm(text: string, enter: () => void): void {
+    this.closeSwitchConfirm();
+    const width = STAGE_WIDTH;
+    const height = LOGICAL_HEIGHT;
+    const { width: boxW, height: boxH, button } = SWITCH_CONFIRM;
+
+    // over the whole view, however much wider than the stage it is; it takes the clicks
+    const overlay = this.add
+      .rectangle(width / 2, height / 2, LOGICAL_MAX_WIDTH, height, ui.well, 0.7)
+      .setDepth(100)
+      .setInteractive();
+    const container = this.add.container(width / 2, height / 2).setDepth(101);
+
+    const box = this.add.graphics();
+    drawPanel(box, -boxW / 2, -boxH / 2, boxW, boxH, { alpha: 0.97 });
+    const line = this.add
+      .text(0, -28, text, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "15px",
+        color: toCss(ui.text),
+        align: "center",
+        wordWrap: { width: boxW - 48 },
+      })
+      .setOrigin(0.5);
+    container.add([box, line]);
+
+    const confirm = {
+      overlay,
+      container,
+      leave: () => {
+        this.closeSwitchConfirm();
+        enter();
+      },
+      cancel: () => this.closeSwitchConfirm(),
+    };
+    const buttons = [
+      { label: SWITCH_LEAVE_LABEL, tone: "secondary" as const, x: -button.width / 2 - 10, act: confirm.leave },
+      { label: SWITCH_CANCEL_LABEL, tone: "cancel" as const, x: button.width / 2 + 10, act: confirm.cancel },
+    ];
+    for (const b of buttons) {
+      const y = boxH / 2 - 26 - button.height / 2;
+      const bg = this.add.graphics();
+      const label = this.add
+        .text(b.x, y, b.label, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "12px",
+          letterSpacing: 2,
+        })
+        .setOrigin(0.5);
+      const draw = (state: ButtonState) => {
+        drawButton(bg, b.x - button.width / 2, y - button.height / 2, button.width, button.height, b.tone, state);
+        label.setColor(toCss(buttonTextColor(b.tone, state)));
+      };
+      draw("idle");
+      const hit = this.add
+        .rectangle(b.x, y, button.width, button.height, ui.well, 0)
+        .setInteractive({ useHandCursor: true });
+      hit.on("pointerover", () => draw("hover"));
+      hit.on("pointerout", () => draw("idle"));
+      hit.on("pointerup", b.act);
+      container.add([bg, label, hit]);
+    }
+    this.switchConfirm = confirm;
+  }
+
+  private closeSwitchConfirm(): void {
+    if (!this.switchConfirm) return;
+    this.switchConfirm.overlay.destroy();
+    this.switchConfirm.container.destroy();
+    this.switchConfirm = undefined;
   }
 
   private handleStartGame(): void {
@@ -832,8 +1023,28 @@ export class MainMenuScene extends Phaser.Scene {
     // inside the hub by talking to an NPC (I-29KSH-6). FS-29KSH §Requirements 34.
     // The server seats by the character's id (FS-BDA7X req 41). Entering from the menu is always
     // an arrival, the same hub session included (FS-PQ2TW R7): the kept place goes first.
-    forgetPlace();
-    socketManager.sendMessage(ActionType.EnterHub, enterHubPayload(activeChar));
+    const enter = () => {
+      forgetPlace();
+      socketManager.sendMessage(ActionType.EnterHub, enterHubPayload(activeChar));
+    };
+
+    // Another character than the one the party holds this player as leaves the party: asked
+    // first, or refused while the party's run is under way (FS-NCC9J §Change: Changing character
+    // leaves the party, C10-C12).
+    const choice = entryChoice(
+      activeChar,
+      usePartyStore.getState().party,
+      useAuthStore.getState().memberInfo?.id,
+    );
+    if (choice.kind === "refused") {
+      this.showRefusal(choice.text);
+      return;
+    }
+    if (choice.kind === "confirm") {
+      this.showSwitchConfirm(choice.text, enter);
+      return;
+    }
+    enter();
   }
 
   private handleConnectionStatusChange(
@@ -842,28 +1053,16 @@ export class MainMenuScene extends Phaser.Scene {
   ): void {
     if (!this.sys?.settings?.active) return;
 
-    this.isConnected = status === "connected";
+    const view = menuConnectionView(status);
+    this.press = view.press;
 
     if (this.startButtonText && this.connectionStatusText) {
-      if (status === "connected") {
-        hitArea.setInteractive({ useHandCursor: true });
-        this.startButtonText.setText(ENTER_LABEL);
-        this.connectionStatusText.setText("The way is open // Server connected");
-        this.connectionStatusText.setColor(toCss(ui.label));
-        this.drawDelveButton("idle");
-      } else if (status === "connecting") {
-        hitArea.disableInteractive();
-        this.startButtonText.setText("CONNECTING...");
-        this.connectionStatusText.setText("Kindling torch // Connecting to game server...");
-        this.connectionStatusText.setColor(toCss(ui.text));
-        this.drawDelveButton("disabled");
-      } else {
-        hitArea.disableInteractive();
-        this.startButtonText.setText("LOST");
-        this.connectionStatusText.setText("The torch gutters // Connection lost");
-        this.connectionStatusText.setColor(toCss(ui.danger));
-        this.drawDelveButton("disabled");
-      }
+      if (view.press) hitArea.setInteractive({ useHandCursor: true });
+      else hitArea.disableInteractive();
+      this.startButtonText.setText(view.label);
+      this.connectionStatusText.setText(view.line);
+      this.connectionStatusText.setColor(toCss(ui[view.tone]));
+      this.drawDelveButton(view.press ? "idle" : "disabled");
     }
   }
 
@@ -1029,5 +1228,8 @@ export class MainMenuScene extends Phaser.Scene {
     this.sidebarMask?.shape.destroy();
     this.sidebarMask = undefined;
     this.closeQueuePopup();
+    this.unsubscribeParty?.();
+    this.unsubscribeParty = undefined;
+    this.closeSwitchConfirm();
   }
 }

@@ -10,6 +10,7 @@ import {
   ClientGameState,
   ItemState,
   EquipmentSlot,
+  type PublicPlayerState,
 } from './gameState';
 
 function makeItem(overrides: Partial<ItemState> = {}): ItemState {
@@ -215,5 +216,15 @@ describe('placedKind (FS-1D6BX R12, D2)', () => {
 
   it.each(['coffin', '', 'Chest'])('should handle an unknown kind %j as a chest', (kind) => {
     expect(placedKind({ kind })).toBe('chest');
+  });
+});
+
+// FS-JS7C8 §E R47: every client derives every figure's facing from the motion it draws, so a
+// player entry carries none (checked by tsc: the directive fails once the field exists)
+describe('PublicPlayerState (FS-JS7C8 §E R47)', () => {
+  it('should carry no facing', () => {
+    // @ts-expect-error: a player entry has no facing field
+    const facing: PublicPlayerState['facing'] = undefined;
+    expect(facing).toBeUndefined();
   });
 });

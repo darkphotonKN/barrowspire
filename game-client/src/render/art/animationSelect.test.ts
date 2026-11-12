@@ -5,6 +5,7 @@ import type { Facing8 } from "@/render/iso/facing";
 import {
   CHARACTER_ANIMATIONS,
   MAX_WALK_SCALE,
+  RUN_PACE,
   WALK_PACE,
   characterSheet,
   selectAnimation,
@@ -179,6 +180,143 @@ describe("selectAnimation", () => {
   });
 });
 
+describe("selectAnimation: the run, and the backward step only while attacking (FS-JS7C8)", () => {
+  const north = { vx: 0, vy: -90 };
+  const south = { vx: 0, vy: 90 };
+  const east = { vx: 90, vy: 0 };
+  const southEast = { vx: 64, vy: 64 };
+  const southWest = { vx: -64, vy: 64 };
+  const aimNorth = { x: 0, y: -50 };
+  const aimNorthEast = { x: 35, y: -35 };
+  /** A class sheet re-baked with run, walk_attack and backpedal_attack (I-JS7C8-12 on). */
+  const full = { run: true, walkAttack: true, backpedalAttack: true };
+  /** Attacking, as a swing on the move is told. */
+  const swinging = (aim: { x: number; y: number }, velocity: { vx: number; vy: number }) => ({
+    attacking: true,
+    aim,
+    velocity,
+  });
+
+  it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
+    [
+      "attacking while moving more than 90° from the aim steps back, turned to the aim (R9)",
+      { ...swinging(aimNorth, south), ...full },
+      { animation: "backpedal_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while moving at 135° from the aim steps back (R9)",
+      { ...swinging(aimNorth, southWest), ...full },
+      { animation: "backpedal_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while moving at exactly 90° from the aim walks, turned to the aim (R9)",
+      { ...swinging(aimNorth, east), ...full },
+      { animation: "walk_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a diagonal aim at exactly 90° from the movement walks (R9)",
+      { ...swinging(aimNorthEast, southEast), ...full },
+      { animation: "walk_attack", facing: "ne", direction: 7 },
+    ],
+    [
+      "attacking while moving toward the aim walks, turned to the aim (R9)",
+      { ...swinging(aimNorth, north), ...full },
+      { animation: "walk_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a sheet with walk_attack but no backpedal_attack walks at any angle (R11)",
+      { ...swinging(aimNorth, south), run: true, walkAttack: true },
+      { animation: "walk_attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a charge plays the whole attack whichever way the body is carried (Fact 11)",
+      { ...swinging(aimNorth, south), run: true, walkAttack: false, backpedalAttack: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while standing is the whole-body attack",
+      { attacking: true, aim: aimNorth, ...full },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "moving and not attacking runs turned to its movement (R4)",
+      { velocity: south, facing: "n", ...full },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "moving and not attacking never steps back, whatever it last faced (R45)",
+      { velocity: { vx: 0, vy: 200 }, facing: "n", ...full },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "a sheet without run walks turned to its movement, as today (R4)",
+      { velocity: south, facing: "n" },
+      { animation: "walk", facing: "s", direction: 2 },
+    ],
+    [
+      "standing keeps the last facing (R22)",
+      { facing: "w", ...full },
+      { animation: "idle", facing: "w", direction: 4 },
+    ],
+    [
+      "the merc's guard plays the way he is going (R24)",
+      { guarding: true, velocity: south, facing: "w", ...full },
+      { animation: "parry", facing: "s", direction: 2 },
+    ],
+    [
+      "death keeps the facing it fell in (R24)",
+      { dead: true, facing: "ne", velocity: south, ...full },
+      { animation: "death", facing: "ne", direction: 7 },
+    ],
+    [
+      "a Shadow Shot hold turns to the held aim (R24)",
+      { holding: { x: 50, y: 0 }, velocity: south, ...full },
+      { animation: "idle", facing: "e", direction: 0 },
+    ],
+  ])("%s", (_name, fields, want) => {
+    const got = selectAnimation(state(fields));
+    expect({ animation: got.animation, facing: got.facing, direction: got.direction }).toEqual(want);
+  });
+
+  it.each<[string, Partial<CharacterState>]>([
+    ["backpedal_attack", { ...swinging(aimNorth, south), ...full }],
+    ["walk_attack", { ...swinging(aimNorth, east), ...full }],
+  ])("should play %s at its authored rate (R9)", (_name, fields) => {
+    expect(selectAnimation(state(fields)).timeScale).toBe(1);
+  });
+
+  it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s (R4)", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, ...full }));
+    expect(got.animation).toBe("run");
+    expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
+    expect(got.timeScale).toBeGreaterThanOrEqual(0.9);
+    expect(got.timeScale).toBeLessThanOrEqual(1.1);
+  });
+
+  it("should cap the run's playback as the walk's for a burst", () => {
+    expect(selectAnimation(state({ velocity: { vx: 2000, vy: 0 }, ...full })).timeScale).toBe(MAX_WALK_SCALE);
+  });
+
+  it("should keep a sheet without run walking at speed / WALK_PACE, as today", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: 200 } }));
+    expect(got.timeScale).toBeCloseTo(200 / WALK_PACE);
+  });
+
+  it("should keep the run's pace inside the band it is keyed to (R3)", () => {
+    expect(RUN_PACE).toBeGreaterThanOrEqual(180);
+    expect(RUN_PACE).toBeLessThanOrEqual(220);
+  });
+
+  it("should never choose a standalone backward step, moving any way, attacking or not (R45)", () => {
+    for (const velocity of [north, south, east, southEast, southWest])
+      for (const attacking of [false, true])
+        for (const facing of ["n", "s", "e", "w"] as Facing8[])
+          expect(selectAnimation(state({ velocity, attacking, aim: aimNorth, facing, ...full })).animation).not.toBe(
+            "backpedal",
+          );
+  });
+});
+
 describe("characterSheet", () => {
   it.each<[string | undefined, string]>([
     ["warrior", "char_knight_base"],
@@ -235,14 +373,23 @@ describe("the shipped character sheets", () => {
       if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
   });
 
-  it.each(CLASSES)(
-    "should bake %s at 2x, trimmed, frames twice a 1x sheet's px each way (FS-HF0WW, FS-3V7GC)",
-    (cls) => {
+  // the four classes at 1.5x since their run re-bakes (FS-HF0WW § Change: Class sheets at 1.5x
+  // R34, R35)
+  it.each([
+    ["warrior", 1.5],
+    ["mage", 1.5],
+    ["archer", 1.5],
+    ["mercenary", 1.5],
+  ] as const)(
+    "should bake %s at %sx, trimmed, its frame a whole number of screen px and its anchor on a whole px (FS-HF0WW, FS-3V7GC, ADR-0076)",
+    (cls, scale) => {
       const sheet = manifest.sheets[characterSheet(cls)];
-      expect(sheet.scale).toBe(2);
+      expect(sheet.scale).toBe(scale);
       expect(sheet.trimmed).toBe(true);
-      expect(sheet.frameWidth % 2).toBe(0);
-      expect(sheet.frameHeight % 2).toBe(0);
+      expect(Number.isInteger(sheet.frameWidth / scale)).toBe(true);
+      expect(Number.isInteger(sheet.frameHeight / scale)).toBe(true);
+      expect(sheet.anchor.x * sheet.frameWidth).toBeCloseTo(Math.round(sheet.anchor.x * sheet.frameWidth), 9);
+      expect(sheet.anchor.y * sheet.frameHeight).toBeCloseTo(Math.round(sheet.anchor.y * sheet.frameHeight), 9);
     },
   );
 

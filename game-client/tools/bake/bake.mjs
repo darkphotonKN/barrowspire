@@ -40,7 +40,7 @@ import { crownHeight } from "./lib/crown.mjs";
 import { SIDE_ON, bodyLength } from "./lib/length.mjs";
 import { packAtlases } from "./lib/pack.mjs";
 import { downscale } from "./lib/downscale.mjs";
-import { cropFrame, trimRect } from "./lib/trim.mjs";
+import { cropFrame, trimGrid, trimRect } from "./lib/trim.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
 import { labelTexts, writeReview } from "./lib/contact.mjs";
@@ -127,8 +127,8 @@ async function bakeAll() {
 function assemble({ tile, facings, sheets }) {
   // Every frame of a sheet in manifest order: animation, then direction, then frame.
   const frameList = (s) => Object.values(s.animations).flatMap((a) => a.frames.flat());
-  // A trimmed sheet's frames (FS-HF0WW, lib/trim.mjs), each cut to its pixels on whole
-  // screen px, by sheet and then by the frame's pixels as baked. The atlas holds the cut and the
+  // A trimmed sheet's frames (FS-HF0WW, lib/trim.mjs), each cut to its pixels on its trim grid
+  // (whole screen px; two at 1.5, ADR-0076), by sheet and then by the frame's pixels as baked. The atlas holds the cut and the
   // manifest says where it sits in the frame; the measures (crown, length, mean) still read the
   // whole frames.
   const cuts = new Map();
@@ -137,7 +137,7 @@ function assemble({ tile, facings, sheets }) {
     for (const b64 of frameList(s)) {
       if (own.has(b64)) continue;
       const px = Buffer.from(b64, "base64");
-      const rect = trimRect(px, s.frameWidth, s.frameHeight, { grid: s.scale ?? 1 });
+      const rect = trimRect(px, s.frameWidth, s.frameHeight, { grid: trimGrid(s.scale ?? 1) });
       own.set(b64, { rect, px: cropFrame(px, s.frameWidth, rect) });
     }
     cuts.set(s.name, own);

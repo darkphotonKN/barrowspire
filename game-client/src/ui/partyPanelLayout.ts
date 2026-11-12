@@ -4,6 +4,7 @@
  */
 
 import type { PartyActions, PartyUpdatePayload } from "@/stores/partyStore";
+import { frameClose } from "./panelFrame";
 
 export interface Rect {
   x: number;
@@ -83,12 +84,21 @@ export function partyPanelTitle(party: PartyUpdatePayload | null): string {
   return party ? `Party (${party.members.length}/${party.size})` : "Party";
 }
 
+/** The view the panel is placed in (logical units). */
+export interface PartyPanelView {
+  width: number;
+  height: number;
+}
+
+/** The narrowest logical view (FS-ZAJMH): the panel's place when no view is given. */
+const DEFAULT_VIEW: PartyPanelView = { width: 1080, height: 720 };
+
 /**
- * Right of the party frames (R28), in every world: the panel starts past the left-edge column and
- * the run's potion cell beside it (right edge x 268), 12 px clear, below the XP bar's band.
+ * Its top edge, as a share of the view's height (FS-R82NV § Change C3; owner 2026-11-12:
+ * "移動到中間一點"): nearer the middle, not dead centre, which would cover the player the camera
+ * keeps there. 130 at 720.
  */
-export const PARTY_PANEL_X = 280;
-export const PARTY_PANEL_Y = 56;
+export const PARTY_PANEL_TOP_SHARE = 0.18;
 export const PARTY_PANEL_W = 300;
 const PAD = 12;
 const TITLE_H = 24;
@@ -108,6 +118,16 @@ const LEAVE_H = 24;
 const LEAVE_W = 96;
 const GAP = 8;
 
+/** The panel's left edge in a view `width` wide: centred across it (§ Change C3). */
+export function partyPanelLeft(width: number): number {
+  return Math.round((width - PARTY_PANEL_W) / 2);
+}
+
+/** The panel's top edge in a view `height` tall (§ Change C3). */
+export function partyPanelTop(height: number): number {
+  return Math.round(height * PARTY_PANEL_TOP_SHARE);
+}
+
 export interface PartyRowFrame {
   row: Rect;
   transfer: Rect;
@@ -117,6 +137,8 @@ export interface PartyRowFrame {
 export interface PartyPanelFrame {
   panel: Rect;
   title: Rect;
+  /** The × that closes the panel, at the title row's right end (§ Change C1). */
+  close: Rect;
   rows: PartyRowFrame[];
   /** The loot-rule selector's reserved slot (FS-V780R), in a party only. */
   loot?: Rect;
@@ -131,15 +153,21 @@ export interface PartyPanelFrame {
   leave?: Rect;
 }
 
-/** Every part's place, from the actions the viewer has now (which decide the panel's shape). */
+/**
+ * Every part's place in `view`, from the actions the viewer has now (which decide the panel's
+ * shape): centred across the view, its top at `PARTY_PANEL_TOP_SHARE` of its height.
+ */
 export function partyPanelFrame(
   actions: PartyActions,
-  x = PARTY_PANEL_X,
-  y = PARTY_PANEL_Y,
+  view: PartyPanelView = DEFAULT_VIEW,
 ): PartyPanelFrame {
+  const x = partyPanelLeft(view.width);
+  const y = partyPanelTop(view.height);
   const inner = { x: x + PAD, width: PARTY_PANEL_W - PAD * 2 };
   let at = y + PAD;
   const title: Rect = { ...inner, y: at, height: TITLE_H };
+  // the frame's × box, where every world panel's stands (`panelFrame`)
+  const close: Rect = frameClose({ x, y, width: PARTY_PANEL_W });
   at += TITLE_H;
 
   const rows = actions.members.map((): PartyRowFrame => {
@@ -206,6 +234,7 @@ export function partyPanelFrame(
   return {
     panel,
     title,
+    close,
     rows,
     loot,
     hint,

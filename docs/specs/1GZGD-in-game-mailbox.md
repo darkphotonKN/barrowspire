@@ -1485,3 +1485,94 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
 - *(Added 2026-11-04, A9:)* a configurable claim cap or pool size; queueing claims over the cap
   instead of answering 503; a gateway retry of a missed deadline; fixing the six other services
   that accept an empty JWT secret (a follow-up in "Before GKE").
+
+## Change: The envelope toggles the letter panel and stands in the corner row
+Status: work-order
+Date: 2026-11-12
+
+Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). Owner: "信箱ui可以透過再按一次信箱關閉"
+(the letter panel can be closed by pressing the envelope again), "mail沒有快捷鍵 所以就顯示mail就好"
+(the mailbox has no key, so its hover text is just "Mail"). Made alongside
+[FS-3EBCA](3EBCA-hud-corner-icons.md), which owns the corner row the envelope joins. R33, R36
+and R40 above are not edited; where this section and they disagree, this section wins.
+
+Amended the same day, before the browser check, by the owner: "信箱似乎也會卡住其他面板 但信箱是全畫面
+那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (the
+mailbox seems to block the other panels; since the letter panel is full-screen, opening it closes
+the other windows, opening another window closes it, opening the menu closes every window too, and
+while the menu is open nothing else can be pressed). C1 is edited in place and C4 added; R40's "the
+letter panel owns the keys" no longer holds for I, B, C and T (FS-3EBCA R16). The rules for every
+world are FS-3EBCA §D.
+
+Amended again the same day, by the owner: "mailbox的x關閉按鈕好像位置跟其他的不太一樣" (the mailbox's ×
+close button seems to sit differently from the others'): C5 added; R36's panel keeps its size,
+place and contents. And: "信箱的內文好像解析度有點差" (the mailbox's body text looks low-resolution): C6
+added.
+
+### Requirements
+
+C1. **The envelope toggles.** With the letter panel open, a press on the envelope closes it, as
+    the × and Esc do (R40), whatever else is open. With it shut, a press opens it as before (R36),
+    and opens nothing while a dialogue or the ESC menu owns the screen. The inventory, the
+    character panel and the party panel no longer refuse it: they close (C4).
+    **(charter default: owner, "信箱ui可以透過再按一次信箱關閉"; the gear overlay taken out of the
+    refusal, owner 2026-11-12: "開信箱時其他視窗會被關閉")**
+C2. **The envelope is the corner row's Mail icon.** It stands in the row's leftmost slot, left of
+    Menu, Inventory, Character and Party (FS-3EBCA R1, R2): at 1080 × 720 its plate is (742, 658,
+    58, 46) (808 before FS-3EBCA's fifth icon, the owner's decision of 2026-11-12), and it keeps that slot when the view's size changes. The mailbox stays town only (R33, D11);
+    outside the town the row draws a greyed envelope in the same slot that cannot be pressed
+    (FS-3EBCA R9; owner, "野外 email也不用消失 就顯示灰色表示不能按"), and nothing of the mailbox is
+    fetched there. Its plate, lines, seal, count and pulse are drawn exactly as before; only its
+    place moves. **(charter default)**
+C3. **It names itself under the pointer**: "Mailbox", in the row's hover label (FS-3EBCA R5), and
+    no key. The screen's word for it stays mailbox and letter (`game-client/CONTEXT.md` § Mailbox
+    terms). **(owner: "mail沒有快捷鍵 所以就顯示mail就好", then "信箱hover改mailbox", 2026-11-12)**
+C4. **The letter panel is full-screen, so it stands alone.** Opening it first closes the inventory,
+    the character panel (the stash with the inventory, at the stash chest) and the party panel
+    (FS-3EBCA R15, R19). Opening any of them (I, B, C, T or their corner icons) with the letter
+    panel open closes the letter panel first (FS-3EBCA R16); the letter panel no longer refuses
+    them. Opening the ESC menu closes it too, and while the menu is open the envelope opens
+    nothing (FS-3EBCA R17, R18). `E` stays dropped under it (R40). **(owner, 2026-11-12, above)**
+C5. **The letter panel wears every window's frame and ×.** It is drawn by the shared frame
+    drawing (`drawPanelFrame`, FS-3EBCA R25), as the party panel, the menu and the inventory and
+    character panel are: the same carved ground, and its × at the shared place, a 24 × 24 box
+    12 px in from the panel's top and right edges (it stood 20 px in), in the same glyph, amber
+    and brighter under the pointer. A press on it closes the panel, as before; Esc as before (R40).
+    Its title stays the shared one (FS-3EBCA R22); nothing else in it moves: the list and the
+    letter already begin below the title band. **(owner, 2026-11-12: "mailbox的x關閉按鈕好像位置跟其他的不太一樣";
+    the shared frame derived here: the × is the frame's, so the panel takes the frame)**
+C6. **The letter's body is as crisp as the rest of the HUD's text** at every render scale (1, 1.5,
+    2; FS-ZAJMH R5). The body is clipped to its rect by a mask (R37's scroll); the mask must not
+    draw it at a lower resolution than it was rasterised at. Cause found: Phaser 4.2.1 draws a
+    masked object focused on itself into a framebuffer of its own logical size, so the body text,
+    rasterised at the render scale, was drawn down to one px a unit and scaled up again. The
+    shared mask (`maskInView`, ADR-0057) now draws a masked Text through the camera's own
+    framebuffer, in backing px, keeping its place by its scroll factor. **(owner, 2026-11-12:
+    "信箱的內文好像解析度有點差"; the cause and the fix derived here)**
+
+### Acceptance Criteria
+
+- [ ] With the letter panel open, a press on the envelope closes it; a second press opens it again.
+- [ ] With the panel shut, a press while a dialogue or the ESC menu is open opens nothing.
+- [ ] With the inventory, the character panel, the stash or the party panel open, a press on the envelope closes them and opens the letter panel.
+- [ ] With the letter panel open, I, B, C, T and the Inventory, Character and Party icons close it and open their window.
+- [ ] At 1080 × 720 the envelope's plate is (742, 658, 58, 46) and at 1280 × 720 (942, 658, 58, 46); its seal, count and pulse are unchanged.
+- [ ] Under the pointer the envelope shows "Mailbox"; the label goes when the pointer leaves.
+- [ ] Esc and the × still close the panel.
+- [ ] The letter panel draws its frame through `drawPanelFrame`, and its one × stands at `frameClose(panel)`: (924, 122, 24, 24) at 1080 × 720.
+- [ ] The open letter's body reads as crisp as the party panel's text at render scale 1, 1.5 and 2, and stays in its rect while the town's camera follows the player.
+
+### Edge States
+
+- **A press while the panel is still loading:** the panel is open as soon as it is asked for
+  (`openPanel` sets it open at once), so a second press closes it and the late answer applies to
+  nothing.
+- **A press on the envelope while the gear overlay is open:** the overlay stops above the row
+  (FS-HRH2J § Change C12); the overlay closes and the letter panel opens (C4).
+- **Leaving the town with the panel open:** as before (R44): it closes with the town.
+
+### Out of Scope
+
+- A key for the mailbox.
+- The mailbox outside the town (D11); the greyed icon there is FS-3EBCA's.
+- Any change to the letter panel's contents (its frame and × are C5's), the seal, or the summary's fetches.

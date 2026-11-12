@@ -3,7 +3,8 @@
  * envelope with a small wax seal, drawn with Phaser graphics on a carved plate (no emoji, no
  * Heroicon, no baked art). The seal is lit with the number of letters waiting and dark when none
  * do; a newer letter than the player last saw makes the envelope glow a few times, then the seal
- * stays lit. Pressing it opens the letter panel.
+ * stays lit. Pressing it opens the letter panel, and pressing it again closes it; it stands in the
+ * corner row's Mailbox slot and names itself "Mailbox" under the pointer (FS-1GZGD § Change).
  *
  * Game palette (ADR-0025): the envelope's lines are amber because it can always be pressed; the
  * lit seal is ember wax; the pulse is the torch's glow. It reads the mailbox store and decides
@@ -18,11 +19,18 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
+import { CornerLabel } from "./cornerLabel";
+import { CORNER_LABEL } from "./hudCornerLayout";
 
 export interface MailboxEnvelopeDeps {
   store: StoreApi<MailboxState>;
-  /** Whether a dialogue, a menu or an overlay owns the screen now: a press then opens nothing. */
+  /** Whether a dialogue or the menu owns the screen now: a press then opens nothing. */
   blocked: () => boolean;
+  /**
+   * Closes the other windows just before the panel opens: the letter panel is full-screen, so it
+   * stands alone (FS-1GZGD § Change C4; FS-3EBCA R15).
+   */
+  opening?: () => void;
 }
 
 const HUD_DEPTH = 1000;
@@ -59,6 +67,39 @@ export function drawWaxSeal(
   g.strokeCircle(x, y, r - 1);
 }
 
+/** The envelope inside its plate. */
+function envelopeRect(f: Rect): Rect {
+  return { x: f.x + 11, y: f.y + 11, width: f.width - 22, height: f.height - 21 };
+}
+
+/** Where the seal sits on an envelope drawn in plate `f`: the flap's point. */
+export function envelopeSealAt(f: Rect): { x: number; y: number } {
+  const e = envelopeRect(f);
+  return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
+}
+
+/**
+ * The envelope's lines in plate `f`, in `ink` (R33): its edge, the flap down to the seal and the
+ * folds at the foot. The corner row draws the greyed Mailbox with it too (FS-3EBCA R9).
+ */
+export function drawEnvelopeLines(
+  g: Pick<Phaser.GameObjects.Graphics, "lineStyle" | "strokeRoundedRect" | "lineBetween">,
+  f: Rect,
+  ink: number,
+  alpha: number,
+): void {
+  const e = envelopeRect(f);
+  const point = envelopeSealAt(f);
+  g.lineStyle(1.5, ink, alpha);
+  g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
+  // the flap, down to the seal
+  g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
+  g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
+  // the folds at the foot
+  g.lineBetween(e.x + 1, e.y + e.height - 1, e.x + e.width * 0.36, e.y + e.height * 0.5);
+  g.lineBetween(e.x + e.width - 1, e.y + e.height - 1, e.x + e.width * 0.64, e.y + e.height * 0.5);
+}
+
 export class MailboxEnvelope {
   private frame: Rect;
   private readonly glow: Phaser.GameObjects.Graphics;
@@ -68,6 +109,7 @@ export class MailboxEnvelope {
   private count?: Phaser.GameObjects.Text;
   private pulse?: Phaser.Tweens.Tween;
   private hovered = false;
+  private readonly label: CornerLabel;
   private readonly unsubscribe: () => void;
 
   constructor(
@@ -75,6 +117,7 @@ export class MailboxEnvelope {
     private readonly deps: MailboxEnvelopeDeps,
   ) {
     this.frame = envelopeFrame(viewport);
+    this.label = new CornerLabel(scene);
     const hud = <T extends Phaser.GameObjects.Graphics>(g: T) =>
       g.setScrollFactor(0).setDepth(HUD_DEPTH);
     this.glow = hud(scene.add.graphics());
@@ -101,17 +144,19 @@ export class MailboxEnvelope {
     });
   }
 
-  /** The logical view changed: the envelope goes back to the bottom-right corner (FS-ZAJMH R12, R13). */
+  /** The logical view changed: the envelope goes back to its slot in the corner row (FS-ZAJMH R12, R13). */
   relayout(): void {
     this.frame = envelopeFrame(viewport);
     this.zone.setPosition(this.frame.x, this.frame.y);
     this.drawGlow();
     this.drawBody();
     this.drawSeal();
+    if (this.hovered) this.label.show(this.frame, CORNER_LABEL.mail);
   }
 
   destroy(): void {
     this.unsubscribe();
+    this.label.hide();
     this.pulse?.stop();
     this.pulse = undefined;
     this.glow.destroy();
@@ -122,31 +167,24 @@ export class MailboxEnvelope {
     this.zone.destroy();
   }
 
+  /**
+   * A press toggles the letter panel (§ Change C1): an open one always closes; a shut one opens
+   * unless refused, the other windows closing first (C4).
+   */
   private press(): void {
-    if (this.deps.blocked() || this.deps.store.getState().panelOpen) return;
-    void this.deps.store.getState().openPanel();
+    const mailbox = this.deps.store.getState();
+    if (mailbox.panelOpen) return mailbox.closePanel();
+    if (this.deps.blocked()) return;
+    this.deps.opening?.();
+    void mailbox.openPanel();
   }
 
   private hover(on: boolean): void {
     if (this.hovered === on) return;
     this.hovered = on;
     this.drawBody();
-  }
-
-  /** The envelope's corner of the screen, where its seal sits: the flap's point. */
-  private sealAt(): { x: number; y: number } {
-    const e = this.envelope();
-    return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
-  }
-
-  private envelope(): Rect {
-    const f = this.frame;
-    return {
-      x: f.x + 11,
-      y: f.y + 11,
-      width: f.width - 22,
-      height: f.height - 21,
-    };
+    if (on) this.label.show(this.frame, CORNER_LABEL.mail);
+    else this.label.hide();
   }
 
   /** The carved plate and the envelope's lines: amber, brighter under the pointer. */
@@ -154,36 +192,18 @@ export class MailboxEnvelope {
     const g = this.body.clear();
     const f = this.frame;
     carvedPanel(g, f.x, f.y, f.width, f.height, { opacity: 0.85 });
-    const e = this.envelope();
-    const point = this.sealAt();
-    g.lineStyle(
-      1.5,
+    drawEnvelopeLines(
+      g,
+      f,
       this.hovered ? palette.interactableBright : palette.interactable,
       this.hovered ? 1 : 0.85,
-    );
-    g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
-    // the flap, down to the seal
-    g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
-    g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
-    // the folds at the foot
-    g.lineBetween(
-      e.x + 1,
-      e.y + e.height - 1,
-      e.x + e.width * 0.36,
-      e.y + e.height * 0.5,
-    );
-    g.lineBetween(
-      e.x + e.width - 1,
-      e.y + e.height - 1,
-      e.x + e.width * 0.64,
-      e.y + e.height * 0.5,
     );
   }
 
   /** The seal: lit with the waiting count, dark with none (R35). */
   private drawSeal(): void {
     const { lit, count } = sealState(this.deps.store.getState().summary);
-    const at = this.sealAt();
+    const at = envelopeSealAt(this.frame);
     const g = this.seal.clear();
     drawWaxSeal(g, at.x, at.y, 8, lit);
     this.count?.destroy();

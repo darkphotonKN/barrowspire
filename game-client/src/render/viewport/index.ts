@@ -47,4 +47,10 @@ export { fitGame, mountViewport, watchDensity, watchFrame } from "./game";
 export {
   FULLSCREEN_BUTTON,
   FULLSCREEN_BUTTON_CLEARANCE,
+  FULLSCREEN_CORNER,
+  FullscreenButtonPlace,
+  fullscreenButtonPlace,
+  fullscreenHintSide,
+  type FullscreenButtonSpot,
+  type FullscreenHintSide,
 } from "./fullscreenButton";

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
 // scene base class and the events the scene hangs its release on.
@@ -61,10 +61,14 @@ const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
+const hudCorner = await import("@/ui/hudCornerLayout");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { EventEmitter } = await import("eventemitter3");
+const { PartyPanel } = await import("@/ui/PartyPanel");
+const { createPartyStore } = await import("@/stores/partyStore");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
@@ -695,6 +699,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     input: unknown;
     equipment?: InstanceType<typeof EquipmentHud>;
     piles?: unknown;
+    menu?: unknown;
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
     lootFromSatchel(item: unknown): void;
@@ -707,6 +712,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     const stage = fieldOnStage();
     const field = stage.field as Hud;
     let visible = false;
+    let character = false;
     let hovered: "inventory" | "head" = "inventory";
     const panel = {
       onEquip: undefined as undefined | ((item: unknown, slot: string) => void),
@@ -717,8 +723,11 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       // the panels stand right of x 500; the clear band is left of it
       covers: (x: number) => x > 500,
       toggle: vi.fn(() => void (visible = !visible)),
-      hide: vi.fn(() => void (visible = false)),
-      isVisible: () => visible,
+      toggleCharacter: vi.fn(() => void (character = !character)),
+      hide: vi.fn(() => void ((visible = false), (character = false))),
+      isVisible: () => visible || character,
+      isInventoryOpen: () => visible,
+      isCharacterOpen: () => character,
       // the pointer over the first inventory row, or over the worn helm
       handleEquipKey: vi.fn((): void =>
         hovered === "inventory"
@@ -829,6 +838,55 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(field.equipment?.isOpen()).toBe(false);
   });
 
+  // FS-HRH2J § Change: Character and inventory apart (C2, C3, C5, C7). I-3EBCA-4.
+  it("should toggle the character panel alone on C, the inventory left as it is (§ Change C2)", () => {
+    const { field, panel, press } = hudOnStage();
+    field.renderState(carrying);
+    press("C");
+    expect(panel.toggleCharacter).toHaveBeenCalledTimes(1);
+    expect(panel.toggle).not.toHaveBeenCalled();
+    expect(panel.isCharacterOpen()).toBe(true);
+    expect(panel.isInventoryOpen()).toBe(false);
+    press("I");
+    expect(panel.isCharacterOpen()).toBe(true);
+    expect(panel.isInventoryOpen()).toBe(true);
+    press("C");
+    expect(panel.isCharacterOpen()).toBe(false);
+    expect(panel.isInventoryOpen()).toBe(true);
+  });
+
+  it("should end a Shadow Shot hold when C opens the character panel, not when it closes it (§ Change C5)", () => {
+    const { field, press } = hudOnStage();
+    const fight = { cancelAim: vi.fn() };
+    (field as unknown as { fight: typeof fight }).fight = fight;
+    press("C");
+    expect(fight.cancelAim).toHaveBeenCalledTimes(1);
+    press("C");
+    expect(fight.cancelAim).toHaveBeenCalledTimes(1);
+  });
+
+  it("should close both panels on one ESC and on Q (§ Change C3)", () => {
+    const { field, panel, press } = hudOnStage();
+    press("C");
+    press("I");
+    press("ESC");
+    expect(field.equipment?.isOpen()).toBe(false);
+    expect(field.menu).toBeUndefined();
+    press("C");
+    press("I");
+    press("Q");
+    expect(panel.isVisible()).toBe(false);
+  });
+
+  it("should reach for a pile on E while only the character panel is open (§ Change C7)", () => {
+    const { field, piles, panel, press } = hudOnStage();
+    field.renderState(carrying);
+    press("C");
+    press("E");
+    expect(panel.handleEquipKey).not.toHaveBeenCalled();
+    expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
+  });
+
   it("should still loot through the open satchel when the press is not over the overlay", () => {
     const { field } = hudOnStage();
     field.satchel = { pointerDown: vi.fn(() => true) };
@@ -930,6 +988,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       expect.arrayContaining([
         "keydown-I",
         "keydown-B",
+        "keydown-C",
         "keydown-E",
         "keydown-Q",
         "keydown-ESC",
@@ -1121,6 +1180,22 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     });
   });
 
+  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false });
+    field.renderState(archerState);
+    const { ABILITY_CARD_PLACE } = hudCorner;
+    expect((field as unknown as { abilityHud: { place: unknown } }).abilityHud.place).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should take a press on the corner row as the row's, never an attack (FS-3EBCA R10)", () => {
+    const { field } = kitOnStage({ lockedOut: false });
+    const f = field as unknown as { corner: unknown; takesPointer(x: number, y: number, p: boolean): boolean };
+    f.corner = { covers: (x: number, y: number) => x > 1000 && y > 650 };
+    expect(f.takesPointer(1030, 680, true)).toBe(true);
+  });
+
   it("should grey the card while the ability lockout runs", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
     const card = vi
@@ -1143,6 +1218,67 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
   });
 
+  // FS-JS7C8 §D R22, §E R47: every figure faces its drawn movement; nothing turns one from
+  // outside its own motion, a `facing` on a state entry is never read, and no `face` is sent
+  describe("facing from movement, nothing on the wire (FS-JS7C8 §D R22, §E R47)", () => {
+    /** A view whose baked animator is stepped and shown, as on main: nothing else turns it. */
+    const view = (x: number) => ({
+      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60, getBounds: () => ({ x: 0, y: 0, width: 40, height: 60 }) }) },
+      name: { setPosition: vi.fn() },
+      pos: { x, y: 0 },
+      target: { x, y: 0 },
+      facing: "se",
+      anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+      fallen: false,
+    });
+
+    it("should step the own body and every other from where it is drawn, and send no face", () => {
+      const { field, send } = kitOnStage({ aiming: false });
+      const me = view(100);
+      const them = view(300);
+      Object.assign(field, {
+        views: new Map([
+          ["me", me],
+          ["them", them],
+        ]),
+        selfEntityID: "me",
+      });
+
+      field.update(16, 16);
+      field.update(300, 16);
+
+      expect(me.anim.step).toHaveBeenCalledWith(me.pos, 300, 16, false);
+      expect(them.anim.step).toHaveBeenCalledWith(them.pos, 300, 16, false);
+      expect(send.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
+    });
+
+    it("should keep no facing from a state entry, the own echo or another's", () => {
+      const { field } = kitOnStage({});
+      const me = view(100);
+      const them = view(300);
+      Object.assign(field, {
+        views: new Map([
+          ["me", me],
+          ["them", them],
+        ]),
+      });
+      const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+      const entry = (entity_id: string) => ({
+        entity_id,
+        position: { x: 1, y: 2 },
+        direction: { vx: 0, vy: 0, speed: 0 },
+        current_health: 100,
+        facing: "ne",
+      });
+
+      place.call(field, entry("me"), true);
+      place.call(field, entry("them"), false);
+
+      expect(Object.keys(me)).not.toContain("wireFacing");
+      expect(Object.keys(them)).not.toContain("wireFacing");
+    });
+  });
+
   it("should stand still while an archer draws a Shadow Shot, and walk on once it ends", () => {
     const fight = { aiming: true };
     const { field, send } = kitOnStage(fight);
@@ -1153,6 +1289,72 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     fight.aiming = false;
     field.update(32, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
+  });
+
+  // Reported 2026-11-12 (the town's twin, HubScene "the first frame of a visit"): the server routes
+  // a move by the player's record, which the world left moves here before the client hears of it,
+  // so that world's last move may walk the field body. The field sent only on a change from what
+  // it last sent, "still" at a start, so with no key held it never stopped it.
+  describe("the first frame of a visit", () => {
+    function visit(held: boolean) {
+      const stage = kitOnStage({ aiming: false });
+      const field = stage.field as unknown as Kitted & {
+        init(data?: { field?: string; arrival?: boolean }): void;
+        release(end: "shutdown" | "destroy"): void;
+        cursors: { right: { isDown: boolean } };
+      };
+      field.cursors.right.isDown = held;
+      const moves = () => stage.send.mock.calls.filter(([action]) => action === ActionType.Move);
+      /** What the field body walks: the last move on the wire, whichever world sent it. */
+      const body = () => moves().at(-1)?.[1];
+      /** The world left's last stride, landing on the field body after the switch. */
+      const strideBefore = () => socketManager.sendMessage(ActionType.Move, { vx: 0, vy: -1 });
+      return { ...stage, field, moves, body, strideBefore };
+    }
+
+    it("should stop the body on its first frame with no key held, after a stride the world left sent", () => {
+      const { field, body, strideBefore } = visit(false);
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(16, 16);
+
+      expect(body()).toEqual({ vx: 0, vy: 0 });
+    });
+
+    it("should stop it on a return too, though the visit before ended standing still", () => {
+      const { field, body, strideBefore } = visit(false);
+      field.update(16, 16);
+      field.release("shutdown");
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(32, 16);
+
+      expect(body()).toEqual({ vx: 0, vy: 0 });
+    });
+
+    it("should send that stop once, and nothing more while no key is held", () => {
+      const { field, moves, strideBefore } = visit(false);
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(16, 16);
+      field.update(32, 16);
+
+      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+    });
+
+    it("should send a key held into the visit as its first move, once", () => {
+      const { field, moves, strideBefore } = visit(true);
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(16, 16);
+      field.update(32, 16);
+
+      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+    });
   });
 });
 
@@ -1298,6 +1500,8 @@ describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
 
     (field.init as (data?: { field?: string; arrival?: boolean }) => void)({ field: fieldId, arrival });
     field.create({ field: fieldId });
+    // the field's minimap paints a canvas texture the stub cannot hold; it has its own suite (FS-P0HSP)
+    Object.assign(field, { minimapStage: undefined });
 
     const veil = made.find((m) => m.kind === "rectangle" && m.depth === ARRIVAL_CARD.depth);
     const words = () => made.filter((m) => m.kind === "text").map((m) => String(m.args[2]));
@@ -1346,5 +1550,793 @@ describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
     field.relayoutHud();
 
     expect(relayout).toHaveBeenCalled();
+  });
+});
+
+const { MINIMAP: FIELD_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
+const { FULLSCREEN_BUTTON } = await import("@/render/viewport");
+const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
+const { FIELD_CHART } = await import("@/ui/fieldChart");
+const { usePartyStore } = await import("@/stores/partyStore");
+const { FOREST_GATE, FOREST_WALLS } = await import("@/render/world/forest.fixture");
+
+// FS-P0HSP §B, §C.16, §D, §E, §F, §G (I-P0HSP-4): a field's minimap, charted as the player walks.
+describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
+  type Layer = { x: number; y: number; depth: number; destroyed: boolean; calls: string[] };
+  function layer(into: Layer[]) {
+    const l: Layer = { x: 0, y: 0, depth: 0, destroyed: false, calls: [] };
+    into.push(l);
+    const self: Record<string, unknown> = new Proxy(l as unknown as Record<string, unknown>, {
+      get: (t, key) => {
+        if (key in t) return t[key as string];
+        if (key === "setPosition") return (x: number, y: number) => ((l.x = x), (l.y = y), self);
+        if (key === "setDepth") return (d: number) => ((l.depth = d), self);
+        if (key === "destroy") return () => void (l.destroyed = true);
+        return () => (l.calls.push(String(key)), self);
+      },
+    });
+    return self;
+  }
+  const WALLS = FOREST_WALLS.map((r, i) => ({ entity_id: `s${i}`, house_id: `s${i}`, position: { x: r.x, y: r.y }, width: r.width, height: r.height }));
+  const GATE = { entity_id: "road", destination: "hub", position: FOREST_GATE, range: 80 };
+
+  function forestWithMap() {
+    const stage = fieldOnStage();
+    const field = stage.field as unknown as FieldUnderTest & Record<string, unknown>;
+    const layers: Layer[] = [];
+    const clock = { now: 0 };
+    Object.assign(field, {
+      field: "forlorn_forest",
+      size: FOREST_SIZE,
+      time: { delayedCall: vi.fn(), get now() { return clock.now; } },
+      minimapStage: { graphics: () => layer(layers), canvasImage: () => layer(layers) },
+      // the map mode icon's own objects, kept apart from the map's layers (FS-56CKV §Change: Map mode icon)
+      modeIconStage: { graphics: () => layer([]), text: () => layer([]) },
+      showClassHud: vi.fn(),
+    });
+    const store = { held: null as string | null, writes: [] as string[] };
+    field.minimapStore = () => ({ getItem: () => store.held, setItem: (_k: string, v: string) => void store.writes.push(v), removeItem: () => {} });
+    const button = new FullscreenButtonPlace();
+    field.fullscreenButton = button;
+    const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
+    field.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    (field as unknown as { bindMinimapKey(): void }).bindMinimapKey();
+    const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
+    const render = (position: { x: number; y: number }, others: unknown[] = []) =>
+      field.renderState({
+        world_type: "field",
+        current_player: { id: "self", entity_id: "me", position },
+        other_players: others,
+        walls: WALLS,
+        gates: [GATE],
+      });
+    const map = () => (field.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
+    const chart = () => (field.charting as { chart: { charted(cx: number, cy: number): boolean; cols: number; rows: number } }).chart;
+    /** A frame: the clock on, and the scene's update for the map alone. */
+    const frame = (ms: number) => {
+      clock.now += ms;
+      (field as unknown as { drawFieldMap(): void }).drawFieldMap();
+    };
+    return { ...stage, field, layers, clock, store, pressM, render, map, chart, frame, button };
+  }
+  const chartedCount = (c: { charted(cx: number, cy: number): boolean; cols: number; rows: number }) => {
+    let n = 0;
+    for (let cy = 0; cy < c.rows; cy++) for (let cx = 0; cx < c.cols; cx++) if (c.charted(cx, cy)) n++;
+    return n;
+  };
+
+  beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    vi.restoreAllMocks();
+  });
+
+  // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
+  // 模式(M)"): a press on the icon is M's, never an attack
+  it("should step the mode on a press on the map mode icon as M does, never an attack, and do nothing with one while chat is typing (FS-56CKV §Change: Map mode icon, D5, D6)", () => {
+    const { field, render, map, store } = forestWithMap();
+    const takes = (x: number, y: number, primary = true) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, primary);
+    expect(takes(862, 109)).toBe(false);
+    render({ x: 2900, y: 1480 });
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    // a right press on it is its too: no class ability at the corner, and no step
+    expect(takes(754, 163, false)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    expect(takes(754, 163)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    expect(store.writes).toEqual(["enlarged"]);
+    // off the icon, the field's as before
+    expect(takes(745, 163)).toBe(false);
+  });
+
+  // integration of the map mode icon (D5, D6) with FS-3EBCA R10 and FS-G4VMQ § Change C4: a press on
+  // the corner row is the row's, and while the ESC menu is up the icon, M's, answers nothing
+  it("should leave a press on the corner row to the row, and step nothing on the icon while the ESC menu is up (FS-3EBCA R10; FS-G4VMQ § Change C4; D5, D6)", () => {
+    const { field, render, map, store } = forestWithMap();
+    const takes = (x: number, y: number) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, true);
+    render({ x: 2900, y: 1480 });
+    field.corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
+    expect(takes(862, 109)).toBe(true);
+    field.corner = undefined;
+    field.menu = {};
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+    field.menu = undefined;
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+  });
+
+  // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字"): the field's name
+  it("should name the field on its minimap, as its arrival card titles it, built with the map and gone with it (FS-56CKV §Change: Map name, E1, E6)", () => {
+    const { field, render } = forestWithMap();
+    const name = () => (field.minimap as { mapName?: { words: string; shown: boolean } } | undefined)?.mapName;
+    expect(name()).toBeUndefined();
+    render({ x: 2900, y: 1480 });
+    expect(name()?.words).toBe("The Forlorn Forest");
+    expect(name()?.shown).toBe(true);
+  });
+
+  it("should build the map with the field's first state, at the column's top, the arrival charted at once (§G.35; Edge States)", () => {
+    const { render, map, layers } = forestWithMap();
+    expect(map()).toBeUndefined();
+    render({ x: 2900, y: 1480 });
+    expect(map()).toBeInstanceOf(WorldMinimap);
+    expect(layers).toHaveLength(5);
+    for (const l of layers) expect([l.x, l.y]).toEqual([1070 - FIELD_MINIMAP.width, 10]);
+    expect(map()!.redraws).toBe(1);
+  });
+
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1–C5 (owner 2026-11-12:
+  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", "其他文字也要跟著往上移動"):
+  // nothing stands under a field's map (FS-P0HSP §G.36), so only the map and the button move
+  it.each([1080, 1280])(
+    "should stand the normal map at the very top, y 10, with the fullscreen button 6 px to its left, and move the button on M, at logical width %i (FS-56CKV §Change C1–C4)",
+    (width) => {
+      viewport.set({ width, height: 720, renderScale: 1 });
+      const { render, layers, pressM, button } = forestWithMap();
+      const corner = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
+      // before the first state there is no map: the button keeps the corner
+      expect(button.current).toEqual(corner);
+      render({ x: 2900, y: 1480 });
+      for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - FIELD_MINIMAP.width, 10]);
+      expect(button.current).toEqual({ top: 10, right: 10 + FIELD_MINIMAP.width + FIELD_MINIMAP.gap });
+      // enlarged, at the very top too with the button at its left (§Change C3 as amended
+      // 2026-11-12: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側"); only the overlay hands it the corner
+      pressM();
+      expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 10]);
+      expect(button.current).toEqual({ top: 10, right: 10 + 324 + FIELD_MINIMAP.gap });
+      pressM();
+      expect(button.current).toEqual(corner);
+      pressM();
+      expect(button.current).toEqual({ top: 10, right: 232 });
+    },
+  );
+
+  it("should chart round the player only, never round a party member (§D.24)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "field" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "field" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { render, chart } = forestWithMap();
+    render({ x: 600, y: 600 }, [{ id: "wren", entity_id: "e-wren", position: { x: 2500, y: 1500 } }]);
+    const { cell } = FIELD_CHART;
+    expect(chart().charted(Math.floor(600 / cell), Math.floor(600 / cell))).toBe(true);
+    expect(chart().charted(Math.floor(2500 / cell), Math.floor(1500 / cell))).toBe(false);
+  });
+
+  it("should redraw at most 4 times a second walking uncharted Forest at full speed, and draw what was left once stopped (§D.28)", () => {
+    const { render, map, frame, chart } = forestWithMap();
+    let x = 200;
+    render({ x, y: 1000 });
+    // 3 s at 400 world px a second, a state every 33 ms, a frame every 16 ms
+    for (let t = 0; t < 3000; t += 33) {
+      x += (400 * 33) / 1000;
+      frame(16);
+      frame(17);
+      render({ x, y: 1000 });
+    }
+    expect(map()!.redraws).toBeLessThanOrEqual(1 + 3 * 4);
+    expect(map()!.redraws).toBeGreaterThan(4);
+    const shown = map()!.redraws;
+    frame(300);
+    frame(300);
+    // the last ground charted is drawn, then nothing more while nothing is new
+    expect(map()!.redraws).toBeLessThanOrEqual(shown + 1);
+    const settled = map()!.redraws;
+    frame(1000);
+    expect(map()!.redraws).toBe(settled);
+    expect(chartedCount(chart())).toBeGreaterThan(0);
+  });
+
+  it("should add nothing to the world for charting: its five layers, in the HUD band, and nothing more (§A.2, §D.23)", () => {
+    const { render, layers, frame } = forestWithMap();
+    for (let i = 0; i < 40; i++) {
+      render({ x: 200 + i * 40, y: 1000 });
+      frame(300);
+    }
+    expect(layers).toHaveLength(5);
+    for (const l of layers) expect(l.depth).toBe(FIELD_MINIMAP.depth);
+  });
+
+  it("should step M through the run's three modes on the stored key, and not on a repeat, while chat types, or before the map (§F.31–§F.33)", () => {
+    const { field, render, map, pressM, store } = forestWithMap();
+    pressM();
+    expect(store.writes).toEqual([]);
+    render({ x: 600, y: 600 });
+    pressM({ repeat: true });
+    field.chatWindow = { isTyping: () => true };
+    pressM();
+    expect(store.writes).toEqual([]);
+    field.chatWindow = undefined;
+    pressM();
+    pressM();
+    pressM();
+    expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+    expect(map()!.mode).toBe("normal");
+  });
+
+  // integration of FS-P0HSP §F.33 with FS-G4VMQ § Change C4: a field now has an ESC menu, and
+  // while it is up it owns the keys, M with them, as the town's menu does
+  it("should not step M while the field's ESC menu is open (§F.33; FS-G4VMQ § Change C4)", () => {
+    const { field, render, map, pressM, store } = forestWithMap();
+    render({ x: 600, y: 600 });
+    field.menu = {};
+    pressM();
+    expect(store.writes).toEqual([]);
+    expect(map()!.mode).toBe("normal");
+    field.menu = undefined;
+    pressM();
+    expect(store.writes).toEqual(["enlarged"]);
+  });
+
+  it("should build the map in the mode this browser kept (§F.32)", () => {
+    const { render, map, store } = forestWithMap();
+    store.held = "overlay";
+    render({ x: 600, y: 600 });
+    expect(map()!.mode).toBe("overlay");
+    expect(map()!.panel).toBeNull();
+  });
+
+  it("should go with the visit", () => {
+    const { field, render, layers, map } = forestWithMap();
+    render({ x: 600, y: 600 });
+    field.release("destroy");
+    expect(layers.every((l) => l.destroyed)).toBe(true);
+    expect(map()).toBeUndefined();
+  });
+});
+
+const { useGameStore } = await import("@/stores/gameStore");
+
+// FS-P0HSP §D.25–§D.27 (I-P0HSP-5): the field scene keeps its charted ground in this browser.
+describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)", () => {
+  const WALLS = FOREST_WALLS.map((r, i) => ({ entity_id: `s${i}`, house_id: `s${i}`, position: { x: r.x, y: r.y }, width: r.width, height: r.height }));
+  const GATE = { entity_id: "road", destination: "hub", position: FOREST_GATE, range: 80 };
+  const any: unknown = new Proxy(() => any, { get: (_t, k) => (k === "then" ? undefined : any), apply: () => any });
+  /** One browser's store, shared across visits. */
+  function browser() {
+    const held = new Map<string, string>();
+    const writes: string[] = [];
+    const reach = () => ({
+      getItem: (k: string) => held.get(k) ?? null,
+      setItem: (k: string, v: string) => void (writes.push(k), held.set(k, v)),
+      removeItem: (k: string) => void held.delete(k),
+    });
+    return { held, writes, reach };
+  }
+  /** A visit to the Forest as `character`, on `store`. */
+  function visit(store: ReturnType<typeof browser>, character: string | null) {
+    useGameStore.setState({ activeCharacterId: character });
+    const stage = fieldOnStage();
+    const field = stage.field as unknown as FieldUnderTest & Record<string, unknown>;
+    const clock = { now: 0 };
+    Object.assign(field, {
+      field: "forlorn_forest",
+      size: FOREST_SIZE,
+      time: { delayedCall: vi.fn(), get now() { return clock.now; } },
+      minimapStage: { graphics: () => any, canvasImage: () => any },
+      showClassHud: vi.fn(),
+      chartStore: store.reach,
+      minimapStore: () => null,
+    });
+    const render = (position: { x: number; y: number }) =>
+      field.renderState({ world_type: "field", current_player: { id: "self", entity_id: "me", position }, other_players: [], walls: WALLS, gates: [GATE] });
+    const chart = () => (field.charting as { chart: { charted(cx: number, cy: number): boolean } } | undefined)?.chart;
+    const cellAt = (p: { x: number; y: number }) => chart()!.charted(Math.floor(p.x / FIELD_CHART.cell), Math.floor(p.y / FIELD_CHART.cell));
+    const frame = (ms: number) => {
+      clock.now += ms;
+      (field as unknown as { update(t: number, d: number): void }).update(clock.now, ms);
+    };
+    return { field, clock, render, chart, cellAt, frame };
+  }
+
+  afterEach(() => {
+    useGameStore.setState({ activeCharacterId: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should show a field walked before as it was left: a second visit starts with the first's ground (§D.25)", () => {
+    const store = browser();
+    const first = visit(store, "char-a");
+    first.render({ x: 600, y: 600 });
+    first.field.release("shutdown");
+    const second = visit(store, "char-a");
+    second.render({ x: 2900, y: 1480 });
+    expect(second.cellAt({ x: 600, y: 600 })).toBe(true);
+    expect(second.cellAt({ x: 2900, y: 1480 })).toBe(true);
+  });
+
+  it("should keep two characters' ground apart (§D.25)", () => {
+    const store = browser();
+    const a = visit(store, "char-a");
+    a.render({ x: 600, y: 600 });
+    a.field.release("shutdown");
+    const b = visit(store, "char-b");
+    b.render({ x: 2900, y: 1480 });
+    expect(b.cellAt({ x: 600, y: 600 })).toBe(false);
+    b.field.release("shutdown");
+    const again = visit(store, "char-a");
+    again.render({ x: 2900, y: 1480 });
+    expect(again.cellAt({ x: 600, y: 600 })).toBe(true);
+  });
+
+  it("should write at most once every 2 s while new ground is charted, and once more as the scene ends (§D.25)", () => {
+    const store = browser();
+    const v = visit(store, "char-a");
+    let x = 200;
+    v.render({ x, y: 1000 });
+    // 5 s walking at 400 px a second, a state every 33 ms, a frame every 16 / 17 ms
+    for (let t = 0; t < 5000; t += 33) {
+      x += (400 * 33) / 1000;
+      v.frame(16);
+      v.frame(17);
+      v.render({ x, y: 1000 });
+    }
+    expect(store.writes.length).toBeGreaterThanOrEqual(2);
+    expect(store.writes.length).toBeLessThanOrEqual(3);
+    // standing still: nothing new, nothing written
+    const written = store.writes.length;
+    v.frame(3000);
+    v.frame(3000);
+    expect(store.writes.length).toBeLessThanOrEqual(written + 1);
+    const settled = store.writes.length;
+    v.frame(3000);
+    expect(store.writes.length).toBe(settled);
+    v.render({ x: 2900, y: 1480 });
+    v.field.release("destroy");
+    expect(store.writes.length).toBe(settled + 1);
+  });
+
+  it("should keep nothing with no active character, and still chart the visit (§D.26)", () => {
+    const store = browser();
+    const v = visit(store, null);
+    v.render({ x: 600, y: 600 });
+    expect(v.cellAt({ x: 600, y: 600 })).toBe(true);
+    v.field.release("shutdown");
+    expect(store.writes).toEqual([]);
+  });
+});
+
+// FS-R82NV § Change C2: in a field one Esc closes one thing. I-R82NV-13. The party panel is drawn
+// over the gear overlay, so it goes first (FS-3EBCA R8; FS-R82NV § Change C8). I-3EBCA-7.
+describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
+  function keyed() {
+    const keys = new Map<string, () => void>();
+    const field = new FieldScene() as unknown as {
+      input: unknown;
+      equipment?: unknown;
+      partyPanel?: unknown;
+      bindHudKeys(): void;
+    };
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+    };
+    let gear = true;
+    let party = true;
+    field.equipment = {
+      isOpen: () => gear,
+      hide: () => {
+        const was = gear;
+        gear = false;
+        return was;
+      },
+    };
+    field.partyPanel = {
+      isOpen: () => party,
+      close: () => {
+        const was = party;
+        party = false;
+        return was;
+      },
+    };
+    field.bindHudKeys();
+    return { esc: () => keys.get("keydown-ESC")!(), open: () => ({ gear, party }) };
+  }
+
+  it("should close the party panel first, drawn over the gear overlay, then the overlay", () => {
+    const f = keyed();
+    f.esc();
+    expect(f.open()).toEqual({ gear: true, party: false });
+    f.esc();
+    expect(f.open()).toEqual({ gear: false, party: false });
+  });
+});
+
+// FS-G4VMQ § Change: The ESC menu in a field world (owner 2026-11-12: "目前野外按esc沒反應
+// 野外按esc跟村莊一樣行為"). I-G4VMQ-5.
+describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
+  type Menued = FieldUnderTest & {
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    input: unknown;
+    bindHudKeys(): void;
+    takesPointer(x: number, y: number, primary: boolean): boolean;
+    sendMovementIntent(): void;
+    cursors?: unknown;
+    wasd?: unknown;
+  };
+
+  function menuedField() {
+    const env = fieldOnStage();
+    const field = env.field as Menued;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const labels: string[] = [];
+    const picks = new Map<string, () => void>();
+    field.add = new Proxy(
+      {},
+      {
+        get: (_t, key) =>
+          key === "text"
+            ? (_x: number, _y: number, content: string) => {
+                labels.push(content);
+                return any;
+              }
+            : () => any,
+      },
+    );
+    const keys = new Map<string, () => void>();
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const state = { gear: false, party: false };
+    field.equipment = {
+      isOpen: () => state.gear,
+      hide: () => ((state.gear = false), true),
+      toggle: () => void (state.gear = !state.gear),
+      toggleCharacter: () => void (state.gear = !state.gear),
+      equipKey: () => false,
+    };
+    field.partyPanel = {
+      isOpen: () => state.party,
+      close: () => ((state.party = false), true),
+      relayout: vi.fn(),
+      destroy: vi.fn(),
+    };
+    field.bindHudKeys();
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    return { ...env, field, labels, key, state, picks };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should open the town's menu on ESC with nothing open, and close it on a second ESC (C1, C2)", () => {
+    const { field, labels, key } = menuedField();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+    expect(labels).toContain("Change character  [1]");
+    expect(labels).toContain("Back  [Esc]");
+    key("ESC");
+    expect(field.menu).toBeUndefined();
+  });
+
+  // the party panel is drawn over the gear overlay, so it goes first (FS-R82NV § Change C2, C8)
+  it("should close the party panel, then the gear overlay, before the menu opens (C1)", () => {
+    const { field, key, state } = menuedField();
+    state.gear = true;
+    state.party = true;
+    key("ESC");
+    expect(state.party).toBe(false);
+    expect(state.gear).toBe(true);
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(state.gear).toBe(false);
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should leave for the roster on Change character: one leave_hub, then MainMenuScene on world_left (C3)", () => {
+    const { field, key, send, reply } = menuedField();
+    key("ESC");
+    key("ONE");
+    key("ONE");
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toHaveLength(1);
+    reply("world_left", {});
+    expect(field.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should stay in the field and say why when the server refuses the leave (C3)", () => {
+    const { field, key, send, labels } = menuedField();
+    const onError = vi.mocked(socketManager.onError);
+    key("ESC");
+    key("ENTER");
+    const refused = onError.mock.calls.find(([a]) => a === ActionType.LeaveHub)?.[1];
+    refused?.({ action: ActionType.LeaveHub, error: "x", message: "You are not in the hub." });
+    expect(field.scene.start).not.toHaveBeenCalled();
+    expect(labels).toContain("You are not in the hub.");
+    key("ENTER");
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toHaveLength(2);
+  });
+
+  it("should own the keys and presses while open: no gear overlay, no attack (C4)", () => {
+    const { field, key, state } = menuedField();
+    key("ESC");
+    key("I");
+    key("C");
+    expect(state.gear).toBe(false);
+    expect(field.takesPointer(400, 300, true)).toBe(true);
+  });
+});
+
+/**
+ * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
+ * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ */
+function partyPanelOn(refused: () => boolean) {
+  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const keyboard = new EventEmitter();
+  const scene = {
+    add: { graphics: () => any, text: () => any },
+    input: Object.assign(new EventEmitter(), { keyboard }),
+    events: new EventEmitter(),
+  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
+  const panel = new PartyPanel(scene, {
+    store: createPartyStore({ selfId: () => "me" }),
+    world: () => null,
+    selfId: () => "me",
+    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
+    makeField: () => ({
+      value: "",
+      setEnabled: vi.fn(),
+      moveTo: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      blur: vi.fn(),
+      destroy: vi.fn(),
+    }),
+    activeElement: () => null,
+    blocked: refused,
+  });
+  return { panel, pressT: () => keyboard.emit("keydown-T") };
+}
+
+// FS-3EBCA R8 and FS-R82NV § Change C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
+// inventory or the character panel open the party panel would not open). I-3EBCA-7.
+describe("FieldScene the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
+  type Partied = {
+    add: unknown;
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    refusesParty(): boolean;
+    mountCorner(): void;
+  };
+
+  function partyInField() {
+    const field = new FieldScene() as unknown as Partied;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const zones: { args: unknown[]; handlers: Record<string, () => void> }[] = [];
+    const zone = (...args: unknown[]) => {
+      const z = { args, handlers: {} as Record<string, () => void> };
+      zones.push(z);
+      const self: unknown = new Proxy(() => self, {
+        get: (_t, prop) =>
+          prop === "on" ? (event: string, fn: () => void) => ((z.handlers[event] = fn), self) : () => self,
+      });
+      return self;
+    };
+    field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
+    const gear = { inventory: false, character: false };
+    field.equipment = { isOpen: () => gear.inventory || gear.character };
+    const party = partyPanelOn(() => field.refusesParty());
+    field.partyPanel = party.panel;
+    field.mountCorner();
+    const f = hudCorner.cornerIconFrame("party", viewport);
+    const pressIcon = () => zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
+    return { field, gear, party, pressIcon };
+  }
+
+  it.each([
+    ["the inventory", { inventory: true, character: false }],
+    ["the character panel", { inventory: false, character: true }],
+    ["both panels", { inventory: true, character: true }],
+  ])("should open and close the party panel on T and on the Party icon with %s open", (_open, open) => {
+    const { gear, party, pressIcon } = partyInField();
+    Object.assign(gear, open);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(true);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(false);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(true);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
+  });
+
+  it("should still refuse T and the Party icon while the ESC menu is open", () => {
+    const { field, gear, party, pressIcon } = partyInField();
+    gear.inventory = true;
+    field.menu = {};
+    party.pressT();
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
+  });
+});
+
+// The owner, 2026-11-12: "開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". In a field the windows are the
+// inventory, the character panel and the party panel (the mailbox is the town's): FS-3EBCA R17,
+// R18; FS-G4VMQ § Change C4.
+describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () => {
+  type Windowed = {
+    add: unknown;
+    input: unknown;
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    refusesParty(): boolean;
+    pressMenuIcon(): void;
+    mayChat(): boolean;
+    mountCorner(): void;
+    bindHudKeys(): void;
+  };
+
+  function fieldWindows() {
+    const env = fieldOnStage();
+    const field = env.field as unknown as Windowed;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    type Zone = { args: unknown[]; handlers: Record<string, () => void>; name?: string; interactive?: unknown[] };
+    const zones: Zone[] = [];
+    const zone = (...args: unknown[]) => {
+      const z: Zone = { args, handlers: {} };
+      zones.push(z);
+      const self: unknown = new Proxy(() => self, {
+        get: (_t, prop) => {
+          if (prop === "on") return (event: string, fn: () => void) => ((z.handlers[event] = fn), self);
+          if (prop === "setName") return (name: string) => ((z.name = name), self);
+          // what it was made pressable with: the menu's blocker hands its own hit test (FS-3EBCA R18)
+          if (prop === "setInteractive") return (...a: unknown[]) => ((z.interactive = a), self);
+          return () => self;
+        },
+      });
+      return self;
+    };
+    field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
+    const keys = new Map<string, () => void>();
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const gear = { inventory: false, character: false };
+    field.equipment = {
+      isOpen: () => gear.inventory || gear.character,
+      hide: () => {
+        const was = gear.inventory || gear.character;
+        gear.inventory = false;
+        gear.character = false;
+        return was;
+      },
+      toggle: () => (gear.inventory = !gear.inventory),
+      toggleCharacter: () => (gear.character = !gear.character),
+      equipKey: () => false,
+    };
+    const party = partyPanelOn(() => field.refusesParty());
+    field.partyPanel = party.panel;
+    field.bindHudKeys();
+    field.mountCorner();
+    const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
+      const f = hudCorner.cornerIconFrame(icon, viewport);
+      zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
+    };
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const open = () => ({ ...gear, party: party.panel.isOpen() });
+    return { ...env, field, gear, party, pressIcon, key, open, zones };
+  }
+  const NONE = { inventory: false, character: false, party: false };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should keep Esc's one press, one thing: the party panel, then the overlay, then the menu (R17)", () => {
+    const { field, gear, party, key, open } = fieldWindows();
+    gear.inventory = true;
+    party.pressT();
+    key("ESC");
+    expect(open()).toEqual({ ...NONE, inventory: true });
+    key("ESC");
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
+    const { field, gear, party, pressIcon, open } = fieldWindows();
+    gear.inventory = true;
+    gear.character = true;
+    party.pressT();
+    pressIcon("menu");
+    expect(open()).toEqual(NONE);
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should answer no corner icon but Menu while the menu is open (R18)", () => {
+    const { field, pressIcon, key, open } = fieldWindows();
+    key("ESC");
+    const menu = field.menu;
+    for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
+    expect(field.menu).toBe(menu);
+    expect(open()).toEqual(NONE);
+  });
+
+  // owner 2026-11-12: "menu無法再按一次icon關閉"
+  it("should close the menu on the Menu icon, as its × and Back do, and open it again on the next press (R6, R18)", () => {
+    const { field, pressIcon, key, open } = fieldWindows();
+    key("ESC");
+    pressIcon("menu");
+    expect(field.menu).toBeUndefined();
+    expect(open()).toEqual(NONE);
+    pressIcon("menu");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+    const { key, zones } = fieldWindows();
+    key("ESC");
+    const blocker = zones.filter((z) => z.name === "menu-blocker").at(-1)!;
+    const test = (blocker.interactive ?? []).find((a) => typeof a === "function") as
+      | ((area: unknown, x: number, y: number, object: unknown) => boolean)
+      | undefined;
+    expect(test, "the blocker's own hit test").toBeTypeOf("function");
+    const takes = (x: number, y: number) => test!({}, x, y, blocker);
+    const plate = hudCorner.cornerIconFrame("menu", viewport);
+    const bag = hudCorner.cornerIconFrame("inventory", viewport);
+    expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+    expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
+    expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
+    expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
+  });
+
+  it("should answer no I, B, C or T while the menu is open, and give the chat input no focus (R18)", () => {
+    const { field, party, key, open } = fieldWindows();
+    expect(field.mayChat()).toBe(true);
+    key("ESC");
+    key("I");
+    key("B");
+    key("C");
+    party.pressT();
+    expect(open()).toEqual(NONE);
+    expect(field.mayChat()).toBe(false);
+    key("ESC");
+    expect(field.menu).toBeUndefined();
   });
 });

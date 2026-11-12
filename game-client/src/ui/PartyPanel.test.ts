@@ -4,14 +4,28 @@ import { viewport } from "@/render/viewport";
 import type Phaser from "phaser";
 import type { WorldType } from "@/assets/types/client";
 import { createPartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
-import { PartyPanel, type PartyPanelDeps } from "./PartyPanel";
+import {
+  PARTY_PANEL_DEPTH,
+  PartyPanel,
+  type PartyPanelDeps,
+} from "./PartyPanel";
 import { partyCommands } from "./partyCommands";
+import { drawPanelFrame, drawPanelTitle } from "./panelFrame";
+import { GEAR_OVERLAY_DEPTH } from "./GearOverlay";
+import { MENU_DEPTH } from "./menuPanel";
+
+// The party panel's frame is one drawing, which this surface must call, not copy (owner
+// 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame), drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
 import type { PartyInviteFieldHandle } from "./partyInviteField";
 import {
   PARTY_HINT,
   PARTY_PANEL_W,
-  PARTY_PANEL_X,
-  PARTY_PANEL_Y,
+  partyPanelLeft,
+  partyPanelTop,
   type FocusedElement,
 } from "./partyPanelLayout";
 
@@ -24,17 +38,21 @@ interface FakeText {
   destroyed: boolean;
   interactive: boolean;
   onPress?: () => void;
+  onOver?: () => void;
+  colour?: string;
+  at?: { x: number; y: number };
 }
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  /** Every depth the panel set on what it drew, in order. */
+  const depths: number[] = [];
   const keyboard = new EventEmitter();
   const input = Object.assign(new EventEmitter(), { keyboard });
   const graphics = () => {
     const self: Record<string, unknown> = {};
     for (const m of [
       "setScrollFactor",
-      "setDepth",
       "clear",
       "fillStyle",
       "lineStyle",
@@ -46,11 +64,13 @@ function fakeScene() {
       "fillCircle",
     ])
       self[m] = () => self;
+    self.setDepth = (d: number) => (depths.push(d), self);
     self.destroy = () => undefined;
     return self;
   };
-  const text = (_x: number, _y: number, content: string) => {
+  const text = (x: number, y: number, content: string) => {
     const t: FakeText = {
+      at: { x, y },
       content,
       alpha: 1,
       destroyed: false,
@@ -59,14 +79,16 @@ function fakeScene() {
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
-      setDepth: () => self,
+      setDepth: (d: number) => (depths.push(d), self),
       setOrigin: () => self,
       setAlpha: (a: number) => ((t.alpha = a), self),
       setInteractive: () => ((t.interactive = true), self),
       on: (event: string, cb: () => void) => {
         if (event === "pointerdown") t.onPress = cb;
+        if (event === "pointerover") t.onOver = cb;
         return self;
       },
+      setColor: (c: string) => ((t.colour = c), self),
       width: content.length * 7,
       height: 18,
       setPosition: () => self,
@@ -82,7 +104,7 @@ function fakeScene() {
   } as unknown as Phaser.Scene;
   const live = () => texts.filter((t) => !t.destroyed);
   const find = (content: string) => live().find((t) => t.content === content);
-  return { scene, keyboard, events, input, live, find };
+  return { scene, keyboard, events, input, live, find, depths };
 }
 
 function fakeField() {
@@ -91,6 +113,7 @@ function fakeField() {
     enabled: true,
     shown: false,
     destroyed: false,
+    at: undefined as { x: number; y: number } | undefined,
     submit: (_v: string) => undefined as void,
   };
   const handle: PartyInviteFieldHandle = {
@@ -101,7 +124,7 @@ function fakeField() {
       field.value = v;
     },
     setEnabled: (e) => void (field.enabled = e),
-    moveTo: () => undefined,
+    moveTo: (r) => void (field.at = r),
     show: () => void (field.shown = true),
     hide: () => void (field.shown = false),
     blur: () => undefined,
@@ -135,6 +158,7 @@ function setup(
     active?: FocusedElement | null;
     blocked?: boolean;
     commands?: PartyPanelDeps["commands"];
+    opening?: () => void;
   } = {},
 ) {
   const scene = fakeScene();
@@ -163,6 +187,7 @@ function setup(
     },
     activeElement: () => state.active,
     blocked: () => state.blocked,
+    opening: opts.opening,
   };
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
@@ -188,10 +213,10 @@ describe("PartyPanel (FS-R82NV R28: T toggles it)", () => {
       expect(env.panel.isOpen()).toBe(false);
       env.pressT();
       expect(env.panel.isOpen()).toBe(true);
-      expect(env.find("Party")).toBeDefined();
+      expect(env.find("PARTY")).toBeDefined();
       env.pressT();
       expect(env.panel.isOpen()).toBe(false);
-      expect(env.find("Party")).toBeUndefined();
+      expect(env.find("PARTY")).toBeUndefined();
     },
   );
 
@@ -242,7 +267,7 @@ describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
     const env = setup();
     env.pressT();
     env.store.getState().apply(update(ALLY));
-    expect(env.find("Party (2/4)")).toBeDefined();
+    expect(env.find("PARTY (2/4)")).toBeDefined();
     expect(env.find("Aldric")).toBeDefined();
     expect(env.find("Wren")).toBeDefined();
     expect(
@@ -472,19 +497,170 @@ describe("PartyPanel at a render scale (FS-ZAJMH R15: Phaser's pointer.x/y are b
       env.handle.blur = blur;
       env.pressT();
       // near the panel's right edge: its backing px, read as logical units, lie past it
+      const left = partyPanelLeft(1080);
+      const top = partyPanelTop(720);
       const onPanel = {
-        x: PARTY_PANEL_X + PARTY_PANEL_W - 10,
-        y: PARTY_PANEL_Y + 20,
+        x: left + PARTY_PANEL_W - 10,
+        y: top + 20,
       };
       expect(env.panel.covers(onPanel.x, onPanel.y)).toBe(true);
       expect(env.panel.covers(onPanel.x * rs, onPanel.y * rs)).toBe(false);
       env.input.emit("pointerdown", { x: onPanel.x * rs, y: onPanel.y * rs });
       expect(blur).not.toHaveBeenCalled();
-      // left of the panel: its backing px, read as logical units, lie on it
-      const offPanel = { x: PARTY_PANEL_X - 60, y: PARTY_PANEL_Y + 20 };
+      // above and left of the centred panel: its backing px, read as logical units, lie on it
+      const offPanel = { x: left - 90, y: top - 30 };
       expect(env.panel.covers(offPanel.x * rs, offPanel.y * rs)).toBe(true);
       env.input.emit("pointerdown", { x: offPanel.x * rs, y: offPanel.y * rs });
       expect(blur).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+// FS-R82NV § Change: The party panel closes on its × and stands nearer the middle. I-R82NV-13.
+describe("PartyPanel (FS-R82NV § Change C1: the × closes it)", () => {
+  it("should draw an amber × at the panel's top right, and close the panel on a press", () => {
+    const env = setup();
+    env.pressT();
+    const x = env.find("×")!;
+    expect(x.interactive).toBe(true);
+    expect(x.at).toEqual({ x: partyPanelLeft(1080) + 300 - 12 - 12, y: partyPanelTop(720) + 12 + 12 });
+    x.onPress?.();
+    expect(env.panel.isOpen()).toBe(false);
+    expect(env.find("×")).toBeUndefined();
+  });
+
+  it("should brighten the × under the pointer", () => {
+    const env = setup();
+    env.pressT();
+    const x = env.find("×")!;
+    const before = x.colour;
+    x.onOver?.();
+    expect(x.colour).toBeDefined();
+    expect(x.colour).not.toBe(before);
+  });
+});
+
+describe("PartyPanel (FS-R82NV § Change C2: Esc closes it; FS-3EBCA R8: the Party icon toggles it)", () => {
+  it("should report whether close() closed anything", () => {
+    const env = setup();
+    expect(env.panel.close()).toBe(false);
+    env.pressT();
+    expect(env.panel.close()).toBe(true);
+    expect(env.panel.isOpen()).toBe(false);
+  });
+
+  it("should toggle on toggle() unless something else owns the screen, a focused text field or not", () => {
+    const env = setup({ active: { tagName: "INPUT", type: "text" } });
+    env.panel.toggle();
+    expect(env.panel.isOpen()).toBe(true);
+    env.panel.toggle();
+    expect(env.panel.isOpen()).toBe(false);
+    env.state.blocked = true;
+    env.panel.toggle();
+    expect(env.panel.isOpen()).toBe(false);
+  });
+});
+
+describe("PartyPanel (FS-R82NV § Change C3–C5: centred, following the view)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should move the open panel and its invite field when the view widens", () => {
+    const env = setup();
+    env.pressT();
+    expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(true);
+    const fieldAt = env.field.at!.x;
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.panel.relayout();
+    expect(env.panel.covers(partyPanelLeft(1280) + 5, partyPanelTop(720) + 5)).toBe(true);
+    expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(false);
+    expect(env.field.at!.x).toBe(fieldAt + 100);
+    expect(env.find("×")!.at!.x).toBe(partyPanelLeft(1280) + 300 - 24);
+  });
+});
+
+describe("PartyPanel's frame, shared (FS-R82NV § Change C1; FS-G4VMQ § Change C1)", () => {
+  it("should draw its panel with the one frame drawing the menu and the gear overlay use", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const env = setup();
+    env.pressT();
+    expect(frame).toHaveBeenCalled();
+    const [, , panel] = frame.mock.calls.at(-1)!;
+    expect(panel.x).toBe(partyPanelLeft(1080));
+    expect(panel.y).toBe(partyPanelTop(720));
+    expect(panel.width).toBe(PARTY_PANEL_W);
+  });
+});
+
+// FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍"): the
+// party panel opens over the inventory and the character panel and is drawn above them.
+describe("PartyPanel over the inventory and the character panel (FS-3EBCA R8; FS-R82NV § Change C8)", () => {
+  it("should draw everything of the open panel above the gear overlay's panels and their ×, under the menu", () => {
+    const env = setup({ world: "field" });
+    env.store.getState().apply(update(ME));
+    env.depths.length = 0;
+    env.pressT();
+    // the graphics and every text it drew
+    expect(env.depths.length).toBeGreaterThanOrEqual(env.live().length + 1);
+    // the overlay draws its panels at GEAR_OVERLAY_DEPTH and up to + 3 (the × zones)
+    for (const d of env.depths) {
+      expect(d).toBe(PARTY_PANEL_DEPTH);
+    }
+    expect(PARTY_PANEL_DEPTH).toBeGreaterThan(GEAR_OVERLAY_DEPTH + 3);
+    expect(PARTY_PANEL_DEPTH).toBeLessThan(MENU_DEPTH);
+  });
+
+  it("should show the invite field, and still keep T a letter while it holds focus", () => {
+    // the scene's rule no longer names the overlay: an open overlay leaves `blocked` false
+    const env = setup({ world: "field" });
+    env.pressT();
+    env.frame();
+    expect(env.field.shown).toBe(true);
+    env.state.active = { tagName: "INPUT", type: "text" };
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(true);
+  });
+});
+
+// The owner, 2026-11-12: "開其他視窗時信箱會被關閉": opening the party panel closes the letter panel
+// first (FS-R82NV § Change C9; FS-3EBCA R16). The panel asks its scene through `opening`.
+describe("PartyPanel clears the letter panel as it opens (FS-R82NV § Change C9)", () => {
+  it("should call `opening` before T or the Party icon opens it, never on a close or a refusal", () => {
+    const opening = vi.fn();
+    const env = setup({ opening });
+    const openAt: boolean[] = [];
+    opening.mockImplementation(() => openAt.push(env.panel.isOpen()));
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(true);
+    expect(openAt).toEqual([false]);
+    env.pressT();
+    env.panel.toggle();
+    expect(openAt).toEqual([false, false]);
+    env.panel.toggle();
+    expect(opening).toHaveBeenCalledTimes(2);
+    env.state.blocked = true;
+    env.pressT();
+    env.panel.toggle();
+    env.state.blocked = false;
+    env.state.active = { tagName: "INPUT", type: "text" };
+    env.pressT();
+    expect(opening).toHaveBeenCalledTimes(2);
+    expect(env.panel.isOpen()).toBe(false);
+  });
+});
+
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// the party panel's title through the shared drawing, centred, in capitals (FS-3EBCA R20, R22). I-3EBCA-9.
+describe("PartyPanel's title, shared (FS-3EBCA R20, R22)", () => {
+  it("should draw its title with the one title drawing, over the whole panel", () => {
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const env = setup();
+    env.store.getState().apply(update(ME));
+    env.pressT();
+    const [, panel, words] = title.mock.calls.at(-1)!;
+    expect(panel).toMatchObject({ x: partyPanelLeft(1080), y: partyPanelTop(720), width: PARTY_PANEL_W });
+    expect(words).toBe("Party (2/4)");
+    expect(env.find("PARTY (2/4)")).toBeDefined();
+  });
 });

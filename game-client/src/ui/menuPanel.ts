@@ -1,7 +1,10 @@
 /**
- * The chrome of a canvas menu, shared by the hub's ESC menu, the run's ESC menu and its Fall
- * confirm, and the hub's NPC dialogue: a camera-fixed charcoal box with a brass hairline in the
- * popup band, an optional line of copy over the rows, and one pressable row per choice. What a
+ * The chrome of a canvas menu, shared by the hub's ESC menu, the field's, the run's ESC menu and
+ * its Fall confirm, and the hub's NPC dialogue's rows: a camera-fixed box in the party panel's
+ * frame (`drawPanelFrame`, its × doing what Esc does; FS-G4VMQ § Change: The menu wears the party
+ * panel's frame) in the popup band, an optional line of copy over the rows, and one pressable row
+ * per choice. While it is open it owns the screen: a blocker over the whole view under it takes
+ * every press and hover but the Menu icon's, which closes it (FS-3EBCA R18). What a
  * menu offers is each scene's rule (`hubMenuChoices`, `runMenuChoices`, `FALL_CONFIRM`); what
  * it looks like and how its keys land is this module's.
  *
@@ -10,22 +13,30 @@
  */
 
 import type Phaser from "phaser";
-import { crispen } from "@/render/viewport";
+import { crispen, viewport } from "@/render/viewport";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
+import { PANEL_TITLE_BAND, drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 
 /** The popup band: menus and dialogues sit here, over the HUD (1000) and the result card (1500). */
 export const MENU_DEPTH = 2000;
+/**
+ * The open menu's blocker (FS-3EBCA R18): under its box, rows and ×, over the HUD (1000), the
+ * party panel (1110), the result card (1500) and the letter panel (1800).
+ */
+export const MENU_BLOCKER_DEPTH = MENU_DEPTH - 1;
 /** The panel: its width, the vertical padding, the copy line's row and one row per choice, in screen px. */
 export const MENU_WIDTH = 320;
 export const MENU_PAD = 18;
 export const MENU_LINE = 44;
 export const MENU_ROW = 40;
+/** Every menu's title, in the windows' one title style (FS-3EBCA R23: "menu目前沒標題也加上"). */
+export const MENU_TITLE = "MENU";
 
 /** What a menu is drawn in, as the scene's own palette tokens. */
 export interface MenuTones {
-  /** The panel's ground; also the fill of the invisible hit rectangles. */
+  /** The fill of the invisible hit rectangles (the ground itself is the party panel's frame). */
   panel: number;
-  /** The panel's hairline. */
+  /** Kept for the scenes' tone sets; the frame's brass is the party panel's. */
   frame: number;
   /** The copy line over the rows, and a row brightened under the pointer. */
   text: number;
@@ -144,6 +155,11 @@ export interface MenuPanelSpec<C extends MenuChoice> {
   origin: { x: number; y: number };
   hit: HitSize;
   tones: MenuTones;
+  /**
+   * A screen point the blocker leaves to what is drawn under it: the corner row's Menu plate, so a
+   * press there closes the menu and a hover there lights the icon (FS-3EBCA R18). Omitted, none.
+   */
+  through?: (x: number, y: number) => boolean;
 }
 
 export interface MenuPanel {
@@ -155,8 +171,8 @@ export interface MenuPanel {
 }
 
 /**
- * A menu panel: a camera-fixed charcoal box with a brass hairline in the popup band, an optional
- * line over the rows, one row per choice. A number answers each actionable row, Enter the first;
+ * A menu panel: a camera-fixed box in the party panel's frame in the popup band, titled MENU, an
+ * optional line over the rows, one row per choice. A number answers each actionable row, Enter the first;
  * the cancel row already says Esc on its label and is what Esc does. The caller holds the
  * container and the keys, and takes the previous menu down before building the next.
  */
@@ -164,19 +180,19 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
   const { line, choices, actions, close, origin, tones } = spec;
   const enabled: Partial<Record<C["id"], () => boolean>> = spec.enabled ?? {};
   const lineHeight = line ? MENU_LINE : 0;
-  const panelHeight = MENU_PAD * 2 + lineHeight + choices.length * MENU_ROW;
+  // the title's band over the copy line and the rows, which keep their gaps under it (FS-3EBCA R23)
+  const panelHeight = PANEL_TITLE_BAND + lineHeight + choices.length * MENU_ROW + MENU_PAD;
   const top = -panelHeight / 2;
+  const below = top + PANEL_TITLE_BAND;
 
   const panel = scene.add.graphics();
-  panel.fillStyle(tones.panel, 0.96);
-  panel.fillRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-  panel.lineStyle(1, tones.frame, 0.5);
-  panel.strokeRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-  const parts: Phaser.GameObjects.GameObject[] = [panel];
+  const box = { x: -MENU_WIDTH / 2, y: top, width: MENU_WIDTH, height: panelHeight };
+  const frame = drawPanelFrame(scene, panel, box);
+  const parts: Phaser.GameObjects.GameObject[] = [panel, frame.glyph, drawPanelTitle(scene, box, MENU_TITLE)];
   if (line) {
     parts.push(
       scene.add
-        .text(0, top + MENU_PAD + MENU_LINE / 2, line, {
+        .text(0, below + MENU_LINE / 2, line, {
           fontFamily: CANVAS_FONT.body,
           fontSize: "15px",
           color: toCss(tones.text),
@@ -195,7 +211,7 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
   const options = choices.map((choice, i) =>
     menuOption(scene, {
       x: 0,
-      y: top + MENU_PAD + lineHeight + MENU_ROW * (i + 0.5),
+      y: below + lineHeight + MENU_ROW * (i + 0.5),
       label: `${choice.label}${hint(choice)}`,
       colour: choice.register === "actionable" ? tones.actionable : tones.cancel,
       onPick: act(choice),
@@ -221,9 +237,51 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
     .container(origin.x, origin.y, [...parts, ...options])
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH);
+
+  // the frame's ×, Esc's own way out (§ Change C2): its hit is camera-fixed beside the box, as a
+  // row's is, since Phaser hit-tests a container's child with the child's own scroll factor
+  const cross = frame.close;
+  const centre = { x: cross.x + cross.width / 2, y: cross.y + cross.height / 2 };
+  const closeHit = scene.add
+    .rectangle(origin.x + centre.x, origin.y + centre.y, cross.width, cross.height, tones.panel, 0)
+    .setScrollFactor(0)
+    .setDepth(MENU_DEPTH + 1)
+    .setInteractive({ useHandCursor: true })
+    .setName("menu-close");
+  closeHit.on("pointerup", () => keys.dismiss());
+  closeHit.on("pointerover", () => lightClose(frame.glyph, true));
+  closeHit.on("pointerout", () => lightClose(frame.glyph, false));
+
+  // the menu owns the screen while open (FS-3EBCA R18, owner: "menu開啟時其他都不能按"): Phaser hands a
+  // press and a hover to the topmost interactive object only, so nothing drawn under the blocker
+  // hears one, and the press stops here, so no scene-wide listener (the world, the chat window) does.
+  // Its own hit test leaves out what `through` names, the Menu plate, which then is the topmost
+  // there (owner: "menu無法再按一次icon關閉"). The zone stands at the view's origin, so a local point
+  // is a screen point; it reads the view as it is now, as setSize keeps the zone to it.
+  const through = spec.through ?? (() => false);
+  const takes = (_area: unknown, x: number, y: number) =>
+    x >= 0 && y >= 0 && x < viewport.width && y < viewport.height && !through(x, y);
+  const blocker = scene.add
+    .zone(0, 0, viewport.width, viewport.height)
+    .setOrigin(0)
+    .setScrollFactor(0)
+    .setDepth(MENU_BLOCKER_DEPTH)
+    .setInteractive({}, takes)
+    .setName("menu-blocker");
+  blocker.on(
+    "pointerdown",
+    (_pointer: unknown, _x: number, _y: number, event?: { stopPropagation(): void }) => event?.stopPropagation(),
+  );
+  container.once("destroy", () => {
+    closeHit.destroy();
+    blocker.destroy();
+  });
+
   const moveTo = (at: { x: number; y: number }) => {
     container.setPosition(at.x, at.y);
     options.forEach((option) => option.place(at));
+    closeHit.setPosition(at.x + centre.x, at.y + centre.y);
+    blocker.setSize(viewport.width, viewport.height);
     crispen([container]);
   };
   return { container, keys, moveTo };

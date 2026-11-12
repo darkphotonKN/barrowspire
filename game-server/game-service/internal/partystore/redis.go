@@ -117,6 +117,10 @@ func NewRedis(client redis.UniversalClient) *Redis {
 // scripts/lib.lua).
 func pointerKey(playerID uuid.UUID) string { return "{party}:pl:" + playerID.String() }
 
+// playerInvitesKey is the invites addressed to a player, scored by expiry (lib.lua's
+// player_invites_key).
+func playerInvitesKey(playerID uuid.UUID) string { return pointerKey(playerID) + ":invites" }
+
 func inviteKey(inviteID uuid.UUID) string { return "{party}:inv:" + inviteID.String() }
 
 func partyKey(partyID uuid.UUID) string { return "{party}:p:" + partyID.String() }

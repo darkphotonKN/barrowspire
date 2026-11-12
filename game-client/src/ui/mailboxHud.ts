@@ -16,8 +16,10 @@ import { MailboxEnvelope } from "./MailboxEnvelope";
 export interface MailboxHudDeps {
   store: StoreApi<MailboxState>;
   art: ArtLibrary;
-  /** Whether a dialogue, a menu or an overlay owns the screen now: the envelope opens nothing. */
+  /** Whether a dialogue or the menu owns the screen now: the envelope opens nothing. */
   blocked: () => boolean;
+  /** Closes the other windows as the envelope opens the panel (FS-1GZGD § Change C4). */
+  opening?: () => void;
   /** The character's level, where known: the enclosure tip tones a requirement above it. */
   level?: () => number | undefined;
 }
@@ -28,8 +30,9 @@ export function mountMailbox(
   art: ArtLibrary,
   blocked: () => boolean,
   level?: () => number | undefined,
+  opening?: () => void,
 ): MailboxHud {
-  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level });
+  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level, opening });
 }
 
 export class MailboxHud {
@@ -43,6 +46,7 @@ export class MailboxHud {
     this.envelope = new MailboxEnvelope(scene, {
       store: deps.store,
       blocked: deps.blocked,
+      opening: deps.opening,
     });
     this.panel = new LetterPanel(scene, {
       store: deps.store,

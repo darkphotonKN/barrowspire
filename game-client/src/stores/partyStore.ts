@@ -56,6 +56,12 @@ export interface PartyUpdatePayload {
   size: number;
   reason: string;
   subject_id: string;
+  /**
+   * On the sync a player on the roster is sent: their party's run is under way on that pod, so
+   * entering as another character is refused (FS-NCC9J §Change: Changing character leaves the
+   * party, C9, C12). Left out everywhere else.
+   */
+  locked?: boolean;
 }
 
 /** The party's open invites, none when the update carries no list. */
@@ -306,7 +312,8 @@ export function isPartyUpdate(payload: unknown): payload is PartyUpdatePayload {
     payload.members.every(isPartyMember) &&
     (payload.reserved === undefined ||
       (Array.isArray(payload.reserved) &&
-        payload.reserved.every(isReservedSlot)))
+        payload.reserved.every(isReservedSlot))) &&
+    (payload.locked === undefined || typeof payload.locked === "boolean")
   );
 }
 
@@ -436,6 +443,11 @@ export interface PartyState {
   dismissInvite: (inviteId: string) => void;
   /** Lets go of every invite whose countdown has run out. */
   expireInvites: () => void;
+  /**
+   * Lets go of every invite: the player went back to the roster, where none can be answered
+   * (FS-NCC9J §Change: Changing character leaves the party, C8).
+   */
+  forgetInvites: () => void;
   /** Whole seconds left on an invite's countdown, by the store's own clock: the one clock (R14). */
   secondsLeft: (invite: PendingInvite) => number;
   /** How full an invite's countdown bar is now, 1 to 0, by the store's own clock (FS-B3NDZ R6). */
@@ -468,6 +480,8 @@ export interface PartyState {
   /** How full the held check's countdown bar is now, 1 to 0, by the store's own clock (FS-B3NDZ R6). */
   readyFraction: (check: OpenReadyCheck) => number;
   togglePanel: () => void;
+  /** Shuts the panel: its ×, Esc (FS-R82NV § Change C1, C2). */
+  closePanel: () => void;
 }
 
 export interface PartyStoreDeps {
@@ -554,6 +568,7 @@ export function createPartyStore({
         const live = state.invites.filter((i) => inviteSecondsLeft(i, at) > 0);
         return live.length === state.invites.length ? state : { invites: live };
       }),
+    forgetInvites: () => set((state) => (state.invites.length === 0 ? state : { invites: [] })),
     secondsLeft: (invite) => inviteSecondsLeft(invite, now()),
     inviteFraction: (invite) => inviteFraction(invite, now()),
     receiveNotice: (notice) => {
@@ -597,6 +612,7 @@ export function createPartyStore({
     readySecondsLeft: (check) => readyCheckSecondsLeft(check, now()),
     readyFraction: (check) => readyCheckFraction(check, now()),
     togglePanel: () => set((state) => ({ panelOpen: !state.panelOpen })),
+    closePanel: () => set({ panelOpen: false }),
   }));
 }
 

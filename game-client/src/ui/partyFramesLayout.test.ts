@@ -4,7 +4,10 @@ import type { PlayerState } from "@/types/gameState";
 import { chatWindowFrame, CHAT_WINDOW_X } from "./chatWindowLayout";
 import { invitePromptFrames } from "./partyInvitePromptLayout";
 import { POTION_CELL_GAP, POTION_CELL_W } from "./potions";
-import { PARTY_PANEL_X } from "./partyPanelLayout";
+import { partyPanelLeft } from "./partyPanelLayout";
+
+/** The T panel's left edge at its leftmost, the narrowest view (FS-R82NV § Change C3). */
+const PARTY_PANEL_LEFT = partyPanelLeft(1080);
 import {
   PARTY_FRAMES_PLACEMENT,
   partyBustFrame,
@@ -579,9 +582,9 @@ describe("partyFramesFrame", () => {
     });
   });
 
-  it("opens the T panel just right of the run's potion cell, in every world", () => {
+  it("opens the T panel clear right of the run's potion cell, even in the narrowest view (FS-R82NV § Change C3)", () => {
     const cell = potionCell();
-    expect(PARTY_PANEL_X).toBe(cell.x + cell.width + 12);
+    expect(PARTY_PANEL_LEFT).toBeGreaterThan(cell.x + cell.width + 12);
   });
 
   it("keeps the most prompts clear of the bars and the potion cell, open panel or not", () => {
@@ -651,7 +654,7 @@ describe("partyFramesFrame", () => {
         overlaps(frames, chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel),
       ).toBe(false);
       // the T panel stands right of the frames (R28)
-      expect(frames.x + frames.width).toBeLessThan(PARTY_PANEL_X);
+      expect(frames.x + frames.width).toBeLessThan(PARTY_PANEL_LEFT);
       for (const panelOpen of [false, true])
         for (const note of [false, true])
           for (const prompt of invitePromptFrames(4, {
@@ -745,7 +748,7 @@ describe("partyTravelButtonRect", () => {
     expect(button.x + button.width).toBeLessThanOrEqual(
       frame.row.x + frame.row.width - 2,
     );
-    expect(button.x + button.width).toBeLessThan(PARTY_PANEL_X);
+    expect(button.x + button.width).toBeLessThan(PARTY_PANEL_LEFT);
     expect(button.y).toBeGreaterThanOrEqual(frame.row.y);
     expect(button.y + button.height).toBeLessThanOrEqual(frame.health.y - 1);
     expect(button.height).toBeGreaterThanOrEqual(14);

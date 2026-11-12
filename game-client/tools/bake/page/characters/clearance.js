@@ -20,7 +20,9 @@
 // and it costs the bake about as much as one more pass of the poses.
 
 import * as THREE from "three";
-import { K1 } from "../projection.js";
+import { K1, VIEW_DIR } from "../projection.js";
+import { FACINGS, yawFor } from "../facing.js";
+import { jointAt as J } from "./rig.js";
 
 /**
  * How far a leg may lie outside the cloth over it, in BAKED px: one. The measure is in 1x px
@@ -53,9 +55,8 @@ export const KNOWN_CLIPPING = new Map([
   ["creature_troll_base", 10], // 9.42
   ["creature_zombie_base", 6.5], // 5.94
   ["creature_ghost_base", 7], // 6.50
-  ["folk_resident_trousers", 5], // 4.64
-  ["folk_spirewarden", 9.5], // 9.03
-  ["folk_quartermaster", 9], // 8.28
+  // the hub folk left it on 2026-11-12, re-baked on the garment weighting (FS-HF0WW § Change: The
+  // folk's legs stay under their clothes)
 ]);
 
 /**
@@ -67,7 +68,6 @@ export const MIRRORED_LEGACY = new Set([
   ...KNOWN_CLIPPING.keys(),
   "creature_ghoul_base",
   "creature_demon_base",
-  "folk_resident_skirt",
 ]);
 
 /** Whether any garment on the rig was made with `skirt({ mirrored: true })` (anatomy.js). */
@@ -107,13 +107,23 @@ export function wallAlong(poly, p) {
  * How far point `v` lies outside a garment given as rings (each an array of THREE.Vector3, the
  * same column count, top to hem) around centres (one per ring): negative inside, null where the
  * garment does not cover it (above its top ring, below its hem, or in its opening).
+ *
+ * Each band between two rings claims the points between the planes square to its axis through its
+ * two centres. Where the line of the centres bends (a stride swinging a robe's front forward over
+ * the knee, its back flung out behind), the outside of the bend lies past one band's end and
+ * before the next one's start, in no band: a point there is measured on the ring at the bend, in
+ * the plane square to the two bands' mean axis.
  */
 export function outside(rings, centres, v) {
+  let past = false;
   for (let r = 0; r + 1 < rings.length; r++) {
     const d = _d.subVectors(centres[r + 1], centres[r]);
     const dd = d.lengthSq();
     if (dd < 1e-12) continue;
     const u = _q.subVectors(v, centres[r]).dot(d) / dd;
+    if (u < 0 && past) return onRing(rings[r], centres[r], _n.copy(_b).add(d.normalize()).normalize(), v);
+    past = u > 1;
+    if (past) _b.copy(d).normalize();
     if (u < 0 || u > 1) continue;
     const n = d.normalize();
     // a frame on the plane across the axis
@@ -131,6 +141,22 @@ export function outside(rings, centres, v) {
   }
   return null;
 }
+
+/** How far `v` lies outside one ring (around centre `c`), in the plane square to `n` through it. */
+function onRing(ring, c, n, v) {
+  const e1 = _e1.set(1, 0, 0).addScaledVector(n, -n.x).normalize();
+  const e2 = _e2.crossVectors(n, e1);
+  const poly = ring.map((a) => {
+    _p.subVectors(a, c);
+    return [_p.dot(e1), _p.dot(e2)];
+  });
+  _q.subVectors(v, c);
+  const p = [_q.dot(e1), _q.dot(e2)];
+  const wall = wallAlong(poly, p);
+  return wall === null ? null : Math.hypot(p[0], p[1]) - wall;
+}
+const _b = new THREE.Vector3();
+const _n = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _q = new THREE.Vector3();
 const _e1 = new THREE.Vector3();
@@ -185,10 +211,16 @@ export function legsInGarments(rig) {
   return {
     covers,
     legs,
-    /** Per leg vertex, how far outside the cloth over it (model units), or null where none covers it. */
+    /**
+     * Per leg vertex, how far outside the cloth over it (model units), or null where none covers
+     * it. A vertex the rings put outside is measured again where the cloth really hangs
+     * ({@link throughCloth}): a hem swung out by a stride or lifted by a heel tilts its rings, and
+     * the cut square to their axis then reads a leg under the cloth, or under the hem, as out.
+     */
     measure() {
       rig.root.updateMatrixWorld(true);
       const now = covers.map(ringsNow);
+      const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
       const out = [];
       for (const leg of legs) {
         const n = leg.geometry.attributes.position.count;
@@ -199,12 +231,71 @@ export function legsInGarments(rig) {
             const o = outside(g.rings, g.mids, v);
             if (o !== null && (best === null || o < best)) best = o;
           }
+          if (best !== null && best > 0) best = throughCloth(now, axis, v);
           out.push(best);
         }
       }
       return out;
     },
   };
+}
+
+/**
+ * How far point `v` lies outside the cloth, measured along the level ray from the garments' axis
+ * (the pelvis, `axis`) out through it, against the covers' surfaces as they hang now (`covers`:
+ * each a { rings } of rings of THREE.Vector3, its quads between consecutive rings): negative (by
+ * how far the cloth lies beyond it) where cloth still lies beyond it, so it is under the cloth;
+ * the distance past the outermost cloth the ray crossed on its way out where none lies beyond, a
+ * leg through the cloth; null where the ray meets no cloth at all, a leg below the hem or in an
+ * opening, which no cloth covers.
+ */
+export function throughCloth(covers, axis, v) {
+  const dir = new THREE.Vector3(v.x - axis.x, 0, v.z - axis.z);
+  const dist = dir.length();
+  if (dist < 1e-9) return null;
+  dir.divideScalar(dist);
+  const from = new THREE.Vector3(axis.x, v.y, axis.z);
+  let before = -Infinity;
+  let beyond = Infinity;
+  const hit = (a, b, c) => {
+    const t = rayTriangle(from, dir, a, b, c);
+    if (t === null) return;
+    if (t > dist) beyond = Math.min(beyond, t);
+    else before = Math.max(before, t);
+  };
+  for (const { rings } of covers)
+    for (let r = 0; r + 1 < rings.length; r++)
+      for (let j = 0; j + 1 < rings[r].length; j++) {
+        hit(rings[r][j], rings[r][j + 1], rings[r + 1][j]);
+        hit(rings[r][j + 1], rings[r + 1][j + 1], rings[r + 1][j]);
+      }
+  if (beyond < Infinity) return dist - beyond;
+  if (before > -Infinity) return dist - before;
+  return null;
+}
+
+const _t1 = new THREE.Vector3();
+const _t2 = new THREE.Vector3();
+const _pv = new THREE.Vector3();
+const _tv = new THREE.Vector3();
+const _qv = new THREE.Vector3();
+
+/** Where a ray (origin `o`, unit `d`) meets triangle a, b, c from either side: its distance, or null (Möller–Trumbore). */
+function rayTriangle(o, d, a, b, c) {
+  _t1.subVectors(b, a);
+  _t2.subVectors(c, a);
+  _pv.crossVectors(d, _t2);
+  const det = _t1.dot(_pv);
+  if (Math.abs(det) < 1e-12) return null;
+  const inv = 1 / det;
+  _tv.subVectors(o, a);
+  const u = _tv.dot(_pv) * inv;
+  if (u < 0 || u > 1) return null;
+  _qv.crossVectors(_tv, _t1);
+  const w = d.dot(_qv) * inv;
+  if (w < 0 || u + w > 1) return null;
+  const t = _t2.dot(_qv) * inv;
+  return t > 0 ? t : null;
 }
 
 /** The furthest any leg vertex in `now` (from `measure`) lies outside the cloth, in 1x px (model space); 0 when none does. */
@@ -231,6 +322,147 @@ export function legClearance(rig, poses) {
     if (px > c.px) Object.assign(c, { px, frame: p.i });
   }
   return clips;
+}
+
+/**
+ * The rig's cloaks (meshes anatomy.js `cloak` tags) and what hangs under them, the legs and the
+ * boots (leg meshes, and any rigid mesh riding a shin or a foot), or null when it has no cloak:
+ * `measure()` gives, for the current pose, each leg and boot vertex's distance out through a cloak
+ * ({@link throughCloth} against the cloak's rings, along the level ray from the pelvis), or null
+ * where no cloak hangs round it. A cloak is open at the front, so a leg ahead of it meets none.
+ */
+export function legsInCloaks(rig) {
+  const cloaks = [];
+  const lower = [];
+  const boneOf = (o) => {
+    for (let p = o.parent; p; p = p.parent) if (p.isBone) return p.name;
+    return "";
+  };
+  rig.root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.isSkinnedMesh && o.userData.cloak) cloaks.push(o);
+    else if (o.isSkinnedMesh && o.userData.leg) lower.push(o);
+    else if (!o.isSkinnedMesh && /^(shin|foot|metatarsal)[LR]$/.test(boneOf(o))) lower.push(o);
+  });
+  if (!cloaks.length || !lower.length) return null;
+  const at = (m, i, v) => (m.isSkinnedMesh ? m.getVertexPosition(i, v) : v.fromBufferAttribute(m.geometry.attributes.position, i)).applyMatrix4(m.matrixWorld);
+  return {
+    measure() {
+      rig.root.updateMatrixWorld(true);
+      const covers = cloaks.map((m) => {
+        const { rows, cols } = m.geometry.userData.tube;
+        return { rings: Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, j) => at(m, r * cols + j, new THREE.Vector3()))) };
+      });
+      const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
+      const out = [];
+      const v = new THREE.Vector3();
+      for (const m of lower) for (let i = 0; i < m.geometry.attributes.position.count; i++) out.push(throughCloth(covers, axis, at(m, i, v)));
+      return out;
+    },
+  };
+}
+
+/**
+ * Runs every baked pose of a sheet (as {@link legClearance}) and returns, per clip, the furthest
+ * any leg or boot lies out through a cloak (1x px, model space) and the frame where it does; null
+ * when the rig has no cloak. A death is not held to it ({@link UNGUARDED}).
+ */
+export function cloakClearance(rig, poses) {
+  const fit = legsInCloaks(rig);
+  if (!fit) return null;
+  const clips = {};
+  for (const p of poses) {
+    if (UNGUARDED.some((a) => p.anim === a || p.anim.startsWith(`${a}_`))) continue;
+    p.apply();
+    const px = worstOutside(fit.measure());
+    const c = (clips[p.anim] ??= { px: 0, frame: 0 });
+    if (px > c.px) Object.assign(c, { px, frame: p.i });
+  }
+  return clips;
+}
+
+/**
+ * The cloak guard's verdict for a sheet: an error naming each clip that shows a leg or a boot out
+ * through its cloak by more than CLEARANCE_PX baked px ({@link clearanceLimit}), or null.
+ */
+export function cloakClearanceError(name, clips, { scale = 1, limit = clearanceLimit(scale) } = {}) {
+  const bad = Object.entries(clips ?? {}).filter(([, c]) => c.px > limit);
+  if (!bad.length) return null;
+  return (
+    `bake: ${name}: a leg or boot shows through the cloak, more than ${+limit.toFixed(3)} px outside it ` +
+    `(1x px; ${CLEARANCE_PX} baked px at ${scale}x) (characters/clearance.js): ` +
+    bad.map(([anim, c]) => `${anim} frame ${c.frame} by ${c.px.toFixed(2)} px`).join(", ")
+  );
+}
+
+/**
+ * The leg vertices the bake's camera sees through the cloth, per pose (`poses` as for
+ * {@link legClearance}): in any of the 8 facings, a leg vertex no other part of the figure hides
+ * from the camera that is either
+ *  - a thigh or knee vertex (by its bind height: from 0.06 H under the knee up to the hip joint
+ *    less 0.03 H) lying outside the cloth hanging round it (on the level ray from the pelvis out
+ *    through it, cloth before it and none beyond: {@link throughCloth} above 0), so a knee out
+ *    through a robe counts, and a knee under a short hem, a heel kicked up under a lifted hem (no
+ *    cloth round it at its height) or a thigh seen through a split front (cloth beyond it) does not;
+ *  - or a vertex of the thigh's root (above that), which the torso, the garment's top and the belt
+ *    over it always hide.
+ * Per pose { anim, i, seen }: `seen` counts vertex-facings. Null when the rig has no garment over
+ * its legs. A check for the clip tests (FS-HF0WW § Change: The guard measures a leg through the
+ * cloth R28), not a bake step: it casts a ray per vertex and facing against every triangle.
+ */
+export function seenThroughCloth(rig, poses) {
+  const fit = legsInGarments(rig);
+  if (!fit) return null;
+  const [, ty] = J(rig, "thighL");
+  const [, ky] = J(rig, "shinL");
+  const zoneOf = (y) => (y > ty - 0.03 ? "waist" : y > ky + 0.06 ? "thigh" : y > ky - 0.06 ? "knee" : "shin");
+  const occluders = [];
+  rig.root.traverse((o) => o.isMesh && occluders.push(o));
+  const world = (m) => {
+    const pos = m.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    return Array.from({ length: pos.count }, (_, i) => (m.isSkinnedMesh ? m.getVertexPosition(i, v) : v.fromBufferAttribute(pos, i)).applyMatrix4(m.matrixWorld).clone());
+  };
+  const out = [];
+  for (const p of poses) {
+    p.apply();
+    rig.root.updateMatrixWorld(true);
+    const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
+    const covers = fit.covers.map((m) => {
+      const { rows, cols } = m.geometry.userData.tube;
+      const P = world(m);
+      return { rings: Array.from({ length: rows }, (_, r) => P.slice(r * cols, (r + 1) * cols)) };
+    });
+    const tris = [];
+    for (const m of occluders) {
+      const P = world(m);
+      const idx = m.geometry.index;
+      if (idx) for (let i = 0; i < idx.count; i += 3) tris.push([P[idx.getX(i)], P[idx.getX(i + 1)], P[idx.getX(i + 2)]]);
+      else for (let i = 0; i + 2 < P.length; i += 3) tris.push([P[i], P[i + 1], P[i + 2]]);
+    }
+    const candidates = [];
+    for (const leg of fit.legs) {
+      const bind = leg.geometry.attributes.position;
+      world(leg).forEach((v, i) => {
+        const zone = zoneOf(bind.getY(i) / rig.H);
+        if (zone === "waist" || (zone !== "shin" && throughCloth(covers, axis, v) > 0)) candidates.push(v);
+      });
+    }
+    let seen = 0;
+    for (const facing of FACINGS) {
+      // the camera's direction in model space: the view turned back by the facing's yaw
+      const yaw = -yawFor(facing);
+      const d = new THREE.Vector3(VIEW_DIR[0] * Math.cos(yaw) + VIEW_DIR[2] * Math.sin(yaw), VIEW_DIR[1], -VIEW_DIR[0] * Math.sin(yaw) + VIEW_DIR[2] * Math.cos(yaw)).normalize();
+      const ray = new THREE.Ray();
+      const hit = new THREE.Vector3();
+      for (const v of candidates) {
+        ray.set(v, d);
+        if (!tris.some(([a, b, c]) => ray.intersectTriangle(a, b, c, false, hit) && hit.distanceTo(v) > 1e-4)) seen++;
+      }
+    }
+    out.push({ anim: p.anim, i: p.i, seen });
+  }
+  return out;
 }
 
 /**

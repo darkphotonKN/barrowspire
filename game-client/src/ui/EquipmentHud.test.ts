@@ -21,15 +21,19 @@ const NOTHING_WORN: EquipmentState = {
 
 /** The run's equipment panel as a recording stand-in. */
 function panel() {
-  let visible = false;
+  let inventory = false;
+  let character = false;
   const p = {
     onEquip: undefined as HudPanel["onEquip"],
     onUnequip: undefined as HudPanel["onUnequip"],
     mayUnequip: undefined as HudPanel["mayUnequip"],
     covers: vi.fn((x: number) => x > 500),
-    toggle: vi.fn(() => void (visible = !visible)),
-    hide: vi.fn(() => void (visible = false)),
-    isVisible: () => visible,
+    toggle: vi.fn(() => void (inventory = !inventory)),
+    toggleCharacter: vi.fn(() => void (character = !character)),
+    hide: vi.fn(() => void ((inventory = false), (character = false))),
+    isVisible: () => inventory || character,
+    isInventoryOpen: () => inventory,
+    isCharacterOpen: () => character,
     handleEquipKey: vi.fn(),
     updateInventory: vi.fn(),
     updateEquipment: vi.fn(),
@@ -248,5 +252,57 @@ describe("EquipmentHud purse line (FS-7TGZ3 §C R8: every open reads the purse, 
   it("should release without a purse", () => {
     const equipment = new EquipmentHud(panel(), { send: vi.fn(), notice: vi.fn() });
     expect(() => equipment.release()).not.toThrow();
+  });
+});
+
+// FS-HRH2J § Change: Character and inventory apart (C1–C3, C5, C7, C10). I-3EBCA-4.
+describe("EquipmentHud, the character panel apart (FS-HRH2J § Change C1–C10)", () => {
+  it("should open the character panel alone with the worn gear for its From gear, reading no purse (C1, C10)", () => {
+    const p = panel();
+    const purse = { refresh: vi.fn(), forget: vi.fn() };
+    const equipment = new EquipmentHud(p, { send: vi.fn(), notice: vi.fn() }, () => 0, purse);
+    const helm = item("helm");
+    equipment.sync({ inventory: [], equipment: { ...NOTHING_WORN, head: helm } });
+
+    expect(equipment.toggleCharacter()).toBe(true);
+    expect(p.toggleCharacter).toHaveBeenCalledTimes(1);
+    expect(p.toggle).not.toHaveBeenCalled();
+    expect(p.updateEquipment).toHaveBeenLastCalledWith(expect.objectContaining({ head: helm }));
+    expect(purse.refresh).not.toHaveBeenCalled();
+    expect(equipment.isOpen()).toBe(true);
+
+    expect(equipment.toggleCharacter()).toBe(false);
+    expect(equipment.isOpen()).toBe(false);
+  });
+
+  it("should say whether the inventory opened, and read the purse only then, the character panel open or not (C10)", () => {
+    const p = panel();
+    const purse = { refresh: vi.fn(), forget: vi.fn() };
+    const equipment = new EquipmentHud(p, { send: vi.fn(), notice: vi.fn() }, () => 0, purse);
+    equipment.toggleCharacter();
+
+    expect(equipment.toggle()).toBe(true);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    // closing the inventory with the character panel still up is no open
+    expect(equipment.toggle()).toBe(false);
+    expect(purse.refresh).toHaveBeenCalledTimes(1);
+    expect(equipment.isOpen()).toBe(true);
+  });
+
+  it("should give E to the panel only while the inventory is open, never to the character panel alone (C7)", () => {
+    const { p, equipment } = hud();
+    equipment.toggleCharacter();
+    expect(equipment.equipKey()).toBe(false);
+    expect(p.handleEquipKey).not.toHaveBeenCalled();
+    equipment.toggle();
+    expect(equipment.equipKey()).toBe(true);
+  });
+
+  it("should close both on hide and say it closed something (C3)", () => {
+    const { p, equipment } = hud();
+    equipment.toggleCharacter();
+    expect(equipment.hide()).toBe(true);
+    expect(p.isVisible()).toBe(false);
+    expect(equipment.hide()).toBe(false);
   });
 });

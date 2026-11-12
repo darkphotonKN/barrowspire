@@ -99,6 +99,7 @@ server state and sends intents. ✅
 - [x] Pre-rendered character and creature art → FS-2325V
 - [ ] High-detail character art → FS-HF0WW
 - [ ] Walk-and-attack animation → FS-HF0WW
+- [ ] Run and backpedal animations → FS-JS7C8
 - [ ] Legs stay inside garments → FS-HF0WW
 - [ ] Baked frames trimmed to their pixels → FS-HF0WW
 - [x] Faces on the human cast → FS-67QQY
@@ -130,6 +131,10 @@ server state and sends intents. ✅
 - [ ] Canvas that resizes with the window → FS-ZAJMH
 - [ ] Fullscreen and windowed play → FS-ZAJMH
 
+### HUD
+
+- [ ] Panel shortcut icons on the HUD → FS-3EBCA
+
 ### Hub
 
 - [x] Hub scene → FS-29KSH
@@ -147,6 +152,7 @@ server state and sends intents. ✅
 - [x] The Spire's entrance at the back of the hub → FS-0XMCP
 - [x] The Warden as storyteller, not the queue → FS-0XMCP
 - [x] Town building interiors → FS-B0H2D
+- [ ] Town minimap → FS-P0HSP
 
 ### Mailbox
 
@@ -161,6 +167,7 @@ server state and sends intents. ✅
 - [x] Gentle Meadows look and creature → FS-X2F2H
 - [x] Forlorn Forest look and creatures → FS-3QHQZ
 - [x] Field edges without a horizon → FS-KSD6K
+- [ ] Field minimap → FS-P0HSP
 
 ### Party
 
@@ -218,6 +225,7 @@ server state and sends intents. ✅
 ### Transport
 
 - [ ] Read the compressed game-state broadcast → FS-5QC03
+- [ ] Lost-connection notice → FS-R6EYZ
 
 ### Deployment
 
@@ -296,8 +304,9 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 - **Transport:** native `WebSocket`; URL **hardcoded** `ws://localhost:5668/game/ws`; auth via
   query `?token=<jwt>&name=<name>` (the token current at each open); server close `4001` →
   renew once and reconnect, else clear auth + `/login` (FS-ZPX58).
-- **Envelope (send):** `{action, payload, seq}`; SocketManager auto-injects `session_id`
-  (gameStore) and `player_id` (authStore) into every payload.
+- **Envelope (send):** `{action, payload, seq}`; the payload carries only the action's own
+  fields: no `session_id`, no sender `player_id` (the server takes both from the connection;
+  FS-29KSH R16, §Change: The acting player is the connection's; ADR-0079).
 - **SENDS:** `find_game`, `move {vx,vy}`, `attack {enemy_entity_id}`, `interact {entity_id}`
   (doors/switches/escape/chests/item-pickup), `equip`/`unequip {item_entity_id}`. Declared but
   unused: `pickup`, `use`, `chat`.

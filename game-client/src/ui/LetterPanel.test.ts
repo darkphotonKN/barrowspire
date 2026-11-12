@@ -19,6 +19,13 @@ import { LetterPanel } from "./LetterPanel";
 import { envelopeFrame, letterPanelFrame } from "./letterPanelLayout";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
+import { drawPanelFrame, drawPanelTitle, frameClose } from "./panelFrame";
+
+// The shared title drawing and frame, watched (FS-3EBCA R20; FS-1GZGD § Change C5).
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle), drawPanelFrame: vi.fn(real.drawPanelFrame) };
+});
 
 // FS-1GZGD R33, R35–R37, R39, R40; A5. I-1GZGD-6 and -7: the envelope and the letter panel as a scene draws them,
 // on a recording stand-in for the Phaser scene.
@@ -29,6 +36,8 @@ interface Pressable {
 }
 interface FakeText extends Pressable {
   content: string;
+  /** Where it was made, before any move. */
+  at?: { x: number; y: number };
   color?: string;
   style?: { wordWrap?: { width?: number; useAdvancedWrap?: boolean } };
   masked?: boolean;
@@ -92,6 +101,7 @@ function fakeScene() {
     ) => {
       const t: FakeText = {
         content,
+        at: { x: _x, y: _y },
         color: style?.color,
         style,
         handlers: {},
@@ -202,6 +212,7 @@ function fakeScene() {
   const find = (content: string) => live().find((t) => t.content === content);
   return {
     scene,
+    texts,
     live,
     shown,
     find,
@@ -618,6 +629,130 @@ describe("MailboxEnvelope (R33, R35)", () => {
     store.setState({ pulses: 1 });
     expect(tweens).toHaveLength(1);
     expect(tweens[0]).toMatchObject({ yoyo: true, repeat: 2 });
+  });
+});
+
+// FS-1GZGD § Change: The envelope toggles the letter panel and stands in the corner row. I-1GZGD-12.
+describe("MailboxEnvelope (FS-1GZGD § Change C1–C3)", () => {
+  it("closes the open panel on a second press, and opens it again on a third (C1)", async () => {
+    const { scene, store, zones } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(true);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(true);
+  });
+
+  it("closes the open panel even while something else is up, and opens nothing then (C1)", () => {
+    const { scene, store, zones } = setup();
+    let blocked = false;
+    new MailboxEnvelope(scene, { store, blocked: () => blocked });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    blocked = true;
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+  });
+
+  it("stands in the corner row's Mailbox slot, left of Menu, Inventory, Character and Party (C2; FS-3EBCA R2)", () => {
+    const { scene, store, zones } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    expect(plate.rect).toEqual({ x: 742, y: 658, w: 58, h: 46 });
+    expect(envelopeFrame({ width: 1280, height: 720 })).toEqual({ x: 942, y: 658, width: 58, height: 46 });
+  });
+
+  it("names itself \"Mailbox\" under the pointer, and lets the label go on leaving (C3)", () => {
+    const { scene, store, zones, shown } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerover();
+    expect(shown()).toContain("Mailbox");
+    plate.handlers.pointerout();
+    expect(shown()).not.toContain("Mailbox");
+  });
+});
+
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// the letter panel's MAILBOX through the shared title drawing (FS-3EBCA R20, R22). I-3EBCA-9.
+describe("LetterPanel's title, shared (FS-3EBCA R20, R22)", () => {
+  it("should title the open panel MAILBOX with the one title drawing, across the whole panel, once", () => {
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { scene, store, shown } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const panel = letterPanelFrame(viewport, 0).panel;
+    const [, at, words] = title.mock.calls.at(-1)!;
+    expect(at).toMatchObject({ x: panel.x, y: panel.y, width: panel.width });
+    expect(words).toBe("MAILBOX");
+    expect(shown().filter((t) => t === "MAILBOX")).toHaveLength(1);
+  });
+});
+
+// The owner, 2026-11-12: "mailbox的x關閉按鈕好像位置跟其他的不太一樣": the letter panel wears the shared
+// frame and its × (FS-1GZGD § Change C5; FS-3EBCA R25).
+describe("LetterPanel's frame, shared (FS-1GZGD § Change C5)", () => {
+  it("should draw its frame with the one frame drawing, round the whole panel, once", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const { scene, store } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const panel = letterPanelFrame(viewport, 0).panel;
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(frame.mock.calls[0][2]).toEqual(panel);
+    // the frame's own ×, with no options that would leave it off
+    expect(frame.mock.calls[0][3]).toBeUndefined();
+  });
+
+  it("should stand one × at the shared place, which closes the panel", () => {
+    const { scene, store, texts } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const crosses = texts.filter((t) => t.content === "×" && !t.destroyed);
+    expect(crosses).toHaveLength(1);
+    const box = frameClose(letterPanelFrame(viewport, 0).panel);
+    expect(crosses[0].at).toEqual({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    crosses[0].handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+  });
+});
+
+// The owner, 2026-11-12: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉". The envelope
+// clears the screen before it opens the letter panel (FS-1GZGD § Change C4; FS-3EBCA R15).
+describe("MailboxEnvelope clears the screen first (FS-1GZGD § Change C4)", () => {
+  it("calls `opening` before it opens the panel, and never on a close or a refused press", () => {
+    const { scene, store, zones } = setup();
+    const order: string[] = [];
+    store.subscribe((s, p) => {
+      if (s.panelOpen && !p.panelOpen) order.push("open");
+    });
+    let blocked = false;
+    new MailboxEnvelope(scene, { store, blocked: () => blocked, opening: () => order.push("clear") });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    expect(order).toEqual(["clear", "open"]);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    blocked = true;
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    expect(order).toEqual(["clear", "open"]);
+  });
+
+  it("is handed the town's `opening` by the mailbox HUD", () => {
+    const { scene, store, zones } = setup();
+    const opening = vi.fn();
+    new MailboxHud(scene, { store, art, blocked: () => false, opening });
+    zones.find((z) => z.handlers.pointerdown)!.handlers.pointerdown();
+    expect(opening).toHaveBeenCalledTimes(1);
+    expect(store.getState().panelOpen).toBe(true);
   });
 });
 

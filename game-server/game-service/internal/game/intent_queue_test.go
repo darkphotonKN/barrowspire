@@ -14,10 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// clientMessage is a message as a client sends it.
+// clientMessage is a message as the message hub hands it to a world: the
+// client's own fields, and the connection's player stamped beside them, never
+// in the payload (ADR-0079).
 func clientMessage(action constants.Action, playerID uuid.UUID, payload map[string]interface{}) types.ClientPackage {
-	payload["player_id"] = playerID.String()
-	return types.ClientPackage{Message: types.Message{Action: string(action), Payload: payload}}
+	return types.ClientPackage{PlayerID: playerID, Message: types.Message{Action: string(action), Payload: payload}}
 }
 
 // runConcurrently runs the session as a started one does, its message goroutine

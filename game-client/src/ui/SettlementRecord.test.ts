@@ -4,6 +4,13 @@ import type Phaser from "phaser";
 import type { SettlementPayload } from "@/assets/types/client";
 import { palette } from "@/utils/canvasPalette";
 import { RECORD_DEPTH, RECORD_W, SettlementRecord } from "./SettlementRecord";
+import { drawPanelTitle } from "./panelFrame";
+
+// The shared title drawing, watched (FS-3EBCA R20).
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
 import { settlementRecord } from "./settlement";
 
 // FS-GV8WN §G R21: the record as a scene draws it, on a recording stand-in for the Phaser scene.
@@ -114,12 +121,28 @@ function opened(onClose = vi.fn()) {
   return { ...stage, record, onClose };
 }
 
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// the record's heading is a window title like the others (FS-3EBCA R20, R22). I-3EBCA-9.
+describe("SettlementRecord's title, shared (FS-3EBCA R20, R22)", () => {
+  it("should title the record with the one title drawing, across its whole width, no blackletter", () => {
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { texts } = opened();
+    expect(title).toHaveBeenCalledTimes(1);
+    const [, panel, words] = title.mock.calls[0];
+    expect(panel).toMatchObject({ x: 0, y: 0, width: RECORD_W });
+    expect(words).toBe("Fallen in the barrow");
+    expect(texts()).not.toContain("Fallen in the barrow");
+  });
+});
+
 describe("SettlementRecord (FS-GV8WN R21)", () => {
   it("should show the outcome, status, carried and lost with their marks, and what was earned", () => {
     const { texts, record } = opened();
     expect(record.isOpen()).toBe(true);
     for (const line of [
-      "Fallen in the barrow",
+      // in the windows' one title style, in capitals (FS-3EBCA R20, R22)
+      "FALLEN IN THE BARROW",
       "Settling…",
       "Iron Blade",
       "Bone Ring",

@@ -11,7 +11,8 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { drawGrip, solveDraw } from "./draw.js";
 import {
   arms,
   bareFeet,
@@ -42,7 +43,6 @@ import {
 import {
   cleaver,
   curvedSword,
-  gripAt,
   inHand,
   kiteShield,
   kneeCop,
@@ -60,6 +60,20 @@ import {
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { barrowThrall, fadingEyes, ghost, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
+import {
+  ARCHER_BUILD,
+  ARCHER_QUIVER,
+  ARCHER_STYLE,
+  KNIGHT_BUILD,
+  KNIGHT_SHEET,
+  KNIGHT_STYLE,
+  MERCENARY_BUILD,
+  MERCENARY_SHEET,
+  MERCENARY_STYLE,
+  WIZARD_BUILD,
+  WIZARD_SHEET,
+  WIZARD_STYLE,
+} from "./classStyles.js";
 
 /**
  * The Knight: the old guard of the barrow-watch. A conical nasal helm over a mail coif, the face
@@ -70,7 +84,7 @@ import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 export function knight() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(2.0, { shoulderW: 1.1, torsoW: 1.06 });
+  const rig = createRig(...KNIGHT_BUILD);
   rig.hooks = [];
   cloakBones(rig, { length: 0.64, drag: 0.34 });
   skirtBones(rig, { stiffness: 55 });
@@ -96,27 +110,16 @@ export function knight() {
   inHand(rig, "R").add(longsword(rig, M, F));
   kiteShield(rig, "L", F);
 
-  const style = {
-    attack: "slash",
-    speed: 1,
-    hold: pose({
-      upperArmL: [-0.38, -0.85, 0.12],
-      foreArmL: [-1.25, 0, 0],
-      upperArmR: [-0.12, 0, -0.04],
-      foreArmR: [-0.62, 0, 0],
-      handR: [-0.55, 0, 0],
-    }),
-    walk: { arms: [0.2, 0.55], lean: 0.05 },
-  };
+  const style = KNIGHT_STYLE;
   return { rig, style };
 }
 
 export function archer() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.96, { shoulderW: 1.0, torsoW: 0.98 });
+  const rig = createRig(...ARCHER_BUILD);
   rig.hooks = [];
-  cloakBones(rig, { length: 0.56, drag: 0.36 });
+  cloakBones(rig, { length: 0.56, drag: 0.36, strap: ARCHER_QUIVER.strap });
   skirtBones(rig, { stiffness: 55 });
   const [, hy] = J(rig, "hips");
   const [, fy] = J(rig, "foreArmL");
@@ -137,20 +140,10 @@ export function archer() {
   skirt(rig, F.buff, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 });
   belt(rig, F.leatherDark, M.brass, { pouch: true });
   cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
-  quiver(rig, M, F);
+  quiver(rig, M, F, ARCHER_QUIVER);
   bowInHand(rig, M, F);
 
-  const style = {
-    attack: "shot",
-    speed: 1.05,
-    hold: pose({
-      upperArmL: [0.02, 0, 0.04],
-      foreArmL: [-0.3, 0, 0],
-      handL: [-0.9, 0, 0],
-      foreArmR: [-0.1, 0, 0],
-    }),
-    walk: { arms: [0.7, 1], lean: 0.06 },
-  };
+  const style = ARCHER_STYLE;
   return { rig, style };
 }
 
@@ -164,32 +157,14 @@ function bowInHand(rig, M, F) {
   const bow = longbow(rig, M, F);
   bowMount.add(bow.group);
 
-  // the string follows the right hand while drawing
+  // the string follows the right hand while drawing; the hand is solved onto the arrow line
+  // (draw.js)
   const handR = rig.bones.handR;
-  const gripR = gripAt(rig, "R");
-  const local = new THREE.Vector3(
-    gripR[0] * rig.H - rig.bind.handR.x,
-    gripR[1] * rig.H - rig.bind.handR.y,
-    gripR[2] * rig.H - rig.bind.handR.z,
-  );
+  const local = drawGrip(rig);
   const tmp = new THREE.Vector3();
   const inv = new THREE.Matrix4();
-  const drawLen = 0.36 * rig.H;
-  const gripBow = new THREE.Vector3(0, -0.012 * rig.H, 0);
-  const restNock = new THREE.Vector3(0, 0.075 * rig.H, 0);
   rig.hooks.push((r, p) => {
-    r.root.updateMatrixWorld(true);
-    const ik = p.fx.ik ?? 0;
-    if (ik > 0) {
-      // the draw hand travels back along the arrow line, from the string toward the jaw
-      const G = gripBow.clone().applyMatrix4(bow.group.matrixWorld);
-      const N = restNock.clone().applyMatrix4(bow.group.matrixWorld);
-      const dir = G.clone().sub(N).normalize();
-      const target = N.clone().addScaledVector(dir, -drawLen * ik);
-      const pole = target.clone().addScaledVector(dir, -0.3 * r.H).add(new THREE.Vector3(0, 0.12 * r.H, 0));
-      r.bones.handR.rotation.set(0, 0, 0);
-      solveArm(r, "R", target, pole, local);
-    }
+    solveDraw(r, bow.group, p, local);
     tmp.copy(local).applyMatrix4(handR.matrixWorld);
     inv.copy(bow.group.matrixWorld).invert();
     tmp.applyMatrix4(inv);
@@ -208,7 +183,7 @@ function bowInHand(rig, M, F) {
 export function wizard() {
   const M = materials();
   const F = fabrics();
-  const rig = createRig(1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 });
+  const rig = createRig(...WIZARD_BUILD);
   rig.hooks = [];
   skirtBones(rig, { stiffness: 38, drag: 0.28 });
   const [, hy] = J(rig, "hips");
@@ -226,17 +201,26 @@ export function wizard() {
   torso(rig, F.robe, { waist, neckW: 0.85 });
   neck(rig, F.skin, { w: 0.85 });
   arms(rig, F.robe, { sleeve: (t) => 1 + 1.35 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
-  legs(rig, F.breeches, { under: gown });
+  // the thighs' roots drawn in under her pinched waist too, where the torso alone covers them over
+  // the gown's top (the owner, 2026-11-12: "腰部似乎也有一點")
+  legs(rig, F.breeches, { under: { ...gown, torso: { waist } } });
   hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
   head(rig, F.skin, { jaw: 0.88 });
   face(rig, F.face, F.browRaven);
   hair(rig, F.raven, { long: true });
   standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
-  skirt(rig, F.robe, { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+  // the gown's rig (FS-HF0WW § Change: The guard measures a leg through the cloth; the owner,
+  // 2026-11-12: "法師跑步會輕微破圖 膝蓋處會凸出衣服"): the thigh carries the cloth over the knee it
+  // bends, handing it to the panels from 0.05 H under the knee, so the run's leading knee stays in
+  // 64 columns, so the scapular's 10 lie on them one for one (anatomy.js `overSkirt`)
+  const robe = { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 64, trail: 0.02, kneeCover: 0.05 };
+  skirt(rig, F.robe, robe);
   for (const arc of panels) {
     overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012, waist });
-    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+    // cut on the gown's rig, so it moves with it and the black gown never comes out through it
+    // (the owner, 2026-11-12: "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉")
+    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, over: robe });
   }
   bust(rig, F.scapular);
   hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });
@@ -253,18 +237,7 @@ export function wizard() {
     orbMat.emissiveIntensity = base * (p.fx.glow ?? 1);
   });
 
-  const style = {
-    attack: "cast",
-    speed: 0.9,
-    hold: pose({
-      upperArmR: [-0.28, 0, -0.08],
-      foreArmR: [-1.15, 0, 0],
-      handR: [-0.1, 0, 0],
-      foreArmL: [-0.15, 0, 0],
-    }),
-    walk: { arms: [0.8, 0.4], lean: 0.05, stride: 0.95 },
-    idleExtra: () => pose({}, {}, { glow: 1 }),
-  };
+  const style = WIZARD_STYLE;
   return { rig, style };
 }
 
@@ -280,7 +253,7 @@ export function wizard() {
  */
 export function mercenary() {
   const F = fabrics();
-  const rig = createRig(1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 });
+  const rig = createRig(...MERCENARY_BUILD);
   rig.hooks = [];
   skirtBones(rig, { stiffness: 55 });
   const [, hy] = J(rig, "hips");
@@ -321,43 +294,7 @@ export function mercenary() {
   scabbard(rig, "L", F);
   inHand(rig, "R").add(curvedSword(rig, F));
 
-  const style = {
-    attack: "slash",
-    speed: 1.08,
-    // a low guard: the blade forward and up, the free hand loose at the belt
-    hold: pose({
-      upperArmL: [-0.08, 0, 0.06],
-      foreArmL: [-0.42, 0, 0],
-      upperArmR: [-0.18, 0, -0.2],
-      foreArmR: [-0.7, 0, 0],
-      handR: [-0.4, -0.4, 0],
-    }),
-    walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
-    // the knight's cut, without a shield to hide behind: the free arm swings out for balance
-    attackExtra: pose({ upperArmL: [0.28, 0.85, 0.06], foreArmL: [0.62, 0, 0] }),
-    // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
-    // little lean back from the blow
-    guard: pose(
-      {
-        hips: [0, 0.12, 0],
-        spine: [-0.08, 0.08, 0],
-        chest: [-0.06, 0.12, 0],
-        neck: [0.06, -0.2, 0],
-        thighL: [-0.24, 0, 0.1],
-        shinL: [0.28, 0, 0],
-        footL: [-0.04, 0, 0],
-        thighR: [0.16, 0, -0.1],
-        shinR: [0.26, 0, 0],
-        footR: [-0.42, 0, 0],
-        upperArmR: [-0.81, -0.54, -0.03],
-        foreArmR: [-1.37, 0, 0],
-        handR: [-0.06, 1.01, -0.8],
-        upperArmL: [-0.4, 0, 0.2],
-        foreArmL: [-0.9, 0, 0],
-      },
-      { z: -0.01 },
-    ),
-  };
+  const style = MERCENARY_STYLE;
   return { rig, style };
 }
 
@@ -584,10 +521,14 @@ export const CAST = [
   // The four classes (FS-HF0WW, FS-3V7GC): each baked at 2× (twice the px per screen px, drawn at
   // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
   // trimmed to its pixels (lib/trim.mjs)
-  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
-  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
-  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
-  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
+  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, ...KNIGHT_SHEET, trim: true },
+  // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
+  // the first class re-baked, the owner's 2026-11-12 pick), baked at 1.5× (ADR-0076, the owner's
+  // 「感覺可以」): each class moves to 1.5× when it is re-baked with the run (FS-HF0WW § Change:
+  // Class sheets at 1.5x)
+  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5, trim: true },
+  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, ...WIZARD_SHEET, trim: true },
+  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, ...MERCENARY_SHEET, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds

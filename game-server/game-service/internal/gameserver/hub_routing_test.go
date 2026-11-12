@@ -52,16 +52,18 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 		player := &types.Player{ID: uuid.New(), Username: "Delver", CurrentGameSessionId: sessionID}
 		registerTestConn(server, conn, player)
 
-		got, err := hub.resolveGameSession(conn)
+		sender, got, err := hub.resolveGameSession(conn)
 
 		require.NoError(t, err)
 		assert.Same(t, want, got)
+		require.NotNil(t, sender, "the sender is the connection's player")
+		assert.Equal(t, player.ID, sender.ID)
 	})
 
 	t.Run("rejects a connection with no registered player", func(t *testing.T) {
 		hub, _ := newRoutingTestHub(t)
 
-		got, err := hub.resolveGameSession(&websocket.Conn{})
+		_, got, err := hub.resolveGameSession(&websocket.Conn{})
 
 		assert.Nil(t, got)
 		assert.ErrorIs(t, err, errPlayerNotFound)
@@ -74,7 +76,7 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 		player := &types.Player{ID: uuid.New(), Username: "Delver", CurrentGameSessionId: uuid.Nil}
 		registerTestConn(server, conn, player)
 
-		got, err := hub.resolveGameSession(conn)
+		_, got, err := hub.resolveGameSession(conn)
 
 		assert.Nil(t, got)
 		assert.ErrorIs(t, err, errPlayerNotInSession)
@@ -87,7 +89,7 @@ func TestResolveGameSession_UsesServerHeldState(t *testing.T) {
 		player := &types.Player{ID: uuid.New(), Username: "Delver", CurrentGameSessionId: uuid.New()}
 		registerTestConn(server, conn, player)
 
-		got, err := hub.resolveGameSession(conn)
+		_, got, err := hub.resolveGameSession(conn)
 
 		assert.Nil(t, got)
 		assert.ErrorIs(t, err, errSessionNotFound)
@@ -145,4 +147,35 @@ func registerRoutableSession(s *Server, id uuid.UUID) *game.Session {
 	s.sessions[id] = session
 
 	return session
+}
+
+// The world is handed the connection's player with the message, whatever the
+// payload says and whatever the package arrived with: only the hub stamps who
+// acts. FS-29KSH §Change: The acting player is the connection's, R37; ADR-0079.
+func TestHubRun_RoutedMessage_CarriesTheConnectionsPlayer(t *testing.T) {
+	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
+
+	worldID := uuid.New()
+	world := registerRoutableSession(server, worldID)
+
+	conn := &websocket.Conn{}
+	player := &types.Player{ID: uuid.New(), Username: "Delver", CurrentGameSessionId: worldID}
+	registerTestConn(server, conn, player)
+
+	someoneElse := uuid.New()
+	server.serverChan <- types.ClientPackage{
+		Conn:     conn,
+		PlayerID: someoneElse,
+		Message: types.Message{
+			Action:  string(constants.ActionAttack),
+			Payload: map[string]interface{}{"player_id": someoneElse.String(), "enemy_entity_id": uuid.NewString()},
+		},
+	}
+
+	select {
+	case delivered := <-world.MessageCh:
+		assert.Equal(t, player.ID, delivered.PlayerID, "the world acts for the connection's player")
+	case <-time.After(2 * time.Second):
+		t.Fatal("message was never routed")
+	}
 }

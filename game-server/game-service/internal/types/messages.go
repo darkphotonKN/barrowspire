@@ -32,6 +32,13 @@ type ClientPackage struct {
 	// the sender's gear was read off its loop. Only the hub sets it; a client's
 	// message is decoded into Message alone, so a client can never set it.
 	LoadoutChecked bool
+
+	// PlayerID is who sent the message: the player the message hub holds for
+	// Conn, stamped as it routes the message into that player's world. Only the
+	// hub sets it; a client's message is decoded into Message alone, so a client
+	// can never set it, and no payload names its sender. FS-29KSH §Change: The
+	// acting player is the connection's, R37; ADR-0079.
+	PlayerID uuid.UUID
 }
 
 type ProjectileState struct {
@@ -202,23 +209,13 @@ func (m *Message) requireFloat(key string) (float64, error) {
 	return value, nil
 }
 
+// ParsePayload reads an in-world action's own fields. It reads neither who
+// sent it nor which world it is for: the server routes on the player's own
+// CurrentGameSessionId (FS-29KSH §Requirements 16) and acts for the player the
+// message hub stamped on the package (R37). A player_id a client still sends is
+// never read (R38).
 func (m *Message) ParsePayload() (interface{}, error) {
 	action := constants.Action(m.Action)
-
-	// Every in-game action identifies its sender. Which world the message belongs
-	// to is NOT read from the payload — the server routes on the player's own
-	// CurrentGameSessionId (FS-29KSH §Requirements 16).
-	var playerID string
-	var err error
-
-	switch action {
-	case constants.ActionMove, constants.ActionInteract, constants.ActionAttack,
-		constants.ActionEquip, constants.ActionUnequip, constants.ActionCastSkill:
-		playerID, err = m.requireString("player_id")
-		if err != nil {
-			return nil, fmt.Errorf("parsing %s payload: %w", action, err)
-		}
-	}
 
 	switch action {
 	case constants.ActionMove:
@@ -232,9 +229,8 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		}
 
 		parsedPayload := PlayerSessionMovePayload{
-			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
-			Vx:                   vx,
-			Vy:                   vy,
+			Vx: vx,
+			Vy: vy,
 		}
 
 		slog.Debug("payload of action move", "payload", parsedPayload)
@@ -248,8 +244,7 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		}
 
 		parsedPayload := PlayerSessionInteractPayload{
-			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
-			EntityID:             entityID,
+			EntityID: entityID,
 		}
 
 		slog.Debug("payload of action interact", "payload", parsedPayload)
@@ -263,8 +258,7 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		}
 
 		parsedPayload := PlayerSectionAttackPayload{
-			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
-			EnemyEntityID:        enemyEntityID,
+			EnemyEntityID: enemyEntityID,
 		}
 
 		slog.Debug("payload of action attack", "payload", parsedPayload)
@@ -278,8 +272,7 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		}
 
 		parsedPayload := PlayerEquipPayload{
-			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
-			ItemEntityID:         itemEntityID,
+			ItemEntityID: itemEntityID,
 		}
 
 		slog.Debug("payload of action equip / unequip", "payload", parsedPayload)
@@ -294,10 +287,9 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		targetY, _ := m.Payload["target_y"].(float64)
 
 		parsedPayload := PlayerCastSkillPayload{
-			PlayerSessionPayload: PlayerSessionPayload{PlayerID: playerID},
-			SkillID:              skillID,
-			TargetX:              targetX,
-			TargetY:              targetY,
+			SkillID: skillID,
+			TargetX: targetX,
+			TargetY: targetY,
 		}
 
 		slog.Debug("payload of action cast_skill", "payload", parsedPayload)
@@ -309,35 +301,27 @@ func (m *Message) ParsePayload() (interface{}, error) {
 }
 
 /**
-* Payloads for players in ongoing games
+* Payloads for players in ongoing games. None names its sender: that is the
+* package's PlayerID, stamped by the message hub (ADR-0079).
 **/
-type PlayerSessionPayload struct {
-	PlayerID string `json:"player_id"`
-}
-
 type PlayerSessionMovePayload struct {
-	PlayerSessionPayload
 	Vx float64 `json:"vx"`
 	Vy float64 `json:"vy"`
 }
 
 type PlayerSessionInteractPayload struct {
-	PlayerSessionPayload
 	EntityID string `json:"entity_id"`
 }
 
 type PlayerSectionAttackPayload struct {
-	PlayerSessionPayload
 	EnemyEntityID string `json:"enemy_entity_id"`
 }
 
 type PlayerEquipPayload struct {
-	PlayerSessionPayload
 	ItemEntityID string `json:"item_entity_id"`
 }
 
 type PlayerCastSkillPayload struct {
-	PlayerSessionPayload
 	SkillID string  `json:"skill_id"`
 	TargetX float64 `json:"target_x"`
 	TargetY float64 `json:"target_y"`

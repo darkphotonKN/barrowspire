@@ -362,3 +362,11 @@ an overlay on floors without regions, in the hub or the field worlds; the minima
 (FS-56CKV §A, unchanged); the fog of war; the hub's and fields' HUD; the fullscreen button and the
 `TOP_RIGHT_HUD` anchor; the target frame, notices, the arrival card and the spectate HUD; a
 dev-gallery family for HUD chrome; any server, proto or gateway change.
+
+## Change: Minimap in the town and the fields → FS-P0HSP
+
+## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
+
+## Change: Map mode icon → FS-56CKV
+
+## Change: Map name → FS-56CKV

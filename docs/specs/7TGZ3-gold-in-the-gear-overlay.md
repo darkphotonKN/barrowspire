@@ -134,3 +134,5 @@ headless profile ran with web security off; nothing on the server was changed.
 - Live updates from the server (no push, no polling).
 - Any endpoint, OpenAPI, generated client, wallet-service or gateway change.
 - Showing the available amount as the headline number, or spending gold from the overlay.
+
+## Change: Character and inventory apart → FS-HRH2J

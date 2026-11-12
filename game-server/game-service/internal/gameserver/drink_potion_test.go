@@ -44,8 +44,9 @@ func drinkHurtWithPotion(t *testing.T, world *game.Session, memberID uuid.UUID, 
 	return potionID
 }
 
-// drinkSend sends drink_potion as the client does: SocketManager stamps a
-// player_id on every send, here naming whoever the test says.
+// drinkSend sends drink_potion as an older client did, a player_id stamped on
+// the send, here naming whoever the test says. The client sends none now
+// (ADR-0079); the server never read it.
 func drinkSend(server *Server, conn *websocket.Conn, stampedPlayerID uuid.UUID) {
 	server.serverChan <- types.ClientPackage{
 		Conn: conn,

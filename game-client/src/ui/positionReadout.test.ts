@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { contrastRatio } from "@/render/lighting/lighting";
-import { RegionGrid, type DungeonMap } from "@/render/world/dungeon";
-import fixture from "@/render/world/dungeon.fixture.json";
+import type { Rect } from "@/render/iso/projection";
+import { FULLSCREEN_CORNER } from "@/render/viewport/fullscreenButton";
 import { mix, palette } from "@/utils/canvasPalette";
-import { MINIMAP, MINIMAP_VIGNETTE, minimapPanel, minimapProjection, minimapRect } from "./minimap";
-import { POSITION_READOUT, positionReadoutPlace, showsPositionReadout } from "./positionReadout";
+import { MINIMAP, MINIMAP_VIGNETTE, minimapPanel } from "./minimap";
+import { MINIMAP_NAME, minimapNameBox, minimapPlaceName } from "./minimapName";
+import {
+  POSITION_READOUT,
+  positionReadoutBox,
+  positionReadoutPlace,
+  readoutGivesWay,
+  showsPositionReadout,
+} from "./positionReadout";
+import { topRightCorner } from "./topRightColumn";
 
 describe("showsPositionReadout", () => {
   afterEach(() => {
@@ -43,93 +51,142 @@ describe("showsPositionReadout", () => {
   });
 });
 
-describe("the position readout's look and place (FS-56CKV §C)", () => {
-  /** The widest line it shows on a floor with a minimap (§C.17). */
-  const WIDEST = "X: 5760 Y: 3840";
-  /**
-   * A generous bound on a line's box at the readout's size, as Phaser measures one: no glyph of the
-   * HUD face is wider than 0.6 em on average over a line of digits, capitals and colons, and its
-   * ascent and descent come under 1.5 em. No canvas here to measure with, so the bound stands in.
-   */
-  const boxOf = (text: string) => {
-    const px = parseInt(POSITION_READOUT.fontSize, 10);
-    return { width: text.length * px * 0.6, height: px * 1.5 };
-  };
-
-  it("should hold its look as named values: 10 px, no backing, a HUD text token at a partial alpha, over the minimap's depth (§C.15, §C.16)", () => {
-    expect(POSITION_READOUT.fontSize).toBe("10px");
-    expect(POSITION_READOUT.colour).toBe(palette.hudText);
-    expect(POSITION_READOUT.alpha).toBeGreaterThan(0);
-    expect(POSITION_READOUT.alpha).toBeLessThan(1);
+// FS-56CKV §Change: Map name, E8 and E11 as amended 2026-11-12 (owner: "有小地圖時 x y座標不是要顯示在
+// 地圖框框內右下角嗎", then "2倍地圖時座標顯示在地區名稱左邊"): inside the normal map's bottom-right, left
+// of the name with the map enlarged, under the column in the overlay and with no map; on the name's plate
+describe("the position readout's look (FS-56CKV §C; §Change: Map name, E8)", () => {
+  it("should hold its look as named values: 10 px vellum at full ink on the map name's plate, over the minimap's depth", () => {
+    expect(POSITION_READOUT).toMatchObject({
+      fontSize: "10px",
+      colour: palette.hudText,
+      plate: MINIMAP_NAME.plate,
+      plateAlpha: MINIMAP_NAME.plateAlpha,
+      padding: MINIMAP_NAME.padding,
+      inset: MINIMAP.inset,
+      gap: 4,
+      beside: MINIMAP.gap,
+    });
+    expect("alpha" in POSITION_READOUT).toBe(false);
     expect(POSITION_READOUT.depth).toBeGreaterThan(MINIMAP.depth);
-    expect(POSITION_READOUT.inset).toBe(MINIMAP.inset);
-    expect(POSITION_READOUT.gap).toBe(4);
   });
 
-  it("should keep its ink at 3:1 or better over the backing however dark the vignette makes it, out to the vignette's darkest, its corner (§C.15)", () => {
-    // where two of the vignette's bands meet at the rim, each at its edge alpha, it is at its darkest
-    const darkest = 1 - (1 - MINIMAP_VIGNETTE.edgeAlpha) ** 2;
-    for (let t = 0; t <= darkest + 1e-9; t += 0.01) {
-      const backing = mix(palette.hudPanel, palette.inkDeep, Math.min(t, darkest));
-      const ink = mix(backing, POSITION_READOUT.colour, POSITION_READOUT.alpha);
-      expect(contrastRatio(ink, backing)).toBeGreaterThanOrEqual(3);
+  it.each([
+    ["the minimap's fill", palette.minimapExplored],
+    ["the minimap's backing", palette.hudPanel],
+    ["the vignette's darkest", mix(palette.hudPanel, palette.inkDeep, 1 - (1 - MINIMAP_VIGNETTE.edgeAlpha) ** 2)],
+    ["a ground as light as vellum", palette.hudText],
+  ])("should keep its ink 4.5:1 or better over its plate laid on %s", (_what, under) => {
+    const plate = mix(under, POSITION_READOUT.plate, POSITION_READOUT.plateAlpha);
+    expect(contrastRatio(POSITION_READOUT.colour, plate)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8, E11)", () => {
+  const viewOf = (width: number) => ({ width, height: 720 });
+  const NORMAL = { ...MINIMAP, mode: "normal" as const };
+  const ENLARGED = { ...minimapPanel("enlarged"), mode: "enlarged" as const };
+  const OVERLAY = { ...MINIMAP, mode: "overlay" as const };
+  /** A generous bound on a plate round 10 or 11 px text, as the name's test takes it: 0.6 em a glyph, 1.5 em a line. */
+  const plateOf = (words: string, fontSize: string, letterSpacing = 0) => {
+    const px = parseInt(fontSize, 10);
+    return { width: Math.ceil(words.length * (px * 0.6 + letterSpacing)) + 8, height: Math.ceil(px * 1.5) + 4 };
+  };
+  /** The readout at its widest: before the player is in, a floor's largest x/y, and an exterior's Outdoor. */
+  const READOUT = ["Awaiting the deep...", "X: 5760 Y: 3840", "X: 5760 Y: 3840 | Outdoor"]
+    .map((words) => plateOf(words, POSITION_READOUT.fontSize))
+    .reduce((a, b) => (b.width > a.width ? b : a));
+  /** The widest floor name a run's map can wear. */
+  const NAME = Array.from({ length: 12 }, (_, i) => minimapPlaceName({ world: "run", floor: i + 1, top: false }))
+    .map((words) => plateOf(words, MINIMAP_NAME.fontSize, MINIMAP_NAME.letterSpacing))
+    .reduce((a, b) => (b.width > a.width ? b : a));
+  const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  /** The corner as the scene reads it: the column's head, its name's plate at `name`'s size, and the column's foot. */
+  const cornerOf = (width: number, minimap: Parameters<typeof topRightCorner>[1], name = NAME) => {
+    const corner = topRightCorner(viewOf(width), minimap);
+    const nameBox = corner.name && minimapNameBox(corner.name, name);
+    return {
+      corner,
+      nameBox,
+      readout: {
+        minimap: corner.minimap,
+        enlarged: minimap?.mode === "enlarged",
+        name: nameBox,
+        button: corner.button,
+        column: { right: corner.right, bottom: corner.below + 21 },
+      },
+    };
+  };
+
+  it.each([
+    [1080, 1066],
+    [1280, 1266],
+  ])("should stand inside the normal map's bottom-right, 4 px in, right-aligned, at width %i (E8)", (width, right) => {
+    const { corner, readout } = cornerOf(width, NORMAL);
+    const at = positionReadoutPlace(readout, viewOf(width));
+    expect(at).toEqual({ x: right, y: 114, origin: { x: 1, y: 1 } });
+    expect(at.x).toBe(corner.minimap!.x + corner.minimap!.width - 4);
+    expect(at.y).toBe(corner.minimap!.y + corner.minimap!.height - 4);
+  });
+
+  it.each([1080, 1280])("should keep its widest plate inside the normal map, clear of the map mode icon and the name, at width %i (E8)", (width) => {
+    const { corner, nameBox, readout } = cornerOf(width, NORMAL);
+    const box = positionReadoutBox(positionReadoutPlace(readout, viewOf(width)), READOUT);
+    const map = corner.minimap!;
+    expect(box.x).toBeGreaterThan(map.x);
+    expect(box.y).toBeGreaterThan(map.y);
+    expect(overlaps(box, corner.modeIcon!.hit)).toBe(false);
+    expect(overlaps(box, nameBox!)).toBe(false);
+  });
+
+  it.each([1080, 1280])("should stand 6 px left of the name's plate with the map enlarged, centred on the button's height as the name is, at width %i (E11)", (width) => {
+    const { nameBox, readout } = cornerOf(width, ENLARGED, { width: 80, height: 17 });
+    const at = positionReadoutPlace(readout, viewOf(width));
+    expect(nameBox!.x + nameBox!.width).toBe(width === 1080 ? 714 : 914);
+    expect(at).toEqual({ x: nameBox!.x - 6, y: 20, origin: { x: 1, y: 0.5 } });
+    expect(at.x).toBe(width === 1080 ? 714 - 80 - 6 : 914 - 80 - 6);
+  });
+
+  it.each([
+    [1080, 720],
+    [1280, 920],
+  ])("should stand 6 px left of the button with the map enlarged where the floor has no name, at width %i (E11)", (width, buttonLeft) => {
+    const { readout } = cornerOf(width, ENLARGED);
+    expect(positionReadoutPlace({ ...readout, name: null }, viewOf(width))).toEqual({ x: buttonLeft - 6, y: 20, origin: { x: 1, y: 0.5 } });
+  });
+
+  it.each([1080, 1280])("should keep the pair on the view, on one line, clear of each other, the button, the map and the icon, with the widest name and readout enlarged, at width %i (E11)", (width) => {
+    const { corner, nameBox, readout } = cornerOf(width, ENLARGED);
+    const box = positionReadoutBox(positionReadoutPlace(readout, viewOf(width)), READOUT);
+    const button = { x: width - corner.button.right - 20, y: corner.button.top, width: 20, height: 20 };
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBe(nameBox!.x - 6);
+    expect(Math.abs(box.y + box.height / 2 - (nameBox!.y + nameBox!.height / 2))).toBeLessThanOrEqual(1);
+    for (const other of [nameBox!, button, corner.minimap!, corner.modeIcon!.hit]) expect(overlaps(box, other)).toBe(false);
+  });
+
+  it.each([OVERLAY, null])("should stand 4 px under the column's last line, right-aligned on the column's x, in the overlay and with no map (§C.18; E8): %o", (minimap) => {
+    for (const width of [1080, 1280]) {
+      const { readout } = cornerOf(width, minimap);
+      expect(positionReadoutPlace(readout, viewOf(width))).toEqual({ x: width - 10, y: 44 + 21 + 4, origin: { x: 1, y: 0 } });
     }
   });
 
-  it("should stand inside a shown minimap, its left and bottom edges 4 px in from the panel's (§C.14)", () => {
-    expect(positionReadoutPlace(minimapRect(1070, 44), { right: 1070, bottom: 204 })).toEqual({
-      x: 858,
-      y: 148,
-      origin: { x: 0, y: 1 },
-    });
-  });
-
-  it("should stand 4 px under the column's last line, right-aligned on the column's x, with no minimap shown (§C.18)", () => {
-    expect(positionReadoutPlace(null, { right: 1070, bottom: 92 })).toEqual({ x: 1070, y: 96, origin: { x: 1, y: 0 } });
-  });
-
   it("should stand on whole logical px", () => {
-    const place = positionReadoutPlace(null, { right: 1069.6, bottom: 91.6 });
-    expect([place.x, place.y]).toEqual([1070, 96]);
-    const inside = positionReadoutPlace({ x: 853.6, y: 43.6, width: 216, height: 108 }, { right: 0, bottom: 0 });
-    expect([inside.x, inside.y]).toEqual([858, 148]);
+    const at = positionReadoutPlace({ minimap: null, enlarged: false, name: null, button: FULLSCREEN_CORNER, column: { right: 1069.6, bottom: 91.6 } }, viewOf(1080));
+    expect([at.x, at.y]).toEqual([1070, 96]);
   });
 
-  it("should lie, at its widest text, below floor 1's diamond's lower-left edge, so it covers no floor (§C.17)", () => {
-    const grid = new RegionGrid(fixture as DungeonMap);
-    const project = minimapProjection(grid);
-    const [w, h] = [grid.cols * grid.cell, grid.rows * grid.cell];
-    const corners = [project({ x: 0, y: 0 }), project({ x: w, y: 0 }), project({ x: w, y: h }), project({ x: 0, y: h })];
-    const left = corners.reduce((a, b) => (b.x < a.x ? b : a));
-    const bottom = corners.reduce((a, b) => (b.y > a.y ? b : a));
-    // the Facts: the left vertex at (8, 44), the bottom at (128, 104)
-    expect([left, bottom].map((p) => [Math.round(p.x), Math.round(p.y)])).toEqual([[8, 44], [128, 104]]);
-    // the readout in the panel's own px: its bottom-left at its place less the panel's top-left
-    const panel = minimapRect(MINIMAP.width, 0);
-    const at = positionReadoutPlace(panel, { right: 0, bottom: 0 });
-    const box = boxOf(WIDEST);
-    const [x0, x1, top] = [at.x - panel.x, at.x - panel.x + box.width, at.y - panel.y - box.height];
-    // the edge's y over the box's span; the box's top is below it all the way across
-    const edgeY = (x: number) => left.y + ((x - left.x) * (bottom.y - left.y)) / (bottom.x - left.x);
-    expect(x1).toBeLessThan(bottom.x);
-    expect(top).toBeGreaterThan(Math.max(edgeY(x0), edgeY(x1)));
+  it("should take its box from its place and its size, on whichever corner stands on the place", () => {
+    const size = { width: 90, height: 19 };
+    expect(positionReadoutBox({ x: 1066, y: 114, origin: { x: 1, y: 1 } }, size)).toEqual({ x: 976, y: 95, width: 90, height: 19 });
+    expect(positionReadoutBox({ x: 628, y: 20, origin: { x: 1, y: 0.5 } }, size)).toEqual({ x: 538, y: 10.5, width: 90, height: 19 });
+    expect(positionReadoutBox({ x: 1070, y: 69, origin: { x: 1, y: 0 } }, size)).toEqual({ x: 980, y: 69, width: 90, height: 19 });
   });
 
-  // FS-1SEF0 §B.11: in the enlarged minimap's corner, at its own 10 px, it still covers no floor
-  it("should lie below floor 1's diamond's lower-left edge in the enlarged minimap too (FS-1SEF0 §B.11)", () => {
-    const grid = new RegionGrid(fixture as DungeonMap);
-    const look = minimapPanel("enlarged");
-    const project = minimapProjection(grid, look);
-    const [w, h] = [grid.cols * grid.cell, grid.rows * grid.cell];
-    const left = project({ x: 0, y: h });
-    const bottom = project({ x: w, y: h });
-    const panel = minimapRect(look.width, 0, look);
-    const at = positionReadoutPlace(panel, { right: 0, bottom: 0 });
-    expect([at.x, at.y]).toEqual([4, 158]);
-    const box = boxOf(WIDEST);
-    const [x0, x1, top] = [at.x - panel.x, at.x - panel.x + box.width, at.y - panel.y - box.height];
-    const edgeY = (x: number) => left.y + ((x - left.x) * (bottom.y - left.y)) / (bottom.x - left.x);
-    expect(x1).toBeLessThan(bottom.x);
-    expect(top).toBeGreaterThan(Math.max(edgeY(x0), edgeY(x1)));
+  it("should give way to what its box meets, and to nothing else (E11, as the name's E7)", () => {
+    const box = { x: 538, y: 10, width: 90, height: 19 };
+    expect(readoutGivesWay(box, [null, undefined])).toBe(false);
+    expect(readoutGivesWay(box, [{ x: 351, y: 10, width: 378, height: 54 }])).toBe(true);
+    expect(readoutGivesWay(box, [{ x: 629, y: 10, width: 50, height: 54 }])).toBe(false);
   });
 });

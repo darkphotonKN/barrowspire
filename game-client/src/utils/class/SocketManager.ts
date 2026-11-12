@@ -11,7 +11,6 @@ import { GameStateLogger } from "@/utils/gameStateLogger";
 import type { RenewOutcome } from "@/utils/sessionRenewal";
 import { travelArrival } from "@/ui/travelArrival";
 import { useGameStore } from "@/stores/gameStore";
-import { useAuthStore } from "@/stores/authStore";
 import { isChatLine, isChatNotice, useChatStore } from "@/stores/chatStore";
 import {
   isPartyInvite,
@@ -90,6 +89,9 @@ export class SocketManager {
   private connectionStatus: ConnectionStatus = "disconnected";
   private connectionStatusListeners: Set<(status: ConnectionStatus) => void> =
     new Set();
+  // Told of each lost connection: the game socket closing when the client did not let it go
+  // (FS-R6EYZ R1, R2).
+  private lostListeners: Set<() => void> = new Set();
   private seq: number = 0;
   // Game state listeners
   private gameStateListeners: Set<(state: ClientGameState) => void> = new Set();
@@ -169,6 +171,21 @@ export class SocketManager {
     this.connect(this.gameUrl());
   }
 
+  /**
+   * Connects again from the main menu (FS-R6EYZ R16): to the server the player was last on
+   * (FS-K2HKP R29), as the same player, on a plain connection. If that server cannot be reached
+   * (the socket closes before it ever opens) and it is not the default address, which a rollout
+   * leaves a run's host address as, one more try at the default, whose landing pod sends a held
+   * player on to the pod holding them (FS-MCYWK R5). A socket open or opening is left alone.
+   */
+  reconnectFromMenu(): void {
+    if (this.serverAddr === DEFAULT_SERVER_ADDR) return this.reconnect();
+    this.connect(this.gameUrl(), () => {
+      this.serverAddr = DEFAULT_SERVER_ADDR;
+      this.reconnect();
+    });
+  }
+
   private gameUrl(): string {
     return `${this.serverAddr}?token=${this.currentToken()}&name=${this.name}`;
   }
@@ -213,6 +230,20 @@ export class SocketManager {
   private setConnectionStatus(status: ConnectionStatus): void {
     this.connectionStatus = status;
     this.connectionStatusListeners.forEach((listener) => listener(status));
+  }
+
+  /**
+   * Hears each lost connection (FS-R6EYZ R1–R3): the game's socket closing when the client did not
+   * let it go, opened or not. Not a socket `disconnect()`, a handoff or a redirect let go, not a
+   * `4001` (FS-ZPX58 R21), not a redirect target failing while the default address is still to
+   * try (FS-MCYWK R18), and nothing while a handoff is pending: the move decides. Returns the
+   * removal.
+   */
+  onConnectionLost(listener: () => void): () => void {
+    this.lostListeners.add(listener);
+    return () => {
+      this.lostListeners.delete(listener);
+    };
   }
 
   setOnAuthError(callback: () => void) {
@@ -318,6 +349,7 @@ export class SocketManager {
 
       this.setConnectionStatus("disconnected");
       this.updateStatus("WebSocket Disconnected", toCss(palette.hudLabel));
+      if (current) this.lost();
     };
 
     socket.onmessage = (event) => {
@@ -656,6 +688,18 @@ export class SocketManager {
     );
   }
 
+  /**
+   * The game's socket closed and the client did not let it go (FS-R6EYZ R2). With a handoff
+   * pending the move decides: it lands, or its failure reconnects to the server the player was on,
+   * and that socket's close is the loss. The run last handed off to is forgotten, so a later
+   * handoff to it is followed (R5). Nothing is retried here (R4).
+   */
+  private lost() {
+    if (this.pending) return;
+    this.handoffSessionId = null;
+    this.lostListeners.forEach((listener) => listener());
+  }
+
   private authFailed() {
     console.log("Auth error detected, redirecting to login...");
     this.onAuthError?.();
@@ -771,9 +815,10 @@ export class SocketManager {
   }
 
   /**
-   * One outgoing message as it goes on the wire, with player_id injected. The world a message
-   * belongs to is NOT sent: the server routes on its own record of the player (FS-29KSH
-   * §Requirements 16).
+   * One outgoing message as it goes on the wire: the action's own fields and nothing more. Neither
+   * who sends it nor the world it belongs to is sent: the server takes both from its own record
+   * of the connection's player (FS-29KSH §Requirements 16, §Change: The acting player is the
+   * connection's R40; ADR-0079).
    */
   private encode<T extends keyof ActionMap>(
     action: T,
@@ -781,7 +826,7 @@ export class SocketManager {
   ): string {
     const message: ClientMessage<T> = {
       action,
-      payload: { ...payload, player_id: useAuthStore.getState().memberInfo?.id },
+      payload,
       seq: ++this.seq,
     };
     return JSON.stringify(message);

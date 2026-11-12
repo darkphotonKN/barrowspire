@@ -1348,3 +1348,290 @@ describe("SocketManager round 2: late opens and disposal (FS-ZPX58 L-a, L-b)", (
     expect(env.arrival.refused).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The server takes who acts from the connection, never from the payload (FS-29KSH §Change: The
+ * acting player is the connection's). Every client is told the others' ids, so a player_id on
+ * the wire would only be one more field for a modified client to forge: none is sent, on any
+ * action, whoever is signed in.
+ */
+describe("SocketManager wire: no player_id (FS-29KSH §Change: The acting player is the connection's)", () => {
+  const ME = "11111111-1111-4111-8111-111111111111";
+  const samples: Record<string, Record<string, unknown>> = {
+    enter_hub: { characterId: "c-1", class: "mage", className: "mage", characterName: "Wren", username: "Wren" },
+    move: { vx: 1, vy: 0 },
+    attack: { enemy_entity_id: "m-1" },
+    pickup: { itemId: "i-1" },
+    use: { itemId: "i-1" },
+    chat: { channel: "area", text: "well met" },
+    find_game: {},
+    interact: { entity_id: "e-1" },
+    equip: { item_entity_id: "i-1" },
+    unequip: { item_entity_id: "i-1" },
+    cast_skill: { skill_id: "dash", target_x: 10, target_y: 20 },
+    leave_run: {},
+    leave_queue: {},
+    leave_hub: {},
+    start_solo: {},
+    forfeit_run: {},
+    request_floor_map: {},
+    enter_field: { field: "meadows" },
+    leave_field: {},
+    drink_potion: {},
+    renew_token: { token: "jwt-2" },
+    party_create: {},
+    party_invite: { name: "Kaelen" },
+    party_kick: { target_id: "p-2" },
+    party_transfer: { target_id: "p-2" },
+    party_leave: {},
+    party_accept: { invite_id: "inv-1" },
+    party_decline: { invite_id: "inv-1" },
+    party_travel: {},
+    party_enter: {},
+    party_ready: { check_id: "chk-1", accept: true },
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ memberInfo: { id: ME, email_verified: false } });
+  });
+  afterEach(() => {
+    useAuthStore.setState({ memberInfo: null });
+  });
+
+  it.each(Object.keys(samples))("sends %s with its own fields and no player_id", (action) => {
+    const { manager, old } = setup();
+
+    manager.sendMessage(action as never, samples[action] as never);
+
+    const sent = old.sent.map((raw) => JSON.parse(raw));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].action).toBe(action);
+    expect(sent[0].payload).toEqual(samples[action]);
+    expect(sent[0].payload).not.toHaveProperty("player_id");
+  });
+
+  it("sends the renewed token with no player_id", () => {
+    const { manager, old } = setup();
+
+    manager.renewToken("jwt-2");
+
+    const sent = old.sent.map((raw) => JSON.parse(raw));
+    expect(sent.map((m) => m.action)).toEqual(["renew_token"]);
+    expect(sent[0].payload).not.toHaveProperty("player_id");
+  });
+});
+
+describe("SocketManager lost connection (FS-R6EYZ §A R1–R5: only a close the client did not choose)", () => {
+  const LEADER = "ws://pod-a.test/game/ws";
+  const marl = { characterId: "c-1", class: "warrior", className: "warrior", characterName: "Marl", username: "Marl" };
+
+  /** Signed in on the default server, the game socket open, a lost listener counting. */
+  function playing({ renewer = true } = {}) {
+    const sockets: FakeSocket[] = [];
+    const arrival = { enterHub: vi.fn(() => marl), refused: vi.fn() };
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    }, arrival);
+    if (renewer) manager.setRenewSession(vi.fn(async () => "renewed" as const));
+    const authError = vi.fn();
+    manager.setOnAuthError(authError);
+    const lost = vi.fn();
+    const stop = manager.onConnectionLost(lost);
+    manager.connectToGame("jwt-1", "Ash");
+    sockets[0].open();
+    return { manager, sockets, lost, stop, authError, last: () => sockets[sockets.length - 1] };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([1006, 1001, 1012, 1000])("should tell the listener once when the open game socket closes with %i (R1, R2)", (code) => {
+    const env = playing();
+    env.sockets[0].serverClose(code);
+    expect(env.lost).toHaveBeenCalledTimes(1);
+    expect(env.manager.getConnectionStatus()).toBe("disconnected");
+  });
+
+  it("should tell no listener that was removed (R1)", () => {
+    const env = playing();
+    env.stop();
+    env.sockets[0].serverClose(1006);
+    expect(env.lost).not.toHaveBeenCalled();
+  });
+
+  it("should tell it when a reconnect cannot reach the server, the socket never opening (R3)", () => {
+    const env = playing();
+    env.sockets[0].serverClose(1006);
+    env.manager.reconnect();
+    env.last().unreachable();
+    expect(env.lost).toHaveBeenCalledTimes(2);
+  });
+
+  it("should tell nothing for the close of a socket disconnect() let go (R2)", () => {
+    const env = playing();
+    env.manager.disconnect();
+    // the browser reports the close after the client asked for it
+    env.sockets[0].serverClose(1000, "client_disconnect");
+    expect(env.lost).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["with a renewer: the recovery runs", true],
+    ["without one: the auth error runs", false],
+  ])("should tell nothing for a 4001, %s (R2)", async (_name, renewer) => {
+    const env = playing({ renewer });
+    env.sockets[0].serverClose(4001);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(env.lost).not.toHaveBeenCalled();
+    if (renewer) expect(env.sockets).toHaveLength(2);
+    else expect(env.authError).toHaveBeenCalledTimes(1);
+  });
+
+  it("should tell nothing for a redirect's landing socket, nor for the redirect target failing while the default is still to try (R2)", () => {
+    const env = playing();
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: LEADER, reconnect: true } });
+    env.sockets[0].serverClose(1000, "redirected");
+    env.sockets[1].unreachable();
+    expect(env.lost).not.toHaveBeenCalled();
+
+    // the one try at the default address failing too is an ordinary loss
+    expect(env.sockets).toHaveLength(3);
+    env.sockets[2].unreachable();
+    expect(env.lost).toHaveBeenCalledTimes(1);
+  });
+
+  it("should tell nothing for the old socket a promoted handoff let go (R2)", () => {
+    const env = playing();
+    env.sockets[0].receive(handoff());
+    env.sockets[1].open();
+    env.sockets[1].receive(runEntered);
+    env.sockets[0].serverClose(1000, "handoff");
+    expect(env.lost).not.toHaveBeenCalled();
+
+    // the host's socket is the game's now: its close is a loss
+    env.sockets[1].serverClose(1006);
+    expect(env.lost).toHaveBeenCalledTimes(1);
+  });
+
+  it("should tell nothing while a run handoff is pending; its failure's reconnect closing is the loss (R2)", () => {
+    const env = playing();
+    env.sockets[0].receive(handoff());
+    env.sockets[0].serverClose(1006);
+    expect(env.lost).not.toHaveBeenCalled();
+
+    // the host refuses: back to the server the player was on, which cannot be reached either
+    env.sockets[1].serverClose(4002);
+    expect(env.sockets).toHaveLength(3);
+    env.sockets[2].unreachable();
+    expect(env.lost).toHaveBeenCalledTimes(1);
+  });
+
+  it("should tell nothing while a hub handoff is pending, and nothing if it lands (R2)", () => {
+    const env = playing();
+    env.sockets[0].receive({ action: "world_handoff", payload: { addr: LEADER, hub: true } });
+    env.sockets[0].serverClose(1006);
+    expect(env.lost).not.toHaveBeenCalled();
+
+    env.sockets[1].open();
+    env.sockets[1].receive({ action: "world_entered", payload: { session_id: "hub-a", world_type: "hub" } });
+    expect(env.lost).not.toHaveBeenCalled();
+    expect(env.manager.getConnectionStatus()).toBe("connected");
+  });
+
+  it("should follow a handoff to the run last handed off to once the connection was lost (R5)", () => {
+    const env = playing();
+    env.sockets[0].receive(handoff("run-1"));
+    env.sockets[1].open();
+    env.sockets[1].receive(runEntered);
+    env.sockets[1].serverClose(1006);
+
+    env.manager.reconnect();
+    env.last().open();
+    const before = env.sockets.length;
+    env.last().receive(handoff("run-1"));
+    expect(env.sockets).toHaveLength(before + 1);
+    expect(env.last().url).toBe(`${HOST}?token=jwt-1&session_id=run-1`);
+  });
+});
+
+describe("SocketManager reconnect from the menu (FS-R6EYZ R16: the server last on, else once the default)", () => {
+  function moved() {
+    const sockets: FakeSocket[] = [];
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    });
+    const lost = vi.fn();
+    manager.onConnectionLost(lost);
+    manager.connectToGame("jwt-1", "Ash");
+    sockets[0].open();
+    return { manager, sockets, lost, last: () => sockets[sockets.length - 1] };
+  }
+
+  /** Handed off to the run's host, then the host's socket lost. */
+  function lostOnTheHost() {
+    const env = moved();
+    env.sockets[0].receive(handoff());
+    env.sockets[1].open();
+    env.sockets[1].receive(runEntered);
+    env.sockets[1].serverClose(1006);
+    env.lost.mockClear();
+    return env;
+  }
+
+  it("should reconnect to the server the player was last on, as the same player, on a plain connection", () => {
+    const env = lostOnTheHost();
+    env.manager.reconnectFromMenu();
+    expect(env.last().url).toBe(`${HOST}?token=jwt-1&name=Ash`);
+  });
+
+  it("should try once at the default address when that server cannot be reached, which is then the server", () => {
+    const env = lostOnTheHost();
+    env.manager.reconnectFromMenu();
+    env.last().unreachable();
+    expect(env.lost).not.toHaveBeenCalled();
+    expect(env.manager.getConnectionStatus()).toBe("connecting");
+    expect(env.last().url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
+    expect(env.manager.getServerAddress()).toBe(DEFAULT_SERVER_ADDR);
+
+    // the default out of reach too: an ordinary loss, and no third try
+    const count = env.sockets.length;
+    env.last().unreachable();
+    expect(env.sockets).toHaveLength(count);
+    expect(env.lost).toHaveBeenCalledTimes(1);
+    expect(env.manager.getConnectionStatus()).toBe("disconnected");
+  });
+
+  it("should not try the default twice when the server last on was the default", () => {
+    const env = moved();
+    env.sockets[0].serverClose(1006);
+    env.manager.reconnectFromMenu();
+    const count = env.sockets.length;
+    env.last().unreachable();
+    expect(env.sockets).toHaveLength(count);
+    expect(env.lost).toHaveBeenCalledTimes(2);
+  });
+
+  it("should leave a socket that is open alone", () => {
+    const env = moved();
+    env.manager.reconnectFromMenu();
+    expect(env.sockets).toHaveLength(1);
+  });
+
+  it("should take an opened socket's later close as an ordinary loss, with no fallback", () => {
+    const env = lostOnTheHost();
+    env.manager.reconnectFromMenu();
+    env.last().open();
+    const count = env.sockets.length;
+    env.last().serverClose(1006);
+    expect(env.sockets).toHaveLength(count);
+    expect(env.lost).toHaveBeenCalledTimes(1);
+  });
+});

@@ -199,6 +199,15 @@ describe("invitePromptFrames (FS-R82NV R32: top centre, stacked)", () => {
     expect(overlaps(frames[1].panel, frames[2].panel)).toBe(false);
   });
 
+  it.each([1080, 1280])(
+    "should step 12 px right of the centred party panel in a %i-wide view (FS-R82NV § Change C6)",
+    (width) => {
+      const [f] = invitePromptFrames(1, { canvasWidth: width, panelOpen: true });
+      expect(f.panel.x).toBe((width - 300) / 2 + 300 + 12);
+      expect(f.panel.y).toBe(92);
+    },
+  );
+
   it("should step right of the open party panel, even at four members", () => {
     const panel = fullPartyPanel();
     const frames = invitePromptFrames(3, {

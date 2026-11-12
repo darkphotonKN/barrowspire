@@ -1,14 +1,10 @@
 import type { ChatChannel } from "@/stores/chatStore";
 import type { ItemState } from "@/types/gameState";
 /**
- * The session identity every game action carries. GameSessionManager builds it
- * once and merges it into each outgoing payload, so action payload types below
- * describe only their own fields.
+ * Outgoing payloads carry only their own fields. None names its sender or its world: the server
+ * takes both from its record of the connection's player (FS-29KSH §Requirements 16, §Change: The
+ * acting player is the connection's R40; ADR-0079). A field naming another player is a target.
  */
-export interface PlayerSessionPayload {
-  session_id: string;
-  player_id: string;
-}
 
 export interface MovePayload {
   vx: number;
@@ -37,7 +33,6 @@ export interface ChatPayload {
 }
 
 export interface FindGamePayload {
-  playerId?: string;
   class?: string;
   className?: string;
   characterName?: string;
@@ -119,9 +114,8 @@ export interface ActionMap {
   /** Inviting a player to this player's party, by character name or id (FS-R82NV R12). */
   party_invite: { name: string };
   /**
-   * The leader removing a member (FS-R82NV R19). The FS names the field `player_id`, but every
-   * outgoing payload has the sender's own `player_id` merged over it by `sendMessage`, so the
-   * target travels as `target_id` until the server's handler (slice 2) settles the name.
+   * The leader removing a member (FS-R82NV R19), named by `target_id`: the member kicked, never
+   * the sender. The server reads `target_id`; no payload names its sender (ADR-0079).
    */
   party_kick: { target_id: string };
   /** The leader handing leadership to a member (FS-R82NV R19); `target_id` as for a kick. */

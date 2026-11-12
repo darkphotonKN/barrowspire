@@ -37,6 +37,7 @@ import {
   floorLabel,
   interactNotice,
   isTopFloor,
+  showsFloorLine,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
@@ -53,6 +54,7 @@ import {
   type RunMenuChoice,
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
@@ -72,13 +74,23 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { escapeStep } from "@/ui/escapeOrder";
+import { HudCorner } from "@/ui/HudCorner";
+import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
-import { POSITION_READOUT, positionReadoutPlace, showsPositionReadout } from "@/ui/positionReadout";
+import {
+  POSITION_READOUT,
+  positionReadoutBox,
+  positionReadoutPlace,
+  readoutGivesWay,
+  showsPositionReadout,
+  type PositionReadoutPlace,
+} from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
 import { SettlementRecord } from "@/ui/SettlementRecord";
 import { settlementRecord } from "@/ui/settlement";
@@ -88,6 +100,7 @@ import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
   palette,
+  rgba,
   shade,
   tint,
   toCss,
@@ -106,6 +119,7 @@ import {
   worldToScreen,
   type Facing8,
   type Point,
+  type Rect,
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
@@ -141,6 +155,8 @@ import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
+import { MinimapModeIcon, type ModeIconStage } from "@/ui/minimapModeIcon";
+import { MinimapName, minimapPlaceName } from "@/ui/minimapName";
 import {
   browserMinimapStore,
   nextMinimapMode,
@@ -149,7 +165,7 @@ import {
   type MinimapMode,
   type MinimapModeStore,
 } from "@/ui/minimapMode";
-import { TOP_RIGHT_LINE, topRightColumn } from "@/ui/topRightColumn";
+import { TOP_RIGHT_HUD, TOP_RIGHT_LINE, cornerMinimap, topRightColumn } from "@/ui/topRightColumn";
 import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
@@ -212,16 +228,16 @@ import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { thicknessPx, type WallHeight } from "@/render/world/walls";
 import {
-  FULLSCREEN_BUTTON_CLEARANCE,
   afterFrameSetUp,
   anchorAt,
   boundCamera,
   crispen,
   followWith,
+  fullscreenButtonPlace,
   relayoutOn,
   viewRect,
   viewport,
-  type Placement,
+  type FullscreenButtonPlace,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -270,8 +286,10 @@ const RESOLVED_CARD_DEPTH = 1500;
  */
 const SPECTATE_HUD_Y = 10;
 /**
- * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, in the HUD band (1000) with
- * the counters, and away from the watched player at the centre and the HUD along the top edge.
+ * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, above the corner row
+ * (`LEAVE_BUTTON_PLACE`, FS-3EBCA R14), in the HUD band (1000) with the counters, and away from the
+ * watched player at the centre and the HUD along the top edge. Its margin is the bottom-centre
+ * row's.
  */
 const LEAVE_BUTTON_DEPTH = 1000;
 const LEAVE_BUTTON_MARGIN = 16;
@@ -319,19 +337,10 @@ const RESOURCE_HUD_Y = RESOURCE_HUD_AT.run.y;
 /** The potion cell (FS-P9G8R R24): just right of the resource bars, top-aligned with them. */
 const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
 /**
- * The ability card (FS-8AY7S req 29, 32): bottom-right, on the leave button's margins. The two
- * share the corner and are never up together: the card is down whenever the button is up.
+ * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
+ * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
  */
-const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
-/**
- * The top-right column's corner (FS-ZAJMH R12; its order FS-56CKV §B, `topRightColumn`), stepped down
- * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05).
- */
-export const TOP_RIGHT_HUD: Placement = {
-  anchor: "top-right",
-  dx: -10,
-  dy: 10 + FULLSCREEN_BUTTON_CLEARANCE,
-};
+export { TOP_RIGHT_HUD };
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label. Markers draw above the light-map and vignette (FS-2325V §C.9). The
@@ -434,6 +443,10 @@ interface DungeonFloor {
   fog?: Fog;
   /** Its minimap (FS-SRA9J §E), built with the fog and gone with the floor. */
   minimap?: Minimap;
+  /** Its minimap's map mode icon, built and gone with it (FS-56CKV §Change: Map mode icon, D4). */
+  modeIcon?: MinimapModeIcon;
+  /** Its minimap's map name, the floor's, built and gone with it (FS-56CKV §Change: Map name, E6). */
+  mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
 }
@@ -675,6 +688,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private invitePrompt?: PartyInvitePrompt;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
+  /**
+   * The corner row (FS-3EBCA): Menu (one Esc), Inventory (I), Character (C), Party (T) and the Mailbox greyed, as
+   * in every world outside the town. The ability card and the leave button stand above it.
+   */
+  private corner?: HudCorner;
   /**
    * The player's own class kit drawn (FS-MAMHR §G.32–§G.36, FS-JTNPR req 11), shared with the
    * field scene: the merc's cut, riposte, stance and parry flash, and the archer's aim line.
@@ -935,6 +953,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private minimapMode: MinimapMode = "normal";
   /** Where this browser keeps the minimap's mode (FS-1SEF0 §A.4). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
+  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
   /** The boss engaged with the party, latched across broadcasts (FS-48CTQ §D.10). */
@@ -952,9 +972,16 @@ export class BarrowspireScene extends Phaser.Scene {
   private escapedCountText?: Phaser.GameObjects.Text;
   /** The dev position readout (FS-56CKV §C); none in a production build. */
   private positionReadout?: Phaser.GameObjects.Text;
-  /** "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor. */
+  /** Where the readout stands now, and what at the top centre it gives way to (FS-56CKV §Change: Map name, E11). */
+  private readoutPlace?: PositionReadoutPlace;
+  private readoutCovers: readonly (Rect | null | undefined)[] = [];
+  /**
+   * "Floor N" (FS-M8CSE R7), hidden where the broadcast carries no floor, and wherever the
+   * minimap's name already names the floor (FS-56CKV §Change: Map name, E9).
+   */
   private floorText?: Phaser.GameObjects.Text;
-  private shownFloorLabel: string | null = null;
+  /** The floor the floor line says, none while it has no label. */
+  private shownFloor: number | undefined;
   /**
    * The floor the last broadcast stood on (FS-F6F88 req 28). Undefined until the first broadcast
    * of a start, so a reconnect builds the party's floor directly with no transition (req 32).
@@ -1004,6 +1031,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * gone and are asked nothing (`SceneEnd`).
    */
   private resetRun(end: SceneEnd): void {
+    // the corner back to the fullscreen button, unless a later scene has stood it (FS-56CKV §Change C6)
+    this.fullscreenButton.takeBack(this);
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.floorMapUnsubscribe?.();
@@ -1130,6 +1159,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.abilityHud = undefined;
+    this.corner?.destroy();
+    this.corner = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
@@ -1148,7 +1179,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.lastHit.clear();
     this.bosses.clear();
     this.markers = "overhead";
-    this.shownFloorLabel = null;
+    this.shownFloor = undefined;
+    this.readoutPlace = undefined;
+    this.readoutCovers = [];
     this.lastFloor = undefined;
     // the next run is sized and built from its own map
     this.mapWidth = 0;
@@ -1175,8 +1208,8 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!keyboard) return;
     // the run's end locks the keyboard, so the next run would start unable to move
     keyboard.enabled = true;
-    // Phaser's stop destroyed the run's keys already and kept their captures: Tab's would stop
-    // focus moving in the hub and its DOM overlays
+    // Phaser's stop destroyed the run's keys already and kept their captures: each would stay
+    // prevented in the hub and its DOM overlays
     releaseCaptures(keyboard, [
       ...Object.values(this.cursors ?? {}),
       ...Object.values(this.wasd ?? {}),
@@ -1198,9 +1231,10 @@ export class BarrowspireScene extends Phaser.Scene {
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
-    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
-    // focus off the canvas; nothing happens unless this player is spectating.
-    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
+    // Tab: the next player to watch (FS-QPDKN req 8); nothing happens unless this player is
+    // spectating. Not captured: the game frame keeps Tab from moving focus while nothing on the
+    // page holds it (keepTab, src/components/gameFocus.ts), so on a focused page control it moves on.
+    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, false);
     this.tabKey.on("down", () => this.cycleWatched());
 
     // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
@@ -1220,8 +1254,27 @@ export class BarrowspireScene extends Phaser.Scene {
       return;
     }
 
+    const controls = [
+      ["WASD", "Move"],
+      ["E", "Interact"],
+      ["F", "Take Item"],
+      ["I / B", "Inventory"],
+      ["C", "Character"],
+      ["T", "Party"],
+      ["ENTER", "Chat"],
+      ["Q", "Close Panel"],
+      ["LEFT CLICK", "Attack"],
+      // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
+      ["RIGHT CLICK", ABILITY_COPY[this.ownClass()]?.name ?? "Class ability"],
+      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
+      ["H", "Toggle Controls"],
+      ["ESC", "Menu"],
+    ];
+
     const panelW = 260;
-    const panelH = 300;
+    // the title, a 20 px row per control, and the hint under them, so a row added never runs
+    // into the hint
+    const panelH = 44 + controls.length * 20 + 32;
     const x = viewport.width / 2;
     const y = viewport.height / 2;
 
@@ -1234,30 +1287,9 @@ export class BarrowspireScene extends Phaser.Scene {
     bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
     children.push(bg);
 
-    const title = this.add.text(0, -panelH / 2 + 16, "CONTROLS", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "16px",
-      color: toCss(palette.frameBright),
-      letterSpacing: 5,
-    });
-    title.setOrigin(0.5);
-    children.push(title);
+    // the windows' one title (FS-3EBCA R20, R22)
+    children.push(drawPanelTitle(this, { x: -panelW / 2, y: -panelH / 2, width: panelW }, "CONTROLS"));
 
-    const controls = [
-      ["WASD", "Move"],
-      ["E", "Interact"],
-      ["F", "Take Item"],
-      ["I / B", "Gear and bag"],
-      ["T", "Party"],
-      ["ENTER", "Chat"],
-      ["Q", "Close Panel"],
-      ["LEFT CLICK", "Attack"],
-      // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
-      ["RIGHT CLICK", ABILITY_COPY[this.ownClass()]?.name ?? "Class ability"],
-      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
-      ["H", "Toggle Controls"],
-      ["ESC", "Menu"],
-    ];
 
     let curY = -panelH / 2 + 44;
     for (const [key, action] of controls) {
@@ -3023,12 +3055,16 @@ export class BarrowspireScene extends Phaser.Scene {
   // === 道具欄功能 ===
 
   /**
-   * I or B opens and closes the gear and bag overlay (FS-HRH2J R4); opening it ends a Shadow Shot
-   * hold (FS-JTNPR req 15).
+   * I or B opens and closes the inventory (FS-HRH2J R4); opening it ends a Shadow Shot hold
+   * (FS-JTNPR req 15).
    */
   private toggleInventory(): void {
-    this.equipment?.toggle();
-    if (this.equipment?.isOpen()) this.cancelAim();
+    if (this.equipment?.toggle()) this.cancelAim();
+  }
+
+  /** C opens and closes the character panel; opening it ends a hold too (FS-HRH2J § Change C2, C5). */
+  private toggleCharacter(): void {
+    if (this.equipment?.toggleCharacter()) this.cancelAim();
   }
 
   /**
@@ -3161,9 +3197,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
-    this.chatWindow = mountChatWindow(this, () => !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen);
-    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(this, () => !!this.menu || this.runEnded || !!this.equipment?.isOpen() || !!this.containerView?.isOpen);
+    this.chatWindow = mountChatWindow(this, () => this.mayChat());
+    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
@@ -3215,10 +3251,77 @@ export class BarrowspireScene extends Phaser.Scene {
     // torch-lit barrow atmosphere — pure decoration, no game state
     this.createAtmosphere();
 
+    this.mountCorner();
+
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
     this.openHeldMessages();
+  }
+
+  /**
+   * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
+   * path, I or B, C, T; the Mailbox greyed, the mailbox being the town's (R9). The overlay's
+   * panels stop above it, so it answers while they are open (R11).
+   */
+  private mountCorner(): void {
+    this.corner = new HudCorner(this, {
+      icons: [
+        { icon: "menu", press: () => this.pressMenuIcon() },
+        {
+          icon: "inventory",
+          press: () => {
+            if (!this.menu) this.toggleInventory();
+          },
+        },
+        {
+          icon: "character",
+          press: () => {
+            if (!this.menu) this.toggleCharacter();
+          },
+        },
+        { icon: "party", press: () => this.partyPanel?.toggle() },
+        { icon: "mail", greyed: true },
+      ],
+    });
+  }
+
+  /**
+   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): the menu, the run's
+   * end or an open container owns the screen. The inventory and the character panel do not: the
+   * party panel opens over them (FS-R82NV § Change C8).
+   */
+  private refusesParty(): boolean {
+    return !!this.menu || this.runEnded || !!this.containerView?.isOpen;
+  }
+
+  /**
+   * Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18), the
+   * run's end, the gear overlay or an open chest owns the keys.
+   */
+  private mayChat(): boolean {
+    return !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen;
+  }
+
+  /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
+  private closeWindows(): void {
+    this.partyPanel?.close();
+    this.equipment?.hide();
+  }
+
+  /**
+   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
+   * it opens. With the menu open it does what its × and Esc do (owner 2026-11-12: "menu無法再按一次icon關閉"):
+   * the menu closes, and from the Fall confirm the whole of it goes, as Not yet does, nothing sent.
+   * After the run's end there is no menu: it only closes the windows.
+   */
+  private pressMenuIcon(): void {
+    if (this.menu) {
+      this.menuChoices?.dismiss();
+      return;
+    }
+    this.closeWindows();
+    if (!this.runEnded) this.openMenu();
   }
 
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
@@ -3240,6 +3343,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     this.abilityHud?.relayout();
+    this.corner?.relayout();
+    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
+    this.partyPanel?.relayout();
     this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
@@ -3278,7 +3384,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-18Z5F R36). Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    const overlay = new GearOverlay(this, this.art, WorldType.Run);
+    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
+    const overlay = new GearOverlay(this, this.art, WorldType.Run, (x, y) => this.partyPanel?.covers(x, y) ?? false);
     return new EquipmentHud(
       overlay,
       {
@@ -3339,13 +3446,18 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // I or B opens and closes the gear and bag overlay (FS-HRH2J R4); not while the menu is open (R6)
+    // I or B opens and closes the inventory (FS-HRH2J R4), C the character panel (§ Change C2);
+    // not while the menu is open (R6)
     for (const key of ["keydown-I", "keydown-B"]) {
       this.input.keyboard?.on(key, () => {
         if (this.menu) return;
         this.toggleInventory();
       });
     }
+    this.input.keyboard?.on("keydown-C", () => {
+      if (this.menu) return;
+      this.toggleCharacter();
+    });
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {
@@ -3386,7 +3498,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
       this.containerView.pointerMove(at.x, at.y);
+      // the map mode icon lit under the pointer, unless a panel lies over it (FS-56CKV §Change: Map mode icon, D7)
+      if (this.panelTakes(at.x, at.y)) this.dungeon?.modeIcon?.pointerOut();
+      else this.dungeon?.modeIcon?.pointerMove(at.x, at.y);
     });
+    this.input.on("gameout", () => this.dungeon?.modeIcon?.pointerOut());
 
     // Disable browser right-click menu for equipment panel context menus
 
@@ -3398,15 +3514,9 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.combat.aiming) return;
       // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
-      // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
-      // clear middle band answers as with the overlay closed (FS-HRH2J R8)
-      if (this.equipment?.covers(at.x, at.y)) return;
-      // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-      if (this.chatWindow?.covers(at.x, at.y)) return;
-      // and one on the open party panel is the panel's (FS-R82NV R28)
-      if (this.partyPanel?.covers(at.x, at.y)) return;
-      // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-      if (this.invitePrompt?.covers(at.x, at.y)) return;
+      if (this.panelTakes(at.x, at.y)) return;
+      // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
+      if (this.dungeon?.modeIcon?.pointerDown(at.x, at.y, pointer.button === 0)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(at.x, at.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
@@ -3468,6 +3578,24 @@ export class BarrowspireScene extends Phaser.Scene {
         }
       }
     });
+  }
+
+  /**
+   * Whether a press at (x, y), logical units, is a HUD panel's or the corner row's: no attack, no
+   * cast, no hold, and nothing under it takes it, the map mode icon included.
+   */
+  private panelTakes(x: number, y: number): boolean {
+    // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
+    // clear middle band answers as with the overlay closed (FS-HRH2J R8)
+    if (this.equipment?.covers(x, y)) return true;
+    // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
+    if (this.chatWindow?.covers(x, y)) return true;
+    // and one on the open party panel is the panel's (FS-R82NV R28)
+    if (this.partyPanel?.covers(x, y)) return true;
+    // and one on the corner row is the row's (FS-3EBCA R10): never the map mode icon's either
+    if (this.corner?.covers(x, y)) return true;
+    // and one on an invite prompt is the prompt's (FS-NCC9J R24)
+    return this.invitePrompt?.covers(x, y) ?? false;
   }
 
   /** The class this player's clicks answer for, lower-cased; a warrior when none is chosen. */
@@ -3854,6 +3982,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.chunks.clear();
     this.dungeon?.fog?.destroy();
     this.dungeon?.minimap?.destroy();
+    this.dungeon?.modeIcon?.destroy();
+    this.dungeon?.mapName?.destroy();
     this.dungeon = undefined;
     this.placeTopRightColumn();
   }
@@ -3934,30 +4064,72 @@ export class BarrowspireScene extends Phaser.Scene {
       () => viewport.renderScale,
     );
     dungeon.minimap.setMode(this.minimapMode);
+    // its map mode icon over it: a press is M's, under M's guards (FS-56CKV §Change: Map mode icon)
+    const iconStage: ModeIconStage = { graphics: () => this.add.graphics(), text: (words, style) => this.add.text(0, 0, words, style) };
+    dungeon.modeIcon = new MinimapModeIcon(iconStage, {
+      press: () => this.cycleMinimap(),
+      blocked: () => !!this.menu || !!this.chatWindow?.isTyping(),
+    });
+    // the floor's name on it, the floor card's title (FS-56CKV §Change: Map name, E1)
+    if (this.builtFloor !== undefined) {
+      const top = this.lastGameState ? isTopFloor(this.lastGameState) : false;
+      dungeon.mapName = new MinimapName(iconStage, minimapPlaceName({ world: "run", floor: this.builtFloor, top }));
+    }
     this.placeTopRightColumn();
   }
 
   /**
    * The top-right column from its anchor (FS-56CKV §B, superseding FS-SRA9J §E.20 in part): the
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
-   * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
-   * dev readout goes with it (§C.14, §C.18): in the minimap's bottom-left corner, else under the
-   * column's last line.
+   * that; where no minimap is shown, or the floor indicator has no label or the map name already
+   * names the floor (§Change: Map name, E9), the rest closes up. The dev readout goes with it: in
+   * the normal map's bottom-right, left of the enlarged map's name, under the column's last line
+   * in the overlay and with no map (§C.18; §Change: Map name, E8, E11). The minimap, normal or enlarged, stands
+   * at the very top with the fullscreen button at its left; in the overlay and with no minimap the button keeps the corner and the
+   * column starts under it (§Change: Minimap at the top, fullscreen button beside it, as amended
+   * 2026-11-12). The map mode icon goes with the map, or beside the button with the overlay up
+   * (§Change: Map mode icon); the map name with them (§Change: Map name, E3–E5).
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
+    // said once: the floor line goes while the map name names its floor (§Change: Map name, E9)
+    const named = this.dungeon?.mapName ? this.dungeon.floor : undefined;
+    floor?.setVisible(showsFloorLine(this.shownFloor, named));
     const column = topRightColumn({
-      corner: anchorAt(TOP_RIGHT_HUD),
-      minimap: minimap?.panel ?? null,
+      view: viewport,
+      minimap: cornerMinimap(minimap),
       floorHeight: floor?.visible ? floor.height : null,
       escapedHeight: this.escapedCountText?.height ?? 0,
     });
+    this.fullscreenButton.hand(this, column.button);
     if (column.minimap) minimap?.place(column.minimap);
+    this.dungeon?.modeIcon?.place(column.modeIcon);
+    this.dungeon?.mapName?.place(column.name);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
-    const readout = positionReadoutPlace(column.minimap, { right: column.escaped.x, bottom: column.bottom });
+    // in the normal map's bottom-right, left of the enlarged map's name, else under the column (E8, E11)
+    const readout = positionReadoutPlace(
+      {
+        minimap: column.minimap,
+        enlarged: minimap?.mode === "enlarged",
+        name: this.dungeon?.mapName?.box ?? null,
+        button: column.button,
+        column: { right: column.escaped.x, bottom: column.bottom },
+      },
+      viewport,
+    );
+    this.readoutPlace = readout;
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
+    this.showReadout();
+  }
+
+  /** The readout shown unless its plate meets what stands at the top centre now (§Change: Map name, E11). */
+  private showReadout(): void {
+    const text = this.positionReadout;
+    if (!text || !this.readoutPlace) return;
+    const shown = !readoutGivesWay(positionReadoutBox(this.readoutPlace, text), this.readoutCovers);
+    if (shown !== text.visible) text.setVisible(shown);
   }
 
   /**
@@ -4271,13 +4443,14 @@ export class BarrowspireScene extends Phaser.Scene {
     });
   }
 
-  /** "Floor N" from the broadcast, redrawn only when it changes; hidden without floors. */
+  /**
+   * "Floor N" from the broadcast, redrawn only when it changes; hidden without floors, and while the
+   * map name names the floor (`placeTopRightColumn`, FS-56CKV §Change: Map name, E9).
+   */
   private updateFloorIndicator(state: ClientGameState): void {
-    const label = floorLabel(state);
-    if (!this.floorText || label === this.shownFloorLabel) return;
-    this.shownFloorLabel = label;
-    this.floorText.setText(label ?? "");
-    this.floorText.setVisible(label !== null);
+    if (!this.floorText || state.floor === this.shownFloor) return;
+    this.shownFloor = state.floor;
+    this.floorText.setText(floorLabel(state) ?? "");
     this.placeTopRightColumn();
   }
 
@@ -4980,6 +5153,12 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
+    // the map name beside the enlarged map gives way to the frame where they meet (FS-56CKV §Change:
+    // Map name, E7), and the readout left of it too (E11)
+    const covers = [this.targetFrame.shownRect()];
+    this.dungeon?.mapName?.giveWay(covers);
+    this.readoutCovers = covers;
+    this.showReadout();
   }
 
   /**
@@ -4991,8 +5170,9 @@ export class BarrowspireScene extends Phaser.Scene {
       fontFamily: CANVAS_FONT.body,
       fontSize: POSITION_READOUT.fontSize,
       color: toCss(POSITION_READOUT.colour),
+      backgroundColor: rgba(POSITION_READOUT.plate, POSITION_READOUT.plateAlpha),
+      padding: { ...POSITION_READOUT.padding },
     });
-    posText.setAlpha(POSITION_READOUT.alpha);
     posText.setScrollFactor(0);
     posText.setDepth(POSITION_READOUT.depth);
     this.positionReadout = posText;
@@ -5093,11 +5273,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastGameState;
     if (!state) return;
-    this.abilityHud ??= new AbilityHud(this, {
-      anchor: "bottom-right",
-      dx: -ABILITY_CARD_MARGIN,
-      dy: -ABILITY_CARD_MARGIN,
-    });
+    // just above the corner row, right-aligned with it (FS-3EBCA R13)
+    this.abilityHud ??= new AbilityHud(this, ABILITY_CARD_PLACE);
     this.abilityHud.show(
       abilityCard(state, {
         lockedOut: this.combat.lockedOut,
@@ -5109,11 +5286,14 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Whether this player's movement keys send `move`: not once they are out of the delve
    * (FS-77AB6 req 17), and not while they watch through a teammate's eyes (FS-QPDKN §Edge
-   * States "Spectating": the camera target is not the player).
+   * States "Spectating": the camera target is not the player), and not once the run has ended: its
+   * end moves the player's record to the town, so a stride sent after it walks the town body
+   * (reported 2026-11-12).
    */
   private canSendMove(): boolean {
     return (
       !this.menu &&
+      !this.runEnded &&
       !resolved(this.lastGameState?.current_player) &&
       this.watchedPlayerId === undefined
     );
@@ -5347,11 +5527,13 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The stride the keys ask for, sent each frame it is non-zero; none from a player out of the
    * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
-   * it interrupts is stopped once, and nothing more goes until it closes.
+   * it interrupts is stopped once, and nothing more goes until it closes. The run's end stops a
+   * stride the same way, for good: the stop walks no further than the town body the run's last
+   * strides may already be walking ({@link canSendMove}).
    */
   private sendMovementIntent(vx: number, vy: number): void {
     // an archer drawing a Shadow Shot stands still the same way (FS-JTNPR req 9)
-    if (this.menu || this.combat.aiming) {
+    if (this.menu || this.combat.aiming || this.runEnded) {
       if (this.striding) socketManager.sendMessage(ActionType.Move, { vx: 0, vy: 0 });
       this.striding = false;
       return;
@@ -5372,17 +5554,32 @@ export class BarrowspireScene extends Phaser.Scene {
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-    // one ESC closes one thing: the gear and bag overlay before the menu opens (FS-HRH2J R5)
-    if (esc && !this.menu && this.equipment?.hide()) return;
-    if (this.runEnded) return;
-
-    if (!this.menu) {
-      if (esc) this.openMenu();
+    if (esc) {
+      this.pressEscape();
       return;
     }
-    if (esc) this.menuChoices?.dismiss();
-    else if (confirm) this.menuChoices?.confirm();
+    if (this.runEnded || !this.menu) return;
+    if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+  }
+
+  /**
+   * One ESC press (FS-R82NV § Change C2; FS-HRH2J R5): one press closes one thing, the open menu,
+   * then the party panel, drawn over the overlay (§ Change C8), then the gear and bag overlay
+   * (`escapeStep`); with nothing open the menu opens. Once the run has ended there is no menu to
+   * open or close.
+   */
+  private pressEscape(): void {
+    const step = escapeStep({
+      menu: !!this.menu,
+      gear: this.equipment?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+    });
+    if (step === "gear") this.equipment?.hide();
+    else if (step === "party") this.partyPanel?.close();
+    else if (this.runEnded) return;
+    else if (step === "close-menu") this.menuChoices?.dismiss();
+    else this.openMenu();
   }
 
   /**
@@ -5401,6 +5598,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-QPDKN req 13), so the two entry points share one send and one pending flag.
    */
   private openMenu(): void {
+    // every window closes as it opens (FS-3EBCA R17)
+    this.closeWindows();
     // closing the menu does not resume the hold (FS-JTNPR req 15)
     this.cancelAim();
     const state = this.menuState();
@@ -5482,6 +5681,8 @@ export class BarrowspireScene extends Phaser.Scene {
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
+      // the Menu icon answers under the open menu and its Fall confirm: it closes them (FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menuChoices = keys;
     this.menu = container;
@@ -5503,11 +5704,8 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private placeLeaveInCorner(): void {
     if (this.resolvedKind !== "dead" || this.leaveButton) return;
-    const at = anchorAt({
-      anchor: "bottom-right",
-      dx: -LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
-      dy: -LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
-    });
+    // above the corner row, as the card it stands in for (FS-3EBCA R14)
+    const at = anchorAt(LEAVE_BUTTON_PLACE);
     this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)

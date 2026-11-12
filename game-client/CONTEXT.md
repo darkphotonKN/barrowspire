@@ -61,6 +61,14 @@ translation belongs to the surface that renders words.
   rule and one line, then the view back and the card burned away to ash (its dust and smoke are
   alternates a play may name). The climb's **floor card** is
   the arrival card of a floor; "floor card" stays the word for that one.
+- **Lost connection** — the game socket closing when the client did not let it go: a server
+  restart or rollout, a network loss, the browser closing it after sleep (FS-R6EYZ). Not a lost
+  connection: leaving /game, a handoff or a redirect (the old socket let go on purpose), or a
+  `4001` refusal the client is renewing its way past (FS-ZPX58). In code, `onConnectionLost`.
+- **Disconnect notice** — the carved panel a lost connection raises while the player is in a
+  world (town, field or run): "Disconnected", one line and **Return to menu**, the world dimmed
+  and still behind it (FS-R6EYZ). One at a time; it stays through scene changes until pressed.
+  The main menu it returns to reconnects.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.
@@ -160,7 +168,9 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   "inbox" or "email" (the account's email is a different thing on the web pages). Maps to
   notification-service's Mailbox and `/api/mail/*`.
 - **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
-  in Phaser with a small **wax seal**. Not an emoji and not a Heroicon (the HUD is canvas).
+  in Phaser with a small **wax seal**, the **corner row**'s Mail icon. Not an emoji and not a
+  Heroicon (the HUD is canvas). Its hover label reads "Mailbox" (FS-1GZGD § Change, 2026-11-12);
+  outside the town the row shows it greyed, "Mailbox · town only".
 - **Wax seal** (on the envelope) — the indicator: lit, with a count, while any letter is unread
   or still holds unclaimed enclosures; dark only when everything is read and claimed. The
   **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
@@ -215,16 +225,42 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   A sheet may also record its **sheet scale** and be **trimmed** (both below). The client learns
   about art only through it.
 - **Sheet scale**: how many of a sheet's px make one screen px (`scale` in the manifest; absent
-  is 1). A sheet baked at 2x holds twice the detail each way and is drawn at half size, so it
-  stands exactly as large as at 1x; its frame size and atlas positions are in its own px, while
-  `crown`, markers, the footprint and every other size stay screen px (ADR-0058, FS-HF0WW).
+  is 1; one of 1, 1.5, 2, 3, 4). A sheet baked at 2x holds twice the detail each way and is drawn
+  at half size, one at 1.5x one and a half times and is drawn at two thirds, so either stands
+  exactly as large as at 1x; its frame size and atlas positions are in its own px, while
+  `crown`, markers, the footprint and every other size stay screen px (ADR-0058, ADR-0076,
+  FS-HF0WW). At 1.5 a screen px is a whole sheet px only every two screen px, so the frame box,
+  the anchor and the trim lie on that two-px step.
 - **Trimmed sheet**: a sheet whose frames were each cut, at bake time, to the box that holds their
   pixels; the atlas stores only the cut and the manifest says where it sits in the whole frame
   (`trim`). Drawn, anchored and sized as the whole frame (ADR-0058, FS-HF0WW).
 - **Walk-attack** (`walk_attack`): a class's attack drawn while it moves: the attack from the
   waist up over the walk from the waist down, the legs facing the aim (for a melee swing, its
   target). Every playable class's sheet carries it; no creature's or resident's does (FS-HF0WW,
-  FS-3V7GC).
+  FS-3V7GC). On a sheet that runs, its legs never step faster than the slowed body moves
+  (FS-JS7C8 R21). Moving more than 90° away from the aim, a class that carries it plays the
+  backpedal-attack instead.
+- **Run** (`run`): a playable class's looping clip while it moves and is not attacking, a fast
+  run (short of a sprint, leaning forward, the arms pumping) keyed to the server's move speed so it plays at about its own pace, turned to its movement.
+  Replaces the walk for the four classes; folk and creatures still walk. Not the walk, which the
+  class sheets keep for later use (FS-JS7C8).
+- **Pace** (`WALK_PACE`, `RUN_PACE`; the backpedal legs' pace in the bake): the world px per
+  second a looping clip carries the body at 1x: the speed its planted foot slides back under the
+  body, measured on the rig by the bake's `pace.js`, never guessed. The client plays a looping clip
+  at the drawn speed over its pace, so planted feet stay planted; the attack-on-the-move clips
+  play at their authored rate, their leg cycles chosen from the measured pace (FS-JS7C8 R3, R10,
+  R21).
+- **Backpedal-attack** (`backpedal_attack`): a playable class's attack drawn while it moves more
+  than 90° away from the attack's facing: the attack from the waist up over the backpedal legs
+  from the waist down, composed as the walk-attack is and lasting as long as the attack. The
+  backpedal legs are the walk's legs run backward in time: the walk-attack's upright stance and
+  stride, the feet stepping back. The only backward step: a class that is not attacking never
+  steps back. The backpedal legs are a bake-only cycle; no sheet carries a standalone `backpedal`
+  (FS-JS7C8, owner changes 2026-11-12).
+- **Facing** (a character's): which of the 8 world directions its figure is turned to: its drawn
+  movement, kept while it stands; a swing turns it to its aim. Never the pointer, and never sent to
+  or received from the server: every client derives every figure's facing from the motion it
+  draws (FS-JS7C8 R22, owner change 2026-11-12). *Avoid*: "pointer facing" (retired).
 - **Atlas group**: the atlas pages one group of sheets is packed onto, named by the manifest's
   atlas keys without the page number (`boss-0` and `boss-1` are the `boss` group). The unit the
   client loads and frees art by (FS-C4JWH).
@@ -393,13 +429,34 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   stands in it now: drawn in full). Its edges are feathered and a change of state eases in. Shared by the party, reset on reconnect and
   on a floor change. Presentation only, never a visibility rule: the server sends what interest
   allows (ADR-0060). On a dungeon floor it takes the place of the indoor blackout.
-- **Minimap**: the top-right HUD map of a dungeon floor: explored regions, the party, and the
-  switch, escape door and stairs once their region is explored. M steps it through its modes,
-  normal, enlarged and the map overlay, and the browser remembers the mode (FS-1SEF0); nothing
-  hides it. Not on floors without regions.
+- **Minimap**: the top-right HUD map of the world the player stands in. On a dungeon floor:
+  explored regions, the party, and the switch, escape door and stairs once their region is
+  explored; not on floors without regions. In the **town** (FS-P0HSP): the whole town from the
+  first moment, its buildings solid with their doors open, its edge open at each road, its **map
+  marks**. In a **field world**: its **charted ground** only. Everywhere the party's dots, never a
+  monster, another player or a label. M, or a press on its **map mode icon**, steps it through its
+  modes, normal, enlarged and the map overlay, and the browser remembers the mode, one for every world (FS-1SEF0, FS-P0HSP); nothing
+  hides it.
 - **Map overlay** (FS-1SEF0): the minimap's third mode, the floor's map drawn see-through over the
   whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
   map while it is up.
+- **Map mode icon** (FS-56CKV §Change: Map mode icon): the small amber glyph in the minimap's
+  bottom-left corner (beside the fullscreen button while the map overlay is up) that does what M
+  does: a press steps the minimap to its next mode. Hovered, it says "Map mode (M)".
+- **Map name** (FS-56CKV §Change: Map name): the name of the place the minimap shows, the same
+  words its arrival card titles it with (the town, a field, a floor of the Spire), in small text on
+  the minimap's top-right, or beside the fullscreen button or the map mode icon when the map is
+  enlarged or the overlay is up. Never a second list of names.
+- **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
+  can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
+  Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the
+  Quartermaster), never the Elder, who only tells a story; in a field the teleport mark of its
+  road home. Never a label, a monster or another player. Once FS-P0HSP ships the town and every field have a minimap.
+- **Charted ground** (FS-P0HSP): the part of a field the character has walked near, which that
+  field's minimap shows; the rest is **uncharted** and shown as nothing. Charting is the field's
+  minimap fog: on the minimap only, never on the screen, the character's own (not the party's),
+  kept in this browser per character and field (ADR-0078). Not **fog of war**, which veils a dungeon floor
+  in the world and is the party's (explored / unexplored are that one's words).
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether
@@ -456,8 +513,23 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Unsafe find** (marking): the border and tip note on an item picked up in this run, which
   is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
+- **Corner row** (FS-3EBCA): the row of drawn panel icons in the bottom-right corner of every
+  world, from the right **Menu** (a gear: one Esc press), **Inventory** (a bag: the inventory),
+  **Character** (a bust: the character panel), **Party** (the party panel) and the **Mailbox**
+  icon (the envelope; greyed outside the town). Each names itself and its key under the pointer.
+  Not the party frames, not the minimap's column.
+- **Inventory** (panel; FS-HRH2J § Change: Character and inventory apart): the gear overlay's right
+  panel, titled INVENTORY: the ten gear slots, the **bag** under them and the purse line, opened
+  on its own by `I` or `B` or the corner row's Inventory icon. The screen's name for that panel
+  only: the items under the slots are still the **bag**, and the wire's `inventory` is still the
+  bag's items.
+- **Character panel** (FS-HRH2J § Change: Character and inventory apart): the gear overlay's left
+  panel, the stats (class, name, level and experience, health and resource, the class card, what
+  worn gear adds), opened on its own by `C` or the corner row's Character icon. Never shown in
+  stash mode, where the left panel is the **stash**.
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
-  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S).
+  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S),
+  standing directly above the **corner row** (FS-3EBCA).
   Never in the hub. The ability itself is game-service's term
   ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
@@ -512,7 +584,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   in stage units (`stagePoint`). Not the HUD: HUD widgets keep to the view's edges by anchors.
 - **Game frame**: the DOM element that holds the canvas and Phaser's DOM container. It is what
   goes fullscreen. The fullscreen button sits over the canvas's top-right corner, never out in
-  the frame's bars.
+  the frame's bars; where the normal minimap holds the very top of that corner, it sits at the
+  minimap's left instead (FS-56CKV §Change: Minimap at the top, fullscreen button beside it).
 - **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
 
 ## Dev gallery terms (FS-1819Q)

@@ -1,9 +1,17 @@
 /**
- * Where the mailbox's pieces sit on the screen (FS-1GZGD R33, R36, R37; D11, D14): the envelope at
- * the bottom-right of the town HUD, and the letter panel centred, the list left and the open
+ * Where the mailbox's pieces sit on the screen (FS-1GZGD R33, R36, R37; D11, D14): the envelope in
+ * the corner row's Mailbox slot (§ Change C2), and the letter panel centred, the list left and the open
  * letter right, its Enclosed row under the body. Phaser-free, so the geometry is tested on its
  * own; `MailboxEnvelope` and `LetterPanel` draw into these rects.
  */
+
+import { frameClose } from "./panelFrame";
+import {
+  CORNER_ICON_H,
+  CORNER_ICON_W,
+  CORNER_MARGIN,
+  cornerIconFrame,
+} from "./hudCornerLayout";
 
 export interface Rect {
   x: number;
@@ -17,18 +25,14 @@ export interface Screen {
   height: number;
 }
 
-/** The envelope's plate, and its distance from the screen's bottom and right edges. */
-export const ENVELOPE_W = 58;
-export const ENVELOPE_H = 46;
-export const ENVELOPE_MARGIN = 16;
+/** The envelope's plate, and its distance from the screen's bottom edge: the corner row's. */
+export const ENVELOPE_W = CORNER_ICON_W;
+export const ENVELOPE_H = CORNER_ICON_H;
+export const ENVELOPE_MARGIN = CORNER_MARGIN;
 
+/** The envelope's plate: the corner row's Mailbox slot, its leftmost (FS-1GZGD § Change C2). */
 export function envelopeFrame(screen: Screen): Rect {
-  return {
-    x: screen.width - ENVELOPE_MARGIN - ENVELOPE_W,
-    y: screen.height - ENVELOPE_MARGIN - ENVELOPE_H,
-    width: ENVELOPE_W,
-    height: ENVELOPE_H,
-  };
+  return cornerIconFrame("mail", screen);
 }
 
 export const PANEL_W = 840;
@@ -36,7 +40,6 @@ export const PANEL_H = 500;
 const PAD = 20;
 /** The header band: the panel's caption and its ×. */
 const HEADER_H = 30;
-const CLOSE_SIZE = 24;
 const LIST_W = 260;
 /** The gap between the list and the letter, a faint rule down its middle. */
 const GUTTER = 28;
@@ -103,12 +106,9 @@ export function letterPanelFrame(
     width: PANEL_W - PAD * 2,
     height: HEADER_H,
   };
-  const close: Rect = {
-    x: panel.x + PANEL_W - PAD - CLOSE_SIZE,
-    y: top,
-    width: CLOSE_SIZE,
-    height: CLOSE_SIZE,
-  };
+  // the shared frame's ×, every window's place for it (FS-1GZGD § Change C5; owner 2026-11-12:
+  // "mailbox的x關閉按鈕好像位置跟其他的不太一樣")
+  const close: Rect = frameClose(panel);
   const contentY = top + HEADER_H + 8;
   const contentH = panel.y + PANEL_H - PAD - contentY;
   const list: Rect = {

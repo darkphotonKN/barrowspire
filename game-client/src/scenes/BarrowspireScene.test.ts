@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
@@ -19,6 +20,12 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
     return () => frames.delete(listener);
   },
 }));
+
+// The shared title drawing, watched: the run's windows title themselves through it (FS-3EBCA R20).
+vi.mock("@/ui/panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/ui/panelFrame")>();
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
 
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
 // on the same emitter Phaser builds them from.
@@ -63,6 +70,7 @@ vi.mock("phaser", async () => {
 const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_HUD } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { FULLSCREEN_BUTTON, anchorAt, viewport } = await import("@/render/viewport");
+const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
 const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeScene");
@@ -79,8 +87,9 @@ const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
 const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
-const { CANVAS_FONT, palette, toCss } = await import("@/utils/canvasPalette");
+const { CANVAS_FONT, palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
+const { ABILITY_CARD_PLACE } = await import("@/ui/hudCornerLayout");
 const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
@@ -92,6 +101,7 @@ const await_minimap = await import("@/ui/minimap");
 const await_minimapMode = await import("@/ui/minimapMode");
 const await_topRightColumn = await import("@/ui/topRightColumn");
 const await_positionReadout = await import("@/ui/positionReadout");
+const await_minimapName = await import("@/ui/minimapName");
 const await_progressHud = await import("@/ui/ProgressHud");
 const await_resourceHud = await import("@/ui/ResourceHud");
 const await_potions = await import("@/ui/potions");
@@ -101,9 +111,12 @@ const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
-const { gearPanelLayout, overlayLayout } = await import("@/ui/gearOverlayLayout");
+const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
+const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
+const { PartyPanel } = await import("@/ui/PartyPanel");
+const { createPartyStore } = await import("@/stores/partyStore");
 const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
@@ -126,7 +139,7 @@ interface RunState {
   monsters?: unknown;
   resolvedCard?: unknown;
   floorText?: unknown;
-  shownFloorLabel: string | null;
+  shownFloor: number | undefined;
   lastFloor?: number;
   stairs: {
     sync(stairs: { entity_id: string; position: { x: number; y: number } }[]): void;
@@ -181,7 +194,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     run.add = { sprite: () => sprite };
     run.stairs.sync([{ entity_id: "s1", position: { x: 100, y: 100 } }]);
     run.floorText = {};
-    run.shownFloorLabel = "Floor 2";
+    run.shownFloor = 2;
     run.lastFloor = 2;
     expect(run.stairs.nearby({ x: 100, y: 100 })).toBe("s1");
 
@@ -191,7 +204,7 @@ describe("BarrowspireScene restart (reconnect mid-run)", () => {
     // Phaser has already destroyed the stopped run's objects
     expect(sprite.destroy).not.toHaveBeenCalled();
     expect(run.floorText).toBeUndefined();
-    expect(run.shownFloorLabel).toBeNull();
+    expect(run.shownFloor).toBeUndefined();
     // the next start's first broadcast is the baseline: its floor is built with no transition
     expect(run.lastFloor).toBeUndefined();
   });
@@ -304,11 +317,24 @@ describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
     Object.assign(scene, systems.scene);
     scene.init();
     (scene as unknown as { bindKeys(): void }).bindKeys();
-    expect(systems.input.manager?.captures).toContain(9);
+    expect(systems.input.manager?.captures).toContain(87);
 
     systems.shutdown();
 
     expect(systems.input.manager?.captures).toEqual([]);
+  });
+
+  // Tab is the game frame's to keep (keepTab, src/components/gameFocus.ts), and only while nothing on
+  // the page holds focus: a capture here held it on a focused header link or the fullscreen button
+  // too, so a keyboard player there could not Tab on (reported 2026-11-12).
+  it("should hear Tab without capturing it", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    (scene as unknown as { bindKeys(): void }).bindKeys();
+
+    expect(systems.input.manager?.captures).not.toContain(9);
   });
 });
 
@@ -1089,6 +1115,38 @@ function partyState(
     current_player: me,
     other_players: [ally],
   } as GameState;
+}
+
+/**
+ * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
+ * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ */
+function partyPanelOn(refused: () => boolean) {
+  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const keyboard = new EventEmitter();
+  const scene = {
+    add: { graphics: () => any, text: () => any },
+    input: Object.assign(new EventEmitter(), { keyboard }),
+    events: new EventEmitter(),
+  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
+  const panel = new PartyPanel(scene, {
+    store: createPartyStore({ selfId: () => "me" }),
+    world: () => null,
+    selfId: () => "me",
+    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
+    makeField: () => ({
+      value: "",
+      setEnabled: vi.fn(),
+      moveTo: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      blur: vi.fn(),
+      destroy: vi.fn(),
+    }),
+    activeElement: () => null,
+    blocked: refused,
+  });
+  return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
 
 function onStage() {
@@ -2177,6 +2235,31 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     run.handleGameStateUpdate(withMe(me(fields)));
     expect(shown()).toBeNull();
     expect(text("Dash")).toBeUndefined();
+  });
+
+  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+    const { run, carded } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    expect((carded.abilityHud as unknown as { place: unknown }).place).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should stand the dead spectator's leave button above the corner row (FS-3EBCA R14)", () => {
+    const { run, live } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    // Watch the delve: the card goes down and the button takes its corner (FS-QPDKN req 7, 10)
+    (run as unknown as { startWatching(): void }).startWatching();
+    const labels = live().filter((m) => m.args[2] === "LEAVE THE BARROW");
+    expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 116, viewport.height - 89]);
+  });
+
+  it("should send no attack or cast for a press on the corner row (FS-3EBCA R10)", () => {
+    const { run, carded, sent, rightClick } = cardOnStage();
+    run.handleGameStateUpdate(withMe(me()));
+    carded.bindRunInput();
+    (run as unknown as { corner: unknown }).corner = { covers: () => true };
+    sent.mockClear();
+    rightClick();
+    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(false);
   });
 
   it("should never be up with the leave button", () => {
@@ -3692,7 +3775,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   it("should open the record at once on settlement, with what was carried, lost and earned", () => {
     const { run, shown } = settlingOnStage();
     run.showSettlement(settlement());
-    for (const line of ["Escaped the barrow", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
+    for (const line of ["ESCAPED THE BARROW", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
       expect(shown()).toContain(line);
     expect(shown()).toContain("Experience +40 · Level 2");
     expect(shown()).toContain("Slain 3 · 1:20 in the delve");
@@ -3751,7 +3834,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect((hit("settlement")!.args as number[])[0]).toBe(400);
     expect(hit("watch-the-delve")).toBeDefined();
     expect(hit("leave-the-barrow")).toBeDefined();
-    expect(shown()).toContain("Fallen in the barrow");
+    expect(shown()).toContain("FALLEN IN THE BARROW");
   });
 
   it("should close from its Close button and reopen from the Settlement button", () => {
@@ -4087,6 +4170,24 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(labels()).toContain("Back  [Esc]");
   });
 
+  it("should close an open party panel on ESC before it opens the menu (FS-R82NV § Change C2)", () => {
+    const { run, keys, press } = menuOnStage();
+    let open = true;
+    (run as unknown as { partyPanel: unknown }).partyPanel = {
+      isOpen: () => open,
+      close: () => {
+        const was = open;
+        open = false;
+        return was;
+      },
+    };
+    press(keys.esc);
+    expect(open).toBe(false);
+    expect(run.menu).toBeUndefined();
+    press(keys.esc);
+    expect(run.menu).toBeDefined();
+  });
+
   it("should close the menu on a second ESC, and on Back, taking its hit areas with it", () => {
     const { run, keys, press, option, pick } = menuOnStage();
     press(keys.esc);
@@ -4118,6 +4219,30 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     run.endRun();
     press(keys.esc);
     expect(run.menu).toBeUndefined();
+  });
+
+  // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"
+  // (FS-3EBCA R20, R22). I-3EBCA-9.
+  it("should title the controls panel CONTROLS with the shared title drawing, across its top", async () => {
+    const { drawPanelTitle } = await import("@/ui/panelFrame");
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { run } = menuOnStage();
+    run.toggleControlsPanel();
+    expect(title).toHaveBeenCalledTimes(1);
+    const [, panel, words] = title.mock.calls[0];
+    expect(words).toBe("CONTROLS");
+    expect(panel.width).toBe(260);
+    expect(panel.x).toBe(-130);
+  });
+
+  // FS-3EBCA R23 (owner 2026-11-12: "menu目前沒標題也加上"): the run's menu reads MENU.
+  it("should title the run's menu and its Fall confirm MENU", () => {
+    const { keys, press, labels } = menuOnStage();
+    press(keys.esc);
+    expect(labels()).toContain("MENU");
+    press(keys.one);
+    expect(labels().filter((l) => l === "MENU")).toHaveLength(1);
   });
 
   it("should list ESC as the menu in the controls panel", () => {
@@ -4216,6 +4341,32 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     run.sendMovementIntent(0, 0);
     press(keys.esc);
     run.sendMovementIntent(0, 0);
+    expect(sentOf(ActionType.Move)).toHaveLength(0);
+  });
+
+  // Reported 2026-11-12: dying with a movement key held left the player running on in the town.
+  // The run's end moves the player's record to the town, and the server routes a move by it, so a
+  // stride the run sends after its end walks the town body. The end locks the keyboard, which
+  // freezes a held key as held, and a player whose death the client never saw still reads in play:
+  // the run sent a stride each frame while the settlement record held the town back.
+  it("should send no stride once the run has ended, stopping one it interrupts once", () => {
+    const { run, sentOf } = menuOnStage();
+    run.sendMovementIntent(1, 0);
+    expect(sentOf(ActionType.Move)).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+
+    run.endRun();
+    run.sendMovementIntent(1, 0);
+    run.sendMovementIntent(1, 0);
+
+    expect(run.canSendMove()).toBe(false);
+    expect(sentOf(ActionType.Move).slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+  });
+
+  it("should send nothing once the run has ended over a player standing still", () => {
+    const { run, sentOf } = menuOnStage();
+    run.sendMovementIntent(0, 0);
+    run.endRun();
+    run.sendMovementIntent(1, 0);
     expect(sentOf(ActionType.Move)).toHaveLength(0);
   });
 
@@ -4527,7 +4678,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
 
   it("should show the player's class, name and health on the stats panel, live while open (FS-HRH2J R24–30)", () => {
     const { run, key, shown } = overlayOnStage();
-    key("I");
+    key("C");
     expect(shown("WARRIOR")).toBe(true);
     expect(shown("Aldric")).toBe(true);
     expect(shown("100 / 100")).toBe(true);
@@ -4607,11 +4758,285 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
   });
 
-  it("should list I / B for the overlay in the controls help (R11)", () => {
+  it("should list I / B for the inventory and C for the character panel in the controls help (R11; § Change C15)", () => {
     const { run, shown } = overlayOnStage();
     run.toggleControlsPanel();
     expect(shown("I / B")).toBe(true);
+    expect(shown("Inventory")).toBe(true);
+    expect(shown("C")).toBe(true);
+    expect(shown("Character")).toBe(true);
+    expect(shown("Gear and bag")).toBe(false);
     expect(shown("I")).toBe(false);
+  });
+
+  // FS-HRH2J § Change: Character and inventory apart (C1–C4, C14). I-3EBCA-4.
+  it("should open the inventory alone on I and the character panel alone on C (§ Change C1, C2, C14)", () => {
+    const { run, key, shown } = overlayOnStage();
+    key("I");
+    expect(shown("INVENTORY")).toBe(true);
+    expect(shown("WARRIOR")).toBe(false);
+    key("C");
+    expect(shown("WARRIOR")).toBe(true);
+    // I closes the inventory alone: the character panel stays over the run
+    key("I");
+    expect(run.equipment?.isOpen()).toBe(true);
+    expect(run.equipment?.equipKey()).toBe(false);
+    key("C");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should ignore C while the ESC menu is open (§ Change C2)", () => {
+    const { run, key, pressEsc } = overlayOnStage();
+    pressEsc();
+    key("C");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should close both panels on one ESC, the menu left closed, and on Q (§ Change C3)", () => {
+    const { run, key, pressEsc } = overlayOnStage();
+    key("I");
+    key("C");
+    pressEsc();
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(run.menu).toBeUndefined();
+    key("I");
+    key("C");
+    key("Q");
+    expect(run.equipment?.isOpen()).toBe(false);
+  });
+
+  it("should close the inventory alone on its ×, sending no attack for the press (§ Change C4)", () => {
+    const { run, key, press, sent } = overlayOnStage("warrior", []);
+    key("I");
+    key("C");
+    const box = panelClose(layout.right);
+    const stageSends = () => sent.mock.calls.length;
+    const before = stageSends();
+    press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
+    expect(run.equipment?.isOpen()).toBe(true);
+    expect(stageSends()).toEqual(before);
+    const left = panelClose(layout.left);
+    press({ x: left.x + left.w / 2, y: left.y + left.h / 2 }, 0);
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(stageSends()).toEqual(before);
+  });
+
+  // FS-3EBCA R1, R7, R11 (the owner's decision of 2026-11-12: the row of five, the row answering
+  // while the inventory is open). I-3EBCA-5.
+  it("should open the inventory on the Inventory icon and the character panel on the Character icon, the row answering while the inventory is open (FS-3EBCA R7, R11)", () => {
+    const { run, stage } = overlayOnStage();
+    (run as unknown as { mountCorner(): void }).mountCorner();
+    const plate = (icon: "inventory" | "character" | "menu") => {
+      const f = cornerIconFrame(icon, viewport);
+      return stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    };
+    plate("inventory").handlers.pointerdown();
+    expect(run.equipment?.equipKey()).toBe(true);
+    // the inventory is open over the run: the row still answers
+    plate("character").handlers.pointerdown();
+    expect(run.equipment?.isOpen()).toBe(true);
+    plate("inventory").handlers.pointerdown();
+    expect(run.equipment?.equipKey()).toBe(false);
+    expect(run.equipment?.isOpen()).toBe(true);
+    plate("character").handlers.pointerdown();
+    expect(run.equipment?.isOpen()).toBe(false);
+    plate("inventory").handlers.pointerdown();
+    // the Menu icon opens the menu at once, the inventory closing with it (FS-3EBCA R17)
+    plate("menu").handlers.pointerdown();
+    expect(run.equipment?.isOpen()).toBe(false);
+    expect(run.menu).toBeDefined();
+  });
+
+  // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
+  // inventory or the character panel open the party panel would not open). I-3EBCA-7.
+  describe("the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
+    function partyOverOverlay() {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Overlaid & { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
+      const party = partyPanelOn(() => run.refusesParty());
+      run.partyPanel = party.panel;
+      run.mountCorner();
+      const f = cornerIconFrame("party", viewport);
+      const icon = () =>
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+      return { ...env, party, pressIcon: () => icon().handlers.pointerdown() };
+    }
+
+    it.each([
+      ["the inventory", ["I"]],
+      ["the character panel", ["C"]],
+      ["both panels", ["I", "C"]],
+    ] as const)("should open and close the party panel on T and on the Party icon with %s open", (_open, keys) => {
+      const { run, key, party, pressIcon } = partyOverOverlay();
+      keys.forEach(key);
+      expect(run.equipment?.isOpen()).toBe(true);
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(false);
+      pressIcon();
+      expect(party.panel.isOpen()).toBe(true);
+      pressIcon();
+      expect(party.panel.isOpen()).toBe(false);
+      // the overlay stays as it was
+      expect(run.equipment?.isOpen()).toBe(true);
+    });
+
+    it("should still refuse T while the ESC menu is open", () => {
+      const { run, party, pressEsc } = partyOverOverlay();
+      pressEsc();
+      expect(run.menu).toBeDefined();
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(false);
+    });
+
+    it("should close the party panel, drawn over the overlay, on the first ESC, and the overlay on the second", () => {
+      const { run, key, party, pressEsc } = partyOverOverlay();
+      key("I");
+      key("C");
+      party.pressT();
+      pressEsc();
+      expect(party.panel.isOpen()).toBe(false);
+      expect(run.equipment?.isOpen()).toBe(true);
+      pressEsc();
+      expect(run.equipment?.isOpen()).toBe(false);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should keep a press on the party panel from the overlay under it: no equip for a bag item there", () => {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Overlaid & { partyPanel?: unknown };
+      const covered = { on: true };
+      run.partyPanel = { covers: () => covered.on, isOpen: () => true };
+      env.key("I");
+      const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
+      const at = { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 };
+      env.press(at, 2);
+      expect(env.sentOf(ActionType.Equip)).toHaveLength(0);
+      covered.on = false;
+      env.press(at, 2);
+      expect(env.sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+    });
+  });
+
+  // The owner, 2026-11-12: "開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". In a run the windows are the
+  // inventory, the character panel and the party panel (the mailbox is the town's): FS-3EBCA R17,
+  // R18; FS-G4VMQ § Change C4.
+  describe("the windows give way to the menu (FS-3EBCA R17, R18)", () => {
+    type Windowed = Overlaid & {
+      partyPanel?: unknown;
+      runEnded: boolean;
+      refusesParty(): boolean;
+      mayChat(): boolean;
+      mountCorner(): void;
+    };
+    function runWindows() {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Windowed;
+      const party = partyPanelOn(() => run.refusesParty());
+      run.partyPanel = party.panel;
+      run.mountCorner();
+      const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
+        const f = cornerIconFrame(icon, viewport);
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
+      };
+      const open = () => ({ gear: run.equipment?.isOpen() ?? false, party: party.panel.isOpen() });
+      return { ...env, run, party, pressIcon, open };
+    }
+    const NONE = { gear: false, party: false };
+
+    it("should keep Esc's one press, one thing: the party panel, then the overlay, then the menu (R17)", () => {
+      const { run, key, party, pressEsc, open } = runWindows();
+      key("I");
+      party.pressT();
+      pressEsc();
+      expect(open()).toEqual({ gear: true, party: false });
+      pressEsc();
+      expect(run.menu).toBeUndefined();
+      pressEsc();
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
+      const { run, key, party, pressIcon, open } = runWindows();
+      key("I");
+      key("C");
+      party.pressT();
+      pressIcon("menu");
+      expect(open()).toEqual(NONE);
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should only close every window on the Menu icon once the run has ended: there is no menu (R17)", () => {
+      const { run, key, party, pressIcon, open } = runWindows();
+      key("I");
+      key("C");
+      party.pressT();
+      run.runEnded = true;
+      pressIcon("menu");
+      expect(open()).toEqual(NONE);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should answer no corner icon but Menu, no I, B, C or T while the menu is open (R18)", () => {
+      const { run, key, party, pressEsc, pressIcon, open } = runWindows();
+      pressEsc();
+      const menu = run.menu;
+      for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
+      key("I");
+      key("B");
+      key("C");
+      party.pressT();
+      expect(run.menu).toBe(menu);
+      expect(open()).toEqual(NONE);
+    });
+
+    // owner 2026-11-12: "menu無法再按一次icon關閉"
+    it("should close the menu on the Menu icon, as its × and Back do, and open it again on the next press (R6, R18)", () => {
+      const { run, pressEsc, pressIcon, open } = runWindows();
+      pressEsc();
+      pressIcon("menu");
+      expect(run.menu).toBeUndefined();
+      expect(open()).toEqual(NONE);
+      pressIcon("menu");
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should close the Fall confirm on the Menu icon, as its × and Not yet do: the whole menu goes, nothing sent (R18)", () => {
+      const { run, pressEsc, pressIcon, stage, sent } = runWindows();
+      pressEsc();
+      stage.made.find((m) => (m as { name?: string }).name === "menu-fall" && !m.destroyed)!.handlers.pointerup();
+      expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(true);
+      const before = sent.mock.calls.length;
+      pressIcon("menu");
+      expect(run.menu).toBeUndefined();
+      expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(false);
+      expect(sent.mock.calls.length).toBe(before);
+    });
+
+    it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+      const { pressEsc, stage } = runWindows();
+      pressEsc();
+      const blocker = stage.made.find((m) => (m as { name?: string }).name === "menu-blocker" && !m.destroyed)!;
+      const test = (blocker.last["setInteractive"] ?? []).find((a) => typeof a === "function") as
+        | ((area: unknown, x: number, y: number, object: unknown) => boolean)
+        | undefined;
+      expect(test, "the blocker's own hit test").toBeTypeOf("function");
+      const takes = (x: number, y: number) => test!({}, x, y, blocker);
+      const plate = cornerIconFrame("menu", viewport);
+      const bag = cornerIconFrame("inventory", viewport);
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+      expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
+      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
+      expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
+    });
+
+    it("should give the chat input no focus while the menu is open (R18)", () => {
+      const { run, pressEsc } = runWindows();
+      expect(run.mayChat()).toBe(true);
+      pressEsc();
+      expect(run.mayChat()).toBe(false);
+    });
   });
 
   it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
@@ -4640,6 +5065,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     openMenu(): void;
     endRun(): void;
     toggleInventory(): void;
+    toggleCharacter(): void;
     aimFrame(): void;
     sendMovementIntent(vx: number, vy: number): void;
     handleGameStateUpdate(state: GameState): void;
@@ -4889,8 +5315,15 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     [
       "the equipment panel opening",
       (s) => {
-        s.run.equipment = { toggle: vi.fn(), isOpen: () => true };
+        s.run.equipment = { toggle: vi.fn(() => true), isOpen: () => true };
         s.run.toggleInventory();
+      },
+    ],
+    [
+      "the character panel opening (FS-HRH2J § Change C5)",
+      (s) => {
+        s.run.equipment = { toggleCharacter: vi.fn(() => true), isOpen: () => true };
+        s.run.toggleCharacter();
       },
     ],
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
@@ -5402,6 +5835,80 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
   });
 });
 
+// FS-JS7C8 §D R22, §E R47: the own character and every other player face their drawn movement.
+// Nothing turns a figure from outside its own motion (the animator a scene drives is stepped and
+// shown, as on main), a `facing` on a state entry is never read, and nothing about facing is sent.
+describe("BarrowspireScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, §E R47)", () => {
+  type Run = {
+    handleGameStateUpdate(state: GameState): void;
+    update(time: number, delta: number): void;
+    updateOtherPlayersSmooth(time: number, delta: number): void;
+    otherPlayersAnim: Map<string, unknown>;
+    playerPos?: { x: number; y: number };
+  };
+
+  /** A baked animator's surface as the scene drives it: stepped from the drawn motion and shown. */
+  const animator = () => ({
+    baked: true,
+    facing: "se",
+    guard: vi.fn(),
+    step: vi.fn(() => ({ animation: "run", facing: "e", direction: 0, timeScale: 1 })),
+    show: vi.fn(),
+  });
+
+  it("should step the own character from where it is drawn, turn it by nothing else and send no face", () => {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const run = sceneOnStage().run as unknown as Run;
+    // an echo of a facing on the own entry, as a server built from slice 2 would send
+    const me = { ...player("me", "Aldric", 130), facing: "w" };
+    run.handleGameStateUpdate({ ...floorState(1), current_player: me, other_players: [] } as GameState);
+    const anim = animator();
+    const up = { isDown: false };
+    const keys = { left: up, right: up, up, down: up };
+    Object.assign(run, {
+      cursors: keys,
+      wasd: keys,
+      kit: { follow: vi.fn(), guarding: false },
+      combat: { aiming: false, aimFrame: vi.fn() },
+      updateLighting: vi.fn(),
+      updateOtherPlayersSmooth: vi.fn(),
+      checkBuildingStatus: vi.fn(),
+      sendMovementIntent: vi.fn(),
+      playerPos: { x: 130, y: 0 },
+      targetPosition: { x: 130, y: 0 },
+      playerAnim: anim,
+    });
+
+    run.update(0, 16);
+    run.update(200, 16);
+
+    expect(anim.step).toHaveBeenCalledWith(run.playerPos, 200, 16, false);
+    expect(sent.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
+  });
+
+  it("should draw another player by their movement, never by a facing their entry carries", () => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const run = sceneOnStage().run as unknown as Run;
+    run.handleGameStateUpdate({
+      ...floorState(1),
+      current_player: player("me", "Aldric", 130),
+      other_players: [{ ...player("ally", "Wenna", 160), facing: "w" }],
+    } as unknown as GameState);
+    const ally = animator();
+    run.otherPlayersAnim.set("ally", ally);
+
+    run.updateOtherPlayersSmooth(0, 16);
+
+    expect(ally.step).toHaveBeenCalledTimes(1);
+    expect(ally.show).toHaveBeenCalledTimes(1);
+  });
+
+  it("should leave no face sender behind (R47)", () => {
+    expect(existsSync(join(__dirname, "faceWire.ts"))).toBe(false);
+    expect(existsSync(join(__dirname, "faceWire.test.ts"))).toBe(false);
+  });
+});
+
 // FS-ZAJMH R18 and the top-right escalation, decided by Nick 2026-11-05: the fullscreen button
 // keeps the game frame's top-right corner in every scene, so the run's escaped count and the
 // floor under it step down clear of it, at every logical width.
@@ -5430,30 +5937,40 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
   const LINE = { width: 160, height: 21 };
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  /** The fullscreen button at the place the column hands it, its square 20 px (FS-ZAJMH R18; FS-56CKV §Change C2). */
+  const buttonAt = (width: number, spot: { top: number; right: number }): Box => ({
+    x: width - spot.right - FULLSCREEN_BUTTON.height,
+    y: spot.top,
+    width: FULLSCREEN_BUTTON.height,
+    height: FULLSCREEN_BUTTON.height,
+  });
 
   it.each([1080, 1280])(
-    "should sit at the column's top with the floor indicator 6 px under it, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i",
+    "should sit at the very top with the button at its left and the floor indicator 6 px under it, right-aligned, within 216 × 108, clear of the rest of the top HUD at logical width %i (FS-56CKV §Change C1, C2, C7)",
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const column = (shown: boolean) => topRightColumn({ corner, minimap: shown ? MINIMAP : null, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const column = (shown: boolean) =>
+        topRightColumn({ view, minimap: shown ? { ...MINIMAP, mode: "normal" } : null, floorHeight: LINE.height, escapedHeight: LINE.height });
       const { minimap, floor: floorAt } = column(true);
       const map = minimap!;
-      expect(map).toEqual({ x: corner.x - 216, y: 44, width: 216, height: 108 });
+      expect(map).toEqual({ x: corner.x - 216, y: 10, width: 216, height: 108 });
       expect(floorAt.y).toBe(map.y + map.height + 6);
       expect([MINIMAP.width, MINIMAP.height]).toEqual([216, 108]);
       if (width === 1080) expect(map.x).toBeGreaterThanOrEqual(854);
-      // the fullscreen button in the canvas's corner, however wide its icon; a top-centre notice
-      // (20 px text in 10 px padding, centred on y 100) up to 600 px wide; either target frame
-      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      // the fullscreen button where the column hands it; a top-centre notice (20 px text in 10 px
+      // padding, centred on y 100) up to 600 px wide; either target frame
       const notice = { x: width / 2 - 300, y: 100 - 22, width: 600, height: 44 };
-      const others = [button, notice, targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
       // with the minimap and closed up without it: no part over another, nor over the rest
       for (const shown of [true, false]) {
         const c = column(shown);
+        const button = buttonAt(width, c.button);
+        const others = [button, notice, ...frames];
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
         const parts: Box[] = [...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped)];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
+        for (const other of [notice, ...frames]) expect(overlaps(button, other)).toBe(false);
         for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
       }
       expect(map.x).toBeGreaterThan(0);
@@ -5461,30 +5978,42 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
     },
   );
 
-  // FS-1SEF0 §B.12: the enlarged minimap, 324 × 162 at the same corner, and the lines under it
+  // FS-1SEF0 §B.12: the enlarged minimap, 324 × 162 at the same corner, and the lines under it;
+  // FS-56CKV §Change C3, C7 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側"):
+  // at the very top, y 10, the button at its left
   it.each([
     [1080, 412],
     [1280, 612],
   ])(
-    "should keep the enlarged minimap and the lines under it clear of the fullscreen button, either target frame and a notice up to its clear width at logical width %i, %i px (FS-1SEF0 §B.12)",
+    "should stand the enlarged minimap at the very top with the button at its left, the map and the lines under it clear of the button, either target frame and a notice up to its clear width at logical width %i, %i px (FS-1SEF0 §B.12; FS-56CKV §Change C3, C7)",
     (width, clearNotice) => {
       const { minimapPanel } = await_minimap;
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_HUD, view);
-      const c = topRightColumn({ corner, minimap: minimapPanel("enlarged"), floorHeight: LINE.height, escapedHeight: LINE.height });
+      const c = topRightColumn({ view, minimap: { ...minimapPanel("enlarged"), mode: "enlarged" }, floorHeight: LINE.height, escapedHeight: LINE.height });
       const map = c.minimap!;
-      expect(map).toEqual({ x: corner.x - 324, y: 44, width: 324, height: 162 });
+      expect(map).toEqual({ x: corner.x - 324, y: 10, width: 324, height: 162 });
       if (width === 1080) {
         expect(map.x).toBe(746);
         expect(targetFrameRect(width / 2, TARGET_BOSS_FRAME).x + TARGET_BOSS_FRAME.width).toBe(729);
       }
+      expect(c.floor.y).toBe(178);
       const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
       const parts: Box[] = [map, line(c.floor), line(c.escaped)];
-      const button = { x: width - FULLSCREEN_BUTTON.inset - 40, y: FULLSCREEN_BUTTON.inset, width: 40, height: FULLSCREEN_BUTTON.height };
+      // the button at the map's left, top-aligned, 6 px off (FS-56CKV §Change C3)
+      expect(c.button).toEqual({ top: 10, right: width - (map.x - 6) });
+      const button = buttonAt(width, c.button);
+      expect(button).toEqual({ x: map.x - 6 - 20, y: 10, width: 20, height: 20 });
       const notice = (w: number) => ({ x: width / 2 - w / 2, y: 100 - 22, width: w, height: 44 });
       for (const part of parts)
         for (const other of [button, notice(clearNotice), targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])
           expect(overlaps(part, other)).toBe(false);
+      for (const other of [notice(clearNotice), targetFrameRect(width / 2, TARGET_FRAME)]) expect(overlaps(button, other)).toBe(false);
+      // the one clearance the owner's rule gives up (§Change C7, Edge States): at 1080 the button
+      // lies over the boss frame's last 9 px; at 1280 it is clear
+      const boss = targetFrameRect(width / 2, TARGET_BOSS_FRAME);
+      expect(overlaps(button, boss)).toBe(width === 1080);
+      if (width === 1080) expect(boss.x + boss.width - button.x).toBe(9);
       // the clear width is the widest: 2 px more and the notice's right end lies over the map (Edge States)
       expect(overlaps(map, notice(clearNotice + 2))).toBe(true);
       for (const [i, a] of parts.entries()) for (const b of parts.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
@@ -5499,6 +6028,7 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
   const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
   const { topRightColumn } = await_topRightColumn;
   const { positionReadoutPlace } = await_positionReadout;
+  const { minimapNameBox } = await_minimapName;
   const { PROGRESS_HUD_AT, PROGRESS_HUD_W, PROGRESS_HUD_H } = await_progressHud;
   const { RESOURCE_HUD_W, resourceHudHeight } = await_resourceHud;
   const { POTION_CELL_GAP, POTION_CELL_W } = await_potions;
@@ -5507,7 +6037,9 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
   /** A 12 px HUD line in its 3 px padding, at its largest, as the top-right column's test takes it. */
   const LINE = { width: 160, height: 21 };
   /** The dev readout at its widest ("X: 5760 Y: 3840 | Outdoor", 10 px), generously. */
-  const READOUT = { width: 200, height: 13 };
+  const READOUT = { width: 200, height: 19 };
+  /** The widest floor name on its plate ("The Seventh Floor", 11 px letter-spaced 1), generously. */
+  const NAME = { width: 140, height: 21 };
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
@@ -5535,12 +6067,24 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
       const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
       const parts = stack();
       // the minimap normal, enlarged (FS-1SEF0 §B), or none in the corner (no regions, the overlay)
-      for (const panel of [await_minimap.minimapPanel("normal"), await_minimap.minimapPanel("enlarged"), null]) {
-        const c = topRightColumn({ corner, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
+      const panels = [
+        { ...await_minimap.minimapPanel("normal"), mode: "normal" as const },
+        { ...await_minimap.minimapPanel("enlarged"), mode: "enlarged" as const },
+        null,
+      ];
+      for (const panel of panels) {
+        const c = topRightColumn({ view, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
-        const at = positionReadoutPlace(c.minimap, { right: corner.x, bottom: c.bottom });
+        // in the map, beside the enlarged map's name (its widest), or under the column (FS-56CKV §Change: Map name, E8, E11)
+        const name = c.name && minimapNameBox(c.name, NAME);
+        const at = positionReadoutPlace(
+          { minimap: c.minimap, enlarged: panel?.mode === "enlarged", name, button: c.button, column: { right: corner.x, bottom: c.bottom } },
+          view,
+        );
         const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
-        const others = [button, ...frames, ...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
+        // the button where the column hands it (FS-56CKV §Change C2), or in the corner
+        const handed = { x: width - c.button.right - FULLSCREEN_BUTTON.height, y: c.button.top, width: FULLSCREEN_BUTTON.height, height: FULLSCREEN_BUTTON.height };
+        const others = [button, handed, ...frames, ...(c.minimap ? [c.minimap] : []), line(c.floor), line(c.escaped), readout];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
       }
       for (const part of parts) {
@@ -5773,6 +6317,14 @@ describe("keepBodySize (FS-HF0WW)", () => {
     keepBodySize(sprite, 0.5);
     keepBodySize(sprite, 0.5);
     expect([sprite.body.width, sprite.body.height]).toEqual([60, 60]);
+  });
+
+  it("should keep a 1.5x sheet's body at the 1x size too (ADR-0076)", () => {
+    const sprite = spriteAt(1 / 1.5);
+    keepBodySize(sprite, 1 / 1.5);
+    keepBodySize(sprite, 1 / 1.5);
+    expect(sprite.body.width).toBeCloseTo(60, 9);
+    expect(sprite.body.height).toBeCloseTo(60, 9);
   });
 
   it("should leave a 1x sheet's body alone", () => {
@@ -7622,11 +8174,24 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         const staged = stageIn(party);
         const run = staged.run as unknown as MappedRun;
         const keys: Record<string, Key> = {};
+        /** The scene's own pointer listeners, by event, as Phaser calls them. */
+        const pointers: Record<string, (pointer?: object) => void> = {};
+        const button = new FullscreenButtonPlace();
         Object.assign(run, {
           minimapStore: store.read,
-          input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) }, on: vi.fn() },
+          fullscreenButton: button,
+          input: {
+            setDefaultCursor: vi.fn(),
+            keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) },
+            on: (event: string, fn: (pointer?: object) => void) => (pointers[event] = fn),
+          },
         });
-        Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+        // the satchel shut: it takes no press and lights nothing (the scene's pointer listeners reach it)
+        Object.assign((run as unknown as { containerView: object }).containerView, {
+          relayout: vi.fn(),
+          pointerDown: vi.fn(() => false),
+          pointerMove: vi.fn(),
+        });
         run.createUI();
         run.bindRunInput();
         Object.assign(run.floorText!, FLOOR_LINE);
@@ -7645,7 +8210,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           for (let i = 0; i < 3 && map()?.mode !== mode; i++) keys["keydown-M"]();
           expect(map()?.mode).toBe(mode);
         };
-        return { ...staged, run, keys, view, frame, map, placed, dots, store, pressTo };
+        return { ...staged, run, keys, pointers, view, frame, map, placed, dots, store, pressTo, button };
       };
       const ally = (id: string, p: { x: number; y: number }, fields: { escape?: boolean; current_health?: number } = {}) => ({
         ...player(id, id, 0, fields),
@@ -7653,19 +8218,20 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       });
 
       // FS-56CKV §B.9 and §B.12 supersede §E.20 in part: the minimap at the column's top, the floor
-      // indicator 6 px under it, the escaped count 4 px under that
-      it("should show the minimap on floor 1 by default at the column's top, the floor indicator and the escaped count under it, right-aligned, and move them with the view", () => {
+      // indicator 6 px under it, the escaped count 4 px under that; the floor line gone while the
+      // map name names the floor, the escaped count in its place (§Change: Map name, E9 as amended
+      // 2026-11-12, owner: "地城樓層顯示兩次 拿掉下面的")
+      it("should show the minimap on floor 1 by default at the column's top, the escaped count under it in the floor line's place, right-aligned, and move them with the view", () => {
         const { run, map, view, placed } = mapped();
         expect(map()).toBeDefined();
         expect(map()!.mode).toBe("normal");
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44));
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 158 + 21 + 4]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 10));
+        expect((run.floorText as Made).shown).toBe(false);
+        expect(standing(run.escapedCountText)).toEqual([1070, 124]);
         view(1280);
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
-        expect(minimapRect(1270, 44)).toMatchObject({ x: 1054, y: 44 });
-        expect(standing(run.floorText)).toEqual([1270, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1270, 183]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10));
+        expect(minimapRect(1270, 10)).toMatchObject({ x: 1054, y: 10 });
+        expect(standing(run.escapedCountText)).toEqual([1270, 124]);
         // moved, so rasterised again at the render scale of now (FS-ZAJMH R5)
         for (const text of [run.floorText, run.escapedCountText]) expect((text as Made).last.setResolution).toEqual([1]);
       });
@@ -7682,54 +8248,109 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       it("should close the column up in the overlay mode, and open it again on M back to normal (FS-1SEF0 §D.21; FS-56CKV §B.11)", () => {
         const { run, keys, pressTo } = mapped();
         pressTo("overlay");
-        expect(standing(run.floorText)).toEqual([1070, 44]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 44 + 21 + 4]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 44]);
         keys["keydown-M"]();
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 124]);
       });
 
-      // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved down
-      it("should stand the enlarged minimap at the column's top and the floor indicator and the escaped count under it, at 1080 and 1280 (FS-1SEF0 §B.11)", () => {
+      // FS-1SEF0 §B.8, §B.11: the enlarged minimap at the column's top, everything under it moved
+      // down; at the very top, y 10, by FS-56CKV §Change C3, C5 as amended 2026-11-12
+      it("should stand the enlarged minimap at the column's top, y 10, and the escaped count under it, at 1080 and 1280 (FS-1SEF0 §B.11; FS-56CKV §Change C3, C5)", () => {
         const { run, view, placed, pressTo } = mapped();
         const enlarged = await_minimap.minimapPanel("enlarged");
         pressTo("enlarged");
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 44, enlarged));
-        expect(standing(run.floorText)).toEqual([1070, 212]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 212 + 21 + 4]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1070, 10, enlarged));
+        expect(standing(run.escapedCountText)).toEqual([1070, 178]);
         view(1280);
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44, enlarged));
-        expect(standing(run.floorText)).toEqual([1270, 212]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10, enlarged));
+        expect(standing(run.escapedCountText)).toEqual([1270, 178]);
         pressTo("normal");
-        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 44));
-        expect(standing(run.floorText)).toEqual([1270, 158]);
+        expect(placed).toHaveBeenLastCalledWith(minimapRect(1270, 10));
+        expect(standing(run.escapedCountText)).toEqual([1270, 124]);
       });
 
-      it("should stand the escaped count where the floor indicator would while it has no label, and step it down once it has (FS-56CKV §B.11)", () => {
-        const { run, keys, pressTo } = mapped();
+      // FS-56CKV §Change: Minimap at the top, fullscreen button beside it (owner 2026-11-12: "地圖移動到
+      // 最上面 全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", "其他文字也要跟著往上移動")
+      describe("the minimap at the very top, the fullscreen button beside it (FS-56CKV §Change C1–C6; I-56CKV-6)", () => {
+        const CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
+
+        it.each([1080, 1280])(
+          "should stand the normal map at y 10, the button 6 px to its left on its top, and the column's first shown line at the map's bottom + 6, at logical width %i (§Change C1, C2, C5)",
+          (width) => {
+            const { run, view, placed, button } = mapped();
+            view(width);
+            const map = minimapRect(width - 10, 10);
+            expect(placed).toHaveBeenLastCalledWith(map);
+            expect(button.current).toEqual({ top: map.y, right: width - (map.x - 6) });
+            expect(standing(run.escapedCountText)).toEqual([width - 10, map.y + map.height + 6]);
+          },
+        );
+
+        // §Change C3 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側")
+        it.each([1080, 1280])("should move the button on M: beside the enlarged map at its left, to the corner for the overlay, beside the map back at normal, the lines with the map each time, at width %i (§Change C2–C5)", (width) => {
+          const { run, view, keys, button, placed } = mapped();
+          view(width);
+          keys["keydown-M"]();
+          const enlarged = minimapRect(width - 10, 10, await_minimap.minimapPanel("enlarged"));
+          expect(enlarged).toEqual({ x: width - 334, y: 10, width: 324, height: 162 });
+          expect(placed).toHaveBeenLastCalledWith(enlarged);
+          expect(button.current).toEqual({ top: 10, right: 340 });
+          expect(standing(run.escapedCountText)).toEqual([width - 10, 10 + 162 + 6]);
+          keys["keydown-M"]();
+          expect(button.current).toEqual(CORNER);
+          expect(standing(run.escapedCountText)).toEqual([width - 10, 44]);
+          keys["keydown-M"]();
+          expect(button.current).toEqual({ top: 10, right: 232 });
+          expect(standing(run.escapedCountText)).toEqual([width - 10, 124]);
+        });
+
+        it("should keep the button in the corner on a floor without regions and before a floor's map is in, and beside the map once it is built (§Change C4)", () => {
+          const { button, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(button.current).toEqual(CORNER);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(button.current).toEqual(CORNER);
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(button.current).toEqual({ top: 10, right: 232 });
+        });
+
+        it("should hand the corner back when the run ends (§Change C6)", () => {
+          const { run, button } = mapped();
+          expect(button.current).toEqual({ top: 10, right: 232 });
+          run.resetRun("shutdown");
+          expect(button.current).toEqual(CORNER);
+        });
+      });
+
+      it("should stand the escaped count where the floor indicator would while it has no label, and step it down once it has, on a floor without a minimap (FS-56CKV §B.11)", () => {
+        const { run, handle } = mapped();
+        useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+        handle(bare(floorState(2)));
         run.updateFloorIndicator({ floor: undefined });
         expect((run.floorText as Made).shown).toBe(false);
-        expect(standing(run.escapedCountText)).toEqual([1070, 158]);
-        pressTo("overlay");
         expect(standing(run.escapedCountText)).toEqual([1070, 44]);
-        keys["keydown-M"]();
-        run.updateFloorIndicator({ floor: 1 });
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+        run.updateFloorIndicator({ floor: 2 });
+        expect((run.floorText as Made).shown).toBe(true);
+        expect(standing(run.floorText)).toEqual([1070, 44]);
+        expect(standing(run.escapedCountText)).toEqual([1070, 69]);
       });
 
-      it("should close the column up on a dungeon floor before its map is in, and open it once its minimap is built (FS-56CKV §B.11)", () => {
+      it("should close the column up on a dungeon floor before its map is in, the floor line shown, and drop the line under the minimap once it is built (FS-56CKV §B.11; §Change: Map name, E9)", () => {
         const { run, map, handle } = mapped();
         // the party climbs to floor 2; its map has not come yet
         handle({ ...dungeonState(inRoom), floor: 2 });
         expect(map()).toBeUndefined();
+        expect((run.floorText as Made).shown).toBe(true);
+        expect((run.floorText as Made).args[2]).toBe("Floor 2");
         expect(standing(run.floorText)).toEqual([1070, 44]);
         expect(standing(run.escapedCountText)).toEqual([1070, 69]);
         useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
         handle({ ...dungeonState(inRoom), floor: 2 });
         expect(map()).toBeDefined();
-        expect(standing(run.floorText)).toEqual([1070, 158]);
-        expect(standing(run.escapedCountText)).toEqual([1070, 183]);
+        expect((run.floorText as Made).shown).toBe(false);
+        expect(standing(run.escapedCountText)).toEqual([1070, 124]);
       });
 
       it("should cycle it on M, normal, enlarged, overlay and round again, never off, and leave it alone while the menu is open, while typing in chat, and on a held key's repeats (FS-1SEF0 §A.2)", () => {
@@ -7771,13 +8392,14 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         keys["keydown-M"]();
         expect(store.writes).toEqual([]);
         expect(run.minimapMode).toBe("normal");
+        expect((run.floorText as Made).shown).toBe(true);
         expect(standing(run.floorText)).toEqual([1070, 44]);
       });
 
       it("should build the minimap in the mode this browser kept, and an old off or anything unknown as normal (FS-1SEF0 §A.4, §A.5)", () => {
         const kept = mapped(inRoom, browserStore("overlay"));
         expect(kept.map()!.mode).toBe("overlay");
-        expect(standing(kept.run.floorText)).toEqual([1070, 44]);
+        expect(standing(kept.run.escapedCountText)).toEqual([1070, 44]);
         for (const held of ["off", "huge", null]) expect(mapped(inRoom, browserStore(held)).map()!.mode).toBe("normal");
       });
 
@@ -7831,6 +8453,124 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         store.held = "enlarged";
         run.createUI();
         expect(run.minimapMode).toBe("enlarged");
+      });
+
+      // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或
+      // 是模式(M)"): the icon in the map's bottom-left, a press doing what M does
+      describe("the map mode icon (FS-56CKV §Change: Map mode icon; I-56CKV-8)", () => {
+        type IconRun = MappedRun & { combat: { cast: (...args: unknown[]) => void } };
+        type Icon = { shownAt: { box: { x: number; y: number; width: number; height: number } } | null; hovered: boolean };
+        const iconOf = (run: MappedRun) => (run.dungeon as { modeIcon?: Icon } | undefined)?.modeIcon;
+        /** A press at logical (x, y), render scale 1: the primary button unless `button` says. */
+        const pointerAt = (x: number, y: number, button = 0) => ({
+          x,
+          y,
+          button,
+          worldX: x,
+          worldY: y,
+          leftButtonDown: () => button === 0,
+          rightButtonDown: () => button === 2,
+        });
+
+        it.each([
+          [1080, "normal", { x: 858, y: 105 }],
+          [1280, "normal", { x: 1058, y: 105 }],
+          [1080, "enlarged", { x: 750, y: 159 }],
+          [1280, "enlarged", { x: 950, y: 159 }],
+          [1080, "overlay", { x: 1039, y: 12 }],
+          [1280, "overlay", { x: 1239, y: 12 }],
+        ])("should stand its 9 × 9 box at width %i in the %s mode: the map's bottom-left, or beside the button in the overlay (D2, D3)", (width, mode, at) => {
+          const { run, view, pressTo } = mapped();
+          view(width);
+          pressTo(mode);
+          expect(iconOf(run)?.shownAt?.box).toEqual({ ...at, width: 9, height: 9 });
+        });
+
+        it("should step the mode on a press in its hit area as M does, written to this browser, never an attack (D6)", () => {
+          const { run, pointers, map, store } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(map()!.mode).toBe("enlarged");
+          expect(store.writes).toEqual(["enlarged"]);
+          // the corner re-laid as on M: the icon in the enlarged map's bottom-left
+          expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 750, y: 159 });
+          pointers.pointerdown(pointerAt(754, 163));
+          pointers.pointerdown(pointerAt(1043, 16));
+          expect(map()!.mode).toBe("normal");
+          expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+          // a right press on it is its too: no class ability at the corner, and no step
+          pointers.pointerdown(pointerAt(862, 109, 2));
+          expect(map()!.mode).toBe("normal");
+          expect(cast).not.toHaveBeenCalled();
+        });
+
+        it("should do nothing with a press while the menu is open or chat is typing, M's guards (D6)", () => {
+          const { run, pointers, map, store } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          run.menu = {};
+          pointers.pointerdown(pointerAt(862, 109));
+          run.menu = undefined;
+          run.chatWindow = { isTyping: () => true, covers: () => false } as MappedRun["chatWindow"];
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(map()!.mode).toBe("normal");
+          expect(store.writes).toEqual([]);
+          expect(cast).not.toHaveBeenCalled();
+        });
+
+        // integration of FS-3EBCA R10 with D5: a press on the corner row is the row's alone
+        it("should leave a press on the corner row to the row: no step, no attack (FS-3EBCA R10; D5)", () => {
+          const { run, pointers, map, store } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          (run as unknown as { corner?: unknown }).corner = { covers: () => true, destroy: vi.fn() };
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(map()!.mode).toBe("normal");
+          expect(store.writes).toEqual([]);
+          expect(cast).not.toHaveBeenCalled();
+        });
+
+        it("should leave a press 1 px outside its hit area to the game, the map's own ground included (D5)", () => {
+          const { run, pointers, map } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          // the hit area x 856–869, y 103–116
+          pointers.pointerdown(pointerAt(855, 109));
+          pointers.pointerdown(pointerAt(862, 117));
+          expect(map()!.mode).toBe("normal");
+          expect(cast).toHaveBeenCalledTimes(2);
+        });
+
+        it("should light up under the pointer and go dark as it leaves, or leaves the canvas (D7)", () => {
+          const { run, pointers } = mapped();
+          pointers.pointermove(pointerAt(862, 109));
+          expect(iconOf(run)?.hovered).toBe(true);
+          pointers.pointermove(pointerAt(900, 109));
+          expect(iconOf(run)?.hovered).toBe(false);
+          pointers.pointermove(pointerAt(862, 109));
+          pointers.gameout();
+          expect(iconOf(run)?.hovered).toBe(false);
+        });
+
+        it("should be gone with its floor, and none on a floor without regions or before a floor's map (D4)", () => {
+          const { run, handle, pointers, store } = mapped();
+          const first = iconOf(run) as unknown as { covers(x: number, y: number): boolean };
+          expect(first.covers(862, 109)).toBe(true);
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(run.dungeon).toBeUndefined();
+          expect(first.covers(862, 109)).toBe(false);
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(store.writes).toEqual([]);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(iconOf(run)).toBeUndefined();
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 858, y: 105 });
+        });
+
+        it("should follow the corner on resize (D2)", () => {
+          const { run, view } = mapped();
+          view(1280);
+          expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 1058, y: 105 });
+        });
       });
 
       // FS-1SEF0 §C.14: the overlay stands about the figure the camera follows, each frame
@@ -8134,7 +8874,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           useGameStore.getState().receiveFloorMap(mapOf(floorState(floor)));
           handle(bare(floorState(floor)));
           expect(run.dungeon).toBeUndefined();
-          // no minimap: the column closes up to its top (FS-56CKV §B.11)
+          // no minimap: the column closes up to its top, the floor line back (FS-56CKV §B.11; §Change: Map name, E9)
+          expect((run.floorText as Made).shown).toBe(true);
           expect(standing(run.floorText)).toEqual([1070, 44]);
           expect(standing(run.escapedCountText)).toEqual([1070, 69]);
         }
@@ -8142,38 +8883,170 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(shown).not.toHaveBeenCalled();
       });
 
+      // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
+      // "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the floor's name with its minimap
+      describe("the map name (FS-56CKV §Change: Map name; I-56CKV-9)", () => {
+        type NameRun = MappedRun & { updateTargetFrame(deltaMs: number): void; targetFrame?: unknown };
+        type Name = { words: string; shown: boolean };
+        const nameOf = (run: MappedRun) => (run.dungeon as { mapName?: Name } | undefined)?.mapName;
+        /** The name's text as the stage made it: 11 px, on its plate; the latest of its words. */
+        const textOf = (made: Made[], words: string) =>
+          made.filter((m) => m.kind === "text" && m.args[2] === words && (m.args[3] as { fontSize?: string })?.fontSize === "11px").at(-1);
+        /** The text 80 × 17, as Phaser would measure it, and the corner laid out again. */
+        const measured = (run: MappedRun, text: Made | undefined) => {
+          Object.assign(text!, { width: 80, height: 17 });
+          run.relayoutHud();
+        };
+
+        it("should name floor 1 \"The First Floor\" with its minimap, in the name's look, over the map (E1, E2, E6)", () => {
+          const { run, stage } = mapped();
+          expect(nameOf(run)?.words).toBe("The First Floor");
+          const text = textOf(stage.made, "The First Floor");
+          expect(text).toBeDefined();
+          expect(text!.args[3]).toMatchObject({ fontFamily: CANVAS_FONT.body, fontSize: "11px", color: toCss(palette.hudText), letterSpacing: 1 });
+          expect(text!.depth).toBeGreaterThan(await_minimap.MINIMAP.depth);
+        });
+
+        it.each([
+          [1080, "normal", [1066 - 80, 14]],
+          [1280, "normal", [1266 - 80, 14]],
+          [1080, "enlarged", [714 - 80, 12]],
+          [1280, "enlarged", [914 - 80, 12]],
+          [1080, "overlay", [1033 - 80, 8]],
+          [1280, "overlay", [1233 - 80, 8]],
+        ])("should stand it at width %i in the %s mode: inside the map's top-right, left of the button, left of the icon (E3–E5)", (width, mode, at) => {
+          const { run, stage, view, pressTo } = mapped();
+          measured(run, textOf(stage.made, "The First Floor"));
+          view(width);
+          pressTo(mode);
+          expect(textOf(stage.made, "The First Floor")!.last.setPosition).toEqual(at);
+          expect(nameOf(run)?.shown).toBe(true);
+        });
+
+        it("should name the floor anew on a climb, and none on a floor without a minimap (E6)", () => {
+          const { run, stage, handle } = mapped();
+          const first = textOf(stage.made, "The First Floor")!;
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(first.destroyed).toBe(true);
+          expect(nameOf(run)).toBeUndefined();
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(nameOf(run)?.words).toBe("The Third Floor");
+          expect(textOf(stage.made, "The Third Floor")?.destroyed).toBe(false);
+        });
+
+        // E9 as amended 2026-11-12 (owner: "地城樓層顯示兩次 拿掉下面的"): the floor said once, by the name
+        it.each([
+          [1080, "normal", 124],
+          [1280, "normal", 124],
+          [1080, "enlarged", 178],
+          [1280, "enlarged", 178],
+          [1080, "overlay", 44],
+          [1280, "overlay", 44],
+        ])("should drop the floor line while the name names floor 1, at width %i in the %s mode, the escaped count at y %i in its place (E9)", (width, mode, y) => {
+          const { run, view, pressTo } = mapped();
+          view(width);
+          pressTo(mode);
+          expect(nameOf(run)?.words).toBe("The First Floor");
+          expect((run.floorText as Made).args[2]).toBe("Floor 1");
+          expect((run.floorText as Made).shown).toBe(false);
+          expect(standing(run.escapedCountText)).toEqual([width - 10, y]);
+        });
+
+        it("should bring the floor line back once the name goes, on a floor of buildings, and drop it again with the next floor's name (E9)", () => {
+          const { run, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
+          expect(nameOf(run)).toBeUndefined();
+          expect((run.floorText as Made).shown).toBe(true);
+          expect((run.floorText as Made).args[2]).toBe("Floor 2");
+          useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
+          handle({ ...dungeonState(inRoom), floor: 3 });
+          expect(nameOf(run)?.words).toBe("The Third Floor");
+          expect((run.floorText as Made).shown).toBe(false);
+        });
+
+        it("should hide it while a target frame its plate meets is shown beside the enlarged map at 1080, and show it once the frame goes (E7)", () => {
+          const { run, stage, pressTo } = mapped();
+          measured(run, textOf(stage.made, "The First Floor"));
+          pressTo("enlarged");
+          const frame = { rect: null as object | null, update: vi.fn(), relayout: vi.fn(), texts: () => [], shownRect: () => frame.rect };
+          (run as NameRun).targetFrame = frame;
+          frame.rect = { x: 351, y: 10, width: 378, height: 54 };
+          (run as NameRun).updateTargetFrame(16);
+          expect(nameOf(run)?.shown).toBe(false);
+          frame.rect = null;
+          (run as NameRun).updateTargetFrame(16);
+          expect(nameOf(run)?.shown).toBe(true);
+        });
+      });
+
       describe("the dev position readout (FS-56CKV §C, I-56CKV-3)", () => {
-        const { POSITION_READOUT } = await_positionReadout;
+        type ReadoutRun = MappedRun & { updateTargetFrame(deltaMs: number): void; targetFrame?: unknown };
         /** Where the readout was last stood, and on which corner of its box. */
         const readoutAt = (run: MappedRun) => {
           const { last } = run.positionReadout as Made;
           return { at: last.setPosition, origin: last.setOrigin };
         };
-        const inMinimap = (right: number) => ({ at: [right - 216 + 4, 44 + 108 - 4], origin: [0, 1] });
-        /** Under the column closed up to its top: the floor indicator, the escaped count, then 4 px. */
+        /** The readout 90 × 19, the name 80 × 17, as Phaser would measure them, and the corner laid out again. */
+        const measured = (run: MappedRun, stage: { made: Made[] }) => {
+          Object.assign(run.positionReadout!, { width: 90, height: 19 });
+          const name = stage.made.filter((m) => m.kind === "text" && (m.args[3] as { fontSize?: string })?.fontSize === "11px").at(-1);
+          if (name) Object.assign(name, { width: 80, height: 17 });
+          run.relayoutHud();
+        };
+        /** Under the column closed up to its top: `lines` 21 px lines 4 px apart from y 44, then 4 px. */
         const underColumn = (right: number, lines = 2) => ({ at: [right, 44 + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
+        // FS-56CKV §Change: Map name, E8 as amended 2026-11-12 (owner: "有小地圖時 x y座標不是要顯示在
+        // 地圖框框內右下角嗎"): inside the normal map's bottom-right, 4 px in
+        const inMap = (right: number) => ({ at: [right - 4, 10 + 108 - 4], origin: [1, 1] });
+        // E11 (owner: "2倍地圖時座標顯示在地區名稱左邊"): 6 px left of the name's plate, on the button's middle
+        const leftOfName = (nameRight: number) => ({ at: [nameRight - 80 - 6, 20], origin: [1, 0.5] });
 
         afterEach(() => {
           vi.unstubAllEnvs();
         });
 
-        it("should draw it at 10 px in a HUD text token at a partial alpha, with no backing, over the minimap's depth (§C.15, §C.16)", () => {
+        it("should draw it at 10 px in vellum on the map name's plate, at full ink, over the minimap's depth (§C.16; §Change: Map name, E8)", () => {
           const { run } = mapped();
           const readout = run.positionReadout as Made;
-          expect(readout.args[3]).toEqual({ fontFamily: CANVAS_FONT.body, fontSize: "10px", color: toCss(palette.hudText) });
-          expect(readout.last.setAlpha).toEqual([POSITION_READOUT.alpha]);
+          expect(readout.args[3]).toEqual({
+            fontFamily: CANVAS_FONT.body,
+            fontSize: "10px",
+            color: toCss(palette.hudText),
+            backgroundColor: rgba(palette.hudPanel, 0.75),
+            padding: { x: 4, y: 2 },
+          });
+          expect(readout.last.setAlpha).toBeUndefined();
           expect(readout.last.setScrollFactor).toEqual([0]);
           expect(readout.depth).toBeGreaterThan(await_minimap.MINIMAP.depth);
         });
 
-        it("should stand it in the minimap's bottom-left corner, 4 px in, and follow the minimap on resize, re-crispened (§C.14, §C.19)", () => {
-          const { run, view } = mapped();
-          expect(readoutAt(run)).toEqual(inMinimap(1070));
+        it("should stand it inside the normal map's bottom-right, 4 px in, and follow the map on resize, re-crispened (§C.19; §Change: Map name, E8)", () => {
+          const { run, stage, view } = mapped();
+          measured(run, stage);
+          expect(readoutAt(run)).toEqual(inMap(1070));
+          expect(inMap(1070).at).toEqual([1066, 114]);
           viewport.set({ width: 1280, height: 720, renderScale: 2 });
           run.relayoutHud();
-          expect(readoutAt(run)).toEqual(inMinimap(1270));
+          expect(readoutAt(run)).toEqual(inMap(1270));
           expect((run.positionReadout as Made).last.setResolution).toEqual([2]);
           view(1080);
+        });
+
+        it.each([1080, 1280])("should keep it clear of the map mode icon and the name inside the normal map at width %i (E8)", (width) => {
+          const { run, stage, view } = mapped();
+          measured(run, stage);
+          view(width);
+          const [x, y] = readoutAt(run).at as number[];
+          const box = { x: x - 90, y: y - 19, width: 90, height: 19 };
+          const overlaps = (a: typeof box, b: typeof box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+          const dungeon = run.dungeon as { modeIcon?: { place?: unknown }; mapName?: { box: typeof box | null } };
+          expect(overlaps(box, dungeon.mapName!.box!)).toBe(false);
+          const map = minimapRect(width - 10, 10);
+          const icon = { x: map.x + 4 - 2, y: map.y + map.height - 4 - 9 - 2, width: 13, height: 13 };
+          expect(overlaps(box, icon)).toBe(false);
         });
 
         it("should never stand it at the top left, in a run on a floor with a minimap or without one", () => {
@@ -8185,32 +9058,56 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(left()).toBe(false);
         });
 
-        it("should stand it 4 px under the column's last line, right-aligned, in the overlay mode, and back in the minimap on M (§C.18; FS-1SEF0 §D.22)", () => {
-          const { run, keys, pressTo } = mapped();
+        it("should stand it 4 px under the column's last line, right-aligned, in the overlay mode, and back in the map on M (§C.18; FS-1SEF0 §D.22; §Change: Map name, E8)", () => {
+          const { run, stage, keys, pressTo } = mapped();
+          measured(run, stage);
           pressTo("overlay");
-          expect(readoutAt(run)).toEqual(underColumn(1070));
+          // the escaped count alone under the button, the floor line dropped (E9)
+          expect(readoutAt(run)).toEqual(underColumn(1070, 1));
           keys["keydown-M"]();
-          expect(readoutAt(run)).toEqual(inMinimap(1070));
+          expect(readoutAt(run)).toEqual(inMap(1070));
         });
 
-        it("should stand it 4 px inside the enlarged minimap's bottom-left corner at its own 10 px (FS-1SEF0 §B.11)", () => {
-          const { run, pressTo } = mapped();
+        it.each([
+          [1080, 714],
+          [1280, 914],
+        ])("should stand it left of the map name with the map enlarged, 6 px off, on the button's middle, at width %i (E11)", (width, nameRight) => {
+          const { run, stage, view, pressTo } = mapped();
+          measured(run, stage);
+          view(width);
           pressTo("enlarged");
-          expect(readoutAt(run)).toEqual({ at: [1070 - 324 + 4, 44 + 162 - 4], origin: [0, 1] });
+          expect(readoutAt(run)).toEqual(leftOfName(nameRight));
           expect((run.positionReadout as Made).args[3]).toMatchObject({ fontSize: "10px" });
         });
 
+        it("should hide it while a target frame its plate meets is shown beside the enlarged map at 1080, and show it once the frame goes (E11)", () => {
+          const { run, stage, pressTo } = mapped();
+          measured(run, stage);
+          pressTo("enlarged");
+          const frame = { rect: null as object | null, update: vi.fn(), relayout: vi.fn(), texts: () => [], shownRect: () => frame.rect };
+          (run as ReadoutRun).targetFrame = frame;
+          // over the readout (x 538–628) but short of the name (x 634–714)
+          frame.rect = { x: 500, y: 10, width: 100, height: 54 };
+          (run as ReadoutRun).updateTargetFrame(16);
+          expect((run.positionReadout as Made).shown).toBe(false);
+          expect((run.dungeon as { mapName?: { shown: boolean } }).mapName?.shown).toBe(true);
+          frame.rect = null;
+          (run as ReadoutRun).updateTargetFrame(16);
+          expect((run.positionReadout as Made).shown).toBe(true);
+        });
+
         it("should follow the column as the floor indicator's label goes and comes, with no minimap shown (§C.18)", () => {
-          const { run, pressTo } = mapped();
-          pressTo("overlay");
+          const { run, handle } = mapped();
+          useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+          handle(bare(floorState(2)));
           run.updateFloorIndicator({ floor: undefined });
           expect(readoutAt(run)).toEqual(underColumn(1070, 1));
-          run.updateFloorIndicator({ floor: 1 });
+          run.updateFloorIndicator({ floor: 2 });
           expect(readoutAt(run)).toEqual(underColumn(1070));
         });
 
-        it("should stand it under the column on a floor without regions and on a dungeon floor before its map, and in the minimap once it is built (§C.18, §C.19)", () => {
-          const { run, handle } = mapped();
+        it("should stand it under the column on a floor without regions, on a dungeon floor before its map, and in the map once it is built (§C.18, §C.19; §Change: Map name, E8)", () => {
+          const { run, stage, handle } = mapped();
           useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
           handle(bare(floorState(2)));
           expect(run.dungeon).toBeUndefined();
@@ -8221,7 +9118,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 3 } as never);
           handle({ ...dungeonState(inRoom), floor: 3 });
           expect(run.dungeon?.minimap).toBeDefined();
-          expect(readoutAt(run)).toEqual(inMinimap(1070));
+          measured(run, stage);
+          expect(readoutAt(run)).toEqual(inMap(1070));
         });
 
         it("should refresh it every frame without redrawing either of the minimap's layers (§C.16, FS-SRA9J §E.23)", () => {
@@ -8242,14 +9140,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(run.positionReadout).toBeUndefined();
           expect(stage.made.some((m) => m.kind === "text" && (m.args[3] as { fontSize?: string })?.fontSize === "10px")).toBe(false);
           pressTo("overlay");
-          expect(standing(run.escapedCountText)).toEqual([1070, 69]);
+          expect(standing(run.escapedCountText)).toEqual([1070, 44]);
         });
       });
 
-      it("should not exist in the hub or field scenes", () => {
+      // superseded in part by FS-P0HSP §A.1–§A.2 (2026-11-12): the town and the fields now have a
+      // minimap of their own plan, still no fog and never a dungeon floor's region map; nor the
+      // run fog's own helpers or modules (review round 1)
+      it("should not exist in the hub or field scenes: no fog, no exploration, no floor's region minimap", () => {
         for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
           const source = readFileSync(join(__dirname, scene), "utf8");
-          expect(source).not.toMatch(/minimap/i);
+          expect(source).not.toMatch(/\bnew Minimap\(|\bFog\b|\bExploration\b/);
+          expect(source).not.toMatch(/\bfogShapes\b|\bfogField\b|render\/world\/(fog|fogField|exploration)\b/);
         }
       });
     });

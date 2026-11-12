@@ -133,3 +133,503 @@ On our own dev server, headless Chrome, account `phaser4-trial@example.test`, he
 - Attacking on the move for the other classes.
 - Fixing the moonwalk, foot slide and stance hitch of `walk_attack`.
 - Any server or game-rule change: animation is presentation only (ADR-0020).
+
+## Change: Class sheets at 1.5x
+Status: work-order
+Date: 2026-11-12
+
+> Anchored here, not on FS-3V7GC or within FS-JS7C8: this FS owns "High-detail character art",
+> the capability a sheet's `scale` serves, and the rule this change rewrites (R1's 2x archer, R2's
+> whole-number `scale`, R22's trim on multiples of `scale`). FS-3V7GC repeats this work order for
+> the other three classes under the same lines, and FS-JS7C8 owns the clips the re-bakes carry,
+> not their scale; both are pointed at from here (R39). Decision: [ADR-0076](../adr/0076-a-sheet-may-be-baked-at-1-5x-its-frame-and-trim-on-a-two-screen-px-grid.md),
+> amending ADR-0058 Decisions 1 and 3.
+
+The owner's words. On 2026-11-12, with the archer re-baked for FS-JS7C8 on two pages at 2x
+(84.70 MB RGBA, +88 % over main), he agreed to the plan "if 1.5x is acceptable, all four classes
+move to 1.5x", approved the spike (「好」), and after its side-by-side page of the archer at 1.5x
+and at 2x on his Retina screen said: 「感覺可以」.
+
+### Facts this change rests on
+
+- The spike (`spike/archer-1p5x`, 16adf4c4, throwaway): the archer at 1.5x is one page,
+  3820×2720, 41.56 MB RGBA, PNG 5.75 MB; against the 2x archer 15–22 % softer at render scale 2,
+  sharper at 1.5, equal at 1, no shimmer at any render scale. Its bake changes left every other
+  atlas byte-identical.
+- The client draws a sheet at 1/`scale` through `sheetScale` (R4–R8). Its readers:
+  `CharacterAnimator.artScale` (`dress`), `markerBase` (markers, `artScale`), `keepBodySize`
+  (BarrowspireScene, `artScale`), `MenuFigure` (the figure's size and the roster portrait's crop)
+  and the manifest validator (`screenScale`). The bust portrait reads the frame's own px and no
+  scale.
+- The roster portrait's crop is screen px × `scale`. At 1.5 a crop edge on an odd screen px is half
+  a frame px.
+
+### Requirements
+
+29. A sheet's `scale` is 1, 1.5, 2, 3 or 4 (ADR-0076 Decision 1). The validator refuses any other
+    value (1.25, 2.5, 3.5, 0.5, 5 among them), a frame size that is not a whole number of screen
+    px (`frameWidth / scale`, `frameHeight / scale` whole) and, on a trimmed sheet, a `trim` off the
+    grid of R31.
+30. At a fractional `scale` the bake cuts the 1x frame box on a grid of `q` 1x px, `q` the least
+    whole number making `scale × q` whole (2 at 1.5): each side of the anchor is rounded up to a
+    multiple of `q`, so the frame is exactly `scale` times the 1x box and the anchor is a whole px
+    in it. It renders at the supersample × `scale` (3x at 1.5) over that box and box-filters to
+    `scale`×. At a whole `scale` nothing changes: every sheet not at 1.5 keeps its bytes.
+31. A trimmed sheet's cut lies on whole multiples of `q` screen px: `scale × q` sheet px (3 at
+    1.5, two screen px; 2 at 2x and 1 at 1x, as R22 had it).
+32. The bake measures `crown` and `length` on the frames brought back to 1x by an exact area filter
+    (R3): at a fractional scale a nearest blow-up by `q`, then a `scale × q` box.
+33. Every reader of `sheetScale` works at 1.5, unchanged in what it gives: the display size, origin
+    and feet in world units are those of the 1x sheet (R4); markers sit over the head as for a 1x
+    sheet (R5); the run's arcade body keeps its 1x size (R6); the menu figure keeps its size (R7).
+    The roster portrait keeps its 44×56 screen-px window and its crop lies on whole frame px: at
+    1.5 its top edge is moved up to the `q`-screen-px grid (one more px of headroom when the crown
+    would put it between px), so the crop's origin and size are whole frame px. The bust portrait
+    cuts the same head from a 1.5x frame (R8).
+34. The archer's sheet (`char_archer_base`) is baked at `scale` 1.5 with every clip it carries
+    (FS-JS7C8: `run`, `walk_attack`, `backpedal_attack`), trimmed, in its own `archer` group. The
+    re-bake changes only the archer's pages and the manifest; every other atlas keeps its bytes.
+35. The knight, the wizard and the mercenary are baked at 1.5 when each is re-baked with `run` and
+    `backpedal_attack` (FS-JS7C8 slices 6–8, I-JS7C8-6..8), and not before: until then they stay
+    at 2, and the client draws each sheet at its own scale.
+36. The design guideline's "Linear filtering" says which sheets are 1.5x and why (memory against
+    crispness at render scale 2, the owner's eye-check); `CONTEXT.md`'s sheet scale names 1.5.
+37. The decoded memory of the archer's pages and of all atlases, before and after, is measured
+    from the manifest and recorded here (§ Verification), and in I-JS7C8-12's VRAM gate.
+38. The bake stays deterministic (R27).
+39. Pointers: FS-3V7GC R1 ("baked at `scale` 2") and FS-JS7C8 R1 ("baked with the class's sheet at
+    2x") read "at the class's scale, 1.5 from its FS-JS7C8 re-bake" for each class from this change
+    on.
+
+### Acceptance Criteria
+
+- [x] The validator accepts `scale` 1, 1.5, 2, 3 and 4 and refuses 1.25, 2.5, 3.5, 0.5 and 5; at
+      1.5 it refuses a frame size that is not a whole number of screen px and a `trim` off the
+      3-sheet-px grid (`manifest.test.ts`).
+- [x] The baker's frame box at 1.5: frame and anchor whole px, each side of the anchor a multiple
+      of two 1x px, the frame exactly 1.5 times the 1x box; at 1 and 2 the box is unchanged
+      (`frameBox` tests).
+- [x] `trimRect` at grid 3: offset and size multiples of 3, lossless round trip (`trim.test.mjs`).
+- [x] `downscale(…, 1.5)` equals a hand-computed area filter (`downscale.test.mjs`).
+- [x] At `artScale` 2/3: the display size, the markers' rise, the arcade body (60×60) and the menu
+      figure's scale are the 1x sheet's; the roster portrait's crop is whole frame px with the
+      44×56 window (`character.test.ts`, `markers.test.ts`, `BarrowspireScene.test.ts`,
+      `menuFigure.test.ts`).
+- [x] The archer's manifest entry has `scale: 1.5`, `trimmed: true`, its clips, one atlas page; no
+      other atlas changes bytes.
+- [x] Memory recorded (§ Verification); `npm run bake -- --check` reports no changes; typecheck,
+      the full vitest suite and lint pass.
+- [x] Guideline and `CONTEXT.md` updated.
+
+### Edge States
+
+- **Fractional render scale.** A 1.5x sheet drawn at its true size has its frame, anchor and cuts
+  on two-screen-px steps: whole backing px at render scale 1, 1.5 and 2, so ADR-0058's sub-px
+  offset of a trimmed frame is gone there. At 1.25 and 1.75 it remains, at most half a backing px.
+- **The menu hero** (its 1.3 menu scale, a sprite scale of 0.87 on a 1.5x sheet; the character
+  creation preview likewise): its cuts are still drawn up to a fraction of a backing px from where
+  the whole frame would draw them, as ADR-0058 describes for the 2x hero.
+- **The frame box grows** by at most one 1x px on each side of the anchor (the rounding to `q`):
+  the frame in screen px can be up to 2 px wider and taller than its 2x bake; the anchor fraction
+  moves by that px. Nothing in play moves: every size is screen px.
+- **A crown that puts the roster portrait's top on an odd screen px**: the crop starts one px
+  higher (one more px of headroom); the head is never cut.
+- **Two scales at once**: until slices 6–8 the archer is 1.5x and the other classes 2x; each sheet
+  is read at its own scale.
+- **An older manifest** (the archer at 2, or no `scale`): drawn at its own scale, as before.
+
+### Out of Scope
+
+- Baking creatures, folk, the boss or props at 1.5 (each its own work and reader check, ADR-0058).
+- Any fractional scale other than 1.5.
+- Re-baking the knight, wizard or mercenary here (FS-JS7C8 slices 6–8 do it at 1.5).
+- Changing the render-scale cap or the groups' residency (ADR-0056, ADR-0059).
+
+### Verification (2026-11-12, branch `feat/run-sheets-1p5x`, I-HF0WW-8)
+
+- **Bake.** The archer re-baked at 1.5 with every clip (and FS-JS7C8's fast run, I-JS7C8-13):
+  252×225 frames (168×150 screen px; the 2x bake's 332×300 was 166×150, the frame box grown by one
+  1x px on each side of the anchor's x), anchor (105, 171) px, fraction (0.4167, 0.76), crown 78,
+  512 frames, trimmed. The leg-clearance guard passes at 1.5 (2/3 1x px). Only `archer-0.png`
+  and `manifest.json` changed; `archer-1.png` is gone; every other atlas keeps its bytes.
+- **Texture memory** (decoded, width × height × 4, from the manifest):
+
+  | archer sheet | pages | page px | RGBA | PNG bytes |
+  |---|---|---|---|---|
+  | main (2x, 336 frames) | 1 | 2924 × 3844 | 44.96 MB | 6,289,416 |
+  | I-JS7C8-12 (2x, 512 frames) | 2 | 4092 × 3760 + 4088 × 1416 | 84.70 MB | 6,557,998 + 2,992,142 |
+  | this bake (1.5x, 512 frames) | 1 | 3820 × 2716 | 41.50 MB | 5,749,502 |
+
+  −51.0 % against the 2x bake, −7.7 % against main's 2x archer without the new clips; the trimmed
+  frames alone hold 39.31 MB. The four class groups: 216.58 → 173.38 MB (knight 47.98, wizard
+  36.51, mercenary 47.39, all still 2x). All atlases: 771.00 → 727.80 MB.
+- **Readers at 1.5** (unit tests): `artScale` 2/3, `dress` sizes a 246×216 frame to 164×144
+  screen px and composes the menu hero's 1.3; `markerBase` seats the markers where a 1x sheet's
+  sit; `keepBodySize` keeps the 60×60 body; `MenuFigure` keeps its size at 1, 1.3 and 1.5, and the
+  roster portrait's crop is whole frame px (it was 70.5, 31.5 on a synthetic sheet with an odd
+  crown and anchor; the shipped archer's anchor (70, 114) and crown 78 land on the grid as they
+  are). The bust portrait reads the frame's own px and no scale.
+- **Suite.** The resident-page tests that failed with the archer on two pages (33) pass again;
+  the whole client vitest, typecheck and lint pass; `npm run bake -- --check` reports no changes.
+
+## Change: The guard measures a leg through the cloth
+Status: work-order
+Date: 2026-11-12
+
+> Written `--from-thread` on 2026-11-12 during FS-JS7C8's class re-bakes (I-JS7C8-6..8). The
+> guard (§C R19) refused the shared fast run on the three long garments: the knight's hauberk
+> 13.02 px, the wizard's robe 6.27, the mercenary's coat 2.66 (limit 2/3 px at 1.5x). Told so, the
+> owner chose to change the garment rig ("改衣服的骨架", 2026-11-12) so the hems follow the legs.
+> Before changing it, each flagged leg vertex was checked a second way, along a level ray from the
+> pelvis out through it against the garment's triangles as they hang: of the run's flagged
+> vertices, almost all lie under cloth (the ray meets the cloth beyond them) or below the hem
+> (the ray meets no cloth: a kicked heel under a lifted hem, seen beneath it, not through it).
+> What truly crosses the cloth goes 0.41 px past it at most (the robe), 0.10 (the hauberk), none
+> (the coat), under the limit, with today's garments. The over-count is the guard's: it cuts each
+> band of rings square to the axis between their centres, and a hem tilted by a stride or a heel
+> reads a leg under it as out. So the fix is the measure, not the cloth: the garments keep their
+> rig, look and swing, which the owner's words were after ("no leg through it", the cloth still
+> hanging as cloth). Anchored here: §C owns the guard and R19 its measure.
+
+### Requirements
+
+22. The guard keeps its ring measure (R19) as the first pass. A leg vertex it puts outside the cloth
+    is measured again along the level ray from the pelvis's vertical axis out through the vertex,
+    against every cover's surface (its quads between consecutive rings) as posed:
+    - cloth beyond the vertex: it lies under the cloth (inside);
+    - cloth only between the axis and the vertex: it is through the cloth, by its distance past
+      the outermost crossing;
+    - no cloth on the ray: no cloth covers it (below the hem, in an opening), as R19's null.
+    The limit, the death's exemption, `KNOWN_CLIPPING` and `MIRRORED_LEGACY` are unchanged.
+23. No garment, rig or clip changes for this; the guard only gates, so no sheet's bytes move by it.
+
+> **Edited in place on 2026-11-12 (still a work-order): the robe in the run.** After playing the
+> wizard at 1.5x, the owner said: "法師跑步會輕微破圖 膝蓋處會凸出衣服 腰部似乎也有一點" (the wizard's
+> run breaks slightly: at the knee the leg pokes out of the robe, and a little at the waist too),
+> then "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉" (at the back of the robe, around the calves,
+> the green panel of the hem seems to be eaten by black while running). The guard (R19, R22) had
+> passed the run at 0.41 px. Rendered from the bake's camera in all 8 facings with every part in a
+> flat colour, the run showed the leading knee through the gown and the teal scapular in keys 1 and
+> 5 (up to 26 baked px a frame at 1.5x), the thigh's root at the pinched waist (up to 3; 1 at rest),
+> and the black gown through the scapular (up to 29 px a frame) and flung out past its back panel
+> behind the calves (the back panel's lower band 576-883 px a back facing in the run against
+> 1,494 in the walk): the panel was not shaded dark, the gown in front of it. Two causes, both
+> measured: the guard read the knee as uncovered, not through (below), and the scapular was skinned
+> apart from the gown (`legFollow` 0.3 against 0.5, its own panel weight, rings at other heights),
+> so the layer that follows the legs further came out through the other; the gown also trailed past
+> the back panel's hem at rest. The owner had already chosen to change the garment rig for this
+> ("改衣服的骨架"), which R23 had set aside; R25-R27 do it for the robe. The knight's hauberk and the
+> mercenary's coat show no leg through the cloth by the same check, and keep their rig.
+
+24. Each band of rings claims the points between the planes square to its axis through its two
+    centres, so where a stride bends the line of the ring centres (a robe's front swung forward over
+    the knee, its back flung out behind) the outside of the bend lies past one band's end and before
+    the next one's start, in no band, and R19 read a leg there as uncovered. Such a point is measured
+    on the ring at the bend, in the plane square to the two bands' mean axis, and goes on to R22's
+    level ray when it reads outside. Every sheet but the wizard reads as before; the wizard's run as
+    cut before reads 1.08 px and fails the bake.
+25. A panel worn over a garment (`skirt({ over })`, the mage's scapular over her gown) is cut on
+    that garment's rig: its rings are the garment's ring for ring (heights, centres, trail), its
+    radii out from them by its own (`rTop - over.rTop` easing to `rBottom - over.rBottom`) and
+    `OVER_CLEAR` (0.002 H), its skin weights the garment's at the same ring, its hem lifted to its
+    own `bottom` on the last ring, where the weights beneath no longer change. The panel never sinks
+    a baked px under the garment, measured along the garment's normal where it lay over it in bind.
+26. A robe's thigh may carry the cloth over the knee it bends (`skirt({ kneeCover })`, H under the
+    knee where the thigh's share starts passing to the panels; 0 as before): the mage's 0.05, the
+    least in 0.01 steps that keeps her leading knee in through the run.
+27. Over a garment's top, where the torso alone covers the thigh's root, `legs({ under: { torso } })`
+    draws the root in under the torso's wall when it is the narrower (the mage's pinched waist).
+28. The check of R24-R27, in the clip tests: from the bake camera in all 8 facings, no thigh or knee
+    vertex lying outside the cloth round it on R22's level ray, and no vertex of the thigh's root, is
+    left unhidden on the knight, the wizard and the mercenary at rest, through the run, the walk and
+    both attacks on the move.
+
+> **Edited in place again on 2026-11-12 (still a work-order): the cloaks, the dashes, the quiver.**
+> The owner, on the robe: "法師長袍修正 沒問題" (the robe fix is fine: knee, waist, green panel). Of
+> the dashes a baked px long left on the back panel at the knee in a few run frames (Verification
+> below), first "可以" (acceptable), then, after playing: "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點"
+> (in the wizard's run, behind the knee joint, the green panel shows black dots), so they go after
+> all. On the play branch: "騎士後退攻擊 腳會穿過斗篷" (in the knight's backward step while attacking
+> his feet pass through his cloak), "弓箭手後退攻擊 腳跟處也會穿過斗篷" (the archer's heels too), and
+> "弓箭手背後的箭袋 底部會吃進斗篷裏 可以擺正一點" (the bottom of the quiver on the archer's back sinks
+> into her cloak; set it straighter), then "目前我知道跑步跟平常站立時都會吃進斗篷" (he has seen it in
+> the run and standing). Measured, not guessed: the dots are the black gown through the teal
+> panel (an ID render: the gown's colour inside the panel's, 254 px over the run's 64 frames); the
+> cloak checks below read the legs and boots through the cloaks and the quiver inside the archer's.
+
+29. **Cloaks are guarded as garments are.** A cloak (anatomy.js `cloak`, tagged) must not show a leg
+    or a boot through it: each leg vertex and each vertex of a mesh riding a shin or a foot is
+    measured on R22's level ray against the cloak's surface as posed (cloth only between the axis and
+    the vertex: through, by its distance past it), and no clip but the death may show one through by
+    more than CLEARANCE_PX baked px (clearance.js `cloakClearance`, `cloakClearanceError`). The bake
+    holds the playable classes (the trimmed sheets) to it; the creatures' rag cloaks are held to it
+    once each is re-baked (today the ghost's attack reads 8.95 px), so their pixels do not move.
+    Seen red: the knight's `backpedal_attack` 18.8 px (653 vertex-facings in view from the bake
+    camera), the archer's 10.5 (268), the knight's standing `attack` 7.6 on its last key.
+30. **The backward step and the knight's attack carry the cloak out behind.** `backpedal_attack`
+    carries its cloth as half a walk would (FS-JS7C8 R10: `BACKPEDAL_ATTACK_SPEED` +0.5, was −0.5,
+    which pressed the cloak forward against the legs; from +0.3 neither cloak is crossed), and the
+    knight's standing attack carries his cloak the same way (`KNIGHT_ATTACK_CLOTH` 0.5, was still:
+    the slash's stance sets his right foot back under it; 0.25 left 3.3 px). The cloak still hangs
+    heavy, as in a slow walk: no flap, no bell.
+31. **A panel is cut on its garment's columns as on its rings (amends R25).** A panel worn over a
+    garment (`skirt({ over })`) has its arc snapped to the garment beneath's columns (`over.segs`
+    round the full turn) and one column per column, so each of its faces lies over a face of the
+    garment; the mage's gown is cut at 64 columns and her scapular's 10 lie on them (were 32, and 16
+    across the panel's own arc: behind the knee in the run the panel's vertices followed the skin's
+    turn from one thigh to the other while the gown's coarser face cut straight across, and the
+    panel dipped under it). R25's measure is taken on the gown's own face where the panel vertex lay
+    over it in bind (nearest point, its barycentric weights), not on a ring row read at one column,
+    which the rings' tilt put a row off: the cut before reads 0.91 px under the gown in the run and
+    fails; the cut now at most 0.28 (one vertex, at the crease), under a baked px.
+32. **The archer's quiver rides over her cloak.** It hangs `QUIVER_TILT` 17° off the spine (was 29),
+    its mouth toward the right shoulder and the fletching over it, seated 0.15 of her torso's depth
+    behind the chest (was 0.1), its foot tipped out 0.12 rad with the cloak's flare
+    (classStyles.js `ARCHER_QUIVER`); its strap holds the cloak's top to her back (anatomy.js
+    `cloakBones({ strap })`, cloak0's and cloak1's drag and fling at 0.2 and 0.4), so the run's drag
+    no longer swings the cloak out past the case's foot. No point of the case is inside the cloak on
+    any frame of the idle, the walk, the run, the attack, `walk_attack`, `backpedal_attack` or the
+    death. Seen red: its foot 5.5 px inside the cloak in the idle (62-77 of 208 case points every
+    frame, hidden in the back and side facings), 21.1 in the run, 10.2 the walk, 17.8 the death.
+
+### Acceptance Criteria
+
+- [ ] The knight's hauberk, the wizard's robe and the mercenary's coat, each on its class's rig and
+      style, pass the guard at 1.5x through `run`, `walk`, `walk_attack` and `backpedal_attack`
+      (seen red: 12.71, 6.27, 2.04 px on the run).
+- [ ] The existing guard tests still hold: a garment skinned to the opposite thigh fails, the
+      thighs wider than a tunic's top fail at rest, a belt is cover, a death is exempt.
+- [ ] A full bake passes with every `KNOWN_CLIPPING` sheet still past the limit and under its
+      ceiling; `npm run bake -- --check` reports no changes.
+- [ ] The guard measures a point on the outside of a bend in the rings (R24); it fails the wizard's
+      run as cut before (seen red: 0.41 px, passing).
+- [ ] From the bake camera, no hip, thigh or knee of the knight, the wizard or the mercenary is seen
+      through the garment or the waist in any facing at rest, in `run`, `walk`, `walk_attack` and
+      `backpedal_attack` (R28; seen red: the wizard's waist at rest and her knee in the run).
+- [ ] The mage's scapular never sinks a baked px under her gown in those clips (seen red: -0.73 px
+      at rest, -2.14 in the run, cut as before); her robe reaches no further in the run (its hem
+      0.427 H from the pelvis, as before).
+- [x] The owner judges the wizard's run on the contact sheet: no leg through the robe, the teal back
+      panel as clear in the run as in the walk ("法師長袍修正 沒問題", 2026-11-12).
+- [ ] No leg or boot of the knight or the archer through the cloak by a baked px in the idle, the
+      walk, the run, the attack, `walk_attack` and `backpedal_attack` (R29-R30; seen red: 18.8 px and
+      10.5 on `backpedal_attack`, 7.6 on the knight's attack).
+- [ ] The gown never through the scapular by a baked px on the face measure (R31; seen red: 0.91 px
+      in the run as cut before); the ID render shows no gown in the panel in the run's back facings.
+- [ ] The archer's quiver case nowhere inside her cloak in any clip, the fletching over the right
+      shoulder (R32; seen red: 5.5 px in the idle, 21.1 in the run).
+- [ ] The owner judges the knight's and the archer's `backpedal_attack`, the wizard's run from the
+      back and the archer's quiver on the contact sheets.
+
+### Edge States
+
+- **A heel under a lifted hem** is uncovered, not through: the owner judges it on the contact
+  sheet like any leg below a hem.
+- **A ray that grazes the cloth's edge** (the open front's split) may miss it; the vertex then
+  counts as uncovered, as an opening always has.
+
+### Out of Scope
+
+- Changing the knight's or the mercenary's garment rig: the check of R28 finds no leg through their
+  cloth. (Was: any garment's skinning, "not needed for the guard; reopened if the contact sheet
+  shows a leg through the cloth": the owner's sheet did, for the robe, R25-R27.)
+- The flat-colour render of the check (a review probe, not a bake step): the clip tests hold the
+  geometry.
+
+### Verification (2026-11-12, branch `feat/run-sheets-1p5x`)
+
+- **Unit.** The three garments on their classes' rigs pass at 1.5x through `run`, `walk`,
+  `walk_attack` and `backpedal_attack` (the run read 12.71 / 6.27 / 2.04 px before); the earlier
+  guard tests hold.
+- **Bake.** The wizard, the knight and the mercenary re-baked at 1.5x with the run: the guard
+  reads the wizard's run at 0.41 px, every other class clip at 0; every `KNOWN_CLIPPING` sheet
+  still clips past the limit and under its ceiling; `npm run bake -- --check` reports no changes.
+- **The robe in the run (R24-R28; I-JS7C8-7).** Unit: the guard measures a point on the outside of a
+  bend (seen red: null); from the bake camera no hip, thigh or knee of the three classes is seen
+  through the cloth at rest, in the run, the walk and both attacks on the move (seen red: the
+  wizard's waist at rest, 23-28 vertex-facings a pose, her knee in run keys 1 and 5); the scapular
+  never sinks a baked px under the gown (seen red: -0.73 px at rest, -2.14 in the run, cut as
+  before); the guard fails the robe as cut before (1.08 px; it read 0.41). Rendered with every
+  part in a flat colour from the bake's camera in all 8 facings at 1.5x (a review probe): leg px in
+  the wizard's run 0 (was 102 at the knee, up to 26 a frame, and 23 at the waist), gown px through
+  the teal 6 over the run (was 456, up to 29 a frame), the teal in the back views' lower band 3,800-3,900
+  px a facing in the run (was 576-883; the walk 3,600-4,200), its mean light as the walk's; a pair
+  of dashes about a baked px long remains on the back panel at the knee's height in a few run
+  frames, unmoved by a wider OVER_CLEAR, left for the owner's eye (he first said "可以", then asked
+  for them gone: R31). The knight and the mercenary:
+  no leg through the cloth, no garment change. Bake: every class clip reads 0 px; every
+  `KNOWN_CLIPPING` sheet reads as before; only the three classes' pages and the manifest changed;
+  `npm run bake -- --check` reports no changes.
+- **The cloaks, the dashes, the quiver (R29-R32; I-JS7C8-6, -7, -12).** Unit: the cloak check on
+  the knight's and the archer's rigs and styles reads 0 on every clip but the knight's walk (0.21
+  px, under the limit) (seen red: 18.8 / 10.5 px on `backpedal_attack`, 7.6 on the knight's
+  attack); the scapular at worst 0.28 px under the gown at one crease vertex (seen red: 0.91 cut as
+  before); the quiver case outside the cloak on every frame of every clip (seen red: 5.5 px in the
+  idle, 21.1 in the run). ID render of the wizard's run at 1.5x, all 8 facings: gown px inside the
+  teal panel 4 over 64 frames, none in the back facings (was 254). Bake: the archer, the knight, the
+  wizard and the mercenary re-baked once each; every creature's bytes unchanged.
+
+
+## Change: The folk's legs stay under their clothes
+Status: work-order
+Date: 2026-11-12
+
+> Written `--from-thread` by write-a-spec on 2026-11-12 (charter "NPC 腿部重繪", approved by the
+> owner: 「核准」). The owner: "npc的模組也要重繪一次 大腿都還是套用以前的模組 腿都超出衣服了" (the NPCs'
+> models need redrawing too: their thighs still use the old rig, and their legs poke out of their
+> clothes). Requirements marked **(owner)** are those words; **(charter default)** settles what
+> they left open. Anchored here: this FS owns "Legs stay inside garments", and R18 and R20 are what
+> left the hub folk (FS-2325V §G) on the old weighting and on `KNOWN_CLIPPING`. A behaviour change,
+> not a tune: four sheets leave the legacy lists and gain the guard's acceptance criteria.
+
+### Facts this change rests on
+
+- The hub's folk are four sheets baked by `tools/bake/page/characters/folk.js`, all 1x, idle and
+  walk only (`FOLK_ANIMATIONS`), on one atlas page `folk-0` (2036×2816, 22.93 MB RGBA, PNG
+  2,640,989 B):
+  - `folk_resident_trousers` (palettes rust, slate): the Cottar, the Woodcutter, the Drover, the
+    Gravedigger, the Smith, and the Elder (the storyteller, `FUNCTION_NPC_SHEETS`), and the
+    fallback for any appearance the client cannot resolve;
+  - `folk_resident_skirt` (green, flax): the Herbwife, the Bellringer, the Alewife, the Pilgrim;
+  - `folk_quartermaster`: the Quartermaster (the storekeeper);
+  - `folk_spirewarden`: baked, drawn by no NPC today (no function maps to it).
+  (`game-server/game-service/internal/game/hub_map.go` `hubNPCs`, `hubResidents`,
+  `hubFixedResidents`; `game-client/src/render/art/hubFolk.ts`.)
+- All four build their garment with `skirt({ mirrored: true })`: each half of the hem skinned to
+  the opposite thigh (R18), and none of the rest of R16. None draws its thighs in under it.
+- Posed as the bake poses them, the guard (R19, R22) reads, worst per sheet (1x px; limit 1): the
+  trousered resident 4.42 (walk frame 0; 1.50 at rest), the spirewarden 8.70 (walk frame 1; 1.60
+  at rest), the quartermaster 8.25 (walk frame 0; 0 at rest). The skirted resident has no legs
+  under her kirtle, only boots, so the guard has nothing to measure; she is on `MIRRORED_LEGACY`
+  alone.
+- The quartermaster's apron is an open panel over the front of the legs only (`arc: FRONT`).
+  `legs({ under })` draws a thigh in wherever it lies past the garment's wall, all round, not only
+  under the cloth: on him that slims the bare breeches at the sides and back by up to 4.6 1x px.
+
+### Requirements
+
+40. **(owner)** The hub folk's legs stay under their clothes: the four folk sheets are rebuilt on
+    R16's garment weighting (no `mirrored`), so each half of a hem follows the thigh on its own
+    side, the follow builds from under the waistband, and swaying panels are pushed out by the
+    legs.
+41. **(owner: 「大腿都還是套用以前的模組」; charter default for the how)** Where a garment covers the
+    thighs all round (the trousered resident's tunic, the spirewarden's hauberk), the thighs are
+    drawn in under it as the classes' are (`legs(rig, mat, { under })`, the one `UNDER_CLEAR`,
+    R17, FS-3V7GC R10), given the garment's own `skirt` options. The quartermaster's thighs are
+    not: his apron covers only their front, and drawing them in would slim the breeches it leaves
+    bare; the weighting of R40 alone keeps them under it. The skirted resident has no thighs to
+    draw in.
+42. **(charter default)** All four pass the guard at 1x with no exemption, in every pose of idle
+    and walk and in every palette variant: they leave `KNOWN_CLIPPING` (the trousered resident,
+    the spirewarden, the quartermaster) and `MIRRORED_LEGACY` (all four). Both lists keep only the
+    monsters (troll, zombie, ghost; ghoul, demon) and still only shrink (R20).
+43. **(charter default)** The look is unchanged but for the legs: each folk keeps its costume,
+    colours, proportions, garment cut (every `skirt` option but `mirrored`), clips (idle and walk),
+    palettes and 1x scale. Only how the cloth follows the legs, and the thighs under the cloth,
+    change.
+44. **(charter default)** Re-baked by the bake tool: only the folk's atlas page(s) and their
+    manifest entries change; every other atlas keeps its bytes; `npm run bake -- --check` reports
+    no changes after.
+45. **(charter default)** The owner approves each sheet on a contact sheet (ADR-0021 §5, FS-2325V
+    §G.5): old beside new, idle and walk, 8 facings, with an animated preview.
+
+> **Edited in place on 2026-11-12 (still a work-order): round 2, the quartermaster.** After
+> playing the round-1 bake, the owner said: "NPC 腿部重繪 還是有一點破圖 尤其是npc quartermaster" (the
+> NPC leg redraw still breaks up a little, especially the quartermaster). Round 1 had left him at
+> 0.66 px on the guard, under its limit, and his thighs as built (R41). The camera check of R28,
+> run on the folk as the bake poses them, found him seen through his clothes in every pose:
+> 165-176 vertex-facings a pose at rest, up to 215 in the walk; the other three folk none. Two
+> places, both measured: (a) from every side his thigh roots came up through the shirt at the hips,
+> above the belt too, round the pale bottom of the shirt (the torso), which showed below the belt
+> between them as a seat; no garment covered his pelvis, the torso and the two leg tubes simply
+> crossed there; (b) in walk frames 0, 1, 3, 4, 5 and 7 the leading thigh came out through the
+> apron's side edge, mid-thigh (0.66 px at most), where the apron follows the thigh by a sixth of
+> its swing. The owner allowed a small change to his look. R41's sentence on the quartermaster is
+> replaced by R47.
+
+46. **(owner)** No folk's hip, thigh or knee is seen through its clothes: R28's camera check, run
+    on each folk sheet posed as the bake poses it, through idle and walk in every palette, sees
+    none in any facing. The skirted resident has no legs under her kirtle to see.
+47. **(owner; the fix that changes his silhouette least)** The quartermaster wears the seat of his
+    breeches: a closed `skirt` in the breeches' cloth from 0.05 H over the hips (a little over the
+    belt, where it hugs the shirt, so the belt's hoop shows breeches, not shirt) to 0.1 H under
+    them (just below the crotch), as wide as his hips were (rTop [0.104, 0.09], rBottom
+    [0.13, 0.085], belly 0.012, 0.006 H back), following the thighs by 0.8 with no panels; his
+    thighs are drawn in under it (`legs({ under })`, the one `UNDER_CLEAR`), and below it, where
+    only the apron covers their front, stay as built. From behind he reads shirt above the belt,
+    breeches below it. The seat lies under the apron wherever the apron is round it.
+48. **(owner; tune)** The quartermaster's apron follows the thighs by 0.5 (was 0.4): the least in
+    0.05 steps that keeps the leading thigh in under its side edge through the walk (0.45 leaves
+    0.12 px seen in walk frames 0 and 4). Its cut, arc and length are unchanged.
+49. The other three folk keep their build: the check of R46 sees nothing on them as round 1 left
+    them.
+
+### Acceptance Criteria
+
+- [ ] Each of the four folk sheets, built by `folk.js` and posed as the bake poses it, asks for no
+      `mirrored` garment and is on neither legacy list (seen red: all four mirrored and listed).
+- [ ] Through idle and walk in every palette, no leg of the trousered resident, the spirewarden or
+      the quartermaster lies more than 1 px outside the cloth over it, and the guard passes each
+      sheet with empty legacy lists (seen red: 4.42, 8.70, 8.25 px).
+- [ ] `KNOWN_CLIPPING` holds only the troll, the zombie and the ghost; `MIRRORED_LEGACY` only those
+      and the ghoul and the demon.
+- [ ] The bake passes the guard on the folk; only `folk-*` pages and the folk entries in
+      `manifest.json` change; `npm run bake -- --check` reports no changes.
+- [ ] A contact sheet per folk sheet, old beside new, idle and walk, 8 facings, and an animated
+      preview; the owner approves each.
+- [ ] Round 2 (R46-R49): from the bake camera no hip, thigh or knee of any folk sheet is seen
+      through its clothes in any facing, through idle and walk in every palette (seen red: the
+      quartermaster, 165-176 vertex-facings a pose at rest, 215 at walk frame 0); his breeches
+      seat never comes out through his apron (seen red at 1.24 px with the seat set 0.02 H
+      forward); only `folk-*` and the folk entries of `manifest.json` change; the owner approves
+      the quartermaster's sheet, old beside new, with a 4x zoom of his legs and apron.
+
+### Edge States
+
+- **A hem swung by a stride** is under the cloth if the cloth lies beyond the leg (R22); the owner
+  judges what the contact sheet shows.
+- **The tunic's and the hauberk's hems.** The thighs drawn in under a hem narrow back to the leg
+  as built between the last ring over the hem and the first under it (R17); in a walk the hem can
+  lift over that taper. Judged on the contact sheet.
+- **The kirtle.** The skirted resident's kirtle now sways with the leg on its own side and its
+  panels are pushed out by the legs below the knee, as the wizard's robe; her boots are not
+  measured (no guard on footwear).
+- **A leg still out after R40–R41** that only a garment change would fix: not decided here; it is
+  reported to the owner (the charter's escalation).
+
+### Out of Scope
+
+- The monsters on the legacy lists (troll, zombie, ghost, ghoul, demon).
+- Any new clip, palette, scale or costume; the game server; game logic; which NPC uses which
+  sheet.
+
+### Verification (2026-11-12, branch `feat/world-folk-legs`, I-HF0WW-9)
+
+- **Unit.** `characters/folk.test.mjs` poses each folk sheet as the bake does (`characters/poses.js`):
+  the guard's worst, 1x px, before → after: the trousered resident 4.42 → 0, the spirewarden
+  8.70 → 0, the quartermaster 8.25 → 0.66; the skirted resident has no legs to measure. None asks
+  for `mirrored`; `KNOWN_CLIPPING` keeps the troll, the zombie and the ghost, `MIRRORED_LEGACY`
+  those and the ghoul and the demon.
+- **Bake.** Only `folk-0` and the folk entries of `manifest.json` changed: 2036×2816 → 2036×2840,
+  22.93 → 23.13 MB RGBA, PNG 2,640,989 → 2,654,316 B. The skirted resident's frame grew 73×88 →
+  78×91 (her kirtle now swings out with her stride); every other folk frame box, anchor and crown
+  is unchanged. `npm run bake -- --check` reports no changes.
+- **Awaiting the owner:** a contact sheet per folk sheet (old above new, idle and walk, 8 facings)
+  and an animated preview. The skirted resident's kirtle visibly swings wider in the walk than
+  before (R43): kept or reverted on his word.
+- **Round 2 (2026-11-12, I-HF0WW-9; R46-R49).** Unit: R28's camera check (`seenThroughCloth`, now
+  in `clearance.js`) on each folk sheet posed as the bake poses it, idle and walk in every
+  palette: the quartermaster 165-176 vertex-facings a pose at rest and up to 215 in the walk → 0
+  (his thigh roots round the shirt's seat from every side, and the leading thigh through the
+  apron's side edge in walk frames 0, 1, 3, 4, 5, 7, 0.66 px); the trousered resident and the
+  spirewarden 0 before and after; the skirted resident has no legs to see. The breeches seat lies
+  under the apron wherever the apron is round it (seen red at 1.24 px with the seat set 0.02 H
+  forward). The guard reads 0 on every folk clip (the quartermaster was 0.66). An ID render from
+  the bake camera (every part a flat colour, a review probe) showed the same: the shirt's pale
+  bottom between dark thigh roots below the belt from behind, gone after. **Bake.** Only the
+  quartermaster's 96 frames moved (the other three sheets' frames are byte-identical); his frame
+  box 77×91, anchor and crown unchanged; `folk-0` 2036×2840 as before, 23.13 MB RGBA unchanged,
+  PNG 2,654,316 → 2,658,511 B; only `folk-0` and its manifest entry changed; `npm run bake --
+  --check` reports no changes. **Awaiting the owner:** his sheet, old (round 1) beside new, idle
+  and walk, 8 facings, an animated preview, and a 4x zoom of his legs and apron in the worst
+  frames.

@@ -26,6 +26,9 @@ interface FakeTarget extends Maskable {
   filterCamera: Maskable["filterCamera"];
   filters: Maskable["filters"];
   filterOrigin: { x: number; y: number };
+  /** Where the filter camera was last scrolled, and what Phaser's own camera focus copied. */
+  filterScroll: { x: number; y: number };
+  focusedOn?: unknown;
   addMaskArgs?: unknown[];
   setMaskArg?: unknown;
 }
@@ -39,6 +42,8 @@ interface TargetShape {
   /** false: the canvas renderer, where `enableFilters` leaves no filter list. */
   webgl?: boolean;
   canSetMask?: boolean;
+  /** A Text's style: what it is rasterised at (`resolution`, the render scale by the crisp factory). */
+  style?: { resolution?: number };
 }
 
 const MASK: ViewMask = { setGameObject: () => undefined, invert: false };
@@ -50,22 +55,35 @@ function target({
   height,
   webgl = true,
   canSetMask = true,
+  style,
 }: TargetShape): FakeTarget {
   const t: FakeTarget = {
     scrollFactorX: scrollFactor[0],
     scrollFactorY: scrollFactor[1],
     width,
     height,
+    style,
     filtersFocusContext: false,
     filterOrigin: { x: 0.5, y: 0.5 },
+    filterScroll: { x: 0, y: 0 },
     filterCamera: null,
     filters: null,
+    // Phaser's own: the filter camera takes the main camera's size, scroll, rotation and zoom
+    focusFiltersOnCamera(cam: { scrollX: number; scrollY: number }) {
+      t.focusedOn = cam;
+      t.filterScroll = { x: cam.scrollX, y: cam.scrollY };
+      return t;
+    },
     enableFilters() {
       if (!webgl) return t;
       t.filtersFocusContext = focusContext;
       t.filterCamera = {
         setOrigin: (x: number, y = x) => {
           t.filterOrigin = { x, y };
+          return t.filterCamera;
+        },
+        setScroll: (x: number, y: number) => {
+          t.filterScroll = { x, y };
           return t.filterCamera;
         },
       };
@@ -132,7 +150,7 @@ describe("maskInView", () => {
       expect(t.filterOrigin).toEqual({ x: 0.25, y: 0.75 });
     });
 
-    it("leaves an object focused on itself (an Image, a Text) to Phaser", () => {
+    it("leaves an object focused on itself (an Image) to Phaser", () => {
       const t = target({ focusContext: false, width: 40, height: 20 });
       maskInView(t, graphicsSource(), camera(1.5));
       expect(t.filterOrigin).toEqual({ x: 0.5, y: 0.5 });
@@ -185,6 +203,55 @@ describe("maskInView", () => {
         expect(t.filterOrigin).toEqual({ x: 0, y: 0 });
       },
     );
+  });
+
+  // The owner, 2026-11-12: "信箱的內文好像解析度有點差" (FS-1GZGD § Change C6). Focused on itself, Phaser
+  // 4.2.1 draws a filtered object into a framebuffer of its own size (`focusFilters` →
+  // `setFilterSize(width, height)`, zoom 1/scale; `renderNodes/Camera.js` makes the internal context
+  // camera.width × camera.height): a Text's width is in logical units, so text rasterised at the
+  // render scale is drawn down to one px a unit there and scaled up again by the camera's zoom,
+  // soft at 1.5 and 2. Focused on the context, its framebuffer is the camera's, in backing px.
+  describe("text keeps its resolution (a Text is drawn through the context, not its own size)", () => {
+    const view = (scrollX: number, scrollY: number) => ({ scrollX, scrollY, originX: 0, originY: 0 });
+
+    it.each(ZOOMS)("focuses a camera-fixed Text on the context at zoom %s, with the camera's origin", (zoom) => {
+      const t = target({ focusContext: false, scrollFactor: [0, 0], width: 400, height: 18, style: { resolution: zoom } });
+      maskInView(t, graphicsSource(), camera(zoom));
+      expect(t.filtersFocusContext).toBe(true);
+      expect(t.filterOrigin).toEqual({ x: 0, y: 0 });
+    });
+
+    it("keeps a camera-fixed Text where it stands while the camera scrolls: its filter camera unscrolled", () => {
+      const t = target({ focusContext: false, scrollFactor: [0, 0], width: 400, height: 18, style: { resolution: 2 } });
+      maskInView(t, graphicsSource(), camera(2));
+      const cam = view(300, 120);
+      t.focusFiltersOnCamera!(cam);
+      // Phaser's focus still ran (the camera's size and zoom), then the scroll is the Text's own
+      expect(t.focusedOn).toBe(cam);
+      expect(t.filterScroll).toEqual({ x: 0, y: 0 });
+    });
+
+    it("scrolls a Text's filter camera by its scroll factor: with the world at 1, half at 0.5", () => {
+      const world = target({ focusContext: false, width: 40, height: 18, style: { resolution: 1.5 } });
+      maskInView(world, graphicsSource(), camera(1.5));
+      world.focusFiltersOnCamera!(view(300, 120));
+      expect(world.filterScroll).toEqual({ x: 300, y: 120 });
+      const half = target({ focusContext: false, scrollFactor: [0.5, 0], width: 40, height: 18, style: { resolution: 1 } });
+      maskInView(half, graphicsSource(), camera(1.5));
+      half.focusFiltersOnCamera!(view(300, 120));
+      expect(half.filterScroll).toEqual({ x: 150, y: 0 });
+    });
+
+    it.each([
+      ["an Image, which carries no style", undefined],
+      ["an object whose style is no text style (no numeric resolution)", { fill: 1 }],
+    ])("leaves %s focused on itself", (_, style) => {
+      const t = target({ focusContext: false, scrollFactor: [0, 0], width: 40, height: 20, style: style as never });
+      maskInView(t, graphicsSource(), camera(2));
+      expect(t.filtersFocusContext).toBe(false);
+      t.focusFiltersOnCamera!(view(300, 120));
+      expect(t.filterScroll).toEqual({ x: 300, y: 120 });
+    });
   });
 
   describe("the mask filter", () => {

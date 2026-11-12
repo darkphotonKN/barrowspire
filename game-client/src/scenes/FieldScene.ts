@@ -51,6 +51,11 @@ import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { escapeStep } from "@/ui/escapeOrder";
+import { HudCorner } from "@/ui/HudCorner";
+import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
+import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -69,8 +74,19 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
-import { boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
+import { usePartyStore } from "@/stores/partyStore";
+import { useGameStore } from "@/stores/gameStore";
+import { browserFieldChartStore, type FieldChartStore } from "@/ui/fieldChart";
+import { FieldChartKeeper } from "@/ui/fieldChartKeeper";
+import { fieldMap } from "@/ui/fieldMap";
+import type { MinimapStage } from "@/ui/minimap";
+import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
+import type { ModeIconStage } from "@/ui/minimapModeIcon";
+import { canvasImage } from "@/ui/paintKit";
+import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
+import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
 
 /**
@@ -113,8 +129,16 @@ const NOTICE_MS = 3200;
 const FALLEN_DEPTH = 1000;
 /** The fallen line's size, as it has always been. */
 const FALLEN_LINE_PX = 18;
-/** The ability card's corner, bottom-right (FS-8AY7S req 29); the resource bars stand at `RESOURCE_HUD_AT`. */
-const HUD_MARGIN = 16;
+/** The ESC menu's pressable rows and tokens: the town's (FS-G4VMQ § Change C2). */
+const MENU_CHOICE_HIT = { width: 160, height: 34 };
+const MENU_TONES: MenuTones = {
+  panel: BARROW_HEX.charcoal,
+  frame: BARROW_HEX.brass,
+  text: BARROW_HEX.vellum,
+  dim: BARROW_HEX.vellumDark,
+  actionable: BARROW_HEX.amber,
+  cancel: BARROW_HEX.arcane,
+};
 
 /** What the entrance gate is called on the ground, for a player to walk to. */
 const ROAD_HOME = "The road home";
@@ -150,7 +174,13 @@ interface PlayerView {
 export class FieldScene extends Phaser.Scene {
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd?: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
-  private lastSent = { vx: 0, vy: 0 };
+  /**
+   * The last move this visit sent, which the field body walks; none yet at a start. The body may
+   * be walking already: the server routes a move by the player's record, which the world left
+   * moves here before the client hears of it, so that world's last move may walk the field body.
+   * The first frame sends whatever the keys say.
+   */
+  private lastSent?: { vx: number; vy: number };
 
   private field: FieldId = "gentle_meadows";
   /**
@@ -179,6 +209,15 @@ export class FieldScene extends Phaser.Scene {
   private leavingField = false;
   /** The field's monsters and the player's fight with them (§Requirements 56). */
   private fight?: FieldCombat;
+  /**
+   * The ESC menu while it is open (FS-G4VMQ § Change: The ESC menu in a field world): the town's,
+   * Change character and Back. It owns the keys and presses while up.
+   */
+  private menu?: Phaser.GameObjects.Container;
+  private menuChoices?: MenuKeys;
+  private moveMenu?: (origin: { x: number; y: number }) => void;
+  /** A leave_hub has been sent from the menu and not answered yet (FS-G4VMQ R25). */
+  private leavingHub = false;
   /** The player's own fall and its 3-2-1 (§Requirements 58). */
   private fallen = new FallenCountdown();
   /** The fallen state on screen: its panel, line, number and countdown bar (FS-B3NDZ R12). */
@@ -203,7 +242,31 @@ export class FieldScene extends Phaser.Scene {
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre: an invite reaches a field too (FS-NCC9J R24). */
   private invitePrompt?: PartyInvitePrompt;
+  /**
+   * The field's minimap at the top of the top-right column (FS-P0HSP): built with the field's
+   * first state, from the stage create wires; gone with the visit.
+   */
+  private minimap?: WorldMinimapController;
+  /** What the field's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
+  private minimapStage?: MinimapStage;
+  /** The map mode icon's own stage, its glyph and hint (FS-56CKV §Change: Map mode icon): the scene's graphics and text. */
+  private modeIconStage?: ModeIconStage;
+  /**
+   * This visit's charted ground (FS-P0HSP §D), the player's own, read at the first state for the
+   * active character then, and when its map redraws and its browser write are due.
+   */
+  private charting?: FieldChartKeeper;
+  /** Where this browser keeps charted ground (ADR-0078). */
+  private readonly chartStore: FieldChartStore = browserFieldChartStore;
+  /** The field's walls and gates as last sent: what its map is built from with the chart. */
+  private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
+  /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
+  private readonly minimapStore: MinimapModeStore = browserMinimapStore;
+  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   private abilityHud?: AbilityHud;
+  /** The corner row (FS-3EBCA): Menu, Inventory, Character, Party and the Mailbox greyed; the card above it. */
+  private corner?: HudCorner;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
   /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
@@ -229,6 +292,8 @@ export class FieldScene extends Phaser.Scene {
   init(data?: { field?: FieldId; arrival?: boolean }): void {
     this.field = data?.field ?? "gentle_meadows";
     this.arrival = data?.arrival ?? false;
+    // what the body walks is not known at a start: the first frame says (reported 2026-11-12)
+    this.lastSent = undefined;
   }
 
   preload(): void {
@@ -274,16 +339,30 @@ export class FieldScene extends Phaser.Scene {
     this.createPiles();
     this.equipment = this.composeEquipment();
     this.bindHudKeys();
+    this.bindMinimapKey();
+    // the field's minimap, built with its first state (FS-P0HSP §A.1); as the overlay, held
+    // against the screen from the main camera's frames (FS-1SEF0 §C.19)
+    this.minimapStage = {
+      graphics: () => this.add.graphics(),
+      canvasImage: (...image) => canvasImage(this, ...image),
+      frames: (listener) => afterFrameSetUp(this.cameras.main, listener),
+    };
+    // the map mode icon's, apart from the map's layers (FS-56CKV §Change: Map mode icon)
+    this.modeIconStage = {
+      graphics: () => this.add.graphics(),
+      text: (words, style) => this.add.text(0, 0, words, style),
+    };
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
-    this.chatWindow = mountChatWindow(this, () => !this.equipment?.isOpen());
-    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(this, () => !!this.equipment?.isOpen());
+    this.chatWindow = mountChatWindow(this, () => this.mayChat());
+    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
+    this.mountCorner();
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
@@ -292,14 +371,64 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
+   * The corner row: the Menu icon opens the menu (R6), the others each the key's own path; the
+   * Mailbox greyed, it is the town's (FS-3EBCA).
+   */
+  private mountCorner(): void {
+    this.corner = new HudCorner(this, {
+      icons: [
+        { icon: "menu", press: () => this.pressMenuIcon() },
+        { icon: "inventory", press: () => this.toggleGear() },
+        { icon: "character", press: () => this.toggleCharacter() },
+        { icon: "party", press: () => this.partyPanel?.toggle() },
+        { icon: "mail", greyed: true },
+      ],
+    });
+  }
+
+  /**
+   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): the menu owns the
+   * screen. The inventory and the character panel do not: the party panel opens over them
+   * (FS-R82NV § Change C8).
+   */
+  private refusesParty(): boolean {
+    return !!this.menu;
+  }
+
+  /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the gear overlay is up. */
+  private mayChat(): boolean {
+    return !this.menu && !this.equipment?.isOpen();
+  }
+
+  /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
+  private closeWindows(): void {
+    this.partyPanel?.close();
+    this.equipment?.hide();
+  }
+
+  /**
+   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
+   * it opens; with the menu open it closes it, as its × and Back do (owner 2026-11-12: "menu無法再按一次icon關閉").
+   */
+  private pressMenuIcon(): void {
+    if (this.menu) this.closeMenu();
+    else this.openMenu();
+  }
+
+  /**
    * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
-   * its anchor, open panels included. The bars, the chat window and the party frames and panel
+   * its anchor, open panels included. The bars, the chat window and the party frames
    * keep to the left and the bottom, which a width change does not move; the gear overlay follows
    * Phaser's resize itself.
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
+    this.minimap?.place();
     this.abilityHud?.relayout();
+    this.corner?.relayout();
+    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
+    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
+    this.partyPanel?.relayout();
     this.satchel?.relayout();
     this.invitePrompt?.relayout();
     if (this.fallenView) {
@@ -310,6 +439,19 @@ export class FieldScene extends Phaser.Scene {
 
   /** The field's answer to leaving: a refusal keeps the player here and says why. */
   private listen(): void {
+    // leaving for the roster from the menu (FS-G4VMQ § Change C3): the scene switches on the
+    // server's world_left; a refusal keeps the player here and says why in passing
+    socketManager.on("world_left", () => {
+      if (!this.leavingHub) return;
+      this.leavingHub = false;
+      this.scene.start("MainMenuScene");
+    });
+    socketManager.onError(ActionType.LeaveHub, (info) => {
+      if (!this.leavingHub) return;
+      this.leavingHub = false;
+      this.menuChoices?.retone();
+      this.notice(info.message ?? "The field will not let you go yet. Ask again.");
+    });
     socketManager.onError(ActionType.LeaveField, (info) => {
       if (!this.leavingField) return;
       this.leavingField = false;
@@ -403,7 +545,8 @@ export class FieldScene extends Phaser.Scene {
    * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    const overlay = new GearOverlay(this, this.art, WorldType.Field);
+    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
+    const overlay = new GearOverlay(this, this.art, WorldType.Field, (x, y) => this.partyPanel?.covers(x, y) ?? false);
     return new EquipmentHud(
       overlay,
       {
@@ -421,30 +564,117 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
+   * I, B or the corner row's icon (FS-HRH2J R4; FS-3EBCA R7): the inventory, not while the ESC
+   * menu owns the keys (FS-G4VMQ R5). Opening it ends a Shadow Shot hold (FS-JTNPR req 15).
+   */
+  private toggleGear(): void {
+    if (this.menu) return;
+    if (this.equipment?.toggle()) this.fight?.cancelAim();
+  }
+
+  /** C or the corner row's Character icon: the character panel, under I's rule (FS-HRH2J § Change C2, C5). */
+  private toggleCharacter(): void {
+    if (this.menu) return;
+    if (this.equipment?.toggleCharacter()) this.fight?.cancelAim();
+  }
+
+  /**
+   * One Esc press (FS-R82NV § Change C2): one press closes one thing, the party panel, drawn over
+   * the gear overlay (§ Change C8), then the overlay (`escapeStep`).
+   */
+  private pressEscape(): void {
+    const step = escapeStep({
+      menu: !!this.menu,
+      gear: this.equipment?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+    });
+    if (step === "gear") this.equipment?.hide();
+    else if (step === "party") this.partyPanel?.close();
+    else if (step === "close-menu") this.closeMenu();
+    else this.openMenu();
+  }
+
+  /**
+   * The town's ESC menu, in the field (FS-G4VMQ § Change C2): Change character and Back, by
+   * `hubMenuChoices`' rule (a field player is never queued, FS-X2F2H R20), centred in the popup
+   * band. The world runs on behind it. Every window closes as it opens (FS-3EBCA R17).
+   */
+  private openMenu(): void {
+    this.closeWindows();
+    const actions: Record<HubMenuChoice["id"], () => void> = {
+      change: () => this.changeCharacter(),
+      leave: () => this.closeMenu(),
+      back: () => this.closeMenu(),
+    };
+    const { container, keys, moveTo } = showMenuPanel(this, {
+      choices: hubMenuChoices({ queued: false }),
+      actions,
+      // dimmed while the server is asked, so a second press has nothing to land on
+      enabled: { change: () => !this.leavingHub },
+      close: () => this.closeMenu(),
+      origin: { x: viewport.centerX, y: viewport.centerY },
+      hit: MENU_CHOICE_HIT,
+      tones: MENU_TONES,
+      // the Menu icon answers under the open menu: it closes it (FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
+    });
+    this.menu = container;
+    this.menuChoices = keys;
+    this.moveMenu = moveTo;
+  }
+
+  private closeMenu(): void {
+    this.menu?.destroy();
+    this.menu = undefined;
+    this.menuChoices = undefined;
+    this.moveMenu = undefined;
+  }
+
+  /**
+   * Out of the field for the roster (FS-G4VMQ § Change C3, R25): one leave_hub, which the server
+   * takes from a field (FS-X2F2H R18), and nothing more until it is answered.
+   */
+  private changeCharacter(): void {
+    if (this.leavingHub) return;
+    this.leavingHub = true;
+    this.menuChoices?.retone();
+    socketManager.sendMessage(ActionType.LeaveHub, {});
+  }
+
+  /**
    * The run's keys for the satchel and the equip HUD: I or B opens and closes the overlay, Q and
    * ESC close it (FS-HRH2J R4; a field has no ESC menu); E over the open overlay equips or
    * unequips, as in the run, else reaches for a pile or chest; F takes the satchel's first item.
    */
   private bindHudKeys(): void {
     this.input.keyboard?.on("keydown-E", () => {
+      if (this.menu) return;
       if (this.equipment?.equipKey()) return;
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
-    for (const key of ["keydown-I", "keydown-B"]) {
-      this.input.keyboard?.on(key, () => {
-        this.equipment?.toggle();
-        // opening the overlay ends a Shadow Shot hold (FS-JTNPR req 15)
-        if (this.equipment?.isOpen()) this.fight?.cancelAim();
-      });
-    }
-    this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
-    this.input.keyboard?.on("keydown-ESC", () => this.equipment?.hide());
-    this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
+    for (const key of ["keydown-I", "keydown-B"]) this.input.keyboard?.on(key, () => this.toggleGear());
+    this.input.keyboard?.on("keydown-C", () => this.toggleCharacter());
+    this.input.keyboard?.on("keydown-Q", () => {
+      if (!this.menu) this.equipment?.hide();
+    });
+    this.input.keyboard?.on("keydown-ESC", () => this.pressEscape());
+    this.input.keyboard?.on("keydown-F", () => {
+      if (!this.menu) this.satchel?.lootFirst();
+    });
+    // the open menu's keys, the town's: Enter is the first choice, a number that choice
+    this.input.keyboard?.on("keydown-ENTER", () => this.menuChoices?.confirm());
+    ["ONE", "TWO", "THREE"].forEach((name, i) =>
+      this.input.keyboard?.on(`keydown-${name}`, () => this.menuChoices?.pick(i)),
+    );
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
       this.satchel?.pointerMove(at.x, at.y);
+      // the map mode icon lit under the pointer, unless a panel lies over it (FS-56CKV §Change: Map mode icon, D7)
+      if (this.panelTakes(at.x, at.y)) this.minimap?.pointerOut();
+      else this.minimap?.pointerMove(at.x, at.y);
     });
+    this.input.on("gameout", () => this.minimap?.pointerOut());
   }
 
   /**
@@ -453,14 +683,30 @@ export class FieldScene extends Phaser.Scene {
    * band attacks as with it closed (FS-HRH2J R8).
    */
   private takesPointer(x: number, y: number, primary: boolean): boolean {
+    // the open menu's rows take their own presses; nothing in the world answers one (FS-G4VMQ R5),
+    // nor the map mode icon, whose guards the menu is one of
+    if (this.menu) return true;
+    if (this.panelTakes(x, y)) return true;
+    // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
+    if (this.minimap?.pointerDown(x, y, primary)) return true;
+    return this.satchel?.pointerDown(x, y, primary) ?? false;
+  }
+
+  /**
+   * Whether a press at (x, y), logical units, is the corner row's or a HUD panel's: the overlay's,
+   * the chat window's, the party panel's or a prompt's. Neither the world nor the map mode icon
+   * answers it.
+   */
+  private panelTakes(x: number, y: number): boolean {
+    // a press on the corner row is the row's (FS-3EBCA R10)
+    if (this.corner?.covers(x, y)) return true;
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     if (this.chatWindow?.covers(x, y)) return true;
     // and one on the open party panel is the panel's (FS-R82NV R28)
     if (this.partyPanel?.covers(x, y)) return true;
     // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-    if (this.invitePrompt?.covers(x, y)) return true;
-    return this.satchel?.pointerDown(x, y, primary) ?? false;
+    return this.invitePrompt?.covers(x, y) ?? false;
   }
 
   /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
@@ -476,6 +722,10 @@ export class FieldScene extends Phaser.Scene {
     this.unsubscribeState?.();
     socketManager.offError(ActionType.LeaveField);
     socketManager.off(ActionType.Interact);
+    socketManager.off("world_left");
+    socketManager.offError(ActionType.LeaveHub);
+    this.closeMenu();
+    this.leavingHub = false;
     this.piles?.release();
     this.piles = undefined;
     this.satchel = undefined;
@@ -490,7 +740,17 @@ export class FieldScene extends Phaser.Scene {
     this.invitePrompt = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
+    // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
+    this.charting?.saveLast();
+    this.minimap?.destroy();
+    this.minimap = undefined;
+    this.minimapStage = undefined;
+    this.modeIconStage = undefined;
+    this.charting = undefined;
+    this.mapField = { walls: [], gates: [] };
     this.abilityHud = undefined;
+    this.corner?.destroy();
+    this.corner = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
     this.selfLevel = undefined;
@@ -508,7 +768,6 @@ export class FieldScene extends Phaser.Scene {
     this.fight?.release();
     this.fight = undefined;
     this.lightMap = undefined;
-    this.lastSent = { vx: 0, vy: 0 };
     // a destroyed game took its input manager, the cursor and the captures with it
     if (end === "shutdown") this.handBackInput();
   }
@@ -525,6 +784,9 @@ export class FieldScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     this.sendMovementIntent();
+    this.drawFieldMap();
+    // the charted ground kept in this browser, as often as its keeper says (FS-P0HSP §D.25)
+    this.charting?.save(this.time.now);
     this.fight?.update(delta);
     this.drainFallen(this.time.now);
     for (const view of this.views.values()) {
@@ -540,6 +802,7 @@ export class FieldScene extends Phaser.Scene {
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     this.lightMap?.carry(self ? { x: self.sprite.x, y: self.sprite.y } : null);
     this.lightMap?.update(time);
+    this.followMapOverlay();
     const selfBody = self?.sprite.getByName("body") as Phaser.GameObjects.Sprite | null | undefined;
     this.occluders.update(
       self && selfBody ? { bounds: selfBody.getBounds(), depth: self.sprite.depth } : null,
@@ -559,7 +822,7 @@ export class FieldScene extends Phaser.Scene {
     };
   }
 
-  /** Velocity, sent only when it changes. */
+  /** Velocity, sent only when it changes, and always on a visit's first frame ({@link lastSent}). */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
     // the fallen do not walk; the server would refuse it
@@ -568,11 +831,12 @@ export class FieldScene extends Phaser.Scene {
     const right = this.cursors.right.isDown || this.wasd.right.isDown;
     const up = this.cursors.up.isDown || this.wasd.up.isDown;
     const down = this.cursors.down.isDown || this.wasd.down.isDown;
-    // the keys read released while an archer draws a Shadow Shot (FS-JTNPR req 9)
-    const aiming = this.fight?.aiming === true;
+    // the keys read released while an archer draws a Shadow Shot (FS-JTNPR req 9), and while the
+    // ESC menu owns them (FS-G4VMQ R5): a stride it interrupts stops
+    const aiming = this.fight?.aiming === true || !!this.menu;
     const vx = aiming ? 0 : (right ? 1 : 0) - (left ? 1 : 0);
     const vy = aiming ? 0 : (down ? 1 : 0) - (up ? 1 : 0);
-    if (vx === this.lastSent.vx && vy === this.lastSent.vy) return;
+    if (vx === this.lastSent?.vx && vy === this.lastSent?.vy) return;
     this.lastSent = { vx, vy };
     socketManager.sendMessage(ActionType.Move, { vx, vy });
   }
@@ -627,8 +891,72 @@ export class FieldScene extends Phaser.Scene {
     this.lastState = state;
     this.showClassHud(state);
     this.partyFrames?.show(state);
+    this.showFieldMap(state);
     // the field is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
     this.arrivalCard.built();
+  }
+
+  /**
+   * The field's minimap from this state (FS-P0HSP §B, §D, §E): built with the field's first state;
+   * the ground round the local player charted, alive or fallen, never round a party member's; the
+   * map drawn at once the first time and after at most every `FIELD_CHART.redraw` while new
+   * ground is charted ({@link drawFieldMap}); the party's dots on every state.
+   */
+  private showFieldMap(state: ClientGameState): void {
+    if (!this.minimap) {
+      if (!this.minimapStage) return;
+      this.minimap = new WorldMinimapController({
+        stage: this.minimapStage,
+        world: this.size,
+        store: this.minimapStore,
+        renderScale: () => viewport.renderScale,
+        button: this.fullscreenButton,
+        // a press on its map mode icon is M's, under M's guards in a field (FS-56CKV §Change: Map mode icon, D6)
+        icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
+        // the field's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
+        name: minimapPlaceName({ world: "field", field: this.field }),
+      });
+      // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
+      const owner = useGameStore.getState().activeCharacterId;
+      this.charting = new FieldChartKeeper(this.chartStore, owner, this.field, this.size, this.time.now);
+    }
+    const me = state.current_player;
+    if (me) this.charting?.chart.chartAround(me.position);
+    this.mapField = { walls: state.walls ?? this.mapField.walls, gates: state.gates ?? this.mapField.gates };
+    this.drawFieldMap();
+    this.charting?.save(this.time.now);
+    this.minimap.party(state, usePartyStore.getState().party?.members.map((m) => m.player_id) ?? []);
+  }
+
+  /**
+   * The field's map drawn again where what it shows changed (FS-P0HSP §D.28): newly charted ground
+   * or the field's walls, as often as the chart's keeper says is due. Each frame and each state;
+   * it builds nothing while nothing is new.
+   */
+  private drawFieldMap(): void {
+    const map = this.minimap;
+    const kept = this.charting;
+    if (!map || !kept || !kept.redrawDue(this.mapField.walls.length, this.time.now)) return;
+    map.show(fieldMap(kept.chart, this.mapField, this.size));
+  }
+
+  /**
+   * M (FS-P0HSP §F.31, §F.33): the run's three modes on the field's minimap, kept in this browser
+   * on the run's one key. Not while chat is typing, nor while the ESC menu is up, which owns the
+   * keys as the town's does (FS-G4VMQ § Change C4); the rest of M's guards are the minimap's own.
+   */
+  private bindMinimapKey(): void {
+    bindMinimapKey(this.input.keyboard ?? undefined, () => this.minimapKeysOwned(), () => this.minimap);
+  }
+
+  /** M's guards in a field, the key's and the map mode icon's (FS-P0HSP §F.33): chat typing, or the ESC menu owning the keys. */
+  private minimapKeysOwned(): boolean {
+    return !!this.chatWindow?.isTyping() || !!this.menu;
+  }
+
+  /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */
+  private followMapOverlay(): void {
+    this.minimap?.follow(this.selfView()?.pos, (id) => this.views.get(id)?.pos);
   }
 
   /**
@@ -646,7 +974,8 @@ export class FieldScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastState;
     if (!state) return;
-    this.abilityHud ??= new AbilityHud(this, { anchor: "bottom-right", dx: -HUD_MARGIN, dy: -HUD_MARGIN });
+    // just above the corner row, right-aligned with it (FS-3EBCA R13)
+    this.abilityHud ??= new AbilityHud(this, ABILITY_CARD_PLACE);
     this.abilityHud.show(abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }));
   }
 

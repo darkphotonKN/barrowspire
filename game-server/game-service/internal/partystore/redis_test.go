@@ -982,3 +982,59 @@ func memberIDs(p partystore.Party) []uuid.UUID {
 	}
 	return ids
 }
+
+// InvitesTo reads every invite addressed to a player, oldest first, and writes nothing; one the
+// player answered is no longer among them. A player changing character has each spent
+// (FS-NCC9J §Change: Changing character leaves the party, C2).
+func TestInvitesTo_ReadsThePlayersInvites(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	ctx := context.Background()
+	wren, idris, kaelen := joiner("Wren"), joiner("Idris"), joiner("Kaelen")
+	fromWren := invite(t, store, wren, kaelen, 2, sentAt)
+	fromIdris := invite(t, store, idris, kaelen, 2, sentAt.Add(time.Second))
+
+	ids, err := store.InvitesTo(ctx, kaelen.PlayerID)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{fromWren.InviteID, fromIdris.InviteID}, ids, "oldest first")
+
+	decline(t, store, fromWren, kaelen.PlayerID, sentAt.Add(2*time.Second))
+	ids, err = store.InvitesTo(ctx, kaelen.PlayerID)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{fromIdris.InviteID}, ids, "a spent invite is gone")
+
+	ids, err = store.InvitesTo(ctx, uuid.New())
+	require.NoError(t, err)
+	assert.Empty(t, ids, "a player nobody invited")
+}
+
+// Peek reads the party a player is in, by name and class as it holds them, and writes nothing:
+// no member's record refreshed, no TTL put back. The roster is sent it, and a player whose record
+// is gone is compared by it (FS-NCC9J §Change: Changing character leaves the party, C9, C13).
+func TestPeek_ReadsThePartyAndKeepsNothing(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	ctx := context.Background()
+	wren, kaelen := joiner("Wren"), joiner("Kaelen")
+	inv := invite(t, store, wren, kaelen, 2, sentAt)
+	accept(t, store, inv, kaelen, sentAt)
+	seenKey := "{party}:p:" + inv.NewPartyID.String() + ":seen"
+	seenBefore := mini.HGet(seenKey, kaelen.PlayerID.String())
+	mini.FastForward(time.Minute)
+	ttlBefore := mini.TTL("{party}:p:" + inv.NewPartyID.String())
+
+	p, in, err := store.Peek(ctx, kaelen.PlayerID)
+	require.NoError(t, err)
+	require.True(t, in)
+	assert.Equal(t, inv.NewPartyID, p.ID)
+	assert.Equal(t, wren.PlayerID, p.Leader)
+	require.Len(t, p.Members, 2)
+	assert.Equal(t, "Kaelen", p.Members[1].Name)
+	assert.Equal(t, "warrior", p.Members[1].Class)
+	assert.Equal(t, seenBefore, mini.HGet(seenKey, kaelen.PlayerID.String()), "nobody's record is refreshed")
+	assert.Equal(t, ttlBefore, mini.TTL("{party}:p:"+inv.NewPartyID.String()), "nor the party kept alive")
+
+	_, in, err = store.Peek(ctx, uuid.New())
+	require.NoError(t, err)
+	assert.False(t, in, "a player in no party")
+}

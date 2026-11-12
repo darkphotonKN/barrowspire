@@ -21,7 +21,7 @@ import type { Facing8 } from "@/render/iso/facing";
 import type { AnimationChoice } from "./animationSelect";
 import { CharacterAnimator } from "./character";
 import type { ArtLibrary } from "./library";
-import { directionIndex, sheetScale } from "./manifest";
+import { directionIndex, screenStep, sheetScale } from "./manifest";
 
 /**
  * In screen px: a menu never draws a figure smaller than the game does (1 screen px per 1x px),
@@ -168,19 +168,26 @@ export class MenuFigure {
       return;
     }
     // The window and the head are screen px; the crop is in the frame's own px, `k` of them to
-    // a screen px on a 2x sheet (FS-HF0WW).
+    // a screen px (FS-HF0WW). At 1.5 a screen px is a whole frame px only on even screen px
+    // (ADR-0076), so the window's left and top edges step out to that grid and its size up to it:
+    // the crop is whole frame px, never a half px that would sample between texels.
     const k = sheetScale(sheet);
+    const step = screenStep(sheet);
+    const down = (v: number) => Math.floor(v / step) * step;
+    const up = (v: number) => Math.ceil(v / step) * step;
     const anchorX = Math.round((sheet.anchor.x * sheet.frameWidth) / k);
     const anchorY = Math.round((sheet.anchor.y * sheet.frameHeight) / k);
-    const above = Math.min(
-      anchorY,
-      (sheet.crown ?? anchorY) + PORTRAIT_HEADROOM,
-    );
+    const above =
+      anchorY -
+      down(
+        anchorY -
+          Math.min(anchorY, (sheet.crown ?? anchorY) + PORTRAIT_HEADROOM),
+      );
     const crop: [number, number, number, number] = [
-      (anchorX - Math.round(portrait.width / 2)) * k,
+      down(anchorX - Math.round(portrait.width / 2)) * k,
       (anchorY - above) * k,
-      portrait.width * k,
-      portrait.height * k,
+      up(portrait.width) * k,
+      up(portrait.height) * k,
     ];
     this.sprite.setCrop(...crop);
     if (sheet.trimmed) this.trimmedCrop = crop;

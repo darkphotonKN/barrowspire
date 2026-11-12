@@ -206,7 +206,8 @@ export default function Home() {
           <ControlKey keys="E" label="Talk, open, use" />
           <ControlKey keys="F" label="Take from a coffer" />
           <ControlKey keys="1" label="Drink a health draught" />
-          <ControlKey keys="I / B" label="Gear and bag" />
+          <ControlKey keys="I / B" label="Inventory" />
+          <ControlKey keys="C" label="Character" />
           <ControlKey keys="T" label="Party" />
           <ControlKey keys="ENTER" label="Chat" />
           <ControlKey keys="Q" label="Close a panel" />

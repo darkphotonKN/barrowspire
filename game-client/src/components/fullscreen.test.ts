@@ -111,13 +111,17 @@ describe("fullscreen state", () => {
 });
 
 // R18: in windowed it reads 全螢幕; in fullscreen the same control reads 縮小 / exit fullscreen.
+// FS-56CKV §Change C9 (owner 2026-11-12: "hover時也有要提示文字"): the hint's words, text only,
+// for the game binds no key to fullscreen (R22)
 describe("fullscreenLabel", () => {
-  it("should flip with the state, with a name for each", () => {
+  it("should flip with the state, with a name and a hint for each", () => {
     expect(fullscreenLabel(false)).toEqual({
       name: "全螢幕 / enter fullscreen",
+      hint: "Fullscreen",
     });
     expect(fullscreenLabel(true)).toEqual({
       name: "縮小 / exit fullscreen",
+      hint: "Exit fullscreen",
     });
   });
 });

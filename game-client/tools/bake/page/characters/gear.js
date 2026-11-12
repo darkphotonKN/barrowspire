@@ -7,9 +7,12 @@
 // Sizes are in H units like everything else on the rig, so gear scales with its wearer.
 
 import * as THREE from "three";
-import { attach, jointAt as J, mount, rigidTube } from "./rig.js";
+import { attach, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
 import { materials, mkCanvas } from "../materials.js";
 import { cssRgb, mix, shade } from "../palette.js";
+
+// the grip point lives with the rig (rig.js), where the draw solver (draw.js) reads it too
+export { gripAt };
 
 
 /** Shape (x = width, y = length) → grip frame: y along +z, x along +y, extrusion along +x. */
@@ -45,12 +48,6 @@ const rod = (r0, r1, len, seg = 10) => {
   g.rotateX(Math.PI / 2); // along +z: r0 at -z, r1 at +z
   return g;
 };
-
-/** Where a hand's grip sits in model space (bind pose). */
-export function gripAt(rig, side) {
-  const [x, wy] = J(rig, `hand${side}`);
-  return [x, wy - 0.036, 0.008];
-}
 
 /** A group on the hand bone, in the grip frame. `rx` tilts the weapon in the swing plane. */
 export function inHand(rig, side, o = {}) {
@@ -237,11 +234,14 @@ export function longbow(rig, M, F) {
   return { group: g, update };
 }
 
-/** A quiver of arrows riding the back, its mouth over the right shoulder. */
-export function quiver(rig, M, F) {
+/**
+ * A quiver of arrows riding the back, its mouth over the right shoulder, placed by `o`
+ * (classStyles.js ARCHER_QUIVER: `tilt` degrees off the spine, `at`, `rx`).
+ */
+export function quiver(rig, M, F, o) {
   const H = rig.H;
   const [, cy] = J(rig, "chest");
-  const g = mount(rig, "chest", [-0.03, cy + 0.03, -0.1 * rig.p.torsoD], { rz: 0.5, rx: -0.12 });
+  const g = mount(rig, "chest", [o.at[0], cy + o.at[1], o.at[2] * rig.p.torsoD], { rz: (o.tilt * Math.PI) / 180, rx: o.rx });
   const body = new THREE.CylinderGeometry(0.032 * H, 0.026 * H, 0.26 * H, 12, 1, true);
   g.add(new THREE.Mesh(body, F.leatherDouble));
   g.add(placed(new THREE.TorusGeometry(0.032 * H, 0.005 * H, 5, 14), M.brass, 0, 0.13 * H, 0, Math.PI / 2));

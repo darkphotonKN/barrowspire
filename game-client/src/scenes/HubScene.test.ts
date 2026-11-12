@@ -95,6 +95,10 @@ const { townOutline } = await import("@/render/world/hubTown.fixture");
 const interiors = await import("@/render/world/hubInteriors");
 const walls_ = await import("@/render/world/walls");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { EventEmitter } = await import("eventemitter3");
+const { PartyPanel } = await import("@/ui/PartyPanel");
+const { createPartyStore } = await import("@/stores/partyStore");
+const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -288,6 +292,12 @@ function recordingStage() {
             target.scrollFactor = factor;
             return proxy;
           };
+        // what it was made pressable with: the menu's blocker hands its own hit test (FS-3EBCA R18)
+        if (prop === "setInteractive")
+          return (...args: unknown[]) => {
+            target.interactiveArgs = args;
+            return proxy;
+          };
         if (prop === "setColor")
           return (color: string) => {
             target.color = color;
@@ -350,8 +360,17 @@ const AT_LEAVE = { x: 200, y: 556 };
 
 /** The hub's gear overlay as the scene drives it (FS-HRH2J §E): open or not, and what it was handed. */
 function fakeGear() {
-  const state = { open: false, stash: false };
+  const state = { open: false, stash: false, character: false };
   return {
+    /** The character panel (FS-HRH2J § Change C1). */
+    get character() {
+      return state.character;
+    },
+    toggleCharacter: vi.fn(() => {
+      if (state.stash) return false;
+      state.character = !state.character;
+      return state.character;
+    }),
     get open() {
       return state.open;
     },
@@ -363,15 +382,17 @@ function fakeGear() {
       state.stash = false;
     }),
     hide: vi.fn(() => {
-      const was = state.open;
+      const was = state.open || state.character;
       state.open = false;
+      state.character = false;
       state.stash = false;
       return was;
     }),
-    isOpen: () => state.open,
+    isOpen: () => state.open || state.character,
     /** Opened at the stash chest (FS-VPD8Y R34): only from closed. */
     openStash: vi.fn(() => {
       if (state.open) return false;
+      state.character = false;
       state.open = true;
       state.stash = true;
       return true;
@@ -436,6 +457,9 @@ function queuedHubOnStage() {
   const off = vi.spyOn(socketManager, "off").mockImplementation(() => {});
   const offError = vi.spyOn(socketManager, "offError").mockImplementation(() => {});
   const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+  // a visit under way: its first frame, which says the body stands still, is behind it
+  stage.hub.update(0, 16);
+  send.mockClear();
   stage.hub.listenForQueue();
   const reply = (action: string, payload: unknown = {}) => listeners.get(action)?.(payload);
   const refuse = (action: string, message: string, reason?: string) =>
@@ -695,11 +719,13 @@ function hubOnStage() {
     three: key(),
     i: key(),
     b: key(),
+    c: key(),
   };
   const gear = fakeGear();
   hub.add = stage.add;
   hub.gear = gear;
   hub.gearKeys = [keys.i, keys.b];
+  hub.characterKey = keys.c;
   hub.choiceKeys = [keys.one, keys.two, keys.three];
   hub.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
   hub.scene = { start: vi.fn() };
@@ -1491,6 +1517,84 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   });
 });
 
+// FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
+// icon's toggle under I's guards. I-3EBCA-1.
+describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
+  type Pressing = { pressEscape(): void; toggleGear(): void; toggleCharacter(): void; partyPanel?: unknown };
+  function withParty(open = true) {
+    const env = hubOnStage();
+    const state = { open };
+    (env.hub as unknown as Pressing).partyPanel = {
+      isOpen: () => state.open,
+      close: () => {
+        const was = state.open;
+        state.open = false;
+        return was;
+      },
+      destroy: vi.fn(),
+    };
+    return { ...env, party: state, pressing: env.hub as unknown as Pressing };
+  }
+
+  it("should close an open party panel on ESC before it opens the menu", () => {
+    const { hub, keys, press, party } = withParty();
+    press(keys.esc);
+    expect(party.open).toBe(false);
+    expect(hub.menu).toBeUndefined();
+    press(keys.esc);
+    expect(hub.menu).toBeDefined();
+  });
+
+  // the party panel is drawn over the gear overlay (FS-3EBCA R8; FS-R82NV § Change C2, C8)
+  it("should close the party panel, drawn over the gear overlay, before the overlay", () => {
+    const { keys, press, party, gear } = withParty();
+    gear.toggle();
+    gear.toggleCharacter();
+    press(keys.esc);
+    expect(party.open).toBe(false);
+    expect(gear.isOpen()).toBe(true);
+    press(keys.esc);
+    expect(gear.isOpen()).toBe(false);
+  });
+
+  it("should open the menu on one ESC with nothing open, and close it on the next", () => {
+    const { hub, pressing } = withParty(false);
+    pressing.pressEscape();
+    expect(hub.menu).toBeDefined();
+    pressing.pressEscape();
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should do nothing on ESC while a dialogue is open", () => {
+    const { hub, pressing } = withParty(false);
+    hub.dialogue = {};
+    pressing.pressEscape();
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should toggle the gear overlay on the Character icon, not while the menu or a dialogue is open", () => {
+    const { hub, gear, pressing } = withParty(false);
+    pressing.toggleGear();
+    expect(gear.isOpen()).toBe(true);
+    pressing.toggleGear();
+    expect(gear.isOpen()).toBe(false);
+    hub.dialogue = {};
+    pressing.toggleGear();
+    expect(gear.isOpen()).toBe(false);
+  });
+
+  it("should toggle the character panel as C does, not while the menu or a dialogue is open (FS-HRH2J § Change C2)", () => {
+    const { hub, gear, pressing } = withParty(false);
+    pressing.toggleCharacter();
+    expect(gear.character).toBe(true);
+    pressing.toggleCharacter();
+    expect(gear.character).toBe(false);
+    hub.dialogue = {};
+    pressing.toggleCharacter();
+    expect(gear.character).toBe(false);
+  });
+});
+
 describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 26)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1526,6 +1630,44 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
     reply("world_left", {});
 
     expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  /** An invite to this player, waiting in the store's prompts. */
+  const inviteWaiting = () => {
+    usePartyStore.setState({ invites: [] });
+    usePartyStore.getState().receiveInvite({
+      invite_id: "44444444-4444-4444-8444-444444444444",
+      party_id: "55555555-5555-4555-8555-555555555555",
+      party_pod_addr: "",
+      leader_name: "Wren",
+      member_count: 1,
+      size: 2,
+      expires_at: "2026-11-12T12:01:00Z",
+    });
+    expect(usePartyStore.getState().invites).toHaveLength(1);
+  };
+
+  it("should let go of every invite prompt on world_left, as the roster cannot answer them (FS-NCC9J §Change: Changing character leaves the party, C8)", () => {
+    const { keys, press, option, reply } = queuedHubOnStage();
+    inviteWaiting();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    reply("world_left", {});
+
+    expect(usePartyStore.getState().invites).toEqual([]);
+  });
+
+  it("should keep the invite prompts when the switch is refused", () => {
+    const { keys, press, option, refuse } = queuedHubOnStage();
+    inviteWaiting();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    refuse("leave_hub", "Not while delving.");
+
+    expect(usePartyStore.getState().invites).toHaveLength(1);
+    usePartyStore.setState({ invites: [] });
   });
 
   it("should stay, re-enable the row and pass on the server's message on the error reply, then send again", () => {
@@ -2263,6 +2405,66 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     press(keys.esc);
     hub.update(0, 16);
     expect(gear.open).toBe(false);
+  });
+
+  // FS-HRH2J § Change: Character and inventory apart (C2, C3, C7, C9). I-3EBCA-4.
+  it("should toggle the character panel alone on C, staying in the hub (§ Change C2)", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+    press(keys.c);
+    expect(gear.toggleCharacter).toHaveBeenCalledTimes(1);
+    expect(gear.toggle).not.toHaveBeenCalled();
+    expect(gear.character).toBe(true);
+    press(keys.i);
+    expect(gear.open).toBe(true);
+    expect(gear.character).toBe(true);
+    press(keys.c);
+    expect(gear.character).toBe(false);
+    expect(gear.open).toBe(true);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing on C while the ESC menu or a dialogue is open, the press spent (§ Change C2)", () => {
+    const { hub, keys, gear, press, talkTo } = hubOnStage();
+    press(keys.esc);
+    press(keys.c);
+    expect(gear.toggleCharacter).not.toHaveBeenCalled();
+    press(keys.esc);
+    talkTo("storekeeper");
+    hub.views = new Map();
+    hub.npcs = new Map();
+    press(keys.c);
+    expect(gear.toggleCharacter).not.toHaveBeenCalled();
+    press(keys.esc);
+    hub.update(0, 16);
+    expect(gear.character).toBe(false);
+  });
+
+  it("should close both panels on one ESC without opening the menu (§ Change C3)", () => {
+    const { hub, keys, gear, press } = hubOnStage();
+    press(keys.c);
+    press(keys.i);
+    press(keys.esc);
+    expect(gear.isOpen()).toBe(false);
+    expect(hub.menu).toBeUndefined();
+  });
+
+  it("should reach for the NPC beside the player on E while only the character panel is open (§ Change C7)", () => {
+    const { hub, keys, gear, press, answer } = hubOnStage();
+    press(keys.c);
+    gear.equipKey.mockImplementation(() => false);
+    hub.selfEntityID = "me";
+    hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
+    hub.npcs = new Map([
+      [
+        "keeper",
+        {
+          state: { entity_id: "keeper", name: "Keeper", function: "storyteller", position: { x: 10, y: 0 } },
+          pos: { x: 10, y: 0 },
+        },
+      ],
+    ]);
+    answer(keys.e);
+    expect(hub.dialogue).toBeDefined();
   });
 
   it("should give E to the overlay while it is open, reaching for no one beside the player (R10)", () => {
@@ -3601,6 +3803,81 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
 
 });
 
+// Reported 2026-11-12: a player who died in a run with a movement key held ran on by themselves in
+// the town, no key held. The server routes a move by the player's record, and the run's end moves
+// the record to the town before the client hears of it: the run's last frames, sent while the key
+// was held and the death was on its way, walk the town body. The town sent only on a change from
+// what it last sent, which on its first frame is "still", so with no key held it never stopped it.
+describe("HubScene the first frame of a visit (stuck walking after a death with a key held)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A start of the town, its socket wired as the server reads it: the body walks the last move. */
+  function visit() {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MenuHub & { init(data?: { arrival?: boolean }): void };
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const moves = () => send.mock.calls.filter(([action]) => action === ActionType.Move);
+    /** What the town body walks: the last move on the wire, whichever world sent it. */
+    const body = () => moves().at(-1)?.[1];
+    /** The run's last frames with the key held, landing on the town body after the run's end. */
+    const runStride = () => socketManager.sendMessage(ActionType.Move, { vx: 1, vy: 0 });
+    return { ...stage, hub, send, moves, body, runStride };
+  }
+
+  it("should stop the body on its first frame with no key held, after a stride the run sent", () => {
+    const { hub, body, runStride } = visit();
+    runStride();
+
+    hub.init({ arrival: false });
+    hub.update(0, 16);
+
+    expect(body()).toEqual({ vx: 0, vy: 0 });
+  });
+
+  it("should stop it on a return too, though the visit before ended standing still", () => {
+    const { hub, keys, body, runStride } = visit();
+    // the visit before: a walk, stopped, then into the Spire
+    keys.w.isDown = true;
+    hub.update(0, 16);
+    keys.w.isDown = false;
+    hub.update(0, 16);
+    hub.release("shutdown");
+    runStride();
+
+    hub.init({ arrival: false });
+    hub.update(0, 16);
+
+    expect(body()).toEqual({ vx: 0, vy: 0 });
+  });
+
+  it("should send that stop once, and nothing more while no key is held", () => {
+    const { hub, moves, runStride } = visit();
+    runStride();
+
+    hub.init({ arrival: false });
+    hub.update(0, 16);
+    hub.update(0, 16);
+    hub.update(0, 16);
+
+    expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+  });
+
+  it("should send a key held into the visit as its first move, once", () => {
+    const { hub, keys, moves, runStride } = visit();
+    runStride();
+
+    hub.init({ arrival: false });
+    keys.w.isDown = true;
+    hub.update(0, 16);
+    hub.update(0, 16);
+
+    expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: -1 }]]);
+  });
+});
+
 const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
 const { atlasTextureKey } = await import("@/render/art/library");
 
@@ -3890,5 +4167,946 @@ describe("HubScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
     hub.relayoutHud();
 
     expect(relayout).toHaveBeenCalled();
+  });
+});
+
+// FS-JS7C8 §D R22, §E R47: every figure in the town faces its drawn movement; nothing turns one
+// from outside its own motion, a `facing` on a state entry is never read, and no `face` is sent
+describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, §E R47)", () => {
+  type Hub = {
+    views: Map<string, unknown>;
+    selfEntityID: string | null;
+    placeName(view: unknown): void;
+    updateAppearance(view: unknown, player: unknown): void;
+    placePlayer(player: unknown, isSelf: boolean): void;
+    easeTowardServerPositions(time: number, delta: number): void;
+  };
+  /** A view whose baked animator is stepped and shown, as on main: nothing else turns it. */
+  const view = (x: number) => ({
+    sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60 }) },
+    pos: { x, y: 0 },
+    target: { x, y: 0 },
+    anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+  });
+
+  function onHub() {
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const hub = new HubScene() as unknown as Hub;
+    const me = view(100);
+    const them = view(300);
+    hub.views = new Map([
+      ["me", me],
+      ["them", them],
+    ]);
+    hub.selfEntityID = "me";
+    hub.placeName = vi.fn();
+    return { hub, me, them, send };
+  }
+
+  it("should step the own body and every other from where it is drawn, and send no face", () => {
+    const { hub, me, them, send } = onHub();
+
+    hub.easeTowardServerPositions(0, 16);
+    hub.easeTowardServerPositions(200, 16);
+
+    expect(me.anim.step).toHaveBeenCalledWith(me.pos, 200, 16, false);
+    expect(them.anim.step).toHaveBeenCalledWith(them.pos, 200, 16, false);
+    expect(send.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
+  });
+
+  it("should keep no facing from a state entry, the own echo or another's", () => {
+    const { hub, me, them } = onHub();
+    hub.updateAppearance = vi.fn();
+    const entry = (entity_id: string) => ({
+      entity_id,
+      position: { x: 1, y: 2 },
+      direction: { vx: 0, vy: 0, speed: 0 },
+      facing: "ne",
+    });
+
+    hub.placePlayer(entry("me"), true);
+    hub.placePlayer(entry("them"), false);
+
+    expect(Object.keys(me)).not.toContain("wireFacing");
+    expect(Object.keys(them)).not.toContain("wireFacing");
+  });
+});
+
+const { MINIMAP: TOWN_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
+const { TOP_RIGHT_HUD } = await import("@/ui/topRightColumn");
+const { FULLSCREEN_BUTTON, anchorAt } = await import("@/render/viewport");
+const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
+/** The fullscreen button in the canvas's corner (FS-ZAJMH R18). */
+const BUTTON_CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
+
+// FS-P0HSP §A, §B, §E, §G (I-P0HSP-1): the town's minimap at the top of the top-right column.
+describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
+  /** A Graphics or image as the minimap's stage makes it: where it stands, and what it drew. */
+  function layer() {
+    const calls: { name: string; args: unknown[] }[] = [];
+    const l = { calls, x: 0, y: 0, depth: 0, visible: true, destroyed: false };
+    const record = (name: string) => (...args: unknown[]) => (calls.push({ name, args }), l);
+    return Object.assign(l, {
+      clear: record("clear"),
+      fillStyle: record("fillStyle"),
+      fillRect: record("fillRect"),
+      fillPoints: record("fillPoints"),
+      fillCircle: record("fillCircle"),
+      lineStyle: record("lineStyle"),
+      strokeRect: record("strokeRect"),
+      beginPath: record("beginPath"),
+      moveTo: record("moveTo"),
+      lineTo: record("lineTo"),
+      closePath: record("closePath"),
+      strokePath: record("strokePath"),
+      setPosition: (x: number, y: number) => ((l.x = x), (l.y = y), l),
+      setDepth: (d: number) => ((l.depth = d), l),
+      setScrollFactor: () => l,
+      setVisible: (v: boolean) => ((l.visible = v), l),
+      destroy: () => void (l.destroyed = true),
+    });
+  }
+  /** The town's walls as hub_map.go walls them, each with its house's id. */
+  const TOWN_WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, width, height], j) => ({
+      entity_id: `house-${i}-wall-${j}`,
+      house_id: `house-${i}`,
+      position: { x, y },
+      width,
+      height,
+    })),
+  );
+
+  type MapHub = MenuHub & Record<string, unknown> & { relayoutHud(): void };
+
+  /** A hub whose states are rendered whole, its minimap's stage at hand, as create wires it. */
+  function townWithMap() {
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MapHub;
+    const layers: ReturnType<typeof layer>[] = [];
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+      minimapStage: {
+        graphics: () => {
+          const l = layer();
+          layers.push(l);
+          return l;
+        },
+        canvasImage: () => {
+          const l = layer();
+          layers.push(l);
+          return l;
+        },
+      },
+    });
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const render = (
+      position = AWAY,
+      others: { id: string; entity_id: string; position: { x: number; y: number } }[] = [],
+      walls: unknown[] = TOWN_WALLS,
+      npcs: unknown[] = [],
+    ) =>
+      hub.renderState({
+        world_type: "hub",
+        current_player: { id: "self", entity_id: "me", position },
+        other_players: others,
+        walls,
+        gates: HUB_GATES,
+        npcs,
+      });
+    const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
+    /** The dot layer, the last made. */
+    const dots = () => layers[layers.length - 1];
+    return { ...stage, hub, layers, render, map, dots };
+  }
+
+  beforeEach(() => {
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    useAuthStore.setState({ memberInfo: { id: "self" } as never });
+  });
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    useAuthStore.setState({ memberInfo: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should build no map before a state carries the town's walls, then one with the first that does", () => {
+    const { render, map, layers } = townWithMap();
+    render(AWAY, [], []);
+    expect(map()).toBeUndefined();
+    expect(layers).toHaveLength(0);
+    render();
+    expect(map()).toBeInstanceOf(WorldMinimap);
+    render();
+    // one minimap: map, two vignettes, marks, dots
+    expect(layers).toHaveLength(5);
+  });
+
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1, C2, C5 (owner 2026-11-12:
+  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側", "其他文字也要跟著往上移動"): nothing stands under the
+  // town's map (FS-P0HSP §G.36), so only the map and the button move
+  it.each([1080, 1280])(
+    "should stand at the very top at logical width %i: right edge on TOP_RIGHT_HUD's x, top at y 10, the fullscreen button 6 px to its left on its top (§G.35; FS-56CKV §Change C1, C2)",
+    (width) => {
+      viewport.set({ width, height: 720, renderScale: 1 });
+      const { hub, render, layers } = townWithMap();
+      const button = new FullscreenButtonPlace();
+      hub.fullscreenButton = button;
+      render();
+      const corner = anchorAt(TOP_RIGHT_HUD);
+      expect(corner.x).toBe(width - 10);
+      for (const l of layers) expect({ x: l.x, y: l.y }).toEqual({ x: corner.x - TOWN_MINIMAP.width, y: 10 });
+      expect(button.current).toEqual({ top: 10, right: width - (corner.x - TOWN_MINIMAP.width - TOWN_MINIMAP.gap) });
+    },
+  );
+
+  it("should follow its corner when the view changes (§G.35)", () => {
+    const { hub, render, layers } = townWithMap();
+    render();
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    hub.relayoutHud();
+    for (const l of layers) expect([l.x, l.y]).toEqual([1270 - TOWN_MINIMAP.width, 10]);
+  });
+
+  it("should redraw the map on a change of the town only, never as the player walks (§A.4)", () => {
+    const { render, map } = townWithMap();
+    render({ x: 1000, y: 500 });
+    render({ x: 1010, y: 500 });
+    render({ x: 1200, y: 600 });
+    expect(map()!.redraws).toBe(1);
+    expect(map()!.dotRedraws).toBe(3);
+    // a building's walls arriving late (never in practice): once more
+    render({ x: 1200, y: 600 }, [], TOWN_WALLS.slice(0, 5));
+    expect(map()!.redraws).toBe(2);
+  });
+
+  // review round 1: an unchanged town's plan is not built again on every 30 Hz state
+  it("should hand the map the one plan it built while the town is unchanged (§A.4, §C.20)", () => {
+    const { render, map } = townWithMap();
+    render({ x: 1000, y: 500 });
+    const show = vi.spyOn(map()!, "show");
+    render({ x: 1010, y: 500 });
+    render({ x: 1020, y: 500 });
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show.mock.calls[1][0]).toBe(show.mock.calls[0][0]);
+  });
+
+  // FS-P0HSP §C (I-P0HSP-2): the marks from the state's gates and function NPCs, redrawn only on a change
+  it("should mark the gates, the stash and the Quartermaster, never the Elder, and redraw them only when they change (§C.14, §C.20)", () => {
+    const { render, map, layers } = townWithMap();
+    const resident = (x: number) => ({ entity_id: "r1", name: "Resident", function: "", position: { x, y: 700 } });
+    const NPCS = [
+      { entity_id: "elder", name: "Elder", function: "storyteller", position: { x: 1140, y: 680 } },
+      { entity_id: "qm", name: "Quartermaster", function: "storekeeper", position: { x: 1280, y: 270 } },
+    ];
+    render(AWAY, [], TOWN_WALLS, [...NPCS, resident(600)]);
+    render({ x: 1010, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(640)]);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(680)]);
+    expect(map()!.redraws).toBe(1);
+    // the marks layer: one glyph a mark, each begun on its ring: tower, two teleports, chest, bag;
+    // none for the Elder, who only tells a story (Nick, 2026-11-12)
+    const marks = layers[3].calls.filter((c) => c.name === "fillStyle" && c.args[0] === palette.markerStroke);
+    expect(marks).toHaveLength(5);
+    // the Elder gone changes nothing the map shows; the Quartermaster gone does
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [NPCS[1], resident(680)]);
+    expect(map()!.redraws).toBe(1);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [resident(680)]);
+    expect(map()!.redraws).toBe(2);
+  });
+
+  it("should dot the player and their party, no one else (§E.29, §E.30)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "hub" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "hub" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { render, dots } = townWithMap();
+    render(AWAY, [
+      { id: "wren", entity_id: "e-wren", position: { x: 400, y: 300 } },
+      { id: "stranger", entity_id: "e-stranger", position: { x: 1600, y: 800 } },
+    ]);
+    const radii = dots()
+      .calls.slice(dots().calls.map((c) => c.name).lastIndexOf("clear") + 1)
+      .filter((c) => c.name === "fillCircle")
+      .map((c) => c.args[2]);
+    // the ally's ring and dot, then the player's over it; the stranger draws nothing
+    expect(radii).toEqual([3, 2, 4, 3]);
+  });
+
+  it("should draw the player's dot alone with no party (§E.30)", () => {
+    const { render, dots } = townWithMap();
+    render(AWAY, [{ id: "stranger", entity_id: "e-stranger", position: { x: 1600, y: 800 } }]);
+    expect(dots().calls.filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4, 3]);
+  });
+
+  it("should go with the visit (§A.4)", () => {
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const { hub, render, layers, map } = townWithMap();
+    render();
+    hub.release("destroy");
+    expect(layers.every((l) => l.destroyed)).toBe(true);
+    expect(map()).toBeUndefined();
+  });
+
+  // §G.37: the map clear of the fullscreen button, the queue line, the arrival card, the party
+  // panel and the XP bar, and of a notice up to 628 px wide at 1080 (828 at 1280)
+  it.each([
+    [1080, 628],
+    [1280, 828],
+  ])("should keep clear of the HUD around it at logical width %i (§G.37)", (width, notice) => {
+    const corner = anchorAt(TOP_RIGHT_HUD, { width, height: 720 });
+    const left = corner.x - TOWN_MINIMAP.width;
+    // the button beside the enlarged map too (FS-56CKV §Change C3, C7 as amended 2026-11-12): its
+    // foot at y 30 above the notice band, its left edge (720 at 1080) never left of the arrival
+    // card's widest line's right end nor over the party panel
+    const enlargedButtonLeft = corner.x - 324 - TOWN_MINIMAP.gap - FULLSCREEN_BUTTON.height;
+    if (width === 1080) expect(enlargedButtonLeft).toBe(720);
+    expect(720).toBeLessThanOrEqual(enlargedButtonLeft);
+    // the button beside the normal map (§Change C2, C7): its foot at y 30, above the notice band
+    // (a 14 px line in 8 px padding centred on y 72) and the arrival card; its left edge right of
+    // the arrival card's widest line and the party panel
+    const buttonLeft = left - TOWN_MINIMAP.gap - FULLSCREEN_BUTTON.height;
+    expect(10 + FULLSCREEN_BUTTON.height).toBeLessThan(72 - 15);
+    expect(720).toBeLessThan(buttonLeft);
+    // a notice centred on the view, on y 72, ends at the map's left edge
+    expect(width / 2 + notice / 2).toBeLessThanOrEqual(left);
+    // the arrival card's widest line (x 360–720) and the party panel (x 280–580) left of the map
+    expect(720).toBeLessThan(left);
+  });
+});
+
+// FS-P0HSP §F, §G (I-P0HSP-3): M steps the town's minimap through the run's three modes.
+describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
+  function layer() {
+    const l = { x: 0, y: 0, depth: 0, visible: true, destroyed: false, scrollFactor: 0 };
+    const self: Record<string, unknown> = new Proxy(l as Record<string, unknown>, {
+      get: (t, key) => {
+        if (key in t) return t[key as string];
+        if (key === "setPosition") return (x: number, y: number) => ((l.x = x), (l.y = y), self);
+        if (key === "setDepth") return (d: number) => ((l.depth = d), self);
+        if (key === "setScrollFactor") return (f: number) => ((l.scrollFactor = f), self);
+        if (key === "setVisible") return (v: boolean) => ((l.visible = v), self);
+        if (key === "destroy") return () => void (l.destroyed = true);
+        return () => self;
+      },
+    });
+    return { l, self };
+  }
+  /** A text the stage makes, measured 80 × 17. */
+  function measuredText() {
+    const { l, self } = layer();
+    Object.assign(l, { width: 80, height: 17 });
+    return self;
+  }
+  const WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, width, height], j) => ({
+      entity_id: `h${i}-${j}`,
+      house_id: `h${i}`,
+      position: { x, y },
+      width,
+      height,
+    })),
+  );
+
+  function townWithModes(held: string | null = null) {
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MenuHub & Record<string, unknown> & { relayoutHud(): void };
+    const layers: ReturnType<typeof layer>["l"][] = [];
+    const make = () => {
+      const { l, self } = layer();
+      layers.push(l);
+      return self;
+    };
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+      minimapStage: { graphics: make, canvasImage: make },
+      // the map mode icon's own objects, kept apart from the map's layers (FS-56CKV §Change: Map mode icon)
+      // its texts measured 80 × 17, as Phaser would (the map name's among them, FS-56CKV §Change: Map name)
+      modeIconStage: { graphics: () => layer().self, text: () => measuredText() },
+    });
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const store = { held, writes: [] as string[] };
+    const button = new FullscreenButtonPlace();
+    hub.fullscreenButton = button;
+    hub.minimapStore = () => ({
+      getItem: () => store.held,
+      setItem: (_key: string, value: string) => void store.writes.push(value),
+      removeItem: () => {},
+    });
+    const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
+    const pointers: Record<string, (pointer?: { x: number; y: number; button?: number }) => void> = {};
+    hub.input = {
+      setDefaultCursor: vi.fn(),
+      keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) },
+      on: (name: string, fn: () => void) => void (pointers[name] = fn),
+    };
+    (hub as unknown as { bindMinimapKey(): void }).bindMinimapKey();
+    const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
+    const render = (others: unknown[] = []) =>
+      hub.renderState({
+        world_type: "hub",
+        current_player: { id: "self", entity_id: "me", position: AWAY },
+        other_players: others,
+        walls: WALLS,
+        gates: HUB_GATES,
+        npcs: [],
+      });
+    const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
+    return { ...stage, hub, layers, store, pressM, render, map, button, pointers };
+  }
+
+  beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should step normal, enlarged, overlay and round again on M, keeping each in this browser (§F.31, §F.32)", () => {
+    const { pressM, render, map, store } = townWithModes();
+    render();
+    expect(map()!.mode).toBe("normal");
+    pressM();
+    expect(map()!.mode).toBe("enlarged");
+    pressM();
+    expect(map()!.mode).toBe("overlay");
+    pressM();
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+  });
+
+  it("should change nothing on M before the map is built (§F.33)", () => {
+    const { pressM, store, map } = townWithModes();
+    pressM();
+    expect(map()).toBeUndefined();
+    expect(store.writes).toEqual([]);
+  });
+
+  type Arrange = (hub: Record<string, unknown>) => void;
+  const GUARDS: [string, Arrange, Partial<KeyboardEvent>][] = [
+    ["a held key's repeat", () => {}, { repeat: true }],
+    ["chat typing", (hub) => void (hub.chatWindow = { isTyping: () => true }), {}],
+    ["the menu panel up", (hub) => void (hub.menu = {}), {}],
+    ["a dialogue card up", (hub) => void (hub.dialogue = {}), {}],
+    ["the letter panel open", (hub) => void (hub.mailbox = { isOpen: () => true }), {}],
+  ];
+  it.each(GUARDS)("should change nothing on M with %s (§F.33)", (_what, arrange, event) => {
+    const { hub, pressM, render, map, store } = townWithModes();
+    render();
+    arrange(hub as Record<string, unknown>);
+    pressM(event);
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+  });
+
+  // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
+  // 模式(M)"): a press on the icon in the map's bottom-left does what M does
+  describe("the map mode icon (FS-56CKV §Change: Map mode icon; I-56CKV-8)", () => {
+    const press = (x: number, y: number, button = 0) => ({ x, y, button });
+
+    it("should step the mode on a press on the icon as M does, in the map's bottom-left and then the enlarged map's, kept in this browser (D2, D6)", () => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("enlarged");
+      pointers.pointerdown!(press(754, 163));
+      expect(map()!.mode).toBe("overlay");
+      // beside the fullscreen button in its corner, as the overlay is up
+      pointers.pointerdown!(press(1043, 16));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+    });
+
+    it.each(GUARDS.slice(1))("should do nothing with a press on the icon with %s, M's guards (D6)", (_what, arrange) => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      arrange(hub as Record<string, unknown>);
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual([]);
+    });
+
+    it("should leave a press under the open gear overlay to it, and one off the icon to the town (D5)", () => {
+      const { hub, render, map, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      hub.gear = { covers: () => true, isOpen: () => true };
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      hub.gear = undefined;
+      pointers.pointerdown!(press(855, 109));
+      expect(map()!.mode).toBe("normal");
+    });
+
+    // integration of FS-3EBCA R10 with D5: a press or hover on the corner row is the row's alone
+    it("should leave a press on the corner row to the row, never stepping the mode (FS-3EBCA R10; D5)", () => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      (hub as Record<string, unknown>).corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual([]);
+    });
+
+    // integration of FS-R82NV § Change C8 with D5: the party panel is drawn over the overlay and
+    // the row, so a press or hover on it is the panel's alone
+    it("should leave a press on the open party panel to the panel, never stepping the mode (FS-R82NV § Change C8; D5)", () => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      (hub as Record<string, unknown>).partyPanel = { covers: () => true, isOpen: () => true };
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual([]);
+    });
+
+    it("should have no icon before the map is built, and take no press for it (D4)", () => {
+      const { hub, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      expect(() => pointers.pointerdown!(press(862, 109))).not.toThrow();
+      expect(map()).toBeUndefined();
+      expect(store.writes).toEqual([]);
+    });
+  });
+
+  // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
+  // "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the town's name, giving way to the queue line
+  describe("the map name (FS-56CKV §Change: Map name; I-56CKV-9)", () => {
+    const nameOf = (hub: Record<string, unknown>) => (hub.minimap as { mapName?: { words: string; shown: boolean } } | undefined)?.mapName;
+    const clear = (hub: Record<string, unknown>) => (hub as unknown as { keepMapNameClear(): void }).keepMapNameClear();
+    const line = (bounds: object, visible = true) => ({ active: true, visible, getBounds: () => bounds });
+
+    it("should name the town \"The Town\" on its minimap, as its arrival card does (E1, E6)", () => {
+      const { hub, render } = townWithModes();
+      expect(nameOf(hub)).toBeUndefined();
+      render();
+      expect(nameOf(hub)?.words).toBe("The Town");
+      expect(nameOf(hub)?.shown).toBe(true);
+    });
+
+    it("should hide it while the queue line or its Leave button meets it beside the enlarged map, and show it once they go (E7)", () => {
+      const { hub, render, pressM } = townWithModes();
+      render();
+      pressM();
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(true);
+      // the 80 × 17 name stands at x 634–714, y 12–29, left of the button: the line runs over it
+      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }) });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(false);
+      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }, false), leaveButton: line({ x: 700, y: 10, width: 60, height: 20 }) });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(false);
+      Object.assign(hub, { leaveButton: undefined, queuePanel: undefined });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(true);
+    });
+  });
+
+  it("should build the map in the mode this browser kept, from a run or an earlier visit (§F.32)", () => {
+    const { render, map, layers } = townWithModes("enlarged");
+    render();
+    expect(map()!.mode).toBe("enlarged");
+    // the enlarged panel at the column's top, y 10, right-aligned (FS-56CKV §Change C3 as amended 2026-11-12)
+    expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 10]);
+  });
+
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C2–C4 (owner 2026-11-12,
+  // amended: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側", replacing "地圖變2倍蛇才移動到右上角")
+  it.each([1080, 1280])("should move the fullscreen button on M: beside the enlarged map at its left, to the corner for the overlay, beside the map back at normal, at width %i (FS-56CKV §Change C2–C4)", (width) => {
+    viewport.set({ width, height: 720, renderScale: 1 });
+    const { pressM, render, layers, button } = townWithModes();
+    render();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    pressM();
+    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 10]);
+    expect(button.current).toEqual({ top: 10, right: 10 + 324 + 6 });
+    pressM();
+    expect(button.current).toEqual(BUTTON_CORNER);
+    pressM();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 216, 10]);
+  });
+
+  it("should hand the button's corner back when the visit ends (FS-56CKV §Change C6)", () => {
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const { hub, render, button } = townWithModes();
+    render();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    (hub as unknown as { release(end: string): void }).release("destroy");
+    expect(button.current).toEqual(BUTTON_CORNER);
+  });
+
+  it("should leave the corner empty as the overlay, and stand it about the player each frame (§F.31, §G.35)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "hub" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "hub" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { hub, pressM, render, map } = townWithModes("overlay");
+    render([{ id: "wren", entity_id: "e-wren", position: { x: 400, y: 300 } }]);
+    expect(map()!.panel).toBeNull();
+    const follow = vi.spyOn(map()!, "follow");
+    hub.selfEntityID = "me";
+    hub.views = new Map([
+      ["me", { pos: { x: 1010, y: 505 } }],
+      ["e-wren", { pos: { x: 410, y: 300 } }],
+    ]);
+    (hub as unknown as { followMapOverlay(): void }).followMapOverlay();
+    expect(follow).toHaveBeenCalledWith({ x: 1010, y: 505 }, { self: { x: 1010, y: 505 }, allies: [{ x: 410, y: 300 }] });
+    pressM();
+    expect(map()!.panel).toEqual({ width: 216, height: 108 });
+  });
+
+  it("should follow the overlay from update, after the figures are eased", () => {
+    const { hub } = townWithModes();
+    const order: string[] = [];
+    for (const step of ["offerMenu", "offerGear", "sendMovementIntent", "easeTowardServerPositions", "offerConversation", "updateBuildings", "hideWhoIsElsewhere", "showStashChest", "carryTheTorch", "followMapOverlay"])
+      hub[step] = () => void order.push(step);
+    hub.update(0, 16);
+    expect(order.indexOf("followMapOverlay")).toBeGreaterThan(order.indexOf("easeTowardServerPositions"));
+  });
+});
+
+/**
+ * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
+ * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ */
+function partyPanelOn(refused: () => boolean, opening?: () => void) {
+  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+  const keyboard = new EventEmitter();
+  const scene = {
+    add: { graphics: () => any, text: () => any },
+    input: Object.assign(new EventEmitter(), { keyboard }),
+    events: new EventEmitter(),
+  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
+  const panel = new PartyPanel(scene, {
+    store: createPartyStore({ selfId: () => "me" }),
+    world: () => null,
+    selfId: () => "me",
+    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
+    makeField: () => ({
+      value: "",
+      setEnabled: vi.fn(),
+      moveTo: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      blur: vi.fn(),
+      destroy: vi.fn(),
+    }),
+    activeElement: () => null,
+    blocked: refused,
+    opening,
+  });
+  return { panel, pressT: () => keyboard.emit("keydown-T") };
+}
+
+// FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
+// inventory or the character panel open the party panel would not open). I-3EBCA-7.
+describe("HubScene the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
+  type Partied = { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
+  function partyInTown() {
+    const env = hubOnStage();
+    const hub = env.hub as unknown as typeof env.hub & Partied;
+    const party = partyPanelOn(() => hub.refusesParty());
+    hub.partyPanel = party.panel;
+    hub.mountCorner();
+    const f = cornerIconFrame("party", viewport);
+    const icon = () =>
+      env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    return { ...env, hub, party, pressIcon: () => icon().handlers.pointerdown() };
+  }
+
+  it.each([
+    ["the inventory", (gear: ReturnType<typeof fakeGear>) => gear.toggle()],
+    ["the character panel", (gear: ReturnType<typeof fakeGear>) => gear.toggleCharacter()],
+    [
+      "both panels",
+      (gear: ReturnType<typeof fakeGear>) => {
+        gear.toggle();
+        gear.toggleCharacter();
+      },
+    ],
+  ])("should open and close the party panel on T and on the Party icon with %s open", (_open, open) => {
+    const { gear, party, pressIcon } = partyInTown();
+    open(gear);
+    expect(gear.isOpen()).toBe(true);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(true);
+    party.pressT();
+    expect(party.panel.isOpen()).toBe(false);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(true);
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
+    expect(gear.isOpen()).toBe(true);
+  });
+
+  it.each([
+    ["a dialogue", (hub: Record<string, unknown>) => void (hub.dialogue = {})],
+    ["the ESC menu", (hub: Record<string, unknown>) => void (hub.menu = {})],
+    ["the letter panel", (hub: Record<string, unknown>) => void (hub.mailbox = { isOpen: () => true, close: vi.fn() })],
+  ])("should still refuse T and the Party icon while %s owns the screen, the inventory open or not", (_owner, own) => {
+    const { hub, gear, party, pressIcon } = partyInTown();
+    gear.toggle();
+    own(hub as unknown as Record<string, unknown>);
+    party.pressT();
+    pressIcon();
+    expect(party.panel.isOpen()).toBe(false);
+  });
+});
+
+// The owner, 2026-11-12: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉
+// 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". The windows (the inventory, the character panel,
+// the party panel, the letter panel) give way: FS-3EBCA R15–R18; FS-1GZGD § Change C4; FS-R82NV
+// § Change C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Change C4.
+describe("HubScene the windows give way to the letter panel and the menu (FS-3EBCA R15–R18)", () => {
+  type Windowed = {
+    partyPanel?: unknown;
+    mailbox?: unknown;
+    refusesParty(): boolean;
+    refusesLetter(): boolean;
+    clearForLetter(): void;
+    closeLetter(): void;
+    pressMenuIcon(): void;
+    openMenu(): void;
+    mayChat(): boolean;
+    mountCorner(): void;
+  };
+  function town() {
+    const env = hubOnStage();
+    const hub = env.hub as unknown as typeof env.hub & Windowed;
+    const letter = { open: false };
+    const close = vi.fn(() => void (letter.open = false));
+    hub.mailbox = { isOpen: () => letter.open, close, relayout: vi.fn(), destroy: vi.fn(), covers: () => false };
+    const party = partyPanelOn(
+      () => hub.refusesParty(),
+      () => hub.closeLetter(),
+    );
+    hub.partyPanel = party.panel;
+    hub.mountCorner();
+    const plate = (icon: "menu" | "inventory" | "character" | "party") => {
+      const f = cornerIconFrame(icon, viewport);
+      return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    };
+    const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => plate(icon).handlers.pointerdown();
+    /** Every window shut, as the scene reads them. */
+    const shut = () => ({
+      inventory: env.gear.open,
+      character: env.gear.character,
+      stash: env.gear.stashOpen(),
+      party: party.panel.isOpen(),
+      letter: letter.open,
+    });
+    return { ...env, hub, letter, party, pressIcon, shut };
+  }
+  const NONE = { inventory: false, character: false, stash: false, party: false, letter: false };
+
+  describe("rule 1: the envelope opens the letter panel over any window, closing them (R15)", () => {
+    it.each([
+      ["the inventory", (t: ReturnType<typeof town>) => t.gear.toggle()],
+      ["the character panel", (t: ReturnType<typeof town>) => t.gear.toggleCharacter()],
+      [
+        "the inventory and the character panel",
+        (t: ReturnType<typeof town>) => {
+          t.gear.toggle();
+          t.gear.toggleCharacter();
+        },
+      ],
+      ["the stash with the inventory (R19)", (t: ReturnType<typeof town>) => t.gear.openStash()],
+      ["the party panel", (t: ReturnType<typeof town>) => t.party.pressT()],
+      [
+        "the party panel over the inventory",
+        (t: ReturnType<typeof town>) => {
+          t.gear.toggle();
+          t.party.pressT();
+        },
+      ],
+    ])("should not refuse the envelope with %s open, and close it first", (_open, open) => {
+      const t = town();
+      open(t);
+      expect(t.hub.refusesLetter()).toBe(false);
+      t.hub.clearForLetter();
+      expect(t.shut()).toEqual(NONE);
+    });
+
+    it.each([
+      ["a dialogue", (hub: Record<string, unknown>) => void (hub.dialogue = {})],
+      ["the ESC menu", (hub: Record<string, unknown>) => void (hub.menu = {})],
+    ])("should still refuse the envelope while %s owns the screen", (_owner, own) => {
+      const t = town();
+      own(t.hub as unknown as Record<string, unknown>);
+      expect(t.hub.refusesLetter()).toBe(true);
+    });
+  });
+
+  describe("rule 2: a window opens over the letter panel, closing it (R16)", () => {
+    it.each([
+      ["I", (t: ReturnType<typeof town>) => t.press(t.keys.i), () => ({ inventory: true })],
+      ["B", (t: ReturnType<typeof town>) => t.press(t.keys.b), () => ({ inventory: true })],
+      ["C", (t: ReturnType<typeof town>) => t.press(t.keys.c), () => ({ character: true })],
+      ["the Inventory icon", (t: ReturnType<typeof town>) => t.pressIcon("inventory"), () => ({ inventory: true })],
+      ["the Character icon", (t: ReturnType<typeof town>) => t.pressIcon("character"), () => ({ character: true })],
+      ["T", (t: ReturnType<typeof town>) => t.party.pressT(), () => ({ party: true })],
+      ["the Party icon", (t: ReturnType<typeof town>) => t.pressIcon("party"), () => ({ party: true })],
+    ])("should open its window on %s with the letter panel open, closing the letter panel", (_key, act, opened) => {
+      const t = town();
+      t.letter.open = true;
+      act(t);
+      expect(t.shut()).toEqual({ ...NONE, ...opened() });
+    });
+
+    it("should leave the letter panel alone when a window refused by a dialogue opens nothing", () => {
+      const t = town();
+      t.letter.open = true;
+      (t.hub as unknown as Record<string, unknown>).dialogue = {};
+      t.press(t.keys.i);
+      t.party.pressT();
+      expect(t.shut()).toEqual({ ...NONE, letter: true });
+    });
+  });
+
+  describe("rule 3: the menu opens over no window (R17)", () => {
+    it("should keep Esc's one press, one thing: the letter panel, the party panel, then the inventory, and only then the menu", () => {
+      const t = town();
+      t.gear.toggle();
+      t.party.pressT();
+      t.press(t.keys.esc);
+      expect(t.shut()).toEqual({ ...NONE, inventory: true });
+      expect(t.hub.menu).toBeUndefined();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeUndefined();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeDefined();
+    });
+
+    it.each([
+      ["the inventory, the character panel and the party panel", (t: ReturnType<typeof town>) => {
+        t.gear.toggle();
+        t.gear.toggleCharacter();
+        t.party.pressT();
+      }],
+      ["the stash", (t: ReturnType<typeof town>) => t.gear.openStash()],
+      ["the letter panel", (t: ReturnType<typeof town>) => void (t.letter.open = true)],
+    ])("should open the menu at once on the Menu icon with %s open, closing every window", (_open, open) => {
+      const t = town();
+      open(t);
+      t.pressIcon("menu");
+      expect(t.shut()).toEqual(NONE);
+      expect(t.hub.menu).toBeDefined();
+    });
+
+    it("should close every window whenever the menu opens", () => {
+      const t = town();
+      t.gear.toggle();
+      t.party.pressT();
+      t.letter.open = true;
+      t.hub.openMenu();
+      expect(t.shut()).toEqual(NONE);
+    });
+
+    it("should do nothing on the Menu icon while a dialogue is open", () => {
+      const t = town();
+      t.gear.toggle();
+      (t.hub as unknown as Record<string, unknown>).dialogue = {};
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.gear.open).toBe(true);
+    });
+  });
+
+  describe("rule 4: while the menu is open nothing else answers (R18)", () => {
+    function menuUp() {
+      const t = town();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeDefined();
+      return t;
+    }
+
+    it("should answer no corner icon but Menu", () => {
+      const t = menuUp();
+      const menu = t.hub.menu;
+      for (const icon of ["inventory", "character", "party"] as const) t.pressIcon(icon);
+      expect(t.hub.menu).toBe(menu);
+      expect(t.shut()).toEqual(NONE);
+    });
+
+    // owner 2026-11-12: "menu無法再按一次icon關閉"
+    it("should close on the Menu icon, as its × and Back do, and open again on the next press", () => {
+      const t = menuUp();
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.shut()).toEqual(NONE);
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeDefined();
+    });
+
+    it("should leave the Menu icon's plate alone to the icon under its blocker, and take a press beside it", () => {
+      const t = menuUp();
+      const blocker = t.stage.made.find((m) => m.name === "menu-blocker" && !m.destroyed)!;
+      const args = (blocker as unknown as { interactiveArgs?: unknown[] }).interactiveArgs ?? [];
+      const test = args.find((a) => typeof a === "function") as
+        | ((area: unknown, x: number, y: number, object: unknown) => boolean)
+        | undefined;
+      expect(test, "the blocker's own hit test").toBeTypeOf("function");
+      const takes = (x: number, y: number) => test!({}, x, y, blocker);
+      const plate = cornerIconFrame("menu", viewport);
+      const bag = cornerIconFrame("inventory", viewport);
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+      expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
+      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
+      expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
+    });
+
+    it("should answer no I, B, C or T, and refuse the envelope", () => {
+      const t = menuUp();
+      t.press(t.keys.i);
+      t.press(t.keys.b);
+      t.press(t.keys.c);
+      t.party.pressT();
+      expect(t.shut()).toEqual(NONE);
+      expect(t.hub.refusesLetter()).toBe(true);
+    });
+
+    it("should give the chat input no focus", () => {
+      const t = town();
+      expect(t.hub.mayChat()).toBe(true);
+      t.press(t.keys.esc);
+      expect(t.hub.mayChat()).toBe(false);
+    });
+
+    it("should still close on Esc", () => {
+      const t = menuUp();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeUndefined();
+    });
   });
 });

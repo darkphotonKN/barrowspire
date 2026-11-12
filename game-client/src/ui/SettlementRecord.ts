@@ -10,12 +10,13 @@
  *
  * Game palette only: vellum words, brass frame, amber for the one control. Finds carried out take
  * the safe channel, finds left in the barrow the danger channel, items used up the neutral label.
- * The heading is the end-of-run overlay's, so it may take the blackletter at 30 px (the guideline's
- * "blackletter bound"); everything else is the body serif.
+ * The heading is every window's title (`drawPanelTitle`, FS-3EBCA R20), no longer the
+ * blackletter the guideline would permit here; everything is the body serif.
  */
 
 import type Phaser from "phaser";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { drawPanelTitle } from "./panelFrame";
 import type { RecordRow, RecordTone, RecordView } from "./settlement";
 
 /** Over the resolved player's card (1500), under the passing notices (2000). */
@@ -131,11 +132,9 @@ export class SettlementRecord {
     };
     const centre = RECORD_W / 2;
 
-    let y = 18;
-    text(centre, y, view.title, 30, palette.hudText, {
-      fontFamily: CANVAS_FONT.display,
-    }).setOrigin(0.5, 0);
-    y += 42;
+    // the windows' one title, in capitals, no longer the blackletter (FS-3EBCA R20, R22)
+    parts.push(drawPanelTitle(this.scene, { x: 0, y: 0, width: RECORD_W }, view.title));
+    let y = 60;
     this.statusText = text(
       centre,
       y,

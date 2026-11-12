@@ -57,11 +57,17 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   darkens once. Free-standing things (props, door leaves, chests, characters) and the tower's
   outer wall's contact shadow stay baked.
 - **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. A sheet may
-  instead be baked at 2x from a 4x render and drawn at half scale, so it stays sharp at render
-  scale 2; today the four classes are (knight, archer, wizard, mercenary; FS-HF0WW, FS-3V7GC)
-  ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md)).
-  It stands exactly as large as at 1x, and every size around it (head height, markers, footprint)
-  stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
+  instead be baked at more px than it is drawn, so it stays sharper on a high-density screen
+  ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md),
+  [ADR-0076](../../docs/adr/0076-a-sheet-may-be-baked-at-1-5x-its-frame-and-trim-on-a-two-screen-px-grid.md)):
+  at 2x from a 4x render, drawn at half scale, sharp at render scale 2; or at 1.5x from a 3x
+  render, drawn at two thirds, which costs a little over half the 2x memory and is a touch softer
+  at render scale 2 (sharper at 1.5, equal at 1). The playable classes moved to 1.5x as each was
+  re-baked with its run (all four: the archer first, then the wizard, the knight and the mercenary;
+  FS-HF0WW, FS-3V7GC, FS-JS7C8): the owner judged the 1.5x archer by eye and took the memory.
+  At 1.5x the frame, its anchor and every trimmed cut sit on two-screen-px steps, so they land on
+  whole backing px at render scale 1, 1.5 and 2. Either way the sheet stands exactly as large as
+  at 1x, and every size around it (head height, markers, footprint) stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
   pixel-grid outlines, `image-rendering: pixelated`) no longer apply to the canvas.
 - **Readable silhouettes over detail.** At game scale a player is roughly one tile wide and a face
   is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
@@ -93,7 +99,11 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Draw order is by footprint** (`x + y` of the ground an object stands on), not by sprite
   bounds. Clicks hit-test the footprint too.
 - **Eight facings.** Characters face one of eight world directions, taken from the velocity the
-  client already renders.
+  client already renders: the local player's character, other players, folk and creatures alike,
+  and standing keeps the last one. The pointer never turns a character; it only aims. An attack
+  faces its aim (and so do `walk_attack` and `backpedal_attack`), death keeps the facing it fell
+  in, and a Shadow Shot hold turns to the held aim. Nothing about facing is sent or received
+  (FS-JS7C8 §D, §E). *(Amended with FS-JS7C8, owner change 2026-11-12.)*
 - **Occlusion: buildings stay closed, the cut-away is for the room you are in, trees fade.** From
   outside, a building is a closed block and never fades; a player it covers shows through it as a
   silhouette. The cut-away (low south and east fronts) is how a room the player stands in is
@@ -261,6 +271,37 @@ lit) while the player stands inside.
 - **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
+  A weapon is carried low and always in a normal grip (out of the thumb side of the fist, never a
+  fist turned over on the forearm): standing, the weapon arm hangs at the side with the hand a
+  little below the waist, a blade pointing down and forward, a sceptre leaning with the relaxed
+  hand 30–45° off vertical beside the leg, its head forward, a little out and under the shoulder
+  (FS-JS7C8 R2). An attack starts from the carry and settles back to it: the weapon turns at most
+  `ATTACK_TURN_LIMIT` (100°) a frame coming out of it and going back.
+  The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
+  `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
+  arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
+  past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
+  head steady and looking ahead; a weapon in a pumping hand is held in a normal grip, a blade
+  forward along the forearm raised above level, its point ahead of the hand, never through or behind the head, a
+  sceptre reasonably upright from a hand that pumps only to the lower chest, 15-40° off vertical;
+  at the front of the pump the weapon hand swings in across the front of the torso, a blade a
+  little across the body, as a runner's arm crosses), played turned to the way the character
+  moves, and
+  `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
+  than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
+  no crouch, the feet stepping back, the cloak carried out behind the heels). No leg or boot ever
+  shows through a cloak or a garment, and a quiver rides over the cloak, never sunk into it
+  (FS-HF0WW). A class with `run` walks the legs of each over 0.75 walk
+  cycles, so neither outpaces the slowed ground; no sheet carries a standalone backpedal
+  (FS-JS7C8, the archer first). A class's attack moves the whole body: a wind-up opposite the
+  strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
+  curve, fastest through the strike and eased at its ends, the weight onto the front foot, a
+  follow-through and a recover, still 7 keys at 12 fps with the strike at key 3. A slash is a
+  full diagonal from above the right shoulder to below the left hip; the knight cuts compact
+  behind a shield kept up before his chest, the mercenary wide, a drawing cut with his free hand
+  thrown out against it; the wizard thrusts her sceptre from the shoulder with her free hand
+  opening (FS-2325V § Change: The class attacks move with weight and cut deep). Folk and
+  creatures keep idle and walk.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
 - **Player:** cloaked/armored figure with a lantern or torch; strong silhouette. The
@@ -276,7 +317,8 @@ lit) while the player stands inside.
   leather that carries the figure. A deep cowl, closed over the crown, hides most of the
   face in shadow down to the mouth. Its crown draws back into one long, full point that droops
   like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
-  ragged cloak hangs over the buff leather, with a quiver on the back. *(Amended at the owner's
+  ragged cloak hangs over the buff leather, with a quiver strapped over it on the back, near
+  upright (about 17° off the spine), its fletching over the right shoulder. *(Amended at the owner's
   pick, 2026-11-04.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
@@ -327,8 +369,21 @@ lit) while the player stands inside.
   all four classes, through the mage's robe too). One clearance serves every class
   (`UNDER_CLEAR`, FS-3V7GC): never give one class its own. At rest and in every clip except the death, no
   leg may lie more than one baked px outside the cloth over it, from the garment's waistband to
-  its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, half a px at 2x (1x
-  px measured in model space, an upper bound on the screen). The bake checks every pose and
+  its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, two thirds of a px at
+  1.5x, half a px at 2x (1x
+  px measured in model space, an upper bound on the screen), measured through the cloth where it
+  hangs: a leg under a hem that a stride or a heel kick has tilted is under it, and a heel below a
+  lifted hem shows beneath it, not through it, and a leg on the outside of a bend in the cloth (a
+  robe's front swung over the knee) is measured on the ring at the bend (FS-HF0WW § Change: The
+  guard measures a leg through the cloth). A panel worn over a garment (the mage's scapular over
+  her gown) is cut on that garment's rig with `skirt({ over })`, so the two move as one cloth;
+  never skin two layers apart, or the one that follows the legs further comes out through the
+  other in a run. A figure whose pelvis no garment covers (the quartermaster in shirt, breeches
+  and a front apron) wears the seat of its breeches, a closed `skirt` in the breeches' cloth from
+  just over the belt to under the crotch, its thighs drawn in under it: the torso and the two leg
+  tubes crossing bare at the hips showed the thigh roots through the shirt and the shirt's pale
+  bottom between them (FS-HF0WW § Change: The folk's legs stay under their clothes, R47). The
+  bake checks every pose and
   fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
   give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt
   to the opposite thigh, kept only for the legacy sheets on the guard's `MIRRORED_LEGACY` list
@@ -655,7 +710,37 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md), 2026-11-12; outer
   outline only, on the owner's look the same day; one fill for every seen region, the owner's
   "目前的區域不特別亮", the same day; walls are lines and openings are gaps, corridors lined as rooms
-  are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)*
+  are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)* In its normal mode, in a run,
+  the town or a field, it stands at the very top of the top-right corner, 10px in from the top and
+  the right, with the fullscreen button at its left, top-aligned, 6px off, and the lines the column
+  stacks under it follow its bottom; enlarged, as the overlay or with no map, the button keeps the
+  corner and the column starts under it. *(Amended by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
+  §Change: Minimap at the top, fullscreen button beside it, the owner's "地圖移動到最上面
+  全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", 2026-11-12.)* A **map mode icon** sits 4px inside the map's
+  bottom-left corner, normal and enlarged, and beside the fullscreen button while the map overlay
+  is up: a 9 × 9 tile built as a map mark is, two nested squares in the interactable amber on the
+  dark `markerStroke` ring, `interactableBright` under the pointer, drawn in code from tokens. A
+  press does what M does. Hovered, it shows "Map mode (M)" beside the map, never over it, on the
+  canvas item tip's ground (`tipGround`'s dark fill, faint brass hairline, 6px corner) in vellum
+  12px body type, the fullscreen button's hint in the game palette. The dev position readout moves
+  to the map's top-right corner, which the floor's diamond leaves as empty as the bottom-left.
+  *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md) §Change: Map mode
+  icon, the owner's "右上角地圖左下角多加小icon hover顯示可以切換大小或是模式(M)", 2026-11-12.)*
+  The **map name**, the place's name as its arrival card titles it ("The Town", "Gentle
+  Meadows", "The First Floor"), stands in 11px vellum body type letter-spaced 1px on a faint
+  `hudPanel` plate at 0.75, padded 4 × 2, square-cornered as the column's lines are: 4px inside the
+  normal map's top-right corner, right-aligned; left of the fullscreen button, centred on it, with
+  the map enlarged; left of the map mode icon in the overlay. It hides while a target frame or the
+  town's queue line stands over it. *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
+  §Change: Map name, the owner's "小地圖右上角顯示目前地圖的名字" and "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊",
+  2026-11-12.)* In a run the name says the floor, so the column's "Floor N" line is not drawn
+  under a map that names it; it shows only where no map does (a floor of buildings, a floor whose
+  map is not yet in). The dev position readout wears the name's plate in 10px vellum: 4px inside
+  the normal map's bottom-right corner, right-aligned; left of the name, on its line, with the map
+  enlarged (hidden while a target frame stands over it); under the column's last line in the
+  overlay and with no map. *(Amended by FS-56CKV §Change: Map name, the owner's "地城樓層顯示兩次
+  拿掉下面的", "有小地圖時 x y座標不是要顯示在地圖框框內右下角嗎" and "2倍地圖時座標顯示在地區名稱左邊",
+  2026-11-12.)*
 - **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
   **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
   drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole
@@ -672,6 +757,32 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   world, the fog and the atmosphere, under the aim line, the floor veil and every piece of HUD, and
   takes no input. The scale, the 40% and the line are starting values to tune by eye.
   *(Added by [FS-1SEF0](../../docs/specs/1SEF0-minimap-modes-enlarged-and-overlay.md), 2026-11-12.)*
+- **Town and field minimap.** The town and every field world wear the run's minimap, its look and
+  its three modes unchanged (the same panel, rim, vignette, layer order and tokens, no new colour).
+  The town's map shows whole from the first moment: its ground in the one stone
+  (`minimapExplored`); its edge the walls' line (`minimapEdge`), left open as a gap where each road
+  leaves (the gate's reach either side of it); each building a solid footprint in the walls' own
+  ink, so what cannot be walked through reads as one thing, a line where it is thin and a mass where
+  it is a building, its door cut in as a notch at least 2 px deep at every size; never its rooms,
+  partitions or furnishings, and nothing changes when the player steps inside. Its **map marks**
+  are amber glyphs on the run's dark ring, 9 × 9 on whole px at every mode's size, drawn in code: a
+  tower for the Spire's gate, a teleport ring for each gate to another area, a chest for the stash,
+  a bag for the Quartermaster, a lozenge for any other function NPC; only what the player can act
+  on (no Elder, who only tells a story; no Inn, Smithy, mailbox, market or dressing), and two that would
+  overlap stand side by side, 1 px apart. A field's map shows only its **charted ground**, the
+  ground round the player as they walk: the same stone, the edge line and the tree stands and rocks
+  solid only where charted, the road home's teleport ring once its spot is charted, and nothing at
+  all, not even a line, where it is uncharted. The screen is never fogged in the town or a field.
+  The party's dots as in a run; no monsters, no other players, no labels, no roads.
+  *(Added by [FS-P0HSP](../../docs/specs/P0HSP-town-and-field-minimap.md), 2026-11-12.)*
+- **Corner row.** The panel icons in the bottom-right corner of every world (`src/ui/HudCorner.ts`):
+  from the right Menu (a gear), Character (a bust), Party (two busts) and Mailbox (the envelope), each
+  a 58 × 46 carved plate at the envelope's 0.85, 8 px apart, 16 px in from the corner. Their lines
+  are the interactable amber, brighter under the pointer; a greyed icon (Mail outside the town)
+  is `hudFaint` and never brightens, since an amber thing the player cannot act on is a defect.
+  Under the pointer a 12 px vellum label on the HUD panel names the icon and its key. Drawn in
+  code from tokens, no baked art. The ability card stands directly above the row.
+  *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-12.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

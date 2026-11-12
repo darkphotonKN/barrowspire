@@ -122,10 +122,12 @@ export function arms(rig, mat, o = {}) {
 
 /**
  * Both legs, hip to ankle, each one continuous tube. `o.under` is the garment the thighs are worn
- * under (the options its `skirt` takes, the four classes): every part of a thigh that would show
- * outside it is drawn in to UNDER_CLEAR inside its wall (`underGarment`), so the thighs no longer
- * show as dark wedges at the sides of the waist. Without it (folk, creatures) the legs are as they
- * always were.
+ * under (the options its `skirt` takes: the four classes, the trousered resident, the
+ * spirewarden, the quartermaster's breeches seat): every part of a thigh that would show outside
+ * it is drawn in to UNDER_CLEAR inside its wall (`underGarment`), so the thighs no longer show as
+ * dark wedges at the sides of the waist. It draws a thigh in all round, so a garment open over
+ * most of the leg (the quartermaster's apron) is never given as `under`, or the thigh it leaves
+ * bare would slim. Without it (creatures) the legs are as they always were.
  */
 export function legs(rig, mat, o = {}) {
   const lr = rig.p.limbR * (o.r ?? 1);
@@ -186,9 +188,27 @@ function underGarment(rig, g) {
     }
     return null;
   };
+  // over the garment's top, where the torso alone covers the thigh's root (`g.torso`, its options):
+  // the torso's wall there when it is the narrower, as a pinched waist is
+  const body = g.torso && torsoProfile(rig, g.torso);
+  const torsoAt = (y) => {
+    for (let i = 0; i + 1 < body.length; i++) {
+      const [a, b] = [body[i], body[i + 1]];
+      if (y < a.p[1] || y > b.p[1]) continue;
+      const t = (y - a.p[1]) / (b.p[1] - a.p[1]);
+      return { r: [a.r[0] + (b.r[0] - a.r[0]) * t, a.r[1] + (b.r[1] - a.r[1]) * t], z: a.p[2] + (b.p[2] - a.p[2]) * t };
+    }
+    return null;
+  };
+  const wallOver = (y) => {
+    const e = wallAt(y);
+    if (!body || y < rings[0].y) return e;
+    const t = torsoAt(y);
+    return t && t.r[0] < e.r[0] ? t : e;
+  };
   return (p) => {
     const y = p.y / H;
-    const e = wallAt(y);
+    const e = wallOver(y);
     if (!e) return;
     const x = p.x / H;
     const z = p.z / H - e.z;
@@ -533,26 +553,119 @@ function pushPanels(rig, bottom) {
  *    already touches the thigh (it once built slowly toward the hem, lagging the thigh above it);
  *  - with `panels`, the swaying panels cannot swing in through a leg: each is pushed out by how
  *    far the legs reach above the hem (`pushPanels`); below the knee a robe hangs on the panels
- *    alone, since the thigh does not carry the shin that kicks it.
+ *    alone, since the thigh does not carry the shin that kicks it. `kneeCover` (H) keeps the
+ *    thigh carrying the cloth that far under the knee before the panels take it, so a knee bent
+ *    high in a run stays inside a robe (the mage's, 0.05; 0 elsewhere).
+ * `over` (another skirt's options) cuts a panel on that garment's rig, to lie over it ({@link overSkirt}).
  * `mirrored: true` keeps the old weighting and none of the rest, for the sheets baked with it and
  * not yet re-baked, so their pixels do not move; never use it on new work.
  */
 export function skirt(rig, mat, o = {}) {
-  const top = o.top;
+  if (o.over) return overSkirt(rig, mat, o);
   const bottom = o.bottom;
   const cps = skirtRings(o).map((c) => ({ p: [0, c.y, c.z], r: c.r, w: { hips: 1 } }));
+  const weight = skirtWeights(rig, o);
+  const drop = o.ragged
+    ? (t, a) => {
+        if (t < 0.7) return 0;
+        const j = Math.floor(((a + Math.PI * 4) / (Math.PI * 2)) * o.ragged.teeth);
+        return ((t - 0.7) / 0.3) * o.ragged.depth * (0.2 + hash2(j, 3, o.ragged.seed ?? 1));
+      }
+    : undefined;
+  if (o.panels && (o.panelWeight ?? 0.5) > 0 && !o.mirrored) pushPanels(rig, bottom);
+  return garment(skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false }), o);
+}
+
+/** Tags a garment for the leg-clearance guard (clearance.js). */
+function garment(mesh, o) {
+  // a garment the legs must stay inside while they move (clearance.js)
+  mesh.userData.garment = true;
+  // the bake fails a sheet off MIRRORED_LEGACY that still asks for the old weighting (clearance.js)
+  if (o.mirrored) mesh.userData.mirrored = true;
+  return mesh;
+}
+
+/**
+ * How much further out than its own radii a panel worn over a garment (`skirt({ over })`) is cut
+ * (H; about 0.17 1x px on the mage): the blended skin closes the space between the two layers
+ * where a stride turns the bones under them apart (the run's knee, the back flung out behind), and
+ * the black gown came through the teal scapular in dashes a baked px long. The least, in 0.001
+ * steps, that leaves at most a stray baked px of it in any frame of the run.
+ */
+export const OVER_CLEAR = 0.002;
+
+/**
+ * A panel worn over another `skirt` (`o.over`, that garment's options: the mage's scapular over her
+ * gown): cut on the garment beneath's own rig, so the two move as one cloth and the one beneath
+ * never shows through it, however far a stride or a run's drag swings them. Its columns are the
+ * garment beneath's, column for column: its arc is snapped to that garment's columns (`over.segs`
+ * round the full turn) and cut one column per column, so each face lies over the face beneath it
+ * (`segs` cuts it across its own arc instead, the cut before 2026-11-12).
+ * Cut finer or across its own angles, the panel's vertices followed the skin's turn from one thigh
+ * to the other behind the knee while the coarser face beneath cut straight across it, and the
+ * panel dipped under the gown in the run (owner 2026-11-12: "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點").
+ * Its rings are the garment beneath's, ring for ring (the same heights, centres and trail), each `rTop - over.rTop`
+ * out from it at the top easing to `rBottom - over.rBottom` at the hem, and OVER_CLEAR more; its skin weights are the
+ * garment beneath's at the same ring. Two layers skinned apart (each its own `legFollow` and panel
+ * weight) and cut on rings at other heights part under a stride: the one that follows the legs
+ * further comes out through the other (the gown through the scapular at the knee, past it behind
+ * the calves in the run). Its hem is lifted to `bottom` on the last ring, where the weights beneath
+ * no longer change, so the cloth beneath shows below it as before. `top` is the garment
+ * beneath's; `legFollow` and `panelWeight` are not read.
+ */
+function overSkirt(rig, mat, o) {
+  const u = o.over;
+  const rings = skirtRings(u);
+  const n = rings.length - 1;
+  const cps = rings.map((c, k) => {
+    const f = k / n;
+    const r = [0, 1].map((i) => c.r[i] + (o.rTop[i] - u.rTop[i]) * (1 - f) + (o.rBottom[i] - u.rBottom[i]) * f + OVER_CLEAR);
+    return { p: [0, c.y, c.z], r, w: { hips: 1 } };
+  });
+  const lift = o.bottom - u.bottom;
+  const under = skirtWeights(rig, u);
+  if (u.panels && (u.panelWeight ?? 0.5) > 0) pushPanels(rig, o.bottom);
+  // the garment beneath's columns (rig.js tubeGeometry: a closed tube's column j at 2πj/segs)
+  // (`o.segs` cuts it across its own arc instead, as before 2026-11-12)
+  const step = (Math.PI * 2) / (u.segs ?? 28);
+  const arc = o.segs ? o.arc : o.arc.map((a) => Math.round(a / step) * step);
+  const mesh = skinTube(rig, cps, mat, {
+    segs: o.segs ?? Math.round((arc[1] - arc[0]) / step),
+    steps: 4,
+    arc,
+    weight: under,
+    drop: (t) => (t >= 1 ? -lift : 0),
+    caps: false,
+    uv: 4,
+    ground: false,
+  });
+  // the hem ring's centre where its vertices are, for the guard's rings (clearance.js)
+  const { centres } = mesh.geometry.userData.tube;
+  centres[centres.length - 1][1] += lift * rig.H;
+  return garment(mesh, o);
+}
+
+/**
+ * A `skirt`'s skin weights for options `o`: at a fraction `t` of the way from its top ring to its
+ * hem and an angle `a` round it, how much of each vertex the hips, the thighs and the panels carry.
+ */
+function skirtWeights(rig, o) {
+  const top = o.top;
+  const bottom = o.bottom;
   const follow = o.legFollow ?? 0.5;
   const [, kneeY] = J(rig, "shinL");
   const panel = o.panels ? (o.panelWeight ?? 0.5) : 0;
-  const weight = (t, a) => {
+  return (t, a) => {
     const down = o.mirrored ? Math.max(0, (t - 0.12) / 0.88) ** 1.3 : THREE.MathUtils.smoothstep(t, 0.05, 0.55);
     const lat = (o.mirrored ? 1 : -1) * Math.cos(a); // +1 left (+x), -1 right
     const fr = Math.sin(a); // +1 front, -1 back
     const L = THREE.MathUtils.smoothstep(lat, -0.35, 0.35);
     const w = { hips: 1 };
     const reach = follow * down * (0.35 + 0.65 * Math.abs(fr) ** 0.5);
-    // under the knee the thigh's share passes to the pushed panels
-    const below = o.mirrored || !panel ? 0 : THREE.MathUtils.smoothstep(kneeY - (top - (top - bottom) * t), 0, 0.1);
+    // under the knee the thigh's share passes to the pushed panels: from the knee, or from
+    // `kneeCover` (H) under it, so the thigh carries the cloth over the knee it bends
+    const cover = o.kneeCover ?? 0;
+    const below = o.mirrored || !panel ? 0 : THREE.MathUtils.smoothstep(kneeY - (top - (top - bottom) * t), cover, cover + 0.1);
     const legs = reach * (1 - below);
     if (legs > 0) {
       w.hips -= legs;
@@ -575,25 +688,14 @@ export function skirt(rig, mat, o = {}) {
     w.hips = Math.max(0, w.hips);
     return w;
   };
-  const drop = o.ragged
-    ? (t, a) => {
-        if (t < 0.7) return 0;
-        const j = Math.floor(((a + Math.PI * 4) / (Math.PI * 2)) * o.ragged.teeth);
-        return ((t - 0.7) / 0.3) * o.ragged.depth * (0.2 + hash2(j, 3, o.ragged.seed ?? 1));
-      }
-    : undefined;
-  if (panel > 0 && !o.mirrored) pushPanels(rig, bottom);
-  const mesh = skinTube(rig, cps, mat, { segs: o.segs ?? 28, steps: 4, arc: o.arc, weight, drop, caps: false, uv: 4, ground: false });
-  // a garment the legs must stay inside while they move (clearance.js)
-  mesh.userData.garment = true;
-  // the bake fails a sheet off MIRRORED_LEGACY that still asks for the old weighting (clearance.js)
-  if (o.mirrored) mesh.userData.mirrored = true;
-  return mesh;
 }
 
 /**
  * Adds a cloak's bone chain (cloak0..cloak3) down the back, each a spring. Call before any
- * skinned mesh is built.
+ * skinned mesh is built. `strap` (per bone from the top, 1 free) holds the cloak's top to the back
+ * under something strapped over it (the archer's quiver): that bone's drag and fling scale by it,
+ * its stiffness by its inverse (at most 5x), so the cloth under the strap stays on the back and
+ * the rest swings from there.
  */
 export function cloakBones(rig, o = {}) {
   const [, ny] = J(rig, "neck");
@@ -603,17 +705,19 @@ export function cloakBones(rig, o = {}) {
   rig.addBone("cloak0", "chest", 0, ny - 0.02 - cy, -back);
   const seg = len / 4;
   for (let i = 1; i <= 3; i++) rig.addBone(`cloak${i}`, `cloak${i - 1}`, 0, -seg, -0.004);
-  for (let i = 0; i <= 3; i++)
+  for (let i = 0; i <= 3; i++) {
+    const held = o.strap?.[i] ?? 1;
     spring(rig, `cloak${i}`, {
-      stiffness: 70 - i * 12,
+      stiffness: (70 - i * 12) / Math.max(held, 0.2),
       damping: 8,
-      drag: (o.drag ?? 0.32) * (0.5 + i * 0.35),
-      inertia: 0.8 + i * 0.25,
+      drag: (o.drag ?? 0.32) * (0.5 + i * 0.35) * held,
+      inertia: (0.8 + i * 0.25) * held,
       limit: 1.0,
       gravity: i === 0 ? 0.25 : 0.85,
       drape: -0.3,
       axes: "xz",
     });
+  }
 }
 
 /** The cloak sheet: an open tube behind the shoulders, weighted down the cloak chain. */
@@ -655,7 +759,10 @@ export function cloak(rig, mat, o = {}) {
         return ((t - 0.75) / 0.25) * o.ragged.depth * (0.2 + hash2(j, 7, o.ragged.seed ?? 2));
       }
     : undefined;
-  return skinTube(rig, cps, mat, { segs: 22, steps: 4, arc, caps: false, drop, uv: 4, ground: false });
+  const mesh = skinTube(rig, cps, mat, { segs: 22, steps: 4, arc, caps: false, drop, uv: 4, ground: false });
+  // a cloak no leg or boot may come out through (clearance.js `cloakClearance`)
+  mesh.userData.cloak = true;
+  return mesh;
 }
 
 /** A hood with an open face, a short capelet over the shoulders, and a tail down the back. */

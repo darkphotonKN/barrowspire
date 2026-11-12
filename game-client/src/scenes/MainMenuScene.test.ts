@@ -295,3 +295,122 @@ describe("MainMenuScene ENTER THE TOWN forgets the kept place (FS-PQ2TW R7)", ()
     expect(verdictAtSend).toEqual([true]);
   });
 });
+
+const { usePartyStore } = await import("@/stores/partyStore");
+const { useAuthStore } = await import("@/stores/authStore");
+type PartyUpdatePayload = import("@/stores/partyStore").PartyUpdatePayload;
+
+// FS-NCC9J §Change: Changing character leaves the party, C9-C12 (owner 2026-11-12: "村莊組的隊伍 換角色就算離隊
+// 但在選角色時有辦法知道他某個角色正在組隊 選了會離隊的提示通知嗎 按確認就離隊").
+describe("MainMenuScene roster: the party's character and the switch (FS-NCC9J C9-C12)", () => {
+  const SELF = "11111111-1111-4111-8111-111111111111";
+  /** This player's party as the roster's sync sends it, holding them as name. */
+  const partyAs = (name: string, locked = false): PartyUpdatePayload => ({
+    party_id: "33333333-3333-4333-8333-333333333333",
+    leader_id: SELF,
+    members: [
+      { player_id: SELF, name, class: "warrior", joined_at: "2026-11-12T10:00:00Z", where: "" },
+    ],
+    size: 2,
+    reason: "sync",
+    subject_id: SELF,
+    locked,
+  });
+  const brannoc = { id: "c-brannoc", name: "Brannoc", className: "archer" };
+  const kaelen = { id: "c-kaelen", name: "Kaelen", className: "warrior" };
+
+  /** The menu with active chosen, its sends and refusals recorded. */
+  function menuChoosing(active: typeof kaelen) {
+    useAuthStore.setState({ memberInfo: { id: SELF } } as unknown as Partial<ReturnType<typeof useAuthStore.getState>>);
+    vi.spyOn(useGameStore, "getState").mockReturnValue({
+      ...useGameStore.getState(),
+      rosterStatus: "ready",
+      getActiveCharacter: () => active,
+    } as unknown as ReturnType<typeof useGameStore.getState>);
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => undefined);
+    const menu = new MainMenuScene() as unknown as {
+      handleStartGame(): void;
+      switchConfirm?: { leave(): void; cancel(): void };
+      showRefusal(message: string): void;
+    } & Record<string, unknown>;
+    Object.assign(menu, { add: any, time: any, tweens: any, input: any, cameras: { main: any } });
+    const refusals: string[] = [];
+    menu.showRefusal = (message: string) => void refusals.push(message);
+    return { menu, send, refusals };
+  }
+
+  afterEach(() => {
+    usePartyStore.setState({ party: null });
+    useAuthStore.setState({ memberInfo: null });
+  });
+
+  it("should mark the card of the character the party holds this player as, and no other (C9)", () => {
+    useAuthStore.setState({ memberInfo: { id: SELF } } as unknown as Partial<ReturnType<typeof useAuthStore.getState>>);
+    usePartyStore.setState({ party: partyAs("Hero 2") });
+    const { scene } = sidebarOnStage(1);
+    const cards = (scene as unknown as { heroSidebarCards: { inParty: boolean }[] }).heroSidebarCards;
+    expect(cards.map((c) => c.inParty)).toEqual([false, false, true, false, false, false, false, false]);
+  });
+
+  it("should mark no card with no party", () => {
+    useAuthStore.setState({ memberInfo: { id: SELF } } as unknown as Partial<ReturnType<typeof useAuthStore.getState>>);
+    const { scene } = sidebarOnStage(1);
+    const cards = (scene as unknown as { heroSidebarCards: { inParty: boolean }[] }).heroSidebarCards;
+    expect(cards.some((c) => c.inParty)).toBe(false);
+  });
+
+  it("should enter at once as the party's own character, asking nothing (C10)", () => {
+    usePartyStore.setState({ party: partyAs("Kaelen") });
+    const { menu, send } = menuChoosing(kaelen);
+
+    menu.handleStartGame();
+
+    expect(menu.switchConfirm).toBeUndefined();
+    expect(send).toHaveBeenCalledWith(ActionType.EnterHub, expect.objectContaining({ characterId: "c-kaelen" }));
+  });
+
+  it("should ask first as another character, sending nothing yet (C11)", () => {
+    usePartyStore.setState({ party: partyAs("Kaelen") });
+    const { menu, send } = menuChoosing(brannoc);
+
+    menu.handleStartGame();
+
+    expect(menu.switchConfirm).toBeDefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing on Cancel, and close the confirm (C11)", () => {
+    usePartyStore.setState({ party: partyAs("Kaelen") });
+    const { menu, send } = menuChoosing(brannoc);
+    menu.handleStartGame();
+
+    menu.switchConfirm?.cancel();
+
+    expect(menu.switchConfirm).toBeUndefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should send enter_hub as the new character on Leave party, which the server makes the switch (C11)", () => {
+    usePartyStore.setState({ party: partyAs("Kaelen") });
+    const { menu, send } = menuChoosing(brannoc);
+    menu.handleStartGame();
+
+    menu.switchConfirm?.leave();
+
+    expect(menu.switchConfirm).toBeUndefined();
+    expect(send.mock.calls).toEqual([
+      [ActionType.EnterHub, expect.objectContaining({ characterId: "c-brannoc" })],
+    ]);
+  });
+
+  it("should show the refusal instead of the confirm while the party's run is under way (C12)", () => {
+    usePartyStore.setState({ party: partyAs("Kaelen", true) });
+    const { menu, send, refusals } = menuChoosing(brannoc);
+
+    menu.handleStartGame();
+
+    expect(menu.switchConfirm).toBeUndefined();
+    expect(refusals).toEqual(["You cannot change character during a delve."]);
+    expect(send).not.toHaveBeenCalled();
+  });
+});

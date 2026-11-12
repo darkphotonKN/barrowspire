@@ -110,14 +110,15 @@ func TestAtGate_WhileTheHubTicks(t *testing.T) {
 	require.NoError(t, err)
 
 	// walking, so every tick writes the body's transform
+	// straight into the hub world, so stamped as the message hub stamps it (ADR-0079)
 	hub.MessageCh <- types.ClientPackage{
-		Conn: conn,
+		Conn:     conn,
+		PlayerID: player.ID,
 		Message: types.Message{
 			Action: string(constants.ActionMove),
 			Payload: map[string]interface{}{
-				"player_id": player.ID.String(),
-				"vx":        -1.0,
-				"vy":        0.0,
+				"vx": -1.0,
+				"vy": 0.0,
 			},
 		},
 	}

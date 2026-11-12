@@ -34,6 +34,9 @@ type partyDirectory interface {
 	// everyone this pod holds, seated in any world, and the connection each is seated on: whose
 	// parties the cache keeps and whose screens it reconciles (R4, R6)
 	SeatedConns() map[uuid.UUID]*websocket.Conn
+	// everyone connected here and seated in no world, on the roster, with their connection: who
+	// is sent their party there (FS-NCC9J §Change: Changing character leaves the party, C9)
+	RosterConns() map[uuid.UUID]*websocket.Conn
 	// whether a player is inside a run: inviting and creating there are refused locked, an
 	// invite to them in_run, accepting there locked (R10, R14, R15)
 	InRun(playerID uuid.UUID) bool
@@ -55,6 +58,12 @@ type partyStore interface {
 	Decline(ctx context.Context, a partystore.DeclineArgs) (partystore.DeclineResult, error)
 	Remove(ctx context.Context, a partystore.RemoveArgs) (partystore.RemoveResult, error)
 	Transfer(ctx context.Context, partyID, leader, target uuid.UUID) (partystore.TransferResult, error)
+	// every invite to a player, read without changing it: spent as they change character
+	// (FS-NCC9J §Change: Changing character leaves the party, C2)
+	InvitesTo(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error)
+	// the party a player is in, read without keeping anything: what the roster is sent, and what
+	// a player whose record is gone is compared by (C9, C13)
+	Peek(ctx context.Context, playerID uuid.UUID) (partystore.Party, bool, error)
 	// what the party cache reads with: the registry hands the store to it
 	partyReader
 	// what the server reads as a player enters the hub, to let one joining their leader past the
@@ -146,6 +155,9 @@ type partyRegistry struct {
 	// matched party members whose removal on leaving the run Redis failed, tried again each tick
 	// until the script answers; true while a try is under way (FS-988SM R17)
 	leaving map[matchedLeave]bool
+	// each connection standing on the roster, and what it was last sent of its party (FS-NCC9J
+	// §Change: Changing character leaves the party, C9)
+	roster map[uuid.UUID]rosterShown
 	// where gear read off the loop for a party entry comes back to it
 	jobs loopJobs
 
@@ -166,6 +178,7 @@ func newPartyRegistry(directory partyDirectory, sender partySender, jobs loopJob
 		entryReads:  make(map[uuid.UUID]struct{}),
 		partyRuns:   make(map[uuid.UUID]partyRun),
 		leaving:     make(map[matchedLeave]bool),
+		roster:      make(map[uuid.UUID]rosterShown),
 		jobs:        jobs,
 		done:        make(chan struct{}),
 	}
@@ -891,13 +904,19 @@ func (r *partyRegistry) decline(ctx context.Context, decliner *types.Player, con
 				slog.Debug("party decline of no open invite ignored", "player_id", decliner.ID)
 				return
 			}
-			if _, cached := r.cache.party(res.Party.ID); cached {
-				r.cache.put(res.Party)
-			}
-			r.noticeAnywhere(ctx, res.Party.Leader, constants.PartyNoticeDeclined, res.TargetName)
-			r.announce(ctx, updateOf(res.Party, constants.PartyUpdateInviteEnded, decliner.ID))
+			r.declined(ctx, decliner.ID, res)
 		},
 	)
+}
+
+// declined tells what a decline the script wrote changed: whoever leads now is told, by the name
+// the invite was sent to, and the party that its slot freed. FS-NCC9J R13.
+func (r *partyRegistry) declined(ctx context.Context, declinerID uuid.UUID, res partystore.DeclineResult) {
+	if _, cached := r.cache.party(res.Party.ID); cached {
+		r.cache.put(res.Party)
+	}
+	r.noticeAnywhere(ctx, res.Party.Leader, constants.PartyNoticeDeclined, res.TargetName)
+	r.announce(ctx, updateOf(res.Party, constants.PartyUpdateInviteEnded, declinerID))
 }
 
 // ticks is when the hub's loop should call tick.
@@ -916,6 +935,7 @@ func (r *partyRegistry) tick(ctx context.Context) {
 	r.cache.tick(ctx)
 	r.tickChecks(ctx)
 	r.retryLeaves(ctx)
+	r.tickRoster(ctx)
 }
 
 // letters is where letters from other pods wait for the hub's loop.

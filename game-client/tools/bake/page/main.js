@@ -9,8 +9,8 @@ import { CATALOGUE, ICON_SIZE } from "./catalogue.js";
 import { TILE_H, TILE_W } from "./projection.js";
 import { FACINGS, yawFor } from "./facing.js";
 import { cssRgb } from "./palette.js";
-import { ANIMATIONS, applyPose, clipsFor, groundPose, simulateSprings } from "./characters/clips.js";
-import { clearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
+import { clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
+import { characterPoses } from "./characters/poses.js";
 
 let baker = null;
 
@@ -121,6 +121,13 @@ function bakeCharacterSheet(sheet) {
   // the guard: no clip may show a leg outside its garment by a baked px (characters/clearance.js)
   const error = clearanceError(sheet.name, legClearance(rig, poses), { scale, mirrored: mirroredGarment(rig) });
   if (error) throw new Error(error);
+  // and a playable class (the trimmed sheets) may not show a leg or a boot out through its cloak by
+  // a baked px (the same file); the creatures' rag cloaks are held to it once each is re-baked
+  // (today the ghost's attack reads 8.95 px), so their pixels do not move here
+  if (sheet.trim) {
+    const cloakError = cloakClearanceError(sheet.name, cloakClearance(rig, poses), { scale });
+    if (cloakError) throw new Error(cloakError);
+  }
   const out = baker.bakeCharacter(
     rig.root,
     poses.map((p) => p.apply),
@@ -160,52 +167,6 @@ window.bakeClearance = (name) => {
   const { rig, poses } = characterPoses(sheet);
   return legClearance(rig, poses);
 };
-
-/** A character sheet's rig and every pose it bakes (clip, frame, how to apply it), in bake order. */
-function characterPoses(sheet) {
-  const { rig, style, variants = [{ name: null, dress: () => {} }] } = sheet.build();
-  const specs = sheet.animations ?? ANIMATIONS;
-  const clips = clipsFor(style, specs);
-  const poses = [];
-  const animations = {};
-  const springs = {};
-  for (const [anim, spec] of Object.entries(specs)) {
-    const frames = clips[anim];
-    if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
-    // walk_attack (a class's attack on the move) walks its cloth like the walk and calms the
-    // shot's fling like the attack
-    springs[anim] = simulateSprings(rig, frames, {
-      ...spec,
-      speed: anim === "walk" || anim === "walk_attack" ? (style.speed ?? 1) : 0,
-      settle: anim === "death",
-      calm: anim === "attack" || anim === "parry" || anim === "walk_attack" ? 0.25 : 1,
-    });
-  }
-  // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
-  // first palette's as `<anim>_<palette>` (src/render/art/hubFolk.ts reads them so).
-  variants.forEach((variant, v) => {
-    for (const [anim, spec] of Object.entries(specs)) {
-      const frames = clips[anim];
-      const name = v === 0 ? anim : `${anim}_${variant.name}`;
-      animations[name] = { fps: spec.fps, loop: spec.loop, frames: FACINGS.map(() => []) };
-      frames.forEach((p, i) =>
-        poses.push({
-          anim: name,
-          i,
-          // a clip `boxed` into the frame the others set (a class's walk_attack) never widens it
-          sizing: !spec.boxed,
-          apply: () => {
-            variant.dress();
-            applyPose(rig, p, springs[anim][i]);
-            groundPose(rig);
-            for (const hook of rig.hooks ?? []) hook(rig, p);
-          },
-        }),
-      );
-    }
-  });
-  return { rig, poses, animations };
-}
 
 /**
  * Renders review labels (the contact sheet's titles and facing names) as straight RGBA, so the

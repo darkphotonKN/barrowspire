@@ -355,3 +355,164 @@ names the target so the inviter knows whom to ask later.)*
 - Spawning the traveller beside the leader (normal spawn point).
 - Moving a party's state when Redis fails over (Redis HA's concern).
 - Closing party-forming in fields (inviting and accepting there stay allowed), and any change to leave, kick or transfer inside a run. *(Added 2026-11-02, charter defaults (Nick approved 2026-11-02); reasons: Nick named only the tower; not asked.)*
+
+## Change: Changing character leaves the party
+Status: work-order
+Date: 2026-11-12
+
+Owner, 2026-11-12: "組隊後 更換角色還會在隊伍中" (after forming a party, a player who changes
+character is still in the party). Found by `/diagnose`; the owner's expectation is the rule.
+
+No FS said what a character switch does to a party. A party's member is a player (R1: player id,
+with the character name and class they joined as), so the party followed the player through the
+roster and on into whichever character they came back as; FS-BJNYC R10 named "back to the roster"
+only as a reason a ready check is cancelled. This section closes that gap.
+
+### Requirements
+
+C1. **Changing character is leaving the party.** A `leave_hub` the pod accepts (the Esc menu's
+    "Change character", from the town or from a field; FS-G4VMQ R23, FS-X2F2H R18) takes the
+    player out of their party exactly as `party_leave` would (R16, FS-R82NV R20–R22): their last
+    `party_update` is the party without them, about them, reason `left`; the others are told `left`;
+    if they led, the earliest-joined member who remains leads at once (reason `leader`); the last
+    one out ends the party. They leave whichever character they come back as, the same one
+    included: choosing a character on the roster is entering as it, never resuming a party.
+    *(Replaced 2026-11-12 by C8 and C10: `leave_hub` keeps the party; the switch is entering as
+    another character, and the same one stays.)*
+C2. **An open invite to them is spent** as their decline would spend it (R13): the slot frees, and
+    whoever leads that party is told `declined` with the name the invite was sent to. Accepting it
+    afterwards, as anyone, joins nothing.
+C3. **A ready check open for their party is cancelled** at once, `left`, naming them (FS-BJNYC
+    R10's "back to the roster"), not `changed`.
+C4. **While their party's run is under way the switch follows `party_leave` there** (FS-BJNYC
+    R19): inside the run `leave_hub` is refused as before ("You are in a delve."); back in the town
+    early, while the run their party went down in is still on this pod, it is refused with the
+    lock's own words, "Not while delving.", and they stay where they stand, in the party. A queued
+    player's `leave_hub` is refused as before and changes no party.
+C5. **The new character starts in no party.** Seated again, the arrival read (R6) shows them a
+    `party_update` listing no members.
+C6. A removal or decline Redis cannot make is logged and left: the switch still happens, and the
+    member's record, no longer refreshed by any pod, removes them when it expires (R17).
+
+### Acceptance Criteria
+
+- [ ] A member who changes character from the town or a field is out of the party: their last
+      update without them, the others told `left`, their pointer gone. (C1)
+- [ ] A leader who changes character is succeeded by the earliest-joined member; the last member
+      changing character ends the party. (C1)
+- [ ] An open invite to a player who changes character is spent: the leader told `declined` by the
+      old name, the slot free, a later accept joins nothing. (C2)
+- [ ] A ready check open for the switcher's party is cancelled `left`, naming them, with no tick
+      needed. (C3)
+- [ ] Inside the party's run, and back in the town while it is still under way, the switch is
+      refused and the party stands as it went down. (C4)
+- [ ] The character they come back as is shown no party. (C5)
+
+### Edge States
+
+- **Switching to the same character:** ~~still a leave (C1)~~ no switch: the party keeps them (C10, 2026-11-12).
+- **A matched party's member back from the run:** leaving the run already took them out of the
+  matched party (FS-988SM R11), so the switch finds no party and changes nothing.
+- **Kicked or left at the same moment:** whichever script runs first removes them; the other finds
+  no member and is dropped quietly, with no notice to the roster.
+
+### Out of Scope
+
+- An `enter_hub` as another character without a `leave_hub` first (a page refreshed in the town,
+  then another character chosen): the hub re-seats them as it (FS-BDA7X R5) and the party keeps
+  them. Not the Esc menu's path; left for the owner.
+- Any change to how a dropped connection or the reconnect grace treats a party (R17, FS-MCYWK).
+
+*(Amended 2026-11-12, same day, before any of this shipped; owner: "但在塔裡有機會進到選角色的頁面嗎"
+(can a player in the tower ever reach the character roster?). Read from the code, not guessed:
+a member held in a run (dropped within the grace, or on a second tab) reconnects in place and is
+announced the run their record names; while their body is in that run, in play or resolved, an
+`enter_hub` as another character is refused (FS-BDA7X R7, "You cannot change character during a
+delve.") and `leave_hub` is refused ("You are in a delve."), so no other character is ever seated
+while the old one is held. A resolved delver whose drop was their leave (FS-QPDKN R25, FS-GV8WN §F
+R17) is already home in the town, and the main menu (a reload, a second tab, a disconnect notice)
+lets them ask in as anyone: that is an `enter_hub` as another character with no `leave_hub`, which
+this section's Out of Scope had left to the owner. It is now in scope:)*
+
+C7. **An `enter_hub` as a character other than the one on the player's record is a character
+    switch too.** Accepted, it takes them out of their party exactly as C1–C3 (the switch then
+    seats the new character, FS-BDA7X R5). While their party's run is under way on this pod and
+    they stand outside it, it is refused "You cannot change character during a delve." and they
+    stay as they were, in the party, as C4. The same character entered again is no switch. A
+    member held in a run is never seated as another character at all (above); that is pinned by a
+    test, not changed. A player whose record is gone (their grace ran out in play, so the run
+    settled them as dead and they left it, and a matched party with it, FS-988SM R11) connects
+    fresh with no character on record, so their first entry is no switch: a party their record
+    no longer names a character for keeps them until they leave it or its run ends, as before.
+
+- [ ] An `enter_hub` as another character leaves the party; as the same one it does not; back in
+      the town while the party's run is under way it is refused. (C7)
+- [ ] A member held in a run, back within the grace or on a second tab, is announced the run and
+      refused another character. (C7)
+
+*(Amended 2026-11-12, the same day again, before any of this shipped; owner: "村莊組的隊伍 換角色就算離隊
+但在選角色時有辦法知道他某個角色正在組隊 選了會離隊的提示通知嗎 按確認就離隊" (for a town party, switching
+character counts as leaving; but can the roster show which character is in a party, and when the
+player picks one that would make them leave, show a notice; pressing confirm leaves). Going back to
+the roster is no longer the switch; choosing a character on it is. C8 replaces C1's first sentence
+and its "the same one included"; C10 reverses the Edge State "Switching to the same character";
+C4's "back in the town early ... refused" no longer applies to `leave_hub`, only to entering as
+another character (C12). C2, C3, C5 and C6 hold, read for the switch, which is now an `enter_hub`
+as another character (C7):)*
+
+C8. **Going back to the roster keeps the party.** An accepted `leave_hub` (the Esc menu's "Change
+    character") takes the player to the roster and nothing else: no `party_update`, no invite
+    spent, no ready check cancelled by it. It is refused as before inside a run and while queued;
+    back in the town while their party's run is under way it is accepted like anywhere else in the
+    town (the roster shows that run's refusal, C12). On the roster no pod seats them, so no pod
+    refreshes their member record: the others see them away after `AwayAfter` (40 s), and the
+    record removes them after `RecordTTL` (5 min), as for any member nobody holds (R17).
+    *Charter default: 5 min on the roster is acceptable, since a player who sits there longer has
+    in practice left; the expiry is R17's, unchanged.*
+C9. **The roster shows the character that is in the party.** Every connection standing on the
+    roster (its player in no world: after `leave_hub`, or freshly connected) is sent the party,
+    once on arrival there and again whenever it changes or the party's lock turns, read every ten
+    seconds: a `party_update` with reason `sync`, as R6's arrival read sends, carrying
+    `locked: true` while their party's run is under way on this pod; a player in no party is sent
+    the update listing nobody. The card whose character name is the player's own member name
+    shows a small mark: a party glyph and "IN A PARTY", in the menu's Bone & Soot. The mark is a
+    soot plate centred across the card in its top band, its top 2 px below the card's and its
+    foot at the name's box (14 px down), the glyph (two linked rings) left of the words; the
+    rings' centres and the words' ink stand on the plate's one midline, the ink measured in the
+    words' own font, not their text box's middle. *Charter
+    default: the roster read is a plain read of the party (`partystore` Peek): it refreshes
+    nobody's record, so C8's expiry holds. The mark's place, owner 2026-11-12: "派對選角色畫面的
+    無限符號跟in party文字 對齊一下中線 然後位置放在正中間" (on the roster, align the infinity-like glyph and
+    the "in party" words on one midline, and put the mark in the middle), replacing its first
+    place in the card's top right, left of the delete cross.*
+C10. **Choosing the same character stays in the party.** Entering as the character the party
+    holds for the player (by name; character names are unique) is no switch, whatever the
+    connection: they arrive as R6 shows them, still a member.
+C11. **Choosing another character asks first.** On the roster, entering as a character other than
+    the marked one, while in a party, first shows "Entering as <name> will leave your party."
+    with **Leave party** and **Cancel**. Cancel closes it and sends nothing. Leave party sends the
+    `enter_hub`; the server makes it the switch (C7): the new character seated, the player out of
+    their party as `party_leave` takes them (C1's removal, C2, C3). *Charter default: the confirm
+    sends `enter_hub` alone, not `party_leave` first: from the roster no pod may hold the party
+    in its cache, so `party_leave` there would be refused `not_member`; the switch is the one
+    authoritative path, and it is the one an old client takes too.*
+C12. **The server stays authoritative.** An `enter_hub` as another character while in a party
+    leaves it (C7) with or without the confirm. While the party's run is under way on this pod
+    it is refused "You cannot change character during a delve." and the player stays on the
+    roster, in the party; the roster, told `locked`, shows that refusal instead of the confirm.
+C13. **A player whose record is gone is compared by the party's record.** A member whose record
+    was deleted (their reconnect grace ran out in a run, or they closed the connection) comes
+    back with no character on record; their entry is compared with the name and class their
+    party record holds for them (R1): the same character stays (C10), another is a switch
+    (C11, C12). This replaces C7's "their first entry is no switch". Read from the pod's party
+    cache when it holds the party (always so while the party's run is under way here); otherwise
+    read from Redis once they are seated, and the switch made then.
+
+- [ ] `leave_hub` keeps the party: no update, the party unchanged in Redis. (C8)
+- [ ] On the roster the player is sent their party, `locked` while its run is under way here, and
+      no party when in none; the roster marks the party's character. (C9)
+- [ ] Entering as the party's character keeps the party; as another, after the confirm, leaves
+      it; Cancel sends nothing. (C10, C11)
+- [ ] Another character while the party's run is under way is refused, on the roster too. (C12)
+- [ ] A member whose record is gone comes back: the same character stays; another leaves the
+      party, or is refused while its run is under way. (C13)

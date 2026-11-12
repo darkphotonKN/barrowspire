@@ -327,3 +327,103 @@ slice as with chat); the client side is agent lane.
 - Whisper (FS-KCQ06), which will reuse the presence index.
 
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
+
+## Change: The party panel closes on its × and stands nearer the middle
+Status: work-order
+Date: 2026-11-12
+
+Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). Owner:
+"組隊ui增加右上角x關閉 然後移動到中間一點" (add an × at the party panel's top right that closes it, and
+move it nearer the middle). Made alongside [FS-3EBCA](3EBCA-hud-corner-icons.md), whose Party icon
+toggles the panel as T does. R28's place ("right of the party frames", `PARTY_PANEL_X` 280, y 56,
+also restated in R34's amendment) is replaced by C3; R28's T rule and R29–R31 stand. The text
+above is not edited; where this section and it disagree, this section wins.
+
+Amended the same day, before the browser check, by the owner's finding "開道具欄跟角色欄時開不了隊伍"
+(with the inventory or the character panel open, the party panel cannot be opened): C8, and C2's
+order with it. FS-3EBCA R8 takes the overlay out of T's and the Party icon's rule.
+
+Amended again the same day by the owner: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (opening the letter panel closes the other
+windows, opening another window closes it, opening the menu closes every window, and while the menu
+is open nothing else can be pressed): C8's refusals edited in place, C9 added (FS-3EBCA §D).
+
+### Requirements
+
+C1. **An × closes the panel.** At the panel's top right, in its title row: "×" at 22 px in
+    `palette.interactable`, `palette.interactableBright` under the pointer, a hand cursor, centred
+    in a 24 × 24 box whose right edge is the panel's inner edge (12 px in) and whose top is the
+    title row's. A press closes the panel. The letter panel's close look (FS-1GZGD R36, R40),
+    reused. **(charter default: owner, "右上角x關閉"; the look: the letter panel's)**
+C2. **Esc closes it**, as it closes the letter panel: one press closes one thing. The order, which
+    extends FS-HRH2J R5's: in the town, a dialogue's own Esc first (unchanged), then the letter
+    panel, then the party panel, then the gear overlay, and only then does Esc open the ESC menu;
+    in a run, the party panel, then the gear overlay, then the run's ESC menu; in a field, as in
+    the town: the party panel, then the gear overlay, then the field's ESC menu (FS-G4VMQ
+    § Change: The ESC menu in a field world). The corner row's Menu icon is one Esc press
+    (FS-3EBCA R6). Esc in the invite field still only lets go of the field.
+    **(charter default: "consistent with the mailbox"; the order derived here: what is drawn on
+    top goes first, and the party panel is drawn over the gear overlay (C8); it first put the
+    overlay first, when the overlay was drawn over the panel)**
+C3. **Its place: centred across, nearer the middle.** The panel's left edge is
+    `round((view width − 300) / 2)` and its top edge `round(0.18 × view height)`, 130 at 720:
+    named `PARTY_PANEL_TOP_SHARE`. At 1080 the panel spans x 390–690, at 1280 x 490–790. Its width
+    and what it holds are unchanged. **(charter default: owner, "移動到中間一點"; about 18%, since
+    dead centre would cover the player the camera keeps there)**
+C4. **The DOM invite field and its Invite button move with it**, inside the panel as before.
+    **(charter default)**
+C5. **It follows the view.** When the view's size changes, an open panel, its × and its invite
+    field are placed again by C3 (FS-ZAJMH R13). **(charter default)**
+C6. **The invite prompts and the ready check stay where they are**: top centre at y 92. While the
+    panel is open they still step right of it, 12 px clear of its right edge (their existing rule),
+    now the centred panel's edge: x 702 at 1080, 802 at 1280. **(charter default: "stay where they
+    are"; derived here: the step-aside rule reads the panel's edge, so it follows the panel)**
+C7. **A press on the open panel stays the panel's** wherever it now stands (R28's `covers`): it
+    is never an attack, a cast or a hold, and it keeps the invite field's focus.
+C8. **It opens over the inventory and the character panel.** T and the Party icon open and close
+    the panel whether or not the inventory, the character panel or both are open, in the town, a
+    field and a run (FS-3EBCA R8); the dialogue, the ESC menu, the run's end and an open container
+    still refuse them (the letter panel no longer does: C9). The panel is drawn above the overlay's panels and their
+    × (depth 1110, over the overlay's 1100–1103, under the letter panel and the menu), overlapping
+    their inner edges a little at its centred place (C3). Its invite field shows and takes typing
+    over them, and keys typed into it (I, B, C, T, E, Q) reach none of the scene's keys, as
+    anywhere. A press, the pointer or the wheel at a point the panel covers is the panel's: the
+    overlay underneath wears, takes off, closes or scrolls nothing there and shows no hover or
+    tip. **(owner, 2026-11-12: "開道具欄跟角色欄時開不了隊伍"; the depth, the press rule and the Esc
+    order (C2) derived here: the panel opened last over the overlay is the one on top)**
+C9. **It closes the letter panel as it opens, and the letter panel and the menu close it.** In
+    the town, T and the Party icon open the panel with the letter panel open, closing the letter
+    panel first; the envelope opening the letter panel closes the party panel; and opening the ESC
+    menu (Esc with nothing open, or the Menu icon) closes it in every world. While the menu is open
+    T and the Party icon open nothing (FS-3EBCA R15–R18). **(owner, 2026-11-12: "開信箱時其他視窗會被關閉
+    開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按")**
+
+### Acceptance Criteria
+
+- [ ] The open panel shows "×" at its top right; a press on it closes the panel; it brightens under the pointer.
+- [ ] Esc closes the open panel in the town, a field and a run; in the town with the letter panel or the gear overlay also open, the first Esc closes that one and the second the party panel; with the party panel open, Esc does not open the ESC menu.
+- [ ] At 1080 × 720 the panel's frame is (390, 130, 300, h) and at 1280 × 720 (490, 130, 300, h); the invite field and its button sit inside it.
+- [ ] A view-size change while the panel is open re-places the panel, its × and the invite field.
+- [ ] With the panel open, the invite prompts and the ready check stand at x 702 (1080) and do not overlap the panel; with it shut they are centred as before.
+- [ ] T still toggles the panel under its existing rule.
+- [ ] With the inventory, the character panel or both open, T and the Party icon open and close the panel in the town, a field and a run; it is drawn above them; the first Esc closes it and the second the overlay; its invite field takes typing; a press on it does nothing in the overlay underneath.
+- [ ] In the town, T and the Party icon open the panel with the letter panel open, closing the letter panel; the envelope closes the panel as it opens the letter panel; opening the ESC menu closes the panel in every world.
+
+### Edge States
+
+- **Panel and letter panel both open (town):** no longer reachable: each closes the other as it
+  opens (C9).
+- **Panel and gear overlay both open:** the panel is drawn over the overlay, whichever opened
+  first; Esc closes the panel first, then the overlay (C2, C8).
+- **A full party of four:** the panel grows down to about y 414 and may cover the player's head at
+  the view's centre; it is still a top-half panel, and the player can close it with ×, Esc, T or
+  the Party icon.
+- **A press on × while the invite field has focus:** the panel closes and the field hides with it.
+- **In a run:** a prompt stepped right of the open panel (x 702–1002 at 1080) overlaps the
+  top-right minimap (from x 854) more than it did at x 592; both stay drawn in the HUD band. Left
+  to the owner's look (FS-3EBCA's browser check).
+
+### Out of Scope
+
+- Dragging or remembering the panel's place.
+- Moving the invite prompts or the ready check themselves.
+- Any change to what the panel holds or to the party protocol.

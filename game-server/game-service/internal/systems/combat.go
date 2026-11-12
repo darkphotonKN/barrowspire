@@ -128,6 +128,9 @@ type attackSpec struct {
 	// parriable: an open parry stance on the target negates it.
 	// FS-MAMHR §Requirements 14.
 	parriable bool
+	// slows: resolving it starts its caster's attack slow. Every row a player
+	// casts; never a monster's. FS-JS7C8 §C R17.
+	slows bool
 }
 
 const (
@@ -164,6 +167,18 @@ const (
 	parryEpsilon = 1e-9
 )
 
+// The attack slow: a player whose cast of a slowing row resolves walks at
+// AttackSlowFactor × their move speed for AttackSlowDuration from that tick,
+// and at full speed on the first tick after. Starting values: 0.45 × 200 = 90
+// px/s unequipped, for about the attack clip's 0.583 s. FS-JS7C8 §C R15–R16.
+const (
+	AttackSlowFactor   = 0.45
+	AttackSlowDuration = 0.6 // seconds
+	// attackSlowEpsilon absorbs the float drift of summing tick lengths, so the
+	// window covers exactly the ticks within 0.6 s of its start.
+	attackSlowEpsilon = 1e-9
+)
+
 // attackTable is FS-77AB6 §Requirements 6. Starting values. Projectile speed,
 // range, radius and spread are what they were before the CombatSystem existed.
 //
@@ -175,6 +190,7 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackTargeted: {
 		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleStrength,
 		coefficient: 0.5, cooldown: 0.5, reach: targetedAttackRange,
+		slows: true,
 	},
 	// a monster's strike is its damage at level, as is: no coefficient, no stat
 	// (§Requirements 5). The MonsterAISystem paces it and measures its reach
@@ -196,12 +212,14 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackSlash: {
 		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrength,
 		coefficient: 1.5, cooldown: 0.25, reach: slashRange, halfArc: slashHalfCone,
+		slows: true,
 	},
 	// the mercenary's left-click: a narrow, heavy sword cut on Strength and
 	// Agility together. FS-MAMHR §Requirements 6–8.
 	components.AttackCut: {
 		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrengthAgility,
 		coefficient: 1.8, cooldown: 0.25, reach: cutRange, halfArc: cutHalfCone,
+		slows: true,
 	},
 	// the cut a merc throws at 3 parry charges, spending them all. No skill id
 	// maps to it: armCut swaps it in for a resolving cut, and its 0.25 s starts
@@ -209,16 +227,19 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackRiposte: {
 		delivery: deliverCone, damageType: components.DamagePhysical, scaling: scaleStrengthAgility,
 		coefficient: 3.0, cost: riposteParryCharges, cooldown: 0.25, reach: riposteRange, halfArc: riposteHalfCone,
+		slows: true,
 	},
 	components.AttackArrow: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
 		coefficient: 1.4, cooldown: 0.25,
 		projectile: projectileSpec{kind: "arrow", speed: 480, maxDistance: 550, radius: 8, spread: []float64{0}},
+		slows:      true,
 	},
 	components.AttackFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
 		coefficient: 1.1, cooldown: 0.25,
 		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
+		slows:      true,
 	},
 	// the archer's ability: one slow, heavy bolt, paid in stamina. 90 of the
 	// archer's 100 nearly drains it, so the next waits on regen. FS-JTNPR
@@ -227,14 +248,17 @@ var attackTable = map[components.AttackKind]attackSpec{
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
 		coefficient: 3.2, cost: 90, cooldown: 1.2,
 		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
+		slows:      true,
 	},
 	components.AttackTripleFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
 		coefficient: 0.9, cost: 15, cooldown: 0.4,
 		projectile: projectileSpec{kind: "fireball", speed: 360, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
+		slows:      true,
 	},
 	components.AttackDash: {
 		delivery: deliverMovement, cost: 25, cooldown: 0.4,
+		slows: true,
 	},
 }
 
@@ -306,6 +330,7 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 
 	for _, entity := range entities {
 		tickCooldowns(entity, deltaTime)
+		tickAttackSlow(entity, deltaTime)
 
 		ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
 		if !ok {
@@ -413,6 +438,34 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if cooldowns != nil {
 		// worn attack speed, already capped, shortens every cooldown
 		cooldowns.Remaining[intent.Kind] = spec.cooldown / (1 + float64(wornGear(attacker).AttackSpeedPercent)/100)
+	}
+	if spec.slows {
+		startAttackSlow(attacker)
+	}
+}
+
+// startAttackSlow starts the caster's attack slow at its full window, or
+// restarts one already running: slows never stack. FS-JS7C8 §C R16, R18.
+func startAttackSlow(caster *ecs.Entity) {
+	if sc, ok := caster.GetComponent(ecs.ComponentTypeAttackSlow); ok {
+		sc.(*components.AttackSlowComponent).Remaining = AttackSlowDuration
+		return
+	}
+	caster.AddComponent(&components.AttackSlowComponent{Remaining: AttackSlowDuration})
+}
+
+// tickAttackSlow runs an attack slow down by a tick, and ends it once its
+// window is over, so the walk is back to full on the first tick after.
+// FS-JS7C8 §C R16.
+func tickAttackSlow(entity *ecs.Entity, deltaTime float64) {
+	sc, ok := entity.GetComponent(ecs.ComponentTypeAttackSlow)
+	if !ok {
+		return
+	}
+	slow := sc.(*components.AttackSlowComponent)
+	slow.Remaining -= deltaTime
+	if slow.Remaining <= attackSlowEpsilon {
+		entity.RemoveComponent(ecs.ComponentTypeAttackSlow)
 	}
 }
 

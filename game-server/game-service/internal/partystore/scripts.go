@@ -34,6 +34,9 @@ var createMatchedLua string
 //go:embed scripts/read.lua
 var readLua string
 
+//go:embed scripts/peek.lua
+var peekLua string
+
 //go:embed scripts/refresh.lua
 var refreshLua string
 
@@ -53,6 +56,7 @@ var (
 	createScript        = script(createLua)
 	createMatchedScript = script(createMatchedLua)
 	readScript          = script(readLua)
+	peekScript          = script(peekLua)
 	refreshScript       = script(refreshLua)
 	removeScript        = script(removeLua)
 	transferScript      = script(transferLua)
@@ -495,6 +499,25 @@ func (r *Redis) PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) 
 	return Arrival{Party: p, In: p.has(playerID), Swept: swept[p.ID]}, nil
 }
 
+// Peek is the party playerID is in, read without changing anything: no member's record refreshed,
+// no TTL put back; in is false when they are in none. A player on the roster is sent it, and one
+// whose record is gone is compared by the name it holds for them (FS-NCC9J §Change: Changing
+// character leaves the party, C9, C13).
+func (r *Redis) Peek(ctx context.Context, playerID uuid.UUID) (p Party, in bool, err error) {
+	res, err := run(ctx, peekScript, r.client, []string{pointerKey(playerID)}, playerID.String())
+	if err != nil {
+		return Party{}, false, fmt.Errorf("peek at party of %s: %w", playerID, err)
+	}
+	if res.refusal() != "" {
+		return Party{}, false, nil
+	}
+	p, err = res.Party.party()
+	if err != nil {
+		return Party{}, false, fmt.Errorf("peek at party of %s: %w", playerID, err)
+	}
+	return p, p.has(playerID), nil
+}
+
 func (p Party) has(playerID uuid.UUID) bool {
 	for _, m := range p.Members {
 		if m.PlayerID == playerID {
@@ -656,6 +679,21 @@ func (r *Redis) Transfer(ctx context.Context, partyID, leader, target uuid.UUID)
 		return TransferResult{}, fmt.Errorf("transfer party %s: %w", partyID, err)
 	}
 	return TransferResult{Party: p}, nil
+}
+
+// InvitesTo is every invite addressed to playerID still on record, oldest first, read without
+// changing anything: one may have lapsed, which Decline then ignores. A player changing character
+// has each spent (FS-NCC9J §Change: Changing character leaves the party, C2).
+func (r *Redis) InvitesTo(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error) {
+	raw, err := r.client.ZRange(ctx, playerInvitesKey(playerID), 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("read invites to %s: %w", playerID, err)
+	}
+	ids, err := parseIDs(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse invites to %s: %w", playerID, err)
+	}
+	return ids, nil
 }
 
 // LeaderOf is who leads the party playerID is in, read without changing anything; in is false when
