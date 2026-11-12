@@ -214,17 +214,25 @@ export function wizard() {
   torso(rig, F.robe, { waist, neckW: 0.85 });
   neck(rig, F.skin, { w: 0.85 });
   arms(rig, F.robe, { sleeve: (t) => 1 + 1.35 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
-  legs(rig, F.breeches, { under: gown });
+  // the thighs' roots drawn in under her pinched waist too, where the torso alone covers them over
+  // the gown's top (the owner, 2026-11-12: "腰部似乎也有一點")
+  legs(rig, F.breeches, { under: { ...gown, torso: { waist } } });
   hands(rig, F.skin, { size: 0.9 });
   boots(rig, F.leatherDark, { top: 0.08 });
   head(rig, F.skin, { jaw: 0.88 });
   face(rig, F.face, F.browRaven);
   hair(rig, F.raven, { long: true });
   standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
-  skirt(rig, F.robe, { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+  // the gown's rig (FS-HF0WW § Change: The guard measures a leg through the cloth; the owner,
+  // 2026-11-12: "法師跑步會輕微破圖 膝蓋處會凸出衣服"): the thigh carries the cloth over the knee it
+  // bends, handing it to the panels from 0.05 H under the knee, so the run's leading knee stays in
+  const robe = { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02, kneeCover: 0.05 };
+  skirt(rig, F.robe, robe);
   for (const arc of panels) {
     overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012, waist });
-    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+    // cut on the gown's rig, so it moves with it and the black gown never comes out through it
+    // (the owner, 2026-11-12: "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉")
+    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, segs: 16, over: robe });
   }
   bust(rig, F.scapular);
   hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });

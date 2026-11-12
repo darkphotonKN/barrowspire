@@ -91,3 +91,17 @@ reports no changes.
 −6.4 % RGBA (R39 estimated about +47 % at 2x; the 1.5x projection was about 51 MB); crown 83 as before. The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
 beside the new, the 7 keys stacked to show the blade's path; walk_attack; backpedal_attack; death; 8 facings) are in the
 session scratchpad `classes-1p5x/knight/`.
+
+## Re-built (2026-11-12, agent): the low carry, the grip, the eased attack; waiting on the owner's contact sheet
+
+Re-baked once with the low carry in a normal grip and the eased slash (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "站立時武器應該可以放下手微微下垂 跑步時也不用太高", "跑步時應該會在胸口附近擺動", "跑步時武器是不是拿反了"): at rest the sword arm hangs, the point down and forward (37-42° below level in the idle); in the run the wrist holds the blade forward along the forearm, its point ahead of the hand, 11-34° below level, never behind the body, the fist never turned over; the slash's key 0 starts half way from the carry to the wind-up and keys 5-6 settle back to it, so the blade turns at most ATTACK_TURN_LIMIT (100°) a frame in and out (92° and 93° into the wind-up, was 149° in one frame; 4° out of key 6, was 99°), the strike and timing kept; the shield as before. The leg check from the bake camera (FS-HF0WW § Change: The guard measures a leg through the cloth R28) finds no leg through the hauberk; the guard reads 0 on every clip.
+Only the knight's page and the manifest changed in its bake commit; every other atlas keeps its bytes;
+`npm run bake -- --check` reports no changes.
+
+| knight sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 3204 × 3464 | 44.39 MB | 7,273,851 | 512 | 276 × 228 |
+
+−1.1 % RGBA against the 1.5x bake before (44.89 MB); crown 80 (was 83: the old carry's raised blade no longer over his head).
+
+The contact sheets (idle, walk, run with the old, held and new keys side by side, attack, walk_attack and backpedal_attack old beside new, 8 facings) and an animated preview are in the session scratchpad `carry-final/knight/`.

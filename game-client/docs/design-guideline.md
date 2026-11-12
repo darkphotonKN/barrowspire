@@ -264,11 +264,20 @@ lit) while the player stands inside.
 - **Fidelity bar: Ultima Online.** Believable proportions, readable silhouettes, textured gear.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
+  A weapon is carried low and always in a normal grip (out of the thumb side of the fist, never a
+  fist turned over on the forearm): standing, the weapon arm hangs at the side with the hand a
+  little below the waist, a blade pointing down and forward, a sceptre leaning with the relaxed
+  hand 30–45° off vertical beside the leg, its head forward, a little out and under the shoulder
+  (FS-JS7C8 R2). An attack starts from the carry and settles back to it: the weapon turns at most
+  `ATTACK_TURN_LIMIT` (100°) a frame coming out of it and going back.
   The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
   `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
   arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
   past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
-  head steady and looking ahead), played turned to the way the character moves, and
+  head steady and looking ahead; a weapon in a pumping hand stays low in a normal grip, a blade
+  held forward along the forearm and a little down, its point ahead of the hand, a sceptre up
+  from the fist with the orb above the hand and under the shoulder), played turned to the way the
+  character moves, and
   `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
   than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
   no crouch, the feet stepping back). A class with `run` walks the legs of each over 0.75 walk
@@ -352,8 +361,12 @@ lit) while the player stands inside.
   1.5x, half a px at 2x (1x
   px measured in model space, an upper bound on the screen), measured through the cloth where it
   hangs: a leg under a hem that a stride or a heel kick has tilted is under it, and a heel below a
-  lifted hem shows beneath it, not through it (FS-HF0WW § Change: The guard measures a leg through
-  the cloth). The bake checks every pose and
+  lifted hem shows beneath it, not through it, and a leg on the outside of a bend in the cloth (a
+  robe's front swung over the knee) is measured on the ring at the bend (FS-HF0WW § Change: The
+  guard measures a leg through the cloth). A panel worn over a garment (the mage's scapular over
+  her gown) is cut on that garment's rig with `skirt({ over })`, so the two move as one cloth;
+  never skin two layers apart, or the one that follows the legs further comes out through the
+  other in a run. The bake checks every pose and
   fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
   give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt
   to the opposite thigh, kept only for the legacy sheets on the guard's `MIRRORED_LEGACY` list

@@ -105,13 +105,23 @@ export function wallAlong(poly, p) {
  * How far point `v` lies outside a garment given as rings (each an array of THREE.Vector3, the
  * same column count, top to hem) around centres (one per ring): negative inside, null where the
  * garment does not cover it (above its top ring, below its hem, or in its opening).
+ *
+ * Each band between two rings claims the points between the planes square to its axis through its
+ * two centres. Where the line of the centres bends (a stride swinging a robe's front forward over
+ * the knee, its back flung out behind), the outside of the bend lies past one band's end and
+ * before the next one's start, in no band: a point there is measured on the ring at the bend, in
+ * the plane square to the two bands' mean axis.
  */
 export function outside(rings, centres, v) {
+  let past = false;
   for (let r = 0; r + 1 < rings.length; r++) {
     const d = _d.subVectors(centres[r + 1], centres[r]);
     const dd = d.lengthSq();
     if (dd < 1e-12) continue;
     const u = _q.subVectors(v, centres[r]).dot(d) / dd;
+    if (u < 0 && past) return onRing(rings[r], centres[r], _n.copy(_b).add(d.normalize()).normalize(), v);
+    past = u > 1;
+    if (past) _b.copy(d).normalize();
     if (u < 0 || u > 1) continue;
     const n = d.normalize();
     // a frame on the plane across the axis
@@ -129,6 +139,22 @@ export function outside(rings, centres, v) {
   }
   return null;
 }
+
+/** How far `v` lies outside one ring (around centre `c`), in the plane square to `n` through it. */
+function onRing(ring, c, n, v) {
+  const e1 = _e1.set(1, 0, 0).addScaledVector(n, -n.x).normalize();
+  const e2 = _e2.crossVectors(n, e1);
+  const poly = ring.map((a) => {
+    _p.subVectors(a, c);
+    return [_p.dot(e1), _p.dot(e2)];
+  });
+  _q.subVectors(v, c);
+  const p = [_q.dot(e1), _q.dot(e2)];
+  const wall = wallAlong(poly, p);
+  return wall === null ? null : Math.hypot(p[0], p[1]) - wall;
+}
+const _b = new THREE.Vector3();
+const _n = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _q = new THREE.Vector3();
 const _e1 = new THREE.Vector3();
