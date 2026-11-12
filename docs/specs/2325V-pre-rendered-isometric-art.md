@@ -324,6 +324,12 @@ Date: 2026-11-12
 > **(charter default)** settles what they left open, with its reason. Every number is a starting
 > value. Anchored here because §E.2 owns each class's attack clip ("archer shot"); the pose gains
 > acceptance criteria it never had, so it is a behaviour change, not a tune (no tunable is named).
+>
+> **Edited in place on 2026-11-12 (owner, still a work-order): the Bone Archer draws the same
+> way.** After approving the delver archer's new draw, the owner said: "拉弓姿勢可以用在怪物身上"
+> (the bow-draw pose can be used on the monster too). R7 no longer limits the change to the delver
+> archer; the Bone Archer (FS-B4SG9) takes the same draw on its own rig and keeps its own timing
+> (R7, R9). Requirement numbers are kept; retired text reads *Retired 2026-11-12*.
 
 ### Facts
 
@@ -340,7 +346,11 @@ Date: 2026-11-12
    and by FS-JS7C8's `backpedal_attack`; the Shadow Shot release plays the archer's `attack`
    (`src/render/combat/playerCombat.ts`); its hold stands in idle (FS-JTNPR R10) and draws nothing.
 4. The Bone Archer (FS-B4SG9) shares `BOW_STANCE`, `bowArm` and the bow hook, with its own keys
-   (`ATTACKS.boneShot`, `ik` up to 1.3).
+   (`ATTACKS.boneShot`, `ik` up to 1.3). Its draw has the delver's fault, measured on its own rig
+   (the ghoul's hunched skeleton, cast.js `skeleton`) on 2026-11-12: the bow hand about 0.11 H
+   left of the aim plane, the full draw 0.165 H from the jaw, the drawing hand and forearm 0.09 H
+   across the centre plane, the elbow 0.17 H behind the chest (its back is 0.077 deep), the loose
+   0.126 H past the anchor (I-2325V-9).
 5. **Pre-existing.** The shot's keys, `BOW_STANCE`, `bowArm` and the bow hook are unchanged on
    FS-JS7C8's branch against main (its bake diff does not touch them); they date from I-2325V-5
    (2026-09-27) and were baked at 2x by FS-HF0WW. Main's archer draws the same way.
@@ -362,12 +372,25 @@ Date: 2026-11-12
    to all 8), and the owner judges all 8 on the contact sheet.
 6. It applies wherever the shot's upper body is drawn: `attack` (so the Shadow Shot release),
    `walk_attack` and `backpedal_attack`.
-7. **(charter default)** The delver archer only. The Bone Archer's sheet keeps its bytes. Reason:
-   the finding names the player's archer, and the Bone Archer's sheet is a creature group with its
-   own review (FS-B4SG9). Whether it gets the same fix is the owner's call.
+7. **(owner, 2026-11-12: "拉弓姿勢可以用在怪物身上")** The Bone Archer draws the same way: R1–R5
+   hold on every key of its shot (`ATTACKS.boneShot`, its sheet's `attack`) on its own rig, in
+   every facing. It takes the delver's draw (the aim stance, the bow arm angled in to the aim
+   line with the wrist turning the bow along the facing, the drawing elbow's pole, the loose by
+   the ear), each angle set on its own rig where its proportions need it, and keeps what is its
+   own: its rig and proportions, its crouch (the knees bent, the hunch), its jaw dropping as it
+   draws, and its clip's length and timing (7 keys at 12 fps over the 0.6 s wind-up, FS-B4SG9 §E
+   R26: nothing nocked on the first key, nocked before it draws, the pull growing to the full
+   draw and held, the loose on the last key). Its idle, walk and death do not change.
+   *Retired 2026-11-12: "The delver archer only. The Bone Archer's sheet keeps its bytes" (the
+   charter default, which left the Bone Archer to the owner's call).*
 8. **(owner)** The archer is re-baked once, with FS-JS7C8's archer re-bake (FS-JS7C8 R48), and its
    contact sheet shows main's `attack` beside the new `attack`, `walk_attack` and
    `backpedal_attack` for comparison. It ships on the owner's approval (§E.7, ADR-0021 §5).
+9. **(owner, 2026-11-12)** The Bone Archer is re-baked on its own, after the archer's: only its
+   `creatures` atlas and the manifest change; every other atlas, the delver archer's included,
+   keeps its bytes. Its contact sheet shows its old `attack` beside the new one in the 8 facings,
+   with its `idle` and `walk` to show nothing else moved. It ships on the owner's approval
+   (FS-B4SG9 §E R29, ADR-0021 §5).
 
 ### Acceptance Criteria
 
@@ -379,9 +402,18 @@ Date: 2026-11-12
       recorded first, so the change is seen as numbers.
 - [ ] The same test holds for every frame of `walk_attack` and `backpedal_attack` on the archer.
 - [ ] The bow arm still points along the facing at the draw; the bow and its string still draw.
-- [ ] The Bone Archer's atlas is byte-identical (`npm run bake -- --check`).
+- [ ] ~~The Bone Archer's atlas is byte-identical (`npm run bake -- --check`).~~ *Retired
+      2026-11-12 (R7).*
 - [ ] The contact sheet shows main's archer `attack` beside the new one, in 8 directions, and the
       owner approves it.
+- [ ] The same test holds on the Bone Archer's rig (built as cast.js `skeleton` builds it) on
+      every key of its shot, the rig turned to each of the 8 facings; today's values are recorded
+      first. Its shot keeps FS-B4SG9 §E R26 (7 keys over the 0.6 s wind-up, nothing nocked on the
+      first, the full draw held, the loose on the last).
+- [ ] The Bone Archer's re-bake changes only its `creatures` atlas and the manifest; every other
+      atlas keeps its bytes; `npm run bake -- --check` reports no changes after it.
+- [ ] The Bone Archer's contact sheet shows its old `attack` beside the new one in 8 directions,
+      with its `idle` and `walk`, and the owner approves it.
 
 ### Edge States
 
@@ -390,7 +422,15 @@ Date: 2026-11-12
   crossing. The owner judges it on the contact sheet.
 - **The leg-clearance guard and the frame box.** A new bow-hand position must stay inside the
   sheet's frame box (`boxed` clips may not widen it) and keep FS-HF0WW §C passing.
+- **The Bone Archer's grip sits off its hand's line.** The bow hook solves the drawing arm so the
+  hand's axis lands on the arrow line; the grip (rig.js `gripAt`) sits off that axis, by 0.008 H
+  on the delver and 0.018 H on the hunched skeleton, whose arm chain hangs 0.01 H behind the
+  model's centre. "On the arrow line" is held to each rig's own grip offset plus a small margin.
+- **The Bone Archer's frame.** Its `attack` sizes its frame (it is not `boxed`), so the new
+  pose may change the frame and its atlas; its crown is measured on `idle`, which does not
+  change, so its size tier (FS-B4SG9 §E R27) stays.
 
 ### Out of Scope
 
-- The Bone Archer's shot (R7); any other class's attack; the bow model; the Shadow Shot hold pose.
+- Any other class's or creature's attack; the bow model; the Shadow Shot hold pose. *Retired
+  2026-11-12: "The Bone Archer's shot (R7)".*

@@ -16,8 +16,9 @@ import { gripAt } from "./rig.js";
 export const DRAW_LEN = 0.36;
 
 /**
- * Where the drawing elbow's pole sits by default, [out, up] in rig heights (`fx.pole`): straight
- * above the line behind the hand, so the elbow rises behind it (the Bone Archer's draw).
+ * Where the drawing elbow's pole sits when a key sets none, [out, up] in rig heights (`fx.pole`):
+ * straight above the line behind the hand, so the elbow rises behind it. Both bow shots set
+ * their own (clips.js `AIM_DRAW`: the delver's and, since 2026-11-12, the Bone Archer's).
  */
 export const DRAW_POLE = [0, 0.12];
 

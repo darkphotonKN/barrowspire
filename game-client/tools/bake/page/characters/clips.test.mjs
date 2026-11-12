@@ -27,7 +27,8 @@ import {
 } from "./clips.js";
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
-import { drawGrip, solveDraw } from "./draw.js";
+import { BOW_BRACE, BOW_GRIP, drawGrip, solveDraw } from "./draw.js";
+import { FACINGS, yawFor } from "../facing.js";
 import { GROUND_EPS, WORLD_PX_PER_UNIT, footing, measurePace } from "./pace.js";
 import { RUN_PACE, WALK_PACE } from "../../../../src/render/art/animationSelect";
 
@@ -200,8 +201,25 @@ describe("the Bone Archer's shot (FS-B4SG9 §E R26)", () => {
     expect(arrow(keys[last])).toBe(false);
   });
 
-  it("keeps its own draw: no key moves the drawing elbow's pole, which only the delver's shot re-keys (FS-2325V § Change: The archer's draw stays on the aim line R7)", () => {
-    for (const p of keys) expect(p.fx.pole).toBeUndefined();
+  it("draws as the delver does (FS-2325V § Change: The archer's draw stays on the aim line R7, owner 2026-11-12: \"拉弓姿勢可以用在怪物身上\"): the delver's aim stance from the waist up, its drawing elbow's pole on every key that draws, its loose", () => {
+    const delver = ATTACKS.shot();
+    const yaw = (p) => ["hips", "spine", "chest"].reduce((s, b) => s + (p.b[b] ?? [0, 0, 0])[1], 0);
+    for (const [i, p] of keys.entries()) {
+      // the chest as far side-on as the delver's, the head turned back to the facing as far
+      expect(yaw(p), `key ${i}: the chest's turn`).toBeCloseTo(yaw(delver[0]), 9);
+      expect(p.b.neck[1], `key ${i}: the neck's turn`).toBeCloseTo(delver[0].b.neck[1], 9);
+      if ((p.fx.ik ?? 0) > 0) expect(p.fx.pole, `key ${i}`).toEqual(delver.find((q) => q.fx.pole).fx.pole);
+    }
+    const loose = (clip) => clip.find((p) => (p.fx.ik ?? 0) > 0 && !((p.fx.draw ?? 0) > 0.5) && !((p.fx.arrow ?? 0) > 0.5)).fx.ik;
+    expect(loose(keys)).toBe(loose(delver));
+  });
+
+  it("keeps its own crouch and jaw: the knees bent, the hunch partly straightened and the jaw dropping as it draws", () => {
+    for (const [i, p] of keys.entries()) {
+      for (const s of ["L", "R"]) expect(p.b[`shin${s}`][0], `key ${i}: shin${s}`).toBeGreaterThanOrEqual(0.4);
+      expect(p.b.hunch, `key ${i}`).toEqual([-0.2, 0, 0]);
+    }
+    for (let i = 1; i < keys.length; i++) expect(keys[i].fx.jaw).toBeGreaterThan(keys[i - 1].fx.jaw);
   });
 
   it("is made by clipsFor for a style that asks for it", () => {
@@ -233,16 +251,21 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     bowAhead: 0.25,
     /** the arrow line's sideways lean off the facing (|x| of its unit direction) */
     arrowAcross: 0.05,
-    /** the drawing hand's distance from the arrow line (the hook's two-bone solve lands the grip within this) */
-    onLine: 0.01,
+    /**
+     * the drawing hand's distance from the arrow line, past the rig's own grip offset: the hook's
+     * two-bone solve lands the hand's axis on the line, and the grip sits off that axis (rig.js
+     * `gripAt`: 0.008 on the delver, so 0.01 in all; 0.018 on the Bone Archer's skeleton, whose
+     * arm chain hangs 0.01 behind the model's centre)
+     */
+    onLine: 0.002,
     /** at full draw, the drawing hand's distance from the anchor */
     toAnchor: 0.04,
     /** how far back past the anchor the hand may go (the loose opens off it, behind the jaw) */
     pastAnchor: 0.06,
     /** the drawing elbow's height against the drawing shoulder */
     elbowRise: [-0.1, 0.1],
-    /** the drawing elbow no further behind the chest's centre than the back (its half depth) */
-    elbowBack: -0.094,
+    /** the drawing elbow no further behind the chest's centre than the back: its half depth, 0.094 × the rig's `torsoD` */
+    elbowBack: 0.094,
   };
 
   /** The archer's rig with the bow frame on the left hand's grip, where cast.js hangs the longbow. */
@@ -251,34 +274,59 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     return { rig, bow: mount(rig, "handL", gripAt(rig, "L")) };
   }
 
-  /** Poses `p` as the bake does (its hook solving the draw) and measures the draw (H, model space). */
-  function measureDraw({ rig, bow }, p) {
+  /**
+   * The Bone Archer's rig as cast.js `skeleton` builds it (the ghoul's: its proportions, its
+   * hunch and jaw bones, the hunched rest), the bow frame on the left hand's grip.
+   */
+  function boneArcherBow() {
+    const rig = createRig(1.9, { hunch: 1, jaw: true, torsoW: 0.78, torsoD: 0.82, shoulderW: 0.94, hipW: 0.86, headR: 0.058, limbR: 0.6 });
+    Object.assign(rig.rest, { hunch: [0.42, 0, 0], neck: [-0.34, 0, 0], head: [-0.12, 0, 0], jaw: [0.05, 0, 0] });
+    return { rig, bow: mount(rig, "handL", gripAt(rig, "L")) };
+  }
+
+  /**
+   * Poses `p` as the bake does (facing +z, its hook solving the draw), turns the model to `yaw`
+   * as the bake turns it to a facing, and measures the draw there, in rig heights: along the
+   * facing (`fwd`), toward the model's left, the bow side (`left`), and up.
+   */
+  function measureDraw({ rig, bow }, p, yaw = 0) {
+    rig.root.rotation.y = 0;
     applyPose(rig, p);
-    const line = solveDraw(rig, bow, p);
+    const drawn = solveDraw(rig, bow, p) !== null;
+    rig.root.rotation.y = yaw;
     rig.root.updateMatrixWorld(true);
     const H = rig.H;
+    const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const left = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const at = (b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld).divideScalar(H);
-    const anchor = new THREE.Vector3(...ANCHOR).multiplyScalar(H).applyMatrix4(rig.bones.head.matrixWorld).divideScalar(H);
+    const inFrame = (v, frame) => new THREE.Vector3(...v).multiplyScalar(H).applyMatrix4(frame.matrixWorld).divideScalar(H);
+    const anchor = inFrame(ANCHOR, rig.bones.head);
     const bowHand = new THREE.Vector3().setFromMatrixPosition(bow.matrixWorld).divideScalar(H);
     const hand = drawGrip(rig).applyMatrix4(rig.bones.handR.matrixWorld).divideScalar(H);
     const [elbow, shoulder, neck, chest] = ["foreArmR", "upperArmR", "neck", "chest"].map(at);
     const toChest = rig.bones.chest.getWorldQuaternion(new THREE.Quaternion()).invert();
-    // the drawing forearm, elbow to hand: its furthest point toward the bow side (+x) of the
-    // centre plane (the upright plane through the neck along the facing)
-    const cross = Math.max(...[0, 0.25, 0.5, 0.75, 1].map((t) => elbow.clone().lerp(hand, t).x - neck.x));
-    // the hand's distance from the arrow line (through the string's rest point, along `dir`)
-    const fromNock = line ? hand.clone().sub(line.nock.clone().divideScalar(H)) : null;
-    const onLine = line ? fromNock.addScaledVector(line.dir, -fromNock.dot(line.dir)).length() : 0;
+    // the arrow line, from the bow's own frame as the hook takes it: the string's rest point
+    // toward the grip
+    const nock = inFrame([0, BOW_BRACE, 0], bow);
+    const dir = inFrame([0, -BOW_GRIP, 0], bow).sub(nock).normalize();
+    // the drawing forearm, elbow to hand: its furthest point toward the bow side of the centre
+    // plane (the upright plane through the neck along the facing)
+    const cross = Math.max(...[0, 0.25, 0.5, 0.75, 1].map((t) => elbow.clone().lerp(hand, t).sub(neck).dot(left)));
+    // the hand's distance from the arrow line
+    const fromNock = hand.clone().sub(nock);
+    const g = drawGrip(rig);
     return {
-      bowOff: bowHand.x - anchor.x,
-      bowAhead: bowHand.z - chest.z,
-      arrowAcross: line ? line.dir.x : 0,
-      onLine,
+      bowOff: bowHand.clone().sub(anchor).dot(left),
+      bowAhead: bowHand.clone().sub(chest).dot(fwd),
+      arrowAcross: drawn ? dir.dot(left) : 0,
+      onLine: drawn ? fromNock.addScaledVector(dir, -fromNock.dot(dir)).length() : 0,
+      gripOff: Math.hypot(g.x, g.z) / H,
       toAnchor: hand.distanceTo(anchor),
-      pastAnchor: anchor.z - hand.z,
+      pastAnchor: anchor.clone().sub(hand).dot(fwd),
       cross,
       elbowRise: elbow.y - shoulder.y,
       elbowBack: elbow.clone().sub(chest).applyQuaternion(toChest).z,
+      back: BAND.elbowBack * rig.p.torsoD,
     };
   }
 
@@ -290,12 +338,17 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     expect(m.cross, `${label}: the drawing hand or forearm across the centre plane`).toBeLessThanOrEqual(0);
     if (ik <= 0) return;
     expect(Math.abs(m.arrowAcross), `${label}: the arrow across the facing`).toBeLessThanOrEqual(BAND.arrowAcross);
-    expect(m.onLine, `${label}: the drawing hand off the arrow line`).toBeLessThanOrEqual(BAND.onLine);
+    expect(m.onLine, `${label}: the drawing hand off the arrow line`).toBeLessThanOrEqual(m.gripOff + BAND.onLine);
     expect(m.pastAnchor, `${label}: the drawing hand past the anchor`).toBeLessThanOrEqual(BAND.pastAnchor);
     expect(m.elbowRise, `${label}: the elbow below the shoulder band`).toBeGreaterThanOrEqual(BAND.elbowRise[0]);
     expect(m.elbowRise, `${label}: the elbow above the shoulder band`).toBeLessThanOrEqual(BAND.elbowRise[1]);
-    expect(m.elbowBack, `${label}: the elbow behind the back`).toBeGreaterThanOrEqual(BAND.elbowBack);
+    expect(m.elbowBack, `${label}: the elbow behind the back`).toBeGreaterThanOrEqual(-m.back);
     if (ik >= 1 && (p.fx.draw ?? 0) > 0.5) expect(m.toAnchor, `${label}: the full draw off the anchor`).toBeLessThanOrEqual(BAND.toAnchor);
+  }
+
+  /** The bands on `p`, the model turned to each of the 8 baked facings (one pose is baked to all 8). */
+  function expectOnTheAimLineInEveryFacing(at, p, label) {
+    for (const f of FACINGS) expectOnTheAimLine(measureDraw(at, p, yawFor(f)), p, `${label}, facing ${f}`);
   }
 
   // the archer's style as cast.js keys it, simplified to what the clips read
@@ -310,7 +363,38 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     const at = archerBow();
     const keys = ATTACKS.shot();
     expect(keys.filter((p) => (p.fx.ik ?? 0) >= 1 && p.fx.draw > 0.5).length).toBeGreaterThanOrEqual(2);
-    keys.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `shot key ${i}`));
+    keys.forEach((p, i) => expectOnTheAimLineInEveryFacing(at, p, `shot key ${i}`));
+  });
+
+  it("measures the same draw in every facing: the pose is turned whole, as the bake turns it", () => {
+    const at = archerBow();
+    const p = ATTACKS.shot()[2];
+    const front = measureDraw(at, p);
+    for (const f of FACINGS) {
+      const m = measureDraw(at, p, yawFor(f));
+      for (const [k, v] of Object.entries(front)) expect(m[k], `${k}, facing ${f}`).toBeCloseTo(v, 9);
+    }
+  });
+
+  // the Bone Archer's style as cast.js keys it, simplified to what its attack reads
+  const boneArcher = { attack: "boneShot", hold: pose({ upperArmL: [-0.25, 0, 0.45], foreArmL: [-0.35, 0, 0], handL: [-0.85, 0.4, 0] }) };
+
+  it("on every frame of the Bone Archer's shot, on its own rig, in every facing (owner 2026-11-12: \"拉弓姿勢可以用在怪物身上\"): the bow hand forward on the aim line, the hand drawn straight back along it to the jaw, never across the body, the elbow at about shoulder height and not behind its back", () => {
+    const at = boneArcherBow();
+    const frames = clipsFor(boneArcher).attack;
+    expect(frames).toHaveLength(ANIMATIONS.attack.frames);
+    expect(frames.filter((p) => (p.fx.ik ?? 0) >= 1 && p.fx.draw > 0.5).length).toBeGreaterThanOrEqual(2);
+    frames.forEach((p, i) => expectOnTheAimLineInEveryFacing(at, p, `boneShot frame ${i}`));
+  });
+
+  it("at the Bone Archer's draw its bow arm points along the facing: the arrow runs straight ahead, the bow held out ahead of the anchor", () => {
+    const at = boneArcherBow();
+    for (const [i, p] of ATTACKS.boneShot().entries()) {
+      if ((p.fx.ik ?? 0) < 1 || !(p.fx.draw > 0.5)) continue;
+      const m = measureDraw(at, p);
+      expect(Math.abs(m.arrowAcross), `key ${i}`).toBeLessThanOrEqual(BAND.arrowAcross);
+      expect(m.bowAhead, `key ${i}`).toBeGreaterThanOrEqual(0.4);
+    }
   });
 
   it("at the draw the bow arm points along the facing: the arrow runs straight ahead, the string drawn and the arrow nocked", () => {
@@ -327,14 +411,14 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
 
   it("holds on every frame of walk_attack, the shot's upper body over the walk", () => {
     const at = archerBow();
-    clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `walk_attack frame ${i}`));
+    clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack.forEach((p, i) => expectOnTheAimLineInEveryFacing(at, p, `walk_attack frame ${i}`));
   });
 
   it("holds on every frame of backpedal_attack, the shot's upper body over the backpedal's legs (FS-JS7C8 R8)", () => {
     const at = archerBow();
     const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).backpedal_attack;
     expect(frames).toHaveLength(14);
-    frames.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `backpedal_attack frame ${i}`));
+    frames.forEach((p, i) => expectOnTheAimLineInEveryFacing(at, p, `backpedal_attack frame ${i}`));
   });
 });
 
