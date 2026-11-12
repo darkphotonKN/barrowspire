@@ -1,6 +1,6 @@
 ---
 id: I-G4VMQ-5
-status: open
+status: done
 implements: FS-G4VMQ
 blocked_by: [I-R82NV-13]
 labels: [ready-for-agent]
@@ -17,8 +17,8 @@ keys and presses; it is re-centred on resize.
 
 ## Acceptance Criteria
 
-- [ ] FS-G4VMQ § Change acceptance criteria, all five.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-G4VMQ § Change acceptance criteria, all five.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 

@@ -30,6 +30,7 @@ import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
+import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 import { HudCorner } from "@/ui/HudCorner";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -314,28 +315,7 @@ function queueLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
   };
 }
 
-/** One line of the hub's ESC menu (FS-G4VMQ §Requirements 3). */
-export interface HubMenuChoice {
-  id: "change" | "leave" | "back";
-  label: string;
-  /** Amber for a thing the player can do, the cancel register for going back. */
-  register: "actionable" | "cancel";
-}
-
-/**
- * What the ESC menu offers, from the scene's state at the moment it opens: the way to the main
- * menu and the way back into the hub always; leaving the queue only while there is a queue to
- * leave. The menu never names the hub ("hub" has no lore name), so it names what changes, the
- * character, not where the player goes.
- */
-export function hubMenuChoices(state: { queued: boolean }): HubMenuChoice[] {
-  const choices: HubMenuChoice[] = [
-    { id: "change", label: "Change character", register: "actionable" },
-  ];
-  if (state.queued) choices.push({ id: "leave", label: "Leave the queue", register: "actionable" });
-  choices.push({ id: "back", label: "Back  [Esc]", register: "cancel" });
-  return choices;
-}
+export { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 
 /** What the hub knows that a dialogue reads: at opening, and live while it is up. */
 interface HubState {
