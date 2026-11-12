@@ -170,20 +170,26 @@ export function quartermaster() {
   torso(rig, F.shirt);
   neck(rig, F.skin);
   arms(rig, F.shirt, { sleeve: (t) => 1 + 0.25 * THREE.MathUtils.smoothstep(t, 0.3, 0.5) * (1 - THREE.MathUtils.smoothstep(t, 0.55, 0.7)) });
-  // his thighs are not drawn in under the apron (legs({ under })): it covers only their front, and
-  // drawing them in would slim the breeches it leaves bare at the sides and back; skinned to its
-  // own thighs, the apron keeps them under it as it is
-  legs(rig, F.breeches);
+  // the seat of his breeches (FS-HF0WW § Change: The folk's legs stay under their clothes, round
+  // 2): a closed band in the breeches' cloth from a little over the belt, where it hugs the shirt,
+  // to just below the crotch, as wide as his hips were, under the apron in front. Without it the
+  // shirt's pale seat showed below the belt between the thigh roots, which came up through the shirt
+  // at the hips and above the belt. His thighs are drawn in under it (legs({ under })), where it
+  // covers them; below it, where only the apron covers their front, they are as built
+  const seat = { top: hy + 0.05, bottom: hy - 0.1, rTop: [0.104, 0.09], rBottom: [0.13, 0.085], belly: 0.012, z: -0.006 };
+  legs(rig, F.breeches, { under: seat });
   hands(rig, F.skin);
   boots(rig, F.leatherDark, { top: 0.1 });
   head(rig, F.skin);
   face(rig, F.face, F.browGrey);
   hair(rig, F.hairGrey);
   cap(rig, F.felt);
+  skirt(rig, F.breeches, { ...seat, legFollow: 0.8, segs: 24 });
   // the apron: pale tanned leather, a bib over the chest and a long panel to the shin; the dark
-  // ledger reads against it
+  // ledger reads against it. It follows the thighs by half (0.4 before round 2, the least in 0.05
+  // steps that keeps the leading thigh in under its side edge through the walk)
   overTorso(rig, F.apron, { from: hy, arc: FRONT, pad: 0.014 });
-  skirt(rig, F.apron, { top: hy + 0.01, bottom: ky - 0.06, rTop: [0.118, 0.1], rBottom: [0.13, 0.116], arc: FRONT, panels: true, legFollow: 0.4, segs: 12 });
+  skirt(rig, F.apron, { top: hy + 0.01, bottom: ky - 0.06, rTop: [0.118, 0.1], rBottom: [0.13, 0.116], arc: FRONT, panels: true, legFollow: 0.5, segs: 12 });
   belt(rig, F.leatherDark, M.brass, { r: [0.12, 0.104], dy: 0.03, pouch: true });
   keyRing(rig, F, "R");
   // upright on the raised forearm, on its outer side, so it stands in front of the body

@@ -533,6 +533,37 @@ Date: 2026-11-12
 45. **(charter default)** The owner approves each sheet on a contact sheet (ADR-0021 §5, FS-2325V
     §G.5): old beside new, idle and walk, 8 facings, with an animated preview.
 
+> **Edited in place on 2026-11-12 (still a work-order): round 2, the quartermaster.** After
+> playing the round-1 bake, the owner said: "NPC 腿部重繪 還是有一點破圖 尤其是npc quartermaster" (the
+> NPC leg redraw still breaks up a little, especially the quartermaster). Round 1 had left him at
+> 0.66 px on the guard, under its limit, and his thighs as built (R41). The camera check of R28,
+> run on the folk as the bake poses them, found him seen through his clothes in every pose:
+> 165-176 vertex-facings a pose at rest, up to 215 in the walk; the other three folk none. Two
+> places, both measured: (a) from every side his thigh roots came up through the shirt at the hips,
+> above the belt too, round the pale bottom of the shirt (the torso), which showed below the belt
+> between them as a seat; no garment covered his pelvis, the torso and the two leg tubes simply
+> crossed there; (b) in walk frames 0, 1, 3, 4, 5 and 7 the leading thigh came out through the
+> apron's side edge, mid-thigh (0.66 px at most), where the apron follows the thigh by a sixth of
+> its swing. The owner allowed a small change to his look. R41's sentence on the quartermaster is
+> replaced by R47.
+
+46. **(owner)** No folk's hip, thigh or knee is seen through its clothes: R28's camera check, run
+    on each folk sheet posed as the bake poses it, through idle and walk in every palette, sees
+    none in any facing. The skirted resident has no legs under her kirtle to see.
+47. **(owner; the fix that changes his silhouette least)** The quartermaster wears the seat of his
+    breeches: a closed `skirt` in the breeches' cloth from 0.05 H over the hips (a little over the
+    belt, where it hugs the shirt, so the belt's hoop shows breeches, not shirt) to 0.1 H under
+    them (just below the crotch), as wide as his hips were (rTop [0.104, 0.09], rBottom
+    [0.13, 0.085], belly 0.012, 0.006 H back), following the thighs by 0.8 with no panels; his
+    thighs are drawn in under it (`legs({ under })`, the one `UNDER_CLEAR`), and below it, where
+    only the apron covers their front, stay as built. From behind he reads shirt above the belt,
+    breeches below it. The seat lies under the apron wherever the apron is round it.
+48. **(owner; tune)** The quartermaster's apron follows the thighs by 0.5 (was 0.4): the least in
+    0.05 steps that keeps the leading thigh in under its side edge through the walk (0.45 leaves
+    0.12 px seen in walk frames 0 and 4). Its cut, arc and length are unchanged.
+49. The other three folk keep their build: the check of R46 sees nothing on them as round 1 left
+    them.
+
 ### Acceptance Criteria
 
 - [ ] Each of the four folk sheets, built by `folk.js` and posed as the bake poses it, asks for no
@@ -546,6 +577,12 @@ Date: 2026-11-12
       `manifest.json` change; `npm run bake -- --check` reports no changes.
 - [ ] A contact sheet per folk sheet, old beside new, idle and walk, 8 facings, and an animated
       preview; the owner approves each.
+- [ ] Round 2 (R46-R49): from the bake camera no hip, thigh or knee of any folk sheet is seen
+      through its clothes in any facing, through idle and walk in every palette (seen red: the
+      quartermaster, 165-176 vertex-facings a pose at rest, 215 at walk frame 0); his breeches
+      seat never comes out through his apron (seen red at 1.24 px with the seat set 0.02 H
+      forward); only `folk-*` and the folk entries of `manifest.json` change; the owner approves
+      the quartermaster's sheet, old beside new, with a 4x zoom of his legs and apron.
 
 ### Edge States
 
@@ -580,3 +617,19 @@ Date: 2026-11-12
 - **Awaiting the owner:** a contact sheet per folk sheet (old above new, idle and walk, 8 facings)
   and an animated preview. The skirted resident's kirtle visibly swings wider in the walk than
   before (R43): kept or reverted on his word.
+- **Round 2 (2026-11-12, I-HF0WW-9; R46-R49).** Unit: R28's camera check (`seenThroughCloth`, now
+  in `clearance.js`) on each folk sheet posed as the bake poses it, idle and walk in every
+  palette: the quartermaster 165-176 vertex-facings a pose at rest and up to 215 in the walk → 0
+  (his thigh roots round the shirt's seat from every side, and the leading thigh through the
+  apron's side edge in walk frames 0, 1, 3, 4, 5, 7, 0.66 px); the trousered resident and the
+  spirewarden 0 before and after; the skirted resident has no legs to see. The breeches seat lies
+  under the apron wherever the apron is round it (seen red at 1.24 px with the seat set 0.02 H
+  forward). The guard reads 0 on every folk clip (the quartermaster was 0.66). An ID render from
+  the bake camera (every part a flat colour, a review probe) showed the same: the shirt's pale
+  bottom between dark thigh roots below the belt from behind, gone after. **Bake.** Only the
+  quartermaster's 96 frames moved (the other three sheets' frames are byte-identical); his frame
+  box 77×91, anchor and crown unchanged; `folk-0` 2036×2840 as before, 23.13 MB RGBA unchanged,
+  PNG 2,654,316 → 2,658,511 B; only `folk-0` and its manifest entry changed; `npm run bake --
+  --check` reports no changes. **Awaiting the owner:** his sheet, old (round 1) beside new, idle
+  and walk, 8 facings, an animated preview, and a 4x zoom of his legs and apron in the worst
+  frames.
