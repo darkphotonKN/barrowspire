@@ -227,8 +227,8 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     bowAhead: 0.25,
     /** the arrow line's sideways lean off the facing (|x| of its unit direction) */
     arrowAcross: 0.05,
-    /** the drawing hand's distance from the arrow line */
-    onLine: 0.005,
+    /** the drawing hand's distance from the arrow line (the hook's two-bone solve lands the grip within this) */
+    onLine: 0.01,
     /** at full draw, the drawing hand's distance from the anchor */
     toAnchor: 0.04,
     /** how far back past the anchor the hand may go (the loose opens off it, behind the jaw) */

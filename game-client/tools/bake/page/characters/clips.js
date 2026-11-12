@@ -425,6 +425,20 @@ const BOW_STANCE = pose({
 /** The bow arm in {@link BOW_STANCE}, lifted `raise` rad out from the side (1.47 is level). */
 const bowArm = (raise, ry = -0.57) => ({ upperArmL: [0, ry, raise] });
 
+/**
+ * The delver archer's stance (FS-2325V § Change: The archer's draw stays on the aim line): the
+ * Bone Archer's {@link BOW_STANCE} with the chest turned further side-on (1.3 rad, the left
+ * shoulder leading closer to the aim line), the neck taking the turn back so the head looks along
+ * the facing as before. The legs are BOW_STANCE's; the bow arm and the wrist are each key's.
+ */
+const AIM_STANCE = pose({
+  ...BOW_STANCE.b,
+  spine: [0, -0.4, 0],
+  chest: [0, -0.4, 0],
+  neck: [0, 1.15, 0],
+  handL: [0, 0, 0],
+});
+
 export const ATTACKS = {
   /** Knight: overhead diagonal slash behind the shield. */
   slash: () => [
@@ -438,21 +452,36 @@ export const ATTACKS = {
   ].map((p) => add(STANCE, p)),
 
   /**
-   * Archer: side-on stance, bow arm straight at the target, draw to the jaw, loose, recover.
-   * `ik` pulls the right hand along the arrow line (0 at the bow, 1 at full draw; the archer's
-   * hook solves the arm), `draw` makes the string follow it, `arrow` shows the nocked arrow.
+   * Archer: side-on, the bow hand forward on the aim line in front of the chest, the draw pulled
+   * straight back along it to the jaw, loose, recover (FS-2325V § Change: The archer's draw stays
+   * on the aim line). `ik` pulls the right hand along the arrow line (0 at the bow, 1 at full
+   * draw; the archer's hook solves the arm, draw.js), `draw` makes the string follow it, `arrow`
+   * shows the nocked arrow, `pole` sets where the drawing elbow bends.
+   *
+   * The arrow runs along the bow's own line, from the string back through the grip. So the bow
+   * hand is held on the aim line (the upright plane along the facing through the jaw on the
+   * drawing side), its arm angled in to it from the leading shoulder ({@link AIM_STANCE}), and the
+   * wrist turns the bow so the arrow points straight along the facing rather than along the arm:
+   * the draw then ends by the right jaw instead of behind the left shoulder. Each bow-arm and
+   * wrist angle is measured on the rig (clips.test.mjs): the bow comes up pitched on the same
+   * plane, the bow arm bent so the drawing hand reaches the string, and goes down on it after.
+   * The elbow's pole (`fx.pole`, draw.js) sits out to the drawing side and below the line, so the
+   * elbow comes back at the arrow's height, behind the hand and out to its side, never up over
+   * the head nor round behind the back (the default pole lifts it 0.16 H over the shoulder on
+   * this stance). The loose (`ik` 1.12, was 1.3) opens the hand just off the anchor, by the ear.
    */
   shot: () => {
-    const aim = bowArm;
+    const draw = { pole: [0.1, -0.1] };
+    const full = { upperArmL: [0, -0.55, 1.7], foreArmL: [0, 0, 0], handL: [1.57, 1.34, -1.29] };
     return [
-      P({ ...aim(0.95, -0.4), upperArmR: [-0.6, 0, -0.1], foreArmR: [-1.4, 0, 0] }, {}, { arrow: 1, ik: 0.1, draw: 0 }),
-      P({ ...aim(1.47) }, {}, { arrow: 1, ik: 0.5, draw: 1 }),
-      P({ ...aim(1.47) }, {}, { arrow: 1, ik: 1, draw: 1 }),
-      P({ ...aim(1.47), chest: [-0.03, 0, 0] }, {}, { arrow: 1, ik: 1.02, draw: 1 }),
-      P({ ...aim(1.47), chest: [-0.05, 0, 0] }, {}, { ik: 1.3, draw: 0 }),
-      P({ ...aim(1.1, -0.45), upperArmR: [-0.3, -0.3, -0.3], foreArmR: [-0.9, 0, 0] }, {}, {}),
-      P({ ...aim(0.55, -0.3), upperArmR: [-0.1, 0, -0.1], foreArmR: [-0.6, 0, 0] }, {}, {}),
-    ].map((p) => add(BOW_STANCE, p));
+      P({ upperArmL: [-0.04, -0.02, 0.58], foreArmL: [-1.87, -0.53, 0.39], handL: [1.86, 0.89, -0.2], upperArmR: [-0.6, 0, -0.1], foreArmR: [-1.4, 0, 0] }, {}, { arrow: 1, ik: 0.1, draw: 0, ...draw }),
+      P({ ...full }, {}, { arrow: 1, ik: 0.5, draw: 1, ...draw }),
+      P({ ...full }, {}, { arrow: 1, ik: 1, draw: 1, ...draw }),
+      P({ ...full, chest: [-0.03, 0, 0] }, {}, { arrow: 1, ik: 1.02, draw: 1, ...draw }),
+      P({ ...full, chest: [-0.05, 0, 0] }, {}, { ik: 1.12, draw: 0, ...draw }),
+      P({ upperArmL: [0, -0.55, 1.26], foreArmL: [0, 0, 0], handL: [2.22, 1.41, -1.95], upperArmR: [-0.3, -0.3, -0.3], foreArmR: [-0.9, 0, 0] }, {}, {}),
+      P({ upperArmL: [-0.05, -0.66, 0.51], foreArmL: [0, 0, 0], handL: [0.26, 1.86, 0], upperArmR: [-0.1, 0, -0.1], foreArmR: [-0.6, 0, 0] }, {}, {}),
+    ].map((p) => add(AIM_STANCE, p));
   },
 
   /**

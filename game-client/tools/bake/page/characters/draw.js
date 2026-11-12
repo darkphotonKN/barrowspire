@@ -1,8 +1,9 @@
 // The bow draw (FS-2325V §E.2, I-2325V-5; § Change: The archer's draw stays on the aim line): the
 // drawing hand is solved, not keyed. While a clip draws (`fx.ik` > 0) the right hand travels back
 // along the arrow line, from the string's rest point away from the bow's grip, `DRAW_LEN` × `ik`
-// rig heights, its elbow bending toward a pole behind and above. So wherever the bow hand sits,
-// the drawing hand follows the line back from it: the bow hand's place sets the draw.
+// rig heights, its elbow bending toward a pole behind and above (a key may move it: `fx.pole`). So
+// wherever the bow hand sits, the drawing hand follows the line back from it: the bow hand's
+// place sets the draw.
 //
 // Pure rig geometry (no materials), so the clip tests pose it as the bake does (cast.js
 // `bowInHand` hangs the longbow on the same frame and runs this as the rig's hook).
@@ -13,6 +14,12 @@ import { gripAt } from "./rig.js";
 
 /** How far back the drawing hand travels from the string at full draw (`ik` 1), in rig heights. */
 export const DRAW_LEN = 0.36;
+
+/**
+ * Where the drawing elbow's pole sits by default, [out, up] in rig heights (`fx.pole`): straight
+ * above the line behind the hand, so the elbow rises behind it (the Bone Archer's draw).
+ */
+export const DRAW_POLE = [0, 0.12];
 
 /**
  * The longbow's own frame points (gear.js `longbow`), in rig heights: the grip on the stave and
@@ -40,7 +47,10 @@ export function solveDraw(rig, bowFrame, p, grip = drawGrip(rig)) {
   const N = new THREE.Vector3(0, BOW_BRACE * rig.H, 0).applyMatrix4(bowFrame.matrixWorld);
   const dir = G.clone().sub(N).normalize();
   const target = N.clone().addScaledVector(dir, -DRAW_LEN * rig.H * ik);
-  const pole = target.clone().addScaledVector(dir, -0.3 * rig.H).add(new THREE.Vector3(0, 0.12 * rig.H, 0));
+  // the elbow bends toward a pole behind the hand along the line, `out` toward the drawing side
+  // (-x) and `up` above it: a key's own `fx.pole` (the delver's shot), else above
+  const [out, up] = p.fx.pole ?? DRAW_POLE;
+  const pole = target.clone().addScaledVector(dir, -0.3 * rig.H).add(new THREE.Vector3(-out * rig.H, up * rig.H, 0));
   rig.bones.handR.rotation.set(0, 0, 0);
   solveArm(rig, "R", target, pole, grip);
   return { nock: N, dir };
