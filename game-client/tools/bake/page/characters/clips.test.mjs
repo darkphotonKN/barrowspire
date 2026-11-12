@@ -10,6 +10,7 @@ import {
   MERC_ANIMATIONS,
   RUN_ANIMATIONS,
   RUNNING_CLASS_ANIMATIONS,
+  RUN_SOFT_LIFT,
   RUN_WALK_ATTACK_CYCLES,
   WALK_ATTACK_CYCLES,
   applyPose,
@@ -440,7 +441,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     attack: "shot",
     hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
     walk: { arms: [0.7, 1], lean: 0.06 },
-    run: { arms: [0.3, 1], elbow: [0.215, 1] },
+    run: { arms: [0.3, 1], elbow: [0.215, 1], lift: RUN_SOFT_LIFT },
   };
   const plain = { attack: "slash", hold: pose() };
   const rig = archerLegs();
@@ -659,6 +660,33 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     const bounce = Math.max(...heights) - Math.min(...heights);
     expect(bounce).toBeGreaterThan(0.02 * rig.H);
     expect(bounce).toBeLessThan(0.07 * rig.H);
+  });
+
+  // owner, 2026-11-12: "跑步時好像有一種整個身體往下頓的感覺 不確定是不是上下起伏過高 我想減少這種感覺";
+  // "跑步的部分先完成弓箭手我看過再補其他職業": the archer first
+  it("the archer's run bobs softly: half the old rise and fall, lowest at mid-stance, highest in the flight, no thud onto the contact frame", () => {
+    const soft = runCycle(archer);
+    const keys = [0, 1, 2, 3, 4, 5, 6, 7].map((f) => footing(rig, soft, f));
+    const y = keys.map((k) => k.hips.y / rig.H);
+    const bob = Math.max(...y) - Math.min(...y);
+    // was 0.055 H (6.4 baked px at 1.5x), the flight key a spike 0.046 H over the contact key
+    expect(bob, "rise and fall").toBeLessThanOrEqual(0.03);
+    expect(bob, "rise and fall").toBeGreaterThanOrEqual(0.02);
+    const drop = Math.max(...y.map((v, i) => v - y[(i + 1) % 8]));
+    expect(drop, "largest key-to-key drop").toBeLessThanOrEqual(0.02);
+    for (const [low, high] of [[1, 3], [5, 7]]) {
+      expect(y[low], `key ${low} the lowest`).toBeCloseTo(Math.min(...y), 3);
+      expect(y[high], `key ${high} the highest`).toBeCloseTo(Math.max(...y), 3);
+    }
+    // still a run: each flight key both soles off the ground, a foot planted in the others
+    for (const f of [3, 7]) expect(Math.min(keys[f].L.y, keys[f].R.y), `flight @${f}`).toBeGreaterThan(0.02);
+    for (const f of [0, 1, 2, 4, 5, 6]) expect(Math.min(keys[f].L.y, keys[f].R.y), `planted @${f}`).toBeLessThan(GROUND_EPS);
+    // and only the flight's lift moves: the legs key for key the shared run's, so the stride, the
+    // planted feet on the baked keys and the pace (RUN_PACE) are its
+    soft.forEach((p, i) => {
+      for (const bone of LOWER_BODY) if (run[i].b[bone]) expect(p.b[bone], `${bone} @${i}`).toEqual(run[i].b[bone]);
+      expect(p.body.y, `lift @${i}`).toBeCloseTo((run[i].body.y ?? 0) * RUN_SOFT_LIFT, 12);
+    });
   });
 
   it("the run: the head holds steady, its turn and roll within a small band and its height no bobbier than the pelvis", () => {
