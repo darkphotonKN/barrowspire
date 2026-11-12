@@ -89,3 +89,17 @@ reports no changes.
 −10.2 % RGBA (the 1.5x projection was about 39 MB); crown 75 as before. The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
 beside the new; walk_attack; backpedal_attack; death; 8 facings) are in the
 session scratchpad `classes-1p5x/wizard/`.
+
+## Re-built (2026-11-12, agent): the low carry, the grip, the eased attack; waiting on the owner's contact sheet
+
+Re-baked once with the robe held through the run, the sceptre's lean and the low carry in a normal grip (FS-JS7C8 R2; FS-HF0WW § Change: The guard measures a leg through the cloth R24-R28; owner 2026-11-12: "法師跑步會輕微破圖 膝蓋處會凸出衣服 腰部似乎也有一點", "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉", "跑步時武器是不是拿反了", "法師走路時武器可以垂一點 現在手垂下來了 但是武器卻還是拿得很直"): the gown's thigh carries the cloth over the bent knee (`kneeCover` 0.05), the thighs' roots drawn in under her pinched waist, the scapular cut on the gown's rig (`skirt({ over })`) so the black gown no longer comes through the teal nor past its back panel behind the calves; measured from the bake camera in all 8 facings, ID-rendered at 1.5x: leg px in the run 0 (was up to 26 a frame at the knee, 3 at the waist), gown px through the teal 6 in the whole run (was 456, up to 29 a frame), the teal in the back views' lower band 3,800-3,900 px a facing in the run (was 576-883; the walk's 3,600-4,200) at the walk's light; the robe reaches no further (0.427 H). At rest the sceptre leans 37-41° off vertical in the idle and 33-44° in the walk (SCEPTRE_TILT 40°), forward and a little out; in the run it stands up from the fist, the orb 5-36° above the hand and under the shoulder. The guard reads 0 on every clip. Left: in a few run frames (keys 1 and 5, side and back views) a pair of dashes about a baked px long still shows on the teal back panel at the knee's height, where the blended skin creases the gown under it; widening the space between the layers (OVER_CLEAR to 0.005 H) does not remove them, so they are left for the owner's eye on the 4× zoom.
+Only the wizard's page and the manifest changed in its bake commit; every other atlas keeps its bytes;
+`npm run bake -- --check` reports no changes.
+
+| wizard sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 2572 × 3220 | 33.13 MB | 4,892,434 | 512 | 222 × 192 |
+
++1.1 % RGBA against the 1.5x bake before (32.77 MB); crown 74 (was 75).
+
+The contact sheets (idle, walk, run with the old, held and new keys side by side, attack, walk_attack and backpedal_attack old beside new, 8 facings) and an animated preview are in the session scratchpad `carry-final/wizard/`, with 4× zooms of the run's knee and waist frames (side views) and of its back views, old above new.

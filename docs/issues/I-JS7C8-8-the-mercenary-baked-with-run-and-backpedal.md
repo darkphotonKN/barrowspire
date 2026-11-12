@@ -90,3 +90,17 @@ reports no changes.
 −3.3 % RGBA (the 1.5x projection was about 50 MB); crown 92 (was 93). The contact sheet and an animated preview (idle; run beside the old 2x walk; the old attack
 beside the new, the 7 keys stacked to show the blade's path; walk_attack; backpedal_attack; death; 8 facings) are in the
 session scratchpad `classes-1p5x/mercenary/`.
+
+## Re-built (2026-11-12, agent): the low carry, the grip, the eased attack; waiting on the owner's contact sheet
+
+Re-baked once with the low carry in a normal grip and the eased cut (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "站立時武器應該可以放下手微微下垂 跑步時也不用太高", "跑步時應該會在胸口附近擺動", "跑步時武器是不是拿反了"): at rest the sword arm hangs, the point down and forward; in the run the wrist holds the curved blade forward along the forearm, 11-33° below level, the fist never turned over; the cut's key 0 starts from the carry and keys 5-6 settle back to it (96° and 97° in, was 153° in one frame; 5° out of key 6, was 99°), the strike and timing kept, the flick back up to his old low guard gone with the guard; his parry unchanged. The leg check from the bake camera finds no leg through the coat; the guard reads 0 on every clip.
+Only the mercenary's page and the manifest changed in its bake commit; every other atlas keeps its bytes;
+`npm run bake -- --check` reports no changes.
+
+| mercenary sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 2908 × 3852 | 44.81 MB | 6,012,838 | 544 | 297 × 261 |
+
+−2.2 % RGBA against the 1.5x bake before (45.83 MB); crown 75 (was 92: the old low guard stood the blade over his crown, as FS-JS7C8 measured).
+
+The contact sheets (idle, walk, run with the old, held and new keys side by side, attack, walk_attack and backpedal_attack old beside new, 8 facings) and an animated preview are in the session scratchpad `carry-final/mercenary/`.

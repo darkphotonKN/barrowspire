@@ -23,6 +23,11 @@
 > **Edited in place a fourth time on 2026-11-12 (the weapon carried low, still a work-order):** R2,
 > R43 and the run's acceptance criteria now carry the knight's, the wizard's and the mercenary's
 > weapon low, at rest and in the run; see *Owner change, 2026-11-12: the weapon carried low*.
+>
+> **Edited in place a fifth time on 2026-11-12 (the grip and the sceptre's lean, still a
+> work-order):** R2, R43 and the run's acceptance criteria now hold the weapon in a normal grip in
+> the run, lean the wizard's sceptre at rest, and ease the class attacks in and out of the lowered
+> carry; see *Owner change, 2026-11-12: a normal grip, the sceptre's lean*.
 
 ## Owner change, 2026-11-12
 
@@ -116,6 +121,29 @@ above level, its tip at 0.96, 1.01 and 0.82 H. The hand's path is what the owner
 So the weapon is carried low (R2): at rest the weapon arm hangs at the side and the weapon points
 low; in the run the weapon arm keeps the chest-high pump and the weapon trails low from the hand.
 The free arms, the knight's shield, the legs, the lean, the pace and the attacks are unchanged.
+
+## Owner change, 2026-11-12: a normal grip, the sceptre's lean
+
+Shown the held keys of the low carry (unbaked previews), the owner said:
+
+> "跑步時武器是不是拿反了"
+> "法師走路時武器可以垂一點 現在手垂下來了 但是武器卻還是拿得很直"
+
+In the run the weapon looks held backwards: the held keys turned the fist over on the forearm
+(hand [0.7, π, 0]) so the blade came out of the little-finger side and trailed back, a reverse
+grip. In the walk the wizard's hand hangs now, but the sceptre is still held very straight; let it
+droop.
+
+So in the run the grip is normal, as at rest and in the attacks (the weapon out of the thumb side
+of the fist, the hand never turned over on the forearm), and the low look comes from the wrist: a
+blade held forward along the forearm and a little down, its point ahead of the hand; the sceptre up
+from the fist with the orb above the hand, both under the shoulder (R2). At rest the sceptre leans
+with the relaxed hand about 30–45° off vertical, forward and a little out, the foot of the shaft
+back toward the heel, swaying a little with the step (R2). The blades' rest is as held.
+
+With the carry lowered the knight's and the mercenary's blade turned about 150° from the idle into
+the attack's first key and 99° from its last key back, a pop; the first key now starts from the
+carry and the last two settle back to it, the strike and the timing kept (R2).
 
 ## Summary
 
@@ -221,6 +249,24 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
      from the hand: its tip is level with the hand or below it at every moment of the cycle, a
      blade trailing back and down behind the hand, the sceptre's head forward and down. The free
      arms and the knight's shield are as before.
+     **(owner, 2026-11-12: "跑步時武器是不是拿反了", "法師走路時武器可以垂一點 現在手垂下來了
+     但是武器卻還是拿得很直"; edited)** The weapon is always held in a normal grip: out of the
+     thumb side of the fist, the hand never turned over on the forearm, in every key of the idle,
+     the walk and the run. In the run a blade is held forward along the forearm and a little down
+     or about level (45° below level to 5° above), its point ahead of the hand, under the shoulder
+     and never behind the body; the sceptre stands up from the fist, the orb above the hand, ahead
+     of it and under the shoulder (it leans forward as the hand rises to the chest: a sceptre held
+     any straighter would bring the orb over the shoulder at the top of the pump). At rest the
+     sceptre leans with the relaxed hand 30–45° off vertical (`SCEPTRE_TILT` 40° on average over
+     the idle and the walk), the orb forward and a little out, the foot of the shaft behind the
+     grip, clear of the robe, swaying a little with the step. *Replaces, for the run: "its tip is
+     level with the hand or below it at every moment of the cycle, a blade trailing back and down
+     behind the hand, the sceptre's head forward and down"; for the sceptre's rest: "held up beside
+     the leg (at least 45° above level)".*
+   - **(charter default, 2026-11-12)** A class attack starts from the carry and settles back to
+     it: coming out of the idle into its first key and on into the wind-up, and from its
+     follow-through back to the idle, the weapon turns at most `ATTACK_TURN_LIMIT` (100°) a frame;
+     the strike's keys, the weight, 7 keys at 12 fps are kept.
    Reason for the numbers: the coordinator's charter from the owner's words (a slight lean, about
    10°; elbows about 90°; hands to chest height, not chin, for "not a sprint").
    *Retired 2026-11-12: "a jog and not a sprint" (a charter default); the jog's 0.12 rad lean
@@ -461,9 +507,14 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
       above the chest bone and below the shoulder at the front of its swing and at least 0.06 H
       behind the hip at the back, the shoulders turning 6.5–10° against the hips, the head looking
       ahead, its legs key for key slice 5's; the knight's, the wizard's and the mercenary's weapon
-      tip never above the weapon hand in the run (a blade's behind it), and at rest the weapon arm
-      hanging (elbow 5–30°, hand under the pelvis bone by at most 0.12 H) with a blade pointing
-      15–60° below level and forward, the sceptre at least 45° up with its head under the shoulder; the backpedal legs are the walk's
+      in a normal grip on every key of the idle, the walk and the run (the fist never turned over on
+      the forearm); in the run a blade 45° below to 5° above level with its tip ahead of the hand,
+      under the shoulder and ahead of the body, the sceptre's orb above the hand, ahead of it and
+      under the shoulder; at rest the weapon arm hanging (elbow 5–30°, hand under the pelvis bone
+      by at most 0.12 H) with a blade pointing 15–60° below level and forward, the sceptre leaning
+      30–45° off vertical on every key of the idle and the walk (40° ± 3° on average), forward and
+      out, its head under the shoulder, clear of the robe; the knight's and the mercenary's attack
+      turning the blade at most 100° a frame out of the carry and back into it; the backpedal legs are the walk's
       run backward: the same leg poses in reverse order, the same pelvis height and stride (no
       crouch), the walk's pace negated.
 - [ ] `walk_attack` and `backpedal_attack` each last exactly as long as `attack`; on a sheet with
