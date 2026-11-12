@@ -27,6 +27,9 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
   it does not hide too much of you; prompts and the ready check beside it, not under it.
 - A field: Esc with nothing open opens the menu; Change character takes you to the roster.
 - A run and a field: the ability card just above the icons; dead, Leave the barrow above them.
+- Pending your decision, not built: splitting the gear overlay into a Character panel (C) and an
+  Inventory panel (I) with a fifth icon (FS-3EBCA Out of Scope). Until then Character (I) opens
+  the whole overlay.
 - Look at: with the gear overlay open its right panel covers the icons (FS-3EBCA R11, raised:
   the Character icon cannot close the overlay); in a run a prompt stepped beside the open party
   panel overlaps the minimap.
