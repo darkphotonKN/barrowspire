@@ -5109,11 +5109,14 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Whether this player's movement keys send `move`: not once they are out of the delve
    * (FS-77AB6 req 17), and not while they watch through a teammate's eyes (FS-QPDKN §Edge
-   * States "Spectating": the camera target is not the player).
+   * States "Spectating": the camera target is not the player), and not once the run has ended: its
+   * end moves the player's record to the town, so a stride sent after it walks the town body
+   * (reported 2026-11-12).
    */
   private canSendMove(): boolean {
     return (
       !this.menu &&
+      !this.runEnded &&
       !resolved(this.lastGameState?.current_player) &&
       this.watchedPlayerId === undefined
     );
@@ -5347,11 +5350,13 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The stride the keys ask for, sent each frame it is non-zero; none from a player out of the
    * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
-   * it interrupts is stopped once, and nothing more goes until it closes.
+   * it interrupts is stopped once, and nothing more goes until it closes. The run's end stops a
+   * stride the same way, for good: the stop walks no further than the town body the run's last
+   * strides may already be walking ({@link canSendMove}).
    */
   private sendMovementIntent(vx: number, vy: number): void {
     // an archer drawing a Shadow Shot stands still the same way (FS-JTNPR req 9)
-    if (this.menu || this.combat.aiming) {
+    if (this.menu || this.combat.aiming || this.runEnded) {
       if (this.striding) socketManager.sendMessage(ActionType.Move, { vx: 0, vy: 0 });
       this.striding = false;
       return;
