@@ -366,7 +366,12 @@ lit) while the player stands inside.
   guard measures a leg through the cloth). A panel worn over a garment (the mage's scapular over
   her gown) is cut on that garment's rig with `skirt({ over })`, so the two move as one cloth;
   never skin two layers apart, or the one that follows the legs further comes out through the
-  other in a run. The bake checks every pose and
+  other in a run. A figure whose pelvis no garment covers (the quartermaster in shirt, breeches
+  and a front apron) wears the seat of its breeches, a closed `skirt` in the breeches' cloth from
+  just over the belt to under the crotch, its thighs drawn in under it: the torso and the two leg
+  tubes crossing bare at the hips showed the thigh roots through the shirt and the shirt's pale
+  bottom between them (FS-HF0WW § Change: The folk's legs stay under their clothes, R47). The
+  bake checks every pose and
   fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
   give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt
   to the opposite thigh, kept only for the legacy sheets on the guard's `MIRRORED_LEGACY` list
