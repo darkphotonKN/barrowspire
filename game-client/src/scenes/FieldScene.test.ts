@@ -1594,6 +1594,24 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(takes(745, 163)).toBe(false);
   });
 
+  // integration of the map mode icon (D5, D6) with FS-3EBCA R10 and FS-G4VMQ § Change C4: a press on
+  // the corner row is the row's, and while the ESC menu is up the icon, M's, answers nothing
+  it("should leave a press on the corner row to the row, and step nothing on the icon while the ESC menu is up (FS-3EBCA R10; FS-G4VMQ § Change C4; D5, D6)", () => {
+    const { field, render, map, store } = forestWithMap();
+    const takes = (x: number, y: number) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, true);
+    render({ x: 2900, y: 1480 });
+    field.corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
+    expect(takes(862, 109)).toBe(true);
+    field.corner = undefined;
+    field.menu = {};
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+    field.menu = undefined;
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+  });
+
   it("should build the map with the field's first state, at the column's top, the arrival charted at once (§G.35; Edge States)", () => {
     const { render, map, layers } = forestWithMap();
     expect(map()).toBeUndefined();

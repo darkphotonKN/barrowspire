@@ -8162,6 +8162,17 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(cast).not.toHaveBeenCalled();
         });
 
+        // integration of FS-3EBCA R10 with D5: a press on the corner row is the row's alone
+        it("should leave a press on the corner row to the row: no step, no attack (FS-3EBCA R10; D5)", () => {
+          const { run, pointers, map, store } = mapped();
+          const cast = vi.spyOn((run as IconRun).combat, "cast");
+          (run as unknown as { corner?: unknown }).corner = { covers: () => true, destroy: vi.fn() };
+          pointers.pointerdown(pointerAt(862, 109));
+          expect(map()!.mode).toBe("normal");
+          expect(store.writes).toEqual([]);
+          expect(cast).not.toHaveBeenCalled();
+        });
+
         it("should leave a press 1 px outside its hit area to the game, the map's own ground included (D5)", () => {
           const { run, pointers, map } = mapped();
           const cast = vi.spyOn((run as IconRun).combat, "cast");

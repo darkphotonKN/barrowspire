@@ -4513,6 +4513,17 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(map()!.mode).toBe("normal");
     });
 
+    // integration of FS-3EBCA R10 with D5: a press or hover on the corner row is the row's alone
+    it("should leave a press on the corner row to the row, never stepping the mode (FS-3EBCA R10; D5)", () => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      (hub as Record<string, unknown>).corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual([]);
+    });
+
     it("should have no icon before the map is built, and take no press for it (D4)", () => {
       const { hub, map, store, pointers } = townWithModes();
       (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();

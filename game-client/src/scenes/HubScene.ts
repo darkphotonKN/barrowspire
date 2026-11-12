@@ -2098,11 +2098,15 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The map mode icon's pointer (FS-56CKV §Change: Map mode icon, D5–D7): lit under it, a press on
-   * it M's. A press or hover over the open gear overlay is the overlay's; the letter panel open is
-   * one of M's guards already.
+   * it M's. A press or hover over the open gear overlay is the overlay's, and one on the corner row
+   * the row's (FS-3EBCA R10); the letter panel open is one of M's guards already.
    */
   private bindMinimapPointer(): void {
-    bindMinimapPointer(this.input, () => this.minimap, (x, y) => !!this.gear?.covers(x, y));
+    bindMinimapPointer(
+      this.input,
+      () => this.minimap,
+      (x, y) => !!this.gear?.covers(x, y) || !!this.corner?.covers(x, y),
+    );
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */

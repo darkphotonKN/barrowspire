@@ -864,8 +864,8 @@ export class FieldScene extends Phaser.Scene {
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
         button: this.fullscreenButton,
-        // a press on its map mode icon is M's, under M's guard in a field: chat typing (FS-56CKV §Change: Map mode icon, D6)
-        icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => !!this.chatWindow?.isTyping() },
+        // a press on its map mode icon is M's, under M's guards in a field (FS-56CKV §Change: Map mode icon, D6)
+        icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
       });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
       const owner = useGameStore.getState().activeCharacterId;
@@ -897,11 +897,12 @@ export class FieldScene extends Phaser.Scene {
    * keys as the town's does (FS-G4VMQ § Change C4); the rest of M's guards are the minimap's own.
    */
   private bindMinimapKey(): void {
-    bindMinimapKey(
-      this.input.keyboard ?? undefined,
-      () => !!this.chatWindow?.isTyping() || !!this.menu,
-      () => this.minimap,
-    );
+    bindMinimapKey(this.input.keyboard ?? undefined, () => this.minimapKeysOwned(), () => this.minimap);
+  }
+
+  /** M's guards in a field, the key's and the map mode icon's (FS-P0HSP §F.33): chat typing, or the ESC menu owning the keys. */
+  private minimapKeysOwned(): boolean {
+    return !!this.chatWindow?.isTyping() || !!this.menu;
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */
