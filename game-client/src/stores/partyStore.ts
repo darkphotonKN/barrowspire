@@ -56,6 +56,12 @@ export interface PartyUpdatePayload {
   size: number;
   reason: string;
   subject_id: string;
+  /**
+   * On the sync a player on the roster is sent: their party's run is under way on that pod, so
+   * entering as another character is refused (FS-NCC9J §Change: Changing character leaves the
+   * party, C9, C12). Left out everywhere else.
+   */
+  locked?: boolean;
 }
 
 /** The party's open invites, none when the update carries no list. */
@@ -306,7 +312,8 @@ export function isPartyUpdate(payload: unknown): payload is PartyUpdatePayload {
     payload.members.every(isPartyMember) &&
     (payload.reserved === undefined ||
       (Array.isArray(payload.reserved) &&
-        payload.reserved.every(isReservedSlot)))
+        payload.reserved.every(isReservedSlot))) &&
+    (payload.locked === undefined || typeof payload.locked === "boolean")
   );
 }
 
@@ -437,8 +444,8 @@ export interface PartyState {
   /** Lets go of every invite whose countdown has run out. */
   expireInvites: () => void;
   /**
-   * Lets go of every invite: the player changed character, and the server spent each invite to
-   * them as they did (FS-NCC9J §Change: Changing character leaves the party, C2).
+   * Lets go of every invite: the player went back to the roster, where none can be answered
+   * (FS-NCC9J §Change: Changing character leaves the party, C8).
    */
   forgetInvites: () => void;
   /** Whole seconds left on an invite's countdown, by the store's own clock: the one clock (R14). */
