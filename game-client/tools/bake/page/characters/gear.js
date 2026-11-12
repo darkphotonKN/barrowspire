@@ -7,9 +7,12 @@
 // Sizes are in H units like everything else on the rig, so gear scales with its wearer.
 
 import * as THREE from "three";
-import { attach, jointAt as J, mount, rigidTube } from "./rig.js";
+import { attach, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
 import { materials, mkCanvas } from "../materials.js";
 import { cssRgb, mix, shade } from "../palette.js";
+
+// the grip point lives with the rig (rig.js), where the draw solver (draw.js) reads it too
+export { gripAt };
 
 
 /** Shape (x = width, y = length) → grip frame: y along +z, x along +y, extrusion along +x. */
@@ -45,12 +48,6 @@ const rod = (r0, r1, len, seg = 10) => {
   g.rotateX(Math.PI / 2); // along +z: r0 at -z, r1 at +z
   return g;
 };
-
-/** Where a hand's grip sits in model space (bind pose). */
-export function gripAt(rig, side) {
-  const [x, wy] = J(rig, `hand${side}`);
-  return [x, wy - 0.036, 0.008];
-}
 
 /** A group on the hand bone, in the grip frame. `rx` tilts the weapon in the swing plane. */
 export function inHand(rig, side, o = {}) {

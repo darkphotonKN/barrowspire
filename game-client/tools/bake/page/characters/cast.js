@@ -11,7 +11,8 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { drawGrip, solveDraw } from "./draw.js";
 import {
   arms,
   bareFeet,
@@ -42,7 +43,6 @@ import {
 import {
   cleaver,
   curvedSword,
-  gripAt,
   inHand,
   kiteShield,
   kneeCop,
@@ -169,32 +169,14 @@ function bowInHand(rig, M, F) {
   const bow = longbow(rig, M, F);
   bowMount.add(bow.group);
 
-  // the string follows the right hand while drawing
+  // the string follows the right hand while drawing; the hand is solved onto the arrow line
+  // (draw.js)
   const handR = rig.bones.handR;
-  const gripR = gripAt(rig, "R");
-  const local = new THREE.Vector3(
-    gripR[0] * rig.H - rig.bind.handR.x,
-    gripR[1] * rig.H - rig.bind.handR.y,
-    gripR[2] * rig.H - rig.bind.handR.z,
-  );
+  const local = drawGrip(rig);
   const tmp = new THREE.Vector3();
   const inv = new THREE.Matrix4();
-  const drawLen = 0.36 * rig.H;
-  const gripBow = new THREE.Vector3(0, -0.012 * rig.H, 0);
-  const restNock = new THREE.Vector3(0, 0.075 * rig.H, 0);
   rig.hooks.push((r, p) => {
-    r.root.updateMatrixWorld(true);
-    const ik = p.fx.ik ?? 0;
-    if (ik > 0) {
-      // the draw hand travels back along the arrow line, from the string toward the jaw
-      const G = gripBow.clone().applyMatrix4(bow.group.matrixWorld);
-      const N = restNock.clone().applyMatrix4(bow.group.matrixWorld);
-      const dir = G.clone().sub(N).normalize();
-      const target = N.clone().addScaledVector(dir, -drawLen * ik);
-      const pole = target.clone().addScaledVector(dir, -0.3 * r.H).add(new THREE.Vector3(0, 0.12 * r.H, 0));
-      r.bones.handR.rotation.set(0, 0, 0);
-      solveArm(r, "R", target, pole, local);
-    }
+    solveDraw(r, bow.group, p, local);
     tmp.copy(local).applyMatrix4(handR.matrixWorld);
     inv.copy(bow.group.matrixWorld).invert();
     tmp.applyMatrix4(inv);
