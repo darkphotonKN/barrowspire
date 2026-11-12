@@ -4191,6 +4191,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       drawScenery: vi.fn(),
       renderNPCs: vi.fn(),
       minimapStage: { graphics: make, canvasImage: make },
+      // the map mode icon's own objects, kept apart from the map's layers (FS-56CKV §Change: Map mode icon)
+      modeIconStage: { graphics: () => layer().self, text: () => layer().self },
     });
     hub.views = new Map([["me", { pos: { ...AWAY } }]]);
     const store = { held, writes: [] as string[] };
@@ -4202,7 +4204,12 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       removeItem: () => {},
     });
     const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
-    hub.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    const pointers: Record<string, (pointer?: { x: number; y: number; button?: number }) => void> = {};
+    hub.input = {
+      setDefaultCursor: vi.fn(),
+      keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) },
+      on: (name: string, fn: () => void) => void (pointers[name] = fn),
+    };
     (hub as unknown as { bindMinimapKey(): void }).bindMinimapKey();
     const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
     const render = (others: unknown[] = []) =>
@@ -4215,7 +4222,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
         npcs: [],
       });
     const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
-    return { ...stage, hub, layers, store, pressM, render, map, button };
+    return { ...stage, hub, layers, store, pressM, render, map, button, pointers };
   }
 
   beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
@@ -4260,6 +4267,56 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     pressM(event);
     expect(map()!.mode).toBe("normal");
     expect(store.writes).toEqual([]);
+  });
+
+  // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
+  // 模式(M)"): a press on the icon in the map's bottom-left does what M does
+  describe("the map mode icon (FS-56CKV §Change: Map mode icon; I-56CKV-8)", () => {
+    const press = (x: number, y: number, button = 0) => ({ x, y, button });
+
+    it("should step the mode on a press on the icon as M does, in the map's bottom-left and then the enlarged map's, kept in this browser (D2, D6)", () => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("enlarged");
+      pointers.pointerdown!(press(754, 163));
+      expect(map()!.mode).toBe("overlay");
+      // beside the fullscreen button in its corner, as the overlay is up
+      pointers.pointerdown!(press(1043, 16));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+    });
+
+    it.each(GUARDS.slice(1))("should do nothing with a press on the icon with %s, M's guards (D6)", (_what, arrange) => {
+      const { hub, render, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      arrange(hub as Record<string, unknown>);
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      expect(store.writes).toEqual([]);
+    });
+
+    it("should leave a press under the open gear overlay to it, and one off the icon to the town (D5)", () => {
+      const { hub, render, map, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      hub.gear = { covers: () => true, isOpen: () => true };
+      pointers.pointerdown!(press(862, 109));
+      expect(map()!.mode).toBe("normal");
+      hub.gear = undefined;
+      pointers.pointerdown!(press(855, 109));
+      expect(map()!.mode).toBe("normal");
+    });
+
+    it("should have no icon before the map is built, and take no press for it (D4)", () => {
+      const { hub, map, store, pointers } = townWithModes();
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      expect(() => pointers.pointerdown!(press(862, 109))).not.toThrow();
+      expect(map()).toBeUndefined();
+      expect(store.writes).toEqual([]);
+    });
   });
 
   it("should build the map in the mode this browser kept, from a run or an earlier visit (§F.32)", () => {

@@ -1388,6 +1388,8 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
       size: FOREST_SIZE,
       time: { delayedCall: vi.fn(), get now() { return clock.now; } },
       minimapStage: { graphics: () => layer(layers), canvasImage: () => layer(layers) },
+      // the map mode icon's own objects, kept apart from the map's layers (FS-56CKV §Change: Map mode icon)
+      modeIconStage: { graphics: () => layer([]), text: () => layer([]) },
       showClassHud: vi.fn(),
     });
     const store = { held: null as string | null, writes: [] as string[] };
@@ -1426,6 +1428,26 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     viewport.set({ width: 800, height: 600, renderScale: 1 });
     usePartyStore.setState({ party: null });
     vi.restoreAllMocks();
+  });
+
+  // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
+  // 模式(M)"): a press on the icon is M's, never an attack
+  it("should step the mode on a press on the map mode icon as M does, never an attack, and do nothing with one while chat is typing (FS-56CKV §Change: Map mode icon, D5, D6)", () => {
+    const { field, render, map, store } = forestWithMap();
+    const takes = (x: number, y: number, primary = true) => (field as unknown as FieldUnderTest).takesPointer(x, y, primary);
+    expect(takes(862, 109)).toBe(false);
+    render({ x: 2900, y: 1480 });
+    expect(takes(862, 109)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    // a right press on it is its too: no class ability at the corner, and no step
+    expect(takes(754, 163, false)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    expect(takes(754, 163)).toBe(true);
+    expect(map()!.mode).toBe("enlarged");
+    expect(store.writes).toEqual(["enlarged"]);
+    // off the icon, the field's as before
+    expect(takes(745, 163)).toBe(false);
   });
 
   it("should build the map with the field's first state, at the column's top, the arrival charted at once (§G.35; Edge States)", () => {

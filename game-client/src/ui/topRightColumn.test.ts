@@ -126,8 +126,25 @@ describe("topRightCorner (FS-56CKV §Change: Minimap at the top, fullscreen butt
   });
 
   it.each([1080, 1280])("should keep the button in the corner for the overlay and no map, at width %i (§Change C4)", (width) => {
-    expect(topRightCorner(viewOf(width), null)).toEqual({ button: CORNER, minimap: null, below: 44, right: width - 10 });
+    expect(topRightCorner(viewOf(width), null)).toEqual({ button: CORNER, minimap: null, modeIcon: null, below: 44, right: width - 10 });
     // a panel handed in the overlay's mode stands nothing in the corner beside the button
     expect(topRightCorner(viewOf(width), { ...MINIMAP, mode: "overlay" }).button).toEqual(CORNER);
+  });
+});
+
+// FS-56CKV §Change: Map mode icon, D2–D4: the column hands on the icon's place with the corner's
+describe("topRightColumn and the map mode icon (FS-56CKV §Change: Map mode icon)", () => {
+  it.each([
+    [NORMAL, { x: 858, y: 105, width: 9, height: 9 }],
+    [ENLARGED, { x: 750, y: 159, width: 9, height: 9 }],
+    [{ ...MINIMAP, mode: "overlay" as const }, { x: 1039, y: 12, width: 9, height: 9 }],
+  ])("should hand on the icon's box with the column (minimap: %o)", (minimap, box) => {
+    const column = topRightColumn({ view: viewOf(1080), minimap, floorHeight: LINE_H, escapedHeight: LINE_H });
+    expect(column.modeIcon?.box).toEqual(box);
+    expect(column.modeIcon).toEqual(topRightCorner(viewOf(1080), minimap).modeIcon);
+  });
+
+  it("should hand on none with no minimap", () => {
+    expect(topRightColumn({ view: viewOf(1080), minimap: null, floorHeight: LINE_H, escapedHeight: LINE_H }).modeIcon).toBeNull();
   });
 });
