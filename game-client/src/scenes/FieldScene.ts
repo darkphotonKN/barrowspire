@@ -69,7 +69,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
-import { afterFrameSetUp, anchorAt, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 import { usePartyStore } from "@/stores/partyStore";
 import { useGameStore } from "@/stores/gameStore";
 import {
@@ -81,18 +81,10 @@ import {
   type FieldChartStore,
 } from "@/ui/fieldChart";
 import { fieldMap } from "@/ui/fieldMap";
-import { WorldMinimap, minimapRect, type MinimapStage } from "@/ui/minimap";
-import {
-  browserMinimapStore,
-  nextMinimapMode,
-  readMinimapMode,
-  rememberMinimapMode,
-  type MinimapMode,
-  type MinimapModeStore,
-} from "@/ui/minimapMode";
+import type { MinimapStage } from "@/ui/minimap";
+import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import { canvasImage } from "@/ui/paintKit";
-import { TOP_RIGHT_HUD } from "@/ui/topRightColumn";
-import { partyOnMap } from "@/ui/worldMap";
+import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
 
@@ -230,7 +222,7 @@ export class FieldScene extends Phaser.Scene {
    * The field's minimap at the top of the top-right column (FS-P0HSP): built with the field's
    * first state, from the stage create wires; gone with the visit.
    */
-  private fieldMinimap?: WorldMinimap;
+  private minimap?: WorldMinimapController;
   /** What the field's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
   /** This visit's charted ground (FS-P0HSP §D): the player's own, read at the first state. */
@@ -245,12 +237,8 @@ export class FieldScene extends Phaser.Scene {
   private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
   /** What the map last drew (the chart's version, the walls' count), and when (the scene's clock): a redraw waits {@link FIELD_CHART}.redraw. */
   private mapDrawn?: { version: number; walls: number; at: number };
-  /** How the field's minimap is shown (FS-P0HSP §F.32): the run's one remembered mode; M steps it. */
-  private minimapMode: MinimapMode = "normal";
-  /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4). */
+  /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** The party members' entity ids in the last state: whose drawn figures the overlay's dots follow. */
-  private mapAllies: string[] = [];
   private abilityHud?: AbilityHud;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -355,7 +343,7 @@ export class FieldScene extends Phaser.Scene {
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
-    this.placeFieldMap();
+    this.minimap?.place();
     this.abilityHud?.relayout();
     this.satchel?.relayout();
     this.invitePrompt?.relayout();
@@ -549,15 +537,14 @@ export class FieldScene extends Phaser.Scene {
     this.partyFrames = undefined;
     // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
     this.saveFieldChart(true);
-    this.fieldMinimap?.destroy();
-    this.fieldMinimap = undefined;
+    this.minimap?.destroy();
+    this.minimap = undefined;
     this.minimapStage = undefined;
     this.chart = undefined;
     this.chartSaved = undefined;
     this.chartOwner = null;
     this.mapDrawn = undefined;
     this.mapField = { walls: [], gates: [] };
-    this.mapAllies = [];
     this.abilityHud = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
@@ -710,26 +697,25 @@ export class FieldScene extends Phaser.Scene {
    * ground is charted ({@link drawFieldMap}); the party's dots on every state.
    */
   private showFieldMap(state: ClientGameState): void {
-    if (!this.fieldMinimap) {
+    if (!this.minimap) {
       if (!this.minimapStage) return;
-      this.fieldMinimap = new WorldMinimap(this.minimapStage, this.size, () => viewport.renderScale);
+      this.minimap = new WorldMinimapController({
+        stage: this.minimapStage,
+        world: this.size,
+        store: this.minimapStore,
+        renderScale: () => viewport.renderScale,
+      });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
       this.chartOwner = useGameStore.getState().activeCharacterId;
       this.chart = readFieldChart(this.chartStore, this.chartOwner, this.field, this.size);
       this.chartSaved = { version: this.chart.version, at: this.time.now };
-      // the mode this browser kept, in a run, the town or another field (FS-P0HSP §F.32)
-      this.minimapMode = readMinimapMode(this.minimapStore);
-      this.fieldMinimap.setMode(this.minimapMode);
-      this.placeFieldMap();
     }
     const me = state.current_player;
     if (me) this.chart?.chartAround(me.position);
     this.mapField = { walls: state.walls ?? this.mapField.walls, gates: state.gates ?? this.mapField.gates };
     this.drawFieldMap();
     this.saveFieldChart();
-    const members = usePartyStore.getState().party?.members.map((m) => m.player_id) ?? [];
-    this.fieldMinimap.party(partyOnMap(state, members));
-    this.mapAllies = (state.other_players ?? []).filter((p) => members.includes(p.id)).map((p) => p.entity_id);
+    this.minimap.party(state, usePartyStore.getState().party?.members.map((m) => m.player_id) ?? []);
   }
 
   /**
@@ -739,7 +725,7 @@ export class FieldScene extends Phaser.Scene {
    * times a second. Each frame and each state; it builds nothing while nothing is new.
    */
   private drawFieldMap(): void {
-    const map = this.fieldMinimap;
+    const map = this.minimap;
     const chart = this.chart;
     if (!map || !chart) return;
     const { version } = chart;
@@ -769,45 +755,18 @@ export class FieldScene extends Phaser.Scene {
     this.chartSaved = { version: chart.version, at: now };
   }
 
-  /** The field's minimap at the top of the top-right column, right-aligned on its x (FS-P0HSP §G.35). */
-  private placeFieldMap(): void {
-    const panel = this.fieldMinimap?.panel;
-    if (!panel) return;
-    const corner = anchorAt(TOP_RIGHT_HUD);
-    this.fieldMinimap?.place(minimapRect(corner.x, corner.y, panel));
-  }
-
   /**
    * M (FS-P0HSP §F.31, §F.33): the run's three modes on the field's minimap, kept in this browser
-   * on the run's one key. An event, never an added key; not on a held key's repeat or while chat is
-   * typing (a field has no other key owner); nothing before the map is built.
+   * on the run's one key. Not while chat is typing (a field has no other key owner); the rest of
+   * M's guards are the minimap's own.
    */
   private bindMinimapKey(): void {
-    this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
-      if (event?.repeat || this.chatWindow?.isTyping()) return;
-      const map = this.fieldMinimap;
-      if (!map) return;
-      this.minimapMode = nextMinimapMode(this.minimapMode);
-      rememberMinimapMode(this.minimapStore, this.minimapMode);
-      map.setMode(this.minimapMode);
-      this.placeFieldMap();
-    });
+    bindMinimapKey(this.input.keyboard ?? undefined, () => !!this.chatWindow?.isTyping(), () => this.minimap);
   }
 
-  /**
-   * The map overlay on the player (FS-P0HSP §F.31; FS-1SEF0 §C.14, §C.19): each frame, after the
-   * figures have eased, the player's drawn position and the party's drawn figures.
-   */
+  /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */
   private followMapOverlay(): void {
-    const map = this.fieldMinimap;
-    const self = this.selfView();
-    if (!map || !self) return;
-    const at = (p: Point) => ({ x: p.x, y: p.y });
-    const allies = this.mapAllies.flatMap((id) => {
-      const view = this.views.get(id);
-      return view ? [at(view.pos)] : [];
-    });
-    map.follow(at(self.pos), { self: at(self.pos), allies });
+    this.minimap?.follow(this.selfView()?.pos, (id) => this.views.get(id)?.pos);
   }
 
   /**

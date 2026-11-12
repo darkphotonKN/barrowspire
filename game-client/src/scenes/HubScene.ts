@@ -165,20 +165,12 @@ import {
   type WallSheets,
 } from "@/render/world/walls";
 import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
-import { afterFrameSetUp, anchorAt, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
-import { WorldMinimap, minimapRect, type MinimapStage } from "@/ui/minimap";
-import {
-  browserMinimapStore,
-  nextMinimapMode,
-  readMinimapMode,
-  rememberMinimapMode,
-  type MinimapMode,
-  type MinimapModeStore,
-} from "@/ui/minimapMode";
+import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import type { MinimapStage } from "@/ui/minimap";
+import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import { canvasImage } from "@/ui/paintKit";
-import { TOP_RIGHT_HUD } from "@/ui/topRightColumn";
 import { townMap } from "@/ui/townMap";
-import { partyOnMap } from "@/ui/worldMap";
+import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
 
@@ -741,15 +733,11 @@ export class HubScene extends Phaser.Scene {
    * The town's minimap at the top of the top-right column (FS-P0HSP): built with the first state
    * that carries the town's walls, from the stage create wires; gone with the visit.
    */
-  private townMinimap?: WorldMinimap;
+  private minimap?: WorldMinimapController;
   /** What the town's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
-  /** How the town's minimap is shown (FS-P0HSP §F.32): the run's one remembered mode, read as the map is built; M steps it. */
-  private minimapMode: MinimapMode = "normal";
-  /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4). */
+  /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** The party members' entity ids in the last state: whose drawn figures the overlay's dots follow. */
-  private mapAllies: string[] = [];
   /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
   private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
@@ -964,7 +952,7 @@ export class HubScene extends Phaser.Scene {
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
-    this.placeTownMap();
+    this.minimap?.place();
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
@@ -1153,8 +1141,8 @@ export class HubScene extends Phaser.Scene {
     this.readyCheck = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
-    this.townMinimap?.destroy();
-    this.townMinimap = undefined;
+    this.minimap?.destroy();
+    this.minimap = undefined;
     this.minimapStage = undefined;
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
@@ -2055,62 +2043,36 @@ export class HubScene extends Phaser.Scene {
    */
   private showTownMap(state: ClientGameState, gates: readonly GateState[]): void {
     const walls = state.walls ?? [];
-    if (!this.townMinimap) {
+    if (!this.minimap) {
       if (!this.minimapStage || walls.length === 0) return;
-      this.townMinimap = new WorldMinimap(this.minimapStage, HUB_SIZE, () => viewport.renderScale);
-      // the mode this browser kept, in a run or an earlier visit (FS-P0HSP §F.32)
-      this.minimapMode = readMinimapMode(this.minimapStore);
-      this.townMinimap.setMode(this.minimapMode);
-      this.placeTownMap();
+      this.minimap = new WorldMinimapController({
+        stage: this.minimapStage,
+        world: HUB_SIZE,
+        store: this.minimapStore,
+        renderScale: () => viewport.renderScale,
+      });
     }
-    if (walls.length > 0) this.townMinimap.show(townMap({ walls, gates, npcs: state.npcs ?? [] }, HUB_SIZE));
-    const members = usePartyStore.getState().party?.members.map((m) => m.player_id) ?? [];
-    this.townMinimap.party(partyOnMap(state, members));
-    this.mapAllies = (state.other_players ?? []).filter((p) => members.includes(p.id)).map((p) => p.entity_id);
+    if (walls.length > 0) this.minimap.show(townMap({ walls, gates, npcs: state.npcs ?? [] }, HUB_SIZE));
+    this.minimap.party(state, usePartyStore.getState().party?.members.map((m) => m.player_id) ?? []);
   }
 
   /**
    * M (FS-P0HSP §F.31, §F.33): the run's three modes on the town's minimap, kept in this browser on
-   * the run's one key. An event, never an added key: nothing is captured, so the letter types in
-   * any field. Not on a held key's repeat, while chat is typing, or while the menu, a dialogue card
-   * or the letter panel owns the keys; nothing before the map is built.
+   * the run's one key. Not while chat is typing or the menu, a dialogue card or the letter panel
+   * owns the keys; the rest of M's guards are the minimap's own.
    */
   private bindMinimapKey(): void {
-    this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
-      if (event?.repeat || this.chatWindow?.isTyping()) return;
-      if (this.menu || this.dialogue || this.mailbox?.isOpen()) return;
-      const map = this.townMinimap;
-      if (!map) return;
-      this.minimapMode = nextMinimapMode(this.minimapMode);
-      rememberMinimapMode(this.minimapStore, this.minimapMode);
-      map.setMode(this.minimapMode);
-      this.placeTownMap();
-    });
+    bindMinimapKey(
+      this.input.keyboard ?? undefined,
+      () => !!this.chatWindow?.isTyping() || !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen(),
+      () => this.minimap,
+    );
   }
 
-  /**
-   * The map overlay on the player (FS-P0HSP §F.31; FS-1SEF0 §C.14, §C.19): each frame, after the
-   * figures have eased, the player's drawn position and the party's drawn figures. A move of its
-   * layers, never a redraw; in a panel mode the minimap only notes these.
-   */
+  /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */
   private followMapOverlay(): void {
-    const map = this.townMinimap;
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
-    if (!map || !self) return;
-    const at = (p: Point) => ({ x: p.x, y: p.y });
-    const allies = this.mapAllies.flatMap((id) => {
-      const view = this.views.get(id);
-      return view ? [at(view.pos)] : [];
-    });
-    map.follow(at(self.pos), { self: at(self.pos), allies });
-  }
-
-  /** The town's minimap at the top of the top-right column, right-aligned on its x (FS-P0HSP §G.35). */
-  private placeTownMap(): void {
-    const panel = this.townMinimap?.panel;
-    if (!panel) return;
-    const corner = anchorAt(TOP_RIGHT_HUD);
-    this.townMinimap?.place(minimapRect(corner.x, corner.y, panel));
+    this.minimap?.follow(self?.pos, (id) => this.views.get(id)?.pos);
   }
 
   /**

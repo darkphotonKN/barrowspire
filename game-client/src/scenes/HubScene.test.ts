@@ -3975,7 +3975,7 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
         gates: HUB_GATES,
         npcs,
       });
-    const map = () => hub.townMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
     /** The dot layer, the last made. */
     const dots = () => layers[layers.length - 1];
     return { ...stage, hub, layers, render, map, dots };
@@ -4175,7 +4175,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
         gates: HUB_GATES,
         npcs: [],
       });
-    const map = () => hub.townMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
     return { ...stage, hub, layers, store, pressM, render, map };
   }
 

@@ -1402,7 +1402,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
         walls: WALLS,
         gates: [GATE],
       });
-    const map = () => field.fieldMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    const map = () => (field.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
     const chart = () => field.chart as { charted(cx: number, cy: number): boolean; cols: number; rows: number };
     /** A frame: the clock on, and the scene's update for the map alone. */
     const frame = (ms: number) => {
